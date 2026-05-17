@@ -153,11 +153,67 @@ export interface Question {
   ipc_version: number;
 }
 
+/**
+ * Per-turn telemetry block — the persistable cost + multi-clock
+ * timing snapshot the reducer commits onto `TurnEntry` at
+ * `turn_complete`. Mirrors the tugdeck `TurnTelemetry` shape (see
+ * `tugdeck/src/lib/code-session-store/telemetry.ts`). Used in two
+ * places on the wire:
+ *
+ *  - inlined onto a replayed `TurnComplete` by the tugcast supervisor
+ *    (the supervisor reads it from its sqlite SessionLedger and
+ *    attaches it so the client reducer's merge function adopts the
+ *    persisted values), and
+ *  - carried on an inbound `RecordTurnTelemetry` from tugdeck so the
+ *    supervisor can persist it for the next reload.
+ *
+ * Round-trip-stable: every field is a primitive scalar; nullable
+ * fields are `number | null` per the data model.
+ *
+ * Field semantics live with the source of truth in tugdeck's
+ * `TurnTelemetry` and `TurnEntry`. This type carries the wire shape
+ * only; tugcode does not interpret any field.
+ */
+export interface TurnTelemetry {
+  cost: TurnCost;
+  wallClockMs: number;
+  awaitingApprovalMs: number;
+  transportDowntimeMs: number;
+  activeMs: number;
+  ttftMs: number | null;
+  ttftcMs: number | null;
+  reconnectCount: number;
+  maxStreamGapMs: number;
+}
+
+/**
+ * Cost subfield of {@link TurnTelemetry}. Field names match
+ * tugdeck's `TurnCost` interface (camelCase, not the snake_case
+ * `cost_update.usage.*` wire shape — that conversion happens
+ * client-side in `extractTurnCost`).
+ */
+export interface TurnCost {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalCostUsd: number;
+}
+
 export interface TurnComplete {
   type: "turn_complete";
   msg_id: string;
   seq: number;
   result: string;
+  /**
+   * Optional per-turn telemetry payload. Populated only on replay
+   * (tugcast supervisor attaches it from the SessionLedger when
+   * resuming a session). Live `turn_complete` frames from tugcode
+   * never carry it — the client reducer derives telemetry from
+   * in-memory clock anchors + cost snapshots on the live path. See
+   * plan `#step-20-3-3` / `#step-20-3-4`.
+   */
+  telemetry?: TurnTelemetry;
   ipc_version: number;
 }
 

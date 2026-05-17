@@ -449,6 +449,14 @@ pub async fn run_session_bridge(
     project_dir: PathBuf,
     session_mode: SessionMode,
     sessions_recorder: Arc<dyn SessionsRecorder>,
+    // Optional handle to the sqlite session ledger. When present, the
+    // relay loop loads per-turn telemetry on `replay_started` and
+    // inlines it onto each replayed `turn_complete` frame before
+    // forwarding to the wire. When `None` (test harnesses that don't
+    // wire a ledger), replayed `turn_complete` frames pass through
+    // unchanged and the client reducer's merge falls back to its
+    // zero-telemetry derived block — correct behavior, no crash.
+    session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -551,6 +559,7 @@ pub async fn run_session_bridge(
             lines,
             &project_dir_str,
             sessions_recorder.as_ref(),
+            session_ledger.as_deref(),
             &cancel,
         )
         .await;
@@ -653,6 +662,10 @@ pub async fn relay_session_io(
     mut lines: Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>,
     project_dir: &str,
     sessions_recorder: &dyn SessionsRecorder,
+    // Optional `SessionLedger` handle for per-turn telemetry reads
+    // during the replay window. `None` in tests that don't wire a
+    // ledger — replayed `turn_complete` frames pass through unchanged.
+    session_ledger: Option<&crate::session_ledger::SessionLedger>,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
     // Captured when tugcode emits `resume_failed`. tugcode then
@@ -668,6 +681,20 @@ pub async fn relay_session_io(
     // count. Without this gate every reconnect / restore inflates
     // the picker's "N turns" subtitle by the full transcript length.
     let mut in_replay = false;
+
+    // Per-replay-window telemetry index. Built once on `replay_started`
+    // (when we have the claude session id from a prior `session_init`)
+    // and consulted on every replayed `turn_complete` for the inline
+    // attach. `None` between replay windows; `Some(empty)` when no
+    // telemetry rows exist for the session (still a valid lookup, the
+    // get just misses and the frame passes through unchanged).
+    //
+    // Built up-front rather than per-row to amortize the sqlite query
+    // — one `list_turn_telemetry` call per replay window, then O(1)
+    // HashMap lookups per turn.
+    let mut replay_telemetry: Option<
+        std::collections::HashMap<String, crate::session_ledger::TurnTelemetryRow>,
+    > = None;
 
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
     let protocol_init = b"{\"type\":\"protocol_init\",\"version\":1}\n";
@@ -839,9 +866,42 @@ pub async fn relay_session_io(
                         // the ledger's `turn_count`.
                         if line.contains("\"type\":\"replay_started\"") {
                             in_replay = true;
+                            // Lazily populate the per-replay-window
+                            // telemetry index. The claude session id is
+                            // set by a prior `session_init` (cold-boot
+                            // path resumes only run after handshake);
+                            // if it's absent we skip the load and
+                            // replayed `turn_complete` frames pass
+                            // through unchanged — the client reducer's
+                            // zero-derived block applies.
+                            if let Some(ledger) = session_ledger {
+                                let claude_id = {
+                                    let entry = ledger_entry.lock().await;
+                                    entry.claude_session_id.clone()
+                                };
+                                if let Some(id) = claude_id {
+                                    match ledger.list_turn_telemetry(&id) {
+                                        Ok(rows) => {
+                                            let map = rows
+                                                .into_iter()
+                                                .map(|r| (r.msg_id.clone(), r))
+                                                .collect();
+                                            replay_telemetry = Some(map);
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                session = %tug_session_id,
+                                                error = %e,
+                                                "list_turn_telemetry failed; replay will carry zero-derived telemetry"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                         }
                         if line.contains("\"type\":\"replay_complete\"") {
                             in_replay = false;
+                            replay_telemetry = None;
                         }
 
                         // `turn_complete` events mark the end of an
@@ -855,19 +915,35 @@ pub async fn relay_session_io(
                         // line for negligible benefit.
                         //
                         // Replay-bracketed `turn_complete` frames are
-                        // skipped: they re-emit persisted history on
-                        // every reconnect / restore, and counting them
-                        // would inflate the picker subtitle by the full
-                        // transcript length on every restart.
-                        if line.contains("\"type\":\"turn_complete\"") && !in_replay {
-                            let claude_id = {
-                                let entry = ledger_entry.lock().await;
-                                entry.claude_session_id.clone()
-                            };
-                            if let Some(id) = claude_id {
-                                sessions_recorder.record_turn(&id);
+                        // skipped from the LIVE turn-count bump (they
+                        // re-emit persisted history on every reconnect /
+                        // restore, and counting them would inflate the
+                        // picker subtitle by the full transcript length)
+                        // BUT they are the surface where we INJECT the
+                        // persisted per-turn telemetry — the client
+                        // reducer's merge function adopts the inline
+                        // payload on the replay path. See plan
+                        // `#step-20-3-4`.
+                        let line_to_emit: Vec<u8> = if line.contains("\"type\":\"turn_complete\"") {
+                            if in_replay {
+                                if let Some(ref map) = replay_telemetry {
+                                    inject_replay_telemetry(line.as_bytes(), map)
+                                } else {
+                                    line.as_bytes().to_vec()
+                                }
+                            } else {
+                                let claude_id = {
+                                    let entry = ledger_entry.lock().await;
+                                    entry.claude_session_id.clone()
+                                };
+                                if let Some(id) = claude_id {
+                                    sessions_recorder.record_turn(&id);
+                                }
+                                line.as_bytes().to_vec()
                             }
-                        }
+                        } else {
+                            line.as_bytes().to_vec()
+                        };
 
                         // `resume_failed` peek: tugcode emits this when
                         // a `--resume` attempt aborts before `session_init`.
@@ -892,7 +968,7 @@ pub async fn relay_session_io(
                             }
                         }
 
-                        let spliced = splice_tug_session_id(line.as_bytes(), tug_session_id.as_str());
+                        let spliced = splice_tug_session_id(&line_to_emit, tug_session_id.as_str());
                         let frame = Frame::new(FeedId::CODE_OUTPUT, spliced);
                         if merger_tx.send(frame).await.is_err() {
                             warn!(session = %tug_session_id, "merger receiver closed; ending relay");
@@ -1002,6 +1078,60 @@ fn parse_resume_failed_reason(line: &[u8]) -> Option<String> {
         .get("reason")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+/// Inline the per-turn telemetry payload onto a replayed
+/// `turn_complete` stream-json line. Looks up the line's `msg_id`
+/// against the per-replay-window `HashMap<msg_id, TurnTelemetryRow>`
+/// built at `replay_started`; on hit, decodes the line, attaches the
+/// `telemetry` field, re-serializes. On miss (no persisted row for
+/// this turn — pre-persistence-feature historical turns, see plan
+/// `#step-20-3-4` "no retroactive backfill" caveat) or on a parse
+/// error, returns the line bytes unchanged so the client reducer's
+/// zero-derived telemetry block applies.
+///
+/// `telemetry`'s shape mirrors tugdeck's `TurnTelemetry`
+/// (camelCase field names: `wallClockMs`, `awaitingApprovalMs`, etc.)
+/// because that's what the reducer's merge function reads. The
+/// schema rows use snake_case columns; the conversion happens here
+/// at the wire boundary.
+fn inject_replay_telemetry(
+    line: &[u8],
+    telemetry_by_msg_id: &std::collections::HashMap<
+        String,
+        crate::session_ledger::TurnTelemetryRow,
+    >,
+) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(line) else {
+        return line.to_vec();
+    };
+    let Some(msg_id) = value.get("msg_id").and_then(|v| v.as_str()) else {
+        return line.to_vec();
+    };
+    let Some(row) = telemetry_by_msg_id.get(msg_id) else {
+        return line.to_vec();
+    };
+    let telemetry = serde_json::json!({
+        "cost": {
+            "inputTokens": row.input_tokens,
+            "outputTokens": row.output_tokens,
+            "cacheCreationInputTokens": row.cache_creation_input_tokens,
+            "cacheReadInputTokens": row.cache_read_input_tokens,
+            "totalCostUsd": row.total_cost_usd,
+        },
+        "wallClockMs": row.wall_clock_ms,
+        "awaitingApprovalMs": row.awaiting_approval_ms,
+        "transportDowntimeMs": row.transport_downtime_ms,
+        "activeMs": row.active_ms,
+        "ttftMs": row.ttft_ms,
+        "ttftcMs": row.ttftc_ms,
+        "reconnectCount": row.reconnect_count,
+        "maxStreamGapMs": row.max_stream_gap_ms,
+    });
+    if let serde_json::Value::Object(ref mut obj) = value {
+        obj.insert("telemetry".to_string(), telemetry);
+    }
+    serde_json::to_vec(&value).unwrap_or_else(|_| line.to_vec())
 }
 
 /// Extract the user's text from a CODE_INPUT frame's JSON payload, when
@@ -1341,5 +1471,97 @@ mod tests {
     #[test]
     fn parse_user_message_text_returns_none_for_malformed_json() {
         assert_eq!(parse_user_message_text(b"not json"), None);
+    }
+
+    // ---- inject_replay_telemetry --------------------------------------
+
+    fn sample_telemetry_row(msg_id: &str) -> crate::session_ledger::TurnTelemetryRow {
+        crate::session_ledger::TurnTelemetryRow {
+            session_id: "s1".to_string(),
+            msg_id: msg_id.to_string(),
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 20,
+            total_cost_usd: 0.0123,
+            wall_clock_ms: 4_000,
+            awaiting_approval_ms: 200,
+            transport_downtime_ms: 100,
+            active_ms: 3_700,
+            ttft_ms: Some(150),
+            ttftc_ms: Some(300),
+            reconnect_count: 0,
+            max_stream_gap_ms: 90,
+            ended_at: 1_000,
+        }
+    }
+
+    #[test]
+    fn inject_replay_telemetry_attaches_on_match() {
+        let line = br#"{"type":"turn_complete","msg_id":"msg-A","seq":1,"result":"success","ipc_version":2}"#;
+        let mut map = std::collections::HashMap::new();
+        map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
+        let out = inject_replay_telemetry(line, &map);
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let telemetry = parsed.get("telemetry").expect("telemetry attached");
+        assert_eq!(telemetry["cost"]["inputTokens"], 100);
+        assert_eq!(telemetry["cost"]["totalCostUsd"], 0.0123);
+        assert_eq!(telemetry["wallClockMs"], 4_000);
+        assert_eq!(telemetry["awaitingApprovalMs"], 200);
+        assert_eq!(telemetry["activeMs"], 3_700);
+        assert_eq!(telemetry["ttftMs"], 150);
+        assert_eq!(telemetry["ttftcMs"], 300);
+        assert_eq!(telemetry["reconnectCount"], 0);
+        assert_eq!(telemetry["maxStreamGapMs"], 90);
+        // Original fields preserved.
+        assert_eq!(parsed["type"], "turn_complete");
+        assert_eq!(parsed["msg_id"], "msg-A");
+        assert_eq!(parsed["result"], "success");
+    }
+
+    #[test]
+    fn inject_replay_telemetry_serializes_null_ttft_fields() {
+        let line = br#"{"type":"turn_complete","msg_id":"msg-A","seq":1,"result":"success","ipc_version":2}"#;
+        let mut row = sample_telemetry_row("msg-A");
+        row.ttft_ms = None;
+        row.ttftc_ms = None;
+        let mut map = std::collections::HashMap::new();
+        map.insert("msg-A".to_string(), row);
+        let out = inject_replay_telemetry(line, &map);
+        let parsed: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert!(parsed["telemetry"]["ttftMs"].is_null());
+        assert!(parsed["telemetry"]["ttftcMs"].is_null());
+    }
+
+    #[test]
+    fn inject_replay_telemetry_passes_through_on_miss() {
+        // No row for this msg_id — line returns unchanged (the
+        // client reducer's zero-derived block applies, per the
+        // "no retroactive backfill" caveat in #step-20-3-4).
+        let line = br#"{"type":"turn_complete","msg_id":"unknown","seq":1,"result":"success","ipc_version":2}"#;
+        let map: std::collections::HashMap<String, crate::session_ledger::TurnTelemetryRow> =
+            std::collections::HashMap::new();
+        let out = inject_replay_telemetry(line, &map);
+        assert_eq!(out, line.to_vec());
+    }
+
+    #[test]
+    fn inject_replay_telemetry_passes_through_on_no_msg_id() {
+        // A turn_complete without msg_id has nothing to look up;
+        // pass through unchanged.
+        let line = br#"{"type":"turn_complete","seq":1,"result":"success","ipc_version":2}"#;
+        let mut map = std::collections::HashMap::new();
+        map.insert("msg-A".to_string(), sample_telemetry_row("msg-A"));
+        let out = inject_replay_telemetry(line, &map);
+        assert_eq!(out, line.to_vec());
+    }
+
+    #[test]
+    fn inject_replay_telemetry_passes_through_on_malformed_json() {
+        let line = b"not json at all";
+        let map: std::collections::HashMap<String, crate::session_ledger::TurnTelemetryRow> =
+            std::collections::HashMap::new();
+        let out = inject_replay_telemetry(line, &map);
+        assert_eq!(out, line.to_vec());
     }
 }

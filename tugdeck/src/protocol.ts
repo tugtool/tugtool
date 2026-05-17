@@ -65,6 +65,7 @@ export const CONTROL_ACTION_LIST_CARD_BINDINGS = "list_card_bindings";
 export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
 export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
+export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";
 
 /**
  * Wire shape for one row of the tugcast-side session ledger.
@@ -451,6 +452,34 @@ export function encodeForgetProjectDirSessions(projectDir: string): Frame {
 export function encodeRequestReplay(tugSessionId: string): Frame {
   return controlFrame(CONTROL_ACTION_REQUEST_REPLAY, {
     tug_session_id: tugSessionId,
+  });
+}
+
+/**
+ * Build a `record_turn_telemetry` CONTROL frame.
+ *
+ * Tugdeck → tugcast: the reducer dispatches this from
+ * `handleTurnComplete` (live path only — replayed turns are not
+ * re-persisted) carrying the per-turn cost + multi-clock timing
+ * block. The supervisor persists it to the sqlite SessionLedger so
+ * the next resume can inline it back onto the replayed
+ * `turn_complete` event. See plan `#step-20-3-3` / `#step-20-3-4`.
+ *
+ * Fire-and-forget at the wire level — no ack frame is broadcast.
+ * The reducer doesn't wait on confirmation; the row's reason for
+ * existing is to survive the next reload, not the next render.
+ */
+export function encodeRecordTurnTelemetry(input: {
+  tugSessionId: string;
+  msgId: string;
+  telemetry: import("./lib/code-session-store/telemetry").TurnTelemetry;
+  endedAt: number;
+}): Frame {
+  return controlFrame(CONTROL_ACTION_RECORD_TURN_TELEMETRY, {
+    tug_session_id: input.tugSessionId,
+    msg_id: input.msgId,
+    telemetry: input.telemetry,
+    ended_at: input.endedAt,
   });
 }
 

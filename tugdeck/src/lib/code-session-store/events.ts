@@ -114,12 +114,23 @@ export interface ToolUseStructuredEvent {
   [key: string]: unknown;
 }
 
-/** `turn_complete` — closes the active turn with success or error. */
+/**
+ * `turn_complete` — closes the active turn with success or error.
+ *
+ * `telemetry` is populated on the replay path only: when the
+ * supervisor reads a per-turn telemetry row from the SessionLedger
+ * for the matching `msg_id`, it inlines that block onto the replayed
+ * `turn_complete` event. Live `turn_complete` events from the wire
+ * never carry telemetry — the reducer derives it from in-memory
+ * clock anchors + cost snapshots. See `mergeTurnTelemetry` in
+ * `telemetry.ts` and the design in plan `#step-20-3-3`.
+ */
 export interface TurnCompleteEvent {
   type: "turn_complete";
   msg_id: string;
   result: "success" | "error";
   tug_session_id?: string;
+  telemetry?: import("./telemetry").TurnTelemetry;
   [key: string]: unknown;
 }
 

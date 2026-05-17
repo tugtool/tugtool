@@ -22,6 +22,7 @@
 import {
   FeedId,
   encodeCodeInputPayload,
+  encodeRecordTurnTelemetry,
   type FeedIdValue,
 } from "@/protocol";
 import type { TugConnection } from "@/connection";
@@ -749,6 +750,22 @@ export class CodeSessionStore {
             this.timerSource.clearTimeout(handle);
             this._replayTimers.delete(effect.name);
           }
+          break;
+        }
+        case "record-telemetry": {
+          // Fire-and-forget CONTROL frame to the supervisor. Persists
+          // the per-turn telemetry block in the sqlite SessionLedger
+          // so the next resume can inline it onto the replayed
+          // `turn_complete`. The supervisor doesn't ack; the
+          // reducer's TurnEntry is already committed locally — the
+          // wire write is purely "remember this for the next reload."
+          const frame = encodeRecordTurnTelemetry({
+            tugSessionId: this.tugSessionId,
+            msgId: effect.msgId,
+            telemetry: effect.telemetry,
+            endedAt: effect.endedAt,
+          });
+          this.conn.send(frame.feedId, frame.payload);
           break;
         }
       }

@@ -57,7 +57,11 @@ import type {
   TurnEntry,
 } from "./types";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
-import { extractTurnCost } from "./telemetry";
+import {
+  deriveTurnTelemetry,
+  mergeTurnTelemetry,
+  type TurnTelemetry,
+} from "./telemetry";
 
 /** Reducer-internal state. Not exposed to consumers. */
 export interface CodeSessionState {
@@ -1086,41 +1090,55 @@ function resetPerTurnTelemetry(): Pick<
  * `"success"`; everything else → `"interrupted"`) so legacy consumers
  * stay coherent until they migrate to `turnEndReason`.
  */
+/**
+ * Build a `record-telemetry` effect for a freshly-committed live
+ * `TurnEntry`. The effect carries the telemetry block in the wire
+ * shape the supervisor's `record_turn_telemetry` CONTROL handler
+ * expects; the store wrapper looks up `tug_session_id` and dispatches
+ * the frame.
+ *
+ * Returns `undefined` when the persistence shouldn't run — the
+ * caller's branch on `event.telemetry !== undefined` (replay path)
+ * is the precondition; this helper just packages the payload.
+ */
+function buildRecordTelemetryEffect(entry: TurnEntry): Effect {
+  const telemetry: TurnTelemetry = {
+    cost: entry.cost,
+    wallClockMs: entry.wallClockMs,
+    awaitingApprovalMs: entry.awaitingApprovalMs,
+    transportDowntimeMs: entry.transportDowntimeMs,
+    activeMs: entry.activeMs,
+    ttftMs: entry.ttftMs,
+    ttftcMs: entry.ttftcMs,
+    reconnectCount: entry.reconnectCount,
+    maxStreamGapMs: entry.maxStreamGapMs,
+  };
+  return {
+    kind: "record-telemetry",
+    msgId: entry.msgId,
+    telemetry,
+    endedAt: entry.endedAt,
+  };
+}
+
 function buildTurnEntry(
   state: CodeSessionState,
   msgId: string,
   reason: TurnEndReason,
   endedAt: number,
+  inlineTelemetry: TurnTelemetry | undefined,
 ): TurnEntry {
   const scratchEntry = state.scratch.get(msgId) ?? {
     assistant: "",
     thinking: "",
   };
   const submitAt = state.pendingUserMessage?.submitAt ?? endedAt;
-  const wallClockMs = Math.max(0, endedAt - submitAt);
-  const awaitingApprovalMs =
-    state.awaitingApprovalSince === null
-      ? state.awaitingApprovalAccumulatedMs
-      : state.awaitingApprovalAccumulatedMs +
-        Math.max(0, endedAt - state.awaitingApprovalSince);
-  const transportDowntimeMs =
-    state.transportNonOnlineSince === null
-      ? state.transportDowntimeAccumulatedMs
-      : state.transportDowntimeAccumulatedMs +
-        Math.max(0, endedAt - state.transportNonOnlineSince);
-  const activeMs = Math.max(
-    0,
-    wallClockMs - awaitingApprovalMs - transportDowntimeMs,
-  );
-  const ttftMs =
-    state.firstAssistantDeltaAt === null
-      ? null
-      : Math.max(0, state.firstAssistantDeltaAt - submitAt);
-  const ttftcMs =
-    state.firstToolUseAt === null
-      ? null
-      : Math.max(0, state.firstToolUseAt - submitAt);
-  const cost = extractTurnCost(state.costAtSubmit, state.lastCost);
+  // Live path derives the telemetry block from reducer state at this
+  // moment; replay path receives it inlined on the wire event. The
+  // merge picks the authoritative source — see telemetry.ts /
+  // `mergeTurnTelemetry` for the contract.
+  const derivedTelemetry = deriveTurnTelemetry(state, submitAt, endedAt);
+  const telemetry = mergeTurnTelemetry(inlineTelemetry, derivedTelemetry);
   return {
     msgId,
     turnKey: state.pendingUserMessage?.turnKey ?? `msg-${msgId}`,
@@ -1135,16 +1153,16 @@ function buildTurnEntry(
     controlRequests: state.controlRequestLog,
     result: reason === "complete" ? "success" : "interrupted",
     endedAt,
-    wallClockMs,
-    awaitingApprovalMs,
-    transportDowntimeMs,
-    activeMs,
-    ttftMs,
-    ttftcMs,
-    reconnectCount: state.transportReconnectCount,
-    maxStreamGapMs: state.maxStreamGapMs,
+    wallClockMs: telemetry.wallClockMs,
+    awaitingApprovalMs: telemetry.awaitingApprovalMs,
+    transportDowntimeMs: telemetry.transportDowntimeMs,
+    activeMs: telemetry.activeMs,
+    ttftMs: telemetry.ttftMs,
+    ttftcMs: telemetry.ttftcMs,
+    reconnectCount: telemetry.reconnectCount,
+    maxStreamGapMs: telemetry.maxStreamGapMs,
     turnEndReason: reason,
-    cost,
+    cost: telemetry.cost,
   };
 }
 
@@ -1258,11 +1276,16 @@ function handleTurnComplete(
     : state.interruptInFlight
       ? "interrupted"
       : "error";
+  // Pass `event.telemetry` straight through: when the supervisor
+  // attached a persisted telemetry block (replay path), buildTurnEntry
+  // adopts it via `mergeTurnTelemetry`; when it's undefined (live
+  // path), buildTurnEntry derives the block from reducer state.
   const entry: TurnEntry = buildTurnEntry(
     state,
     msgId,
     turnEndReason,
     Date.now(),
+    event.telemetry,
   );
 
   const scratch = new Map(state.scratch);
@@ -1335,6 +1358,15 @@ function handleTurnComplete(
       effects: [
         { kind: "append-transcript", entry },
         { kind: "clear-inflight" },
+        // Persist the per-turn telemetry block via the supervisor's
+        // SessionLedger so the next resume can inline it onto the
+        // replayed `turn_complete`. Live path only — the replaying
+        // branch above returns before reaching here, and inlined
+        // event.telemetry on a non-replay event would be an upstream
+        // bug (the wire shape's replay-only contract is enforced by
+        // tugcast's supervisor; defensively, only persist when there
+        // was no inline source).
+        ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry)] : []),
         {
           kind: "send-frame",
           msg: {
@@ -1373,6 +1405,9 @@ function handleTurnComplete(
     effects: [
       { kind: "append-transcript", entry },
       { kind: "clear-inflight" },
+      // Persist per-turn telemetry via the supervisor's SessionLedger
+      // on the live path. See note above in the queue-flush branch.
+      ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry)] : []),
     ],
   };
 }
@@ -1714,7 +1749,10 @@ function handleTransportClose(
   if (state.pendingUserMessage !== null) {
     const msgId = state.activeMsgId ?? `transport-lost-${state.pendingUserMessage.turnKey}`;
     if (!state.committedMsgIds.has(msgId)) {
-      const entry = buildTurnEntry(state, msgId, "transport_lost", endedAt);
+      // Transport-lost commits never come from replay (replay never
+      // synthesizes a transport_lost reason); the live derivation is
+      // always the source.
+      const entry = buildTurnEntry(state, msgId, "transport_lost", endedAt, undefined);
       transportLostCommit.push({ kind: "append-transcript", entry });
       transportLostCommit.push({ kind: "clear-inflight" });
       const committedMsgIds = new Set(state.committedMsgIds);

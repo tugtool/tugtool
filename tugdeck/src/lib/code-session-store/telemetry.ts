@@ -202,6 +202,121 @@ export function liveTurnActiveMs(
 }
 
 // ---------------------------------------------------------------------------
+// Per-turn telemetry block — the persistable shape
+// ---------------------------------------------------------------------------
+
+/**
+ * The persistable per-turn telemetry block — exactly the subset of
+ * `TurnEntry` fields that need to survive HMR / Reload / app relaunch
+ * via the sqlite SessionLedger (see plan `#step-20-3-3` /
+ * `#step-20-3-4`). Two sources can populate it:
+ *
+ *  - **Live path** — the reducer at `handleTurnComplete` computes
+ *    every field from in-memory clock anchors + cost snapshots via
+ *    {@link deriveTurnTelemetry}.
+ *  - **Replay path** — the supervisor reads previously-persisted
+ *    rows from the SessionLedger and inlines this exact shape on
+ *    the replayed `turn_complete` wire event. The reducer takes
+ *    the inlined payload as-is via {@link mergeTurnTelemetry}.
+ *
+ * The shape is byte-identical across the two sources by construction;
+ * `mergeTurnTelemetry` just decides which source wins (inline if
+ * present, else the live derivation). One reducer code path, two
+ * data sources, single source of truth for the COMPUTATION (the
+ * reducer's clock + cost machinery — see `deriveTurnTelemetry`).
+ */
+export interface TurnTelemetry {
+  cost: TurnCost;
+  wallClockMs: number;
+  awaitingApprovalMs: number;
+  transportDowntimeMs: number;
+  activeMs: number;
+  ttftMs: number | null;
+  ttftcMs: number | null;
+  reconnectCount: number;
+  maxStreamGapMs: number;
+}
+
+/**
+ * Derive the per-turn telemetry block from reducer state at the
+ * moment a turn ends. Lifts the computation out of
+ * `buildTurnEntry` so it has a pinning surface and so the same
+ * shape is what the persistence layer round-trips.
+ *
+ * `submitAt` and `endedAt` are the same wall-clock millisecond
+ * timestamps `buildTurnEntry` derives — passed in so this helper
+ * stays pure and the timestamps the reducer chose are the
+ * timestamps the telemetry block reports.
+ */
+export function deriveTurnTelemetry(
+  state: CodeSessionState,
+  submitAt: number,
+  endedAt: number,
+): TurnTelemetry {
+  const wallClockMs = Math.max(0, endedAt - submitAt);
+  const awaitingApprovalMs =
+    state.awaitingApprovalSince === null
+      ? state.awaitingApprovalAccumulatedMs
+      : state.awaitingApprovalAccumulatedMs +
+        Math.max(0, endedAt - state.awaitingApprovalSince);
+  const transportDowntimeMs =
+    state.transportNonOnlineSince === null
+      ? state.transportDowntimeAccumulatedMs
+      : state.transportDowntimeAccumulatedMs +
+        Math.max(0, endedAt - state.transportNonOnlineSince);
+  const activeMs = Math.max(
+    0,
+    wallClockMs - awaitingApprovalMs - transportDowntimeMs,
+  );
+  const ttftMs =
+    state.firstAssistantDeltaAt === null
+      ? null
+      : Math.max(0, state.firstAssistantDeltaAt - submitAt);
+  const ttftcMs =
+    state.firstToolUseAt === null
+      ? null
+      : Math.max(0, state.firstToolUseAt - submitAt);
+  const cost = extractTurnCost(state.costAtSubmit, state.lastCost);
+  return {
+    cost,
+    wallClockMs,
+    awaitingApprovalMs,
+    transportDowntimeMs,
+    activeMs,
+    ttftMs,
+    ttftcMs,
+    reconnectCount: state.transportReconnectCount,
+    maxStreamGapMs: state.maxStreamGapMs,
+  };
+}
+
+/**
+ * Pick the authoritative per-turn telemetry block.
+ *
+ *  - `inline !== undefined` → replay path. The supervisor read this
+ *    block from the SessionLedger and attached it to the replayed
+ *    `turn_complete` event. Use it verbatim — the values were
+ *    computed by the live reducer during the original turn and
+ *    persisted at the same `handleTurnComplete` callsite that's
+ *    consulting this function now.
+ *  - `inline === undefined` → live path. The wire didn't carry a
+ *    telemetry payload; the reducer's just-derived block is the
+ *    authoritative one and the live path also schedules an effect
+ *    to persist it for the next reload.
+ *
+ * Trivial by construction — the entire merge is `inline ?? derived`.
+ * Exists as a named helper so the contract is grep-able, the call
+ * site reads as intent, and the test surface has a single function
+ * to pin.
+ */
+export function mergeTurnTelemetry(
+  inline: TurnTelemetry | undefined,
+  derived: TurnTelemetry,
+): TurnTelemetry {
+  return inline ?? derived;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 

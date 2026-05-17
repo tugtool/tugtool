@@ -179,6 +179,38 @@ pub struct JournalRow {
     pub created_at: i64,
 }
 
+/// One row of the `turn_telemetry` table — the per-turn cost + multi-
+/// clock timing block. Written by `record_turn_telemetry` from the
+/// supervisor's inbound handler; read by `list_turn_telemetry` at
+/// resume time and inlined onto replayed `turn_complete` wire events
+/// by the supervisor's replay path.
+///
+/// The shape is the wire-shape of tugdeck's `TurnTelemetry`
+/// interface (see `tugdeck/src/lib/code-session-store/telemetry.ts`
+/// `TurnTelemetry`) — every field is round-trippable. `ttft_ms` and
+/// `ttftc_ms` are nullable per the tugdeck data model (a turn that
+/// produced no assistant output or no tool calls has no first-event
+/// timestamp).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TurnTelemetryRow {
+    pub session_id: String,
+    pub msg_id: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_creation_input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+    pub total_cost_usd: f64,
+    pub wall_clock_ms: i64,
+    pub awaiting_approval_ms: i64,
+    pub transport_downtime_ms: i64,
+    pub active_ms: i64,
+    pub ttft_ms: Option<i64>,
+    pub ttftc_ms: Option<i64>,
+    pub reconnect_count: i64,
+    pub max_stream_gap_ms: i64,
+    pub ended_at: i64,
+}
+
 /// Result of a successful `forget` call.
 ///
 /// `jsonl_moved_to` is `None` until step 8 wires the trash move. Until then
@@ -300,6 +332,54 @@ impl SessionLedger {
             FOR EACH ROW
             BEGIN
                 DELETE FROM turns WHERE session_id = OLD.session_id;
+            END;
+
+            -- Per-turn telemetry — cost + multi-clock timing block,
+            -- one row per committed turn. Written by the supervisor
+            -- on receipt of a `record_turn_telemetry` inbound message
+            -- from tugdeck (the reducer dispatches this from
+            -- `handleTurnComplete` on the live path); read at
+            -- `spawn_session(mode=resume)` and inlined onto replayed
+            -- `turn_complete` events so the client reducer's merge
+            -- function adopts the persisted values. Cascade-on-DELETE
+            -- mirrors the `turns` journal pattern so eviction of a
+            -- `sessions` row (cap / age policy) takes its telemetry
+            -- with it.
+            --
+            -- `(session_id, msg_id)` PK: msg_id is Claude-assigned,
+            -- carried through JSONL, survives replay unchanged. The
+            -- client-only `turn_key` is intentionally absent — it is
+            -- re-minted fresh on every reload and cannot cross
+            -- persistence boundaries. See plan `#step-20-3-3` for
+            -- the design rationale.
+            CREATE TABLE IF NOT EXISTS turn_telemetry (
+                session_id                  TEXT NOT NULL,
+                msg_id                      TEXT NOT NULL,
+                input_tokens                INTEGER NOT NULL DEFAULT 0,
+                output_tokens               INTEGER NOT NULL DEFAULT 0,
+                cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read_input_tokens     INTEGER NOT NULL DEFAULT 0,
+                total_cost_usd              REAL    NOT NULL DEFAULT 0,
+                wall_clock_ms               INTEGER NOT NULL DEFAULT 0,
+                awaiting_approval_ms        INTEGER NOT NULL DEFAULT 0,
+                transport_downtime_ms       INTEGER NOT NULL DEFAULT 0,
+                active_ms                   INTEGER NOT NULL DEFAULT 0,
+                ttft_ms                     INTEGER,
+                ttftc_ms                    INTEGER,
+                reconnect_count             INTEGER NOT NULL DEFAULT 0,
+                max_stream_gap_ms           INTEGER NOT NULL DEFAULT 0,
+                ended_at                    INTEGER NOT NULL,
+                PRIMARY KEY (session_id, msg_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS turn_telemetry_session_order
+                ON turn_telemetry(session_id, ended_at);
+
+            CREATE TRIGGER IF NOT EXISTS turn_telemetry_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM turn_telemetry WHERE session_id = OLD.session_id;
             END;
             ",
         )?;
@@ -845,6 +925,91 @@ impl SessionLedger {
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().collect()
     }
+
+    /// Upsert one `turn_telemetry` row. Idempotent on
+    /// `(session_id, msg_id)` via `INSERT OR REPLACE` — the supervisor
+    /// may receive a repeat `record_turn_telemetry` from a reconnecting
+    /// client that already committed the same turn locally, and the
+    /// repeat should be a no-op write (same values overwriting same
+    /// values), not a duplicate-key error.
+    ///
+    /// Single statement; sqlite's implicit per-statement transaction is
+    /// enough. No explicit transaction needed for the write cadence we
+    /// expect (one per `turn_complete`).
+    pub fn record_turn_telemetry(
+        &self,
+        row: &TurnTelemetryRow,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT OR REPLACE INTO turn_telemetry (
+                session_id, msg_id,
+                input_tokens, output_tokens,
+                cache_creation_input_tokens, cache_read_input_tokens,
+                total_cost_usd,
+                wall_clock_ms, awaiting_approval_ms, transport_downtime_ms, active_ms,
+                ttft_ms, ttftc_ms,
+                reconnect_count, max_stream_gap_ms,
+                ended_at
+            ) VALUES (
+                ?1, ?2,
+                ?3, ?4,
+                ?5, ?6,
+                ?7,
+                ?8, ?9, ?10, ?11,
+                ?12, ?13,
+                ?14, ?15,
+                ?16
+            )",
+            params![
+                row.session_id,
+                row.msg_id,
+                row.input_tokens,
+                row.output_tokens,
+                row.cache_creation_input_tokens,
+                row.cache_read_input_tokens,
+                row.total_cost_usd,
+                row.wall_clock_ms,
+                row.awaiting_approval_ms,
+                row.transport_downtime_ms,
+                row.active_ms,
+                row.ttft_ms,
+                row.ttftc_ms,
+                row.reconnect_count,
+                row.max_stream_gap_ms,
+                row.ended_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// All telemetry rows for a session, ordered oldest-to-newest by
+    /// `ended_at`. The supervisor's replay path builds a
+    /// `HashMap<msg_id, TurnTelemetryRow>` from this and inlines the
+    /// matching row onto each replayed `turn_complete` event.
+    pub fn list_turn_telemetry(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<TurnTelemetryRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT session_id, msg_id,
+                    input_tokens, output_tokens,
+                    cache_creation_input_tokens, cache_read_input_tokens,
+                    total_cost_usd,
+                    wall_clock_ms, awaiting_approval_ms, transport_downtime_ms, active_ms,
+                    ttft_ms, ttftc_ms,
+                    reconnect_count, max_stream_gap_ms,
+                    ended_at
+             FROM turn_telemetry
+             WHERE session_id = ?1
+             ORDER BY ended_at ASC, msg_id ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![session_id], turn_telemetry_row_from_query)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
 }
 
 /// Decode one row from a `SELECT … FROM sessions` cursor matching the column
@@ -902,6 +1067,34 @@ fn journal_row_from_query(
         user_attachments,
         created_at,
     }))
+}
+
+/// Decode one row from a `SELECT … FROM turn_telemetry` cursor matching
+/// the column order in `list_turn_telemetry`. No fallible decode beyond
+/// rusqlite's own type coercion — every column is a fixed scalar — so
+/// the outer `Result` wrapper just keeps the function-signature shape
+/// consistent with the other row decoders in this module.
+fn turn_telemetry_row_from_query(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<TurnTelemetryRow> {
+    Ok(TurnTelemetryRow {
+        session_id: row.get(0)?,
+        msg_id: row.get(1)?,
+        input_tokens: row.get(2)?,
+        output_tokens: row.get(3)?,
+        cache_creation_input_tokens: row.get(4)?,
+        cache_read_input_tokens: row.get(5)?,
+        total_cost_usd: row.get(6)?,
+        wall_clock_ms: row.get(7)?,
+        awaiting_approval_ms: row.get(8)?,
+        transport_downtime_ms: row.get(9)?,
+        active_ms: row.get(10)?,
+        ttft_ms: row.get(11)?,
+        ttftc_ms: row.get(12)?,
+        reconnect_count: row.get(13)?,
+        max_stream_gap_ms: row.get(14)?,
+        ended_at: row.get(15)?,
+    })
 }
 
 /// Truncate a first-user-prompt to at most `FIRST_USER_PROMPT_MAX_CHARS`
@@ -1968,6 +2161,129 @@ mod tests {
             l.list_pending_turns_for_session("s1").unwrap().len(),
             0,
             "cascade trigger must purge journal rows when the parent session row is deleted",
+        );
+    }
+
+    // ---- turn_telemetry table ------------------------------------------
+
+    fn sample_telemetry(session_id: &str, msg_id: &str, ended_at: i64) -> TurnTelemetryRow {
+        TurnTelemetryRow {
+            session_id: session_id.to_owned(),
+            msg_id: msg_id.to_owned(),
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 20,
+            total_cost_usd: 0.0123,
+            wall_clock_ms: 4_000,
+            awaiting_approval_ms: 200,
+            transport_downtime_ms: 100,
+            active_ms: 3_700,
+            ttft_ms: Some(150),
+            ttftc_ms: Some(300),
+            reconnect_count: 0,
+            max_stream_gap_ms: 90,
+            ended_at,
+        }
+    }
+
+    #[test]
+    fn record_turn_telemetry_round_trip_preserves_every_field() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let row = sample_telemetry("s1", "msg-A", 1_000);
+        l.record_turn_telemetry(&row).unwrap();
+        let read = l.list_turn_telemetry("s1").unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0], row);
+    }
+
+    #[test]
+    fn record_turn_telemetry_persists_nullable_ttft_fields_as_null() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let mut row = sample_telemetry("s1", "msg-A", 1_000);
+        row.ttft_ms = None;
+        row.ttftc_ms = None;
+        l.record_turn_telemetry(&row).unwrap();
+        let read = l.list_turn_telemetry("s1").unwrap();
+        assert_eq!(read[0].ttft_ms, None);
+        assert_eq!(read[0].ttftc_ms, None);
+    }
+
+    #[test]
+    fn record_turn_telemetry_idempotent_on_session_msg_pk() {
+        // A repeat write for the same `(session_id, msg_id)` overwrites
+        // — INSERT OR REPLACE — instead of erroring on the PK
+        // constraint. This is what defends the supervisor's inbound
+        // handler against a reconnecting client that re-emits the
+        // same `record_turn_telemetry` after recovery.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let row_v1 = sample_telemetry("s1", "msg-A", 1_000);
+        l.record_turn_telemetry(&row_v1).unwrap();
+        let mut row_v2 = row_v1.clone();
+        row_v2.total_cost_usd = 9.99;
+        l.record_turn_telemetry(&row_v2).unwrap();
+        let read = l.list_turn_telemetry("s1").unwrap();
+        assert_eq!(read.len(), 1, "INSERT OR REPLACE keeps one row per PK");
+        assert_eq!(read[0].total_cost_usd, 9.99);
+    }
+
+    #[test]
+    fn list_turn_telemetry_orders_by_ended_at_ascending() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.record_turn_telemetry(&sample_telemetry("s1", "msg-newest", 3_000))
+            .unwrap();
+        l.record_turn_telemetry(&sample_telemetry("s1", "msg-middle", 2_000))
+            .unwrap();
+        l.record_turn_telemetry(&sample_telemetry("s1", "msg-oldest", 1_000))
+            .unwrap();
+        let read = l.list_turn_telemetry("s1").unwrap();
+        let ids: Vec<&str> = read.iter().map(|r| r.msg_id.as_str()).collect();
+        assert_eq!(ids, vec!["msg-oldest", "msg-middle", "msg-newest"]);
+    }
+
+    #[test]
+    fn list_turn_telemetry_filters_by_session() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        seed_live(&l, "s2", "ws", "card-2", millis(0));
+        l.record_turn_telemetry(&sample_telemetry("s1", "msg-1", 1_000))
+            .unwrap();
+        l.record_turn_telemetry(&sample_telemetry("s2", "msg-1", 1_000))
+            .unwrap();
+        assert_eq!(l.list_turn_telemetry("s1").unwrap().len(), 1);
+        assert_eq!(l.list_turn_telemetry("s2").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn list_turn_telemetry_empty_for_unknown_session() {
+        let l = fresh();
+        assert_eq!(l.list_turn_telemetry("never-existed").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn cascade_delete_removes_turn_telemetry_when_session_deleted() {
+        // Pin the `turn_telemetry_cascade_delete_on_session` trigger:
+        // forgetting a session also removes its telemetry rows. The
+        // user-visible "forget cascades" contract extends to telemetry.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.mark_closed("s1").unwrap();
+        l.record_turn_telemetry(&sample_telemetry("s1", "msg-A", 1_000))
+            .unwrap();
+        l.record_turn_telemetry(&sample_telemetry("s1", "msg-B", 2_000))
+            .unwrap();
+        assert_eq!(l.list_turn_telemetry("s1").unwrap().len(), 2);
+
+        l.forget("s1").unwrap();
+
+        assert_eq!(
+            l.list_turn_telemetry("s1").unwrap().len(),
+            0,
+            "cascade trigger must purge turn_telemetry rows when the parent session row is deleted",
         );
     }
 }

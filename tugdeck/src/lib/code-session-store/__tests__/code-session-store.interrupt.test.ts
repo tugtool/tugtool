@@ -220,8 +220,24 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
     expect(snap.transcript.length).toBe(1);
     expect(snap.transcript[0].result).toBe("interrupted");
 
-    // No additional frames were written during the commit path.
-    expect(conn.recordedFrames.length).toBe(2);
+    // Live `turn_complete` commits now also emit a
+    // `record_turn_telemetry` CONTROL frame so the per-turn cost +
+    // timing block survives the next reload — see plan
+    // `#step-20-3-4`. Interrupted turns are persisted too; the cost
+    // block is zero (no `cost_update` was ever observed) but the
+    // timing intervals captured up to the interrupt are real and
+    // worth round-tripping. CONTROL payloads come back to the test
+    // recorder as raw Uint8Array bytes (only CODE_INPUT gets
+    // auto-decoded by the mock); parse the JSON to assert the
+    // action.
+    expect(conn.recordedFrames.length).toBe(3);
+    const recordFrame = conn.recordedFrames[2];
+    const parsed = JSON.parse(new TextDecoder().decode(recordFrame.decoded as Uint8Array));
+    expect(parsed).toMatchObject({
+      action: "record_turn_telemetry",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: FIXTURE_IDS.MSG_ID,
+    });
   });
 
   it("drops interrupt() when the store is idle", () => {

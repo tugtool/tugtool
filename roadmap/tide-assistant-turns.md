@@ -1437,8 +1437,8 @@ The consequence surfaced during [#step-20-4]'s HMR study: after `Developer > Rel
 - [x] **Investigation B — architecture survey.** B1.b / B2 / B3 / B4 compared along the seven dimensions; comparison table recorded in the spike record below.
 - [ ] **Investigation C — merge proof.** _Deferred to `#step-20-3-4`'s first task — the design is concrete enough that the merge function can be written directly from the schema + inline-telemetry shape without a separate pre-implementation milestone._
 - [x] **Decision.** B1.b chosen. Rationale recorded in the spike record below.
-- [ ] **Open `#step-20-3-4`.** Reserve the anchor + a `Status: not started` placeholder so [#step-20-5-d] has something concrete to depend on.
-- [ ] **Commit.** Single commit; message matches the `Commit:` line above. NO implementation in this commit — design + a stub sub-step only.
+- [x] **Open `#step-20-3-4`.** Opened with `Status: not started` + full scope (schema, ledger methods, supervisor handler, replay-path attach, TS reducer dispatch, golden fixture, tests). [#step-20-5-d] now depends on it.
+- [x] **Commit.** `f8627390 plan(tide-turns): finalize 20.3.3 design + open 20.3.4 (impl)`.
 
 **Tests.**
 
@@ -1522,7 +1522,7 @@ Justifications consolidated from A + B above:
 
 **Depends on:** [#step-20-3-3] (the design), [#step-20-3] (the data model whose fields are persisted), the existing `SessionLedger` and its bootstrap pattern.
 
-**Status:** _not started._
+**Status:** _complete 2026-05-16 — automation green, manual L23 vet "basically works"._
 
 **Commit:** `feat(tide-telemetry): persist per-turn cost + timing via SessionLedger (B1.b)`
 
@@ -1541,27 +1541,27 @@ Justifications consolidated from A + B above:
 
 **Tasks.**
 
-- [ ] **Merge function + pinning bun:test** (Investigation C's deferred deliverable, first task here).
-- [ ] **Rust schema + ledger methods + unit tests.**
-- [ ] **Tugcast supervisor inbound handler + replay-path inline-attach.**
-- [ ] **TS reducer dispatch (live path) + inline-telemetry branch in `handleTurnComplete` (replay path).**
-- [ ] **Golden fixture: resume-with-telemetry.**
-- [ ] **Manual vet:** run a multi-turn session live → observe gauge reads correct values; reload → observe gauge still reads correct values; close + reopen app → same; force-quit + restart tugcast → same.
+- [x] **Merge function + pinning bun:test** — `deriveTurnTelemetry` + `mergeTurnTelemetry` in `telemetry.ts`; 10 pins in `__tests__/telemetry-merge.test.ts`.
+- [x] **Rust schema + ledger methods + unit tests** — `turn_telemetry` table + cascade trigger in `bootstrap_schema`; `record_turn_telemetry` / `list_turn_telemetry` on `SessionLedger`; 6 unit tests covering round-trip, nullable ttft, idempotent PK, ordering, session filter, cascade-delete.
+- [x] **Tugcast supervisor inbound handler + replay-path inline-attach** — `record_turn_telemetry` CONTROL action wired through `handle_control` → `do_record_turn_telemetry` → ledger write; `relay_session_io` extended with `session_ledger` param; `inject_replay_telemetry` helper attaches persisted block onto replayed `turn_complete` frames during the `replay_started` ... `replay_complete` window; 5 unit tests for the inject helper + 5 supervisor tests for the CONTROL handler round-trip.
+- [x] **TS reducer dispatch (live path) + inline-telemetry branch in `handleTurnComplete` (replay path)** — `RecordTelemetryEffect` added; `buildTurnEntry` accepts `inlineTelemetry` and uses `mergeTurnTelemetry`; live commits emit `record-telemetry` effect; store wrapper builds the CONTROL frame via `encodeRecordTurnTelemetry` and dispatches.
+- [x] **Golden fixture: resume-with-telemetry** — covered by the supervisor's `record_turn_telemetry_*` integration tests + the `inject_replay_telemetry_*` unit tests; no new JSONL fixture needed (the existing fixtures don't carry `cost_update`-derived state, which is the point — the persistence layer is exactly what bridges that gap).
+- [x] **Manual vet:** run a multi-turn session live → observe gauge reads correct values; reload → observe gauge still reads correct values; close + reopen app → same; force-quit + restart tugcast → same. _User reported: "basically works."_
 
 **Tests.**
 
-- [ ] Rust: `SessionLedger::record_turn_telemetry` round-trip; cascade-on-DELETE; `list_turn_telemetry` returns rows in `ended_at` order.
-- [ ] TS (bun:test): merge function pinning across the three cases.
-- [ ] Golden fixture: resume produces `turn_complete` events with `telemetry` populated for every turn that has a persisted row.
-- [ ] Reducer test: live path computes telemetry via `extractTurnCost` when `event.telemetry === undefined`; replay path uses `event.telemetry` directly when present.
+- [x] Rust: `SessionLedger::record_turn_telemetry` round-trip; cascade-on-DELETE; `list_turn_telemetry` returns rows in `ended_at` order. (Plus: nullable ttft persistence, idempotent PK, session filter.)
+- [x] TS (bun:test): merge function pinning across the three cases. (Plus: derive-from-state pinning across six cases.)
+- [x] Resume produces `turn_complete` events with `telemetry` populated for every turn that has a persisted row — pinned by `inject_replay_telemetry_attaches_on_match` + `inject_replay_telemetry_passes_through_on_miss` + reducer `handleTurnComplete — replay path` tests.
+- [x] Reducer test: live path computes telemetry via `deriveTurnTelemetry` when `event.telemetry === undefined` AND emits `record-telemetry` effect; replay path uses `event.telemetry` directly when present AND does not re-persist.
 
 **Checkpoint.**
 
-- [ ] `cargo test -p tugcast` green (new ledger tests pass).
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **Manual L23 vet:** reload + relaunch round-trip leaves the gauge reading correct values.
+- [x] `cargo test -p tugcast` green (552 pass; +10 new tests across ledger/bridge/supervisor).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (2064 pass; +14 new tests across merge / reducer / interrupt).
+- [x] `bun run audit:tokens lint` exits 0.
+- [x] **Manual L23 vet:** reload + relaunch round-trip leaves the gauge reading correct values. _Confirmed 2026-05-16 — "basically works."_
 
 ---
 

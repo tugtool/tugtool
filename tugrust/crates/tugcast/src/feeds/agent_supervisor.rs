@@ -1074,6 +1074,95 @@ fn parse_tug_session_id_payload(payload: &[u8]) -> Result<TugSessionId, ControlE
     Ok(TugSessionId::new(id))
 }
 
+/// Parsed payload of the `record_turn_telemetry` CONTROL action.
+/// Tugdeck → tugcast: the reducer dispatches this from
+/// `handleTurnComplete` (live path only — replayed turns aren't
+/// re-persisted) carrying the per-turn telemetry block the reducer
+/// just computed. The supervisor's `do_record_turn_telemetry` resolves
+/// `tug_session_id` to the claude `session_id` (the ledger PK) and
+/// writes the row.
+///
+/// Field names mirror the wire-shape of tugdeck's `TurnTelemetry`
+/// (camelCase nested inside `telemetry`). The outer envelope uses
+/// snake_case to match the rest of the CONTROL action conventions.
+#[derive(Debug)]
+struct RecordTurnTelemetryPayload {
+    tug_session_id: TugSessionId,
+    msg_id: String,
+    cost_input_tokens: i64,
+    cost_output_tokens: i64,
+    cost_cache_creation_input_tokens: i64,
+    cost_cache_read_input_tokens: i64,
+    cost_total_cost_usd: f64,
+    wall_clock_ms: i64,
+    awaiting_approval_ms: i64,
+    transport_downtime_ms: i64,
+    active_ms: i64,
+    ttft_ms: Option<i64>,
+    ttftc_ms: Option<i64>,
+    reconnect_count: i64,
+    max_stream_gap_ms: i64,
+    ended_at: i64,
+}
+
+fn parse_record_turn_telemetry_payload(
+    payload: &[u8],
+) -> Result<RecordTurnTelemetryPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let tug_session_id = value
+        .get("tug_session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    let msg_id = value
+        .get("msg_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let telemetry = value.get("telemetry").ok_or(ControlError::Malformed)?;
+    let cost = telemetry.get("cost").ok_or(ControlError::Malformed)?;
+    let ended_at = value
+        .get("ended_at")
+        .and_then(|v| v.as_i64())
+        .ok_or(ControlError::Malformed)?;
+    let i64_or = |obj: &serde_json::Value, key: &str| -> Result<i64, ControlError> {
+        obj.get(key)
+            .and_then(|v| v.as_i64())
+            .ok_or(ControlError::Malformed)
+    };
+    let optional_i64 = |obj: &serde_json::Value, key: &str| -> Option<i64> {
+        match obj.get(key) {
+            Some(v) if v.is_null() => None,
+            Some(v) => v.as_i64(),
+            None => None,
+        }
+    };
+    Ok(RecordTurnTelemetryPayload {
+        tug_session_id: TugSessionId::new(tug_session_id),
+        msg_id,
+        cost_input_tokens: i64_or(cost, "inputTokens")?,
+        cost_output_tokens: i64_or(cost, "outputTokens")?,
+        cost_cache_creation_input_tokens: i64_or(cost, "cacheCreationInputTokens")?,
+        cost_cache_read_input_tokens: i64_or(cost, "cacheReadInputTokens")?,
+        cost_total_cost_usd: cost
+            .get("totalCostUsd")
+            .and_then(|v| v.as_f64())
+            .ok_or(ControlError::Malformed)?,
+        wall_clock_ms: i64_or(telemetry, "wallClockMs")?,
+        awaiting_approval_ms: i64_or(telemetry, "awaitingApprovalMs")?,
+        transport_downtime_ms: i64_or(telemetry, "transportDowntimeMs")?,
+        active_ms: i64_or(telemetry, "activeMs")?,
+        ttft_ms: optional_i64(telemetry, "ttftMs"),
+        ttftc_ms: optional_i64(telemetry, "ttftcMs"),
+        reconnect_count: i64_or(telemetry, "reconnectCount")?,
+        max_stream_gap_ms: i64_or(telemetry, "maxStreamGapMs")?,
+        ended_at,
+    })
+}
+
 /// Canonical constructor for `SESSION_STATE` wire frames. Shared between
 /// `agent_supervisor` (pending/spawning/closed/errored on control events)
 /// and `agent_bridge` (live after session_init, errored on crash-budget
@@ -1387,6 +1476,17 @@ impl AgentSupervisor {
                     }
                 };
                 self.do_request_replay(&tug_session_id).await;
+                Ok(())
+            }
+            "record_turn_telemetry" => {
+                let parsed = match parse_record_turn_telemetry_payload(payload) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected record_turn_telemetry");
+                        return ControlOutcome::Error(e);
+                    }
+                };
+                self.do_record_turn_telemetry(parsed).await;
                 Ok(())
             }
             // Any action not above is not owned by the supervisor.
@@ -2116,6 +2216,89 @@ impl AgentSupervisor {
     /// { removed: true }` on success — the recorder broadcasts that frame
     /// internally; this handler emits the matching `forget_session_ok`
     /// response so the requesting client can resolve its pending action.
+    /// Persist a per-turn telemetry block. Tugdeck → tugcast inbound
+    /// CONTROL action driven by the reducer's `handleTurnComplete`
+    /// (live path only — replayed turns aren't re-persisted). The
+    /// claude `session_id` is the row's PK; we resolve it from the
+    /// ledger entry keyed by `tug_session_id` (the wire-side
+    /// identifier the client uses).
+    ///
+    /// The write is fire-and-forget at the wire level — no ack frame
+    /// is broadcast. The client doesn't wait on confirmation; the
+    /// row's reason for existing is to survive the next reload, not
+    /// the next render. A `LedgerError` here is logged at `warn`
+    /// (telemetry, not a user-visible failure).
+    ///
+    /// Three quietly-dropped cases — all benign:
+    ///   1. No `SessionLedger` configured (test harnesses without
+    ///      persistence). Nothing to do.
+    ///   2. Ledger entry not found for `tug_session_id` (the session
+    ///      was already evicted or never spawned through this
+    ///      supervisor). Nothing to write to.
+    ///   3. Ledger entry exists but `claude_session_id` is `None`
+    ///      (handshake not yet complete). The reducer should never
+    ///      reach `handleTurnComplete` before `session_init` lands,
+    ///      so this branch is defensive — if it ever fires, log and
+    ///      drop. The next live turn whose `session_init` precedes
+    ///      it will write a fresh row.
+    async fn do_record_turn_telemetry(&self, parsed: RecordTurnTelemetryPayload) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            return;
+        };
+        let claude_id = {
+            let outer = self.ledger.lock().await;
+            let Some(entry_arc) = outer.get(&parsed.tug_session_id) else {
+                tracing::warn!(
+                    target: "tide::telemetry",
+                    event = "record_turn_telemetry.skipped",
+                    tug_session_id = %parsed.tug_session_id,
+                    msg_id = %parsed.msg_id,
+                    reason = "session_not_found",
+                );
+                return;
+            };
+            let entry = entry_arc.lock().await;
+            entry.claude_session_id.clone()
+        };
+        let Some(claude_id) = claude_id else {
+            tracing::warn!(
+                target: "tide::telemetry",
+                event = "record_turn_telemetry.skipped",
+                tug_session_id = %parsed.tug_session_id,
+                msg_id = %parsed.msg_id,
+                reason = "no_claude_session_id",
+            );
+            return;
+        };
+        let row = crate::session_ledger::TurnTelemetryRow {
+            session_id: claude_id,
+            msg_id: parsed.msg_id,
+            input_tokens: parsed.cost_input_tokens,
+            output_tokens: parsed.cost_output_tokens,
+            cache_creation_input_tokens: parsed.cost_cache_creation_input_tokens,
+            cache_read_input_tokens: parsed.cost_cache_read_input_tokens,
+            total_cost_usd: parsed.cost_total_cost_usd,
+            wall_clock_ms: parsed.wall_clock_ms,
+            awaiting_approval_ms: parsed.awaiting_approval_ms,
+            transport_downtime_ms: parsed.transport_downtime_ms,
+            active_ms: parsed.active_ms,
+            ttft_ms: parsed.ttft_ms,
+            ttftc_ms: parsed.ttftc_ms,
+            reconnect_count: parsed.reconnect_count,
+            max_stream_gap_ms: parsed.max_stream_gap_ms,
+            ended_at: parsed.ended_at,
+        };
+        if let Err(err) = ledger.record_turn_telemetry(&row) {
+            tracing::warn!(
+                target: "tide::telemetry",
+                error = %err,
+                session_id = %row.session_id,
+                msg_id = %row.msg_id,
+                "record_turn_telemetry ledger write failed",
+            );
+        }
+    }
+
     async fn do_forget_session(&self, session_id: &str) {
         let Some(ledger) = self.session_ledger.as_ref() else {
             let body = serde_json::json!({
@@ -2872,6 +3055,7 @@ impl AgentSupervisor {
             (entry.project_dir.clone(), entry.session_mode)
         };
         let sessions_recorder = self.sessions_recorder.clone();
+        let session_ledger_for_bridge = self.session_ledger.clone();
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -2883,6 +3067,7 @@ impl AgentSupervisor {
                 project_dir,
                 session_mode,
                 sessions_recorder,
+                session_ledger_for_bridge,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -4785,6 +4970,7 @@ mod tests {
             lines,
             "/tmp/test-relay-project",
             &recorder,
+            None,
             &cancel,
         )
         .await;
@@ -4893,6 +5079,7 @@ mod tests {
             lines,
             "/tmp/test-relay-resume-fail",
             &recorder,
+            None,
             &cancel,
         )
         .await;
@@ -6384,5 +6571,160 @@ mod tests {
             0,
             "session B's bracket flag stays false; its turn_complete pops as normal",
         );
+    }
+
+    // -------------------------------------------------------------------
+    // record_turn_telemetry — CONTROL action → SessionLedger round-trip
+    // -------------------------------------------------------------------
+
+    fn record_turn_telemetry_payload(
+        tug_session_id: &str,
+        msg_id: &str,
+        total_cost_usd: f64,
+    ) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "action": "record_turn_telemetry",
+            "tug_session_id": tug_session_id,
+            "msg_id": msg_id,
+            "telemetry": {
+                "cost": {
+                    "inputTokens": 100,
+                    "outputTokens": 50,
+                    "cacheCreationInputTokens": 10,
+                    "cacheReadInputTokens": 20,
+                    "totalCostUsd": total_cost_usd,
+                },
+                "wallClockMs": 4_000,
+                "awaitingApprovalMs": 200,
+                "transportDowntimeMs": 100,
+                "activeMs": 3_700,
+                "ttftMs": 150,
+                "ttftcMs": 300,
+                "reconnectCount": 0,
+                "maxStreamGapMs": 90,
+            },
+            "ended_at": 1_000,
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn record_turn_telemetry_writes_row_to_ledger() {
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let tug_id = TugSessionId::new("sess-tel-1");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+
+        // Bind a claude session id; the ledger writes need this since
+        // it's the row PK on the sqlite side. Also seed the sessions
+        // row so the cascade trigger has something to anchor.
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-A".to_string());
+        }
+        ledger
+            .record_spawn("claude-A", "ws-1", "/proj/x", "card-1", 1_000)
+            .unwrap();
+
+        let outcome = sup
+            .handle_control(
+                "record_turn_telemetry",
+                &record_turn_telemetry_payload("sess-tel-1", "msg-A", 0.0123),
+                10,
+            )
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Handled));
+
+        let rows = ledger.list_turn_telemetry("claude-A").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].msg_id, "msg-A");
+        assert_eq!(rows[0].total_cost_usd, 0.0123);
+        assert_eq!(rows[0].input_tokens, 100);
+        assert_eq!(rows[0].wall_clock_ms, 4_000);
+        assert_eq!(rows[0].active_ms, 3_700);
+        assert_eq!(rows[0].ttft_ms, Some(150));
+    }
+
+    #[tokio::test]
+    async fn record_turn_telemetry_overwrites_existing_row_for_same_pk() {
+        // A reconnecting client may re-emit the same `record_turn_telemetry`
+        // for an already-persisted (session_id, msg_id). The ledger's
+        // `INSERT OR REPLACE` makes the repeat a no-op write — same
+        // values overwriting same values, not a duplicate-key error.
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let tug_id = TugSessionId::new("sess-tel-2");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-B".to_string());
+        }
+        ledger
+            .record_spawn("claude-B", "ws-1", "/proj/x", "card-2", 1_000)
+            .unwrap();
+
+        sup.handle_control(
+            "record_turn_telemetry",
+            &record_turn_telemetry_payload("sess-tel-2", "msg-A", 0.0123),
+            10,
+        )
+        .await;
+        sup.handle_control(
+            "record_turn_telemetry",
+            &record_turn_telemetry_payload("sess-tel-2", "msg-A", 9.99),
+            10,
+        )
+        .await;
+
+        let rows = ledger.list_turn_telemetry("claude-B").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].total_cost_usd, 9.99);
+    }
+
+    #[tokio::test]
+    async fn record_turn_telemetry_silently_skips_when_session_not_found() {
+        // The session was already evicted, never spawned through this
+        // supervisor, or never had `session_init` complete. The handler
+        // logs and drops — no write, no error frame, no panic.
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+
+        let outcome = sup
+            .handle_control(
+                "record_turn_telemetry",
+                &record_turn_telemetry_payload("sess-unknown", "msg-A", 0.0123),
+                10,
+            )
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Handled));
+
+        // No row should exist for any session.
+        let rows = ledger.list_turn_telemetry("claude-anything").unwrap();
+        assert_eq!(rows.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn record_turn_telemetry_rejects_malformed_payload() {
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+
+        let outcome = sup
+            .handle_control("record_turn_telemetry", b"not json", 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn record_turn_telemetry_rejects_missing_msg_id() {
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "record_turn_telemetry",
+            "tug_session_id": "sess-x",
+            "telemetry": { "cost": {} },
+            "ended_at": 1_000,
+        }))
+        .unwrap();
+
+        let outcome = sup
+            .handle_control("record_turn_telemetry", &payload, 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
     }
 }

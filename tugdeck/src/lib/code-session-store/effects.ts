@@ -79,13 +79,37 @@ export interface CancelTimerEffect {
   name: string;
 }
 
+/**
+ * Persist a per-turn telemetry block via the tugcast SessionLedger.
+ * Emitted by `handleTurnComplete` on the LIVE path only — replayed
+ * turns arrive with `event.telemetry` already inlined, and the
+ * reducer doesn't re-persist them (the persisted row already exists,
+ * which is how the inline made it onto the wire in the first place).
+ *
+ * The store wrapper looks up `tugSessionId` from its own state and
+ * builds the `record_turn_telemetry` CONTROL frame via
+ * `encodeRecordTurnTelemetry`. The effect carries the
+ * tug_session_id-independent payload so the reducer stays pure.
+ *
+ * Fire-and-forget: no ack frame is awaited. The row's reason for
+ * existing is to survive the next reload, not the next render — see
+ * plan `#step-20-3-3` / `#step-20-3-4`.
+ */
+export interface RecordTelemetryEffect {
+  kind: "record-telemetry";
+  msgId: string;
+  telemetry: import("./telemetry").TurnTelemetry;
+  endedAt: number;
+}
+
 export type Effect =
   | WriteInflightEffect
   | ClearInflightEffect
   | SendFrameEffect
   | AppendTranscriptEffect
   | ScheduleTimerEffect
-  | CancelTimerEffect;
+  | CancelTimerEffect
+  | RecordTelemetryEffect;
 
 export function isWriteInflight(e: Effect): e is WriteInflightEffect {
   return e.kind === "write-inflight";
@@ -109,4 +133,8 @@ export function isScheduleTimer(e: Effect): e is ScheduleTimerEffect {
 
 export function isCancelTimer(e: Effect): e is CancelTimerEffect {
   return e.kind === "cancel_timer";
+}
+
+export function isRecordTelemetry(e: Effect): e is RecordTelemetryEffect {
+  return e.kind === "record-telemetry";
 }
