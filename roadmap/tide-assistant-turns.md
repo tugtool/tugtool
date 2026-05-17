@@ -1811,7 +1811,7 @@ Beyond the `[1m]` regression: this step closes off the entire class of "live-onl
 
 **Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
 
-**Status:** _slot infrastructure + renderers + dev harness landed; HMR study pending._
+**Status:** _Complete. Slot infrastructure + renderers + dev harness landed; HMR study resolved by promoting the F5 design from the spike gallery (IBM-1620 endcap-rule labels, uniform-width cells, always-hours time format, caps-token magnitudes, color-coded context numerator, no arc gauge) into the production `TideTelemetryStatusRow` renderer; placement-experiment harness defaults Z2 to `statusRow`. Z0 / Z1-user / Z3 / Z4 remain reserved._
 
 **Commit:** `feat(tide-rendering): placement slots Z0–Z4 for tide-card session telemetry`
 
@@ -1923,7 +1923,7 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 - [x] **Renderer components** — small focused React components for each datum in the experimentation catalog, each consuming the [#step-20-3] telemetry helpers via `useSyncExternalStore` per [L02]. One renderer per datum; placement-agnostic.
 - [x] **Experimentation harness** — dev-mode selector that maps {datum → slot}. Captures the chosen placement into a tugbank entry (or a hash-fragment) so HMR reloads preserve the experiment state. Productized as a tugplug skill if it gets enough use.
 - [x] **Mount-identity verification** — confirm `TideCardTranscript` survives the top-split-panel wrapper insertion without unmount; confirm `TugPromptEntry`'s focus / responder identity survives the restructure. Use the existing tide-card caret/first-responder probe pattern (`c773c7ac`) if helpful.
-- [ ] **HMR study** — sit with the five-slot layout (Z0–Z4), A/B placements for each datum, decide which combination wins. The result is captured as the default mapping in [#step-20-5.D](#step-20-5-d)'s scope.
+- [x] **HMR study** — sit with the five-slot layout (Z0–Z4), A/B placements for each datum, decide which combination wins. The result is captured as the default mapping in [#step-20-5.D](#step-20-5-d)'s scope. _Outcome: Z2 maps to the new `statusRow` design (F5 from `gallery-tide-status-row`); other zones remain reserved. See the Checkpoint entry below for the full detail._
 
 **Tests.**
 
@@ -1937,7 +1937,7 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 - [x] `bun x tsc --noEmit` clean.
 - [x] `bun test` green.
 - [x] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR study (manual)** — open a tide card, run a multi-turn session, A/B placement combinations using the dev selector, capture the chosen default mapping for [#step-20-5.D](#step-20-5-d).
+- [x] **HMR study (manual)** — open a tide card, run a multi-turn session, A/B placement combinations using the dev selector, capture the chosen default mapping for [#step-20-5.D](#step-20-5-d). _Outcome: **Z2 = `statusRow`** (the F5 design from the spike: five uniform-width cells with IBM-1620 endcap-rule labels above centered always-hours time + caps-token values, color-coded context numerator, no arc gauge). Z0 / Z1-user / Z3 / Z4 remain empty pending later content decisions. The placement-experiment harness now defaults Z2 to `statusRow` when the tugbank mapping is null; explicit `window.tugTidePlacement.set({ Z2: ... })` still overrides._
 
 **Implementation notes (post-landing).**
 

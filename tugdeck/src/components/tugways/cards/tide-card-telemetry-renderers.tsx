@@ -56,6 +56,19 @@ export function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
+/**
+ * Same magnitudes as `formatTokens` but with **uppercase** suffixes —
+ * `K` (kilo), `M` (mega), `G` (giga). Instrument-shorthand convention
+ * adopted for the Z2 status row in #step-20-4.
+ */
+export function formatTokensCaps(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  if (n < 1_000) return String(Math.round(n));
+  if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  return `${(n / 1_000_000_000).toFixed(2)}G`;
+}
+
 /** Format milliseconds as `1.2s` / `34s` / `2m 03s` / `1h 04m`. */
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "0s";
@@ -73,6 +86,21 @@ export function formatDurationMs(ms: number): string {
   const h = Math.floor(totalSec / 3_600);
   const m = Math.floor((totalSec % 3_600) / 60);
   return `${h}h ${m.toString().padStart(2, "0")}m`;
+}
+
+/**
+ * Always-hours time format — `Hh Mm SSs` shape at every magnitude.
+ * `0h 0m 12s` even when below an hour; `4h 30m 00s` for a marathon
+ * session. Always includes the seconds component. This is the
+ * canonical time format for the Z2 status row (#step-20-4 outcome).
+ */
+export function formatTimeAlwaysHours(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0h 0m 00s";
+  const totalSec = Math.max(0, Math.floor(ms / 1_000));
+  const h = Math.floor(totalSec / 3_600);
+  const m = Math.floor((totalSec % 3_600) / 60);
+  const s = totalSec % 60;
+  return `${h}h ${m}m ${s.toString().padStart(2, "0")}s`;
 }
 
 /** Format a USD cost as `$0.0123` (4 decimals when small, 2 when ≥ $1). */
@@ -287,22 +315,67 @@ export const TideTelemetryPhase: React.FC<TideTelemetryProps> = ({
 };
 
 /**
- * Combined session status row — one centered group containing every
- * session-level datum the status bar surfaces, separated by bullets:
+ * IBM-1620-style endcap-rule label apparatus — letterspaced uppercase
+ * label inset into a horizontal rule terminated by short perpendicular
+ * ticks at each end. The label visually divides one section from the
+ * next without explicit row dividers; the ticks point toward the
+ * value (down when label is above, up when label is below).
  *
- *   time: 1m 23s • tokens: 12.3k • total time: 1h 04m • total tokens: 1.05M • context: 200k / 1.0M [arc]
+ * Internal component for `TideTelemetryStatusRow`. The apparatus
+ * width is fixed by the row (uniform across all cells via the
+ * `--tugx-tide-status-cell-width` CSS variable on the row), so this
+ * component just fills whatever width its container provides.
+ */
+const TideTelemetryEndcapRuleLabel: React.FC<{
+  label: string;
+  /** Direction the endcap ticks extend (toward the value). */
+  ticksDirection: "down" | "up";
+}> = ({ label, ticksDirection }) => (
+  <span
+    className="tide-telemetry-endcap-rule"
+    data-ticks={ticksDirection}
+    aria-hidden="true"
+  >
+    <span className="tide-telemetry-endcap-tick tide-telemetry-endcap-tick-left" />
+    <span className="tide-telemetry-endcap-rule-fill" />
+    <span className="tide-telemetry-endcap-label">{label}</span>
+    <span className="tide-telemetry-endcap-rule-fill" />
+    <span className="tide-telemetry-endcap-tick tide-telemetry-endcap-tick-right" />
+  </span>
+);
+
+/**
+ * Combined session status row — the canonical Z2 design chosen by the
+ * Step 20.4 HMR study (F5 variant from the design spike gallery).
  *
- * Each item is independently collapsible via container queries on the
- * host (the priority order from most-to-least persistent is `context`,
- * `tokens`, `time`, `total-tokens`, `total-time`). Bullet separators
- * are siblings of their preceding item so the `+` adjacent-sibling
- * selector can hide them at the same breakpoint that hides the item.
+ * **Layout — five uniform-width cells, label-above-value:**
+ *
+ *   ┌──── TIME ────┐  ┌──── TOKENS ────┐  ┌── TOTAL TIME ──┐  …  ┌── CONTEXT ──┐
+ *      0h 0m 12s         30.3K            0h 0m 12s              30.3K / 1.00M
+ *
+ * Every cell is a two-row stack: an IBM-1620 letterspaced label
+ * embedded in a hairline rule with downward endcap ticks, sitting
+ * above a centered value. The five cells share a single uniform
+ * apparatus width (`--tugx-tide-status-cell-width`) so the row
+ * never jitters — values can change width inside their cell, but
+ * the cell columns themselves stay rock-stable.
+ *
+ * **Formats:**
+ *  - `time`/`total time` → `formatTimeAlwaysHours` (`Hh Mm SSs` shape).
+ *    Per-turn time and total time both surface the seconds component
+ *    so the readout never goes dark on a low-magnitude value.
+ *  - `tokens`/`total tokens` → `formatTokensCaps` (`K`/`M`/`G`).
+ *  - `context` → `formatTokensCaps(current) / formatTokensCaps(max)`,
+ *    with the numerator color-coded by usage ratio (caution at ≥75%,
+ *    danger at ≥90% via the `--tug7-element-global-text-normal-{caution,danger}`
+ *    tokens). No arc gauge — the colored numerator is the entire
+ *    graphical cue.
  *
  * `time` / `tokens` read off the LAST COMMITTED turn — during an
  * in-flight turn the previous turn's values stay surfaced. `total
- * time` / `total tokens` use `deriveSessionTotals` (committed turns
- * only). The cumulative-active surface re-renders on the 1Hz tick so
- * that any side-channel that bumps the committed sum mid-second still
+ * time` / `total tokens` use `deriveSessionTotals`. The
+ * always-hours formatter is re-evaluated on the 1Hz live tick so
+ * any side-channel that bumps the committed sum mid-second still
  * surfaces promptly.
  */
 export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
@@ -344,11 +417,13 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
     totals.totalCacheCreationTokens +
     totals.totalOutputTokens;
 
-  const contextMaxText = formatTokens(contextMax);
-  const formatContextRatio = useCallback(
-    (v: number) => `${formatTokens(v)} / ${contextMaxText}`,
-    [contextMaxText],
-  );
+  // Color-coded context numerator. The `/` and denominator stay
+  // muted so the live numerator reads first. Threshold class is
+  // applied to the wrapping span; the CSS rule paints the
+  // numerator's color via descendant selector.
+  const ratio = contextMax > 0 ? perTurnContextTokens / contextMax : 0;
+  const contextThreshold: "normal" | "caution" | "danger" =
+    ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
   return (
     <div
@@ -356,60 +431,67 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
       data-slot="tide-telemetry-status-row"
     >
       <span
-        className="tide-telemetry-status-item"
+        className="tide-telemetry-status-cell"
         data-priority="time"
       >
-        <span className="tide-telemetry-status-label">time:</span>
-        <span className="tide-telemetry-status-value">
-          {formatDurationMs(perTurnActiveMs)}
+        <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
+        <span className="tide-telemetry-status-value-wrap">
+          <span className="tide-telemetry-status-value">
+            {formatTimeAlwaysHours(perTurnActiveMs)}
+          </span>
         </span>
       </span>
-      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
       <span
-        className="tide-telemetry-status-item"
+        className="tide-telemetry-status-cell"
         data-priority="tokens"
       >
-        <span className="tide-telemetry-status-label">tokens:</span>
-        <span className="tide-telemetry-status-value">
-          {formatTokens(perTurnContextTokens)}
+        <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
+        <span className="tide-telemetry-status-value-wrap">
+          <span className="tide-telemetry-status-value">
+            {formatTokensCaps(perTurnContextTokens)}
+          </span>
         </span>
       </span>
-      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
       <span
-        className="tide-telemetry-status-item"
+        className="tide-telemetry-status-cell"
         data-priority="total-time"
       >
-        <span className="tide-telemetry-status-label">total time:</span>
-        <span className="tide-telemetry-status-value">
-          {formatDurationMs(totals.totalActiveMs)}
+        <TideTelemetryEndcapRuleLabel label="TOTAL TIME" ticksDirection="down" />
+        <span className="tide-telemetry-status-value-wrap">
+          <span className="tide-telemetry-status-value">
+            {formatTimeAlwaysHours(totals.totalActiveMs)}
+          </span>
         </span>
       </span>
-      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
       <span
-        className="tide-telemetry-status-item"
+        className="tide-telemetry-status-cell"
         data-priority="total-tokens"
       >
-        <span className="tide-telemetry-status-label">total tokens:</span>
-        <span className="tide-telemetry-status-value">
-          {formatTokens(totalTokensSum)}
+        <TideTelemetryEndcapRuleLabel label="TOTAL TOKENS" ticksDirection="down" />
+        <span className="tide-telemetry-status-value-wrap">
+          <span className="tide-telemetry-status-value">
+            {formatTokensCaps(totalTokensSum)}
+          </span>
         </span>
       </span>
-      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
       <span
-        className="tide-telemetry-status-item tide-telemetry-status-item-context"
+        className="tide-telemetry-status-cell"
         data-priority="context"
       >
-        <span className="tide-telemetry-status-label">context:</span>
-        <TugArcGauge
-          className="tide-telemetry-window-utilization"
-          data-slot="tide-telemetry-window-utilization"
-          value={perTurnContextTokens}
-          min={0}
-          max={contextMax}
-          density="compact"
-          formatValue={formatContextRatio}
-          thresholds={{ caution: 0.75, danger: 0.9 }}
-        />
+        <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
+        <span className="tide-telemetry-status-value-wrap">
+          <span
+            className="tide-telemetry-status-value tide-telemetry-status-value-context"
+            data-context-threshold={contextThreshold}
+          >
+            <span className="tide-telemetry-status-context-numerator">
+              {formatTokensCaps(perTurnContextTokens)}
+            </span>
+            <span className="tide-telemetry-status-context-denominator">
+              {` / ${formatTokensCaps(contextMax)}`}
+            </span>
+          </span>
+        </span>
       </span>
     </div>
   );

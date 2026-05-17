@@ -223,6 +223,13 @@ export function useTidePlacementSlots(
 
   const { codeSessionStore, sessionMetadataStore } = input;
 
+  // Effective Z2 — explicit mapping wins, but a null / unset value
+  // falls back to `statusRow` (the Step 20.4 HMR-study outcome).
+  // The placement-experiment console controls still work normally;
+  // setting Z2 to a different datum overrides this default.
+  const effectiveZ2: SessionDatum | null =
+    mapping.Z2 ?? "statusRow";
+
   const sessionNode = useCallback(
     (datum: SessionDatum | null | undefined): React.ReactNode => {
       if (datum === null || datum === undefined) return null;
@@ -281,7 +288,7 @@ export function useTidePlacementSlots(
 
   return {
     headerContent: sessionNode(mapping.Z0),
-    statusBarContent: sessionNode(mapping.Z2),
+    statusBarContent: sessionNode(effectiveZ2),
     promptStatusContent: sessionNode(mapping.Z3),
     promptFooterContent: sessionNode(mapping.Z4),
     renderTurnTrailing,
