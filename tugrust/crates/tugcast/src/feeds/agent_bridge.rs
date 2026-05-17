@@ -1796,7 +1796,11 @@ mod tests {
         let tug_id = test_tug_session_id();
         let line = b"not valid json";
         let out = merge_and_persist_system_metadata(line, &ledger, "sess-1", &tug_id);
-        assert_eq!(out, line.to_vec(), "malformed incoming returns the line unchanged");
+        assert_eq!(
+            out,
+            line.to_vec(),
+            "malformed incoming returns the line unchanged"
+        );
         // And nothing was written to the ledger.
         assert!(ledger.get_session_metadata("sess-1").unwrap().is_none());
     }

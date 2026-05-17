@@ -986,10 +986,7 @@ impl SessionLedger {
     /// Single statement; sqlite's implicit per-statement transaction is
     /// enough. No explicit transaction needed for the write cadence we
     /// expect (one per `turn_complete`).
-    pub fn record_turn_telemetry(
-        &self,
-        row: &TurnTelemetryRow,
-    ) -> Result<(), LedgerError> {
+    pub fn record_turn_telemetry(&self, row: &TurnTelemetryRow) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
             "INSERT OR REPLACE INTO turn_telemetry (
@@ -1175,9 +1172,7 @@ fn journal_row_from_query(
 /// rusqlite's own type coercion — every column is a fixed scalar — so
 /// the outer `Result` wrapper just keeps the function-signature shape
 /// consistent with the other row decoders in this module.
-fn turn_telemetry_row_from_query(
-    row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<TurnTelemetryRow> {
+fn turn_telemetry_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<TurnTelemetryRow> {
     Ok(TurnTelemetryRow {
         session_id: row.get(0)?,
         msg_id: row.get(1)?,

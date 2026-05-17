@@ -5308,10 +5308,7 @@ mod tests {
                 .len(),
             1,
         );
-        assert_eq!(
-            metadata_frames[1]["skills"].as_array().unwrap().len(),
-            1,
-        );
+        assert_eq!(metadata_frames[1]["skills"].as_array().unwrap().len(), 1,);
 
         // The ledger row holds the suffixed model at end-of-stream.
         let row = ledger

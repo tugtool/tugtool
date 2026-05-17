@@ -138,9 +138,7 @@ pub fn merge_session_metadata(current: Option<&Value>, incoming: &Value) -> Map<
     for field in ARRAY_FIELDS {
         let incoming_arr = incoming_obj.get(*field).and_then(|v| v.as_array());
         let incoming_nonempty = incoming_arr.is_some_and(|a| !a.is_empty());
-        if !incoming_nonempty
-            && let Some(current_v) = current_obj.get(*field)
-        {
+        if !incoming_nonempty && let Some(current_v) = current_obj.get(*field) {
             merged.insert((*field).to_owned(), current_v.clone());
         }
     }
@@ -310,7 +308,12 @@ mod tests {
         let merged = merge_session_metadata(Some(&live), &replay);
         assert_eq!(merged.get("tools").unwrap().as_array().unwrap().len(), 2);
         assert_eq!(
-            merged.get("slash_commands").unwrap().as_array().unwrap().len(),
+            merged
+                .get("slash_commands")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
             2,
         );
         assert_eq!(merged.get("plugins").unwrap().as_array().unwrap().len(), 1);
@@ -421,10 +424,7 @@ mod tests {
     #[test]
     fn prefer_more_specific_takes_incoming_on_exact_match() {
         assert_eq!(
-            prefer_more_specific_model(
-                Some("claude-opus-4-7[1m]"),
-                Some("claude-opus-4-7[1m]"),
-            ),
+            prefer_more_specific_model(Some("claude-opus-4-7[1m]"), Some("claude-opus-4-7[1m]"),),
             Some("claude-opus-4-7[1m]"),
         );
     }
