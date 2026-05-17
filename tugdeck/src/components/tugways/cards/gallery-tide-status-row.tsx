@@ -2,40 +2,41 @@
  * gallery-tide-status-row.tsx — design-spike gallery card for the
  * tide-card Z2 status row.
  *
- * **Round 5.** Round 4 chose EA2 and EA4 (plain values, label
- * above/below, UNIFORM endcap-rule widths). Round 5 keeps that
- * foundation and explores four orthogonal refinements:
+ * **Round 7 — down-selected.** Round 6 chose:
  *
- *   1. **Centered values** — drop the fixed-width right-pinned value
- *      slot in favor of natural-width values centered horizontally
- *      within the apparatus width. The apparatus columns stay rigidly
- *      stable (uniform widths), but values are now visually centered
- *      under / over their labels regardless of length.
+ *   - **§2 indicator** → P6 concentric pulsing ring (with concentric
+ *     centering bug to fix)
+ *   - **§3 chevron** → bigger than the round-6 14px default
+ *   - **§4 endcap** → stay with T1 (custom EndcapRuleLabel, current
+ *     production design)
+ *   - **§5 composed row** → more horizontal breathing room for the
+ *     leftmost indicator and rightmost chevron (round-6's was too
+ *     cramped)
  *
- *   2. **CAPITAL magnitude abbreviations** — `K`, `M`, `G` instead of
- *      `k`, `M`. Reads as instrument shorthand.
+ * Round 7 narrows the gallery to those choices and explores the
+ * remaining knobs:
  *
- *   3. **Time format variations:**
- *      - Default keeps current `formatDurationMs` for per-turn time;
- *        the new `formatDurationWithSeconds` for total time (always
- *        appends seconds at every magnitude).
- *      - Always-minutes (`0m 12s` shape) for per-turn time.
- *      - Always-hours (`0h 0m 12s` shape) for per-turn time.
+ *   §1 — Distribution-fix baseline (one variant, for reference)
+ *   §2 — P6 concentric fix + size variations (12 / 14 / 16 / 18 px)
+ *   §3 — Chevron size variations (14 / 16 / 18 / 20 px)
+ *   §4 — T1 endcap locked in (no variants; called out for completeness)
+ *   §5 — Composed-row spacing studies (5 variations with different
+ *        gap / padding / zone strategies for the indicator+chevron)
  *
- *   4. **Total time always shows seconds** — regardless of which time
- *      variant the per-turn cell uses, total time keeps the seconds
- *      component visible.
+ * Once these pick, we promote into production and the design study
+ * for Z2 is done.
  *
  * @module components/tugways/cards/gallery-tide-status-row
  */
 
 import React, { useEffect, useState } from "react";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
 // ---------------------------------------------------------------------------
-// Scenarios + values
+// Value scenarios + status-row formatters
 // ---------------------------------------------------------------------------
 
 interface StatusValues {
@@ -56,159 +57,23 @@ interface Scenario {
 const ONE_MILLION = 1_000_000;
 
 const SCENARIOS: ReadonlyArray<Scenario> = [
-  {
-    id: "fresh",
-    label: "Fresh session",
-    values: {
-      perTurnActiveMs: 1_800,
-      perTurnTokens: 30_300,
-      totalActiveMs: 1_800,
-      totalTokens: 30_300,
-      contextTokens: 30_300,
-      contextMax: ONE_MILLION,
-    },
-  },
-  {
-    id: "early",
-    label: "Early session",
-    values: {
-      perTurnActiveMs: 12_400,
-      perTurnTokens: 5_100,
-      totalActiveMs: 14_200,
-      totalTokens: 5_100,
-      contextTokens: 5_100,
-      contextMax: ONE_MILLION,
-    },
-  },
-  {
-    id: "longTurn",
-    label: "Long turn",
-    values: {
-      perTurnActiveMs: 83_400,
-      perTurnTokens: 87_500,
-      totalActiveMs: 124_200,
-      totalTokens: 92_000,
-      contextTokens: 87_500,
-      contextMax: ONE_MILLION,
-    },
-  },
-  {
-    id: "deepSession",
-    label: "Deep session",
-    values: {
-      perTurnActiveMs: 12_300,
-      perTurnTokens: 30_000,
-      totalActiveMs: 3_840_000,
-      totalTokens: 5_050_000,
-      contextTokens: 195_000,
-      contextMax: ONE_MILLION,
-    },
-  },
-  {
-    id: "approachingCap",
-    label: "Approaching cap (caution)",
-    values: {
-      perTurnActiveMs: 14_200,
-      perTurnTokens: 65_000,
-      totalActiveMs: 600_000,
-      totalTokens: 4_200_000,
-      contextTokens: 780_000,
-      contextMax: ONE_MILLION,
-    },
-  },
-  {
-    id: "nearCap",
-    label: "Near cap (danger)",
-    values: {
-      perTurnActiveMs: 4_200,
-      perTurnTokens: 18_000,
-      totalActiveMs: 1_394_000,
-      totalTokens: 9_800_000,
-      contextTokens: 905_000,
-      contextMax: ONE_MILLION,
-    },
-  },
-  {
-    id: "marathon",
-    label: "Marathon",
-    values: {
-      perTurnActiveMs: 8_100,
-      perTurnTokens: 22_000,
-      totalActiveMs: 16_200_000,
-      totalTokens: 47_200_000,
-      contextTokens: 950_000,
-      contextMax: ONE_MILLION,
-    },
-  },
+  { id: "fresh", label: "Fresh session", values: { perTurnActiveMs: 1_800, perTurnTokens: 30_300, totalActiveMs: 1_800, totalTokens: 30_300, contextTokens: 30_300, contextMax: ONE_MILLION } },
+  { id: "early", label: "Early session", values: { perTurnActiveMs: 12_400, perTurnTokens: 5_100, totalActiveMs: 14_200, totalTokens: 5_100, contextTokens: 5_100, contextMax: ONE_MILLION } },
+  { id: "longTurn", label: "Long turn", values: { perTurnActiveMs: 83_400, perTurnTokens: 87_500, totalActiveMs: 124_200, totalTokens: 92_000, contextTokens: 87_500, contextMax: ONE_MILLION } },
+  { id: "deepSession", label: "Deep session", values: { perTurnActiveMs: 12_300, perTurnTokens: 30_000, totalActiveMs: 3_840_000, totalTokens: 5_050_000, contextTokens: 195_000, contextMax: ONE_MILLION } },
+  { id: "approachingCap", label: "Approaching cap (caution)", values: { perTurnActiveMs: 14_200, perTurnTokens: 65_000, totalActiveMs: 600_000, totalTokens: 4_200_000, contextTokens: 780_000, contextMax: ONE_MILLION } },
+  { id: "nearCap", label: "Near cap (danger)", values: { perTurnActiveMs: 4_200, perTurnTokens: 18_000, totalActiveMs: 1_394_000, totalTokens: 9_800_000, contextTokens: 905_000, contextMax: ONE_MILLION } },
+  { id: "marathon", label: "Marathon", values: { perTurnActiveMs: 8_100, perTurnTokens: 22_000, totalActiveMs: 16_200_000, totalTokens: 47_200_000, contextTokens: 950_000, contextMax: ONE_MILLION } },
 ];
 
-// ---------------------------------------------------------------------------
-// Formatters — local to this gallery; do NOT export back into the
-// production renderer until the design is chosen.
-// ---------------------------------------------------------------------------
-
-/** Default per-turn time format — `1.8s`, `12s`, `1m 04s`, `1h 04m`. */
-function formatDurationMs(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return "0s";
-  if (ms < 1_000) return `${ms}ms`;
-  const totalSec = Math.floor(ms / 1_000);
-  if (totalSec < 60) {
-    const tenths = Math.floor((ms % 1_000) / 100);
-    return totalSec < 10 ? `${totalSec}.${tenths}s` : `${totalSec}s`;
-  }
-  if (totalSec < 3_600) {
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m}m ${s.toString().padStart(2, "0")}s`;
-  }
-  const h = Math.floor(totalSec / 3_600);
-  const m = Math.floor((totalSec % 3_600) / 60);
-  return `${h}h ${m.toString().padStart(2, "0")}m`;
+function formatTokensCaps(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  if (n < 1_000) return String(Math.round(n));
+  if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  return `${(n / 1_000_000_000).toFixed(2)}G`;
 }
 
-/**
- * Default time format BUT always includes seconds at every magnitude.
- * Per round-5 spec: total time keeps the seconds visible regardless
- * of whether hours / minutes are also shown.
- */
-function formatDurationWithSeconds(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return "0s";
-  if (ms < 1_000) return `${ms}ms`;
-  const totalSec = Math.floor(ms / 1_000);
-  if (totalSec < 60) {
-    const tenths = Math.floor((ms % 1_000) / 100);
-    return totalSec < 10 ? `${totalSec}.${tenths}s` : `${totalSec}s`;
-  }
-  if (totalSec < 3_600) {
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m}m ${s.toString().padStart(2, "0")}s`;
-  }
-  const h = Math.floor(totalSec / 3_600);
-  const m = Math.floor((totalSec % 3_600) / 60);
-  const s = totalSec % 60;
-  return `${h}h ${m.toString().padStart(2, "0")}m ${s.toString().padStart(2, "0")}s`;
-}
-
-/**
- * Always-minutes time format — `Mm SSs` shape at every magnitude.
- * `0m 12s` even when seconds are < 60; `270m 00s` when crossing
- * many hours (hours roll into the minutes counter). Always includes
- * the seconds component.
- */
-function formatTimeAlwaysMinutes(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return "0m 00s";
-  const totalSec = Math.max(0, Math.floor(ms / 1_000));
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}m ${s.toString().padStart(2, "0")}s`;
-}
-
-/**
- * Always-hours time format — `Hh Mm SSs` shape at every magnitude.
- * `0h 0m 12s` even when below an hour. Always includes hours and
- * minutes (zero-padded for minutes, single-digit for hours).
- */
 function formatTimeAlwaysHours(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "0h 0m 00s";
   const totalSec = Math.max(0, Math.floor(ms / 1_000));
@@ -218,75 +83,45 @@ function formatTimeAlwaysHours(ms: number): string {
   return `${h}h ${m}m ${s.toString().padStart(2, "0")}s`;
 }
 
-/**
- * Token count formatter using **uppercase** magnitude abbreviations:
- * `K` (kilo), `M` (mega), `G` (giga). Round-5 instrument-shorthand
- * convention.
- */
-function formatTokensCaps(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "0";
-  if (n < 1_000) return String(Math.round(n));
-  if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}K`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  return `${(n / 1_000_000_000).toFixed(2)}G`;
+// ---------------------------------------------------------------------------
+// Session state model
+// ---------------------------------------------------------------------------
+
+type DemoPhase =
+  | "idle"
+  | "submitting"
+  | "awaiting_first_token"
+  | "streaming"
+  | "tool_work"
+  | "awaiting_approval"
+  | "replaying"
+  | "errored";
+
+type DemoTransport = "online" | "offline" | "restoring";
+
+interface SessionState {
+  phase: DemoPhase;
+  transport: DemoTransport;
+  interruptInFlight: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Time-mode dispatcher
-// ---------------------------------------------------------------------------
-
-type TimeMode = "default" | "minutes" | "hours";
-
-interface TimeModeBundle {
-  /** Per-turn time formatter. */
-  time: (ms: number) => string;
-  /** Total-time formatter — always includes seconds per round-5 spec. */
-  totalTime: (ms: number) => string;
-  /** Max realistic width of per-turn time text, in ch. */
-  timeMaxCh: number;
-  /** Max realistic width of total-time text, in ch. */
-  totalTimeMaxCh: number;
-  /** Label suffix for the variant title. */
-  label: string;
-}
-
-function getTimeMode(mode: TimeMode): TimeModeBundle {
-  switch (mode) {
-    case "minutes":
-      return {
-        time: formatTimeAlwaysMinutes,
-        totalTime: formatTimeAlwaysMinutes,
-        timeMaxCh: 8, // "59m 00s"
-        totalTimeMaxCh: 9, // "270m 00s"
-        label: "always-minutes",
-      };
-    case "hours":
-      return {
-        time: formatTimeAlwaysHours,
-        totalTime: formatTimeAlwaysHours,
-        timeMaxCh: 10, // "0h 59m 00s"
-        totalTimeMaxCh: 11, // "4h 30m 00s"
-        label: "always-hours",
-      };
-    case "default":
-    default:
-      return {
-        time: formatDurationMs,
-        // Default total time format with always-seconds appended.
-        totalTime: formatDurationWithSeconds,
-        timeMaxCh: 6, // "1h 04m"
-        totalTimeMaxCh: 10, // "1h 04m 23s"
-        label: "default + total-seconds",
-      };
-  }
-}
+const STATE_SCENARIOS: ReadonlyArray<{ id: string; label: string; state: SessionState }> = [
+  { id: "idle_online", label: "idle · online", state: { phase: "idle", transport: "online", interruptInFlight: false } },
+  { id: "submitting", label: "submitting · online", state: { phase: "submitting", transport: "online", interruptInFlight: false } },
+  { id: "awaiting_first", label: "awaiting_first_token · online", state: { phase: "awaiting_first_token", transport: "online", interruptInFlight: false } },
+  { id: "streaming", label: "streaming · online", state: { phase: "streaming", transport: "online", interruptInFlight: false } },
+  { id: "tool_work", label: "tool_work · online", state: { phase: "tool_work", transport: "online", interruptInFlight: false } },
+  { id: "awaiting_approval", label: "awaiting_approval · online", state: { phase: "awaiting_approval", transport: "online", interruptInFlight: false } },
+  { id: "interrupted_streaming", label: "streaming · INTERRUPT in flight", state: { phase: "streaming", transport: "online", interruptInFlight: true } },
+  { id: "offline", label: "idle · OFFLINE", state: { phase: "idle", transport: "offline", interruptInFlight: false } },
+  { id: "restoring", label: "submitting · RESTORING", state: { phase: "submitting", transport: "restoring", interruptInFlight: false } },
+  { id: "errored", label: "errored · online", state: { phase: "errored", transport: "online", interruptInFlight: false } },
+  { id: "replaying", label: "replaying · online", state: { phase: "replaying", transport: "online", interruptInFlight: false } },
+];
 
 // ---------------------------------------------------------------------------
-// Reserved widths + tokens
+// Tokens, surfaces, base styles
 // ---------------------------------------------------------------------------
-
-const VALUE_WIDTH_TOKENS_CH = 7; // `999.99M` worst case
-const VALUE_WIDTH_CONTEXT_CH = 15; // `999.99K / 1.00M` worst case
 
 const MONO = "var(--tug-font-mono, monospace)";
 const RAIL_COLOR = "var(--tug7-element-global-border-normal-default-rest)";
@@ -295,38 +130,16 @@ const TEXT_MUTED = "var(--tug7-element-global-text-normal-muted-rest)";
 const TEXT_CAUTION = "var(--tug7-element-global-text-normal-caution-rest)";
 const TEXT_DANGER = "var(--tug7-element-global-text-normal-danger-rest)";
 
-const DEFAULT_LABEL_SIZE = "0.5625rem"; // 9px (locked from R1)
-const DEFAULT_VALUE_SIZE = "0.6875rem"; // 11px (locked from R1)
-
+const DEFAULT_LABEL_SIZE = "0.5625rem";
+const DEFAULT_VALUE_SIZE = "0.6875rem";
 const LABEL_LETTER_SPACING = "0.18em";
 
-// ---------------------------------------------------------------------------
-// Surface + base styles
-// ---------------------------------------------------------------------------
-
-function contextNumeratorColor(v: StatusValues): string {
-  const ratio = v.contextTokens / v.contextMax;
-  if (ratio >= 0.9) return TEXT_DANGER;
-  if (ratio >= 0.75) return TEXT_CAUTION;
-  return TEXT_NORMAL;
-}
-
-const cardSurface: React.CSSProperties = {
-  backgroundColor: "var(--tug7-surface-card-primary-normal-status-rest)",
-  borderTop: `1px solid ${RAIL_COLOR}`,
-  borderBottom: `1px solid ${RAIL_COLOR}`,
-  padding: "var(--tug-space-md)",
+const labelMuted: React.CSSProperties = {
   fontFamily: MONO,
-  fontVariantNumeric: "tabular-nums",
-  fontSize: "0.6875rem",
-  lineHeight: 1.2,
-};
-
-const valueStrong: React.CSSProperties = {
-  fontFamily: MONO,
-  color: TEXT_NORMAL,
-  fontWeight: 600,
-  fontVariantNumeric: "tabular-nums",
+  color: TEXT_MUTED,
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  fontWeight: 500,
 };
 
 const sectionTitleStyle: React.CSSProperties = {
@@ -357,19 +170,27 @@ const variantNoteStyle: React.CSSProperties = {
   opacity: 0.85,
 };
 
-// ---------------------------------------------------------------------------
-// EndcapRuleLabel — IBM-1620-inspired apparatus
-// ---------------------------------------------------------------------------
-
-interface EndcapRuleLabelProps {
-  label: string;
-  width: string;
-  ticksDirection: "down" | "up";
-  capLength?: number;
-  ruleOpacity?: number;
-  letterSpacing?: string;
-  labelSize?: string;
+function contextNumeratorColor(v: StatusValues): string {
+  const ratio = v.contextTokens / v.contextMax;
+  if (ratio >= 0.9) return TEXT_DANGER;
+  if (ratio >= 0.75) return TEXT_CAUTION;
+  return TEXT_NORMAL;
 }
+
+const cardSurface: React.CSSProperties = {
+  backgroundColor: "var(--tug7-surface-card-primary-normal-status-rest)",
+  borderTop: `1px solid ${RAIL_COLOR}`,
+  borderBottom: `1px solid ${RAIL_COLOR}`,
+  padding: "var(--tug-space-md)",
+  fontFamily: MONO,
+  fontVariantNumeric: "tabular-nums",
+  fontSize: "0.6875rem",
+  lineHeight: 1.2,
+};
+
+// ---------------------------------------------------------------------------
+// Custom EndcapRuleLabel (T1 — current production / chosen design)
+// ---------------------------------------------------------------------------
 
 function EndcapRuleLabel({
   label,
@@ -378,63 +199,61 @@ function EndcapRuleLabel({
   capLength = 5,
   ruleOpacity = 0.55,
   letterSpacing = LABEL_LETTER_SPACING,
-  labelSize = DEFAULT_LABEL_SIZE,
-}: EndcapRuleLabelProps): React.ReactElement {
+}: {
+  label: string;
+  width: string;
+  ticksDirection: "down" | "up";
+  capLength?: number;
+  ruleOpacity?: number;
+  letterSpacing?: string;
+}): React.ReactElement {
   const ticksDown = ticksDirection === "down";
-
-  const containerStyle: React.CSSProperties = {
-    position: "relative",
-    display: "inline-flex",
-    flexDirection: "row",
-    alignItems: "center",
-    width,
-    gap: 4,
-    [ticksDown ? "marginBottom" : "marginTop"]: capLength,
-  };
-
-  const ruleFillStyle: React.CSSProperties = {
-    flex: 1,
-    height: 1,
-    backgroundColor: RAIL_COLOR,
-    opacity: ruleOpacity,
-  };
-
-  const labelStyle: React.CSSProperties = {
-    fontFamily: MONO,
-    fontSize: labelSize,
-    letterSpacing,
-    color: TEXT_MUTED,
-    textTransform: "uppercase",
-    fontWeight: 500,
-    padding: "0 4px",
-    transform: "translateY(0.5px)",
-  };
-
-  const tickAnchorStyle: React.CSSProperties = ticksDown
-    ? { top: "50%", height: capLength }
-    : { bottom: "50%", height: capLength };
-
   return (
-    <div style={containerStyle}>
+    <div
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        flexDirection: "row",
+        alignItems: "center",
+        width,
+        gap: 4,
+        [ticksDown ? "marginBottom" : "marginTop"]: capLength,
+      }}
+    >
       <span
         style={{
           position: "absolute",
           left: 0,
-          ...tickAnchorStyle,
+          ...(ticksDown ? { top: "50%" } : { bottom: "50%" }),
           width: 1,
+          height: capLength,
           backgroundColor: RAIL_COLOR,
           opacity: ruleOpacity,
         }}
       />
-      <span style={ruleFillStyle} />
-      <span style={labelStyle}>{label}</span>
-      <span style={ruleFillStyle} />
+      <span style={{ flex: 1, height: 1, backgroundColor: RAIL_COLOR, opacity: ruleOpacity }} />
+      <span
+        style={{
+          fontFamily: MONO,
+          fontSize: DEFAULT_LABEL_SIZE,
+          letterSpacing,
+          color: TEXT_MUTED,
+          textTransform: "uppercase",
+          fontWeight: 500,
+          padding: "0 4px",
+          transform: "translateY(0.5px)",
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ flex: 1, height: 1, backgroundColor: RAIL_COLOR, opacity: ruleOpacity }} />
       <span
         style={{
           position: "absolute",
           right: 0,
-          ...tickAnchorStyle,
+          ...(ticksDown ? { top: "50%" } : { bottom: "50%" }),
           width: 1,
+          height: capLength,
           backgroundColor: RAIL_COLOR,
           opacity: ruleOpacity,
         }}
@@ -444,107 +263,167 @@ function EndcapRuleLabel({
 }
 
 // ---------------------------------------------------------------------------
-// Value rendering
+// Phase visual mapping
+// ---------------------------------------------------------------------------
+
+interface PhaseVisual {
+  color: string;
+  animated: boolean;
+  label: string;
+}
+
+function phaseVisualFor(state: SessionState): PhaseVisual {
+  if (state.transport === "offline") {
+    return { color: TEXT_DANGER, animated: false, label: "offline" };
+  }
+  if (state.transport === "restoring") {
+    return { color: TEXT_CAUTION, animated: true, label: "restoring" };
+  }
+  if (state.interruptInFlight) {
+    return { color: TEXT_CAUTION, animated: true, label: "interrupting" };
+  }
+  switch (state.phase) {
+    case "errored":
+      return { color: TEXT_DANGER, animated: false, label: "errored" };
+    case "submitting":
+    case "awaiting_first_token":
+    case "streaming":
+    case "tool_work":
+    case "replaying":
+      return { color: TEXT_NORMAL, animated: true, label: state.phase };
+    case "awaiting_approval":
+      return { color: TEXT_CAUTION, animated: true, label: "awaiting_approval" };
+    case "idle":
+    default:
+      return { color: TEXT_MUTED, animated: false, label: "idle" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// P6 — Concentric pulsing ring (FIXED)
 // ---------------------------------------------------------------------------
 //
-// Round-5: drop fixed-width right-pinned mode. Every value renders
-// natural-width (`whiteSpace: nowrap`) and the wrapping cell centers
-// it within the uniform apparatus width.
+// Centering fix: each child sits at top:50% / left:50% with a
+// translate(-50%, -50%) anchor, so it stays perfectly centered on
+// the container's geometric middle regardless of element size or
+// border weight. The ring uses box-sizing: border-box so the 1px
+// border doesn't extend the visual extent past `size`.
+//
+// The pulse keyframe combines translate(-50%, -50%) with scale(...)
+// so the ring grows outward AROUND the dot rather than drifting off
+// to one side.
 
-function PlainValue({ value }: { value: string }): React.ReactElement {
+function ConcentricPulsingRing({
+  state,
+  size,
+}: {
+  state: SessionState;
+  size: number;
+}): React.ReactElement {
+  const v = phaseVisualFor(state);
+  // The inner dot scales with the container — about 50% of size.
+  const dotSize = Math.max(4, Math.round(size * 0.5));
   return (
     <span
+      title={v.label}
+      aria-label={v.label}
       style={{
-        ...valueStrong,
-        fontSize: DEFAULT_VALUE_SIZE,
-        whiteSpace: "nowrap",
+        position: "relative",
+        display: "inline-block",
+        width: size,
+        height: size,
+        flex: "0 0 auto",
       }}
     >
-      {value}
-    </span>
-  );
-}
-
-function ContextValue({ v }: { v: StatusValues }): React.ReactElement {
-  const numColor = contextNumeratorColor(v);
-  return (
-    <span
-      style={{
-        ...valueStrong,
-        fontSize: DEFAULT_VALUE_SIZE,
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={{ color: numColor }}>{formatTokensCaps(v.contextTokens)}</span>
-      <span style={{ color: TEXT_MUTED, opacity: 0.7 }}>
-        {` / ${formatTokensCaps(v.contextMax)}`}
-      </span>
+      {/* Inner dot — solid filled circle, centered. */}
+      <span
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: dotSize,
+          height: dotSize,
+          borderRadius: 999,
+          backgroundColor: v.color,
+          opacity: v.animated ? 0.95 : 0.65,
+          transform: "translate(-50%, -50%)",
+        }}
+      />
+      {/* Outer pulsing ring — 1px border, box-sized so the border
+          doesn't bleed past the container; centered via the same
+          translate anchor as the dot. The keyframe combines the
+          translate with the scale so the ring stays centered while
+          it grows outward. */}
+      {v.animated && (
+        <span
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            width: size,
+            height: size,
+            borderRadius: 999,
+            border: `1px solid ${v.color}`,
+            boxSizing: "border-box",
+            transform: "translate(-50%, -50%)",
+            animation: "tide-status-ring-pulse 1.6s ease-out infinite",
+          }}
+        />
+      )}
     </span>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Cell — endcap-rule label + centered value
+// Chevron control
 // ---------------------------------------------------------------------------
 
-interface CellSpec {
+function ChevronControl({
+  collapsed,
+  onToggle,
+  size = 18,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  size?: number;
+}): React.ReactElement {
+  const Icon = collapsed ? ChevronsLeft : ChevronsRight;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={collapsed ? "Expand status bar" : "Collapse status bar"}
+      style={{
+        appearance: "none",
+        background: "transparent",
+        border: "none",
+        padding: 4,
+        cursor: "pointer",
+        color: TEXT_MUTED,
+        display: "inline-flex",
+        alignItems: "center",
+        opacity: 0.75,
+        flex: "0 0 auto",
+      }}
+    >
+      <Icon size={size} strokeWidth={1.75} />
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// F5 cells (T1 endcap)
+// ---------------------------------------------------------------------------
+
+const UNIFORM_CELL_WIDTH = "19ch";
+
+function F5Cell({
+  label,
+  valueNode,
+}: {
   label: string;
   valueNode: React.ReactElement;
-  /** Worst-case value width in ch (used for apparatus width sizing). */
-  valueWidthCh: number;
-}
-
-interface CellOpts {
-  labelPos: "above" | "below";
-  uniformWidthCh: number;
-  capLength?: number;
-  ruleOpacity?: number;
-  letterSpacing?: string;
-}
-
-function labelVisualWidthCh(label: string, letterSpacing: string): number {
-  const factor = letterSpacing.endsWith("em") ? parseFloat(letterSpacing) : 0;
-  return label.length * (1 + factor);
-}
-
-function Cell({
-  spec,
-  opts,
-}: {
-  spec: CellSpec;
-  opts: CellOpts;
 }): React.ReactElement {
-  const widthCss = `${opts.uniformWidthCh}ch`;
-  const ticksDirection: "up" | "down" =
-    opts.labelPos === "above" ? "down" : "up";
-
-  const labelEl = (
-    <EndcapRuleLabel
-      label={spec.label}
-      width={widthCss}
-      ticksDirection={ticksDirection}
-      capLength={opts.capLength}
-      ruleOpacity={opts.ruleOpacity}
-      letterSpacing={opts.letterSpacing}
-    />
-  );
-
-  // Value centered within the uniform apparatus width. Drops the
-  // R4-era min-width / text-align right pinning per round-5 spec —
-  // values render natural-width, and the apparatus's centering keeps
-  // them visually anchored under (or over) the label center.
-  const valueWrap = (
-    <span
-      style={{
-        display: "inline-flex",
-        justifyContent: "center",
-        width: widthCss,
-      }}
-    >
-      {spec.valueNode}
-    </span>
-  );
-
   return (
     <span
       style={{
@@ -554,275 +433,323 @@ function Cell({
         gap: 2,
       }}
     >
-      {opts.labelPos === "above" ? labelEl : valueWrap}
-      {opts.labelPos === "above" ? valueWrap : labelEl}
+      <EndcapRuleLabel
+        label={label}
+        width={UNIFORM_CELL_WIDTH}
+        ticksDirection="down"
+      />
+      <span
+        style={{
+          display: "inline-flex",
+          justifyContent: "center",
+          width: UNIFORM_CELL_WIDTH,
+        }}
+      >
+        {valueNode}
+      </span>
     </span>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Specs + uniform width computation
-// ---------------------------------------------------------------------------
+function plainValue(text: string): React.ReactElement {
+  return (
+    <span
+      style={{
+        fontFamily: MONO,
+        color: TEXT_NORMAL,
+        fontWeight: 600,
+        fontSize: DEFAULT_VALUE_SIZE,
+        whiteSpace: "nowrap",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
 
-function buildSpecs(v: StatusValues, mode: TimeModeBundle): CellSpec[] {
+function contextValue(v: StatusValues): React.ReactElement {
+  return (
+    <span
+      style={{
+        fontFamily: MONO,
+        fontWeight: 600,
+        fontSize: DEFAULT_VALUE_SIZE,
+        whiteSpace: "nowrap",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      <span style={{ color: contextNumeratorColor(v) }}>{formatTokensCaps(v.contextTokens)}</span>
+      <span style={{ color: TEXT_MUTED, opacity: 0.7 }}>{` / ${formatTokensCaps(v.contextMax)}`}</span>
+    </span>
+  );
+}
+
+function buildCellNodes(v: StatusValues): React.ReactElement[] {
   return [
-    {
-      label: "TIME",
-      valueNode: <PlainValue value={mode.time(v.perTurnActiveMs)} />,
-      valueWidthCh: mode.timeMaxCh,
-    },
-    {
-      label: "TOKENS",
-      valueNode: <PlainValue value={formatTokensCaps(v.perTurnTokens)} />,
-      valueWidthCh: VALUE_WIDTH_TOKENS_CH,
-    },
-    {
-      label: "TOTAL TIME",
-      valueNode: <PlainValue value={mode.totalTime(v.totalActiveMs)} />,
-      valueWidthCh: mode.totalTimeMaxCh,
-    },
-    {
-      label: "TOTAL TOKENS",
-      valueNode: <PlainValue value={formatTokensCaps(v.totalTokens)} />,
-      valueWidthCh: VALUE_WIDTH_TOKENS_CH,
-    },
-    {
-      label: "CONTEXT",
-      valueNode: <ContextValue v={v} />,
-      valueWidthCh: VALUE_WIDTH_CONTEXT_CH,
-    },
+    <F5Cell key="time" label="TIME" valueNode={plainValue(formatTimeAlwaysHours(v.perTurnActiveMs))} />,
+    <F5Cell key="tokens" label="TOKENS" valueNode={plainValue(formatTokensCaps(v.perTurnTokens))} />,
+    <F5Cell key="total-time" label="TOTAL TIME" valueNode={plainValue(formatTimeAlwaysHours(v.totalActiveMs))} />,
+    <F5Cell key="total-tokens" label="TOTAL TOKENS" valueNode={plainValue(formatTokensCaps(v.totalTokens))} />,
+    <F5Cell key="context" label="CONTEXT" valueNode={contextValue(v)} />,
   ];
 }
 
-/**
- * Uniform width across all cells. Computed from the widest cell's
- * `max(label-visual-width, value-width) + 4ch breathing room`. The
- * +4ch is the apparatus internal padding (label inner padding + rule
- * minimum). Ensures every cell's apparatus is strictly wider than
- * the longer of its label or value.
- */
-function uniformWidthCh(specs: CellSpec[], letterSpacing: string): number {
-  let max = 0;
-  for (const s of specs) {
-    const labelChars = labelVisualWidthCh(s.label, letterSpacing);
-    const candidate = Math.max(labelChars, s.valueWidthCh) + 4;
-    if (candidate > max) max = candidate;
-  }
-  return Math.ceil(max);
-}
-
 // ---------------------------------------------------------------------------
-// Row
+// §1 — Distribution-fix baseline row
 // ---------------------------------------------------------------------------
 
-interface RowOpts {
-  timeMode: TimeMode;
-  labelPos: "above" | "below";
-  capLength?: number;
-  ruleOpacity?: number;
-  letterSpacing?: string;
-  paddingInline?: string;
-}
-
-function StatusRow({
-  v,
-  opts,
-}: {
-  v: StatusValues;
-  opts: RowOpts;
-}): React.ReactElement {
-  const mode = getTimeMode(opts.timeMode);
-  const specs = buildSpecs(v, mode);
-  const letterSpacing = opts.letterSpacing ?? LABEL_LETTER_SPACING;
-  const uCh = uniformWidthCh(specs, letterSpacing);
-  const cellOpts: CellOpts = {
-    labelPos: opts.labelPos,
-    uniformWidthCh: uCh,
-    capLength: opts.capLength,
-    ruleOpacity: opts.ruleOpacity,
-    letterSpacing,
-  };
+function CellsOnlyRow({ v }: { v: StatusValues }): React.ReactElement {
   return (
     <div
       style={{
         ...cardSurface,
-        paddingInline: opts.paddingInline ?? "var(--tug-space-2xl)",
+        paddingInline: "var(--tug-space-2xl)",
         display: "flex",
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
         gap: "var(--tug-space-md)",
+        width: "100%",
+        boxSizing: "border-box",
       }}
     >
-      {specs.map((s) => (
-        <Cell key={s.label} spec={s} opts={cellOpts} />
-      ))}
+      {buildCellNodes(v)}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Round-5 variants (6 total)
+// §5 — Composed row spacing variations
+// ---------------------------------------------------------------------------
+//
+// Each variation takes the same indicator + cells + chevron contents
+// and lays them out with a different spacing strategy. The goal is
+// to give the leftmost indicator and rightmost chevron MORE breathing
+// room than round-6's cramped baseline.
+
+interface ComposedRowProps {
+  v: StatusValues;
+  state: SessionState;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  indicatorSize: number;
+  chevronSize: number;
+  /** Spacing strategy. */
+  variant:
+    | "tight"
+    | "wide-gap"
+    | "wider-gap"
+    | "padded-zones"
+    | "fixed-zones-divided";
+}
+
+function ComposedRow({
+  v,
+  state,
+  collapsed,
+  onToggleCollapse,
+  indicatorSize,
+  chevronSize,
+  variant,
+}: ComposedRowProps): React.ReactElement {
+  // Resolve spacing knobs per variant.
+  let rowGap = "var(--tug-space-md)";
+  let rowPaddingInline = "var(--tug-space-md)";
+  let indicatorPaddingInline = "0";
+  let chevronPaddingInline = "0";
+  let showDividers = false;
+  let indicatorMinWidth: number | undefined;
+  let chevronMinWidth: number | undefined;
+
+  switch (variant) {
+    case "tight":
+      // Round-6 baseline — too cramped, kept for reference.
+      break;
+    case "wide-gap":
+      rowGap = "var(--tug-space-xl)";
+      rowPaddingInline = "var(--tug-space-lg)";
+      break;
+    case "wider-gap":
+      rowGap = "var(--tug-space-2xl)";
+      rowPaddingInline = "var(--tug-space-lg)";
+      break;
+    case "padded-zones":
+      // Indicator + chevron get internal padding plus a generous row
+      // gap; reads as zoned chrome around the data block.
+      rowGap = "var(--tug-space-lg)";
+      rowPaddingInline = "var(--tug-space-md)";
+      indicatorPaddingInline = "var(--tug-space-md)";
+      chevronPaddingInline = "var(--tug-space-md)";
+      break;
+    case "fixed-zones-divided":
+      // Fixed-width left/right zones with a hairline divider before
+      // and after the cells block. Reads like an instrument-panel
+      // bezel separating the chrome zones from the data zone.
+      rowGap = "0";
+      rowPaddingInline = "0";
+      indicatorMinWidth = 56;
+      chevronMinWidth = 56;
+      showDividers = true;
+      break;
+  }
+
+  const indicator = (
+    <ConcentricPulsingRing state={state} size={indicatorSize} />
+  );
+
+  const indicatorZone = (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flex: "0 0 auto",
+        paddingInline: indicatorPaddingInline,
+        minWidth: indicatorMinWidth,
+      }}
+    >
+      {indicator}
+    </span>
+  );
+
+  const chevronZone = (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flex: "0 0 auto",
+        paddingInline: chevronPaddingInline,
+        minWidth: chevronMinWidth,
+      }}
+    >
+      <ChevronControl
+        collapsed={collapsed}
+        onToggle={onToggleCollapse}
+        size={chevronSize}
+      />
+    </span>
+  );
+
+  const divider = (
+    <span
+      style={{
+        display: "inline-block",
+        width: 1,
+        alignSelf: "stretch",
+        backgroundColor: RAIL_COLOR,
+        opacity: 0.4,
+      }}
+    />
+  );
+
+  return (
+    <div
+      style={{
+        ...cardSurface,
+        paddingInline: rowPaddingInline,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: rowGap,
+        width: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      {indicatorZone}
+      {showDividers && divider}
+
+      {!collapsed && (
+        <div
+          style={{
+            flex: "1 1 auto",
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--tug-space-md)",
+            minWidth: 0,
+            paddingInline: showDividers ? "var(--tug-space-lg)" : 0,
+          }}
+        >
+          {buildCellNodes(v)}
+        </div>
+      )}
+      {collapsed && <span style={{ flex: "1 1 auto" }} />}
+
+      {showDividers && divider}
+      {chevronZone}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section / variant wrappers
 // ---------------------------------------------------------------------------
 
-// §1 — Default time format (per-turn keeps current formatDurationMs;
-// total time uses formatDurationWithSeconds)
-
-function R5_F1({ v }: { v: StatusValues }): React.ReactElement {
+function SectionTitle({ children }: { children: string }): React.ReactElement {
   return (
-    <StatusRow
-      v={v}
-      opts={{ timeMode: "default", labelPos: "above" }}
-    />
+    <div style={sectionTitleStyle}>
+      <TugLabel size="xs">{children}</TugLabel>
+    </div>
   );
 }
-
-function R5_F2({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <StatusRow
-      v={v}
-      opts={{ timeMode: "default", labelPos: "below" }}
-    />
-  );
-}
-
-// §2 — Always-minutes time format
-
-function R5_F3({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <StatusRow
-      v={v}
-      opts={{ timeMode: "minutes", labelPos: "above" }}
-    />
-  );
-}
-
-function R5_F4({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <StatusRow
-      v={v}
-      opts={{ timeMode: "minutes", labelPos: "below" }}
-    />
-  );
-}
-
-// §3 — Always-hours time format
-
-function R5_F5({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <StatusRow
-      v={v}
-      opts={{ timeMode: "hours", labelPos: "above" }}
-    />
-  );
-}
-
-function R5_F6({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <StatusRow
-      v={v}
-      opts={{ timeMode: "hours", labelPos: "below" }}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Variant catalog
-// ---------------------------------------------------------------------------
-
-interface VariantEntry {
-  id: string;
-  title: string;
-  note: string;
-  render: (v: StatusValues) => React.ReactElement;
-}
-
-const SECTION_DEFAULT_TIME: VariantEntry[] = [
-  {
-    id: "f1",
-    title: "F1 — LABEL ABOVE · default time · TOTAL TIME always-seconds",
-    note: "EA2 carried forward with centered values, CAPS magnitudes, and TOTAL TIME always shows seconds (e.g. `1h 04m 23s` instead of `1h 04m`). Per-turn TIME keeps the existing format.",
-    render: (v) => <R5_F1 v={v} />,
-  },
-  {
-    id: "f2",
-    title: "F2 — LABEL BELOW · default time · TOTAL TIME always-seconds",
-    note: "EA4 carried forward with centered values, CAPS magnitudes, and TOTAL TIME always shows seconds.",
-    render: (v) => <R5_F2 v={v} />,
-  },
-];
-
-const SECTION_ALWAYS_MINUTES: VariantEntry[] = [
-  {
-    id: "f3",
-    title: "F3 — LABEL ABOVE · always-minutes time (`0m 12s` shape)",
-    note: "Per-turn TIME and TOTAL TIME both render as `Mm SSs` at every magnitude. Hours roll into the minutes counter (a marathon session reads `270m 00s` rather than `4h 30m`).",
-    render: (v) => <R5_F3 v={v} />,
-  },
-  {
-    id: "f4",
-    title: "F4 — LABEL BELOW · always-minutes time",
-    note: "Same as F3 with labels below.",
-    render: (v) => <R5_F4 v={v} />,
-  },
-];
-
-const SECTION_ALWAYS_HOURS: VariantEntry[] = [
-  {
-    id: "f5",
-    title: "F5 — LABEL ABOVE · always-hours time (`0h 0m 12s` shape)",
-    note: "Per-turn TIME and TOTAL TIME both render as `Hh Mm SSs` at every magnitude. A fresh session's first turn shows `0h 0m 01s`; a marathon reads `4h 30m 00s`.",
-    render: (v) => <R5_F5 v={v} />,
-  },
-  {
-    id: "f6",
-    title: "F6 — LABEL BELOW · always-hours time",
-    note: "Same as F5 with labels below.",
-    render: (v) => <R5_F6 v={v} />,
-  },
-];
 
 function VariantBlock({
-  entry,
-  values,
+  title,
+  note,
+  children,
 }: {
-  entry: VariantEntry;
-  values: StatusValues;
+  title: string;
+  note: string;
+  children: React.ReactNode;
 }): React.ReactElement {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-2xs)" }}>
-      <div style={variantTitleStyle}>{entry.title}</div>
-      <div style={variantNoteStyle}>{entry.note}</div>
-      {entry.render(values)}
+      <div style={variantTitleStyle}>{title}</div>
+      <div style={variantNoteStyle}>{note}</div>
+      {children}
     </div>
   );
 }
 
-function VariantSection({
-  title,
-  entries,
-  values,
+// ---------------------------------------------------------------------------
+// Indicator-in-isolation demo box (for §2 size sweep)
+// ---------------------------------------------------------------------------
+
+function IndicatorIsolated({
+  state,
+  size,
+  description,
 }: {
-  title: string;
-  entries: VariantEntry[];
-  values: StatusValues;
+  state: SessionState;
+  size: number;
+  description: string;
 }): React.ReactElement {
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-      <div style={sectionTitleStyle}>
-        <TugLabel size="xs">{title}</TugLabel>
-      </div>
-      <div style={variantStackStyle}>
-        {entries.map((e) => (
-          <VariantBlock key={e.id} entry={e} values={values} />
-        ))}
-      </div>
-    </section>
+    <div
+      style={{
+        ...cardSurface,
+        paddingInline: "var(--tug-space-md)",
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: "var(--tug-space-lg)",
+        width: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      <ConcentricPulsingRing state={state} size={size} />
+      <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>
+        {description}
+      </span>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Controls
+// Controls + chrome
 // ---------------------------------------------------------------------------
 
 const controlSelectStyle: React.CSSProperties = {
@@ -839,13 +766,16 @@ const controlButtonStyle: React.CSSProperties = {
 };
 
 const labelMutedSmall: React.CSSProperties = {
-  fontFamily: MONO,
-  color: TEXT_MUTED,
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  fontWeight: 500,
+  ...labelMuted,
   fontSize: "0.6875rem",
 };
+
+const INLINE_KEYFRAMES = `
+@keyframes tide-status-ring-pulse {
+  0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.7; }
+  100% { transform: translate(-50%, -50%) scale(1.55); opacity: 0; }
+}
+`;
 
 // ---------------------------------------------------------------------------
 // GalleryTideStatusRow
@@ -853,7 +783,9 @@ const labelMutedSmall: React.CSSProperties = {
 
 export function GalleryTideStatusRow(): React.ReactElement {
   const [scenarioIdx, setScenarioIdx] = useState(0);
+  const [stateIdx, setStateIdx] = useState(3); // streaming · online — animation visible
   const [autoTick, setAutoTick] = useState(false);
+  const [collapsedDemo, setCollapsedDemo] = useState(false);
 
   useEffect(() => {
     if (!autoTick) return;
@@ -865,6 +797,7 @@ export function GalleryTideStatusRow(): React.ReactElement {
 
   const scenario = SCENARIOS[scenarioIdx];
   const values = scenario.values;
+  const state = STATE_SCENARIOS[stateIdx].state;
   const ratioPct = Math.round((values.contextTokens / values.contextMax) * 100);
 
   return (
@@ -878,6 +811,8 @@ export function GalleryTideStatusRow(): React.ReactElement {
         padding: "var(--tug-space-md)",
       }}
     >
+      <style>{INLINE_KEYFRAMES}</style>
+
       {/* Sticky controls */}
       <div
         style={{
@@ -890,14 +825,11 @@ export function GalleryTideStatusRow(): React.ReactElement {
           top: 0,
           zIndex: 1,
           padding: "var(--tug-space-sm)",
-          backgroundColor:
-            "var(--tug7-surface-card-primary-normal-default-rest)",
+          backgroundColor: "var(--tug7-surface-card-primary-normal-default-rest)",
           borderBottom: `1px solid ${RAIL_COLOR}`,
         }}
       >
-        <label
-          style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}
-        >
+        <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}>
           <span style={labelMutedSmall}>scenario</span>
           <select
             style={controlSelectStyle}
@@ -905,64 +837,218 @@ export function GalleryTideStatusRow(): React.ReactElement {
             onChange={(e) => setScenarioIdx(Number(e.currentTarget.value))}
           >
             {SCENARIOS.map((s, i) => (
-              <option key={s.id} value={String(i)}>
-                {s.label}
-              </option>
+              <option key={s.id} value={String(i)}>{s.label}</option>
             ))}
           </select>
         </label>
-        <button
-          type="button"
-          style={controlButtonStyle}
-          onClick={() => setScenarioIdx((i) => (i + 1) % SCENARIOS.length)}
-        >
+        <button type="button" style={controlButtonStyle} onClick={() => setScenarioIdx((i) => (i + 1) % SCENARIOS.length)}>
           next →
         </button>
-        <label
-          style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}
-        >
-          <input
-            type="checkbox"
-            checked={autoTick}
-            onChange={(e) => setAutoTick(e.currentTarget.checked)}
-          />
+        <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}>
+          <input type="checkbox" checked={autoTick} onChange={(e) => setAutoTick(e.currentTarget.checked)} />
           <span style={labelMutedSmall}>auto-tick (1.5s)</span>
         </label>
-        <span
-          style={{
-            fontFamily: MONO,
-            fontSize: "0.6875rem",
-            color: TEXT_MUTED,
-            marginLeft: "auto",
-          }}
-        >
+        <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}>
+          <span style={labelMutedSmall}>session state</span>
+          <select
+            style={controlSelectStyle}
+            value={String(stateIdx)}
+            onChange={(e) => setStateIdx(Number(e.currentTarget.value))}
+          >
+            {STATE_SCENARIOS.map((s, i) => (
+              <option key={s.id} value={String(i)}>{s.label}</option>
+            ))}
+          </select>
+        </label>
+        <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED, marginLeft: "auto" }}>
           context: {ratioPct}%
-          {ratioPct >= 90 && (
-            <span style={{ color: TEXT_DANGER }}> ▲ danger</span>
-          )}
-          {ratioPct >= 75 && ratioPct < 90 && (
-            <span style={{ color: TEXT_CAUTION }}> ▲ caution</span>
-          )}
+          {ratioPct >= 90 && <span style={{ color: TEXT_DANGER }}> ▲ danger</span>}
+          {ratioPct >= 75 && ratioPct < 90 && <span style={{ color: TEXT_CAUTION }}> ▲ caution</span>}
         </span>
       </div>
 
-      <VariantSection
-        title="§1 — Default time + TOTAL TIME always-seconds"
-        entries={SECTION_DEFAULT_TIME}
-        values={values}
-      />
+      {/* §1 — Distribution baseline */}
+      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+        <SectionTitle>§1 — F5 distribution baseline (cells only, no indicator / chevron)</SectionTitle>
+        <div style={variantStackStyle}>
+          <VariantBlock
+            title="R6-base — F5 row with width:100% + space-between"
+            note="Reference for the cells-only F5 design. The fix the production CSS still needs."
+          >
+            <CellsOnlyRow v={values} />
+          </VariantBlock>
+        </div>
+      </section>
+
       <TugSeparator />
-      <VariantSection
-        title="§2 — Always-minutes time (`Mm SSs`)"
-        entries={SECTION_ALWAYS_MINUTES}
-        values={values}
-      />
+
+      {/* §2 — P6 indicator: concentric fix + size sweep */}
+      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+        <SectionTitle>§2 — P6 concentric pulsing ring (FIXED) — size sweep</SectionTitle>
+        <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
+          The concentric centering bug from round 6 is fixed — each child sits at
+          top:50%/left:50% with translate(-50%, -50%) so the ring's center is
+          perfectly aligned on the dot's center. The pulse keyframe combines the
+          translate with the scale so the ring grows AROUND the dot rather than
+          drifting off-axis. Use the session-state dropdown above to verify in
+          every state (idle / streaming / caution / errored / offline).
+        </div>
+        <div style={variantStackStyle}>
+          <VariantBlock title="P6 @ 12px (round-6 size, fixed)" note="Smallest variant. Dot is 6px; ring is 12px.">
+            <IndicatorIsolated state={state} size={12} description="12px container, 6px dot" />
+          </VariantBlock>
+          <VariantBlock title="P6 @ 14px" note="Mid-size. Dot 7px, ring 14px.">
+            <IndicatorIsolated state={state} size={14} description="14px container, 7px dot" />
+          </VariantBlock>
+          <VariantBlock title="P6 @ 16px" note="Reads more present at row scale.">
+            <IndicatorIsolated state={state} size={16} description="16px container, 8px dot" />
+          </VariantBlock>
+          <VariantBlock title="P6 @ 18px" note="Biggest variant. Matches the body-row typography weight more strongly.">
+            <IndicatorIsolated state={state} size={18} description="18px container, 9px dot" />
+          </VariantBlock>
+        </div>
+      </section>
+
       <TugSeparator />
-      <VariantSection
-        title="§3 — Always-hours time (`Hh Mm SSs`)"
-        entries={SECTION_ALWAYS_HOURS}
-        values={values}
-      />
+
+      {/* §3 — Chevron size sweep */}
+      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+        <SectionTitle>§3 — Chevron size sweep</SectionTitle>
+        <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
+          Round 6 used 14px; user noted this is too small. Sweep through 14 / 16 / 18 / 20
+          to pick the right size. Click any to toggle expanded ⇄ collapsed state (state is
+          shared across all chevrons in this gallery).
+        </div>
+        <div style={variantStackStyle}>
+          {[14, 16, 18, 20].map((size) => (
+            <VariantBlock
+              key={size}
+              title={`Chevron @ ${size}px`}
+              note={`Lucide ChevronsLeft / ChevronsRight at size=${size}, strokeWidth=1.75.`}
+            >
+              <div
+                style={{
+                  ...cardSurface,
+                  paddingInline: "var(--tug-space-md)",
+                  display: "flex",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  width: "100%",
+                  boxSizing: "border-box",
+                }}
+              >
+                <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>
+                  state: {collapsedDemo ? "COLLAPSED" : "EXPANDED"}
+                </span>
+                <ChevronControl
+                  collapsed={collapsedDemo}
+                  onToggle={() => setCollapsedDemo((c) => !c)}
+                  size={size}
+                />
+              </div>
+            </VariantBlock>
+          ))}
+        </div>
+      </section>
+
+      <TugSeparator />
+
+      {/* §4 — T1 endcap (locked in — informational) */}
+      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+        <SectionTitle>§4 — Endcap: T1 custom EndcapRuleLabel (LOCKED IN)</SectionTitle>
+        <div style={{ ...variantNoteStyle }}>
+          Round 6 picked T1 (the current production custom EndcapRuleLabel — one-sided
+          ticks pointing down at 0.55 opacity, hairline rule). All composed rows below
+          use this. No variants to compare here; called out for completeness so this
+          section's status is visible.
+        </div>
+      </section>
+
+      <TugSeparator />
+
+      {/* §5 — Composed-row spacing studies */}
+      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+        <SectionTitle>§5 — Composed-row spacing (indicator + cells + chevron)</SectionTitle>
+        <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
+          Round-6 baseline was too cramped — the indicator and chevron were tight
+          against the cell strip. Five spacing strategies. All use P6 @ 16px + chevron @
+          18px (good defaults; tune per §2 and §3 picks). Click the chevron on any row to
+          watch the collapsed shape: only indicator + chevron stay visible.
+        </div>
+        <div style={variantStackStyle}>
+          <VariantBlock
+            title="C-tight — round-6 baseline (cramped, for reference)"
+            note="gap: md, paddingInline: md. The original cramped layout."
+          >
+            <ComposedRow
+              v={values}
+              state={state}
+              collapsed={collapsedDemo}
+              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
+              indicatorSize={16}
+              chevronSize={18}
+              variant="tight"
+            />
+          </VariantBlock>
+          <VariantBlock
+            title="C-wide-gap — bigger row gap"
+            note="gap: xl (~24px), paddingInline: lg (~16px). Direct increase of inter-element spacing."
+          >
+            <ComposedRow
+              v={values}
+              state={state}
+              collapsed={collapsedDemo}
+              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
+              indicatorSize={16}
+              chevronSize={18}
+              variant="wide-gap"
+            />
+          </VariantBlock>
+          <VariantBlock
+            title="C-wider-gap — even bigger gap"
+            note="gap: 2xl (~32px), paddingInline: lg. Maximum lateral breathing room via gap alone."
+          >
+            <ComposedRow
+              v={values}
+              state={state}
+              collapsed={collapsedDemo}
+              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
+              indicatorSize={16}
+              chevronSize={18}
+              variant="wider-gap"
+            />
+          </VariantBlock>
+          <VariantBlock
+            title="C-padded-zones — internal padding around indicator + chevron"
+            note="Indicator and chevron sit inside zones with their own paddingInline (md) plus a row gap (lg). Reads as zoned chrome wrapping the data block."
+          >
+            <ComposedRow
+              v={values}
+              state={state}
+              collapsed={collapsedDemo}
+              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
+              indicatorSize={16}
+              chevronSize={18}
+              variant="padded-zones"
+            />
+          </VariantBlock>
+          <VariantBlock
+            title="C-fixed-zones-divided — fixed 56px zones + hairline dividers"
+            note="Indicator and chevron in fixed-width zones, separated from the cells by 1px hairline rails. Reads like an instrument-panel bezel — chrome zones vs data zone."
+          >
+            <ComposedRow
+              v={values}
+              state={state}
+              collapsed={collapsedDemo}
+              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
+              indicatorSize={16}
+              chevronSize={18}
+              variant="fixed-zones-divided"
+            />
+          </VariantBlock>
+        </div>
+      </section>
     </div>
   );
 }
