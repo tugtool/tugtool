@@ -286,6 +286,135 @@ export const TideTelemetryPhase: React.FC<TideTelemetryProps> = ({
   );
 };
 
+/**
+ * Combined session status row — one centered group containing every
+ * session-level datum the status bar surfaces, separated by bullets:
+ *
+ *   time: 1m 23s • tokens: 12.3k • total time: 1h 04m • total tokens: 1.05M • context: 200k / 1.0M [arc]
+ *
+ * Each item is independently collapsible via container queries on the
+ * host (the priority order from most-to-least persistent is `context`,
+ * `tokens`, `time`, `total-tokens`, `total-time`). Bullet separators
+ * are siblings of their preceding item so the `+` adjacent-sibling
+ * selector can hide them at the same breakpoint that hides the item.
+ *
+ * `time` / `tokens` read off the LAST COMMITTED turn — during an
+ * in-flight turn the previous turn's values stay surfaced. `total
+ * time` / `total tokens` use `deriveSessionTotals` (committed turns
+ * only). The cumulative-active surface re-renders on the 1Hz tick so
+ * that any side-channel that bumps the committed sum mid-second still
+ * surfaces promptly.
+ */
+export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
+  codeSessionStore,
+  sessionMetadataStore,
+}) => {
+  const snap = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+  const meta = useSyncExternalStore(
+    useCallback(
+      (listener) =>
+        sessionMetadataStore !== undefined
+          ? sessionMetadataStore.subscribe(listener)
+          : () => {},
+      [sessionMetadataStore],
+    ),
+    useCallback(
+      () => sessionMetadataStore?.getSnapshot().model ?? null,
+      [sessionMetadataStore],
+    ),
+  );
+  useLiveTick();
+
+  const lastTurn =
+    snap.transcript.length > 0
+      ? snap.transcript[snap.transcript.length - 1]
+      : null;
+  const perTurnActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
+  const perTurnContextTokens =
+    lastTurn !== null ? perTurnContextSize(lastTurn) : 0;
+  const contextMax =
+    meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
+  const totals = deriveSessionTotals(snap.transcript);
+  const totalTokensSum =
+    totals.totalInputTokens +
+    totals.totalCacheReadTokens +
+    totals.totalCacheCreationTokens +
+    totals.totalOutputTokens;
+
+  const contextMaxText = formatTokens(contextMax);
+  const formatContextRatio = useCallback(
+    (v: number) => `${formatTokens(v)} / ${contextMaxText}`,
+    [contextMaxText],
+  );
+
+  return (
+    <div
+      className="tide-telemetry-status-row"
+      data-slot="tide-telemetry-status-row"
+    >
+      <span
+        className="tide-telemetry-status-item"
+        data-priority="time"
+      >
+        <span className="tide-telemetry-status-label">time:</span>
+        <span className="tide-telemetry-status-value">
+          {formatDurationMs(perTurnActiveMs)}
+        </span>
+      </span>
+      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
+      <span
+        className="tide-telemetry-status-item"
+        data-priority="tokens"
+      >
+        <span className="tide-telemetry-status-label">tokens:</span>
+        <span className="tide-telemetry-status-value">
+          {formatTokens(perTurnContextTokens)}
+        </span>
+      </span>
+      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
+      <span
+        className="tide-telemetry-status-item"
+        data-priority="total-time"
+      >
+        <span className="tide-telemetry-status-label">total time:</span>
+        <span className="tide-telemetry-status-value">
+          {formatDurationMs(totals.totalActiveMs)}
+        </span>
+      </span>
+      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
+      <span
+        className="tide-telemetry-status-item"
+        data-priority="total-tokens"
+      >
+        <span className="tide-telemetry-status-label">total tokens:</span>
+        <span className="tide-telemetry-status-value">
+          {formatTokens(totalTokensSum)}
+        </span>
+      </span>
+      <span className="tide-telemetry-status-sep" aria-hidden="true">•</span>
+      <span
+        className="tide-telemetry-status-item tide-telemetry-status-item-context"
+        data-priority="context"
+      >
+        <span className="tide-telemetry-status-label">context:</span>
+        <TugArcGauge
+          className="tide-telemetry-window-utilization"
+          data-slot="tide-telemetry-window-utilization"
+          value={perTurnContextTokens}
+          min={0}
+          max={contextMax}
+          density="compact"
+          formatValue={formatContextRatio}
+          thresholds={{ caution: 0.75, danger: 0.9 }}
+        />
+      </span>
+    </div>
+  );
+};
+
 // ---------------------------------------------------------------------------
 // Per-turn renderers (Z1)
 // ---------------------------------------------------------------------------

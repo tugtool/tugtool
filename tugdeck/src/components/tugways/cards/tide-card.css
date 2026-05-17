@@ -80,6 +80,14 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+  /* Center the entire status-bar group horizontally. The combined
+     status-row renderer is a single child `div` containing every
+     datum + bullet separator; `justify-content: center` keeps the
+     group balanced across the card width as items collapse. Single-
+     item renderers (the prior placement-experiment defaults) still
+     sit centered the same way — a one-item group centers identically
+     to a five-item one. */
+  justify-content: center;
   gap: var(--tug-space-md);
   padding: var(--tug-space-md);
   background-color: var(--tug7-surface-card-primary-normal-status-rest);
@@ -88,6 +96,13 @@
      (an element); self-documenting per [L16] — the border renders on
      the status surface declared on the same rule. */
   border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* Establish a CSS containment context so the combined status-row
+     renderer's container queries can target this host. `inline-size`
+     so the queries see the host's width but height stays content-
+     sized; `tide-status` so the renderer's @container rules match
+     this container by name rather than the nearest unnamed ancestor. */
+  container-type: inline-size;
+  container-name: tide-status;
 }
 
 /* When Z2 has no content, the wrapper renders as an empty `<div>`

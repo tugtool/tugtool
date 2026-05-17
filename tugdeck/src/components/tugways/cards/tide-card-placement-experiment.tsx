@@ -51,6 +51,7 @@ import {
   TideTelemetryPerTurnDuration,
   TideTelemetryPerTurnTtft,
   TideTelemetryPhase,
+  TideTelemetryStatusRow,
   TideTelemetryWindowUtilization,
 } from "./tide-card-telemetry-renderers";
 import type {
@@ -67,7 +68,8 @@ export type SessionDatum =
   | "window"
   | "tokens"
   | "active"
-  | "phase";
+  | "phase"
+  | "statusRow";
 
 /** Per-turn datums — eligible for zone Z1 (assistant half only). */
 export type TurnDatum =
@@ -80,6 +82,7 @@ const SESSION_DATUMS: ReadonlyArray<SessionDatum> = [
   "tokens",
   "active",
   "phase",
+  "statusRow",
 ];
 
 const TURN_DATUMS: ReadonlyArray<TurnDatum> = [
@@ -128,7 +131,8 @@ function isSessionDatum(v: unknown): v is SessionDatum {
     v === "window" ||
     v === "tokens" ||
     v === "active" ||
-    v === "phase"
+    v === "phase" ||
+    v === "statusRow"
   );
 }
 
@@ -244,6 +248,13 @@ export function useTidePlacementSlots(
           );
         case "phase":
           return <TideTelemetryPhase codeSessionStore={codeSessionStore} />;
+        case "statusRow":
+          return (
+            <TideTelemetryStatusRow
+              codeSessionStore={codeSessionStore}
+              sessionMetadataStore={sessionMetadataStore}
+            />
+          );
       }
     },
     [codeSessionStore, sessionMetadataStore],

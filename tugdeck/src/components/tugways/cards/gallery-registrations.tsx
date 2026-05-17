@@ -88,6 +88,7 @@ import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
+import { GalleryTideStatusRow } from "./gallery-tide-status-row";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -881,6 +882,21 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-arc-gauge",
     contentFactory: (_cardId) => <GalleryTugArcGauge />,
     defaultMeta: { title: "TugArcGauge", icon: "Gauge", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  // Design spike for the tide-card Z2 status row layout (Step 20.4).
+  // Six variants exploring stability strategies (fixed-width values,
+  // CSS Grid pinning, stacked badges, all-gauges, sparkline tails) +
+  // a scenario picker that walks through realistic value ranges so
+  // jitter / stability are empirically visible.
+  registerCard({
+    componentId: "gallery-tide-status-row",
+    contentFactory: (_cardId) => <GalleryTideStatusRow />,
+    defaultMeta: { title: "Tide Status Row", icon: "Activity", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

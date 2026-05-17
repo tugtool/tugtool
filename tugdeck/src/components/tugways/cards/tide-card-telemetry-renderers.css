@@ -84,3 +84,145 @@
   font-family: inherit;
   margin-top: 0;
 }
+
+/* ============================================================================
+   .tide-telemetry-status-row — combined session-status row for Z2
+   ============================================================================
+   Instrument-panel readout. The row reads as a small, dense, mono
+   dashboard strip — labels muted, values strong, tabular figures,
+   compact font matching the arc gauge's readout treatment so the
+   whole row plus its embedded gauge feel like one fitted family.
+
+   Visual vocabulary modeled on `.tug-arc-gauge-readout` (mono,
+   tabular nums, 11px / 0.6875rem, weight 600 for values, muted
+   uppercase-tracked treatment for labels). Items are separated by
+   bullets; each item collapses by container-query priority on the
+   Z2 host as the card narrows.
+
+   Collapse priority (least-to-most persistent) — driven by container
+   queries on the host's `container-name: tide-status` declaration. As
+   the host narrows, items hide in this order; each item hides its
+   trailing bullet at the same breakpoint via the `+` adjacent-sibling
+   selector:
+     1. total-time   → ~620px
+     2. total-tokens → ~480px
+     3. time         → ~360px
+     4. tokens       → ~260px
+     5. context      → always shown (most persistent)
+
+   Breakpoint widths reflect the new compact 11px mono typography.
+   ========================================================================= */
+
+.tide-telemetry-status-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  /* Mono + tabular for the entire row. Setting these once on the
+     wrapper lets every descendant inherit; specific overrides
+     (color, weight) live on the label vs. value spans. Inherits
+     down into the TugArcGauge readout where it harmlessly
+     reaffirms what the gauge already sets. */
+  font-family: var(--tug-font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  /* Match the compact arc-gauge readout (11px). The row reads as
+     one instrument family with the gauge it contains. */
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  /* Inter-element gap. The bullet separators are inline `<span>`
+     siblings, so the gap applies on both sides of each bullet —
+     using `sm` keeps the bullets visually separated from the items
+     without dominating. */
+  gap: var(--tug-space-sm);
+}
+
+.tide-telemetry-status-item {
+  /* Each item is its own flex group with a tight label-to-value
+     gap. Stays on one line and never wraps mid-item. */
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+  gap: var(--tug-space-2xs);
+}
+
+/* Context item carries a label + the arc-gauge primitive in one
+   line. Slightly wider gap than the text items so the arc + numeric
+   readout pairing doesn't crowd the "context:" label. */
+.tide-telemetry-status-item-context {
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* Label treatment — muted color, uppercase tracking matching the
+   gauge's `.tug-arc-gauge-label` rule. Reads as instrument-panel
+   labels rather than body prose. The colon stays inline since the
+   label span carries it; the small inter-item gap above provides
+   the visual separation from the value. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-status-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+
+/* Value treatment — strong color, weight 600. Mirrors
+   `.tug-arc-gauge-value` from `tug-arc-gauge.css:200-204`. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-status-value {
+  color: var(--tug7-element-global-text-normal-strong-rest);
+  font-weight: 600;
+}
+
+.tide-telemetry-status-sep {
+  /* The bullet character — pulled muted via the normal-muted
+     element token so it reads as a separator rather than data.
+     Slightly smaller font-size + reduced opacity keeps it from
+     visually competing with the values. Rule sets only `color`;
+     pairs to the most-saturated host surface the harness can land
+     on. */
+  /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  user-select: none;
+  opacity: 0.6;
+}
+
+/* Container-query collapse rules. The Z2 host (`.tide-card-status-bar`)
+   declares `container-type: inline-size` + `container-name:
+   tide-status` so these `@container` rules can target it.
+
+   Each breakpoint hides ONE item AND its trailing bullet — the `+`
+   adjacent-sibling selector matches only the bullet immediately
+   after the hidden item in DOM order, so the row collapses cleanly
+   without dangling separators. */
+
+@container tide-status (max-width: 620px) {
+  .tide-telemetry-status-item[data-priority="total-time"],
+  .tide-telemetry-status-item[data-priority="total-time"]
+    + .tide-telemetry-status-sep {
+    display: none;
+  }
+}
+
+@container tide-status (max-width: 480px) {
+  .tide-telemetry-status-item[data-priority="total-tokens"],
+  .tide-telemetry-status-item[data-priority="total-tokens"]
+    + .tide-telemetry-status-sep {
+    display: none;
+  }
+}
+
+@container tide-status (max-width: 360px) {
+  .tide-telemetry-status-item[data-priority="time"],
+  .tide-telemetry-status-item[data-priority="time"]
+    + .tide-telemetry-status-sep {
+    display: none;
+  }
+}
+
+@container tide-status (max-width: 260px) {
+  .tide-telemetry-status-item[data-priority="tokens"],
+  .tide-telemetry-status-item[data-priority="tokens"]
+    + .tide-telemetry-status-sep {
+    display: none;
+  }
+}
