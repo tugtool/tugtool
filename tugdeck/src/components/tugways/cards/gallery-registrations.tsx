@@ -1,7 +1,7 @@
 /**
  * Gallery card registrations.
  *
- * Registers all twenty-three gallery card types in the global card registry.
+ * Registers all gallery card types in the global card registry.
  * Also exports GALLERY_DEFAULT_CARDS and small adapter components.
  *
  * **Authoritative references:**
@@ -88,6 +88,7 @@ import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
+import { GalleryTugStateIndicator } from "./gallery-tug-state-indicator";
 import { GalleryTideStatusRow } from "./gallery-tide-status-row";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -270,267 +271,128 @@ const GALLERY_COMPLEX_SIZE: CardSizePolicy = {
  */
 /**
  * Category declarations for the [+] type picker. Each gallery card
- * registration passes one of these as its `category` field. TugTabBar
- * groups registrations by `category.label` in first-encountered order —
- * there is no hardcoded list of component IDs in the tab bar anymore.
+ * registration passes one of these as its `category` field. `TugTabBar`
+ * sorts sections by label and items within each section by label, so
+ * declaration order here has no effect on menu placement.
  */
 const CATEGORIES = {
-  buttons: { label: "Buttons", icon: "MousePointerClick" },
-  textInput: { label: "Text Input & Display", icon: "TextCursorInput" },
-  blockRenderers: { label: "Block Renderers", icon: "Blocks" },
-  selection: { label: "Selection", icon: "CheckSquare" },
-  overlays: { label: "Overlays", icon: "MessageSquareMore" },
-  feedback: { label: "Feedback & Status", icon: "Activity" },
-  layout: { label: "Layout & Structure", icon: "Box" },
   animation: { label: "Animation & Theming", icon: "Play" },
   architecture: { label: "Architecture", icon: "GitBranch" },
+  blockRenderers: { label: "Block Renderers", icon: "Blocks" },
+  buttons: { label: "Buttons", icon: "MousePointerClick" },
+  dataViews: { label: "Data Views", icon: "List" },
+  feedback: { label: "Feedback & Status", icon: "Activity" },
+  layout: { label: "Layout & Structure", icon: "Box" },
+  overlays: { label: "Overlays", icon: "MessageSquareMore" },
+  selection: { label: "Selection", icon: "CheckSquare" },
+  textInput: { label: "Text Input", icon: "TextCursorInput" },
 } as const;
 
 export function registerGalleryCards(): void {
 
   // ===========================================================================
-  // Buttons
-  // ===========================================================================
-
-  // gallery-buttons (entry-point: carries defaultCards + defaultTitle)
-  registerCard({
-    componentId: "gallery-buttons",
-    contentFactory: (_cardId) => <GalleryPushButton />,
-    defaultMeta: { title: "TugPushButton", icon: "MousePointerClick", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    defaultCards: GALLERY_DEFAULT_CARDS,
-    defaultTitle: "Component Gallery",
-    sizePolicy: GALLERY_ENTRY_SIZE,
-    category: CATEGORIES.buttons,
-  });
-
-  registerCard({
-    componentId: "gallery-default-button",
-    contentFactory: (_cardId) => <GalleryDefaultButton />,
-    defaultMeta: { title: "TugDefaultButton", icon: "CornerDownLeft", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.buttons,
-  });
-
-  registerCard({
-    componentId: "gallery-popup-button",
-    contentFactory: (_cardId) => <GalleryPopupButton />,
-    defaultMeta: { title: "TugPopupButton", icon: "ChevronDown", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.buttons,
-  });
-
-  registerCard({
-    componentId: "gallery-icon-button",
-    contentFactory: (_cardId) => <GalleryIconButton />,
-    defaultMeta: { title: "TugIconButton", icon: "MousePointer2", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.buttons,
-  });
-
-  // Design exploration for `TugCue` — the upcoming public component for
-  // "soft inline banner that's also a click target." Six prototype
-  // variants; user vets before the production component ships.
-  registerCard({
-    componentId: "gallery-tug-cue",
-    contentFactory: (_cardId) => <GalleryTugCue />,
-    defaultMeta: { title: "TugCue", icon: "Lightbulb", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.buttons,
-  });
-
-  // ===========================================================================
-  // Text Input & Display
+  // Animation & Theming
   // ===========================================================================
 
   registerCard({
-    componentId: "gallery-input",
-    contentFactory: (_cardId) => <GalleryInput />,
-    defaultMeta: { title: "TugInput", icon: "TextCursorInput", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
-  registerCard({
-    componentId: "gallery-value-input",
-    contentFactory: (_cardId) => <GalleryValueInput />,
-    defaultMeta: { title: "TugValueInput", icon: "Hash", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
-  registerCard({
-    componentId: "gallery-textarea",
-    contentFactory: (_cardId) => <GalleryTextarea />,
-    defaultMeta: { title: "TugTextarea", icon: "TextAlignStart", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
-  registerCard({
-    componentId: "gallery-prompt-entry",
-    contentFactory: (cardId) => <GalleryPromptEntry cardId={cardId} />,
-    defaultMeta: { title: "TugPromptEntry", icon: "MessageSquareText", closable: true },
+    componentId: "gallery-palette",
+    contentFactory: (_cardId) => <GalleryPalette />,
+    defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-    engineKind: "em",
+    category: CATEGORIES.animation,
   });
 
   registerCard({
-    componentId: "gallery-text-editor",
-    contentFactory: (cardId) => <GalleryTextEditor cardId={cardId} />,
-    defaultMeta: { title: "TugTextEditor", icon: "TextCursorInput", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-    engineKind: "em",
-  });
-
-  registerCard({
-    componentId: "gallery-label",
-    contentFactory: (_cardId) => <GalleryLabel />,
-    defaultMeta: { title: "TugLabel", icon: "Type", closable: true },
+    componentId: "gallery-scale-timing",
+    contentFactory: (_cardId) => <GalleryScaleTiming />,
+    defaultMeta: { title: "Scale & Timing", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.textInput,
+    category: CATEGORIES.animation,
   });
 
   registerCard({
-    componentId: "gallery-markdown-view",
-    contentFactory: (_cardId) => <GalleryMarkdownView />,
-    defaultMeta: { title: "TugMarkdownView", icon: "FileText", closable: true },
+    componentId: "gallery-theme-generator",
+    contentFactory: (_cardId) => <GalleryThemeGenerator />,
+    defaultMeta: { title: "Theme Accessibility", icon: "Paintbrush", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
+    category: CATEGORIES.animation,
   });
 
-  // Pre-baked variant: mounts with 50KB of static markdown loaded
-  // immediately. Used by [AT0014] / [AT0023] harness tests
-  // for predictable scrollable content; useful as a manual
-  // theme-debug fixture too. Same component code, distinct id.
   registerCard({
-    componentId: "gallery-markdown-50kb",
-    contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="50kb" />,
-    defaultMeta: { title: "TugMarkdownView (50KB)", icon: "FileText", closable: true },
+    componentId: "gallery-animator",
+    contentFactory: (_cardId) => <GalleryAnimator />,
+    defaultMeta: { title: "TugAnimator", icon: "Play", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
+    category: CATEGORIES.animation,
   });
 
-  // Pre-baked variant: mounts with 1KB of static markdown — small
-  // enough that all blocks fit in one viewport, so block-container
-  // children render fully and are stable across re-mount. Used by
-  // the cold-boot selection harness test where deterministic
-  // anchor paths matter; the 50KB variant exercises the
-  // virtualization-aware path separately.
-  registerCard({
-    componentId: "gallery-markdown-1kb",
-    contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="1kb" />,
-    defaultMeta: { title: "TugMarkdownView (1KB)", icon: "FileText", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-  });
+  // ===========================================================================
+  // Architecture
+  // ===========================================================================
 
   registerCard({
-    componentId: "gallery-transcript-entry",
-    contentFactory: (_cardId) => <GalleryTranscriptEntry />,
-    defaultMeta: { title: "TugTranscriptEntry", icon: "MessagesSquare", closable: true },
+    componentId: "gallery-chain-actions",
+    contentFactory: (_cardId) => <GalleryChainActions />,
+    defaultMeta: { title: "Chain Actions", icon: "Zap", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.textInput,
+    category: CATEGORIES.architecture,
   });
 
   registerCard({
-    componentId: "gallery-list-view",
-    contentFactory: (_cardId) => <GalleryListView />,
-    defaultMeta: { title: "TugListView", icon: "List", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
-  // Companion to `gallery-list-view`: same dataset, but the inner
-  // `TugListView` carries `scrollKey="gallery-list-view-scroll"` so
-  // the [A9] region-scroll axis captures the list's position into
-  // `bag.regionScroll`, AND mounts in `inline` mode (every cell in
-  // the DOM, no windowing) to mirror the tide-card transcript
-  // configuration. The region-scroll-anchor app-tests
-  // (`at0059-region-scroll-anchor-save.test.ts`,
-  // `at0060-tide-card-content-settled.test.ts`,
-  // `at0061-region-scroll-anchor-apply.test.ts`) drive this card.
-  registerCard({
-    componentId: "gallery-list-view-scroll-keyed",
-    contentFactory: (_cardId) => (
-      <GalleryListView
-        scrollKey="gallery-list-view-scroll"
-        inline
-        disableStreaming
-      />
-    ),
-    defaultMeta: {
-      title: "TugListView (scroll-keyed)",
-      icon: "List",
-      closable: true,
-    },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.textInput,
-  });
-
-  // Visual smoke for `TugListView`'s row-role feature
-  // (`roleForIndex` → `data-list-cell-role` + `tabIndex={-1}` +
-  // `onSelect` gating). Companion to `gallery-list-view` above:
-  // that card exercises mutation, streaming, and windowing; this
-  // one scopes to the role contract introduced by Phase 0 of
-  // `tugplan-tide-picker-redesign`.
-  registerCard({
-    componentId: "gallery-list-view-headers",
-    contentFactory: (_cardId) => <GalleryListViewHeaders />,
-    defaultMeta: { title: "TugListView (headers)", icon: "List", closable: true },
+    componentId: "gallery-mutation",
+    contentFactory: (_cardId) => <GalleryMutation />,
+    defaultMeta: { title: "Mutation Model", icon: "GitBranch", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.textInput,
+    category: CATEGORIES.architecture,
   });
 
-  // Visual smoke for `useFilteredDataSource` — the Phase 1
-  // UISearchController-style decorator hook. A `TugInput` above the
-  // list view drives a substring predicate; the host owns the input
-  // and the primitive consumes the derived data source.
   registerCard({
-    componentId: "gallery-list-view-filter",
-    contentFactory: (_cardId) => <GalleryListViewFilter />,
-    defaultMeta: { title: "TugListView (filter)", icon: "Search", closable: true },
+    componentId: "gallery-mutation-tx",
+    contentFactory: (_cardId) => <GalleryMutationTx />,
+    defaultMeta: { title: "Mutation Transactions", icon: "Layers", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.architecture,
+  });
+
+  // The cardId is passed through to GalleryObservableProps so inspector
+  // controls can direct setProperty actions to the correct TugPane responder
+  // node via sendToTarget. [D04] (#s07-gallery-demo)
+  registerCard({
+    componentId: "gallery-observable-props",
+    contentFactory: (cardId) => <GalleryObservableProps cardId={cardId} />,
+    defaultMeta: { title: "Observable Props", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.textInput,
+    category: CATEGORIES.architecture,
+  });
+
+  // Canonical manual-verification card for the Component State
+  // Preservation Protocol ([D13], [A9]). Every component that opts in
+  // should land a new section here so reload / tab-switch / cmd-tab
+  // survival is easy to sanity-check by hand.
+  registerCard({
+    componentId: "gallery-state-preservation",
+    contentFactory: (_cardId) => <GalleryStatePreservation />,
+    defaultMeta: { title: "State Preservation", icon: "Save", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.architecture,
   });
 
   // ===========================================================================
@@ -538,8 +400,6 @@ export function registerGalleryCards(): void {
   //
   // Tide assistant-rendering surfaces: the body kinds, tool wrappers,
   // and chrome that render a transcript's tool calls and reasoning.
-  // Registered in alphabetical order by display title so the [+]
-  // picker reads predictably.
   // ===========================================================================
 
   // Visual fixture for the smart-pick routing inside BashToolBlock:
@@ -639,67 +499,371 @@ export function registerGalleryCards(): void {
   });
 
   // ===========================================================================
-  // Selection
+  // Buttons
+  // ===========================================================================
+
+  // Design exploration for `TugCue` — the upcoming public component for
+  // "soft inline banner that's also a click target." Six prototype
+  // variants; user vets before the production component ships.
+  registerCard({
+    componentId: "gallery-tug-cue",
+    contentFactory: (_cardId) => <GalleryTugCue />,
+    defaultMeta: { title: "TugCue", icon: "Lightbulb", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.buttons,
+  });
+
+  registerCard({
+    componentId: "gallery-default-button",
+    contentFactory: (_cardId) => <GalleryDefaultButton />,
+    defaultMeta: { title: "TugDefaultButton", icon: "CornerDownLeft", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.buttons,
+  });
+
+  registerCard({
+    componentId: "gallery-icon-button",
+    contentFactory: (_cardId) => <GalleryIconButton />,
+    defaultMeta: { title: "TugIconButton", icon: "MousePointer2", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.buttons,
+  });
+
+  registerCard({
+    componentId: "gallery-popup-button",
+    contentFactory: (_cardId) => <GalleryPopupButton />,
+    defaultMeta: { title: "TugPopupButton", icon: "ChevronDown", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.buttons,
+  });
+
+  // gallery-buttons is the multi-tab entry point: it carries
+  // `defaultCards` and `defaultTitle` so `addCard("gallery-buttons")`
+  // seeds a starter stack. Display title is "TugPushButton".
+  registerCard({
+    componentId: "gallery-buttons",
+    contentFactory: (_cardId) => <GalleryPushButton />,
+    defaultMeta: { title: "TugPushButton", icon: "MousePointerClick", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    defaultCards: GALLERY_DEFAULT_CARDS,
+    defaultTitle: "Component Gallery",
+    sizePolicy: GALLERY_ENTRY_SIZE,
+    category: CATEGORIES.buttons,
+  });
+
+  // ===========================================================================
+  // Data Views
   // ===========================================================================
 
   registerCard({
-    componentId: "gallery-checkbox",
-    contentFactory: (_cardId) => <GalleryCheckbox />,
-    defaultMeta: { title: "TugCheckbox", icon: "SquareCheck", closable: true },
+    componentId: "gallery-list-view",
+    contentFactory: (_cardId) => <GalleryListView />,
+    defaultMeta: { title: "TugListView", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Visual smoke for `useFilteredDataSource` — the Phase 1
+  // UISearchController-style decorator hook. A `TugInput` above the
+  // list view drives a substring predicate; the host owns the input
+  // and the primitive consumes the derived data source.
+  registerCard({
+    componentId: "gallery-list-view-filter",
+    contentFactory: (_cardId) => <GalleryListViewFilter />,
+    defaultMeta: { title: "TugListView (filter)", icon: "Search", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.selection,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Visual smoke for `TugListView`'s row-role feature
+  // (`roleForIndex` → `data-list-cell-role` + `tabIndex={-1}` +
+  // `onSelect` gating). Companion to `gallery-list-view` above:
+  // that card exercises mutation, streaming, and windowing; this
+  // one scopes to the role contract introduced by Phase 0 of
+  // `tugplan-tide-picker-redesign`.
+  registerCard({
+    componentId: "gallery-list-view-headers",
+    contentFactory: (_cardId) => <GalleryListViewHeaders />,
+    defaultMeta: { title: "TugListView (headers)", icon: "List", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Companion to `gallery-list-view`: same dataset, but the inner
+  // `TugListView` carries `scrollKey="gallery-list-view-scroll"` so
+  // the [A9] region-scroll axis captures the list's position into
+  // `bag.regionScroll`, AND mounts in `inline` mode (every cell in
+  // the DOM, no windowing) to mirror the tide-card transcript
+  // configuration. The region-scroll-anchor app-tests
+  // (`at0059-region-scroll-anchor-save.test.ts`,
+  // `at0060-tide-card-content-settled.test.ts`,
+  // `at0061-region-scroll-anchor-apply.test.ts`) drive this card.
+  registerCard({
+    componentId: "gallery-list-view-scroll-keyed",
+    contentFactory: (_cardId) => (
+      <GalleryListView
+        scrollKey="gallery-list-view-scroll"
+        inline
+        disableStreaming
+      />
+    ),
+    defaultMeta: {
+      title: "TugListView (scroll-keyed)",
+      icon: "List",
+      closable: true,
+    },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
   });
 
   registerCard({
-    componentId: "gallery-switch",
-    contentFactory: (_cardId) => <GallerySwitch />,
-    defaultMeta: { title: "TugSwitch", icon: "ToggleRight", closable: true },
+    componentId: "gallery-markdown-view",
+    contentFactory: (_cardId) => <GalleryMarkdownView />,
+    defaultMeta: { title: "TugMarkdownView", icon: "FileText", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.selection,
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Pre-baked variant: mounts with 1KB of static markdown — small
+  // enough that all blocks fit in one viewport, so block-container
+  // children render fully and are stable across re-mount. Used by
+  // the cold-boot selection harness test where deterministic
+  // anchor paths matter; the 50KB variant exercises the
+  // virtualization-aware path separately.
+  registerCard({
+    componentId: "gallery-markdown-1kb",
+    contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="1kb" />,
+    defaultMeta: { title: "TugMarkdownView (1KB)", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // Pre-baked variant: mounts with 50KB of static markdown loaded
+  // immediately. Used by [AT0014] / [AT0023] harness tests
+  // for predictable scrollable content; useful as a manual
+  // theme-debug fixture too. Same component code, distinct id.
+  registerCard({
+    componentId: "gallery-markdown-50kb",
+    contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="50kb" />,
+    defaultMeta: { title: "TugMarkdownView (50KB)", icon: "FileText", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // ===========================================================================
+  // Feedback & Status
+  // ===========================================================================
+
+  // Design spike for the tide-card Z2 status row layout. Six variants
+  // exploring stability strategies (fixed-width values, CSS Grid
+  // pinning, stacked badges, all-gauges, sparkline tails) + a scenario
+  // picker that walks through realistic value ranges so jitter /
+  // stability are empirically visible.
+  registerCard({
+    componentId: "gallery-tide-status-row",
+    contentFactory: (_cardId) => <GalleryTideStatusRow />,
+    defaultMeta: { title: "Tide Status Row", icon: "Activity", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
-    componentId: "gallery-radio-group",
-    contentFactory: (_cardId) => <GalleryRadioGroup />,
-    defaultMeta: { title: "TugRadioGroup", icon: "CircleDot", closable: true },
+    componentId: "gallery-tug-arc-gauge",
+    contentFactory: (_cardId) => <GalleryTugArcGauge />,
+    defaultMeta: { title: "TugArcGauge", icon: "Gauge", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.selection,
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
-    componentId: "gallery-choice-group",
-    contentFactory: (_cardId) => <GalleryChoiceGroup />,
-    defaultMeta: { title: "TugChoiceGroup", icon: "ToggleLeft", closable: true },
+    componentId: "gallery-badge",
+    contentFactory: (_cardId) => <GalleryBadge />,
+    defaultMeta: { title: "TugBadge", icon: "Tag", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.selection,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
-    componentId: "gallery-option-group",
-    contentFactory: (_cardId) => <GalleryOptionGroup />,
-    defaultMeta: { title: "TugOptionGroup", icon: "ToggleLeft", closable: true },
+    componentId: "gallery-banner",
+    contentFactory: (_cardId) => <GalleryBanner />,
+    defaultMeta: { title: "TugBanner", icon: "TriangleAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.selection,
+    category: CATEGORIES.feedback,
   });
 
   registerCard({
-    componentId: "gallery-slider",
-    contentFactory: (_cardId) => <GallerySlider />,
-    defaultMeta: { title: "TugSlider", icon: "SlidersHorizontal", closable: true },
+    componentId: "gallery-bulletin",
+    contentFactory: (_cardId) => <GalleryBulletin />,
+    defaultMeta: { title: "TugBulletin", icon: "Bell", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.selection,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-tug-linear-gauge",
+    contentFactory: (_cardId) => <GalleryTugLinearGauge />,
+    defaultMeta: { title: "TugLinearGauge", icon: "Gauge", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-marquee",
+    contentFactory: (_cardId) => <GalleryMarquee />,
+    defaultMeta: { title: "TugMarquee", icon: "MoveHorizontal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-card-banner",
+    contentFactory: (_cardId) => <GalleryCardBanner />,
+    defaultMeta: { title: "TugPaneBanner", icon: "CircleAlert", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-progress",
+    contentFactory: (_cardId) => <GalleryProgress />,
+    defaultMeta: { title: "TugProgress", icon: "Activity", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-skeleton",
+    contentFactory: (_cardId) => <GallerySkeleton />,
+    defaultMeta: { title: "TugSkeleton", icon: "Loader", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-tug-state-indicator",
+    contentFactory: (_cardId) => <GalleryTugStateIndicator />,
+    defaultMeta: { title: "TugStateIndicator", icon: "CircleDot", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  // ===========================================================================
+  // Layout & Structure
+  // ===========================================================================
+
+  registerCard({
+    componentId: "gallery-accordion",
+    contentFactory: (_cardId) => <GalleryAccordion />,
+    defaultMeta: { title: "TugAccordion", icon: "ChevronDown", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-atom",
+    contentFactory: (_cardId) => <GalleryAtom />,
+    defaultMeta: { title: "TugAtom", icon: "AtSign", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-box",
+    contentFactory: (_cardId) => <GalleryBox />,
+    defaultMeta: { title: "TugBox", icon: "Box", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-separator",
+    contentFactory: (_cardId) => <GallerySeparator />,
+    defaultMeta: { title: "TugSeparator", icon: "Minus", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-split-pane",
+    contentFactory: (_cardId) => <GallerySplitPane />,
+    defaultMeta: { title: "TugSplitPane", icon: "Rows2", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-tabbar",
+    contentFactory: (_cardId) => <GalleryTabBar />,
+    defaultMeta: { title: "TugTabBar", icon: "PanelTop", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-title-bar",
+    contentFactory: (_cardId) => <GalleryTitleBar />,
+    defaultMeta: { title: "TugTitleBar", icon: "PanelTop", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
   });
 
   // ===========================================================================
@@ -707,9 +871,9 @@ export function registerGalleryCards(): void {
   // ===========================================================================
 
   registerCard({
-    componentId: "gallery-popover",
-    contentFactory: (_cardId) => <GalleryPopover />,
-    defaultMeta: { title: "TugPopover", icon: "MessageSquareMore", closable: true },
+    componentId: "gallery-alert",
+    contentFactory: (_cardId) => <GalleryAlert />,
+    defaultMeta: { title: "TugAlert", icon: "CircleAlert", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
@@ -737,32 +901,16 @@ export function registerGalleryCards(): void {
   });
 
   registerCard({
-    componentId: "gallery-tooltip",
-    contentFactory: (_cardId) => <GalleryTooltip />,
-    defaultMeta: { title: "TugTooltip", icon: "MessageSquare", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.overlays,
-  });
-
-  registerCard({
-    componentId: "gallery-sheet",
-    contentFactory: (_cardId) => <GallerySheet />,
-    defaultMeta: { title: "TugSheet", icon: "PanelTopOpen", closable: true },
+    componentId: "gallery-tug-dialog-button",
+    contentFactory: (_cardId) => <GalleryTugDialogButton />,
+    defaultMeta: {
+      title: "TugDialogButton",
+      icon: "MousePointerClick",
+      closable: true,
+    },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.overlays,
-  });
-
-  registerCard({
-    componentId: "gallery-alert",
-    contentFactory: (_cardId) => <GalleryAlert />,
-    defaultMeta: { title: "TugAlert", icon: "CircleAlert", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
     category: CATEGORIES.overlays,
   });
 
@@ -781,305 +929,173 @@ export function registerGalleryCards(): void {
   });
 
   registerCard({
-    componentId: "gallery-tug-dialog-button",
-    contentFactory: (_cardId) => <GalleryTugDialogButton />,
-    defaultMeta: {
-      title: "TugDialogButton",
-      icon: "MousePointerClick",
-      closable: true,
-    },
+    componentId: "gallery-popover",
+    contentFactory: (_cardId) => <GalleryPopover />,
+    defaultMeta: { title: "TugPopover", icon: "MessageSquareMore", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
+  });
+
+  registerCard({
+    componentId: "gallery-sheet",
+    contentFactory: (_cardId) => <GallerySheet />,
+    defaultMeta: { title: "TugSheet", icon: "PanelTopOpen", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.overlays,
   });
 
-  // ===========================================================================
-  // Feedback & Status
-  // ===========================================================================
-
   registerCard({
-    componentId: "gallery-progress",
-    contentFactory: (_cardId) => <GalleryProgress />,
-    defaultMeta: { title: "TugProgress", icon: "Activity", closable: true },
+    componentId: "gallery-tooltip",
+    contentFactory: (_cardId) => <GalleryTooltip />,
+    defaultMeta: { title: "TugTooltip", icon: "MessageSquare", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-badge",
-    contentFactory: (_cardId) => <GalleryBadge />,
-    defaultMeta: { title: "TugBadge", icon: "Tag", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-banner",
-    contentFactory: (_cardId) => <GalleryBanner />,
-    defaultMeta: { title: "TugBanner", icon: "TriangleAlert", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-card-banner",
-    contentFactory: (_cardId) => <GalleryCardBanner />,
-    defaultMeta: { title: "TugPaneBanner", icon: "CircleAlert", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-bulletin",
-    contentFactory: (_cardId) => <GalleryBulletin />,
-    defaultMeta: { title: "TugBulletin", icon: "Bell", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-skeleton",
-    contentFactory: (_cardId) => <GallerySkeleton />,
-    defaultMeta: { title: "TugSkeleton", icon: "Loader", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-marquee",
-    contentFactory: (_cardId) => <GalleryMarquee />,
-    defaultMeta: { title: "TugMarquee", icon: "MoveHorizontal", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-tug-linear-gauge",
-    contentFactory: (_cardId) => <GalleryTugLinearGauge />,
-    defaultMeta: { title: "TugLinearGauge", icon: "Gauge", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-tug-arc-gauge",
-    contentFactory: (_cardId) => <GalleryTugArcGauge />,
-    defaultMeta: { title: "TugArcGauge", icon: "Gauge", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  // Design spike for the tide-card Z2 status row layout (Step 20.4).
-  // Six variants exploring stability strategies (fixed-width values,
-  // CSS Grid pinning, stacked badges, all-gauges, sparkline tails) +
-  // a scenario picker that walks through realistic value ranges so
-  // jitter / stability are empirically visible.
-  registerCard({
-    componentId: "gallery-tide-status-row",
-    contentFactory: (_cardId) => <GalleryTideStatusRow />,
-    defaultMeta: { title: "Tide Status Row", icon: "Activity", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
+    category: CATEGORIES.overlays,
   });
 
   // ===========================================================================
-  // Layout & Structure
+  // Selection
   // ===========================================================================
 
   registerCard({
-    componentId: "gallery-box",
-    contentFactory: (_cardId) => <GalleryBox />,
-    defaultMeta: { title: "TugBox", icon: "Box", closable: true },
+    componentId: "gallery-checkbox",
+    contentFactory: (_cardId) => <GalleryCheckbox />,
+    defaultMeta: { title: "TugCheckbox", icon: "SquareCheck", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.layout,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
-    componentId: "gallery-atom",
-    contentFactory: (_cardId) => <GalleryAtom />,
-    defaultMeta: { title: "TugAtom", icon: "AtSign", closable: true },
+    componentId: "gallery-choice-group",
+    contentFactory: (_cardId) => <GalleryChoiceGroup />,
+    defaultMeta: { title: "TugChoiceGroup", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.layout,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
-    componentId: "gallery-accordion",
-    contentFactory: (_cardId) => <GalleryAccordion />,
-    defaultMeta: { title: "TugAccordion", icon: "ChevronDown", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.layout,
-  });
-
-  registerCard({
-    componentId: "gallery-split-pane",
-    contentFactory: (_cardId) => <GallerySplitPane />,
-    defaultMeta: { title: "TugSplitPane", icon: "Rows2", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.layout,
-  });
-
-  registerCard({
-    componentId: "gallery-separator",
-    contentFactory: (_cardId) => <GallerySeparator />,
-    defaultMeta: { title: "TugSeparator", icon: "Minus", closable: true },
+    componentId: "gallery-option-group",
+    contentFactory: (_cardId) => <GalleryOptionGroup />,
+    defaultMeta: { title: "TugOptionGroup", icon: "ToggleLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.layout,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
-    componentId: "gallery-tabbar",
-    contentFactory: (_cardId) => <GalleryTabBar />,
-    defaultMeta: { title: "TugTabBar", icon: "PanelTop", closable: true },
+    componentId: "gallery-radio-group",
+    contentFactory: (_cardId) => <GalleryRadioGroup />,
+    defaultMeta: { title: "TugRadioGroup", icon: "CircleDot", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.layout,
+    category: CATEGORIES.selection,
   });
 
   registerCard({
-    componentId: "gallery-title-bar",
-    contentFactory: (_cardId) => <GalleryTitleBar />,
-    defaultMeta: { title: "TugTitleBar", icon: "PanelTop", closable: true },
+    componentId: "gallery-slider",
+    contentFactory: (_cardId) => <GallerySlider />,
+    defaultMeta: { title: "TugSlider", icon: "SlidersHorizontal", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.layout,
+    category: CATEGORIES.selection,
+  });
+
+  registerCard({
+    componentId: "gallery-switch",
+    contentFactory: (_cardId) => <GallerySwitch />,
+    defaultMeta: { title: "TugSwitch", icon: "ToggleRight", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.selection,
   });
 
   // ===========================================================================
-  // Animation & Theming
+  // Text Input
   // ===========================================================================
 
   registerCard({
-    componentId: "gallery-animator",
-    contentFactory: (_cardId) => <GalleryAnimator />,
-    defaultMeta: { title: "TugAnimator", icon: "Play", closable: true },
+    componentId: "gallery-input",
+    contentFactory: (_cardId) => <GalleryInput />,
+    defaultMeta: { title: "TugInput", icon: "TextCursorInput", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  registerCard({
+    componentId: "gallery-label",
+    contentFactory: (_cardId) => <GalleryLabel />,
+    defaultMeta: { title: "TugLabel", icon: "Type", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  registerCard({
+    componentId: "gallery-prompt-entry",
+    contentFactory: (cardId) => <GalleryPromptEntry cardId={cardId} />,
+    defaultMeta: { title: "TugPromptEntry", icon: "MessageSquareText", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.animation,
+    category: CATEGORIES.textInput,
+    engineKind: "em",
   });
 
   registerCard({
-    componentId: "gallery-scale-timing",
-    contentFactory: (_cardId) => <GalleryScaleTiming />,
-    defaultMeta: { title: "Scale & Timing", icon: "SlidersHorizontal", closable: true },
+    componentId: "gallery-textarea",
+    contentFactory: (_cardId) => <GalleryTextarea />,
+    defaultMeta: { title: "TugTextarea", icon: "TextAlignStart", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.animation,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({
-    componentId: "gallery-palette",
-    contentFactory: (_cardId) => <GalleryPalette />,
-    defaultMeta: { title: "Palette Engine", icon: "Palette", closable: true },
+    componentId: "gallery-text-editor",
+    contentFactory: (cardId) => <GalleryTextEditor cardId={cardId} />,
+    defaultMeta: { title: "TugTextEditor", icon: "TextCursorInput", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.animation,
+    category: CATEGORIES.textInput,
+    engineKind: "em",
   });
 
   registerCard({
-    componentId: "gallery-theme-generator",
-    contentFactory: (_cardId) => <GalleryThemeGenerator />,
-    defaultMeta: { title: "Theme Accessibility", icon: "Paintbrush", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.animation,
-  });
-
-  // ===========================================================================
-  // Architecture
-  // ===========================================================================
-
-  registerCard({
-    componentId: "gallery-mutation",
-    contentFactory: (_cardId) => <GalleryMutation />,
-    defaultMeta: { title: "Mutation Model", icon: "GitBranch", closable: true },
+    componentId: "gallery-transcript-entry",
+    contentFactory: (_cardId) => <GalleryTranscriptEntry />,
+    defaultMeta: { title: "TugTranscriptEntry", icon: "MessagesSquare", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.architecture,
+    category: CATEGORIES.textInput,
   });
 
   registerCard({
-    componentId: "gallery-mutation-tx",
-    contentFactory: (_cardId) => <GalleryMutationTx />,
-    defaultMeta: { title: "Mutation Transactions", icon: "Layers", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.architecture,
-  });
-
-  // The cardId is passed through to GalleryObservableProps so inspector
-  // controls can direct setProperty actions to the correct TugPane responder
-  // node via sendToTarget. [D04] (#s07-gallery-demo)
-  registerCard({
-    componentId: "gallery-observable-props",
-    contentFactory: (cardId) => <GalleryObservableProps cardId={cardId} />,
-    defaultMeta: { title: "Observable Props", icon: "SlidersHorizontal", closable: true },
+    componentId: "gallery-value-input",
+    contentFactory: (_cardId) => <GalleryValueInput />,
+    defaultMeta: { title: "TugValueInput", icon: "Hash", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.architecture,
-  });
-
-  registerCard({
-    componentId: "gallery-chain-actions",
-    contentFactory: (_cardId) => <GalleryChainActions />,
-    defaultMeta: { title: "Chain Actions", icon: "Zap", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.architecture,
-  });
-
-  // Canonical manual-verification card for the Component State
-  // Preservation Protocol ([D13], [A9]). Every component that opts in
-  // should land a new section here so reload / tab-switch / cmd-tab
-  // survival is easy to sanity-check by hand.
-  registerCard({
-    componentId: "gallery-state-preservation",
-    contentFactory: (_cardId) => <GalleryStatePreservation />,
-    defaultMeta: { title: "State Preservation", icon: "Save", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.architecture,
+    category: CATEGORIES.textInput,
   });
 
 }

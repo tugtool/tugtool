@@ -582,11 +582,10 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       .filter((reg) => effectiveFamilies.includes(reg.family ?? "standard"));
 
     // Group registrations by their declared `category` (see
-    // CardRegistration.category in card-registry.ts). Sections appear in
-    // first-encountered order — whichever category is seen first on a
-    // registration defines that section's position. Items within a section
-    // appear in registration order. Registrations without a category fall
-    // through at the end as top-level items.
+    // CardRegistration.category in card-registry.ts). Sections and items
+    // are sorted alphabetically by label — registration order in the
+    // source file has no effect on menu placement. Registrations without
+    // a category fall through at the end as top-level items, also sorted.
     //
     // TugTabBar has no knowledge of which categories exist — grouping data
     // lives on the registration, not in this component.
@@ -615,8 +614,16 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       section.items.push(item);
     }
 
+    const sortedSections = Array.from(sections.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+    for (const section of sortedSections) {
+      section.items.sort((a, b) => a.label.localeCompare(b.label));
+    }
+    ungrouped.sort((a, b) => a.label.localeCompare(b.label));
+
     const entries: TugPopupMenuEntry[] = [];
-    for (const section of sections.values()) {
+    for (const section of sortedSections) {
       entries.push({
         type: "sub",
         label: section.label,
