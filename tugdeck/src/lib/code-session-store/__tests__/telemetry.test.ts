@@ -20,6 +20,7 @@ import {
   computeTimeSummary,
   computeTokensSummary,
   computeContextBreakdown,
+  computeRichContextBreakdown,
   type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
 import {
@@ -825,5 +826,152 @@ describe("computeContextBreakdown", () => {
       "Output",
       "Unused",
     ]);
+  });
+});
+
+describe("computeRichContextBreakdown", () => {
+  const CONTEXT_MAX = 200_000;
+
+  const autocompactOffBreakdown = {
+    contextMax: CONTEXT_MAX,
+    categories: [
+      { id: "system_prompt", label: "System prompt", tokens: 3_500 } as const,
+      { id: "system_tools", label: "System tools", tokens: 9_000 } as const,
+      { id: "custom_agents", label: "Custom agents", tokens: 14_200 } as const,
+      { id: "memory_files", label: "Memory files", tokens: 2_500 } as const,
+      { id: "skills", label: "Skills", tokens: 10_500 } as const,
+      { id: "messages", label: "Messages", tokens: 29_800 } as const,
+    ],
+  };
+
+  const autocompactOnBreakdown = {
+    contextMax: CONTEXT_MAX,
+    categories: [
+      ...autocompactOffBreakdown.categories,
+      {
+        id: "autocompact_buffer",
+        label: "Autocompact buffer",
+        tokens: 33_000,
+      } as const,
+    ],
+  };
+
+  it("rich path with autocompact-off renders 6 categories plus remainder", () => {
+    const r = computeRichContextBreakdown(autocompactOffBreakdown, [], CONTEXT_MAX)!;
+    expect(r).not.toBeNull();
+    const ids = r.segments.map((s) => s.id);
+    expect(ids).toEqual([
+      "system_prompt",
+      "system_tools",
+      "custom_agents",
+      "memory_files",
+      "skills",
+      "messages",
+      "remainder",
+    ]);
+    expect(r.segments[r.segments.length - 1].tone).toBe("remainder");
+    // totalUsed = sum of static categories + messages (no buffer).
+    expect(r.totalUsed).toBe(3_500 + 9_000 + 14_200 + 2_500 + 10_500 + 29_800);
+    // remainder = contextMax - totalUsed.
+    expect(r.segments[r.segments.length - 1].value).toBe(CONTEXT_MAX - r.totalUsed);
+  });
+
+  it("rich path with autocompact-on renders 7 categories plus remainder", () => {
+    const r = computeRichContextBreakdown(autocompactOnBreakdown, [], CONTEXT_MAX)!;
+    expect(r).not.toBeNull();
+    expect(r.segments.map((s) => s.id)).toEqual([
+      "system_prompt",
+      "system_tools",
+      "custom_agents",
+      "memory_files",
+      "skills",
+      "messages",
+      "autocompact_buffer",
+      "remainder",
+    ]);
+    // autocompact_buffer counts toward totalUsed — reserved space
+    // takes from the available capacity, so the remainder shrinks.
+    expect(r.totalUsed).toBe(
+      3_500 + 9_000 + 14_200 + 2_500 + 10_500 + 29_800 + 33_000,
+    );
+    expect(r.segments[r.segments.length - 1].value).toBe(
+      CONTEXT_MAX - r.totalUsed,
+    );
+  });
+
+  it("no breakdown frame falls back to computeContextBreakdown against last transcript turn", () => {
+    const t = turn({
+      cost: {
+        inputTokens: 12_000,
+        outputTokens: 1_800,
+        cacheReadInputTokens: 2_400,
+        cacheCreationInputTokens: 600,
+        totalCostUsd: 0,
+      },
+    });
+    const r = computeRichContextBreakdown(null, [t], CONTEXT_MAX)!;
+    expect(r).not.toBeNull();
+    // Fallback emits the 5-tone cost vocabulary.
+    expect(r.segments.map((s) => s.tone)).toEqual([
+      "input",
+      "cache-read",
+      "cache-creation",
+      "output",
+      "remainder",
+    ]);
+    expect(r.totalUsed).toBe(12_000 + 1_800 + 2_400 + 600);
+  });
+
+  it("no breakdown frame and no transcript returns null", () => {
+    expect(computeRichContextBreakdown(null, [], CONTEXT_MAX)).toBeNull();
+  });
+
+  it("rich path with contextMax=0 still produces categories; remainder clamps to 0", () => {
+    const degenerateBreakdown = {
+      contextMax: 0,
+      categories: autocompactOffBreakdown.categories,
+    };
+    const r = computeRichContextBreakdown(degenerateBreakdown, [], 0)!;
+    expect(r).not.toBeNull();
+    // Remainder clamps to 0 — overflow is signaled by `totalUsed > contextMax`.
+    expect(r.segments[r.segments.length - 1].value).toBe(0);
+    expect(r.contextMax).toBe(0);
+    expect(r.totalUsed).toBeGreaterThan(0);
+  });
+
+  it("wire-frame contextMax wins over fallbackContextMax on the rich path", () => {
+    // Production case: the wire frame carries the authoritative cap;
+    // the fallbackContextMax (sourced from cost_update or a default)
+    // is only consulted on the cost_update-derived fallback path.
+    const richWith1m = {
+      contextMax: 1_000_000,
+      categories: autocompactOffBreakdown.categories,
+    };
+    const r = computeRichContextBreakdown(richWith1m, [], 200_000)!;
+    expect(r.contextMax).toBe(1_000_000);
+  });
+
+  it("rich path is meaningful with empty transcript (idle-with-bind)", () => {
+    // Per the plan: when breakdown frame is present but transcript is
+    // empty (just-bound session, no committed turns yet), the popover
+    // still shows the breakdown. Static categories + free space
+    // dominate; the renderer paints them.
+    const r = computeRichContextBreakdown(autocompactOffBreakdown, [], CONTEXT_MAX)!;
+    expect(r).not.toBeNull();
+    expect(r.segments.length).toBe(7); // 6 categories + remainder
+  });
+
+  it("clamps negative per-category tokens to 0 (defensive against malformed input)", () => {
+    const malformed = {
+      contextMax: CONTEXT_MAX,
+      categories: [
+        { id: "system_prompt", label: "System prompt", tokens: -500 } as const,
+        { id: "messages", label: "Messages", tokens: 1_000 } as const,
+      ],
+    };
+    const r = computeRichContextBreakdown(malformed, [], CONTEXT_MAX)!;
+    expect(r.segments[0].value).toBe(0);
+    expect(r.segments[1].value).toBe(1_000);
+    expect(r.totalUsed).toBe(1_000);
   });
 });

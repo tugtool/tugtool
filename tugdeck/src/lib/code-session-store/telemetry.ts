@@ -168,24 +168,49 @@ export interface TurnTokensSummary {
 }
 
 /**
- * Categorical tone for {@link computeContextBreakdown}'s output. Same
- * five-value union as `TugArcGaugeSegmentTone` (the gauge primitive's
- * segments-mode tone enum) — structurally compatible so the gallery
- * popover (and 20.4.10's production composition) can hand a breakdown's
- * `segments` array directly to `TugArcGauge` in segments mode without
- * mapping or casting.
+ * Categorical tone for {@link computeContextBreakdown} and
+ * {@link computeRichContextBreakdown} output. Structurally compatible
+ * with `TugArcGaugeSegmentTone` (the gauge primitive's segments-mode
+ * tone enum) — the gallery popover (and 20.4.10's production
+ * composition) can hand a breakdown's `segments` array directly to
+ * `TugArcGauge` in segments mode without mapping or casting.
  *
- * Declared locally here rather than imported from the components layer
- * so the library boundary stays one-way: `lib` doesn't depend on
- * `components`. The five literal values are stable enough that the
- * structural-compat trade is worth it.
+ * Two parallel vocabularies coexist:
+ *
+ * - **Wire-level cost tones** (`input` / `cache-read` / `cache-creation`
+ *   / `output` / `remainder`): emitted by `computeContextBreakdown` —
+ *   the popover's fallback view from `#step-20-4-7-c`.
+ *
+ * - **`/context`-style category tones** (`system_prompt` / `system_tools`
+ *   / `custom_agents` / `memory_files` / `skills` / `messages` /
+ *   `autocompact_buffer`): emitted by `computeRichContextBreakdown`
+ *   when the snapshot carries a `lastContextBreakdown` from the
+ *   tugcode → reducer → supervisor round-trip (`#step-20-4-7-d`).
+ *   `mcp_tools` is intentionally absent — Tug treats MCP as out of
+ *   scope; no MCP tone ever appears.
+ *
+ * `remainder` straddles both uses since the auto-synthesized
+ * fill-the-gap slice is shape-uniform across either vocabulary.
+ *
+ * Declared locally here rather than imported from the components
+ * layer so the library boundary stays one-way: `lib` doesn't depend
+ * on `components`.
  */
 export type ContextBreakdownTone =
+  // Wire-level cost vocabulary.
   | "input"
   | "cache-read"
   | "cache-creation"
   | "output"
-  | "remainder";
+  | "remainder"
+  // `/context`-style category vocabulary.
+  | "system_prompt"
+  | "system_tools"
+  | "custom_agents"
+  | "memory_files"
+  | "skills"
+  | "messages"
+  | "autocompact_buffer";
 
 /**
  * One segment in a context-window categorical breakdown. Mirrors the
@@ -268,6 +293,91 @@ export function computeContextBreakdown(
     totalUsed,
     contextMax: safeContextMax,
   };
+}
+
+/**
+ * Build the rich `/context`-style breakdown for the Context popover
+ * (`#step-20-4-7-d`). Three-way resolution:
+ *
+ * 1. **`lastContextBreakdown` present (live or bind-attach):** return
+ *    the rich per-category breakdown sourced from the
+ *    `context_breakdown` wire frame. Variable length (6 or 7
+ *    categories depending on autocompact-on / autocompact-off) plus
+ *    the auto-synthesized `remainder` slice. The wire-frame
+ *    `context_max` wins over `fallbackContextMax` — it's the
+ *    authoritative cap for the model the session is running against.
+ *
+ * 2. **No breakdown frame, transcript has committed turns:** fall back
+ *    to {@link computeContextBreakdown} against the last committed
+ *    turn — the 20.4.7.C cost_update-derived view, with the original
+ *    5-tone cost vocabulary. This path keeps the popover useful
+ *    against older tugcode that hasn't shipped the new frame, against
+ *    a tugcode session that opted out, and in the first few seconds
+ *    after a fresh spawn before the first `context_breakdown` lands.
+ *
+ * 3. **No breakdown frame and no transcript:** return `null`. The
+ *    renderer paints the empty-state body ("No committed turns yet.").
+ *
+ * Per the spike's 5–10% accuracy bar, the rich-path numbers are not
+ * byte-exact against Claude Code's `/context` terminal output —
+ * tugcode's local tokenization sits a few percent off the canonical
+ * count. The popover shows numbers in the right ballpark; this is
+ * intentional, not a bug.
+ *
+ * Pure: no DOM, no React, no time source.
+ */
+export function computeRichContextBreakdown(
+  lastContextBreakdown: ContextBreakdownSnapshotInput | null,
+  transcript: ReadonlyArray<TurnEntry>,
+  fallbackContextMax: number,
+): ContextBreakdown | null {
+  if (lastContextBreakdown !== null) {
+    const safeContextMax = Math.max(0, lastContextBreakdown.contextMax);
+    const segments: ContextBreakdownSegment[] = [];
+    let totalUsed = 0;
+    for (const c of lastContextBreakdown.categories) {
+      const value = Math.max(0, c.tokens);
+      totalUsed += value;
+      segments.push({
+        id: c.id,
+        // Wire-frame category ids map 1:1 to the categorical-tone half
+        // of `ContextBreakdownTone` — the two enums were designed
+        // together (see `types.ts` `ContextBreakdownCategoryId` and
+        // `TugArcGaugeSegmentTone`). The cast is safe by construction.
+        tone: c.id,
+        value,
+        label: c.label,
+      });
+    }
+    const remainder = Math.max(0, safeContextMax - totalUsed);
+    segments.push({
+      id: "remainder",
+      tone: "remainder",
+      value: remainder,
+      label: "Unused",
+    });
+    return { segments, totalUsed, contextMax: safeContextMax };
+  }
+  if (transcript.length > 0) {
+    return computeContextBreakdown(transcript[transcript.length - 1], fallbackContextMax);
+  }
+  return null;
+}
+
+/**
+ * Shape this helper reads out of the snapshot's
+ * {@link CodeSessionSnapshot.lastContextBreakdown} field. Declared as
+ * a structural type so the caller can pass either the snapshot's
+ * field directly or any other source carrying the same shape
+ * (test fixtures, supervisor-side prefetch, etc.).
+ */
+export interface ContextBreakdownSnapshotInput {
+  contextMax: number;
+  categories: ReadonlyArray<{
+    id: ContextBreakdownTone;
+    label: string;
+    tokens: number;
+  }>;
 }
 
 /**

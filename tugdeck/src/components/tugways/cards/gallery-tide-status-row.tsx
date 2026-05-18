@@ -103,7 +103,8 @@ import type {
   TugArcGaugeSegment,
 } from "@/components/tugways/tug-arc-gauge";
 import {
-  computeContextBreakdown,
+  computeRichContextBreakdown,
+  type ContextBreakdownSnapshotInput,
   computeTimeSummary,
   computeTokensSummary,
 } from "@/lib/code-session-store/telemetry";
@@ -444,7 +445,44 @@ interface TranscriptScenario {
   readonly id: string;
   readonly label: string;
   readonly transcript: ReadonlyArray<TurnEntry>;
+  /**
+   * Synthetic `lastContextBreakdown` field — what the snapshot would
+   * carry in production after a `context_breakdown` wire frame
+   * landed. When present, the Context popover's rich path renders;
+   * when omitted, the popover hits its 20.4.7.C fallback view
+   * against the transcript. Two of the scenarios below set this so
+   * the rich popover is HMR-vettable in the gallery without needing
+   * a live tugcode session.
+   */
+  readonly lastContextBreakdown?: ContextBreakdownSnapshotInput | null;
 }
+
+// Synthetic `/context`-style breakdowns for the gallery's rich-path
+// scenarios. Static categories pinned to plausible Tug-development
+// numbers (~3.5k system prompt, ~9k system tools, ~14k custom
+// agents from the tugplug suite, ~2.5k memory files, ~10k skills,
+// ~30k accumulated messages); only the `autocompact_buffer` slice
+// toggles between the two scenarios. `mcp_tools` is intentionally
+// absent.
+const SAMPLE_RICH_BREAKDOWN_AUTOCOMPACT_OFF: ContextBreakdownSnapshotInput = {
+  contextMax: 200_000,
+  categories: [
+    { id: "system_prompt", label: "System prompt", tokens: 3_500 },
+    { id: "system_tools", label: "System tools", tokens: 9_000 },
+    { id: "custom_agents", label: "Custom agents", tokens: 14_200 },
+    { id: "memory_files", label: "Memory files", tokens: 2_500 },
+    { id: "skills", label: "Skills", tokens: 10_500 },
+    { id: "messages", label: "Messages", tokens: 29_800 },
+  ],
+};
+
+const SAMPLE_RICH_BREAKDOWN_AUTOCOMPACT_ON: ContextBreakdownSnapshotInput = {
+  contextMax: 200_000,
+  categories: [
+    ...SAMPLE_RICH_BREAKDOWN_AUTOCOMPACT_OFF.categories,
+    { id: "autocompact_buffer", label: "Autocompact buffer", tokens: 33_000 },
+  ],
+};
 
 /**
  * Synthetic transcripts that drive the Time + Tokens popovers'
@@ -487,6 +525,28 @@ const TRANSCRIPT_SCENARIOS: ReadonlyArray<TranscriptScenario> = [
         cost: { inputTokens: 13_400, outputTokens: 2_700, cacheCreationInputTokens: 1_500 },
       }),
     ],
+  },
+  {
+    id: "rich-autocompact-off",
+    label: "/context breakdown · autocompact off",
+    transcript: [
+      fixtureTurn(1, {
+        activeMs: 4_200,
+        cost: { inputTokens: 12_000, outputTokens: 1_800, cacheReadInputTokens: 2_400 },
+      }),
+    ],
+    lastContextBreakdown: SAMPLE_RICH_BREAKDOWN_AUTOCOMPACT_OFF,
+  },
+  {
+    id: "rich-autocompact-on",
+    label: "/context breakdown · autocompact on",
+    transcript: [
+      fixtureTurn(1, {
+        activeMs: 4_200,
+        cost: { inputTokens: 12_000, outputTokens: 1_800, cacheReadInputTokens: 2_400 },
+      }),
+    ],
+    lastContextBreakdown: SAMPLE_RICH_BREAKDOWN_AUTOCOMPACT_ON,
   },
   {
     id: "deep",
@@ -1146,20 +1206,38 @@ function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
 }
 
 /**
- * `Context` popover content per plan `#step-20-4-7-c`: large
- * `TugArcGauge` in segmented mode showing the last committed turn's
- * five-category context-window breakdown (input / cache-read /
- * cache-creation / output / remainder), paired with a legend listing
- * each category's token count + percent of the window. The footer
- * shows the totalUsed / contextMax headline.
+ * `Context` popover content. Two render paths backed by one helper
+ * ({@link computeRichContextBreakdown}):
  *
- * In-flight contract per the plan: when opened during an in-flight
- * turn, the popover shows the **last committed** turn's breakdown
- * (the most-recent boundary at which a context picture is
- * meaningful). When the transcript is empty (no committed turns
- * yet), the popover renders an empty-state body without the gauge
- * or footer — the placeholder the plan calls out for the
- * pre-first-commit case.
+ * - **Rich path (`#step-20-4-7-d`):** when the snapshot carries a
+ *   `lastContextBreakdown` (live `context_breakdown` frame from
+ *   tugcode, or the supervisor's bind-time re-emit from the
+ *   persisted ledger row), the popover paints the `/context`-style
+ *   per-category breakdown — system_prompt / system_tools /
+ *   custom_agents / memory_files / skills / messages + the conditional
+ *   autocompact_buffer (autocompact-on only) + the remainder slice.
+ *   Numbers are tokenized locally in tugcode and sit within the
+ *   documented 5–10% accuracy bar against Claude Code's `/context`
+ *   terminal output — not byte-exact, intentionally; the popover
+ *   shows the right ballpark for each category, and the calibration
+ *   trick was dropped in the D.3 fixup after it warped statics on
+ *   resumed sessions.
+ *
+ * - **Fallback path (`#step-20-4-7-c`):** when no breakdown frame has
+ *   landed yet (older tugcode, opt-out, the first few seconds after
+ *   a fresh spawn), the popover renders the cost_update-derived 5-
+ *   segment view against the last committed turn — input /
+ *   cache-read / cache-creation / output / remainder. Keeps the
+ *   popover useful across the deployment matrix.
+ *
+ * Empty state: when neither the breakdown frame nor any committed
+ * turn is available, the popover renders the "No committed turns
+ * yet." placeholder. The rich path is meaningful even pre-first-
+ * turn — system prompt + tools dominate; the renderer paints them
+ * if the frame is present.
+ *
+ * `mcp_tools` is intentionally absent from the rich path's
+ * categories — Tug treats MCP as out of scope.
  *
  * Reads the same `--tugx-arc-gauge-segment-*-color` slot family the
  * gauge primitive paints with; the popover never reaches for raw
@@ -1168,45 +1246,38 @@ function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
 function ContextPopoverContent({
   transcript,
   contextMax,
+  lastContextBreakdown,
 }: {
   transcript: ReadonlyArray<TurnEntry>;
   contextMax: number;
+  /**
+   * The snapshot's `lastContextBreakdown` field, if any. In production
+   * this comes from `snap.lastContextBreakdown`; the gallery passes
+   * `null` for the fallback-only scenarios and a synthetic shape for
+   * rich-path vetting.
+   */
+  lastContextBreakdown?: ContextBreakdownSnapshotInput | null;
 }): React.ReactElement {
-  const lastTurn =
-    transcript.length > 0 ? transcript[transcript.length - 1] : null;
-  if (lastTurn === null) {
+  const breakdown = computeRichContextBreakdown(
+    lastContextBreakdown ?? null,
+    transcript,
+    contextMax,
+  );
+  if (breakdown === null) {
     return (
-      <PerAreaPopoverFrame title="Context window — last committed turn">
+      <PerAreaPopoverFrame title="Context window">
         <EmptyTranscriptBody />
       </PerAreaPopoverFrame>
     );
   }
-  const breakdown = computeContextBreakdown(lastTurn, contextMax);
   const visibleSegments = breakdown.segments;
   return (
-    <PerAreaPopoverFrame
-      title="Context window — last committed turn"
-      minWidth={400}
-      maxWidth={500}
-      summaryFooter={
-        <>
-          <PopoverRow
-            label="used"
-            value={formatTokensCaps(breakdown.totalUsed)}
-            hint={formatContextPercent(breakdown.totalUsed, breakdown.contextMax)}
-          />
-          <PopoverRow
-            label="max"
-            value={formatTokensCaps(breakdown.contextMax)}
-          />
-        </>
-      }
-    >
+    <PerAreaPopoverFrame title="Context window" minWidth={400} maxWidth={500}>
       <div
         style={{
           display: "flex",
           flexDirection: "row",
-          alignItems: "center",
+          alignItems: "flex-start",
           gap: "var(--tug-space-lg)",
           paddingBlock: 4,
         }}
@@ -1215,6 +1286,11 @@ function ContextPopoverContent({
           style={{
             width: CONTEXT_GAUGE_LARGE_PX,
             flex: "0 0 auto",
+            // Top-aligned (inherits the parent flex's
+            // `alignItems: "flex-start"`). The legend + summary
+            // grid on the right is typically taller than the gauge
+            // — the summary rows then extend below the gauge's
+            // bottom edge, which is the layout the popover targets.
           }}
         >
           <TugArcGauge
@@ -1224,43 +1300,106 @@ function ContextPopoverContent({
             // documented fallback role.
             value={0}
             density="detailed"
-            label="used"
+            // No `label` prop — the gauge's center text already
+            // serves as the readout, and the categorical legend
+            // names every slice. A free-floating "used" caption
+            // under the gauge added no information.
             formatValue={formatTokensCaps}
             segments={visibleSegments}
           />
         </div>
+        {/*
+          Shared 3-column grid for both the per-category legend AND
+          the used/max summary at the bottom. One grid instance, not
+          one-per-row — `max-content` columns size to the widest
+          percent and the widest value across ALL rows (legend +
+          summary together), so every percent column edge and every
+          value column edge land at the same x.
+
+          The divider row sits between the legend and summary by
+          spanning all three columns. Containing both blocks in one
+          grid means the divider lives in the right-side text area
+          rather than across the full popover — visually distinct
+          from the prior "full-width divider" but more meaningful:
+          the divider separates the per-category rows from the
+          summary rows, both of which live on the right.
+        */}
         <div
           style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) max-content max-content",
+            columnGap: "var(--tug-space-md)",
+            rowGap: 4,
+            alignItems: "baseline",
+            fontFamily: MONO,
+            fontVariantNumeric: "tabular-nums",
+            fontSize: "0.6875rem",
             flex: "1 1 auto",
             minWidth: 0,
+            // Drop the legend down so its first row sits roughly at
+            // the gauge's tick-mark band rather than at the gauge's
+            // tip. The summary rows then extend below the gauge's
+            // bottom edge, which balances the whole popover
+            // visually.
+            paddingTop: 18,
           }}
         >
           {visibleSegments.map((s) => (
-            <PopoverRow
-              key={s.id}
-              label={
-                <>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      marginRight: 6,
-                      verticalAlign: "middle",
-                      backgroundColor: contextSegmentSwatchVar(s.tone),
-                    }}
-                  />
-                  {s.label}
-                </>
-              }
-              value={formatTokensCaps(s.value)}
-              hint={formatContextPercent(s.value, breakdown.contextMax)}
-            />
+            <React.Fragment key={s.id}>
+              <span
+                style={{
+                  color: TEXT_MUTED,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 10,
+                    height: 10,
+                    borderRadius: 2,
+                    marginRight: 6,
+                    flex: "0 0 auto",
+                    backgroundColor: contextSegmentSwatchVar(s.tone),
+                  }}
+                />
+                {s.label}
+              </span>
+              <span style={{ color: TEXT_MUTED, textAlign: "right" }}>
+                {formatContextPercent(s.value, breakdown.contextMax)}
+              </span>
+              <span style={{ color: TEXT_NORMAL, textAlign: "right" }}>
+                {formatTokensCaps(s.value)}
+              </span>
+            </React.Fragment>
           ))}
+          {/* Divider — spans all 3 columns. Sits between legend and
+              summary rows in the same grid so the columns share
+              widths and the percentages / values line up across the
+              divider. */}
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              borderTop: `1px solid ${RAIL_COLOR}`,
+              marginBlock: 4,
+            }}
+          />
+          {/* Summary rows: used + max. The "used" row has a percent;
+              "max" is the cap so no percent. Empty middle cell on
+              the "max" row keeps the value column anchored. */}
+          <span style={{ color: TEXT_MUTED }}>used</span>
+          <span style={{ color: TEXT_MUTED, textAlign: "right" }}>
+            {formatContextPercent(breakdown.totalUsed, breakdown.contextMax)}
+          </span>
+          <span style={{ color: TEXT_NORMAL, textAlign: "right" }}>
+            {formatTokensCaps(breakdown.totalUsed)}
+          </span>
+          <span style={{ color: TEXT_MUTED }}>max</span>
+          <span />
+          <span style={{ color: TEXT_NORMAL, textAlign: "right" }}>
+            {formatTokensCaps(breakdown.contextMax)}
+          </span>
         </div>
       </div>
     </PerAreaPopoverFrame>
@@ -1565,6 +1704,7 @@ export function GalleryTideStatusRow(): React.ReactElement {
       <ContextPopoverContent
         transcript={transcript}
         contextMax={baseValues.contextMax}
+        lastContextBreakdown={transcriptScenario.lastContextBreakdown ?? null}
       />
     ),
   };
