@@ -92,6 +92,11 @@ import {
   deriveTimeCellMs,
 } from "@/lib/code-session-store/telemetry";
 import type { CodeSessionSnapshot } from "@/lib/code-session-store/types";
+import {
+  TugPopover,
+  TugPopoverContent,
+  TugPopoverTrigger,
+} from "@/components/tugways/tug-popover";
 
 // ---------------------------------------------------------------------------
 // Value scenarios + status-row formatters
@@ -561,6 +566,129 @@ function buildCellNodes(v: StatusValues): React.ReactElement[] {
 }
 
 // ---------------------------------------------------------------------------
+// Status-cell popover anchor pattern (scratch — 20.4.6 substrate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Field-row scaffold that anticipates the dev-panel-style layout the
+ * per-area popovers will adopt in 20.4.7 (one row per committed turn,
+ * label + value + optional muted hint). Kept inline in the gallery
+ * card rather than promoted into the production tree because the
+ * production rows will read live `TurnEntry` data and carry their own
+ * formatters — this scaffold only exists to give the popover
+ * substrate a plausible visual stand-in to HMR-vet against.
+ *
+ * Visual language mirrors `components/tug-dev-panel/field-row.tsx`:
+ * tabular monospace, label + path on the left, value + hint on the
+ * right. The per-area popovers in 20.4.7 will adopt the same shape so
+ * the user's eye learns one row-density across the dev panel and the
+ * status popovers.
+ */
+function ScratchFieldRow({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}): React.ReactElement {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        columnGap: "var(--tug-space-md)",
+        fontFamily: MONO,
+        fontVariantNumeric: "tabular-nums",
+        fontSize: "0.6875rem",
+        paddingBlock: 2,
+      }}
+    >
+      <span style={{ color: TEXT_MUTED }}>{label}</span>
+      <span style={{ color: TEXT_NORMAL, fontWeight: 600 }}>
+        {value}
+        {hint !== undefined ? (
+          <span style={{ color: TEXT_MUTED, fontWeight: 400, marginLeft: 6 }}>
+            {hint}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Anchor demo: a single F5-style cell wrapped in `TugPopoverTrigger`,
+ * opening a small popover with the dev-panel field-row scaffold. The
+ * cell carries the `.gallery-tide-status-cell-clickable` hover
+ * affordance (cursor + subtle background tint on hover) so the user
+ * can tell the cell is interactive without an explicit "click me"
+ * label. The substrate contract: hover hints, click opens, re-click
+ * closes, outside-click closes, Esc closes — Radix Popover handles
+ * the latter three, the affordance class supplies the first.
+ *
+ * 20.4.7 + 20.4.9 will adopt this same anchor shape on the real
+ * F5Cell and on `TugStateIndicator`, populated with per-area row
+ * content. The popover content here uses placeholder rows so the
+ * substrate's open/close behavior + the row-density visual language
+ * can be vetted before the per-area derivations land.
+ */
+function PopoverAnchorDemo({ v }: { v: StatusValues }): React.ReactElement {
+  return (
+    <TugPopover>
+      <TugPopoverTrigger>
+        <span className="gallery-tide-status-cell-clickable">
+          <F5Cell
+            priority="time"
+            label="TIME (click)"
+            valueNode={plainValue(formatTimeAlwaysHours(v.perTurnActiveMs))}
+          />
+        </span>
+      </TugPopoverTrigger>
+      <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+        <div
+          style={{
+            padding: "var(--tug-space-md)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            minWidth: 240,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: MONO,
+              fontSize: "0.625rem",
+              letterSpacing: LABEL_LETTER_SPACING,
+              textTransform: "uppercase",
+              color: TEXT_MUTED,
+              marginBottom: 4,
+            }}
+          >
+            Per-request log (scratch)
+          </div>
+          <ScratchFieldRow label="turn 1" value="0h 0m 04s" hint="success" />
+          <ScratchFieldRow label="turn 2" value="0h 0m 12s" hint="success" />
+          <ScratchFieldRow label="turn 3" value="0h 0m 01s" hint="interrupted" />
+          <div
+            style={{
+              borderTop: `1px solid ${RAIL_COLOR}`,
+              marginTop: 6,
+              paddingTop: 6,
+            }}
+          >
+            <ScratchFieldRow label="turns" value="3" />
+            <ScratchFieldRow label="total time" value="0h 0m 17s" />
+            <ScratchFieldRow label="avg" value="0h 0m 06s" hint="per turn" />
+          </div>
+        </div>
+      </TugPopoverContent>
+    </TugPopover>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Plan-of-record composed row — indicator + cells, C-wider-gap spacing
 // ---------------------------------------------------------------------------
 
@@ -929,6 +1057,26 @@ export function GalleryTideStatusRow(): React.ReactElement {
           </div>
           <div className="gallery-tide-status-resize-frame">
             <ComposedRow v={values} state={state} />
+          </div>
+        </section>
+
+        <TugSeparator />
+
+        {/* Popover substrate — status-cell anchor pattern (20.4.6). */}
+        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+          <SectionTitle>Popover substrate — status-cell anchor</SectionTitle>
+          <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
+            The substrate per 20.4.6: status cell wraps in `TugPopoverTrigger`;
+            hover gives a cursor + subtle background-tint affordance hint (no
+            popover open); click opens; re-click closes; outside-click closes;
+            Escape closes. Popover content adopts the dev-panel field-row
+            visual language (mono, tabular numerics, label-left / value-right,
+            muted hint suffix), the same language 20.4.7's per-area popovers
+            and 20.4.9's indicator ledger will reuse. The popover's content
+            here is placeholder — real per-area row data lands in 20.4.7.
+          </div>
+          <div style={{ ...cardSurface, paddingInline: "var(--tug-space-2xl)", display: "flex", justifyContent: "center" }}>
+            <PopoverAnchorDemo v={values} />
           </div>
         </section>
       </div>

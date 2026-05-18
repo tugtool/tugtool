@@ -52,6 +52,21 @@ body {
   transform-origin: var(--radix-popover-content-transform-origin);
 }
 
+/* Radix `Popover.Content` mounts as a `tabIndex=-1` element and grabs
+   programmatic focus on open so the FocusScope can trap focus inside.
+   The browser's default `:focus-visible` outline then paints a thick
+   ring around the entire popover, on top of the popover's own border
+   + shadow — visually redundant and louder than the chrome below. The
+   popover IS the focus affordance (border + shadow + portal), so the
+   container itself should not draw a separate focus ring. Inner
+   focusable children (inputs, buttons, links) keep their own
+   `:focus-visible` rings unchanged because they each set
+   `outline-offset` / `box-shadow` on themselves. */
+.tug-popover-content:focus,
+.tug-popover-content:focus-visible {
+  outline: none;
+}
+
 /* Popup-in-sheet z-tier elevation per [D09]. When TugPopover is rendered
    inside a `<TugSheetContent>`, the consumer (TugPopoverContent) reads
    `TugSheetStackingContext` and adds `tug-popup-in-dialog` to the

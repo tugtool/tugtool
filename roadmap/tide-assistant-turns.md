@@ -2316,7 +2316,7 @@ export function deriveInflightActiveMs(
 
 **Depends on:** #step-20-4-2 (gallery indicator is the first anchor candidate, though popovers can be exercised against any status cell); foundational for 20.4.7 + 20.4.9.
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tugways): TugPopover substrate (if missing) + status-cell anchor pattern`
 
@@ -2326,21 +2326,21 @@ export function deriveInflightActiveMs(
 
 **Tasks.**
 
-- [ ] Audit `tugways/` for an existing popover primitive; verify whether one exists.
-- [ ] If absent: implement `TugPopover` per `component-authoring.md` (file pair, docstring, props with `@selector` annotations, `data-slot`, `forwardRef`, `@tug-pairings`, CSS keyframes on `[data-state]` per [L14]).
-- [ ] Document the hover-affordance + click-to-open + Esc/outside-close contract.
-- [ ] Inspect `tug-dev-panel/`'s log-format conventions to derive a shared visual language the per-area popovers can adopt for their per-row layout.
+- [x] Audit `tugways/` for an existing popover primitive; verify whether one exists. (`TugPopover` already exists at `components/tugways/tug-popover.{tsx,css}` — fully covers data-slot, forwardRef, `@tug-pairings`, `@tug-renders-on` annotations, CSS keyframes on `[data-state]` per [L14], component aliases resolving in one hop [L17], chain integration via `cancelDialog` / `dismissPopover` [L11]. The existing `gallery-popover.tsx` covers basic + positioning + arrow + form + close-button + imperative modes.)
+- [x] If absent: implement `TugPopover` per `component-authoring.md`. (Not needed — already implemented.)
+- [x] Document the hover-affordance + click-to-open + Esc/outside-close contract. (New "Status-cell anchor pattern" section in `tug-popover.tsx`'s docstring + new `.gallery-tide-status-cell-clickable` class in `gallery-tide-status-row.css` documenting the affordance contract for non-button anchors + new "Popover substrate — status-cell anchor" section in the gallery card.)
+- [x] Inspect `tug-dev-panel/`'s log-format conventions to derive a shared visual language the per-area popovers can adopt for their per-row layout. (Read `components/tug-dev-panel/field-row.tsx` — mono + tabular numerics + label-left/value-right + muted hint suffix. Gallery's `ScratchFieldRow` mirrors this shape for the substrate demo so 20.4.7's per-area rows have a visual stand-in to work against.)
 
 **Tests.**
 
-- [ ] Pure-logic tests for the open/close state machine (where applicable; Radix Presence handles the DOM lifecycle per [L14]).
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic tests for the open/close state machine (where applicable; Radix Presence handles the DOM lifecycle per [L14]). (Radix owns the state machine; `TugPopover`'s chain-integration behavior is exercised by existing real-app tests via `TugConfirmPopover` and the gallery cards. No new pure-logic surface in this step — the new code is the gallery anchor demo + an affordance CSS class, both visual/structural.)
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] Gallery card includes a scratch popover example so the substrate's open/close behavior is HMR-vettable before any per-area popover content is built.
+- [ ] Gallery card includes a scratch popover example so the substrate's open/close behavior is HMR-vettable before any per-area popover content is built. _(HMR vet pending; `PopoverAnchorDemo` is wired in the "Popover substrate — status-cell anchor" section.)_
 
 ---
 
