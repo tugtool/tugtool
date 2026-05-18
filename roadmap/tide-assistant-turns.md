@@ -1811,7 +1811,7 @@ Beyond the `[1m]` regression: this step closes off the entire class of "live-onl
 
 **Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
 
-**Status:** _Complete. Slot infrastructure + renderers + dev harness landed; HMR study resolved by promoting the F5 design from the spike gallery (IBM-1620 endcap-rule labels, uniform-width cells, always-hours time format, caps-token magnitudes, color-coded context numerator, no arc gauge) into the production `TideTelemetryStatusRow` renderer; placement-experiment harness defaults Z2 to `statusRow`. Final plan-of-record features promoted from the gallery to production: leftmost concentric dot+ring indicator keyed on `phase × transportState × interruptInFlight` (success/caution/danger/default tone via global text tokens, ring-pulse only for ACTIVE states), plain-English `TugTooltip` hover (phase title + transport/interrupt secondaries), C-wider-gap row spacing (gap 2xl + padding-inline lg) for indicator breathing room. `CodeSessionSnapshot.interruptInFlight` projected from reducer state to drive the indicator. Z0 / Z1-user / Z3 / Z4 remain reserved. **Follow-on series in progress** — sub-steps 20.4.1 through 20.4.15 below cover (a) Z2 work: extract `TugStateIndicator` as a Tug component, add a tuglaws-grounded animation-completion handoff hook, reshape Z2 to four cells with a live-clock that pauses on yellow states, add per-area popovers (Time / Tokens / Context / state-change log), and persist state-change history via a sqlite ledger expansion; and (b) Z1 asst-half work: build a new `TugThinkingIndicator` (three-bar primitive with delta-debounced blink-on-pause behavior), establish a two-line stack composition for Z1 asst half (model row + status row), and design the terminal end-state display (OK/error + time + tokens). Subsumes the planned Step 20.5.C (TugProgress agent-role variant study) — that step is marked superseded._
+**Status:** _Complete. Slot infrastructure + renderers + dev harness landed; HMR study resolved by promoting the F5 design from the spike gallery (IBM-1620 endcap-rule labels, uniform-width cells, always-hours time format, caps-token magnitudes, color-coded context numerator, no arc gauge) into the production `TideTelemetryStatusRow` renderer; placement-experiment harness defaults Z2 to `statusRow`. Final plan-of-record features promoted from the gallery to production: leftmost concentric dot+ring indicator keyed on `phase × transportState × interruptInFlight` (success/caution/danger/default tone via global text tokens, ring-pulse only for ACTIVE states), plain-English `TugTooltip` hover (phase title + transport/interrupt secondaries), C-wider-gap row spacing (gap 2xl + padding-inline lg) for indicator breathing room. `CodeSessionSnapshot.interruptInFlight` projected from reducer state to drive the indicator. Z0 / Z1-user / Z3 / Z4 remain reserved. **Follow-on series in progress** — sub-steps 20.4.1 through 20.4.15 below (with 20.4.5 split A/B and 20.4.7 split A/B/C) cover (a) Z2 work: extract `TugStateIndicator` as a Tug component, add a tuglaws-grounded animation-completion handoff hook (single + multi-element capable, reduced-motion aware), reshape Z2 to four cells with a live-clock that pauses on yellow states (union-semantics over overlapping pause axes), add per-area popovers (Time / Tokens / Context / state-change log) with `TugArcGauge` segmented-mode primitive prep, and persist state-change history via a sqlite ledger expansion; and (b) Z1 asst-half work: build a new `TugThinkingIndicator` (three-bar primitive with delta-debounced blink-on-pause behavior, per-card stream-idle observer substrate), establish a two-line stack composition for Z1 asst half (model row + status row), and design the terminal end-state display (OK/error + time + tokens). Subsumes the planned Step 20.5.C (TugProgress agent-role variant study) — that step is marked superseded._
 
 **Commit:** `feat(tide-rendering): placement slots Z0–Z4 for tide-card session telemetry`
 
@@ -1983,39 +1983,64 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
  * commits behind the next iteration end. Returns nothing — the hook owns
  * the DOM mutation. No React state is involved in the appearance commit.
  *
- *  - `ref` — the element whose CSS animation drives the gate. Stable
- *    across the lifetime of the consumer (per [L26]). The hook treats
- *    this element as the appearance owner; it writes its class via ref.
+ *  - `ref` — the element to listen on. Stable across the lifetime of
+ *    the consumer (per [L26]). The hook attaches the `animationend`
+ *    listener here (it bubbles from descendants, so a parent ref
+ *    works for multi-element pulses too — see `animationName` below).
+ *  - `commitTo` — the element whose class the hook mutates on commit.
+ *    Usually the same as `ref`, but can differ for compositions where
+ *    the listener element and the appearance element are different
+ *    nodes. Stable per [L26].
  *  - `targetClassName` — the class string the consumer wants applied
- *    to `ref.current` once the current animation iteration completes.
+ *    to `commitTo.current` once the gating animation iteration ends.
  *    When the consumer's logical state changes to an unanimated target,
  *    the swap still defers (so the pulse finishes in its starting color
  *    before the ring disappears).
  *  - `defaultClassName` — the class applied on first mount (before any
  *    animation has run, so there is nothing to wait for).
+ *  - `animationName` — optional. When supplied, the hook only commits
+ *    on `animationend` events whose `event.animationName` matches.
+ *    Required when the listener element hosts multiple keyframe
+ *    animations (e.g., the three-bar TugThinkingIndicator where each
+ *    bar's `animationend` bubbles to the parent and only one of them
+ *    should drive the gate). When omitted, the first `animationend`
+ *    from any animation commits.
  *
  * Internal mechanism:
  *   - First `useLayoutEffect` ([L22]): when `targetClassName` changes,
  *     stash the pending value in a ref. If the DOM is not currently
  *     animating (no animation present, or in the static `defaultClassName`
- *     state), commit immediately; otherwise wait.
+ *     state), commit immediately; otherwise wait. Reduced-motion
+ *     fast-path: if `getComputedStyle(commitTo.current).animationName === "none"`
+ *     OR `getComputedStyle(commitTo.current).animationDuration === "0s"`
+ *     (the two cases CSS can produce under `--tug-motion: 0` per [D24]),
+ *     commit immediately — there's no in-progress iteration to preserve.
  *   - Second `useLayoutEffect` (mount): register the `animationend`
- *     listener on `ref.current`. The listener reads the pending value
- *     from the ref and writes the class to the DOM if a deferred commit
- *     is queued.
+ *     listener on `ref.current` with the `animationName` filter (if
+ *     supplied). The listener reads the pending value from the ref and
+ *     writes the class to `commitTo.current` if a deferred commit is
+ *     queued.
  *
  * The hook NEVER stores the appearance in React state ([L06]). React's
  * render cycle is not involved in the deferred commit ([L22]). RAF is
- * not used ([L05]).
+ * not used ([L05]). Under reduced motion ([D24]), the hook degrades to
+ * immediate-commit, preserving correctness without surprising the user
+ * (zero-duration animations have no "in-progress iteration" to defer to).
  */
 function useCommitOnAnimationEnd(
   ref: React.RefObject<HTMLElement>,
+  commitTo: React.RefObject<HTMLElement>,
   targetClassName: string,
   defaultClassName: string,
+  animationName?: string,
 ): void;
 ```
 
 The hook's name is provisional. Implementation review may surface a cleaner shape (companion utilities, a different signature for grouped animations, etc.) — the laws above are what is non-negotiable; the API ergonomics are open.
+
+**Multi-element animation policy.** Consumers with a single animated element (e.g., `TugStateIndicator`'s ring) pass the same ref for `ref` and `commitTo` and omit `animationName`. Consumers with multiple staggered animations (e.g., `TugThinkingIndicator`'s three bars) attach the listener to a stable parent (which catches the bubbled `animationend` from each bar) and pass `animationName` to pick exactly one bar's completion as the gate — by convention the last bar in the stagger sequence, so the whole pulse-set finishes before the swap commits.
+
+**Reduced-motion policy ([D24]).** Under `--tug-motion: 0`, CSS resolves the keyframe animation to either `animation-name: none` or `animation-duration: 0s` depending on how the consumer authored the rule. Either way, there is no "in-progress iteration" to preserve and `animationend` may either never fire or fire immediately for every targetClassName change. The hook detects the zero-motion case in its first `useLayoutEffect` (via `getComputedStyle` on `commitTo.current`) and commits immediately. The animation-handoff principle is about preserving the perceived rhythm of motion the user expects to see — when motion is off, there is no rhythm to preserve, and the cleanest behavior is to apply the new state on the spot.
 
 **Tuglaws conformance audit.** Implementation review explicitly walks through each cited law's exact text and the design-decision rationale. If a check fails, the implementation changes — not the law. The audit is recorded in the commit message + a brief note in the hook source so future readers can trace the conformance trail without re-deriving it.
 
@@ -2024,7 +2049,7 @@ The hook's name is provisional. Implementation review may surface a cleaner shap
 - [ ] **Re-read** `tuglaws/tuglaws.md`, `tuglaws/design-decisions.md`, and the relevant sections of `tuglaws/component-authoring.md`. Confirm the law interpretations in this step's scope.
 - [ ] **Document the design principle** — add a new `[D##]` entry to `tuglaws/design-decisions.md` capturing the rule "pulse animations complete in their starting color"; reference it from the hook source.
 - [ ] **Implement the hook** at `tugdeck/src/components/tugways/use-commit-on-animation-end.ts` (or final-named location), with module docstring citing the laws.
-- [ ] **Pure-logic unit tests** for the deferred-commit decision logic (the parts that do not require real DOM): pending-class queue, no-op when target matches current, etc.
+- [ ] **Pure-logic unit tests** for the deferred-commit decision logic (the parts that do not require real DOM): pending-class queue, no-op when target matches current, `animationName` filter accepts matching events and ignores non-matching events, reduced-motion fast-path commits immediately.
 
 **Tests.**
 
@@ -2190,53 +2215,99 @@ labelPosition?: "left" | "right" | "hidden"; // default "right"
 
 **References:** [L02], [L23], [#step-20-3] (reducer turn-accounting model)
 
-**Scope.** Make the live-clock derivation possible without busting the snapshot cache. Add the reducer accounting needed for the interrupt-in-flight axis; project the building-block fields onto `CodeSessionSnapshot`; add a pure helper that composes the live in-flight active duration. The renderer (20.4.5.B) consumes the helper and the existing live-tick external store.
+**Scope.** Make the live-clock derivation possible without busting the snapshot cache. Add the reducer accounting needed for the interrupt-in-flight axis; project the building-block fields onto `CodeSessionSnapshot` in a form that lets a pure helper compute the live in-flight active duration AND correctly handle yellow-axis overlap. The renderer (20.4.5.B) consumes the helper and the existing 1 Hz live-tick external store.
 
-**Reducer-state additions.**
+**The overlap-correctness problem.** The naive math (`wall-clock − sum(accumulators) − sum(open segments)`) would over-subtract whenever two yellow axes overlap. Concrete failure case: a turn enters `awaiting_approval` (axis A opens), then transport flakes mid-approval (axis T opens). For the duration both axes are open, naive `sum()` subtracts twice — the live clock runs negative and clamps to 0, silently swallowing real Claude-active time. With three yellow axes (awaiting-approval, transport-downtime, interrupt-in-flight) and turn lifecycles that can interleave them, this is reachable in practice, not a theoretical edge case.
 
-- `interruptInFlightAccumulatedMs: number` — closed accumulator (sum of past interrupt-in-flight windows within the current turn). Mirrors `awaitingApprovalAccumulatedMs` and `transportDowntimeAccumulatedMs`.
-- `interruptInFlightSegmentStartedAt: number | null` — wall-clock ms when the current interrupt segment opened, or `null` if no segment is open. Mirrors the existing pattern for the other two axes.
-- Both reset on turn boundary (same lifecycle as the existing accumulators).
+**The correct math: UNION of pause intervals, not SUM.** The pause time the live clock must subtract is the duration of the *union* of pause intervals across all axes within `[submitAt, now]` — overlapping intervals contribute only the overlap once. Concretely:
 
-**Snapshot projection (additive).** The snapshot exposes the inputs the helper needs to compute live elapsed:
+```
+pauseMs = duration_of_union(
+  awaitingApprovalIntervals ∪
+  transportDowntimeIntervals ∪
+  interruptInFlightIntervals
+) clipped to [submitAt, now]
 
-- `awaitingApprovalAccumulatedMs`, `awaitingApprovalSegmentStartedAt`
-- `transportDowntimeAccumulatedMs`, `transportDowntimeSegmentStartedAt`
-- `interruptInFlightAccumulatedMs`, `interruptInFlightSegmentStartedAt`
+liveActiveMs = max(0, (now - submitAt) - pauseMs)
+```
+
+The accumulators alone (closed intervals) can't be unioned in scalar form — we'd need to retain the individual interval timestamps. The cleanest substrate is therefore: project ALL closed intervals per axis as arrays of `[start, end]` pairs alongside the open-segment start timestamps, and let the pure helper compute the union.
+
+**Reducer-state additions / changes.**
+
+- `interruptInFlightIntervals: ReadonlyArray<[number, number]>` — array of `[start, end]` ms pairs for closed interrupt-in-flight segments within the current turn. Pushed when the segment closes.
+- `interruptInFlightSegmentStartedAt: number | null` — wall-clock ms when the current interrupt segment opened, or `null` if no segment is open.
+- `awaitingApprovalIntervals: ReadonlyArray<[number, number]>` — same shape, for awaiting-approval. **Adds interval tracking alongside the existing scalar `awaitingApprovalAccumulatedMs`** (keep the scalar to avoid breaking existing `TurnEntry.awaitingApprovalMs` accounting at turn-complete; the new array is used only for live-derivation within the current turn).
+- `transportDowntimeIntervals: ReadonlyArray<[number, number]>` — same shape, for transport-downtime, alongside the existing scalar.
+- All three array fields + the three segment-start timestamps reset to `[]` / `null` on turn boundary.
+
+**Existing scalar accumulators are preserved.** `awaitingApprovalAccumulatedMs` and `transportDowntimeAccumulatedMs` continue to exist and continue to drive `TurnEntry.awaitingApprovalMs` / `transportDowntimeMs` at turn-complete (their downstream consumers in `telemetry.ts` are unchanged). The new interval arrays are an additional, parallel projection used only by the live-derivation path. At turn boundary, the interval arrays are discarded — the per-turn scalar persists.
+
+**The no-overlap-at-commit invariant.** When `turn_complete` lands, the scalar accumulators are committed to `TurnEntry`. If overlap is theoretically possible, `TurnEntry.activeMs` is also wrong by the overlap amount. **Resolution**: at `turn_complete`, recompute `TurnEntry.activeMs` from the union of intervals (same math as the live helper, just over closed intervals) rather than from the scalar sum. This fixes both the live clock AND the committed turn record in one place. Existing `TurnEntry.awaitingApprovalMs` and `transportDowntimeMs` fields stay scalar (their consumers don't need union semantics — they're per-axis totals, not "the union for active-time subtraction").
+
+**Snapshot projection (additive).**
+
+- `awaitingApprovalIntervals`, `awaitingApprovalSegmentStartedAt`
+- `transportDowntimeIntervals`, `transportDowntimeSegmentStartedAt`
+- `interruptInFlightIntervals`, `interruptInFlightSegmentStartedAt`
 
 (`inflightUserMessage.submitAt` is already on the snapshot and serves as the in-flight start anchor.)
 
-The snapshot cache stays dispatch-driven — these fields update only on dispatch, so the [L02] stable-reference contract is preserved. The renderer pulls a stable snapshot via `useSyncExternalStore` + a separate live-tick value via the existing 1Hz tick store, and composes the live elapsed value.
+Snapshot cache stays dispatch-driven — these fields update only on dispatch, so the [L02] stable-reference contract is preserved.
 
 **Pure helper.**
 
 ```typescript
 // In code-session-store/telemetry.ts
+
+/**
+ * Compute the duration of the UNION of pause intervals from any
+ * number of axes, clipped to [windowStart, windowEnd]. Currently-open
+ * segments (passed as `[start, null]` pairs) are treated as having
+ * `end = windowEnd`. Time-complexity O(n log n) in the total number of
+ * intervals (sort + sweep), which for a single in-flight turn is small
+ * (typically < 10).
+ */
+export function unionPauseMs(
+  segments: ReadonlyArray<readonly [number, number | null]>,
+  windowStart: number,
+  windowEnd: number,
+): number;
+
+/**
+ * Compose the live in-flight active duration from snapshot fields and
+ * the current wall-clock. Returns null when no turn is in flight.
+ *
+ *   liveActiveMs = max(0, (now - submitAt) - unionPauseMs(allYellowIntervals, submitAt, now))
+ *
+ * Yellow intervals = union across all three axes (awaiting-approval +
+ * transport-downtime + interrupt-in-flight). Overlapping windows
+ * contribute only once. See `unionPauseMs` for the algorithm.
+ */
 export function deriveInflightActiveMs(
   snap: CodeSessionSnapshot,
   nowMs: number,
-): number | null {
-  // Returns null when no turn is in flight (no inflightUserMessage).
-  // Otherwise: (nowMs - submitAt) − sum(closed accumulators)
-  //                               − sum(currently-open segments measured to nowMs)
-  // Clamped to 0.
-}
+): number | null;
 ```
 
-**Pause-on-yellow correctness.** The derivation automatically produces the pause-on-yellow behavior because the same yellow conditions (awaiting_approval, transport=restoring, interruptInFlight) are exactly what open the three accumulator segments. The live clock pauses while any axis is open and resumes when it closes — no separate "is the indicator yellow" check needed. The indicator's tone-mapping and the clock's pause-mapping share one underlying mechanism, which is the cleanest expression of the rule.
+**Pause-on-yellow correctness.** The derivation produces the pause-on-yellow behavior because the same yellow conditions (awaiting_approval, transport=restoring, interruptInFlight) are exactly what open the three accumulator segments. The live clock pauses while any axis is open and resumes when the union of axes becomes empty — no separate "is the indicator yellow" check needed. The indicator's tone-mapping and the clock's pause-mapping share one underlying mechanism, expressed correctly under overlap.
 
 **Tasks.**
 
-- [ ] Add `interruptInFlightAccumulatedMs` + `interruptInFlightSegmentStartedAt` to the reducer state; open/close the segment in the dispatch paths that set/clear `interruptInFlight`.
-- [ ] Verify the existing `awaitingApproval*` and `transportDowntime*` segments are exposed on the snapshot (some may already be; project the rest).
-- [ ] Add the six snapshot fields listed above.
-- [ ] Implement `deriveInflightActiveMs(snap, nowMs)` in `code-session-store/telemetry.ts`.
-- [ ] Update existing tests that build a fake snapshot to include the new fields.
+- [ ] Add `interruptInFlightIntervals` + `interruptInFlightSegmentStartedAt` to reducer state. Open the segment when `interruptInFlight` flips true; close it (push closed interval, clear segment-start) when it flips false. Reset on turn boundary.
+- [ ] Add `awaitingApprovalIntervals` alongside the existing `awaitingApprovalAccumulatedMs`. Push closed intervals when the awaiting-approval window closes. Keep the existing scalar untouched.
+- [ ] Add `transportDowntimeIntervals` alongside the existing `transportDowntimeAccumulatedMs`. Same shape.
+- [ ] Project the six new fields (three intervals arrays + three segment-start timestamps) onto `CodeSessionSnapshot`.
+- [ ] Implement `unionPauseMs` + `deriveInflightActiveMs` in `code-session-store/telemetry.ts`.
+- [ ] At `turn_complete`, recompute `TurnEntry.activeMs` from `unionPauseMs` over the closed intervals (instead of from the scalar sum) so the committed record matches the live derivation.
+- [ ] Update existing test fixtures to include the new snapshot fields.
 
 **Tests.**
 
-- [ ] Pure-logic tests for `deriveInflightActiveMs` covering: no in-flight turn → null; in-flight, no segments open → wall-clock since submit; in-flight with one open segment → wall-clock − (now − segmentStart); multiple closed accumulators + one open segment → sum subtracted correctly; clamped-to-zero when accumulators sum past wall-clock.
-- [ ] Reducer test for the interrupt accumulator: dispatch `interrupt` → segment opens; `turn_complete` → segment closes and accumulates.
+- [ ] Pure-logic tests for `unionPauseMs`: zero segments → 0; one open segment → `(windowEnd − start)`; two non-overlapping closed segments → sum; two overlapping closed segments → union duration (NOT sum); three axes overlapping in pairs (A∩B, B∩C, A∩C) → correct union; segment partially outside window → clipped.
+- [ ] Pure-logic tests for `deriveInflightActiveMs`: no in-flight turn → null; no segments → wall-clock since submit; one open segment → wall-clock − open duration; **two yellow axes overlapping** → wall-clock − union duration (the regression that prompted this design); clamped-to-zero when union ≥ wall-clock.
+- [ ] Reducer test for interrupt accumulator: dispatch `interrupt` → segment opens; `turn_complete` → segment closes and pushes to intervals.
+- [ ] Reducer test for **overlap correctness at turn-complete**: simulate awaiting-approval + transport-downtime overlap during one turn; assert `TurnEntry.activeMs` equals `wall-clock − union duration`, not `wall-clock − sum`.
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
@@ -2245,6 +2316,7 @@ export function deriveInflightActiveMs(
 
 - [ ] Snapshot is additively expanded — no existing field removed or renamed.
 - [ ] Existing tests (`reducer.diagnostics.test.ts`, `reducer.awaiting-approval-accounting.test.ts`, etc.) updated to acknowledge the new fields where relevant.
+- [ ] Existing `TurnEntry.activeMs` callers see unchanged or strictly more-correct values (the only behavior change is the overlap case, which previously over-subtracted; the recomputation at turn-complete fixes that without breaking non-overlapping cases — verify with a regression sweep over existing reducer fixtures).
 
 ---
 
@@ -2313,42 +2385,139 @@ export function deriveInflightActiveMs(
 
 ---
 
-#### Step 20.4.7: Per-area popover designs — Time, Tokens, Context (gallery) {#step-20-4-7}
+#### Step 20.4.7.A: `Time` and `Tokens` popover designs (gallery) {#step-20-4-7-a}
 
 **Depends on:** #step-20-4-6
 
 **Status:** _not started._
 
-**Commit:** `feat(tide-rendering): gallery popovers for Time / Tokens / Context`
+**Commit:** `feat(tide-rendering): gallery popovers for Time + Tokens`
 
 **References:** [L02], [L06], [L19], [L20]
 
-**Scope.** Three popovers, all anchored on their respective status cells. Each shows a per-request log (one row per committed turn) plus a summary footer.
+**Scope.** Two popovers, anchored on their respective status cells. Both share the same data shape: per-request log (one row per committed turn) + summary footer. Bundled because they're structurally identical, differing only in which `TurnEntry` fields they format.
 
 - **`Time` popover** — log of times for each request/response, with terminal-state badge per row; summary footer: number of requests, total time, average time per request/response.
 - **`Tokens` popover** — log of token usage per request/response, terminal-state badge per row; summary footer: number of requests, total tokens, average tokens per request/response.
-- **`Context` popover** — large `TugArcGauge` with a breakdown of tokens used, redesigned for graphical UI display (re-imagined from Claude Code's terminal-UI `/context` display). Categories: input, cache-read, cache-creation, output, plus the unused remainder relative to the context max.
 
-Visual language pulled from `tug-dev-panel/`'s log format (mono font, tight row-density, tabular numerics, terminal-state badges as small chips).
+Visual language pulled from `tug-dev-panel/`'s log format (mono font, tight row-density, tabular numerics, terminal-state badges as small chips). Per-row "terminal state" comes from `TurnEntry.result` (`"success" | "interrupted"`) — workshop'd in the gallery for additional shape (error / transport-lost rendering once the lifecycle map's broader terminal-reason vocabulary lands).
+
+**In-flight handling.** Popovers can be opened while a turn is in flight. Rule: in-flight turns are NOT included in the row log (the log shows committed turns only) but the in-flight per-turn elapsed / tokens contribute live to the summary footer ("current turn: ... in flight"). Workshop the exact footer copy in the gallery.
 
 **Tasks.**
 
 - [ ] `Time` popover: row list + summary; pure-logic helper to compute summary stats from `transcript[]`.
 - [ ] `Tokens` popover: row list + summary; pure-logic helper for totals + average.
-- [ ] `Context` popover: arc-gauge composition + breakdown legend; pure-logic helper for category breakdown from `transcript[last]`.
+- [ ] In-flight footer surface: small live "current turn" addendum that ticks with the existing 1Hz live-tick subscription.
 - [ ] Gallery card adds a controlled-scenario picker so the popovers render against representative session shapes (fresh, deep, near-cap, etc.).
 
 **Tests.**
 
-- [ ] Pure-logic tests for each helper (`computeTimeSummary`, `computeTokensSummary`, `computeContextBreakdown`) against synthetic transcripts.
+- [ ] Pure-logic tests for each helper (`computeTimeSummary`, `computeTokensSummary`) against synthetic transcripts.
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] HMR-vet all three popovers against multiple scenarios.
-- [ ] If the `Context` popover's re-imagining proves substantively heavier than the other two, split into 20.4.7.A / 20.4.7.B / 20.4.7.C and re-checkpoint each separately.
+- [ ] HMR-vet both popovers against multiple scenarios.
+- [ ] In-flight footer renders correctly when a turn is in flight.
+
+---
+
+#### Step 20.4.7.B: `TugArcGauge` multi-segment mode (primitive extension) {#step-20-4-7-b}
+
+**Depends on:** none in 20.4.x; foundational for 20.4.7.C.
+
+**Status:** _not started._
+
+**Commit:** `feat(tugways): TugArcGauge multi-segment mode`
+
+**References:** [L02], [L06], [L13], [L16], [L17], [L19], [L20], [#step-20-2] (TugArcGauge primitive)
+
+**Scope.** Extend `TugArcGauge` to render a categorical breakdown along its arc instead of a single value-vs-max sweep. The current primitive paints a continuous fill from `min` to `value` against a `max`; the new mode accepts an array of named segments that sum to (≤) `max` and paints each in its own tone. Required by the Context popover (20.4.7.C); useful for any future categorical-breakdown surface.
+
+**Tugways primitive surgery, not a popover composition.** This is its own sub-step because (a) it's a TugArcGauge API extension, (b) it requires new token slots for the segment tones, and (c) it must satisfy the full component-authoring conformance checklist ([L19]) — file pair updates, props interface extension with `@selector` annotations, `@tug-pairings` additions for each segment tone, `@tug-renders-on` annotations, and one-hop `--tugx-arc-gauge-segment-*-color` aliases ([L17]). Embedding this into a popover sub-step would smuggle a primitive change past the component-authoring rigor.
+
+**Props additions (provisional).**
+
+```typescript
+// Extends TugArcGaugeProps:
+/**
+ * Categorical breakdown along the arc. When provided, replaces the
+ * single `value` sweep. Segments paint left-to-right around the arc
+ * in array order; their `value`s sum to `max` (or less, in which case
+ * the remainder paints as a muted "unused" segment).
+ *
+ * @selector .tug-arc-gauge[data-mode="segments"]
+ */
+segments?: ReadonlyArray<{
+  /** Stable key for animation continuity ([L26]). */
+  id: string;
+  /** Numeric magnitude. */
+  value: number;
+  /** Semantic tone for this segment. */
+  tone: "input" | "cache-read" | "cache-creation" | "output" | "remainder";
+  /** Optional label shown in the gauge's adjacent legend slot. */
+  label?: string;
+}>;
+```
+
+When `segments` is provided, the existing `value` / `formatValue` / `thresholds` props are ignored (or take a documented fallback role). When `segments` is omitted, the primitive behaves exactly as today (no regression for existing call-sites).
+
+**Tasks.**
+
+- [ ] Extend `TugArcGauge` props with the `segments` field; preserve all existing behavior when `segments` is omitted.
+- [ ] Add five segment-tone token slots (`--tugx-arc-gauge-segment-input-color`, `…-cache-read-color`, `…-cache-creation-color`, `…-output-color`, `…-remainder-color`), each resolving to `--tug7-*` in one hop ([L17]).
+- [ ] Update `@tug-pairings` in `tug-arc-gauge.css` to include the five new pairings (each segment tone × the gauge surface).
+- [ ] Update the existing TugArcGauge gallery (Step 20.2's gallery card) with a segmented-mode demo.
+- [ ] Pure-logic tests for segment sweep geometry (start angles, sweep lengths) given an array of segments + `max`.
+
+**Tests.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0 (the five new pairings + annotations must pass).
+
+**Checkpoint.**
+
+- [ ] Existing TugArcGauge consumers (Step 20.4's window-utilization renderer, gallery accordion) render unchanged.
+- [ ] Segmented mode renders correctly in the gallery for 2–5 segments with the remainder slot.
+
+---
+
+#### Step 20.4.7.C: `Context` popover design (gallery) {#step-20-4-7-c}
+
+**Depends on:** #step-20-4-6, #step-20-4-7-b
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): gallery Context popover`
+
+**References:** [L02], [L06], [L19], [L20]
+
+**Scope.** The Context popover anchored on the Context status cell. Large `TugArcGauge` in segmented mode (per 20.4.7.B), showing a categorical breakdown of context-window consumption for the most-recent committed turn: input / cache-read / cache-creation / output / remainder (unused capacity). Re-imagined from Claude Code's terminal-UI `/context` display for the graphical surface.
+
+**In-flight handling.** When opened during an in-flight turn, the popover shows the breakdown for the latest committed turn (the most-recent boundary at which a context picture is meaningful). Pre-empts the question "what does Context show when nothing's committed yet?" — answer: an empty / "no committed turns yet" placeholder.
+
+**Tasks.**
+
+- [ ] Compose the Context popover using `TugArcGauge` in segmented mode + a legend block.
+- [ ] Pure-logic helper `computeContextBreakdown(turn: TurnEntry, contextMax: number)` returning the five-segment array.
+- [ ] Empty-state rendering for pre-first-commit case.
+- [ ] Gallery scenario picker covers fresh / deep / near-cap representative shapes.
+
+**Tests.**
+
+- [ ] Pure-logic tests for `computeContextBreakdown` across the representative scenarios.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] HMR-vet the popover at multiple scenarios.
+- [ ] Empty-state renders correctly when no turn has committed yet.
 
 ---
 
@@ -2469,11 +2638,18 @@ export interface TugThinkingIndicatorProps
 }
 ```
 
+**Multi-element animation-handoff wiring.** The three bars use staggered CSS keyframe animations (each with the same `animation-name` but staggered `animation-delay`s, so they pulse in sequence). `animationend` fires per-bar per-iteration and bubbles to the parent. To gate the `animating` toggle on a clean cycle boundary:
+
+- The CSS defines a single animation name (e.g., `tug-thinking-indicator-bar-pulse`).
+- The component renders a stable parent `<span>` containing the three bars; the parent's ref serves as both `ref` AND `commitTo` for the 20.4.1 hook.
+- Each bar's `animationend` bubbles to the parent; the hook receives all three events per iteration.
+- The third (last) bar gets a CSS class marker `.tug-thinking-indicator-bar-last`; the hook's `animationName` filter is configured against this bar's animation. Convention: the last bar in the stagger sequence drives the gate, so the entire pulse-set completes before any visible state swap. (Implementation detail: since all three bars share the same `animation-name`, the filter alone doesn't distinguish them — use `event.target` matching on the last-bar element ref instead, or give the last bar a distinct `animation-name` like `tug-thinking-indicator-bar-pulse-tail`. Pick the cleaner option during implementation.)
+
 **Tasks.**
 
 - [ ] Implement `tug-thinking-indicator.tsx` + `tug-thinking-indicator.css` per the component-authoring guide.
 - [ ] Iterate the bar geometry in the gallery: width, height, spacing, pulse keyframe (staggered timing per bar so the three pulse in sequence).
-- [ ] Wire 20.4.1's animation-handoff hook so the pulse iteration completes in-color before any `animating` toggle takes effect.
+- [ ] Wire 20.4.1's animation-handoff hook on the parent ref; configure the `animationName` filter (or equivalent `event.target` discriminator) to commit only on the LAST bar's iteration end so the full pulse-set completes before any `animating` toggle takes effect.
 - [ ] Add a gallery card (or extend an existing one) with controls for `animating`, `labelPosition`, `label`, `size` so the design space is HMR-vettable.
 
 **Tests.**
@@ -2500,7 +2676,9 @@ export interface TugThinkingIndicatorProps
 
 **References:** [L02], [L23]
 
-**Scope.** Expose "when did the last streaming text delta arrive?" on `CodeSessionSnapshot` so consumers can derive a delta-debounced "stream is actively producing" signal. Add a pure helper that returns `true` when a delta has arrived within the last N ms. No UI consumers yet — 20.4.12 is the first.
+**Scope.** Expose "when did the last streaming text delta arrive?" on `CodeSessionSnapshot` so consumers can derive a delta-debounced "stream is actively producing" signal. Add a pure helper that returns `true` when a delta has arrived within the last N ms, plus a **per-card stream-idle observer** (an [L02]-shaped external store) that fires exactly once when a delta-debounce window elapses without a new delta. The observer is what lets consumers re-render at debounce-window granularity (250–500 ms) without coupling to the 1Hz module-level live tick that today's session-cumulative renderers use — the tick's 1-second granularity is too coarse to drive a 250–500 ms debounce. No UI consumers yet — 20.4.12 is the first.
+
+**Why an observer instead of a finer global tick.** Two options were on the table: (a) drop the global tick from 1Hz to ~250 ms so consumers reading `isStreamActive` re-evaluate frequently enough; (b) keep the global tick at 1Hz and add a per-card stream-idle observer that fires precisely when the debounce window expires after the most recent delta. Option (a) makes every session-cumulative renderer in every open card re-render four times per second, paying a cost for a problem only the new indicator has. Option (b) fires exactly once per debounce window only on cards with an in-flight turn — strictly less work, scoped to the actual consumer. The observer wins on every axis (efficiency, locality, [L02] cleanliness).
 
 **Reducer-state additions.**
 
@@ -2508,7 +2686,17 @@ export interface TugThinkingIndicatorProps
 
 **Snapshot projection (additive).**
 
-- `lastStreamingDeltaAtMs: number | null` — projected directly. Snapshot cache invalidates only on dispatch (consistent with the [L02] stable-reference contract). The renderer reads a stable snapshot + live-tick value and composes.
+- `lastStreamingDeltaAtMs: number | null` — projected directly. Snapshot cache invalidates only on dispatch (consistent with the [L02] stable-reference contract). The renderer reads a stable snapshot + composes.
+
+**Stream-idle observer (per-card external store on `CodeSessionStore`).**
+
+A small `{ subscribe, getSnapshot }` pair exposed on the store. Internal mechanism:
+
+- On each dispatch path that updates `lastStreamingDeltaAtMs` (the text-delta handler), the store cancels any pending `setTimeout` and schedules a new one to fire `windowMs` ms in the future.
+- When the timeout fires, the store increments an integer `streamIdleTick`, notifies subscribers, and clears the timer.
+- `getSnapshot()` returns the current `streamIdleTick` integer. Consumers subscribe via `useSyncExternalStore` and re-render when it changes — at exactly the moment the stream is now considered idle, regardless of where the 1Hz global tick happens to fall.
+- The timer is also cleared on turn boundary and on store dispose (per the existing dispose path).
+- `windowMs` is a store-level constant (workshop'd in the gallery; likely 300 ms).
 
 **Pure helper.**
 
@@ -2519,6 +2707,13 @@ export interface TugThinkingIndicatorProps
  * `windowMs` ms. Default window is workshop'd in the gallery (likely
  * 250–500 ms). Returns false when no in-flight turn, no delta has
  * arrived yet, or the last delta is older than the window.
+ *
+ * For LIVE updates (re-evaluation at debounce-window granularity),
+ * subscribe to `CodeSessionStore.subscribeStreamIdle` and read
+ * `getStreamIdleTick()` — that fires precisely when the window
+ * expires after the most recent delta. Reading this helper from
+ * render without subscribing yields a value that may not refresh
+ * until the next snapshot dispatch.
  */
 export function isStreamActive(
   snap: CodeSessionSnapshot,
@@ -2527,10 +2722,27 @@ export function isStreamActive(
 ): boolean;
 ```
 
+**Consumer subscription pattern.**
+
+```typescript
+// In a renderer that needs live "is stream active" updates:
+const snap = useSyncExternalStore(store.subscribe, store.getSnapshot);
+const idleTick = useSyncExternalStore(
+  store.subscribeStreamIdle,
+  store.getStreamIdleTick,
+);
+// idleTick is read solely to force re-render when the debounce
+// elapses; the actual value comes from the helper:
+const streamActive = isStreamActive(snap, Date.now(), STREAM_IDLE_WINDOW_MS);
+```
+
+The double subscription is intentional: the snapshot subscription drives re-renders on delta arrival (snapshot.lastStreamingDeltaAtMs updates); the stream-idle subscription drives the one re-render that flips active → idle when the debounce expires. Together they cover both directions of the transition without per-frame ticking.
+
 **Tasks.**
 
 - [ ] Add `lastStreamingDeltaAtMs` to reducer state; update on `assistant_delta` (or equivalent text-delta event) handling; reset at turn boundary.
 - [ ] Add the snapshot projection.
+- [ ] Implement the stream-idle observer (`subscribeStreamIdle` + `getStreamIdleTick`) on `CodeSessionStore`. Hook timer set/clear into the delta-handling and turn-boundary code paths. Clear on dispose.
 - [ ] Implement `isStreamActive(snap, nowMs, windowMs?)` in `code-session-store/telemetry.ts`.
 - [ ] Update existing fake-snapshot test fixtures to include the new field.
 
@@ -2538,6 +2750,7 @@ export function isStreamActive(
 
 - [ ] Pure-logic tests for `isStreamActive`: returns `false` with no in-flight turn; returns `false` when no delta has arrived; returns `true` within window; returns `false` past window; window default behaves sensibly.
 - [ ] Reducer test confirming `lastStreamingDeltaAtMs` updates on text-delta events and clears on turn boundary.
+- [ ] Store test confirming the stream-idle observer fires once per debounce window: a single delta produces exactly one tick after `windowMs`; rapid deltas only fire one tick after the LAST delta + `windowMs`; turn boundary cancels a pending timer; dispose clears the timer.
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
@@ -2545,6 +2758,7 @@ export function isStreamActive(
 **Checkpoint.**
 
 - [ ] Snapshot is additively expanded — no existing field removed or renamed.
+- [ ] The 1Hz global tick is unchanged — no consumers of the existing tick are affected.
 
 ---
 
