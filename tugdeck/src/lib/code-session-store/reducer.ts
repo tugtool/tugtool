@@ -295,6 +295,56 @@ export interface CodeSessionState {
    */
   interruptInFlight: boolean;
   /**
+   * Wall-clock ms when `handleInterrupt` opened the current
+   * CASE B interrupt round-trip; `null` while no interrupt is in
+   * flight. Companion to {@link interruptInFlight} (which is the
+   * latched bool) — this field is the entry-side timestamp the
+   * live-clock helper folds in via the yellow-axis union.
+   *
+   * The two fields could be inferred from each other (bool ↔
+   * timestamp), but keeping them parallel matches the
+   * `awaitingApprovalSince` / `transportNonOnlineSince` pattern and
+   * lets `closeInterruptInFlightInterval` push a closed `[start, end]`
+   * pair into {@link interruptInFlightIntervals} without re-deriving
+   * the start time.
+   */
+  interruptInFlightSegmentStartedAt: number | null;
+  /**
+   * Closed pause-axis intervals observed within the current in-flight
+   * turn, as `[startMs, endMs]` pairs in chronological order. The
+   * three arrays mirror the three scalar accumulators / segment-start
+   * timestamps and are appended to whenever the matching segment
+   * closes:
+   *
+   *   - awaiting-approval: closes when a dialog (permission OR
+   *     question) is answered, or when an interrupt fires while a
+   *     dialog is open
+   *   - transport-downtime: closes when the wire returns to `online`
+   *     via `transport_settled`
+   *   - interrupt-in-flight: closes at the matching `turn_complete`
+   *     (the only path that flips `interruptInFlight` back to false)
+   *
+   * Reset to `[]` at every new turn start (`handleSend`). They are
+   * deliberately NOT reset at `handleTurnComplete` — the closed
+   * intervals from the just-ended turn linger through the brief idle
+   * gap so the reducer-state inspector can show the full pause
+   * history of the most recent turn, and so the next `handleSend`
+   * does the canonical reset in one place.
+   *
+   * The arrays sit alongside the existing scalar accumulators
+   * (`awaitingApprovalAccumulatedMs` / `transportDowntimeAccumulatedMs`).
+   * The scalars continue to drive the committed `TurnEntry` per-turn
+   * telemetry; the arrays are an additional, parallel projection that
+   * the pure live-derivation helper (`deriveInflightActiveMs`) unions
+   * across axes so overlapping pauses contribute only once. See plan
+   * `#step-20-4-5-a` for the overlap-correctness rationale — naive
+   * scalar sums over-subtract under any pair-overlap, the union is
+   * the smallest fix.
+   */
+  awaitingApprovalIntervals: ReadonlyArray<readonly [number, number]>;
+  transportDowntimeIntervals: ReadonlyArray<readonly [number, number]>;
+  interruptInFlightIntervals: ReadonlyArray<readonly [number, number]>;
+  /**
    * Per-tool-call start timestamps captured at `handleToolUse`, used
    * by `handleToolResult` to compute the matching `ToolCallState.toolWallMs`.
    * Reducer-internal — never exposed on the snapshot. Cleared on turn
@@ -367,6 +417,10 @@ export function createInitialState(
     firstToolUseAt: null,
     costAtSubmit: null,
     interruptInFlight: false,
+    interruptInFlightSegmentStartedAt: null,
+    awaitingApprovalIntervals: [],
+    transportDowntimeIntervals: [],
+    interruptInFlightIntervals: [],
     toolUseStartedAt: new Map(),
   };
 }
@@ -420,7 +474,12 @@ function handleSend(
       // Reset per-turn accumulators. `transportNonOnlineSince` is
       // owned by the transport handlers — leave it alone so a
       // disconnect that started before this submit still folds into
-      // the turn correctly.
+      // the turn correctly. The new per-turn interval arrays + the
+      // interrupt segment-start ARE reset here (canSubmit gating
+      // ensures the wire is online at submit time, so no
+      // transport-downtime segment can carry over the boundary in a
+      // way the next turn cares about; the array projection is
+      // strictly per-turn).
       awaitingApprovalSince: null,
       awaitingApprovalAccumulatedMs: 0,
       transportDowntimeAccumulatedMs: 0,
@@ -430,6 +489,10 @@ function handleSend(
       firstAssistantDeltaAt: null,
       firstToolUseAt: null,
       interruptInFlight: false,
+      interruptInFlightSegmentStartedAt: null,
+      awaitingApprovalIntervals: [],
+      transportDowntimeIntervals: [],
+      interruptInFlightIntervals: [],
     };
     return {
       state: next,
@@ -546,6 +609,16 @@ function handleInterrupt(
         // cleanliness.
         costAtSubmit: null,
         interruptInFlight: false,
+        // Per-turn interval projections: clear alongside the scalar
+        // accumulators so the next turn starts with empty pause
+        // history. CASE A doesn't open an interrupt segment (the UI
+        // never sees an INTERRUPTING state for a no-content abort),
+        // so `interruptInFlightSegmentStartedAt` is already null
+        // here — written explicitly for invariant clarity.
+        interruptInFlightSegmentStartedAt: null,
+        awaitingApprovalIntervals: [],
+        transportDowntimeIntervals: [],
+        interruptInFlightIntervals: [],
       },
       effects: [
         { kind: "send-frame", msg: { type: "interrupt" } },
@@ -579,9 +652,14 @@ function handleInterrupt(
   // CASE B: the wire's eventual `turn_complete(error)` commits an
   // interrupted entry. Set `interruptInFlight` so the UI can show
   // an INTERRUPTING state during the round-trip; `handleTurnComplete`
-  // clears it. If we were paused on a dialog, fold the in-progress
-  // awaiting interval into the accumulator so the committed entry
-  // reports the full time the user waited.
+  // clears it. Open the interrupt-in-flight segment at this same
+  // instant so live-derivation can pause the in-flight active clock
+  // for the round-trip's duration (the segment closes at
+  // `handleTurnComplete` and the closed `[start, end]` pair lands on
+  // `interruptInFlightIntervals`). If we were paused on a dialog,
+  // fold the in-progress awaiting interval into the accumulator so
+  // the committed entry reports the full time the user waited.
+  const interruptOpenedAt = Date.now();
   return {
     state: {
       ...state,
@@ -591,7 +669,8 @@ function handleInterrupt(
       prevPhase: null,
       queuedSends: [],
       interruptInFlight: true,
-      ...closeAwaitingApprovalInterval(state),
+      interruptInFlightSegmentStartedAt: interruptOpenedAt,
+      ...closeAwaitingApprovalInterval(state, interruptOpenedAt),
     },
     effects: [{ kind: "send-frame", msg: { type: "interrupt" } }],
   };
@@ -1044,12 +1123,68 @@ function handleToolUseStructured(
 }
 
 /**
+ * Close any open per-turn pause segments (awaiting-approval +
+ * interrupt-in-flight) and produce the resulting interval-array
+ * updates. Called by every turn-boundary callsite (`handleTurnComplete`,
+ * transport-lost commit) so the just-ended turn's intervals projection
+ * is complete before the post-state lands.
+ *
+ * Note the asymmetry with transport-downtime: a transport-downtime
+ * segment that's still open at turn boundary (the transport-lost
+ * commit case) is deliberately NOT closed here — the disconnect
+ * outlives the turn and the segment continues into the next
+ * idle/errored window. `handleTransportSettled` is the sole closer of
+ * transport segments. (At the next `handleSend`, `transportDowntimeIntervals`
+ * is reset to `[]` along with the rest of the per-turn array
+ * projections; an open `transportNonOnlineSince` remains the
+ * transport handler's concern.)
+ */
+function closeTurnPauseSegments(
+  state: CodeSessionState,
+  end: number,
+): {
+  awaitingApprovalIntervals: ReadonlyArray<readonly [number, number]>;
+  interruptInFlightIntervals: ReadonlyArray<readonly [number, number]>;
+  interruptInFlightSegmentStartedAt: null;
+} {
+  const awaitingApprovalIntervals =
+    state.awaitingApprovalSince === null
+      ? state.awaitingApprovalIntervals
+      : [
+          ...state.awaitingApprovalIntervals,
+          [state.awaitingApprovalSince, end] as const,
+        ];
+  const interruptInFlightIntervals =
+    state.interruptInFlightSegmentStartedAt === null
+      ? state.interruptInFlightIntervals
+      : [
+          ...state.interruptInFlightIntervals,
+          [state.interruptInFlightSegmentStartedAt, end] as const,
+        ];
+  return {
+    awaitingApprovalIntervals,
+    interruptInFlightIntervals,
+    interruptInFlightSegmentStartedAt: null,
+  };
+}
+
+/**
  * Per-turn reset slice — fields cleared at every turn boundary
  * (`turn_complete` success/error, `turn_complete` interrupted,
  * mid-turn transport-lost). The active-turn axis (phase, scratch,
  * pendingUserMessage, etc.) is reset separately at each call site
  * because the queue-flush path needs to populate the next turn's slots
  * synchronously.
+ *
+ * The per-turn interval arrays (`awaitingApprovalIntervals` /
+ * `transportDowntimeIntervals` / `interruptInFlightIntervals`) are
+ * deliberately NOT reset here — the closed-intervals projection
+ * from the just-ended turn persists through the brief idle gap so
+ * the dev-panel inspector and any debug-time consumer can see the
+ * full pause history. The arrays reset at the next `handleSend`
+ * (start of the next turn). Open segments are closed by
+ * {@link closeTurnPauseSegments} at the same callsite that spreads
+ * this reset.
  */
 function resetPerTurnTelemetry(): Pick<
   CodeSessionState,
@@ -1280,13 +1415,22 @@ function handleTurnComplete(
   // attached a persisted telemetry block (replay path), buildTurnEntry
   // adopts it via `mergeTurnTelemetry`; when it's undefined (live
   // path), buildTurnEntry derives the block from reducer state.
+  const endedAt = Date.now();
   const entry: TurnEntry = buildTurnEntry(
     state,
     msgId,
     turnEndReason,
-    Date.now(),
+    endedAt,
     event.telemetry,
   );
+  // Close any open per-turn pause segments (awaiting-approval +
+  // interrupt-in-flight) into their interval-array projections. The
+  // committed `TurnEntry` above already folds the scalar
+  // accumulators; this is the parallel projection for live-derivation
+  // consumers (see `deriveInflightActiveMs` in telemetry.ts). The
+  // transport-downtime segment is owned by the transport handlers
+  // and deliberately not closed here.
+  const closedPauseSegments = closeTurnPauseSegments(state, endedAt);
 
   const scratch = new Map(state.scratch);
   scratch.delete(msgId);
@@ -1314,6 +1458,7 @@ function handleTurnComplete(
         pendingUserMessage: null,
         committedMsgIds,
         ...resetPerTurnTelemetry(),
+        ...closedPauseSegments,
       },
       effects: [{ kind: "append-transcript", entry }],
     };
@@ -1353,6 +1498,15 @@ function handleTurnComplete(
         // snapshot the post-completion `lastCost` so the next turn's
         // delta is measured from this point.
         ...resetPerTurnTelemetry(),
+        // Queue-flush IS the next `handleSend` for telemetry purposes,
+        // so apply the same per-turn interval-array reset that
+        // `handleSend` does. The closed-segment push from the
+        // just-ended turn is discarded — the new turn's intervals
+        // start empty.
+        awaitingApprovalIntervals: [],
+        transportDowntimeIntervals: [],
+        interruptInFlightIntervals: [],
+        interruptInFlightSegmentStartedAt: null,
         costAtSubmit: state.lastCost,
       },
       effects: [
@@ -1401,6 +1555,7 @@ function handleTurnComplete(
       lastError: isSuccess ? null : state.lastError,
       committedMsgIds,
       ...resetPerTurnTelemetry(),
+      ...closedPauseSegments,
     },
     effects: [
       { kind: "append-transcript", entry },
@@ -1467,20 +1622,105 @@ function handleControlRequestForward(
  * Close the awaiting-approval interval and fold it into the
  * accumulator. Used by both `handleRespondApproval` and
  * `handleRespondQuestion` so the two dialog kinds count identically.
+ *
+ * Also appends the closed `[since, end]` pair onto
+ * `awaitingApprovalIntervals` so live-derivation (which unions
+ * per-axis intervals) sees the closed segment. The scalar accumulator
+ * and the intervals array are populated in lockstep — the scalar
+ * continues to drive the committed `TurnEntry`, the array drives the
+ * live in-flight clock.
  */
 function closeAwaitingApprovalInterval(
   state: CodeSessionState,
-): { awaitingApprovalSince: null; awaitingApprovalAccumulatedMs: number } {
+  end: number = Date.now(),
+): {
+  awaitingApprovalSince: null;
+  awaitingApprovalAccumulatedMs: number;
+  awaitingApprovalIntervals: ReadonlyArray<readonly [number, number]>;
+} {
   if (state.awaitingApprovalSince === null) {
     return {
       awaitingApprovalSince: null,
       awaitingApprovalAccumulatedMs: state.awaitingApprovalAccumulatedMs,
+      awaitingApprovalIntervals: state.awaitingApprovalIntervals,
     };
   }
-  const elapsed = Math.max(0, Date.now() - state.awaitingApprovalSince);
+  const start = state.awaitingApprovalSince;
+  const elapsed = Math.max(0, end - start);
   return {
     awaitingApprovalSince: null,
     awaitingApprovalAccumulatedMs: state.awaitingApprovalAccumulatedMs + elapsed,
+    awaitingApprovalIntervals: [
+      ...state.awaitingApprovalIntervals,
+      [start, end] as const,
+    ],
+  };
+}
+
+/**
+ * Close the in-flight transport-downtime interval. Folds the elapsed
+ * non-online time into the scalar accumulator AND appends the closed
+ * `[since, end]` pair onto `transportDowntimeIntervals`. Used by
+ * `handleTransportSettled` when the wire returns to `online`. No-op
+ * (returns the existing references) when no segment is open.
+ */
+function closeTransportDowntimeInterval(
+  state: CodeSessionState,
+  end: number = Date.now(),
+): {
+  transportNonOnlineSince: null;
+  transportDowntimeAccumulatedMs: number;
+  transportDowntimeIntervals: ReadonlyArray<readonly [number, number]>;
+} {
+  if (state.transportNonOnlineSince === null) {
+    return {
+      transportNonOnlineSince: null,
+      transportDowntimeAccumulatedMs: state.transportDowntimeAccumulatedMs,
+      transportDowntimeIntervals: state.transportDowntimeIntervals,
+    };
+  }
+  const start = state.transportNonOnlineSince;
+  const elapsed = Math.max(0, end - start);
+  return {
+    transportNonOnlineSince: null,
+    transportDowntimeAccumulatedMs:
+      state.transportDowntimeAccumulatedMs + elapsed,
+    transportDowntimeIntervals: [
+      ...state.transportDowntimeIntervals,
+      [start, end] as const,
+    ],
+  };
+}
+
+/**
+ * Close the in-flight interrupt segment. Appends the closed
+ * `[since, end]` pair onto `interruptInFlightIntervals` and clears
+ * `interruptInFlightSegmentStartedAt`. Used by `handleTurnComplete`
+ * (and the transport-lost commit path) so the just-ended turn's
+ * pause history is complete before the new state lands. The latched
+ * `interruptInFlight` boolean is cleared separately, by the same
+ * call site, via `resetPerTurnTelemetry`.
+ */
+function closeInterruptInFlightInterval(
+  state: CodeSessionState,
+  end: number = Date.now(),
+): {
+  interruptInFlightSegmentStartedAt: null;
+  interruptInFlightIntervals: ReadonlyArray<readonly [number, number]>;
+} {
+  if (state.interruptInFlightSegmentStartedAt === null) {
+    return {
+      interruptInFlightSegmentStartedAt: null,
+      interruptInFlightIntervals: state.interruptInFlightIntervals,
+    };
+  }
+  const start = state.interruptInFlightSegmentStartedAt;
+  return {
+    interruptInFlightSegmentStartedAt: null,
+    interruptInFlightIntervals: [
+      ...state.interruptInFlightIntervals,
+      [start, end] as const,
+    ],
   };
 }
 
@@ -1774,6 +2014,12 @@ function handleTransportClose(
         pendingUserMessage: null,
         queuedSends: [],
         ...resetPerTurnTelemetry(),
+        // Same per-turn-boundary close as `handleTurnComplete`:
+        // close awaiting + interrupt segments into their arrays so
+        // the just-lost turn's pause history is complete. The
+        // transport segment is deliberately left open — the
+        // disconnect that lost the turn is still live.
+        ...closeTurnPauseSegments(state, endedAt),
       };
     }
   }
@@ -1844,27 +2090,16 @@ function handleTransportSettled(
     return { state, effects: [] };
   }
   // Close the transport-downtime interval and fold the elapsed time
-  // into the accumulator; increment the reconnect counter. If
-  // `transportNonOnlineSince` was somehow null (defensive — both
-  // transport_close and transport_open set it), only the reconnect
-  // count moves.
-  const accumulator =
-    state.transportNonOnlineSince === null
-      ? {
-          transportNonOnlineSince: null as number | null,
-          transportDowntimeAccumulatedMs: state.transportDowntimeAccumulatedMs,
-        }
-      : {
-          transportNonOnlineSince: null as number | null,
-          transportDowntimeAccumulatedMs:
-            state.transportDowntimeAccumulatedMs +
-            Math.max(0, Date.now() - state.transportNonOnlineSince),
-        };
+  // into both the scalar accumulator and the per-turn intervals
+  // array; increment the reconnect counter. If `transportNonOnlineSince`
+  // was somehow null (defensive — both transport_close and
+  // transport_open set it), the helper is a no-op and only the
+  // reconnect count moves.
   return {
     state: {
       ...state,
       transportState: "online",
-      ...accumulator,
+      ...closeTransportDowntimeInterval(state),
       transportReconnectCount: state.transportReconnectCount + 1,
     },
     effects: [],

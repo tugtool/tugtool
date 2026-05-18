@@ -371,6 +371,28 @@ export class CodeSessionStore {
       replayPreflightActive: this.state.replayPreflightActive,
       replaySoftBudgetElapsed: this.state.replaySoftBudgetElapsed,
       replayTimeoutDwellActive: this.state.replayTimeoutDwellActive,
+      // Per-turn pause-axis projections for the live-clock
+      // derivation. Three closed-intervals arrays + three
+      // segment-start timestamps, one set per axis. References pass
+      // through unchanged so identity is stable across snapshot
+      // rebuilds while the underlying reducer fields don't change
+      // ([L02] `useSyncExternalStore` consumers see `Object.is`
+      // stability during quiescent renders).
+      //
+      // Two of the three segment-start fields are renamed
+      // projections of existing reducer fields (`awaitingApprovalSince`
+      // → `awaitingApprovalSegmentStartedAt`, `transportNonOnlineSince`
+      // → `transportDowntimeSegmentStartedAt`). The renames give all
+      // three axes a uniform `<axis>SegmentStartedAt` vocabulary at
+      // the snapshot surface so `deriveInflightActiveMs` can read
+      // them generically.
+      awaitingApprovalIntervals: this.state.awaitingApprovalIntervals,
+      awaitingApprovalSegmentStartedAt: this.state.awaitingApprovalSince,
+      transportDowntimeIntervals: this.state.transportDowntimeIntervals,
+      transportDowntimeSegmentStartedAt: this.state.transportNonOnlineSince,
+      interruptInFlightIntervals: this.state.interruptInFlightIntervals,
+      interruptInFlightSegmentStartedAt:
+        this.state.interruptInFlightSegmentStartedAt,
     };
     this._cachedSnapshot = snap;
     return snap;

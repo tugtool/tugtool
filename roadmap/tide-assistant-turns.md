@@ -2170,7 +2170,7 @@ labelPosition?: "left" | "right" | "hidden"; // default "right"
 
 **Depends on:** none in 20.4.x; foundational for 20.4.5.B.
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(code-session): inflight-active-ms substrate (interrupt accumulator + snapshot)`
 
@@ -2255,27 +2255,27 @@ export function deriveInflightActiveMs(
 
 **Tasks.**
 
-- [ ] Add `interruptInFlightIntervals` + `interruptInFlightSegmentStartedAt` to reducer state. Open the segment when `interruptInFlight` flips true; close it (push closed interval, clear segment-start) when it flips false. Reset on turn boundary.
-- [ ] Add `awaitingApprovalIntervals` alongside the existing `awaitingApprovalAccumulatedMs`. Push closed intervals when the awaiting-approval window closes. Keep the existing scalar untouched.
-- [ ] Add `transportDowntimeIntervals` alongside the existing `transportDowntimeAccumulatedMs`. Same shape.
-- [ ] Project the six new fields (three intervals arrays + three segment-start timestamps) onto `CodeSessionSnapshot`.
-- [ ] Implement `unionPauseMs` + `deriveInflightActiveMs` in `code-session-store/telemetry.ts`.
-- [ ] Update existing test fixtures to include the new snapshot fields.
+- [x] Add `interruptInFlightIntervals` + `interruptInFlightSegmentStartedAt` to reducer state. Open the segment when `interruptInFlight` flips true; close it (push closed interval, clear segment-start) when it flips false. Reset on turn boundary.
+- [x] Add `awaitingApprovalIntervals` alongside the existing `awaitingApprovalAccumulatedMs`. Push closed intervals when the awaiting-approval window closes. Keep the existing scalar untouched.
+- [x] Add `transportDowntimeIntervals` alongside the existing `transportDowntimeAccumulatedMs`. Same shape.
+- [x] Project the six new fields (three intervals arrays + three segment-start timestamps) onto `CodeSessionSnapshot`.
+- [x] Implement `unionPauseMs` + `deriveInflightActiveMs` in `code-session-store/telemetry.ts`.
+- [x] Update existing test fixtures to include the new snapshot fields.
 
 **Tests.**
 
-- [ ] Pure-logic tests for `unionPauseMs`: zero segments → 0; one open segment → `(windowEnd − start)`; two non-overlapping closed segments → sum; two overlapping closed segments → union duration (NOT sum); three axes overlapping in pairs (A∩B, B∩C, A∩C) → correct union; segment partially outside window → clipped.
-- [ ] Pure-logic tests for `deriveInflightActiveMs`: no in-flight turn → null; no segments → wall-clock since submit; one open segment → wall-clock − open duration; **two yellow axes overlapping** → wall-clock − union duration (the regression that prompted this design); clamped-to-zero when union ≥ wall-clock.
-- [ ] Reducer test for interrupt accumulator: dispatch `interrupt` → segment opens; `turn_complete` → segment closes and pushes to intervals.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic tests for `unionPauseMs`: zero segments → 0; one open segment → `(windowEnd − start)`; two non-overlapping closed segments → sum; two overlapping closed segments → union duration (NOT sum); three axes overlapping in pairs (A∩B, B∩C, A∩C) → correct union; segment partially outside window → clipped.
+- [x] Pure-logic tests for `deriveInflightActiveMs`: no in-flight turn → null; no segments → wall-clock since submit; one open segment → wall-clock − open duration; **two yellow axes overlapping** → wall-clock − union duration (the regression that prompted this design); clamped-to-zero when union ≥ wall-clock.
+- [x] Reducer test for interrupt accumulator: dispatch `interrupt` → segment opens; `turn_complete` → segment closes and pushes to intervals.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] Snapshot is additively expanded — no existing field removed or renamed.
-- [ ] Existing tests (`reducer.diagnostics.test.ts`, `reducer.awaiting-approval-accounting.test.ts`, etc.) updated to acknowledge the new fields where relevant.
-- [ ] `TurnEntry.activeMs` and its consumers are unchanged — this step does not touch the committed-record code path.
+- [x] Snapshot is additively expanded — no existing field removed or renamed.
+- [x] Existing tests (`reducer.diagnostics.test.ts`, `reducer.awaiting-approval-accounting.test.ts`, etc.) updated to acknowledge the new fields where relevant.
+- [x] `TurnEntry.activeMs` and its consumers are unchanged — this step does not touch the committed-record code path.
 
 ---
 

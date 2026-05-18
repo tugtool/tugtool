@@ -498,6 +498,68 @@ export interface CodeSessionSnapshot {
    * the banner dismisses.
    */
   replayTimeoutDwellActive: boolean;
+
+  /**
+   * Closed awaiting-approval intervals observed within the current
+   * in-flight turn, as `[startMs, endMs]` pairs in chronological order.
+   * Cleared at every new turn start (`send`); appended to whenever a
+   * dialog (permission or question) closes. Sits alongside the scalar
+   * `TurnEntry.awaitingApprovalMs` accumulator — the array is the
+   * authoritative shape for live-derivation (it can be unioned with
+   * the other yellow axes' intervals to correctly handle overlap),
+   * while the scalar continues to drive the committed entry.
+   *
+   * Reference is preserved across snapshot rebuilds while the array
+   * doesn't change; per [L02] `useSyncExternalStore` consumers get
+   * `Object.is` stability during quiescent renders.
+   */
+  awaitingApprovalIntervals: ReadonlyArray<readonly [number, number]>;
+  /**
+   * Wall-clock ms when the current awaiting-approval dialog (permission
+   * or question) opened, or `null` if no dialog is open. Mirrors the
+   * reducer's `awaitingApprovalSince` field under the spec's per-turn
+   * vocabulary so live-derivation helpers read it under the same
+   * naming as the matching intervals array.
+   */
+  awaitingApprovalSegmentStartedAt: number | null;
+  /**
+   * Closed transport-downtime intervals observed within the current
+   * in-flight turn (both `offline` and `restoring` count as
+   * non-online), as `[startMs, endMs]` pairs in chronological order.
+   * Cleared at every new turn start (`send`); appended to whenever the
+   * transport returns to `online` (`transport_settled`). Sits
+   * alongside the scalar `TurnEntry.transportDowntimeMs` accumulator
+   * with the same dual-source contract as
+   * {@link awaitingApprovalIntervals}.
+   */
+  transportDowntimeIntervals: ReadonlyArray<readonly [number, number]>;
+  /**
+   * Wall-clock ms when the transport first left `online` (to
+   * `offline` or `restoring`), or `null` while online. Mirrors the
+   * reducer's `transportNonOnlineSince` under the spec's per-turn
+   * vocabulary.
+   */
+  transportDowntimeSegmentStartedAt: number | null;
+  /**
+   * Closed interrupt-in-flight intervals observed within the current
+   * turn, as `[startMs, endMs]` pairs. In practice each turn carries
+   * at most one such interval — the user presses Stop once and the
+   * subsequent `turn_complete` ends both the segment and the turn —
+   * so the array's length is usually 0 (no interrupt happened) or 1
+   * (CASE B interrupt ran to completion). The array shape is uniform
+   * with the other two axes so {@link deriveInflightActiveMs} can
+   * union them generically.
+   */
+  interruptInFlightIntervals: ReadonlyArray<readonly [number, number]>;
+  /**
+   * Wall-clock ms when the user-initiated interrupt round-trip
+   * started (`interrupt()` from a content-bearing phase — CASE B), or
+   * `null` while no interrupt is in flight. Mirrors the semantics of
+   * the existing `interruptInFlight` boolean (which is the latched
+   * state); this field is the entry-side timestamp the live-clock
+   * helper uses to compute the open-segment duration.
+   */
+  interruptInFlightSegmentStartedAt: number | null;
 }
 
 /**

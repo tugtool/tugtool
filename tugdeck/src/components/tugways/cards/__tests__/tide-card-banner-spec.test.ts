@@ -74,6 +74,12 @@ function baseSnap(
     replayPreflightActive: false,
     replaySoftBudgetElapsed: false,
     replayTimeoutDwellActive: false,
+    awaitingApprovalIntervals: [],
+    awaitingApprovalSegmentStartedAt: null,
+    transportDowntimeIntervals: [],
+    transportDowntimeSegmentStartedAt: null,
+    interruptInFlightIntervals: [],
+    interruptInFlightSegmentStartedAt: null,
     ...overrides,
   };
 }

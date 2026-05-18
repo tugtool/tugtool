@@ -14,12 +14,16 @@ import {
   liveTurnAwaitingApprovalMs,
   liveTurnTransportDowntimeMs,
   liveTurnActiveMs,
+  unionPauseMs,
+  deriveInflightActiveMs,
+  type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
 import {
   createInitialState,
   type CodeSessionState,
 } from "@/lib/code-session-store/reducer";
 import type {
+  CodeSessionSnapshot,
   CostSnapshot,
   TurnEntry,
 } from "@/lib/code-session-store/types";
@@ -272,5 +276,231 @@ describe("telemetry — liveTurn* helpers", () => {
     };
     // wall = 1000, awaiting = 200, downtime = 100 → active = 700
     expect(liveTurnActiveMs(state, 1_001_000)).toBe(700);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Overlap-correct live in-flight derivation — `unionPauseMs` +
+// `deriveInflightActiveMs`. The headline regression this guards is
+// the over-subtraction bug that scalar-sum derivations fall into
+// whenever two pause axes overlap.
+// ---------------------------------------------------------------------------
+
+describe("unionPauseMs", () => {
+  it("returns 0 for zero segments", () => {
+    expect(unionPauseMs([], 1_000, 2_000)).toBe(0);
+  });
+
+  it("returns 0 for a degenerate window (end <= start)", () => {
+    expect(unionPauseMs([[1_500, 1_800]], 2_000, 2_000)).toBe(0);
+    expect(unionPauseMs([[1_500, 1_800]], 2_000, 1_900)).toBe(0);
+  });
+
+  it("treats an open segment ([start, null]) as ending at the window end", () => {
+    const segments: PauseSegment[] = [[1_500, null]];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(500);
+  });
+
+  it("sums two non-overlapping closed segments", () => {
+    const segments: PauseSegment[] = [
+      [1_100, 1_300],
+      [1_500, 1_900],
+    ];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(200 + 400);
+  });
+
+  it("unions two overlapping closed segments (NOT their sum)", () => {
+    const segments: PauseSegment[] = [
+      [1_100, 1_500],
+      [1_300, 1_700],
+    ];
+    // Naive sum would be 400 + 400 = 800. Union is [1_100, 1_700] = 600.
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(600);
+  });
+
+  it("unions three segments with pairwise overlap (A∩B, B∩C, A∩C)", () => {
+    const segments: PauseSegment[] = [
+      [1_100, 1_400], // A
+      [1_300, 1_600], // B (overlaps A, overlaps C)
+      [1_500, 1_700], // C (overlaps B; does not directly overlap A)
+    ];
+    // All three merge into [1_100, 1_700] = 600.
+    // Naive sum would be 300 + 300 + 200 = 800.
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(600);
+  });
+
+  it("merges identical segments into a single contribution", () => {
+    const segments: PauseSegment[] = [
+      [1_200, 1_500],
+      [1_200, 1_500],
+    ];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(300);
+  });
+
+  it("merges a segment fully contained within another into the outer", () => {
+    const segments: PauseSegment[] = [
+      [1_100, 1_900],
+      [1_300, 1_500],
+    ];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(800);
+  });
+
+  it("clips a segment that starts before the window", () => {
+    const segments: PauseSegment[] = [[500, 1_200]];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(200);
+  });
+
+  it("clips a segment that ends after the window", () => {
+    const segments: PauseSegment[] = [[1_800, 2_500]];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(200);
+  });
+
+  it("clips a segment that straddles the entire window", () => {
+    const segments: PauseSegment[] = [[500, 2_500]];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(1_000);
+  });
+
+  it("drops a segment fully outside the window", () => {
+    const segments: PauseSegment[] = [
+      [200, 500],
+      [2_500, 3_000],
+    ];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(0);
+  });
+
+  it("clips an open segment whose start is before the window", () => {
+    const segments: PauseSegment[] = [[500, null]];
+    expect(unionPauseMs(segments, 1_000, 2_000)).toBe(1_000);
+  });
+});
+
+describe("deriveInflightActiveMs", () => {
+  /**
+   * Minimal `CodeSessionSnapshot` builder for the live-derivation
+   * helper. Only fields `deriveInflightActiveMs` reads are populated
+   * meaningfully; everything else defaults to a quiescent shape that
+   * passes the type check.
+   */
+  function snap(
+    overrides: Partial<CodeSessionSnapshot> = {},
+  ): CodeSessionSnapshot {
+    return {
+      phase: "streaming",
+      transportState: "online",
+      interruptInFlight: false,
+      tugSessionId: "tug-1",
+      displayLabel: "test",
+      sessionMode: "new",
+      activeMsgId: "msg",
+      canSubmit: false,
+      canInterrupt: true,
+      pendingApproval: null,
+      pendingQuestion: null,
+      controlRequestLog: [],
+      queuedSends: 0,
+      transcript: [],
+      inflightUserMessage: null,
+      pendingDraftRestore: null,
+      lastCost: null,
+      lastError: null,
+      lastReplayResult: null,
+      replayPreflightActive: false,
+      replaySoftBudgetElapsed: false,
+      replayTimeoutDwellActive: false,
+      awaitingApprovalIntervals: [],
+      awaitingApprovalSegmentStartedAt: null,
+      transportDowntimeIntervals: [],
+      transportDowntimeSegmentStartedAt: null,
+      interruptInFlightIntervals: [],
+      interruptInFlightSegmentStartedAt: null,
+      ...overrides,
+    };
+  }
+
+  function inflight(submitAt: number): CodeSessionSnapshot["inflightUserMessage"] {
+    return { text: "", atoms: [], submitAt, turnKey: "k" };
+  }
+
+  it("returns null when no turn is in flight", () => {
+    expect(deriveInflightActiveMs(snap(), 1_002_000)).toBeNull();
+  });
+
+  it("returns wall-clock since submit when no pause segments exist", () => {
+    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    expect(deriveInflightActiveMs(s, 1_001_500)).toBe(1_500);
+  });
+
+  it("returns 0 when now == submitAt (degenerate window)", () => {
+    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    expect(deriveInflightActiveMs(s, 1_000_000)).toBe(0);
+  });
+
+  it("returns 0 when now < submitAt (clock skew)", () => {
+    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    expect(deriveInflightActiveMs(s, 999_000)).toBe(0);
+  });
+
+  it("subtracts a single open awaiting-approval segment", () => {
+    const s = snap({
+      inflightUserMessage: inflight(1_000_000),
+      awaitingApprovalSegmentStartedAt: 1_000_300,
+    });
+    // wall = 1_000, open pause = (now - 1_000_300) = 700, active = 300
+    expect(deriveInflightActiveMs(s, 1_001_000)).toBe(300);
+  });
+
+  it("subtracts a closed transport-downtime interval", () => {
+    const s = snap({
+      inflightUserMessage: inflight(1_000_000),
+      transportDowntimeIntervals: [[1_000_200, 1_000_500]],
+    });
+    // wall = 1_000, pause = 300, active = 700
+    expect(deriveInflightActiveMs(s, 1_001_000)).toBe(700);
+  });
+
+  it("unions two yellow axes overlapping (NOT sum) — the regression this design guards", () => {
+    const s = snap({
+      inflightUserMessage: inflight(1_000_000),
+      // Awaiting-approval dialog open [200, 600]
+      awaitingApprovalIntervals: [[1_000_200, 1_000_600]],
+      // Transport restoring [400, 800] — overlaps awaiting in [400, 600]
+      transportDowntimeIntervals: [[1_000_400, 1_000_800]],
+    });
+    // Naive scalar sum would subtract 400 + 400 = 800 → active = 200.
+    // Correct union [200, 800] = 600 → active = 400.
+    expect(deriveInflightActiveMs(s, 1_001_000)).toBe(400);
+  });
+
+  it("unions all three yellow axes when interrupt-in-flight overlaps both", () => {
+    const s = snap({
+      inflightUserMessage: inflight(1_000_000),
+      awaitingApprovalIntervals: [[1_000_100, 1_000_400]],
+      transportDowntimeIntervals: [[1_000_300, 1_000_700]],
+      interruptInFlightSegmentStartedAt: 1_000_500,
+    });
+    // Now = 1_001_000. Open interrupt = [500, 1000]. Awaiting = [100, 400].
+    // Transport = [300, 700]. Union = [100, 400] ∪ [300, 1000] = [100, 1000] = 900.
+    // active = 1000 - 900 = 100.
+    expect(deriveInflightActiveMs(s, 1_001_000)).toBe(100);
+  });
+
+  it("clamps to 0 when the union of pauses covers the entire wall-clock", () => {
+    const s = snap({
+      inflightUserMessage: inflight(1_000_000),
+      // Pause covers more than wall-clock (clipped to window).
+      awaitingApprovalIntervals: [[500_000, 2_000_000]],
+    });
+    expect(deriveInflightActiveMs(s, 1_001_000)).toBe(0);
+  });
+
+  it("clips a pause segment that began before submitAt to the in-flight window", () => {
+    const s = snap({
+      inflightUserMessage: inflight(1_000_000),
+      // Transport disconnect that began 200 ms before submit, closed 300 ms after.
+      transportDowntimeIntervals: [[999_800, 1_000_300]],
+    });
+    // Window = [1_000_000, 1_001_000]. Clipped interval = [1_000_000, 1_000_300] = 300.
+    // active = 1_000 - 300 = 700.
+    expect(deriveInflightActiveMs(s, 1_001_000)).toBe(700);
   });
 });

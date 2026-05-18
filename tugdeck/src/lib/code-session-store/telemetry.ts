@@ -21,7 +21,12 @@
  */
 
 import type { CodeSessionState } from "./reducer";
-import type { CostSnapshot, TurnCost, TurnEntry } from "./types";
+import type {
+  CodeSessionSnapshot,
+  CostSnapshot,
+  TurnCost,
+  TurnEntry,
+} from "./types";
 
 /**
  * The model's view of "context tokens consumed at the boundary of this
@@ -190,6 +195,16 @@ export function liveTurnTransportDowntimeMs(
  * Live machine-doing-work duration — `live wall − live awaiting − live
  * downtime`, clamped ≥ 0. The headline "assistant response time" for
  * an in-flight turn.
+ *
+ * Note: this helper SUBTRACTS the two scalar accumulators, so it
+ * over-subtracts whenever the two pause axes overlap (e.g. transport
+ * goes restoring during an awaiting-approval dialog). The
+ * snapshot-projection helper {@link deriveInflightActiveMs} uses the
+ * union of per-axis intervals across all three yellow axes (adding
+ * interrupt-in-flight) and is the recommended derivation for the
+ * gallery's live `Time` cell. `liveTurnActiveMs` is preserved for
+ * backwards-compatibility and for the per-turn-summary surfaces that
+ * already accept the over-subtraction.
  */
 export function liveTurnActiveMs(
   state: CodeSessionState,
@@ -199,6 +214,140 @@ export function liveTurnActiveMs(
   const awaiting = liveTurnAwaitingApprovalMs(state, now);
   const downtime = liveTurnTransportDowntimeMs(state, now);
   return Math.max(0, wall - awaiting - downtime);
+}
+
+// ---------------------------------------------------------------------------
+// Overlap-correct live in-flight active derivation
+// ---------------------------------------------------------------------------
+
+/**
+ * One pause segment as understood by {@link unionPauseMs}: a tuple
+ * whose second element is either the close timestamp (closed
+ * segment) or `null` (the segment is still open and treated as
+ * ending at the window's end).
+ */
+export type PauseSegment = readonly [number, number | null];
+
+/**
+ * Compute the duration of the UNION of pause segments from any number
+ * of axes, clipped to `[windowStart, windowEnd]`. Currently-open
+ * segments (`[start, null]`) are treated as having `end = windowEnd`.
+ *
+ * The naive sum of per-axis durations over-counts whenever segments
+ * overlap (an awaiting-approval dialog while transport is restoring
+ * contributes twice if you sum them, swallowing real Claude-active
+ * time in the live-clock derivation). The union counts each
+ * overlapping millisecond exactly once.
+ *
+ * Algorithm: sort-and-sweep. Each segment is first normalized
+ * (open → `windowEnd`, then clipped to `[windowStart, windowEnd]`),
+ * skipping any segment that's empty after clipping. The sweep merges
+ * adjacent or overlapping intervals as it walks the sorted list,
+ * summing each merged region's length.
+ *
+ * Time-complexity is O(n log n) in the total number of segments,
+ * dominated by the sort. For a single in-flight turn the total is
+ * typically < 10 (one awaiting-approval dialog, one transport blip,
+ * one interrupt-in-flight = three segments), so the constant factor
+ * is what matters; the algorithm is the smallest correct one rather
+ * than the most performant possible.
+ *
+ * Returns `0` when `windowEnd <= windowStart` (degenerate window) or
+ * when no segment falls inside the window.
+ */
+export function unionPauseMs(
+  segments: ReadonlyArray<PauseSegment>,
+  windowStart: number,
+  windowEnd: number,
+): number {
+  if (windowEnd <= windowStart) {
+    return 0;
+  }
+  const clipped: Array<[number, number]> = [];
+  for (const [rawStart, rawEnd] of segments) {
+    const end = rawEnd ?? windowEnd;
+    const start = Math.max(windowStart, rawStart);
+    const cappedEnd = Math.min(windowEnd, end);
+    if (cappedEnd <= start) {
+      continue;
+    }
+    clipped.push([start, cappedEnd]);
+  }
+  if (clipped.length === 0) {
+    return 0;
+  }
+  clipped.sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let mergeStart = clipped[0][0];
+  let mergeEnd = clipped[0][1];
+  for (let i = 1; i < clipped.length; i++) {
+    const [start, end] = clipped[i];
+    if (start <= mergeEnd) {
+      if (end > mergeEnd) {
+        mergeEnd = end;
+      }
+    } else {
+      total += mergeEnd - mergeStart;
+      mergeStart = start;
+      mergeEnd = end;
+    }
+  }
+  total += mergeEnd - mergeStart;
+  return total;
+}
+
+/**
+ * Compose the live in-flight active duration from snapshot fields and
+ * the current wall-clock. Returns `null` when no turn is in flight
+ * (`inflightUserMessage === null`).
+ *
+ *   liveActiveMs = max(
+ *     0,
+ *     (nowMs - submitAt) - unionPauseMs(allYellowSegments, submitAt, nowMs)
+ *   )
+ *
+ * Yellow segments = union across all three axes (awaiting-approval +
+ * transport-downtime + interrupt-in-flight). The same yellow
+ * conditions that flip the `TugStateIndicator` to caution are exactly
+ * what open each axis's segment; the live clock pauses while any
+ * axis is open and resumes when the union of axes becomes empty —
+ * no separate "is the indicator yellow" check is required. Overlapping
+ * pauses contribute only once. See {@link unionPauseMs} for the
+ * algorithm and {@link PauseSegment} for the input shape.
+ */
+export function deriveInflightActiveMs(
+  snap: CodeSessionSnapshot,
+  nowMs: number,
+): number | null {
+  if (snap.inflightUserMessage === null) {
+    return null;
+  }
+  const submitAt = snap.inflightUserMessage.submitAt;
+  if (nowMs <= submitAt) {
+    return 0;
+  }
+  const wall = nowMs - submitAt;
+  const segments: PauseSegment[] = [];
+  for (const interval of snap.awaitingApprovalIntervals) {
+    segments.push(interval);
+  }
+  if (snap.awaitingApprovalSegmentStartedAt !== null) {
+    segments.push([snap.awaitingApprovalSegmentStartedAt, null]);
+  }
+  for (const interval of snap.transportDowntimeIntervals) {
+    segments.push(interval);
+  }
+  if (snap.transportDowntimeSegmentStartedAt !== null) {
+    segments.push([snap.transportDowntimeSegmentStartedAt, null]);
+  }
+  for (const interval of snap.interruptInFlightIntervals) {
+    segments.push(interval);
+  }
+  if (snap.interruptInFlightSegmentStartedAt !== null) {
+    segments.push([snap.interruptInFlightSegmentStartedAt, null]);
+  }
+  const pause = unionPauseMs(segments, submitAt, nowMs);
+  return Math.max(0, wall - pause);
 }
 
 // ---------------------------------------------------------------------------
