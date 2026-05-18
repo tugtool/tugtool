@@ -2641,24 +2641,24 @@ The detailed implementation-task lists below remain the canonical spec — the d
 
 ##### Tests
 
-- [ ] Pure-logic tests for `computeRichContextBreakdown` covering: breakdown present with autocompact-on (7 + remainder), breakdown present with autocompact-off (6 + remainder), breakdown absent (fallback to `computeContextBreakdown`), breakdown present but contextMax 0 (degenerate).
-- [ ] Reducer test for `context_breakdown` event: state captures the latest breakdown; subsequent frames replace it; transport-close clears it (or preserves it across reconnect — spike S6 decides).
-- [ ] Persistence round-trip test: write a breakdown row, dispose the store, reconstruct, confirm the snapshot's `lastContextBreakdown` matches what was written. Covers both autocompact-on and autocompact-off shapes.
-- [ ] Tugcode-side wire-emission test: a mocked SDK session with known per-category content emits a `context_breakdown` frame whose `categories[]` totals match the mock's per-category token counts within the 5–10% accuracy bar. No MCP category in any emitted frame.
-- [ ] Visual: existing arc-gauge tests untouched; new 7-tone gallery scenarios (autocompact-on and autocompact-off variants) render without geometry regression.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0 (seven new pairings + annotations must pass).
-- [ ] Rust workspace (`cargo nextest run`) clean if any tugcode changes touch the Rust side.
+- [x] Pure-logic tests for `computeRichContextBreakdown` covering: breakdown present with autocompact-on (7 + remainder), breakdown present with autocompact-off (6 + remainder), breakdown absent (fallback to `computeContextBreakdown`), breakdown present but contextMax 0 (degenerate). _Landed in 20.4.7.D.5: 8 cases in `telemetry.test.ts` — also covers wire-frame contextMax wins, idle-with-bind, negative-token clamp, and the spike-benchmark anchor case._
+- [x] Reducer test for `context_breakdown` event: state captures the latest breakdown; subsequent frames replace it; transport-close clears it (or preserves it across reconnect — spike S6 decides). _Landed in 20.4.7.D.3: 11 cases in `reducer.context-breakdown.test.ts` cover initial null, projection, frame replacement, malformed-shape drops, effect payload identity, `from_supervisor_attach` round-trip suppression, autocompact id round-trip, no-MCP invariant. S6 decision (preserve across transport flap) is observed by construction — the reducer doesn't touch `lastContextBreakdown` on transport events._
+- [x] Persistence round-trip test: write a breakdown row, dispose the store, reconstruct, confirm the snapshot's `lastContextBreakdown` matches what was written. Covers both autocompact-on and autocompact-off shapes. _Landed in 20.4.7.D.1: 6 Rust cases on `SessionLedger.record_context_breakdown` / `get_context_breakdown` cover round-trip preservation, UPSERT idempotency, per-session isolation, CASCADE on `forget`, and the autocompact-on/off shapes via blob payloads. The cross-layer "kill tugdeck → reload → bind-attach repopulates snapshot" path is HMR-verified in the manual checkpoint below (no automated cross-crate integration test in this step; out of harness scope per `[feedback_real_claude_tests_ondemand]`)._
+- [x] Tugcode-side wire-emission test: a mocked SDK session with known per-category content emits a `context_breakdown` frame whose `categories[]` totals match the mock's per-category token counts within the 5–10% accuracy bar. No MCP category in any emitted frame. _Landed in 20.4.7.D.2: 13 emitter-lifecycle cases in `tugcode/src/__tests__/context-breakdown.test.ts` exercise `onSessionInit` → `onCostUpdate` → autocompact-on/off frame shape; the no-MCP invariant is pinned by both the `ContextBreakdownCategoryId` type and a dedicated test assertion. The 5–10% accuracy bar itself was validated empirically in 20.4.7.D.0's benchmark (drift 0.5–5.6% on static categories)._
+- [x] Visual: existing arc-gauge tests untouched; new 7-tone gallery scenarios (autocompact-on and autocompact-off variants) render without geometry regression. _Landed in 20.4.7.D.4: existing `tug-arc-gauge.test.ts` cases pass unchanged; gallery's new "Section 5: /context breakdown" exercises both autocompact variants HMR-vettable._
+- [x] `bun x tsc --noEmit` clean. _Verified in final sweep post-D.5._
+- [x] `bun test` green. _Verified: tugdeck 2171/2171, tugcode 389/389._
+- [x] `bun run audit:tokens lint` exits 0 (seven new pairings + annotations must pass). _Verified: zero violations._
+- [x] Rust workspace (`cargo nextest run`) clean if any tugcode changes touch the Rust side. _Verified: tugcast 592/592, 4 skipped._
 
 ##### Checkpoint
 
-- [ ] HMR-vet the upgraded popover against a live Claude Code session — the categories Tide shows match what `/context` shows in the terminal for the same session (within the 5–10% accuracy bar; ignoring MCP since `/context` shows it and we don't).
-- [ ] Autocompact-on / autocompact-off vetted: switch the setting in Claude Code, observe the popover's reserved-buffer slice appearing and disappearing accordingly.
-- [ ] Fallback path verified: temporarily strip the new wire-frame handler from tugcode and confirm the popover degrades gracefully to the 5-segment cost_update view.
-- [ ] Persistence verified: open a session, observe the popover, kill tugdeck, reload, confirm the popover shows the last breakdown without waiting for a new turn.
-- [ ] Categorical color mapping passes the at-a-glance recognition test against `/context`'s terminal colors.
-- [ ] The popover's data-sourcing question — "what do these numbers mean?" — has a clean answer the user can validate against their `/context` muscle memory.
+- [x] HMR-vet the upgraded popover against a live Claude Code session — the categories Tide shows match what `/context` shows in the terminal for the same session (within the 5–10% accuracy bar; ignoring MCP since `/context` shows it and we don't). _Verified by manual HMR checkpoint._
+- [x] Autocompact-on / autocompact-off vetted: switch the setting in Claude Code, observe the popover's reserved-buffer slice appearing and disappearing accordingly. _Verified by manual HMR checkpoint._
+- [x] Fallback path verified: temporarily strip the new wire-frame handler from tugcode and confirm the popover degrades gracefully to the 5-segment cost_update view. _Verified by manual HMR checkpoint._
+- [x] Persistence verified: open a session, observe the popover, kill tugdeck, reload, confirm the popover shows the last breakdown without waiting for a new turn. _Verified by manual HMR checkpoint._
+- [x] Categorical color mapping passes the at-a-glance recognition test against `/context`'s terminal colors. _Verified by manual HMR checkpoint — color reshuffle in the D.5 polish fixup landed the warm/cool interleave that solved the cool-cluster readability issue._
+- [x] The popover's data-sourcing question — "what do these numbers mean?" — has a clean answer the user can validate against their `/context` muscle memory. _Verified by manual HMR checkpoint._
 
 ---
 
