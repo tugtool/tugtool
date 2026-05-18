@@ -194,6 +194,16 @@ body {
   justify-content: center;
 }
 
+/* Override the base `.tug-tab-title { flex: 1 }`: when the dev panel
+ * widens tabs past their content, `flex: 1` makes the title consume
+ * all extra space, leaving `justify-content: center` above with
+ * nothing to redistribute. `flex: 0 1 auto` lets the icon + title
+ * size to content (so they center as a group) while preserving
+ * shrink + ellipsis for over-long labels. */
+.tug-devpanel-tabstrip .tug-tab-title {
+  flex: 0 1 auto;
+}
+
 .tug-devpanel-cardpicker {
   display: flex;
   align-items: center;
