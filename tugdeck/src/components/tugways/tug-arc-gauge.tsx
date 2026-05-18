@@ -74,22 +74,47 @@ export type TugArcGaugeFillRole = GaugeFillRole;
 export type TugArcGaugeThresholds = GaugeThresholds;
 
 /**
- * Semantic tones for `TugArcGauge`'s segmented mode. Five tones cover
- * the context-window breakdown shape from `#step-20-4-7-c` (input /
- * cache-read / cache-creation / output / remainder); other
- * categorical-breakdown call sites can reuse the same tones if the
- * semantic mapping fits, or extend the union in lockstep with new
- * `--tugx-arc-gauge-segment-*-color` slots when it doesn't.
+ * Semantic tones for `TugArcGauge`'s segmented mode.
+ *
+ * Two parallel tone vocabularies coexist:
+ *
+ * - **Wire-level cost tones** (`input` / `cache-read` / `cache-creation`
+ *   / `output` / `remainder`): the original five tones, surfacing the
+ *   per-turn `cost_update.usage.*` token breakdown. Consumed by the
+ *   Context popover's fallback view (`#step-20-4-7-c`) and any future
+ *   raw-cost categorical surface.
+ *
+ * - **`/context`-style category tones** (`system_prompt` / `system_tools`
+ *   / `custom_agents` / `memory_files` / `skills` / `messages` /
+ *   `autocompact_buffer`): the seven categories the rich Context
+ *   popover surfaces from the persisted `context_breakdown` wire frame.
+ *   `mcp_tools` is intentionally absent — Tug treats MCP as out of
+ *   scope; no MCP slice ever paints.
+ *
+ * The vocabularies don't overlap and both stay in the union; each
+ * call site picks the relevant subset. `remainder` straddles both
+ * uses since the synthesized fill-the-gap segment is shape-uniform
+ * across either categorical mapping.
  *
  * Each tone resolves to a `--tugx-arc-gauge-segment-<tone>-color`
  * alias in CSS, one-hop to a `--tug7-*` base token per [L17].
  */
 export type TugArcGaugeSegmentTone =
+  // Wire-level cost tones — see `#step-20-4-7-c`.
   | "input"
   | "cache-read"
   | "cache-creation"
   | "output"
-  | "remainder";
+  | "remainder"
+  // `/context`-style category tones — see `#step-20-4-7-d`. No
+  // `mcp_tools` per "Out of scope: MCP".
+  | "system_prompt"
+  | "system_tools"
+  | "custom_agents"
+  | "memory_files"
+  | "skills"
+  | "messages"
+  | "autocompact_buffer";
 
 /**
  * One categorical segment painted along the arc in segmented mode.

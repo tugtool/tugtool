@@ -198,12 +198,53 @@ const SEGMENT_SCENARIOS: ReadonlyArray<SegmentScenario> = [
   },
 ];
 
+// Per-category breakdown scenarios — the rich Context popover's
+// shape (`#step-20-4-7-d`). Two scenarios sit side-by-side so the
+// gallery shows the autocompact-on vs autocompact-off conditional
+// at a glance: identical static categories, identical messages,
+// only the reserved-buffer slice toggles. Values are scaled to a
+// max of 100 (% of context window) for easy visual reading.
+const CONTEXT_BREAKDOWN_SCENARIOS: ReadonlyArray<SegmentScenario> = [
+  {
+    label: "/context breakdown — autocompact off",
+    segments: [
+      { id: "system_prompt", tone: "system_prompt", value: 2, label: "System prompt" },
+      { id: "system_tools", tone: "system_tools", value: 5, label: "System tools" },
+      { id: "custom_agents", tone: "custom_agents", value: 7, label: "Custom agents" },
+      { id: "memory_files", tone: "memory_files", value: 1, label: "Memory files" },
+      { id: "skills", tone: "skills", value: 5, label: "Skills" },
+      { id: "messages", tone: "messages", value: 28, label: "Messages" },
+    ],
+  },
+  {
+    label: "/context breakdown — autocompact on",
+    segments: [
+      { id: "system_prompt", tone: "system_prompt", value: 2, label: "System prompt" },
+      { id: "system_tools", tone: "system_tools", value: 5, label: "System tools" },
+      { id: "custom_agents", tone: "custom_agents", value: 7, label: "Custom agents" },
+      { id: "memory_files", tone: "memory_files", value: 1, label: "Memory files" },
+      { id: "skills", tone: "skills", value: 5, label: "Skills" },
+      { id: "messages", tone: "messages", value: 28, label: "Messages" },
+      { id: "autocompact_buffer", tone: "autocompact_buffer", value: 17, label: "Autocompact buffer" },
+    ],
+  },
+];
+
 const SEGMENT_TONE_LABELS: Record<TugArcGaugeSegment["tone"], string> = {
+  // Wire-level cost vocabulary (`#step-20-4-7-c`).
   input: "Input",
   "cache-read": "Cache (read)",
   "cache-creation": "Cache (creation)",
   output: "Output",
   remainder: "Unused",
+  // `/context`-style category vocabulary (`#step-20-4-7-d`).
+  system_prompt: "System prompt",
+  system_tools: "System tools",
+  custom_agents: "Custom agents",
+  memory_files: "Memory files",
+  skills: "Skills",
+  messages: "Messages",
+  autocompact_buffer: "Autocompact buffer",
 };
 
 const segmentScenariosRowStyle: React.CSSProperties = {
@@ -630,6 +671,58 @@ export function GalleryTugArcGauge(): React.ReactElement {
 
         <div style={segmentScenariosRowStyle}>
           {SEGMENT_SCENARIOS.map((scenario) => (
+            <div key={scenario.label} style={geometryCellStyle}>
+              <div style={READABLE_SIZE}>
+                <TugArcGauge
+                  min={0}
+                  max={100}
+                  value={0}
+                  density="compact"
+                  segments={scenario.segments}
+                />
+              </div>
+              <span style={geometryCellLabelStyle}>{scenario.label}</span>
+              <div style={legendStyle}>
+                {scenario.segments.map((s) => (
+                  <span key={s.id}>
+                    <span
+                      style={{
+                        ...segmentSwatchStyle,
+                        backgroundColor: segmentToneCssVar(s.tone),
+                      }}
+                    />
+                    {s.label ?? SEGMENT_TONE_LABELS[s.tone]}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ============================================================
+          5. `/context`-style breakdown — autocompact-on / off
+          ============================================================ */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">
+          /context breakdown (autocompact-on / off)
+        </TugLabel>
+        <div style={labelStyle}>
+          Seven category tones surface the rich Context popover shape
+          (#step-20-4-7-d): system_prompt, system_tools, custom_agents,
+          memory_files, skills, messages, and the conditional
+          autocompact_buffer. The two cards below carry identical
+          static categories and the same messages count — only the
+          reserved-buffer slice toggles. <code>mcp_tools</code> is
+          intentionally absent: Tug treats MCP as out of scope, so
+          the wire frame never carries it and the renderer never
+          paints a slice for it.
+        </div>
+
+        <div style={segmentScenariosRowStyle}>
+          {CONTEXT_BREAKDOWN_SCENARIOS.map((scenario) => (
             <div key={scenario.label} style={geometryCellStyle}>
               <div style={READABLE_SIZE}>
                 <TugArcGauge
