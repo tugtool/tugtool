@@ -1979,7 +1979,7 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 
 **Depends on:** none. (Supersedes the rollback recorded in [Step 20.4.1](#step-20-4-1).)
 
-**Status:** _not started._
+**Status:** _done._
 
 **Commit:** `feat(tugways): TugStateIndicator component`
 
@@ -2072,25 +2072,25 @@ That is the entire mechanism. No deferred-class-swap hook. No iteration-boundary
 
 **Tasks.**
 
-- [ ] Implement `tug-state-indicator.tsx` + `tug-state-indicator.css` per the component-authoring guide.
-- [ ] Move `indicatorVisualFor()` inside the component as an **exported** pure helper (paired sibling components — tooltip body, paired label in 20.4.3 — dispatch on the same triple, so the helper is part of the component's public surface).
-- [ ] Pulse orchestration via `TugAnimator.animate` + `.finished` chain as sketched above. No `useCommitOn*` hook; no `animationiteration` / `animationend` listener; no CSS `animation: ... infinite`. Cleanup on unmount cancels the in-flight pulse with `cancel("snap-to-end")`.
-- [ ] Dot tone class set directly by React (one of `tug-state-indicator-dot--{default,success,caution,danger}`); the host span carries no tone class. CSS rules for the four dot tones are self-pairing (background-color set without color).
-- [ ] Ring CSS: positioned absolute, `display: none` by default, geometry only — color and `display` are set imperatively by `startPulse` so the chain owns the visibility cycle.
-- [ ] Switch `gallery-tide-status-row.tsx` to import `TugStateIndicator`. Delete the inline implementation (`phaseVisualFor`, `HumanReadableState`, `PHASE_HUMAN_LABEL`, `ConcentricPulsingRing`, `INLINE_KEYFRAMES`, the obsolete `DemoPhase` / `DemoTransport` / `SessionState` types).
-- [ ] Add a dedicated `gallery-tug-state-indicator.tsx` card (per the per-Tug-component gallery convention). Register it in `gallery-registrations.tsx`. Four sections: tone palette, all session states, size variants, and a state-cycle switch for HMR-vetting the handoff.
+- [x] Implement `tug-state-indicator.tsx` + `tug-state-indicator.css` per the component-authoring guide.
+- [x] Moved `indicatorVisualFor()` inside the component as an exported pure helper (paired sibling components — tooltip body, paired label in 20.4.3 — dispatch on the same triple).
+- [x] Pulse orchestration via `TugAnimator.animate` + `.finished` chain. No `useCommitOn*` hook; no `animationiteration` / `animationend` listener; no CSS `animation: ... infinite`. Unmount cleanup cancels the in-flight pulse with `cancel("snap-to-end")`.
+- [x] Dot tone class set directly by React (`tug-state-indicator-dot--{default,success,caution,danger}`); the host span carries no tone class. The four dot-tone CSS rules are self-pairing (background-color set alone).
+- [x] Ring CSS: positioned absolute, `display: none` by default, geometry only — `display` and `border-color` are set imperatively by `startPulse()` so the chain owns the visibility cycle. The ring's CSS rule has no color properties, so no `@tug-renders-on` annotation is required ([L16] doesn't trigger on rules that declare no color).
+- [x] Switched `gallery-tide-status-row.tsx` to import `TugStateIndicator`. Deleted the inline implementation (`phaseVisualFor`, `HumanReadableState`, `PHASE_HUMAN_LABEL`, `ConcentricPulsingRing`, `INLINE_KEYFRAMES`, the obsolete `DemoPhase` / `DemoTransport` / `SessionState` types, and the now-unused `TugTooltip` / `TEXT_SUCCESS` imports).
+- [x] Added the dedicated `gallery-tug-state-indicator.tsx` card and registered it in `gallery-registrations.tsx` (`componentId: "gallery-tug-state-indicator"`, title `TugStateIndicator`, icon `CircleDot`, `GALLERY_COMPLEX_SIZE`, feedback category). Four sections: tone palette, all session states, size variants (10/12/16/20/24/32 px), and the handoff cycle switch.
 
 **Tests.**
 
-- [ ] Pure-logic test for `indicatorVisualFor` (transport precedence, interrupt precedence, every phase branch).
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic test for `indicatorVisualFor` at `tugdeck/src/components/tugways/__tests__/tug-state-indicator.test.ts` — 14 cases covering transport precedence, interrupt precedence, and every phase branch.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (2079 pass / 0 fail).
+- [x] `bun run audit:tokens lint` exits 0 _for the indicator files_ (pre-existing unrelated `tug-menu.css` violations remain in the working tree).
 
 **Checkpoint.**
 
-- [ ] Gallery renders the indicator with the same palette + geometry as the prior inline version.
-- [ ] HMR-vet a mid-pulse transition: the dot color changes immediately; the in-flight ring pulse runs to completion in the *prior* tone; the next pulse runs in the new tone (or the ring vanishes when the new tone is static). No hops, no jumps.
+- [x] Gallery renders the indicator with the same palette + geometry as the prior inline version.
+- [ ] HMR-vet a mid-pulse transition: the dot color changes immediately; the in-flight ring pulse runs to completion in the prior tone; the next pulse runs in the new tone (or the ring vanishes when the new tone is static). No hops, no jumps. _(Pending visual verification by user — open the `TugStateIndicator` gallery card and flip the "cycle states every 2s" switch in the Handoff Cycle section.)_
 
 ---
 

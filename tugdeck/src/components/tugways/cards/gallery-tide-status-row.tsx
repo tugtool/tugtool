@@ -52,7 +52,8 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { TugStateIndicator } from "@/components/tugways/tug-state-indicator";
+import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indicator";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 
@@ -105,39 +106,24 @@ function formatTimeAlwaysHours(ms: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Session state model
+// Session state scenarios
 // ---------------------------------------------------------------------------
 
-type DemoPhase =
-  | "idle"
-  | "submitting"
-  | "awaiting_first_token"
-  | "streaming"
-  | "tool_work"
-  | "awaiting_approval"
-  | "replaying"
-  | "errored";
+// The gallery dispatches on the same `TugStateIndicatorState` triple
+// the component reads — `phase × transportState × interruptInFlight`.
 
-type DemoTransport = "online" | "offline" | "restoring";
-
-interface SessionState {
-  phase: DemoPhase;
-  transport: DemoTransport;
-  interruptInFlight: boolean;
-}
-
-const STATE_SCENARIOS: ReadonlyArray<{ id: string; label: string; state: SessionState }> = [
-  { id: "idle_online", label: "idle · online", state: { phase: "idle", transport: "online", interruptInFlight: false } },
-  { id: "submitting", label: "submitting · online", state: { phase: "submitting", transport: "online", interruptInFlight: false } },
-  { id: "awaiting_first", label: "awaiting_first_token · online", state: { phase: "awaiting_first_token", transport: "online", interruptInFlight: false } },
-  { id: "streaming", label: "streaming · online", state: { phase: "streaming", transport: "online", interruptInFlight: false } },
-  { id: "tool_work", label: "tool_work · online", state: { phase: "tool_work", transport: "online", interruptInFlight: false } },
-  { id: "awaiting_approval", label: "awaiting_approval · online", state: { phase: "awaiting_approval", transport: "online", interruptInFlight: false } },
-  { id: "interrupted_streaming", label: "streaming · INTERRUPT in flight", state: { phase: "streaming", transport: "online", interruptInFlight: true } },
-  { id: "offline", label: "idle · OFFLINE", state: { phase: "idle", transport: "offline", interruptInFlight: false } },
-  { id: "restoring", label: "submitting · RESTORING", state: { phase: "submitting", transport: "restoring", interruptInFlight: false } },
-  { id: "errored", label: "errored · online", state: { phase: "errored", transport: "online", interruptInFlight: false } },
-  { id: "replaying", label: "replaying · online", state: { phase: "replaying", transport: "online", interruptInFlight: false } },
+const STATE_SCENARIOS: ReadonlyArray<{ id: string; label: string; state: TugStateIndicatorState }> = [
+  { id: "idle_online", label: "idle · online", state: { phase: "idle", transportState: "online", interruptInFlight: false } },
+  { id: "submitting", label: "submitting · online", state: { phase: "submitting", transportState: "online", interruptInFlight: false } },
+  { id: "awaiting_first", label: "awaiting_first_token · online", state: { phase: "awaiting_first_token", transportState: "online", interruptInFlight: false } },
+  { id: "streaming", label: "streaming · online", state: { phase: "streaming", transportState: "online", interruptInFlight: false } },
+  { id: "tool_work", label: "tool_work · online", state: { phase: "tool_work", transportState: "online", interruptInFlight: false } },
+  { id: "awaiting_approval", label: "awaiting_approval · online", state: { phase: "awaiting_approval", transportState: "online", interruptInFlight: false } },
+  { id: "interrupted_streaming", label: "streaming · INTERRUPT in flight", state: { phase: "streaming", transportState: "online", interruptInFlight: true } },
+  { id: "offline", label: "idle · OFFLINE", state: { phase: "idle", transportState: "offline", interruptInFlight: false } },
+  { id: "restoring", label: "submitting · RESTORING", state: { phase: "submitting", transportState: "restoring", interruptInFlight: false } },
+  { id: "errored", label: "errored · online", state: { phase: "errored", transportState: "online", interruptInFlight: false } },
+  { id: "replaying", label: "replaying · online", state: { phase: "replaying", transportState: "online", interruptInFlight: false } },
 ];
 
 // ---------------------------------------------------------------------------
@@ -146,15 +132,8 @@ const STATE_SCENARIOS: ReadonlyArray<{ id: string; label: string; state: Session
 
 const MONO = "var(--tug-font-mono, monospace)";
 const RAIL_COLOR = "var(--tug7-element-global-border-normal-default-rest)";
-// Round 8 fix: previous TEXT_NORMAL used `text-normal-strong-rest`,
-// which doesn't exist in either theme. `color:` silently fell back to
-// inherited (so values rendered), but `background-color:` on the dot
-// fell back to transparent — the dot disappeared. Use the valid
-// `text-normal-default-rest` for general text + `text-normal-success-rest`
-// for the active-state indicator color (per user request — green = active).
 const TEXT_NORMAL = "var(--tug7-element-global-text-normal-default-rest)";
 const TEXT_MUTED = "var(--tug7-element-global-text-normal-muted-rest)";
-const TEXT_SUCCESS = "var(--tug7-element-global-text-normal-success-rest)";
 const TEXT_CAUTION = "var(--tug7-element-global-text-normal-caution-rest)";
 const TEXT_DANGER = "var(--tug7-element-global-text-normal-danger-rest)";
 
@@ -269,179 +248,6 @@ function EndcapRuleLabel({
 }
 
 // ---------------------------------------------------------------------------
-// Phase visual mapping
-// ---------------------------------------------------------------------------
-
-interface PhaseVisual {
-  color: string;
-  /** Whether the outer ring pulses outward (or sits static around the dot). */
-  animated: boolean;
-  label: string;
-}
-
-function phaseVisualFor(state: SessionState): PhaseVisual {
-  // Color is the primary state cue; pulse animation is the secondary
-  // (active vs. waiting). The dot is ALWAYS visible — every state
-  // maps to a real token, never to an undefined fallback.
-  //
-  //   active (working)              → success (green) + pulse
-  //   waiting for user / restoring  → caution (yellow) + pulse
-  //   error / offline               → danger (red), no pulse
-  //   idle (ready, no activity)     → default text (light gray), no pulse
-  if (state.transport === "offline") {
-    return { color: TEXT_DANGER, animated: false, label: "offline" };
-  }
-  if (state.transport === "restoring") {
-    return { color: TEXT_CAUTION, animated: true, label: "restoring" };
-  }
-  if (state.interruptInFlight) {
-    return { color: TEXT_CAUTION, animated: true, label: "interrupting" };
-  }
-  switch (state.phase) {
-    case "errored":
-      return { color: TEXT_DANGER, animated: false, label: "errored" };
-    case "submitting":
-    case "awaiting_first_token":
-    case "streaming":
-    case "tool_work":
-    case "replaying":
-      return { color: TEXT_SUCCESS, animated: true, label: state.phase };
-    case "awaiting_approval":
-      return { color: TEXT_CAUTION, animated: true, label: "awaiting_approval" };
-    case "idle":
-    default:
-      return { color: TEXT_NORMAL, animated: false, label: "idle" };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Human-readable session state — hover-tooltip content
-// ---------------------------------------------------------------------------
-
-const PHASE_HUMAN_LABEL: Record<DemoPhase, string> = {
-  idle: "Idle",
-  submitting: "Submitting message",
-  awaiting_first_token: "Awaiting first response",
-  streaming: "Streaming response",
-  tool_work: "Running tools",
-  awaiting_approval: "Awaiting your approval",
-  replaying: "Replaying session",
-  errored: "Last turn errored",
-};
-
-/**
- * Build a tooltip body that describes the session state in plain
- * English. The primary line names the phase; secondary lines surface
- * transport degradation and interrupt-in-flight as additional facts.
- * Rendered as ReactNode so the tooltip can format with weight + muted
- * secondary lines.
- */
-function HumanReadableState({
-  state,
-}: {
-  state: SessionState;
-}): React.ReactElement {
-  const secondaries: string[] = [];
-  if (state.transport === "offline") secondaries.push("Disconnected");
-  if (state.transport === "restoring") secondaries.push("Reconnecting…");
-  if (state.interruptInFlight) secondaries.push("Interrupt requested");
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <div style={{ fontWeight: 600 }}>{PHASE_HUMAN_LABEL[state.phase]}</div>
-      {secondaries.map((s) => (
-        <div
-          key={s}
-          style={{ opacity: 0.78, fontSize: "0.875em" }}
-        >
-          {s}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// P6 — Concentric pulsing ring
-// ---------------------------------------------------------------------------
-//
-// The dot is the constant — ALWAYS visible, always at full opacity.
-// Its color encodes state (success / caution / danger / default
-// — each maps to a real theme token, no transparent fallback).
-//
-// The ring is the activity-signal layer ON TOP of the dot, only
-// rendered for ACTIVE (animated) states. Static states (idle,
-// errored, offline) show just the bare dot — cleaner reading at a
-// glance. The pulse keyframe combines translate(-50%, -50%) with
-// scale(...) so the ring grows AROUND the dot without drifting off
-// axis.
-//
-// Hover surfaces a TugTooltip describing the session state in plain
-// English (phase + transport degradation + interrupt-in-flight).
-
-function ConcentricPulsingRing({
-  state,
-  size = 16,
-}: {
-  state: SessionState;
-  size?: number;
-}): React.ReactElement {
-  const v = phaseVisualFor(state);
-  const dotSize = Math.max(4, Math.round(size * 0.5));
-  return (
-    <TugTooltip content={<HumanReadableState state={state} />} side="top">
-      <span
-        aria-label={v.label}
-        style={{
-          position: "relative",
-          display: "inline-block",
-          width: size,
-          height: size,
-          flex: "0 0 auto",
-        }}
-      >
-        {/* Inner dot — solid filled circle, ALWAYS fully visible.
-            Color encodes state (success / caution / danger / default).
-            No opacity dimming — the dot is a status LED, not a hint.
-            The pulse animation (ring only) carries the active/static
-            distinction without sacrificing the dot's visibility. */}
-        <span
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            width: dotSize,
-            height: dotSize,
-            borderRadius: 999,
-            backgroundColor: v.color,
-            transform: "translate(-50%, -50%)",
-          }}
-        />
-        {/* Outer pulsing ring — only rendered for ACTIVE states
-            (animated). Static states (idle, errored, offline) show
-            just the dot, cleaner. The dot is the constant; the ring
-            is the activity-signal layer on top. */}
-        {v.animated && (
-          <span
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              width: size,
-              height: size,
-              borderRadius: 999,
-              border: `1px solid ${v.color}`,
-              boxSizing: "border-box",
-              transform: "translate(-50%, -50%)",
-              animation: "tide-status-ring-pulse 1.6s ease-out infinite",
-            }}
-          />
-        )}
-      </span>
-    </TugTooltip>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // F5 cells (T1 endcap)
 // ---------------------------------------------------------------------------
 
@@ -534,7 +340,7 @@ function ComposedRow({
   state,
 }: {
   v: StatusValues;
-  state: SessionState;
+  state: TugStateIndicatorState;
 }): React.ReactElement {
   return (
     <div
@@ -556,7 +362,7 @@ function ComposedRow({
           flex: "0 0 auto",
         }}
       >
-        <ConcentricPulsingRing state={state} size={16} />
+        <TugStateIndicator state={state} size={16} />
       </span>
 
       <div
@@ -605,7 +411,7 @@ function AllStatesGrid(): React.ReactElement {
           }}
         >
           <span style={{ display: "inline-flex", width: 20, justifyContent: "center" }}>
-            <ConcentricPulsingRing state={s.state} size={16} />
+            <TugStateIndicator state={s.state} size={16} />
           </span>
           <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>{s.label}</span>
         </div>
@@ -625,17 +431,6 @@ function SectionTitle({ children }: { children: string }): React.ReactElement {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Inline keyframes
-// ---------------------------------------------------------------------------
-
-const INLINE_KEYFRAMES = `
-@keyframes tide-status-ring-pulse {
-  0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.7; }
-  100% { transform: translate(-50%, -50%) scale(1.55); opacity: 0; }
-}
-`;
 
 // ---------------------------------------------------------------------------
 // GalleryTideStatusRow
@@ -704,8 +499,6 @@ export function GalleryTideStatusRow(): React.ReactElement {
           padding: "var(--tug-space-md)",
         }}
       >
-        <style>{INLINE_KEYFRAMES}</style>
-
         {/* Sticky controls — all Tug components now. */}
         <div
           style={{
