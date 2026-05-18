@@ -21,6 +21,9 @@ import { describe, it, expect } from "bun:test";
 import {
   DEFAULT_ARC_GEOMETRY,
   arcPath,
+  layoutArcSegments,
+  ARC_GAUGE_SEGMENT_REMAINDER_ID,
+  type TugArcGaugeSegment,
 } from "@/components/tugways/tug-arc-gauge";
 
 const CX = 50;
@@ -152,6 +155,157 @@ describe("TugArcGauge — arcPath validation", () => {
   it("accepts negative angles for startAngleDeg without throwing", () => {
     // Start angle is just a position, not a magnitude — negative is fine.
     expect(() => arcPath(CX, CY, R, -45, 90, 0.5)).not.toThrow();
+  });
+});
+
+describe("TugArcGauge — layoutArcSegments", () => {
+  const START = 135;
+  const SWEEP = 270;
+
+  function seg(
+    id: string,
+    value: number,
+    tone: TugArcGaugeSegment["tone"] = "input",
+  ): TugArcGaugeSegment {
+    return { id, value, tone };
+  }
+
+  it("returns empty array when max <= 0", () => {
+    expect(layoutArcSegments([seg("a", 50)], 0, START, SWEEP)).toEqual([]);
+    expect(layoutArcSegments([seg("a", 50)], -10, START, SWEEP)).toEqual([]);
+  });
+
+  it("returns empty array when gauge sweep <= 0", () => {
+    expect(layoutArcSegments([seg("a", 50)], 100, START, 0)).toEqual([]);
+    expect(layoutArcSegments([seg("a", 50)], 100, START, -10)).toEqual([]);
+  });
+
+  it("returns a single full-sweep remainder when segments is empty", () => {
+    const layout = layoutArcSegments([], 100, START, SWEEP);
+    expect(layout.length).toBe(1);
+    expect(layout[0].id).toBe(ARC_GAUGE_SEGMENT_REMAINDER_ID);
+    expect(layout[0].tone).toBe("remainder");
+    expect(layout[0].startAngleDeg).toBe(START);
+    expect(layout[0].sweepAngleDeg).toBe(SWEEP);
+    expect(layout[0].value).toBeCloseTo(100, 6);
+  });
+
+  it("lays out two non-overlapping segments in array order", () => {
+    const layout = layoutArcSegments(
+      [seg("a", 30), seg("b", 20)],
+      100,
+      START,
+      SWEEP,
+    );
+    // 30/100 of 270 = 81; 20/100 of 270 = 54; remainder = 270 - 81 - 54 = 135.
+    expect(layout.length).toBe(3);
+    expect(layout[0].id).toBe("a");
+    expect(layout[0].startAngleDeg).toBeCloseTo(START, 6);
+    expect(layout[0].sweepAngleDeg).toBeCloseTo(81, 6);
+    expect(layout[1].id).toBe("b");
+    expect(layout[1].startAngleDeg).toBeCloseTo(START + 81, 6);
+    expect(layout[1].sweepAngleDeg).toBeCloseTo(54, 6);
+    expect(layout[2].id).toBe(ARC_GAUGE_SEGMENT_REMAINDER_ID);
+    expect(layout[2].startAngleDeg).toBeCloseTo(START + 81 + 54, 6);
+    expect(layout[2].sweepAngleDeg).toBeCloseTo(135, 6);
+  });
+
+  it("omits the remainder when segment values sum exactly to max", () => {
+    const layout = layoutArcSegments(
+      [seg("a", 60), seg("b", 40)],
+      100,
+      START,
+      SWEEP,
+    );
+    expect(layout.length).toBe(2);
+    expect(layout.some((s) => s.id === ARC_GAUGE_SEGMENT_REMAINDER_ID)).toBe(
+      false,
+    );
+    expect(layout[0].sweepAngleDeg + layout[1].sweepAngleDeg).toBeCloseTo(
+      SWEEP,
+      6,
+    );
+  });
+
+  it("clamps the cumulative sweep at the arc end when values overshoot max", () => {
+    // a + b = 150 with max = 100 — overshoot.
+    const layout = layoutArcSegments(
+      [seg("a", 80), seg("b", 70)],
+      100,
+      START,
+      SWEEP,
+    );
+    expect(layout.length).toBe(2);
+    expect(layout.some((s) => s.id === ARC_GAUGE_SEGMENT_REMAINDER_ID)).toBe(
+      false,
+    );
+    // First segment unaffected; second segment truncated to (max - sum_so_far) / max.
+    expect(layout[0].sweepAngleDeg).toBeCloseTo((80 / 100) * SWEEP, 6);
+    expect(layout[1].sweepAngleDeg).toBeCloseTo(SWEEP - layout[0].sweepAngleDeg, 6);
+    // Cumulative sweep equals the gauge's total sweep.
+    expect(layout[0].sweepAngleDeg + layout[1].sweepAngleDeg).toBeCloseTo(
+      SWEEP,
+      6,
+    );
+  });
+
+  it("clamps negative segment values to zero (no inverse sweep)", () => {
+    const layout = layoutArcSegments(
+      [seg("a", -50), seg("b", 25)],
+      100,
+      START,
+      SWEEP,
+    );
+    expect(layout[0].sweepAngleDeg).toBe(0);
+    expect(layout[0].value).toBe(0);
+    expect(layout[1].sweepAngleDeg).toBeCloseTo((25 / 100) * SWEEP, 6);
+  });
+
+  it("emits a zero-sweep layout entry for a value=0 segment", () => {
+    const layout = layoutArcSegments(
+      [seg("a", 0), seg("b", 50)],
+      100,
+      START,
+      SWEEP,
+    );
+    expect(layout[0].id).toBe("a");
+    expect(layout[0].sweepAngleDeg).toBe(0);
+    expect(layout[1].id).toBe("b");
+    expect(layout[1].sweepAngleDeg).toBeGreaterThan(0);
+  });
+
+  it("preserves tone and label fields verbatim from each input segment", () => {
+    const layout = layoutArcSegments(
+      [
+        { id: "i", value: 20, tone: "input", label: "Input" },
+        { id: "c", value: 15, tone: "cache-read", label: "Cache (read)" },
+      ],
+      100,
+      START,
+      SWEEP,
+    );
+    expect(layout[0].tone).toBe("input");
+    expect(layout[0].label).toBe("Input");
+    expect(layout[1].tone).toBe("cache-read");
+    expect(layout[1].label).toBe("Cache (read)");
+  });
+
+  it("lays out five segments + remainder for the canonical context breakdown shape", () => {
+    // The 20.4.7.C context-breakdown five-tone shape — at 60% utilization.
+    const layout = layoutArcSegments(
+      [
+        seg("input", 20, "input"),
+        seg("cache-read", 15, "cache-read"),
+        seg("cache-creation", 10, "cache-creation"),
+        seg("output", 15, "output"),
+      ],
+      100,
+      START,
+      SWEEP,
+    );
+    expect(layout.length).toBe(5);
+    expect(layout[4].id).toBe(ARC_GAUGE_SEGMENT_REMAINDER_ID);
+    expect(layout[4].sweepAngleDeg).toBeCloseTo((40 / 100) * SWEEP, 6);
   });
 });
 

@@ -73,6 +73,81 @@ import {
 export type TugArcGaugeFillRole = GaugeFillRole;
 export type TugArcGaugeThresholds = GaugeThresholds;
 
+/**
+ * Semantic tones for `TugArcGauge`'s segmented mode. Five tones cover
+ * the context-window breakdown shape from `#step-20-4-7-c` (input /
+ * cache-read / cache-creation / output / remainder); other
+ * categorical-breakdown call sites can reuse the same tones if the
+ * semantic mapping fits, or extend the union in lockstep with new
+ * `--tugx-arc-gauge-segment-*-color` slots when it doesn't.
+ *
+ * Each tone resolves to a `--tugx-arc-gauge-segment-<tone>-color`
+ * alias in CSS, one-hop to a `--tug7-*` base token per [L17].
+ */
+export type TugArcGaugeSegmentTone =
+  | "input"
+  | "cache-read"
+  | "cache-creation"
+  | "output"
+  | "remainder";
+
+/**
+ * One categorical segment painted along the arc in segmented mode.
+ * Segments paint in array order around the arc, beginning at the
+ * gauge's `startAngleDeg` and cumulatively advancing by each
+ * segment's `(value / max) * sweepAngleDeg` arc length. When the
+ * caller's segment values sum to less than `max`, the gauge synthesizes
+ * a "remainder" segment that fills the gap; when they sum to `max`
+ * (or more — overflow is clamped at the arc end), no remainder is
+ * appended.
+ */
+export interface TugArcGaugeSegment {
+  /**
+   * Stable identity for this segment across renders. Used as the
+   * SVG path's React key so the path's `d`-attribute transitions
+   * animate against the same node instead of remounting on every
+   * value change. [L26]
+   */
+  id: string;
+  /**
+   * Numeric magnitude in the same domain as `max`. Negative values
+   * clamp to `0`; segments with `value === 0` produce a zero-sweep
+   * layout entry but render no path geometry.
+   */
+  value: number;
+  /** Semantic tone — selects the `--tugx-arc-gauge-segment-<tone>-color` slot. */
+  tone: TugArcGaugeSegmentTone;
+  /**
+   * Optional human-readable label for the segment. The primitive does
+   * not render the label itself (the segment surface is geometry +
+   * stroke only); consumers compose their own legend alongside the
+   * gauge if they need one.
+   */
+  label?: string;
+}
+
+/**
+ * Single laid-out segment ready for rendering: tone + path geometry
+ * (start angle + sweep length in degrees) + the source segment's
+ * input fields preserved for legend composition.
+ *
+ * The synthesized remainder segment carries `id === "__remainder__"`
+ * and `tone === "remainder"` so consumers can detect it without
+ * pattern-matching string fields.
+ */
+export interface TugArcGaugeSegmentLayout {
+  id: string;
+  tone: TugArcGaugeSegmentTone;
+  startAngleDeg: number;
+  sweepAngleDeg: number;
+  /** The clamped (≥ 0) value used for the layout's sweep ratio. */
+  value: number;
+  label?: string;
+}
+
+/** Sentinel id used for the auto-appended remainder segment. */
+export const ARC_GAUGE_SEGMENT_REMAINDER_ID = "__remainder__";
+
 /** Density mode — `compact` for chrome / dashboard, `detailed` for
  *  the full mockup-style face with ticks. */
 export type TugArcGaugeDensity = "compact" | "detailed";
@@ -125,6 +200,27 @@ export interface TugArcGaugeProps
    * shaped gauge.
    */
   geometry?: TugArcGaugeGeometry;
+  /**
+   * Categorical breakdown along the arc. When provided, the gauge
+   * switches to segmented mode (`data-mode="segments"`): the arc is
+   * painted as a sequence of per-tone segments instead of a single
+   * value-vs-max sweep. Segments paint left-to-right in array order,
+   * sized to `(segment.value / max) * sweepAngleDeg`. When the segment
+   * values sum to less than `max`, a remainder segment is synthesized
+   * to fill the gap.
+   *
+   * In segmented mode the following props are documented as ignored:
+   * `value`, `formatValue`, `thresholds`, `fillRole`. The track and
+   * single-fill paths are also hidden — the segments (including the
+   * synthesized remainder) cover the arc entirely. The `label` prop
+   * still renders in segmented mode for both density modes; the
+   * value/percent readouts do not (their per-value meaning doesn't
+   * apply to a categorical breakdown). Consumers compose any legend
+   * separately, alongside the gauge.
+   *
+   * @selector .tug-arc-gauge[data-mode="segments"]
+   */
+  segments?: ReadonlyArray<TugArcGaugeSegment>;
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +313,76 @@ export function arcPath(
 }
 
 // ---------------------------------------------------------------------------
+// Segment layout — categorical-breakdown geometry (exported for testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lay out per-segment start angles + sweep lengths from a categorical
+ * breakdown. Each input segment maps to a contiguous arc span;
+ * spans paint in array order beginning at `gaugeStartAngleDeg`, each
+ * sized to `(value / max) * gaugeSweepAngleDeg`. Cumulative sweep is
+ * clamped at `gaugeSweepAngleDeg` so a segment whose `value` would
+ * overshoot the arc end gets truncated; any further segments after
+ * the overflow are emitted with `sweepAngleDeg === 0`.
+ *
+ * Behavior:
+ *
+ *  - `max <= 0` → empty array (degenerate domain; no meaningful layout).
+ *  - `gaugeSweepAngleDeg <= 0` → empty array (no arc to lay out).
+ *  - `segments.length === 0` → returns a single remainder segment
+ *    covering the full arc when `max > 0`.
+ *  - Sum of segment values < `max` → appends a synthesized remainder
+ *    segment with id `ARC_GAUGE_SEGMENT_REMAINDER_ID` and tone
+ *    `"remainder"`, filling the gap.
+ *  - Sum equals or exceeds `max` → no remainder appended; segments
+ *    occupying overflow space get truncated by the cumulative clamp.
+ *  - Negative segment values clamp to `0` (no inverse sweep).
+ *
+ * Pure: no DOM, no React, no time source.
+ */
+export function layoutArcSegments(
+  segments: ReadonlyArray<TugArcGaugeSegment>,
+  max: number,
+  gaugeStartAngleDeg: number,
+  gaugeSweepAngleDeg: number,
+): ReadonlyArray<TugArcGaugeSegmentLayout> {
+  if (max <= 0 || gaugeSweepAngleDeg <= 0) {
+    return [];
+  }
+  const arcEnd = gaugeStartAngleDeg + gaugeSweepAngleDeg;
+  const out: TugArcGaugeSegmentLayout[] = [];
+  let cumStart = gaugeStartAngleDeg;
+  for (const seg of segments) {
+    const value = Math.max(0, seg.value);
+    const remaining = Math.max(0, arcEnd - cumStart);
+    const desiredSweep = (value / max) * gaugeSweepAngleDeg;
+    const sweep = Math.min(desiredSweep, remaining);
+    out.push({
+      id: seg.id,
+      tone: seg.tone,
+      startAngleDeg: cumStart,
+      sweepAngleDeg: sweep,
+      value,
+      label: seg.label,
+    });
+    cumStart += sweep;
+  }
+  const remaining = arcEnd - cumStart;
+  if (remaining > 0) {
+    const remainderValue =
+      max * (remaining / gaugeSweepAngleDeg);
+    out.push({
+      id: ARC_GAUGE_SEGMENT_REMAINDER_ID,
+      tone: "remainder",
+      startAngleDeg: cumStart,
+      sweepAngleDeg: remaining,
+      value: remainderValue,
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Tick generation for the detailed density
 // ---------------------------------------------------------------------------
 
@@ -299,12 +465,14 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
       density = "compact",
       fillRole = "default",
       geometry,
+      segments,
       className,
       ...rest
     }: TugArcGaugeProps,
     ref,
   ) {
     const { startAngleDeg, sweepAngleDeg } = geometry ?? DEFAULT_ARC_GEOMETRY;
+    const isSegmented = segments !== undefined;
     const ratio = computeFillRatio(value, min, max);
     const role = effectiveFillRole(ratio, fillRole, thresholds);
     const display = formatValue ?? ((v: number) => String(v));
@@ -333,18 +501,27 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
       ratio,
     );
 
+    // Segmented mode: lay out per-tone segments and pre-compute each
+    // segment's SVG `d` attribute. The single-value `trackD` / `fillD`
+    // paths are hidden in this mode via CSS — the segments (including
+    // the synthesized remainder) cover the arc end-to-end.
+    const segmentLayouts = isSegmented
+      ? layoutArcSegments(segments, max, startAngleDeg, sweepAngleDeg)
+      : null;
+
     return (
       <div
         ref={ref}
         data-slot="tug-arc-gauge"
         data-density={density}
+        data-mode={isSegmented ? "segments" : "value"}
         data-role={role}
         className={cn("tug-arc-gauge", className)}
         role="meter"
         aria-valuemin={min}
         aria-valuemax={max}
-        aria-valuenow={value}
-        aria-valuetext={ariaValueText}
+        aria-valuenow={isSegmented ? max : value}
+        aria-valuetext={isSegmented ? (label ?? "categorical breakdown") : ariaValueText}
         {...rest}
       >
         <svg
@@ -352,12 +529,35 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
           viewBox={`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
           aria-hidden="true"
         >
-          {trackD !== "" ? (
+          {!isSegmented && trackD !== "" ? (
             <path className="tug-arc-gauge-track" d={trackD} />
           ) : null}
-          {fillD !== "" ? (
+          {!isSegmented && fillD !== "" ? (
             <path className="tug-arc-gauge-fill" d={fillD} />
           ) : null}
+          {segmentLayouts !== null
+            ? segmentLayouts.map((s) => {
+                if (s.sweepAngleDeg <= 0) {
+                  return null;
+                }
+                const d = arcPath(
+                  VIEWBOX_CENTER,
+                  VIEWBOX_CENTER,
+                  radius,
+                  s.startAngleDeg,
+                  s.sweepAngleDeg,
+                  1,
+                );
+                return d === "" ? null : (
+                  <path
+                    key={s.id}
+                    className="tug-arc-gauge-segment"
+                    data-tone={s.tone}
+                    d={d}
+                  />
+                );
+              })
+            : null}
           {density === "detailed" ? (
             <DetailedTicks
               startAngleDeg={startAngleDeg}
@@ -365,7 +565,7 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
               radius={radius}
             />
           ) : null}
-          {density === "detailed" ? (
+          {density === "detailed" && !isSegmented ? (
             <>
               <text
                 className="tug-arc-gauge-value-svg"
@@ -388,12 +588,17 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
             </>
           ) : null}
         </svg>
-        {density === "compact" ? (
+        {density === "compact" && !isSegmented ? (
           <div className="tug-arc-gauge-readout">
             <span className="tug-arc-gauge-value">{valueText}</span>
             {label !== undefined ? (
               <span className="tug-arc-gauge-label">{label}</span>
             ) : null}
+          </div>
+        ) : null}
+        {density === "compact" && isSegmented && label !== undefined ? (
+          <div className="tug-arc-gauge-readout">
+            <span className="tug-arc-gauge-label">{label}</span>
           </div>
         ) : null}
         {density === "detailed" && label !== undefined ? (

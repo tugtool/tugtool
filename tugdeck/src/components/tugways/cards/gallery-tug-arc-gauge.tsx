@@ -31,6 +31,7 @@ import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
 import type {
   TugArcGaugeDensity,
   TugArcGaugeGeometry,
+  TugArcGaugeSegment,
 } from "@/components/tugways/tug-arc-gauge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -138,6 +139,108 @@ const GEOMETRY_VARIANTS: ReadonlyArray<GeometryVariant> = [
   { label: "top-left quarter", geometry: { startAngleDeg: 180, sweepAngleDeg: 90 } },
   { label: "top-right quarter", geometry: { startAngleDeg: 270, sweepAngleDeg: 90 } },
 ];
+
+// ---------------------------------------------------------------------------
+// Segmented-mode demo scenarios — categorical breakdowns of context-window
+// utilization across representative session shapes. Each segment's `value`
+// is in the same domain as the gauge's `max` (`100` here — percent of
+// context capacity); the gauge auto-synthesizes a "remainder" slice when
+// the segments sum below `max`. See [#step-20-4-7-b].
+// ---------------------------------------------------------------------------
+
+interface SegmentScenario {
+  label: string;
+  segments: ReadonlyArray<TugArcGaugeSegment>;
+}
+
+const SEGMENT_SCENARIOS: ReadonlyArray<SegmentScenario> = [
+  {
+    label: "two slices (5%)",
+    segments: [
+      { id: "input", tone: "input", value: 3, label: "Input" },
+      { id: "output", tone: "output", value: 2, label: "Output" },
+    ],
+  },
+  {
+    label: "three slices (30%)",
+    segments: [
+      { id: "input", tone: "input", value: 12, label: "Input" },
+      { id: "cache-read", tone: "cache-read", value: 10, label: "Cache (read)" },
+      { id: "output", tone: "output", value: 8, label: "Output" },
+    ],
+  },
+  {
+    label: "four slices (60%)",
+    segments: [
+      { id: "input", tone: "input", value: 20, label: "Input" },
+      { id: "cache-read", tone: "cache-read", value: 15, label: "Cache (read)" },
+      { id: "cache-creation", tone: "cache-creation", value: 10, label: "Cache (creation)" },
+      { id: "output", tone: "output", value: 15, label: "Output" },
+    ],
+  },
+  {
+    label: "near-cap (95%)",
+    segments: [
+      { id: "input", tone: "input", value: 38, label: "Input" },
+      { id: "cache-read", tone: "cache-read", value: 30, label: "Cache (read)" },
+      { id: "cache-creation", tone: "cache-creation", value: 12, label: "Cache (creation)" },
+      { id: "output", tone: "output", value: 15, label: "Output" },
+    ],
+  },
+  {
+    label: "saturated (no remainder)",
+    segments: [
+      { id: "input", tone: "input", value: 40, label: "Input" },
+      { id: "cache-read", tone: "cache-read", value: 25, label: "Cache (read)" },
+      { id: "cache-creation", tone: "cache-creation", value: 15, label: "Cache (creation)" },
+      { id: "output", tone: "output", value: 20, label: "Output" },
+    ],
+  },
+];
+
+const SEGMENT_TONE_LABELS: Record<TugArcGaugeSegment["tone"], string> = {
+  input: "Input",
+  "cache-read": "Cache (read)",
+  "cache-creation": "Cache (creation)",
+  output: "Output",
+  remainder: "Unused",
+};
+
+const segmentScenariosRowStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(5, 1fr)",
+  gap: "1rem",
+  alignItems: "start",
+};
+
+const segmentSwatchStyle: React.CSSProperties = {
+  display: "inline-block",
+  width: "10px",
+  height: "10px",
+  borderRadius: "2px",
+  marginRight: "6px",
+  verticalAlign: "middle",
+};
+
+const legendStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "2px",
+  marginTop: "var(--tug-space-xs)",
+  fontFamily: "var(--tug-font-mono, monospace)",
+  fontSize: "0.6875rem",
+  color: "var(--tug7-element-global-text-normal-muted-rest)",
+};
+
+/**
+ * Map a `TugArcGaugeSegment["tone"]` to its CSS custom property — the
+ * gallery's legend swatches read the same `--tugx-arc-gauge-segment-*-
+ * color` variables the SVG segments themselves read, so swatches and
+ * arcs stay in lockstep across themes.
+ */
+function segmentToneCssVar(tone: TugArcGaugeSegment["tone"]): string {
+  return `var(--tugx-arc-gauge-segment-${tone}-color)`;
+}
 
 // ---------------------------------------------------------------------------
 // GalleryTugArcGauge
@@ -499,6 +602,58 @@ export function GalleryTugArcGauge(): React.ReactElement {
                   {variant.geometry.sweepAngleDeg}°
                 </code>
               </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ============================================================
+          4. Segmented mode — categorical breakdown
+          ============================================================ */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">
+          Segmented mode (categorical breakdown)
+        </TugLabel>
+        <div style={labelStyle}>
+          Pass <code>segments</code> instead of (or alongside)
+          <code>value</code> to paint the arc as a sequence of per-tone
+          slices. Segments paint left-to-right in array order; when
+          their values sum below <code>max</code> the gauge auto-
+          synthesizes a muted <em>remainder</em> slice that fills the
+          unused capacity. Five canonical tones are wired: input,
+          cache-read, cache-creation, output, and the remainder slot.
+          Foundational for the Context popover (20.4.7.C); useful for
+          any categorical-vs-max breakdown.
+        </div>
+
+        <div style={segmentScenariosRowStyle}>
+          {SEGMENT_SCENARIOS.map((scenario) => (
+            <div key={scenario.label} style={geometryCellStyle}>
+              <div style={READABLE_SIZE}>
+                <TugArcGauge
+                  min={0}
+                  max={100}
+                  value={0}
+                  density="compact"
+                  segments={scenario.segments}
+                />
+              </div>
+              <span style={geometryCellLabelStyle}>{scenario.label}</span>
+              <div style={legendStyle}>
+                {scenario.segments.map((s) => (
+                  <span key={s.id}>
+                    <span
+                      style={{
+                        ...segmentSwatchStyle,
+                        backgroundColor: segmentToneCssVar(s.tone),
+                      }}
+                    />
+                    {s.label ?? SEGMENT_TONE_LABELS[s.tone]}
+                  </span>
+                ))}
+              </div>
             </div>
           ))}
         </div>

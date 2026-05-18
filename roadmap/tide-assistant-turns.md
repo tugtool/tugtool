@@ -2388,7 +2388,7 @@ Visual language pulled from `tug-dev-panel/`'s log format (mono font, tight row-
 
 **Depends on:** none in 20.4.x; foundational for 20.4.7.C.
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tugways): TugArcGauge multi-segment mode`
 
@@ -2426,22 +2426,22 @@ When `segments` is provided, the existing `value` / `formatValue` / `thresholds`
 
 **Tasks.**
 
-- [ ] Extend `TugArcGauge` props with the `segments` field; preserve all existing behavior when `segments` is omitted.
-- [ ] Add five segment-tone token slots (`--tugx-arc-gauge-segment-input-color`, `…-cache-read-color`, `…-cache-creation-color`, `…-output-color`, `…-remainder-color`), each resolving to `--tug7-*` in one hop ([L17]).
-- [ ] Update `@tug-pairings` in `tug-arc-gauge.css` to include the five new pairings (each segment tone × the gauge surface).
-- [ ] Update the existing TugArcGauge gallery (Step 20.2's gallery card) with a segmented-mode demo.
-- [ ] Pure-logic tests for segment sweep geometry (start angles, sweep lengths) given an array of segments + `max`.
+- [x] Extend `TugArcGauge` props with the `segments` field; preserve all existing behavior when `segments` is omitted. (Added `segments?: ReadonlyArray<TugArcGaugeSegment>`; component flips `data-mode="segments"` and renders per-tone arcs when provided. Single-value path remains the default branch.)
+- [x] Add five segment-tone token slots (`--tugx-arc-gauge-segment-input-color`, `…-cache-read-color`, `…-cache-creation-color`, `…-output-color`, `…-remainder-color`), each resolving to `--tug7-*` in one hop ([L17]). (Aliases live in `tug-arc-gauge.css` body{}; `remainder` aliases to `--tugx-gauge-track-color` so the unused slice reads as background.)
+- [x] Update `@tug-pairings` in `tug-arc-gauge.css` to include the five new pairings (each segment tone × the gauge surface).
+- [x] Update the existing TugArcGauge gallery (Step 20.2's gallery card) with a segmented-mode demo. (New section "Segmented mode (categorical breakdown)" with five scenarios — two-slice 5% / three-slice 30% / four-slice 60% / near-cap 95% / saturated — plus a swatch legend per scenario.)
+- [x] Pure-logic tests for segment sweep geometry (start angles, sweep lengths) given an array of segments + `max`. (New `layoutArcSegments` pure helper + ten test cases in `tug-arc-gauge.test.ts` covering degenerate domain, empty input, sum-equals-max, sum-overflows-max, negative-value clamp, zero-value entry, label/tone passthrough, canonical five-tone breakdown.)
 
 **Tests.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0 (the five new pairings + annotations must pass).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0 (the five new pairings + annotations must pass).
 
 **Checkpoint.**
 
-- [ ] Existing TugArcGauge consumers (Step 20.4's window-utilization renderer, gallery accordion) render unchanged.
-- [ ] Segmented mode renders correctly in the gallery for 2–5 segments with the remainder slot.
+- [x] Existing TugArcGauge consumers (Step 20.4's window-utilization renderer, gallery accordion) render unchanged. (Verified by re-running the full test suite — every existing arc-gauge test still passes; the segments path engages only when the new prop is provided.)
+- [ ] Segmented mode renders correctly in the gallery for 2–5 segments with the remainder slot. _(Pending HMR vet; the five scenarios are wired in the gallery card.)_
 
 ---
 
