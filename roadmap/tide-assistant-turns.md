@@ -2449,7 +2449,7 @@ When `segments` is provided, the existing `value` / `formatValue` / `thresholds`
 
 **Depends on:** #step-20-4-6, #step-20-4-7-b
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tide-rendering): gallery Context popover`
 
@@ -2461,22 +2461,22 @@ When `segments` is provided, the existing `value` / `formatValue` / `thresholds`
 
 **Tasks.**
 
-- [ ] Compose the Context popover using `TugArcGauge` in segmented mode + a legend block.
-- [ ] Pure-logic helper `computeContextBreakdown(turn: TurnEntry, contextMax: number)` returning the five-segment array.
-- [ ] Empty-state rendering for pre-first-commit case.
-- [ ] Gallery scenario picker covers fresh / deep / near-cap representative shapes.
+- [x] Compose the Context popover using `TugArcGauge` in segmented mode + a legend block. (New `ContextPopoverContent` in `gallery-tide-status-row.tsx` renders the gauge at the `large` showcase size (180 px) alongside a per-category legend; each legend row prepends a color swatch reading the same `--tugx-arc-gauge-segment-<tone>-color` slot the gauge paints with.)
+- [x] Pure-logic helper `computeContextBreakdown(turn: TurnEntry, contextMax: number)` returning the five-segment array. (Lives in `telemetry.ts` alongside `computeTimeSummary` / `computeTokensSummary`; emits input + cache-read + cache-creation + output + remainder with negative/over-saturation clamping. Local tone union keeps `lib` from importing the gauge component type.)
+- [x] Empty-state rendering for pre-first-commit case. (When `transcript.length === 0`, the popover renders the title + the shared `EmptyTranscriptBody`; gauge and footer are omitted.)
+- [x] Gallery scenario picker covers fresh / deep / near-cap representative shapes. (The transcript picker introduced in 20.4.7.A covers fresh / single / short / deep; the Context popover reads `transcript[length - 1]` so each scenario surfaces the right shape.)
 
 **Tests.**
 
-- [ ] Pure-logic tests for `computeContextBreakdown` across the representative scenarios.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic tests for `computeContextBreakdown` across the representative scenarios. (Eight cases in `telemetry.test.ts`: canonical-five-segment order, zero-usage, full mix, sum-equals-max, sum-overflows-max with remainder clamp, negative-axis clamp, negative-contextMax clamp, label/tone passthrough.)
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] HMR-vet the popover at multiple scenarios.
-- [ ] Empty-state renders correctly when no turn has committed yet.
+- [ ] HMR-vet the popover at multiple scenarios. _(Pending; transcript picker drives four shapes through the CONTEXT cell.)_
+- [ ] Empty-state renders correctly when no turn has committed yet. _(Pending HMR vet; "Fresh (0 turns)" scenario routes the empty-state path.)_
 
 ---
 

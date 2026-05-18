@@ -509,6 +509,24 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
       ? layoutArcSegments(segments, max, startAngleDeg, sweepAngleDeg)
       : null;
 
+    // Segmented mode "used" total — the sum of every non-remainder
+    // segment's value. Drives `aria-valuenow` and the detailed-density
+    // center readout so a user opening the gauge with screen-reader
+    // or keyboard inspection hears the same "how full" reading the
+    // text overlay shows.
+    const segmentedUsedTotal =
+      segmentLayouts === null
+        ? 0
+        : segmentLayouts.reduce(
+            (sum, s) => (s.tone === "remainder" ? sum : sum + s.value),
+            0,
+          );
+    const segmentedValueText = isSegmented ? display(segmentedUsedTotal) : "";
+    const segmentedPercentText =
+      isSegmented && max > 0
+        ? `${((segmentedUsedTotal / max) * 100).toFixed(1)}%`
+        : "0.0%";
+
     return (
       <div
         ref={ref}
@@ -520,8 +538,12 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
         role="meter"
         aria-valuemin={min}
         aria-valuemax={max}
-        aria-valuenow={isSegmented ? max : value}
-        aria-valuetext={isSegmented ? (label ?? "categorical breakdown") : ariaValueText}
+        aria-valuenow={isSegmented ? segmentedUsedTotal : value}
+        aria-valuetext={
+          isSegmented
+            ? `${segmentedValueText} ${label ?? "used"} (${segmentedPercentText})`
+            : ariaValueText
+        }
         {...rest}
       >
         <svg
@@ -565,7 +587,7 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
               radius={radius}
             />
           ) : null}
-          {density === "detailed" && !isSegmented ? (
+          {density === "detailed" ? (
             <>
               <text
                 className="tug-arc-gauge-value-svg"
@@ -574,7 +596,7 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
                 textAnchor="middle"
                 dominantBaseline="central"
               >
-                {valueText}
+                {isSegmented ? segmentedValueText : valueText}
               </text>
               <text
                 className="tug-arc-gauge-percent-svg"
@@ -583,7 +605,7 @@ export const TugArcGauge = React.forwardRef<HTMLDivElement, TugArcGaugeProps>(
                 textAnchor="middle"
                 dominantBaseline="central"
               >
-                {percentText}
+                {isSegmented ? segmentedPercentText : percentText}
               </text>
             </>
           ) : null}

@@ -19,6 +19,7 @@ import {
   deriveTimeCellMs,
   computeTimeSummary,
   computeTokensSummary,
+  computeContextBreakdown,
   type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
 import {
@@ -699,5 +700,128 @@ describe("computeTokensSummary", () => {
       totalTokens: 0,
       avgTokensPerTurn: 0,
     });
+  });
+});
+
+describe("computeContextBreakdown", () => {
+  const CONTEXT_MAX = 1_000_000;
+
+  it("returns five segments in the canonical (input, cache-read, cache-creation, output, remainder) order", () => {
+    const t = turn({});
+    const ids = computeContextBreakdown(t, CONTEXT_MAX).segments.map((s) => s.id);
+    expect(ids).toEqual(["input", "cache-read", "cache-creation", "output", "remainder"]);
+  });
+
+  it("returns a full-window remainder for a zero-usage turn", () => {
+    const t = turn({});
+    const r = computeContextBreakdown(t, CONTEXT_MAX);
+    expect(r.totalUsed).toBe(0);
+    expect(r.contextMax).toBe(CONTEXT_MAX);
+    expect(r.segments[0].value).toBe(0); // input
+    expect(r.segments[1].value).toBe(0); // cache-read
+    expect(r.segments[2].value).toBe(0); // cache-creation
+    expect(r.segments[3].value).toBe(0); // output
+    expect(r.segments[4].value).toBe(CONTEXT_MAX); // remainder
+  });
+
+  it("splits usage across the four categories and computes the remainder", () => {
+    const t = turn({
+      cost: {
+        inputTokens: 30_000,
+        outputTokens: 8_000,
+        cacheReadInputTokens: 12_000,
+        cacheCreationInputTokens: 5_000,
+        totalCostUsd: 0,
+      },
+    });
+    const r = computeContextBreakdown(t, CONTEXT_MAX);
+    expect(r.totalUsed).toBe(55_000);
+    expect(r.segments[0].value).toBe(30_000);
+    expect(r.segments[1].value).toBe(12_000);
+    expect(r.segments[2].value).toBe(5_000);
+    expect(r.segments[3].value).toBe(8_000);
+    expect(r.segments[4].value).toBe(CONTEXT_MAX - 55_000);
+  });
+
+  it("returns zero remainder when used exactly equals max", () => {
+    const t = turn({
+      cost: {
+        inputTokens: 400_000,
+        outputTokens: 100_000,
+        cacheReadInputTokens: 300_000,
+        cacheCreationInputTokens: 200_000,
+        totalCostUsd: 0,
+      },
+    });
+    const r = computeContextBreakdown(t, CONTEXT_MAX);
+    expect(r.totalUsed).toBe(CONTEXT_MAX);
+    expect(r.segments[4].value).toBe(0);
+  });
+
+  it("clamps remainder to 0 when usage exceeds max; totalUsed honors the raw sum", () => {
+    const t = turn({
+      cost: {
+        inputTokens: 800_000,
+        outputTokens: 300_000,
+        cacheReadInputTokens: 100_000,
+        cacheCreationInputTokens: 0,
+        totalCostUsd: 0,
+      },
+    });
+    const r = computeContextBreakdown(t, CONTEXT_MAX);
+    // Raw sum = 1_200_000; over-saturation surfaces honestly.
+    expect(r.totalUsed).toBe(1_200_000);
+    expect(r.segments[4].value).toBe(0);
+  });
+
+  it("clamps negative per-category values to 0", () => {
+    const t = turn({
+      cost: {
+        inputTokens: -100,
+        outputTokens: 500,
+        cacheReadInputTokens: -2_000,
+        cacheCreationInputTokens: 1_000,
+        totalCostUsd: 0,
+      },
+    });
+    const r = computeContextBreakdown(t, CONTEXT_MAX);
+    expect(r.segments[0].value).toBe(0); // input clamped
+    expect(r.segments[1].value).toBe(0); // cache-read clamped
+    expect(r.segments[2].value).toBe(1_000);
+    expect(r.segments[3].value).toBe(500);
+    expect(r.totalUsed).toBe(1_500);
+  });
+
+  it("clamps contextMax to 0 when given a negative value", () => {
+    const t = turn({
+      cost: {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        totalCostUsd: 0,
+      },
+    });
+    const r = computeContextBreakdown(t, -1);
+    expect(r.contextMax).toBe(0);
+    expect(r.segments[4].value).toBe(0);
+  });
+
+  it("preserves labels and tones across all five segments", () => {
+    const r = computeContextBreakdown(turn({}), CONTEXT_MAX);
+    expect(r.segments.map((s) => s.tone)).toEqual([
+      "input",
+      "cache-read",
+      "cache-creation",
+      "output",
+      "remainder",
+    ]);
+    expect(r.segments.map((s) => s.label)).toEqual([
+      "Input",
+      "Cache (read)",
+      "Cache (creation)",
+      "Output",
+      "Unused",
+    ]);
   });
 });

@@ -168,6 +168,109 @@ export interface TurnTokensSummary {
 }
 
 /**
+ * Categorical tone for {@link computeContextBreakdown}'s output. Same
+ * five-value union as `TugArcGaugeSegmentTone` (the gauge primitive's
+ * segments-mode tone enum) — structurally compatible so the gallery
+ * popover (and 20.4.10's production composition) can hand a breakdown's
+ * `segments` array directly to `TugArcGauge` in segments mode without
+ * mapping or casting.
+ *
+ * Declared locally here rather than imported from the components layer
+ * so the library boundary stays one-way: `lib` doesn't depend on
+ * `components`. The five literal values are stable enough that the
+ * structural-compat trade is worth it.
+ */
+export type ContextBreakdownTone =
+  | "input"
+  | "cache-read"
+  | "cache-creation"
+  | "output"
+  | "remainder";
+
+/**
+ * One segment in a context-window categorical breakdown. Mirrors the
+ * shape `TugArcGauge`'s segments mode consumes ({@link ContextBreakdownTone}
+ * matches its tone union exactly), so the popover renderer can pass
+ * the array through without translation.
+ */
+export interface ContextBreakdownSegment {
+  /** Stable identity for the segment across renders. */
+  id: string;
+  /** Categorical tone — paired with the matching `--tugx-arc-gauge-segment-<tone>-color` slot. */
+  tone: ContextBreakdownTone;
+  /** Token count for this category (clamped to ≥ 0). */
+  value: number;
+  /** Human-readable label for the legend. */
+  label: string;
+}
+
+/**
+ * Output shape of {@link computeContextBreakdown}: the five segments
+ * needed to paint the categorical arc + the headline `totalUsed`
+ * count (sum of all four non-remainder categories) + the originating
+ * `contextMax` so the popover footer can render `used / max`.
+ */
+export interface ContextBreakdown {
+  segments: ReadonlyArray<ContextBreakdownSegment>;
+  /**
+   * Sum of input + cache-read + cache-creation + output for the turn,
+   * clamped to ≥ 0 on each axis. NOT clamped against `contextMax` —
+   * over-saturation (rare) surfaces as `totalUsed > contextMax` so
+   * the renderer can show the imbalance honestly.
+   */
+  totalUsed: number;
+  /** The model's context-window cap as passed in (clamped to ≥ 0). */
+  contextMax: number;
+}
+
+/**
+ * Decompose a committed turn's token usage into the five-segment
+ * shape the Context popover (`#step-20-4-7-c`) paints: the four
+ * token categories Anthropic emits in `cost_update.usage` (input,
+ * cache-read, cache-creation, output) plus an auto-computed
+ * `remainder` slice representing the unused window capacity. The
+ * remainder is `max(0, contextMax − sum-of-used)`; if the turn
+ * over-saturated the window (sum > contextMax), the remainder
+ * clamps to 0 and `totalUsed > contextMax` signals the imbalance.
+ *
+ * Negative values on any axis (defensive against malformed inputs)
+ * clamp to 0. `contextMax <= 0` clamps to 0 too; the result is then
+ * five-segment but with remainder = 0.
+ *
+ * Pure: no DOM, no React, no time source. The caller picks which
+ * turn to decompose; the popover's contract is "most-recent committed
+ * turn" but the helper itself takes any `TurnEntry`.
+ */
+export function computeContextBreakdown(
+  turn: TurnEntry,
+  contextMax: number,
+): ContextBreakdown {
+  const safeContextMax = Math.max(0, contextMax);
+  const input = Math.max(0, turn.cost.inputTokens);
+  const cacheRead = Math.max(0, turn.cost.cacheReadInputTokens);
+  const cacheCreation = Math.max(0, turn.cost.cacheCreationInputTokens);
+  const output = Math.max(0, turn.cost.outputTokens);
+  const totalUsed = input + cacheRead + cacheCreation + output;
+  const remainder = Math.max(0, safeContextMax - totalUsed);
+  return {
+    segments: [
+      { id: "input", tone: "input", value: input, label: "Input" },
+      { id: "cache-read", tone: "cache-read", value: cacheRead, label: "Cache (read)" },
+      {
+        id: "cache-creation",
+        tone: "cache-creation",
+        value: cacheCreation,
+        label: "Cache (creation)",
+      },
+      { id: "output", tone: "output", value: output, label: "Output" },
+      { id: "remainder", tone: "remainder", value: remainder, label: "Unused" },
+    ],
+    totalUsed,
+    contextMax: safeContextMax,
+  };
+}
+
+/**
  * Compute the `Tokens` popover's summary block from the committed
  * transcript. Same in-flight contract as {@link computeTimeSummary}:
  * row log + this summary cover committed turns only; the renderer

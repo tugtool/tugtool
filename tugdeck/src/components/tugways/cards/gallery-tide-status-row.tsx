@@ -98,7 +98,12 @@ import {
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
 import { TugBadge } from "@/components/tugways/tug-badge";
+import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
+import type {
+  TugArcGaugeSegment,
+} from "@/components/tugways/tug-arc-gauge";
 import {
+  computeContextBreakdown,
   computeTimeSummary,
   computeTokensSummary,
 } from "@/lib/code-session-store/telemetry";
@@ -807,7 +812,13 @@ function PopoverRow({
   hint,
   badge,
 }: {
-  label: string;
+  /**
+   * Row label. Accepts arbitrary nodes (not just strings) so the
+   * Context popover can prepend a per-row color swatch inline with
+   * the label text; string-only callers (Time / Tokens row logs +
+   * summary rows) pass plain strings unchanged.
+   */
+  label: React.ReactNode;
   value: string;
   hint?: string;
   badge?: React.ReactNode;
@@ -883,20 +894,29 @@ function TerminalStateBadge({
 }
 
 /**
- * Popover-content frame shared by Time + Tokens. Renders an uppercase
- * title bar, the body rows (passed in as `children`), and a separator-
- * fronted summary footer (also passed in as `summaryFooter`). The
- * frame owns the layout chrome so the two popovers' content stays
- * structurally identical — only the row formatters differ.
+ * Popover-content frame shared by Time + Tokens + Context. Renders an
+ * uppercase title bar, the body (passed in as `children`), and an
+ * optional separator-fronted summary footer (`summaryFooter`). The
+ * frame owns the layout chrome so popovers stay structurally
+ * consistent across surfaces — only the body content differs.
+ *
+ * The default min/max width fits the Time + Tokens row lists (~280–360
+ * px); the Context popover overrides `maxWidth` with a wider cap so
+ * the large segmented gauge + legend layout fits side-by-side
+ * without clipping.
  */
 function PerAreaPopoverFrame({
   title,
   children,
   summaryFooter,
+  minWidth = 280,
+  maxWidth = 360,
 }: {
   title: string;
   children: React.ReactNode;
-  summaryFooter: React.ReactNode;
+  summaryFooter?: React.ReactNode;
+  minWidth?: number;
+  maxWidth?: number;
 }): React.ReactElement {
   return (
     <div
@@ -905,8 +925,8 @@ function PerAreaPopoverFrame({
         display: "flex",
         flexDirection: "column",
         gap: 2,
-        minWidth: 280,
-        maxWidth: 360,
+        minWidth,
+        maxWidth,
       }}
     >
       <div
@@ -922,15 +942,17 @@ function PerAreaPopoverFrame({
         {title}
       </div>
       {children}
-      <div
-        style={{
-          borderTop: `1px solid ${RAIL_COLOR}`,
-          marginTop: 6,
-          paddingTop: 6,
-        }}
-      >
-        {summaryFooter}
-      </div>
+      {summaryFooter !== undefined && summaryFooter !== null ? (
+        <div
+          style={{
+            borderTop: `1px solid ${RAIL_COLOR}`,
+            marginTop: 6,
+            paddingTop: 6,
+          }}
+        >
+          {summaryFooter}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1083,6 +1105,163 @@ function TokensPopoverContent({
           />
         ))
       )}
+    </PerAreaPopoverFrame>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Context popover — large segmented gauge + per-category legend
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrapper pinning the `Context` popover's large `TugArcGauge` at the
+ * showcase scale (`180px`). Matches the gallery's `SHOWCASE_SIZE` in
+ * `gallery-tug-arc-gauge.tsx` (the third gauge gallery card) so the
+ * "large" gauge size used by the Context popover stays in lockstep
+ * with the substrate gallery's own large demonstration.
+ */
+const CONTEXT_GAUGE_LARGE_PX = 180;
+
+/**
+ * Token-to-percent formatter. The legend rows + summary footer both
+ * show the percent of context-window consumption — one decimal place
+ * is plenty for human comparison (0.0% to 100.0%).
+ */
+function formatContextPercent(used: number, max: number): string {
+  if (max <= 0) {
+    return "0.0%";
+  }
+  return `${((used / max) * 100).toFixed(1)}%`;
+}
+
+/**
+ * Map a categorical tone to the matching `--tugx-arc-gauge-segment-*-color`
+ * CSS variable so the legend swatches read the same custom property
+ * the gauge's segments do — themes that retune the segment palette
+ * propagate to both surfaces without per-callsite hard-coding.
+ */
+function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
+  return `var(--tugx-arc-gauge-segment-${tone}-color)`;
+}
+
+/**
+ * `Context` popover content per plan `#step-20-4-7-c`: large
+ * `TugArcGauge` in segmented mode showing the last committed turn's
+ * five-category context-window breakdown (input / cache-read /
+ * cache-creation / output / remainder), paired with a legend listing
+ * each category's token count + percent of the window. The footer
+ * shows the totalUsed / contextMax headline.
+ *
+ * In-flight contract per the plan: when opened during an in-flight
+ * turn, the popover shows the **last committed** turn's breakdown
+ * (the most-recent boundary at which a context picture is
+ * meaningful). When the transcript is empty (no committed turns
+ * yet), the popover renders an empty-state body without the gauge
+ * or footer — the placeholder the plan calls out for the
+ * pre-first-commit case.
+ *
+ * Reads the same `--tugx-arc-gauge-segment-*-color` slot family the
+ * gauge primitive paints with; the popover never reaches for raw
+ * `--tug7-*` tokens directly per [L17] / [L20].
+ */
+function ContextPopoverContent({
+  transcript,
+  contextMax,
+}: {
+  transcript: ReadonlyArray<TurnEntry>;
+  contextMax: number;
+}): React.ReactElement {
+  const lastTurn =
+    transcript.length > 0 ? transcript[transcript.length - 1] : null;
+  if (lastTurn === null) {
+    return (
+      <PerAreaPopoverFrame title="Context window — last committed turn">
+        <EmptyTranscriptBody />
+      </PerAreaPopoverFrame>
+    );
+  }
+  const breakdown = computeContextBreakdown(lastTurn, contextMax);
+  const visibleSegments = breakdown.segments;
+  return (
+    <PerAreaPopoverFrame
+      title="Context window — last committed turn"
+      minWidth={400}
+      maxWidth={500}
+      summaryFooter={
+        <>
+          <PopoverRow
+            label="used"
+            value={formatTokensCaps(breakdown.totalUsed)}
+            hint={formatContextPercent(breakdown.totalUsed, breakdown.contextMax)}
+          />
+          <PopoverRow
+            label="max"
+            value={formatTokensCaps(breakdown.contextMax)}
+          />
+        </>
+      }
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: "var(--tug-space-lg)",
+          paddingBlock: 4,
+        }}
+      >
+        <div
+          style={{
+            width: CONTEXT_GAUGE_LARGE_PX,
+            flex: "0 0 auto",
+          }}
+        >
+          <TugArcGauge
+            min={0}
+            max={breakdown.contextMax}
+            // `value` is ignored in segments mode; pass 0 for the
+            // documented fallback role.
+            value={0}
+            density="detailed"
+            label="used"
+            formatValue={formatTokensCaps}
+            segments={visibleSegments}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            flex: "1 1 auto",
+            minWidth: 0,
+          }}
+        >
+          {visibleSegments.map((s) => (
+            <PopoverRow
+              key={s.id}
+              label={
+                <>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      marginRight: 6,
+                      verticalAlign: "middle",
+                      backgroundColor: contextSegmentSwatchVar(s.tone),
+                    }}
+                  />
+                  {s.label}
+                </>
+              }
+              value={formatTokensCaps(s.value)}
+              hint={formatContextPercent(s.value, breakdown.contextMax)}
+            />
+          ))}
+        </div>
+      </div>
     </PerAreaPopoverFrame>
   );
 }
@@ -1381,6 +1560,12 @@ export function GalleryTideStatusRow(): React.ReactElement {
         }
       />
     ),
+    context: (
+      <ContextPopoverContent
+        transcript={transcript}
+        contextMax={baseValues.contextMax}
+      />
+    ),
   };
 
   return (
@@ -1475,7 +1660,9 @@ export function GalleryTideStatusRow(): React.ReactElement {
             ("Awaiting first response") — so the cell positions stay stable across
             label-text changes. Scenario picker drives the cell values; session-state
             picker drives the indicator behavior; transcript-scenario picker drives
-            the per-area popovers (TIME + TOKENS — click either cell). This is the
+            the per-area popovers (TIME, TOKENS, CONTEXT — click any cell). The
+            Context popover renders the last committed turn's categorical
+            breakdown via a large segmented TugArcGauge (20.4.7.B). This is the
             canonical layout that will be promoted into the production tide-card Z2
             renderer.
           </div>
