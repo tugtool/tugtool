@@ -2480,6 +2480,173 @@ When `segments` is provided, the existing `value` / `formatValue` / `thresholds`
 
 ---
 
+#### Step 20.4.7.D: `/context`-style breakdown — wire frame + popover upgrade (cross-crate) {#step-20-4-7-d}
+
+**Depends on:** #step-20-4-7-c (popover scaffold to upgrade), #step-20-4-7-b (segments-mode primitive), #step-20-3-4 (SessionLedger persistence precedent)
+
+**Status:** _not started._
+
+**Commit:** `feat(tugcode+tide-rendering): context_breakdown wire frame + popover upgrade`
+
+**References:** [L02], [L06], [L19], [L20], [L23], [#step-20-3-4] (SessionLedger), [#step-20-4-7-b] (segments primitive), [#step-20-4-7-c] (placeholder popover this upgrades)
+
+##### Background
+
+The Context popover landed in 20.4.7.C with a 5-segment breakdown sourced from `cost_update.usage`: `input` / `cache_read` / `cache_creation` / `output` / `remainder`. Those five numbers are **wire-level token accounting** — they're what Anthropic's API actually emits per turn, and they don't correspond to anything a user recognizes when they ask "what's filling up my context window?" That mental model is the one Claude Code's own `/context` slash command surfaces: System prompt / System tools / Custom agents / Memory files / Skills / Messages / Autocompact buffer (when enabled) / Free space. Tide's popover should land at parity with `/context` — and arguably better, because the graphical surface can do things a terminal table cannot (live updates, comparative views, drill-down).
+
+This step is the cross-crate work to plumb the `/context`-style breakdown from Claude Code (via tugcode's stream-json IPC) to tugdeck's snapshot, the sqlite ledger, and finally into the popover renderer. It supersedes — but does not delete — the 20.4.7.C fallback view, which remains the renderer's behavior when the rich breakdown is unavailable (no tugcode support, older tugcode, etc.).
+
+##### Out of scope: MCP
+
+**MCP (Model Context Protocol) is intentionally not implemented in Tug.** It's treated as a dead-end technology — the rest of the Tug suite has no MCP integration path, plans, or schedule, and this step inherits that stance. Claude Code's `/context` lists MCP tools as a separate section (loaded on-demand); we don't surface it in our popover, the wire frame doesn't carry it, the snapshot doesn't store it, the sqlite ledger doesn't persist it, and the gauge's tone vocabulary doesn't include an `mcp_tools` slot. Any future Tug-side MCP work would land in its own plan with its own step — until then, the absence is by design, not an oversight.
+
+##### Accuracy bar: within 5–10% of `/context`, not byte-exact parity
+
+The popover doesn't need token-for-token agreement with Claude Code's `/context` output. The bar is **functional parity** — a user opening the popover should see numbers in the same ballpark as `/context` (within 5–10% per category) and recognize the categorical breakdown as the same one they see in the terminal. Drift this large is acceptable because:
+
+- A local tokenizer (e.g., a `tiktoken`-compatible model approximating the Anthropic tokenizer) is fast, deterministic, and offline; the drift it introduces is well below the 5–10% bar.
+- Counts at session-init can be tokenized once and cached for the session's lifetime; only Messages needs per-turn re-tokenization.
+- Anthropic's `count_tokens` API (the byte-exact path) is network-bound, costs a ~460-token preamble per call, and ties our popover's freshness to API latency. The 5–10% bar lets us avoid this entirely.
+
+Spike S3 below picks the tokenizer with this looser bar in mind; the implementation prefers fast, local, cached counts unless the spike surfaces a concrete reason to spend the network budget.
+
+##### Verified findings from upstream research
+
+Confirmed against external research before drafting the implementation plan:
+
+- **The categorical breakdown Tug cares about, with MCP omitted by design:** System prompt, System tools, Custom agents, Memory files, Skills, Messages, Autocompact buffer (conditional), Free space. ([code.claude.com/docs/en/context-window](https://code.claude.com/docs/en/context-window), [wmedia.es Context Window guide](https://wmedia.es/en/tips/claude-code-context-command-token-usage)) Claude Code's own `/context` includes an MCP tools row; we skip it per the "Out of scope: MCP" section above.
+- **Most categories are fixed-at-session-start.** System prompt / System tools / Custom agents / Skills are loaded once at session init and don't change for the session's lifetime. Memory files are re-read each turn (content can change if the user edits `CLAUDE.md` / `MEMORY.md` between turns). Messages grow monotonically with the conversation. This is the user's hypothesis — verified, with the single MCP exception that we're ignoring anyway. ([wmedia.es](https://wmedia.es/en/tips/claude-code-context-command-token-usage))
+- **The Claude Agent SDK does NOT expose `/context` programmatically.** This is an open feature request: [anthropics/claude-agent-sdk-python#507](https://github.com/anthropics/claude-agent-sdk-python/issues/507). The SDK today only exposes cumulative `usage.input_tokens` / `usage.output_tokens` (plus the cache-read/creation deltas) — the same surface `cost_update` already gives us. A related issue on the TypeScript SDK ([anthropics/claude-agent-sdk-typescript#66](https://github.com/anthropics/claude-agent-sdk-typescript/issues/66)) confirms there is no `total_context_window_input` or per-category breakdown field; computing usage from `usage` + `modelUsage` is itself ambiguous. Either we extract the per-category counts ourselves from SDK-exposed state, or we don't get them at all.
+- **The Anthropic API's `count_tokens` endpoint is the canonical tokenizer.** Claude Code uses it per tool, wrapping each tool schema in a dummy conversation; this incurs ~460 tokens of preamble per call. We do NOT need this accuracy (see "Accuracy bar" above); a local tokenizer is preferred. ([platform.claude.com Token counting](https://platform.claude.com/docs/en/build-with-claude/token-counting))
+- **The Autocompact buffer is reserved space, not content.** Currently ~33k tokens (reduced from ~45k in early 2026); compaction fires when free space hits the buffer. It shows as its own category in `/context` *when enabled* — and the user can turn it off. The popover must handle both states: render the buffer slice when on, omit it when off. ([claudefa.st context-buffer-management](https://claudefa.st/blog/guide/mechanics/context-buffer-management), [anthropics/claude-code#10266](https://github.com/anthropics/claude-code/issues/10266))
+
+**Implication:** since the SDK doesn't surface the breakdown, tugcode has three paths to obtain it — and the spike below must determine which is viable before we commit to an implementation shape.
+
+##### Architectural decisions the spike must answer
+
+1. **Where does tugcode get the per-category counts?** Three candidate paths:
+   - **A. Run `/context` as an in-session slash command and parse its output.** The exact mechanism for executing a slash command from the SDK and capturing its structured response is not documented in the issues we read. May or may not be a stable surface.
+   - **B. Re-tokenize each component locally from SDK-exposed state.** Requires (i) the SDK to expose the actual system-prompt / tool-defs / memory / agents / skills payloads tugcode is sending, and (ii) a tokenizer. With the 5–10% accuracy bar, a local tokenizer is preferred over Anthropic's `count_tokens` API. Locally feasible if the SDK exposes the components.
+   - **C. Wait for / contribute to the upstream feature request.** Lowest maintenance burden but indefinite timeline.
+2. **How frequently does the breakdown need to update?** Most categories are session-stable; only Messages changes between turns (Memory files re-read each turn but rarely mutates). A `context_breakdown` frame emitted once at session_init + once per `turn_complete` is sufficient. The spike must confirm there is no path that mutates the fixed categories mid-turn.
+3. **How does tugcode know whether the autocompact buffer is on?** The buffer is a Claude Code user-configurable setting; many users (the plan author included) run with it off, others leave it on. Two sub-questions:
+   - Does the SDK expose the user's autocompact setting? Or does tugcode need to read Claude Code's config files directly to learn it?
+   - When the buffer is on, what's the current reserved size — is it always `~33k`, or does Claude Code expose the live value? The wire frame must carry the actual reserved count, not a hardcoded constant, so the popover stays accurate across future buffer-size changes.
+   - The `categories` array in the wire frame includes `autocompact_buffer` only when the buffer is enabled and the reserved tokens are non-zero. Renderer trusts the wire — if the category is present, it paints; if absent, the popover shows one fewer slice (no buffer segment, larger `free_space`).
+4. **Where does the breakdown persist?** The breakdown should survive HMR / reload — like `TurnEntry` telemetry does today (#step-20-3-4 SessionLedger precedent). The spike must decide: extend the existing `session_state_changes` ledger from #step-20-4-8, add a new dedicated table, or piggyback on the in-progress turn-entry ledger row. **The persistence shape does not include any MCP-related field** — see "Out of scope: MCP" above.
+5. **Does the gauge tone vocabulary need extending?** Today `TugArcGauge`'s segments mode supports 5 tones (`input` / `cache-read` / `cache-creation` / `output` / `remainder`). The richer breakdown needs **7 distinct tones** (system_prompt, system_tools, custom_agents, memory_files, skills, messages, autocompact_buffer — plus the existing `remainder`). We extend the tone enum + add new `--tugx-arc-gauge-segment-*-color` slots; collapsing categories is not on the table per the "as good as `/context`" goal.
+
+##### Spike — preconditions for the implementation tasks below
+
+- [ ] **S1 — SDK surface inventory.** Read the current `@anthropic-ai/claude-agent-sdk` (TypeScript; this is what tugcode imports) source / types and document every property that exposes context-relevant state: system prompt, tool definitions, custom-agent definitions, memory file contents, skill manifests, current message history. Capture method names, return shapes, and whether each is read-once-at-init or queryable each turn. **Skip any MCP-related surfaces** — they're irrelevant per "Out of scope: MCP". Land the findings as `tugcode/SPIKES/context-breakdown-sdk-surface.md`.
+- [ ] **S2 — Slash-command access.** Determine whether the SDK can execute `/context` programmatically and capture the structured response. Try the three forms from the python feature request (slash-command query, dedicated method, automatic context updates in the message stream) against the TypeScript SDK. Document the verdict.
+- [ ] **S3 — Tokenization strategy.** Goal: pick a tokenizer that lands within the 5–10% accuracy bar at the lowest implementation + runtime cost. Prefer (b) a local approximation (fast, offline, deterministic — `tiktoken`-compatible or [`@anthropic-ai/tokenizer`](https://www.npmjs.com/package/@anthropic-ai/tokenizer) if it exists) over (a) Anthropic's `count_tokens` API (accurate but network-bound, ~460-token preamble per call). Only fall back to (a) if (b) drifts beyond the bar on a representative session. Land the verdict + drift benchmark in the spike file.
+- [ ] **S4 — Update-frequency / caching design.** Confirm: fixed categories (system prompt / system tools / custom agents / skills) tokenize exactly once per session. Memory files re-tokenize each turn (cheap; the files are small) but skip the work when their mtime hasn't changed. Messages re-tokenize each turn (the assistant response just appended). Document any mid-session mutation paths that break the fixed-categories assumption.
+- [ ] **S5 — Autocompact buffer settings access.** Determine how tugcode learns the user's autocompact-on / autocompact-off setting and the current reserved-buffer size when on. Candidates: the SDK exposes a settings query, or tugcode reads Claude Code's per-user config file directly. Document the chosen path. Verify the popover renders correctly with the buffer both enabled and disabled.
+- [ ] **S6 — Persistence shape.** Decide whether the breakdown lands in (a) an extension to the #step-20-4-8 `session_state_changes` ledger, (b) a new `context_breakdown_latest` single-row-per-session table, or (c) a new append-only `context_breakdown_history` table. Factor in the access pattern: the popover only needs the latest row; persistent history would feed a future "context-growth over time" surface. **The chosen shape does not include MCP-related columns** per the "Out of scope: MCP" section above; if 20.4.8's ledger schema accidentally accrues an MCP column during its own implementation, this spike notes the cleanup.
+
+**Spike outcome gate:** until S1–S6 complete and land their findings on disk, the implementation tasks below are provisional. The spike may also conclude that one or more of the implementation tasks below changes shape — re-edit this step at that point rather than charging forward against a stale plan.
+
+##### Wire frame (provisional, pending spike outcome)
+
+A new control frame from tugcode → tugdeck:
+
+```typescript
+// On the wire:
+{
+  type: "context_breakdown",
+  tug_session_id: string,
+  context_max: number,                       // Model's context window cap.
+  categories: ReadonlyArray<{
+    id: "system_prompt"
+      | "system_tools"
+      | "custom_agents"
+      | "memory_files"
+      | "skills"
+      | "messages"
+      | "autocompact_buffer";                 // Identity for stable React keys.
+    label: string;                            // Display label ("System prompt", etc.).
+    tokens: number;                           // Per-category count.
+  }>;
+  // `free_space` is derived = context_max − sum(categories.tokens).
+  // Emit once at session_init and once after each `turn_complete`. The
+  // spike may decide finer-grained timing if a category proves to
+  // mutate intra-turn.
+  //
+  // `autocompact_buffer` is present in `categories` ONLY when the
+  // user has the buffer enabled and the reserved count is non-zero.
+  // The renderer treats absence as "buffer is off" — one fewer slice,
+  // larger `free_space`. No `mcp_tools` id ever appears in this
+  // union — see "Out of scope: MCP".
+}
+```
+
+##### Implementation tasks (provisional, pending spike)
+
+**Tugcode (cross-crate):**
+
+- [ ] Implement the chosen access path (S1–S2 outcome) for extracting per-category counts. Skip MCP entirely — neither the per-category counts nor the wire shape carry it.
+- [ ] Tokenize per S3's verdict, targeting the 5–10% accuracy bar with the cheapest viable tokenizer.
+- [ ] Detect the user's autocompact setting per S5; include the `autocompact_buffer` category only when the buffer is enabled.
+- [ ] Emit `context_breakdown` frame at session_init and at each `turn_complete`.
+- [ ] Cache fixed-category counts per S4's design so re-tokenization is bounded (memory files re-check via mtime; messages re-tokenize only the newly-appended assistant response).
+- [ ] Wire tests against a mocked SDK session covering both autocompact-on and autocompact-off configurations.
+
+**Tugdeck reducer + snapshot:**
+
+- [ ] Decode the new wire frame in `events.ts`.
+- [ ] Reducer handler captures `lastContextBreakdown: ContextBreakdownSnapshot | null` onto reducer state.
+- [ ] Project onto `CodeSessionSnapshot.lastContextBreakdown` with reference stability ([L02]) — only changes when a new frame lands.
+- [ ] Update existing snapshot fixtures (e.g., `tide-card-banner-spec.test.ts`) to include the new field.
+
+**Persistence (S6 outcome):**
+
+- [ ] Schema migration for whichever ledger shape the spike chooses. **No MCP columns** in any ledger table this step adds or extends.
+- [ ] Writer effect (`record-context-breakdown`) dispatched by the reducer on each frame.
+- [ ] Reader path: at session bind, the supervisor reads the latest breakdown row and inlines it onto the bind response so the snapshot's `lastContextBreakdown` is populated before the popover opens.
+- [ ] Audit 20.4.8's `session_state_changes` ledger schema at this step's spike time: if its implementation accidentally included an MCP column or row variant, delete it as part of this step's persistence work. The cleanup is small and the alignment is worth keeping in one place.
+
+**TugArcGauge tone vocabulary extension (substrate work):**
+
+- [ ] Extend `TugArcGaugeSegmentTone` with the 7 new values the rich breakdown uses (`system_prompt` / `system_tools` / `custom_agents` / `memory_files` / `skills` / `messages` / `autocompact_buffer`). The existing 5-tone vocabulary (`input` / `cache_read` / `cache_creation` / `output` / `remainder`) stays — 20.4.7.C's fallback popover still uses it, and future categorical surfaces may want either palette. No `mcp_tools` tone — see "Out of scope: MCP".
+- [ ] Add 7 new `--tugx-arc-gauge-segment-*-color` aliases, one-hop to `--tug7-*` per [L17], with `@tug-pairings` rows + `@tug-renders-on` annotations.
+- [ ] Pick a per-category color mapping that's visually distinguishable in the gallery's swatch legend. The mapping should track Claude Code's terminal colors where possible (e.g., system prompt = blue, system tools = teal, messages = violet) so a user familiar with `/context` recognizes the categories at a glance. The `autocompact_buffer` tone should read as "reserved / not-content" — a desaturated muted slice that visually distinguishes it from real-content categories.
+- [ ] Extend the TugArcGauge gallery's segmented-mode demo with a 7-tone scenario plus a side-by-side autocompact-on / autocompact-off variant so the conditional slice is HMR-vettable.
+
+**Popover upgrade:**
+
+- [ ] New helper `computeRichContextBreakdown(snap: CodeSessionSnapshot)` in `telemetry.ts` that returns the rich-categorical breakdown when `snap.lastContextBreakdown` is non-null (variable length: 6 or 7 categories plus remainder, depending on autocompact-on / autocompact-off), falling back to `computeContextBreakdown(transcript[last], contextMax)` otherwise.
+- [ ] Update `ContextPopoverContent` to consume the new helper. The popover renders the rich breakdown when available; the existing 5-segment cost_update view becomes the documented fallback for sessions running against a tugcode that hasn't shipped the new frame.
+- [ ] Update the empty-state copy: when no committed turns AND no breakdown frame, show "No committed turns yet." When breakdown frame present but transcript empty (idle-with-bind), show the breakdown anyway — Free space dominates the chart but the categorical content (system prompt + tools) is meaningful even pre-first-turn.
+- [ ] Update the popover's section text in the gallery card to point to the new helper + the source of the data. Call out the 5–10% accuracy bar and the autocompact-on / autocompact-off conditional explicitly so a future reader doesn't mistake the looser bar for a bug.
+
+**Fallback contract.**
+
+- The popover MUST continue to render — using the 20.4.7.C cost_update view — when `snap.lastContextBreakdown === null`. Older tugcode (pre-this-step), tugcode that opted out, and the first few seconds before the first `context_breakdown` frame arrives all hit this path. The fallback is a feature, not a bug — it keeps the popover useful across the deployment matrix.
+
+##### Tests
+
+- [ ] Pure-logic tests for `computeRichContextBreakdown` covering: breakdown present with autocompact-on (7 + remainder), breakdown present with autocompact-off (6 + remainder), breakdown absent (fallback to `computeContextBreakdown`), breakdown present but contextMax 0 (degenerate).
+- [ ] Reducer test for `context_breakdown` event: state captures the latest breakdown; subsequent frames replace it; transport-close clears it (or preserves it across reconnect — spike S6 decides).
+- [ ] Persistence round-trip test: write a breakdown row, dispose the store, reconstruct, confirm the snapshot's `lastContextBreakdown` matches what was written. Covers both autocompact-on and autocompact-off shapes.
+- [ ] Tugcode-side wire-emission test: a mocked SDK session with known per-category content emits a `context_breakdown` frame whose `categories[]` totals match the mock's per-category token counts within the 5–10% accuracy bar. No MCP category in any emitted frame.
+- [ ] Visual: existing arc-gauge tests untouched; new 7-tone gallery scenarios (autocompact-on and autocompact-off variants) render without geometry regression.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0 (seven new pairings + annotations must pass).
+- [ ] Rust workspace (`cargo nextest run`) clean if any tugcode changes touch the Rust side.
+
+##### Checkpoint
+
+- [ ] HMR-vet the upgraded popover against a live Claude Code session — the categories Tide shows match what `/context` shows in the terminal for the same session (within the 5–10% accuracy bar; ignoring MCP since `/context` shows it and we don't).
+- [ ] Autocompact-on / autocompact-off vetted: switch the setting in Claude Code, observe the popover's reserved-buffer slice appearing and disappearing accordingly.
+- [ ] Fallback path verified: temporarily strip the new wire-frame handler from tugcode and confirm the popover degrades gracefully to the 5-segment cost_update view.
+- [ ] Persistence verified: open a session, observe the popover, kill tugdeck, reload, confirm the popover shows the last breakdown without waiting for a new turn.
+- [ ] Categorical color mapping passes the at-a-glance recognition test against `/context`'s terminal colors.
+- [ ] The popover's data-sourcing question — "what do these numbers mean?" — has a clean answer the user can validate against their `/context` muscle memory.
+
+---
+
 #### Step 20.4.8: SQLite session_state_changes ledger (cross-crate) {#step-20-4-8}
 
 **Depends on:** none — substrate; consumed by 20.4.9. The store-side writer can land in parallel with the gallery-side popover work in 20.4.6 / 20.4.7.
