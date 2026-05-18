@@ -22,6 +22,7 @@
 import {
   FeedId,
   encodeCodeInputPayload,
+  encodeRecordContextBreakdown,
   encodeRecordTurnTelemetry,
   type FeedIdValue,
 } from "@/protocol";
@@ -366,6 +367,11 @@ export class CodeSessionStore {
       // snapshot rebuild that touches an unrelated field.
       pendingDraftRestore: this.state.pendingDraftRestore,
       lastCost: this.state.lastCost,
+      // The reducer assigns a fresh `lastContextBreakdown` only when
+      // a new `context_breakdown` frame lands; reading the state's
+      // reference through unchanged preserves `Object.is` stability
+      // across quiescent snapshot rebuilds ([L02]).
+      lastContextBreakdown: this.state.lastContextBreakdown,
       lastError: this.state.lastError,
       lastReplayResult: this.state.lastReplayResult,
       replayPreflightActive: this.state.replayPreflightActive,
@@ -788,6 +794,21 @@ export class CodeSessionStore {
             msgId: effect.msgId,
             telemetry: effect.telemetry,
             endedAt: effect.endedAt,
+          });
+          this.conn.send(frame.feedId, frame.payload);
+          break;
+        }
+        case "record-context-breakdown": {
+          // Fire-and-forget CONTROL frame to the supervisor. Persists
+          // the `/context`-style breakdown blob in the sqlite
+          // `context_breakdown_latest` table so the next bind can
+          // re-emit it as a synthetic `context_breakdown` frame
+          // before any new live frame lands. Idempotent on
+          // `tug_session_id` via UPSERT — repeat writes overwrite.
+          const frame = encodeRecordContextBreakdown({
+            tugSessionId: this.tugSessionId,
+            payload: effect.payload,
+            capturedAt: effect.capturedAt,
           });
           this.conn.send(frame.feedId, frame.payload);
           break;

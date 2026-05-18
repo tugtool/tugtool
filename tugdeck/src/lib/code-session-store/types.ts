@@ -297,6 +297,52 @@ export interface CostSnapshot {
 }
 
 /**
+ * Per-category identity for the `/context`-style breakdown. Mirrors
+ * tugcode's wire-frame `ContextBreakdownCategoryId` enum. `mcp_tools`
+ * is intentionally absent — Tug treats MCP as out of scope; no MCP
+ * id ever appears on the wire, in this snapshot, or in the
+ * persisted ledger row.
+ */
+export type ContextBreakdownCategoryId =
+  | "system_prompt"
+  | "system_tools"
+  | "custom_agents"
+  | "memory_files"
+  | "skills"
+  | "messages"
+  | "autocompact_buffer";
+
+/**
+ * One per-category slice of the breakdown. Mirrors the wire-frame
+ * shape (snake_case `id` enum, label string, numeric token count).
+ */
+export interface ContextBreakdownCategory {
+  id: ContextBreakdownCategoryId;
+  label: string;
+  tokens: number;
+}
+
+/**
+ * Reducer projection of the most-recent `context_breakdown` wire
+ * frame. Drives the Tide card's Context popover when present. The
+ * popover paints the categories in array order; `contextMax` is the
+ * model's context-window cap (so the renderer can compute the
+ * free-space remainder).
+ *
+ * The `autocompact_buffer` category is conditional — present only
+ * when the user has Claude Code's autocompact setting enabled.
+ * Absence means one fewer slice and a larger free-space remainder.
+ *
+ * Reference is preserved across snapshot rebuilds while the reducer's
+ * `lastContextBreakdown` field doesn't change — [L02] consumers see
+ * `Object.is` stability during quiescent renders.
+ */
+export interface ContextBreakdownSnapshot {
+  contextMax: number;
+  categories: ReadonlyArray<ContextBreakdownCategory>;
+}
+
+/**
  * Public snapshot returned by `CodeSessionStore.getSnapshot()`. Stable
  * reference between dispatches that produce no change — callers can use
  * `useSyncExternalStore` without tearing ([D11]).
@@ -441,6 +487,20 @@ export interface CodeSessionSnapshot {
   } | null;
 
   lastCost: CostSnapshot | null;
+  /**
+   * Most-recent `/context`-style per-category token breakdown for this
+   * session. Populated by `context_breakdown` events from tugcode
+   * (live path) and by the supervisor's bind-time attach from the
+   * persisted `context_breakdown_latest` ledger row (resume path).
+   * `null` until the first frame lands — the popover renders its
+   * 20.4.7.C `cost_update`-derived fallback view in that case.
+   *
+   * The reference is preserved across snapshot rebuilds while the
+   * reducer's underlying field doesn't change — `useSyncExternalStore`
+   * consumers ([L02]) get `Object.is` stability during quiescent
+   * renders.
+   */
+  lastContextBreakdown: ContextBreakdownSnapshot | null;
   lastError: {
     cause:
       | "session_state_errored"

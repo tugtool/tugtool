@@ -1163,6 +1163,58 @@ fn parse_record_turn_telemetry_payload(
     })
 }
 
+/// Parsed payload of the `record_context_breakdown` CONTROL action.
+/// Tugdeck → tugcast: the reducer dispatches this for every
+/// `context_breakdown` event it consumes (live frames from tugcode +
+/// the supervisor's bind-time re-emit). The supervisor's
+/// `do_record_context_breakdown` resolves `tug_session_id` to the
+/// claude `session_id` (the ledger PK) and writes the row.
+///
+/// `payload_bytes` is the serialized JSON of the wire-frame body
+/// (the `payload` sub-object of the CONTROL frame, NOT the full
+/// CONTROL envelope). The supervisor stores it verbatim in the
+/// `context_breakdown_latest.payload` BLOB; the next bind reads it
+/// back and re-emits it as a synthetic `context_breakdown` wire
+/// frame.
+struct RecordContextBreakdownPayload {
+    tug_session_id: TugSessionId,
+    payload_bytes: Vec<u8>,
+    captured_at: i64,
+}
+
+fn parse_record_context_breakdown_payload(
+    payload: &[u8],
+) -> Result<RecordContextBreakdownPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let tug_session_id = value
+        .get("tug_session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    let captured_at = value
+        .get("captured_at")
+        .and_then(|v| v.as_i64())
+        .ok_or(ControlError::Malformed)?;
+    // Re-serialize the `payload` sub-object so the supervisor stores
+    // it as a stable blob shape (it round-trips back through
+    // `serde_json` even if the CONTROL frame's whitespace / key order
+    // differed). The sub-object must be present and an object.
+    let payload_obj = value
+        .get("payload")
+        .ok_or(ControlError::Malformed)?;
+    if !payload_obj.is_object() {
+        return Err(ControlError::Malformed);
+    }
+    let payload_bytes = serde_json::to_vec(payload_obj).map_err(|_| ControlError::Malformed)?;
+    Ok(RecordContextBreakdownPayload {
+        tug_session_id: TugSessionId::new(tug_session_id),
+        payload_bytes,
+        captured_at,
+    })
+}
+
 /// Canonical constructor for `SESSION_STATE` wire frames. Shared between
 /// `agent_supervisor` (pending/spawning/closed/errored on control events)
 /// and `agent_bridge` (live after session_init, errored on crash-budget
@@ -1487,6 +1539,17 @@ impl AgentSupervisor {
                     }
                 };
                 self.do_record_turn_telemetry(parsed).await;
+                Ok(())
+            }
+            "record_context_breakdown" => {
+                let parsed = match parse_record_context_breakdown_payload(payload) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected record_context_breakdown");
+                        return ControlOutcome::Error(e);
+                    }
+                };
+                self.do_record_context_breakdown(parsed).await;
                 Ok(())
             }
             // Any action not above is not owned by the supervisor.
@@ -2295,6 +2358,52 @@ impl AgentSupervisor {
                 session_id = %row.session_id,
                 msg_id = %row.msg_id,
                 "record_turn_telemetry ledger write failed",
+            );
+        }
+    }
+
+    /// Persist the latest `/context`-style breakdown payload for a
+    /// session via the SessionLedger. Mirrors
+    /// {@link do_record_turn_telemetry} structurally: resolve
+    /// `tug_session_id → claude_session_id`, UPSERT one row keyed by
+    /// claude session id. The three quietly-dropped cases — no
+    /// ledger configured, no session entry, no claude_session_id —
+    /// log at telemetry level and return without raising.
+    async fn do_record_context_breakdown(&self, parsed: RecordContextBreakdownPayload) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            return;
+        };
+        let claude_id = {
+            let outer = self.ledger.lock().await;
+            let Some(entry_arc) = outer.get(&parsed.tug_session_id) else {
+                tracing::warn!(
+                    target: "tide::telemetry",
+                    event = "record_context_breakdown.skipped",
+                    tug_session_id = %parsed.tug_session_id,
+                    reason = "session_not_found",
+                );
+                return;
+            };
+            let entry = entry_arc.lock().await;
+            entry.claude_session_id.clone()
+        };
+        let Some(claude_id) = claude_id else {
+            tracing::warn!(
+                target: "tide::telemetry",
+                event = "record_context_breakdown.skipped",
+                tug_session_id = %parsed.tug_session_id,
+                reason = "no_claude_session_id",
+            );
+            return;
+        };
+        if let Err(err) =
+            ledger.record_context_breakdown(&claude_id, &parsed.payload_bytes, parsed.captured_at)
+        {
+            tracing::warn!(
+                target: "tide::telemetry",
+                error = %err,
+                session_id = %claude_id,
+                "record_context_breakdown ledger write failed",
             );
         }
     }
@@ -6938,6 +7047,181 @@ mod tests {
 
         let outcome = sup
             .handle_control("record_turn_telemetry", &payload, 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    // -------------------------------------------------------------------
+    // record_context_breakdown — CONTROL action → SessionLedger round-trip
+    // -------------------------------------------------------------------
+
+    fn record_context_breakdown_payload(
+        tug_session_id: &str,
+        messages_tokens: i64,
+        autocompact_enabled: bool,
+    ) -> Vec<u8> {
+        let mut categories = vec![
+            serde_json::json!({ "id": "system_prompt", "label": "System prompt", "tokens": 3_500 }),
+            serde_json::json!({ "id": "messages",      "label": "Messages",      "tokens": messages_tokens }),
+        ];
+        if autocompact_enabled {
+            categories.push(serde_json::json!({
+                "id": "autocompact_buffer",
+                "label": "Autocompact buffer",
+                "tokens": 33_000,
+            }));
+        }
+        serde_json::to_vec(&serde_json::json!({
+            "action": "record_context_breakdown",
+            "tug_session_id": tug_session_id,
+            "payload": {
+                "context_max": 200_000,
+                "categories": categories,
+            },
+            "captured_at": 5_000,
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn record_context_breakdown_writes_row_to_ledger() {
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let tug_id = TugSessionId::new("sess-ctx-1");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-ctx-A".to_string());
+        }
+        ledger
+            .record_spawn("claude-ctx-A", "ws-1", "/proj/x", "card-1", 1_000)
+            .unwrap();
+
+        let outcome = sup
+            .handle_control(
+                "record_context_breakdown",
+                &record_context_breakdown_payload("sess-ctx-1", 12_000, false),
+                10,
+            )
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Handled));
+
+        let row = ledger.get_context_breakdown("claude-ctx-A").unwrap();
+        assert!(row.is_some(), "ledger row should be present after persist");
+        let row = row.unwrap();
+        assert_eq!(row.captured_at, 5_000);
+        // The persisted payload is the wire-frame body (context_max +
+        // categories). Re-parse and check structure.
+        let parsed: serde_json::Value = serde_json::from_slice(&row.payload).unwrap();
+        assert_eq!(parsed["context_max"], 200_000);
+        assert!(parsed["categories"].is_array());
+        let cats = parsed["categories"].as_array().unwrap();
+        assert_eq!(cats.len(), 2);
+        assert_eq!(cats[1]["id"], "messages");
+        assert_eq!(cats[1]["tokens"], 12_000);
+    }
+
+    #[tokio::test]
+    async fn record_context_breakdown_upserts_on_repeat() {
+        // Repeat writes for the same session must overwrite, not pile
+        // on. The popover always reads the most recent row; an older
+        // row hanging around would mean stale data on a fresh bind.
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let tug_id = TugSessionId::new("sess-ctx-2");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-ctx-B".to_string());
+        }
+        ledger
+            .record_spawn("claude-ctx-B", "ws-1", "/proj/x", "card-2", 1_000)
+            .unwrap();
+
+        sup.handle_control(
+            "record_context_breakdown",
+            &record_context_breakdown_payload("sess-ctx-2", 1_000, false),
+            10,
+        )
+        .await;
+        sup.handle_control(
+            "record_context_breakdown",
+            &record_context_breakdown_payload("sess-ctx-2", 99_000, true),
+            10,
+        )
+        .await;
+
+        let row = ledger.get_context_breakdown("claude-ctx-B").unwrap().unwrap();
+        let parsed: serde_json::Value = serde_json::from_slice(&row.payload).unwrap();
+        let cats = parsed["categories"].as_array().unwrap();
+        // Second write wins.
+        let messages = cats
+            .iter()
+            .find(|c| c["id"] == "messages")
+            .expect("messages category present");
+        assert_eq!(messages["tokens"], 99_000);
+        assert!(
+            cats.iter().any(|c| c["id"] == "autocompact_buffer"),
+            "autocompact_buffer present in second write",
+        );
+    }
+
+    #[tokio::test]
+    async fn record_context_breakdown_silently_skips_when_session_not_found() {
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+
+        let outcome = sup
+            .handle_control(
+                "record_context_breakdown",
+                &record_context_breakdown_payload("sess-unknown", 1_000, false),
+                10,
+            )
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Handled));
+
+        // No row was written.
+        assert!(ledger.get_context_breakdown("claude-anything").unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn record_context_breakdown_rejects_malformed_payload() {
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+
+        let outcome = sup
+            .handle_control("record_context_breakdown", b"not json", 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn record_context_breakdown_rejects_missing_payload_field() {
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+        let body = serde_json::to_vec(&serde_json::json!({
+            "action": "record_context_breakdown",
+            "tug_session_id": "sess-x",
+            "captured_at": 1_000,
+        }))
+        .unwrap();
+        let outcome = sup
+            .handle_control("record_context_breakdown", &body, 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn record_context_breakdown_rejects_payload_that_is_not_an_object() {
+        // The CONTROL frame's `payload` sub-field must be a JSON
+        // object — the supervisor stores it verbatim and the bind-
+        // attach side expects to be able to splice an outer wrapper
+        // by trimming the leading `{`.
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+        let body = serde_json::to_vec(&serde_json::json!({
+            "action": "record_context_breakdown",
+            "tug_session_id": "sess-x",
+            "payload": "not-an-object",
+            "captured_at": 1_000,
+        }))
+        .unwrap();
+        let outcome = sup
+            .handle_control("record_context_breakdown", &body, 10)
             .await;
         assert!(matches!(outcome, ControlOutcome::Error(_)));
     }

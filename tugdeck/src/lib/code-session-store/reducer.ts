@@ -25,6 +25,7 @@ import type { Effect } from "./effects";
 import type {
   AssistantTextEvent,
   CodeSessionEvent,
+  ContextBreakdownEvent,
   ControlRequestForwardEvent,
   CostUpdateEvent,
   ReplayCompleteEvent,
@@ -47,6 +48,7 @@ import type {
 import type {
   CardSessionMode,
   CodeSessionPhase,
+  ContextBreakdownSnapshot,
   ControlRequestForward,
   ControlRequestRecord,
   CostSnapshot,
@@ -184,6 +186,16 @@ export interface CodeSessionState {
     at: number;
   } | null;
   lastCost: CostSnapshot | null;
+  /**
+   * Most-recent `/context`-style breakdown captured from a
+   * `context_breakdown` wire frame. Projected onto
+   * `CodeSessionSnapshot.lastContextBreakdown` with reference
+   * stability — the reducer assigns a fresh object only when a new
+   * frame lands (handleContextBreakdown); quiescent reductions
+   * preserve the reference so [L02] consumers see `Object.is`
+   * stability.
+   */
+  lastContextBreakdown: ContextBreakdownSnapshot | null;
   /**
    * Set of msg_ids already committed to the transcript. Used to
    * dedupe `turn_complete` events whose msg_id has already produced a
@@ -401,6 +413,7 @@ export function createInitialState(
     queuedSends: [],
     lastError: null,
     lastCost: null,
+    lastContextBreakdown: null,
     committedMsgIds: new Set(),
     lastReplayResult: null,
     replayPreflightActive: false,
@@ -1838,6 +1851,57 @@ function handleCostUpdate(
   };
 }
 
+/**
+ * `context_breakdown` reducer handler. Projects the wire frame onto
+ * `state.lastContextBreakdown` and fires a `record-context-breakdown`
+ * effect so the supervisor persists the latest blob.
+ *
+ * Validation: drops malformed frames silently (non-numeric
+ * `context_max`, non-array `categories`, individual category entries
+ * missing the required `id`/`label`/`tokens` triple). A dropped
+ * frame leaves state unchanged — the popover keeps showing whatever
+ * the prior frame produced (or the 20.4.7.C fallback if none has
+ * landed). The renderer is resilient; the reducer doesn't need to
+ * surface a wire-contract error.
+ */
+function handleContextBreakdown(
+  state: CodeSessionState,
+  event: ContextBreakdownEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (typeof event.context_max !== "number" || !Array.isArray(event.categories)) {
+    return { state, effects: [] };
+  }
+  const categories: Array<ContextBreakdownSnapshot["categories"][number]> = [];
+  for (const c of event.categories) {
+    if (typeof c !== "object" || c === null) continue;
+    const id = (c as { id?: unknown }).id;
+    const label = (c as { label?: unknown }).label;
+    const tokens = (c as { tokens?: unknown }).tokens;
+    if (typeof id !== "string" || typeof label !== "string" || typeof tokens !== "number") {
+      continue;
+    }
+    categories.push({
+      id: id as ContextBreakdownSnapshot["categories"][number]["id"],
+      label,
+      tokens,
+    });
+  }
+  const projection: ContextBreakdownSnapshot = {
+    contextMax: event.context_max,
+    categories,
+  };
+  return {
+    state: { ...state, lastContextBreakdown: projection },
+    effects: [
+      {
+        kind: "record-context-breakdown",
+        payload: projection,
+        capturedAt: Date.now(),
+      },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Errored triggers —
 // ---------------------------------------------------------------------------
@@ -2525,6 +2589,8 @@ export function reduce(
       return handleConsumeDraftRestore(state);
     case "cost_update":
       return handleCostUpdate(state, event);
+    case "context_breakdown":
+      return handleContextBreakdown(state, event);
     case "system_metadata":
       // [D09] SessionMetadataStore owns this feed — drop explicitly.
       return { state, effects: [] };

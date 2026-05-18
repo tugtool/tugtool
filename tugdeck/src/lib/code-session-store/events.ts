@@ -204,6 +204,36 @@ export interface ConsumeDraftRestoreActionEvent {
 }
 
 /**
+ * `context_breakdown` — `/context`-style per-category token breakdown
+ * emitted by tugcode at session_init, after each `cost_update`, and
+ * after `compact_boundary`. Also emitted by the tugcast supervisor
+ * once at bind time from the persisted `context_breakdown_latest`
+ * ledger row so the popover renders pre-populated on a fresh bind.
+ *
+ * The reducer captures the latest frame onto state and projects it
+ * onto `CodeSessionSnapshot.lastContextBreakdown`. Each frame also
+ * fires a `record-context-breakdown` effect that persists the
+ * payload via the supervisor's `record_context_breakdown` CONTROL
+ * handler — the round trip is reducer → CONTROL → supervisor →
+ * ledger, mirroring the per-turn telemetry path.
+ *
+ * `categories[]` carries the per-category token counts in the order
+ * the renderer paints them. `autocompact_buffer` is conditional;
+ * `mcp_tools` is never present (out of scope).
+ */
+export interface ContextBreakdownEvent {
+  type: "context_breakdown";
+  tug_session_id?: string;
+  context_max: number;
+  categories: ReadonlyArray<{
+    id: import("./types").ContextBreakdownCategoryId;
+    label: string;
+    tokens: number;
+  }>;
+  [key: string]: unknown;
+}
+
+/**
  * `cost_update` — telemetry frame carrying cumulative dollar cost and
  * per-turn/session accounting. Surfaced through the snapshot's
  * `lastCost` field with no phase transition; `cost_update` can land in
@@ -460,6 +490,7 @@ export type CodeSessionEvent =
   | InterruptActionEvent
   | ConsumeDraftRestoreActionEvent
   | CostUpdateEvent
+  | ContextBreakdownEvent
   | WireErrorEvent
   | SessionStateErroredEvent
   | SessionUnknownEvent

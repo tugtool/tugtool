@@ -102,6 +102,27 @@ export interface RecordTelemetryEffect {
   endedAt: number;
 }
 
+/**
+ * Persist a `/context`-style breakdown frame via the tugcast
+ * SessionLedger. Emitted by `handleContextBreakdown` on every frame
+ * the reducer consumes — both live frames from tugcode and the
+ * bind-time attach the supervisor re-emits from the persisted row
+ * (the latter writes the same bytes back, which is idempotent).
+ *
+ * The store wrapper builds the `record_context_breakdown` CONTROL
+ * frame via `encodeRecordContextBreakdown`, threading the store's
+ * own `tugSessionId`. Fire-and-forget: no ack frame is awaited.
+ *
+ * `payload` carries the wire-frame shape the supervisor stores
+ * verbatim. `capturedAt` is `Date.now()` at the moment the reducer
+ * built the effect — used by the ledger row's `captured_at` column.
+ */
+export interface RecordContextBreakdownEffect {
+  kind: "record-context-breakdown";
+  payload: import("./types").ContextBreakdownSnapshot;
+  capturedAt: number;
+}
+
 export type Effect =
   | WriteInflightEffect
   | ClearInflightEffect
@@ -109,7 +130,8 @@ export type Effect =
   | AppendTranscriptEffect
   | ScheduleTimerEffect
   | CancelTimerEffect
-  | RecordTelemetryEffect;
+  | RecordTelemetryEffect
+  | RecordContextBreakdownEffect;
 
 export function isWriteInflight(e: Effect): e is WriteInflightEffect {
   return e.kind === "write-inflight";
@@ -137,4 +159,10 @@ export function isCancelTimer(e: Effect): e is CancelTimerEffect {
 
 export function isRecordTelemetry(e: Effect): e is RecordTelemetryEffect {
   return e.kind === "record-telemetry";
+}
+
+export function isRecordContextBreakdown(
+  e: Effect,
+): e is RecordContextBreakdownEffect {
+  return e.kind === "record-context-breakdown";
 }

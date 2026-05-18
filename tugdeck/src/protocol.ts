@@ -66,6 +66,7 @@ export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
 export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
 export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";
+export const CONTROL_ACTION_RECORD_CONTEXT_BREAKDOWN = "record_context_breakdown";
 
 /**
  * Wire shape for one row of the tugcast-side session ledger.
@@ -480,6 +481,36 @@ export function encodeRecordTurnTelemetry(input: {
     msg_id: input.msgId,
     telemetry: input.telemetry,
     ended_at: input.endedAt,
+  });
+}
+
+/**
+ * Build a `record_context_breakdown` CONTROL frame.
+ *
+ * Tugdeck → tugcast: the reducer dispatches this for every
+ * `context_breakdown` event it consumes — both live frames from
+ * tugcode and the bind-time attach the supervisor re-emits from the
+ * persisted ledger row. The supervisor stores the payload verbatim
+ * in the `context_breakdown_latest` table (UPSERT keyed by
+ * `tug_session_id`); the next bind reads it back to seed the
+ * popover before any new frame arrives.
+ *
+ * Fire-and-forget at the wire level — no ack frame is broadcast.
+ * The popover's local snapshot is already current; persistence is
+ * for the next reload, not the next render.
+ */
+export function encodeRecordContextBreakdown(input: {
+  tugSessionId: string;
+  payload: import("./lib/code-session-store/types").ContextBreakdownSnapshot;
+  capturedAt: number;
+}): Frame {
+  return controlFrame(CONTROL_ACTION_RECORD_CONTEXT_BREAKDOWN, {
+    tug_session_id: input.tugSessionId,
+    payload: {
+      context_max: input.payload.contextMax,
+      categories: input.payload.categories,
+    },
+    captured_at: input.capturedAt,
   });
 }
 
