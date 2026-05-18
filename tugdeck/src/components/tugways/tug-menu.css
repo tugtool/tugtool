@@ -347,6 +347,7 @@ body {
    "current item" indicator, and clear any other item's
    data-highlighted / open-state paint that isn't :hover. The :hover
    case (cursor genuinely on an item) always wins and is preserved. */
+/* @tug-renders-on: --tugx-menu-bg */
 .tug-menu-content:has(.tug-menu-item:hover) .tug-menu-sub-trigger[data-state="open"]:not(:hover),
 .tug-menu-content:has(.tug-menu-sub-trigger[data-state="open"]) .tug-menu-item[data-highlighted]:not(:hover):not([data-state="open"]) {
   background-color: transparent;
