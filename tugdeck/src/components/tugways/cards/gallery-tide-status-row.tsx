@@ -2,38 +2,41 @@
  * gallery-tide-status-row.tsx — design-spike gallery card for the
  * tide-card Z2 status row.
  *
- * **Round 7 — down-selected.** Round 6 chose:
+ * **Round 8 — final down-select.** Round 7 chose:
  *
- *   - **§2 indicator** → P6 concentric pulsing ring (with concentric
- *     centering bug to fix)
- *   - **§3 chevron** → bigger than the round-6 14px default
- *   - **§4 endcap** → stay with T1 (custom EndcapRuleLabel, current
- *     production design)
- *   - **§5 composed row** → more horizontal breathing room for the
- *     leftmost indicator and rightmost chevron (round-6's was too
- *     cramped)
+ *   - **§2 indicator** → P6 @ 16px (concentric pulsing ring)
+ *   - **§3 chevron** → 16px
+ *   - **§4 endcap** → T1 (locked in)
+ *   - **§5 composed row** → C-wider-gap
  *
- * Round 7 narrows the gallery to those choices and explores the
- * remaining knobs:
+ * Round 8 changes:
  *
- *   §1 — Distribution-fix baseline (one variant, for reference)
- *   §2 — P6 concentric fix + size variations (12 / 14 / 16 / 18 px)
- *   §3 — Chevron size variations (14 / 16 / 18 / 20 px)
- *   §4 — T1 endcap locked in (no variants; called out for completeness)
- *   §5 — Composed-row spacing studies (5 variations with different
- *        gap / padding / zone strategies for the indicator+chevron)
- *
- * Once these pick, we promote into production and the design study
- * for Z2 is done.
+ *   - **Ring renders in ALL session states.** Round 7 gated the ring
+ *     behind `v.animated`, which hid it for idle / errored / offline.
+ *     Fix: always render the ring; only the keyframe animation is
+ *     conditional. Static states show a quiet outline around the dot.
+ *   - **All-states grid.** A new sub-section renders P6 @ 16px once
+ *     per session state, side-by-side, so every state can be compared
+ *     at a glance without flipping the dropdown.
+ *   - **Tug controls.** Replaced the native `<select>` / `<input
+ *     type="checkbox">` / `<button>` at the top of the card with
+ *     TugPopupButton / TugSwitch / TugPushButton, wired through the
+ *     responder-chain pattern via `useResponderForm` (`setValueString`
+ *     + `toggle` bindings).
  *
  * @module components/tugways/cards/gallery-tide-status-row
  */
 
-import React, { useEffect, useState } from "react";
-import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import React, { useEffect, useId, useState } from "react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
+import { TugSwitch } from "@/components/tugways/tug-switch";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Value scenarios + status-row formatters
@@ -125,22 +128,21 @@ const STATE_SCENARIOS: ReadonlyArray<{ id: string; label: string; state: Session
 
 const MONO = "var(--tug-font-mono, monospace)";
 const RAIL_COLOR = "var(--tug7-element-global-border-normal-default-rest)";
-const TEXT_NORMAL = "var(--tug7-element-global-text-normal-strong-rest)";
+// Round 8 fix: previous TEXT_NORMAL used `text-normal-strong-rest`,
+// which doesn't exist in either theme. `color:` silently fell back to
+// inherited (so values rendered), but `background-color:` on the dot
+// fell back to transparent — the dot disappeared. Use the valid
+// `text-normal-default-rest` for general text + `text-normal-success-rest`
+// for the active-state indicator color (per user request — green = active).
+const TEXT_NORMAL = "var(--tug7-element-global-text-normal-default-rest)";
 const TEXT_MUTED = "var(--tug7-element-global-text-normal-muted-rest)";
+const TEXT_SUCCESS = "var(--tug7-element-global-text-normal-success-rest)";
 const TEXT_CAUTION = "var(--tug7-element-global-text-normal-caution-rest)";
 const TEXT_DANGER = "var(--tug7-element-global-text-normal-danger-rest)";
 
 const DEFAULT_LABEL_SIZE = "0.5625rem";
 const DEFAULT_VALUE_SIZE = "0.6875rem";
 const LABEL_LETTER_SPACING = "0.18em";
-
-const labelMuted: React.CSSProperties = {
-  fontFamily: MONO,
-  color: TEXT_MUTED,
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  fontWeight: 500,
-};
 
 const sectionTitleStyle: React.CSSProperties = {
   display: "flex",
@@ -189,7 +191,7 @@ const cardSurface: React.CSSProperties = {
 };
 
 // ---------------------------------------------------------------------------
-// Custom EndcapRuleLabel (T1 — current production / chosen design)
+// Custom EndcapRuleLabel (T1 — locked-in design)
 // ---------------------------------------------------------------------------
 
 function EndcapRuleLabel({
@@ -268,11 +270,20 @@ function EndcapRuleLabel({
 
 interface PhaseVisual {
   color: string;
+  /** Whether the outer ring pulses outward (or sits static around the dot). */
   animated: boolean;
   label: string;
 }
 
 function phaseVisualFor(state: SessionState): PhaseVisual {
+  // Color is the primary state cue; pulse animation is the secondary
+  // (active vs. waiting). The dot is ALWAYS visible — every state
+  // maps to a real token, never to an undefined fallback.
+  //
+  //   active (working)              → success (green) + pulse
+  //   waiting for user / restoring  → caution (yellow) + pulse
+  //   error / offline               → danger (red), no pulse
+  //   idle (ready, no activity)     → default text (light gray), no pulse
   if (state.transport === "offline") {
     return { color: TEXT_DANGER, animated: false, label: "offline" };
   }
@@ -290,38 +301,38 @@ function phaseVisualFor(state: SessionState): PhaseVisual {
     case "streaming":
     case "tool_work":
     case "replaying":
-      return { color: TEXT_NORMAL, animated: true, label: state.phase };
+      return { color: TEXT_SUCCESS, animated: true, label: state.phase };
     case "awaiting_approval":
       return { color: TEXT_CAUTION, animated: true, label: "awaiting_approval" };
     case "idle":
     default:
-      return { color: TEXT_MUTED, animated: false, label: "idle" };
+      return { color: TEXT_NORMAL, animated: false, label: "idle" };
   }
 }
 
 // ---------------------------------------------------------------------------
-// P6 — Concentric pulsing ring (FIXED)
+// P6 — Concentric pulsing ring
 // ---------------------------------------------------------------------------
 //
-// Centering fix: each child sits at top:50% / left:50% with a
-// translate(-50%, -50%) anchor, so it stays perfectly centered on
-// the container's geometric middle regardless of element size or
-// border weight. The ring uses box-sizing: border-box so the 1px
-// border doesn't extend the visual extent past `size`.
+// The dot is the constant — ALWAYS visible, always at full opacity.
+// Its color encodes state (success / caution / danger / default
+// — each maps to a real theme token, no transparent fallback).
 //
-// The pulse keyframe combines translate(-50%, -50%) with scale(...)
-// so the ring grows outward AROUND the dot rather than drifting off
-// to one side.
+// The ring is the activity-signal layer ON TOP of the dot, only
+// rendered for ACTIVE (animated) states. Static states (idle,
+// errored, offline) show just the bare dot — cleaner reading at a
+// glance. The pulse keyframe combines translate(-50%, -50%) with
+// scale(...) so the ring grows AROUND the dot without drifting off
+// axis.
 
 function ConcentricPulsingRing({
   state,
-  size,
+  size = 16,
 }: {
   state: SessionState;
-  size: number;
+  size?: number;
 }): React.ReactElement {
   const v = phaseVisualFor(state);
-  // The inner dot scales with the container — about 50% of size.
   const dotSize = Math.max(4, Math.round(size * 0.5));
   return (
     <span
@@ -335,7 +346,11 @@ function ConcentricPulsingRing({
         flex: "0 0 auto",
       }}
     >
-      {/* Inner dot — solid filled circle, centered. */}
+      {/* Inner dot — solid filled circle, ALWAYS fully visible.
+          Color encodes state (success / caution / danger / default).
+          No opacity dimming — the dot is a status LED, not a hint.
+          The pulse animation (ring only) carries the active/static
+          distinction without sacrificing the dot's visibility. */}
       <span
         style={{
           position: "absolute",
@@ -345,15 +360,13 @@ function ConcentricPulsingRing({
           height: dotSize,
           borderRadius: 999,
           backgroundColor: v.color,
-          opacity: v.animated ? 0.95 : 0.65,
           transform: "translate(-50%, -50%)",
         }}
       />
-      {/* Outer pulsing ring — 1px border, box-sized so the border
-          doesn't bleed past the container; centered via the same
-          translate anchor as the dot. The keyframe combines the
-          translate with the scale so the ring stays centered while
-          it grows outward. */}
+      {/* Outer pulsing ring — only rendered for ACTIVE states
+          (animated). Static states (idle, errored, offline) show
+          just the dot, cleaner. The dot is the constant; the ring
+          is the activity-signal layer on top. */}
       {v.animated && (
         <span
           style={{
@@ -371,43 +384,6 @@ function ConcentricPulsingRing({
         />
       )}
     </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Chevron control
-// ---------------------------------------------------------------------------
-
-function ChevronControl({
-  collapsed,
-  onToggle,
-  size = 18,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-  size?: number;
-}): React.ReactElement {
-  const Icon = collapsed ? ChevronsLeft : ChevronsRight;
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-label={collapsed ? "Expand status bar" : "Collapse status bar"}
-      style={{
-        appearance: "none",
-        background: "transparent",
-        border: "none",
-        padding: 4,
-        cursor: "pointer",
-        color: TEXT_MUTED,
-        display: "inline-flex",
-        alignItems: "center",
-        opacity: 0.75,
-        flex: "0 0 auto",
-      }}
-    >
-      <Icon size={size} strokeWidth={1.75} />
-    </button>
   );
 }
 
@@ -496,7 +472,7 @@ function buildCellNodes(v: StatusValues): React.ReactElement[] {
 }
 
 // ---------------------------------------------------------------------------
-// §1 — Distribution-fix baseline row
+// §1 row: cells only (F5 baseline)
 // ---------------------------------------------------------------------------
 
 function CellsOnlyRow({ v }: { v: StatusValues }): React.ReactElement {
@@ -520,166 +496,90 @@ function CellsOnlyRow({ v }: { v: StatusValues }): React.ReactElement {
 }
 
 // ---------------------------------------------------------------------------
-// §5 — Composed row spacing variations
+// §5 — C-wider-gap composed row (the chosen spacing) — indicator + cells
 // ---------------------------------------------------------------------------
-//
-// Each variation takes the same indicator + cells + chevron contents
-// and lays them out with a different spacing strategy. The goal is
-// to give the leftmost indicator and rightmost chevron MORE breathing
-// room than round-6's cramped baseline.
-
-interface ComposedRowProps {
-  v: StatusValues;
-  state: SessionState;
-  collapsed: boolean;
-  onToggleCollapse: () => void;
-  indicatorSize: number;
-  chevronSize: number;
-  /** Spacing strategy. */
-  variant:
-    | "tight"
-    | "wide-gap"
-    | "wider-gap"
-    | "padded-zones"
-    | "fixed-zones-divided";
-}
 
 function ComposedRow({
   v,
   state,
-  collapsed,
-  onToggleCollapse,
-  indicatorSize,
-  chevronSize,
-  variant,
-}: ComposedRowProps): React.ReactElement {
-  // Resolve spacing knobs per variant.
-  let rowGap = "var(--tug-space-md)";
-  let rowPaddingInline = "var(--tug-space-md)";
-  let indicatorPaddingInline = "0";
-  let chevronPaddingInline = "0";
-  let showDividers = false;
-  let indicatorMinWidth: number | undefined;
-  let chevronMinWidth: number | undefined;
-
-  switch (variant) {
-    case "tight":
-      // Round-6 baseline — too cramped, kept for reference.
-      break;
-    case "wide-gap":
-      rowGap = "var(--tug-space-xl)";
-      rowPaddingInline = "var(--tug-space-lg)";
-      break;
-    case "wider-gap":
-      rowGap = "var(--tug-space-2xl)";
-      rowPaddingInline = "var(--tug-space-lg)";
-      break;
-    case "padded-zones":
-      // Indicator + chevron get internal padding plus a generous row
-      // gap; reads as zoned chrome around the data block.
-      rowGap = "var(--tug-space-lg)";
-      rowPaddingInline = "var(--tug-space-md)";
-      indicatorPaddingInline = "var(--tug-space-md)";
-      chevronPaddingInline = "var(--tug-space-md)";
-      break;
-    case "fixed-zones-divided":
-      // Fixed-width left/right zones with a hairline divider before
-      // and after the cells block. Reads like an instrument-panel
-      // bezel separating the chrome zones from the data zone.
-      rowGap = "0";
-      rowPaddingInline = "0";
-      indicatorMinWidth = 56;
-      chevronMinWidth = 56;
-      showDividers = true;
-      break;
-  }
-
-  const indicator = (
-    <ConcentricPulsingRing state={state} size={indicatorSize} />
-  );
-
-  const indicatorZone = (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flex: "0 0 auto",
-        paddingInline: indicatorPaddingInline,
-        minWidth: indicatorMinWidth,
-      }}
-    >
-      {indicator}
-    </span>
-  );
-
-  const chevronZone = (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flex: "0 0 auto",
-        paddingInline: chevronPaddingInline,
-        minWidth: chevronMinWidth,
-      }}
-    >
-      <ChevronControl
-        collapsed={collapsed}
-        onToggle={onToggleCollapse}
-        size={chevronSize}
-      />
-    </span>
-  );
-
-  const divider = (
-    <span
-      style={{
-        display: "inline-block",
-        width: 1,
-        alignSelf: "stretch",
-        backgroundColor: RAIL_COLOR,
-        opacity: 0.4,
-      }}
-    />
-  );
-
+}: {
+  v: StatusValues;
+  state: SessionState;
+}): React.ReactElement {
   return (
     <div
       style={{
         ...cardSurface,
-        paddingInline: rowPaddingInline,
+        paddingInline: "var(--tug-space-lg)",
         display: "flex",
         flexDirection: "row",
         alignItems: "center",
-        gap: rowGap,
+        gap: "var(--tug-space-2xl)",
         width: "100%",
         boxSizing: "border-box",
       }}
     >
-      {indicatorZone}
-      {showDividers && divider}
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          flex: "0 0 auto",
+        }}
+      >
+        <ConcentricPulsingRing state={state} size={16} />
+      </span>
 
-      {!collapsed && (
+      <div
+        style={{
+          flex: "1 1 auto",
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "var(--tug-space-md)",
+          minWidth: 0,
+        }}
+      >
+        {buildCellNodes(v)}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// §2 — all states grid for P6 @ 16px
+// ---------------------------------------------------------------------------
+
+function AllStatesGrid(): React.ReactElement {
+  return (
+    <div
+      style={{
+        ...cardSurface,
+        paddingInline: "var(--tug-space-lg)",
+        paddingBlock: "var(--tug-space-md)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--tug-space-sm)",
+        width: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      {STATE_SCENARIOS.map((s) => (
         <div
+          key={s.id}
           style={{
-            flex: "1 1 auto",
             display: "flex",
             flexDirection: "row",
             alignItems: "center",
-            justifyContent: "space-between",
             gap: "var(--tug-space-md)",
-            minWidth: 0,
-            paddingInline: showDividers ? "var(--tug-space-lg)" : 0,
           }}
         >
-          {buildCellNodes(v)}
+          <span style={{ display: "inline-flex", width: 20, justifyContent: "center" }}>
+            <ConcentricPulsingRing state={s.state} size={16} />
+          </span>
+          <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>{s.label}</span>
         </div>
-      )}
-      {collapsed && <span style={{ flex: "1 1 auto" }} />}
-
-      {showDividers && divider}
-      {chevronZone}
+      ))}
     </div>
   );
 }
@@ -715,60 +615,8 @@ function VariantBlock({
 }
 
 // ---------------------------------------------------------------------------
-// Indicator-in-isolation demo box (for §2 size sweep)
+// Inline keyframes
 // ---------------------------------------------------------------------------
-
-function IndicatorIsolated({
-  state,
-  size,
-  description,
-}: {
-  state: SessionState;
-  size: number;
-  description: string;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        ...cardSurface,
-        paddingInline: "var(--tug-space-md)",
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        gap: "var(--tug-space-lg)",
-        width: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      <ConcentricPulsingRing state={state} size={size} />
-      <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>
-        {description}
-      </span>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Controls + chrome
-// ---------------------------------------------------------------------------
-
-const controlSelectStyle: React.CSSProperties = {
-  fontFamily: MONO,
-  fontSize: "0.75rem",
-  padding: "2px 6px",
-};
-
-const controlButtonStyle: React.CSSProperties = {
-  fontFamily: MONO,
-  fontSize: "0.75rem",
-  padding: "2px 8px",
-  cursor: "pointer",
-};
-
-const labelMutedSmall: React.CSSProperties = {
-  ...labelMuted,
-  fontSize: "0.6875rem",
-};
 
 const INLINE_KEYFRAMES = `
 @keyframes tide-status-ring-pulse {
@@ -785,7 +633,6 @@ export function GalleryTideStatusRow(): React.ReactElement {
   const [scenarioIdx, setScenarioIdx] = useState(0);
   const [stateIdx, setStateIdx] = useState(3); // streaming · online — animation visible
   const [autoTick, setAutoTick] = useState(false);
-  const [collapsedDemo, setCollapsedDemo] = useState(false);
 
   useEffect(() => {
     if (!autoTick) return;
@@ -795,260 +642,194 @@ export function GalleryTideStatusRow(): React.ReactElement {
     return () => clearInterval(id);
   }, [autoTick]);
 
+  // Stable sender IDs for the responder-chain bindings.
+  const scenarioPopupId = useId();
+  const statePopupId = useId();
+  const autoTickSwitchId = useId();
+
+  // Wire the popup-button + switch dispatches through the chain via
+  // useResponderForm. TugPopupButton items dispatch `setValueString`
+  // with their `value` payload; TugSwitch dispatches `toggle` with a
+  // boolean. The bindings here forward each to its local setState.
+  // [L11] migration pattern.
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueString: {
+      [scenarioPopupId]: (v: string) => setScenarioIdx(Number(v)),
+      [statePopupId]: (v: string) => setStateIdx(Number(v)),
+    },
+    toggle: {
+      [autoTickSwitchId]: setAutoTick,
+    },
+  });
+
   const scenario = SCENARIOS[scenarioIdx];
   const values = scenario.values;
   const state = STATE_SCENARIOS[stateIdx].state;
   const ratioPct = Math.round((values.contextTokens / values.contextMax) * 100);
 
-  return (
-    <div
-      className="cg-content"
-      data-testid="gallery-tide-status-row"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "var(--tug-space-xl)",
-        padding: "var(--tug-space-md)",
-      }}
-    >
-      <style>{INLINE_KEYFRAMES}</style>
+  const scenarioItems: TugPopupButtonItem<string>[] = SCENARIOS.map((s, i) => ({
+    action: TUG_ACTIONS.SET_VALUE,
+    value: String(i),
+    label: s.label,
+  }));
 
-      {/* Sticky controls */}
+  const stateItems: TugPopupButtonItem<string>[] = STATE_SCENARIOS.map((s, i) => ({
+    action: TUG_ACTIONS.SET_VALUE,
+    value: String(i),
+    label: s.label,
+  }));
+
+  return (
+    <ResponderScope>
       <div
+        className="cg-content"
+        data-testid="gallery-tide-status-row"
+        ref={responderRef as (el: HTMLDivElement | null) => void}
         style={{
           display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          gap: "var(--tug-space-md)",
-          flexWrap: "wrap",
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          padding: "var(--tug-space-sm)",
-          backgroundColor: "var(--tug7-surface-card-primary-normal-default-rest)",
-          borderBottom: `1px solid ${RAIL_COLOR}`,
+          flexDirection: "column",
+          gap: "var(--tug-space-xl)",
+          padding: "var(--tug-space-md)",
         }}
       >
-        <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}>
-          <span style={labelMutedSmall}>scenario</span>
-          <select
-            style={controlSelectStyle}
-            value={String(scenarioIdx)}
-            onChange={(e) => setScenarioIdx(Number(e.currentTarget.value))}
+        <style>{INLINE_KEYFRAMES}</style>
+
+        {/* Sticky controls — all Tug components now. */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: "var(--tug-space-md)",
+            flexWrap: "wrap",
+            position: "sticky",
+            top: 0,
+            zIndex: 1,
+            padding: "var(--tug-space-sm)",
+            backgroundColor: "var(--tug7-surface-card-primary-normal-default-rest)",
+            borderBottom: `1px solid ${RAIL_COLOR}`,
+          }}
+        >
+          <TugPopupButton
+            label={`scenario: ${scenario.label}`}
+            items={scenarioItems}
+            senderId={scenarioPopupId}
+            size="sm"
+            aria-label="scenario"
+          />
+          <TugPushButton
+            size="sm"
+            onClick={() => setScenarioIdx((i) => (i + 1) % SCENARIOS.length)}
           >
-            {SCENARIOS.map((s, i) => (
-              <option key={s.id} value={String(i)}>{s.label}</option>
-            ))}
-          </select>
-        </label>
-        <button type="button" style={controlButtonStyle} onClick={() => setScenarioIdx((i) => (i + 1) % SCENARIOS.length)}>
-          next →
-        </button>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}>
-          <input type="checkbox" checked={autoTick} onChange={(e) => setAutoTick(e.currentTarget.checked)} />
-          <span style={labelMutedSmall}>auto-tick (1.5s)</span>
-        </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: "var(--tug-space-2xs)" }}>
-          <span style={labelMutedSmall}>session state</span>
-          <select
-            style={controlSelectStyle}
-            value={String(stateIdx)}
-            onChange={(e) => setStateIdx(Number(e.currentTarget.value))}
-          >
-            {STATE_SCENARIOS.map((s, i) => (
-              <option key={s.id} value={String(i)}>{s.label}</option>
-            ))}
-          </select>
-        </label>
-        <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED, marginLeft: "auto" }}>
-          context: {ratioPct}%
-          {ratioPct >= 90 && <span style={{ color: TEXT_DANGER }}> ▲ danger</span>}
-          {ratioPct >= 75 && ratioPct < 90 && <span style={{ color: TEXT_CAUTION }}> ▲ caution</span>}
-        </span>
-      </div>
-
-      {/* §1 — Distribution baseline */}
-      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-        <SectionTitle>§1 — F5 distribution baseline (cells only, no indicator / chevron)</SectionTitle>
-        <div style={variantStackStyle}>
-          <VariantBlock
-            title="R6-base — F5 row with width:100% + space-between"
-            note="Reference for the cells-only F5 design. The fix the production CSS still needs."
-          >
-            <CellsOnlyRow v={values} />
-          </VariantBlock>
+            Next →
+          </TugPushButton>
+          <TugSwitch
+            checked={autoTick}
+            senderId={autoTickSwitchId}
+            label="auto-tick (1.5s)"
+            size="sm"
+          />
+          <TugPopupButton
+            label={`state: ${STATE_SCENARIOS[stateIdx].label}`}
+            items={stateItems}
+            senderId={statePopupId}
+            size="sm"
+            aria-label="session state"
+          />
+          <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED, marginLeft: "auto" }}>
+            context: {ratioPct}%
+            {ratioPct >= 90 && <span style={{ color: TEXT_DANGER }}> ▲ danger</span>}
+            {ratioPct >= 75 && ratioPct < 90 && <span style={{ color: TEXT_CAUTION }}> ▲ caution</span>}
+          </span>
         </div>
-      </section>
 
-      <TugSeparator />
-
-      {/* §2 — P6 indicator: concentric fix + size sweep */}
-      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-        <SectionTitle>§2 — P6 concentric pulsing ring (FIXED) — size sweep</SectionTitle>
-        <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
-          The concentric centering bug from round 6 is fixed — each child sits at
-          top:50%/left:50% with translate(-50%, -50%) so the ring's center is
-          perfectly aligned on the dot's center. The pulse keyframe combines the
-          translate with the scale so the ring grows AROUND the dot rather than
-          drifting off-axis. Use the session-state dropdown above to verify in
-          every state (idle / streaming / caution / errored / offline).
-        </div>
-        <div style={variantStackStyle}>
-          <VariantBlock title="P6 @ 12px (round-6 size, fixed)" note="Smallest variant. Dot is 6px; ring is 12px.">
-            <IndicatorIsolated state={state} size={12} description="12px container, 6px dot" />
-          </VariantBlock>
-          <VariantBlock title="P6 @ 14px" note="Mid-size. Dot 7px, ring 14px.">
-            <IndicatorIsolated state={state} size={14} description="14px container, 7px dot" />
-          </VariantBlock>
-          <VariantBlock title="P6 @ 16px" note="Reads more present at row scale.">
-            <IndicatorIsolated state={state} size={16} description="16px container, 8px dot" />
-          </VariantBlock>
-          <VariantBlock title="P6 @ 18px" note="Biggest variant. Matches the body-row typography weight more strongly.">
-            <IndicatorIsolated state={state} size={18} description="18px container, 9px dot" />
-          </VariantBlock>
-        </div>
-      </section>
-
-      <TugSeparator />
-
-      {/* §3 — Chevron size sweep */}
-      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-        <SectionTitle>§3 — Chevron size sweep</SectionTitle>
-        <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
-          Round 6 used 14px; user noted this is too small. Sweep through 14 / 16 / 18 / 20
-          to pick the right size. Click any to toggle expanded ⇄ collapsed state (state is
-          shared across all chevrons in this gallery).
-        </div>
-        <div style={variantStackStyle}>
-          {[14, 16, 18, 20].map((size) => (
+        {/* §1 — Distribution baseline */}
+        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+          <SectionTitle>§1 — F5 distribution baseline (cells only)</SectionTitle>
+          <div style={variantStackStyle}>
             <VariantBlock
-              key={size}
-              title={`Chevron @ ${size}px`}
-              note={`Lucide ChevronsLeft / ChevronsRight at size=${size}, strokeWidth=1.75.`}
+              title="R6-base — F5 row with width:100% + space-between"
+              note="Reference for the cells-only F5 design. The distribution fix the production CSS needs."
+            >
+              <CellsOnlyRow v={values} />
+            </VariantBlock>
+          </div>
+        </section>
+
+        <TugSeparator />
+
+        {/* §2 — P6 @ 16px in every state */}
+        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+          <SectionTitle>§2 — P6 concentric pulsing ring @ 16px — all session states</SectionTitle>
+          <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
+            Dot is the constant — always visible, color encodes state (success / caution / danger /
+            default, each mapped to a real theme token). Ring is the activity layer on top, only
+            rendered for ACTIVE states. Static states (idle, errored, offline) show just the bare dot.
+            Grid below shows P6 @ 16px once per session state, side-by-side.
+          </div>
+          <div style={variantStackStyle}>
+            <VariantBlock
+              title="All states grid — P6 @ 16px"
+              note="Every state from idle to errored, with the indicator rendered at its actual production size."
+            >
+              <AllStatesGrid />
+            </VariantBlock>
+            <VariantBlock
+              title="Interactive single — driven by session-state dropdown"
+              note="Pick a state above to see the indicator at full row scale."
             >
               <div
                 style={{
                   ...cardSurface,
-                  paddingInline: "var(--tug-space-md)",
+                  paddingInline: "var(--tug-space-lg)",
                   display: "flex",
                   flexDirection: "row",
                   alignItems: "center",
-                  justifyContent: "space-between",
+                  gap: "var(--tug-space-2xl)",
                   width: "100%",
                   boxSizing: "border-box",
                 }}
               >
+                <ConcentricPulsingRing state={state} size={16} />
                 <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>
-                  state: {collapsedDemo ? "COLLAPSED" : "EXPANDED"}
+                  state = {STATE_SCENARIOS[stateIdx].label}
                 </span>
-                <ChevronControl
-                  collapsed={collapsedDemo}
-                  onToggle={() => setCollapsedDemo((c) => !c)}
-                  size={size}
-                />
               </div>
             </VariantBlock>
-          ))}
-        </div>
-      </section>
+          </div>
+        </section>
 
-      <TugSeparator />
+        <TugSeparator />
 
-      {/* §4 — T1 endcap (locked in — informational) */}
-      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-        <SectionTitle>§4 — Endcap: T1 custom EndcapRuleLabel (LOCKED IN)</SectionTitle>
-        <div style={{ ...variantNoteStyle }}>
-          Round 6 picked T1 (the current production custom EndcapRuleLabel — one-sided
-          ticks pointing down at 0.55 opacity, hairline rule). All composed rows below
-          use this. No variants to compare here; called out for completeness so this
-          section's status is visible.
-        </div>
-      </section>
+        {/* §4 — T1 endcap (locked in) */}
+        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+          <SectionTitle>§4 — Endcap: T1 custom EndcapRuleLabel (LOCKED IN)</SectionTitle>
+          <div style={{ ...variantNoteStyle }}>
+            The current production EndcapRuleLabel — one-sided ticks pointing down at 0.55 opacity,
+            hairline rule. Visible in every cell of every row throughout this gallery.
+          </div>
+        </section>
 
-      <TugSeparator />
+        <TugSeparator />
 
-      {/* §5 — Composed-row spacing studies */}
-      <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-        <SectionTitle>§5 — Composed-row spacing (indicator + cells + chevron)</SectionTitle>
-        <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
-          Round-6 baseline was too cramped — the indicator and chevron were tight
-          against the cell strip. Five spacing strategies. All use P6 @ 16px + chevron @
-          18px (good defaults; tune per §2 and §3 picks). Click the chevron on any row to
-          watch the collapsed shape: only indicator + chevron stay visible.
-        </div>
-        <div style={variantStackStyle}>
-          <VariantBlock
-            title="C-tight — round-6 baseline (cramped, for reference)"
-            note="gap: md, paddingInline: md. The original cramped layout."
-          >
-            <ComposedRow
-              v={values}
-              state={state}
-              collapsed={collapsedDemo}
-              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
-              indicatorSize={16}
-              chevronSize={18}
-              variant="tight"
-            />
-          </VariantBlock>
-          <VariantBlock
-            title="C-wide-gap — bigger row gap"
-            note="gap: xl (~24px), paddingInline: lg (~16px). Direct increase of inter-element spacing."
-          >
-            <ComposedRow
-              v={values}
-              state={state}
-              collapsed={collapsedDemo}
-              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
-              indicatorSize={16}
-              chevronSize={18}
-              variant="wide-gap"
-            />
-          </VariantBlock>
-          <VariantBlock
-            title="C-wider-gap — even bigger gap"
-            note="gap: 2xl (~32px), paddingInline: lg. Maximum lateral breathing room via gap alone."
-          >
-            <ComposedRow
-              v={values}
-              state={state}
-              collapsed={collapsedDemo}
-              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
-              indicatorSize={16}
-              chevronSize={18}
-              variant="wider-gap"
-            />
-          </VariantBlock>
-          <VariantBlock
-            title="C-padded-zones — internal padding around indicator + chevron"
-            note="Indicator and chevron sit inside zones with their own paddingInline (md) plus a row gap (lg). Reads as zoned chrome wrapping the data block."
-          >
-            <ComposedRow
-              v={values}
-              state={state}
-              collapsed={collapsedDemo}
-              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
-              indicatorSize={16}
-              chevronSize={18}
-              variant="padded-zones"
-            />
-          </VariantBlock>
-          <VariantBlock
-            title="C-fixed-zones-divided — fixed 56px zones + hairline dividers"
-            note="Indicator and chevron in fixed-width zones, separated from the cells by 1px hairline rails. Reads like an instrument-panel bezel — chrome zones vs data zone."
-          >
-            <ComposedRow
-              v={values}
-              state={state}
-              collapsed={collapsedDemo}
-              onToggleCollapse={() => setCollapsedDemo((c) => !c)}
-              indicatorSize={16}
-              chevronSize={18}
-              variant="fixed-zones-divided"
-            />
-          </VariantBlock>
-        </div>
-      </section>
-    </div>
+        {/* §5 — C-wider-gap composed target row */}
+        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+          <SectionTitle>§5 — Composed target row: C-wider-gap (chosen spacing)</SectionTitle>
+          <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
+            The integration target. P6 @ 16px indicator (left), F5 cells filling the rest of the
+            row. Row gap is 2xl (~32px), paddingInline is lg. Chevron + collapse removed — the
+            row is always full.
+          </div>
+          <div style={variantStackStyle}>
+            <VariantBlock
+              title="C-wider-gap — indicator + cells, gap: 2xl, paddingInline: lg"
+              note="The chosen spacing strategy. Indicator has generous breathing room from the cells block."
+            >
+              <ComposedRow v={values} state={state} />
+            </VariantBlock>
+          </div>
+        </section>
+      </div>
+    </ResponderScope>
   );
 }

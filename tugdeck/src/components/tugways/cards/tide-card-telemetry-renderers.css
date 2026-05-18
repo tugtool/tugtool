@@ -155,7 +155,7 @@
    primitive's value styling. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-telemetry-status-value {
-  color: var(--tug7-element-global-text-normal-strong-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
   font-weight: 600;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -172,7 +172,7 @@
 }
 
 .tide-telemetry-status-context-numerator {
-  color: var(--tug7-element-global-text-normal-strong-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 .tide-telemetry-status-value-context[data-context-threshold="caution"]
