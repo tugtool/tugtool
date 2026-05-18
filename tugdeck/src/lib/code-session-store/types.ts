@@ -305,6 +305,16 @@ export interface CodeSessionSnapshot {
   phase: CodeSessionPhase;
   transportState: TransportState;
 
+  /**
+   * True while the user-initiated interrupt round-trip is in flight —
+   * set when `interrupt()` is dispatched during an active turn and
+   * cleared when the matching `turn_complete` (or terminal phase
+   * change) lands. The Z2 status-row indicator promotes its dot to
+   * "caution" + ring-pulse while this is true so the user can see
+   * their stop request hasn't been lost between request and ack.
+   */
+  interruptInFlight: boolean;
+
   tugSessionId: string;
   displayLabel: string;
   /**

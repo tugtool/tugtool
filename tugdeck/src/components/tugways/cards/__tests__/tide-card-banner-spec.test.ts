@@ -50,6 +50,7 @@ function baseSnap(
   return {
     phase: "idle",
     transportState: "online",
+    interruptInFlight: false,
     tugSessionId: "tug-1",
     displayLabel: "test",
     // Default fixtures to "new" — Step 2 will exercise both modes

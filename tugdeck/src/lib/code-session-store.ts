@@ -322,6 +322,7 @@ export class CodeSessionStore {
     const snap: CodeSessionSnapshot = {
       phase: this.state.phase,
       transportState: this.state.transportState,
+      interruptInFlight: this.state.interruptInFlight,
       tugSessionId: this.tugSessionId,
       displayLabel: this.displayLabel,
       sessionMode: this.sessionMode,

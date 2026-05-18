@@ -32,8 +32,14 @@ import "./tide-card-telemetry-renderers.css";
 import React, { useCallback, useSyncExternalStore } from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-import type { TurnEntry } from "@/lib/code-session-store/types";
+import type {
+  CodeSessionPhase,
+  CodeSessionSnapshot,
+  TransportState,
+  TurnEntry,
+} from "@/lib/code-session-store/types";
 import {
   deriveSessionTotals,
   perTurnContextSize,
@@ -344,14 +350,158 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
   </span>
 );
 
+// ---------------------------------------------------------------------------
+// Phase / transport / interrupt → visual mapping for the Z2 indicator
+// ---------------------------------------------------------------------------
+
+interface IndicatorVisual {
+  /** CSS class suffix consumed by `.tide-telemetry-indicator-dot--<tone>`. */
+  tone: "default" | "success" | "caution" | "danger";
+  /** Whether the outer ring pulses (active states) or is omitted (static). */
+  animated: boolean;
+  /** Accessible label — matches the human-readable phase summary. */
+  label: string;
+}
+
+/**
+ * Map the session's `phase × transportState × interruptInFlight` triple
+ * onto the indicator's visible state. Transport health dominates phase:
+ * an offline wire reads as `danger` regardless of the phase the
+ * reducer last assigned, and a restoring wire reads as `caution + pulse`.
+ * An in-flight interrupt promotes the indicator to `caution + pulse` so
+ * the user can see their stop request hasn't been lost between request
+ * and ack. Otherwise the phase enum drives the tone:
+ *   active (working)              → success (green) + pulse
+ *   awaiting user approval         → caution (yellow) + pulse
+ *   errored                        → danger (red), no pulse
+ *   idle                           → default text, no pulse
+ */
+function indicatorVisualFor(snap: {
+  phase: CodeSessionPhase;
+  transportState: TransportState;
+  interruptInFlight: boolean;
+}): IndicatorVisual {
+  if (snap.transportState === "offline") {
+    return { tone: "danger", animated: false, label: "offline" };
+  }
+  if (snap.transportState === "restoring") {
+    return { tone: "caution", animated: true, label: "restoring" };
+  }
+  if (snap.interruptInFlight) {
+    return { tone: "caution", animated: true, label: "interrupting" };
+  }
+  switch (snap.phase) {
+    case "errored":
+      return { tone: "danger", animated: false, label: "errored" };
+    case "submitting":
+    case "awaiting_first_token":
+    case "streaming":
+    case "tool_work":
+    case "replaying":
+      return { tone: "success", animated: true, label: snap.phase };
+    case "awaiting_approval":
+      return { tone: "caution", animated: true, label: "awaiting_approval" };
+    case "idle":
+    default:
+      return { tone: "default", animated: false, label: "idle" };
+  }
+}
+
+const PHASE_HUMAN_LABEL: Record<CodeSessionPhase, string> = {
+  idle: "Idle",
+  submitting: "Submitting message",
+  awaiting_first_token: "Awaiting first response",
+  streaming: "Streaming response",
+  tool_work: "Running tools",
+  awaiting_approval: "Awaiting your approval",
+  replaying: "Replaying session",
+  errored: "Last turn errored",
+};
+
+/**
+ * Tooltip body for the Z2 indicator — phase title in bold + muted
+ * secondary lines for transport degradation and interrupt-in-flight.
+ * Reads the same triple that {@link indicatorVisualFor} dispatches on,
+ * so the visible color/animation and the spoken description always agree.
+ */
+const TideTelemetryIndicatorTooltip: React.FC<{
+  snap: {
+    phase: CodeSessionPhase;
+    transportState: TransportState;
+    interruptInFlight: boolean;
+  };
+}> = ({ snap }) => {
+  const secondaries: string[] = [];
+  if (snap.transportState === "offline") secondaries.push("Disconnected");
+  if (snap.transportState === "restoring") secondaries.push("Reconnecting…");
+  if (snap.interruptInFlight) secondaries.push("Interrupt requested");
+  return (
+    <div className="tide-telemetry-indicator-tooltip">
+      <div className="tide-telemetry-indicator-tooltip-title">
+        {PHASE_HUMAN_LABEL[snap.phase]}
+      </div>
+      {secondaries.map((s) => (
+        <div key={s} className="tide-telemetry-indicator-tooltip-secondary">
+          {s}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/**
+ * Concentric phase/transport indicator — a solid dot wrapped by an
+ * optional pulsing ring. The dot is ALWAYS visible; its tone (mapped
+ * via {@link indicatorVisualFor}) encodes the session's coarse state.
+ * The ring is the activity-signal layer, rendered only for ACTIVE
+ * (animated) phases. Hovering surfaces a TugTooltip describing the
+ * state in plain English.
+ *
+ * Appearance is driven entirely through CSS classes ([L06]) — the
+ * tone-class selector picks the tone token; the `--animated` modifier
+ * toggles the ring's visibility. No inline styles for state.
+ */
+const TideTelemetryIndicator: React.FC<{
+  snap: {
+    phase: CodeSessionPhase;
+    transportState: TransportState;
+    interruptInFlight: boolean;
+  };
+}> = ({ snap }) => {
+  const v = indicatorVisualFor(snap);
+  return (
+    <TugTooltip
+      content={<TideTelemetryIndicatorTooltip snap={snap} />}
+      side="top"
+    >
+      <span
+        className={`tide-telemetry-indicator tide-telemetry-indicator--${v.tone}${
+          v.animated ? " tide-telemetry-indicator--animated" : ""
+        }`}
+        data-slot="tide-telemetry-indicator"
+        aria-label={v.label}
+      >
+        <span className="tide-telemetry-indicator-dot" />
+        {v.animated && <span className="tide-telemetry-indicator-ring" />}
+      </span>
+    </TugTooltip>
+  );
+};
+
 /**
  * Combined session status row — the canonical Z2 design chosen by the
  * Step 20.4 HMR study (F5 variant from the design spike gallery).
  *
- * **Layout — five uniform-width cells, label-above-value:**
+ * **Layout — phase/transport indicator + five uniform-width cells:**
  *
- *   ┌──── TIME ────┐  ┌──── TOKENS ────┐  ┌── TOTAL TIME ──┐  …  ┌── CONTEXT ──┐
- *      0h 0m 12s         30.3K            0h 0m 12s              30.3K / 1.00M
+ *   ●  ┌── TIME ──┐  ┌── TOKENS ──┐  ┌── TOTAL TIME ──┐  …  ┌── CONTEXT ──┐
+ *        0h 0m 12s      30.3K          0h 0m 12s                30.3K / 1.00M
+ *
+ * The leftmost slot is a concentric dot + pulsing ring keyed on the
+ * session's `phase × transportState × interruptInFlight` triple — the
+ * dot is always visible (its tone encodes the state), the ring only
+ * renders for ACTIVE phases. Hovering surfaces a plain-English
+ * tooltip via `TugTooltip`.
  *
  * Every cell is a two-row stack: an IBM-1620 letterspaced label
  * embedded in a hairline rule with downward endcap ticks, sitting
@@ -425,74 +575,86 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
+  const indicatorSnap: Pick<
+    CodeSessionSnapshot,
+    "phase" | "transportState" | "interruptInFlight"
+  > = {
+    phase: snap.phase,
+    transportState: snap.transportState,
+    interruptInFlight: snap.interruptInFlight,
+  };
+
   return (
     <div
       className="tide-telemetry-status-row"
       data-slot="tide-telemetry-status-row"
     >
-      <span
-        className="tide-telemetry-status-cell"
-        data-priority="time"
-      >
-        <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
-        <span className="tide-telemetry-status-value-wrap">
-          <span className="tide-telemetry-status-value">
-            {formatTimeAlwaysHours(perTurnActiveMs)}
+      <TideTelemetryIndicator snap={indicatorSnap} />
+      <div className="tide-telemetry-status-cells">
+        <span
+          className="tide-telemetry-status-cell"
+          data-priority="time"
+        >
+          <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
+          <span className="tide-telemetry-status-value-wrap">
+            <span className="tide-telemetry-status-value">
+              {formatTimeAlwaysHours(perTurnActiveMs)}
+            </span>
           </span>
         </span>
-      </span>
-      <span
-        className="tide-telemetry-status-cell"
-        data-priority="tokens"
-      >
-        <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
-        <span className="tide-telemetry-status-value-wrap">
-          <span className="tide-telemetry-status-value">
-            {formatTokensCaps(perTurnContextTokens)}
-          </span>
-        </span>
-      </span>
-      <span
-        className="tide-telemetry-status-cell"
-        data-priority="total-time"
-      >
-        <TideTelemetryEndcapRuleLabel label="TOTAL TIME" ticksDirection="down" />
-        <span className="tide-telemetry-status-value-wrap">
-          <span className="tide-telemetry-status-value">
-            {formatTimeAlwaysHours(totals.totalActiveMs)}
-          </span>
-        </span>
-      </span>
-      <span
-        className="tide-telemetry-status-cell"
-        data-priority="total-tokens"
-      >
-        <TideTelemetryEndcapRuleLabel label="TOTAL TOKENS" ticksDirection="down" />
-        <span className="tide-telemetry-status-value-wrap">
-          <span className="tide-telemetry-status-value">
-            {formatTokensCaps(totalTokensSum)}
-          </span>
-        </span>
-      </span>
-      <span
-        className="tide-telemetry-status-cell"
-        data-priority="context"
-      >
-        <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
-        <span className="tide-telemetry-status-value-wrap">
-          <span
-            className="tide-telemetry-status-value tide-telemetry-status-value-context"
-            data-context-threshold={contextThreshold}
-          >
-            <span className="tide-telemetry-status-context-numerator">
+        <span
+          className="tide-telemetry-status-cell"
+          data-priority="tokens"
+        >
+          <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
+          <span className="tide-telemetry-status-value-wrap">
+            <span className="tide-telemetry-status-value">
               {formatTokensCaps(perTurnContextTokens)}
             </span>
-            <span className="tide-telemetry-status-context-denominator">
-              {` / ${formatTokensCaps(contextMax)}`}
+          </span>
+        </span>
+        <span
+          className="tide-telemetry-status-cell"
+          data-priority="total-time"
+        >
+          <TideTelemetryEndcapRuleLabel label="TOTAL TIME" ticksDirection="down" />
+          <span className="tide-telemetry-status-value-wrap">
+            <span className="tide-telemetry-status-value">
+              {formatTimeAlwaysHours(totals.totalActiveMs)}
             </span>
           </span>
         </span>
-      </span>
+        <span
+          className="tide-telemetry-status-cell"
+          data-priority="total-tokens"
+        >
+          <TideTelemetryEndcapRuleLabel label="TOTAL TOKENS" ticksDirection="down" />
+          <span className="tide-telemetry-status-value-wrap">
+            <span className="tide-telemetry-status-value">
+              {formatTokensCaps(totalTokensSum)}
+            </span>
+          </span>
+        </span>
+        <span
+          className="tide-telemetry-status-cell"
+          data-priority="context"
+        >
+          <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
+          <span className="tide-telemetry-status-value-wrap">
+            <span
+              className="tide-telemetry-status-value tide-telemetry-status-value-context"
+              data-context-threshold={contextThreshold}
+            >
+              <span className="tide-telemetry-status-context-numerator">
+                {formatTokensCaps(perTurnContextTokens)}
+              </span>
+              <span className="tide-telemetry-status-context-denominator">
+                {` / ${formatTokensCaps(contextMax)}`}
+              </span>
+            </span>
+          </span>
+        </span>
+      </div>
     </div>
   );
 };
