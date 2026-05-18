@@ -329,6 +329,30 @@ body {
   color: var(--tug7-element-control-text-filled-action-hover);
 }
 
+/* Radix DropdownMenu double-highlight cleanup.
+   Two failure modes need correcting:
+
+   1. Cursor moves from an open sub-trigger to a sibling: Radix delays
+      closing the sub-menu, so during that delay the open sub-trigger
+      still has data-state="open" while the sibling is being hovered.
+      Without intervention both look selected.
+
+   2. Cursor moves from a parent menu item INTO an open submenu: Radix
+      sometimes leaves data-highlighted on the previously-hovered
+      sibling rather than clearing it. The sibling then shows as
+      highlighted indefinitely, even though the cursor is elsewhere.
+
+   The unified treatment: whenever a sub-trigger in the same menu has
+   data-state="open", treat data-state="open" as the authoritative
+   "current item" indicator, and clear any other item's
+   data-highlighted / open-state paint that isn't :hover. The :hover
+   case (cursor genuinely on an item) always wins and is preserved. */
+.tug-menu-content:has(.tug-menu-item:hover) .tug-menu-sub-trigger[data-state="open"]:not(:hover),
+.tug-menu-content:has(.tug-menu-sub-trigger[data-state="open"]) .tug-menu-item[data-highlighted]:not(:hover):not([data-state="open"]) {
+  background-color: transparent;
+  color: var(--tugx-menu-fg);
+}
+
 /* ============================================================================
    Separator + Section Label
    ============================================================================ */
