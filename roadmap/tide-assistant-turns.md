@@ -1811,7 +1811,7 @@ Beyond the `[1m]` regression: this step closes off the entire class of "live-onl
 
 **Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
 
-**Status:** _Complete. Slot infrastructure + renderers + dev harness landed; HMR study resolved by promoting the F5 design from the spike gallery (IBM-1620 endcap-rule labels, uniform-width cells, always-hours time format, caps-token magnitudes, color-coded context numerator, no arc gauge) into the production `TideTelemetryStatusRow` renderer; placement-experiment harness defaults Z2 to `statusRow`. Z0 / Z1-user / Z3 / Z4 remain reserved._
+**Status:** _Complete. Slot infrastructure + renderers + dev harness landed; HMR study resolved by promoting the F5 design from the spike gallery (IBM-1620 endcap-rule labels, uniform-width cells, always-hours time format, caps-token magnitudes, color-coded context numerator, no arc gauge) into the production `TideTelemetryStatusRow` renderer; placement-experiment harness defaults Z2 to `statusRow`. Final plan-of-record features promoted from the gallery to production: leftmost concentric dot+ring indicator keyed on `phase × transportState × interruptInFlight` (success/caution/danger/default tone via global text tokens, ring-pulse only for ACTIVE states), plain-English `TugTooltip` hover (phase title + transport/interrupt secondaries), C-wider-gap row spacing (gap 2xl + padding-inline lg) for indicator breathing room. `CodeSessionSnapshot.interruptInFlight` projected from reducer state to drive the indicator. Z0 / Z1-user / Z3 / Z4 remain reserved. **Follow-on series in progress** — sub-steps 20.4.1 through 20.4.10 below extract `TugStateIndicator` as a Tug component, add a tuglaws-grounded animation-completion handoff hook, reshape Z2 to four cells with a live-clock that pauses on yellow states, add per-area popovers (Time / Tokens / Context / state-change log), and persist state-change history via a sqlite ledger expansion._
 
 **Commit:** `feat(tide-rendering): placement slots Z0–Z4 for tide-card session telemetry`
 
@@ -1947,6 +1947,526 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 - _Live-clock segments deferred._ `TideTelemetryCumulativeActiveMs` surfaces the committed-turns sum only; computing the live in-flight active segment requires the internal reducer accumulators (not on the public `CodeSessionSnapshot`) and lands in [#step-20-5.D](#step-20-5-d)'s lifecycle work.
 - _Dev control surface._ `window.tugTidePlacement` (dev only) exposes `get` / `set(patch)` / `clear` / `datums` / `zones`. The mapping persists via the tugbank `dev.tugtool.tide.placement-experiment/mapping` key (`kind: "json"`) so HMR reloads preserve the experiment state.
 - _Test coverage shape._ Pure-logic tests pin the value formatters (`formatTokens` / `formatDurationMs` / `formatUsd`) and the placement-entry parser (rejects garbage, refuses cross-zone datums). Renderer-component rendering and slot-presence DOM assertions are real-app territory, not bun:test, per the no-fake-DOM policy; the HMR study covers them empirically.
+- _Indicator integration (final promotion)._ The leftmost phase/transport indicator was first prototyped in `gallery-tide-status-row.tsx` across nine design rounds (size sweep, chevron exploration, color-token bug fix, ring-centering geometry, animated-only ring policy) and is now in the production `TideTelemetryStatusRow`. Tone classes (`--default` / `--success` / `--caution` / `--danger`) drive the dot's `background-color` and the ring's `border-color` from existing global text tokens (`text-normal-{default,success,caution,danger}-rest`) — no new global tokens. Appearance is fully CSS-driven via class modifiers per [L06]. The `tide-telemetry-indicator-pulse` keyframe is co-located in the renderer's `.css` file so the apparatus stays self-contained. `interruptInFlight` was added to `CodeSessionSnapshot` (it already lived on the internal reducer state) so the indicator can read it via the existing `useSyncExternalStore` subscription without a parallel internal-state surface.
+
+---
+
+#### Step 20.4.1: Animation-completion design principle + reusable handoff hook {#step-20-4-1}
+
+**Depends on:** none — pure substrate. First sub-step of the 20.4.x follow-on series.
+
+**Status:** _not started._
+
+**Commit:** `plan(tide-rendering): animation-completion handoff hook + design rule`
+
+**References:** [L02], [L05], [L06], [L13], [L14], [L22], [L24], [L26], [D13] (DOM utility hooks for the appearance zone), [tuglaws.md](../tuglaws/tuglaws.md), [design-decisions.md](../tuglaws/design-decisions.md), [component-authoring.md](../tuglaws/component-authoring.md)
+
+**Scope.** Codify the rule "a pulse animation (or any state-coupled keyframe animation) must be allowed to complete its current iteration in the color it started with before any tone or visibility change is committed to the DOM," and implement a small reusable hook that lets future Tug pulse-animation components honor the rule without re-deriving the mechanism. No UI consumers yet — pure substrate that 20.4.2 will be the first to depend on.
+
+**Why the rule needs codification.** Today's gallery + production indicator swap their color the moment the underlying session state changes — mid-pulse, the ring's color snaps from green to default and the dot blinks color, drawing the eye to a transition that should have completed quietly. The intended visual is: a pulse begins → pulse runs to completion in its starting color → after the iteration ends, the new state's representation is committed. The eye sees a finished animation, not an interrupted one.
+
+**Why this is tuglaws-shaped, not just a one-off implementation detail.**
+
+- **[L24] + [L06]** — "Currently-playing pulse color" is *appearance* (visible-only state with no non-rendering consumer): lives in DOM class, never React state. "Logical tone derived from the session snapshot" is *data*: flows through React's render cycle normally. The hook's job is to bridge the two — receive a logical target and gate when the appearance commits.
+- **[L22]** — "When external state drives direct DOM updates, observe the store directly — don't round-trip through React's render cycle." The deferred color commit is exactly the case L22 is written for: snapshot-derived data drives a DOM class mutation. The hook subscribes via `useLayoutEffect` and writes the DOM class via ref. No `useState` for the appearance.
+- **[L13] + [L14]** — CSS handles continuous animations; `animationend` is the canonical CSS-native completion signal (it is the same mechanism Radix Presence uses for enter/exit, per the L14 guidance in `component-authoring.md`). The hook listens for `animationend` on a registered DOM element. WAAPI / TugAnimator does not apply here: `TugAnimator`'s `.finished` promise resolves only when an animation's full iteration count completes, which for an infinite-iteration pulse never resolves. CSS `@keyframes` + `animationend` is the only mechanism that expresses "wait for the *current iteration* to end."
+- **[L05]** — `requestAnimationFrame` is forbidden for state-commit-coordinated work; the hook uses `animationend` exclusively.
+- **[L26]** — The hook's correctness depends on the consuming component keeping stable mount identity (key, component type, renderer reference) for the animating DOM node across logical transitions. If the node remounts mid-transition, the in-progress animation tears down and the handoff is moot. The hook documents this requirement; consumers must comply.
+
+**Why this is NOT TugAnimator territory.** `component-authoring.md`'s "Enter/Exit Animations" section warns "Do not use CSS keyframes with manual `animationend` listeners in self-managed components — that's hand-rolling what TugAnimator already provides." That rule governs *enter/exit lifecycle coordination* — the case where a library or component owns when an element mounts and unmounts. The pulse-handoff problem is different: the dot and ring DOM nodes never mount or unmount during the transition (per [L26]); only the *class* on a stable element is being deferred. The animation itself is a continuous CSS `@keyframes` loop that [L13] explicitly assigns to CSS ("CSS owns ... continuous animations"). The `animationend` listener is used purely as a *completion signal*, not as animation orchestration. TugAnimator's WAAPI-based `.finished` promise has no equivalent for "current iteration of an infinite animation," so even if it were applicable in principle, it could not express what the rule needs.
+
+**Hook design (provisional API — final name + signature settled during implementation review).**
+
+```typescript
+/**
+ * Registers an animationend listener on `ref.current` and gates DOM-class
+ * commits behind the next iteration end. Returns nothing — the hook owns
+ * the DOM mutation. No React state is involved in the appearance commit.
+ *
+ *  - `ref` — the element whose CSS animation drives the gate. Stable
+ *    across the lifetime of the consumer (per [L26]). The hook treats
+ *    this element as the appearance owner; it writes its class via ref.
+ *  - `targetClassName` — the class string the consumer wants applied
+ *    to `ref.current` once the current animation iteration completes.
+ *    When the consumer's logical state changes to an unanimated target,
+ *    the swap still defers (so the pulse finishes in its starting color
+ *    before the ring disappears).
+ *  - `defaultClassName` — the class applied on first mount (before any
+ *    animation has run, so there is nothing to wait for).
+ *
+ * Internal mechanism:
+ *   - First `useLayoutEffect` ([L22]): when `targetClassName` changes,
+ *     stash the pending value in a ref. If the DOM is not currently
+ *     animating (no animation present, or in the static `defaultClassName`
+ *     state), commit immediately; otherwise wait.
+ *   - Second `useLayoutEffect` (mount): register the `animationend`
+ *     listener on `ref.current`. The listener reads the pending value
+ *     from the ref and writes the class to the DOM if a deferred commit
+ *     is queued.
+ *
+ * The hook NEVER stores the appearance in React state ([L06]). React's
+ * render cycle is not involved in the deferred commit ([L22]). RAF is
+ * not used ([L05]).
+ */
+function useCommitOnAnimationEnd(
+  ref: React.RefObject<HTMLElement>,
+  targetClassName: string,
+  defaultClassName: string,
+): void;
+```
+
+The hook's name is provisional. Implementation review may surface a cleaner shape (companion utilities, a different signature for grouped animations, etc.) — the laws above are what is non-negotiable; the API ergonomics are open.
+
+**Tuglaws conformance audit.** Implementation review explicitly walks through each cited law's exact text and the design-decision rationale. If a check fails, the implementation changes — not the law. The audit is recorded in the commit message + a brief note in the hook source so future readers can trace the conformance trail without re-deriving it.
+
+**Tasks.**
+
+- [ ] **Re-read** `tuglaws/tuglaws.md`, `tuglaws/design-decisions.md`, and the relevant sections of `tuglaws/component-authoring.md`. Confirm the law interpretations in this step's scope.
+- [ ] **Document the design principle** — add a new `[D##]` entry to `tuglaws/design-decisions.md` capturing the rule "pulse animations complete in their starting color"; reference it from the hook source.
+- [ ] **Implement the hook** at `tugdeck/src/components/tugways/use-commit-on-animation-end.ts` (or final-named location), with module docstring citing the laws.
+- [ ] **Pure-logic unit tests** for the deferred-commit decision logic (the parts that do not require real DOM): pending-class queue, no-op when target matches current, etc.
+
+**Tests.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] _No UI consumers yet; full integration is exercised by 20.4.2._
+
+**Checkpoint.**
+
+- [ ] Hook lands as a `tugways/` utility (per [L19] conventions, even though it is a hook rather than a component).
+- [ ] Design-decision entry references the hook and cites the laws it conforms to.
+- [ ] Commit message includes the conformance-audit walkthrough.
+
+---
+
+#### Step 20.4.2: Extract `TugStateIndicator` as a standalone Tug component (gallery-only) {#step-20-4-2}
+
+**Depends on:** #step-20-4-1 (the animation-handoff hook is the first internal dependency)
+
+**Status:** _not started._
+
+**Commit:** `feat(tugways): TugStateIndicator component (gallery use, animation handoff)`
+
+**References:** [L02], [L06], [L13], [L16], [L17], [L19], [L20], [L24], [L26], [D05] (component kinds), [D06] (public tugways API), [component-authoring.md](../tuglaws/component-authoring.md)
+
+**Scope.** Move the inline indicator (currently duplicated in `gallery-tide-status-row.tsx` and production `tide-card-telemetry-renderers.tsx`) into its own packaged Tug component at `tugdeck/src/components/tugways/tug-state-indicator.tsx` + `.css`. API matches today's gallery behavior exactly, plus first-consumer wiring of 20.4.1's animation-handoff hook so transitions complete in their starting color. The gallery card switches to the new component; the production `TideTelemetryStatusRow` stays on its inline implementation through phases B–F per the gallery-only iteration mode (final promotion is 20.4.10).
+
+**Component-authoring conformance.** The component must satisfy [L19] in full per `tuglaws/component-authoring.md`:
+
+- File pair `tug-state-indicator.tsx` + `tug-state-indicator.css` at `components/tugways/` (public surface, not `internal/`).
+- Module docstring citing the governing laws ([L02], [L06], [L13], [L19], [L20], [L24], [L26]).
+- Exported `TugStateIndicatorProps` interface extending `React.ComponentPropsWithoutRef<"span">` with `@selector` annotations on every CSS-targetable prop and `@default` annotations on prop defaults.
+- `data-slot="tug-state-indicator"` on the root element.
+- `React.forwardRef` to the root with `...rest` spread last and merged `style` (per the "Inline `style` must be merged, not replaced" rule).
+- CSS opens with `@tug-pairings` in both compact-block (machine-readable) and expanded-table (human/agent-readable) forms; every color-setting rule that does not declare `background-color` in the same rule carries an `@tug-renders-on` annotation ([L16]).
+- Component-tier alias tokens `--tugx-state-indicator-*` resolve to `--tug7-*` in exactly one hop ([L17]).
+
+**Props (provisional — finalized during implementation).**
+
+```typescript
+export interface TugStateIndicatorProps
+  extends React.ComponentPropsWithoutRef<"span"> {
+  /** The session state to display. Determines tone + animation. */
+  state: {
+    phase: CodeSessionPhase;
+    transportState: TransportState;
+    interruptInFlight: boolean;
+  };
+  /**
+   * Dot + ring diameter in CSS px.
+   * @default 16
+   * @selector .tug-state-indicator (custom property --tugx-state-indicator-size)
+   */
+  size?: number;
+}
+```
+
+Label support, tooltip behavior, and popover affordance are NOT in this step's scope — they land in 20.4.3 (label), 20.4.6 (popover substrate), and 20.4.9 (popover content) respectively. This step is the minimum extraction.
+
+**Tasks.**
+
+- [ ] Implement `tug-state-indicator.tsx` + `tug-state-indicator.css` per the component-authoring guide.
+- [ ] Move `indicatorVisualFor()` (or its equivalent) inside the component as a private pure helper.
+- [ ] Wire 20.4.1's hook for the appearance-commit handoff.
+- [ ] Switch `gallery-tide-status-row.tsx` to import `TugStateIndicator` (production renderer untouched).
+- [ ] Delete the now-duplicated inline implementation from the gallery file.
+- [ ] Add a gallery scenario that toggles the session state mid-pulse so the handoff is visually verifiable.
+
+**Tests.**
+
+- [ ] Pure-logic test for `indicatorVisualFor` (phase × transport × interrupt → tone).
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Gallery card renders `TugStateIndicator` identically to the prior inline version.
+- [ ] HMR-vet the animation handoff: trigger a state transition mid-pulse; the ring completes its iteration in the starting color before the new state's tone commits.
+
+---
+
+#### Step 20.4.3: `TugStateIndicator` label support (gallery-only) {#step-20-4-3}
+
+**Depends on:** #step-20-4-2
+
+**Status:** _not started._
+
+**Commit:** `feat(tugways): TugStateIndicator label + tooltip-when-hidden`
+
+**References:** [L06], [L16], [L19], [L20]
+
+**Scope.** Add a human-readable label that can sit to the left or right of the dot, or be hidden entirely. When the label is visible, the tooltip is suppressed (the same information is already on screen). When the label is hidden, the tooltip surfaces on hover (existing behavior). Adopts the existing `PHASE_HUMAN_LABEL` map (`Streaming response`, `Idle`, etc.) as the canonical phase title; transport / interrupt secondaries surface in the tooltip only.
+
+**Props additions (provisional).**
+
+```typescript
+labelPosition?: "left" | "right" | "hidden"; // default "right"
+// When labelPosition === "hidden", the TugTooltip on hover surfaces
+// the same content that the visible label would have shown plus the
+// transport / interrupt secondary lines.
+```
+
+**Tasks.**
+
+- [ ] Extend `TugStateIndicator` with the label slot + position prop. Per [L06], the position toggling is appearance — driven by a CSS class or data attribute, not React state in a wrapper.
+- [ ] Wire `PHASE_HUMAN_LABEL` into the component (move from the renderer file).
+- [ ] Tooltip renders only when `labelPosition === "hidden"`.
+- [ ] Gallery card adds a control to toggle label position so the three modes are visually inspectable.
+
+**Tests.**
+
+- [ ] Pure-logic test pinning the visible-label text for each phase.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Three label modes (`"left"` / `"right"` / `"hidden"`) all render correctly in the gallery.
+
+---
+
+#### Step 20.4.4: Z2 four-cell layout reshape (gallery-only) {#step-20-4-4}
+
+**Depends on:** #step-20-4-3 (label support shapes the indicator's host width)
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): Z2 four-cell layout, remove Total Time + Total Tokens`
+
+**References:** [L06], [L19]
+
+**Scope.** Reduce Z2 to four areas: `TugStateIndicator` (with label), `Time`, `Tokens`, `Context`. Remove the `Total Time` and `Total Tokens` cells from the gallery composition. Rebalance container-query collapse breakpoints for the four-area row. The data that used to surface as `Total Time` / `Total Tokens` reappears in the per-area popovers (20.4.7).
+
+**Tasks.**
+
+- [ ] Remove the `Total Time` / `Total Tokens` cells from the gallery's `ComposedRow`.
+- [ ] Recompute the proportional spacing and container-query breakpoints for four cells.
+- [ ] Reserve the expanded indicator host slot so the label fits without crowding the `Time` cell.
+
+**Tests.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Gallery card's plan-of-record row shows four areas with the indicator's label visible at default position.
+- [ ] HMR-vet container-query collapse behavior at four representative widths.
+
+---
+
+#### Step 20.4.5.A: Live-clock substrate — reducer accumulator + snapshot projection + derivation helper {#step-20-4-5-a}
+
+**Depends on:** none in 20.4.x; foundational for 20.4.5.B.
+
+**Status:** _not started._
+
+**Commit:** `feat(code-session): inflight-active-ms substrate (interrupt accumulator + snapshot)`
+
+**References:** [L02], [L23], [#step-20-3] (reducer turn-accounting model)
+
+**Scope.** Make the live-clock derivation possible without busting the snapshot cache. Add the reducer accounting needed for the interrupt-in-flight axis; project the building-block fields onto `CodeSessionSnapshot`; add a pure helper that composes the live in-flight active duration. The renderer (20.4.5.B) consumes the helper and the existing live-tick external store.
+
+**Reducer-state additions.**
+
+- `interruptInFlightAccumulatedMs: number` — closed accumulator (sum of past interrupt-in-flight windows within the current turn). Mirrors `awaitingApprovalAccumulatedMs` and `transportDowntimeAccumulatedMs`.
+- `interruptInFlightSegmentStartedAt: number | null` — wall-clock ms when the current interrupt segment opened, or `null` if no segment is open. Mirrors the existing pattern for the other two axes.
+- Both reset on turn boundary (same lifecycle as the existing accumulators).
+
+**Snapshot projection (additive).** The snapshot exposes the inputs the helper needs to compute live elapsed:
+
+- `awaitingApprovalAccumulatedMs`, `awaitingApprovalSegmentStartedAt`
+- `transportDowntimeAccumulatedMs`, `transportDowntimeSegmentStartedAt`
+- `interruptInFlightAccumulatedMs`, `interruptInFlightSegmentStartedAt`
+
+(`inflightUserMessage.submitAt` is already on the snapshot and serves as the in-flight start anchor.)
+
+The snapshot cache stays dispatch-driven — these fields update only on dispatch, so the [L02] stable-reference contract is preserved. The renderer pulls a stable snapshot via `useSyncExternalStore` + a separate live-tick value via the existing 1Hz tick store, and composes the live elapsed value.
+
+**Pure helper.**
+
+```typescript
+// In code-session-store/telemetry.ts
+export function deriveInflightActiveMs(
+  snap: CodeSessionSnapshot,
+  nowMs: number,
+): number | null {
+  // Returns null when no turn is in flight (no inflightUserMessage).
+  // Otherwise: (nowMs - submitAt) − sum(closed accumulators)
+  //                               − sum(currently-open segments measured to nowMs)
+  // Clamped to 0.
+}
+```
+
+**Pause-on-yellow correctness.** The derivation automatically produces the pause-on-yellow behavior because the same yellow conditions (awaiting_approval, transport=restoring, interruptInFlight) are exactly what open the three accumulator segments. The live clock pauses while any axis is open and resumes when it closes — no separate "is the indicator yellow" check needed. The indicator's tone-mapping and the clock's pause-mapping share one underlying mechanism, which is the cleanest expression of the rule.
+
+**Tasks.**
+
+- [ ] Add `interruptInFlightAccumulatedMs` + `interruptInFlightSegmentStartedAt` to the reducer state; open/close the segment in the dispatch paths that set/clear `interruptInFlight`.
+- [ ] Verify the existing `awaitingApproval*` and `transportDowntime*` segments are exposed on the snapshot (some may already be; project the rest).
+- [ ] Add the six snapshot fields listed above.
+- [ ] Implement `deriveInflightActiveMs(snap, nowMs)` in `code-session-store/telemetry.ts`.
+- [ ] Update existing tests that build a fake snapshot to include the new fields.
+
+**Tests.**
+
+- [ ] Pure-logic tests for `deriveInflightActiveMs` covering: no in-flight turn → null; in-flight, no segments open → wall-clock since submit; in-flight with one open segment → wall-clock − (now − segmentStart); multiple closed accumulators + one open segment → sum subtracted correctly; clamped-to-zero when accumulators sum past wall-clock.
+- [ ] Reducer test for the interrupt accumulator: dispatch `interrupt` → segment opens; `turn_complete` → segment closes and accumulates.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Snapshot is additively expanded — no existing field removed or renamed.
+- [ ] Existing tests (`reducer.diagnostics.test.ts`, `reducer.awaiting-approval-accounting.test.ts`, etc.) updated to acknowledge the new fields where relevant.
+
+---
+
+#### Step 20.4.5.B: Gallery wiring for live updates — Time, Tokens, Context (gallery-only) {#step-20-4-5-b}
+
+**Depends on:** #step-20-4-5-a
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): gallery live updates for Time / Tokens / Context`
+
+**References:** [L02], [L06]
+
+**Scope.** Wire the gallery's four-area row to update live during an in-flight turn. `Time` consumes `deriveInflightActiveMs(snap, nowMs)` — the clock ticks up at 1Hz from submit, pauses on yellow axes automatically, freezes at turn-complete with the committed `activeMs`, resets to 0 on the next submit. `Tokens` updates from the in-flight per-turn token sum (live). `Context` updates from the in-flight per-turn context-size derivation.
+
+**Tasks.**
+
+- [ ] Update gallery composition to use `deriveInflightActiveMs` for the `Time` cell value.
+- [ ] Wire `Tokens` to the in-flight per-turn token sum (live).
+- [ ] Wire `Context` to the in-flight per-turn context size (live).
+- [ ] Add a gallery scenario that simulates an in-flight turn so the live behavior is HMR-vettable.
+
+**Tests.**
+
+- [ ] Pure-logic test confirming the gallery's value-derivation functions return the expected formatted strings for representative snapshot + tick combinations.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] HMR-vet: live clock ticks on green states, pauses on yellow states, freezes at turn-complete.
+- [ ] Pause-on-yellow visually matches the indicator's tone.
+
+---
+
+#### Step 20.4.6: Popover substrate — hover-affordance, click-to-open (gallery) {#step-20-4-6}
+
+**Depends on:** #step-20-4-2 (gallery indicator is the first anchor candidate, though popovers can be exercised against any status cell); foundational for 20.4.7 + 20.4.9.
+
+**Status:** _not started._
+
+**Commit:** `feat(tugways): TugPopover substrate (if missing) + status-cell anchor pattern`
+
+**References:** [L02], [L06], [L13], [L14], [L19], [L20], [D05]
+
+**Scope.** Audit `tugways/` for an existing popover primitive; if missing, wrap Radix Popover (mirroring how `TugTooltip` wraps Radix Tooltip — per the [L14] guidance in `component-authoring.md` that Radix-managed enter/exit uses CSS keyframes + `[data-state]`). Establish the open/close contract: hover gives a cursor / hover-class affordance hint (no popover open), click opens, re-click closes, outside-click closes, Esc closes. Document the status-cell anchor pattern that 20.4.7 + 20.4.9 will reuse.
+
+**Tasks.**
+
+- [ ] Audit `tugways/` for an existing popover primitive; verify whether one exists.
+- [ ] If absent: implement `TugPopover` per `component-authoring.md` (file pair, docstring, props with `@selector` annotations, `data-slot`, `forwardRef`, `@tug-pairings`, CSS keyframes on `[data-state]` per [L14]).
+- [ ] Document the hover-affordance + click-to-open + Esc/outside-close contract.
+- [ ] Inspect `tug-dev-panel/`'s log-format conventions to derive a shared visual language the per-area popovers can adopt for their per-row layout.
+
+**Tests.**
+
+- [ ] Pure-logic tests for the open/close state machine (where applicable; Radix Presence handles the DOM lifecycle per [L14]).
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Gallery card includes a scratch popover example so the substrate's open/close behavior is HMR-vettable before any per-area popover content is built.
+
+---
+
+#### Step 20.4.7: Per-area popover designs — Time, Tokens, Context (gallery) {#step-20-4-7}
+
+**Depends on:** #step-20-4-6
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): gallery popovers for Time / Tokens / Context`
+
+**References:** [L02], [L06], [L19], [L20]
+
+**Scope.** Three popovers, all anchored on their respective status cells. Each shows a per-request log (one row per committed turn) plus a summary footer.
+
+- **`Time` popover** — log of times for each request/response, with terminal-state badge per row; summary footer: number of requests, total time, average time per request/response.
+- **`Tokens` popover** — log of token usage per request/response, terminal-state badge per row; summary footer: number of requests, total tokens, average tokens per request/response.
+- **`Context` popover** — large `TugArcGauge` with a breakdown of tokens used, redesigned for graphical UI display (re-imagined from Claude Code's terminal-UI `/context` display). Categories: input, cache-read, cache-creation, output, plus the unused remainder relative to the context max.
+
+Visual language pulled from `tug-dev-panel/`'s log format (mono font, tight row-density, tabular numerics, terminal-state badges as small chips).
+
+**Tasks.**
+
+- [ ] `Time` popover: row list + summary; pure-logic helper to compute summary stats from `transcript[]`.
+- [ ] `Tokens` popover: row list + summary; pure-logic helper for totals + average.
+- [ ] `Context` popover: arc-gauge composition + breakdown legend; pure-logic helper for category breakdown from `transcript[last]`.
+- [ ] Gallery card adds a controlled-scenario picker so the popovers render against representative session shapes (fresh, deep, near-cap, etc.).
+
+**Tests.**
+
+- [ ] Pure-logic tests for each helper (`computeTimeSummary`, `computeTokensSummary`, `computeContextBreakdown`) against synthetic transcripts.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] HMR-vet all three popovers against multiple scenarios.
+- [ ] If the `Context` popover's re-imagining proves substantively heavier than the other two, split into 20.4.7.A / 20.4.7.B / 20.4.7.C and re-checkpoint each separately.
+
+---
+
+#### Step 20.4.8: SQLite session_state_changes ledger (cross-crate) {#step-20-4-8}
+
+**Depends on:** none — substrate; consumed by 20.4.9. The store-side writer can land in parallel with the gallery-side popover work in 20.4.6 / 20.4.7.
+
+**Status:** _not started._
+
+**Commit:** `feat(tugbank+code-session): session_state_changes ledger`
+
+**References:** [L02], [L23], [D46] (Tugbank SQLite shape), [D48] (HTTP bridge for tugbank reads), [#step-20-3-4] (SessionLedger precedent)
+
+**Scope.** Cross-crate. Add a `session_state_changes` table to the sqlite session ledger that persists every distinct `(phase, transportState, interruptInFlight)` triple transition for a given `tugSessionId`. Writer dedupes: if the new triple equals the most recent row for the session, no row is written. Retention is unbounded per session. Rows are deleted when the parent session is deleted (`ON DELETE CASCADE` or app-level equivalent). Expose a reader API to tugdeck via the same bridge pattern the rest of tugbank uses.
+
+**Schema (provisional).**
+
+```sql
+CREATE TABLE session_state_changes (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  tug_session_id      TEXT NOT NULL,                       -- FK to sessions
+  at_ms               INTEGER NOT NULL,                    -- wall-clock ms
+  phase               TEXT NOT NULL,                       -- CodeSessionPhase enum string
+  transport_state     TEXT NOT NULL,                       -- TransportState enum string
+  interrupt_in_flight INTEGER NOT NULL,                    -- 0 / 1
+  FOREIGN KEY (tug_session_id) REFERENCES sessions(tug_session_id)
+    ON DELETE CASCADE
+);
+CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms);
+```
+
+**Writer (tugdeck side).** Hook into `CodeSessionStore.dispatch`. After `reduce()` runs and the snapshot cache invalidates, compare `(prev.phase, prev.transportState, prev.interruptInFlight)` to the new state's triple; if any axis changed, POST a write to the bridge endpoint. The dedupe at the SQL layer is a safety net for races.
+
+**Reader (tugdeck side).** New typed API: `loadSessionStateChanges(tugSessionId): Promise<ReadonlyArray<{ at: number; phase: CodeSessionPhase; transportState: TransportState; interruptInFlight: boolean }>>`. Used by 20.4.9's popover.
+
+**Tasks.**
+
+- [ ] Add the table + index migration to the tugbank crate. Verify `ON DELETE CASCADE` works with the existing session-delete path; fall back to app-level cleanup if rusqlite does not enable cascades by default.
+- [ ] Implement the writer: bridge endpoint + tugdeck-side client + hook in `code-session-store.ts`'s dispatch.
+- [ ] Implement the reader: bridge endpoint + tugdeck-side client.
+- [ ] Idle↔idle dedupe: skip the write if the new triple equals the most recent persisted triple for the session.
+
+**Tests.**
+
+- [ ] Rust-side: dedupe semantics, retention, `ON DELETE CASCADE`.
+- [ ] Tugdeck-side: writer fires on triple change, skips on no-change.
+- [ ] `cargo nextest run` green.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+
+**Checkpoint.**
+
+- [ ] Manual verification: open a tide card, drive through several state transitions, verify the rows accumulate in sqlite via `tug-dev-panel` or a direct DB query.
+- [ ] Manual verification: delete a session, confirm `session_state_changes` rows for that session are gone.
+
+---
+
+#### Step 20.4.9: `TugStateIndicator` state-change log popover (gallery) {#step-20-4-9}
+
+**Depends on:** #step-20-4-6 (popover substrate), #step-20-4-8 (state-change ledger)
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): gallery TugStateIndicator state-change log popover`
+
+**References:** [L02], [L06], [L19], [L20]
+
+**Scope.** Popover anchored on the gallery's `TugStateIndicator`. Renders a scrolling, timestamped log of every persisted state change for the current session (most recent in view). Reads from 20.4.8's reader API via a `useSyncExternalStore`-shaped wrapper. Uses the visual language established by 20.4.7 + the tug-dev-panel log inspector.
+
+**Tasks.**
+
+- [ ] Gallery popover renders the log; auto-scrolls so the most-recent entry is in view.
+- [ ] Each row: `[at-ms formatted as HH:MM:SS.mmm] · [phase] · [transportState] · [interrupt: yes/no]` (final row layout settled during gallery iteration).
+- [ ] Live updates: when a new state-change lands, the popover (if open) appends the new row and re-scrolls if the user has not scrolled away.
+
+**Tests.**
+
+- [ ] Pure-logic tests for the row-formatting helper.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] HMR-vet against a multi-transition session.
+
+---
+
+#### Step 20.4.10: Promote polished gallery design into production tide-card {#step-20-4-10}
+
+**Depends on:** #step-20-4-1 through #step-20-4-9
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): promote 20.4.x gallery design into production`
+
+**References:** [L02], [L06], [L19], [L20], [L26]
+
+**Scope.** Wire the polished gallery design into the production `tide-card-telemetry-renderers.tsx`. Production switches to `TugStateIndicator` (with label, animation handoff, all four popovers). Production CSS adopts the four-cell layout. Wires live updates to production. The inline indicator implementation in production is deleted (replaced by the `TugStateIndicator` component).
+
+**Tasks.**
+
+- [ ] Replace the inline indicator in production with `TugStateIndicator`, including label + popover.
+- [ ] Remove `Total Time` / `Total Tokens` cells from the production `TideTelemetryStatusRow` and rebalance the four-cell layout.
+- [ ] Wire live `Time` / `Tokens` / `Context` to the production renderer via the same `deriveInflightActiveMs` helper and live-tick subscription used in the gallery.
+- [ ] Wire the four popovers (Time, Tokens, Context, state-change log) to production status cells.
+- [ ] Update the Step 20.4 parent status line in this plan file to record completion of the 20.4.x follow-on series.
+
+**Tests.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] HMR-vet the production tide-card matches the gallery's plan-of-record in every interactive dimension (live clock, pause-on-yellow, label position, four popovers, state-change log).
+- [ ] Step 20.4 (parent) is closed in `roadmap/tide-assistant-turns.md`.
 
 ---
 
