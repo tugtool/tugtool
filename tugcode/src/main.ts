@@ -16,6 +16,9 @@ import {
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
+import { readClaudeCodeSettings } from "./claude-code-settings.ts";
+import { ContextBreakdownEmitter } from "./context-breakdown.ts";
+import { homedir } from "node:os";
 
 // Redirect console.log/warn/error to stderr to keep stdout clean for JSON-lines
 const originalLog = console.log;
@@ -179,12 +182,27 @@ async function main() {
         continue;
       }
 
+      // Read the user's Claude Code settings once at session start
+      // and build the context_breakdown emitter from them. Settings
+      // come from `~/.claude/settings.json` and degrade to documented
+      // defaults on missing / malformed file — the emitter is
+      // production-resilient. See claude-code-settings.ts for the
+      // exact fallback policy.
+      const claudeCodeSettings = await readClaudeCodeSettings();
+      const contextBreakdownEmitter = new ContextBreakdownEmitter({
+        sessionId,
+        homeDir: homedir(),
+        cwd: projectDir,
+        settings: claudeCodeSettings,
+      });
+
       // Create session manager and initialize claude process
       sessionManager = new SessionManager(
         projectDir,
         sessionId,
         sessionMode,
         resumeSessionId,
+        { contextBreakdownEmitter },
       );
 
       // Send protocol_ack first (with placeholder session_id)

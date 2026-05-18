@@ -310,6 +310,66 @@ export interface CompactBoundary {
 }
 
 /**
+ * Category identities the popover surfaces in the `/context`-style
+ * breakdown. The renderer trusts the wire — only categories present
+ * in {@link ContextBreakdown.categories} are painted.
+ *
+ * `autocompact_buffer` is conditional: present only when the user has
+ * Claude Code's autocompact feature enabled. Absence means the
+ * popover paints one fewer slice and a larger free-space remainder.
+ *
+ * MCP is intentionally absent — Tug treats MCP as out of scope, so
+ * no `mcp_tools` id ever appears. See the parent plan step's
+ * "Out of scope: MCP" section for the rationale.
+ */
+export type ContextBreakdownCategoryId =
+  | "system_prompt"
+  | "system_tools"
+  | "custom_agents"
+  | "memory_files"
+  | "skills"
+  | "messages"
+  | "autocompact_buffer";
+
+/**
+ * One category slice of the {@link ContextBreakdown} wire frame.
+ */
+export interface ContextBreakdownCategory {
+  /** Identity for stable React keys + per-tone color mapping. */
+  id: ContextBreakdownCategoryId;
+  /** Display label (e.g. "System prompt"). */
+  label: string;
+  /** Per-category token count. Already calibrated when applicable. */
+  tokens: number;
+}
+
+/**
+ * `/context`-style per-category token breakdown of the session's
+ * context window. Emitted by tugcode at session_init, after every
+ * `cost_update`, and after every `compact_boundary`; consumed by
+ * tugdeck's reducer + popover. Persisted by the tugcast supervisor
+ * to `context_breakdown_latest` (one row per session, UPSERT) so the
+ * popover renders pre-populated on a fresh bind.
+ *
+ * Renderer fallback: when no `context_breakdown` frame has landed
+ * yet, the popover shows the 20.4.7.C `cost_update`-derived 5-segment
+ * view. The fallback is a feature — it keeps the popover useful
+ * across the deployment matrix (older tugcode, transient
+ * pre-first-frame state).
+ *
+ * `free_space` is intentionally NOT a column — it's derived by the
+ * renderer as `context_max - sum(categories.tokens)`.
+ */
+export interface ContextBreakdown {
+  type: "context_breakdown";
+  tug_session_id: string;
+  /** Model's context-window cap (e.g. 200_000 for current sonnet/opus). */
+  context_max: number;
+  categories: ReadonlyArray<ContextBreakdownCategory>;
+  ipc_version: number;
+}
+
+/**
  * API retry notification. Claude Code retries up to 10 times with exponential backoff.
  */
 export interface ApiRetry {
@@ -441,6 +501,7 @@ export type OutboundMessage =
   | SystemMetadata
   | CostUpdate
   | CompactBoundary
+  | ContextBreakdown
   | ApiRetry
   | ToolUseStructured
   | ControlRequestCancel

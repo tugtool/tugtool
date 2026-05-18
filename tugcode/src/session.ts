@@ -36,6 +36,7 @@ import {
   type ReplayTelemetry,
   translateJsonlSession,
 } from "./replay.ts";
+import { ContextBreakdownEmitter } from "./context-breakdown.ts";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -1090,6 +1091,15 @@ export class SessionManager {
    */
   private claudeStdoutEofObserved: boolean = false;
   private permissionManager = new PermissionManager();
+  /**
+   * Optional `/context`-style breakdown emitter. Injected by main.ts
+   * after reading the user's Claude Code settings; null in tests and
+   * any caller that doesn't supply one. When present, the dispatcher
+   * invokes its lifecycle methods on `system:init`, `result`
+   * (cost_update), and `system:compact_boundary` events, and on every
+   * inbound user message (for calibration anchor data).
+   */
+  private contextBreakdownEmitter: ContextBreakdownEmitter | null = null;
   private seq: number = 0;
   // Legacy pending maps kept for reference; control flow is now via control_response writes.
   private pendingApprovals = new Map<string, PendingRequest<"allow" | "deny">>();
@@ -1226,6 +1236,15 @@ export class SessionManager {
        * exercise this). Omit / undefined → use {@link defaultSessionsDbPath}.
        */
       sessionsDbPath?: string | null;
+      /**
+       * Pre-constructed context_breakdown emitter. main.ts builds it
+       * once at startup (after reading settings.json) and threads it
+       * here so the emitter knows the session id and the user's
+       * autocompact preference. `null` / undefined → no
+       * `context_breakdown` frames are produced; the popover hits its
+       * 20.4.7.C fallback view. Tests omit it for backwards-compat.
+       */
+      contextBreakdownEmitter?: ContextBreakdownEmitter | null;
     },
   ) {
     if (!sessionId) {
@@ -1248,6 +1267,7 @@ export class SessionManager {
     this.replayLiveBufferMax =
       options?.replayLiveBufferMax ?? REPLAY_LIVE_BUFFER_MAX;
     this.replayTelemetry = options?.replayTelemetry;
+    this.contextBreakdownEmitter = options?.contextBreakdownEmitter ?? null;
     this.openSessionsDb(options?.sessionsDbPath);
   }
 
@@ -2397,6 +2417,57 @@ export class SessionManager {
     } else {
       this.handleInterTurnEvent(event);
     }
+    // After the canonical dispatch has written its own frames, give
+    // the context_breakdown emitter a chance to append its frame for
+    // the same event. Order matters: a `cost_update` from the
+    // dispatcher is followed by a `context_breakdown` so reducers
+    // that join the two by arrival order see them in the expected
+    // sequence. The emitter is silent when not initialized or when
+    // the event is not a trigger.
+    this.maybeEmitContextBreakdown(event);
+  }
+
+  /**
+   * Inspect a parsed claude stdout event and, if it is a trigger,
+   * write a corresponding `context_breakdown` frame to the wire.
+   * Trigger events (per spike S4):
+   *   - `system:init`      → initial frame after static-categories tokenize
+   *   - `result`           → recomputed frame after each cost_update
+   *   - `system:compact_boundary` → emitter is notified; the next
+   *      `result` produces the updated frame via subtraction
+   *
+   * No-op when the emitter is not injected. Defensive: any
+   * unexpected event shape (missing fields, wrong types) leaves the
+   * emitter untouched and produces no frame.
+   */
+  private maybeEmitContextBreakdown(event: Record<string, unknown>): void {
+    const emitter = this.contextBreakdownEmitter;
+    if (!emitter) return;
+    if (event.type === "system") {
+      const subtype = event.subtype;
+      if (subtype === "init") {
+        const frame = emitter.onSessionInit({
+          tools: Array.isArray(event.tools) ? event.tools : [],
+          agents: Array.isArray(event.agents) ? event.agents : [],
+          skills: Array.isArray(event.skills) ? event.skills : [],
+          plugins: Array.isArray(event.plugins) ? event.plugins : [],
+        });
+        writeLine(frame);
+      } else if (subtype === "compact_boundary") {
+        emitter.onCompactBoundary();
+      }
+    } else if (event.type === "result") {
+      const usage =
+        typeof event.usage === "object" && event.usage !== null
+          ? (event.usage as Record<string, unknown>)
+          : {};
+      const modelUsage =
+        typeof event.modelUsage === "object" && event.modelUsage !== null
+          ? (event.modelUsage as Record<string, unknown>)
+          : undefined;
+      const frame = emitter.onCostUpdate(usage, modelUsage);
+      if (frame) writeLine(frame);
+    }
   }
 
   /**
@@ -2787,6 +2858,14 @@ export class SessionManager {
       });
       return;
     }
+
+    // Accumulate the user-message text for the context_breakdown
+    // emitter's calibration anchor. The first cost_update after this
+    // submit will use the accumulated user-message tokens to anchor
+    // the per-session calibration ratio. No-op when no emitter is
+    // injected. Tokenization is fast (sub-millisecond on typical
+    // message-length text) and runs before any IO.
+    this.contextBreakdownEmitter?.onUserMessageSubmitted(msg.text);
 
     // Build content blocks from text and attachments per PN-12.
     const contentBlocks = buildContentBlocks(msg.text, msg.attachments || []);
