@@ -2379,8 +2379,8 @@ Visual language pulled from `tug-dev-panel/`'s log format (mono font, tight row-
 
 **Checkpoint.**
 
-- [ ] HMR-vet both popovers against multiple scenarios. _(Pending; transcript picker is wired and ready.)_
-- [ ] In-flight footer renders correctly when a turn is in flight. _(Pending HMR vet; live-tick wiring + footer row are in place.)_
+- [x] HMR-vet both popovers against multiple scenarios.
+- [x] In-flight footer renders correctly when a turn is in flight.
 
 ---
 
