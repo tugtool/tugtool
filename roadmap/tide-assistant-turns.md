@@ -1811,7 +1811,7 @@ Beyond the `[1m]` regression: this step closes off the entire class of "live-onl
 
 **Depends on:** #step-20-3 (clean per-turn + session-cumulative data is the input this step renders), #step-20-1 (TugLinearGauge for any window-utilization gauge surface)
 
-**Status:** _Complete. Slot infrastructure + renderers + dev harness landed; HMR study resolved by promoting the F5 design from the spike gallery (IBM-1620 endcap-rule labels, uniform-width cells, always-hours time format, caps-token magnitudes, color-coded context numerator, no arc gauge) into the production `TideTelemetryStatusRow` renderer; placement-experiment harness defaults Z2 to `statusRow`. Final plan-of-record features promoted from the gallery to production: leftmost concentric dot+ring indicator keyed on `phase × transportState × interruptInFlight` (success/caution/danger/default tone via global text tokens, ring-pulse only for ACTIVE states), plain-English `TugTooltip` hover (phase title + transport/interrupt secondaries), C-wider-gap row spacing (gap 2xl + padding-inline lg) for indicator breathing room. `CodeSessionSnapshot.interruptInFlight` projected from reducer state to drive the indicator. Z0 / Z1-user / Z3 / Z4 remain reserved. **Follow-on series in progress** — sub-steps 20.4.1 through 20.4.10 below extract `TugStateIndicator` as a Tug component, add a tuglaws-grounded animation-completion handoff hook, reshape Z2 to four cells with a live-clock that pauses on yellow states, add per-area popovers (Time / Tokens / Context / state-change log), and persist state-change history via a sqlite ledger expansion._
+**Status:** _Complete. Slot infrastructure + renderers + dev harness landed; HMR study resolved by promoting the F5 design from the spike gallery (IBM-1620 endcap-rule labels, uniform-width cells, always-hours time format, caps-token magnitudes, color-coded context numerator, no arc gauge) into the production `TideTelemetryStatusRow` renderer; placement-experiment harness defaults Z2 to `statusRow`. Final plan-of-record features promoted from the gallery to production: leftmost concentric dot+ring indicator keyed on `phase × transportState × interruptInFlight` (success/caution/danger/default tone via global text tokens, ring-pulse only for ACTIVE states), plain-English `TugTooltip` hover (phase title + transport/interrupt secondaries), C-wider-gap row spacing (gap 2xl + padding-inline lg) for indicator breathing room. `CodeSessionSnapshot.interruptInFlight` projected from reducer state to drive the indicator. Z0 / Z1-user / Z3 / Z4 remain reserved. **Follow-on series in progress** — sub-steps 20.4.1 through 20.4.15 below cover (a) Z2 work: extract `TugStateIndicator` as a Tug component, add a tuglaws-grounded animation-completion handoff hook, reshape Z2 to four cells with a live-clock that pauses on yellow states, add per-area popovers (Time / Tokens / Context / state-change log), and persist state-change history via a sqlite ledger expansion; and (b) Z1 asst-half work: build a new `TugThinkingIndicator` (three-bar primitive with delta-debounced blink-on-pause behavior), establish a two-line stack composition for Z1 asst half (model row + status row), and design the terminal end-state display (OK/error + time + tokens). Subsumes the planned Step 20.5.C (TugProgress agent-role variant study) — that step is marked superseded._
 
 **Commit:** `feat(tide-rendering): placement slots Z0–Z4 for tide-card session telemetry`
 
@@ -2437,25 +2437,144 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 ---
 
-#### Step 20.4.10: Promote polished gallery design into production tide-card {#step-20-4-10}
+#### Step 20.4.10: `TugThinkingIndicator` component — three-bar primitive (gallery-only) {#step-20-4-10}
 
-**Depends on:** #step-20-4-1 through #step-20-4-9
+**Depends on:** #step-20-4-1 (the animation-handoff hook applies to the bar-pulse animation too)
 
 **Status:** _not started._
 
-**Commit:** `feat(tide-rendering): promote 20.4.x gallery design into production`
+**Commit:** `feat(tugways): TugThinkingIndicator component (three-bar primitive)`
 
-**References:** [L02], [L06], [L19], [L20], [L26]
+**References:** [L02], [L06], [L13], [L16], [L17], [L19], [L20], [L24], [L26], [D05] (component kinds), [D06] (public tugways API), [component-authoring.md](../tuglaws/component-authoring.md)
 
-**Scope.** Wire the polished gallery design into the production `tide-card-telemetry-renderers.tsx`. Production switches to `TugStateIndicator` (with label, animation handoff, all four popovers). Production CSS adopts the four-cell layout. Wires live updates to production. The inline indicator implementation in production is deleted (replaced by the `TugStateIndicator` component).
+**Scope.** Net-new Tug component (NOT an extraction — the codebase has no existing three-dots indicator to refactor; `TugProgress` has spinner/bar/ring/pie variants only). Implements a compact "thinking" indicator as three vertical rectangular bars that pulse in sequence (default geometry; final shape worked out in gallery iteration). Optional human-readable label sits to the side (default right; supports left / right / hidden — mirrors `TugStateIndicator`'s label API). Consumes 20.4.1's animation-handoff hook so any mode change visible to the bar animation completes its current iteration before swapping.
+
+The `animating` prop controls whether the bars pulse or freeze in place (visible but static). The Z1 asst-half integration (20.4.12 + 20.4.13) drives this prop from a delta-debounced derivation (20.4.11), producing the "blinking caret analog" behavior: bars pulse when no text is flowing, freeze when text is actively streaming.
+
+**Component-authoring conformance.** Same [L19] checklist as `TugStateIndicator` (20.4.2) — file pair, docstring with required law citations, exported Props interface with `@selector` annotations, `data-slot="tug-thinking-indicator"`, `forwardRef` with `...rest` spread + merged `style`, `@tug-pairings` in both forms, `@tug-renders-on` on every unpaired color rule, `--tugx-thinking-indicator-*` aliases resolving to `--tug7-*` in one hop ([L17]).
+
+**Props (provisional — finalized during implementation).**
+
+```typescript
+export interface TugThinkingIndicatorProps
+  extends React.ComponentPropsWithoutRef<"span"> {
+  /** When true, bars pulse in sequence. When false, bars are visible but static. */
+  animating?: boolean;
+  /** Human-readable label position. */
+  labelPosition?: "left" | "right" | "hidden"; // default "right"
+  /** Optional label text. Defaults to "Thinking…" when omitted and labelPosition !== "hidden". */
+  label?: string;
+  /** Bar height in CSS px. */
+  size?: number;
+}
+```
 
 **Tasks.**
 
-- [ ] Replace the inline indicator in production with `TugStateIndicator`, including label + popover.
-- [ ] Remove `Total Time` / `Total Tokens` cells from the production `TideTelemetryStatusRow` and rebalance the four-cell layout.
-- [ ] Wire live `Time` / `Tokens` / `Context` to the production renderer via the same `deriveInflightActiveMs` helper and live-tick subscription used in the gallery.
-- [ ] Wire the four popovers (Time, Tokens, Context, state-change log) to production status cells.
-- [ ] Update the Step 20.4 parent status line in this plan file to record completion of the 20.4.x follow-on series.
+- [ ] Implement `tug-thinking-indicator.tsx` + `tug-thinking-indicator.css` per the component-authoring guide.
+- [ ] Iterate the bar geometry in the gallery: width, height, spacing, pulse keyframe (staggered timing per bar so the three pulse in sequence).
+- [ ] Wire 20.4.1's animation-handoff hook so the pulse iteration completes in-color before any `animating` toggle takes effect.
+- [ ] Add a gallery card (or extend an existing one) with controls for `animating`, `labelPosition`, `label`, `size` so the design space is HMR-vettable.
+
+**Tests.**
+
+- [ ] Pure-logic tests for label-position derivation (which side renders), default label text, etc.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Gallery renders `TugThinkingIndicator` at multiple sizes + label positions.
+- [ ] HMR-vet the animation handoff: toggle `animating` mid-pulse; the bars complete their current iteration before freezing.
+
+---
+
+#### Step 20.4.11: Delta-debounced "stream active" derivation (substrate) {#step-20-4-11}
+
+**Depends on:** none in 20.4.x; foundational for 20.4.12's Z1 wiring.
+
+**Status:** _not started._
+
+**Commit:** `feat(code-session): lastStreamingDeltaAt snapshot field + isStreamActive helper`
+
+**References:** [L02], [L23]
+
+**Scope.** Expose "when did the last streaming text delta arrive?" on `CodeSessionSnapshot` so consumers can derive a delta-debounced "stream is actively producing" signal. Add a pure helper that returns `true` when a delta has arrived within the last N ms. No UI consumers yet — 20.4.12 is the first.
+
+**Reducer-state additions.**
+
+- `lastStreamingDeltaAtMs: number | null` — wall-clock ms when the most recent assistant text delta was applied to the in-flight turn. Resets to `null` on turn boundary.
+
+**Snapshot projection (additive).**
+
+- `lastStreamingDeltaAtMs: number | null` — projected directly. Snapshot cache invalidates only on dispatch (consistent with the [L02] stable-reference contract). The renderer reads a stable snapshot + live-tick value and composes.
+
+**Pure helper.**
+
+```typescript
+// In code-session-store/telemetry.ts
+/**
+ * Returns true when a streaming delta has arrived within the last
+ * `windowMs` ms. Default window is workshop'd in the gallery (likely
+ * 250–500 ms). Returns false when no in-flight turn, no delta has
+ * arrived yet, or the last delta is older than the window.
+ */
+export function isStreamActive(
+  snap: CodeSessionSnapshot,
+  nowMs: number,
+  windowMs?: number,
+): boolean;
+```
+
+**Tasks.**
+
+- [ ] Add `lastStreamingDeltaAtMs` to reducer state; update on `assistant_delta` (or equivalent text-delta event) handling; reset at turn boundary.
+- [ ] Add the snapshot projection.
+- [ ] Implement `isStreamActive(snap, nowMs, windowMs?)` in `code-session-store/telemetry.ts`.
+- [ ] Update existing fake-snapshot test fixtures to include the new field.
+
+**Tests.**
+
+- [ ] Pure-logic tests for `isStreamActive`: returns `false` with no in-flight turn; returns `false` when no delta has arrived; returns `true` within window; returns `false` past window; window default behaves sensibly.
+- [ ] Reducer test confirming `lastStreamingDeltaAtMs` updates on text-delta events and clears on turn boundary.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Snapshot is additively expanded — no existing field removed or renamed.
+
+---
+
+#### Step 20.4.12: Z1 asst-half scaffolding — two-line stack (gallery-only) {#step-20-4-12}
+
+**Depends on:** #step-20-4-10, #step-20-4-11
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): gallery Z1 asst-half two-line stack`
+
+**References:** [L06], [L19], [L26], [#step-20-4] (Z1 catalog), [#step-20-5-a] (lifecycle matrix Z1 row, to be updated when this step lands)
+
+**Scope.** Replace the dangling-model-name look in Z1 asst half with a two-line stack:
+
+```
+[model name]                              ← persistent (model row, top)
+[status: indicator OR end-state]          ← in-flight OR terminal (status row, bottom)
+```
+
+Top line (model row) is persistent throughout the turn lifecycle — model name reads as "who's responding." Bottom line (status row) is mode-dependent: during in-flight phases it hosts `TugThinkingIndicator` with `animating={!isStreamActive(snap, nowMs)}`; after `turn_complete` it swaps to the end-state display (designed in 20.4.13). Gallery iteration shapes typography, spacing, vertical rhythm.
+
+**Mount-identity discipline.** The status row's content swap (indicator → end-state) MUST happen inside the same DOM container with stable key + component type ([L26]) so the assistant row's focus / hover / scroll-position state is not destroyed at the turn boundary. The same `[L23]/[L26] note` recorded in the (now-superseded) Step 20.5.C applies here: build the slot once; swap content within it.
+
+**Tasks.**
+
+- [ ] Gallery card (or new section in an existing one): mock the two-line stack for an in-flight turn and a completed turn.
+- [ ] Wire `TugThinkingIndicator` in the in-flight status row with delta-debounced `animating` derivation per 20.4.11.
+- [ ] Reserve the end-state slot for 20.4.13 (placeholder for now).
+- [ ] Workshop typography + spacing so model row + status row read as a coherent unit, not two stacked details.
 
 **Tests.**
 
@@ -2465,7 +2584,114 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 **Checkpoint.**
 
-- [ ] HMR-vet the production tide-card matches the gallery's plan-of-record in every interactive dimension (live clock, pause-on-yellow, label position, four popovers, state-change log).
+- [ ] HMR-vet the in-flight indicator's blink-on-pause behavior: trigger a streaming pause (no deltas for a few seconds) and observe the bars start pulsing; resume deltas and observe them freeze.
+- [ ] HMR-vet that the in-flight → end-state swap preserves the status-row DOM container (no remount).
+
+---
+
+#### Step 20.4.13: End-state display — Z1 asst-half terminal form (gallery-only) {#step-20-4-13}
+
+**Depends on:** #step-20-4-12
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): gallery Z1 asst-half end-state display`
+
+**References:** [L06], [L19], [#step-20-3] (TurnEntry data fields), [#step-20-5-a] (lifecycle matrix COMPLETE row, to be updated when this step lands)
+
+**Scope.** Design the terminal-form content of Z1 asst half's status row. After `turn_complete`, the status row swaps from `TugThinkingIndicator` to a compact end-state display:
+
+- **End-state badge** — OK / error indication. Maps the four terminal `turnEndReason` values from the lifecycle map ([#step-20-5-a]): `complete` → OK; `interrupted` / `error` / `transport_lost` → respective non-OK tones.
+- **Time elapsed** — the response's `activeMs` (per-turn Claude-active time, already in `TurnEntry`), formatted via `formatTimeAlwaysHours`.
+- **Token count** — sum of the response's `cost.inputTokens + cacheReadInputTokens + cacheCreationInputTokens + outputTokens`, formatted via `formatTokensCaps`.
+
+Visual language coordinates with the per-area popover designs (20.4.7) — tight row layout, mono numerics, color-coded badge per terminal state. Reads as a "footer" beneath the model row.
+
+**Tasks.**
+
+- [ ] Gallery card mocks the end-state display for each of the four terminal `turnEndReason` values (OK, interrupted, error, transport_lost).
+- [ ] Pure-logic helpers for the end-state computations: terminal-state badge text + tone; total tokens from `TurnEntry.cost`; formatted time.
+- [ ] Workshop the typography so the end-state reads as a coherent footer to the model row.
+- [ ] Confirm the swap from in-flight indicator to end-state is visually clean (no layout shift; mount identity preserved per [L26], cross-checked against 20.4.12's container).
+
+**Tests.**
+
+- [ ] Pure-logic tests for the four terminal-state mappings.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] HMR-vet all four terminal states render correctly.
+
+---
+
+#### Step 20.4.14: `TugThinkingIndicator` adoption audit (gallery + polish) {#step-20-4-14}
+
+**Depends on:** #step-20-4-10
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): TugThinkingIndicator adoption pass`
+
+**References:** [L06], [L19]
+
+**Scope.** Audit the tide-card UI surface for places where `TugThinkingIndicator` would prevent a similar dangling / no-progress-indication look. The codebase has no existing three-dots usages today, so this is an *adoption* audit, not a migration. Candidates to consider:
+
+- Tool-call cards during execution windows where nothing visible is happening for a noticeable interval.
+- Any `awaiting-X` UI that currently shows a static affordance.
+- Other locations surfaced during gallery exploration.
+
+For each adoption site, gallery-prototype the change before any production work. An empty audit outcome (no other places adopt) is a valid result — the goal is to *find out*, not to force adoptions.
+
+**Tasks.**
+
+- [ ] Grep / walk the tide-card surface for static affordances that could become live progress indicators.
+- [ ] Gallery-prototype any candidate adoptions.
+- [ ] Document the audit outcome (which call-sites adopt; which were considered and rejected, with reason).
+
+**Tests.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] Audit outcome documented (even if empty).
+
+---
+
+#### Step 20.4.15: Promote polished gallery design into production tide-card {#step-20-4-15}
+
+**Depends on:** #step-20-4-1 through #step-20-4-14
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): promote 20.4.x gallery design into production`
+
+**References:** [L02], [L06], [L19], [L20], [L26]
+
+**Scope.** Wire the polished gallery designs into the production tide-card surface. Two parallel promotions: (a) Z2 status row — production switches to `TugStateIndicator` (with label, animation handoff, four popovers, four-cell layout, live updates); (b) Z1 asst half — production switches to the two-line stack (model row + status row with `TugThinkingIndicator` in flight and end-state display after turn-complete). The inline indicator implementation in production is deleted (replaced by the `TugStateIndicator` component); the dangling-model-name treatment is replaced by the two-line stack.
+
+**Tasks.**
+
+- [ ] **Z2 promotion** — replace the inline indicator in production with `TugStateIndicator` (label + popover); remove `Total Time` / `Total Tokens` cells and rebalance the four-cell layout; wire live `Time` / `Tokens` / `Context` to the production renderer via the same `deriveInflightActiveMs` helper and live-tick subscription used in the gallery; wire the four popovers (Time, Tokens, Context, state-change log) to production status cells.
+- [ ] **Z1 asst-half promotion** — replace the dangling-model-name treatment in `tide-card-transcript.tsx` with the two-line stack; wire `TugThinkingIndicator` in the in-flight status row driven by the delta-debounced `isStreamActive` helper; wire the end-state display in the terminal status row. Mount-identity audit ([L26]): confirm the assistant-row chrome is not remounted by the swap.
+- [ ] **Any adoption-audit migrations** — promote any 20.4.14 gallery prototypes to production.
+- [ ] **Update the lifecycle matrix** ([Step 20.5.A](#step-20-5-a)) Z1 asst-half row entries to reference `TugThinkingIndicator` (in-flight) and the end-state display (terminal). Strike out the now-stale `TugProgress agent` placeholders.
+- [ ] **Close out** the Step 20.4 parent status line to record completion of the 20.4.x follow-on series.
+
+**Tests.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] HMR-vet the production tide-card matches the gallery in every interactive dimension: Z2 (live clock, pause-on-yellow, label position, four popovers, state-change log) AND Z1 asst-half (two-line stack, blink-on-pause, end-state for all four `turnEndReason` values).
 - [ ] Step 20.4 (parent) is closed in `roadmap/tide-assistant-turns.md`.
 
 ---
@@ -2474,11 +2700,11 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 **Depends on:** #step-20-4 (slot infrastructure + placement decisions from the HMR study)
 
-**Status:** _not started — split into 20.5.A → 20.5.B → 20.5.C → 20.5.D → 20.5.E, gated sequentially._
+**Status:** _not started — split into 20.5.A → 20.5.B → ~~20.5.C~~ (superseded by Step 20.4.10–20.4.13) → 20.5.D → 20.5.E, gated sequentially._
 
-**Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), studies and adds the `agent` role to `TugProgress` for Z1's SUBMITTING-state immediate-feedback indicator (20.5.C), wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.D), and ships the on-demand `/context`-style drill-down surface (20.5.E).
+**Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), ~~studies and adds the `agent` role to `TugProgress` for Z1's SUBMITTING-state immediate-feedback indicator (20.5.C)~~ — _superseded; the Z1 asst-half indicator is `TugThinkingIndicator` per [Step 20.4.10](#step-20-4-10) instead of a TugProgress variant_, wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.D), and ships the on-demand `/context`-style drill-down surface (20.5.E).
 
-The five sub-steps are gated sequentially: 20.5.A is the spec that everything else references; 20.5.B closes pre-existing gaps so downstream work builds on working primitives; 20.5.C does the small primitive prep (TugProgress agent role + variant study); 20.5.D is the big lifecycle implementation; 20.5.E layers the drill-down on top.
+The remaining sub-steps are gated sequentially: 20.5.A is the spec that everything else references; 20.5.B closes pre-existing gaps so downstream work builds on working primitives; 20.5.D is the big lifecycle implementation; 20.5.E layers the drill-down on top. The Z1 asst-half indicator work that was 20.5.C now lives in [Step 20.4.10](#step-20-4-10)–[Step 20.4.13](#step-20-4-13) and ships via [Step 20.4.15](#step-20-4-15).
 
 **References:** [#step-20-3] (data model), [#step-20-4] (slot infrastructure + study outcome), [polish-plan #step-13](./tugplan-tide-card-polish.md#step-13), [polish-plan #step-14](./tugplan-tide-card-polish.md#step-14), [polish-plan #step-15](./tugplan-tide-card-polish.md#step-15), [L02], [L23], [L26]
 
@@ -2600,7 +2826,7 @@ The five sub-steps are gated sequentially: 20.5.A is the spec that everything el
 |---|---|---|
 | IDLE | No active turn. Initial state and the steady state after each COMPLETE until the user submits again. | `phase === "idle"` AND `interruptInFlight === false` |
 | SUBMITTING | User pressed Enter; `send` frame in flight; no events received yet. | `phase === "submitting"` |
-| AWAITING_FIRST_TOKEN | Send acknowledged by supervisor; awaiting Claude's first response token. **This is where Z1's TugProgress spinner ([Step 20.5.C](#step-20-5-c)) shows.** | `phase === "awaiting_first_token"` |
+| AWAITING_FIRST_TOKEN | Send acknowledged by supervisor; awaiting Claude's first response token. **This is where Z1's `TugThinkingIndicator` ([Step 20.4.10](#step-20-4-10)) shows** — superseding the prior plan to use a TugProgress variant ([Step 20.5.C](#step-20-5-c), now superseded). | `phase === "awaiting_first_token"` |
 | STREAMING | First `assistant_delta` arrived; response body streaming. | `phase === "streaming"` |
 | TOOL_WORK | `tool_use` sent; awaiting `tool_result`. | `phase === "tool_work"` |
 | AWAITING_USER | `control_request_forward` arrived; awaiting Allow/Deny (permission) or answer (question). | `phase === "awaiting_approval"` (canonical) — equivalently `pendingApproval !== null \|\| pendingQuestion !== null` |
@@ -2617,8 +2843,8 @@ The five sub-steps are gated sequentially: 20.5.A is the spec that everything el
 | State | Z0 (top of card) | Z1 (per-turn trailing — asst half) | Z2 (status bar) | Z3 (prompt-entry top) | Z4 (prompt-entry footer) | Z5 (submit button) |
 |---|---|---|---|---|---|---|
 | IDLE | reserved | n/a (no current turn) | session cumulative totals (frozen) | project badge | (default content per 20.4 study) | **Submit** (disabled if prompt empty) |
-| SUBMITTING | reserved | TugProgress agent (chosen variant per [#step-20-5-c]) | live cum + this-turn elapsed (ticking via [useLifecycleTick](#step-20-3)) | project badge | (default) | **Stop** |
-| AWAITING_FIRST_TOKEN | reserved | TugProgress agent (chosen variant per [#step-20-5-c]) | live cum + this-turn elapsed (ticking) | project badge | "Awaiting first token" indicator | **Stop** |
+| SUBMITTING | reserved | `TugThinkingIndicator` (per [#step-20-4-10]) inside Z1's two-line stack (per [#step-20-4-12]); `animating={true}` since no streaming deltas have arrived yet | live cum + this-turn elapsed (ticking via [useLifecycleTick](#step-20-3)) | project badge | (default) | **Stop** |
+| AWAITING_FIRST_TOKEN | reserved | `TugThinkingIndicator` (per [#step-20-4-10]); `animating={true}` (still no deltas) | live cum + this-turn elapsed (ticking) | project badge | "Awaiting first token" indicator | **Stop** |
 | STREAMING | reserved | per-turn live elapsed (ticking) | live cum + this-turn elapsed + window util (ticking) | project badge | "Claude is thinking" indicator | **Stop** |
 | TOOL_WORK | reserved | per-turn live elapsed + tool name (ticking) | live cum + this-turn elapsed (ticking) | project badge | "Running {tool_name}" | **Stop** |
 | AWAITING_USER | reserved | per-turn elapsed paused (clock frozen) | live cum (frozen during pause) + "awaiting input" badge | project badge | (default) | **"Awaiting your input"** (disabled) |
@@ -2630,7 +2856,7 @@ The five sub-steps are gated sequentially: 20.5.A is the spec that everything el
 | QUEUED_NEXT_TURN (overlay) | reserved | (current turn's live indicator) | (current turn's live counts) | project badge | (default) | Submit visually marked "will send on idle" |
 | DRILLDOWN_OPEN (overlay) | reserved | dimmed | dimmed | dimmed | dimmed | dimmed (drill-down surface is the focus) |
 
-**Matrix-edit policy.** [Step 20.5.C](#step-20-5-c) updates this matrix to substitute the chosen concrete TugProgress variant (`kind="spinner"` vs. `kind="ring"`) for the placeholder text "TugProgress agent (chosen variant per [#step-20-5-c])" in the SUBMITTING and AWAITING_FIRST_TOKEN rows. No other matrix changes happen there.
+**Matrix-edit policy.** [Step 20.5.C](#step-20-5-c) is **superseded** by [Step 20.4.10](#step-20-4-10) through [Step 20.4.13](#step-20-4-13). The SUBMITTING and AWAITING_FIRST_TOKEN rows above are updated to reference the new `TugThinkingIndicator` (which replaces the planned TugProgress variant); the remaining Z1 asst-half cells in this matrix (STREAMING / TOOL_WORK / AWAITING_USER / INTERRUPTING / COMPLETE / others) still describe per-turn metrics in the pre-20.4.x framing. Those cells are updated authoritatively by [Step 20.4.15](#step-20-4-15) when it lands the production wiring — at that point each row's Z1 asst-half cell will say (a) which content the two-line stack's status row shows for that state (indicator-with-animating-derivation vs. end-state display) and (b) what the model row shows (always present, content unchanged across states).
 
 **Two coordination invariants exposed by the matrix.**
 
@@ -2717,7 +2943,7 @@ The five sub-steps are gated sequentially: 20.5.A is the spec that everything el
 
 **Depends on:** #step-20-5-a (matrix this step updates), #step-20-5-b (primitives working)
 
-**Status:** _not started._
+**Status:** _**SUPERSEDED** by [Step 20.4.10](#step-20-4-10) through [Step 20.4.13](#step-20-4-13)._ Z1 asst-half's SUBMITTING / AWAITING_FIRST_TOKEN / STREAMING immediate-feedback indicator is now `TugThinkingIndicator` (a new dedicated component built fresh — a three-bar primitive with delta-debounced blink-on-pause behavior), not a TugProgress variant. The TugProgress agent-role primitive change this step would have made is dropped from 20.4.x scope; if a need for it surfaces later from a different consumer, it can be picked up independently. The full Z1 asst-half composition (two-line stack: model row + status row hosting `TugThinkingIndicator` while in-flight and an end-state display after turn-complete) is designed in [Step 20.4.12](#step-20-4-12) + [Step 20.4.13](#step-20-4-13) and promoted to production in [Step 20.4.15](#step-20-4-15)._
 
 **Commit:** `feat(tugways): TugProgress agent role + Z1 SUBMITTING-state variant study`
 
