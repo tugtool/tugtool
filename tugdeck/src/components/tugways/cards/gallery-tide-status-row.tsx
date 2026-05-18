@@ -83,6 +83,15 @@ import { TugStateIndicator } from "@/components/tugways/tug-state-indicator";
 import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indicator";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import {
+  isLivePhase,
+  useLifecycleTick,
+} from "@/lib/code-session-store/hooks/use-lifecycle-tick";
+import {
+  deriveInflightActiveMs,
+  deriveTimeCellMs,
+} from "@/lib/code-session-store/telemetry";
+import type { CodeSessionSnapshot } from "@/lib/code-session-store/types";
 
 // ---------------------------------------------------------------------------
 // Value scenarios + status-row formatters
@@ -130,6 +139,195 @@ function formatTimeAlwaysHours(ms: number): string {
   const m = Math.floor((totalSec % 3_600) / 60);
   const s = totalSec % 60;
   return `${h}h ${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic in-flight bookkeeping for the gallery's live-clock demo
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-pause-axis bookkeeping for one yellow axis (awaiting-approval,
+ * transport-downtime, or interrupt-in-flight) over the lifetime of a
+ * simulated in-flight turn. `since` is the wall-clock ms when the
+ * axis last opened (or `null` while closed); `intervals` is the
+ * closed-segment history accumulated as the user toggles the axis on
+ * and off via the state picker. Mirrors the reducer's bookkeeping
+ * from `#step-20-4-5-a` — the gallery's synthetic snapshot reads from
+ * this state in the same shape the production snapshot exposes.
+ */
+interface PauseAxisTrack {
+  since: number | null;
+  intervals: ReadonlyArray<readonly [number, number]>;
+}
+
+/**
+ * Aggregate in-flight bookkeeping for the simulated turn the gallery
+ * picks across. `submitAt` is captured once when the user transitions
+ * from a terminal phase into a live phase (or via the explicit "New
+ * turn" button) and preserved across subsequent live-phase changes,
+ * so toggling between yellow and green states accumulates pause time
+ * against the same submit anchor — exactly the production behavior.
+ *
+ * When the picker selects a terminal phase, the track collapses to
+ * `EMPTY_INFLIGHT` and the synthetic snapshot's `inflightUserMessage`
+ * goes `null`; the renderer's `deriveTimeCellMs` fallback then shows
+ * the static post-commit scenario value (the "freeze at turn-complete"
+ * demonstration).
+ */
+interface InflightTrack {
+  submitAt: number | null;
+  awaiting: PauseAxisTrack;
+  transport: PauseAxisTrack;
+  interrupt: PauseAxisTrack;
+}
+
+const EMPTY_AXIS: PauseAxisTrack = { since: null, intervals: [] };
+const EMPTY_INFLIGHT: InflightTrack = {
+  submitAt: null,
+  awaiting: EMPTY_AXIS,
+  transport: EMPTY_AXIS,
+  interrupt: EMPTY_AXIS,
+};
+
+/**
+ * Open a fresh in-flight turn at `now` — captures `submitAt` and
+ * opens every axis whose `state` is currently "yellow". Used both at
+ * mount (so the gallery shows a live clock immediately) and from the
+ * "New turn" button when the user wants to restart the demo without
+ * round-tripping through a terminal phase.
+ */
+function startInflight(
+  state: TugStateIndicatorState,
+  now: number,
+): InflightTrack {
+  return {
+    submitAt: now,
+    awaiting: {
+      since: state.phase === "awaiting_approval" ? now : null,
+      intervals: [],
+    },
+    transport: {
+      since: state.transportState !== "online" ? now : null,
+      intervals: [],
+    },
+    interrupt: {
+      since: state.interruptInFlight ? now : null,
+      intervals: [],
+    },
+  };
+}
+
+/**
+ * Apply an open/close transition to one axis. If the axis should
+ * become open and is currently closed, capture `now` as the segment
+ * start. If it should become closed and is currently open, push the
+ * `[since, now]` pair onto the intervals array. Otherwise preserve
+ * the prior reference (no churn for unchanged axes).
+ */
+function applyAxisTransition(
+  prev: PauseAxisTrack,
+  wantOpen: boolean,
+  now: number,
+): PauseAxisTrack {
+  if (wantOpen) {
+    return prev.since === null ? { since: now, intervals: prev.intervals } : prev;
+  }
+  if (prev.since === null) {
+    return prev;
+  }
+  return {
+    since: null,
+    intervals: [...prev.intervals, [prev.since, now] as const],
+  };
+}
+
+/**
+ * Apply a state-picker transition to the in-flight track. Terminal →
+ * anything collapses to `EMPTY_INFLIGHT` (so the renderer falls back
+ * to the static post-commit value). Terminal → live opens a fresh
+ * turn at `now`. Live → live preserves `submitAt` and updates each
+ * axis open/close per the new state.
+ */
+function applyStateChange(
+  prev: InflightTrack,
+  state: TugStateIndicatorState,
+  now: number,
+): InflightTrack {
+  if (!isLivePhase(state.phase)) {
+    return EMPTY_INFLIGHT;
+  }
+  if (prev.submitAt === null) {
+    return startInflight(state, now);
+  }
+  return {
+    submitAt: prev.submitAt,
+    awaiting: applyAxisTransition(
+      prev.awaiting,
+      state.phase === "awaiting_approval",
+      now,
+    ),
+    transport: applyAxisTransition(
+      prev.transport,
+      state.transportState !== "online",
+      now,
+    ),
+    interrupt: applyAxisTransition(
+      prev.interrupt,
+      state.interruptInFlight,
+      now,
+    ),
+  };
+}
+
+/**
+ * Project the gallery's `InflightTrack` onto a `CodeSessionSnapshot`
+ * in the same shape the production reducer exposes. The synthesized
+ * snapshot is the input `deriveInflightActiveMs` reads; identity
+ * stability isn't a concern here (the gallery never subscribes to
+ * the snapshot via `useSyncExternalStore`).
+ */
+function buildSyntheticSnapshot(
+  state: TugStateIndicatorState,
+  inflight: InflightTrack,
+): CodeSessionSnapshot {
+  const inFlight = inflight.submitAt !== null;
+  return {
+    phase: state.phase,
+    transportState: state.transportState,
+    interruptInFlight: state.interruptInFlight,
+    tugSessionId: "gallery",
+    displayLabel: "gallery",
+    sessionMode: "new",
+    activeMsgId: null,
+    canSubmit: !inFlight,
+    canInterrupt: inFlight,
+    pendingApproval: null,
+    pendingQuestion: null,
+    controlRequestLog: [],
+    queuedSends: 0,
+    transcript: [],
+    inflightUserMessage: inFlight
+      ? {
+          text: "",
+          atoms: [],
+          submitAt: inflight.submitAt as number,
+          turnKey: "gallery-turn",
+        }
+      : null,
+    pendingDraftRestore: null,
+    lastCost: null,
+    lastError: null,
+    lastReplayResult: null,
+    replayPreflightActive: false,
+    replaySoftBudgetElapsed: false,
+    replayTimeoutDwellActive: false,
+    awaitingApprovalIntervals: inflight.awaiting.intervals,
+    awaitingApprovalSegmentStartedAt: inflight.awaiting.since,
+    transportDowntimeIntervals: inflight.transport.intervals,
+    transportDowntimeSegmentStartedAt: inflight.transport.since,
+    interruptInFlightIntervals: inflight.interrupt.intervals,
+    interruptInFlightSegmentStartedAt: inflight.interrupt.since,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +690,40 @@ export function GalleryTideStatusRow(): React.ReactElement {
     return () => clearInterval(id);
   }, [autoTick]);
 
+  // Gallery-side in-flight simulator. `submitAt` is captured once at
+  // mount (or via the "New turn" button) and preserved across
+  // state-picker changes that stay within live phases — so toggling
+  // between green and yellow states accumulates pause time against
+  // the same submit anchor, exactly matching the production lifecycle
+  // pause semantics.
+  //
+  // The bookkeeping is mutated only by the state-picker's
+  // `setValueString` handler and the "New turn" button — both
+  // user-gesture sources, both using the functional `setInflight(prev
+  // => ...)` form so handlers read current state safely without
+  // closing over a stale snapshot ([L07]). No `useEffect` derives
+  // state from other state ([L02]'s broader principle); the
+  // bookkeeping update lives at the call site that knows the change
+  // is happening.
+  //
+  // `useLifecycleTick` returns a 1Hz tick value while phase is
+  // non-terminal and `0` otherwise; `deriveTimeCellMs` reads it
+  // through the synthetic snapshot and the helper's fallback covers
+  // both the post-commit and never-submitted paths.
+  const phase = STATE_SCENARIOS[stateIdx].state.phase;
+  const tickAt = useLifecycleTick(phase);
+  const [inflight, setInflight] = useState<InflightTrack>(() =>
+    applyStateChange(EMPTY_INFLIGHT, STATE_SCENARIOS[stateIdx].state, Date.now()),
+  );
+  // `committedMs` is the production-analog "just-completed turn's
+  // activeMs" — set the moment the user picks a terminal state from
+  // the picker (snapshot of the running clock at that instant), so
+  // the Time cell freezes at the running value instead of jumping to
+  // a scenario default. Cleared on the next transition back to a
+  // live phase (a new simulated turn is starting) and by the "New
+  // turn" button.
+  const [committedMs, setCommittedMs] = useState<number | null>(null);
+
   // Stable sender IDs for the responder-chain bindings.
   const scenarioPopupId = useId();
   const statePopupId = useId();
@@ -502,10 +734,37 @@ export function GalleryTideStatusRow(): React.ReactElement {
   // with their `value` payload; TugSwitch dispatches `toggle` with a
   // boolean. The bindings here forward each to its local setState.
   // [L11] migration pattern.
+  //
+  // The state picker's handler also computes the next `inflight`
+  // bookkeeping in-line with the picker change — same call site, no
+  // useEffect indirection ([L02]). The functional setter form reads
+  // `prev` rather than closing over the current render's snapshot
+  // ([L07]), so the handler is correct under back-to-back picks.
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [scenarioPopupId]: (v: string) => setScenarioIdx(Number(v)),
-      [statePopupId]: (v: string) => setStateIdx(Number(v)),
+      [statePopupId]: (v: string) => {
+        const nextIdx = Number(v);
+        const nextState = STATE_SCENARIOS[nextIdx].state;
+        const now = Date.now();
+        // Live → terminal: freeze the cell at the exact elapsed value
+        // at this instant — the production-analog of `TurnEntry.activeMs`
+        // landing at turn-complete. Recompute against the current
+        // `inflight` track + a fresh `now` so the freeze is accurate
+        // to the picker click, not to the most-recent 1Hz tick.
+        if (!isLivePhase(nextState.phase) && inflight.submitAt !== null) {
+          const snap = buildSyntheticSnapshot(state, inflight);
+          setCommittedMs(deriveInflightActiveMs(snap, now) ?? 0);
+        }
+        // Terminal → live: clear the frozen value so the new turn's
+        // live clock takes over without a stale freeze leaking
+        // through the fallback path.
+        if (isLivePhase(nextState.phase) && inflight.submitAt === null) {
+          setCommittedMs(null);
+        }
+        setStateIdx(nextIdx);
+        setInflight((prev) => applyStateChange(prev, nextState, now));
+      },
     },
     toggle: {
       [autoTickSwitchId]: setAutoTick,
@@ -513,9 +772,29 @@ export function GalleryTideStatusRow(): React.ReactElement {
   });
 
   const scenario = SCENARIOS[scenarioIdx];
-  const values = scenario.values;
+  const baseValues = scenario.values;
   const state = STATE_SCENARIOS[stateIdx].state;
-  const ratioPct = Math.round((values.contextTokens / values.contextMax) * 100);
+  const ratioPct = Math.round((baseValues.contextTokens / baseValues.contextMax) * 100);
+
+  // Live-clock derivation. The synthetic snapshot reflects the
+  // picker's current state + the accumulated `inflight` track; the
+  // pure helper ticks the `Time` cell up at 1Hz while in flight,
+  // pauses on yellow axes via the union math (the track carries the
+  // closed-interval history of every yellow open/close cycle so far
+  // this simulated turn), and falls back to the static scenario value
+  // when no turn is in flight. The resulting `liveValues` keeps the
+  // rest of the cell pipeline (formatters + ComposedRow) unchanged.
+  const syntheticSnap = buildSyntheticSnapshot(state, inflight);
+  // Fallback precedence: a `committedMs` capture (the just-frozen
+  // value from the live → terminal transition) wins over the
+  // scenario's static value. The scenario default only surfaces
+  // before any simulated turn has run.
+  const liveTimeMs = deriveTimeCellMs(
+    syntheticSnap,
+    tickAt,
+    committedMs ?? baseValues.perTurnActiveMs,
+  );
+  const values: StatusValues = { ...baseValues, perTurnActiveMs: liveTimeMs };
 
   const scenarioItems: TugPopupButtonItem<string>[] = SCENARIOS.map((s, i) => ({
     action: TUG_ACTIONS.SET_VALUE,
@@ -584,6 +863,15 @@ export function GalleryTideStatusRow(): React.ReactElement {
             size="sm"
             aria-label="session state"
           />
+          <TugPushButton
+            size="sm"
+            onClick={() => {
+              setCommittedMs(null);
+              setInflight(startInflight(state, Date.now()));
+            }}
+          >
+            New turn
+          </TugPushButton>
           <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED, marginLeft: "auto" }}>
             context: {ratioPct}%
             {ratioPct >= 90 && <span style={{ color: TEXT_DANGER }}> ▲ danger</span>}

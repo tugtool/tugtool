@@ -2283,7 +2283,7 @@ export function deriveInflightActiveMs(
 
 **Depends on:** #step-20-4-5-a
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tide-rendering): gallery live updates for Time / Tokens / Context`
 
@@ -2293,17 +2293,17 @@ export function deriveInflightActiveMs(
 
 **Tasks.**
 
-- [ ] Update gallery composition to use `deriveInflightActiveMs` for the `Time` cell value.
-- [ ] Wire `Tokens` to the in-flight per-turn token sum (live).
-- [ ] Wire `Context` to the in-flight per-turn context size (live).
-- [ ] Add a gallery scenario that simulates an in-flight turn so the live behavior is HMR-vettable.
+- [x] Update gallery composition to use `deriveInflightActiveMs` for the `Time` cell value. (Routed through new `deriveTimeCellMs` renderer wrapper so the live derivation + post-commit fallback share one call site.)
+- [x] Wire `Tokens` to the in-flight per-turn token sum (live). (Gallery passes scenario `perTurnTokens` through the same `StatusValues` pipeline; live token-delta accumulation hits production once `costAtSubmit` projects onto the snapshot in a later step.)
+- [x] Wire `Context` to the in-flight per-turn context size (live). (Same structural treatment as Tokens; numeric derivation already covered by `perTurnContextSize` in `telemetry.ts`.)
+- [x] Add a gallery scenario that simulates an in-flight turn so the live behavior is HMR-vettable. (Existing state picker drives in-flight phases; gallery captures `submitAt` on state change and builds a synthetic `CodeSessionSnapshot` whose yellow segments match the picker's state.)
 
 **Tests.**
 
-- [ ] Pure-logic test confirming the gallery's value-derivation functions return the expected formatted strings for representative snapshot + tick combinations.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic test confirming the gallery's value-derivation functions return the expected formatted strings for representative snapshot + tick combinations. (Five `deriveTimeCellMs` cases in `telemetry.test.ts`: post-commit fallback, never-submitted card, live in-flight, overlap-correct yellow union, turn-complete freeze.)
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 

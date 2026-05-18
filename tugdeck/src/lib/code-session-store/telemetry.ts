@@ -315,6 +315,38 @@ export function unionPauseMs(
  * pauses contribute only once. See {@link unionPauseMs} for the
  * algorithm and {@link PauseSegment} for the input shape.
  */
+/**
+ * Renderer convenience over {@link deriveInflightActiveMs}. Returns
+ * the live in-flight active duration while a turn is in flight, and
+ * falls back to a caller-supplied post-commit value (typically the
+ * just-committed `TurnEntry.activeMs`, or `0` for a never-submitted
+ * card) when no turn is in flight. Never returns `null` — the
+ * fallback covers every post-commit / idle / errored path the
+ * underlying derivation reports as not-applicable.
+ *
+ *   - In-flight: ticks up at the granularity of the caller's `tickAt`
+ *     (see `useLifecycleTick` for the 1 Hz heartbeat that drives the
+ *     gallery + production renderers).
+ *   - Pauses when any yellow axis is open — the same overlap-correct
+ *     union {@link deriveInflightActiveMs} computes.
+ *   - Freezes at turn-complete: the snapshot's `inflightUserMessage`
+ *     becomes `null`, the underlying derivation returns `null`, and
+ *     this helper returns the committed `activeMs` (the caller's
+ *     fallback).
+ *   - Resets at the next submit: a fresh `inflightUserMessage` makes
+ *     the derivation re-engage from the new `submitAt`.
+ *
+ * Pure: no time source, no DOM, no React. Callers pass `tickAt`.
+ */
+export function deriveTimeCellMs(
+  snap: CodeSessionSnapshot,
+  tickAt: number,
+  postCommitFallbackMs: number,
+): number {
+  const live = deriveInflightActiveMs(snap, tickAt);
+  return live ?? postCommitFallbackMs;
+}
+
 export function deriveInflightActiveMs(
   snap: CodeSessionSnapshot,
   nowMs: number,

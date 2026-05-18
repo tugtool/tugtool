@@ -16,6 +16,7 @@ import {
   liveTurnActiveMs,
   unionPauseMs,
   deriveInflightActiveMs,
+  deriveTimeCellMs,
   type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
 import {
@@ -502,5 +503,80 @@ describe("deriveInflightActiveMs", () => {
     // Window = [1_000_000, 1_001_000]. Clipped interval = [1_000_000, 1_000_300] = 300.
     // active = 1_000 - 300 = 700.
     expect(deriveInflightActiveMs(s, 1_001_000)).toBe(700);
+  });
+});
+
+describe("deriveTimeCellMs", () => {
+  function snap(
+    overrides: Partial<CodeSessionSnapshot> = {},
+  ): CodeSessionSnapshot {
+    return {
+      phase: "streaming",
+      transportState: "online",
+      interruptInFlight: false,
+      tugSessionId: "tug-1",
+      displayLabel: "test",
+      sessionMode: "new",
+      activeMsgId: "msg",
+      canSubmit: false,
+      canInterrupt: true,
+      pendingApproval: null,
+      pendingQuestion: null,
+      controlRequestLog: [],
+      queuedSends: 0,
+      transcript: [],
+      inflightUserMessage: null,
+      pendingDraftRestore: null,
+      lastCost: null,
+      lastError: null,
+      lastReplayResult: null,
+      replayPreflightActive: false,
+      replaySoftBudgetElapsed: false,
+      replayTimeoutDwellActive: false,
+      awaitingApprovalIntervals: [],
+      awaitingApprovalSegmentStartedAt: null,
+      transportDowntimeIntervals: [],
+      transportDowntimeSegmentStartedAt: null,
+      interruptInFlightIntervals: [],
+      interruptInFlightSegmentStartedAt: null,
+      ...overrides,
+    };
+  }
+  function inflight(submitAt: number): CodeSessionSnapshot["inflightUserMessage"] {
+    return { text: "", atoms: [], submitAt, turnKey: "k" };
+  }
+
+  it("falls back to the post-commit value when no turn is in flight", () => {
+    // Idle / post-commit: derivation returns null; helper returns the
+    // fallback (typically the just-committed TurnEntry.activeMs).
+    expect(deriveTimeCellMs(snap(), 1_001_000, 4_200)).toBe(4_200);
+  });
+
+  it("returns 0 fallback for a never-submitted card", () => {
+    expect(deriveTimeCellMs(snap(), 1_001_000, 0)).toBe(0);
+  });
+
+  it("returns the live in-flight active duration when a turn is in flight", () => {
+    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    // No pause segments, wall = 1_500. Live derivation wins over fallback.
+    expect(deriveTimeCellMs(s, 1_001_500, 999_999)).toBe(1_500);
+  });
+
+  it("subtracts overlapping yellow axes (NOT scalar sum) when in flight", () => {
+    const s = snap({
+      inflightUserMessage: inflight(1_000_000),
+      awaitingApprovalIntervals: [[1_000_200, 1_000_600]],
+      transportDowntimeIntervals: [[1_000_400, 1_000_800]],
+    });
+    // Union [200, 800] = 600; wall = 1_000; active = 400.
+    expect(deriveTimeCellMs(s, 1_001_000, 999_999)).toBe(400);
+  });
+
+  it("uses the fallback the moment the snapshot's in-flight slot clears (turn-complete freeze)", () => {
+    // Simulate a freshly-committed turn: snapshot's inflightUserMessage
+    // is null, and the caller passes the just-committed activeMs as
+    // the fallback. The cell should freeze at that committed value
+    // rather than ticking back to 0 or any other transient state.
+    expect(deriveTimeCellMs(snap(), 1_001_000, 7_777)).toBe(7_777);
   });
 });
