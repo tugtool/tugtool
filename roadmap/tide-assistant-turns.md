@@ -2583,7 +2583,20 @@ A new control frame from tugcode → tugdeck:
 }
 ```
 
-##### Implementation tasks (provisional, pending spike)
+##### Sub-step decomposition (commit map)
+
+The implementation work in this step lands across six commits, each independently reviewable. The first is a gating empirical check — the S3 calibration trick is the load-bearing assumption behind the whole design and we want measured evidence before pouring substrate.
+
+- **20.4.7.D.0 — S3 calibration-ratio empirical validation.** No shipping code. Add `@anthropic-ai/tokenizer` as a tugcode dev-dependency, build a small benchmark harness, run representative content (system prompt approximation, tool schemas, agent/skill files, memory files, varied chat text) through both the local tokenizer and Anthropic's `count_tokens` API. Measure per-content drift, then simulate the calibration trick (use first content as the "session-init anchor", compute `calibration_ratio`, apply to remaining categories, measure residual drift). Append the findings as a "Drift benchmark" appendix to S3 in [`tide-assistant-turns-context-breakdown-spikes.md`](tide-assistant-turns-context-breakdown-spikes.md#s3--tokenization-strategy). **Outcome decision:** proceed with the calibrated-`@anthropic-ai/tokenizer` design, or revisit tokenizer choice / accuracy bar / category granularity. If the calibration trick fails the 5–10% bar, the subsequent sub-steps either change shape or pause.
+- **20.4.7.D.1 — Substrate: tugbank `context_breakdown_latest` table + bridge endpoints.** Per S6's schema (10 INTEGER + 1 REAL + 1 TEXT column, no MCP fields). Migration in tugbank; HTTP bridge endpoints (write-upsert by `tug_session_id`, read-latest); tugcode-side client extension to `tugbank-client.ts`. Rust-side `cargo nextest` covers schema, upsert semantics, `ON DELETE CASCADE`, and the bind-time read path.
+- **20.4.7.D.2 — Tugcode: settings reader + tokenizer integration + frame emitter.** New `tugcode/src/claude-code-settings.ts` (S5; reads `~/.claude/settings.json`), new `tugcode/src/context-breakdown.ts` (S3 tokenizer + calibration math + S4 cache by `(path, mtime)`). Hook into `session.ts` at session_init, each `cost_update`, and `compact_boundary`. Add the new `ContextBreakdown` IPC frame type to `tugcode/src/types.ts`. Wire the writer to the tugbank client per 20.4.7.D.1. Tests: settings reader (file present / missing / malformed), calibration math, mocked-SDK wire-emission for both autocompact-on and autocompact-off.
+- **20.4.7.D.3 — Tugdeck reducer + snapshot + bind-time inlining.** Decode the new wire frame in `events.ts`, reducer handler captures `lastContextBreakdown` onto state, snapshot projection with [L02] reference stability, fixture updates (`tide-card-banner-spec.test.ts` + any other affected). Bind-time inlining wired through the supervisor's existing bind-response shape so the popover sees the latest breakdown before any new turn lands. Tests: reducer event handling, snapshot reference-stability, fixture round-trip.
+- **20.4.7.D.4 — TugArcGauge: 7-tone vocabulary extension (substrate).** Extend `TugArcGaugeSegmentTone` with the 7 new values (existing 5 stay — 20.4.7.C's fallback still uses them). Add 7 new `--tugx-arc-gauge-segment-*-color` aliases one-hop to `--tug7-*` per [L17], with `@tug-pairings` + `@tug-renders-on`. Gallery scenario for the 7-tone breakdown plus a side-by-side autocompact-on / autocompact-off variant. `bun run audit:tokens lint` exits 0. No popover work in this commit — substrate only.
+- **20.4.7.D.5 — Popover upgrade + HMR checkpoint.** New `computeRichContextBreakdown` helper in `telemetry.ts`, `ContextPopoverContent` consumes it with fallback to the 20.4.7.C view when `snap.lastContextBreakdown === null`, empty-state copy update, gallery card section text update. HMR vet against a live Claude Code session — categories Tide shows match `/context`'s terminal output within the 5–10% bar; autocompact-on / autocompact-off slice appears / disappears; fallback path verified by temporarily stripping the wire-frame handler; persistence verified across a reload.
+
+The detailed implementation-task lists below remain the canonical spec — the decomposition above is the commit map that orders them.
+
+##### Implementation tasks
 
 **Tugcode (cross-crate):**
 
