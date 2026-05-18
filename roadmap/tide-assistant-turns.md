@@ -1951,149 +1951,62 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 
 ---
 
-#### Step 20.4.1: Animation-completion design principle + reusable handoff hook {#step-20-4-1}
+#### Step 20.4.1: Retired — ring pulse uses TugAnimator one-shots {#step-20-4-1}
 
-**Depends on:** none — pure substrate. First sub-step of the 20.4.x follow-on series.
+**Depends on:** none.
 
-**Status:** _done._
+**Status:** _retired (rolled into [Step 20.4.2](#step-20-4-2))._
 
-**Commit:** `plan(tide-rendering): animation-completion handoff hook + design rule`
+**Commit:** _rollback commit lands as part of 20.4.2's branch._
 
-**References:** [L02], [L05], [L06], [L13], [L14], [L22], [L24], [L26], [D13] (DOM utility hooks for the appearance zone), [tuglaws.md](../tuglaws/tuglaws.md), [design-decisions.md](../tuglaws/design-decisions.md), [component-authoring.md](../tuglaws/component-authoring.md)
+**What this used to be.** A bespoke `useCommitOnAnimationBoundary` hook + a new `[D97]` design-decision entry + two pure decision helpers + 12 unit tests, all to gate DOM-class swaps behind `animationiteration` / `animationend` events fired by an `animation: ... infinite` CSS keyframe loop. Implemented (commit `cea298d8`), wired into [Step 20.4.2](#step-20-4-2), and HMR-vetted against a four-state gallery cycle — at which point two unrelated problems surfaced: (a) the first cut listened only for `animationend`, which never fires for infinite animations; (b) even after that fix, the single-pending-target model dropped intermediate states under rapid cycling, producing visible hops.
 
-**Scope.** Codify the rule "a pulse animation (or any state-coupled keyframe animation) must be allowed to complete its current iteration in the color it started with before any tone or visibility change is committed to the DOM," and implement a small reusable hook that lets future Tug pulse-animation components honor the rule without re-deriving the mechanism. No UI consumers yet — pure substrate that 20.4.2 will be the first to depend on.
+**Why retired.** The framing was wrong, not just the implementation. `TugAnimator` already provides `.finished` on finite WAAPI animations — the exact "wait until this pulse completes, then do something else" signal we need. Once you swap `animation: ... infinite` for one finite pulse at a time, the iteration-boundary problem dissolves: each pulse's `.finished` is the boundary, and the chain freely reads the *latest* tone (via a ref) before deciding whether to start another pulse, switch tones, or stop. No new hook, no new design-decision entry, no new event listeners, no new tests around boundary-decision logic. The indicator becomes ~80 lines of TS using primitives that already exist in the codebase.
 
-**Why the rule needs codification.** Today's gallery + production indicator swap their color the moment the underlying session state changes — mid-pulse, the ring's color snaps from green to default and the dot blinks color, drawing the eye to a transition that should have completed quietly. The intended visual is: a pulse begins → pulse runs to completion in its starting color → after the iteration ends, the new state's representation is committed. The eye sees a finished animation, not an interrupted one.
+**Rollback (executed as part of 20.4.2's work).**
 
-**Why this is tuglaws-shaped, not just a one-off implementation detail.**
+- Delete `tugdeck/src/components/tugways/hooks/use-commit-on-animation-boundary.ts`.
+- Delete `tugdeck/src/components/tugways/__tests__/use-commit-on-animation-boundary.test.ts`.
+- Remove the barrel export from `tugdeck/src/components/tugways/hooks/index.ts`.
+- Delete `[D97]` from `tuglaws/design-decisions.md`.
+- Reset this step's plan checkboxes to `[ ]` (status: retired).
 
-- **[L24] + [L06]** — "Currently-playing pulse color" is *appearance* (visible-only state with no non-rendering consumer): lives in DOM class, never React state. "Logical tone derived from the session snapshot" is *data*: flows through React's render cycle normally. The hook's job is to bridge the two — receive a logical target and gate when the appearance commits.
-- **[L22]** — "When external state drives direct DOM updates, observe the store directly — don't round-trip through React's render cycle." The deferred color commit is exactly the case L22 is written for: snapshot-derived data drives a DOM class mutation. The hook subscribes via `useLayoutEffect` and writes the DOM class via ref. No `useState` for the appearance.
-- **[L13] + [L14]** — CSS handles continuous animations; `animationend` is the canonical CSS-native completion signal (it is the same mechanism Radix Presence uses for enter/exit, per the L14 guidance in `component-authoring.md`). The hook listens for `animationend` on a registered DOM element. WAAPI / TugAnimator does not apply here: `TugAnimator`'s `.finished` promise resolves only when an animation's full iteration count completes, which for an infinite-iteration pulse never resolves. CSS `@keyframes` + `animationend` is the only mechanism that expresses "wait for the *current iteration* to end."
-- **[L05]** — `requestAnimationFrame` is forbidden for state-commit-coordinated work; the hook uses `animationend` exclusively.
-- **[L26]** — The hook's correctness depends on the consuming component keeping stable mount identity (key, component type, renderer reference) for the animating DOM node across logical transitions. If the node remounts mid-transition, the in-progress animation tears down and the handoff is moot. The hook documents this requirement; consumers must comply.
-
-**Why this is NOT TugAnimator territory.** `component-authoring.md`'s "Enter/Exit Animations" section warns "Do not use CSS keyframes with manual `animationend` listeners in self-managed components — that's hand-rolling what TugAnimator already provides." That rule governs *enter/exit lifecycle coordination* — the case where a library or component owns when an element mounts and unmounts. The pulse-handoff problem is different: the dot and ring DOM nodes never mount or unmount during the transition (per [L26]); only the *class* on a stable element is being deferred. The animation itself is a continuous CSS `@keyframes` loop that [L13] explicitly assigns to CSS ("CSS owns ... continuous animations"). The `animationend` listener is used purely as a *completion signal*, not as animation orchestration. TugAnimator's WAAPI-based `.finished` promise has no equivalent for "current iteration of an infinite animation," so even if it were applicable in principle, it could not express what the rule needs.
-
-**Hook design (provisional API — final name + signature settled during implementation review).**
-
-```typescript
-/**
- * Registers an animationend listener on `ref.current` and gates DOM-class
- * commits behind the next iteration end. Returns nothing — the hook owns
- * the DOM mutation. No React state is involved in the appearance commit.
- *
- *  - `ref` — the element to listen on. Stable across the lifetime of
- *    the consumer (per [L26]). The hook attaches the `animationend`
- *    listener here (it bubbles from descendants, so a parent ref
- *    works for multi-element pulses too — see `animationName` below).
- *  - `commitTo` — the element whose class the hook mutates on commit.
- *    Usually the same as `ref`, but can differ for compositions where
- *    the listener element and the appearance element are different
- *    nodes. Stable per [L26].
- *  - `targetClassName` — the class string the consumer wants applied
- *    to `commitTo.current` once the gating animation iteration ends.
- *    When the consumer's logical state changes to an unanimated target,
- *    the swap still defers (so the pulse finishes in its starting color
- *    before the ring disappears).
- *  - `defaultClassName` — the class applied on first mount (before any
- *    animation has run, so there is nothing to wait for).
- *  - `animationName` — optional. When supplied, the hook only commits
- *    on `animationend` events whose `event.animationName` matches.
- *    Required when the listener element hosts multiple keyframe
- *    animations (e.g., the three-bar TugThinkingIndicator where each
- *    bar's `animationend` bubbles to the parent and only one of them
- *    should drive the gate). When omitted, the first `animationend`
- *    from any animation commits.
- *
- * Internal mechanism:
- *   - First `useLayoutEffect` ([L22]): when `targetClassName` changes,
- *     stash the pending value in a ref. If the DOM is not currently
- *     animating (no animation present, or in the static `defaultClassName`
- *     state), commit immediately; otherwise wait. Reduced-motion
- *     fast-path: if `getComputedStyle(commitTo.current).animationName === "none"`
- *     OR `getComputedStyle(commitTo.current).animationDuration === "0s"`
- *     (the two cases CSS can produce under `--tug-motion: 0` per [D24]),
- *     commit immediately — there's no in-progress iteration to preserve.
- *   - Second `useLayoutEffect` (mount): register the `animationend`
- *     listener on `ref.current` with the `animationName` filter (if
- *     supplied). The listener reads the pending value from the ref and
- *     writes the class to `commitTo.current` if a deferred commit is
- *     queued.
- *
- * The hook NEVER stores the appearance in React state ([L06]). React's
- * render cycle is not involved in the deferred commit ([L22]). RAF is
- * not used ([L05]). Under reduced motion ([D24]), the hook degrades to
- * immediate-commit, preserving correctness without surprising the user
- * (zero-duration animations have no "in-progress iteration" to defer to).
- */
-function useCommitOnAnimationEnd(
-  ref: React.RefObject<HTMLElement>,
-  commitTo: React.RefObject<HTMLElement>,
-  targetClassName: string,
-  defaultClassName: string,
-  animationName?: string,
-): void;
-```
-
-The hook's name is provisional. Implementation review may surface a cleaner shape (companion utilities, a different signature for grouped animations, etc.) — the laws above are what is non-negotiable; the API ergonomics are open.
-
-**Multi-element animation policy.** Consumers with a single animated element (e.g., `TugStateIndicator`'s ring) pass the same ref for `ref` and `commitTo` and omit `animationName`. Consumers with multiple staggered animations (e.g., `TugThinkingIndicator`'s three bars) attach the listener to a stable parent (which catches the bubbled `animationend` from each bar) and pass `animationName` to pick exactly one bar's completion as the gate — by convention the last bar in the stagger sequence, so the whole pulse-set finishes before the swap commits.
-
-**Reduced-motion policy ([D24]).** Under `--tug-motion: 0`, CSS resolves the keyframe animation to either `animation-name: none` or `animation-duration: 0s` depending on how the consumer authored the rule. Either way, there is no "in-progress iteration" to preserve and `animationend` may either never fire or fire immediately for every targetClassName change. The hook detects the zero-motion case in its first `useLayoutEffect` (via `getComputedStyle` on `commitTo.current`) and commits immediately. The animation-handoff principle is about preserving the perceived rhythm of motion the user expects to see — when motion is off, there is no rhythm to preserve, and the cleanest behavior is to apply the new state on the spot.
-
-**Tuglaws conformance audit.** Implementation review explicitly walks through each cited law's exact text and the design-decision rationale. If a check fails, the implementation changes — not the law. The audit is recorded in the commit message + a brief note in the hook source so future readers can trace the conformance trail without re-deriving it.
-
-**Tasks.**
-
-- [x] **Re-read** `tuglaws/tuglaws.md`, `tuglaws/design-decisions.md`, and the relevant sections of `tuglaws/component-authoring.md`. Confirm the law interpretations in this step's scope.
-- [x] **Document the design principle** — added `[D97]` to `tuglaws/design-decisions.md` capturing the rule "pulse animations complete in their starting color"; referenced from the hook source.
-- [x] **Implement the hook** at `tugdeck/src/components/tugways/hooks/use-commit-on-animation-end.ts` (placed alongside the other DOM-utility hooks per [D13]), with module docstring citing the laws.
-- [x] **Pure-logic unit tests** for the deferred-commit decision logic at `tugdeck/src/components/tugways/__tests__/use-commit-on-animation-end.test.ts`. Two pure helpers exported from the hook module (`decideOnTargetChange`, `decideOnAnimationEnd`) cover: pending-class queue, no-op when target matches current, `animationName` filter accepts matching and ignores non-matching, and reduced-motion fast-path (which collapses to the same "no running animation → commit-now" branch as the static-default case, since reduced motion forces `animation-duration: 0s` and `getAnimations` returns no running animations).
-
-**Tests.**
-
-- [x] `bun x tsc --noEmit` clean.
-- [x] `bun test` green (2077 pass, 0 fail; 12 new tests for the hook).
-- [x] `bun run audit:tokens lint` exits 0.
-- [x] _No UI consumers yet; full integration is exercised by 20.4.2._
-
-**Checkpoint.**
-
-- [x] Hook lands as a `tugways/hooks/` utility (per [L19] conventions, alongside `useCSSVar` / `useDOMClass` / `useDOMStyle`).
-- [x] Design-decision entry (D97) references the hook and cites the laws it conforms to ([L02], [L05], [L06], [L13], [L14], [L22], [L24], [L26]).
-- [x] Commit message includes the conformance-audit walkthrough.
+**Cross-step note.** [Step 20.4.10](#step-20-4-10) (`TugThinkingIndicator` — three-bar primitive) previously referenced this hook's `animationName` filter for the multi-element handoff. With the rollback, that step uses `TugAnimator.group()` to coordinate the three bars; the group's `.finished` resolves only when the last bar completes, giving the same "whole pulse-set finishes before any visible state swap" guarantee without a custom event mechanism. The corresponding section in 20.4.10 has been updated.
 
 ---
 
 #### Step 20.4.2: Extract `TugStateIndicator` as a standalone Tug component (gallery-only) {#step-20-4-2}
 
-**Depends on:** #step-20-4-1 (the animation-handoff hook is the first internal dependency)
+**Depends on:** none. (Supersedes the rollback recorded in [Step 20.4.1](#step-20-4-1).)
 
 **Status:** _not started._
 
-**Commit:** `feat(tugways): TugStateIndicator component (gallery use, animation handoff)`
+**Commit:** `feat(tugways): TugStateIndicator component`
 
-**References:** [L02], [L06], [L13], [L16], [L17], [L19], [L20], [L24], [L26], [D05] (component kinds), [D06] (public tugways API), [component-authoring.md](../tuglaws/component-authoring.md)
+**References:** [L02], [L06], [L13], [L19], [L20], [component-authoring.md](../tuglaws/component-authoring.md), `tug-animator.ts`
 
-**Scope.** Move the inline indicator (currently duplicated in `gallery-tide-status-row.tsx` and production `tide-card-telemetry-renderers.tsx`) into its own packaged Tug component at `tugdeck/src/components/tugways/tug-state-indicator.tsx` + `.css`. API matches today's gallery behavior exactly, plus first-consumer wiring of 20.4.1's animation-handoff hook so transitions complete in their starting color. The gallery card switches to the new component; the production `TideTelemetryStatusRow` stays on its inline implementation through phases B–F per the gallery-only iteration mode (final promotion is 20.4.10).
+**Scope.** Move the inline indicator (currently duplicated in `gallery-tide-status-row.tsx` and production `tide-card-telemetry-renderers.tsx`) into a standalone Tug component at `tugdeck/src/components/tugways/tug-state-indicator.tsx` + `.css`. Two visible elements:
 
-**Component-authoring conformance.** The component must satisfy [L19] in full per `tuglaws/component-authoring.md`:
+- **Dot** — a small solid circle whose tone class is set by React on every render. Reconciles immediately when the underlying state changes.
+- **Ring** — a thin circle border around the dot, animated by `TugAnimator` as a chain of finite one-shot pulses. One pulse runs at a time; when its `.finished` resolves, the chain reads the *latest* tone via a ref and either starts the next pulse (in the new tone) or stops (when the new state is static).
 
-- File pair `tug-state-indicator.tsx` + `tug-state-indicator.css` at `components/tugways/` (public surface, not `internal/`).
-- Module docstring citing the governing laws ([L02], [L06], [L13], [L19], [L20], [L24], [L26]).
-- Exported `TugStateIndicatorProps` interface extending `React.ComponentPropsWithoutRef<"span">` with `@selector` annotations on every CSS-targetable prop and `@default` annotations on prop defaults.
+The "pulse completes in its starting color" guarantee falls out of this naturally: each pulse is a one-shot, so it finishes on its own clock; the dot's color update during the pulse is decoupled (different element, no shared class). Mid-pulse state changes update the dot immediately while the in-flight pulse runs to completion in the prior tone; the new tone takes over on the next pulse in the chain.
+
+**Component-authoring conformance.** Standard [L19] requirements per `tuglaws/component-authoring.md`:
+
+- File pair `tug-state-indicator.tsx` + `tug-state-indicator.css` at `components/tugways/`.
+- Module docstring citing the governing laws ([L02], [L06], [L13], [L19], [L20]).
+- Exported `TugStateIndicatorProps` extending `React.ComponentPropsWithoutRef<"span">` with `@selector` / `@default` annotations.
 - `data-slot="tug-state-indicator"` on the root element.
-- `React.forwardRef` to the root with `...rest` spread last and merged `style` (per the "Inline `style` must be merged, not replaced" rule).
-- CSS opens with `@tug-pairings` in both compact-block (machine-readable) and expanded-table (human/agent-readable) forms; every color-setting rule that does not declare `background-color` in the same rule carries an `@tug-renders-on` annotation ([L16]).
-- Component-tier alias tokens `--tugx-state-indicator-*` resolve to `--tug7-*` in exactly one hop ([L17]).
+- `React.forwardRef` to the root, `...rest` spread last, merged `style`.
+- CSS opens with `@tug-pairings` (compact + expanded); `@tug-renders-on` annotations as required by [L16]; `--tugx-state-indicator-*` aliases resolve to base tokens in one hop.
 
-**Props (provisional — finalized during implementation).**
+**Props.**
 
 ```typescript
 export interface TugStateIndicatorProps
   extends React.ComponentPropsWithoutRef<"span"> {
-  /** The session state to display. Determines tone + animation. */
+  /** The session state to display. Determines tone + animated flag. */
   state: {
     phase: CodeSessionPhase;
     transportState: TransportState;
@@ -2108,28 +2021,76 @@ export interface TugStateIndicatorProps
 }
 ```
 
-Label support, tooltip behavior, and popover affordance are NOT in this step's scope — they land in 20.4.3 (label), 20.4.6 (popover substrate), and 20.4.9 (popover content) respectively. This step is the minimum extraction.
+Label, popover, popover content are NOT in this step's scope — they land in 20.4.3 / 20.4.6 / 20.4.9.
+
+**Pulse orchestration (the whole mechanism).**
+
+```typescript
+// Internals — refs only, no React state.
+const ringRef       = useRef<HTMLSpanElement | null>(null);
+const pulseRef      = useRef<TugAnimation | null>(null);     // in-flight pulse, or null
+const latestRef     = useRef<TugStateIndicatorVisual>(v);    // tone + animated, updated on every render
+latestRef.current   = v;
+
+// Kickoff effect — fires whenever the derived visual changes.
+useEffect(() => {
+  // A pulse is already running -> let it finish; the .finished handler
+  // will read latestRef and decide what to do at boundary time.
+  if (pulseRef.current !== null) return;
+  // New state is static -> nothing to start.
+  if (!v.animated) return;
+  // No pulse running and new state is animated -> start one.
+  startPulse();
+}, [v.tone, v.animated]);
+
+function startPulse() {
+  const el = ringRef.current;
+  if (!el) return;
+  const tone = latestRef.current.tone;          // freeze for this pulse
+  el.style.borderColor = `var(--tugx-state-indicator-tone-${tone})`;
+  el.style.display = "block";
+  const anim = animate(el, [/* scale + opacity keyframes */], {
+    duration: PULSE_DURATION_MS,
+    easing: "ease-out",
+  });
+  pulseRef.current = anim;
+  anim.finished.then(() => {
+    pulseRef.current = null;
+    const next = latestRef.current;
+    if (next.animated) {
+      startPulse();                              // chain, using latest tone
+    } else if (ringRef.current) {
+      ringRef.current.style.display = "none";    // settled to a static tone
+    }
+  }).catch(() => {
+    pulseRef.current = null;                     // cancellation (e.g., unmount)
+  });
+}
+```
+
+That is the entire mechanism. No deferred-class-swap hook. No iteration-boundary event listener. No queue. No D-entry. The "complete in starting color" rule is satisfied because each pulse is a one-shot and `.finished` resolves at its end. Reduced motion ([D24]) falls out automatically: `TugAnimator.animate` already strips spatial properties and short-fades under `--tug-motion: 0`, so the chain continues to tick at the fast-fade rate when motion is off.
 
 **Tasks.**
 
 - [ ] Implement `tug-state-indicator.tsx` + `tug-state-indicator.css` per the component-authoring guide.
-- [ ] Move `indicatorVisualFor()` (or its equivalent) inside the component as a private pure helper.
-- [ ] Wire 20.4.1's hook for the appearance-commit handoff.
-- [ ] Switch `gallery-tide-status-row.tsx` to import `TugStateIndicator` (production renderer untouched).
-- [ ] Delete the now-duplicated inline implementation from the gallery file.
-- [ ] Add a gallery scenario that toggles the session state mid-pulse so the handoff is visually verifiable.
+- [ ] Move `indicatorVisualFor()` inside the component as an **exported** pure helper (paired sibling components — tooltip body, paired label in 20.4.3 — dispatch on the same triple, so the helper is part of the component's public surface).
+- [ ] Pulse orchestration via `TugAnimator.animate` + `.finished` chain as sketched above. No `useCommitOn*` hook; no `animationiteration` / `animationend` listener; no CSS `animation: ... infinite`. Cleanup on unmount cancels the in-flight pulse with `cancel("snap-to-end")`.
+- [ ] Dot tone class set directly by React (one of `tug-state-indicator-dot--{default,success,caution,danger}`); the host span carries no tone class. CSS rules for the four dot tones are self-pairing (background-color set without color).
+- [ ] Ring CSS: positioned absolute, `display: none` by default, geometry only — color and `display` are set imperatively by `startPulse` so the chain owns the visibility cycle.
+- [ ] Switch `gallery-tide-status-row.tsx` to import `TugStateIndicator`. Delete the inline implementation (`phaseVisualFor`, `HumanReadableState`, `PHASE_HUMAN_LABEL`, `ConcentricPulsingRing`, `INLINE_KEYFRAMES`, the obsolete `DemoPhase` / `DemoTransport` / `SessionState` types).
+- [ ] Add a dedicated `gallery-tug-state-indicator.tsx` card (per the per-Tug-component gallery convention). Register it in `gallery-registrations.tsx`. Four sections: tone palette, all session states, size variants, and a state-cycle switch for HMR-vetting the handoff.
 
 **Tests.**
 
-- [ ] Pure-logic test for `indicatorVisualFor` (phase × transport × interrupt → tone).
+- [ ] Pure-logic test for `indicatorVisualFor` (transport precedence, interrupt precedence, every phase branch).
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] Gallery card renders `TugStateIndicator` identically to the prior inline version.
-- [ ] HMR-vet the animation handoff: trigger a state transition mid-pulse; the ring completes its iteration in the starting color before the new state's tone commits.
+- [ ] Gallery renders the indicator with the same palette + geometry as the prior inline version.
+- [ ] HMR-vet a mid-pulse transition: the dot color changes immediately; the in-flight ring pulse runs to completion in the *prior* tone; the next pulse runs in the new tone (or the ring vanishes when the new tone is static). No hops, no jumps.
 
 ---
 
@@ -2608,15 +2569,15 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 #### Step 20.4.10: `TugThinkingIndicator` component — three-bar primitive (gallery-only) {#step-20-4-10}
 
-**Depends on:** #step-20-4-1 (the animation-handoff hook applies to the bar-pulse animation too)
+**Depends on:** #step-20-4-2 (reuses the TugAnimator-one-shot-pulse pattern established for `TugStateIndicator`).
 
 **Status:** _not started._
 
 **Commit:** `feat(tugways): TugThinkingIndicator component (three-bar primitive)`
 
-**References:** [L02], [L06], [L13], [L16], [L17], [L19], [L20], [L24], [L26], [D05] (component kinds), [D06] (public tugways API), [component-authoring.md](../tuglaws/component-authoring.md)
+**References:** [L02], [L06], [L13], [L16], [L17], [L19], [L20], [component-authoring.md](../tuglaws/component-authoring.md), `tug-animator.ts`
 
-**Scope.** Net-new Tug component (NOT an extraction — the codebase has no existing three-dots indicator to refactor; `TugProgress` has spinner/bar/ring/pie variants only). Implements a compact "thinking" indicator as three vertical rectangular bars that pulse in sequence (default geometry; final shape worked out in gallery iteration). Optional human-readable label sits to the side (default right; supports left / right / hidden — mirrors `TugStateIndicator`'s label API). Consumes 20.4.1's animation-handoff hook so any mode change visible to the bar animation completes its current iteration before swapping.
+**Scope.** Net-new Tug component (NOT an extraction — the codebase has no existing three-dots indicator to refactor; `TugProgress` has spinner/bar/ring/pie variants only). Implements a compact "thinking" indicator as three vertical rectangular bars that pulse in sequence (default geometry; final shape worked out in gallery iteration). Optional human-readable label sits to the side (default right; supports left / right / hidden — mirrors `TugStateIndicator`'s label API).
 
 The `animating` prop controls whether the bars pulse or freeze in place (visible but static). The Z1 asst-half integration (20.4.12 + 20.4.13) drives this prop from a delta-debounced derivation (20.4.11), producing the "blinking caret analog" behavior: bars pulse when no text is flowing, freeze when text is actively streaming.
 
@@ -2638,18 +2599,13 @@ export interface TugThinkingIndicatorProps
 }
 ```
 
-**Multi-element animation-handoff wiring.** The three bars use staggered CSS keyframe animations (each with the same `animation-name` but staggered `animation-delay`s, so they pulse in sequence). `animationend` fires per-bar per-iteration and bubbles to the parent. To gate the `animating` toggle on a clean cycle boundary:
-
-- The CSS defines a single animation name (e.g., `tug-thinking-indicator-bar-pulse`).
-- The component renders a stable parent `<span>` containing the three bars; the parent's ref serves as both `ref` AND `commitTo` for the 20.4.1 hook.
-- Each bar's `animationend` bubbles to the parent; the hook receives all three events per iteration.
-- The third (last) bar gets a CSS class marker `.tug-thinking-indicator-bar-last`; the hook's `animationName` filter is configured against this bar's animation. Convention: the last bar in the stagger sequence drives the gate, so the entire pulse-set completes before any visible state swap. (Implementation detail: since all three bars share the same `animation-name`, the filter alone doesn't distinguish them — use `event.target` matching on the last-bar element ref instead, or give the last bar a distinct `animation-name` like `tug-thinking-indicator-bar-pulse-tail`. Pick the cleaner option during implementation.)
+**Multi-element animation orchestration.** Same shape as `TugStateIndicator`'s ring (per [Step 20.4.2](#step-20-4-2)), generalized to three elements via `TugAnimator.group()`. Each bar's pulse is a finite WAAPI one-shot; `group()` coordinates all three (the bars start in staggered order with per-bar `animation-delay`-equivalent offsets in WAAPI). The group's `.finished` resolves only when the last bar in the stagger completes, giving a clean cycle boundary without inventing any new event mechanism. When `animating` toggles off mid-cycle, the in-flight group runs to completion and the chain simply does not start the next group. When it toggles back on, a new group starts. No deferred-class-swap hook, no `animationiteration` listener — same primitives as 20.4.2, just bundled.
 
 **Tasks.**
 
 - [ ] Implement `tug-thinking-indicator.tsx` + `tug-thinking-indicator.css` per the component-authoring guide.
-- [ ] Iterate the bar geometry in the gallery: width, height, spacing, pulse keyframe (staggered timing per bar so the three pulse in sequence).
-- [ ] Wire 20.4.1's animation-handoff hook on the parent ref; configure the `animationName` filter (or equivalent `event.target` discriminator) to commit only on the LAST bar's iteration end so the full pulse-set completes before any `animating` toggle takes effect.
+- [ ] Iterate the bar geometry in the gallery: width, height, spacing, per-bar keyframes (staggered so the three pulse in sequence).
+- [ ] Drive the pulse chain via `TugAnimator.group()` (each bar's WAAPI one-shot is a member of the group). On the group's `.finished`, read the latest `animating` value via a ref and either start the next group or stop. Cleanup on unmount cancels the in-flight group.
 - [ ] Add a gallery card (or extend an existing one) with controls for `animating`, `labelPosition`, `label`, `size` so the design space is HMR-vettable.
 
 **Tests.**
@@ -2662,7 +2618,7 @@ export interface TugThinkingIndicatorProps
 **Checkpoint.**
 
 - [ ] Gallery renders `TugThinkingIndicator` at multiple sizes + label positions.
-- [ ] HMR-vet the animation handoff: toggle `animating` mid-pulse; the bars complete their current iteration before freezing.
+- [ ] HMR-vet a mid-cycle `animating` toggle: the in-flight pulse group runs to completion before the bars freeze. No hops, no jumps.
 
 ---
 

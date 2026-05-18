@@ -51,7 +51,6 @@
 export { useCSSVar } from "./use-css-var";
 export { useDOMClass } from "./use-dom-class";
 export { useDOMStyle } from "./use-dom-style";
-export { useCommitOnAnimationEnd } from "./use-commit-on-animation-end";
 export { useCardData } from "./use-card-data";
 export { useSelectionBoundary } from "./use-selection-boundary";
 export { usePropertyStore, CardPropertyContext } from "./use-property-store";

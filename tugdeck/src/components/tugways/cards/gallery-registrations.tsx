@@ -88,7 +88,6 @@ import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
-import { GalleryTugStateIndicator } from "./gallery-tug-state-indicator";
 import { GalleryTideStatusRow } from "./gallery-tide-status-row";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -779,16 +778,6 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-tug-state-indicator",
-    contentFactory: (_cardId) => <GalleryTugStateIndicator />,
-    defaultMeta: { title: "TugStateIndicator", icon: "CircleDot", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.feedback,
   });
 

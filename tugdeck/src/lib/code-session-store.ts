@@ -50,6 +50,7 @@ export type {
   CardSessionMode,
   CodeSessionSnapshot,
   CodeSessionPhase,
+  TransportState,
   TurnEntry,
   ToolCallState,
   ControlRequestForward,
