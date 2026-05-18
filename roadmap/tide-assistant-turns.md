@@ -2488,9 +2488,19 @@ When `segments` is provided, the existing `value` / `formatValue` / `thresholds`
 
 **Commit:** `feat(tugbank+code-session): session_state_changes ledger`
 
-**References:** [L02], [L23], [D46] (Tugbank SQLite shape), [D48] (HTTP bridge for tugbank reads), [#step-20-3-4] (SessionLedger precedent)
+**References:** [L02], [L23], [D46] (Tugbank SQLite shape), [D48] (HTTP bridge for tugbank reads), [#step-20-3-4] (SessionLedger precedent), [#step-20-5-a] (lifecycle state machine the persisted axes mirror), [#step-20-4-2] (`TugStateIndicator` props that define the axis set)
 
 **Scope.** Cross-crate. Add a `session_state_changes` table to the sqlite session ledger that persists every distinct `(phase, transportState, interruptInFlight)` triple transition for a given `tugSessionId`. Writer dedupes: if the new triple equals the most recent row for the session, no row is written. Retention is unbounded per session. Rows are deleted when the parent session is deleted (`ON DELETE CASCADE` or app-level equivalent). Expose a reader API to tugdeck via the same bridge pattern the rest of tugbank uses.
+
+**Coverage and known collapses.** The ledger persists exactly the three axes the `TugStateIndicator` reads as props ([#step-20-4-2]): `phase`, `transportState`, `interruptInFlight`. The invariant is **ledger axes ≡ indicator's tone axes ⊆ matrix signals** ([#step-20-5-a]): anything that can change the indicator's tone produces a ledger row; anything the matrix tracks but the indicator doesn't render is intentionally absent. The full 12-state lifecycle matrix from [Step 20.5.A](#step-20-5-a) carries signals this ledger does NOT capture:
+
+- **`transcript.length`** — differentiates IDLE from COMPLETE in the matrix. Both produce the triple `(idle, online, false)` here; the ledger writes one row, not two. Consumers that need the distinction read the turns table.
+- **`pendingApproval` vs `pendingQuestion`** — both collapse under `phase === "awaiting_approval"`. The ledger row says "user was awaited," not "for what." [DT07]'s Esc semantics distinguishes them; this ledger doesn't.
+- **`queuedSends`** — the QUEUED_NEXT_TURN overlay does not change the triple. Toggling this overlay produces zero ledger rows.
+- **`turnEndReason`** — the `complete | interrupted | error | transport_lost` distinction lives on `TurnEntry`, not here. After any turn ends the ledger sees `phase=idle`; the reason is recovered from the turns table.
+- **DRILLDOWN_OPEN** — UI-local state, never reducer-tracked; never written.
+
+**Schema co-evolution.** If [Step 20.4.2](#step-20-4-2) ever adds a fourth axis to `TugStateIndicator`'s props (or [Step 20.5.A](#step-20-5-a)'s matrix grows a new tone-bearing signal), this ledger's schema MUST grow a corresponding column in the same step. The three artifacts — indicator props, matrix state-definitions table, ledger schema — co-evolve as one.
 
 **Schema (provisional).**
 
@@ -2549,7 +2559,7 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 **Tasks.**
 
 - [ ] Gallery popover renders the log; auto-scrolls so the most-recent entry is in view.
-- [ ] Each row: `[at-ms formatted as HH:MM:SS.mmm] · [phase] · [transportState] · [interrupt: yes/no]` (final row layout settled during gallery iteration).
+- [ ] Each row: `[at-ms formatted as HH:MM:SS.mmm] · [phase] · [transportState] · [interrupt: yes/no]` (final row layout settled during gallery iteration). Row format mirrors the indicator's three-axis view, not the full 12-state matrix from [Step 20.5.A](#step-20-5-a) — IDLE and COMPLETE both display as `phase: idle`; see [Step 20.4.8](#step-20-4-8)'s coverage-and-collapses note for the full list of signals this view does not surface.
 - [ ] Live updates: when a new state-change lands, the popover (if open) appends the new row and re-scrolls if the user has not scrolled away.
 
 **Tests.**
@@ -3005,6 +3015,8 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 | TRANSPORT_DOWN (overlay) | Wire not usable. Can apply during any non-IDLE state; covers BOTH `offline` (no wire) AND `restoring` (wire back, binding not re-ack'd). | `transportState !== "online"` |
 | QUEUED_NEXT_TURN (overlay) | User submitted a second prompt while a turn was in flight; queued for auto-flush on idle. | `queuedSends > 0` |
 | DRILLDOWN_OPEN (overlay) | User opened the `/context`-style breakdown via the Z2 affordance. | UI-local state (not reducer-tracked; merged into the lifecycle snapshot by `deriveLifecycleSnapshot` per [DT08](#dt08-lifecycle-snapshot-merges-ui-state)) |
+
+**Persistence projection.** The subset `(phase, transportState, interruptInFlight)` is the *indicator-tone axis set*: exactly what [`TugStateIndicator`](#step-20-4-2) reads as props, and exactly what [Step 20.4.8](#step-20-4-8)'s `session_state_changes` ledger persists. The invariant is **ledger axes ≡ indicator's tone axes ⊆ matrix signals**: signals in this table that are NOT in that triple (transcript length, `pendingApproval` / `pendingQuestion` distinction, `queuedSends`, `turnEndReason`, DRILLDOWN_OPEN) are deliberately not persisted as state-change rows; consumers recover them from other tables (`TurnEntry`s for `turnEndReason`, transcript-length count for IDLE↔COMPLETE) or accept that they're not historically replayable. If this matrix grows a new tone-bearing signal, all three artifacts (indicator props, this table, ledger schema) co-evolve in the same step.
 
 **The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract [Step 20.5.D](#step-20-5-d) implements:
 
