@@ -21,11 +21,17 @@
 import React, { useEffect, useId, useState } from "react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugPopupButton } from "@/components/tugways/tug-popup-button";
+import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugStateIndicator } from "@/components/tugways/tug-state-indicator";
-import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indicator";
+import type {
+  TugStateIndicatorLabelPosition,
+  TugStateIndicatorState,
+} from "@/components/tugways/tug-state-indicator";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,6 +84,24 @@ const HANDOFF_CYCLE: ReadonlyArray<TugStateIndicatorState> = [
 
 const HANDOFF_CYCLE_INTERVAL_MS = 2000;
 
+// Label-position section: the indicator is rendered at the same
+// streaming-online state for all three positions so the only thing
+// that varies is the label slot.
+const LABEL_POSITIONS: ReadonlyArray<{
+  id: TugStateIndicatorLabelPosition;
+  label: string;
+}> = [
+  { id: "right", label: "label right (default)" },
+  { id: "left", label: "label left" },
+  { id: "hidden", label: "label hidden (tooltip on hover)" },
+];
+
+const LABEL_DEMO_STATE: TugStateIndicatorState = {
+  phase: "streaming",
+  transportState: "online",
+  interruptInFlight: false,
+};
+
 // ---------------------------------------------------------------------------
 // GalleryTugStateIndicator
 // ---------------------------------------------------------------------------
@@ -85,6 +109,8 @@ const HANDOFF_CYCLE_INTERVAL_MS = 2000;
 export function GalleryTugStateIndicator(): React.ReactElement {
   const [cycling, setCycling] = useState(false);
   const [cycleIdx, setCycleIdx] = useState(0);
+  const [labelPosition, setLabelPosition] =
+    useState<TugStateIndicatorLabelPosition>("right");
 
   useEffect(() => {
     if (!cycling) return;
@@ -95,11 +121,26 @@ export function GalleryTugStateIndicator(): React.ReactElement {
   }, [cycling]);
 
   const cyclingSwitchId = useId();
+  const labelPositionPopupId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     toggle: { [cyclingSwitchId]: setCycling },
+    setValueString: {
+      [labelPositionPopupId]: (v: string) =>
+        setLabelPosition(v as TugStateIndicatorLabelPosition),
+    },
   });
 
   const cycledState = HANDOFF_CYCLE[cycleIdx];
+
+  const labelPositionItems: TugPopupButtonItem<string>[] = LABEL_POSITIONS.map(
+    (p) => ({
+      action: TUG_ACTIONS.SET_VALUE,
+      value: p.id,
+      label: p.label,
+    }),
+  );
+  const labelPositionLabel =
+    LABEL_POSITIONS.find((p) => p.id === labelPosition)?.label ?? labelPosition;
 
   return (
     <ResponderScope>
@@ -127,7 +168,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
                   minWidth: 56,
                 }}
               >
-                <TugStateIndicator state={t.state} size={16} />
+                <TugStateIndicator state={t.state} size={16} labelPosition="hidden" />
                 <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>{t.label}</span>
               </div>
             ))}
@@ -148,7 +189,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
             {ALL_STATES.map((s) => (
               <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ display: "inline-flex", width: 20, justifyContent: "center" }}>
-                  <TugStateIndicator state={s.state} size={16} />
+                  <TugStateIndicator state={s.state} size={16} labelPosition="hidden" />
                 </span>
                 <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>{s.label}</span>
               </div>
@@ -180,6 +221,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
                 <TugStateIndicator
                   state={{ phase: "streaming", transportState: "online", interruptInFlight: false }}
                   size={s}
+                  labelPosition="hidden"
                 />
                 <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>{s}px</span>
               </div>
@@ -203,6 +245,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
             <TugStateIndicator
               state={cycling ? cycledState : ALL_STATES[3].state}
               size={20}
+              labelPosition="hidden"
             />
             <TugSwitch
               checked={cycling}
@@ -215,6 +258,54 @@ export function GalleryTugStateIndicator(): React.ReactElement {
                 ? `${cycledState.phase} · ${cycledState.transportState}`
                 : "streaming · online (static)"}
             </span>
+          </div>
+        </div>
+
+        <TugSeparator />
+
+        {/* ---- Section 5 — Label Position ---- */}
+        <div className="cg-section">
+          <TugLabel className="cg-section-title">TugStateIndicator — Label Position</TugLabel>
+          <TugLabel size="2xs" color="muted">
+            The `labelPosition` prop renders the canonical phase title to the right of the dot
+            (default), to the left, or hides it. When the label is visible the TugTooltip is
+            suppressed — the same information is already on screen. When hidden, the tooltip
+            surfaces on hover with the phase title plus transport / interrupt secondaries.
+          </TugLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "8px 0" }}>
+            {LABEL_POSITIONS.map((p) => (
+              <div
+                key={p.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                }}
+              >
+                <TugStateIndicator
+                  state={LABEL_DEMO_STATE}
+                  size={16}
+                  labelPosition={p.id}
+                />
+                <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>
+                  {p.label}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0" }}>
+            <TugPopupButton
+              label={`labelPosition: ${labelPositionLabel}`}
+              items={labelPositionItems}
+              senderId={labelPositionPopupId}
+              size="sm"
+              aria-label="label position"
+            />
+            <TugStateIndicator
+              state={LABEL_DEMO_STATE}
+              size={20}
+              labelPosition={labelPosition}
+            />
           </div>
         </div>
       </div>

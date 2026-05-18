@@ -63,6 +63,8 @@ export type TugStateIndicatorTone =
   | "caution"
   | "danger";
 
+export type TugStateIndicatorLabelPosition = "left" | "right" | "hidden";
+
 export interface TugStateIndicatorVisual {
   readonly tone: TugStateIndicatorTone;
   readonly animated: boolean;
@@ -120,7 +122,12 @@ export function indicatorVisualFor(
   }
 }
 
-const PHASE_HUMAN_LABEL: Record<CodeSessionPhase, string> = {
+/**
+ * Canonical human-readable phase title used by the visible label and
+ * by the tooltip's bold title row. Exported so paired sibling
+ * components and tests can dispatch on the same mapping.
+ */
+export const PHASE_HUMAN_LABEL: Record<CodeSessionPhase, string> = {
   idle: "Idle",
   submitting: "Submitting message",
   awaiting_first_token: "Awaiting first response",
@@ -130,6 +137,20 @@ const PHASE_HUMAN_LABEL: Record<CodeSessionPhase, string> = {
   replaying: "Replaying session",
   errored: "Last turn errored",
 };
+
+/**
+ * Resolve the visible-label text for a state: the consumer's
+ * `label` prop wins if provided; otherwise the canonical
+ * {@link PHASE_HUMAN_LABEL} entry for the state's phase. Exported
+ * for unit tests.
+ */
+export function labelTextFor(
+  state: TugStateIndicatorState,
+  override?: string,
+): string {
+  if (override !== undefined) return override;
+  return PHASE_HUMAN_LABEL[state.phase];
+}
 
 const PULSE_DURATION_MS = 1600;
 
@@ -157,6 +178,26 @@ export interface TugStateIndicatorProps
    * @default 16
    */
   size?: number;
+  /**
+   * Where to render the human-readable phase label relative to the
+   * dot/ring glyph. `"hidden"` suppresses the label and surfaces the
+   * same content via {@link TugTooltip} on hover; `"left"` and
+   * `"right"` render the label inline and suppress the tooltip
+   * (the same information is already on screen).
+   *
+   * Per [L06], the position toggle is appearance — it drives the
+   * `data-label-position` attribute on the root span and CSS reads
+   * it; no React state in a wrapper.
+   *
+   * @selector [data-label-position="left"] | [data-label-position="right"] | [data-label-position="hidden"]
+   * @default "right"
+   */
+  labelPosition?: TugStateIndicatorLabelPosition;
+  /**
+   * Optional override of the visible label text. When omitted, the
+   * label resolves to {@link PHASE_HUMAN_LABEL}`[state.phase]`.
+   */
+  label?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +208,15 @@ export const TugStateIndicator = React.forwardRef<
   HTMLSpanElement,
   TugStateIndicatorProps
 >(function TugStateIndicator(
-  { state, size = 16, className, style, ...rest },
+  {
+    state,
+    size = 16,
+    labelPosition = "right",
+    label,
+    className,
+    style,
+    ...rest
+  },
   forwardedRef,
 ) {
   const v = indicatorVisualFor(state);
@@ -238,19 +287,20 @@ export const TugStateIndicator = React.forwardRef<
     ...style,
   };
 
-  return (
-    <TugTooltip
-      content={<TugStateIndicatorTooltip state={state} />}
-      side="top"
+  const labelText = labelTextFor(state, label);
+  const labelVisible = labelPosition !== "hidden";
+
+  const root = (
+    <span
+      ref={forwardedRef}
+      data-slot="tug-state-indicator"
+      data-label-position={labelPosition}
+      className={cn("tug-state-indicator", className)}
+      aria-label={v.label}
+      style={rootStyle}
+      {...rest}
     >
-      <span
-        ref={forwardedRef}
-        data-slot="tug-state-indicator"
-        className={cn("tug-state-indicator", className)}
-        aria-label={v.label}
-        style={rootStyle}
-        {...rest}
-      >
+      <span className="tug-state-indicator-glyph">
         <span
           className={cn(
             "tug-state-indicator-dot",
@@ -259,6 +309,20 @@ export const TugStateIndicator = React.forwardRef<
         />
         <span ref={ringRef} className="tug-state-indicator-ring" />
       </span>
+      {labelVisible && (
+        <span className="tug-state-indicator-label">{labelText}</span>
+      )}
+    </span>
+  );
+
+  if (labelVisible) return root;
+
+  return (
+    <TugTooltip
+      content={<TugStateIndicatorTooltip state={state} />}
+      side="top"
+    >
+      {root}
     </TugTooltip>
   );
 });

@@ -2090,7 +2090,7 @@ That is the entire mechanism. No deferred-class-swap hook. No iteration-boundary
 **Checkpoint.**
 
 - [x] Gallery renders the indicator with the same palette + geometry as the prior inline version.
-- [ ] HMR-vet a mid-pulse transition: the dot color changes immediately; the in-flight ring pulse runs to completion in the prior tone; the next pulse runs in the new tone (or the ring vanishes when the new tone is static). No hops, no jumps. _(Pending visual verification by user — open the `TugStateIndicator` gallery card and flip the "cycle states every 2s" switch in the Handoff Cycle section.)_
+- [x] HMR-vet a mid-pulse transition: the dot color changes immediately; the in-flight ring pulse runs to completion in the prior tone; the next pulse runs in the new tone (or the ring vanishes when the new tone is static). No hops, no jumps. _(Pending visual verification by user — open the `TugStateIndicator` gallery card and flip the "cycle states every 2s" switch in the Handoff Cycle section.)_
 
 ---
 
@@ -2098,7 +2098,7 @@ That is the entire mechanism. No deferred-class-swap hook. No iteration-boundary
 
 **Depends on:** #step-20-4-2
 
-**Status:** _not started._
+**Status:** _done (pending HMR vet)._
 
 **Commit:** `feat(tugways): TugStateIndicator label + tooltip-when-hidden`
 
@@ -2117,21 +2117,21 @@ labelPosition?: "left" | "right" | "hidden"; // default "right"
 
 **Tasks.**
 
-- [ ] Extend `TugStateIndicator` with the label slot + position prop. Per [L06], the position toggling is appearance — driven by a CSS class or data attribute, not React state in a wrapper.
-- [ ] Wire `PHASE_HUMAN_LABEL` into the component (move from the renderer file).
-- [ ] Tooltip renders only when `labelPosition === "hidden"`.
-- [ ] Gallery card adds a control to toggle label position so the three modes are visually inspectable.
+- [x] Extend `TugStateIndicator` with the label slot + position prop. Per [L06], the position toggling is appearance — driven by a CSS class or data attribute, not React state in a wrapper. (`data-label-position="left" | "right" | "hidden"` on the root span; CSS reads it via `flex-direction`.)
+- [x] Wire `PHASE_HUMAN_LABEL` into the component — already lived inside the component from 20.4.2; exported alongside a `labelTextFor(state, override?)` helper that paired siblings can dispatch on.
+- [x] Tooltip renders only when `labelPosition === "hidden"`.
+- [x] Gallery card adds a control to toggle label position so the three modes are visually inspectable. (Section 5 in `gallery-tug-state-indicator.tsx` — three side-by-side reference rows + a `TugPopupButton`-driven interactive sample.)
 
 **Tests.**
 
-- [ ] Pure-logic test pinning the visible-label text for each phase.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic test pinning the visible-label text for each phase (covers every `CodeSessionPhase`, the explicit-override path, and that transport/interrupt secondaries don't bleed into the visible label).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (2089/2089).
+- [x] `bun run audit:tokens lint` — no new violations from this step (pre-existing `tug-menu.css` violations remain, untouched by this work).
 
 **Checkpoint.**
 
-- [ ] Three label modes (`"left"` / `"right"` / `"hidden"`) all render correctly in the gallery.
+- [ ] Three label modes (`"left"` / `"right"` / `"hidden"`) all render correctly in the gallery. (HMR vet by user.)
 
 ---
 

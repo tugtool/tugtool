@@ -362,7 +362,7 @@ function ComposedRow({
           flex: "0 0 auto",
         }}
       >
-        <TugStateIndicator state={state} size={16} />
+        <TugStateIndicator state={state} size={16} labelPosition="hidden" />
       </span>
 
       <div
@@ -411,7 +411,7 @@ function AllStatesGrid(): React.ReactElement {
           }}
         >
           <span style={{ display: "inline-flex", width: 20, justifyContent: "center" }}>
-            <TugStateIndicator state={s.state} size={16} />
+            <TugStateIndicator state={s.state} size={16} labelPosition="hidden" />
           </span>
           <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>{s.label}</span>
         </div>

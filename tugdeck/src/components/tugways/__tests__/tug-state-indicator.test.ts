@@ -11,8 +11,13 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { indicatorVisualFor } from "../tug-state-indicator";
+import {
+  PHASE_HUMAN_LABEL,
+  indicatorVisualFor,
+  labelTextFor,
+} from "../tug-state-indicator";
 import type { TugStateIndicatorState } from "../tug-state-indicator";
+import type { CodeSessionPhase } from "@/lib/code-session-store";
 
 function state(
   overrides: Partial<TugStateIndicatorState>,
@@ -134,5 +139,43 @@ describe("indicatorVisualFor — phase mapping", () => {
     expect(v.tone).toBe("default");
     expect(v.animated).toBe(false);
     expect(v.label).toBe("idle");
+  });
+});
+
+describe("labelTextFor — visible-label text", () => {
+  test.each([
+    ["idle", "Idle"],
+    ["submitting", "Submitting message"],
+    ["awaiting_first_token", "Awaiting first response"],
+    ["streaming", "Streaming response"],
+    ["tool_work", "Running tools"],
+    ["awaiting_approval", "Awaiting your approval"],
+    ["replaying", "Replaying session"],
+    ["errored", "Last turn errored"],
+  ] as const)(
+    "phase %s resolves to canonical title %s",
+    (phase, expected) => {
+      expect(labelTextFor(state({ phase }))).toBe(expected);
+      expect(PHASE_HUMAN_LABEL[phase as CodeSessionPhase]).toBe(expected);
+    },
+  );
+
+  test("explicit `label` override wins over the canonical title", () => {
+    expect(labelTextFor(state({ phase: "streaming" }), "Working…")).toBe(
+      "Working…",
+    );
+    expect(labelTextFor(state({ phase: "idle" }), "")).toBe("");
+  });
+
+  test("label text ignores transport / interrupt secondaries", () => {
+    expect(
+      labelTextFor(
+        state({
+          phase: "streaming",
+          transportState: "offline",
+          interruptInFlight: true,
+        }),
+      ),
+    ).toBe("Streaming response");
   });
 });

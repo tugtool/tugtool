@@ -3,6 +3,7 @@
   --tugx-state-indicator-tone-success | --tugx-state-indicator-surface | informational
   --tugx-state-indicator-tone-caution | --tugx-state-indicator-surface | informational
   --tugx-state-indicator-tone-danger  | --tugx-state-indicator-surface | informational
+  --tugx-state-indicator-label-text   | --tugx-state-indicator-surface | informational
 } */
 
 /**
@@ -15,6 +16,7 @@
  * | --tugx-state-indicator-tone-success | --tugx-state-indicator-surface  | informational | .tug-state-indicator-dot--success (background-color)   |
  * | --tugx-state-indicator-tone-caution | --tugx-state-indicator-surface  | informational | .tug-state-indicator-dot--caution (background-color)   |
  * | --tugx-state-indicator-tone-danger  | --tugx-state-indicator-surface  | informational | .tug-state-indicator-dot--danger (background-color)    |
+ * | --tugx-state-indicator-label-text   | --tugx-state-indicator-surface  | informational | .tug-state-indicator-label (color)                     |
  *
  * The ring's `border-color` is set imperatively at pulse start by
  * the component's `startPulse()` (see `tug-state-indicator.tsx`) —
@@ -56,6 +58,7 @@ body {
      root span when the consumer passes `size`). */
   --tugx-state-indicator-size:     16px;
   --tugx-state-indicator-dot-size: calc(var(--tugx-state-indicator-size) / 2);
+  --tugx-state-indicator-label-gap: var(--tug-space-xs, 6px);
 
   /* The host surface the indicator is expected to render against.
      Consumers on a non-default surface re-declare this in their own
@@ -69,13 +72,45 @@ body {
   --tugx-state-indicator-tone-success: var(--tug7-element-global-text-normal-success-rest);
   --tugx-state-indicator-tone-caution: var(--tug7-element-global-text-normal-caution-rest);
   --tugx-state-indicator-tone-danger:  var(--tug7-element-global-text-normal-danger-rest);
+
+  /* Visible-label text tone — paired against the same host surface
+     the indicator renders on. Resolves to the default text tone so
+     the label reads as ordinary chrome text. */
+  --tugx-state-indicator-label-text: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* ============================================================================
-   Host span
+   Host span — flex row of glyph + optional label. The
+   `data-label-position` attribute drives the visual order; layout
+   toggles never round-trip through React state [L06].
+
+       data-label-position="right"  → row    (glyph, label)
+       data-label-position="left"   → row-reverse (label, glyph)
+       data-label-position="hidden" → row, label absent from the DOM
    ========================================================================= */
 
 .tug-state-indicator {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tugx-state-indicator-label-gap);
+}
+
+.tug-state-indicator[data-label-position="left"] {
+  flex-direction: row-reverse;
+}
+
+.tug-state-indicator[data-label-position="hidden"] {
+  gap: 0;
+}
+
+/* ============================================================================
+   Glyph — the dot + ring stack. Owns the fixed-size square that the
+   `size` prop drives; positioned ancestor for the absolutely-laid
+   out dot and ring children.
+   ========================================================================= */
+
+.tug-state-indicator-glyph {
   position: relative;
   display: inline-block;
   flex: 0 0 auto;
@@ -141,6 +176,23 @@ body {
   box-sizing: border-box;
   display: none;
   transform: translate(-50%, -50%);
+}
+
+/* ============================================================================
+   Visible label — the human-readable phase title rendered inline
+   alongside the glyph when `labelPosition !== "hidden"`. Color comes
+   from `--tugx-state-indicator-label-text`, paired against
+   `--tugx-state-indicator-surface` (see @tug-pairings above). When
+   the label is visible the component suppresses TugTooltip — the
+   same information is already on screen.
+   ========================================================================= */
+
+.tug-state-indicator-label {
+  /* @tug-renders-on var(--tugx-state-indicator-surface) */
+  color: var(--tugx-state-indicator-label-text);
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 /* ============================================================================
