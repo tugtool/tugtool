@@ -2204,7 +2204,7 @@ The accumulators alone (closed intervals) can't be unioned in scalar form — we
 
 **Existing scalar accumulators are preserved.** `awaitingApprovalAccumulatedMs` and `transportDowntimeAccumulatedMs` continue to exist and continue to drive `TurnEntry.awaitingApprovalMs` / `transportDowntimeMs` at turn-complete (their downstream consumers in `telemetry.ts` are unchanged). The new interval arrays are an additional, parallel projection used only by the live-derivation path. At turn boundary, the interval arrays are discarded — the per-turn scalar persists.
 
-**The no-overlap-at-commit invariant.** When `turn_complete` lands, the scalar accumulators are committed to `TurnEntry`. If overlap is theoretically possible, `TurnEntry.activeMs` is also wrong by the overlap amount. **Resolution**: at `turn_complete`, recompute `TurnEntry.activeMs` from the union of intervals (same math as the live helper, just over closed intervals) rather than from the scalar sum. This fixes both the live clock AND the committed turn record in one place. Existing `TurnEntry.awaitingApprovalMs` and `transportDowntimeMs` fields stay scalar (their consumers don't need union semantics — they're per-axis totals, not "the union for active-time subtraction").
+**Out of scope: `TurnEntry.activeMs` overlap correction.** `TurnEntry.activeMs` continues to be computed from the scalar accumulator sum at `turn_complete`, which over-subtracts under the same overlap conditions this step addresses for the live clock. That latent miscount is pre-existing behavior; no consumer has flagged it, and fixing it is a separable concern from making the live clock correct. If overlap-correct committed records become a requirement, that lands in its own step. This step only addresses the live derivation.
 
 **Snapshot projection (additive).**
 
@@ -2260,7 +2260,6 @@ export function deriveInflightActiveMs(
 - [ ] Add `transportDowntimeIntervals` alongside the existing `transportDowntimeAccumulatedMs`. Same shape.
 - [ ] Project the six new fields (three intervals arrays + three segment-start timestamps) onto `CodeSessionSnapshot`.
 - [ ] Implement `unionPauseMs` + `deriveInflightActiveMs` in `code-session-store/telemetry.ts`.
-- [ ] At `turn_complete`, recompute `TurnEntry.activeMs` from `unionPauseMs` over the closed intervals (instead of from the scalar sum) so the committed record matches the live derivation.
 - [ ] Update existing test fixtures to include the new snapshot fields.
 
 **Tests.**
@@ -2268,7 +2267,6 @@ export function deriveInflightActiveMs(
 - [ ] Pure-logic tests for `unionPauseMs`: zero segments → 0; one open segment → `(windowEnd − start)`; two non-overlapping closed segments → sum; two overlapping closed segments → union duration (NOT sum); three axes overlapping in pairs (A∩B, B∩C, A∩C) → correct union; segment partially outside window → clipped.
 - [ ] Pure-logic tests for `deriveInflightActiveMs`: no in-flight turn → null; no segments → wall-clock since submit; one open segment → wall-clock − open duration; **two yellow axes overlapping** → wall-clock − union duration (the regression that prompted this design); clamped-to-zero when union ≥ wall-clock.
 - [ ] Reducer test for interrupt accumulator: dispatch `interrupt` → segment opens; `turn_complete` → segment closes and pushes to intervals.
-- [ ] Reducer test for **overlap correctness at turn-complete**: simulate awaiting-approval + transport-downtime overlap during one turn; assert `TurnEntry.activeMs` equals `wall-clock − union duration`, not `wall-clock − sum`.
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
@@ -2277,7 +2275,7 @@ export function deriveInflightActiveMs(
 
 - [ ] Snapshot is additively expanded — no existing field removed or renamed.
 - [ ] Existing tests (`reducer.diagnostics.test.ts`, `reducer.awaiting-approval-accounting.test.ts`, etc.) updated to acknowledge the new fields where relevant.
-- [ ] Existing `TurnEntry.activeMs` callers see unchanged or strictly more-correct values (the only behavior change is the overlap case, which previously over-subtracted; the recomputation at turn-complete fixes that without breaking non-overlapping cases — verify with a regression sweep over existing reducer fixtures).
+- [ ] `TurnEntry.activeMs` and its consumers are unchanged — this step does not touch the committed-record code path.
 
 ---
 
