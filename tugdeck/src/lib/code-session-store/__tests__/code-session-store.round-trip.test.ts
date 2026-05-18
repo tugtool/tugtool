@@ -44,9 +44,10 @@ describe("CodeSessionStore — basic round-trip (Step 3)", () => {
     store.send("hello", []);
 
     // Outbound CODE_INPUT frame written immediately.
-    expect(conn.recordedFrames.length).toBe(1);
-    expect(conn.recordedFrames[0].feedId).toBe(FeedId.CODE_INPUT);
-    expect(conn.recordedFrames[0].decoded).toEqual({
+    const userFrames = conn.recordedFramesExcludingStateChange;
+    expect(userFrames.length).toBe(1);
+    expect(userFrames[0].feedId).toBe(FeedId.CODE_INPUT);
+    expect(userFrames[0].decoded).toEqual({
       type: "user_message",
       text: "hello",
       attachments: [],

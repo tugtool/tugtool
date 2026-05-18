@@ -67,6 +67,10 @@ export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_se
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
 export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";
 export const CONTROL_ACTION_RECORD_CONTEXT_BREAKDOWN = "record_context_breakdown";
+export const CONTROL_ACTION_RECORD_SESSION_STATE_CHANGE =
+  "record_session_state_change";
+export const CONTROL_ACTION_LIST_SESSION_STATE_CHANGES =
+  "list_session_state_changes";
 
 /**
  * Wire shape for one row of the tugcast-side session ledger.
@@ -512,6 +516,85 @@ export function encodeRecordContextBreakdown(input: {
     },
     captured_at: input.capturedAt,
   });
+}
+
+/**
+ * One row of the `list_session_state_changes_ok` response — a single
+ * indicator-tone triple transition persisted by the supervisor.
+ * `at_ms` is the wall-clock millisecond when the triple landed on the
+ * snapshot; the field order mirrors the writer's payload.
+ *
+ * Wire shape — keep in lockstep with
+ * `tugrust/crates/tugcast/src/session_ledger.rs::SessionStateChangeRow`.
+ */
+export interface SessionStateChangeWireRow {
+  at_ms: number;
+  phase: import("./lib/code-session-store/types").CodeSessionPhase;
+  transport_state: import("./lib/code-session-store/types").TransportState;
+  interrupt_in_flight: boolean;
+}
+
+/**
+ * Build a `record_session_state_change` CONTROL frame.
+ *
+ * Tugdeck → tugcast: the per-card `CodeSessionStore.dispatch` wrapper
+ * compares prev/new triple after every reduce and emits this for every
+ * change. The supervisor resolves `tug_session_id → claude_session_id`
+ * and appends one row to `session_state_changes`. The SQL layer dedupes
+ * against the most-recent persisted row as a race safety-net; the
+ * client-side compare is the primary dedupe.
+ *
+ * Fire-and-forget at the wire level — no ack frame is broadcast.
+ * Persistence is for the next reload (and the popover's history view),
+ * not the next render.
+ */
+export function encodeRecordSessionStateChange(input: {
+  tugSessionId: string;
+  atMs: number;
+  phase: import("./lib/code-session-store/types").CodeSessionPhase;
+  transportState: import("./lib/code-session-store/types").TransportState;
+  interruptInFlight: boolean;
+}): Frame {
+  return controlFrame(CONTROL_ACTION_RECORD_SESSION_STATE_CHANGE, {
+    tug_session_id: input.tugSessionId,
+    at_ms: input.atMs,
+    phase: input.phase,
+    transport_state: input.transportState,
+    interrupt_in_flight: input.interruptInFlight,
+  });
+}
+
+/**
+ * Build a `list_session_state_changes` CONTROL request frame.
+ *
+ * Tugdeck → tugcast read: the popover reader (Step 20.4.9) asks the
+ * supervisor for the persisted history for a given `tug_session_id`.
+ * The response is `list_session_state_changes_ok { tug_session_id,
+ * rows }`, oldest-first by insertion order. Unknown sessions surface
+ * as an empty `rows` array, not an error frame — the client renders
+ * the same "no history yet" UI for both.
+ */
+export function encodeListSessionStateChanges(tugSessionId: string): Frame {
+  return controlFrame(CONTROL_ACTION_LIST_SESSION_STATE_CHANGES, {
+    tug_session_id: tugSessionId,
+  });
+}
+
+/**
+ * Decoded `list_session_state_changes_ok` response payload. Correlated
+ * to the request by `tug_session_id` (echoed verbatim from the request).
+ */
+export interface ListSessionStateChangesOk {
+  tug_session_id: string;
+  rows: SessionStateChangeWireRow[];
+}
+
+/**
+ * Decoded `list_session_state_changes_err` response payload.
+ */
+export interface ListSessionStateChangesErr {
+  tug_session_id: string;
+  reason: string;
 }
 
 /**

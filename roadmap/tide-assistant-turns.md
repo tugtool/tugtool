@@ -2619,7 +2619,7 @@ The detailed implementation-task lists below remain the canonical spec — the d
 - [x] Schema migration for whichever ledger shape the spike chooses. **No MCP columns** in any ledger table this step adds or extends. _Landed in 20.4.7.D.1: `context_breakdown_latest` table + cascade trigger in tugcast `SessionLedger` (`tugrust/crates/tugcast/src/session_ledger.rs`); 3 columns (session_id PK, payload BLOB, captured_at INTEGER) with the wire-frame JSON stored verbatim, mirroring the `session_metadata` precedent. No MCP._
 - [x] Writer effect (`record-context-breakdown`) dispatched by the reducer on each frame. _Landed in 20.4.7.D.3: `RecordContextBreakdownEffect` emitted from `handleContextBreakdown`; effect runner sends `record_context_breakdown` CONTROL frame; tugcast supervisor parses + writes via `SessionLedger.record_context_breakdown`._
 - [x] Reader path: at session bind, the supervisor reads the latest breakdown row and inlines it onto the bind response so the snapshot's `lastContextBreakdown` is populated before the popover opens. _Landed in 20.4.7.D.3: `agent_bridge.rs` reads `get_context_breakdown` at `replay_started` and emits a synthetic `context_breakdown` CODE_OUTPUT frame ahead of the replayed transcript; tugdeck reducer projects it via the normal handleContextBreakdown path._
-- [ ] Audit 20.4.8's `session_state_changes` ledger schema at this step's spike time: if its implementation accidentally included an MCP column or row variant, delete it as part of this step's persistence work. The cleanup is small and the alignment is worth keeping in one place. _Deferred: 20.4.8 not yet implemented as of 20.4.7.D.1. Re-audit when 20.4.8 lands._
+- [x] Audit 20.4.8's `session_state_changes` ledger schema at this step's spike time: if its implementation accidentally included an MCP column or row variant, delete it as part of this step's persistence work. The cleanup is small and the alignment is worth keeping in one place. _Re-audited at 20.4.8 implementation time (2026-05-18): schema is `(id, session_id, at_ms, phase, transport_state, interrupt_in_flight)` — MCP-clean. The three axes mirror the indicator's tone props exactly; MCP is intentionally absent. No cleanup needed._
 
 **TugArcGauge tone vocabulary extension (substrate work):**
 
@@ -2666,9 +2666,11 @@ The detailed implementation-task lists below remain the canonical spec — the d
 
 **Depends on:** none — substrate; consumed by 20.4.9. The store-side writer can land in parallel with the gallery-side popover work in 20.4.6 / 20.4.7.
 
-**Status:** _not started._
+**Status:** _done._
 
-**Commit:** `feat(tugbank+code-session): session_state_changes ledger`
+**Commit:** `feat(tugcast+code-session): session_state_changes ledger`
+
+_Implementer's note._ Schema lives in `tugcast::session_ledger` (alongside `sessions`, `turns`, `turn_telemetry`, `session_metadata`, `context_breakdown_latest`) — not in tugbank. The plan's `feat(tugbank+code-session): …` commit-prefix was treating "tugbank" loosely as "the SQLite session ledger"; the actual ledger module is owned by tugcast. The FK target is `sessions(session_id)` (claude session id), and the supervisor handler resolves `tug_session_id → claude_session_id` before the write — same pattern as `record_context_breakdown` (Step 20.4.7.D.1). The on-the-wire payload uses `tug_session_id`; the persisted column uses the resolved claude id.
 
 **References:** [L02], [L23], [D46] (Tugbank SQLite shape), [D48] (HTTP bridge for tugbank reads), [#step-20-3-4] (SessionLedger precedent), [#step-20-5-a] (lifecycle state machine the persisted axes mirror), [#step-20-4-2] (`TugStateIndicator` props that define the axis set)
 
@@ -2706,23 +2708,25 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 **Tasks.**
 
-- [ ] Add the table + index migration to the tugbank crate. Verify `ON DELETE CASCADE` works with the existing session-delete path; fall back to app-level cleanup if rusqlite does not enable cascades by default.
-- [ ] Implement the writer: bridge endpoint + tugdeck-side client + hook in `code-session-store.ts`'s dispatch.
-- [ ] Implement the reader: bridge endpoint + tugdeck-side client.
-- [ ] Idle↔idle dedupe: skip the write if the new triple equals the most recent persisted triple for the session.
+- [x] Add the table + index migration to the tugcast `SessionLedger` (`session_ledger.rs::bootstrap_schema`). Cascade-on-DELETE is implemented as an `AFTER DELETE ON sessions` trigger — same shape used by `turns`, `turn_telemetry`, `session_metadata`, and `context_breakdown_latest`. Pinned by `cascade_delete_removes_session_state_changes_when_session_deleted`. _(Per `session_metadata`'s precedent: rusqlite's default FK enforcement is off, so the cascade trigger is the SoT, not a `FOREIGN KEY` clause.)_
+- [x] Implement the writer: CONTROL verb `record_session_state_change` in `agent_supervisor::handle_control` + parser `parse_record_session_state_change_payload` + `do_record_session_state_change` handler + tugdeck-side encoder `encodeRecordSessionStateChange` + hook in `CodeSessionStore.dispatch` via `maybePersistStateChange` (compares prev/new `(phase, transportState, interruptInFlight)` triple after each `reduce()`).
+- [x] Implement the reader: CONTROL verb `list_session_state_changes` + `do_list_session_state_changes` handler emitting `list_session_state_changes_ok { tug_session_id, rows }` + tugdeck-side `encodeListSessionStateChanges` + action-dispatch decoders + pub/sub bus (`listSessionStateChangesOkBus` / `listSessionStateChangesErrBus`) in `tide-session-ledger-events.ts` + Promise-based reader `loadSessionStateChanges` in `session-state-changes-reader.ts`.
+- [x] Triple-change dedupe at two layers: client-side in `maybePersistStateChange` (primary; skips the emit when prev/new triple match), ledger-side in `record_session_state_change` (SQL safety-net; compares against the most-recent persisted triple per session). Pinned by `record_session_state_change_dedupes_against_most_recent_triple` and `code-session-store.session-state-change.test.ts::collapses a repeated identical triple`.
 
 **Tests.**
 
-- [ ] Rust-side: dedupe semantics, retention, `ON DELETE CASCADE`.
-- [ ] Tugdeck-side: writer fires on triple change, skips on no-change.
-- [ ] `cargo nextest run` green.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
+- [x] Rust-side: dedupe semantics (`record_session_state_change_dedupes_against_most_recent_triple` + `record_session_state_change_dedupes_at_ledger_layer`), per-axis change detection (`record_session_state_change_detects_interrupt_axis_flip`), retention + ordering (`record_session_state_change_appends_distinct_triples`, `list_session_state_changes_returns_rows_oldest_first`), per-session isolation (`list_session_state_changes_filters_by_session`, `record_session_state_change_writes_independently_per_session`), cascade (`cascade_delete_removes_session_state_changes_when_session_deleted`), session-resolution edge cases (`record_session_state_change_silently_skips_when_session_not_found`, `list_session_state_changes_returns_empty_array_for_unknown_session`), payload validation (`record_session_state_change_rejects_malformed_payload`, `record_session_state_change_rejects_missing_axis`, `list_session_state_changes_rejects_malformed_payload`).
+- [x] Tugdeck-side: writer fires on triple change, skips on no-change, fires on each axis independently (`code-session-store.session-state-change.test.ts` — 5 tests). Reader correlation by `tug_session_id` (`session-state-changes-reader.test.ts` — 5 tests).
+- [x] `cargo nextest run` green — 1308/1308 (8 new ledger tests + 7 new supervisor tests + adjacent suites).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green — 2181/2181 (10 new tugdeck tests + pre-existing tests updated to read `conn.recordedFramesExcludingStateChange` so frame-count assertions tolerate the new fire-and-forget CONTROL).
 
 **Checkpoint.**
 
-- [ ] Manual verification: open a tide card, drive through several state transitions, verify the rows accumulate in sqlite via `tug-dev-panel` or a direct DB query.
-- [ ] Manual verification: delete a session, confirm `session_state_changes` rows for that session are gone.
+- [x] Manual verification: open a tide card, drive through several state transitions, verify the rows accumulate in sqlite via `tug-dev-panel` or a direct DB query.
+- [x] Manual verification: delete a session, confirm `session_state_changes` rows for that session are gone.
+
+**20.4.7.D.1 MCP-column audit (deferred from 20.4.7.D).** The provisional schema this step shipped — `(id, session_id, at_ms, phase, transport_state, interrupt_in_flight)` — is MCP-clean. No `mcp_*` columns, no MCP-derived axes. The pre-existing axes `(phase, transportState, interruptInFlight)` reflect the live indicator-tone matrix exactly; MCP is intentionally out of scope (see "Out of scope: MCP" in 20.4.7.D). Re-audit closed.
 
 ---
 

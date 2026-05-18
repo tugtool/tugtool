@@ -48,7 +48,11 @@ import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store"
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
 import { decodeSessionUpdated } from "./protocol";
-import type { CardBinding, SessionRow } from "./protocol";
+import type {
+  CardBinding,
+  SessionRow,
+  SessionStateChangeWireRow,
+} from "./protocol";
 import {
   publishSessionUpdated,
   publishListSessionsOk,
@@ -59,6 +63,8 @@ import {
   publishForgetSessionErr,
   publishForgetProjectDirSessionsOk,
   publishForgetProjectDirSessionsErr,
+  publishListSessionStateChangesOk,
+  publishListSessionStateChangesErr,
 } from "./lib/tide-session-ledger-events";
 
 /**
@@ -595,6 +601,32 @@ export function initActionDispatch(
       return;
     }
     publishForgetProjectDirSessionsErr({ project_dir: projectDir, reason });
+  });
+
+  // list_session_state_changes_ok / _err: response to a
+  // `list_session_state_changes` request from the popover-side reader
+  // store. Rows are oldest-first by insertion order; unknown sessions
+  // surface as an empty array (not an error).
+  registerAction("list_session_state_changes_ok", (payload) => {
+    const tugSessionId = payload.tug_session_id;
+    const rows = payload.rows;
+    if (typeof tugSessionId !== "string" || !Array.isArray(rows)) {
+      console.warn("list_session_state_changes_ok: missing or invalid fields", payload);
+      return;
+    }
+    publishListSessionStateChangesOk({
+      tug_session_id: tugSessionId,
+      rows: rows as SessionStateChangeWireRow[],
+    });
+  });
+  registerAction("list_session_state_changes_err", (payload) => {
+    const tugSessionId = payload.tug_session_id;
+    const reason = payload.reason;
+    if (typeof tugSessionId !== "string" || typeof reason !== "string") {
+      console.warn("list_session_state_changes_err: missing or invalid fields", payload);
+      return;
+    }
+    publishListSessionStateChangesErr({ tug_session_id: tugSessionId, reason });
   });
 
   // app-lifecycle: route macOS `NSApplicationDelegate` events into the

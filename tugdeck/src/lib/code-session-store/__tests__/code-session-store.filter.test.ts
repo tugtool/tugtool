@@ -85,8 +85,9 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
     // Two outbound frames so far: one from each... wait, only A sent.
     // TestFrameChannel records every outbound frame; we assert both
     // the count and the session attribution.
-    expect(conn.recordedFrames.length).toBe(1);
-    expect(conn.recordedFrames[0].decoded).toMatchObject({
+    let userFrames = conn.recordedFramesExcludingStateChange;
+    expect(userFrames.length).toBe(1);
+    expect(userFrames[0].decoded).toMatchObject({
       tug_session_id: TUG_A,
       type: "user_message",
       text: "from A",
@@ -95,8 +96,9 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
     storeB.send("from B", []);
     expect(storeA.getSnapshot().phase).toBe("submitting");
     expect(storeB.getSnapshot().phase).toBe("submitting");
-    expect(conn.recordedFrames.length).toBe(2);
-    expect(conn.recordedFrames[1].decoded).toMatchObject({
+    userFrames = conn.recordedFramesExcludingStateChange;
+    expect(userFrames.length).toBe(2);
+    expect(userFrames[1].decoded).toMatchObject({
       tug_session_id: TUG_B,
       type: "user_message",
       text: "from B",

@@ -29,11 +29,28 @@
  */
 
 import {
+  CONTROL_ACTION_RECORD_SESSION_STATE_CHANGE,
   decodeCodeInputPayload,
   FeedId,
   type FeedIdValue,
 } from "@/protocol";
 import type { FeedStoreFilter } from "@/lib/feed-store";
+
+function isStateChangeFrame(frame: {
+  feedId: number;
+  decoded: unknown;
+}): boolean {
+  if (frame.feedId !== FeedId.CONTROL) return false;
+  const decoded = frame.decoded;
+  if (!(decoded instanceof Uint8Array)) return false;
+  try {
+    const json = new TextDecoder().decode(decoded);
+    const parsed = JSON.parse(json) as { action?: string };
+    return parsed.action === CONTROL_ACTION_RECORD_SESSION_STATE_CHANGE;
+  } catch {
+    return false;
+  }
+}
 
 /** A frame shape used by `MockFeedStore.replay` — already decoded. */
 export interface MockFrame {
@@ -63,6 +80,23 @@ export class TestFrameChannel {
     } else {
       this.recordedFrames.push({ feedId, decoded: payload });
     }
+  }
+
+  /**
+   * Recorded frames with `record_session_state_change` CONTROL
+   * frames filtered out. The per-card `CodeSessionStore.dispatch`
+   * wrapper fires one such CONTROL frame on every indicator-tone
+   * triple change as a fire-and-forget persist — orthogonal to the
+   * frames any user action emits. Tests that count or index frames
+   * by user-driven semantics should read this list instead of the
+   * raw `recordedFrames`. Tests that pin the state-change emission
+   * itself read `recordedFrames` directly.
+   */
+  get recordedFramesExcludingStateChange(): Array<{
+    feedId: number;
+    decoded: unknown;
+  }> {
+    return this.recordedFrames.filter((f) => !isStateChangeFrame(f));
   }
 
   onFrame(feedId: number, callback: (payload: Uint8Array) => void): void {

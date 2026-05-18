@@ -105,7 +105,7 @@ describe("CodeSessionStore — synthetic permission-allow (Step 6)", () => {
     expect(snap.pendingApproval?.tool_name).toBe("Bash");
     expect(snap.pendingQuestion).toBeNull();
 
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.respondApproval(FIXTURE_IDS.REQUEST_ID, { decision: "allow" });
 
     snap = store.getSnapshot();
@@ -113,8 +113,8 @@ describe("CodeSessionStore — synthetic permission-allow (Step 6)", () => {
     expect(snap.pendingApproval).toBeNull();
 
     // Exactly one new frame: the tool_approval.
-    expect(conn.recordedFrames.length).toBe(framesBefore + 1);
-    const approval = conn.recordedFrames[framesBefore];
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore + 1);
+    const approval = conn.recordedFramesExcludingStateChange[framesBefore];
     expect(approval.feedId).toBe(FeedId.CODE_INPUT);
     expect(approval.decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
@@ -129,9 +129,9 @@ describe("CodeSessionStore — synthetic permission-allow (Step 6)", () => {
     const store = constructStore(conn);
 
     store.send("hello", []);
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.respondApproval(FIXTURE_IDS.REQUEST_ID, { decision: "allow" });
-    expect(conn.recordedFrames.length).toBe(framesBefore);
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore);
     expect(store.getSnapshot().phase).toBe("submitting");
   });
 
@@ -225,11 +225,11 @@ describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
     expect(Array.isArray(approval?.permission_suggestions)).toBe(true);
     expect(approval?.permission_suggestions?.length).toBeGreaterThan(0);
 
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.respondApproval(FIXTURE_IDS.REQUEST_ID, { decision: "deny" });
 
-    expect(conn.recordedFrames.length).toBe(framesBefore + 1);
-    const denyFrame = conn.recordedFrames[framesBefore];
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore + 1);
+    const denyFrame = conn.recordedFramesExcludingStateChange[framesBefore];
     expect(denyFrame.decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
       type: "tool_approval",
@@ -302,15 +302,15 @@ describe("CodeSessionStore — synthetic AskUserQuestion (Step 6)", () => {
     expect(snap.pendingQuestion?.is_question).toBe(true);
     expect(snap.pendingApproval).toBeNull();
 
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.respondQuestion(FIXTURE_IDS.REQUEST_ID, { answers: { pick: "a" } });
 
     snap = store.getSnapshot();
     expect(snap.phase).toBe("streaming");
     expect(snap.pendingQuestion).toBeNull();
 
-    expect(conn.recordedFrames.length).toBe(framesBefore + 1);
-    const answerFrame = conn.recordedFrames[framesBefore];
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore + 1);
+    const answerFrame = conn.recordedFramesExcludingStateChange[framesBefore];
     expect(answerFrame.feedId).toBe(FeedId.CODE_INPUT);
     expect(answerFrame.decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
@@ -325,8 +325,8 @@ describe("CodeSessionStore — synthetic AskUserQuestion (Step 6)", () => {
     const store = constructStore(conn);
 
     store.send("hello", []);
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.respondQuestion(FIXTURE_IDS.REQUEST_ID, { answers: { pick: "a" } });
-    expect(conn.recordedFrames.length).toBe(framesBefore);
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore);
   });
 });

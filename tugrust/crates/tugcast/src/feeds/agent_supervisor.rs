@@ -1182,6 +1182,90 @@ struct RecordContextBreakdownPayload {
     captured_at: i64,
 }
 
+/// Parsed payload of the `record_session_state_change` CONTROL action.
+/// Tugdeck → tugcast: the per-card store wrapper compares the prev/new
+/// indicator-tone triple after every `reduce()` and dispatches this
+/// when any axis changed.
+///
+/// `do_record_session_state_change` resolves `tug_session_id` to the
+/// claude `session_id` (the ledger PK) and writes one
+/// `session_state_changes` row. The sqlite layer dedupes against the
+/// most-recent persisted triple as a race safety-net; the per-card
+/// pre-check is the primary dedupe.
+struct RecordSessionStateChangePayload {
+    tug_session_id: TugSessionId,
+    at_ms: i64,
+    phase: String,
+    transport_state: String,
+    interrupt_in_flight: bool,
+}
+
+fn parse_record_session_state_change_payload(
+    payload: &[u8],
+) -> Result<RecordSessionStateChangePayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let tug_session_id = value
+        .get("tug_session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    let at_ms = value
+        .get("at_ms")
+        .and_then(|v| v.as_i64())
+        .ok_or(ControlError::Malformed)?;
+    let phase = value
+        .get("phase")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let transport_state = value
+        .get("transport_state")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let interrupt_in_flight = value
+        .get("interrupt_in_flight")
+        .and_then(|v| v.as_bool())
+        .ok_or(ControlError::Malformed)?;
+    Ok(RecordSessionStateChangePayload {
+        tug_session_id: TugSessionId::new(tug_session_id),
+        at_ms,
+        phase,
+        transport_state,
+        interrupt_in_flight,
+    })
+}
+
+/// Parsed payload of the `list_session_state_changes` CONTROL action.
+/// Tugdeck → tugcast read: the popover-side reader asks the supervisor
+/// for the persisted history of triples for a given session. The
+/// supervisor resolves `tug_session_id → claude_session_id`, reads
+/// every row from `session_state_changes`, and broadcasts
+/// `list_session_state_changes_ok` back on CONTROL.
+struct ListSessionStateChangesPayload {
+    tug_session_id: TugSessionId,
+}
+
+fn parse_list_session_state_changes_payload(
+    payload: &[u8],
+) -> Result<ListSessionStateChangesPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let tug_session_id = value
+        .get("tug_session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    Ok(ListSessionStateChangesPayload {
+        tug_session_id: TugSessionId::new(tug_session_id),
+    })
+}
+
 fn parse_record_context_breakdown_payload(
     payload: &[u8],
 ) -> Result<RecordContextBreakdownPayload, ControlError> {
@@ -1550,6 +1634,28 @@ impl AgentSupervisor {
                     }
                 };
                 self.do_record_context_breakdown(parsed).await;
+                Ok(())
+            }
+            "record_session_state_change" => {
+                let parsed = match parse_record_session_state_change_payload(payload) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected record_session_state_change");
+                        return ControlOutcome::Error(e);
+                    }
+                };
+                self.do_record_session_state_change(parsed).await;
+                Ok(())
+            }
+            "list_session_state_changes" => {
+                let parsed = match parse_list_session_state_changes_payload(payload) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(action, error = %e, "handle_control: rejected list_session_state_changes");
+                        return ControlOutcome::Error(e);
+                    }
+                };
+                self.do_list_session_state_changes(parsed).await;
                 Ok(())
             }
             // Any action not above is not owned by the supervisor.
@@ -2406,6 +2512,156 @@ impl AgentSupervisor {
                 "record_context_breakdown ledger write failed",
             );
         }
+    }
+
+    /// Persist one indicator-tone triple transition via the
+    /// SessionLedger. Structurally mirrors
+    /// {@link do_record_context_breakdown}: resolve
+    /// `tug_session_id → claude_session_id`, hand the row to the
+    /// ledger. The ledger's per-session dedupe is the SQL-layer
+    /// safety net for races where the client-side prev/new compare
+    /// in `dispatch()` doesn't get the chance to skip a redundant
+    /// write (e.g., two near-simultaneous dispatches that both see
+    /// the same previous state).
+    ///
+    /// The three quietly-dropped cases — no ledger configured, no
+    /// session entry, no claude_session_id — log at telemetry level
+    /// and return without raising; mirrors the context-breakdown
+    /// handler.
+    async fn do_record_session_state_change(&self, parsed: RecordSessionStateChangePayload) {
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            return;
+        };
+        let claude_id = {
+            let outer = self.ledger.lock().await;
+            let Some(entry_arc) = outer.get(&parsed.tug_session_id) else {
+                tracing::warn!(
+                    target: "tide::telemetry",
+                    event = "record_session_state_change.skipped",
+                    tug_session_id = %parsed.tug_session_id,
+                    reason = "session_not_found",
+                );
+                return;
+            };
+            let entry = entry_arc.lock().await;
+            entry.claude_session_id.clone()
+        };
+        let Some(claude_id) = claude_id else {
+            tracing::warn!(
+                target: "tide::telemetry",
+                event = "record_session_state_change.skipped",
+                tug_session_id = %parsed.tug_session_id,
+                reason = "no_claude_session_id",
+            );
+            return;
+        };
+        if let Err(err) = ledger.record_session_state_change(
+            &claude_id,
+            parsed.at_ms,
+            &parsed.phase,
+            &parsed.transport_state,
+            parsed.interrupt_in_flight,
+        ) {
+            tracing::warn!(
+                target: "tide::telemetry",
+                error = %err,
+                session_id = %claude_id,
+                "record_session_state_change ledger write failed",
+            );
+        }
+    }
+
+    /// Handle a `list_session_state_changes` CONTROL request. Reads
+    /// every persisted triple-transition row for the resolved claude
+    /// session id and broadcasts a `list_session_state_changes_ok`
+    /// response carrying the rows oldest-first by `id`. The client-
+    /// side reader correlates by the `tug_session_id` field, which
+    /// is echoed verbatim from the request.
+    ///
+    /// Empty arrays are valid responses: a fresh session that has
+    /// never had a triple change yet has no rows; the client should
+    /// render a "no history" state.
+    ///
+    /// Errors broadcast `list_session_state_changes_err
+    /// { tug_session_id, reason }`. The three quietly-dropped cases
+    /// from the writer (no ledger, no session entry, no
+    /// claude_session_id) all surface as empty arrays here — the
+    /// reader can't distinguish "session not found on supervisor"
+    /// from "no history yet"; the popover renders the same empty
+    /// state for both, and the gallery + smoke tests cover the live
+    /// path explicitly.
+    async fn do_list_session_state_changes(&self, parsed: ListSessionStateChangesPayload) {
+        let tug_session_id_str = parsed.tug_session_id.as_str().to_owned();
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            let body = serde_json::json!({
+                "action": "list_session_state_changes_ok",
+                "tug_session_id": tug_session_id_str,
+                "rows": serde_json::Value::Array(Vec::new()),
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("list_session_state_changes_ok serializes"),
+            ));
+            return;
+        };
+        let claude_id = {
+            let outer = self.ledger.lock().await;
+            match outer.get(&parsed.tug_session_id) {
+                Some(entry_arc) => {
+                    let entry = entry_arc.lock().await;
+                    entry.claude_session_id.clone()
+                }
+                None => None,
+            }
+        };
+        let Some(claude_id) = claude_id else {
+            let body = serde_json::json!({
+                "action": "list_session_state_changes_ok",
+                "tug_session_id": tug_session_id_str,
+                "rows": serde_json::Value::Array(Vec::new()),
+            });
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&body).expect("list_session_state_changes_ok serializes"),
+            ));
+            return;
+        };
+        let rows = match ledger.list_session_state_changes(&claude_id) {
+            Ok(r) => r,
+            Err(err) => {
+                warn!(error = %err, session_id = %claude_id, "list_session_state_changes failed");
+                let body = serde_json::json!({
+                    "action": "list_session_state_changes_err",
+                    "tug_session_id": tug_session_id_str,
+                    "reason": "ledger_read_failed",
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("list_session_state_changes_err serializes"),
+                ));
+                return;
+            }
+        };
+        let wire_rows: Vec<serde_json::Value> = rows
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "at_ms": r.at_ms,
+                    "phase": r.phase,
+                    "transport_state": r.transport_state,
+                    "interrupt_in_flight": r.interrupt_in_flight,
+                })
+            })
+            .collect();
+        let body = serde_json::json!({
+            "action": "list_session_state_changes_ok",
+            "tug_session_id": tug_session_id_str,
+            "rows": wire_rows,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_session_state_changes_ok serializes"),
+        ));
     }
 
     async fn do_forget_session(&self, session_id: &str) {
@@ -7222,6 +7478,237 @@ mod tests {
         .unwrap();
         let outcome = sup
             .handle_control("record_context_breakdown", &body, 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    // -------------------------------------------------------------------
+    // record_session_state_change + list_session_state_changes — CONTROL
+    // actions → SessionLedger round-trip
+    // -------------------------------------------------------------------
+
+    fn record_state_change_payload(
+        tug_session_id: &str,
+        at_ms: i64,
+        phase: &str,
+        transport_state: &str,
+        interrupt_in_flight: bool,
+    ) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "action": "record_session_state_change",
+            "tug_session_id": tug_session_id,
+            "at_ms": at_ms,
+            "phase": phase,
+            "transport_state": transport_state,
+            "interrupt_in_flight": interrupt_in_flight,
+        }))
+        .unwrap()
+    }
+
+    fn list_state_changes_payload(tug_session_id: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "action": "list_session_state_changes",
+            "tug_session_id": tug_session_id,
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn record_session_state_change_writes_rows_to_ledger() {
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let tug_id = TugSessionId::new("sess-ssc-1");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-ssc-A".to_string());
+        }
+        ledger
+            .record_spawn("claude-ssc-A", "ws-1", "/proj/x", "card-1", 1_000)
+            .unwrap();
+
+        sup.handle_control(
+            "record_session_state_change",
+            &record_state_change_payload("sess-ssc-1", 100, "idle", "online", false),
+            10,
+        )
+        .await
+        .expect_handled();
+        sup.handle_control(
+            "record_session_state_change",
+            &record_state_change_payload("sess-ssc-1", 200, "submitting", "online", false),
+            10,
+        )
+        .await
+        .expect_handled();
+        sup.handle_control(
+            "record_session_state_change",
+            &record_state_change_payload("sess-ssc-1", 300, "submitting", "offline", true),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        let rows = ledger.list_session_state_changes("claude-ssc-A").unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].phase, "idle");
+        assert_eq!(rows[1].phase, "submitting");
+        assert_eq!(rows[2].transport_state, "offline");
+        assert!(rows[2].interrupt_in_flight);
+    }
+
+    #[tokio::test]
+    async fn record_session_state_change_dedupes_at_ledger_layer() {
+        // Even if the supervisor receives two writes of the same triple
+        // (e.g., a racing dispatch beat the client-side compare), the
+        // ledger layer dedupes and only one row lands.
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let tug_id = TugSessionId::new("sess-ssc-2");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-ssc-B".to_string());
+        }
+        ledger
+            .record_spawn("claude-ssc-B", "ws-1", "/proj/x", "card-2", 1_000)
+            .unwrap();
+
+        sup.handle_control(
+            "record_session_state_change",
+            &record_state_change_payload("sess-ssc-2", 100, "idle", "online", false),
+            10,
+        )
+        .await
+        .expect_handled();
+        sup.handle_control(
+            "record_session_state_change",
+            &record_state_change_payload("sess-ssc-2", 200, "idle", "online", false),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        let rows = ledger.list_session_state_changes("claude-ssc-B").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].at_ms, 100);
+    }
+
+    #[tokio::test]
+    async fn record_session_state_change_silently_skips_when_session_not_found() {
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+
+        sup.handle_control(
+            "record_session_state_change",
+            &record_state_change_payload("sess-unknown", 100, "idle", "online", false),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        assert_eq!(
+            ledger.list_session_state_changes("claude-anything").unwrap().len(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn record_session_state_change_rejects_malformed_payload() {
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+        let outcome = sup
+            .handle_control("record_session_state_change", b"not json", 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn record_session_state_change_rejects_missing_axis() {
+        // Missing `transport_state` — the parser must reject; the writer
+        // can't fall back to a default because the triple is the row's
+        // semantic identity.
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+        let body = serde_json::to_vec(&serde_json::json!({
+            "action": "record_session_state_change",
+            "tug_session_id": "sess-x",
+            "at_ms": 100,
+            "phase": "idle",
+            "interrupt_in_flight": false,
+        }))
+        .unwrap();
+        let outcome = sup
+            .handle_control("record_session_state_change", &body, 10)
+            .await;
+        assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn list_session_state_changes_returns_rows_oldest_first() {
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
+        let tug_id = TugSessionId::new("sess-ssc-list");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.claude_session_id = Some("claude-ssc-L".to_string());
+        }
+        ledger
+            .record_spawn("claude-ssc-L", "ws-1", "/proj/x", "card-3", 1_000)
+            .unwrap();
+        ledger
+            .record_session_state_change("claude-ssc-L", 100, "idle", "online", false)
+            .unwrap();
+        ledger
+            .record_session_state_change("claude-ssc-L", 200, "submitting", "online", false)
+            .unwrap();
+        ledger
+            .record_session_state_change("claude-ssc-L", 300, "tool_work", "online", false)
+            .unwrap();
+
+        while rx.try_recv().is_ok() {}
+
+        sup.handle_control(
+            "list_session_state_changes",
+            &list_state_changes_payload("sess-ssc-list"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_session_state_changes_ok");
+        assert_eq!(response["tug_session_id"], "sess-ssc-list");
+        let rows = response["rows"].as_array().expect("rows array");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0]["phase"], "idle");
+        assert_eq!(rows[0]["at_ms"], 100);
+        assert_eq!(rows[1]["phase"], "submitting");
+        assert_eq!(rows[2]["phase"], "tool_work");
+        assert_eq!(rows[0]["transport_state"], "online");
+        assert_eq!(rows[0]["interrupt_in_flight"], false);
+    }
+
+    #[tokio::test]
+    async fn list_session_state_changes_returns_empty_array_for_unknown_session() {
+        // Unknown session id surfaces as an empty array, not an error
+        // frame: the client renders the same "no history yet" state for
+        // either case.
+        let (sup, _ledger, mut rx) = make_supervisor_with_ledger();
+
+        sup.handle_control(
+            "list_session_state_changes",
+            &list_state_changes_payload("sess-never"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_session_state_changes_ok");
+        assert_eq!(response["tug_session_id"], "sess-never");
+        let rows = response["rows"].as_array().expect("rows array");
+        assert_eq!(rows.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn list_session_state_changes_rejects_malformed_payload() {
+        let (sup, _ledger, _rx) = make_supervisor_with_ledger();
+        let outcome = sup
+            .handle_control("list_session_state_changes", b"not json", 10)
             .await;
         assert!(matches!(outcome, ControlOutcome::Error(_)));
     }

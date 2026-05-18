@@ -10,6 +10,9 @@
  *     ack frames in response to a `forget_session` request.
  *   - `forget_workspace_sessions_ok { workspace_key, count }` /
  *     `forget_workspace_sessions_err { reason }` ack frames.
+ *   - `list_session_state_changes_ok { tug_session_id, rows }` /
+ *     `list_session_state_changes_err { tug_session_id, reason }`
+ *     ack frames in response to a `list_session_state_changes` request.
  *
  * `action-dispatch.ts` decodes those frames and forwards them through this
  * module's `publish*` functions; the `TideSessionLedgerStore` (step 4)
@@ -22,7 +25,13 @@
  * own listeners.
  */
 
-import type { CardBinding, SessionRow, SessionUpdatedPush } from "../protocol.ts";
+import type {
+  CardBinding,
+  ListSessionStateChangesErr,
+  ListSessionStateChangesOk,
+  SessionRow,
+  SessionUpdatedPush,
+} from "../protocol.ts";
 
 type Listener<T> = (payload: T) => void;
 
@@ -57,6 +66,8 @@ const forgetSessionOkBus = makeBus<{ session_id: string }>();
 const forgetSessionErrBus = makeBus<{ session_id: string; reason: string }>();
 const forgetProjectDirSessionsOkBus = makeBus<{ project_dir: string; count: number }>();
 const forgetProjectDirSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
+const listSessionStateChangesOkBus = makeBus<ListSessionStateChangesOk>();
+const listSessionStateChangesErrBus = makeBus<ListSessionStateChangesErr>();
 
 export const subscribeToSessionUpdated = sessionUpdatedBus.subscribe;
 export const publishSessionUpdated = sessionUpdatedBus.publish;
@@ -85,6 +96,12 @@ export const publishForgetProjectDirSessionsOk = forgetProjectDirSessionsOkBus.p
 export const subscribeToForgetProjectDirSessionsErr = forgetProjectDirSessionsErrBus.subscribe;
 export const publishForgetProjectDirSessionsErr = forgetProjectDirSessionsErrBus.publish;
 
+export const subscribeToListSessionStateChangesOk = listSessionStateChangesOkBus.subscribe;
+export const publishListSessionStateChangesOk = listSessionStateChangesOkBus.publish;
+
+export const subscribeToListSessionStateChangesErr = listSessionStateChangesErrBus.subscribe;
+export const publishListSessionStateChangesErr = listSessionStateChangesErrBus.publish;
+
 export function _resetTideSessionLedgerEventsForTest(): void {
   sessionUpdatedBus.reset();
   listSessionsOkBus.reset();
@@ -95,4 +112,6 @@ export function _resetTideSessionLedgerEventsForTest(): void {
   forgetSessionErrBus.reset();
   forgetProjectDirSessionsOkBus.reset();
   forgetProjectDirSessionsErrBus.reset();
+  listSessionStateChangesOkBus.reset();
+  listSessionStateChangesErrBus.reset();
 }

@@ -23,6 +23,7 @@ import {
   FeedId,
   encodeCodeInputPayload,
   encodeRecordContextBreakdown,
+  encodeRecordSessionStateChange,
   encodeRecordTurnTelemetry,
   type FeedIdValue,
 } from "@/protocol";
@@ -715,10 +716,50 @@ export class CodeSessionStore {
     const { state, effects } = reduce(this.state, event);
     this.state = state;
     this.processEffects(effects);
+    this.maybePersistStateChange(prev, state);
     if (prev !== state || effects.length > 0) {
       this._cachedSnapshot = null;
       this.notifyListeners();
     }
+  }
+
+  /**
+   * After every reduce, compare the indicator-tone triple `(phase,
+   * transportState, interruptInFlight)` between prev and next state.
+   * If any axis changed, fire-and-forget a
+   * `record_session_state_change` CONTROL frame so the supervisor
+   * appends one row to the `session_state_changes` ledger. This is
+   * the client-side primary dedupe; the ledger layer dedupes against
+   * the most-recent persisted triple as a race safety-net.
+   *
+   * The triple seeds the popover's state-change log
+   * (Step 20.4.9); persistence survives reload so the log is not
+   * lost when the card re-mounts. The collapse rules (transcript-
+   * length, `pendingApproval` vs `pendingQuestion`, `queuedSends`,
+   * `turnEndReason`, DRILLDOWN_OPEN) are owned by the reducer's
+   * indicator-tone derivation; this hook only sees what the snapshot
+   * already exposes through these three fields. See the parent plan
+   * step's "Coverage and known collapses" note.
+   */
+  private maybePersistStateChange(
+    prev: CodeSessionState,
+    next: CodeSessionState,
+  ): void {
+    if (
+      prev.phase === next.phase &&
+      prev.transportState === next.transportState &&
+      prev.interruptInFlight === next.interruptInFlight
+    ) {
+      return;
+    }
+    const frame = encodeRecordSessionStateChange({
+      tugSessionId: this.tugSessionId,
+      atMs: Date.now(),
+      phase: next.phase,
+      transportState: next.transportState,
+      interruptInFlight: next.interruptInFlight,
+    });
+    this.conn.send(frame.feedId, frame.payload);
   }
 
   private processEffects(effects: Effect[]): void {

@@ -63,12 +63,12 @@ describe("CodeSessionStore — interrupt mid-stream on test-06 (Step 7)", () => 
     const preservedText = inflightValue(store, "assistant") as string;
     expect(preservedText.length).toBe(116); // 3 + 113 accumulated
 
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.interrupt();
 
     // interrupt frame written, queue cleared, phase unchanged.
-    expect(conn.recordedFrames.length).toBe(framesBefore + 1);
-    const interruptFrame = conn.recordedFrames[framesBefore];
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore + 1);
+    const interruptFrame = conn.recordedFramesExcludingStateChange[framesBefore];
     expect(interruptFrame.feedId).toBe(FeedId.CODE_INPUT);
     expect(interruptFrame.decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
@@ -188,20 +188,20 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
     store.send("c", []);
     expect(store.getSnapshot().queuedSends).toBe(3);
     // Only the original user_message has been written so far.
-    expect(conn.recordedFrames.length).toBe(1);
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(1);
 
     store.interrupt();
     expect(store.getSnapshot().queuedSends).toBe(0);
 
     // Outbound so far: user_message "first", interrupt.
-    expect(conn.recordedFrames.length).toBe(2);
-    expect(conn.recordedFrames[0].decoded).toEqual({
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(2);
+    expect(conn.recordedFramesExcludingStateChange[0].decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
       type: "user_message",
       text: "first",
       attachments: [],
     });
-    expect(conn.recordedFrames[1].decoded).toEqual({
+    expect(conn.recordedFramesExcludingStateChange[1].decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
       type: "interrupt",
     });
@@ -230,8 +230,8 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
     // recorder as raw Uint8Array bytes (only CODE_INPUT gets
     // auto-decoded by the mock); parse the JSON to assert the
     // action.
-    expect(conn.recordedFrames.length).toBe(3);
-    const recordFrame = conn.recordedFrames[2];
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(3);
+    const recordFrame = conn.recordedFramesExcludingStateChange[2];
     const parsed = JSON.parse(new TextDecoder().decode(recordFrame.decoded as Uint8Array));
     expect(parsed).toMatchObject({
       action: "record_turn_telemetry",
@@ -245,7 +245,7 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
     const store = constructStore(conn);
 
     store.interrupt();
-    expect(conn.recordedFrames.length).toBe(0);
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(0);
     expect(store.getSnapshot().phase).toBe("idle");
   });
 });
@@ -286,11 +286,11 @@ describe("CodeSessionStore — interrupt during awaiting_approval (Step 9b)", ()
     // interrupt frame AND simultaneously restores a coherent
     // non-approval state — subscribers never see the "live prompt on
     // a dead turn" window while waiting for turn_complete(error).
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.interrupt();
 
-    expect(conn.recordedFrames.length).toBe(framesBefore + 1);
-    const interruptFrame = conn.recordedFrames[framesBefore];
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore + 1);
+    const interruptFrame = conn.recordedFramesExcludingStateChange[framesBefore];
     expect(interruptFrame.feedId).toBe(FeedId.CODE_INPUT);
     expect(interruptFrame.decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
@@ -349,12 +349,12 @@ describe("CodeSessionStore — CASE A interrupt (submitting → no transcript en
     expect(store.getSnapshot().inflightUserMessage?.text).toBe("draft text");
     expect(store.getSnapshot().pendingDraftRestore).toBeNull();
 
-    const framesBefore = conn.recordedFrames.length;
+    const framesBefore = conn.recordedFramesExcludingStateChange.length;
     store.interrupt();
 
     // One outbound interrupt frame.
-    expect(conn.recordedFrames.length).toBe(framesBefore + 1);
-    expect(conn.recordedFrames[framesBefore].decoded).toEqual({
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(framesBefore + 1);
+    expect(conn.recordedFramesExcludingStateChange[framesBefore].decoded).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
       type: "interrupt",
     });

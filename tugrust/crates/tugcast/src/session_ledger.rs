@@ -270,6 +270,36 @@ pub struct ContextBreakdownRow {
     pub captured_at: i64,
 }
 
+/// One row of the `session_state_changes` table — a single transition
+/// of the indicator-tone triple `(phase, transport_state,
+/// interrupt_in_flight)` for a given session. Persisted by
+/// `record_session_state_change` from the supervisor's inbound handler
+/// when tugdeck's dispatch-wrapper observes the triple change; read
+/// by the popover (Step 20.4.9) via `list_session_state_changes`.
+///
+/// The persisted axes are exactly the props
+/// [`TugStateIndicator`](#step-20-4-2) reads — see the parent step's
+/// "Coverage and known collapses" note for the signals the indicator
+/// tracks but this ledger intentionally does NOT capture
+/// (transcript-length, `pendingApproval` vs `pendingQuestion`,
+/// `queuedSends`, `turnEndReason`, DRILLDOWN_OPEN).
+///
+/// Append-only per session; retention is unbounded. Rows are deleted
+/// when the parent session row is deleted, via the cascade trigger.
+///
+/// `at_ms` is the wall-clock millisecond when the new triple landed
+/// on the snapshot; `id` is the sqlite-assigned autoincrement primary
+/// key (preserves insertion order regardless of clock skew on `at_ms`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionStateChangeRow {
+    pub id: i64,
+    pub session_id: String,
+    pub at_ms: i64,
+    pub phase: String,
+    pub transport_state: String,
+    pub interrupt_in_flight: bool,
+}
+
 /// Result of a successful `forget` call.
 ///
 /// `jsonl_moved_to` is `None` until step 8 wires the trash move. Until then
@@ -509,6 +539,45 @@ impl SessionLedger {
             FOR EACH ROW
             BEGIN
                 DELETE FROM context_breakdown_latest WHERE session_id = OLD.session_id;
+            END;
+
+            -- Append-only log of indicator-tone triple transitions —
+            -- one row per distinct `(phase, transport_state,
+            -- interrupt_in_flight)` change for a given session.
+            -- Written by `record_session_state_change` from the
+            -- supervisor's inbound handler, after tugdeck's dispatch-
+            -- wrapper observes the triple has changed. Read by the
+            -- popover (Step 20.4.9) via `list_session_state_changes`.
+            --
+            -- Per-column storage (not BLOB) because the popover's
+            -- access pattern reads structured fields and the row shape
+            -- is small + fixed by the indicator's prop set. Promoting
+            -- a new tone-bearing axis means co-evolving indicator
+            -- props, matrix definitions, and this schema in the same
+            -- step.
+            --
+            -- Dedupe: the writer skips the insert if the new triple
+            -- equals the most recent persisted triple for the session.
+            -- The SQL layer trusts the writer; no UNIQUE constraint
+            -- (the natural-key set is the triple plus its position in
+            -- the history, which the autoincrement PK already covers).
+            CREATE TABLE IF NOT EXISTS session_state_changes (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id          TEXT NOT NULL,
+                at_ms               INTEGER NOT NULL,
+                phase               TEXT NOT NULL,
+                transport_state     TEXT NOT NULL,
+                interrupt_in_flight INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS session_state_changes_session_at
+                ON session_state_changes(session_id, at_ms);
+
+            CREATE TRIGGER IF NOT EXISTS session_state_changes_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM session_state_changes WHERE session_id = OLD.session_id;
             END;
             ",
         )?;
@@ -1238,6 +1307,93 @@ impl SessionLedger {
             )
             .optional()?;
         Ok(row)
+    }
+
+    /// Append a `session_state_changes` row for `session_id`. Dedupes
+    /// against the most recent persisted row for the same session: if
+    /// the new `(phase, transport_state, interrupt_in_flight)` triple
+    /// equals the most recent row's triple, this is a no-op (the
+    /// caller has already deduped locally; this is the SQL-layer
+    /// safety net for races where two dispatches see the same
+    /// previous-state but one writes its row before the other
+    /// finishes its comparison).
+    ///
+    /// Returns `Ok(true)` if a row was written, `Ok(false)` if the
+    /// dedupe skipped it.
+    pub fn record_session_state_change(
+        &self,
+        session_id: &str,
+        at_ms: i64,
+        phase: &str,
+        transport_state: &str,
+        interrupt_in_flight: bool,
+    ) -> Result<bool, LedgerError> {
+        let mut conn = self.db.lock().expect("ledger mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let most_recent: Option<(String, String, i64)> = tx
+            .query_row(
+                "SELECT phase, transport_state, interrupt_in_flight
+                 FROM session_state_changes
+                 WHERE session_id = ?1
+                 ORDER BY id DESC
+                 LIMIT 1",
+                params![session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        if let Some((prev_phase, prev_transport, prev_interrupt)) = most_recent {
+            let prev_interrupt_bool = prev_interrupt != 0;
+            if prev_phase == phase
+                && prev_transport == transport_state
+                && prev_interrupt_bool == interrupt_in_flight
+            {
+                return Ok(false);
+            }
+        }
+        tx.execute(
+            "INSERT INTO session_state_changes
+                (session_id, at_ms, phase, transport_state, interrupt_in_flight)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                session_id,
+                at_ms,
+                phase,
+                transport_state,
+                interrupt_in_flight as i64,
+            ],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Return every `session_state_changes` row for `session_id`,
+    /// oldest-first by `id` (which is monotonic). Empty vec if no rows
+    /// exist for the session.
+    pub fn list_session_state_changes(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<SessionStateChangeRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, at_ms, phase, transport_state, interrupt_in_flight
+             FROM session_state_changes
+             WHERE session_id = ?1
+             ORDER BY id ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![session_id], |row| {
+                let interrupt_int: i64 = row.get(5)?;
+                Ok(SessionStateChangeRow {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    at_ms: row.get(2)?,
+                    phase: row.get(3)?,
+                    transport_state: row.get(4)?,
+                    interrupt_in_flight: interrupt_int != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 }
 
@@ -2724,5 +2880,170 @@ mod tests {
             l.get_context_breakdown("s1").unwrap().is_none(),
             "cascade trigger must purge context_breakdown_latest when parent session row is deleted",
         );
+    }
+
+    // ---- session_state_changes table -----------------------------------
+
+    #[test]
+    fn record_session_state_change_appends_distinct_triples() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        assert!(
+            l.record_session_state_change("s1", 100, "idle", "online", false)
+                .unwrap()
+        );
+        assert!(
+            l.record_session_state_change("s1", 200, "submitting", "online", false)
+                .unwrap()
+        );
+        assert!(
+            l.record_session_state_change("s1", 300, "submitting", "offline", false)
+                .unwrap()
+        );
+        let rows = l.list_session_state_changes("s1").unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].phase, "idle");
+        assert_eq!(rows[0].transport_state, "online");
+        assert!(!rows[0].interrupt_in_flight);
+        assert_eq!(rows[1].phase, "submitting");
+        assert_eq!(rows[2].transport_state, "offline");
+        // ids are monotonic in insertion order
+        assert!(rows[0].id < rows[1].id);
+        assert!(rows[1].id < rows[2].id);
+        // at_ms is preserved verbatim
+        assert_eq!(rows[0].at_ms, 100);
+        assert_eq!(rows[1].at_ms, 200);
+        assert_eq!(rows[2].at_ms, 300);
+    }
+
+    #[test]
+    fn record_session_state_change_dedupes_against_most_recent_triple() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        assert!(
+            l.record_session_state_change("s1", 100, "idle", "online", false)
+                .unwrap()
+        );
+        // Same triple — dedupes (returns false; no row written).
+        assert!(
+            !l.record_session_state_change("s1", 150, "idle", "online", false)
+                .unwrap()
+        );
+        assert!(
+            !l.record_session_state_change("s1", 200, "idle", "online", false)
+                .unwrap()
+        );
+        // A real change — accepted.
+        assert!(
+            l.record_session_state_change("s1", 300, "submitting", "online", false)
+                .unwrap()
+        );
+        // Now back to the original triple — accepted again, because
+        // the dedupe is against the MOST RECENT row, not "has this
+        // ever been written."
+        assert!(
+            l.record_session_state_change("s1", 400, "idle", "online", false)
+                .unwrap()
+        );
+        let rows = l.list_session_state_changes("s1").unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].at_ms, 100);
+        assert_eq!(rows[1].at_ms, 300);
+        assert_eq!(rows[2].at_ms, 400);
+    }
+
+    #[test]
+    fn record_session_state_change_detects_interrupt_axis_flip() {
+        // Dedupe must compare ALL three axes — flipping
+        // `interrupt_in_flight` without changing phase or transport
+        // produces a new row.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.record_session_state_change("s1", 100, "submitting", "online", false)
+            .unwrap();
+        assert!(
+            l.record_session_state_change("s1", 200, "submitting", "online", true)
+                .unwrap()
+        );
+        assert!(
+            l.record_session_state_change("s1", 300, "submitting", "online", false)
+                .unwrap()
+        );
+        let rows = l.list_session_state_changes("s1").unwrap();
+        assert_eq!(rows.len(), 3);
+        let flags: Vec<bool> = rows.iter().map(|r| r.interrupt_in_flight).collect();
+        assert_eq!(flags, vec![false, true, false]);
+    }
+
+    #[test]
+    fn list_session_state_changes_filters_by_session() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        seed_live(&l, "s2", "ws", "card-2", millis(0));
+        l.record_session_state_change("s1", 100, "idle", "online", false)
+            .unwrap();
+        l.record_session_state_change("s2", 200, "submitting", "online", false)
+            .unwrap();
+        l.record_session_state_change("s1", 300, "submitting", "online", false)
+            .unwrap();
+        let s1 = l.list_session_state_changes("s1").unwrap();
+        let s2 = l.list_session_state_changes("s2").unwrap();
+        assert_eq!(s1.len(), 2);
+        assert_eq!(s2.len(), 1);
+        assert!(s1.iter().all(|r| r.session_id == "s1"));
+        assert!(s2.iter().all(|r| r.session_id == "s2"));
+    }
+
+    #[test]
+    fn list_session_state_changes_returns_empty_for_unknown_session() {
+        let l = fresh();
+        assert_eq!(
+            l.list_session_state_changes("never-existed").unwrap().len(),
+            0
+        );
+    }
+
+    #[test]
+    fn cascade_delete_removes_session_state_changes_when_session_deleted() {
+        // Pin the `session_state_changes_cascade_delete_on_session`
+        // trigger: forgetting a session must take its state-change log
+        // with it. Same "forget cascades" contract as the other
+        // session-scoped tables in this file.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.record_session_state_change("s1", 100, "idle", "online", false)
+            .unwrap();
+        l.record_session_state_change("s1", 200, "submitting", "online", false)
+            .unwrap();
+        l.mark_closed("s1").unwrap();
+        assert_eq!(l.list_session_state_changes("s1").unwrap().len(), 2);
+
+        l.forget("s1").unwrap();
+
+        assert_eq!(
+            l.list_session_state_changes("s1").unwrap().len(),
+            0,
+            "cascade trigger must purge session_state_changes when parent session row is deleted",
+        );
+    }
+
+    #[test]
+    fn record_session_state_change_writes_independently_per_session() {
+        // Dedupe is scoped to the session: writing triple X for s1 must
+        // not block triple X for s2 (cross-session bleed would mean a
+        // popover renders the wrong card's history).
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        seed_live(&l, "s2", "ws", "card-2", millis(0));
+        assert!(
+            l.record_session_state_change("s1", 100, "idle", "online", false)
+                .unwrap()
+        );
+        assert!(
+            l.record_session_state_change("s2", 100, "idle", "online", false)
+                .unwrap()
+        );
+        assert_eq!(l.list_session_state_changes("s1").unwrap().len(), 1);
+        assert_eq!(l.list_session_state_changes("s2").unwrap().len(), 1);
     }
 }
