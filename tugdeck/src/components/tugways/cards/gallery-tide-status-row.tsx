@@ -1,28 +1,45 @@
 /**
- * gallery-tide-status-row.tsx — design-spike gallery card for the
+ * gallery-tide-status-row.tsx — plan-of-record reference for the
  * tide-card Z2 status row.
  *
- * **Round 8 — final down-select.** Round 7 chose:
+ * **Status: plan of record.** The design spike (rounds 1–9) is
+ * resolved. This card now documents the chosen design rather than
+ * exploring alternatives. The composed row at the top is the
+ * canonical layout; the all-states reference beneath it documents
+ * every behavior the leftmost indicator can show.
  *
- *   - **§2 indicator** → P6 @ 16px (concentric pulsing ring)
- *   - **§3 chevron** → 16px
- *   - **§4 endcap** → T1 (locked in)
- *   - **§5 composed row** → C-wider-gap
+ * # Design
  *
- * Round 8 changes:
+ *  - **Leftmost — phase/transport indicator.** Concentric dot + ring.
+ *    The dot is the constant — always visible, color encodes state
+ *    (`success` for active, `caution` for awaiting/restoring/
+ *    interrupt, `danger` for errored/offline, `default` for idle).
+ *    The ring is the activity-signal layer: rendered only for ACTIVE
+ *    (animated) states, pulses outward via `tide-status-ring-pulse`.
+ *    Centering via `translate(-50%,-50%)` keeps the ring concentric
+ *    with the dot through the scale animation.
+ *  - **Middle — five F5 cells.** Uniform-width columns containing
+ *    `TIME · TOKENS · TOTAL TIME · TOTAL TOKENS · CONTEXT`. Each cell
+ *    is the IBM-1620-inspired endcap-rule label apparatus above a
+ *    centered value. `formatTimeAlwaysHours` (`Hh Mm SSs`) for time
+ *    cells, `formatTokensCaps` (`K`/`M`/`G`) for token cells. CONTEXT
+ *    numerator color-codes by usage ratio.
+ *  - **Spacing — C-wider-gap.** `gap: 2xl` (~32px) + `paddingInline:
+ *    lg` (~16px). Indicator has generous breathing room from the
+ *    cells block.
+ *  - **No chevron.** The status bar does not collapse.
  *
- *   - **Ring renders in ALL session states.** Round 7 gated the ring
- *     behind `v.animated`, which hid it for idle / errored / offline.
- *     Fix: always render the ring; only the keyframe animation is
- *     conditional. Static states show a quiet outline around the dot.
- *   - **All-states grid.** A new sub-section renders P6 @ 16px once
- *     per session state, side-by-side, so every state can be compared
- *     at a glance without flipping the dropdown.
- *   - **Tug controls.** Replaced the native `<select>` / `<input
- *     type="checkbox">` / `<button>` at the top of the card with
- *     TugPopupButton / TugSwitch / TugPushButton, wired through the
- *     responder-chain pattern via `useResponderForm` (`setValueString`
- *     + `toggle` bindings).
+ * # Card structure
+ *
+ *  1. **Plan of record** — the chosen composed row at the user's
+ *     selected scenario + session state.
+ *  2. **All session states** — reference grid showing the indicator's
+ *     behavior in every `CodeSessionPhase` × `TransportState` ×
+ *     `interruptInFlight` combination.
+ *
+ * Controls (Tug components, responder-chain wired via
+ * `useResponderForm`): scenario picker, next-scenario button,
+ * auto-tick switch, session-state picker.
  *
  * @module components/tugways/cards/gallery-tide-status-row
  */
@@ -35,6 +52,7 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 
@@ -149,20 +167,6 @@ const sectionTitleStyle: React.CSSProperties = {
   flexDirection: "column",
   gap: "var(--tug-space-2xs)",
   marginBottom: "var(--tug-space-sm)",
-};
-
-const variantStackStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--tug-space-md)",
-};
-
-const variantTitleStyle: React.CSSProperties = {
-  fontFamily: MONO,
-  fontSize: "0.6875rem",
-  color: TEXT_MUTED,
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
 };
 
 const variantNoteStyle: React.CSSProperties = {
@@ -311,6 +315,52 @@ function phaseVisualFor(state: SessionState): PhaseVisual {
 }
 
 // ---------------------------------------------------------------------------
+// Human-readable session state — hover-tooltip content
+// ---------------------------------------------------------------------------
+
+const PHASE_HUMAN_LABEL: Record<DemoPhase, string> = {
+  idle: "Idle",
+  submitting: "Submitting message",
+  awaiting_first_token: "Awaiting first response",
+  streaming: "Streaming response",
+  tool_work: "Running tools",
+  awaiting_approval: "Awaiting your approval",
+  replaying: "Replaying session",
+  errored: "Last turn errored",
+};
+
+/**
+ * Build a tooltip body that describes the session state in plain
+ * English. The primary line names the phase; secondary lines surface
+ * transport degradation and interrupt-in-flight as additional facts.
+ * Rendered as ReactNode so the tooltip can format with weight + muted
+ * secondary lines.
+ */
+function HumanReadableState({
+  state,
+}: {
+  state: SessionState;
+}): React.ReactElement {
+  const secondaries: string[] = [];
+  if (state.transport === "offline") secondaries.push("Disconnected");
+  if (state.transport === "restoring") secondaries.push("Reconnecting…");
+  if (state.interruptInFlight) secondaries.push("Interrupt requested");
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ fontWeight: 600 }}>{PHASE_HUMAN_LABEL[state.phase]}</div>
+      {secondaries.map((s) => (
+        <div
+          key={s}
+          style={{ opacity: 0.78, fontSize: "0.875em" }}
+        >
+          {s}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // P6 — Concentric pulsing ring
 // ---------------------------------------------------------------------------
 //
@@ -324,6 +374,9 @@ function phaseVisualFor(state: SessionState): PhaseVisual {
 // glance. The pulse keyframe combines translate(-50%, -50%) with
 // scale(...) so the ring grows AROUND the dot without drifting off
 // axis.
+//
+// Hover surfaces a TugTooltip describing the session state in plain
+// English (phase + transport degradation + interrupt-in-flight).
 
 function ConcentricPulsingRing({
   state,
@@ -335,55 +388,56 @@ function ConcentricPulsingRing({
   const v = phaseVisualFor(state);
   const dotSize = Math.max(4, Math.round(size * 0.5));
   return (
-    <span
-      title={v.label}
-      aria-label={v.label}
-      style={{
-        position: "relative",
-        display: "inline-block",
-        width: size,
-        height: size,
-        flex: "0 0 auto",
-      }}
-    >
-      {/* Inner dot — solid filled circle, ALWAYS fully visible.
-          Color encodes state (success / caution / danger / default).
-          No opacity dimming — the dot is a status LED, not a hint.
-          The pulse animation (ring only) carries the active/static
-          distinction without sacrificing the dot's visibility. */}
+    <TugTooltip content={<HumanReadableState state={state} />} side="top">
       <span
+        aria-label={v.label}
         style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          width: dotSize,
-          height: dotSize,
-          borderRadius: 999,
-          backgroundColor: v.color,
-          transform: "translate(-50%, -50%)",
+          position: "relative",
+          display: "inline-block",
+          width: size,
+          height: size,
+          flex: "0 0 auto",
         }}
-      />
-      {/* Outer pulsing ring — only rendered for ACTIVE states
-          (animated). Static states (idle, errored, offline) show
-          just the dot, cleaner. The dot is the constant; the ring
-          is the activity-signal layer on top. */}
-      {v.animated && (
+      >
+        {/* Inner dot — solid filled circle, ALWAYS fully visible.
+            Color encodes state (success / caution / danger / default).
+            No opacity dimming — the dot is a status LED, not a hint.
+            The pulse animation (ring only) carries the active/static
+            distinction without sacrificing the dot's visibility. */}
         <span
           style={{
             position: "absolute",
             top: "50%",
             left: "50%",
-            width: size,
-            height: size,
+            width: dotSize,
+            height: dotSize,
             borderRadius: 999,
-            border: `1px solid ${v.color}`,
-            boxSizing: "border-box",
+            backgroundColor: v.color,
             transform: "translate(-50%, -50%)",
-            animation: "tide-status-ring-pulse 1.6s ease-out infinite",
           }}
         />
-      )}
-    </span>
+        {/* Outer pulsing ring — only rendered for ACTIVE states
+            (animated). Static states (idle, errored, offline) show
+            just the dot, cleaner. The dot is the constant; the ring
+            is the activity-signal layer on top. */}
+        {v.animated && (
+          <span
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              width: size,
+              height: size,
+              borderRadius: 999,
+              border: `1px solid ${v.color}`,
+              boxSizing: "border-box",
+              transform: "translate(-50%, -50%)",
+              animation: "tide-status-ring-pulse 1.6s ease-out infinite",
+            }}
+          />
+        )}
+      </span>
+    </TugTooltip>
   );
 }
 
@@ -472,31 +526,7 @@ function buildCellNodes(v: StatusValues): React.ReactElement[] {
 }
 
 // ---------------------------------------------------------------------------
-// §1 row: cells only (F5 baseline)
-// ---------------------------------------------------------------------------
-
-function CellsOnlyRow({ v }: { v: StatusValues }): React.ReactElement {
-  return (
-    <div
-      style={{
-        ...cardSurface,
-        paddingInline: "var(--tug-space-2xl)",
-        display: "flex",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "var(--tug-space-md)",
-        width: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      {buildCellNodes(v)}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// §5 — C-wider-gap composed row (the chosen spacing) — indicator + cells
+// Plan-of-record composed row — indicator + cells, C-wider-gap spacing
 // ---------------------------------------------------------------------------
 
 function ComposedRow({
@@ -585,31 +615,13 @@ function AllStatesGrid(): React.ReactElement {
 }
 
 // ---------------------------------------------------------------------------
-// Section / variant wrappers
+// Section title wrapper
 // ---------------------------------------------------------------------------
 
 function SectionTitle({ children }: { children: string }): React.ReactElement {
   return (
     <div style={sectionTitleStyle}>
       <TugLabel size="xs">{children}</TugLabel>
-    </div>
-  );
-}
-
-function VariantBlock({
-  title,
-  note,
-  children,
-}: {
-  title: string;
-  note: string;
-  children: React.ReactNode;
-}): React.ReactElement {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-2xs)" }}>
-      <div style={variantTitleStyle}>{title}</div>
-      <div style={variantNoteStyle}>{note}</div>
-      {children}
     </div>
   );
 }
@@ -743,91 +755,31 @@ export function GalleryTideStatusRow(): React.ReactElement {
           </span>
         </div>
 
-        {/* §1 — Distribution baseline */}
+        {/* Plan of record — the chosen composed row at the user's selected
+            scenario + state. Featured at the top because this IS the design. */}
         <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-          <SectionTitle>§1 — F5 distribution baseline (cells only)</SectionTitle>
-          <div style={variantStackStyle}>
-            <VariantBlock
-              title="R6-base — F5 row with width:100% + space-between"
-              note="Reference for the cells-only F5 design. The distribution fix the production CSS needs."
-            >
-              <CellsOnlyRow v={values} />
-            </VariantBlock>
-          </div>
-        </section>
-
-        <TugSeparator />
-
-        {/* §2 — P6 @ 16px in every state */}
-        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-          <SectionTitle>§2 — P6 concentric pulsing ring @ 16px — all session states</SectionTitle>
+          <SectionTitle>Plan of record — Z2 status row</SectionTitle>
           <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
-            Dot is the constant — always visible, color encodes state (success / caution / danger /
-            default, each mapped to a real theme token). Ring is the activity layer on top, only
-            rendered for ACTIVE states. Static states (idle, errored, offline) show just the bare dot.
-            Grid below shows P6 @ 16px once per session state, side-by-side.
+            Concentric pulsing-ring indicator (left) + five F5 cells (right). Row gap 2xl
+            (~32px), paddingInline lg (~16px). Scenario picker drives the cell values;
+            session-state picker drives the indicator behavior. This is the canonical layout
+            that will be promoted into the production tide-card Z2 renderer.
           </div>
-          <div style={variantStackStyle}>
-            <VariantBlock
-              title="All states grid — P6 @ 16px"
-              note="Every state from idle to errored, with the indicator rendered at its actual production size."
-            >
-              <AllStatesGrid />
-            </VariantBlock>
-            <VariantBlock
-              title="Interactive single — driven by session-state dropdown"
-              note="Pick a state above to see the indicator at full row scale."
-            >
-              <div
-                style={{
-                  ...cardSurface,
-                  paddingInline: "var(--tug-space-lg)",
-                  display: "flex",
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: "var(--tug-space-2xl)",
-                  width: "100%",
-                  boxSizing: "border-box",
-                }}
-              >
-                <ConcentricPulsingRing state={state} size={16} />
-                <span style={{ color: TEXT_MUTED, fontSize: "0.625rem" }}>
-                  state = {STATE_SCENARIOS[stateIdx].label}
-                </span>
-              </div>
-            </VariantBlock>
-          </div>
+          <ComposedRow v={values} state={state} />
         </section>
 
         <TugSeparator />
 
-        {/* §4 — T1 endcap (locked in) */}
+        {/* All session states — reference grid for the indicator's per-state behavior. */}
         <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-          <SectionTitle>§4 — Endcap: T1 custom EndcapRuleLabel (LOCKED IN)</SectionTitle>
-          <div style={{ ...variantNoteStyle }}>
-            The current production EndcapRuleLabel — one-sided ticks pointing down at 0.55 opacity,
-            hairline rule. Visible in every cell of every row throughout this gallery.
-          </div>
-        </section>
-
-        <TugSeparator />
-
-        {/* §5 — C-wider-gap composed target row */}
-        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-          <SectionTitle>§5 — Composed target row: C-wider-gap (chosen spacing)</SectionTitle>
+          <SectionTitle>All session states — indicator reference</SectionTitle>
           <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
-            The integration target. P6 @ 16px indicator (left), F5 cells filling the rest of the
-            row. Row gap is 2xl (~32px), paddingInline is lg. Chevron + collapse removed — the
-            row is always full.
+            The indicator (P6 @ 16px) in every CodeSessionPhase × TransportState ×
+            interruptInFlight combination. Dot is the constant — always visible, color encodes
+            state. Ring is the activity-signal layer, only present for ACTIVE states (animated).
+            Static states (idle, errored, offline) show just the bare dot.
           </div>
-          <div style={variantStackStyle}>
-            <VariantBlock
-              title="C-wider-gap — indicator + cells, gap: 2xl, paddingInline: lg"
-              note="The chosen spacing strategy. Indicator has generous breathing room from the cells block."
-            >
-              <ComposedRow v={values} state={state} />
-            </VariantBlock>
-          </div>
+          <AllStatesGrid />
         </section>
       </div>
     </ResponderScope>
