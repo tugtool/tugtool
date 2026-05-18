@@ -2441,7 +2441,7 @@ When `segments` is provided, the existing `value` / `formatValue` / `thresholds`
 **Checkpoint.**
 
 - [x] Existing TugArcGauge consumers (Step 20.4's window-utilization renderer, gallery accordion) render unchanged. (Verified by re-running the full test suite — every existing arc-gauge test still passes; the segments path engages only when the new prop is provided.)
-- [ ] Segmented mode renders correctly in the gallery for 2–5 segments with the remainder slot. _(Pending HMR vet; the five scenarios are wired in the gallery card.)_
+- [x] Segmented mode renders correctly in the gallery for 2–5 segments with the remainder slot.
 
 ---
 
