@@ -5,28 +5,49 @@
  * **Status: plan of record.** The design spike (rounds 1–9) is
  * resolved. This card now documents the chosen design rather than
  * exploring alternatives. The composed row at the top is the
- * canonical layout; the all-states reference beneath it documents
- * every behavior the leftmost indicator can show.
+ * canonical layout; the all-states reference and width-survey rows
+ * beneath it document the indicator's per-state behavior and the
+ * row's container-query collapse priority.
  *
  * # Design
  *
- *  - **Leftmost — phase/transport indicator.** Concentric dot + ring.
- *    The dot is the constant — always visible, color encodes state
- *    (`success` for active, `caution` for awaiting/restoring/
- *    interrupt, `danger` for errored/offline, `default` for idle).
- *    The ring is the activity-signal layer: rendered only for ACTIVE
- *    (animated) states, pulses outward via `tide-status-ring-pulse`.
- *    Centering via `translate(-50%,-50%)` keeps the ring concentric
- *    with the dot through the scale animation.
- *  - **Middle — five F5 cells.** Uniform-width columns containing
- *    `TIME · TOKENS · TOTAL TIME · TOTAL TOKENS · CONTEXT`. Each cell
- *    is the IBM-1620-inspired endcap-rule label apparatus above a
- *    centered value. `formatTimeAlwaysHours` (`Hh Mm SSs`) for time
- *    cells, `formatTokensCaps` (`K`/`M`/`G`) for token cells. CONTEXT
- *    numerator color-codes by usage ratio.
- *  - **Spacing — C-wider-gap.** `gap: 2xl` (~32px) + `paddingInline:
- *    lg` (~16px). Indicator has generous breathing room from the
- *    cells block.
+ *  - **Leftmost — phase/transport indicator + label.** Concentric
+ *    dot + ring with the canonical phase title rendered inline to
+ *    the right (TugStateIndicator's default `labelPosition="right"`,
+ *    landed in 20.4.3). The dot is the constant — always visible,
+ *    color encodes state (`success` for active, `caution` for
+ *    awaiting/restoring/interrupt, `danger` for errored/offline,
+ *    `default` for idle). The ring is the activity-signal layer:
+ *    rendered only for ACTIVE (animated) states, pulses outward via
+ *    TugAnimator. The wrapping host span uses a fixed `width`
+ *    (`INDICATOR_SLOT_WIDTH`, currently 220 px) — not `minWidth` —
+ *    so the variable-width label (longest is "Awaiting first
+ *    response") never expands the slot and the Time/Tokens/Context
+ *    cells stay at a stable horizontal position across label-text
+ *    changes.
+ *  - **Middle — three F5 cells.** Uniform-width columns containing
+ *    `TIME · TOKENS · CONTEXT`. Each cell is the IBM-1620-inspired
+ *    endcap-rule label apparatus above a centered value.
+ *    `formatTimeAlwaysHours` (`Hh Mm SSs`) for the time cell,
+ *    `formatTokensCaps` (`K`/`M`/`G`) for the tokens cell. CONTEXT
+ *    numerator color-codes by usage ratio. (The total-time / total-
+ *    tokens cells from the pre-20.4.4 layout were removed; that data
+ *    reappears in the per-area popovers in 20.4.7.)
+ *  - **Spacing — single flex row, all gaps fluid.** `paddingInline:
+ *    2xl` (24 px) gives the row generous margins at its left/right
+ *    edges. The row is a flat 4-item flex layout (indicator, TIME,
+ *    TOKENS, CONTEXT) with `justify-content: space-between` and a
+ *    minimum `gap: 8 px`. All three inter-item gaps flex uniformly
+ *    as the frame widens; no item's position is "stuck" to any
+ *    other item.
+ *  - **Collapse priority (gallery @container rules).** As the row
+ *    narrows, whole cells hide in priority order — TIME, then
+ *    TOKENS, then CONTEXT (the indicator + label always stays). The
+ *    breakpoint for each tier is written in `ch` units inside the
+ *    @container `calc()`, so it's derived from the actual rendered
+ *    `19ch` cell width in whatever monospace font the browser is
+ *    using — no guessing pixel widths. See
+ *    `gallery-tide-status-row.css` for the calc expressions.
  *  - **No chevron.** The status bar does not collapse.
  *
  * # Card structure
@@ -36,6 +57,10 @@
  *  2. **All session states** — reference grid showing the indicator's
  *     behavior in every `CodeSessionPhase` × `TransportState` ×
  *     `interruptInFlight` combination.
+ *  3. **Container-query widths** — the canonical row inside a
+ *     `resize: horizontal` frame so the collapse priority can be
+ *     vetted by direct manipulation (drag the bottom-right corner of
+ *     the frame to narrow it past the 430 / 260 breakpoints).
  *
  * Controls (Tug components, responder-chain wired via
  * `useResponderForm`): scenario picker, next-scenario button,
@@ -43,6 +68,8 @@
  *
  * @module components/tugways/cards/gallery-tide-status-row
  */
+
+import "./gallery-tide-status-row.css";
 
 import React, { useEffect, useId, useState } from "react";
 
@@ -253,15 +280,21 @@ function EndcapRuleLabel({
 
 const UNIFORM_CELL_WIDTH = "19ch";
 
+type CellPriority = "time" | "tokens" | "context";
+
 function F5Cell({
   label,
   valueNode,
+  priority,
 }: {
   label: string;
   valueNode: React.ReactElement;
+  priority: CellPriority;
 }): React.ReactElement {
   return (
     <span
+      className="gallery-tide-status-cell"
+      data-priority={priority}
       style={{
         display: "inline-flex",
         flexDirection: "column",
@@ -323,17 +356,31 @@ function contextValue(v: StatusValues): React.ReactElement {
 
 function buildCellNodes(v: StatusValues): React.ReactElement[] {
   return [
-    <F5Cell key="time" label="TIME" valueNode={plainValue(formatTimeAlwaysHours(v.perTurnActiveMs))} />,
-    <F5Cell key="tokens" label="TOKENS" valueNode={plainValue(formatTokensCaps(v.perTurnTokens))} />,
-    <F5Cell key="total-time" label="TOTAL TIME" valueNode={plainValue(formatTimeAlwaysHours(v.totalActiveMs))} />,
-    <F5Cell key="total-tokens" label="TOTAL TOKENS" valueNode={plainValue(formatTokensCaps(v.totalTokens))} />,
-    <F5Cell key="context" label="CONTEXT" valueNode={contextValue(v)} />,
+    <F5Cell key="time" priority="time" label="TIME" valueNode={plainValue(formatTimeAlwaysHours(v.perTurnActiveMs))} />,
+    <F5Cell key="tokens" priority="tokens" label="TOKENS" valueNode={plainValue(formatTokensCaps(v.perTurnTokens))} />,
+    <F5Cell key="context" priority="context" label="CONTEXT" valueNode={contextValue(v)} />,
   ];
 }
 
 // ---------------------------------------------------------------------------
 // Plan-of-record composed row — indicator + cells, C-wider-gap spacing
 // ---------------------------------------------------------------------------
+
+// Indicator + label host slot: a FIXED width (not minWidth) so the
+// cells positions are stable across label-text changes. Sized for the
+// longest PHASE_HUMAN_LABEL ("Awaiting first response", 23 chars in
+// the row's mono font at 0.75rem ≈ 173px) + 16px glyph + 6px gap,
+// plus ~25px buffer so verbose mono fallbacks still fit. If a future
+// phase label is added longer than this, bump the constant.
+const INDICATOR_SLOT_WIDTH = 220;
+
+// Initial / min width for the resizable container-query demo live in
+// `gallery-tide-status-row.css` (NOT in React inline style) so the
+// user's drag persists across gallery re-renders. The CSS sets
+// `width: 800px; min-width: 280px; max-width: 100%` on
+// `.gallery-tide-status-resize-frame`; the @container breakpoints
+// below it derive from the row's actual `19ch` cell width, so they
+// stay correct regardless of which monospace font the browser picks.
 
 function ComposedRow({
   v,
@@ -344,13 +391,21 @@ function ComposedRow({
 }): React.ReactElement {
   return (
     <div
+      className="gallery-tide-status-row-host"
       style={{
         ...cardSurface,
-        paddingInline: "var(--tug-space-lg)",
+        paddingInline: "var(--tug-space-2xl)",
         display: "flex",
         flexDirection: "row",
         alignItems: "center",
-        gap: "var(--tug-space-2xl)",
+        // Single flex row holding the indicator + every visible cell.
+        // `space-between` distributes them edge-to-edge with the
+        // remaining row width absorbed into the gaps; `gap` is the
+        // *minimum* inter-item spacing the gaps will ever shrink to.
+        // All four (indicator → TIME → TOKENS → CONTEXT) gaps are
+        // flexible — they grow uniformly as the row widens.
+        justifyContent: "space-between",
+        gap: 8,
         width: "100%",
         boxSizing: "border-box",
       }}
@@ -360,24 +415,12 @@ function ComposedRow({
           display: "inline-flex",
           alignItems: "center",
           flex: "0 0 auto",
+          width: INDICATOR_SLOT_WIDTH,
         }}
       >
-        <TugStateIndicator state={state} size={16} labelPosition="hidden" />
+        <TugStateIndicator state={state} size={16} />
       </span>
-
-      <div
-        style={{
-          flex: "1 1 auto",
-          display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "var(--tug-space-md)",
-          minWidth: 0,
-        }}
-      >
-        {buildCellNodes(v)}
-      </div>
+      {buildCellNodes(v)}
     </div>
   );
 }
@@ -553,10 +596,16 @@ export function GalleryTideStatusRow(): React.ReactElement {
         <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
           <SectionTitle>Plan of record — Z2 status row</SectionTitle>
           <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
-            Concentric pulsing-ring indicator (left) + five F5 cells (right). Row gap 2xl
-            (~32px), paddingInline lg (~16px). Scenario picker drives the cell values;
-            session-state picker drives the indicator behavior. This is the canonical layout
-            that will be promoted into the production tide-card Z2 renderer.
+            Four areas — TugStateIndicator (with inline label) + three F5 cells
+            (TIME · TOKENS · CONTEXT) — in one flex row with
+            `justify-content: space-between` and a small minimum gap, so all three
+            inter-item spaces flex uniformly with row width. Row paddingInline 2xl (24px)
+            for end margins. The indicator slot is a fixed
+            {INDICATOR_SLOT_WIDTH}px wide — sized for the longest phase label
+            ("Awaiting first response") — so the cell positions stay stable across
+            label-text changes. Scenario picker drives the cell values; session-state
+            picker drives the indicator behavior. This is the canonical layout that will be
+            promoted into the production tide-card Z2 renderer.
           </div>
           <ComposedRow v={values} state={state} />
         </section>
@@ -573,6 +622,26 @@ export function GalleryTideStatusRow(): React.ReactElement {
             Static states (idle, errored, offline) show just the bare dot.
           </div>
           <AllStatesGrid />
+        </section>
+
+        <TugSeparator />
+
+        {/* Container-query collapse — single resizable frame, dragged by the user. */}
+        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
+          <SectionTitle>Container-query collapse — drag to test</SectionTitle>
+          <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
+            Drag the bottom-right corner of the frame below to narrow it. The row is a
+            single 4-item flex layout — indicator, TIME, TOKENS, CONTEXT — with
+            `justify-content: space-between` and a small minimum gap, so all four
+            inter-item spaces flex uniformly as the frame widens. Gallery-only @container
+            rules hide cells in priority order (TIME → TOKENS → CONTEXT) the moment they
+            would no longer fit; the breakpoints are written in `ch` units so they track
+            the row's actual monospace metrics, not a guessed pixel value. The frame's
+            CSS-pinned `min-width` keeps the indicator itself from ever clipping.
+          </div>
+          <div className="gallery-tide-status-resize-frame">
+            <ComposedRow v={values} state={state} />
+          </div>
         </section>
       </div>
     </ResponderScope>

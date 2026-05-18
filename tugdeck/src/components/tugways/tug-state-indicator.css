@@ -58,7 +58,7 @@ body {
      root span when the consumer passes `size`). */
   --tugx-state-indicator-size:     16px;
   --tugx-state-indicator-dot-size: calc(var(--tugx-state-indicator-size) / 2);
-  --tugx-state-indicator-label-gap: var(--tug-space-xs, 6px);
+  --tugx-state-indicator-label-gap: var(--tug-space-sm, 6px);
 
   /* The host surface the indicator is expected to render against.
      Consumers on a non-default surface re-declare this in their own

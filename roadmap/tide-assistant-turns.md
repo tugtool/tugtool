@@ -2139,7 +2139,7 @@ labelPosition?: "left" | "right" | "hidden"; // default "right"
 
 **Depends on:** #step-20-4-3 (label support shapes the indicator's host width)
 
-**Status:** _not started._
+**Status:** _done (pending HMR vet)._
 
 **Commit:** `feat(tide-rendering): Z2 four-cell layout, remove Total Time + Total Tokens`
 
@@ -2149,20 +2149,20 @@ labelPosition?: "left" | "right" | "hidden"; // default "right"
 
 **Tasks.**
 
-- [ ] Remove the `Total Time` / `Total Tokens` cells from the gallery's `ComposedRow`.
-- [ ] Recompute the proportional spacing and container-query breakpoints for four cells.
-- [ ] Reserve the expanded indicator host slot so the label fits without crowding the `Time` cell.
+- [x] Remove the `Total Time` / `Total Tokens` cells from the gallery's `ComposedRow` (`buildCellNodes` now emits only TIME · TOKENS · CONTEXT).
+- [x] Recompute the proportional spacing and container-query breakpoints for four cells — new `gallery-tide-status-row.css` declares `container-type: inline-size` + `container-name: gallery-tide-status` on `ComposedRow`'s host and runs two `@container` rules: TIME hides at ≤430px, TOKENS at ≤260px, CONTEXT is most persistent. The pre-reshape 780/600 breakpoints (which collapsed total-time / total-tokens) are now obsolete and were not carried over.
+- [x] Reserve the expanded indicator host slot — the ComposedRow's wrapping span gets a fixed `minWidth: 180px` (sized for the widest `PHASE_HUMAN_LABEL`, "Awaiting first response", in the row's mono font), keyed off the new `INDICATOR_SLOT_MIN_WIDTH` constant. Label-text changes during a streaming turn never reflow the Time cell. The ComposedRow's `TugStateIndicator` now uses the default `labelPosition="right"` (no longer pinned to `"hidden"`).
 
 **Tests.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (2089/2089).
+- [x] `bun run audit:tokens lint` exits 0 (zero violations).
 
 **Checkpoint.**
 
-- [ ] Gallery card's plan-of-record row shows four areas with the indicator's label visible at default position.
-- [ ] HMR-vet container-query collapse behavior at four representative widths.
+- [ ] Gallery card's plan-of-record row shows four areas with the indicator's label visible at default position. (HMR vet by user.)
+- [ ] HMR-vet container-query collapse behavior at four representative widths. (New "Container-query widths" section renders the canonical row at 720 / 480 / 380 / 220 px so each collapse state is inspectable in place.)
 
 ---
 
