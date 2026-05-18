@@ -56,19 +56,22 @@
    ========================================================================= */
 
 @container gallery-tide-status (max-width: calc(48px + 220px + 3 * 19ch + 3 * 8px + 20px)) {
-  .gallery-tide-status-cell[data-priority="time"] {
+  .gallery-tide-status-cell[data-priority="time"],
+  .gallery-tide-status-cell-clickable[data-priority="time"] {
     display: none;
   }
 }
 
 @container gallery-tide-status (max-width: calc(48px + 220px + 2 * 19ch + 2 * 8px + 20px)) {
-  .gallery-tide-status-cell[data-priority="tokens"] {
+  .gallery-tide-status-cell[data-priority="tokens"],
+  .gallery-tide-status-cell-clickable[data-priority="tokens"] {
     display: none;
   }
 }
 
 @container gallery-tide-status (max-width: calc(48px + 220px + 19ch + 8px + 20px)) {
-  .gallery-tide-status-cell[data-priority="context"] {
+  .gallery-tide-status-cell[data-priority="context"],
+  .gallery-tide-status-cell-clickable[data-priority="context"] {
     display: none;
   }
 }

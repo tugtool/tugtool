@@ -91,6 +91,109 @@ export function extractTurnCost(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Per-area popover summaries — count / total / average shapes consumed
+// by the Tide status-row popovers (`Time`, `Tokens`) per plan
+// `#step-20-4-7-a`. Built on top of {@link deriveSessionTotals} so the
+// session-wide sums are computed once; the popover-specific helpers
+// add the popover surface's specific shape (count + average for the
+// per-area summary footer).
+// ---------------------------------------------------------------------------
+//
+// Why two purpose-named helpers instead of one generic surface: each
+// popover has its own footer copy and its own units (ms vs tokens),
+// and the renderers downstream want a typed shape they can destructure
+// without manually re-computing averages. The two helpers stay tiny
+// because they delegate the actual summation to `deriveSessionTotals`.
+
+/**
+ * Per-turn timing summary for the `Time` status-area popover.
+ *
+ *   - `count`: number of committed turns in `transcript[]`.
+ *   - `totalActiveMs`: sum of `TurnEntry.activeMs` across the transcript.
+ *   - `avgActiveMs`: arithmetic mean, rounded to the nearest ms; `0`
+ *     when `count === 0` (avoids a NaN footer for fresh sessions).
+ *
+ * Active-time is the "machine doing work" measure the indicator's
+ * green-axis paint represents — wall-clock minus pause time. The
+ * popover surfaces this same measure across the committed transcript
+ * so the user sees the per-turn breakdown that matches the headline
+ * cell value.
+ */
+export interface TurnTimingSummary {
+  count: number;
+  totalActiveMs: number;
+  avgActiveMs: number;
+}
+
+/**
+ * Compute the `Time` popover's summary block from the committed
+ * transcript. In-flight turns are NOT included by design — the popover's
+ * row log shows committed turns only; live in-flight time is surfaced
+ * separately in the popover footer by the renderer (via
+ * {@link deriveInflightActiveMs}). See plan `#step-20-4-7-a`.
+ */
+export function computeTimeSummary(
+  transcript: ReadonlyArray<TurnEntry>,
+): TurnTimingSummary {
+  const totals = deriveSessionTotals(transcript);
+  return {
+    count: totals.turnCount,
+    totalActiveMs: totals.totalActiveMs,
+    avgActiveMs:
+      totals.turnCount === 0
+        ? 0
+        : Math.round(totals.totalActiveMs / totals.turnCount),
+  };
+}
+
+/**
+ * Per-turn token summary for the `Tokens` status-area popover.
+ * `totalTokens` is the sum across all four token categories — the
+ * single number the cell headline shows — and `avgTokensPerTurn` is
+ * the per-turn arithmetic mean (rounded), `0` for an empty transcript.
+ *
+ * The four per-category totals are exposed alongside so the renderer
+ * can break the value down into "input + output + cache-read +
+ * cache-creation" if the popover surface wants that detail.
+ */
+export interface TurnTokensSummary {
+  count: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
+  totalTokens: number;
+  avgTokensPerTurn: number;
+}
+
+/**
+ * Compute the `Tokens` popover's summary block from the committed
+ * transcript. Same in-flight contract as {@link computeTimeSummary}:
+ * row log + this summary cover committed turns only; the renderer
+ * adds the live in-flight token contribution to the footer separately.
+ */
+export function computeTokensSummary(
+  transcript: ReadonlyArray<TurnEntry>,
+): TurnTokensSummary {
+  const totals = deriveSessionTotals(transcript);
+  const totalTokens =
+    totals.totalInputTokens +
+    totals.totalOutputTokens +
+    totals.totalCacheReadTokens +
+    totals.totalCacheCreationTokens;
+  return {
+    count: totals.turnCount,
+    totalInputTokens: totals.totalInputTokens,
+    totalOutputTokens: totals.totalOutputTokens,
+    totalCacheReadTokens: totals.totalCacheReadTokens,
+    totalCacheCreationTokens: totals.totalCacheCreationTokens,
+    totalTokens,
+    avgTokensPerTurn:
+      totals.turnCount === 0 ? 0 : Math.round(totalTokens / totals.turnCount),
+  };
+}
+
 /**
  * Session-level totals derived by summing per-turn fields across the
  * committed transcript. Pure folds — no time source, no live in-flight

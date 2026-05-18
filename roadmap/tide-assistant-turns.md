@@ -2348,7 +2348,7 @@ export function deriveInflightActiveMs(
 
 **Depends on:** #step-20-4-6
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tide-rendering): gallery popovers for Time + Tokens`
 
@@ -2365,22 +2365,22 @@ Visual language pulled from `tug-dev-panel/`'s log format (mono font, tight row-
 
 **Tasks.**
 
-- [ ] `Time` popover: row list + summary; pure-logic helper to compute summary stats from `transcript[]`.
-- [ ] `Tokens` popover: row list + summary; pure-logic helper for totals + average.
-- [ ] In-flight footer surface: small live "current turn" addendum that ticks with the existing 1Hz live-tick subscription.
-- [ ] Gallery card adds a controlled-scenario picker so the popovers render against representative session shapes (fresh, deep, near-cap, etc.).
+- [x] `Time` popover: row list + summary; pure-logic helper to compute summary stats from `transcript[]`. (`computeTimeSummary` in `telemetry.ts`; `TimePopoverContent` in the gallery renders the row log + footer.)
+- [x] `Tokens` popover: row list + summary; pure-logic helper for totals + average. (`computeTokensSummary` + `TokensPopoverContent`.)
+- [x] In-flight footer surface: small live "current turn" addendum that ticks with the existing 1Hz live-tick subscription. (Both popovers accept an optional `inflight` prop; when set, the footer adds a "current turn ... in flight" row. The gallery feeds the live `liveTimeMs` already 1Hz-ticked via `useLifecycleTick`.)
+- [x] Gallery card adds a controlled-scenario picker so the popovers render against representative session shapes (fresh, deep, near-cap, etc.). (New "transcript" popup-button in the controls bar swaps between four `TRANSCRIPT_SCENARIOS` — `Fresh (0 turns)`, `Single turn`, `Short session (4 turns)`, `Deep session (mixed outcomes, 10 turns)`.)
 
 **Tests.**
 
-- [ ] Pure-logic tests for each helper (`computeTimeSummary`, `computeTokensSummary`) against synthetic transcripts.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic tests for each helper (`computeTimeSummary`, `computeTokensSummary`) against synthetic transcripts. (Eight cases in `telemetry.test.ts`: empty / single / multi / rounding / mixed-outcomes for time; empty / four-category sums / zero-defaults for tokens.)
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] HMR-vet both popovers against multiple scenarios.
-- [ ] In-flight footer renders correctly when a turn is in flight.
+- [ ] HMR-vet both popovers against multiple scenarios. _(Pending; transcript picker is wired and ready.)_
+- [ ] In-flight footer renders correctly when a turn is in flight. _(Pending HMR vet; live-tick wiring + footer row are in place.)_
 
 ---
 

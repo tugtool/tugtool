@@ -17,6 +17,8 @@ import {
   unionPauseMs,
   deriveInflightActiveMs,
   deriveTimeCellMs,
+  computeTimeSummary,
+  computeTokensSummary,
   type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
 import {
@@ -578,5 +580,124 @@ describe("deriveTimeCellMs", () => {
     // the fallback. The cell should freeze at that committed value
     // rather than ticking back to 0 or any other transient state.
     expect(deriveTimeCellMs(snap(), 1_001_000, 7_777)).toBe(7_777);
+  });
+});
+
+describe("computeTimeSummary", () => {
+  it("returns zeros for an empty transcript", () => {
+    expect(computeTimeSummary([])).toEqual({
+      count: 0,
+      totalActiveMs: 0,
+      avgActiveMs: 0,
+    });
+  });
+
+  it("returns the single turn's activeMs as both total and average", () => {
+    const result = computeTimeSummary([turn({ activeMs: 4_200 })]);
+    expect(result).toEqual({
+      count: 1,
+      totalActiveMs: 4_200,
+      avgActiveMs: 4_200,
+    });
+  });
+
+  it("sums and averages across multiple committed turns", () => {
+    const transcript = [
+      turn({ activeMs: 1_000 }),
+      turn({ activeMs: 3_000 }),
+      turn({ activeMs: 5_000 }),
+    ];
+    expect(computeTimeSummary(transcript)).toEqual({
+      count: 3,
+      totalActiveMs: 9_000,
+      avgActiveMs: 3_000,
+    });
+  });
+
+  it("rounds the average to the nearest ms", () => {
+    const transcript = [
+      turn({ activeMs: 1_000 }),
+      turn({ activeMs: 1_001 }),
+      turn({ activeMs: 1_001 }),
+    ];
+    // total = 3_002, count = 3, avg = 1000.6667 → round → 1001
+    expect(computeTimeSummary(transcript).avgActiveMs).toBe(1_001);
+  });
+
+  it("includes interrupted turns in the sum and count", () => {
+    // The summary reflects all committed turns regardless of terminal
+    // reason — interrupted turns are still committed transcript rows
+    // and their accumulated activeMs is part of the session's total.
+    const transcript = [
+      turn({ activeMs: 2_000, result: "success" }),
+      turn({ activeMs: 500, result: "interrupted" }),
+    ];
+    expect(computeTimeSummary(transcript)).toEqual({
+      count: 2,
+      totalActiveMs: 2_500,
+      avgActiveMs: 1_250,
+    });
+  });
+});
+
+describe("computeTokensSummary", () => {
+  it("returns zeros for an empty transcript", () => {
+    expect(computeTokensSummary([])).toEqual({
+      count: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalTokens: 0,
+      avgTokensPerTurn: 0,
+    });
+  });
+
+  it("sums all four token categories and the cross-category total", () => {
+    const transcript = [
+      turn({
+        cost: {
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadInputTokens: 10,
+          cacheCreationInputTokens: 5,
+          totalCostUsd: 0,
+        },
+      }),
+      turn({
+        cost: {
+          inputTokens: 200,
+          outputTokens: 75,
+          cacheReadInputTokens: 20,
+          cacheCreationInputTokens: 15,
+          totalCostUsd: 0,
+        },
+      }),
+    ];
+    const r = computeTokensSummary(transcript);
+    expect(r.count).toBe(2);
+    expect(r.totalInputTokens).toBe(300);
+    expect(r.totalOutputTokens).toBe(125);
+    expect(r.totalCacheReadTokens).toBe(30);
+    expect(r.totalCacheCreationTokens).toBe(20);
+    // total = 300 + 125 + 30 + 20 = 475
+    expect(r.totalTokens).toBe(475);
+    // avg = 475 / 2 = 237.5 → round → 238
+    expect(r.avgTokensPerTurn).toBe(238);
+  });
+
+  it("treats missing token categories as zero", () => {
+    // TurnCost defaults from TURN_ENTRY_TELEMETRY_DEFAULTS — verify the
+    // helper folds them as zero rather than NaN-propagating.
+    const transcript = [turn({}), turn({})];
+    expect(computeTokensSummary(transcript)).toEqual({
+      count: 2,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalTokens: 0,
+      avgTokensPerTurn: 0,
+    });
   });
 });

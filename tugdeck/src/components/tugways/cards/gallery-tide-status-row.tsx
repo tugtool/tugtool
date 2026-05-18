@@ -97,6 +97,15 @@ import {
   TugPopoverContent,
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
+import { TugBadge } from "@/components/tugways/tug-badge";
+import {
+  computeTimeSummary,
+  computeTokensSummary,
+} from "@/lib/code-session-store/telemetry";
+import type {
+  TurnCost,
+  TurnEntry,
+} from "@/lib/code-session-store/types";
 
 // ---------------------------------------------------------------------------
 // Value scenarios + status-row formatters
@@ -357,6 +366,141 @@ const STATE_SCENARIOS: ReadonlyArray<{ id: string; label: string; state: TugStat
 ];
 
 // ---------------------------------------------------------------------------
+// Transcript fixtures for per-area popovers (20.4.7.A)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a `TurnCost` with explicit per-category counts and a derived
+ * (synthetic) `totalCostUsd`. Defaults to zero per category — callers
+ * pass only the categories they care about for the fixture's shape.
+ */
+function fixtureCost(partial: Partial<TurnCost> = {}): TurnCost {
+  const {
+    inputTokens = 0,
+    outputTokens = 0,
+    cacheReadInputTokens = 0,
+    cacheCreationInputTokens = 0,
+    totalCostUsd,
+  } = partial;
+  const derivedCost =
+    (inputTokens + outputTokens) * 0.000003 +
+    cacheCreationInputTokens * 0.000004 +
+    cacheReadInputTokens * 0.00000025;
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadInputTokens,
+    cacheCreationInputTokens,
+    totalCostUsd: totalCostUsd ?? derivedCost,
+  };
+}
+
+/**
+ * Build a complete `TurnEntry` from a small set of meaningful per-turn
+ * fields. The remaining `TurnEntry` surface (`turnKey`, `msgId`,
+ * `endedAt`, `ttftMs`, etc.) is filled with neutral defaults so the
+ * fixtures stay terse — the popover content only reads `activeMs`,
+ * `cost`, and `result`.
+ */
+function fixtureTurn(
+  idx: number,
+  partial: {
+    activeMs?: number;
+    cost?: Partial<TurnCost>;
+    result?: "success" | "interrupted";
+  } = {},
+): TurnEntry {
+  const { activeMs = 5_000, cost = {}, result = "success" } = partial;
+  return {
+    turnKey: `fixture-turn-${idx}`,
+    msgId: `fixture-msg-${idx}`,
+    userMessage: { text: "", attachments: [], submitAt: 0 },
+    thinking: "",
+    assistant: "",
+    toolCalls: [],
+    controlRequests: [],
+    result,
+    endedAt: 0,
+    wallClockMs: activeMs,
+    awaitingApprovalMs: 0,
+    transportDowntimeMs: 0,
+    activeMs,
+    ttftMs: null,
+    ttftcMs: null,
+    reconnectCount: 0,
+    maxStreamGapMs: 0,
+    turnEndReason: result === "success" ? "complete" : "interrupted",
+    cost: fixtureCost(cost),
+  };
+}
+
+interface TranscriptScenario {
+  readonly id: string;
+  readonly label: string;
+  readonly transcript: ReadonlyArray<TurnEntry>;
+}
+
+/**
+ * Synthetic transcripts that drive the Time + Tokens popovers'
+ * row-log + summary footer. Each shape exercises a different
+ * popover state — empty / single-row / multi-row with mixed
+ * terminal reasons / long-session — so the substrate is HMR-vettable
+ * against the cases production will eventually hit.
+ */
+const TRANSCRIPT_SCENARIOS: ReadonlyArray<TranscriptScenario> = [
+  { id: "empty", label: "Fresh (0 turns)", transcript: [] },
+  {
+    id: "single",
+    label: "Single turn",
+    transcript: [
+      fixtureTurn(1, {
+        activeMs: 4_200,
+        cost: { inputTokens: 12_000, outputTokens: 1_800, cacheReadInputTokens: 2_400 },
+      }),
+    ],
+  },
+  {
+    id: "short",
+    label: "Short session (4 turns)",
+    transcript: [
+      fixtureTurn(1, {
+        activeMs: 1_800,
+        cost: { inputTokens: 9_400, outputTokens: 1_200 },
+      }),
+      fixtureTurn(2, {
+        activeMs: 12_400,
+        cost: { inputTokens: 14_200, outputTokens: 4_300, cacheReadInputTokens: 3_000 },
+      }),
+      fixtureTurn(3, {
+        activeMs: 3_100,
+        cost: { inputTokens: 11_800, outputTokens: 900 },
+        result: "interrupted",
+      }),
+      fixtureTurn(4, {
+        activeMs: 8_900,
+        cost: { inputTokens: 13_400, outputTokens: 2_700, cacheCreationInputTokens: 1_500 },
+      }),
+    ],
+  },
+  {
+    id: "deep",
+    label: "Deep session (mixed outcomes)",
+    transcript: [
+      fixtureTurn(1, { activeMs: 1_500, cost: { inputTokens: 4_200, outputTokens: 600 } }),
+      fixtureTurn(2, { activeMs: 6_400, cost: { inputTokens: 7_800, outputTokens: 1_900 } }),
+      fixtureTurn(3, { activeMs: 24_800, cost: { inputTokens: 18_600, outputTokens: 8_400, cacheReadInputTokens: 5_400 } }),
+      fixtureTurn(4, { activeMs: 2_100, cost: { inputTokens: 8_300, outputTokens: 1_100 }, result: "interrupted" }),
+      fixtureTurn(5, { activeMs: 14_600, cost: { inputTokens: 12_900, outputTokens: 4_400 } }),
+      fixtureTurn(6, { activeMs: 9_300, cost: { inputTokens: 11_200, outputTokens: 2_800, cacheCreationInputTokens: 2_000 } }),
+      fixtureTurn(7, { activeMs: 31_900, cost: { inputTokens: 22_400, outputTokens: 12_100, cacheReadInputTokens: 9_800 } }),
+      fixtureTurn(8, { activeMs: 4_700, cost: { inputTokens: 9_100, outputTokens: 1_700 } }),
+      fixtureTurn(9, { activeMs: 18_200, cost: { inputTokens: 16_800, outputTokens: 6_300 } }),
+      fixtureTurn(10, { activeMs: 7_400, cost: { inputTokens: 10_500, outputTokens: 2_200 }, result: "interrupted" }),
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Tokens, surfaces, base styles
 // ---------------------------------------------------------------------------
 
@@ -557,48 +701,131 @@ function contextValue(v: StatusValues): React.ReactElement {
   );
 }
 
-function buildCellNodes(v: StatusValues): React.ReactElement[] {
-  return [
-    <F5Cell key="time" priority="time" label="TIME" valueNode={plainValue(formatTimeAlwaysHours(v.perTurnActiveMs))} />,
-    <F5Cell key="tokens" priority="tokens" label="TOKENS" valueNode={plainValue(formatTokensCaps(v.perTurnTokens))} />,
-    <F5Cell key="context" priority="context" label="CONTEXT" valueNode={contextValue(v)} />,
+/**
+ * Optional popover content keyed by cell priority. When a key is set,
+ * `buildCellNodes` wraps the matching cell in a `TugPopoverTrigger`
+ * with the status-cell anchor affordance class — the anchor pattern
+ * established in 20.4.6. Keys with no value render the cell bare.
+ *
+ * The Z2 status row reuses this map's shape across both gallery
+ * instances (plan-of-record + resize-frame): the plan-of-record
+ * instance passes meaningful popover content for `time` and `tokens`;
+ * the resize-frame instance omits the prop so the cell-collapse
+ * behavior can be vetted without popovers interfering. CONTEXT's
+ * popover (an arc-gauge breakdown) lands in 20.4.7.C.
+ */
+interface CellPopoverContent {
+  time?: React.ReactNode;
+  tokens?: React.ReactNode;
+  context?: React.ReactNode;
+}
+
+function buildCellNodes(
+  v: StatusValues,
+  popovers?: CellPopoverContent,
+): React.ReactElement[] {
+  const entries: Array<{ priority: CellPriority; node: React.ReactElement }> = [
+    {
+      priority: "time",
+      node: (
+        <F5Cell
+          priority="time"
+          label="TIME"
+          valueNode={plainValue(formatTimeAlwaysHours(v.perTurnActiveMs))}
+        />
+      ),
+    },
+    {
+      priority: "tokens",
+      node: (
+        <F5Cell
+          priority="tokens"
+          label="TOKENS"
+          valueNode={plainValue(formatTokensCaps(v.perTurnTokens))}
+        />
+      ),
+    },
+    {
+      priority: "context",
+      node: (
+        <F5Cell priority="context" label="CONTEXT" valueNode={contextValue(v)} />
+      ),
+    },
   ];
+  return entries.map(({ priority, node }) => {
+    const content = popovers?.[priority];
+    if (content === undefined) {
+      return React.cloneElement(node, { key: priority });
+    }
+    // Anchor pattern: F5Cell wrapped in `gallery-tide-status-cell-clickable`
+    // for the hover affordance hint (cursor + tinted background), then
+    // composed into a TugPopover whose trigger uses asChild so Radix
+    // merges click + ARIA onto the affordance span. The wrapper carries
+    // `data-priority` so the @container collapse rules hide it
+    // alongside the cell itself.
+    return (
+      <TugPopover key={priority}>
+        <TugPopoverTrigger>
+          <span
+            className="gallery-tide-status-cell-clickable"
+            data-priority={priority}
+          >
+            {node}
+          </span>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+          {content}
+        </TugPopoverContent>
+      </TugPopover>
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Status-cell popover anchor pattern (scratch — 20.4.6 substrate)
+// Per-area popover content (20.4.7.A) — Time + Tokens
 // ---------------------------------------------------------------------------
 
 /**
- * Field-row scaffold that anticipates the dev-panel-style layout the
- * per-area popovers will adopt in 20.4.7 (one row per committed turn,
- * label + value + optional muted hint). Kept inline in the gallery
- * card rather than promoted into the production tree because the
- * production rows will read live `TurnEntry` data and carry their own
- * formatters — this scaffold only exists to give the popover
- * substrate a plausible visual stand-in to HMR-vet against.
+ * One row in a per-area popover. Two-column layout — label on the
+ * left, value on the right — with an optional `hint` rendered as a
+ * trailing muted suffix and an optional `badge` rendered after the
+ * value. Mirrors the dev-panel `FieldRow` visual language (mono
+ * monospace, tabular numerics, label-left / value-right, muted hint
+ * suffix) so the popover's row density matches the rest of the dev
+ * surfaces the user works in. The badge slot is the per-row terminal-
+ * state chip the row log uses.
  *
- * Visual language mirrors `components/tug-dev-panel/field-row.tsx`:
- * tabular monospace, label + path on the left, value + hint on the
- * right. The per-area popovers in 20.4.7 will adopt the same shape so
- * the user's eye learns one row-density across the dev panel and the
- * status popovers.
+ * Kept inline in the gallery card rather than promoted into the
+ * tugways library because the per-area popovers are still a workshop
+ * surface — the production component (when 20.4.10 promotes this
+ * into the real Z2 renderer) will choose whether this row primitive
+ * graduates to a shared component.
  */
-function ScratchFieldRow({
+function PopoverRow({
   label,
   value,
   hint,
+  badge,
 }: {
   label: string;
   value: string;
   hint?: string;
+  badge?: React.ReactNode;
 }): React.ReactElement {
+  // Three-column grid: label (far left, muted), an annotation column
+  // (badge OR hint, right-aligned so it abuts the value) and the
+  // numeric value (far right). Numbers across rows share the same
+  // `auto`-sized rightmost column, so different value lengths (e.g.
+  // "4" vs "0h 0m 26s") still right-align on the same edge — the
+  // reader can scan the column vertically without their eye chasing
+  // ragged trailing chrome.
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr auto",
+        gridTemplateColumns: "auto 1fr auto",
         columnGap: "var(--tug-space-md)",
+        alignItems: "baseline",
         fontFamily: MONO,
         fontVariantNumeric: "tabular-nums",
         fontSize: "0.6875rem",
@@ -606,85 +833,257 @@ function ScratchFieldRow({
       }}
     >
       <span style={{ color: TEXT_MUTED }}>{label}</span>
-      <span style={{ color: TEXT_NORMAL, fontWeight: 600 }}>
+      <span
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "baseline",
+          color: TEXT_MUTED,
+          fontWeight: 400,
+        }}
+      >
+        {badge !== undefined ? badge : hint !== undefined ? hint : null}
+      </span>
+      <span
+        style={{
+          color: TEXT_NORMAL,
+          fontWeight: 600,
+          textAlign: "right",
+        }}
+      >
         {value}
-        {hint !== undefined ? (
-          <span style={{ color: TEXT_MUTED, fontWeight: 400, marginLeft: 6 }}>
-            {hint}
-          </span>
-        ) : null}
       </span>
     </div>
   );
 }
 
 /**
- * Anchor demo: a single F5-style cell wrapped in `TugPopoverTrigger`,
- * opening a small popover with the dev-panel field-row scaffold. The
- * cell carries the `.gallery-tide-status-cell-clickable` hover
- * affordance (cursor + subtle background tint on hover) so the user
- * can tell the cell is interactive without an explicit "click me"
- * label. The substrate contract: hover hints, click opens, re-click
- * closes, outside-click closes, Esc closes — Radix Popover handles
- * the latter three, the affordance class supplies the first.
- *
- * 20.4.7 + 20.4.9 will adopt this same anchor shape on the real
- * F5Cell and on `TugStateIndicator`, populated with per-area row
- * content. The popover content here uses placeholder rows so the
- * substrate's open/close behavior + the row-density visual language
- * can be vetted before the per-area derivations land.
+ * Small chip rendering the per-row terminal state (`TurnEntry.result`).
+ * "success" reads as low-emphasis "ok" / muted ghost, "interrupted"
+ * reads as `caution` so the row jumps out a little — the per-row
+ * stripe the user scans the log for.
  */
-function PopoverAnchorDemo({ v }: { v: StatusValues }): React.ReactElement {
+function TerminalStateBadge({
+  result,
+}: {
+  result: TurnEntry["result"];
+}): React.ReactElement {
+  if (result === "interrupted") {
+    return (
+      <TugBadge emphasis="tinted" role="caution" size="sm">
+        interrupted
+      </TugBadge>
+    );
+  }
   return (
-    <TugPopover>
-      <TugPopoverTrigger>
-        <span className="gallery-tide-status-cell-clickable">
-          <F5Cell
-            priority="time"
-            label="TIME (click)"
-            valueNode={plainValue(formatTimeAlwaysHours(v.perTurnActiveMs))}
+    <TugBadge emphasis="ghost" role="success" size="sm">
+      success
+    </TugBadge>
+  );
+}
+
+/**
+ * Popover-content frame shared by Time + Tokens. Renders an uppercase
+ * title bar, the body rows (passed in as `children`), and a separator-
+ * fronted summary footer (also passed in as `summaryFooter`). The
+ * frame owns the layout chrome so the two popovers' content stays
+ * structurally identical — only the row formatters differ.
+ */
+function PerAreaPopoverFrame({
+  title,
+  children,
+  summaryFooter,
+}: {
+  title: string;
+  children: React.ReactNode;
+  summaryFooter: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <div
+      style={{
+        padding: "var(--tug-space-md)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        minWidth: 280,
+        maxWidth: 360,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: "0.625rem",
+          letterSpacing: LABEL_LETTER_SPACING,
+          textTransform: "uppercase",
+          color: TEXT_MUTED,
+          marginBottom: 4,
+        }}
+      >
+        {title}
+      </div>
+      {children}
+      <div
+        style={{
+          borderTop: `1px solid ${RAIL_COLOR}`,
+          marginTop: 6,
+          paddingTop: 6,
+        }}
+      >
+        {summaryFooter}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "No committed turns yet" body — the empty-transcript path for both
+ * popovers. Same muted typographic weight as the rest of the popover
+ * body so the empty state doesn't read as an error.
+ */
+function EmptyTranscriptBody(): React.ReactElement {
+  return (
+    <div
+      style={{
+        fontFamily: MONO,
+        fontSize: "0.6875rem",
+        color: TEXT_MUTED,
+        fontStyle: "italic",
+        paddingBlock: 4,
+      }}
+    >
+      No committed turns yet.
+    </div>
+  );
+}
+
+/**
+ * `Time` popover content per plan `#step-20-4-7-a`: per-turn
+ * `activeMs` log (committed turns only) + summary footer (count,
+ * total, average) + optional in-flight footer that surfaces the live
+ * current-turn elapsed when a turn is in flight.
+ *
+ * The summary block is computed by `computeTimeSummary` so the same
+ * derivation pins the production popover (when 20.4.10 promotes it).
+ * The in-flight slot is null while no turn is in flight; when set, it
+ * receives the live `currentTurnActiveMs` from the gallery card
+ * (already 1Hz-ticked via `useLifecycleTick`) and the rest of the
+ * popover surface re-renders for free as a child of the gallery's
+ * render cycle.
+ */
+function TimePopoverContent({
+  transcript,
+  inflight,
+}: {
+  transcript: ReadonlyArray<TurnEntry>;
+  inflight: { currentTurnActiveMs: number } | null;
+}): React.ReactElement {
+  const summary = computeTimeSummary(transcript);
+  return (
+    <PerAreaPopoverFrame
+      title="Per-request log — Time"
+      summaryFooter={
+        <>
+          <PopoverRow label="turns" value={String(summary.count)} />
+          <PopoverRow
+            label="total"
+            value={formatTimeAlwaysHours(summary.totalActiveMs)}
           />
-        </span>
-      </TugPopoverTrigger>
-      <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-        <div
-          style={{
-            padding: "var(--tug-space-md)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-            minWidth: 240,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: MONO,
-              fontSize: "0.625rem",
-              letterSpacing: LABEL_LETTER_SPACING,
-              textTransform: "uppercase",
-              color: TEXT_MUTED,
-              marginBottom: 4,
-            }}
-          >
-            Per-request log (scratch)
-          </div>
-          <ScratchFieldRow label="turn 1" value="0h 0m 04s" hint="success" />
-          <ScratchFieldRow label="turn 2" value="0h 0m 12s" hint="success" />
-          <ScratchFieldRow label="turn 3" value="0h 0m 01s" hint="interrupted" />
-          <div
-            style={{
-              borderTop: `1px solid ${RAIL_COLOR}`,
-              marginTop: 6,
-              paddingTop: 6,
-            }}
-          >
-            <ScratchFieldRow label="turns" value="3" />
-            <ScratchFieldRow label="total time" value="0h 0m 17s" />
-            <ScratchFieldRow label="avg" value="0h 0m 06s" hint="per turn" />
-          </div>
-        </div>
-      </TugPopoverContent>
-    </TugPopover>
+          <PopoverRow
+            label="avg"
+            value={formatTimeAlwaysHours(summary.avgActiveMs)}
+            hint="per turn"
+          />
+          {inflight !== null ? (
+            <PopoverRow
+              label="current turn"
+              value={formatTimeAlwaysHours(inflight.currentTurnActiveMs)}
+              hint="in flight"
+            />
+          ) : null}
+        </>
+      }
+    >
+      {transcript.length === 0 ? (
+        <EmptyTranscriptBody />
+      ) : (
+        transcript.map((t, i) => (
+          <PopoverRow
+            key={t.turnKey}
+            label={`turn ${i + 1}`}
+            value={formatTimeAlwaysHours(t.activeMs)}
+            badge={<TerminalStateBadge result={t.result} />}
+          />
+        ))
+      )}
+    </PerAreaPopoverFrame>
+  );
+}
+
+/**
+ * Per-turn total token sum for the `Tokens` popover's row log. Mirrors
+ * the headline `Tokens` cell's value across the row dimension: sum of
+ * input + output + cache-read + cache-creation per committed turn.
+ */
+function perTurnTotalTokens(turn: TurnEntry): number {
+  return (
+    turn.cost.inputTokens +
+    turn.cost.outputTokens +
+    turn.cost.cacheReadInputTokens +
+    turn.cost.cacheCreationInputTokens
+  );
+}
+
+/**
+ * `Tokens` popover content per plan `#step-20-4-7-a`: per-turn token
+ * sum log + summary footer (count, total, average) + optional in-flight
+ * footer. Same in-flight contract as `TimePopoverContent`: in-flight
+ * turns are excluded from the row log and the summary footer, with
+ * the live current-turn contribution surfaced as a separate footer
+ * row when a turn is in flight.
+ */
+function TokensPopoverContent({
+  transcript,
+  inflight,
+}: {
+  transcript: ReadonlyArray<TurnEntry>;
+  inflight: { currentTurnTokens: number } | null;
+}): React.ReactElement {
+  const summary = computeTokensSummary(transcript);
+  return (
+    <PerAreaPopoverFrame
+      title="Per-request log — Tokens"
+      summaryFooter={
+        <>
+          <PopoverRow label="turns" value={String(summary.count)} />
+          <PopoverRow label="total" value={formatTokensCaps(summary.totalTokens)} />
+          <PopoverRow
+            label="avg"
+            value={formatTokensCaps(summary.avgTokensPerTurn)}
+            hint="per turn"
+          />
+          {inflight !== null ? (
+            <PopoverRow
+              label="current turn"
+              value={formatTokensCaps(inflight.currentTurnTokens)}
+              hint="in flight"
+            />
+          ) : null}
+        </>
+      }
+    >
+      {transcript.length === 0 ? (
+        <EmptyTranscriptBody />
+      ) : (
+        transcript.map((t, i) => (
+          <PopoverRow
+            key={t.turnKey}
+            label={`turn ${i + 1}`}
+            value={formatTokensCaps(perTurnTotalTokens(t))}
+            badge={<TerminalStateBadge result={t.result} />}
+          />
+        ))
+      )}
+    </PerAreaPopoverFrame>
   );
 }
 
@@ -711,9 +1110,19 @@ const INDICATOR_SLOT_WIDTH = 220;
 function ComposedRow({
   v,
   state,
+  popovers,
 }: {
   v: StatusValues;
   state: TugStateIndicatorState;
+  /**
+   * Optional per-cell popover content keyed by cell priority. When
+   * provided, the matching cells are wrapped in `TugPopoverTrigger`
+   * with the status-cell anchor affordance class (the substrate from
+   * 20.4.6). Pass `undefined` (or omit) to render bare cells — the
+   * resize-frame instance leaves this off so cell-collapse can be
+   * vetted without popovers competing for click handling.
+   */
+  popovers?: CellPopoverContent;
 }): React.ReactElement {
   return (
     <div
@@ -746,7 +1155,7 @@ function ComposedRow({
       >
         <TugStateIndicator state={state} size={16} />
       </span>
-      {buildCellNodes(v)}
+      {buildCellNodes(v, popovers)}
     </div>
   );
 }
@@ -808,6 +1217,7 @@ function SectionTitle({ children }: { children: string }): React.ReactElement {
 export function GalleryTideStatusRow(): React.ReactElement {
   const [scenarioIdx, setScenarioIdx] = useState(0);
   const [stateIdx, setStateIdx] = useState(3); // streaming · online — animation visible
+  const [transcriptIdx, setTranscriptIdx] = useState(2); // "Short session"
   const [autoTick, setAutoTick] = useState(false);
 
   useEffect(() => {
@@ -855,6 +1265,7 @@ export function GalleryTideStatusRow(): React.ReactElement {
   // Stable sender IDs for the responder-chain bindings.
   const scenarioPopupId = useId();
   const statePopupId = useId();
+  const transcriptPopupId = useId();
   const autoTickSwitchId = useId();
 
   // Wire the popup-button + switch dispatches through the chain via
@@ -871,6 +1282,7 @@ export function GalleryTideStatusRow(): React.ReactElement {
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [scenarioPopupId]: (v: string) => setScenarioIdx(Number(v)),
+      [transcriptPopupId]: (v: string) => setTranscriptIdx(Number(v)),
       [statePopupId]: (v: string) => {
         const nextIdx = Number(v);
         const nextState = STATE_SCENARIOS[nextIdx].state;
@@ -936,6 +1348,41 @@ export function GalleryTideStatusRow(): React.ReactElement {
     label: s.label,
   }));
 
+  const transcriptScenario = TRANSCRIPT_SCENARIOS[transcriptIdx];
+  const transcriptItems: TugPopupButtonItem<string>[] = TRANSCRIPT_SCENARIOS.map(
+    (s, i) => ({
+      action: TUG_ACTIONS.SET_VALUE,
+      value: String(i),
+      label: s.label,
+    }),
+  );
+
+  // Per-area popover content for the Time + Tokens cells. Computed
+  // here so the gallery's 1Hz live-tick (which drives `liveTimeMs`)
+  // flows into the popover's in-flight footer for free — the popover
+  // content is a child of this render, so every tick re-renders it
+  // alongside the cells.
+  const transcript = transcriptScenario.transcript;
+  const isInflight = inflight.submitAt !== null;
+  const cellPopovers: CellPopoverContent = {
+    time: (
+      <TimePopoverContent
+        transcript={transcript}
+        inflight={isInflight ? { currentTurnActiveMs: liveTimeMs } : null}
+      />
+    ),
+    tokens: (
+      <TokensPopoverContent
+        transcript={transcript}
+        inflight={
+          isInflight
+            ? { currentTurnTokens: baseValues.perTurnTokens }
+            : null
+        }
+      />
+    ),
+  };
+
   return (
     <ResponderScope>
       <div
@@ -1000,6 +1447,13 @@ export function GalleryTideStatusRow(): React.ReactElement {
           >
             New turn
           </TugPushButton>
+          <TugPopupButton
+            label={`transcript: ${transcriptScenario.label}`}
+            items={transcriptItems}
+            senderId={transcriptPopupId}
+            size="sm"
+            aria-label="transcript scenario"
+          />
           <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED, marginLeft: "auto" }}>
             context: {ratioPct}%
             {ratioPct >= 90 && <span style={{ color: TEXT_DANGER }}> ▲ danger</span>}
@@ -1020,10 +1474,12 @@ export function GalleryTideStatusRow(): React.ReactElement {
             {INDICATOR_SLOT_WIDTH}px wide — sized for the longest phase label
             ("Awaiting first response") — so the cell positions stay stable across
             label-text changes. Scenario picker drives the cell values; session-state
-            picker drives the indicator behavior. This is the canonical layout that will be
-            promoted into the production tide-card Z2 renderer.
+            picker drives the indicator behavior; transcript-scenario picker drives
+            the per-area popovers (TIME + TOKENS — click either cell). This is the
+            canonical layout that will be promoted into the production tide-card Z2
+            renderer.
           </div>
-          <ComposedRow v={values} state={state} />
+          <ComposedRow v={values} state={state} popovers={cellPopovers} />
         </section>
 
         <TugSeparator />
@@ -1060,25 +1516,6 @@ export function GalleryTideStatusRow(): React.ReactElement {
           </div>
         </section>
 
-        <TugSeparator />
-
-        {/* Popover substrate — status-cell anchor pattern (20.4.6). */}
-        <section style={{ display: "flex", flexDirection: "column", gap: "var(--tug-space-md)" }}>
-          <SectionTitle>Popover substrate — status-cell anchor</SectionTitle>
-          <div style={{ ...variantNoteStyle, marginBottom: "var(--tug-space-sm)" }}>
-            The substrate per 20.4.6: status cell wraps in `TugPopoverTrigger`;
-            hover gives a cursor + subtle background-tint affordance hint (no
-            popover open); click opens; re-click closes; outside-click closes;
-            Escape closes. Popover content adopts the dev-panel field-row
-            visual language (mono, tabular numerics, label-left / value-right,
-            muted hint suffix), the same language 20.4.7's per-area popovers
-            and 20.4.9's indicator ledger will reuse. The popover's content
-            here is placeholder — real per-area row data lands in 20.4.7.
-          </div>
-          <div style={{ ...cardSurface, paddingInline: "var(--tug-space-2xl)", display: "flex", justifyContent: "center" }}>
-            <PopoverAnchorDemo v={values} />
-          </div>
-        </section>
       </div>
     </ResponderScope>
   );
