@@ -519,42 +519,40 @@ If we emit on init + every turn_complete + every compact_boundary, a busy sessio
 
 ### Decision
 
-**New table: `context_breakdown_latest`. One row per session. UPSERT on each `context_breakdown` frame.**
+**New table: `context_breakdown_latest`. One row per session. UPSERT on each `context_breakdown` frame. Payload stored as a JSON blob mirroring the wire frame verbatim.**
 
-#### Provisional schema
+#### Schema
 
 ```sql
-CREATE TABLE context_breakdown_latest (
-  tug_session_id        TEXT NOT NULL PRIMARY KEY,         -- FK to sessions
-  at_ms                 INTEGER NOT NULL,                  -- wall-clock ms of the emit
-  context_max           INTEGER NOT NULL,                  -- model's context window cap
-  system_prompt_tokens  INTEGER NOT NULL DEFAULT 0,
-  system_tools_tokens   INTEGER NOT NULL DEFAULT 0,
-  custom_agents_tokens  INTEGER NOT NULL DEFAULT 0,
-  memory_files_tokens   INTEGER NOT NULL DEFAULT 0,
-  skills_tokens         INTEGER NOT NULL DEFAULT 0,
-  messages_tokens       INTEGER NOT NULL DEFAULT 0,
-  autocompact_buffer_tokens INTEGER NOT NULL DEFAULT 0,   -- 0 when buffer is off
-  autocompact_enabled   INTEGER NOT NULL DEFAULT 0,       -- 0 / 1
-  calibration_ratio     REAL NOT NULL DEFAULT 1.0,        -- per-session calibration from S3
-  claude_code_version   TEXT NOT NULL,                    -- for cache-key invalidation
-  FOREIGN KEY (tug_session_id) REFERENCES sessions(tug_session_id)
-    ON DELETE CASCADE
+CREATE TABLE IF NOT EXISTS context_breakdown_latest (
+  session_id  TEXT PRIMARY KEY,
+  payload     BLOB NOT NULL,
+  captured_at INTEGER NOT NULL
 );
 ```
 
-Notes on column choices:
-- **No `mcp_tools_tokens` column** — per "Out of scope: MCP" in the plan.
-- Per-category columns (instead of a JSON blob) keep the table queryable and make schema evolution explicit.
-- `autocompact_buffer_tokens` defaulting to `0` carries the "buffer is off" state without needing a separate column.
-- `calibration_ratio` (real) carries the S3 per-session scaling so resumes can re-emit calibrated frames before the first new turn lands.
-- `claude_code_version` is the cache-key axis from S4 — on CLI upgrade, the static categories should re-tokenize.
-- `at_ms` is bookkeeping; the popover doesn't display it today but lets us debug stale rows.
+Plus a paired `CREATE TRIGGER IF NOT EXISTS context_breakdown_latest_cascade_delete_on_session AFTER DELETE ON sessions` mirroring the cascade triggers used by `turn_telemetry` and `session_metadata` in the same file. No FK constraint — the cascade trigger preserves the "forget cascades" contract without coupling INSERT ordering.
+
+Notes on schema choices:
+- **JSON blob, not per-column.** The single access pattern is PK lookup; the renderer reads a fixed-shape struct from the parsed JSON; the wire-frame TypeScript types validate the payload on both ends. Per-column storage would duplicate that validation without buying indexed-field queries we don't need. Promoting a new category in the future becomes a TypeScript-only change. This decision mirrors the `session_metadata` precedent in the same `session_ledger.rs` file, whose existing comment justifies the blob approach in nearly identical terms.
+- **No `mcp_tools` category in the wire frame**, so no MCP bytes ever reach this table. Per "Out of scope: MCP" in the plan.
+- **`session_id` column name** matches the convention used by `turn_telemetry` / `session_metadata` in the same file (the column is the Claude-assigned session id, which IS the Tug-tracked session at this layer).
+- **`captured_at`** is the wall-clock millisecond timestamp when the row was last written — for debugging / staleness audits. Distinct from any time field the payload itself may carry.
+
+Tradeoff intentionally accepted: no `WHERE messages_tokens > X` style queries. If a future "context-growth over time" surface needs them, it lives in a separate `context_breakdown_history` table that can parse the blob into per-category columns at insert time, leaving `_latest` as the popover's source of truth.
+
+Per-session axes the payload itself carries (in the wire frame JSON), not as separate columns:
+- `context_max` — the model's context-window cap.
+- `categories[]` — per-category id + label + token count. Wire frame's array shape is what the renderer wants; no normalization needed at the persistence layer.
+- `autocompact_buffer` — present in `categories[]` only when the user has the buffer enabled (per S5); absent otherwise. Renderer trusts the wire-frame shape.
+- `calibration_ratio` — the per-session scaling from S3, carried in the wire frame so a resume can re-emit calibrated frames before the first new turn lands.
+- `claude_code_version` — the cache-key axis from S4; a CLI upgrade rewrites the row with re-tokenized values.
 
 #### Writer / reader paths
 
-- **Writer (tugcode side, NOT tugdeck side):** tugcode emits the frame on the IPC channel; the tugcast supervisor's existing `record-*` plumbing writes the row via tugbank. (Symmetric with the `RecordTurnTelemetry` writer that 20.3.4 already established for TurnEntry.) Tugdeck does not need a separate writer path because the breakdown is computed authoritatively in tugcode, not derived from reducer state.
-- **Reader:** at session bind, the supervisor SELECTs the row by `tug_session_id` and inlines it onto the bind response. The reducer's bind handler projects it onto `CodeSessionSnapshot.lastContextBreakdown`. If no row exists, `lastContextBreakdown === null` and the popover hits its 20.4.7.C fallback per the plan's "Fallback contract".
+- **Persistence lives in the tugcast `SessionLedger`** (`tugrust/crates/tugcast/src/session_ledger.rs`), the same sqlite store that already owns `sessions`, `turns`, `turn_telemetry`, and `session_metadata`. *Not* the separate `tugbank-core` typed-defaults store — that one is reserved for user-preferences-style key-value defaults, while `SessionLedger` is the per-session metadata store the supervisor already owns and cascade-deletes on `forget`. (Earlier drafts of this section called it "tugbank"; that was wrong.)
+- **Writer:** symmetric with the `record_turn_telemetry` precedent from `#step-20-3-4`. tugcode emits the `context_breakdown` frame; the supervisor forwards it to tugdeck unchanged; tugdeck's reducer consumes it and dispatches a `record_context_breakdown` CONTROL action back to the supervisor; the supervisor calls `SessionLedger.record_context_breakdown(&row)`. Reducer-as-persistence-boundary keeps the supervisor agnostic of the wire shape and matches the existing pattern.
+- **Reader:** at session bind, the supervisor SELECTs the row by `session_id` (matching the `session_id` column convention used by `turn_telemetry` / `session_metadata`) and inlines it onto the bind response. The reducer's bind handler projects it onto `CodeSessionSnapshot.lastContextBreakdown`. If no row exists, `lastContextBreakdown === null` and the popover hits its 20.4.7.C fallback per the plan's "Fallback contract".
 
 #### Transport-close behavior
 

@@ -230,6 +230,46 @@ pub struct SessionMetadataRow {
     pub captured_at: i64,
 }
 
+/// One row of the `context_breakdown_latest` table — the most-recent
+/// `/context`-style per-category token breakdown for a session,
+/// persisted verbatim as the JSON wire frame tugcode emits. Written
+/// by `record_context_breakdown` from the supervisor's inbound
+/// handler when tugdeck dispatches the persist action; read at session
+/// bind so the snapshot's `lastContextBreakdown` populates before the
+/// popover opens.
+///
+/// One row per session — UPSERT semantics by `session_id`. The "latest"
+/// shape (vs. an append-only history table) matches the popover's
+/// access pattern: it only ever wants the current breakdown. A future
+/// "context-growth over time" surface can add a separate
+/// `context_breakdown_history` table without migrating this one.
+///
+/// Payload is stored as a JSON BLOB rather than per-column for the
+/// same reason `session_metadata` is: the access pattern is pure PK
+/// lookup, the consumer (popover renderer) reads a fixed-shape struct
+/// from the parsed JSON, and the wire-frame TypeScript types already
+/// validate the shape on both write and read. Per-column storage
+/// would duplicate that validation without buying us indexed-field
+/// queries we don't need. Promoting a new category in the future
+/// becomes a TypeScript-only change. Trade-off: no `WHERE
+/// messages_tokens > X` queries, but the only access pattern is `WHERE
+/// session_id = ?`.
+///
+/// MCP is intentionally absent from the persisted payload — Tug
+/// treats MCP as out of scope; the wire frame the renderer paints
+/// carries no `mcp_tools` category. See the spike companion document
+/// for the architectural decision.
+///
+/// `captured_at` is the wall-clock millisecond timestamp when the row
+/// was last written (for debugging / staleness audits). Distinct from
+/// any time-related field the payload itself may carry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextBreakdownRow {
+    pub session_id: String,
+    pub payload: Vec<u8>,
+    pub captured_at: i64,
+}
+
 /// Result of a successful `forget` call.
 ///
 /// `jsonl_moved_to` is `None` until step 8 wires the trash move. Until then
@@ -430,6 +470,45 @@ impl SessionLedger {
             FOR EACH ROW
             BEGIN
                 DELETE FROM session_metadata WHERE session_id = OLD.session_id;
+            END;
+
+            -- Latest per-session `/context`-style breakdown — one row
+            -- per session, UPSERT on receipt of a
+            -- `record_context_breakdown` inbound action from tugdeck.
+            -- The reducer dispatches the action after consuming each
+            -- `context_breakdown` frame from tugcode, mirroring the
+            -- `record_turn_telemetry` pattern (reducer is the
+            -- persistence boundary; supervisor writes; ledger stores).
+            --
+            -- Read at session bind so the snapshot's
+            -- `lastContextBreakdown` populates before the popover
+            -- opens, then overwritten by the next live
+            -- `context_breakdown` frame.
+            --
+            -- Payload is stored as a JSON BLOB rather than per-column
+            -- so future categories (or the deprecation of existing
+            -- ones, if Anthropic reshapes `/context`) land here
+            -- without a schema migration. Trade-off: no indexed
+            -- queries on individual category tokens, but the only
+            -- access pattern is PK lookup by session_id. Mirrors the
+            -- `session_metadata` decision in the same file. The wire-
+            -- frame TypeScript types validate the payload shape on
+            -- both write and read paths; the sqlite layer is pure
+            -- persistence.
+            --
+            -- MCP is intentionally absent from the wire frame's
+            -- categories union, so no MCP bytes ever reach this table.
+            CREATE TABLE IF NOT EXISTS context_breakdown_latest (
+                session_id  TEXT PRIMARY KEY,
+                payload     BLOB NOT NULL,
+                captured_at INTEGER NOT NULL
+            );
+
+            CREATE TRIGGER IF NOT EXISTS context_breakdown_latest_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM context_breakdown_latest WHERE session_id = OLD.session_id;
             END;
             ",
         )?;
@@ -1099,6 +1178,58 @@ impl SessionLedger {
                 params![session_id],
                 |row| {
                     Ok(SessionMetadataRow {
+                        session_id: row.get(0)?,
+                        payload: row.get(1)?,
+                        captured_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Upsert the per-session `/context`-style breakdown. Idempotent on
+    /// `session_id` via `INSERT OR REPLACE` — every fresh frame from
+    /// tugcode produces one persist action, and the only persisted row
+    /// for a session is always the most recent.
+    ///
+    /// `payload` is the wire-frame JSON serialized as bytes (the
+    /// supervisor receives the frame, hands the raw payload here, and
+    /// re-emits the same bytes at bind time). This module does not
+    /// parse or validate the payload — the wire-frame TypeScript
+    /// types do that on both ends.
+    pub fn record_context_breakdown(
+        &self,
+        session_id: &str,
+        payload: &[u8],
+        captured_at: i64,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT OR REPLACE INTO context_breakdown_latest (session_id, payload, captured_at)
+             VALUES (?1, ?2, ?3)",
+            params![session_id, payload, captured_at],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch the persisted breakdown row for `session_id`, or `None`
+    /// if no row exists. The popover's fallback path renders the
+    /// pre-existing `cost_update`-derived view when `None` — see the
+    /// "Fallback contract" section of the parent plan step.
+    pub fn get_context_breakdown(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<ContextBreakdownRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let row = conn
+            .query_row(
+                "SELECT session_id, payload, captured_at
+                 FROM context_breakdown_latest
+                 WHERE session_id = ?1",
+                params![session_id],
+                |row| {
+                    Ok(ContextBreakdownRow {
                         session_id: row.get(0)?,
                         payload: row.get(1)?,
                         captured_at: row.get(2)?,
@@ -2474,6 +2605,124 @@ mod tests {
         assert!(
             l.get_session_metadata("s1").unwrap().is_none(),
             "cascade trigger must purge session_metadata when parent session row is deleted",
+        );
+    }
+
+    // ---- context_breakdown_latest table --------------------------------
+
+    fn sample_breakdown_payload(messages_tokens: i64, autocompact_enabled: bool) -> Vec<u8> {
+        let mut categories = vec![
+            serde_json::json!({ "id": "system_prompt", "label": "System prompt", "tokens": 4_200 }),
+            serde_json::json!({ "id": "system_tools",  "label": "System tools",  "tokens": 9_100 }),
+            serde_json::json!({ "id": "custom_agents", "label": "Custom agents", "tokens": 14_600 }),
+            serde_json::json!({ "id": "memory_files",  "label": "Memory files",  "tokens": 1_080 }),
+            serde_json::json!({ "id": "skills",        "label": "Skills",        "tokens": 10_700 }),
+            serde_json::json!({ "id": "messages",      "label": "Messages",      "tokens": messages_tokens }),
+        ];
+        if autocompact_enabled {
+            categories.push(serde_json::json!({
+                "id": "autocompact_buffer",
+                "label": "Autocompact buffer",
+                "tokens": 33_000,
+            }));
+        }
+        serde_json::json!({
+            "type": "context_breakdown",
+            "tug_session_id": "s1",
+            "context_max": 200_000,
+            "categories": categories,
+        })
+        .to_string()
+        .into_bytes()
+    }
+
+    #[test]
+    fn record_context_breakdown_round_trip() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let payload = sample_breakdown_payload(38_500, false);
+        l.record_context_breakdown("s1", &payload, 5_000).unwrap();
+        let read = l.get_context_breakdown("s1").unwrap().unwrap();
+        assert_eq!(read.session_id, "s1");
+        assert_eq!(read.payload, payload);
+        assert_eq!(read.captured_at, 5_000);
+    }
+
+    #[test]
+    fn get_context_breakdown_returns_none_for_unknown_session() {
+        let l = fresh();
+        assert!(l.get_context_breakdown("never-existed").unwrap().is_none());
+    }
+
+    #[test]
+    fn record_context_breakdown_idempotent_on_session_pk() {
+        // Steady-state operation: tugcode emits a fresh frame on every
+        // turn_complete, and the reducer dispatches one persist per
+        // frame. Writes for the same session must overwrite, not
+        // duplicate-key. Mirrors `record_session_metadata` semantics.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let v1 = sample_breakdown_payload(10_000, false);
+        let v2 = sample_breakdown_payload(42_000, true);
+        l.record_context_breakdown("s1", &v1, 1_000).unwrap();
+        l.record_context_breakdown("s1", &v2, 2_000).unwrap();
+        let read = l.get_context_breakdown("s1").unwrap().unwrap();
+        assert_eq!(read.payload, v2);
+        assert_eq!(read.captured_at, 2_000);
+    }
+
+    #[test]
+    fn record_context_breakdown_accepts_arbitrary_blob() {
+        // The schema column type is BLOB with no JSON validation, so
+        // the ledger persists whatever bytes the caller hands it.
+        // Round-trip succeeds; downstream JSON deserialization is the
+        // supervisor / renderer's responsibility (and the renderer
+        // already falls back to the cost_update-derived view on a
+        // parse failure — see the "Fallback contract" section of the
+        // parent plan step).
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let garbage = b"this-is-not-json".to_vec();
+        l.record_context_breakdown("s1", &garbage, 1_000).unwrap();
+        let read = l.get_context_breakdown("s1").unwrap().unwrap();
+        assert_eq!(read.payload, garbage);
+    }
+
+    #[test]
+    fn get_context_breakdown_filters_by_session() {
+        // Sessions are isolated; a write to one must not surface on a
+        // read of another. The popover binds per-session, so cross-
+        // session bleed would surface as the wrong breakdown in the
+        // wrong card.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        seed_live(&l, "s2", "ws", "card-2", millis(0));
+        let p1 = sample_breakdown_payload(10_000, false);
+        let p2 = sample_breakdown_payload(88_000, true);
+        l.record_context_breakdown("s1", &p1, 1_000).unwrap();
+        l.record_context_breakdown("s2", &p2, 1_000).unwrap();
+        assert_eq!(l.get_context_breakdown("s1").unwrap().unwrap().payload, p1);
+        assert_eq!(l.get_context_breakdown("s2").unwrap().unwrap().payload, p2);
+    }
+
+    #[test]
+    fn cascade_delete_removes_context_breakdown_when_session_deleted() {
+        // Pin the `context_breakdown_latest_cascade_delete_on_session`
+        // trigger: forgetting a session also removes its breakdown row.
+        // The user-visible "forget cascades" contract extends to the
+        // context breakdown.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.mark_closed("s1").unwrap();
+        l.record_context_breakdown("s1", &sample_breakdown_payload(5_000, false), 1_000)
+            .unwrap();
+        assert!(l.get_context_breakdown("s1").unwrap().is_some());
+
+        l.forget("s1").unwrap();
+
+        assert!(
+            l.get_context_breakdown("s1").unwrap().is_none(),
+            "cascade trigger must purge context_breakdown_latest when parent session row is deleted",
         );
     }
 }
