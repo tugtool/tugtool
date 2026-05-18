@@ -301,11 +301,25 @@ Notes on the outliers, for reference:
 - `messages_short` (−43.75%): the API wraps each `messages: [{role, content}]` payload with ~7 tokens of role-envelope overhead. For a 9-token body that's a 43% relative drift; for a 1,000-token body it's <1%. This is a fixed-cost-per-message phenomenon — uniform across messages — and is absorbed by the calibration ratio over the session.
 - `messages_code` (−12.29%): the Claude 2 BPE that `@anthropic-ai/tokenizer` ships has fewer code-style merges than the current Claude 4 vocab. Code under-counts by ~12% even after calibration. Again, the design subtraction skips this entirely.
 
-**Verdict:** the S3 calibration design is validated. Proceed with `@anthropic-ai/tokenizer` + per-session calibration ratio for the static categories; derive `messages` by subtraction from observed `usage.input_tokens`. No tokenizer replacement needed for the current 5–10% bar.
+**Verdict (initial):** the S3 calibration design appeared validated against the synthetic anchor — proceed with the ratio.
+
+**Post-mortem (post-implementation reversal):** during 20.4.7.D.3 implementation review we found that the per-session calibration ratio breaks on resumed sessions. On a resume, the first `cost_update` arrives with `observed_input` including all prior conversation; the anchor (`static_total + new_user_msg_tokens`) is much smaller; the computed ratio comes out >1.0 and — for moderate-history sessions — falls inside the defensive `[0.5, 2.0]` clamp. The accepted-but-wrong ratio then warps every static category by a too-large factor on display.
+
+The fix landed in a fixup commit after D.3: **calibration was dropped entirely.** `messages_tokens` is now derived by direct subtraction: `messages_tokens = max(0, observed_input - static_total)`. The benchmark table above already shows that raw per-category drift (without calibration) is 0.5–5.6% for natural-language content — comfortably inside the 5–10% bar — so the calibration trick was a clever optimization that introduced a worse bug than it fixed.
+
+Lessons:
+- The benchmark anchor (a single natural-language file) didn't represent the resume case. A resume-aware benchmark would have caught this earlier; we'd want one before adding any future per-session scaling.
+- Defensive clamps that admit "plausible but wrong" inputs are worse than clamps that admit "obviously wrong" inputs. The `[0.5, 2.0]` range let bad ratios through silently. If we ever re-introduce calibration, we'd want a stricter signal that we're on a fresh session (e.g., gate on transcript length) rather than a numerical range.
+- Subtraction-from-observed is robust on both fresh and resumed sessions, has no tunable parameters, and produces correct totals by construction. Worth defaulting to this shape for any future "derived from observed truth" feature.
+
+The post-fix design:
+- Static categories tokenize once at session_init and again on file edit (via mtime cache).
+- Messages tokens = observed input − static total. No scaling. No per-session state beyond the cache.
+- Resume case: works correctly by construction; the supervisor's bind-attach re-emits the persisted breakdown so the popover starts populated.
 
 Follow-up benchmarks worth running once 20.4.7.D.5 lands a live popover:
-- Real-world session calibration: capture an actual `cost_update.usage.input_tokens` for the first turn of a fresh tugcode session and compute the live `calibration_ratio` from real data (vs. the proxy anchor used here).
-- Long-running drift: track per-category residual across 50+ turns to verify the ratio is stable (it should be — it depends only on tokenizer-vs-vocab differences, which don't shift mid-session).
+- Real-world category-level drift: open a session, compare Tide's popover values against `/context`'s terminal output. Confirm per-category residual stays inside 5–10% on representative content.
+- Resume regression: open → submit → reload → confirm popover still shows correct numbers with no transient warp.
 
 ---
 

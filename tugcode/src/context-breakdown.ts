@@ -1,26 +1,29 @@
 // Produces `/context`-style per-category token breakdowns of the session's
 // context window. Tokenizes static categories (system prompt, tool schemas,
 // custom agents, memory files, skills) locally; derives `messages_tokens`
-// by subtracting the calibrated static sum from Claude's observed input
-// tokens; emits a {@link ContextBreakdown} wire frame for the popover.
+// by subtracting the static total from Claude's observed input tokens;
+// emits a {@link ContextBreakdown} wire frame for the popover.
 //
 // Spike S3 in roadmap/tide-assistant-turns-context-breakdown-spikes.md
-// established the calibration algorithm (locally-tokenize statics, pin
-// the total to observed `usage.input_tokens` truth via a per-session
-// ratio, derive messages by subtraction). Spike S4 established the
-// emit cadence (session_init + every cost_update + after compact_boundary)
-// and the file-mtime cache. Spike S5 established the autocompact reading
-// (settings.json → `autoCompactEnabled`).
+// originally proposed a per-session calibration ratio to pin our local
+// estimates to observed truth. The implementation revealed the
+// calibration breaks on resumed sessions: observed_input on resume
+// includes the entire prior conversation, the anchor (static +
+// new_user_msg) is much smaller, and the resulting ratio warps every
+// static category by a too-large factor. The S3 benchmark already
+// showed raw drift is 0.5–5.6% — inside the 5–10% accuracy bar — so
+// dropping calibration is the simpler, correct thing on both fresh
+// and resumed sessions. The spike's drift benchmark appendix carries
+// the post-mortem.
 //
 // The CLI's actual system prompt and tool schemas are opaque to us —
 // they live inside the Claude Code binary and the SDK does not surface
 // them. {@link SYSTEM_PROMPT_DEFAULT_TOKENS} and
-// {@link TOOL_SCHEMA_DEFAULT_TOKENS} are heuristic approximations; the
-// per-session calibration ratio absorbs the residual drift, keeping
-// the displayed total within Anthropic's `count_tokens` truth and the
-// per-category split within the documented 5–10% accuracy bar.
+// {@link TOOL_SCHEMA_DEFAULT_TOKENS} are heuristic approximations.
+// File-backed categories (custom_agents, memory_files, skills) come
+// from disk reads cached by `(path, mtime)`.
 
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { countTokens } from "@anthropic-ai/tokenizer";
@@ -31,25 +34,23 @@ import type { ContextBreakdown, ContextBreakdownCategory } from "./types.ts";
 /**
  * Heuristic estimate of the CLI's internal system prompt in tokens.
  * The actual bytes are CLI-internal and not addressable from the SDK
- * (see spike S1). The calibration ratio (S3) absorbs the residual.
- * If a future SDK release surfaces the actual count, replace this
- * with the SDK-provided value.
+ * (see spike S1). If a future SDK release surfaces the actual count,
+ * replace this constant with the SDK-provided value.
  */
 export const SYSTEM_PROMPT_DEFAULT_TOKENS = 3_500;
 
 /**
  * Per-tool schema-token estimate. Built-in Claude Code tools average
  * roughly this in token count (per spike S1's reference research).
- * The calibration ratio absorbs per-tool variance.
  */
 export const TOOL_SCHEMA_DEFAULT_TOKENS = 500;
 
 /**
  * Default reserved-buffer size when the user has autocompact enabled.
  * Per spike S5: current Claude Code reserves ~33k tokens when the
- * `autoCompactEnabled` setting is true (reduced from ~45k in early
- * 2026). Hardcoded here rather than queried from the SDK because the
- * SDK exposes neither the setting nor the buffer size.
+ * `autoCompactEnabled` setting is true. Hardcoded here rather than
+ * queried from the SDK because the SDK exposes neither the setting
+ * nor the buffer size.
  */
 export const AUTOCOMPACT_BUFFER_DEFAULT_TOKENS = 33_000;
 
@@ -98,6 +99,69 @@ export function tokenizeFileCached(
 }
 
 /**
+ * Sum the token counts of every `*.md` file directly inside `dirPath`.
+ * Best-effort: missing or unreadable directory returns 0 silently.
+ * Used to tokenize a memory directory's full corpus (MEMORY.md +
+ * sibling entry files) without hard-coding individual filenames.
+ */
+export function tokenizeMarkdownDirCached(
+  dirPath: string,
+  cache: Map<string, CacheEntry>,
+): number {
+  let entries: string[];
+  try {
+    entries = readdirSync(dirPath);
+  } catch {
+    return 0;
+  }
+  let total = 0;
+  for (const name of entries) {
+    if (!name.endsWith(".md")) continue;
+    total += tokenizeFileCached(join(dirPath, name), cache);
+  }
+  return total;
+}
+
+/**
+ * Sum the token counts of every `SKILL.md` under `<pluginPath>/skills/<name>/SKILL.md`.
+ * Used to fold plugin-shipped skills into the breakdown's `skills`
+ * category — without this walk, users with plugin-loaded skills
+ * would see their skills under-count by the full plugin corpus.
+ */
+export function tokenizePluginSkills(
+  pluginPath: string,
+  cache: Map<string, CacheEntry>,
+): number {
+  const skillsRoot = join(pluginPath, "skills");
+  let entries: string[];
+  try {
+    entries = readdirSync(skillsRoot);
+  } catch {
+    return 0;
+  }
+  let total = 0;
+  for (const skillDirName of entries) {
+    total += tokenizeFileCached(
+      join(skillsRoot, skillDirName, "SKILL.md"),
+      cache,
+    );
+  }
+  return total;
+}
+
+/**
+ * Sum the token counts of every `*.md` under `<pluginPath>/agents/`.
+ * Used to fold plugin-shipped agents into the breakdown's
+ * `custom_agents` category. Mirrors {@link tokenizePluginSkills}.
+ */
+export function tokenizePluginAgents(
+  pluginPath: string,
+  cache: Map<string, CacheEntry>,
+): number {
+  return tokenizeMarkdownDirCached(join(pluginPath, "agents"), cache);
+}
+
+/**
  * Per-category token estimates for the session-stable categories.
  * `messages` is excluded — it's derived per turn from observed input
  * tokens, not tokenized locally.
@@ -127,6 +191,11 @@ export function staticTotal(s: StaticCategoryEstimates): number {
  * Subset of the SDK's `system:init` event fields we need for static-
  * category tokenization. Tugcode already projects this shape into
  * its `SystemMetadata` IPC — we read the same data here.
+ *
+ * Plugin entries are objects with at least a `path` field (the on-
+ * disk plugin directory); we walk each plugin's `agents/` and
+ * `skills/` subdirs to fold plugin-shipped content into the
+ * corresponding categories.
  */
 export interface SessionInitMetadata {
   tools: ReadonlyArray<unknown>;
@@ -147,17 +216,32 @@ export interface ComputeStaticCategoriesOptions {
 }
 
 /**
+ * Encode an absolute cwd into Claude Code's project-directory naming
+ * convention (`/` → `-`). Mirrors `encodeProjectDir` in
+ * `tugcode/src/session.ts` — duplicated here rather than imported
+ * to keep this module standalone for testing.
+ */
+function encodeProjectDir(absDir: string): string {
+  return absDir.replace(/\//g, "-");
+}
+
+/**
  * Tokenize the session's static categories using the local BPE
  * tokenizer plus heuristic constants for CLI-internal bytes
  * (`system_prompt`, `system_tools`). File-backed categories
  * (`custom_agents`, `memory_files`, `skills`) read from disk; absent
  * files contribute 0.
  *
- * Plugin walking is intentionally minimal in this version. Plugin-
- * shipped agents and skills currently undercount; the calibration
- * ratio absorbs the resulting drift uniformly. If plugin accuracy
- * proves load-bearing, walk `metadata.plugins[].path` here (each
- * plugin dir conventionally has `agents/` and `skills/` subdirs).
+ * The walk covers:
+ * - User-level files under `~/.claude/agents/` and
+ *   `~/.claude/skills/<name>/SKILL.md` for each name in `metadata.agents`
+ *   / `metadata.skills`.
+ * - User-level + project memory: `~/.claude/CLAUDE.md`, `cwd/CLAUDE.md`,
+ *   and every `*.md` inside
+ *   `~/.claude/projects/<encoded-cwd>/memory/` (so the auto-memory
+ *   `MEMORY.md` index + every sibling entry file contributes).
+ * - Plugin-shipped agents and skills: for every plugin entry that
+ *   carries a `path`, walk `<path>/agents/` and `<path>/skills/`.
  */
 export function computeStaticCategories(
   metadata: SessionInitMetadata,
@@ -184,6 +268,15 @@ export function computeStaticCategories(
     cache,
   );
   memory_files += tokenizeFileCached(join(cwd, "CLAUDE.md"), cache);
+  // Auto-memory directory: `~/.claude/projects/<encoded-cwd>/memory/`
+  // holds `MEMORY.md` (the index) plus per-entry `*.md` files the
+  // assistant maintains across sessions. Walk the whole directory so
+  // the full corpus counts toward memory_files — undercounting just
+  // MEMORY.md would miss the bulk of the user's persistent memory.
+  memory_files += tokenizeMarkdownDirCached(
+    join(homeDir, ".claude", "projects", encodeProjectDir(cwd), "memory"),
+    cache,
+  );
 
   let skills = 0;
   for (const s of metadata.skills) {
@@ -194,48 +287,37 @@ export function computeStaticCategories(
     );
   }
 
+  // Walk every plugin's `agents/` and `skills/` subdirs. For users
+  // with plugins loaded (the common case in Tug development), this
+  // is the bulk of the agents/skills contribution; without it the
+  // categories would significantly under-count.
+  for (const p of metadata.plugins) {
+    if (typeof p !== "object" || p === null) continue;
+    const path = (p as { path?: unknown }).path;
+    if (typeof path !== "string" || path.length === 0) continue;
+    custom_agents += tokenizePluginAgents(path, cache);
+    skills += tokenizePluginSkills(path, cache);
+  }
+
   return { system_prompt, system_tools, custom_agents, memory_files, skills };
 }
 
 /**
- * Compute the per-session calibration ratio that pins our locally-
- * tokenized static estimate to Claude's observed input-token truth.
- * Anchor: the first `cost_update` after the user has submitted at
- * least one message.
- *
- *   ratio = observedInput / (staticTotal + userMessageTokens)
- *
- * Returns 1.0 (no calibration) when there's no anchor data, when
- * the divisor is zero/non-finite, or when the computed ratio falls
- * outside a defensive `[0.5, 2.0]` clamp — drift that extreme suggests
- * something is wrong with the inputs and would warp the breakdown
- * worse than no calibration at all.
- */
-export function computeCalibrationRatio(
-  observedInput: number,
-  staticTotalTokens: number,
-  userMessageTokens: number,
-): number {
-  if (userMessageTokens <= 0) return 1.0;
-  const divisor = staticTotalTokens + userMessageTokens;
-  if (divisor <= 0) return 1.0;
-  const ratio = observedInput / divisor;
-  if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 2.0) return 1.0;
-  return ratio;
-}
-
-/**
  * Derive `messages_tokens` for the current cost_update by subtracting
- * the calibrated static sum from observed input. Clamps to 0 — a
- * negative result (rare; usually a sparse first cost_update where our
- * static estimate slightly exceeds observed) reads as "no message
- * content yet" rather than a confusing negative slice.
+ * the static-category total from observed input. Clamps to 0 — if our
+ * static estimate slightly exceeds observed (rare; usually a sparse
+ * first cost_update on a fresh session) the messages slice reads as
+ * 0 rather than a confusing negative.
+ *
+ * `observedInput` should include cache-read + cache-creation tokens
+ * (i.e., the full content-byte count Claude has in context, not just
+ * the billed-this-turn input).
  */
 export function computeMessagesTokens(
   observedInput: number,
-  calibratedStaticSum: number,
+  staticTotalTokens: number,
 ): number {
-  return Math.max(0, Math.round(observedInput - calibratedStaticSum));
+  return Math.max(0, Math.round(observedInput - staticTotalTokens));
 }
 
 const CATEGORY_LABELS: Record<
@@ -255,7 +337,6 @@ export interface BuildFrameInput {
   sessionId: string;
   contextMax: number;
   staticEstimates: StaticCategoryEstimates;
-  calibrationRatio: number;
   messagesTokens: number;
   autocompactEnabled: boolean;
   autocompactBufferTokens?: number;
@@ -263,9 +344,10 @@ export interface BuildFrameInput {
 
 /**
  * Assemble the {@link ContextBreakdown} wire frame. Static categories
- * are scaled by the calibration ratio; messages tokens come pre-derived;
- * the autocompact buffer slice is included iff the setting is enabled
- * and the reserved count is non-zero.
+ * pass through unmodified — there is no per-session calibration; the
+ * local tokenizer's raw output sits inside the documented 5–10%
+ * accuracy bar. The autocompact buffer slice is included iff the
+ * setting is enabled and the reserved count is non-zero.
  */
 export function buildContextBreakdownFrame(
   input: BuildFrameInput,
@@ -274,7 +356,6 @@ export function buildContextBreakdownFrame(
     sessionId,
     contextMax,
     staticEstimates,
-    calibrationRatio,
     messagesTokens,
     autocompactEnabled,
   } = input;
@@ -285,27 +366,27 @@ export function buildContextBreakdownFrame(
     {
       id: "system_prompt",
       label: CATEGORY_LABELS.system_prompt,
-      tokens: Math.round(staticEstimates.system_prompt * calibrationRatio),
+      tokens: staticEstimates.system_prompt,
     },
     {
       id: "system_tools",
       label: CATEGORY_LABELS.system_tools,
-      tokens: Math.round(staticEstimates.system_tools * calibrationRatio),
+      tokens: staticEstimates.system_tools,
     },
     {
       id: "custom_agents",
       label: CATEGORY_LABELS.custom_agents,
-      tokens: Math.round(staticEstimates.custom_agents * calibrationRatio),
+      tokens: staticEstimates.custom_agents,
     },
     {
       id: "memory_files",
       label: CATEGORY_LABELS.memory_files,
-      tokens: Math.round(staticEstimates.memory_files * calibrationRatio),
+      tokens: staticEstimates.memory_files,
     },
     {
       id: "skills",
       label: CATEGORY_LABELS.skills,
-      tokens: Math.round(staticEstimates.skills * calibrationRatio),
+      tokens: staticEstimates.skills,
     },
     {
       id: "messages",
@@ -377,18 +458,17 @@ export function extractContextMax(
  *
  * Emit cadence (per spike S4):
  * - {@link onSessionInit}: tokenizes statics, returns the initial frame
- *   (calibration_ratio = 1.0, messages_tokens = 0).
+ *   (messages_tokens = 0).
  * - {@link onCostUpdate}: recomputes messages_tokens from observed
- *   usage; calibrates against truth on the first call that has anchor
- *   data (a user message has been submitted).
+ *   usage via subtraction from the static total.
  * - {@link onCompactBoundary}: currently a no-op — the next cost_update
  *   reflects the post-compaction state via the same subtraction.
  *
  * The caller is responsible for writing the returned frame to the
  * wire. All methods are synchronous; file IO is best-effort and uses
  * `readFileSync` against small fixture-shaped paths (CLAUDE.md,
- * agent/skill manifests). Sub-millisecond on the first call, cache-hit
- * thereafter.
+ * agent/skill manifests, memory entries, plugin agents/skills).
+ * Sub-millisecond on first call, cache-hit thereafter.
  */
 export class ContextBreakdownEmitter {
   private readonly sessionId: string;
@@ -398,9 +478,6 @@ export class ContextBreakdownEmitter {
 
   private staticEstimates: StaticCategoryEstimates | null = null;
   private contextMax: number = DEFAULT_CONTEXT_MAX;
-  private calibrationRatio: number = 1.0;
-  private hasCalibrated: boolean = false;
-  private userMessageTokenAccumulator: number = 0;
   private readonly tokenizationCache: Map<string, CacheEntry> = new Map();
 
   constructor(opts: {
@@ -430,20 +507,9 @@ export class ContextBreakdownEmitter {
   }
 
   /**
-   * Accumulate a user-submitted message's token count for calibration.
-   * Called from `SessionManager.handleUserMessage` on every live
-   * submit. Empty strings contribute 0 (no-op).
-   */
-  onUserMessageSubmitted(text: string): void {
-    if (text.length === 0) return;
-    this.userMessageTokenAccumulator += countTokens(text);
-  }
-
-  /**
-   * Recompute and return the updated frame. Calibrates against
-   * observed truth on the first call that has user-message anchor
-   * data. Returns `null` if the emitter has not been initialized
-   * (no session_init yet — defensive; should not occur in practice).
+   * Recompute and return the updated frame. Returns `null` if the
+   * emitter has not been initialized (no session_init yet —
+   * defensive; should not occur in practice).
    */
   onCostUpdate(
     usage: Record<string, unknown>,
@@ -453,19 +519,10 @@ export class ContextBreakdownEmitter {
 
     this.contextMax = extractContextMax(modelUsage);
     const observedInput = extractObservedInputTokens(usage);
-
-    if (!this.hasCalibrated && this.userMessageTokenAccumulator > 0) {
-      this.calibrationRatio = computeCalibrationRatio(
-        observedInput,
-        staticTotal(this.staticEstimates),
-        this.userMessageTokenAccumulator,
-      );
-      this.hasCalibrated = true;
-    }
-
-    const calibratedSum =
-      staticTotal(this.staticEstimates) * this.calibrationRatio;
-    const messagesTokens = computeMessagesTokens(observedInput, calibratedSum);
+    const messagesTokens = computeMessagesTokens(
+      observedInput,
+      staticTotal(this.staticEstimates),
+    );
 
     return this.buildCurrentFrame(messagesTokens);
   }
@@ -475,17 +532,10 @@ export class ContextBreakdownEmitter {
    * arrives with a reduced `usage.input_tokens` total reflecting the
    * post-compact context window; the messages-by-subtraction
    * arithmetic in {@link onCostUpdate} surfaces the new `messages_tokens`
-   * automatically. If post-compact drift becomes a problem in
-   * practice, this is where to reset {@link hasCalibrated} so the
-   * next cost_update re-anchors the ratio.
+   * automatically.
    */
   onCompactBoundary(): void {
     // Intentionally empty; see method docstring.
-  }
-
-  /** Diagnostic accessor. Exposed for tests; not consumed elsewhere. */
-  get calibrationRatioForTests(): number {
-    return this.calibrationRatio;
   }
 
   private buildCurrentFrame(messagesTokens: number): ContextBreakdown {
@@ -500,7 +550,6 @@ export class ContextBreakdownEmitter {
           memory_files: 0,
           skills: 0,
         },
-      calibrationRatio: this.calibrationRatio,
       messagesTokens,
       autocompactEnabled: this.settings.autoCompactEnabled,
       autocompactBufferTokens: AUTOCOMPACT_BUFFER_DEFAULT_TOKENS,

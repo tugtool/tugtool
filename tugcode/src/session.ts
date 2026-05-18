@@ -2859,14 +2859,6 @@ export class SessionManager {
       return;
     }
 
-    // Accumulate the user-message text for the context_breakdown
-    // emitter's calibration anchor. The first cost_update after this
-    // submit will use the accumulated user-message tokens to anchor
-    // the per-session calibration ratio. No-op when no emitter is
-    // injected. Tokenization is fast (sub-millisecond on typical
-    // message-length text) and runs before any IO.
-    this.contextBreakdownEmitter?.onUserMessageSubmitted(msg.text);
-
     // Build content blocks from text and attachments per PN-12.
     const contentBlocks = buildContentBlocks(msg.text, msg.attachments || []);
 

@@ -897,62 +897,94 @@ pub async fn relay_session_io(
                                         }
                                     }
                                     // Bind-time inline of the persisted
-                                    // `/context`-style breakdown. Emit a
-                                    // synthetic `context_breakdown` frame
-                                    // ahead of the replayed transcript so
-                                    // the popover renders pre-populated
-                                    // instead of falling through to the
-                                    // 20.4.7.C `cost_update`-derived view.
-                                    // Missing row → no emit → fallback. A
-                                    // sqlite error logs but doesn't block
-                                    // the replay (telemetry-level
-                                    // failure, not user-visible).
+                                    // `/context`-style breakdown. Synthesize
+                                    // a `context_breakdown` wire frame from
+                                    // the stored payload and emit it ahead
+                                    // of the replayed transcript so the
+                                    // popover renders pre-populated instead
+                                    // of falling through to the 20.4.7.C
+                                    // `cost_update`-derived view.
+                                    //
+                                    // `from_supervisor_attach: true` tells
+                                    // the tugdeck reducer to project this
+                                    // frame onto its snapshot but NOT
+                                    // dispatch a `record_context_breakdown`
+                                    // effect — the row already exists, the
+                                    // round-trip would be a no-op UPSERT.
+                                    //
+                                    // Parse-and-rebuild rather than
+                                    // byte-splice: the parse cost is
+                                    // microseconds for a payload of this
+                                    // size, and the resulting JSON is
+                                    // robust to any whitespace / key-order
+                                    // shifts in how the payload was
+                                    // originally serialized.
                                     match ledger.get_context_breakdown(&id) {
                                         Ok(Some(row)) => {
-                                            // Wrap the stored payload (which
-                                            // carries `context_max` +
-                                            // `categories`) in a full
-                                            // `context_breakdown` wire frame
-                                            // by prepending the type tag and
-                                            // ipc_version. Use string
-                                            // concatenation rather than
-                                            // round-trip-parse: the payload is
-                                            // already valid JSON (this side
-                                            // wrote it) and the wrapping is
-                                            // mechanical.
-                                            let mut wire = Vec::with_capacity(
-                                                row.payload.len() + 64,
-                                            );
-                                            wire.extend_from_slice(
-                                                b"{\"type\":\"context_breakdown\",\"ipc_version\":2,",
-                                            );
-                                            // Skip the leading `{` of the
-                                            // payload to splice it into the
-                                            // outer object.
-                                            let trimmed: &[u8] = match row.payload.first() {
-                                                Some(b'{') => &row.payload[1..],
-                                                _ => {
-                                                    warn!(
-                                                        session = %tug_session_id,
-                                                        "persisted context_breakdown payload not a JSON object; skipping bind-attach"
-                                                    );
-                                                    &[]
+                                            match serde_json::from_slice::<serde_json::Value>(
+                                                &row.payload,
+                                            ) {
+                                                Ok(payload_value) => {
+                                                    let mut wire = serde_json::json!({
+                                                        "type": "context_breakdown",
+                                                        "ipc_version": 2,
+                                                        "from_supervisor_attach": true,
+                                                    });
+                                                    if let (
+                                                        Some(payload_obj),
+                                                        Some(wire_obj),
+                                                    ) = (
+                                                        payload_value.as_object(),
+                                                        wire.as_object_mut(),
+                                                    ) {
+                                                        for (k, v) in payload_obj {
+                                                            wire_obj
+                                                                .insert(k.clone(), v.clone());
+                                                        }
+                                                        match serde_json::to_vec(&wire) {
+                                                            Ok(bytes) => {
+                                                                let spliced =
+                                                                    splice_tug_session_id(
+                                                                        &bytes,
+                                                                        tug_session_id.as_str(),
+                                                                    );
+                                                                let frame = Frame::new(
+                                                                    FeedId::CODE_OUTPUT,
+                                                                    spliced,
+                                                                );
+                                                                if merger_tx
+                                                                    .send(frame)
+                                                                    .await
+                                                                    .is_err()
+                                                                {
+                                                                    warn!(
+                                                                        session = %tug_session_id,
+                                                                        "merger receiver closed during context_breakdown bind-attach"
+                                                                    );
+                                                                    return RelayOutcome::Cancelled;
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                warn!(
+                                                                    session = %tug_session_id,
+                                                                    error = %e,
+                                                                    "context_breakdown bind-attach serialize failed; falling through"
+                                                                );
+                                                            }
+                                                        }
+                                                    } else {
+                                                        warn!(
+                                                            session = %tug_session_id,
+                                                            "persisted context_breakdown payload not a JSON object; skipping bind-attach"
+                                                        );
+                                                    }
                                                 }
-                                            };
-                                            if !trimmed.is_empty() {
-                                                wire.extend_from_slice(trimmed);
-                                                let spliced = splice_tug_session_id(
-                                                    &wire,
-                                                    tug_session_id.as_str(),
-                                                );
-                                                let frame =
-                                                    Frame::new(FeedId::CODE_OUTPUT, spliced);
-                                                if merger_tx.send(frame).await.is_err() {
+                                                Err(e) => {
                                                     warn!(
                                                         session = %tug_session_id,
-                                                        "merger receiver closed during context_breakdown bind-attach"
+                                                        error = %e,
+                                                        "persisted context_breakdown payload not valid JSON; falling through"
                                                     );
-                                                    return RelayOutcome::Cancelled;
                                                 }
                                             }
                                         }

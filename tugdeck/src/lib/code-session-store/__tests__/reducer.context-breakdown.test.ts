@@ -150,7 +150,8 @@ describe("reducer / context_breakdown", () => {
     // The effect's payload is the same object as the snapshot's projection.
     // The supervisor persists exactly what the renderer sees; no parallel
     // re-serialization where the two could drift.
-    expect(eff.payload).toBe(s1.lastContextBreakdown);
+    expect(s1.lastContextBreakdown).not.toBeNull();
+    expect(eff.payload).toBe(s1.lastContextBreakdown!);
   });
 
   test("autocompact_buffer category id is supported (round-trips)", () => {
@@ -162,6 +163,41 @@ describe("reducer / context_breakdown", () => {
     const { state: s1 } = reduce(s0, ev);
     const ids = s1.lastContextBreakdown!.categories.map((c) => c.id);
     expect(ids).toEqual(["messages", "autocompact_buffer"]);
+  });
+
+  test("from_supervisor_attach=true projects but skips the persist effect", () => {
+    // Bind-attach round-trip suppression: the supervisor synthesized
+    // this frame from the persisted row, so re-persisting it would
+    // be a redundant no-op UPSERT write. Reducer projects onto
+    // snapshot but doesn't emit `record-context-breakdown`.
+    const s0 = freshState();
+    const ev: ContextBreakdownEvent = {
+      ...frame(200_000, [
+        { id: "messages", label: "Messages", tokens: 7_777 },
+      ]),
+      from_supervisor_attach: true,
+    };
+    const { state: s1, effects } = reduce(s0, ev);
+    expect(s1.lastContextBreakdown).not.toBeNull();
+    expect(s1.lastContextBreakdown!.categories[0].tokens).toBe(7_777);
+    const recordEffects = (effects as ReadonlyArray<{ kind: string }>).filter(
+      (e) => e.kind === "record-context-breakdown",
+    );
+    expect(recordEffects.length).toBe(0);
+  });
+
+  test("from_supervisor_attach=false (or absent) still persists", () => {
+    // The default path — live frames from tugcode (no flag).
+    const s0 = freshState();
+    const ev = frame(200_000, [
+      { id: "messages", label: "Messages", tokens: 1_111 },
+    ]);
+    const { effects } = reduce(s0, ev);
+    expect(
+      (effects as ReadonlyArray<{ kind: string }>).some(
+        (e) => e.kind === "record-context-breakdown",
+      ),
+    ).toBe(true);
   });
 
   test("no MCP id ever surfaces (pinned at the reducer)", () => {

@@ -1890,15 +1890,24 @@ function handleContextBreakdown(
     contextMax: event.context_max,
     categories,
   };
+  // Suppress the persist effect for bind-attach frames: the supervisor
+  // synthesized this frame from the row it already holds, so writing
+  // the same bytes back via record_context_breakdown would just be a
+  // no-op UPSERT round-trip. Live frames from tugcode (no flag) get
+  // persisted as normal.
+  const effects: Effect[] =
+    event.from_supervisor_attach === true
+      ? []
+      : [
+          {
+            kind: "record-context-breakdown",
+            payload: projection,
+            capturedAt: Date.now(),
+          },
+        ];
   return {
     state: { ...state, lastContextBreakdown: projection },
-    effects: [
-      {
-        kind: "record-context-breakdown",
-        payload: projection,
-        capturedAt: Date.now(),
-      },
-    ],
+    effects,
   };
 }
 

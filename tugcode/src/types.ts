@@ -366,6 +366,18 @@ export interface ContextBreakdown {
   /** Model's context-window cap (e.g. 200_000 for current sonnet/opus). */
   context_max: number;
   categories: ReadonlyArray<ContextBreakdownCategory>;
+  /**
+   * Set to `true` when the supervisor synthesizes this frame from the
+   * persisted `context_breakdown_latest` row at bind time. The
+   * tugdeck reducer uses the flag to suppress the redundant
+   * `record_context_breakdown` round-trip — the row already exists,
+   * re-persisting it would be a no-op write of the same bytes.
+   *
+   * Absent on live frames emitted by tugcode (the reducer dispatches
+   * the persist effect for those as normal). The renderer ignores
+   * the flag.
+   */
+  from_supervisor_attach?: boolean;
   ipc_version: number;
 }
 

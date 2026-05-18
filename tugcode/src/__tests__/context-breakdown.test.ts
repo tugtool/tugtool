@@ -13,7 +13,6 @@ import type { ClaudeCodeSettings } from "../claude-code-settings.ts";
 import {
   AUTOCOMPACT_BUFFER_DEFAULT_TOKENS,
   buildContextBreakdownFrame,
-  computeCalibrationRatio,
   computeMessagesTokens,
   computeStaticCategories,
   ContextBreakdownEmitter,
@@ -23,6 +22,9 @@ import {
   staticTotal,
   SYSTEM_PROMPT_DEFAULT_TOKENS,
   tokenizeFileCached,
+  tokenizeMarkdownDirCached,
+  tokenizePluginAgents,
+  tokenizePluginSkills,
   TOOL_SCHEMA_DEFAULT_TOKENS,
 } from "../context-breakdown.ts";
 
@@ -47,7 +49,6 @@ describe("tokenizeFileCached", () => {
   test("returns 0 for a missing file", () => {
     const cache = new Map();
     expect(tokenizeFileCached("/no/such/path/here.md", cache)).toBe(0);
-    // Cache must not be poisoned with a miss entry.
     expect(cache.size).toBe(0);
   });
 
@@ -59,7 +60,6 @@ describe("tokenizeFileCached", () => {
     const t1 = tokenizeFileCached(path, cache);
     expect(t1).toBeGreaterThan(0);
     expect(cache.size).toBe(1);
-    // Second call returns cached value without re-reading.
     const t2 = tokenizeFileCached(path, cache);
     expect(t2).toBe(t1);
   });
@@ -70,12 +70,81 @@ describe("tokenizeFileCached", () => {
     writeFileSync(path, "first version of the content\n");
     const cache = new Map();
     const t1 = tokenizeFileCached(path, cache);
-    // Rewrite with much larger content + bump mtime to a future value.
     writeFileSync(path, "second version of content ".repeat(100));
     const future = new Date(Date.now() + 60_000);
     utimesSync(path, future, future);
     const t2 = tokenizeFileCached(path, cache);
     expect(t2).toBeGreaterThan(t1);
+  });
+});
+
+// ---- tokenizeMarkdownDirCached ------------------------------------------
+
+describe("tokenizeMarkdownDirCached", () => {
+  test("returns 0 for a missing directory", () => {
+    expect(tokenizeMarkdownDirCached("/no/such/dir/here", new Map())).toBe(0);
+  });
+
+  test("sums *.md files in the directory", () => {
+    const dir = scratch();
+    writeFileSync(join(dir, "MEMORY.md"), "memory index entry ".repeat(30));
+    writeFileSync(join(dir, "feedback_one.md"), "feedback content ".repeat(40));
+    writeFileSync(join(dir, "user_thing.md"), "user data ".repeat(50));
+    writeFileSync(join(dir, "ignored.txt"), "not a markdown file");
+    const total = tokenizeMarkdownDirCached(dir, new Map());
+    expect(total).toBeGreaterThan(0);
+    // Same call hits the cache; same result.
+    expect(tokenizeMarkdownDirCached(dir, new Map(
+      Array.from(new Map().entries()),
+    ))).toBe(total);
+  });
+
+  test("returns 0 for an empty directory", () => {
+    const dir = scratch();
+    expect(tokenizeMarkdownDirCached(dir, new Map())).toBe(0);
+  });
+});
+
+// ---- tokenizePluginAgents / tokenizePluginSkills ------------------------
+
+describe("tokenizePluginAgents / tokenizePluginSkills", () => {
+  test("plugin with agents/ + skills/ subdirs contributes from both", () => {
+    const plugin = scratch();
+    mkdirSync(join(plugin, "agents"), { recursive: true });
+    mkdirSync(join(plugin, "skills", "plan"), { recursive: true });
+    mkdirSync(join(plugin, "skills", "merge"), { recursive: true });
+    writeFileSync(
+      join(plugin, "agents", "coder-agent.md"),
+      "You are a coder ".repeat(40),
+    );
+    writeFileSync(
+      join(plugin, "agents", "reviewer-agent.md"),
+      "You are a reviewer ".repeat(40),
+    );
+    writeFileSync(
+      join(plugin, "skills", "plan", "SKILL.md"),
+      "Plan skill body ".repeat(50),
+    );
+    writeFileSync(
+      join(plugin, "skills", "merge", "SKILL.md"),
+      "Merge skill body ".repeat(50),
+    );
+    const cache = new Map();
+    expect(tokenizePluginAgents(plugin, cache)).toBeGreaterThan(0);
+    expect(tokenizePluginSkills(plugin, cache)).toBeGreaterThan(0);
+  });
+
+  test("plugin with missing subdirs contributes 0 (best-effort)", () => {
+    const plugin = scratch();
+    // No `agents/` or `skills/` created.
+    expect(tokenizePluginAgents(plugin, new Map())).toBe(0);
+    expect(tokenizePluginSkills(plugin, new Map())).toBe(0);
+  });
+
+  test("skill subdir without SKILL.md contributes 0", () => {
+    const plugin = scratch();
+    mkdirSync(join(plugin, "skills", "empty-skill"), { recursive: true });
+    expect(tokenizePluginSkills(plugin, new Map())).toBe(0);
   });
 });
 
@@ -108,11 +177,10 @@ describe("computeStaticCategories", () => {
       },
       { homeDir: home, cwd: scratch(), cache: new Map() },
     );
-    // Present file contributes tokens; absent agent contributes 0.
     expect(result.custom_agents).toBeGreaterThan(0);
   });
 
-  test("memory_files sums ~/.claude/CLAUDE.md + cwd/CLAUDE.md", () => {
+  test("memory_files sums ~/.claude/CLAUDE.md + cwd/CLAUDE.md + project memory dir", () => {
     const home = scratch();
     const cwd = scratch();
     mkdirSync(join(home, ".claude"), { recursive: true });
@@ -124,15 +192,37 @@ describe("computeStaticCategories", () => {
       join(cwd, "CLAUDE.md"),
       "project-level memory content here ".repeat(30),
     );
+    // Auto-memory directory at ~/.claude/projects/<encoded>/memory/
+    const encoded = cwd.replace(/\//g, "-");
+    const memoryDir = join(home, ".claude", "projects", encoded, "memory");
+    mkdirSync(memoryDir, { recursive: true });
+    writeFileSync(
+      join(memoryDir, "MEMORY.md"),
+      "MEMORY index entry ".repeat(40),
+    );
+    writeFileSync(
+      join(memoryDir, "feedback_one.md"),
+      "feedback content here ".repeat(50),
+    );
+    writeFileSync(
+      join(memoryDir, "user_thing.md"),
+      "user data ".repeat(60),
+    );
     const result = computeStaticCategories(
       { tools: [], agents: [], skills: [], plugins: [] },
       { homeDir: home, cwd, cache: new Map() },
     );
-    // Sum of both files; each contributes >0.
     expect(result.memory_files).toBeGreaterThan(0);
+    // Sanity: contributing files should swell the count well past just
+    // the cwd/CLAUDE.md contribution alone.
+    const cwdOnly = computeStaticCategories(
+      { tools: [], agents: [], skills: [], plugins: [] },
+      { homeDir: scratch(), cwd, cache: new Map() },
+    );
+    expect(result.memory_files).toBeGreaterThan(cwdOnly.memory_files);
   });
 
-  test("memory_files = 0 when neither file exists", () => {
+  test("memory_files = 0 when neither file nor memory dir exists", () => {
     const home = scratch();
     const cwd = scratch();
     const result = computeStaticCategories(
@@ -156,16 +246,48 @@ describe("computeStaticCategories", () => {
     expect(result.skills).toBeGreaterThan(0);
   });
 
-  test("non-string entries in agents/skills are skipped", () => {
-    // Defensive: SDK init carries `string[]` but we accept `unknown[]`
-    // at the type boundary. Non-strings must not crash.
+  test("plugin agents/skills fold into custom_agents/skills", () => {
+    const home = scratch();
+    const cwd = scratch();
+    const plugin = scratch();
+    mkdirSync(join(plugin, "agents"), { recursive: true });
+    mkdirSync(join(plugin, "skills", "merge"), { recursive: true });
+    writeFileSync(
+      join(plugin, "agents", "coder-agent.md"),
+      "You are a coder ".repeat(60),
+    );
+    writeFileSync(
+      join(plugin, "skills", "merge", "SKILL.md"),
+      "Merge skill body ".repeat(60),
+    );
+    const result = computeStaticCategories(
+      {
+        tools: [],
+        agents: [],
+        skills: [],
+        plugins: [{ name: "tugplug", path: plugin }],
+      },
+      { homeDir: home, cwd, cache: new Map() },
+    );
+    expect(result.custom_agents).toBeGreaterThan(0);
+    expect(result.skills).toBeGreaterThan(0);
+  });
+
+  test("non-string entries in agents/skills are skipped; plugin without path is skipped", () => {
     const home = scratch();
     const result = computeStaticCategories(
       {
         tools: [],
         agents: [42, null, { weird: true }, "still-absent"],
         skills: [true, "still-absent-skill"],
-        plugins: [],
+        plugins: [
+          // Plugin object missing `path` — skipped.
+          { name: "no-path" },
+          // Non-object plugin entry — skipped.
+          "string-not-object",
+          // `path` of wrong type — skipped.
+          { name: "bad-path", path: 42 },
+        ],
       },
       { homeDir: home, cwd: scratch(), cache: new Map() },
     );
@@ -190,48 +312,10 @@ describe("staticTotal", () => {
   });
 });
 
-// ---- computeCalibrationRatio ---------------------------------------------
-
-describe("computeCalibrationRatio", () => {
-  test("returns 1.0 when no user message anchor data is available", () => {
-    expect(computeCalibrationRatio(10_000, 8_000, 0)).toBe(1.0);
-  });
-
-  test("computes observed / (static + user) when anchored", () => {
-    // 10100 / (8000 + 100) = 10100 / 8100 = 1.2469...
-    const ratio = computeCalibrationRatio(10_100, 8_000, 100);
-    expect(ratio).toBeCloseTo(10_100 / 8_100, 4);
-  });
-
-  test("matches the spike benchmark (~1.005 against natural-language anchor)", () => {
-    // Mirrors the drift numbers from the spike companion appendix:
-    // local under-counts by ~0.5% on prose-shaped content. ratio ~1.005.
-    const local = 751;
-    const apiTruth = 755;
-    const ratio = computeCalibrationRatio(apiTruth, local, 0.0001);
-    // user-message-anchor of ~0 lets the ratio collapse to api/local.
-    expect(ratio).toBeCloseTo(apiTruth / local, 3);
-  });
-
-  test("clamps extreme drift to 1.0 (defensive)", () => {
-    // observed wildly larger than estimate → clamp.
-    expect(computeCalibrationRatio(1_000_000, 100, 50)).toBe(1.0);
-    // observed wildly smaller → clamp.
-    expect(computeCalibrationRatio(10, 8_000, 100)).toBe(1.0);
-  });
-
-  test("handles degenerate inputs (negative, NaN, Infinity)", () => {
-    expect(computeCalibrationRatio(NaN, 100, 50)).toBe(1.0);
-    expect(computeCalibrationRatio(100, NaN, 50)).toBe(1.0);
-    // Negative divisor → divisor <= 0 short circuit.
-    expect(computeCalibrationRatio(100, -100, 50)).toBe(1.0);
-  });
-});
-
 // ---- computeMessagesTokens -----------------------------------------------
 
 describe("computeMessagesTokens", () => {
-  test("subtracts the calibrated static sum from observed input", () => {
+  test("subtracts the static total from observed input", () => {
     expect(computeMessagesTokens(10_000, 8_000)).toBe(2_000);
   });
 
@@ -240,7 +324,6 @@ describe("computeMessagesTokens", () => {
   });
 
   test("rounds fractional inputs", () => {
-    // 10_000 - 7_999.6 = 2000.4 → 2000
     expect(computeMessagesTokens(10_000, 7_999.6)).toBe(2_000);
   });
 });
@@ -298,35 +381,34 @@ describe("buildContextBreakdownFrame", () => {
     skills: 1_000,
   };
 
-  test("scales static categories by calibrationRatio", () => {
+  test("static categories pass through unmodified (no calibration)", () => {
     const frame = buildContextBreakdownFrame({
       sessionId: "s1",
       contextMax: 200_000,
       staticEstimates: baseStatics,
-      calibrationRatio: 1.10,
       messagesTokens: 12_345,
       autocompactEnabled: false,
     });
     const findCat = (id: string) =>
       frame.categories.find((c) => c.id === id)!;
-    expect(findCat("system_prompt").tokens).toBe(Math.round(3_000 * 1.10));
-    expect(findCat("system_tools").tokens).toBe(Math.round(5_000 * 1.10));
-    expect(findCat("custom_agents").tokens).toBe(Math.round(2_000 * 1.10));
-    expect(findCat("memory_files").tokens).toBe(Math.round(500 * 1.10));
-    expect(findCat("skills").tokens).toBe(Math.round(1_000 * 1.10));
+    expect(findCat("system_prompt").tokens).toBe(3_000);
+    expect(findCat("system_tools").tokens).toBe(5_000);
+    expect(findCat("custom_agents").tokens).toBe(2_000);
+    expect(findCat("memory_files").tokens).toBe(500);
+    expect(findCat("skills").tokens).toBe(1_000);
   });
 
-  test("messages tokens pass through unmodified by calibration ratio", () => {
+  test("messages tokens pass through unmodified", () => {
     const frame = buildContextBreakdownFrame({
       sessionId: "s1",
       contextMax: 200_000,
       staticEstimates: baseStatics,
-      calibrationRatio: 1.50,
       messagesTokens: 9_999,
       autocompactEnabled: false,
     });
-    const messages = frame.categories.find((c) => c.id === "messages")!;
-    expect(messages.tokens).toBe(9_999);
+    expect(frame.categories.find((c) => c.id === "messages")!.tokens).toBe(
+      9_999,
+    );
   });
 
   test("omits autocompact_buffer when the setting is disabled", () => {
@@ -334,7 +416,6 @@ describe("buildContextBreakdownFrame", () => {
       sessionId: "s1",
       contextMax: 200_000,
       staticEstimates: baseStatics,
-      calibrationRatio: 1.0,
       messagesTokens: 1_000,
       autocompactEnabled: false,
     });
@@ -348,7 +429,6 @@ describe("buildContextBreakdownFrame", () => {
       sessionId: "s1",
       contextMax: 200_000,
       staticEstimates: baseStatics,
-      calibrationRatio: 1.0,
       messagesTokens: 1_000,
       autocompactEnabled: true,
     });
@@ -361,12 +441,9 @@ describe("buildContextBreakdownFrame", () => {
       sessionId: "s1",
       contextMax: 200_000,
       staticEstimates: baseStatics,
-      calibrationRatio: 1.0,
       messagesTokens: 1_000,
       autocompactEnabled: true,
     });
-    // The category id union excludes `mcp_tools`; this test pins the
-    // out-of-scope-MCP invariant at the frame-shape level too.
     for (const c of frame.categories) {
       expect(c.id).not.toBe("mcp_tools");
     }
@@ -377,7 +454,6 @@ describe("buildContextBreakdownFrame", () => {
       sessionId: "sess-42",
       contextMax: 1_000_000,
       staticEstimates: baseStatics,
-      calibrationRatio: 1.0,
       messagesTokens: 0,
       autocompactEnabled: false,
     });
@@ -420,56 +496,17 @@ describe("ContextBreakdownEmitter", () => {
     });
     expect(frame.type).toBe("context_breakdown");
     expect(frame.tug_session_id).toBe("test-session");
-    const messages = frame.categories.find((c) => c.id === "messages")!;
-    expect(messages.tokens).toBe(0);
+    expect(frame.categories.find((c) => c.id === "messages")!.tokens).toBe(0);
   });
 
   test("onCostUpdate before onSessionInit returns null (defensive)", () => {
     const { emitter } = fresh(settingsOff);
-    const frame = emitter.onCostUpdate({ input_tokens: 100 });
-    expect(frame).toBeNull();
+    expect(emitter.onCostUpdate({ input_tokens: 100 })).toBeNull();
   });
 
-  test("onCostUpdate without a user-message anchor leaves ratio at 1.0", () => {
+  test("messages_tokens grows turn-over-turn as observed_input grows", () => {
     const { emitter } = fresh(settingsOff);
     emitter.onSessionInit({ tools: [], agents: [], skills: [], plugins: [] });
-    // Observed input matches the heuristic static_prompt directly;
-    // without a user-message anchor the ratio cannot calibrate.
-    emitter.onCostUpdate({ input_tokens: 5_000 });
-    expect(emitter.calibrationRatioForTests).toBe(1.0);
-  });
-
-  test("calibrates on first cost_update with anchor data", () => {
-    const { emitter } = fresh(settingsOff);
-    emitter.onSessionInit({ tools: [], agents: [], skills: [], plugins: [] });
-    // staticTotal = SYSTEM_PROMPT_DEFAULT_TOKENS (no tools, no files)
-    emitter.onUserMessageSubmitted("hello, this is a user message");
-    // observed = static * 1.05 + user_tokens (roughly)
-    const observed = Math.round(SYSTEM_PROMPT_DEFAULT_TOKENS * 1.05) + 20;
-    emitter.onCostUpdate({ input_tokens: observed });
-    expect(emitter.calibrationRatioForTests).not.toBe(1.0);
-    expect(emitter.calibrationRatioForTests).toBeGreaterThan(1.0);
-    expect(emitter.calibrationRatioForTests).toBeLessThan(1.10);
-  });
-
-  test("hasCalibrated latches — subsequent cost_updates reuse the ratio", () => {
-    const { emitter } = fresh(settingsOff);
-    emitter.onSessionInit({ tools: [], agents: [], skills: [], plugins: [] });
-    emitter.onUserMessageSubmitted("first message");
-    emitter.onCostUpdate({ input_tokens: 4_000 });
-    const firstRatio = emitter.calibrationRatioForTests;
-
-    // Submit more messages, fire another cost_update with very
-    // different totals — ratio must stay pinned.
-    emitter.onUserMessageSubmitted("second longer message ".repeat(50));
-    emitter.onCostUpdate({ input_tokens: 50_000 });
-    expect(emitter.calibrationRatioForTests).toBe(firstRatio);
-  });
-
-  test("messages_tokens grows turn-over-turn for steady-state operation", () => {
-    const { emitter } = fresh(settingsOff);
-    emitter.onSessionInit({ tools: [], agents: [], skills: [], plugins: [] });
-    emitter.onUserMessageSubmitted("hello");
     const t1 = emitter.onCostUpdate({ input_tokens: 5_000 })!;
     const t2 = emitter.onCostUpdate({ input_tokens: 12_000 })!;
     const t3 = emitter.onCostUpdate({ input_tokens: 25_000 })!;
@@ -477,6 +514,30 @@ describe("ContextBreakdownEmitter", () => {
       f.categories.find((c) => c.id === "messages")!.tokens;
     expect(msgs(t1)).toBeLessThan(msgs(t2));
     expect(msgs(t2)).toBeLessThan(msgs(t3));
+  });
+
+  test("resume case: large observed_input on first cost_update does not warp statics", () => {
+    // Regression test for the pre-fix calibration-on-resume bug.
+    // A resumed session's first cost_update arrives with
+    // observed_input including ALL prior history. With the old
+    // calibration trick the ratio would scale statics by a too-large
+    // factor; with calibration dropped, statics pass through
+    // unchanged and messages_tokens absorbs the history correctly.
+    const { emitter } = fresh(settingsOff);
+    const init = emitter.onSessionInit({
+      tools: ["Read"],
+      agents: [],
+      skills: [],
+      plugins: [],
+    });
+    const staticAtInit = init.categories.find((c) => c.id === "system_prompt")!.tokens;
+    // Simulate a resumed-session cost_update with a big observed.
+    const f = emitter.onCostUpdate({ input_tokens: 100_000 })!;
+    const staticAfter = f.categories.find((c) => c.id === "system_prompt")!.tokens;
+    expect(staticAfter).toBe(staticAtInit);
+    // Messages absorbs the rest.
+    const msgs = f.categories.find((c) => c.id === "messages")!.tokens;
+    expect(msgs).toBeGreaterThan(80_000);
   });
 
   test("autocompact-on emits the autocompact_buffer slice", () => {
@@ -508,13 +569,13 @@ describe("ContextBreakdownEmitter", () => {
   test("onCompactBoundary is a no-op (next cost_update reflects the new state)", () => {
     const { emitter } = fresh(settingsOff);
     emitter.onSessionInit({ tools: [], agents: [], skills: [], plugins: [] });
-    emitter.onUserMessageSubmitted("hello");
     emitter.onCostUpdate({ input_tokens: 100_000 });
-    const ratioBefore = emitter.calibrationRatioForTests;
+    // No state to assert on directly; verify subsequent cost_update
+    // still produces a frame with the expected shape after the
+    // boundary event.
     emitter.onCompactBoundary();
-    // No state mutation; the next cost_update handles the reset via
-    // the messages-by-subtraction arithmetic.
-    expect(emitter.calibrationRatioForTests).toBe(ratioBefore);
+    const f = emitter.onCostUpdate({ input_tokens: 20_000 })!;
+    expect(f.type).toBe("context_breakdown");
   });
 
   test("modelUsage contextWindow is reflected in subsequent frames", () => {
@@ -525,13 +586,5 @@ describe("ContextBreakdownEmitter", () => {
       { "claude-sonnet-4-5": { contextWindow: 1_000_000 } },
     )!;
     expect(f.context_max).toBe(1_000_000);
-  });
-
-  test("empty user message text is a no-op", () => {
-    const { emitter } = fresh(settingsOff);
-    emitter.onSessionInit({ tools: [], agents: [], skills: [], plugins: [] });
-    emitter.onUserMessageSubmitted("");
-    emitter.onCostUpdate({ input_tokens: 5_000 });
-    expect(emitter.calibrationRatioForTests).toBe(1.0);
   });
 });

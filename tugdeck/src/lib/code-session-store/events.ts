@@ -230,6 +230,17 @@ export interface ContextBreakdownEvent {
     label: string;
     tokens: number;
   }>;
+  /**
+   * Set to `true` by the tugcast supervisor when it synthesizes this
+   * frame from the persisted ledger row at bind time. The reducer
+   * uses this flag to suppress the redundant `record-context-breakdown`
+   * effect — the row already exists, re-persisting it would write
+   * identical bytes back to the same UPSERT slot.
+   *
+   * Absent on live frames from tugcode (those get persisted as
+   * normal). The popover renderer ignores the flag.
+   */
+  from_supervisor_attach?: boolean;
   [key: string]: unknown;
 }
 
