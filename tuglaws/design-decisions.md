@@ -186,6 +186,8 @@
 
 **D79.** `requestAnimationFrame` is never used for operations depending on React state commits. RAF timing relative to React's commit cycle is not a contract. [L05]
 
+**D97.** Pulse animations complete in their starting color. When a state-coupled CSS keyframe animation is running and the underlying logical state changes, the visible class on the animating element does not swap mid-iteration; the swap is deferred until the current iteration's `animationend` fires, so the user perceives the pulse finishing the way it began rather than blinking color partway through. The mechanism is the `useCommitOnAnimationEnd` hook (`tugways/hooks/use-commit-on-animation-end.ts`): it owns the DOM-class commit ([L06], [L24]), subscribes via `useLayoutEffect` and writes the class through a ref ([L22]), uses CSS `animationend` as the canonical completion signal ([L13], [L14]) — never `requestAnimationFrame` ([L05]) — and requires consumers to keep mount identity stable for the animating element through the transition ([L26]). For multi-element compositions (e.g., a three-bar indicator) the consumer attaches the listener to a stable parent and passes an `animationName` filter so exactly one bar's completion drives the gate. Under reduced motion (`--tug-motion: 0`, per [D24]), the hook detects the zero-duration / animation-none case and commits immediately — there is no in-progress iteration to preserve. The rule applies to any state-coupled keyframe animation, not just the indicator dot/ring; new pulse-style Tug components opt in by calling the hook rather than re-deriving the mechanism. [L02, L05, L06, L13, L14, L22, L24, L26]
+
 ---
 
 ## Scroll Behavior

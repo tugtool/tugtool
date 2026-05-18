@@ -1955,7 +1955,7 @@ The "✓" / "maybe" / "—" marks are starting positions, not decisions. The stu
 
 **Depends on:** none — pure substrate. First sub-step of the 20.4.x follow-on series.
 
-**Status:** _not started._
+**Status:** _done._
 
 **Commit:** `plan(tide-rendering): animation-completion handoff hook + design rule`
 
@@ -2046,23 +2046,23 @@ The hook's name is provisional. Implementation review may surface a cleaner shap
 
 **Tasks.**
 
-- [ ] **Re-read** `tuglaws/tuglaws.md`, `tuglaws/design-decisions.md`, and the relevant sections of `tuglaws/component-authoring.md`. Confirm the law interpretations in this step's scope.
-- [ ] **Document the design principle** — add a new `[D##]` entry to `tuglaws/design-decisions.md` capturing the rule "pulse animations complete in their starting color"; reference it from the hook source.
-- [ ] **Implement the hook** at `tugdeck/src/components/tugways/use-commit-on-animation-end.ts` (or final-named location), with module docstring citing the laws.
-- [ ] **Pure-logic unit tests** for the deferred-commit decision logic (the parts that do not require real DOM): pending-class queue, no-op when target matches current, `animationName` filter accepts matching events and ignores non-matching events, reduced-motion fast-path commits immediately.
+- [x] **Re-read** `tuglaws/tuglaws.md`, `tuglaws/design-decisions.md`, and the relevant sections of `tuglaws/component-authoring.md`. Confirm the law interpretations in this step's scope.
+- [x] **Document the design principle** — added `[D97]` to `tuglaws/design-decisions.md` capturing the rule "pulse animations complete in their starting color"; referenced from the hook source.
+- [x] **Implement the hook** at `tugdeck/src/components/tugways/hooks/use-commit-on-animation-end.ts` (placed alongside the other DOM-utility hooks per [D13]), with module docstring citing the laws.
+- [x] **Pure-logic unit tests** for the deferred-commit decision logic at `tugdeck/src/components/tugways/__tests__/use-commit-on-animation-end.test.ts`. Two pure helpers exported from the hook module (`decideOnTargetChange`, `decideOnAnimationEnd`) cover: pending-class queue, no-op when target matches current, `animationName` filter accepts matching and ignores non-matching, and reduced-motion fast-path (which collapses to the same "no running animation → commit-now" branch as the static-default case, since reduced motion forces `animation-duration: 0s` and `getAnimations` returns no running animations).
 
 **Tests.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] _No UI consumers yet; full integration is exercised by 20.4.2._
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green (2077 pass, 0 fail; 12 new tests for the hook).
+- [x] `bun run audit:tokens lint` exits 0.
+- [x] _No UI consumers yet; full integration is exercised by 20.4.2._
 
 **Checkpoint.**
 
-- [ ] Hook lands as a `tugways/` utility (per [L19] conventions, even though it is a hook rather than a component).
-- [ ] Design-decision entry references the hook and cites the laws it conforms to.
-- [ ] Commit message includes the conformance-audit walkthrough.
+- [x] Hook lands as a `tugways/hooks/` utility (per [L19] conventions, alongside `useCSSVar` / `useDOMClass` / `useDOMStyle`).
+- [x] Design-decision entry (D97) references the hook and cites the laws it conforms to ([L02], [L05], [L06], [L13], [L14], [L22], [L24], [L26]).
+- [x] Commit message includes the conformance-audit walkthrough.
 
 ---
 
