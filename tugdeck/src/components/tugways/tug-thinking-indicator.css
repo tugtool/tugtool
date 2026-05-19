@@ -154,8 +154,10 @@ body {
      13px in the default theme) so the indicator reads as part of
      the assistant's stream rather than as a separate piece of
      chrome. The base `--tugx-block-code-font-size` alias in
-     `tugx-block.css` resolves to the same token. */
+     `tugx-block.css` resolves to the same token. Bold weight so
+     the label reads as a header beside the active glyph. */
   font-size: var(--tug-font-size-sm);
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
 }

@@ -80,10 +80,12 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
   // in the live tinker bench (Section 4) so the design space is
   // HMR-vettable. Defaults match the component's prop defaults.
   const [shrinkTo, setShrinkTo] = useState<number>(0.5);
-  const [dimTo, setDimTo] = useState<number>(0.5);
+  const [dimTo, setDimTo] = useState<number>(1);
   const [cycleMs, setCycleMs] = useState<number>(960);
   const [shrinkFromTop, setShrinkFromTop] = useState<boolean>(true);
   const [shrinkFromBottom, setShrinkFromBottom] = useState<boolean>(true);
+  const [sideBarRatio, setSideBarRatio] = useState<number>(0.5);
+  const [barWidthRatio, setBarWidthRatio] = useState<number>(0.15);
 
   const animatingSwitchId = useId();
   const labelPositionPopupId = useId();
@@ -93,6 +95,8 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
   const cycleMsSliderId = useId();
   const shrinkFromTopCheckboxId = useId();
   const shrinkFromBottomCheckboxId = useId();
+  const sideBarRatioSliderId = useId();
+  const barWidthRatioSliderId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     toggle: {
@@ -109,6 +113,8 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
       [shrinkToSliderId]: setShrinkTo,
       [dimToSliderId]: setDimTo,
       [cycleMsSliderId]: setCycleMs,
+      [sideBarRatioSliderId]: setSideBarRatio,
+      [barWidthRatioSliderId]: setBarWidthRatio,
     },
   });
 
@@ -279,6 +285,8 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
                 cycleMs={cycleMs}
                 shrinkFromTop={shrinkFromTop}
                 shrinkFromBottom={shrinkFromBottom}
+                sideBarRatio={sideBarRatio}
+                barWidthRatio={barWidthRatio}
               />
               <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>
                 {animating ? "animating" : "static (rest)"}
@@ -369,6 +377,28 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
                 label="cycleMs (total cycle ms)"
                 size="sm"
                 valueWidth={MS_VALUE_WIDTH}
+              />
+              <TugSlider
+                value={sideBarRatio}
+                senderId={sideBarRatioSliderId}
+                min={0}
+                max={1}
+                step={0.05}
+                label="sideBarRatio (outer-bar rest height)"
+                size="sm"
+                formatter={RATIO_FORMATTER}
+                valueWidth={RATIO_VALUE_WIDTH}
+              />
+              <TugSlider
+                value={barWidthRatio}
+                senderId={barWidthRatioSliderId}
+                min={0.05}
+                max={0.5}
+                step={0.01}
+                label="barWidthRatio (bar width / size)"
+                size="sm"
+                formatter={RATIO_FORMATTER}
+                valueWidth={RATIO_VALUE_WIDTH}
               />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>

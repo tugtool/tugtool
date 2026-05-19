@@ -183,11 +183,13 @@ function Z1AsstHalfStack({
         }}
       >
         {live ? (
-          <TugThinkingIndicator
-            animating={true}
-            size={12}
-            labelPosition="right"
-          />
+          // Use defaults — `size`, `barWidthRatio`, `sideBarRatio`,
+          // and every other tunable were workshopped in the
+          // TugThinkingIndicator tinker bench to read well in
+          // exactly this context (a label-pair adjacent to small
+          // mono text). Avoid passing overrides here so the chrome
+          // stays in lockstep with the indicator's defaults.
+          <TugThinkingIndicator animating={true} labelPosition="right" />
         ) : (
           <EndStatePlaceholder phase={phase} />
         )}

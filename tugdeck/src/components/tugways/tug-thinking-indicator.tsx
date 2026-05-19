@@ -128,22 +128,94 @@ const BAR_COUNT = 3;
 /** Default scale factor at peak shrink (consumers override via `shrinkTo`). */
 const DEFAULT_SHRINK_TO = 0.5;
 
-/** Default opacity at peak shrink (consumers override via `dimTo`). */
-const DEFAULT_DIM_TO = 0.5;
+/**
+ * Default opacity at peak shrink (consumers override via `dimTo`).
+ * `1.0` disables the fade entirely — the visible pulse is carried
+ * by the scale change alone. The opacity-driven dimming read as
+ * extra visual noise next to the asymmetric short-long-short
+ * silhouette; the scale change is enough motion on its own.
+ */
+const DEFAULT_DIM_TO = 1;
+
+/**
+ * Default rest-height ratio for the outer bars relative to the
+ * middle bar's full height. The "short-long-short" silhouette: the
+ * middle bar sits at its full natural height; the outer bars sit
+ * at `sideBarRatio * size` at rest. Consumers override via
+ * `sideBarRatio`.
+ */
+const DEFAULT_SIDE_BAR_RATIO = 0.5;
+
+/**
+ * Default bar width as a ratio of the host `size`. Thin enough
+ * that the indicator reads as a compact glyph next to its label;
+ * the gap derives from width via {@link gapForBarWidth} so thinner
+ * bars sit closer together.
+ */
+const DEFAULT_BAR_WIDTH_RATIO = 0.15;
+
+/**
+ * Bar gap as a ratio of bar width. Pinned at 0.8 — the same ratio
+ * the prior hard-coded geometry produced (`size/5` gap vs `size/4`
+ * width). Keeps the silhouette balanced as the width ratio
+ * changes: thin bars sit close together, thick bars sit further
+ * apart.
+ */
+const GAP_TO_WIDTH_RATIO = 0.8;
+
+/**
+ * Resolve the gap (px) between bars for a given bar width (px).
+ * Exported for unit tests so the proportionality rule is pin-able
+ * without a render.
+ */
+export function gapForBarWidth(barWidthPx: number): number {
+  return barWidthPx * GAP_TO_WIDTH_RATIO;
+}
+
+/**
+ * Resolve the per-bar `(restScale, peakScale)` pair from `index`,
+ * `shrinkTo`, and `sideBarRatio`. The middle bar (index 1) sits at
+ * full rest height (`1.0`) and dips to `shrinkTo` at the pulse
+ * peak — the established "shrink then grow" motion. The outer
+ * bars (index 0 and 2) sit at the short rest height
+ * (`sideBarRatio`) and grow toward full height (`1.0`) at the
+ * pulse peak — the inverse motion that gives the indicator its
+ * "wave" feel ([Step 20.4.10] iteration on the short-long-short
+ * silhouette).
+ *
+ * Exported for unit tests so the per-index asymmetry is pin-able
+ * without a render.
+ */
+export function thinkingIndicatorBarScales(
+  index: number,
+  shrinkTo: number,
+  sideBarRatio: number,
+): { restScale: number; peakScale: number } {
+  const isMiddle = index === 1;
+  if (isMiddle) {
+    return { restScale: 1, peakScale: clamp01(shrinkTo) };
+  }
+  return { restScale: clamp01(sideBarRatio), peakScale: 1 };
+}
 
 /**
  * Build the per-bar keyframe sequence for a staggered pulse. Bar
  * `index` holds at rest from offset 0 to `index*PULSE_STAGGER_RATIO`,
- * pulses across `PULSE_WINDOW_RATIO`, then holds at rest until
- * offset 1. Keyframe `offset` values are normalized to [0, 1]; the
- * cycle's actual duration (`cycleMs`) is applied at `animate()`
- * time so a single duration value scales the whole timeline.
+ * runs the active motion across `PULSE_WINDOW_RATIO`, then holds at
+ * rest until offset 1. Keyframe `offset` values are normalized to
+ * [0, 1]; the cycle's actual duration (`cycleMs`) is applied at
+ * `animate()` time so a single duration value scales the whole
+ * timeline.
  *
- * `shrinkTo` controls the scaleY at peak shrink (1.0 = no shrink,
- * 0.0 = collapsed). `dimTo` controls opacity at peak (1.0 = no
- * fade, 0.0 = invisible). Set `shrinkTo === 1` to disable the
- * vertical motion entirely (opacity-only); set `dimTo === 1` to
- * disable the fade.
+ * The middle bar shrinks (rest=1 → peak=`shrinkTo`); the outer
+ * bars grow (rest=`sideBarRatio` → peak=1). Both directions cross
+ * at the same offset, producing a "wave" silhouette as the active
+ * focus walks across the three bars.
+ *
+ * `dimTo` controls opacity at peak (1.0 = no fade, 0.0 =
+ * invisible) and applies to every bar uniformly — the dip in
+ * opacity is the soft visual marker for the active motion,
+ * regardless of which direction the scale is going.
  *
  * The rest "holds" are realized with consecutive identical
  * keyframes — WAAPI interpolates between adjacent frames, so two
@@ -154,28 +226,34 @@ function buildBarKeyframes(
   index: number,
   shrinkTo: number,
   dimTo: number,
+  sideBarRatio: number,
 ): Keyframe[] {
   const startOffset = index * PULSE_STAGGER_RATIO;
   const midOffset = startOffset + PULSE_WINDOW_RATIO / 2;
   const endOffset = startOffset + PULSE_WINDOW_RATIO;
+  const { restScale, peakScale } = thinkingIndicatorBarScales(
+    index,
+    shrinkTo,
+    sideBarRatio,
+  );
   return [
-    { offset: 0, opacity: 1, transform: "scaleY(1)" },
+    { offset: 0, opacity: 1, transform: `scaleY(${restScale})` },
     {
       offset: clamp01(startOffset),
       opacity: 1,
-      transform: "scaleY(1)",
+      transform: `scaleY(${restScale})`,
     },
     {
       offset: clamp01(midOffset),
       opacity: clamp01(dimTo),
-      transform: `scaleY(${clamp01(shrinkTo)})`,
+      transform: `scaleY(${peakScale})`,
     },
     {
       offset: clamp01(endOffset),
       opacity: 1,
-      transform: "scaleY(1)",
+      transform: `scaleY(${restScale})`,
     },
-    { offset: 1, opacity: 1, transform: "scaleY(1)" },
+    { offset: 1, opacity: 1, transform: `scaleY(${restScale})` },
   ];
 }
 
@@ -262,9 +340,10 @@ export interface TugThinkingIndicatorProps
   shrinkTo?: number;
   /**
    * Opacity at peak shrink (0..1). `1` disables the fade (shrink-
-   * only pulse); `0.5` dims the bar to 50% opacity at the pulse
-   * trough.
-   * @default 0.5
+   * only pulse — the default); lower values dim the bar at the
+   * pulse peak. The visible motion is carried by the asymmetric
+   * scale change; opacity-driven dimming is opt-in.
+   * @default 1
    */
   dimTo?: number;
   /**
@@ -292,6 +371,25 @@ export interface TugThinkingIndicatorProps
    * @default true
    */
   shrinkFromBottom?: boolean;
+  /**
+   * Rest-height ratio for the outer bars relative to the middle
+   * bar's full height. Drives the "short-long-short" silhouette:
+   * at `1.0` all three bars are the same height; at `0.5`
+   * (default) the outer bars sit at half the middle bar's height.
+   * The outer bars grow toward the middle's full height at their
+   * pulse peak (inverse motion).
+   * @default 0.5
+   */
+  sideBarRatio?: number;
+  /**
+   * Bar width as a ratio of `size`. Default `0.15` (each bar is
+   * 15% of the host size). The gap between bars derives from the
+   * width via {@link gapForBarWidth} (80% of width), so thinner
+   * bars sit closer together.
+   * @selector .tug-thinking-indicator (custom property --tugx-thinking-indicator-bar-width)
+   * @default 0.15
+   */
+  barWidthRatio?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +410,8 @@ export const TugThinkingIndicator = React.forwardRef<
     cycleMs = DEFAULT_CYCLE_MS,
     shrinkFromTop = true,
     shrinkFromBottom = true,
+    sideBarRatio = DEFAULT_SIDE_BAR_RATIO,
+    barWidthRatio = DEFAULT_BAR_WIDTH_RATIO,
     className,
     style,
     ...rest
@@ -334,8 +434,13 @@ export const TugThinkingIndicator = React.forwardRef<
   // mid-cycle change to e.g. `cycleMs` does not interrupt the
   // in-flight pulse — the new value takes effect on the NEXT
   // cycle, preserving the "no hops, no jumps" guarantee.
-  const latestTunablesRef = useRef({ shrinkTo, dimTo, cycleMs });
-  latestTunablesRef.current = { shrinkTo, dimTo, cycleMs };
+  const latestTunablesRef = useRef({
+    shrinkTo,
+    dimTo,
+    cycleMs,
+    sideBarRatio,
+  });
+  latestTunablesRef.current = { shrinkTo, dimTo, cycleMs, sideBarRatio };
 
   // Start one staggered pulse cycle across all three bars. Each
   // bar gets a finite WAAPI one-shot inside the group; `.finished`
@@ -350,10 +455,19 @@ export const TugThinkingIndicator = React.forwardRef<
     for (let i = 0; i < BAR_COUNT; i += 1) {
       const el = barRefs.current[i];
       if (el === null) continue;
-      g.animate(el, buildBarKeyframes(i, tunables.shrinkTo, tunables.dimTo), {
-        duration: tunables.cycleMs,
-        easing: "ease-in-out",
-      });
+      g.animate(
+        el,
+        buildBarKeyframes(
+          i,
+          tunables.shrinkTo,
+          tunables.dimTo,
+          tunables.sideBarRatio,
+        ),
+        {
+          duration: tunables.cycleMs,
+          easing: "ease-in-out",
+        },
+      );
       scheduled += 1;
     }
     if (scheduled === 0) {
@@ -407,8 +521,18 @@ export const TugThinkingIndicator = React.forwardRef<
     };
   }, []);
 
+  // Bar width and gap are computed at this layer so the
+  // `barWidthRatio` prop can drive both with a single source of
+  // truth. The gap stays proportional to the width
+  // (`gapForBarWidth`) so thinner bars sit closer together,
+  // thicker bars sit further apart — keeps the silhouette balanced
+  // across the prop's range.
+  const barWidthPx = size * barWidthRatio;
+  const barGapPx = gapForBarWidth(barWidthPx);
   const rootStyle: React.CSSProperties = {
     ["--tugx-thinking-indicator-size" as string]: `${size}px`,
+    ["--tugx-thinking-indicator-bar-width" as string]: `${barWidthPx}px`,
+    ["--tugx-thinking-indicator-bar-gap" as string]: `${barGapPx}px`,
     ...style,
   };
 
@@ -434,21 +558,41 @@ export const TugThinkingIndicator = React.forwardRef<
       {...rest}
     >
       <span className="tug-thinking-indicator-glyph">
-        {Array.from({ length: BAR_COUNT }).map((_, i) => (
-          <span
-            key={i}
-            ref={(el) => {
-              barRefs.current[i] = el;
-            }}
-            className="tug-thinking-indicator-bar"
-            // Per-bar transform-origin overrides the CSS default
-            // (`center bottom`) when the consumer flips
-            // `shrinkFromBottom` or pairs both directions. Inline
-            // style wins per [L06] — no React-state-derived class
-            // toggle.
-            style={{ transformOrigin }}
-          />
-        ))}
+        {Array.from({ length: BAR_COUNT }).map((_, i) => {
+          const { restScale } = thinkingIndicatorBarScales(
+            i,
+            shrinkTo,
+            sideBarRatio,
+          );
+          return (
+            <span
+              key={i}
+              ref={(el) => {
+                barRefs.current[i] = el;
+              }}
+              className="tug-thinking-indicator-bar"
+              // Per-bar inline styles per [L06] — DOM owns
+              // appearance, not React state.
+              //
+              //  - `transform-origin` swaps based on the
+              //    `shrinkFromTop` / `shrinkFromBottom` flags;
+              //    overrides the CSS default (`center bottom`).
+              //  - `transform: scaleY(restScale)` seeds the
+              //    bar's rest pose so the outer bars start at
+              //    their short rest height (`sideBarRatio`) on
+              //    mount — without this seed, the bar paints
+              //    full-height for one frame before WAAPI's
+              //    first keyframe lands. Also drives the static
+              //    (non-pulsing) silhouette so the
+              //    `animating={false}` state shows the
+              //    short-long-short shape.
+              style={{
+                transformOrigin,
+                transform: `scaleY(${restScale})`,
+              }}
+            />
+          );
+        })}
       </span>
       {labelVisible && (
         <span className="tug-thinking-indicator-label">{labelText}</span>

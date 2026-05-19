@@ -12,6 +12,8 @@ import { describe, expect, test } from "bun:test";
 
 import {
   TUG_THINKING_INDICATOR_DEFAULT_LABEL,
+  gapForBarWidth,
+  thinkingIndicatorBarScales,
   thinkingIndicatorLabelText,
   thinkingIndicatorLabelVisible,
   thinkingIndicatorTransformOrigin,
@@ -61,6 +63,53 @@ describe("TUG_THINKING_INDICATOR_DEFAULT_LABEL", () => {
     // public surface — consumers that want to compare against the
     // default rather than recompute it import this symbol.
     expect(TUG_THINKING_INDICATOR_DEFAULT_LABEL).toBe("Thinking…");
+  });
+});
+
+describe("thinkingIndicatorBarScales", () => {
+  test("middle bar (index 1) shrinks: rest=1, peak=shrinkTo", () => {
+    expect(thinkingIndicatorBarScales(1, 0.5, 0.55)).toEqual({
+      restScale: 1,
+      peakScale: 0.5,
+    });
+  });
+
+  test("left bar (index 0) grows: rest=sideBarRatio, peak=1", () => {
+    expect(thinkingIndicatorBarScales(0, 0.5, 0.55)).toEqual({
+      restScale: 0.55,
+      peakScale: 1,
+    });
+  });
+
+  test("right bar (index 2) grows: rest=sideBarRatio, peak=1", () => {
+    expect(thinkingIndicatorBarScales(2, 0.5, 0.55)).toEqual({
+      restScale: 0.55,
+      peakScale: 1,
+    });
+  });
+
+  test("clamps shrinkTo into [0, 1] for the middle bar", () => {
+    expect(thinkingIndicatorBarScales(1, -0.1, 0.55).peakScale).toBe(0);
+    expect(thinkingIndicatorBarScales(1, 1.4, 0.55).peakScale).toBe(1);
+  });
+
+  test("clamps sideBarRatio into [0, 1] for outer bars", () => {
+    expect(thinkingIndicatorBarScales(0, 0.5, -0.2).restScale).toBe(0);
+    expect(thinkingIndicatorBarScales(2, 0.5, 1.6).restScale).toBe(1);
+  });
+});
+
+describe("gapForBarWidth", () => {
+  test("returns 80% of bar width", () => {
+    expect(gapForBarWidth(10)).toBeCloseTo(8);
+    expect(gapForBarWidth(5)).toBeCloseTo(4);
+    expect(gapForBarWidth(0)).toBe(0);
+  });
+
+  test("scales linearly with bar width", () => {
+    const a = gapForBarWidth(4);
+    const b = gapForBarWidth(8);
+    expect(b).toBeCloseTo(a * 2);
   });
 });
 
