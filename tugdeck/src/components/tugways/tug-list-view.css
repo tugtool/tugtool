@@ -88,12 +88,26 @@ body {
    content-box edge offset by padding. The pseudo-elements participate
    in normal scroll flow, so they scroll out of view as the user
    scrolls — exactly the same UX as the previous `padding-block` had,
-   without the sticky-pin penalty. */
-.tug-list-view::before,
+   without the sticky-pin penalty.
+
+   `--tugx-list-view-padding-block` sets a symmetric default for
+   both pseudo-elements. Optional `*-start` / `*-end` longhands
+   let a consumer pick asymmetric breathing room (e.g., the tide-
+   card transcript needs more space below the last entry to clear
+   the Z2 status bar than it does above the first entry). Both
+   longhands fall back to the symmetric token, so existing
+   consumers that only set `--tugx-list-view-padding-block` keep
+   their current behaviour. */
+.tug-list-view::before {
+  content: "";
+  display: block;
+  height: var(--tugx-list-view-padding-block-start, var(--tugx-list-view-padding-block));
+}
+
 .tug-list-view::after {
   content: "";
   display: block;
-  height: var(--tugx-list-view-padding-block);
+  height: var(--tugx-list-view-padding-block-end, var(--tugx-list-view-padding-block));
 }
 
 /* ---- Spacers ---- */

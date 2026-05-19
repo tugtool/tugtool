@@ -194,6 +194,15 @@
 .tide-card-transcript .tug-list-view {
   --tugx-list-view-row-gap: var(--tugx-tide-entry-margin);
   --tugx-list-view-padding-block: var(--tug-space-md);
+  /* Bottom-only override: the symmetric `md` reads as cramped
+     against the Z2 status bar — the last entry's Z1B sits a few
+     pixels below the status indicator dot above. Bump just the
+     end side to `2xl` (24px) so there's generous breathing room
+     between the bottom-most Z1B and the status surface. The
+     start side stays at `md` (8px) — the first entry sits below
+     the entry-header's natural padding, so no extra top breathing
+     room is needed. */
+  --tugx-list-view-padding-block-end: var(--tug-space-2xl);
   --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
 
   /* Static fallback for the entry-header pin offset. The

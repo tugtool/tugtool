@@ -219,6 +219,20 @@ body {
   /* Same min-width: 0 trick as the body column — body slot content (long
      URLs, code spans, atoms) must not push the transcript surface wider. */
   min-width: 0;
+  /* Contain body content's bottom margin so the entry's visible
+     bottom edge is content-independent. Different body kinds end
+     with different trailing chrome (markdown paragraphs carry
+     default `<p>` margin-bottom; tool blocks end on a chrome
+     footer with its own padding; file blocks may end on a
+     scrollport edge), and without containment those trailing
+     margins escape into the flex column and shift the controls
+     slot below by varying amounts — surfacing as visibly uneven
+     gaps between Z1B and the next entry's header. `display: flow-
+     root` establishes a block formatting context that contains
+     all descendant margins; the body's content-box height now
+     includes any last-child margin-bottom, so the controls slot
+     sits at the same offset every time. */
+  display: flow-root;
   /* Transcript text is user data — the user submitted it, the assistant
      wrote it, both should be selectable. Browser default is `text` for
      normal flow content, but be explicit so a future ancestor rule with
