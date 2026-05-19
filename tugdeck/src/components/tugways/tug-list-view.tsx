@@ -1085,17 +1085,58 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           heightIndex.set(index, newHeight);
           anyChanged = true;
         }
-        if (anyChanged && pendingFlushRef.current === null) {
-          pendingFlushRef.current = requestAnimationFrame(() => {
-            pendingFlushRef.current = null;
-            // A measured cell height changed → request a pin so the
-            // post-commit pin effect re-asserts the bottom on the
-            // next commit. Without this, the signal-gated pin effect
-            // would bail out (no request) and a streaming cell that
-            // grew its content would leave the user above the bottom.
-            pinRequestedRef.current = true;
-            scrollTick();
-          });
+        if (anyChanged) {
+          // **Synchronous bottom-pin** ([Step 20.4.16] Sub-step A
+          // root cause 2). The `ResizeObserver` callback fires after
+          // layout but BEFORE the browser's next paint (it is part
+          // of the same animation frame's "deliver resize-observer
+          // notifications" step). Writing `scrollTop` here lands in
+          // the SAME paint that shows the new cell heights, so the
+          // user never sees the bottom region drift upward as
+          // `scrollHeight` grows.
+          //
+          // Without this write, the rAF deferral below scheduled
+          // the pin one or two frames later — long enough for the
+          // browser to paint with the stale `scrollTop` (cells at
+          // new heights, scrollbar at old position → bottom region
+          // visibly slides out of view), then paint again with the
+          // pin applied (scrollbar snaps back). The bottom region
+          // "flashing" the user reported was that drift-and-snap.
+          //
+          // Gates: only fire while the list is following the bottom
+          // and the user isn't actively scrolling — the same gates
+          // the post-commit pin effect honors. `pinToBottom` itself
+          // is idempotent (it skips the write when already at the
+          // bottom), so a no-op call is cheap.
+          const ss = smartScrollRef.current;
+          if (
+            ss !== null &&
+            ss.isFollowingBottom &&
+            !ss.isUserScrolling
+          ) {
+            ss.pinToBottom();
+          }
+
+          // Still schedule the rAF flush so the list-view re-windows
+          // against the updated height index. The post-commit pin
+          // re-asserts the bottom on commit; the synchronous write
+          // above already eliminated the visible drift — the
+          // post-commit pin is the canonical pin write (and a no-op
+          // on the steady-state case where the sync write already
+          // landed scrollTop at the bottom).
+          if (pendingFlushRef.current === null) {
+            pendingFlushRef.current = requestAnimationFrame(() => {
+              pendingFlushRef.current = null;
+              // A measured cell height changed → request a pin so
+              // the post-commit pin effect re-asserts the bottom on
+              // the next commit. Without this, the signal-gated pin
+              // effect would bail out (no request) and a streaming
+              // cell that grew its content would leave the user
+              // above the bottom.
+              pinRequestedRef.current = true;
+              scrollTick();
+            });
+          }
         }
       });
       observerRef.current = observer;
@@ -1293,9 +1334,28 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const el = scrollContainerRef.current;
       if (el === null) return;
       const observer = new ResizeObserver(() => {
-        // Container resized → if we were following the bottom, the
-        // new viewport changes the absolute bottom position. Request
-        // a pin so the post-commit pin effect re-asserts.
+        // **Synchronous bottom-pin** ([Step 20.4.16] Sub-step A
+        // root cause 2). Container resize changes the absolute
+        // bottom position; pin synchronously so the bottom region
+        // doesn't visibly drift mid-resize. Per-cell observers
+        // fire AFTER this for cells whose intrinsic height
+        // changed (text re-wrap, etc.), and the per-cell sync pin
+        // there snaps to the updated bottom as each cell settles
+        // — together the two paths keep the bottom region glued
+        // across the full resize cascade.
+        const ss = smartScrollRef.current;
+        if (
+          ss !== null &&
+          ss.isFollowingBottom &&
+          !ss.isUserScrolling
+        ) {
+          ss.pinToBottom();
+        }
+        // Still request the async pin + re-window so the rendered
+        // window catches any cells that newly fit / no longer fit
+        // at the new container width. The post-commit pin write
+        // is a no-op when the sync pin already landed scrollTop
+        // at the bottom (pinToBottom is idempotent).
         pinRequestedRef.current = true;
         scrollTick();
       });

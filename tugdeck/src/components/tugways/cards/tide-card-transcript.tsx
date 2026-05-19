@@ -467,7 +467,19 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
 // ---------------------------------------------------------------------------
 
 interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
-  modelName: string | null;
+  /**
+   * Per-card `SessionMetadataStore`. Each `CodeRowCell` subscribes
+   * to it directly via `useSessionModelName` rather than receiving
+   * `modelName` as a prop. The subscription is per-cell because
+   * threading `modelName` through the renderer lambda would tie the
+   * lambda's identity to the metadata snapshot — and a single
+   * lambda-identity flip remounts every cell in the window (per
+   * the [L26] note on this file's `cellRenderers` map), restarting
+   * any in-flight `TugThinkingIndicator` animation in the assistant
+   * row's Z1B chrome. See [Step 20.4.16] Sub-step A for the full
+   * diagnosis.
+   */
+  sessionMetadataStore: SessionMetadataStore;
   codeSessionStore: CodeSessionStore;
   streamingStore: PropertyStore;
   renderTurnTrailing?: TurnTrailingRenderer;
@@ -476,11 +488,18 @@ interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource
 const CodeRowCell: React.FC<CodeRowCellProps> = ({
   index,
   dataSource,
-  modelName,
+  sessionMetadataStore,
   codeSessionStore,
   streamingStore,
   renderTurnTrailing,
 }) => {
+  // Subscribe to the metadata store HERE in the cell — not at the
+  // host — so the model-name read does not flow through the
+  // `codeRenderer` lambda's dependency array. The renderer stays
+  // identity-stable across metadata updates, which keeps every
+  // cell mounted across the (one-time at session-init, occasional
+  // mid-session) `modelName` resolution. [L02] / [L26].
+  const modelName = useSessionModelName(sessionMetadataStore);
   const row = dataSource.rowAt(index);
   // `turnKey` is set for every code row by `rowAt`. The fallback
   // throws in dev (data-source contract violation) and falls back to
@@ -767,7 +786,6 @@ export const TideTranscriptHost = forwardRef<
   ref,
 ) {
   const dataSource = useTideTranscriptDataSource(codeSessionStore);
-  const modelName = useSessionModelName(sessionMetadataStore);
   const streamingStore = codeSessionStore.streamingDocument;
 
   // One renderer per kind ([L26] — renderer reference is the third
@@ -786,19 +804,37 @@ export const TideTranscriptHost = forwardRef<
   // the chrome differences that genuinely vary by phase (timestamp,
   // copy button, interrupted badge, permission-record vs
   // live-dialog source).
+  //
+  // **Deps discipline ([Step 20.4.16] Sub-step A).** The four store
+  // refs (`codeSessionStore`, `sessionMetadataStore`, `streamingStore`,
+  // `renderTurnTrailing`) are all stable for the card's lifetime:
+  //   - `codeSessionStore` / `sessionMetadataStore` come from
+  //     `useTideCardServices`, scoped to the card mount.
+  //   - `streamingStore` is `codeSessionStore.streamingDocument`,
+  //     `readonly` and assigned once in the store's constructor.
+  //   - `renderTurnTrailing` is memoized by the placement-experiment
+  //     hook and only churns on `mapping.Z1` changes — a deliberate
+  //     user-driven event, not a streaming-time churn.
+  // The renderer therefore never re-creates in steady state. Adding a
+  // dep that DOES churn (the pre-20.4.16 `modelName` was exactly such
+  // a dep — flipped from `null` to the resolved value on `system_init`)
+  // would remount every cell in the window on each churn, restarting
+  // any in-flight `TugThinkingIndicator` animation. Per-cell metadata
+  // reads happen INSIDE `CodeRowCell` via `useSessionModelName` so the
+  // renderer lambda stays inert.
   const codeRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
   >(
     (p) => (
       <CodeRowCell
         {...p}
-        modelName={modelName}
+        sessionMetadataStore={sessionMetadataStore}
         codeSessionStore={codeSessionStore}
         streamingStore={streamingStore}
         renderTurnTrailing={renderTurnTrailing}
       />
     ),
-    [modelName, codeSessionStore, streamingStore, renderTurnTrailing],
+    [sessionMetadataStore, codeSessionStore, streamingStore, renderTurnTrailing],
   );
   const userRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
