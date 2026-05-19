@@ -2961,7 +2961,7 @@ Top line (model row) is persistent throughout the turn lifecycle — model name 
 
 **Depends on:** #step-20-4-12
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tide-rendering): gallery Z1 asst-half end-state display`
 
@@ -2977,21 +2977,24 @@ Visual language coordinates with the per-area popover designs (20.4.7) — tight
 
 **Tasks.**
 
-- [ ] Gallery card mocks the end-state display for each of the four terminal `turnEndReason` values (OK, interrupted, error, transport_lost).
-- [ ] Pure-logic helpers for the end-state computations: terminal-state badge text + tone; total tokens from `TurnEntry.cost`; formatted time.
-- [ ] Workshop the typography so the end-state reads as a coherent footer to the model row.
-- [ ] Confirm the swap from in-flight indicator to end-state is visually clean (no layout shift; mount identity preserved per [L26], cross-checked against 20.4.12's container).
+- [x] Gallery card mocks the end-state display for each of the four terminal `turnEndReason` values (`complete`, `interrupted`, `error`, `transport_lost`) as a dedicated "End-state coverage" section in `gallery-tide-asst-half-stack.tsx`, each row driven by a representative `TurnEntry`-shaped fixture.
+- [x] Pure-logic helpers landed in `code-session-store/end-state.ts`:
+  - `endStateBadgeFor(reason)` → `{ text, role }` — maps `complete → success/"OK"`, `interrupted → caution/"interrupted"` (user-initiated, recoverable), `error → danger/"errored"` (system failure), `transport_lost → caution/"lost"` (recoverable on reconnect).
+  - `totalTokensForTurn(cost)` — sums every numeric token field on `TurnCost`. Same formula the per-turn Tokens cell / popover use, hoisted so the end-state display doesn't duplicate it.
+  - Time + tokens formatting reuses the existing `formatTimeAlwaysHours` / `formatTokensCaps` exports from `tide-card-telemetry-renderers.tsx`.
+- [x] Workshop the typography: three tight inline cells (`TugBadge` · active-time · total-tokens), `--tug-font-size-sm` (matches the model row + indicator label), `font-variant-numeric: tabular-nums`, gap matching the indicator's label-gap (`--tug-space-sm`) so the in-flight and terminal chrome read with identical rhythm.
+- [x] Confirm clean swap: `EndStateDisplay` lands inside the same `data-slot="tide-asst-half-status-slot"` div established by 20.4.12 — only the slot's CHILD swaps. New `data-slot="tide-asst-half-end-state"` on the display itself gives DOM tooling a second anchor for the inner element. Side-by-side section now passes a representative `complete` fixture so the terminal example renders the real end-state, not the placeholder.
 
 **Tests.**
 
-- [ ] Pure-logic tests for the four terminal-state mappings.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic tests for the four terminal-state mappings — 4 cases in `end-state.test.ts`, plus 4 cases pinning `totalTokensForTurn` (every-field-sum, zero, output-only, cache-only).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green — 2224/2224 across 135 files (8 new tests).
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] HMR-vet all four terminal states render correctly.
+- [ ] HMR-vet all four terminal states render correctly. _Pending user verification against the "End-state coverage" section of the `Z1 asst-half stack` gallery card._
 
 ---
 
