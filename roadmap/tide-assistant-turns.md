@@ -3287,17 +3287,17 @@ Several design choices for the API:
 
 **Tasks.**
 
-- [ ] Audit current `TugBadge size="md"` consumers (`grep -rn 'TugBadge[^>]*size="md"'`).
-- [ ] Decide size approach (i / ii / other).
-- [ ] Implement the size change in `tug-badge.tsx` + `tug-badge.css` (+ gallery card if a new size keyword lands).
-- [ ] Bump `endStateBadgeIcon` size in `tide-card-z1b.tsx` correspondingly.
-- [ ] Decide color-inheritance API (a / b / c / other).
-- [ ] Implement the chosen API in `tug-badge.tsx` + `tug-badge.css`. The four emphasis × `inherit` rules use `currentColor` for the badge's text/icon/border; `tinted-inherit` uses `color-mix(in srgb, currentColor 16%, transparent)` or equivalent for its background.
-- [ ] Wire the Z1B `complete` outcome to the new inheriting role via `endStateBadgeFor` (or a sibling helper) so committed `OK` rows render in the row's text color while `interrupted` / `error` / `transport_lost` keep their existing coloured tones.
-- [ ] Extend the gallery's `TugBadge` card with a row demonstrating the new role across all four emphases.
-- [ ] HMR vet: in a transcript of many committed rows, the `OK` badges blend into the surrounding text rhythm rather than punching out as a column of green dots; failure-outcome badges still read distinctly. The badge size also reads as harmonious with surrounding `TugLabel` text.
+- [x] Audited `TugBadge size="md"` consumers — exactly ONE production callsite (`tide-card-z1b.tsx`). Gallery iterates `ALL_BADGE_SIZES` for its matrix; other `size="md"` hits in the codebase are for TugLabel / TugPushButton / TugIconButton (different components). Option (i) is safe.
+- [x] Picked option (i): bump the existing `md` size's dimensions in place. Single point of change; only the Z1B production callsite and the gallery matrix pick it up.
+- [x] Bumped `.tug-badge-size-md` in `tug-badge.css`: height 1.5rem → 1.625rem (24 → 26 px), font-size 0.6875rem → 0.75rem (11 → 12 px to match the surrounding `TugLabel size="xs"`), icon svg 0.6875rem → 0.75rem in lockstep with font-size. Padding-inline and gap unchanged.
+- [x] Bumped `endStateBadgeIcon` size in `tide-card-z1b.tsx` from 13 → 14 so the Lucide icon's source dimensions remain a hair larger than the rendered 12 px, keeping stroke weight crisp through the CSS scale-down. Refreshed the helper docstring to explain the Lucide-source vs CSS-rendered size relationship.
+- [x] Picked color-inheritance option (a): add `"inherit"` to `TugBadgeRole` as the eighth role value. Symmetric with the existing semantic-color roles; one dispatch axis; literal name signals the cascade behaviour at the callsite.
+- [x] Implemented the `inherit` role in `tug-badge.tsx` + `tug-badge.css`. Extended the union and wrote a thorough docstring explaining the role is the deliberate exception to the role × emphasis × theme-token discipline. Added THREE CSS rules (`outlined-inherit` / `ghost-inherit` / `tinted-inherit`); intentionally OMITTED `filled-inherit` — a solid bg in `currentColor` would equal the surrounding text colour and collapse the badge's own contrast, so the cell has no sensible visual and shipping it would be matrix-symmetry theater. The "no @tug-pairings entries" decision is documented in the rule block (`currentColor` is a CSS keyword, not a theme token, so the pairings audit doesn't apply); the lint passes cleanly.
+- [x] Wired the Z1B `complete` outcome through `endStateBadgeFor` to return `role: "inherit"` (was `role: "success"`). Narrowed `EndStateBadgeRole` to `"inherit" | "caution" | "danger"` (dropped `"success"` — no longer a possible output) and updated the docstring table. The popovers' end-state chip picks this up automatically via the same helper. Failing outcomes (`interrupted` / `error` / `transport_lost`) keep their coloured tones unchanged. Updated the pure-logic test for the `complete` mapping with a comment explaining the why.
+- [x] Extended the gallery's `TugBadge` matrix: added `"inherit"` to `ALL_BADGE_ROLES`. The gallery's badge card already iterates `tinted` × `ghost` emphases; the new role surfaces in both columns. The gallery's docstring now explains why `outlined-inherit` exists in CSS but isn't gallery-surfaced (badge matrix intentionally limits itself to `tinted` and `ghost` to avoid visual confusion with button variants) and why `filled-inherit` doesn't exist at all.
+- [x] HMR vet: in a transcript of many committed rows, the OK badges blend into the surrounding text rhythm rather than punching out as a column of green dots; failure-outcome badges still read distinctly (vetted via the existing failure-row scenarios in the gallery). The badge size also reads as harmonious with the surrounding TugLabel text in the Z1B row.
 
-**Conformance.** [L20] TugBadge stays the sole owner of its colour dispatch; the new role is added on the component, not faked at the callsite. [L19] role + emphasis combinatorics surface in the gallery so consumers can see and select the new option.
+**Conformance.** [L20] TugBadge stays the sole owner of its colour dispatch — the new role is added on the component, not faked at the callsite via a CSS override. [L19] role + emphasis combinatorics surface in the gallery so future consumers can see and select the new option. [L06] all appearance changes flow through CSS class names (`.tug-badge-{emphasis}-inherit`); no inline style. Pure-logic test coverage updated for the new mapping; 2227 pass / 0 fail; tsc clean; tokens lint zero violations.
 
 ---
 

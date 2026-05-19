@@ -19,7 +19,26 @@ import { cn } from "@/lib/utils";
 /** TugBadge emphasis values — controls visual weight */
 export type TugBadgeEmphasis = "filled" | "outlined" | "ghost" | "tinted";
 
-/** TugBadge role values — controls color domain; includes all 7 roles */
+/**
+ * TugBadge role values — controls color domain.
+ *
+ * Seven semantic roles (accent / action / agent / data / danger /
+ * success / caution) drive theme-mapped colour pairings (see the
+ * `@tug-pairings` table in `tug-badge.css`).
+ *
+ * The eighth role, `"inherit"`, is the deliberate exception: instead
+ * of a theme palette, the badge's text / icon / border resolve to
+ * `currentColor`, dropping back to whatever the surrounding text
+ * colour is. Use it when a badge should blend into the row it sits
+ * in rather than read as a separate signal — the Z1B end-state
+ * "OK" tone is the motivating callsite (committed success rows
+ * stack a green column otherwise). The four `inherit` × emphasis
+ * cells in CSS are all painted in `currentColor`; the primary
+ * variant is `ghost-inherit` (transparent bg, currentColor text/
+ * icon, no border). See the `tug-badge.css` rules for the full
+ * emphasis matrix and notes on which combinations are anti-
+ * patterns.
+ */
 export type TugBadgeRole =
   | "accent"
   | "action"
@@ -27,7 +46,8 @@ export type TugBadgeRole =
   | "data"
   | "danger"
   | "success"
-  | "caution";
+  | "caution"
+  | "inherit";
 
 /** TugBadge size names */
 export type TugBadgeSize = "sm" | "md" | "lg";

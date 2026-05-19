@@ -218,21 +218,24 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
 // ---------------------------------------------------------------------------
 
 /**
- * Per-reason icon for the end-state badge. Sized to track the
- * `md` badge's natural icon dimensions — a hair larger so the
- * glyph reads as the badge's anchor next to the slightly bigger
- * label text.
+ * Per-reason icon for the end-state badge. The Lucide `size` prop
+ * sets the SVG's intrinsic dimensions; `tug-badge.css`'s
+ * `.tug-badge-size-md .tug-badge-icon svg` rule then scales the
+ * rendered icon to match the badge's 12px font-size. The 14px
+ * source size leaves the glyph a hair larger than the label text
+ * before the CSS scale-down, which keeps stroke weight crisp at
+ * the rendered size.
  */
 function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
   switch (reason) {
     case "complete":
-      return <Check size={13} aria-hidden="true" />;
+      return <Check size={14} aria-hidden="true" />;
     case "interrupted":
-      return <ShieldAlert size={13} aria-hidden="true" />;
+      return <ShieldAlert size={14} aria-hidden="true" />;
     case "error":
-      return <ShieldX size={13} aria-hidden="true" />;
+      return <ShieldX size={14} aria-hidden="true" />;
     case "transport_lost":
-      return <Unplug size={13} aria-hidden="true" />;
+      return <Unplug size={14} aria-hidden="true" />;
   }
 }
 

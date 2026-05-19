@@ -167,15 +167,32 @@ export function TugPopupButtonDemo() {
 // GalleryBadge
 // ---------------------------------------------------------------------------
 
-/** All role combinations for the TugBadge showcase matrix */
-const ALL_BADGE_ROLES: TugBadgeRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution"];
+/**
+ * All role combinations for the TugBadge showcase matrix. Includes
+ * the `inherit` role — paints text / icon / border in
+ * `currentColor` so the badge blends into the surrounding text
+ * rather than reading as a separate colour signal. See the
+ * `TugBadgeRole` docstring in `tug-badge.tsx` for the full
+ * contract.
+ */
+const ALL_BADGE_ROLES: TugBadgeRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution", "inherit"];
 const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
 const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
 
 /**
  * GalleryBadge -- TugBadge showcase gallery tab.
  *
- * Shows tinted and ghost emphasis across all 7 roles at all sizes.
+ * Shows tinted and ghost emphasis across all 8 roles at all sizes.
+ * The eighth role (`inherit`) paints text / icon / border in
+ * `currentColor` so the badge blends into the surrounding text —
+ * primary callsite is the Z1B end-state "OK" tone in the
+ * transcript. (`outlined-inherit` exists in CSS for future
+ * consumers but is not surfaced here; the gallery's badge matrix
+ * intentionally limits itself to `tinted` and `ghost` to avoid
+ * visual confusion with button variants. `filled-inherit` is
+ * intentionally not provided — its bg would equal the surrounding
+ * text colour, collapsing its own contrast; see the docstring on
+ * the inherit role in `tug-badge.tsx`.)
  */
 export function GalleryBadge() {
   return (

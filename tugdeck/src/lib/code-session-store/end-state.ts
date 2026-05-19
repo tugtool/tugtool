@@ -21,12 +21,19 @@
 import type { TurnCost, TurnEndReason } from "./types";
 
 /**
- * The four roles a terminal-state badge can take. Subset of
+ * The roles a terminal-state badge can take. Subset of
  * `TugBadgeRole` — the badge component carries more roles than
  * the end-state mapping uses, so this narrower type keeps the
  * helper's contract honest about its output set.
+ *
+ * `"inherit"` (vs the coloured tones) is the deliberate choice for
+ * the `complete` outcome: in a transcript of many committed rows
+ * the green "OK" dots otherwise compound into a vertical column
+ * that draws the eye away from message content. The actionable
+ * outcomes (`interrupted` / `error` / `transport_lost`) keep
+ * their coloured tones because attention IS warranted there.
  */
-export type EndStateBadgeRole = "success" | "caution" | "danger";
+export type EndStateBadgeRole = "inherit" | "caution" | "danger";
 
 export interface EndStateBadge {
   /** Display text rendered inside the badge. */
@@ -40,21 +47,25 @@ export interface EndStateBadge {
  *
  * | turnEndReason     | text          | role     |
  * |-------------------|---------------|----------|
- * | `complete`        | "OK"          | success  |
+ * | `complete`        | "OK"          | inherit  |
  * | `interrupted`     | "interrupted" | caution  |
  * | `error`           | "error"       | danger   |
  * | `transport_lost`  | "lost"        | caution  |
  *
- * `transport_lost` is mapped to `caution` (not `danger`) because
- * the wire-loss path is recoverable — a reconnect can deliver the
- * outstanding output; `caution` reads as "look at this" rather
- * than "this failed." `interrupted` is also `caution` because the
- * user initiated the stop; it isn't a system error.
+ * `complete` returns `role: "inherit"` so the OK badge paints in
+ * the surrounding text colour and blends into the row's rhythm —
+ * saving the coloured palettes for outcomes that warrant
+ * attention. `transport_lost` is mapped to `caution` (not
+ * `danger`) because the wire-loss path is recoverable — a
+ * reconnect can deliver the outstanding output; `caution` reads
+ * as "look at this" rather than "this failed."  `interrupted` is
+ * also `caution` because the user initiated the stop; it isn't a
+ * system error.
  */
 export function endStateBadgeFor(reason: TurnEndReason): EndStateBadge {
   switch (reason) {
     case "complete":
-      return { text: "OK", role: "success" };
+      return { text: "OK", role: "inherit" };
     case "interrupted":
       return { text: "interrupted", role: "caution" };
     case "error":

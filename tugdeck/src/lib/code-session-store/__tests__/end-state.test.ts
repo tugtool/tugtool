@@ -13,10 +13,15 @@ import {
 import type { TurnCost } from "@/lib/code-session-store/types";
 
 describe("endStateBadgeFor", () => {
-  it("maps complete → success (OK)", () => {
+  it("maps complete → inherit (OK)", () => {
+    // Inherit, not success: in a transcript of many committed
+    // rows the green "OK" dots stack into a vertical column
+    // that draws attention away from message content. The OK
+    // badge should blend into the row's text colour; the
+    // coloured tones are reserved for actionable outcomes.
     expect(endStateBadgeFor("complete")).toEqual({
       text: "OK",
-      role: "success",
+      role: "inherit",
     });
   });
 
