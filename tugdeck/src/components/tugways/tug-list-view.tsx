@@ -724,23 +724,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // paint.
     //
     // The lock is RELEASED per-cell once that cell's measured
-    // height reaches or exceeds the saved value (Sub-step H). The
-    // ResizeObserver callback clears `hydratedCellHeightsRef
-    // .current[index]` (set to 0) when `newHeight >= saved - 0.5`,
-    // and the next render reads the cleared entry → no more
-    // `min-height` on that cell's wrapper. This makes user-action
-    // shrinks honored: a hydrated Bash / diff cell that mounts
-    // expanded at its saved height (lock releases on first
-    // measurement) can subsequently collapse, and the wrapper
-    // shrinks with its content — no ghost space below.
+    // height reaches or exceeds the saved value. The ResizeObserver
+    // callback clears `hydratedCellHeightsRef.current[index]` (set
+    // to 0) when `newHeight >= saved - 0.5`, and the next render
+    // reads the cleared entry → no more `min-height` on that cell's
+    // wrapper. This makes user-action shrinks honored: a hydrated
+    // Bash / diff cell that mounts expanded at its saved height
+    // (lock releases on first measurement) can subsequently
+    // collapse, and the wrapper shrinks with its content — no ghost
+    // space below.
     //
-    // The pre-Sub-step-H contract was "lock is permanent within
-    // the mount" (ghost space in the shrink case vs. siblings
-    // shifting every time). The "siblings shifting" concern only
-    // applied to the async-content-fill-in window; once a cell
-    // has been measured at its saved size, sub-content is settled
-    // and releasing the lock costs nothing. The user-action
-    // collapse case is then unblocked.
+    // A permanent lock (held for the whole mount) would leave ghost
+    // space in the shrink case. The release is safe because the
+    // "siblings shifting" concern the lock guards against only
+    // applies to the async-content-fill-in window; once a cell has
+    // been measured at its saved size, sub-content is settled and
+    // releasing the lock costs nothing — the user-action collapse
+    // case is then unblocked.
     //
     // Held in a ref so cell-render reads are appearance-only
     // ([L06]) — no React state for the lock map.
@@ -1106,9 +1106,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           const newHeight = entry.contentRect.height;
           const currentHeight = heightIndex.get(index);
 
-          // Hydration-lock release (Sub-step H). When a cell's
-          // measurement reaches or exceeds its saved-at-hydration
-          // height, drop the `min-height` lock on that cell so
+          // Hydration-lock release. When a cell's measurement
+          // reaches or exceeds its saved-at-hydration height, drop
+          // the `min-height` lock on that cell so
           // subsequent shrinks (user collapses an expanded Bash /
           // diff hunk, etc.) are honored — the wrapper follows
           // the content down instead of holding ghost space.

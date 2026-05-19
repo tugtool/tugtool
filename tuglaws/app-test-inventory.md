@@ -21,7 +21,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 
 ## Adding a new tag
 
-1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0082** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10; AT0075–AT0079 ship at Phase E.11; AT0071–AT0077 + AT0079 are retired at Phase E.12 — see entries below; AT0080–AT0081 ship at Phase E.12; AT0082 gates gallery-shipped-renderers).
+1. Pick the next unused `AT{NNNN}`. The current high-water mark is **AT0083** (AT0069 ships at Phase E.9; AT0070 was claimed and immediately released as a deferred-implementation tag; AT0071–AT0074 ship at Phase E.10; AT0075–AT0079 ship at Phase E.11; AT0071–AT0077 + AT0079 are retired at Phase E.12 — see entries below; AT0080–AT0081 ship at Phase E.12; AT0082 gates gallery-shipped-renderers; AT0083 gates the Step 20.4.16 Sub-step I scroll-to-bottom + auto-pin work).
 2. Add an entry below in the appropriate section (or create a section).
 3. State, in one line each: card types, state axes, trigger, status.
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
@@ -392,6 +392,11 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Summary:** Seed a tide card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the tide-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
 
 > **Cross-pane drag** — the fourth activation source for the single-text-entry rule (#phase-e-12) — is gated by AT0034 (`at0034-em-focus-after-move.test.ts`), which exercises a cross-pane drag and a detach on `gallery-prompt-entry` (the `tug-prompt-entry` surface a tide card uses internally) and asserts focus lands on the contenteditable. No new tag is needed.
+
+#### [AT0083] TugListView scroll-to-bottom reliability + auto-pin funnel
+- **Status:** ✅ shipped at tide-assistant-turns Step 20.4.16 Sub-step I — gates the I-0 restore-anchor fix and the I-1 `maybePinToBottom` consolidation.
+- **Tests:** `at0083-list-view-submit-pin.test.ts`.
+- **Summary:** Drives `gallery-list-view-scroll-keyed` (real `TugListView` + `SmartScroll` + CardHost region-scroll restore). Test 1 (I-0): cold-boot a card restored to a mid-list anchor, drive the fixture's "Scroll to bottom" control (the inner `TugListView`'s imperative `scrollToBottom()` — the same method the tide-card transcript host calls on submit), assert the scroller lands AND holds at the bottom — the restore-anchor apply effect must not pull it back. Test 2 (I-0 a/b/c + I-1): `scrollToBottom()` at the bottom is a no-op; after `tug-disengage-follow-bottom` content growth does NOT auto-pin (gate false — also covers the collapsed-hunk case); `scrollToBottom()` re-engages follow-bottom; subsequent growth then auto-pins (gate true). Gates `SmartScroll.shouldAutoPin` / `maybePinToBottom` — the funnel `TugMarkdownView` also routes through.
 
 ## Maintenance
 

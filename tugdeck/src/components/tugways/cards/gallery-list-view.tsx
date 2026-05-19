@@ -25,8 +25,11 @@
  *                           ([D06], [L22]).
  *
  * A header bar exposes four data-source mutators — insert at top,
- * insert at bottom, remove last, reset — for live mutation review.
- * The list view's `delegate` logs `willDisplay` /
+ * insert at bottom, remove last, reset — for live mutation review,
+ * plus a "Scroll to bottom" control that drives the inner
+ * `TugListView`'s imperative `scrollToBottom()` handle (the same
+ * jump-to-latest method the tide-card transcript host calls on
+ * submit). The list view's `delegate` logs `willDisplay` /
  * `didEndDisplaying` / `onSelect` to the console so the lifecycle
  * model can be observed visually during scroll and click.
  *
@@ -68,6 +71,7 @@ import {
   type TugListViewCellRenderer,
   type TugListViewDataSource,
   type TugListViewDelegate,
+  type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -510,6 +514,18 @@ export function GalleryListView(
     dataSource.reset();
   }, [dataSource]);
 
+  // Imperative handle to the inner `TugListView`. The "Scroll to
+  // bottom" button drives `scrollToBottom()` — the same imperative
+  // method the tide-card transcript host calls from its submit
+  // handler ([D07]). Exposing it as a gallery control lets the
+  // app-tests exercise the jump-to-latest gesture against the real
+  // primitive (restore-anchor handling, follow-bottom re-engagement,
+  // auto-pin) without standing up a full tugcode session.
+  const listViewRef = React.useRef<TugListViewHandle | null>(null);
+  const handleScrollToBottom = React.useCallback(() => {
+    listViewRef.current?.scrollToBottom();
+  }, []);
+
   return (
     <div
       className="cg-content"
@@ -530,6 +546,7 @@ export function GalleryListView(
           role="action"
           size="sm"
           onClick={handleInsertBottom}
+          data-testid="gallery-list-view-insert-bottom"
         >
           Insert bottom
         </TugPushButton>
@@ -549,10 +566,20 @@ export function GalleryListView(
         >
           Reset
         </TugPushButton>
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          size="sm"
+          onClick={handleScrollToBottom}
+          data-testid="gallery-list-view-scroll-to-bottom"
+        >
+          Scroll to bottom
+        </TugPushButton>
         <span style={DIAGNOSTIC_STYLE}>{itemCount} items</span>
       </div>
       <div style={LIST_VIEW_HOST_STYLE}>
         <TugListView<GalleryListViewDataSource>
+          ref={listViewRef}
           dataSource={dataSource}
           delegate={delegate}
           cellRenderers={cellRenderers}
