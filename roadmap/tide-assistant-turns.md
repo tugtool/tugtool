@@ -3082,6 +3082,167 @@ For each adoption site, gallery-prototype the change before any production work.
 
 ---
 
+#### Step 20.4.16: Z1B stability + visual polish + user-half symmetry {#step-20-4-16}
+
+**Depends on:** #step-20-4-15
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): Z1B stability + visual polish + user-half symmetry`
+
+**References:** [L02], [L06], [L13], [L19], [L20], [L26]
+
+**Scope.** Six follow-on items surfaced during HMR vetting of the 20.4.15 production wiring. They break into three buckets:
+
+  - (a) **Stability** — fix the Z1B "flashing" surfaced during streaming AND on transcript resize. This is the highest-priority item — a flashing footer makes the whole surface feel unstable.
+  - (b) **Symmetry** — give the Z1 user half a status row that matches the asst-half's Z1B so the two halves line up vertically in the transcript.
+  - (c) **Polish** — four cosmetic items: status-bar drop shadow, tighter indicator↔TIME gap, larger Z1B asst-half badge, and a fix for the Context popover so the session-init breakdown actually surfaces from the ledger on reload.
+
+Bundled into one step (not six ad-hoc fixes) because they share surfaces (Z1B + Z2 status bar) and share root-cause investigations (the flashing diagnosis may also explain the Context popover's empty-state behaviour).
+
+---
+
+##### Sub-step A — Z1B flashing: root cause + fix
+
+**Symptom.** Z1B's `TugThinkingIndicator` flashes during streaming responses AND while resizing the tide-card. Restarts of the WAAPI animation make the bars hop visibly instead of pulsing smoothly.
+
+**Smoking-gun hypothesis.** `tide-card-transcript.tsx::TideTranscriptHost` builds `codeRenderer` as a `useCallback` whose deps include `[modelName, codeSessionStore, streamingStore, renderTurnTrailing]`. Every time any of those deps churns, `codeRenderer` gets a new identity. Per the [L26] note already in that file: "renderer reference is the third identity input React reconciles against; distinct lambdas count as distinct component types" — meaning **every cell remounts** when `codeRenderer`'s identity changes. The Z1B indicator's WAAPI animation restarts on each remount.
+
+Candidate dep-churn sources (need direct confirmation during diagnosis):
+  - `modelName` flipping from `null` → resolved value during initial `system_init`, or churning if the metadata store re-emits during streaming.
+  - `streamingStore` identity changes (the per-session `PropertyStore`) if the store wrapper rebuilds on certain reducer transitions.
+  - The placement experiment's `renderTurnTrailing` (passed in from `tide-card.tsx`) rebuilding when `mapping.Z1` changes — should be stable in steady state, but worth confirming.
+
+**Resize axis.** When the tide-card width changes, the list-view's `ResizeObserver` fires and re-windows. Re-windowing alone should NOT remount cells (cells are keyed by `${turnKey}-{user|code}` per `TideTranscriptDataSource.idForIndex`, stable across reflow). If cells DO remount on resize, either (a) the renderer-identity issue above is firing during resize too (e.g., some downstream effect of resize causes `modelName` to re-emit), or (b) the list-view itself has a remount-on-reflow bug.
+
+**Tasks.**
+
+- [ ] **Diagnose.** Add render-counter logging (in dev only — `console.debug` keyed off `process.env.NODE_ENV !== "production"`) to `CodeRowCell`, `TideAsstHalfZ1B`, and `TugThinkingIndicator` (a per-mount unique id + a render counter on each). Stream a long response and resize the card. Confirm whether cells remount (id changes) or just re-render (id stable, counter increments).
+- [ ] **Audit the renderer's deps.** Confirm which of `[modelName, codeSessionStore, streamingStore, renderTurnTrailing]` churns during streaming / on resize. If `modelName` is the culprit, hoist its read into `CodeRowCell` (via `useSessionModelName` already exported) so the renderer lambda doesn't need it.
+- [ ] **Apply the fix.** Strategy depends on the diagnosis:
+  - If `modelName` churns: drop it from `codeRenderer`'s deps; have `CodeRowCell` subscribe to `useSessionModelName(sessionMetadataStore)` directly and read its own model name. The renderer lambda then only depends on `codeSessionStore` + `streamingStore` + `renderTurnTrailing`.
+  - If another dep churns: hoist the affected read similarly so the renderer becomes truly inert (deps = `[]`).
+  - If the list-view has a resize-remount bug: fix the list-view to preserve mount identity across reflow (keys are already stable; the issue would be at the wrapping React layer).
+- [ ] **HMR vet.** Stream a long response — indicator bars pulse smoothly without restart. Resize the tide-card width during streaming — bars continue pulsing without restart.
+
+**Conformance.** [L26] mount identity preserved across reflow + streaming. [L13] WAAPI animations stay finite one-shots — no leaks across re-renders.
+
+---
+
+##### Sub-step B — Z1 user-half status row (OK badge + symmetry)
+
+**Symptom.** The asst-half Z1B carries a badge + active-ms + tokens + COPY row beneath the body; the user-half has only an inline COPY button beside the body. The two halves don't visually align — the asst row's status footer sits below where the user row simply ends.
+
+**Design questions.**
+
+  1. **What does "OK" mean for the user half?** A user message has only "submitted" or "not submitted" semantics — failures attach to the assistant's turn, not the user's submission. Two reasonable definitions:
+      - **Round-trip semantics** — "OK" iff `row.turn` is defined (the corresponding asst turn completed). The badge mirrors `endStateBadgeFor(turn.turnEndReason)`, so the two halves of one turn always show the same badge.
+      - **Submission semantics** — "OK" iff the user message reached the supervisor and was ack'd. The badge says "submitted" / "queued" / "sent"; never errors.
+  2. **Which fields appear?** The asst half shows badge + active-ms + tokens + COPY. The user half has no per-side cost (cost is the assistant's). Candidates: badge + submit timestamp + COPY; badge + COPY only; badge + char count + COPY.
+
+**Recommendation (pending user review).** Round-trip semantics + minimal fields: `[OK badge] :: [COPY]` — badge mirrors the turn's end-state badge (so vertical alignment with the asst-half is visually intuitive: same outcome, same badge), no time/tokens (per-asst data doesn't belong on the user row), keep the labelled COPY for consistency with the asst Z1B.
+
+**Tasks.**
+
+- [ ] Confirm the design choices above (or pick alternatives).
+- [ ] Generalize `TideAsstHalfZ1B` to a `TideZ1B` that takes a `participant: "user" | "code"` prop (or split into two thin wrappers around shared internals). The user variant suppresses time + tokens; the asst variant keeps them.
+- [ ] Wire `TideUserHalfZ1B` (or the unified component in `participant="user"` mode) into `UserRowCell.controls` in place of the current inline `BlockCopyButton`.
+- [ ] In-flight user row (`row.turn === undefined`): render nothing in the Z1B slot — no indicator pulse on the user row, ever (the asst row owns the live indicator).
+- [ ] HMR vet: both halves of a committed turn read with matching footers; vertical edges align.
+
+---
+
+##### Sub-step C — Context popover: ledger-backed restoration
+
+**Symptom.** The Context popover reads "Session-init breakdown not yet recorded" in a session that has been running long enough to have emitted at least one `context_breakdown` frame. The user expects the rich `/context`-style breakdown to surface immediately (from tugcode's first emit) and to survive reloads (from the ledger via supervisor bind-attach replay).
+
+**Three persistence paths exist in the codebase:**
+
+  1. tugcode's `ContextBreakdownEmitter.onSessionInit()` fires on claude's `system:init` event and writes a `context_breakdown` frame to the wire (see `tugcode/src/session.ts::maybeEmitContextBreakdown`).
+  2. tugcode's `onCostUpdate()` fires on every `result` event and writes a recomputed frame.
+  3. On supervisor bind-attach (reload / reconnect), `agent_bridge.rs` reads the persisted ledger row (`get_context_breakdown`) and synthesizes a `context_breakdown` frame with `from_supervisor_attach: true` so the reducer projects it onto `snap.lastContextBreakdown` without re-persisting (`handleContextBreakdown` suppresses the `record-context-breakdown` effect when the flag is set).
+
+If the popover shows the empty state, one of the chains is broken — but the chain itself is wired. Likely first suspects: a frame-parse rejection in the wire dispatch, a `tug_session_id` splice mismatch, or a bind-attach timing race against the reducer subscription.
+
+**Tasks.**
+
+- [ ] **Diagnose.** Open the dev panel's wire log during a fresh session. Confirm `context_breakdown` frames arrive from tugcode (init + per-turn). Confirm the reducer's `handleContextBreakdown` accepts them (state-change tap or breakpoint). Confirm `snap.lastContextBreakdown` is populated after the first frame.
+- [ ] **Diagnose bind-attach.** Reload the tide-card mid-session. Confirm `agent_bridge.rs` emits a `context_breakdown` frame with `from_supervisor_attach: true`. Confirm the reducer accepts it. Confirm the popover surfaces the rich breakdown immediately on reload (no "not yet recorded" race).
+- [ ] **Confirm the persisted row exists.** `sqlite3 ~/Library/Application Support/.../session_ledger.db "SELECT * FROM session_context_breakdown WHERE session_id = '<sid>';"`. Row present → wire chain broken downstream. Row missing → tugcode's emit never reached the supervisor's persist effect.
+- [ ] **Fix the broken link.** Document the findings; apply a targeted fix once root-cause is identified.
+- [ ] **HMR vet.** Open a fresh session, send one turn → Context popover shows the rich breakdown. Reload the page → popover surfaces the persisted breakdown immediately (no flicker, no "not yet recorded").
+
+---
+
+##### Sub-step D — Status-bar drop shadow
+
+**Symptom.** The Z2 status bar sits directly beneath the scrolling transcript with no visual separation; the bottom-most transcript row reads as continuous with the status bar.
+
+**Tasks.**
+
+- [ ] Add a subtle `box-shadow` (or top-edge gradient) above `.tide-card-status-bar` in `tide-card.css`. Tokenize via a `--tugx-tide-status-bar-shadow` slot per [L20] so a future cascade-scoped consumer can retune.
+- [ ] Verify the shadow renders correctly in both themes (brio + harmony).
+- [ ] HMR vet: the bar reads as a distinct surface; transcript content visually scrolls "under" it.
+
+---
+
+##### Sub-step E — Indicator ↔ TIME gap
+
+**Symptom.** The current Z2 row pins the indicator slot to a fixed 220 px width (sized for the longest phase label "Awaiting first response"). When the phase label is short ("Idle" — 4 chars), most of the slot is empty, leaving a large visual gap between the dot/label and TIME.
+
+**Design tradeoff.**
+
+  - **(i) Smaller fixed slot** (e.g., 120 px) — cells shift slightly when phase labels switch between "Idle" and "Awaiting first response", but the resting layout is tighter.
+  - **(ii) Indicator-left + cells-right groupings** — drop `space-between` on the row; pin TIME hard against the indicator with a small fixed gap, then `space-between` only between TIME / TOKENS / CONTEXT. The indicator + TIME read as a left-anchored unit; the three cells distribute across the remaining width.
+  - **(iii) Content-sized slot** (`min-content` or `max-content`) — cells reflow with every label change; tightest resting layout, most movement.
+  - **(iv) Fixed slot sized for the typical label** ("Streaming response" ≈ 18 chars) — longest label overflows visually; trades worst-case clipping for best-case rhythm.
+
+**Recommendation (pending user review).** Option (ii) — pin the indicator + TIME together; let TOKENS / CONTEXT space-between across the rest. Keeps the indicator slot stable AND tightens the indicator↔TIME gap.
+
+**Tasks.**
+
+- [ ] Pick a layout option from above (or propose another).
+- [ ] Implement in `tide-card-telemetry-renderers.css` + corresponding TSX changes if the structure shifts.
+- [ ] HMR vet at multiple widths — indicator↔TIME reads tight at default width; gaps between TIME / TOKENS / CONTEXT still flex with width; the longest phase label ("Awaiting first response") still fits without clipping.
+
+---
+
+##### Sub-step F — Z1B asst-half badge size
+
+**Symptom.** The Z1B end-state badge (`TugBadge size="md"`, icon `size=13`) reads as slightly small compared to the surrounding `TugLabel` text in the row.
+
+**Design tradeoff.**
+
+  - **(i) Bump the existing `md` size's metrics slightly** — affects every `md` consumer in the codebase. Cleanest if no other `md` callsite suffers.
+  - **(ii) Add a new size between `md` and `lg`** (e.g., `md-plus` or rename current `lg`) — Z1B switches to it; other consumers unaffected.
+  - **(iii) Per-callsite override** — Z1B applies a CSS override on `.tide-asst-half-end-state .tug-badge`. Rejects core-component sovereignty per [L20]; not recommended.
+
+**Recommendation (pending user review).** Audit existing `TugBadge size="md"` consumers first. If none depend on the current dimensions, go with (i) — single point of change, gallery + tide-card both pick it up. Otherwise go with (ii) — add a new size keyword.
+
+**Tasks.**
+
+- [ ] Audit current `TugBadge size="md"` consumers (`grep -rn 'TugBadge[^>]*size="md"'`).
+- [ ] Decide on (i), (ii), or another option.
+- [ ] Implement the size change in `tug-badge.tsx` + `tug-badge.css` (+ gallery card if a new size keyword lands).
+- [ ] Bump `endStateBadgeIcon` size in `tide-card-asst-half-stack.tsx` correspondingly.
+- [ ] HMR vet: Z1B badge reads as harmonious with surrounding TugLabel text; the gallery's TugBadge card also reflects the change.
+
+---
+
+**Tests.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+
+**Checkpoint.**
+
+- [ ] All six sub-steps closed; HMR-vetted against the production tide-card.
+- [ ] No regressions in 20.4.15-landed surfaces (Z2 row, Z1 asst-half).
+- [ ] The Z1B flashing diagnosis is documented in the commit message (root cause + fix), so the L26 lesson is recorded for future renderer-lambda authors.
+
+---
+
 #### Step 20.5: Lifecycle coordination + Z5 + drill-down — split into four sub-steps {#step-20-5}
 
 **Depends on:** #step-20-4 (slot infrastructure + placement decisions from the HMR study)
