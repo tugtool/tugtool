@@ -2765,9 +2765,11 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 **Depends on:** #step-20-4-2 (reuses the TugAnimator-one-shot-pulse pattern established for `TugStateIndicator`).
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tugways): TugThinkingIndicator component (three-bar primitive)`
+
+_Implementer's note._ TugAnimator's public `animate()` does not expose WAAPI `delay`, so per-bar stagger is realized via keyframe `offset` values within a shared `CYCLE_DURATION_MS = PULSE_WINDOW_MS + (BAR_COUNT - 1) * PULSE_STAGGER_MS` window. Every bar runs for the same total duration; the group's `.finished` resolves cleanly at one boundary so the chain logic stays simple. `buildBarKeyframes(index)` is the keyframe generator.
 
 **References:** [L02], [L06], [L13], [L16], [L17], [L19], [L20], [component-authoring.md](../tuglaws/component-authoring.md), `tug-animator.ts`
 
@@ -2797,22 +2799,22 @@ export interface TugThinkingIndicatorProps
 
 **Tasks.**
 
-- [ ] Implement `tug-thinking-indicator.tsx` + `tug-thinking-indicator.css` per the component-authoring guide.
-- [ ] Iterate the bar geometry in the gallery: width, height, spacing, per-bar keyframes (staggered so the three pulse in sequence).
-- [ ] Drive the pulse chain via `TugAnimator.group()` (each bar's WAAPI one-shot is a member of the group). On the group's `.finished`, read the latest `animating` value via a ref and either start the next group or stop. Cleanup on unmount cancels the in-flight group.
-- [ ] Add a gallery card (or extend an existing one) with controls for `animating`, `labelPosition`, `label`, `size` so the design space is HMR-vettable.
+- [x] Implement `tug-thinking-indicator.tsx` + `tug-thinking-indicator.css` per the component-authoring guide. Full [L19] conformance: file pair, module docstring with all required law citations, exported Props interface with `@selector` + `@default` on `animating`, `labelPosition`, and `size`, `data-slot="tug-thinking-indicator"`, `React.forwardRef` with `...rest` spread + merged `style`, `@tug-pairings` block in both the comment-header and the JSDoc, no unpaired color rules (every color rule self-pairs), `--tugx-thinking-indicator-*` aliases resolving to `--tug7-*` in one hop ([L17]).
+- [x] Iterate the bar geometry in the gallery: bars sized via `--tugx-thinking-indicator-size` with bar width and gap derived from the host size (`/ 4` and `/ 5` respectively) so proportions hold across scales; pulse keyframes drive `opacity` (1 → 0.35 → 1) and `transform: scaleY(...)` (1 → 0.4 → 1) anchored at `transform-origin: center bottom` so the bars shorten from the top down.
+- [x] Drive the pulse chain via `TugAnimator.group()` (each bar's WAAPI one-shot is a member of the group). The keyframe-offset stagger means each bar runs the same `CYCLE_DURATION_MS` window with its pulse-window shifted by `i * PULSE_STAGGER_MS`. On the group's `.finished`, read the latest `animating` value via `latestAnimatingRef` and either start the next group or stop. Cleanup on unmount cancels the in-flight group via `g.cancel("snap-to-end")`. A guard `groupRef.current === g` prevents superseded groups from re-chaining.
+- [x] Add a gallery card with controls for `animating`, `labelPosition`, `label`, `size`. Four sections: animating-vs-static side-by-side, size variants (10/12/16/20/24/32 px), label-position variants (default text + custom text), and a mid-cycle toggle bench. Registered as `gallery-tug-thinking-indicator` under the `feedback` category.
 
 **Tests.**
 
-- [ ] Pure-logic tests for label-position derivation (which side renders), default label text, etc.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic tests for label-position derivation (which side renders), default label text, etc. 8 cases in `tug-thinking-indicator.test.ts` (override-wins, default-when-omitted, default-on-undefined, empty-string-respected, labelVisible for each position, default-constant pin).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green — 2205/2205 across 134 files (8 new tests).
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] Gallery renders `TugThinkingIndicator` at multiple sizes + label positions.
-- [ ] HMR-vet a mid-cycle `animating` toggle: the in-flight pulse group runs to completion before the bars freeze. No hops, no jumps.
+- [x] Gallery renders `TugThinkingIndicator` at multiple sizes + label positions. _Sections 1–3 of the gallery card cover every size + labelPosition combination; section 4 is the live tinker bench._
+- [ ] HMR-vet a mid-cycle `animating` toggle: the in-flight pulse group runs to completion before the bars freeze. No hops, no jumps. _Pending user verification against the new gallery card (`TugThinkingIndicator`, feedback category)._
 
 ---
 

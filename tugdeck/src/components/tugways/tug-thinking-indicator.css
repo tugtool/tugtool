@@ -1,0 +1,161 @@
+/* @tug-pairings {
+  --tugx-thinking-indicator-bar-color  | --tugx-thinking-indicator-surface | informational
+  --tugx-thinking-indicator-label-text | --tugx-thinking-indicator-surface | informational
+} */
+
+/**
+ * tug-thinking-indicator.css — TugThinkingIndicator primitive.
+ *
+ * @tug-pairings
+ * | Element                              | Surface                            | Role          | Context                                              |
+ * |--------------------------------------|------------------------------------|---------------|------------------------------------------------------|
+ * | --tugx-thinking-indicator-bar-color  | --tugx-thinking-indicator-surface  | informational | .tug-thinking-indicator-bar (background-color)       |
+ * | --tugx-thinking-indicator-label-text | --tugx-thinking-indicator-surface  | informational | .tug-thinking-indicator-label (color)                |
+ *
+ * The component renders three small vertical bars that pulse in
+ * staggered sequence via TugAnimator. The pulse drives `opacity` and
+ * `transform: scaleY(...)` — no color animation. Static (non-pulsing)
+ * state keeps the bars visible at full opacity + natural height.
+ *
+ * The component does not paint its own background — the bars render
+ * directly onto whatever surface hosts the indicator.
+ * `--tugx-thinking-indicator-surface` is the alias that names that
+ * host surface; consumers on a non-default surface override it in
+ * their own scope (same pattern TugStateIndicator uses for
+ * `--tugx-state-indicator-surface`).
+ *
+ * Tuglaws cross-check:
+ *  - [L02] state arrives via props from the consumer's
+ *    `useSyncExternalStore` subscription; this component holds no
+ *    reducer-derived state.
+ *  - [L06] appearance changes go through CSS / DOM — the
+ *    `animating` toggle flips a `data-animating` attribute on the
+ *    root; the bars' opacity/transform is owned by TugAnimator at
+ *    pulse boundaries. No React state for appearance.
+ *  - [L13] motion runs through TugAnimator (WAAPI) as finite one-
+ *    shot pulses chained on `group().finished`. No CSS
+ *    `@keyframes`, no `animation: ... infinite`.
+ *  - [L16] every color-setting rule below sets `background-color`
+ *    or `color` self-paired; no `@tug-renders-on` annotations
+ *    needed beyond the label.
+ *  - [L17] every `--tugx-thinking-indicator-*` alias resolves to a
+ *    base `--tug7-*` token in one hop.
+ *  - [L19] file pair, `data-slot="tug-thinking-indicator"`,
+ *    `@tug-pairings` declared.
+ *  - [L20] the indicator owns its `--tugx-thinking-indicator-*`
+ *    sub-family exclusively; it does not reach into other
+ *    components' token namespaces.
+ */
+
+/* ---- Component-tier aliases [L17, L20] ---- */
+
+body {
+  /* Geometry (overridable per call site via the inline style on the
+     root span when the consumer passes `size`). `size` sets the bar
+     height; bar width and gap are scaled from it so the three bars
+     keep their proportions across sizes. */
+  --tugx-thinking-indicator-size:    16px;
+  --tugx-thinking-indicator-bar-width: calc(var(--tugx-thinking-indicator-size) / 4);
+  --tugx-thinking-indicator-bar-gap:  calc(var(--tugx-thinking-indicator-size) / 5);
+  --tugx-thinking-indicator-label-gap: var(--tug-space-sm, 6px);
+
+  /* The host surface the indicator is expected to render against.
+     Consumers on a non-default surface re-declare this in their own
+     scope. */
+  --tugx-thinking-indicator-surface: var(--tug7-surface-global-primary-normal-default-rest);
+
+  /* Bar fill — one hop to a base text token per [L17]. Shares the
+     same default-text family `TugStateIndicator` uses for its dot's
+     `default` tone so the two indicators read as the same chrome
+     vocabulary when sitting near each other. */
+  --tugx-thinking-indicator-bar-color: var(--tug7-element-global-text-normal-default-rest);
+
+  /* Visible-label text tone — paired against the same host surface
+     the indicator renders on. */
+  --tugx-thinking-indicator-label-text: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* ============================================================================
+   Host span — flex row of glyph + optional label. The
+   `data-label-position` attribute drives the visual order; layout
+   toggles never round-trip through React state [L06].
+
+       data-label-position="right"  → row    (glyph, label)
+       data-label-position="left"   → row-reverse (label, glyph)
+       data-label-position="hidden" → row, label absent from the DOM
+   ========================================================================= */
+
+.tug-thinking-indicator {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tugx-thinking-indicator-label-gap);
+}
+
+.tug-thinking-indicator[data-label-position="left"] {
+  flex-direction: row-reverse;
+}
+
+.tug-thinking-indicator[data-label-position="hidden"] {
+  gap: 0;
+}
+
+/* ============================================================================
+   Glyph — the three-bar stack. A flex row sized to the geometry
+   custom properties; positioned ancestor for the bars.
+
+   The bars sit at the bottom of the glyph (align-items: flex-end)
+   so the scaleY pulse animates "growing up from the floor" — keeps
+   the visual center of the indicator stable while the bars pulse.
+   ========================================================================= */
+
+.tug-thinking-indicator-glyph {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: var(--tugx-thinking-indicator-size);
+  gap: var(--tugx-thinking-indicator-bar-gap);
+}
+
+/* ============================================================================
+   Bars — geometry only for the rest layer. `opacity` and
+   `transform: scaleY(...)` are owned by the component's TugAnimator
+   chain at pulse boundaries. The rest state is full-opacity,
+   un-scaled bars; the pulse drops opacity + shortens scaleY then
+   restores. Static (non-pulsing) mode keeps the rest state — bars
+   visible, no motion.
+
+   `transform-origin: center bottom` so scaleY shortens the bars
+   from the top down (keeps the floor anchored).
+   ========================================================================= */
+
+.tug-thinking-indicator-bar {
+  width: var(--tugx-thinking-indicator-bar-width);
+  height: var(--tugx-thinking-indicator-size);
+  background-color: var(--tugx-thinking-indicator-bar-color);
+  border-radius: 1px;
+  transform-origin: center bottom;
+  flex: 0 0 auto;
+}
+
+/* ============================================================================
+   Visible label — the human-readable text rendered inline alongside
+   the glyph when `labelPosition !== "hidden"`. Color comes from
+   `--tugx-thinking-indicator-label-text`, paired against
+   `--tugx-thinking-indicator-surface` (see @tug-pairings above).
+   ========================================================================= */
+
+.tug-thinking-indicator-label {
+  /* @tug-renders-on var(--tugx-thinking-indicator-surface) */
+  color: var(--tugx-thinking-indicator-label-text);
+  /* Match the transcript body's font size (`--tug-font-size-sm`,
+     13px in the default theme) so the indicator reads as part of
+     the assistant's stream rather than as a separate piece of
+     chrome. The base `--tugx-block-code-font-size` alias in
+     `tugx-block.css` resolves to the same token. */
+  font-size: var(--tug-font-size-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
