@@ -107,11 +107,14 @@
    never jitters as values change. Values render natural-width and
    center horizontally within their cell.
 
-   Row layout — single flex row with `justify-content: space-between`
-   on `.tide-telemetry-status-cells`; row padding-inline of
-   `var(--tug-space-2xl)` gives the indicator + cells generous
-   end margins. The indicator + cells distribute across the row's
-   width with gaps that flex uniformly as the host widens.
+   Row layout — flat 4-item flex container holding the indicator
+   slot + three cells as direct siblings, with
+   `justify-content: space-between` on the row itself and
+   `padding-inline: var(--tug-space-2xl)` for the end margins.
+   The indicator slot is pinned to a fixed width
+   (`--tugx-tide-status-indicator-slot-width`) so the cells'
+   positions stay stable across phase-label changes; all four
+   inter-item gaps flex uniformly with the host width.
 
    Collapse priority (least-to-most persistent) — driven by container
    queries on the host's `container-name: tide-status`. As the host
@@ -122,19 +125,24 @@
    ========================================================================= */
 
 .tide-telemetry-status-row {
+  /* Flat 4-item flex row: indicator slot + TIME + TOKENS + CONTEXT
+     as direct siblings. `justify-content: space-between` pushes
+     them to the row's edges and distributes the leftover width
+     across the three inter-item gaps; `gap` is the *minimum*
+     spacing the gaps shrink to as the row narrows. All four
+     inter-item spaces flex uniformly with row width — no item is
+     "stuck" to any other. The indicator slot's fixed width keeps
+     the cells' horizontal positions rock-stable across phase
+     label-text changes ("Idle" → "Awaiting first response"). */
   display: flex;
   flex-direction: row;
   align-items: center;
+  justify-content: space-between;
   font-family: var(--tug-font-mono, monospace);
   font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
   line-height: 1.2;
-  gap: var(--tug-space-md);
-  /* Row fills its Z2 host so the cells block can distribute itself
-     across the full width via `justify-content: space-between` on
-     `.tide-telemetry-status-cells`. Without this the row would
-     collapse to content width and the cells block would lose its
-     distribution geometry. */
+  gap: 8px;
   width: 100%;
   padding-inline: var(--tug-space-2xl);
   box-sizing: border-box;
@@ -144,33 +152,42 @@
      and value-wrap both consume this width so every cell
      occupies an identical horizontal slot. */
   --tugx-tide-status-cell-width: 19ch;
+  /* Indicator slot width — sized for the longest PHASE_HUMAN_LABEL
+     ("Awaiting first response", ~23 chars in mono at 0.75rem ≈
+     173px) + 16px glyph + 6px gap + ~25px buffer. Bump this if a
+     future phase label is added longer than this. The slot's
+     `width` (not `min-width`) is what keeps the cells' positions
+     stable as the visible label text varies. */
+  --tugx-tide-status-indicator-slot-width: 220px;
 }
 
-/* Cells block — the five F5 cells distributed across whatever
-   horizontal space the indicator leaves. `space-between` distributes
-   the cells edge-to-edge so the readout fills the row evenly.
-   `min-width: 0` lets the block shrink past its content size when
-   the host narrows past a collapse breakpoint. */
-.tide-telemetry-status-cells {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--tug-space-md);
-  min-width: 0;
+/* Indicator slot — fixed-width host for the TugStateIndicator and
+   its popover anchor. `flex: 0 0 auto` so the slot never grows
+   or shrinks with the row; `align-self: stretch` lets the inner
+   hover affordance span the row's full height (the indicator
+   itself is just one text line tall, much shorter than the cells
+   stacked above their values). The popover trigger inside reuses
+   the shared `.tide-telemetry-status-anchor` chrome. */
+.tide-telemetry-status-indicator-slot {
+  flex: 0 0 auto;
+  width: var(--tugx-tide-status-indicator-slot-width);
+  display: inline-flex;
+  align-items: stretch;
+  align-self: stretch;
 }
 
 .tide-telemetry-status-cell {
   /* Each cell is a two-row vertical stack: label apparatus on top,
-     value centered below. Cells lay out edge-to-edge in the row;
-     the apparatus's own width is the source of truth for cell
-     width — `space-between` distributes them across Z2 with the
-     row's gap as the minimum inter-cell gap. */
+     value centered below. Cells are direct flex children of the
+     row; `flex: 0 0 auto` keeps them at their intrinsic
+     (19ch-wide) size so the row's `justify-content: space-between`
+     can distribute the leftover width across the gaps between
+     them instead of stretching individual cells. */
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  flex: 0 0 auto;
 }
 
 .tide-telemetry-status-value-wrap {

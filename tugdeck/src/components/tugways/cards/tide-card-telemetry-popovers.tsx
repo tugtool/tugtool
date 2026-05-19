@@ -4,16 +4,28 @@
  *
  * Each component renders inside a `TugPopoverContent` returned by
  * `TideTelemetryStatusRow`. The popovers share a layout vocabulary
- * (`PerAreaPopoverFrame`, `PopoverRow`, `PopoverRowScroller`) so the
+ * (`PerAreaPopoverFrame`, `PopoverRow`, `TidePopoverRowGrid`) so the
  * four surfaces read with the same rhythm — title bar above a 1px
- * rule, optional row-list body, optional summary footer separated
- * by a second rule.
+ * rule, then either a 3-column row grid (Time / Tokens / state-change
+ * log) or a 2-column gauge + legend layout (Context).
+ *
+ * **Three-column shared grid (Time / Tokens).** The row list AND the
+ * summary footer share a single CSS grid via `subgrid`, so the
+ * label / annotation / value columns line up vertically across every
+ * row in both blocks. Without the shared grid, each row would be its
+ * own grid and column edges would drift with content widths.
+ *
+ * **End-state badge consistency.** Per-turn rows display the badge
+ * produced by `endStateBadgeFor(turn.turnEndReason)` — the same
+ * dispatch the Z1B end-state display uses. The popover and the Z1B
+ * footer therefore always read the same text ("OK" / "interrupted" /
+ * "error" / "lost") and tone for a given turn.
  *
  * Polished in `gallery-tide-status-row.tsx` (workshop) and promoted
- * here for production use by Step 20.4.15. The promotion translates
+ * here for production use by [Step 20.4.15]. The promotion translates
  * the gallery's inline-style layout into class-driven CSS per [L19]
- * / [L20]; the data shapes and semantics are unchanged from the
- * workshop pinning.
+ * / [L20]; the row-grid alignment is tightened from per-row grids
+ * to a subgrid-shared 3-column grid so columns align consistently.
  *
  * Conformance:
  *  - [L02] popover content is a function of inputs only — `transcript`,
@@ -42,9 +54,12 @@ import {
   indicatorVisualFor,
   type TugStateIndicatorTone,
 } from "@/components/tugways/tug-state-indicator";
+import {
+  endStateBadgeFor,
+  type EndStateBadge,
+} from "@/lib/code-session-store/end-state";
 import { formatStateChangeRow } from "@/lib/code-session-store/state-change-formatter";
 import {
-  computeContextBreakdown,
   computeRichContextBreakdown,
   computeTimeSummary,
   computeTokensSummary,
@@ -56,14 +71,17 @@ import type { SessionStateChangeRow } from "@/lib/session-state-changes-reader";
 import { formatTimeAlwaysHours, formatTokensCaps } from "./tide-card-telemetry-renderers";
 
 // ---------------------------------------------------------------------------
-// Shared frame + row primitives
+// Shared frame
 // ---------------------------------------------------------------------------
 
 /**
  * Popover-content frame shared by every Z2 anchor — centered uppercase
- * title bar above a 1px rule, body slot, optional separator-fronted
- * summary footer. The frame owns the chrome so popovers stay
- * structurally consistent — only the body content differs.
+ * title bar above a 1px rule, then the body. The summary footer is
+ * NOT rendered here for the row-grid popovers (Time / Tokens / state
+ * log): those use {@link TidePopoverRowGrid}, which folds the summary
+ * into the same subgrid so columns align across rows and summary.
+ * The Context popover renders its own arc + legend body and never
+ * carries a summary footer.
  *
  * `data-popover-kind` lets a callsite tune width / padding via the
  * stylesheet without each popover redeclaring its own root rule.
@@ -71,12 +89,10 @@ import { formatTimeAlwaysHours, formatTokensCaps } from "./tide-card-telemetry-r
 function PerAreaPopoverFrame({
   title,
   children,
-  summaryFooter,
   kind,
 }: {
   title: string;
   children: React.ReactNode;
-  summaryFooter?: React.ReactNode;
   /**
    * `default` → the Time / Tokens narrow width.
    * `context` → wider cap for the segmented arc + legend.
@@ -93,20 +109,31 @@ function PerAreaPopoverFrame({
       <div className="tide-popover-frame-title">{title}</div>
       <div className="tide-popover-frame-rule" />
       {children}
-      {summaryFooter !== undefined && summaryFooter !== null ? (
-        <div className="tide-popover-frame-footer">{summaryFooter}</div>
-      ) : null}
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Row primitives — subgrid-shared 3-column layout
+// ---------------------------------------------------------------------------
+
 /**
- * Single row inside a Time / Tokens popover. Three-column grid —
- * label (muted, left), badge-or-hint (annotation, right-aligned to
- * abut value), value (normal, right). The grid's columns
- * `auto 1fr auto` keep values right-aligned across rows even when
- * widths vary, so a column-scan reads cleanly. `label` accepts a
- * `ReactNode` so callsites can prepend swatches inline.
+ * One row in a Time / Tokens popover. Renders three grid cells (label
+ * / annotation / value) into the surrounding {@link TidePopoverRowGrid}
+ * via CSS subgrid. Columns size to the widest content across EVERY
+ * row in the grid (both the scrollable row list and the summary
+ * footer), so the label / annotation / value edges line up
+ * vertically end-to-end.
+ *
+ * Three-column contract:
+ *   col 1 → label (muted, left-aligned, e.g. "turn 1" / "total")
+ *   col 2 → annotation (badge or hint, right-aligned within the
+ *           column so it abuts the value)
+ *   col 3 → value (normal, right-aligned, e.g. "30.1K" / "0h 0m 02s")
+ *
+ * `label` accepts a `ReactNode` so a future caller can prepend
+ * swatches inline (the Context popover used to do this in the
+ * gallery; it now uses a separate body).
  */
 function PopoverRow({
   label,
@@ -131,31 +158,73 @@ function PopoverRow({
 }
 
 /**
- * Per-row chip rendering the turn's terminal state. `success` reads
- * as low-emphasis (muted ghost); `interrupted` reads as caution so
- * the row jumps slightly out of the column.
+ * Shared 3-column grid spanning the popover's row list AND its
+ * summary footer. Both blocks render into the same outer grid via
+ * `subgrid`, so the label / annotation / value column edges line up
+ * vertically across every row — including across the divider that
+ * separates the scrolling list from the summary rows.
+ *
+ * The row list lives inside a `<div>` with `max-height` + `overflow-y:
+ * auto` capped at the shared 10-row visible height; the summary rows
+ * sit below the divider and are always visible.
+ *
+ * If the row list is empty, the grid degenerates to "summary only"
+ * (or to the caller's `empty` content when no summary applies).
  */
-function TerminalStateBadge({
-  result,
+function TidePopoverRowGrid({
+  rows,
+  summary,
+  empty,
 }: {
-  result: TurnEntry["result"];
+  rows: ReadonlyArray<React.ReactElement>;
+  summary?: ReadonlyArray<React.ReactElement>;
+  empty?: React.ReactNode;
 }): React.ReactElement {
-  if (result === "interrupted") {
-    return (
-      <TugBadge emphasis="tinted" role="caution" size="sm">
-        interrupted
-      </TugBadge>
-    );
+  const hasRows = rows.length > 0;
+  const summaryRows = summary ?? [];
+  const hasSummary = summaryRows.length > 0;
+  if (!hasRows && !hasSummary) {
+    return <>{empty ?? <EmptyTranscriptBody />}</>;
   }
   return (
-    <TugBadge emphasis="ghost" role="success" size="sm">
-      success
+    <div className="tide-popover-row-grid" data-slot="tide-popover-row-grid">
+      {hasRows ? (
+        <div className="tide-popover-row-grid-scroller">{rows}</div>
+      ) : (
+        <div className="tide-popover-row-grid-empty">
+          {empty ?? <EmptyTranscriptBody />}
+        </div>
+      )}
+      {hasSummary ? (
+        <>
+          <div className="tide-popover-row-grid-divider" aria-hidden />
+          {summaryRows}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Per-turn end-state chip — driven by the same `endStateBadgeFor`
+ * dispatch the Z1B end-state row uses, so the popover row and the
+ * Z1B footer always read the same text + tone for a given turn.
+ *
+ * Renders as a `ghost`-emphasis TugBadge to keep the row chrome
+ * quiet (the popover lists many rows; a `tinted` badge per row
+ * would dominate).
+ */
+function TurnEndStateBadge({ turn }: { turn: TurnEntry }): React.ReactElement {
+  const badge: EndStateBadge = endStateBadgeFor(turn.turnEndReason);
+  return (
+    <TugBadge emphasis="ghost" role={badge.role} size="sm">
+      {badge.text}
     </TugBadge>
   );
 }
 
 /**
- * Empty-transcript body shared by the Time + Tokens popovers. Same
+ * Empty-row body shared by Time / Tokens / state-log popovers. Same
  * muted typographic weight as the rest of the popover so the empty
  * state doesn't read as an error.
  */
@@ -163,23 +232,6 @@ function EmptyTranscriptBody(): React.ReactElement {
   return (
     <div className="tide-popover-empty" data-slot="tide-popover-empty">
       No committed turns yet.
-    </div>
-  );
-}
-
-/**
- * Scrolling wrapper for the row-list popovers (Time / Tokens). Caps
- * the body at the shared 10-row visible height and gutters the
- * scrollbar so the value column never sits flush against the thumb.
- */
-function PopoverRowScroller({
-  children,
-}: {
-  children: React.ReactNode;
-}): React.ReactElement {
-  return (
-    <div className="tide-popover-row-scroller" data-slot="tide-popover-row-scroller">
-      {children}
     </div>
   );
 }
@@ -194,6 +246,9 @@ function PopoverRowScroller({
  * current-turn elapsed when a turn is in flight. The summary is
  * derived by `computeTimeSummary` so the gallery + production
  * popovers compute identical numbers.
+ *
+ * Row + summary share a single subgrid so the column edges line up
+ * end-to-end ({@link TidePopoverRowGrid}).
  */
 export function TimePopoverContent({
   transcript,
@@ -203,45 +258,41 @@ export function TimePopoverContent({
   inflight: { currentTurnActiveMs: number } | null;
 }): React.ReactElement {
   const summary = computeTimeSummary(transcript);
+  const rows = transcript.map((t, i) => (
+    <PopoverRow
+      key={t.turnKey}
+      label={`turn ${i + 1}`}
+      value={formatTimeAlwaysHours(t.activeMs)}
+      badge={<TurnEndStateBadge turn={t} />}
+    />
+  ));
+  const summaryRows: React.ReactElement[] = [
+    <PopoverRow key="turns" label="turns" value={String(summary.count)} />,
+    <PopoverRow
+      key="total"
+      label="total"
+      value={formatTimeAlwaysHours(summary.totalActiveMs)}
+    />,
+    <PopoverRow
+      key="avg"
+      label="avg"
+      value={formatTimeAlwaysHours(summary.avgActiveMs)}
+      hint="per turn"
+    />,
+  ];
+  if (inflight !== null) {
+    summaryRows.push(
+      <PopoverRow
+        key="current"
+        label="current turn"
+        value={formatTimeAlwaysHours(inflight.currentTurnActiveMs)}
+        hint="in flight"
+      />,
+    );
+  }
   return (
-    <PerAreaPopoverFrame
-      title="Per-request log — Time"
-      summaryFooter={
-        <>
-          <PopoverRow label="turns" value={String(summary.count)} />
-          <PopoverRow
-            label="total"
-            value={formatTimeAlwaysHours(summary.totalActiveMs)}
-          />
-          <PopoverRow
-            label="avg"
-            value={formatTimeAlwaysHours(summary.avgActiveMs)}
-            hint="per turn"
-          />
-          {inflight !== null ? (
-            <PopoverRow
-              label="current turn"
-              value={formatTimeAlwaysHours(inflight.currentTurnActiveMs)}
-              hint="in flight"
-            />
-          ) : null}
-        </>
-      }
-    >
-      {transcript.length === 0 ? (
-        <EmptyTranscriptBody />
-      ) : (
-        <PopoverRowScroller>
-          {transcript.map((t, i) => (
-            <PopoverRow
-              key={t.turnKey}
-              label={`turn ${i + 1}`}
-              value={formatTimeAlwaysHours(t.activeMs)}
-              badge={<TerminalStateBadge result={t.result} />}
-            />
-          ))}
-        </PopoverRowScroller>
-      )}
+    <PerAreaPopoverFrame title="Per-request log — Time">
+      <TidePopoverRowGrid rows={rows} summary={summaryRows} />
     </PerAreaPopoverFrame>
   );
 }
@@ -265,6 +316,8 @@ function perTurnTotalTokens(turn: TurnEntry): number {
  * in-flight contract as the Time popover: in-flight turns are
  * excluded from the row log, with the live current-turn contribution
  * surfaced as a separate footer row when a turn is in flight.
+ *
+ * Row + summary share a single subgrid ({@link TidePopoverRowGrid}).
  */
 export function TokensPopoverContent({
   transcript,
@@ -274,42 +327,41 @@ export function TokensPopoverContent({
   inflight: { currentTurnTokens: number } | null;
 }): React.ReactElement {
   const summary = computeTokensSummary(transcript);
+  const rows = transcript.map((t, i) => (
+    <PopoverRow
+      key={t.turnKey}
+      label={`turn ${i + 1}`}
+      value={formatTokensCaps(perTurnTotalTokens(t))}
+      badge={<TurnEndStateBadge turn={t} />}
+    />
+  ));
+  const summaryRows: React.ReactElement[] = [
+    <PopoverRow key="turns" label="turns" value={String(summary.count)} />,
+    <PopoverRow
+      key="total"
+      label="total"
+      value={formatTokensCaps(summary.totalTokens)}
+    />,
+    <PopoverRow
+      key="avg"
+      label="avg"
+      value={formatTokensCaps(summary.avgTokensPerTurn)}
+      hint="per turn"
+    />,
+  ];
+  if (inflight !== null) {
+    summaryRows.push(
+      <PopoverRow
+        key="current"
+        label="current turn"
+        value={formatTokensCaps(inflight.currentTurnTokens)}
+        hint="in flight"
+      />,
+    );
+  }
   return (
-    <PerAreaPopoverFrame
-      title="Per-request log — Tokens"
-      summaryFooter={
-        <>
-          <PopoverRow label="turns" value={String(summary.count)} />
-          <PopoverRow label="total" value={formatTokensCaps(summary.totalTokens)} />
-          <PopoverRow
-            label="avg"
-            value={formatTokensCaps(summary.avgTokensPerTurn)}
-            hint="per turn"
-          />
-          {inflight !== null ? (
-            <PopoverRow
-              label="current turn"
-              value={formatTokensCaps(inflight.currentTurnTokens)}
-              hint="in flight"
-            />
-          ) : null}
-        </>
-      }
-    >
-      {transcript.length === 0 ? (
-        <EmptyTranscriptBody />
-      ) : (
-        <PopoverRowScroller>
-          {transcript.map((t, i) => (
-            <PopoverRow
-              key={t.turnKey}
-              label={`turn ${i + 1}`}
-              value={formatTokensCaps(perTurnTotalTokens(t))}
-              badge={<TerminalStateBadge result={t.result} />}
-            />
-          ))}
-        </PopoverRowScroller>
-      )}
+    <PerAreaPopoverFrame title="Per-request log — Tokens">
+      <TidePopoverRowGrid rows={rows} summary={summaryRows} />
     </PerAreaPopoverFrame>
   );
 }
@@ -317,9 +369,6 @@ export function TokensPopoverContent({
 // ---------------------------------------------------------------------------
 // Context popover
 // ---------------------------------------------------------------------------
-
-/** Showcase scale used by the large segmented gauge inside the popover. */
-const CONTEXT_GAUGE_LARGE_PX = 180;
 
 function formatContextPercent(used: number, max: number): string {
   if (max <= 0) return "0.0%";
@@ -331,59 +380,60 @@ function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
 }
 
 /**
- * `Context` popover — two render paths backed by one helper:
+ * `Context` popover — `/context`-style cumulative session breakdown.
+ * Reads `snap.lastContextBreakdown` (populated by tugcode's
+ * `context_breakdown` wire frame, which fires at session attach and
+ * after every committed turn). Renders the categorical view: system
+ * prompt / system tools / custom agents / memory files / skills /
+ * messages + optional autocompact_buffer + auto-synthesized remainder.
  *
- *  - **Rich path:** when the snapshot carries a `lastContextBreakdown`,
- *    paint the `/context`-style per-category breakdown via
- *    `computeRichContextBreakdown` (system_prompt / system_tools /
- *    custom_agents / memory_files / skills / messages + optional
- *    autocompact_buffer + remainder). Numbers are tokenized in
- *    tugcode within the documented 5–10% accuracy bar.
- *  - **Fallback path:** when no breakdown frame has landed, render
- *    the cost_update-derived 5-segment view against the last
- *    committed turn (input / cache-read / cache-creation / output /
- *    remainder), via `computeContextBreakdown`.
+ * **Rich path only.** Pre-20.4.15 this surface had a `cost_update`
+ * fallback that decomposed the LAST committed turn into 5 wire-level
+ * segments (input / cache-read / cache-creation / output / remainder).
+ * That fallback misrepresented the popover's contract: it showed a
+ * single turn's tokens, not the cumulative session breakdown the
+ * popover heading promises. The fallback is now removed — if no
+ * `context_breakdown` frame has landed yet, the popover surfaces
+ * an explicit empty state.
  *
- * Empty state: when neither the breakdown frame nor any committed
- * turn is available, the popover renders the empty-transcript
- * placeholder. `mcp_tools` is intentionally absent from the rich
- * path — Tug treats MCP as out of scope.
+ * Numbers sit within the documented 5–10% accuracy bar against
+ * Claude Code's `/context` terminal output — tugcode's local
+ * tokenization is intentionally not byte-exact.
+ *
+ * `mcp_tools` is intentionally absent from the categories — Tug
+ * treats MCP as out of scope.
  */
 export function ContextPopoverContent({
-  transcript,
   contextMax,
   lastContextBreakdown,
 }: {
-  transcript: ReadonlyArray<TurnEntry>;
   contextMax: number;
-  lastContextBreakdown?: ContextBreakdownSnapshotInput | null;
+  lastContextBreakdown: ContextBreakdownSnapshotInput | null | undefined;
 }): React.ReactElement {
+  if (lastContextBreakdown === null || lastContextBreakdown === undefined) {
+    return (
+      <PerAreaPopoverFrame title="Context window" kind="context">
+        <div className="tide-popover-empty">
+          Session-init breakdown not yet recorded.
+        </div>
+      </PerAreaPopoverFrame>
+    );
+  }
+  // Pass an empty transcript so the helper's fallback path (which
+  // would re-derive from the last committed turn) can never fire —
+  // when `lastContextBreakdown` is non-null the helper returns the
+  // rich breakdown directly.
   const breakdown = computeRichContextBreakdown(
-    lastContextBreakdown ?? null,
-    transcript,
+    lastContextBreakdown,
+    [],
     contextMax,
   );
   if (breakdown === null) {
-    // Try the fallback path against the most recent turn before
-    // surrendering to the empty state.
-    const fallback =
-      transcript.length > 0
-        ? computeContextBreakdown(transcript[transcript.length - 1]!, contextMax)
-        : null;
-    if (fallback === null) {
-      return (
-        <PerAreaPopoverFrame title="Context window" kind="context">
-          <EmptyTranscriptBody />
-        </PerAreaPopoverFrame>
-      );
-    }
     return (
       <PerAreaPopoverFrame title="Context window" kind="context">
-        <ContextBreakdownBody
-          segments={fallback.segments}
-          contextMax={fallback.contextMax}
-          totalUsed={fallback.totalUsed}
-        />
+        <div className="tide-popover-empty">
+          Session-init breakdown not yet recorded.
+        </div>
       </PerAreaPopoverFrame>
     );
   }
@@ -399,11 +449,10 @@ export function ContextPopoverContent({
 }
 
 /**
- * Shared body for the Context popover — large segmented gauge on
- * the left, per-category legend + used/max summary in a single
- * 3-column grid on the right so column edges line up across the
- * legend / summary divider. Used by both the rich and the
- * cost_update-derived fallback paths.
+ * Body for the Context popover — large segmented gauge on the left,
+ * per-category legend + used/max summary in a single 3-column grid
+ * on the right so column edges line up across the legend / summary
+ * divider. Used by both rich and (when present) fallback paths.
  */
 function ContextBreakdownBody({
   segments,

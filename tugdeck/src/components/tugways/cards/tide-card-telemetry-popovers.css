@@ -7,8 +7,13 @@
  *   PerAreaPopoverFrame
  *     ├─ title (centered uppercase)
  *     ├─ rule (1px)
- *     ├─ body slot
- *     └─ optional summary footer (separator-fronted)
+ *     └─ body slot
+ *           ├─ TidePopoverRowGrid (Time / Tokens) — subgrid 3-col
+ *           │   ├─ scroller (rows; subgrid)
+ *           │   ├─ divider
+ *           │   └─ summary rows (subgrid)
+ *           ├─ ContextBreakdownBody (Context) — gauge + legend grid
+ *           └─ state-log scroller (state changes) — 5-col grid
  *
  * `data-popover-kind` on the frame root selects width/padding
  * variants for the three popover families (default narrow row-log,
@@ -71,13 +76,6 @@
   margin-bottom: 8px;
 }
 
-/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.tide-popover-frame-footer {
-  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  margin-top: 6px;
-  padding-top: 6px;
-}
-
 /* ============================================================================
    Empty body
    ========================================================================= */
@@ -90,14 +88,57 @@
 }
 
 /* ============================================================================
-   Row primitive (Time / Tokens)
+   Shared row-grid (Time / Tokens)
+   ============================================================================
+   One outer grid spans both the scrolling row list AND the summary
+   footer; both use `subgrid` to inherit columns from the outer
+   grid. The three columns (label / annotation / value) therefore
+   size to the widest content across EVERY row in the popover —
+   row-list edges and summary edges align end-to-end.
+
+   The scroller wrapper caps the row-list height at the shared
+   10-row visible height; the summary rows below the divider are
+   always visible.
    ========================================================================= */
 
-.tide-popover-row {
+.tide-popover-row-grid {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  column-gap: var(--tug-space-md);
+  grid-template-columns: max-content max-content auto;
+  row-gap: 0;
+}
+
+.tide-popover-row-grid-scroller {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  /* Shared 10-row visible cap × ~22px per row at this font size. */
+  max-height: calc(10 * 22px);
+  overflow-y: auto;
+  /* Breathing room between the scrollbar gutter and the right-most
+     column so value digits never sit flush against the thumb. */
+  padding-right: 12px;
+}
+
+.tide-popover-row-grid-empty {
+  grid-column: 1 / -1;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-row-grid-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-block: 6px;
+}
+
+/* Each row is a subgrid spanning the three columns; the grid cells
+   below pick up the parent's tracks via `grid-template-columns:
+   subgrid`. */
+.tide-popover-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: baseline;
+  column-gap: var(--tug-space-md);
   padding-block: 2px;
 }
 
@@ -120,15 +161,6 @@
   color: var(--tug7-element-global-text-normal-default-rest);
   font-weight: 600;
   text-align: right;
-}
-
-.tide-popover-row-scroller {
-  /* Shared 10-row visible cap × ~22px per row at this font size. */
-  max-height: calc(10 * 22px);
-  overflow-y: auto;
-  /* Breathing room between the scrollbar gutter and the right-most
-     column so value digits never sit flush against the thumb. */
-  padding-right: 12px;
 }
 
 /* ============================================================================

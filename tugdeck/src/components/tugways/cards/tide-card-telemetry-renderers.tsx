@@ -517,7 +517,6 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   );
   const contextPopover = (
     <ContextPopoverContent
-      transcript={snap.transcript}
       contextMax={contextMax}
       lastContextBreakdown={snap.lastContextBreakdown}
     />
@@ -526,89 +525,102 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
     <StateChangeLogPopoverContent rows={stateChangeSnap.rows} />
   );
 
+  // Flat 4-item flex row — indicator slot + three cells as direct
+  // siblings. The row's `justify-content: space-between` (declared
+  // in CSS) distributes them edge-to-edge with the row's `gap`
+  // serving as the *minimum* inter-item spacing; all four
+  // inter-item gaps flex uniformly with the host width. The
+  // indicator slot is pinned to a fixed width
+  // (`--tugx-tide-status-indicator-slot-width`, 220px) sized for
+  // the longest `PHASE_HUMAN_LABEL` ("Awaiting first response")
+  // so the cells' horizontal positions stay rock-stable across
+  // label-text changes.
   return (
     <div
       className="tide-telemetry-status-row"
       data-slot="tide-telemetry-status-row"
     >
+      <span
+        className="tide-telemetry-status-indicator-slot"
+        data-slot="tide-telemetry-status-indicator-slot"
+      >
+        <TugPopover>
+          <TugPopoverTrigger>
+            <span
+              className="tide-telemetry-status-anchor"
+              data-slot="tide-telemetry-status-indicator-anchor"
+              data-priority="indicator"
+            >
+              <TugStateIndicator state={indicatorState} size={16} />
+            </span>
+          </TugPopoverTrigger>
+          <TugPopoverContent side="top" align="start" sideOffset={8} arrow>
+            {indicatorPopover}
+          </TugPopoverContent>
+        </TugPopover>
+      </span>
       <TugPopover>
         <TugPopoverTrigger>
           <span
-            className="tide-telemetry-status-anchor"
-            data-slot="tide-telemetry-status-indicator-anchor"
-            data-priority="indicator"
+            className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+            data-priority="time"
           >
-            <TugStateIndicator state={indicatorState} size={16} />
+            <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
+            <span className="tide-telemetry-status-value-wrap">
+              <span className="tide-telemetry-status-value">
+                {formatTimeAlwaysHours(perTurnActiveMs)}
+              </span>
+            </span>
           </span>
         </TugPopoverTrigger>
-        <TugPopoverContent side="top" align="start" sideOffset={8} arrow>
-          {indicatorPopover}
+        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+          {timePopover}
         </TugPopoverContent>
       </TugPopover>
-      <div className="tide-telemetry-status-cells">
-        <TugPopover>
-          <TugPopoverTrigger>
-            <span
-              className="tide-telemetry-status-cell tide-telemetry-status-anchor"
-              data-priority="time"
-            >
-              <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
-              <span className="tide-telemetry-status-value-wrap">
-                <span className="tide-telemetry-status-value">
-                  {formatTimeAlwaysHours(perTurnActiveMs)}
+      <TugPopover>
+        <TugPopoverTrigger>
+          <span
+            className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+            data-priority="tokens"
+          >
+            <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
+            <span className="tide-telemetry-status-value-wrap">
+              <span className="tide-telemetry-status-value">
+                {formatTokensCaps(perTurnTokens)}
+              </span>
+            </span>
+          </span>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+          {tokensPopover}
+        </TugPopoverContent>
+      </TugPopover>
+      <TugPopover>
+        <TugPopoverTrigger>
+          <span
+            className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+            data-priority="context"
+          >
+            <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
+            <span className="tide-telemetry-status-value-wrap">
+              <span
+                className="tide-telemetry-status-value tide-telemetry-status-value-context"
+                data-context-threshold={contextThreshold}
+              >
+                <span className="tide-telemetry-status-context-numerator">
+                  {formatTokensCaps(perTurnContextTokens)}
+                </span>
+                <span className="tide-telemetry-status-context-denominator">
+                  {` / ${formatTokensCaps(contextMax)}`}
                 </span>
               </span>
             </span>
-          </TugPopoverTrigger>
-          <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-            {timePopover}
-          </TugPopoverContent>
-        </TugPopover>
-        <TugPopover>
-          <TugPopoverTrigger>
-            <span
-              className="tide-telemetry-status-cell tide-telemetry-status-anchor"
-              data-priority="tokens"
-            >
-              <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
-              <span className="tide-telemetry-status-value-wrap">
-                <span className="tide-telemetry-status-value">
-                  {formatTokensCaps(perTurnTokens)}
-                </span>
-              </span>
-            </span>
-          </TugPopoverTrigger>
-          <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-            {tokensPopover}
-          </TugPopoverContent>
-        </TugPopover>
-        <TugPopover>
-          <TugPopoverTrigger>
-            <span
-              className="tide-telemetry-status-cell tide-telemetry-status-anchor"
-              data-priority="context"
-            >
-              <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
-              <span className="tide-telemetry-status-value-wrap">
-                <span
-                  className="tide-telemetry-status-value tide-telemetry-status-value-context"
-                  data-context-threshold={contextThreshold}
-                >
-                  <span className="tide-telemetry-status-context-numerator">
-                    {formatTokensCaps(perTurnContextTokens)}
-                  </span>
-                  <span className="tide-telemetry-status-context-denominator">
-                    {` / ${formatTokensCaps(contextMax)}`}
-                  </span>
-                </span>
-              </span>
-            </span>
-          </TugPopoverTrigger>
-          <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
-            {contextPopover}
-          </TugPopoverContent>
-        </TugPopover>
-      </div>
+          </span>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+          {contextPopover}
+        </TugPopoverContent>
+      </TugPopover>
     </div>
   );
 };

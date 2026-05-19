@@ -70,9 +70,8 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Check, Copy } from "lucide-react";
-
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { HighlightSelectionAdapter, type TextSelectionAdapter } from "@/components/tugways/text-selection-adapter";
 import {
   TugListView,
@@ -86,7 +85,6 @@ import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transc
 import { TideAsstHalfZ1B } from "@/components/tugways/cards/tide-card-asst-half-stack";
 import { dispatch as dispatchRenderInput } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
@@ -387,10 +385,6 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
   const timestamp = submitAt !== undefined
     ? formatTranscriptTimestamp(submitAt)
     : undefined;
-  const handleCopyButton = useCallback(() => {
-    if (text.length === 0) return;
-    void navigator.clipboard?.writeText(text);
-  }, [text]);
   const hasBody = text.length > 0;
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
@@ -429,18 +423,10 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
             showControls ? (
               <>
                 {hasBody ? (
-                  <TugPushButton
-                    subtype="icon"
-                    emphasis="ghost"
-                    role="action"
-                    size="sm"
-                    icon={<Copy size={12} />}
-                    confirmation={{
-                      icon: <Check size={12} />,
-                      ariaLabel: "Copied",
-                    }}
-                    aria-label="Copy"
-                    onClick={handleCopyButton}
+                  <BlockCopyButton
+                    data-slot="tide-card-transcript-user-copy"
+                    getText={() => text}
+                    aria-label="Copy message"
                   />
                 ) : null}
                 {hasTrailing ? trailing : null}
@@ -520,16 +506,6 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   const assistantText = turn?.assistant ?? "";
   const timestamp =
     turn !== undefined ? formatTranscriptTimestamp(turn.endedAt) : undefined;
-  // Session phase drives the Z1B status row's live ↔ terminal
-  // dispatch. Subscribing here keeps every code cell consistent
-  // with the rest of the row's external-state reads ([L02]).
-  const phase = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () => codeSessionStore.getSnapshot().phase,
-      [codeSessionStore],
-    ),
-  );
 
   // Permission slot — built from committed `turn.controlRequests` when
   // the cell is past `turn_complete`, otherwise from the live
@@ -687,7 +663,6 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
               return (
                 <>
                   <TideAsstHalfZ1B
-                    phase={phase}
                     turn={turn}
                     bodyText={isCommitted ? assistantText : undefined}
                   />

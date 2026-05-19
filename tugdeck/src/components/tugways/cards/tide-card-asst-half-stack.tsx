@@ -16,35 +16,43 @@
  *     [body — streaming assistant content]
  *     [Z1B — status / end-state + copy]      ← THIS COMPONENT
  *
- * **Mode dispatch.** When `isLivePhase(phase)` is true the slot
- * paints a `TugThinkingIndicator` (animating, label-hidden) — the
- * canonical "agent is working on this turn" signal. When the phase
- * is terminal AND an `endState` is supplied, the slot swaps to
- * `EndStateDisplay`: a tone-coded ghost-emphasis badge with icon,
- * the turn's active-time, a `•` separator, and the total tokens.
- * Terminal phases without an `endState` (e.g., a turn that lived
- * across a wire restart and is missing telemetry) render nothing
- * but still hold the slot div mounted — preserving the per-row
- * mount-identity contract below.
+ * **Mode dispatch — purely per-row.** The component takes one
+ * data-driving prop: `turn`. The data source's invariant is "a row
+ * with `turn === undefined` is the (single) in-flight row; a row
+ * with `turn !== undefined` is a committed row." Z1B dispatches
+ * directly on that:
+ *
+ *  - `turn !== undefined` → committed row → `EndStateDisplay`
+ *    (tone-coded ghost badge + active-time + total tokens).
+ *  - `turn === undefined` → in-flight row → `TugThinkingIndicator`
+ *    (animating, label-hidden).
+ *
+ * The session `phase` is deliberately NOT an input here. Phase is
+ * a session-wide signal; using it would force every assistant row
+ * in the transcript to re-derive "is this the in-flight row?"
+ * (the only one phase actually applies to). The data source has
+ * already encoded that distinction at the row level, so the
+ * component reads it straight off `row.turn`.
  *
  * **Mount-identity discipline ([L26]).** Z1B is a single always-
  * mounted `<div data-slot="tide-asst-half-z1b">` whose CHILD swaps
- * between the in-flight indicator, the end-state display, and an
- * empty render. The slot div itself is never unmounted at the
- * turn boundary — so any focus / hover / scroll-position state the
- * assistant row carries survives the indicator → end-state
- * transition.
+ * exactly once per row when `turn` lands. The slot div itself is
+ * never unmounted at the turn boundary — so any focus / hover
+ * state the assistant row carries survives the indicator →
+ * end-state transition. `CodeRowCell` is keyed by stable
+ * `turnKey` (byte-identical pre/post commit), so the cell wrapper
+ * survives the same transition; this component inherits that
+ * contract.
  *
- * **Trailing copy button.** When the phase is terminal, an
- * `endState` exists, and `bodyText` is non-empty, the row's
- * trailing edge renders a `BlockCopyButton` whose `getText`
- * returns `bodyText`. Suppressed for live phases (nothing to
- * copy yet) and for empty-body terminal scenarios.
+ * **Trailing copy button.** When `turn` is defined and `bodyText`
+ * is non-empty, the row's trailing edge renders a `BlockCopyButton`
+ * whose `getText` returns `bodyText`. Suppressed for in-flight
+ * rows (nothing to copy yet) and for empty-body committed rows.
  *
  * Conformance:
- *  - [L02] external state — `phase` is read by the caller (the
- *    transcript cell) via `useSyncExternalStore` and threaded down
- *    as a prop. This component is a pure function of inputs.
+ *  - [L02] no external-state reads — the component is a pure
+ *    function of `turn` + `bodyText`. The caller has already
+ *    subscribed to the data source.
  *  - [L06] all appearance state flows through CSS classes /
  *    `data-mode` attribute. No inline style for appearance.
  *  - [L19] file pair with the component; `data-slot` anchors on
@@ -70,9 +78,7 @@ import {
   endStateBadgeFor,
   totalTokensForTurn,
 } from "@/lib/code-session-store/end-state";
-import { isLivePhase } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
 import type {
-  CodeSessionPhase,
   TurnEntry,
   TurnEndReason,
 } from "@/lib/code-session-store/types";
@@ -88,23 +94,19 @@ import {
 
 export interface TideAsstHalfZ1BProps {
   /**
-   * The session phase, threaded down from the cell's
-   * `useSyncExternalStore` subscription to `CodeSessionStore`.
-   * Drives the live vs terminal branch via {@link isLivePhase}.
-   */
-  phase: CodeSessionPhase;
-  /**
-   * The committed turn entry, if any. Populated post-`turn_complete`;
-   * `undefined` for in-flight rows. Required for the end-state
-   * display (the badge + numbers read off this).
+   * The committed turn entry for this row, if any. `undefined` for
+   * the in-flight row (the single row the data source emits while
+   * a turn is mid-stream); populated post-`turn_complete` for every
+   * committed row. The presence of this field is the SOLE driver
+   * of the live ↔ terminal mode dispatch — see module docstring.
    */
   turn?: TurnEntry;
   /**
    * Plain-text source for the copy-button affordance. When non-
-   * empty AND the phase is terminal AND `turn` is defined, the
-   * row's trailing edge renders a `BlockCopyButton` whose
-   * `getText` returns this string. Suppressed for live phases
-   * (nothing to copy yet) and for empty-body terminal scenarios.
+   * empty AND `turn` is defined, the row's trailing edge renders
+   * a `BlockCopyButton` whose `getText` returns this string.
+   * Suppressed for in-flight rows (nothing to copy yet) and for
+   * empty-body committed rows.
    */
   bodyText?: string;
 }
@@ -119,25 +121,20 @@ export interface TideAsstHalfZ1BProps {
  * and conformance notes.
  */
 export const TideAsstHalfZ1B: React.FC<TideAsstHalfZ1BProps> = ({
-  phase,
   turn,
   bodyText,
 }) => {
-  const live = isLivePhase(phase);
-  const hasEndState = !live && turn !== undefined;
+  // Per-row mode dispatch. `turn !== undefined` is the data
+  // source's "this row is committed" signal; the absence of a
+  // turn is the data source's "this row is the in-flight row."
+  // No session-wide signal is consulted — every other row in the
+  // transcript independently lands in `terminal` because each of
+  // them has its own committed `TurnEntry`.
+  const hasEndState = turn !== undefined;
+  const mode: "live" | "terminal" = hasEndState ? "terminal" : "live";
   const showCopy =
     hasEndState && bodyText !== undefined && bodyText.length > 0;
   const bodyTextForCopy = bodyText ?? "";
-
-  // `data-mode` is the only dispatch the parent CSS needs: `live`
-  // for the indicator branch, `terminal` for the end-state branch,
-  // `idle` for the always-mounted-but-empty fallback. The slot div
-  // itself is unconditionally mounted ([L26]).
-  const mode: "live" | "terminal" | "idle" = live
-    ? "live"
-    : hasEndState
-      ? "terminal"
-      : "idle";
 
   return (
     <div
@@ -145,11 +142,11 @@ export const TideAsstHalfZ1B: React.FC<TideAsstHalfZ1BProps> = ({
       data-slot="tide-asst-half-z1b"
       data-mode={mode}
     >
-      {live ? (
+      {hasEndState ? (
+        <EndStateDisplay turn={turn} />
+      ) : (
         <TugThinkingIndicator animating={true} labelPosition="hidden" />
-      ) : hasEndState ? (
-        <EndStateDisplay turn={turn!} />
-      ) : null}
+      )}
       {showCopy ? (
         <>
           <TugLabel
