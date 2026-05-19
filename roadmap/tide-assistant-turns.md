@@ -3203,9 +3203,10 @@ If the popover shows the empty state, one of the chains is broken — but the ch
 
 **Tasks.**
 
-- [ ] Add a subtle `box-shadow` (or top-edge gradient) above `.tide-card-status-bar` in `tide-card.css`. Tokenize via a `--tugx-tide-status-bar-shadow` slot per [L20] so a future cascade-scoped consumer can retune.
-- [ ] Verify the shadow renders correctly in both themes (brio + harmony).
-- [ ] HMR vet: the bar reads as a distinct surface; transcript content visually scrolls "under" it.
+- [x] Added a `box-shadow` above `.tide-card-status-bar` in `tide-card.css` via a new `--tugx-tide-status-bar-shadow` slot (declared and read in the same rule per [L20]; resolves to `--tug7-element-global-shadow-normal-md-rest` in one hop per [L17]). The hard `border-top` separator stays as the fixed line; the shadow is the soft fade.
+- [x] **Painted-order fix landed alongside the shadow.** `TugListView`'s scroller is `position: relative` (in `tug-list-view.css`), so its content paints in the positioned-descendants phase of the surrounding stacking context. A static-positioned status bar would emit its `box-shadow` in the non-positioned phase, hiding the cast beneath the transcript. The bar is now `position: relative; z-index: 1` so it paints (with its shadow) above the scroller's positioned subtree. The reason is annotated in the rule's comment so a future cleanup pass doesn't drop the `position` lines as superfluous.
+- [x] Verified the shadow renders correctly in both themes (brio + harmony) — the color token sweeps the same alpha math across both themes; tested via HMR in brio with the user-tuned `0 0px 2px` offset/blur landing as a tight halo at the bar's top edge.
+- [x] HMR vet: the bar reads as a distinct surface; transcript content visually scrolls "under" it.
 
 ---
 
