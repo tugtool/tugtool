@@ -313,7 +313,26 @@
 
 /* ============================================================================
    Ghost emphasis
+
+   Ghost badges paint NO visible chrome — both background and
+   border resolve to transparent tokens. The padding-inline and
+   1px border the other emphases need for visual breathing room
+   would, on a ghost badge, manifest as dead layout space —
+   the icon + text would visually indent away from the badge's
+   layout edges with no corresponding visible chrome to justify
+   the inset. Zero them out so a ghost badge's content sits
+   flush with its layout edges, matching adjacent non-badge
+   inline content (icons, text labels).
+
+   `data-emphasis="ghost"` is set by the TugBadge component on
+   the root span; pairing the attribute with `.tug-badge`
+   keeps the override scoped to the badge primitive.
    ========================================================================= */
+
+.tug-badge[data-emphasis="ghost"] {
+  padding-inline: 0;
+  border-width: 0;
+}
 
 /* --- ghost-accent --- */
 

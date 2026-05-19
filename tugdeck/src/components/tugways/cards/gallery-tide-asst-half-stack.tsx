@@ -7,19 +7,33 @@
  * `tide-card-transcript.tsx`'s assistant row (per Step 20.5.D's
  * promotion).
  *
- * The chrome is a two-line stack:
+ * The chrome is a two-row stack with body content between (Option
+ * B layout):
  *
- *     [model name]                        ← persistent (model row, top)
- *     [status: indicator OR end-state]    ← in-flight OR terminal (status row, bottom)
+ *     [model name]  [timestamp]              ← Z1A (top, persistent)
  *
- * **Mount-identity discipline ([L26]).** The status row is a single
- * always-mounted `<div data-slot="tide-asst-half-status-slot">`
- * whose CHILD swaps between the in-flight indicator and the
- * end-state display. The slot div itself is never unmounted at the
- * turn boundary — so any focus / hover / scroll-position state the
+ *     [body — streaming assistant content
+ *      flows here and grows downward]
+ *
+ *     [status OR end-state]      [copy]      ← Z1B (bottom, mode-dependent)
+ *
+ * **Z1A** holds the model name + timestamp; both fields are
+ * persistent across the turn lifecycle. **Z1B** hosts the live
+ * three-bar indicator while a turn is in flight, then swaps to
+ * the end-state display (badge + active-time + tokens) once the
+ * turn lands on a terminal phase. A trailing copy button appears
+ * on Z1B's right edge when an `endState` and `onCopy` handler are
+ * both supplied — the production analog of the copy-body action
+ * currently surfaced via `TugTranscriptEntry`'s `controls` slot.
+ *
+ * **Mount-identity discipline ([L26]).** Z1B is a single always-
+ * mounted `<div data-slot="tide-asst-half-z1b">` whose CHILD
+ * swaps between the in-flight indicator and the end-state
+ * display. The slot div itself is never unmounted at the turn
+ * boundary — so any focus / hover / scroll-position state the
  * assistant row carries survives the indicator → end-state
- * transition. The data attribute lets tests + tooling pin the
- * boundary by selector.
+ * transition. Z1A carries its own `data-slot="tide-asst-half-z1a"`
+ * anchor so tests + tooling can pin both rows by selector.
  *
  * **End-state slot.** Renders `EndStateDisplay` ([Step 20.4.13])
  * when the consumer supplies an `endState`: a ghost-emphasis,
@@ -65,8 +79,7 @@ import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugThinkingIndicator } from "@/components/tugways/tug-thinking-indicator";
-import { PHASE_HUMAN_LABEL } from "@/components/tugways/tug-state-indicator";
-import { TugBadge } from "@/components/tugways/tug-badge";
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { isLivePhase } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
@@ -79,6 +92,7 @@ import {
   endStateBadgeFor,
   totalTokensForTurn,
 } from "@/lib/code-session-store/end-state";
+import { TugBadge } from "@/components/tugways/tug-badge";
 import {
   formatDurationMs,
   formatTokensCaps,
@@ -93,6 +107,77 @@ const MONO = "var(--tug-font-mono, monospace)";
 const TEXT_MUTED = "var(--tug7-element-global-text-normal-muted-rest)";
 const TEXT_NORMAL = "var(--tug7-element-global-text-normal-default-rest)";
 
+// ---------------------------------------------------------------------------
+// Z1B layout tunables — adjust these directly to iterate the spacing
+// + alignment of the badge / separators / COPY button. Every consumer
+// of these numbers lives in this file, so a change here re-flows
+// the whole Z1B chrome on the next HMR tick.
+// ---------------------------------------------------------------------------
+
+/**
+ * Base inter-item gap (px) inside `EndStateDisplay`. Applies between
+ * EVERY pair of adjacent items: badge → `::` → time → `•` → tokens.
+ * The flex container's `gap` realises this uniformly.
+ *
+ * Bump this to push every item further from its neighbors; reduce
+ * to tighten the row.
+ */
+const Z1B_INNER_GAP_PX = 6;
+
+/**
+ * Extra horizontal margin (px) on each side of the `::` separators
+ * — added ON TOP of `Z1B_INNER_GAP_PX`. Lets the double-colons
+ * breathe a bit more than the `•` separator without changing the
+ * row's overall gap.
+ *
+ * Set to `0` to make every separator's spacing match `Z1B_INNER_GAP_PX`
+ * exactly. Positive values push the `::` further from its neighbors
+ * (effective gap around `::` = `Z1B_INNER_GAP_PX + SEP_EXTRA_MARGIN_PX`
+ * on each side).
+ */
+const Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX = 8;
+
+/**
+ * Base inter-item gap (px) on the outer Z1B row (between
+ * `EndStateDisplay`, the trailing `::`, and `BlockCopyButton`).
+ * Mirrors `Z1B_INNER_GAP_PX` by default so the outer row reads
+ * with the same rhythm as the inner end-state row.
+ */
+const Z1B_OUTER_GAP_PX = 8;
+
+/**
+ * Vertical nudge (px) applied to the trailing COPY button so its
+ * text baseline lines up with the badge / time / tokens text.
+ * Negative values shift the button UP; positive shift DOWN.
+ *
+ * The COPY button (TugPushButton size=2xs, 20px tall) is shorter
+ * than the badge (TugBadge size=md, 24px tall). With
+ * `alignItems: center` the COPY's text-middle sits ~2px below the
+ * badge's text-middle (the badge's text is offset upward by its
+ * larger padding+border allowance). A small negative `translateY`
+ * pulls COPY back onto the row's baseline.
+ *
+ * Tune by eyeball until COPY's "COPY" letters share a baseline
+ * with the badge's "OK" letters.
+ */
+const Z1B_COPY_BASELINE_NUDGE_PX = 0.25;
+
+/**
+ * Horizontal nudge (px) applied to the trailing COPY button's
+ * left edge. Negative values pull COPY CLOSER to the trailing
+ * `::` separator; positive values push it further away.
+ *
+ * Operates independently of `Z1B_OUTER_GAP_PX` and
+ * `Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX` so the gap between
+ * `EndStateDisplay` and the `::` stays fixed while only COPY's
+ * proximity to `::` is adjusted.
+ *
+ * The effective COPY-to-`::` gap = `Z1B_OUTER_GAP_PX +
+ * Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX + Z1B_COPY_LEFT_NUDGE_PX`.
+ * Set negative to tighten; positive to loosen.
+ */
+const Z1B_COPY_LEFT_NUDGE_PX = -14;
+
 /**
  * Sample model name displayed in the model row. Mirrors the literal
  * Anthropic identifier the SessionMetadataStore reports (the
@@ -100,6 +185,15 @@ const TEXT_NORMAL = "var(--tug7-element-global-text-normal-default-rest)";
  * design accounts for the worst-case width).
  */
 const SAMPLE_MODEL_NAME = "claude-opus-4-7[1m]";
+
+/**
+ * Sample timestamp displayed in Z1A alongside the model name.
+ * Mirrors the format `formatTranscriptTimestamp` produces in
+ * production. Hard-coded here so the gallery rendering is stable
+ * across mounts (a live `Date.now()` would shift the value on
+ * every render and obscure visual regressions).
+ */
+const SAMPLE_TIMESTAMP = "12:34:56";
 
 /**
  * Phases that count as "in-flight" for the gallery picker. Pulled
@@ -154,104 +248,203 @@ export interface Z1AsstHalfEndState {
 
 function Z1AsstHalfStack({
   modelName,
+  timestamp = SAMPLE_TIMESTAMP,
   phase,
   endState,
+  body,
+  bodyText,
 }: {
   modelName: string;
+  /**
+   * Timestamp text rendered in Z1A alongside the model name. In
+   * production this is `formatTranscriptTimestamp(turn.endedAt)`.
+   * The gallery defaults to `SAMPLE_TIMESTAMP` so most callsites
+   * don't need to repeat it.
+   */
+  timestamp?: string;
   phase: CodeSessionPhase;
   /**
-   * Post-turn data for the end-state slot. When the phase is
-   * terminal AND this is provided, the status slot renders
-   * `EndStateDisplay`. When the phase is terminal and this is
-   * absent, the slot falls back to a small muted "no end-state
-   * recorded" line so existing gallery sections that don't carry
-   * a completed-turn fixture still render meaningful chrome.
+   * Post-turn data for Z1B. When the phase is terminal AND this
+   * is provided, Z1B renders `EndStateDisplay`. When the phase is
+   * terminal and this is absent, Z1B falls back to a small muted
+   * "no end-state recorded" line so existing gallery sections
+   * that don't carry a completed-turn fixture still render
+   * meaningful chrome.
    */
   endState?: Z1AsstHalfEndState;
+  /**
+   * Body content rendered BETWEEN Z1A (model + timestamp) and Z1B
+   * (status / end-state + copy). In production this hosts the
+   * streaming markdown / thinking / tool-calls content; in the
+   * gallery it's a static paragraph.
+   */
+  body?: React.ReactNode;
+  /**
+   * Plain-text source for the copy-button affordance. When non-
+   * empty AND the phase is terminal AND an `endState` exists,
+   * Z1B's trailing slot renders a `BlockCopyButton` whose
+   * `getText` returns this string. The button reuses the same
+   * affordance the block renderers use (`FileBlock`,
+   * `DiffBlock`, etc.) so the rest/confirm flash + width
+   * stabilization match the rest of the chrome library.
+   * Suppressed for live phases (nothing to copy yet) and for
+   * empty-end-state terminal scenarios.
+   */
+  bodyText?: string;
 }): React.ReactElement {
   const live = isLivePhase(phase);
+  const hasBody = body !== undefined && body !== null;
+  const showCopy =
+    !live &&
+    endState !== undefined &&
+    bodyText !== undefined &&
+    bodyText.length > 0;
+  const bodyTextForCopy = bodyText ?? "";
   return (
     <div
       data-slot="tide-asst-half-stack"
       style={{
         display: "flex",
         flexDirection: "column",
-        // Tight vertical rhythm — the two rows must read as one
-        // coherent unit, not two stacked details. The
-        // `--tug-space-2xs` (~2px) gap keeps them tight enough to
-        // feel paired while leaving a discernible separation.
-        gap: "var(--tug-space-2xs, 2px)",
-        // Bound the stack at the model name's natural width so the
-        // status row's right edge never extends past the model
-        // name (visual anchor — the model name reads as the
-        // header). The gallery's column container is wider; this
-        // `inline-flex` collapses to content width.
-        alignItems: "flex-start",
+        // Wider gap when a body is present so Z1B reads as a
+        // footer beneath the content, not as a sibling of Z1A.
+        // Without a body the chrome collapses to a tight
+        // label-pair (Z1A directly atop Z1B).
+        gap: hasBody
+          ? "var(--tug-space-md, 12px)"
+          : "var(--tug-space-2xs, 2px)",
+        // With a body, stretch so the body content can fill the
+        // available reading column; without one, collapse to the
+        // model name's natural width.
+        alignItems: hasBody ? "stretch" : "flex-start",
       }}
     >
+      {/*
+        Z1A — model + timestamp.
+        The bold model name carries the row; the timestamp sits
+        beside it in a muted weight so the model name reads as
+        the primary identifier. Both fields render in `MONO` at
+        `--tug-font-size-sm` so Z1A and Z1B share typographic
+        rhythm.
+      */}
       <div
-        data-slot="tide-asst-half-model-row"
+        data-slot="tide-asst-half-z1a"
         style={{
+          display: "inline-flex",
+          alignItems: "baseline",
+          gap: "var(--tug-space-sm, 6px)",
           fontFamily: MONO,
-          // Match the status row's `--tug-font-size-sm` (13px) so the
-          // two rows read as a coherent label-pair, not a sized
-          // hierarchy. The bold weight alone gives the model row
-          // its prominence — sizing it up further (the earlier
-          // `--tug-font-size-lg` matched the production transcript
-          // identifier but read as oversized here because that
-          // identifier sits next to an icon + timestamp + sequence
-          // number in production, whereas the stack chrome is
-          // standalone).
           fontSize: "var(--tug-font-size-sm)",
-          fontWeight: 600,
-          color: TEXT_NORMAL,
           lineHeight: 1.2,
           whiteSpace: "nowrap",
         }}
       >
-        {modelName}
+        <span style={{ color: TEXT_NORMAL, fontWeight: 600 }}>
+          {modelName}
+        </span>
+        <span
+          data-slot="tide-asst-half-z1a-timestamp"
+          style={{
+            color: TEXT_MUTED,
+            fontSize: "var(--tug-font-size-xs)",
+          }}
+        >
+          {timestamp}
+        </span>
       </div>
+      {hasBody ? (
+        <div
+          data-slot="tide-asst-half-body"
+          style={{
+            color: TEXT_NORMAL,
+            fontSize: "var(--tug-font-size-sm)",
+            lineHeight: 1.5,
+          }}
+        >
+          {body}
+        </div>
+      ) : null}
       {/*
-        The status-row slot. Single always-mounted div per [L26];
-        the child swaps but the container does not. Tooling can
-        observe `data-slot="tide-asst-half-status-slot"` to verify
-        the boundary survives the swap.
+        Z1B — status row. Single always-mounted div per [L26];
+        the child swaps (indicator ↔ end-state ↔ placeholder)
+        but the container does not. Tooling can observe
+        `data-slot="tide-asst-half-z1b"` to verify the boundary
+        survives the swap.
+
+        Layout: leading content (indicator OR end-state OR
+        placeholder) left-aligned; optional trailing copy button
+        pushed to the row's right edge via `margin-left: auto`.
       */}
       <div
-        data-slot="tide-asst-half-status-slot"
+        data-slot="tide-asst-half-z1b"
         style={{
           display: "flex",
+          // Center alignment puts each item's vertical-middle on
+          // the same row-middle line. With the inline badge (no
+          // fixed height), every item shares the same effective
+          // text-line height, so center alignment also lands all
+          // text baselines on the same y.
           alignItems: "center",
-          // Status row sits a hair indented from the model row's
-          // baseline glyph so the visual hierarchy reads
-          // top-anchored — "model" first, "status" second.
+          // Uniform 2px left indent across both Z1B variants —
+          // the indicator and the inline end-state badge both
+          // shift 2px right relative to Z1A above. The same
+          // padding applies to both variants so the indicator
+          // and end-state share the same horizontal start.
+          paddingLeft: 2,
+          // End-states only: pull Z1B up by 2px so the row sits
+          // tighter under the body. The live variant keeps its
+          // natural rhythm (the indicator's pulse looks better
+          // with a hair more space above it).
+          marginTop:
+            !live && endState !== undefined ? -2 : 0,
           minHeight: "var(--tug-space-xl, 20px)",
+          width: "100%",
+          // Outer-row gap. Tunable via `Z1B_OUTER_GAP_PX`.
+          gap: Z1B_OUTER_GAP_PX,
         }}
       >
         {live ? (
-          // Use defaults for every tunable — `size`,
-          // `barWidthRatio`, `sideBarRatio`, etc. — workshopped in
-          // the TugThinkingIndicator tinker bench to read well in
-          // exactly this context (a label-pair adjacent to small
-          // mono text). Avoid passing overrides so the chrome
-          // stays in lockstep with the indicator's defaults.
-          //
-          // The label reflects the actual phase via
-          // `PHASE_HUMAN_LABEL` (the same map TugStateIndicator
-          // reads) so "submitting" reads as "Submitting message",
-          // "streaming" as "Streaming response", etc. — the
-          // generic "Thinking…" default would understate what the
-          // assistant is actually doing.
-          <TugThinkingIndicator
-            animating={true}
-            labelPosition="right"
-            label={PHASE_HUMAN_LABEL[phase]}
-          />
+          <TugThinkingIndicator animating={true} labelPosition="hidden" />
         ) : endState !== undefined ? (
           <EndStateDisplay endState={endState} />
         ) : (
           <EndStatePlaceholder />
         )}
+        {showCopy ? (
+          <>
+            <TugLabel
+              size="xs"
+              color="muted"
+              aria-hidden
+              style={{ marginInline: Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX }}
+            >
+              ::
+            </TugLabel>
+            <span
+              style={{
+                // Per-button vertical nudge so COPY's text
+                // baseline lines up with the badge / time /
+                // tokens text. Tunable via
+                // `Z1B_COPY_BASELINE_NUDGE_PX`. Negative =
+                // shift up; positive = shift down.
+                transform: `translateY(${Z1B_COPY_BASELINE_NUDGE_PX}px)`,
+                // Per-button horizontal nudge so COPY can sit
+                // closer to the trailing `::` than the row's
+                // base gap would put it. Tunable via
+                // `Z1B_COPY_LEFT_NUDGE_PX`. Negative = pull
+                // closer; positive = push further.
+                marginLeft: Z1B_COPY_LEFT_NUDGE_PX,
+                display: "inline-flex",
+              }}
+            >
+              <BlockCopyButton
+                data-slot="tide-asst-half-copy"
+                getText={() => bodyTextForCopy}
+                aria-label="Copy response"
+              />
+            </span>
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -265,15 +458,18 @@ function Z1AsstHalfStack({
  * at `size="sm"`.
  */
 function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
+  // Icon size 13 tracks the `md` badge's natural icon dimensions
+  // a hair larger so the glyph reads as the badge's anchor next
+  // to the slightly bigger label text.
   switch (reason) {
     case "complete":
-      return <Check size={11} aria-hidden="true" />;
+      return <Check size={13} aria-hidden="true" />;
     case "interrupted":
-      return <ShieldAlert size={11} aria-hidden="true" />;
+      return <ShieldAlert size={13} aria-hidden="true" />;
     case "error":
-      return <ShieldX size={11} aria-hidden="true" />;
+      return <ShieldX size={13} aria-hidden="true" />;
     case "transport_lost":
-      return <Unplug size={11} aria-hidden="true" />;
+      return <Unplug size={13} aria-hidden="true" />;
   }
 }
 
@@ -305,39 +501,51 @@ function EndStateDisplay({
 }): React.ReactElement {
   const badge = endStateBadgeFor(endState.turnEndReason);
   const tokens = totalTokensForTurn(endState.cost);
+  // Style for the `::` separators — base color + an extra
+  // horizontal margin on each side (tunable via
+  // `Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX`). The flex container's
+  // `gap` provides the base spacing; this margin adds to that
+  // for the `::` only, leaving the `•` at the base gap.
+  const doubleColonStyle: React.CSSProperties = {
+    marginInline: Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX,
+  };
   return (
     <span
       data-slot="tide-asst-half-end-state"
       style={{
         display: "inline-flex",
+        // Center alignment + matching font-size across every
+        // child (TugBadge size=md uses 11px, TugLabel size=xs
+        // uses 12px — close enough that center-alignment lands
+        // their text-middle within ~0.5px of each other; the
+        // baselines read as one line). Baseline alignment is
+        // wrong here because TugBadge is inline-flex with a
+        // fixed height, and its outer baseline per the CSS spec
+        // is its margin-box bottom rather than its inner text
+        // baseline.
         alignItems: "center",
-        // Gap matches the indicator's label-gap so the end-state's
-        // visual rhythm reads identical to the in-flight chrome.
-        gap: "var(--tug-space-sm, 6px)",
-        fontSize: "var(--tug-font-size-xs)",
-        color: TEXT_NORMAL,
-        lineHeight: 1,
+        // Base inter-item gap. Tunable via `Z1B_INNER_GAP_PX`.
+        gap: Z1B_INNER_GAP_PX,
         whiteSpace: "nowrap",
       }}
     >
       <TugBadge
-        size="sm"
+        size="md"
         emphasis="ghost"
         role={badge.role}
         icon={endStateBadgeIcon(endState.turnEndReason)}
+        iconGap={5}
       >
         {badge.text}
       </TugBadge>
-      <span style={{ color: TEXT_MUTED, paddingRight: 7, }} aria-hidden="true">
+      <TugLabel size="xs" color="muted" aria-hidden style={doubleColonStyle}>
         ::
-      </span>      <span>{formatDurationMs(endState.activeMs)}</span>
-      <span style={{ color: TEXT_MUTED }} aria-hidden="true">
+      </TugLabel>
+      <TugLabel size="xs">{formatDurationMs(endState.activeMs)}</TugLabel>
+      <TugLabel size="xs" color="muted" aria-hidden>
         •
-      </span>
-      <span>
-        {formatTokensCaps(tokens)}
-        <span style={{ color: TEXT_MUTED, marginLeft: "0.25em" }}>tokens</span>
-      </span>
+      </TugLabel>
+      <TugLabel size="xs">{`${formatTokensCaps(tokens)} tokens`}</TugLabel>
     </span>
   );
 }
@@ -383,6 +591,14 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
     },
   });
 
+  // Body content used across every section so each chrome
+  // example renders with representative streaming output above
+  // Z1B. Single source so iterating typography doesn't drift
+  // between sections. Used as both the renderable body and the
+  // copy-button's `getText` source (passed in as `bodyText`).
+  const SAMPLE_BODY =
+    "Sure — to enable tugbank's defaults store you'll want to add the `enableDefaults: true` flag to your `TugcastConfig` and restart the supervisor. The defaults are scoped per domain, so set `domain: \"my-app\"` to keep your keys isolated from other consumers on the same instance.";
+
   const phaseItems: TugPopupButtonItem<string>[] = PICKABLE_PHASES.map(
     (p) => ({
       action: TUG_ACTIONS.SET_VALUE,
@@ -425,6 +641,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
   const END_STATE_FIXTURES: ReadonlyArray<{
     label: string;
     endState: Z1AsstHalfEndState;
+    body: string;
   }> = [
     {
       label: "complete (happy path)",
@@ -439,6 +656,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
           totalCostUsd: 0,
         },
       },
+      body: "Sure — to enable tugbank's defaults store you'll want to add the `enableDefaults: true` flag to your `TugcastConfig` and restart the supervisor. The defaults are scoped per domain, so set `domain: \"my-app\"` to keep your keys isolated from other consumers on the same instance.",
     },
     {
       label: "interrupted (user pressed Stop)",
@@ -453,6 +671,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
           totalCostUsd: 0,
         },
       },
+      body: "Looking at the migration, the first step is to back up your existing config file. Run `cp config.toml config.toml.bak` before",
     },
     {
       label: "error (model / tool failure)",
@@ -467,6 +686,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
           totalCostUsd: 0,
         },
       },
+      body: "Let me check the schema for that table.",
     },
     {
       label: "transport_lost (wire dropped mid-turn)",
@@ -481,6 +701,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
           totalCostUsd: 0,
         },
       },
+      body: "The handshake completes in three stages: first the client sends its capability list, then the server replies with the supported subset and a session token, and finally the client acknowledges by echoing the token back over the same channel. Each stage has its own timeout — the spec calls out 5s, 10s, and 5s respectively — and a failure at any stage falls back to the legacy",
     },
   ];
 
@@ -495,20 +716,21 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
         <div className="cg-section">
           <TugLabel className="cg-section-title">Z1 asst-half — Side-by-side states</TugLabel>
           <TugLabel size="2xs" color="muted">
-            Two-line stack: model name (top, persistent) over the status row
-            (bottom, mode-dependent). The status row's container is mounted
-            once and its content swaps between the live indicator and the
+            Two-row chrome with body content between: Z1A (model + timestamp,
+            top, persistent) over the body and Z1B (status / end-state +
+            copy, bottom, mode-dependent). Z1B's container is mounted once
+            and its content swaps between the live indicator and the
             end-state display per [L26]. The in-flight version shows the
             three-bar pulse driven by `isLivePhase(snap.phase)`; the
             terminal version renders the end-state — a tone-coded badge,
-            active-time, and total tokens — driven by a representative
-            `complete`-status `TurnEntry` fixture.
+            active-time, total tokens, and a trailing copy button — driven
+            by a representative `complete`-status `TurnEntry` fixture.
           </TugLabel>
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
-              gap: 48,
+              gap: 32,
               padding: "16px 0",
             }}
           >
@@ -516,11 +738,15 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                alignItems: "flex-start",
+                alignItems: "stretch",
                 gap: 8,
               }}
             >
-              <Z1AsstHalfStack modelName={SAMPLE_MODEL_NAME} phase="streaming" />
+              <Z1AsstHalfStack
+                modelName={SAMPLE_MODEL_NAME}
+                phase="streaming"
+                body={SAMPLE_BODY}
+              />
               <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>
                 in-flight (streaming)
               </span>
@@ -529,7 +755,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                alignItems: "flex-start",
+                alignItems: "stretch",
                 gap: 8,
               }}
             >
@@ -537,6 +763,8 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
                 modelName={SAMPLE_MODEL_NAME}
                 phase="idle"
                 endState={TRANSITION_SUCCESS_END_STATE}
+                body={SAMPLE_BODY}
+                bodyText={SAMPLE_BODY}
               />
               <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>
                 terminal (idle · complete)
@@ -552,10 +780,13 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
           <TugLabel className="cg-section-title">Z1 asst-half — Live Transition</TugLabel>
           <TugLabel size="2xs" color="muted">
             Toggle the switch to flip the synthetic phase between `streaming`
-            and `idle`. The status-row container
-            (`data-slot="tide-asst-half-status-slot"`) is always mounted —
-            only its child swaps. Inspect via DOM tools to confirm the slot
-            div survives the swap (no parent re-mount).
+            and `idle`. Z1B's container
+            (`data-slot="tide-asst-half-z1b"`) is always mounted — only
+            its child swaps between the live indicator and the end-state
+            display. The copy button appears at the trailing edge only
+            once the turn lands on a terminal phase with an end-state.
+            Inspect via DOM tools to confirm the slot div survives the
+            swap (no parent re-mount).
           </TugLabel>
           <div
             style={{
@@ -563,12 +794,15 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
               flexDirection: "column",
               gap: 12,
               padding: "12px 0",
+              maxWidth: 640,
             }}
           >
             <Z1AsstHalfStack
               modelName={SAMPLE_MODEL_NAME}
               phase={transitionPhase}
               endState={transitionEndState}
+              body={SAMPLE_BODY}
+              bodyText={SAMPLE_BODY}
             />
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               <TugSwitch
@@ -594,9 +828,10 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
             indicator's perspective. Every live phase (submitting,
             awaiting_first_token, streaming, tool_work,
             awaiting_approval, replaying) drives the indicator the same
-            way — the model row above remains stable across them.
-            Terminal phases (idle, errored) surface the end-state
-            placeholder. Use the picker to scrub through the spectrum.
+            way — Z1A above remains stable across them. Terminal phases
+            (idle, errored) surface the end-state placeholder when no
+            `endState` fixture is supplied. Use the picker to scrub
+            through the spectrum.
           </TugLabel>
           <div
             style={{
@@ -604,9 +839,14 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
               flexDirection: "column",
               gap: 12,
               padding: "12px 0",
+              maxWidth: 640,
             }}
           >
-            <Z1AsstHalfStack modelName={SAMPLE_MODEL_NAME} phase={phase} />
+            <Z1AsstHalfStack
+              modelName={SAMPLE_MODEL_NAME}
+              phase={phase}
+              body={SAMPLE_BODY}
+            />
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
               <TugPopupButton
                 label={`phase: ${phase}`}
@@ -624,15 +864,21 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
 
         <TugSeparator />
 
-        {/* ---- Section 4 — End-state coverage ---- */}
+        {/* ---- Section 4 — End-state coverage (Option B layout) ---- */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">Z1 asst-half — End-state Coverage</TugLabel>
+          <TugLabel className="cg-section-title">Z1 asst-half — End-state Coverage (Option B)</TugLabel>
           <TugLabel size="2xs" color="muted">
             The stack rendered for each of the four `TurnEndReason`
-            values with a representative `TurnEntry` fixture per row.
-            Each fixture drives `EndStateDisplay` via the same pure
+            values with a representative `TurnEntry` fixture per
+            row, laid out with the status row BENEATH a body of
+            sample assistant content (Option B). The body sits
+            between the model name (top) and the end-state row
+            (bottom); as text streams in during a real turn it
+            would grow downward and the indicator / end-state
+            would always sit underneath the most recent line.
+            Each row drives `EndStateDisplay` via the same pure
             helpers (`endStateBadgeFor`, `totalTokensForTurn`,
-            `formatTimeAlwaysHours`, `formatTokensCaps`) the
+            `formatDurationMs`, `formatTokensCaps`) the
             production renderer will use. `complete` → success
             badge; `interrupted` and `transport_lost` → caution
             (recoverable / user-initiated); `error` → danger
@@ -642,8 +888,9 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 16,
+              gap: 32,
               padding: "12px 0",
+              maxWidth: 640,
             }}
           >
             {END_STATE_FIXTURES.map((fixture) => (
@@ -652,7 +899,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  alignItems: "flex-start",
+                  alignItems: "stretch",
                   gap: 4,
                 }}
               >
@@ -660,6 +907,8 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
                   modelName={SAMPLE_MODEL_NAME}
                   phase="idle"
                   endState={fixture.endState}
+                  body={fixture.body}
+                  bodyText={fixture.body}
                 />
                 <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED }}>
                   {fixture.label}

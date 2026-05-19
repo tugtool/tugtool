@@ -58,6 +58,15 @@ export interface TugBadgeProps extends Omit<React.ComponentPropsWithoutRef<"span
   children: React.ReactNode;
   /** Lucide icon node rendered before the label. */
   icon?: React.ReactNode;
+  /**
+   * Override for the gap between the leading icon and the label
+   * text, in CSS pixels. Defaults vary by size (3-4 px); pass an
+   * explicit value when a callsite needs a tighter or looser
+   * spacing than the size's natural gap. Applied as inline style
+   * on the badge root (via `style.gap`); takes effect only when
+   * an `icon` is supplied.
+   */
+  iconGap?: number;
 }
 
 // ---- TugBadge ----
@@ -69,17 +78,35 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     size = "sm",
     children,
     icon,
+    iconGap,
     className,
+    style,
     ...rest
   }: TugBadgeProps, ref) {
     const emphasisRoleClass = `tug-badge-${emphasis}-${role}`;
     const sizeClass = `tug-badge-size-${size}`;
+    // `iconGap` overrides the size's natural gap (set by the
+    // `.tug-badge-size-{sm,md,lg}` CSS rules). Inline style takes
+    // precedence per CSS specificity. Caller's `style` wins last
+    // if the consumer wants the final say.
+    const mergedStyle: React.CSSProperties | undefined =
+      iconGap !== undefined
+        ? { gap: `${iconGap}px`, ...style }
+        : style;
 
     return (
       <span
         ref={ref}
         data-slot="tug-badge"
+        // `data-emphasis` lets CSS dispatch on the emphasis
+        // axis without parsing the role half of the class name.
+        // The "ghost" variant uses it to zero out padding +
+        // border (see `tug-badge.css`) so a badge with no
+        // visible chrome doesn't reserve layout space for box
+        // it never paints.
+        data-emphasis={emphasis}
         className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}
+        style={mergedStyle}
         {...rest}
       >
         {icon && <span className="tug-badge-icon">{icon}</span>}
