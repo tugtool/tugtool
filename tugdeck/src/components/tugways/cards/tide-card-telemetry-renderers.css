@@ -107,14 +107,20 @@
    never jitters as values change. Values render natural-width and
    center horizontally within their cell.
 
-   Row layout — flat 4-item flex container holding the indicator
-   slot + three cells as direct siblings, with
-   `justify-content: space-between` on the row itself and
-   `padding-inline: var(--tug-space-2xl)` for the end margins.
+   Row layout — single 4-item flex layout (indicator, TIME, TOKENS,
+   CONTEXT) with `justify-content: space-between` and a small
+   minimum `gap`, so all four inter-item spaces flex uniformly as
+   the row widens. This is the layout vetted in the
+   `gallery-tide-status-row` reference card; the production row
+   mirrors it exactly so the gallery stays a faithful design source.
+
    The indicator slot is pinned to a fixed width
-   (`--tugx-tide-status-indicator-slot-width`) so the cells'
-   positions stay stable across phase-label changes; all four
-   inter-item gaps flex uniformly with the host width.
+   (`--tugx-tide-status-indicator-slot-width`, 220px) sized for the
+   longest `PHASE_HUMAN_LABEL` ("Awaiting first response") so the
+   TIME / TOKENS / CONTEXT cells' horizontal positions stay rock-
+   stable across phase-label changes. When the label is short
+   ("Idle"), the slot still reserves its 220px — the empty band
+   inside the slot is the price of column-position stability.
 
    Collapse priority (least-to-most persistent) — driven by container
    queries on the host's `container-name: tide-status`. As the host
@@ -157,7 +163,8 @@
      173px) + 16px glyph + 6px gap + ~25px buffer. Bump this if a
      future phase label is added longer than this. The slot's
      `width` (not `min-width`) is what keeps the cells' positions
-     stable as the visible label text varies. */
+     stable as the visible label text varies — the gallery's
+     reference layout uses the same 220px fix-width discipline. */
   --tugx-tide-status-indicator-slot-width: 220px;
 }
 

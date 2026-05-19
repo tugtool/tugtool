@@ -534,7 +534,8 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   // (`--tugx-tide-status-indicator-slot-width`, 220px) sized for
   // the longest `PHASE_HUMAN_LABEL` ("Awaiting first response")
   // so the cells' horizontal positions stay rock-stable across
-  // label-text changes.
+  // label-text changes. Mirrors the `gallery-tide-status-row`
+  // reference layout exactly.
   return (
     <div
       className="tide-telemetry-status-row"

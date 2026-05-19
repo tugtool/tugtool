@@ -3225,9 +3225,12 @@ If the popover shows the empty state, one of the chains is broken — but the ch
 
 **Tasks.**
 
-- [ ] Pick a layout option from above (or propose another).
-- [ ] Implement in `tide-card-telemetry-renderers.css` + corresponding TSX changes if the structure shifts.
-- [ ] HMR vet at multiple widths — indicator↔TIME reads tight at default width; gaps between TIME / TOKENS / CONTEXT still flex with width; the longest phase label ("Awaiting first response") still fits without clipping.
+- [x] **Option (ii) tried, rejected.** Two-group distribution (indicator + TIME left-anchored via row `gap`; TOKENS + CONTEXT trailing via `margin-left: auto`) made TIME read as "stuck" to the indicator rather than balanced; deviated from the gallery's vetted 4-way `space-between`.
+- [x] **Option (iii) tried, rejected.** Content-sized indicator slot (no fixed width) eliminated the empty band for short labels but caused TIME / TOKENS / CONTEXT positions to shift left/right whenever the phase label changed ("Idle" → "Streaming response" → "Awaiting first response"). Cell positions stability is the load-bearing constraint here — the live readout's value lies in being able to glance at the SAME spot and read the SAME column.
+- [x] **Landed: keep the existing 4-item `space-between` layout with the 220 px fixed indicator slot** — matches `gallery-tide-status-row` byte-for-byte. Cell positions stay rock-stable across phase-label changes; the empty band inside the slot for short labels ("Idle") is the accepted price of stability. Refreshed the rule's docstring + the renderer's call-site comment to record `gallery-tide-status-row` as the design source of truth and to make the cosmetic-vs-stability tradeoff explicit in-source, so a future reader doesn't try to "fix" the empty band again. No structural CSS / TSX changes landed — Sub-step E confirms the existing layout is correct and documents why.
+- [x] HMR vet at multiple widths — cells stay at fixed X positions as the phase label cycles through every state; all four inter-item gaps flex uniformly via `space-between`; the longest phase label ("Awaiting first response") fits the 220 px slot without clipping; the "Idle" empty band is present and accepted.
+
+**Conformance.** [L20] no token changes — `--tugx-tide-status-indicator-slot-width` is declared and read on the same rule per the existing discipline. [L06] all visible distribution flows through CSS; no React state for layout. The container-query collapse rules at the bottom of the file are unchanged. The production layout matches `gallery-tide-status-row` exactly, so the gallery stays a faithful design source.
 
 ---
 
