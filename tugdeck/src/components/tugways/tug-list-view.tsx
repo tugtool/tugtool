@@ -1319,7 +1319,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           meta?: unknown;
         }>;
         event.preventDefault();
-        smartScroll.disengageFollowBottom();
+        smartScroll.disengageFollowBottom("region-scroll-restore");
 
         if (typeof ce.detail.left === "number") {
           el.scrollLeft = ce.detail.left;

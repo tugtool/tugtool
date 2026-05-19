@@ -551,7 +551,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       if (typeof ce.detail.top === "number") {
         ss.scrollTo({ top: ce.detail.top, animated: false });
       }
-      ss.disengageFollowBottom();
+      ss.disengageFollowBottom("region-scroll-restore");
     };
     scrollContainerRef.current.addEventListener(
       "tug-region-scroll-set",

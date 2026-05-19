@@ -267,16 +267,34 @@ export class SmartScroll {
     if (this._disposed) return;
     const { top, animated = false } = options;
     if (top === undefined) return;
+    // An explicit programmatic scroll supersedes a pending cold-boot
+    // restore — the consumer has named a position, so a restore that
+    // would pull `scrollTop` back to the saved anchor must be
+    // dropped. The restore heartbeat (`applyRestoreTarget`) writes
+    // through the private `_writeScrollTop` directly, NOT this
+    // method, so it does not clear its own target.
+    this.clearRestoreTarget();
+    this._writeScrollTop(top, animated);
+  }
 
+  /**
+   * Programmatic `scrollTop` write — the shared mechanism behind the
+   * public `scrollTo` and the cold-boot restore heartbeat. Enters the
+   * programmatic phase and arms the one-shot idle-re-engagement
+   * suppression so the deferred scroll event this write emits cannot
+   * flip follow-bottom back on: without it, a restore path that
+   * disengages follow-bottom before writing would have its disengage
+   * undone by the deferred event's `isAtBottom`-driven re-engagement.
+   * The flag is consumed by the FIRST `_handleScroll` invocation.
+   *
+   * Does NOT touch the restore target — the caller owns that policy:
+   * the public `scrollTo` clears it (an explicit scroll supersedes a
+   * restore); `applyRestoreTarget` preserves it (the restore must
+   * re-apply across the content-settle window).
+   */
+  private _writeScrollTop(top: number, animated: boolean): void {
     this._enterProgrammatic();
-    // Suppress the idle-phase auto-re-engagement check on the
-    // deferred scroll event this write emits. Without this, a
-    // state-restore path that disengages follow-bottom before
-    // writing would have its disengage undone by the deferred
-    // event's `isAtBottom`-driven re-engagement. The flag is one-
-    // shot and consumed by the FIRST `_handleScroll` invocation.
     this._suppressIdleReengagementOnNextScroll = true;
-
     if (animated) {
       this._container.scrollTo({ top, behavior: 'smooth' });
       // scrollend event (or 150ms fallback) will return us to idle.
@@ -293,7 +311,7 @@ export class SmartScroll {
 
   scrollToBottom(animated = false): void {
     if (this._disposed) return;
-    this._setFollowingBottom(true);
+    this._setFollowingBottom(true, 'scroll-to-bottom');
     // 2^30 sentinel: large enough to exceed any real document height,
     // small enough to avoid WebKit's 32-bit int overflow. The browser
     // clamps to `scrollHeight - clientHeight` for us.
@@ -355,6 +373,9 @@ export class SmartScroll {
   ): void {
     if (this._disposed) return;
     const { animated = false, block = 'nearest' } = options;
+    // An explicit programmatic scroll supersedes a pending cold-boot
+    // restore — see `scrollTo`.
+    this.clearRestoreTarget();
     this._enterProgrammatic();
     element.scrollIntoView({ behavior: animated ? 'smooth' : 'instant', block });
     if (!animated) {
@@ -377,7 +398,10 @@ export class SmartScroll {
   //     re-engage) supersedes the restore — `_setFollowingBottom(true)`
   //     clears it;
   //   - a user scroll gesture supersedes the restore — `applyRestore
-  //     Target` clears it when `isUserScrolling`.
+  //     Target` clears it when `isUserScrolling`;
+  //   - an explicit programmatic scroll (`scrollTo`, `scrollToTop`,
+  //     `scrollToElement`) supersedes the restore — the consumer
+  //     named a position, so those methods clear the target.
   // The consumer's only job is to forward layout signals by calling
   // `applyRestoreTarget` (its post-commit / ResizeObserver heartbeat);
   // it holds no restore state of its own.
@@ -398,7 +422,7 @@ export class SmartScroll {
   setRestoreTarget(resolver: () => number | null): void {
     if (this._disposed) return;
     this._restoreTarget = resolver;
-    this._setFollowingBottom(false);
+    this._setFollowingBottom(false, 'restore-target');
   }
 
   /** Drop the pending restore target, if any. */
@@ -416,7 +440,9 @@ export class SmartScroll {
    * Consumers call this from their layout heartbeat (a post-commit
    * `useLayoutEffect`, a `ResizeObserver` flush) so the restore
    * tracks the resolved offset as content settles. The write goes
-   * through `scrollTo`, which arms the one-shot idle-re-engagement
+   * through the private `_writeScrollTop` — NOT the public
+   * `scrollTo` — so the restore does not clear its own target;
+   * `_writeScrollTop` still arms the one-shot idle-re-engagement
    * suppression so the deferred scroll event cannot flip follow-bottom
    * back on mid-restore.
    */
@@ -433,7 +459,7 @@ export class SmartScroll {
     const desired = resolver();
     if (desired === null) return;
     if (Math.abs(this._container.scrollTop - desired) > 0.5) {
-      this.scrollTo({ top: desired, animated: false });
+      this._writeScrollTop(desired, false);
     }
   }
 
@@ -441,44 +467,41 @@ export class SmartScroll {
   // Public API — follow-bottom control
   // -------------------------------------------------------------------------
 
-  engageFollowBottom(): void {
-    this._setFollowingBottom(true);
+  /** Engage auto-follow-bottom. `source` tags the trigger for the
+   *  deck trace — see {@link _setFollowingBottom}. */
+  engageFollowBottom(source: string): void {
+    this._setFollowingBottom(true, source);
   }
 
-  disengageFollowBottom(): void {
-    this._setFollowingBottom(false);
+  /** Disengage auto-follow-bottom. `source` tags the trigger for the
+   *  deck trace — see {@link _setFollowingBottom}. */
+  disengageFollowBottom(source: string): void {
+    this._setFollowingBottom(false, source);
   }
 
   /**
-   * Engage follow-bottom on behalf of a named `source`, recording the
-   * intent to the deck trace. This is the typed, logged funnel for
-   * follow-bottom intent crossing a component boundary — the
-   * `useScroller()` façade delegates here. `engageFollowBottom` stays
-   * as the unlogged primitive for SmartScroll's own internal paths
-   * (gesture re-engagement, keyboard End, `scrollToBottom`).
-   *
-   * `source` is a short, stable trigger tag so a follow-bottom
-   * regression in the trace can be attributed to who flipped it. The
-   * event is recorded even when the call is a no-op (already
-   * following) — the record of intent is the diagnostic value.
+   * Engage follow-bottom on behalf of a named `source` — the typed
+   * funnel for follow-bottom intent crossing a component boundary, to
+   * which the `useScroller()` façade delegates. A thin wrapper over
+   * `engageFollowBottom`; the `source` reaches the deck trace via
+   * `_setFollowingBottom`, the chokepoint every transition routes
+   * through. `source` is a short, stable trigger tag so a follow-bottom
+   * regression in the trace can be attributed to who flipped it.
    */
   engage(source: string): void {
     if (this._disposed) return;
-    deckTrace.record({ kind: "follow-bottom", following: true, source });
-    this.engageFollowBottom();
+    this.engageFollowBottom(source);
   }
 
   /**
-   * Disengage follow-bottom on behalf of a named `source`, recording
-   * the intent to the deck trace. Counterpart to {@link engage}; see
-   * its doc for the funnel rationale. The bubbling
-   * descendant-to-host signalling this replaces had no record of who
-   * fired it — `source` closes that gap.
+   * Disengage follow-bottom on behalf of a named `source`. Counterpart
+   * to {@link engage}; see its doc for the funnel rationale. The
+   * bubbling descendant-to-host signalling this replaces had no record
+   * of who fired it — `source` closes that gap.
    */
   disengage(source: string): void {
     if (this._disposed) return;
-    deckTrace.record({ kind: "follow-bottom", following: false, source });
-    this.disengageFollowBottom();
+    this.disengageFollowBottom(source);
   }
 
   // -------------------------------------------------------------------------
@@ -544,7 +567,7 @@ export class SmartScroll {
           scrollTop >= this._lastScrollTop &&
           this.isAtBottom
         ) {
-          this._setFollowingBottom(true);
+          this._setFollowingBottom(true, 'idle-reengage');
         }
         break;
 
@@ -557,7 +580,7 @@ export class SmartScroll {
         // During active dragging, the user is in deliberate control — no
         // re-engagement. Only DISENGAGE if they scroll up past the jitter guard.
         if (scrollTop < this._lastScrollTop && this._isFollowingBottom && !this.isAtBottom) {
-          this._setFollowingBottom(false);
+          this._setFollowingBottom(false, 'drag-up');
         }
         if (!this._supportsScrollEnd) {
           this._restartScrollEndTimer();
@@ -664,7 +687,7 @@ export class SmartScroll {
 
     // Disengage follow-bottom on scroll-up.
     if (e.deltaY < 0 && this._isFollowingBottom) {
-      this._setFollowingBottom(false);
+      this._setFollowingBottom(false, 'wheel-up');
     }
   }
 
@@ -699,7 +722,7 @@ export class SmartScroll {
     // Disengage follow-bottom for scroll-up keys.
     const isScrollUpKey = SCROLL_UP_KEYS.has(e.code) || (e.code === 'Space' && e.shiftKey);
     if (isScrollUpKey && this._isFollowingBottom) {
-      this._setFollowingBottom(false);
+      this._setFollowingBottom(false, 'key-up');
     }
 
     // Explicit re-engagement: End and Cmd+Down are definite "go to bottom"
@@ -789,16 +812,24 @@ export class SmartScroll {
   // Private — follow-bottom helpers
   // -------------------------------------------------------------------------
 
-  private _setFollowingBottom(following: boolean): void {
+  private _setFollowingBottom(following: boolean, source: string): void {
     if (this._isFollowingBottom === following) return;
     this._isFollowingBottom = following;
+    // Record every follow-bottom transition to the deck trace.
+    // `_setFollowingBottom` is the one chokepoint all engage /
+    // disengage paths route through, so recording here — rather than
+    // in the public `engage` / `disengage` wrappers — captures the
+    // heuristic internal flips too: wheel-up, keyboard scroll-up,
+    // idle re-engagement, gesture-end re-engage. Those are the paths
+    // a follow-bottom regression most often hides in. `source` names
+    // the trigger; the early-return above means only real transitions
+    // are logged, never no-op calls.
+    deckTrace.record({ kind: 'follow-bottom', following, source });
     // Engaging the live edge supersedes any pending cold-boot
     // restore: the user (or an explicit jump-to-latest) has declared
     // the bottom is where they want to be, so a restore target that
     // would pull them back to a saved mid-content position must be
-    // dropped. The five engage paths — `scrollToBottom`,
-    // `engageFollowBottom`, idle re-engagement, gesture-end
-    // re-engage, keyboard End / Cmd+ArrowDown — all route here.
+    // dropped.
     if (following) this.clearRestoreTarget();
     this._callbacks.onFollowBottomChanged?.(this, following);
   }
@@ -811,7 +842,7 @@ export class SmartScroll {
     if (!this._isFollowingBottom
       && this.isAtBottom
       && this._container.scrollTop > this._gestureStartScrollTop) {
-      this._setFollowingBottom(true);
+      this._setFollowingBottom(true, 'gesture-end-reengage');
     }
   }
 
