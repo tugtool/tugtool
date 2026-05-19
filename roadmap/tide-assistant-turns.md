@@ -3092,13 +3092,15 @@ For each adoption site, gallery-prototype the change before any production work.
 
 **References:** [L02], [L06], [L13], [L19], [L20], [L26]
 
-**Scope.** Eight follow-on items surfaced during HMR vetting of the 20.4.15 production wiring. They break into three buckets:
+**Scope.** Twelve follow-on items surfaced during HMR vetting of the 20.4.15 production wiring. They break into five buckets:
 
-  - (a) **Stability** — two list-view + transcript-entry boundary issues that both manifest as visible jumps / gaps: (A) the Z1B "flashing" during streaming and on resize, and (H) the gap left behind when a body kind (Bash / diff hunks) collapses without the scroller reclaiming the vacated space. Both are highest-priority — a transcript whose layout drifts under its own user-driven interactions feels broken.
+  - (a) **Stability** — three transcript-surface reliability issues: (A) the Z1B "flashing" during streaming and on resize; (H) the gap left behind when a body kind (Bash / diff hunks) collapses without the scroller reclaiming the vacated space; (I) scroll-to-bottom-on-submit must be never-fail reliable so the user always sees their just-submitted Z1B user-half and the corresponding asst-half (in-flight indicator or end state). All three are highest-priority — a transcript whose layout drifts under its own user-driven interactions feels broken.
   - (b) **Symmetry** — give the Z1 user half a status row that matches the asst-half's Z1B so the two halves line up vertically in the transcript.
   - (c) **Polish** — five cosmetic items: status-bar drop shadow, tighter indicator↔TIME gap, larger Z1B asst-half badge, a fix for the Context popover so the session-init breakdown actually surfaces from the ledger on reload, and consistent bottom margins under Z1B (including breathing room against the Z2 status bar).
+  - (d) **Correctness** — (J) token-count math is currently unreliable in several distinct ways (first turn gets charged with the session-init bootstrap tokens; Z1B asst-half reads as cumulative-for-session rather than per-entry; Z1B value and Context-area value drift apart). Token counts are a contract with the user about cost / context usage; they need to be robust.
+  - (e) **Interaction** — two keyboard / chrome-affordance items: (K) PgUp / PgDown when the top-pane is focused should scroll by *entry* (top of previous entry pinned at top on PgUp; bottom of Z1B pinned at bottom on PgDown), not by page; (L) every Bash renderer's result block should carry an expand / collapse control with the standard pinning behaviour, collapsing to a tunable default of ~25 lines (FileBlock / DiffBlock already follow this pattern).
 
-Bundled into one step (not eight ad-hoc fixes) because they share surfaces (Z1B + Z2 status bar + transcript spacing + TugListView windowing) and share root-cause investigations — the flashing diagnosis informs the collapse-gap fix because both live at the `TugListView` ↔ per-cell `ResizeObserver` boundary.
+Bundled into one step (not twelve ad-hoc fixes) because they share surfaces (Z1B + Z2 status bar + transcript spacing + TugListView windowing + Bash body kind + per-turn cost wiring) and share root-cause investigations — the flashing diagnosis informs the collapse-gap fix because both live at the `TugListView` ↔ per-cell `ResizeObserver` boundary; the per-entry PgUp / PgDown work composes on top of the same scroll-anchor discipline used for the in-viewport collapse fix; the Bash expand / collapse work re-uses the FileBlock / DiffBlock pinning chrome that the hydration-lock release in Sub-step H unblocked.
 
 ---
 
@@ -3377,6 +3379,170 @@ This is the scroll-anchoring discipline modern browsers apply automatically via 
 
 ---
 
+##### Sub-step I — Scroll-to-bottom on submit (never-fail reliability)
+
+**Symptom.** When the user is scrolled up in the transcript and submits a new request, the scroller does NOT reliably snap back to the bottom — the just-submitted Z1B user-half and the corresponding assistant in-flight indicator (or end state once the turn completes) frequently stay below the viewport. The user has to scroll down manually to see what they just sent and to watch the response stream in. Currently hit-and-miss.
+
+**Suspect chain.**
+
+The send path likely flows through several boundaries before the new row is visible:
+
+  1. The user types + presses Enter in the entry pane.
+  2. `CodeSessionStore.send()` dispatches the user-message event into the reducer.
+  3. The reducer commits the new "in-flight" row (`turn === undefined`).
+  4. `TideTranscriptDataSource` projects the new row into the list view's data source.
+  5. The list view notifies its `numberOfItems` change → window grows → cells reflow → ResizeObserver fires.
+  6. The post-commit pin effect (gated on `pinRequestedRef.current`) runs only if `isFollowingBottom` was true at the moment of dispatch.
+
+The "hit-and-miss" symptom strongly suggests step 6 — if the user had scrolled up, `isFollowingBottom` was `false`, and the post-commit pin doesn't re-engage on submit. The user EXPECTS submit to re-engage follow-bottom (it's a user-initiated action that should "take them to where the action is").
+
+**Proposed fix.** Treat user-submit as an EXPLICIT follow-bottom re-engage signal — same semantic as the user clicking a "scroll to bottom" affordance. Wire `CodeSessionStore.send()` (or the transcript host that calls it) to also call `SmartScroll.pinToBottom()` immediately, AND to set `isFollowingBottom = true` so subsequent streaming growth stays pinned.
+
+The implementation surface is likely in `tug-list-view.tsx` (expose a `requestFollowBottom()` imperative method on the list view ref) plus `tide-card-transcript.tsx` (call it from the user-submit handler). Alternative: thread a "submit" signal through the data source so the list view re-engages without coupling the transcript host to the list view's imperative API.
+
+**Tasks.**
+
+- [ ] **Diagnose.** Submit a request while scrolled up. Confirm `isFollowingBottom` was `false` at dispatch time; confirm the post-commit pin effect bailed out for that reason. Rule out the alternate paths (e.g., the data-source notify firing AFTER the post-commit effect, or the SmartScroll instance not yet seeing the new content).
+- [ ] **Decide the API surface.** (a) Imperative `requestFollowBottom()` on the list view ref called from the transcript host's submit handler; or (b) a "user-initiated submit" signal threaded through the data source / transcript host that the list view consumes; or (c) a direct `SmartScroll.pinToBottom()` call from `CodeSessionStore.send()` (couples the store to the SmartScroll instance, less clean).
+- [ ] **Implement.** Wire the chosen path so every user-submit re-engages follow-bottom AND pins to the bottom in the same paint (mirror the Sub-step A sync-pin discipline).
+- [ ] **HMR vet.**
+    - (a) Scroll up so the entry pane's last row is not visible. Submit a request. The transcript MUST scroll to the bottom and show the new user-half + assistant in-flight indicator.
+    - (b) Scroll up while a response is streaming (deliberately break follow-bottom mid-stream). Submit another request. The transcript MUST re-engage follow-bottom and show the new in-flight row.
+    - (c) Submit while already at the bottom. No change to the existing flow.
+    - (d) Re-vet that the Sub-step A "drift-and-snap" fix and Sub-step H collapse-gap fix still hold — both are upstream of this fix in the same scroll-anchor regime.
+
+**Conformance.** [D07] auto-follow-bottom semantics preserved outside the user-submit window — the user can still scroll up to break the follow after the new row has been pinned. [L02] no React state for the scroll write — the pin is an imperative `SmartScroll.pinToBottom()` call mirroring the existing discipline. [L23] user-visible state is honest: submit always takes the user to the action; there is no silent failure where the message is sent but invisible.
+
+---
+
+##### Sub-step J — Token-count math: per-entry vs cumulative, no session-init bootstrap
+
+**Symptom.** Three related token-counting issues observed in production:
+
+  1. **First turn is charged with the session-init bootstrap.** Open a new tide-card, say "hello", the first committed turn reports ~30K tokens. That ~30K is the session-init context window (system prompt, system tools, custom agents, memory files, skills, etc.), NOT the cost of the user's "hello" turn alone. It should not be attributed to the first request.
+  2. **Z1B asst-half reads as cumulative-for-session.** The Z1B end-state shows token counts that grow monotonically across turns rather than reporting the per-entry incremental count. The cumulative-for-session value belongs in the `Context` cell in the Z2 status bar (and its popover); Z1B should show the per-turn delta.
+  3. **Z1B value drifts from the Context-area value.** Even taking both as "some kind of cumulative", the two surfaces disagree (e.g., Z1B reads `101.1K tokens` while Context reads `100.9K / 1.00M`). The two should never drift — they're either the same number (if Z1B is also cumulative) or one is an obvious subset of the other (if Z1B is per-turn).
+
+**Suspect chain.**
+
+The cost flow:
+
+  1. tugcode's `cost_update` frame carries `usage` (input/output/cache-read/cache-creation tokens) for the just-completed turn.
+  2. The reducer's `handleCostUpdate` projects `usage` onto `state.lastCost`.
+  3. The reducer's `handleTurnComplete` commits the turn with `cost: { ... }` derived from the most recent `lastCost`.
+  4. `totalTokensForTurn(turn.cost)` sums every numeric field on `TurnCost`.
+
+The bugs likely live in:
+
+  - **(α) tugcode's `cost_update` semantics** — does claude's `result` event carry per-turn `usage` or cumulative session usage? If cumulative, tugcode (or the reducer) needs to compute the per-turn delta by subtracting the prior cumulative from the current.
+  - **(β) Session-init attribution** — the first `cost_update`'s `usage` includes the system-prompt / tools / agents / memory / skills tokens that were emitted at session start. These need to be subtracted off the first turn's cost so the user's actual submission cost is reported in isolation.
+  - **(γ) Z1B's `totalTokensForTurn`** — if `TurnCost` itself is being populated with cumulative values, the per-entry sum will be cumulative-for-session by construction. Need to confirm whether `TurnCost` is intended as per-turn (and the bug is upstream) or as cumulative-snapshot-at-turn (and the consumer needs to compute deltas).
+  - **(δ) Drift between Z1B and Context** — if Context reads `lastContextBreakdown` (the `/context`-style snapshot) and Z1B reads `turn.cost`, the two paths source from different frames (`context_breakdown` vs `cost_update`) with potentially-different timing. The drift may reflect a frame-ordering issue or simply different categorisations of "tokens."
+
+The diagnosis must pin which of (α)–(δ) is responsible for each user-visible symptom; the symptoms are coupled but the fixes may not be.
+
+**Tasks.**
+
+- [ ] **Diagnose end-to-end.** Open a new tide-card, send a one-word message, capture the wire log: every `cost_update`, every `context_breakdown`, every `turn_complete`. For each, record `usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `usage.cache_creation_input_tokens`, plus the `context_breakdown` totals. Compute by hand what the per-turn cost SHOULD be vs what Z1B and Context currently display. Pin which step in the chain introduces the discrepancy.
+- [ ] **Decide the semantic contract.** Two distinct numbers must be defined and named:
+    - (i) **per-turn tokens** — what this user's submission cost in isolation; surfaces in Z1B (asst-half).
+    - (ii) **session-cumulative tokens** — total tokens this session has consumed; surfaces in the Context cell + popover.
+  Document the contract in `end-state.ts` / `telemetry.ts` so future contributors see the distinction.
+- [ ] **Fix session-init attribution.** Subtract the session-init bootstrap (system prompt + tools + agents + memory + skills) from the first turn's cost. Either tugcode emits the session-init `usage` as a separate frame the reducer can subtract from the first `cost_update`, or the reducer detects the first-turn case and zeros the bootstrap fields. Choose the path that requires the least coupling.
+- [ ] **Fix per-turn vs cumulative dispatch.** If `TurnCost` is currently cumulative-at-turn (suspect γ), introduce a derived per-turn helper that computes `(this turn's TurnCost) - (previous turn's TurnCost)` for the relevant fields, and have Z1B's `totalTokensForTurn` (or a renamed sibling) read that delta. Context's popover already sources from `lastContextBreakdown` independently and should stay on that path.
+- [ ] **Fix the Z1B ↔ Context drift.** Once per-turn vs cumulative are decoupled, the two surfaces should sit on disjoint data and stop competing. Verify the two always agree on "what's the cumulative total this session has consumed" by reading the same source where they overlap.
+- [ ] **HMR vet.**
+    - (a) New tide-card. Send "hello". Z1B reports a small per-turn number (likely a few hundred tokens for "hello" + response), NOT 30K.
+    - (b) Send a second message. Z1B reports per-turn for THIS message only.
+    - (c) The Context cell + popover read cumulative-for-session at every point.
+    - (d) Reload mid-session; Context restores from the persisted `context_breakdown_latest` row (Sub-step C); Z1B's per-turn numbers restore from each committed turn's `TurnCost` (already persisted in `turn_telemetry`).
+- [ ] **Test coverage.** Add or extend pure-logic tests in `end-state.test.ts` (and `telemetry.test.ts` if the helper sits there) pinning the per-turn vs cumulative contract, including the first-turn-with-session-init case.
+
+**Conformance.** [L02] no React state for the math — token computation lives in pure helpers off the snapshot. [L23] user-visible state is honest — Z1B and Context never disagree on cumulative totals; first-turn cost does not silently inflate to include the bootstrap. The accuracy bar across the user's `/remember`'d memory ("Context breakdown accuracy bar is 5-10%, prefer local tokenizer") still applies.
+
+---
+
+##### Sub-step K — PgUp / PgDown by entry when the top-pane is focused
+
+**Symptom.** When the user has the top-pane (the scrolling transcript) focused, PgUp / PgDown (alias: Opt+ArrowUp / Opt+ArrowDown on macOS) currently scroll by viewport-height — a generic browser-default. For a transcript organized into discrete entries (one per turn), scrolling by ENTRY is the correct unit of navigation: the user can step backward / forward through the conversation one turn at a time, with each step landing the entry at a predictable position.
+
+**Behaviour contract.**
+
+  - **PgUp (Opt+ArrowUp):** scroll so the TOP of the previous entry is pinned to the TOP of the scroll view (with the usual list-view `padding-block-start` already in place — the user sees the entry's header at the top of the viewport).
+  - **PgDown (Opt+ArrowDown):** scroll so the BOTTOM of the next entry's Z1B area (with `padding-block-end` margin) is at the BOTTOM of the scroll view (the user sees the end-state badge / COPY chip just above the Z2 status bar).
+  - **Edge cases:** PgUp at the topmost entry stays at the top; PgDown at the bottommost entry stays at the bottom; both are no-ops at their respective edges. PgDown when at the bottom-most entry re-engages follow-bottom (interaction with Sub-step I).
+
+**Suspect implementation surface.**
+
+The list-view already tracks per-cell positions in `heightIndexRef`. The keyboard handler lives somewhere in the transcript host's chain (likely on the `.tug-list-view` element itself, since it carries `tabIndex={0}`).
+
+Likely implementation shape:
+
+  1. Add a `KeyDown` handler on the list view (or override the existing one) that intercepts `PageUp` / `PageDown` / `Alt+ArrowUp` / `Alt+ArrowDown` (per the macOS convention).
+  2. Compute the current "anchor entry" — the entry whose top edge is closest to (but not below) the current `scrollTop`.
+  3. On PgUp: target = `scrollTop` for `(anchorEntry.index - 1).topY - padding-block-start`.
+  4. On PgDown: target = `scrollTop` for `(anchorEntry.index + 1).bottomY - viewportHeight + padding-block-end`.
+  5. Write `SmartScroll.scrollTo(target)` (smooth or instant — pick smooth for tactile feedback).
+
+Edge: the "entry" unit here is the data-source row (`turn entry`), which in the transcript is composed of two list-view cells (user-half + asst-half). The contract may want to treat the PAIR as a single entry — PgUp scrolls to the previous TURN's user-half top, PgDown scrolls to the next TURN's asst-half bottom. Confirm during diagnosis.
+
+**Tasks.**
+
+- [ ] **Confirm the keyboard surface.** Identify which element receives focus (the `.tug-list-view` host vs. a parent), and whether existing handlers (browser default, SmartScroll, response-settings shortcuts) already capture PageUp / PageDown / Alt+Arrow keys. Resolve any precedence conflicts.
+- [ ] **Decide the "entry" unit.** Per-list-view-cell (user-half OR asst-half) or per-turn-pair (user-half AND asst-half together). The user's verbal description ("the top of the previous entry...the bottom of the Z1B area") strongly implies per-turn-pair — confirm.
+- [ ] **Implement the handler.** Use `heightIndexRef.current` to compute target positions; route the scroll write through `SmartScroll` so the auto-follow-bottom intent tracking sees the user's navigation (PgDown at the bottom should re-engage follow-bottom; PgUp from the bottom should break it).
+- [ ] **HMR vet.**
+    - (a) PgUp from mid-transcript: the previous entry's header (Z0) pins to the top of the viewport.
+    - (b) PgDown from mid-transcript: the next entry's Z1B bottom (with breathing-room margin) pins to the bottom of the viewport.
+    - (c) PgUp at the top entry: no-op (or scroll to the absolute top if not already there).
+    - (d) PgDown at the bottom entry: scrolls to the absolute bottom AND re-engages follow-bottom (composes with Sub-step I).
+    - (e) Hold Opt and press ArrowUp / ArrowDown — same behaviour as PgUp / PgDown (the macOS alias).
+
+**Conformance.** [L02] keyboard handler is a DOM event listener installed in a `useLayoutEffect` ([L03]); no React state for the scroll write. [D07] auto-follow-bottom intent tracked through SmartScroll, same discipline as wheel / pointer scroll. [L23] keyboard navigation lands the user at a PREDICTABLE position every time — top of previous entry, bottom of next entry — not "approximately one viewport up / down."
+
+---
+
+##### Sub-step L — Bash renderer: expand / collapse with pinning + tunable default-line cap
+
+**Symptom.** Bash result blocks render full, unbounded output regardless of how long the stdout / stderr stream is. A `find . -type f` listing 300 entries renders as 300 lines; the transcript is dominated by one entry. There is no user-facing affordance to collapse the output to a readable summary line count.
+
+**Reference.** `FileBlock` and `DiffBlock` already implement an expand / collapse control with pinning behaviour: the chrome row sits at the top of the body, and on collapse the body folds to a fixed height while keeping the chrome (with the affordance toggle) visible. Bash should adopt the same pattern.
+
+**Behaviour contract.**
+
+  - **Collapsed state (default):** body shows the first N lines (tunable, default 25). Trailing chrome reads "X more lines" with the expand toggle.
+  - **Expanded state:** body shows all lines. Toggle reads "Collapse" — clicking returns to collapsed state.
+  - **Pinning:** when the user collapses an expanded block, the cell wrapper shrinks (Sub-step H's hydration-lock release work makes this possible without ghost space); when the user expands a collapsed block, the cell grows and the scroll anchor stays put (Sub-step H's scroll-anchoring contract applies).
+  - **Default-line cap configurable:** the 25-line default should be easily tunable (likely a const at the top of the bash body kind, with a comment explaining the tradeoff between "see the output" and "don't dominate the transcript").
+
+**Suspect implementation surface.**
+
+`agent-transcript-block.tsx` or whichever file owns the bash body kind. Look at how `FileBlock` / `DiffBlock` wire their expand / collapse:
+
+  - Local state (or per-callsite ref) for `expanded: boolean`.
+  - Chrome row with the toggle button (icon + label).
+  - Body shows truncated or full content based on `expanded`.
+  - The cell wrapper's height responds via standard ResizeObserver flow.
+
+The Bash body kind likely renders its output as a `TerminalBlock` or similar — confirm the existing component, then add the expand / collapse axis if not already there.
+
+**Tasks.**
+
+- [ ] **Audit the Bash body kind.** Find the body-kind file; confirm whether there's an existing expand / collapse mechanism (maybe partially-implemented but not surfaced as an affordance). Compare against `FileBlock` and `DiffBlock` for the pattern to mirror.
+- [ ] **Add the expand / collapse axis.** Default collapsed; first N lines visible; chrome shows the line count + toggle.
+- [ ] **Wire the pinning.** Reuse the existing FileBlock / DiffBlock pinning chrome so the chrome row stays at the top of the body during scroll, and the toggle is always reachable.
+- [ ] **Pick the default-line cap.** Start at 25 lines. Add a `const` at the top of the file with a comment explaining the tradeoff and an easy tuning hook for future iteration.
+- [ ] **HMR vet.**
+    - (a) Submit `find . -type f | head -300`. Result renders collapsed (25 lines visible) by default.
+    - (b) Click "Expand" — body grows to full content; subsequent entries push down; user's anchor stays put (per Sub-step H).
+    - (c) Click "Collapse" — body folds back to 25 lines; subsequent entries pull up; no ghost space (per Sub-step H's hydration-lock release).
+    - (d) Pinning chrome stays at top of body during scroll; toggle is always reachable.
+    - (e) Bash results SHORTER than the cap render expanded by default (no toggle needed — there's nothing to collapse).
+
+**Conformance.** [L26] mount identity preserved across the collapse / expand transition. [L02] `expanded` is local component state (it doesn't escape into shared snapshot or store). [D07] scroll behaviour follows the Sub-step H contract — the wrapper's height tracks the body, no min-height ghost. [L19] body-kind authored in the established `body-kinds/*` pattern; toggle uses `TugPushButton` or the existing FileBlock chrome primitive.
+
+---
+
 **Tests.**
 
 - [ ] `bun x tsc --noEmit` clean.
@@ -3385,9 +3551,10 @@ This is the scroll-anchoring discipline modern browsers apply automatically via 
 
 **Checkpoint.**
 
-- [ ] All eight sub-steps closed; HMR-vetted against the production tide-card.
+- [ ] All twelve sub-steps closed; HMR-vetted against the production tide-card.
 - [ ] No regressions in 20.4.15-landed surfaces (Z2 row, Z1 asst-half).
 - [ ] The Z1B flashing diagnosis (Sub-step A) and the collapse-gap diagnosis (Sub-step H) are both documented in their commit messages so the L26 + windowing lessons are recorded for future authors of cell-renderer lambdas and body-kind collapse affordances.
+- [ ] The token-attribution contract from Sub-step J is documented in `end-state.ts` / `telemetry.ts` source comments so the per-turn vs cumulative distinction survives future cost-related work.
 
 ---
 
