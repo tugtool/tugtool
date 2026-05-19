@@ -71,7 +71,6 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { HighlightSelectionAdapter, type TextSelectionAdapter } from "@/components/tugways/text-selection-adapter";
 import {
   TugListView,
@@ -82,7 +81,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
 import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transcript-tool-calls";
-import { TideAsstHalfZ1B } from "@/components/tugways/cards/tide-card-asst-half-stack";
+import { TideZ1B } from "@/components/tugways/cards/tide-card-z1b";
 import { dispatch as dispatchRenderInput } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -401,7 +400,6 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
         })
       : null;
   const hasTrailing = trailing !== null && trailing !== undefined;
-  const showControls = hasBody || hasTrailing;
   return (
     <ResponderScope>
       <div {...cellProps}>
@@ -420,18 +418,33 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
             </span>
           }
           controls={
-            showControls ? (
-              <>
-                {hasBody ? (
-                  <BlockCopyButton
-                    data-slot="tide-card-transcript-user-copy"
-                    getText={() => text}
-                    aria-label="Copy message"
+            (() => {
+              // Z1B — always-mounted status / end-state row driven
+              // by `row.turn`. In-flight (turn === undefined) the
+              // user-half renders nothing inside the slot but keeps
+              // the slot div mounted ([L26]); the slot's
+              // `min-height: 0` rule collapses the empty footer so
+              // no phantom strip sits below the user's just-
+              // submitted message. Terminal (turn defined) shows
+              // `[badge] :: [COPY]` driven by the same
+              // `endStateBadgeFor(turn.turnEndReason)` dispatch the
+              // asst-half uses — so the two halves of one turn
+              // always show the same outcome glyph + text + tone.
+              //
+              // Optional Z1 placement-experiment renderer trails
+              // Z1B when the experiment maps an alt-datum onto the
+              // user row.
+              return (
+                <>
+                  <TideZ1B
+                    participant="user"
+                    turn={row.turn}
+                    bodyText={hasBody ? text : undefined}
                   />
-                ) : null}
-                {hasTrailing ? trailing : null}
-              </>
-            ) : null
+                  {hasTrailing ? trailing : null}
+                </>
+              );
+            })()
           }
         />
       </div>
@@ -681,7 +694,8 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
               const hasTrailing = trailing !== null && trailing !== undefined;
               return (
                 <>
-                  <TideAsstHalfZ1B
+                  <TideZ1B
+                    participant="code"
                     turn={turn}
                     bodyText={isCommitted ? assistantText : undefined}
                   />

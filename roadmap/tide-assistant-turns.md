@@ -3163,15 +3163,15 @@ Alternative framing: introduce a "reflow-in-progress" flag that opens on contain
       - **Submission semantics** — "OK" iff the user message reached the supervisor and was ack'd. The badge says "submitted" / "queued" / "sent"; never errors.
   2. **Which fields appear?** The asst half shows badge + active-ms + tokens + COPY. The user half has no per-side cost (cost is the assistant's). Candidates: badge + submit timestamp + COPY; badge + COPY only; badge + char count + COPY.
 
-**Recommendation (pending user review).** Round-trip semantics + minimal fields: `[OK badge] :: [COPY]` — badge mirrors the turn's end-state badge (so vertical alignment with the asst-half is visually intuitive: same outcome, same badge), no time/tokens (per-asst data doesn't belong on the user row), keep the labelled COPY for consistency with the asst Z1B.
+**Decision (landed).** Round-trip semantics + minimal fields: `[OK badge] :: [COPY]` — badge mirrors the turn's end-state badge (so vertical alignment with the asst-half is visually intuitive: same outcome, same badge), no time/tokens (per-asst data doesn't belong on the user row), keep the labelled COPY for consistency with the asst Z1B.
 
 **Tasks.**
 
-- [ ] Confirm the design choices above (or pick alternatives).
-- [ ] Generalize `TideAsstHalfZ1B` to a `TideZ1B` that takes a `participant: "user" | "code"` prop (or split into two thin wrappers around shared internals). The user variant suppresses time + tokens; the asst variant keeps them.
-- [ ] Wire `TideUserHalfZ1B` (or the unified component in `participant="user"` mode) into `UserRowCell.controls` in place of the current inline `BlockCopyButton`.
-- [ ] In-flight user row (`row.turn === undefined`): render nothing in the Z1B slot — no indicator pulse on the user row, ever (the asst row owns the live indicator).
-- [ ] HMR vet: both halves of a committed turn read with matching footers; vertical edges align.
+- [x] Confirmed the design choices above.
+- [x] Generalized `TideAsstHalfZ1B` → `TideZ1B` with a `participant: "user" | "code"` prop and renamed the file pair to `tide-card-z1b.{tsx,css}` (via `git mv` to preserve history). The user variant suppresses time + tokens in `EndStateDisplay` via a `showMetrics` branch and renders nothing in the in-flight branch (no `TugThinkingIndicator` on the user row, ever). The asst variant keeps the full metrics row. Both variants share the same slot div, same trailing `[::] [COPY]` chrome, same `endStateBadgeFor`-driven badge — so the two halves of a turn agree on outcome by construction. CSS class names + `--tugx-tide-z1b-*` slot tokens renamed accordingly; new `[data-participant]` selector axis added; `[data-mode="idle"]` rule collapses the user-half in-flight to `min-height: 0` so the empty footer doesn't reserve phantom space below the user's just-submitted message (L26 contract preserved — only visible box collapses).
+- [x] Wired `TideZ1B participant="user"` into `UserRowCell.controls` in place of the inline `BlockCopyButton`. The Z1B is always rendered (mount-identity preserved across the in-flight ↔ terminal swap); the legacy `showControls` gate is gone (Z1B handles its own dispatch). Optional placement-experiment `renderTurnTrailing` output still trails Z1B when set.
+- [x] In-flight user row renders nothing inside the Z1B slot — `participant="user"` + `turn === undefined` → `data-mode="idle"` → both the leading content slot AND the trailing copy slot suppress; only the always-mounted slot div remains.
+- [ ] HMR vet: both halves of a committed turn read with matching footers; vertical edges align. _Pending user verification._
 
 ---
 
