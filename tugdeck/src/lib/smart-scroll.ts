@@ -298,6 +298,37 @@ export class SmartScroll {
     this._container.scrollTop = Math.max(0, max);
   }
 
+  /** True when a content-growth signal should auto-pin the scroller to the
+   *  bottom: the scroller is following the bottom (intent) AND the user is
+   *  not actively scrolling (safe to take the scroll position).
+   *
+   *  This is the single home of the `isFollowingBottom && !isUserScrolling`
+   *  gate. Auto-pin callers previously re-derived it inline at many sites —
+   *  the list view's three growth-pin paths, the markdown view's two raw
+   *  `scrollTop` slams (which omitted the `isUserScrolling` half entirely
+   *  and so fought an in-flight user gesture), and the markdown view's
+   *  predicted-bottom render decision. Reading the gate from one place
+   *  keeps the policy consistent: a user mid-scroll always wins, and a
+   *  scroller the user has scrolled up from is never yanked back.
+   *
+   *  Exposed as a getter (not just folded into `maybePinToBottom`) because
+   *  some callers need the gate as a *value* — e.g. choosing whether to
+   *  render the virtualized window at the predicted bottom or at the
+   *  user's live scroll position. */
+  get shouldAutoPin(): boolean {
+    return this._isFollowingBottom && !this.isUserScrolling;
+  }
+
+  /** Pin to bottom when `shouldAutoPin` — the convenience wrapper for the
+   *  pure-pin case (a ResizeObserver fire, a spacer reflow, a post-commit
+   *  re-window). The underlying `pinToBottom` is idempotent, so a call
+   *  that passes the gate but finds scrollTop already at the bottom is a
+   *  cheap no-op. */
+  maybePinToBottom(): void {
+    if (this._disposed) return;
+    if (this.shouldAutoPin) this.pinToBottom();
+  }
+
   scrollToElement(
     element: HTMLElement,
     options: { animated?: boolean; block?: ScrollLogicalPosition } = {},

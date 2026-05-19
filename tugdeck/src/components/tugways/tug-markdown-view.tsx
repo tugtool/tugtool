@@ -460,11 +460,12 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
         const update = engine.blockWindow.update(scrollTop);
         applySpacers(update.topSpacerHeight, update.bottomSpacerHeight);
-        // Safety net: if following bottom, re-slam scrollTop so any height
-        // corrections from ResizeObserver don't leave us short of the bottom [D03].
-        if (smartScrollRef.current?.isFollowingBottom && scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = 0x40000000;
-        }
+        // Safety net: if following bottom, re-pin so any height
+        // corrections from ResizeObserver don't leave us short of the
+        // bottom [D03]. `maybePinToBottom` owns the follow-bottom +
+        // not-user-scrolling gate — a height correction that arrives
+        // mid user-gesture no longer yanks the user to the bottom.
+        smartScrollRef.current?.maybePinToBottom();
       }
     });
     resizeObserverRef.current = observer;
@@ -513,12 +514,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
               const scrollTop = scrollContainerRef.current?.scrollTop ?? 0;
               const update = engine.blockWindow.update(scrollTop);
               applyWindowUpdate(engine, update.topSpacerHeight, update.bottomSpacerHeight, update.enter, update.exit);
-              // If following bottom, re-slam after spacer changes so scrollTop
-              // stays at the true bottom. Without this, the spacer shift leaves
-              // scrollTop short of the new max for one paint frame.
-              if (smartScrollRef.current?.isFollowingBottom && scrollContainerRef.current) {
-                scrollContainerRef.current.scrollTop = 0x40000000;
-              }
+              // If following bottom, re-pin after spacer changes so
+              // scrollTop stays at the true bottom. Without this, the
+              // spacer shift leaves scrollTop short of the new max for
+              // one paint frame. `maybePinToBottom` owns the gate.
+              smartScrollRef.current?.maybePinToBottom();
             });
           }
         },
@@ -977,7 +977,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     // their fingers own the viewport.
     const clientHeight = scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT;
     engine.blockWindow.setViewportHeight(clientHeight);
-    const willPin = smartScrollRef.current?.isFollowingBottom && !smartScrollRef.current?.isUserScrolling;
+    const willPin = smartScrollRef.current?.shouldAutoPin ?? false;
     const renderScrollTop = willPin
       ? Math.max(0, engine.heightIndex.getTotalHeight() - clientHeight)
       : (scrollContainerRef.current?.scrollTop ?? 0);
@@ -1003,17 +1003,15 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       incrementalTailUpdate(engine, key, fullText);
     }
 
-    // When following bottom AND the user is not actively scrolling: measure
-    // all rendered blocks, correct heights, recompute spacers, pin to bottom.
-    //
-    // The isUserScrolling guard separates INTENT from ACTION:
-    //   - isFollowingBottom = intent ("user wants to follow the bottom")
-    //   - !isUserScrolling = action ("safe to take control of scroll position")
-    // During active gestures (dragging, decelerating), the flag may be set
-    // but we don't slam — the user's fingers own the scroll position.
-    // When the gesture ends (idle), the next chunk pins to the real bottom.
+    // When `shouldAutoPin` (following bottom AND the user is not actively
+    // scrolling): measure all rendered blocks, correct heights, recompute
+    // spacers, pin to bottom. `shouldAutoPin` separates INTENT from ACTION
+    // — following-bottom is the intent, not-user-scrolling is the "safe to
+    // take the scroll position" action gate. During active gestures the
+    // intent may be set but we don't slam; when the gesture ends (idle),
+    // the next chunk pins to the real bottom.
     const ss = smartScrollRef.current;
-    if (ss?.isFollowingBottom && !ss.isUserScrolling) {
+    if (ss?.shouldAutoPin) {
       const engine2 = engineRef.current;
       if (engine2 && scrollContainerRef.current) {
         // Single measurement pass: read offsetHeight for every rendered block.

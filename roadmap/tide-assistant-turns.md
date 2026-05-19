@@ -3379,39 +3379,81 @@ This is the scroll-anchoring discipline modern browsers apply automatically via 
 
 ---
 
-##### Sub-step I — Scroll-to-bottom on submit (never-fail reliability)
+##### Sub-step I — Scroll-to-bottom on submit + scrolling-system consolidation
 
-**Symptom.** When the user is scrolled up in the transcript and submits a new request, the scroller does NOT reliably snap back to the bottom — the just-submitted Z1B user-half and the corresponding assistant in-flight indicator (or end state once the turn completes) frequently stay below the viewport. The user has to scroll down manually to see what they just sent and to watch the response stream in. Currently hit-and-miss.
+**Symptom.** When the user is scrolled up in the transcript and submits a new request, the scroller does NOT reliably snap back to the bottom — the just-submitted Z1B user-half and the corresponding assistant in-flight indicator (or end state once the turn completes) stay below the viewport. The user has to scroll down manually to see what they just sent and to watch the response stream in. Originally reported as hit-and-miss; under a cold-boot-restored card it fails every time.
 
-**Suspect chain.**
+**Root cause (confirmed).** The transcript host already calls `transcriptRef.current?.scrollToBottom()` from `handleAfterSubmit` (`tide-card.tsx:2031`) — that path is wired and engages follow-bottom. The saboteur is the **cold-boot restore-anchor apply effect** in `tug-list-view.tsx`. When a card cold-boots into a saved mid-transcript scroll position, a mount-time `useLayoutEffect` seeds `restoreAnchorRef.current = {anchorIndex, anchorOffset}` from `bag.regionScroll[scrollKey].meta.anchor`. The restore-apply effect then runs on EVERY commit while the ref is set: it recomputes `desired = heightIndex.offsetForIndex(anchorIndex) + anchorOffset` and (a) re-writes `scrollTop` whenever drift > 0.5 px AND (b) called `disengageFollowBottom()` UNCONDITIONALLY. The ref was cleared only on `isUserScrolling = true` (a gesture). On submit, `scrollToBottom()` engages follow-bottom and writes `scrollTop = newMax`, but on the next commit the restore-apply effect computes `desired = saved-anchor`, sees the drift, **overwrites `scrollTop` back to the saved anchor AND disengages follow-bottom** — and every subsequent ResizeObserver bottom-pin then bails on `!isFollowingBottom`. The same bug defeated SmartScroll's keyboard End / Cmd+ArrowDown handler, which never touched `restoreAnchorRef`.
 
-The send path likely flows through several boundaries before the new row is visible:
+**Scope.** Sub-step I has two halves. **I-0** is the immediate bug fix (landed). **I-1 … I-4** are an incremental consolidation of the scrolling subsystem, motivated by the audit below and sequenced so each phase shrinks the surface the next one touches.
 
-  1. The user types + presses Enter in the entry pane.
-  2. `CodeSessionStore.send()` dispatches the user-message event into the reducer.
-  3. The reducer commits the new "in-flight" row (`turn === undefined`).
-  4. `TideTranscriptDataSource` projects the new row into the list view's data source.
-  5. The list view notifies its `numberOfItems` change → window grows → cells reflow → ResizeObserver fires.
-  6. The post-commit pin effect (gated on `pinRequestedRef.current`) runs only if `isFollowingBottom` was true at the moment of dispatch.
+**Why the consolidation.** Diagnosing I-0 required enumerating ~30 distinct `scrollTop` writers across ~10 files, two independent `SmartScroll` instances (`TugListView`, `TugMarkdownView`) that each re-implement the follow-bottom pin loop inline, three parallel restoration mechanisms (CardHost `bag.regionScroll` + `tug-region-scroll-set` event; `TugListView`'s anchor-restore effect; `TugMarkdownView`'s raw save/restore in `lexParseAndRender`), and DOM-`CustomEvent` signalling (`tug-disengage-follow-bottom`) for follow-bottom intent. Every feature so far added another rule; every bug now requires holding all the rules at once. The full `ScrollIntent` state-machine rewrite is deferred — these four phases funnel the existing behaviour through `SmartScroll` without changing semantics, and the checkpoint after I-4 re-evaluates whether the deeper rewrite is still warranted.
 
-The "hit-and-miss" symptom strongly suggests step 6 — if the user had scrolled up, `isFollowingBottom` was `false`, and the post-commit pin doesn't re-engage on submit. The user EXPECTS submit to re-engage follow-bottom (it's a user-initiated action that should "take them to where the action is").
+**I-0 — Immediate fix: restore-anchor must yield to follow-bottom engagement.**
 
-**Proposed fix.** Treat user-submit as an EXPLICIT follow-bottom re-engage signal — same semantic as the user clicking a "scroll to bottom" affordance. Wire `CodeSessionStore.send()` (or the transcript host that calls it) to also call `SmartScroll.pinToBottom()` immediately, AND to set `isFollowingBottom = true` so subsequent streaming growth stays pinned.
-
-The implementation surface is likely in `tug-list-view.tsx` (expose a `requestFollowBottom()` imperative method on the list view ref) plus `tide-card-transcript.tsx` (call it from the user-submit handler). Alternative: thread a "submit" signal through the data source so the list view re-engages without coupling the transcript host to the list view's imperative API.
-
-**Tasks.**
-
-- [ ] **Diagnose.** Submit a request while scrolled up. Confirm `isFollowingBottom` was `false` at dispatch time; confirm the post-commit pin effect bailed out for that reason. Rule out the alternate paths (e.g., the data-source notify firing AFTER the post-commit effect, or the SmartScroll instance not yet seeing the new content).
-- [ ] **Decide the API surface.** (a) Imperative `requestFollowBottom()` on the list view ref called from the transcript host's submit handler; or (b) a "user-initiated submit" signal threaded through the data source / transcript host that the list view consumes; or (c) a direct `SmartScroll.pinToBottom()` call from `CodeSessionStore.send()` (couples the store to the SmartScroll instance, less clean).
-- [ ] **Implement.** Wire the chosen path so every user-submit re-engages follow-bottom AND pins to the bottom in the same paint (mirror the Sub-step A sync-pin discipline).
+- [x] **Diagnose.** Confirmed root cause above. CardHost's MutationObserver retry (`card-host.tsx:1057`) and the `tug-region-scroll-set` listener are NOT interfering after first paint — CardHost's `settledElByKey` gate stops re-dispatch once the element lands within `REGION_SCROLL_TOLERANCE_PX = 8` of the saved position.
+- [x] **Decide the API surface.** Wire the clear-on-engage signal through SmartScroll's existing `onFollowBottomChanged` callback. Five paths converge on `_setFollowingBottom(true)`: `scrollToBottom`, `engageFollowBottom`, idle re-engagement in `_handleScroll`, `_checkReEngageFollowBottom` at gesture end, keyboard End / Cmd+ArrowDown. All five mean "user wants the live edge now" — incompatible with "restore me to a saved position." One callback site covers all five. Rejected: clearing only inside `TugListViewHandle.scrollToBottom` (leaves keyboard End broken); threading a submit signal through the data source (overcoupled, still misses keyboard / idle re-engage).
+- [x] **Implement.** `tug-list-view.tsx` — three changes: (1) SmartScroll instantiation passes `onFollowBottomChanged` that clears `restoreAnchorRef.current = null` when `following === true`; (2) the restore-anchor apply effect's `disengageFollowBottom()` is scoped inside the `if (drift > 0.5)` branch so an idle apply no longer kills follow-bottom; (3) `TugListViewHandle.scrollToBottom` arms `pinRequestedRef.current = true` so the post-commit pin re-asserts the bottom against the post-commit `scrollHeight`.
 - [ ] **HMR vet.**
     - (a) Scroll up so the entry pane's last row is not visible. Submit a request. The transcript MUST scroll to the bottom and show the new user-half + assistant in-flight indicator.
     - (b) Scroll up while a response is streaming (deliberately break follow-bottom mid-stream). Submit another request. The transcript MUST re-engage follow-bottom and show the new in-flight row.
     - (c) Submit while already at the bottom. No change to the existing flow.
-    - (d) Re-vet that the Sub-step A "drift-and-snap" fix and Sub-step H collapse-gap fix still hold — both are upstream of this fix in the same scroll-anchor regime.
+    - (d) Cold-boot a session restored to a mid-transcript scroll position. Submit. The transcript MUST snap to the bottom (this is the every-time-fails case).
+    - (e) Re-vet that the Sub-step A "drift-and-snap" fix and Sub-step H collapse-gap fix still hold — both ride the same scroll-anchor regime.
 
-**Conformance.** [D07] auto-follow-bottom semantics preserved outside the user-submit window — the user can still scroll up to break the follow after the new row has been pinned. [L02] no React state for the scroll write — the pin is an imperative `SmartScroll.pinToBottom()` call mirroring the existing discipline. [L23] user-visible state is honest: submit always takes the user to the action; there is no silent failure where the message is sent but invisible.
+**I-1 — Single auto-pin helper on SmartScroll** _(audit item 2 — done first: collapses the duplication every later phase would otherwise step around)._
+
+The "if following bottom and content grew, slam `scrollTop` to the bottom" logic existed in **seven** places with subtly different gates (the audit's count of five undercounted `TugMarkdownView` by two): `TugListView`'s per-cell ResizeObserver sync-pin, its container-ResizeObserver sync-pin, and its post-commit pin effect (all gated on `isFollowingBottom && !isUserScrolling`); `TugMarkdownView`'s `onScroll` callback and its block-height ResizeObserver each did a raw `scrollContainerRef.current.scrollTop = 0x40000000` with NO `isUserScrolling` guard (a latent bug — they fought an active user gesture); plus `TugMarkdownView`'s `_render` predicted-bottom decision (`willPin`) and its `doSetRegion` measurement-and-pin block, which each re-derived the gate inline.
+
+- [x] **Add the gate as one owner on SmartScroll.** `get shouldAutoPin(): boolean` returns `isFollowingBottom && !isUserScrolling` — the single home of the gate. `maybePinToBottom(): void` is the convenience wrapper for the pure-pin case (`if (shouldAutoPin) pinToBottom()`). `pinToBottom()` stays as the unguarded primitive. The getter is exposed separately because some callers need the gate as a *value*, not a pin action.
+- [x] **Migrate `TugListView`'s three sync-pin sites.** Per-cell + container ResizeObserver callbacks call `ss.maybePinToBottom()`. The post-commit pin effect now owns only the `pinRequestedRef` lifecycle: it keeps an explicit `isUserScrolling` check (to HOLD the request for re-fire after the gesture) and an `itemCount <= 0` guard, then delegates the follow-bottom gate + pin to `maybePinToBottom()`.
+- [x] **Migrate `TugMarkdownView`'s two raw `0x40000000` slams** (block-height ResizeObserver + `onScroll` rAF) to `ss.maybePinToBottom()` — closing the latent missing-`isUserScrolling`-guard bug. Migrated the two extra inline gates the audit missed: `_render`'s `willPin` reads `ss.shouldAutoPin`; `doSetRegion`'s measurement-and-pin block branches on `ss?.shouldAutoPin`.
+- [x] **Delete the `0x40000000` sentinel** from `TugMarkdownView` — it now lives only inside `SmartScroll.scrollToBottom`.
+- [ ] **HMR vet.** Re-run I-0 (a)–(e). Streaming auto-follow in both the transcript and any markdown body kind still pins on growth; scrolling up mid-stream still breaks the follow; collapsing a block mid-stream still keeps the click target in view.
+
+**Conformance.** [L06] DOM-appearance write owned by SmartScroll. [L07] `isFollowingBottom` / `isUserScrolling` read live at call time via the `shouldAutoPin` getter. Typecheck clean; full tugdeck suite (2227 tests) green.
+
+**I-2 — Restore-anchor becomes a SmartScroll restoration target** _(audit item 4)._
+
+After I-1, the only `TugListView`-local scroll machinery left fighting follow-bottom is the restore-anchor effect (~30 lines of effect + the hydration seed + the I-0 `onFollowBottomChanged` clear). Move the concept into SmartScroll so the "engage invalidates restore" rule is intrinsic, not a hand-wired callback.
+
+- [ ] **Add `SmartScroll.setRestoreTarget(resolver)` / `clearRestoreTarget()`** — `resolver: () => number | null` returns the desired `scrollTop` (or `null` when the anchor cell is not yet in range). SmartScroll re-applies the resolved target on each layout signal until the user gestures OR follow-bottom engages, then auto-clears. The "engaging follow-bottom clears the restore target" rule moves INTO `_setFollowingBottom(true)`.
+- [ ] **Migrate `TugListView`** — the apply effect collapses to `ss.setRestoreTarget(() => heightIndex.offsetForIndex(anchorIndex) + anchorOffset)`; the mount-time hydration seeds the target instead of `restoreAnchorRef`. Delete `restoreAnchorRef`, the apply effect, and the I-0 `onFollowBottomChanged` clear (now subsumed).
+- [ ] **HMR vet.** Re-run I-0 (a)–(e). Cold-boot restore to a mid-transcript position still lands precisely and holds across the content-settle window; user scroll still hands off; submit still re-engages.
+
+**Conformance.** [L23] preserves the user-visible saved viewport position across the indefinite settle window. [L07] resolver reads the live `heightIndex`. [D07] follow-bottom semantics unchanged.
+
+**I-3 — Logged engage/disengage funnel + scroller context** _(audit item 3)._
+
+Follow-bottom intent today is signalled by a bubbling `tug-disengage-follow-bottom` `CustomEvent` dispatched by `block-fold-cue` and `diff-block` — untyped action-at-a-distance with no record of who fired it.
+
+- [ ] **Add `SmartScroll.engage(source: string)` / `disengage(source: string)`** — thin wrappers over `engageFollowBottom` / `disengageFollowBottom` that route the `source` string to `deckTrace` so a follow-bottom regression can be traced to its trigger.
+- [ ] **Add a `ScrollerContext` + `useScroller()` hook** in tugways. The provider's value is a stable façade object (created once via `useRef`) whose methods delegate to `smartScrollRef.current` and no-op while it is `null` — so the context value never churns and needs no post-mount update.
+- [ ] **Migrate `block-fold-cue` and `diff-block`** to `useScroller().disengage("block-fold")` instead of dispatching the DOM event. Remove the `tug-disengage-follow-bottom` listener + the event.
+- [ ] **HMR vet.** Collapse a Bash / diff hunk while following bottom — follow-bottom disengages and the click target stays in view (the existing "interacting with a control does not move it out of view" rule). Re-run I-0 (a)–(e).
+
+**Conformance.** [L07] the façade delegates to the live SmartScroll instance; no React state crossed. [L02] context value is a stable imperative handle, not store state.
+
+**I-4 — Route TugMarkdownView's residual raw scroll writes through SmartScroll** _(audit item 1)._
+
+I-1 absorbed the two `0x40000000` slams. What remains raw in `TugMarkdownView`: the save/restore-around-DOM-clear in `lexParseAndRender` and the post-region-update `scrollTop` write. Routing these through `SmartScroll.scrollTo()` makes SmartScroll the sole owner of every programmatic scroll-position write in `TugMarkdownView` — matching the invariant its own docstring already claims.
+
+- [ ] **Migrate `lexParseAndRender`'s save/restore** to `ss.scrollTo({ top: clampedScrollTop })`.
+- [ ] **Migrate the post-region-update raw write** to `ss.scrollTo(...)`.
+- [ ] **Audit** for any remaining raw `scrollTop =` write in `TugMarkdownView`; the only direct container access left should be reads.
+- [ ] **HMR vet.** Markdown streaming + mid-stream region edits keep the scroll position stable; cold-boot restore of a markdown view still lands; follow-bottom on a streaming markdown body still pins.
+
+**Conformance.** [L06] every programmatic scroll write in `TugMarkdownView` goes through the one owner.
+
+**Checkpoint after I-4.**
+
+- [ ] Follow-bottom pinning is funneled through `SmartScroll.maybePinToBottom()` — one gate, one site.
+- [ ] Restoration is a SmartScroll concept (`setRestoreTarget`) — one mechanism shared by `TugListView` and (where applicable) `TugMarkdownView`; `restoreAnchorRef` and the per-component apply effect are gone.
+- [ ] Engage / disengage is a logged, typed funnel via `useScroller()` — the `tug-disengage-follow-bottom` DOM event is removed.
+- [ ] SmartScroll owns 100% of programmatic scroll-position writes in both `TugListView` and `TugMarkdownView`.
+- [ ] Re-evaluate: with the surface roughly halved, decide whether the full `ScrollIntent` state-machine migration is still worth doing or whether the consolidated `SmartScroll` API is now comfortable enough to stop here.
+
+**Conformance (Sub-step I overall).** [D07] auto-follow-bottom semantics preserved outside the user-submit window — the user can still scroll up to break the follow after a new row pins. [L02] no React state for scroll writes — every pin / restore is an imperative `SmartScroll` call. [L06] programmatic scroll writes are DOM-appearance updates owned by SmartScroll. [L07] `isFollowingBottom` / `isUserScrolling` / `heightIndex` read live at call time. [L23] user-visible state is honest: submit always takes the user to the action; cold-boot restore reproduces the saved viewport; there is no silent failure where the message is sent but invisible.
 
 ---
 
@@ -3555,6 +3597,7 @@ The Bash body kind likely renders its output as a `TerminalBlock` or similar —
 - [ ] No regressions in 20.4.15-landed surfaces (Z2 row, Z1 asst-half).
 - [ ] The Z1B flashing diagnosis (Sub-step A) and the collapse-gap diagnosis (Sub-step H) are both documented in their commit messages so the L26 + windowing lessons are recorded for future authors of cell-renderer lambdas and body-kind collapse affordances.
 - [ ] The token-attribution contract from Sub-step J is documented in `end-state.ts` / `telemetry.ts` source comments so the per-turn vs cumulative distinction survives future cost-related work.
+- [ ] The Sub-step I scrolling consolidation (I-1 … I-4) is closed and its checkpoint answered: `SmartScroll` is the single funnel for pinning, restoration, and engage/disengage, and the decision on the deeper `ScrollIntent` rewrite is recorded.
 
 ---
 

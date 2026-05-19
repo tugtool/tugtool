@@ -353,6 +353,17 @@ export interface TugListViewHandle {
    * `SmartScroll.scrollToBottom`, which excludes the `inert` tail
    * spacer so the scroll lands at the bottom of *content*, not the
    * spacer. No-op before the scroll instance exists.
+   *
+   * Also arms the post-commit pin so the bottom is re-asserted once
+   * React commits any pending state changes that grow `scrollHeight`
+   * after this synchronous call (the canonical case: a user submit
+   * dispatches into a store inside the same event handler, then calls
+   * this method; `scrollHeight` is the pre-commit value at the
+   * moment of the clamp, so without the post-commit re-pin the new
+   * row can land below the viewport). The post-commit pin reads the
+   * live `scrollHeight` after commit and slams to the new bottom,
+   * making the "jump to latest" reliable regardless of dispatch
+   * order between this method and the store growth.
    */
   scrollToBottom(options?: { animated?: boolean }): void;
 }
@@ -586,10 +597,9 @@ function resolveSelectionIndex(
  * against the previous commit and notifies the delegate of
  * transitions; the cell wrapper's `onClick` handler fires
  * `onSelect`. Auto-follow-bottom is handled by a post-commit pin
- * effect that calls `SmartScroll.pinToBottom` whenever the data
- * source grew or the last item is in the rendered window AND
- * SmartScroll's `isFollowingBottom` flag is set AND the user is not
- * actively scrolling.
+ * effect plus the per-cell / container `ResizeObserver` callbacks,
+ * all of which route through `SmartScroll.maybePinToBottom` — the
+ * single owner of the `isFollowingBottom && !isUserScrolling` gate.
  *
  * What's stable today:
  * - DOM shape per the plan's [#dom-shape]: scroll container,
@@ -1128,12 +1138,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           anyChanged = true;
         }
         if (anyChanged) {
-          // **Synchronous bottom-pin** ([Step 20.4.16] Sub-step A
-          // root cause 2). The `ResizeObserver` callback fires after
-          // layout but BEFORE the browser's next paint (it is part
-          // of the same animation frame's "deliver resize-observer
-          // notifications" step). Writing `scrollTop` here lands in
-          // the SAME paint that shows the new cell heights, so the
+          // **Synchronous bottom-pin.** The `ResizeObserver` callback
+          // fires after layout but BEFORE the browser's next paint
+          // (it is part of the same animation frame's "deliver
+          // resize-observer notifications" step). Pinning here lands
+          // in the SAME paint that shows the new cell heights, so the
           // user never sees the bottom region drift upward as
           // `scrollHeight` grows.
           //
@@ -1142,22 +1151,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           // browser to paint with the stale `scrollTop` (cells at
           // new heights, scrollbar at old position → bottom region
           // visibly slides out of view), then paint again with the
-          // pin applied (scrollbar snaps back). The bottom region
-          // "flashing" the user reported was that drift-and-snap.
+          // pin applied (scrollbar snaps back). That drift-and-snap
+          // was the "flashing" of the bottom region.
           //
-          // Gates: only fire while the list is following the bottom
-          // and the user isn't actively scrolling — the same gates
-          // the post-commit pin effect honors. `pinToBottom` itself
-          // is idempotent (it skips the write when already at the
-          // bottom), so a no-op call is cheap.
-          const ss = smartScrollRef.current;
-          if (
-            ss !== null &&
-            ss.isFollowingBottom &&
-            !ss.isUserScrolling
-          ) {
-            ss.pinToBottom();
-          }
+          // `maybePinToBottom` owns the follow-bottom + not-user-
+          // scrolling gate and is idempotent, so a call that passes
+          // the gate but finds scrollTop already at the bottom is a
+          // cheap no-op.
+          smartScrollRef.current?.maybePinToBottom();
 
           // Still schedule the rAF flush so the list-view re-windows
           // against the updated height index. The post-commit pin
@@ -1227,6 +1228,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           onScroll: () => {
             scrollTick();
           },
+          onFollowBottomChanged: (_ss, following) => {
+            // Engagement of follow-bottom is a user-intent signal that
+            // semantically supersedes a pending cold-boot restore
+            // anchor. The five paths that reach `_setFollowingBottom
+            // (true)` — imperative `scrollToBottom`, SmartScroll's
+            // End / Cmd+ArrowDown keyboard handler, the public
+            // `engageFollowBottom`, idle re-engagement at the
+            // absolute bottom, and `_checkReEngageFollowBottom` at
+            // gesture end — all express "the user wants the live
+            // edge right now."
+            //
+            // Without this clear, the restore-anchor apply effect
+            // (below) keeps re-asserting the saved scroll position
+            // on every commit and calls `disengageFollowBottom()`
+            // unconditionally — directly undoing the engage we just
+            // received. The visible symptom: user scroll-restores
+            // mid-transcript, submits a prompt, transcript stays at
+            // the saved anchor because the restore effect overwrites
+            // both the scroll position AND the follow-bottom flag
+            // between the synchronous `scrollToBottom` and the next
+            // paint. `isUserScrolling` (the existing clear signal)
+            // covers gesture-based handoff but not user-initiated
+            // actions that bypass the gesture path (submit, End).
+            if (following) {
+              restoreAnchorRef.current = null;
+            }
+          },
         },
       });
       smartScrollRef.current = smartScroll;
@@ -1239,9 +1267,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // the click target scrolls off-screen — violating the
       // "interacting with a control does not move that control out
       // of view" rule. Disengaging follow-bottom flips
-      // `isFollowingBottom` to false; the post-commit pin effect
-      // then bails out (`tug-list-view.tsx`'s `if
-      // (!ss.isFollowingBottom)` gate).
+      // `isFollowingBottom` to false, so `SmartScroll.shouldAutoPin`
+      // is false and every growth-driven `maybePinToBottom` call
+      // becomes a no-op.
       const onDisengage = (): void => {
         smartScroll.disengageFollowBottom();
       };
@@ -1376,23 +1404,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const el = scrollContainerRef.current;
       if (el === null) return;
       const observer = new ResizeObserver(() => {
-        // **Synchronous bottom-pin** ([Step 20.4.16] Sub-step A
-        // root cause 2). Container resize changes the absolute
-        // bottom position; pin synchronously so the bottom region
-        // doesn't visibly drift mid-resize. Per-cell observers
-        // fire AFTER this for cells whose intrinsic height
-        // changed (text re-wrap, etc.), and the per-cell sync pin
-        // there snaps to the updated bottom as each cell settles
-        // — together the two paths keep the bottom region glued
-        // across the full resize cascade.
-        const ss = smartScrollRef.current;
-        if (
-          ss !== null &&
-          ss.isFollowingBottom &&
-          !ss.isUserScrolling
-        ) {
-          ss.pinToBottom();
-        }
+        // **Synchronous bottom-pin.** Container resize changes the
+        // absolute bottom position; pin synchronously so the bottom
+        // region doesn't visibly drift mid-resize. Per-cell observers
+        // fire AFTER this for cells whose intrinsic height changed
+        // (text re-wrap, etc.), and the per-cell sync pin there snaps
+        // to the updated bottom as each cell settles — together the
+        // two paths keep the bottom region glued across the full
+        // resize cascade. `maybePinToBottom` owns the gate.
+        smartScrollRef.current?.maybePinToBottom();
         // Still request the async pin + re-window so the rendered
         // window catches any cells that newly fit / no longer fit
         // at the new container width. The post-commit pin write
@@ -1458,31 +1478,27 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // relaunch bounce — pin's own scroll event re-fed the commit
     // cycle, sustaining a tight pin → scroll → re-render → pin loop.
     //
-    // [L07] — `isFollowingBottom` / `isUserScrolling` are read from
-    // `smartScrollRef.current` at the moment of the call so each pin
-    // sees the live SmartScroll state.
+    // The follow-bottom gate itself lives in `SmartScroll.maybePin
+    // ToBottom` ([L07] reads `isFollowingBottom` live); this effect
+    // owns only the `pinRequestedRef` lifecycle.
     //
-    // Ref-clearing semantics: clear on cancel-conditions (`!following`,
-    // `empty`) so a stale request doesn't fire later. Hold the request
-    // (don't clear) on `user-scrolling` so the pin re-fires once the
-    // gesture ends. Hold on `no-ss` (rare; the SmartScroll-install
-    // effect runs before this one in registration order) so the
-    // request survives to a commit where SmartScroll exists.
+    // Ref-clearing semantics: HOLD the request (don't clear) on
+    // `no-ss` (rare; the SmartScroll-install effect runs before this
+    // one in registration order — the request survives to a commit
+    // where SmartScroll exists) and on `user-scrolling` (the pin must
+    // re-fire once the gesture ends). CONSUME the request on every
+    // other path: once SmartScroll exists and the user is idle, this
+    // commit is the request's terminal outcome — `maybePinToBottom`
+    // either pins or correctly drops the request when follow-bottom
+    // is disengaged.
     React.useLayoutEffect(() => {
       if (!pinRequestedRef.current) return;
       const ss = smartScrollRef.current;
       if (ss === null) return;
-      if (!ss.isFollowingBottom) {
-        pinRequestedRef.current = false;
-        return;
-      }
       if (ss.isUserScrolling) return;
-      if (itemCount <= 0) {
-        pinRequestedRef.current = false;
-        return;
-      }
       pinRequestedRef.current = false;
-      ss.pinToBottom();
+      if (itemCount <= 0) return;
+      ss.maybePinToBottom();
     });
 
     // Anchor-state writer. Runs every commit; reads the live
@@ -1603,8 +1619,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const desired = Math.max(0, cellTop + restore.anchorOffset);
       if (Math.abs(el.scrollTop - desired) > 0.5) {
         ss.scrollTo({ top: desired, animated: false });
+        // Disengage ONLY when we actually fought a deviation. An
+        // idle apply (scrollTop already at desired) must leave
+        // follow-bottom alone — otherwise this effect would
+        // perpetually kill any explicit re-engagement that arrives
+        // between drifts (keyboard End, imperative scrollToBottom,
+        // idle re-engagement). The companion `onFollowBottomChanged`
+        // hook on SmartScroll (above) clears `restoreAnchorRef` the
+        // moment follow-bottom re-engages, so this branch only
+        // executes during the legitimate restore-in-progress window.
+        ss.disengageFollowBottom();
       }
-      ss.disengageFollowBottom();
     });
 
     // Two-pass `scrollToIndex` correction per [D03]. Pass 1 lives in
@@ -1776,6 +1801,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         },
         scrollToBottom(options?: { animated?: boolean }): void {
           smartScrollRef.current?.scrollToBottom(options?.animated ?? false);
+          // Belt-and-suspenders: the synchronous clamp above lands at
+          // the pre-commit `scrollHeight - clientHeight`. If the
+          // caller dispatched a state change in the same event that
+          // grows the list (e.g. user-submit adds an in-flight row
+          // before calling this), the new row is in the data source
+          // but not yet in the DOM at the moment of the clamp.
+          // Arming `pinRequestedRef` guarantees the post-commit pin
+          // effect re-asserts the bottom against the post-commit
+          // `scrollHeight`, so the new content lands fully in the
+          // viewport on the same paint as it appears. `pinToBottom`
+          // is idempotent — a no-op when scrollTop is already at the
+          // bottom — so the steady-state cost is zero.
+          pinRequestedRef.current = true;
         },
       }),
       [dataSource, estimatedHeightForKindOnly],
