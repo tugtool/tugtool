@@ -3102,30 +3102,57 @@ Bundled into one step (not six ad-hoc fixes) because they share surfaces (Z1B + 
 
 ---
 
-##### Sub-step A — Z1B flashing: root cause + fix
+##### Sub-step A — Z1B "flashing": two interacting root causes + fix
 
-**Symptom.** Z1B's `TugThinkingIndicator` flashes during streaming responses AND while resizing the tide-card. Restarts of the WAAPI animation make the bars hop visibly instead of pulsing smoothly.
+**Symptom.** Z1B reads as "flashing" both during streaming responses AND on every tide-card resize — including when the session is idle and the Z1B end-state badge is the only thing there. The user-perceived "flashing" is the umbrella label for what diagnosis reveals to be **two distinct phenomena that compound**:
 
-**Smoking-gun hypothesis.** `tide-card-transcript.tsx::TideTranscriptHost` builds `codeRenderer` as a `useCallback` whose deps include `[modelName, codeSessionStore, streamingStore, renderTurnTrailing]`. Every time any of those deps churns, `codeRenderer` gets a new identity. Per the [L26] note already in that file: "renderer reference is the third identity input React reconciles against; distinct lambdas count as distinct component types" — meaning **every cell remounts** when `codeRenderer`'s identity changes. The Z1B indicator's WAAPI animation restarts on each remount.
+  1. **The indicator's WAAPI animation restarts** — bars hop instead of pulsing smoothly. Visible only while streaming (the indicator is mounted then).
+  2. **The transcript scroll position briefly drifts away from the bottom and snaps back** — the bottom region of the transcript (including Z1B) momentarily slides out of view and back in. Visible in BOTH idle and streaming states, on every container resize. Video evidence: a single corner-drag resize shows the transcript scrolled up by ~100px mid-resize and back to the bottom on settle — the bottom-most assistant row's Z1B is visibly gone in the middle frame.
+
+Either alone is a stability bug; together they compound. The fix below addresses both.
+
+---
+
+**Root cause 1 — Indicator remount cascade (streaming case).**
+
+`tide-card-transcript.tsx::TideTranscriptHost` builds `codeRenderer` as a `useCallback` whose deps include `[modelName, codeSessionStore, streamingStore, renderTurnTrailing]`. Every time any of those deps churns, `codeRenderer` gets a new identity. Per the [L26] note already in that file: "renderer reference is the third identity input React reconciles against; distinct lambdas count as distinct component types" — meaning **every cell remounts** when `codeRenderer`'s identity changes. The Z1B indicator's WAAPI animation restarts on each remount.
 
 Candidate dep-churn sources (need direct confirmation during diagnosis):
   - `modelName` flipping from `null` → resolved value during initial `system_init`, or churning if the metadata store re-emits during streaming.
   - `streamingStore` identity changes (the per-session `PropertyStore`) if the store wrapper rebuilds on certain reducer transitions.
   - The placement experiment's `renderTurnTrailing` (passed in from `tide-card.tsx`) rebuilding when `mapping.Z1` changes — should be stable in steady state, but worth confirming.
 
-**Resize axis.** When the tide-card width changes, the list-view's `ResizeObserver` fires and re-windows. Re-windowing alone should NOT remount cells (cells are keyed by `${turnKey}-{user|code}` per `TideTranscriptDataSource.idForIndex`, stable across reflow). If cells DO remount on resize, either (a) the renderer-identity issue above is firing during resize too (e.g., some downstream effect of resize causes `modelName` to re-emit), or (b) the list-view itself has a remount-on-reflow bug.
+---
+
+**Root cause 2 — Auto-follow-bottom pin jitter during reflow (resize case).**
+
+The transcript host (`TideTranscriptHost`) mounts `TugListView` with `followBottom={true}`. The list-view pins the scrollport to the bottom when content grows (per [D07]). On container resize:
+
+  1. The list-view's container `ResizeObserver` fires → sets `pinRequestedRef.current = true` → calls `scrollTick()`.
+  2. Per-cell `ResizeObserver`s fire SEPARATELY as cells reflow at the new width (text re-wraps, code blocks re-measure, etc.). Each per-cell measurement updates the height index incrementally.
+  3. Between (1) and (2), `scrollHeight` grows as cells report their new heights. The pin's `scrollTop = scrollHeight - clientHeight` lands at the bottom according to the CURRENT `scrollHeight` — but the per-cell measurement cascade has only partially settled. Once more cells report their new heights, `scrollHeight` grows further; the existing `scrollTop` value is now above the new bottom. **The scrollbar visibly drifts upward.**
+  4. The list-view's post-commit pin effect re-fires on the next ResizeObserver-driven flush and snaps `scrollTop` back to the new `scrollHeight - clientHeight`. **The scrollbar snaps to the bottom.**
+
+The net visible: a brief upward drift (~50-200px depending on cell-count and reflow magnitude) followed by a hard snap back. The bottom-most assistant row's Z1B and everything else in the bottom region disappear and reappear — the visual signature the user reads as "flashing".
+
+The fix is in the list-view: **hold the bottom pin across the entire reflow cascade** until all per-cell measurements have settled, not just on the container's first ResizeObserver fire. Concretely: after a container resize, every subsequent per-cell ResizeObserver flush should re-assert the bottom pin (cheap: a `scrollTop = scrollHeight - clientHeight` write) for as long as `followBottom` was true AND `pinRequestedRef` was set. The pin clears once a frame elapses with no new measurement-driven height changes.
+
+Alternative framing: introduce a "reflow-in-progress" flag that opens on container resize and closes after one rAF with no per-cell ResizeObserver fires; while open, every paint pins to the bottom. Same effect, different implementation.
+
+---
 
 **Tasks.**
 
-- [ ] **Diagnose.** Add render-counter logging (in dev only — `console.debug` keyed off `process.env.NODE_ENV !== "production"`) to `CodeRowCell`, `TideAsstHalfZ1B`, and `TugThinkingIndicator` (a per-mount unique id + a render counter on each). Stream a long response and resize the card. Confirm whether cells remount (id changes) or just re-render (id stable, counter increments).
-- [ ] **Audit the renderer's deps.** Confirm which of `[modelName, codeSessionStore, streamingStore, renderTurnTrailing]` churns during streaming / on resize. If `modelName` is the culprit, hoist its read into `CodeRowCell` (via `useSessionModelName` already exported) so the renderer lambda doesn't need it.
-- [ ] **Apply the fix.** Strategy depends on the diagnosis:
+- [ ] **Diagnose root cause 1.** Add render-counter logging (in dev only — `console.debug` keyed off `process.env.NODE_ENV !== "production"`) to `CodeRowCell`, `TideAsstHalfZ1B`, and `TugThinkingIndicator` (per-mount unique id + render counter). Stream a long response. Confirm whether cells remount (id changes) or just re-render (id stable, counter increments).
+- [ ] **Audit the renderer's deps.** Confirm which of `[modelName, codeSessionStore, streamingStore, renderTurnTrailing]` churns during streaming. If `modelName` is the culprit, hoist its read into `CodeRowCell` (via `useSessionModelName` already exported) so the renderer lambda doesn't need it.
+- [ ] **Apply the fix for root cause 1.** Strategy depends on the diagnosis:
   - If `modelName` churns: drop it from `codeRenderer`'s deps; have `CodeRowCell` subscribe to `useSessionModelName(sessionMetadataStore)` directly and read its own model name. The renderer lambda then only depends on `codeSessionStore` + `streamingStore` + `renderTurnTrailing`.
   - If another dep churns: hoist the affected read similarly so the renderer becomes truly inert (deps = `[]`).
-  - If the list-view has a resize-remount bug: fix the list-view to preserve mount identity across reflow (keys are already stable; the issue would be at the wrapping React layer).
-- [ ] **HMR vet.** Stream a long response — indicator bars pulse smoothly without restart. Resize the tide-card width during streaming — bars continue pulsing without restart.
+- [ ] **Diagnose root cause 2.** Set the dev-tools paint-flash overlay; resize the tide-card at idle (no streaming). Confirm the bottom-region disappears mid-resize and reappears on settle. Log `scrollTop` and `scrollHeight` at every list-view render to confirm the drift-and-snap pattern.
+- [ ] **Apply the fix for root cause 2.** In `tug-list-view.tsx`'s post-commit pin effect: extend the pin to re-assert on every per-cell ResizeObserver flush during an in-flight reflow window. Pin clears once a frame elapses with no new height changes. Confirm `followBottom` semantics are unchanged outside the reflow window.
+- [ ] **HMR vet both fixes.** (a) Stream a long response — indicator bars pulse smoothly without restart. (b) Resize the tide-card width at idle — the bottom region (Z1B, "OK :: 26s • 5.3K tokens :: COPY") stays glued to the bottom across the entire resize gesture, no visible upward drift. (c) Resize WHILE streaming — both fixes hold simultaneously.
 
-**Conformance.** [L26] mount identity preserved across reflow + streaming. [L13] WAAPI animations stay finite one-shots — no leaks across re-renders.
+**Conformance.** [L26] mount identity preserved across reflow + streaming. [L13] WAAPI animations stay finite one-shots — no leaks across re-renders. [D07] auto-follow-bottom semantics preserved outside the reflow window — the user can still scroll up to break the follow.
 
 ---
 
