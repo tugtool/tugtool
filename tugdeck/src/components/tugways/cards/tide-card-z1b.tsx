@@ -205,6 +205,13 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
               data-slot="tide-z1b-copy"
               getText={() => bodyTextForCopy}
               aria-label={copyAriaLabel}
+              // One step up from the affordance default (`2xs`) so
+              // COPY's 11px font + 12px icon read at the same scale
+              // as the row's surrounding `TugLabel size="xs"` (12px)
+              // and `TugBadge size="md"` (12px font). The `2xs`
+              // default suits in-block-header callsites where the
+              // surrounding text is muted path-label scale.
+              size="xs"
             />
           </span>
         </>

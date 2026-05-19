@@ -56,13 +56,18 @@
      identifier above them. The same padding applies to both
      variants so the indicator and end-state share the same
      horizontal start. */
-  padding-left: 2px;
+  padding-left: 1px;
   min-height: var(--tug-space-xl, 20px);
   width: 100%;
   /* Outer-row gap between the leading content (indicator OR
      end-state) and the trailing chrome (the optional `::` + copy
-     button). Tunable via `--tugx-tide-z1b-outer-gap`. */
-  --tugx-tide-z1b-outer-gap: 8px;
+     button). Held at 6px to match `.tide-z1b-end-state`'s internal
+     `gap`, so the two `::` separators across the row (inner =
+     between OK and TIME; trailing = between the end-state group
+     and COPY) end up with visually-equal surrounding space: 6px
+     flex gap + 8px separator `margin-inline` = 14px on each side
+     of every `::`. Tunable via `--tugx-tide-z1b-outer-gap`. */
+  --tugx-tide-z1b-outer-gap: 12px;
   gap: var(--tugx-tide-z1b-outer-gap);
   /* End-states only: pull Z1B up by 2px so the row sits tighter
      under the body. The live variant keeps its natural rhythm —
@@ -101,17 +106,26 @@
 
 .tide-z1b-copy {
   display: inline-flex;
-  /* Vertical nudge for COPY's baseline. The copy button
-     (TugPushButton size=2xs, ~20px tall) is shorter than the
-     badge (TugBadge size=md, ~24px tall); with `align-items:
-     center` the button's text-middle sits a hair below the
-     badge's text-middle. A small positive `translateY` pulls
-     COPY onto the same baseline. Tunable via the slot token. */
-  --tugx-tide-z1b-copy-baseline-nudge: 0.25px;
-  /* Horizontal nudge — pull COPY closer to the trailing `::`
-     than the outer-gap alone would put it. Negative = tighter.
-     Tunable via the slot token. */
-  --tugx-tide-z1b-copy-left-nudge: -14px;
+  /* Vertical nudge for COPY's baseline. Z1B passes
+     `size="xs"` to `BlockCopyButton` (24px tall) so the copy
+     chip sits one step up from the affordance default (`2xs`,
+     20px) and reads at the row's 12px type scale. The badge
+     (TugBadge size=md) is 26px tall after the Step 20.4.16
+     Sub-step F bump, so the two heights now differ by 2px —
+     close enough that `align-items: center` puts the text-
+     middles on the same line without an explicit nudge. The
+     slot token stays so a future cascade-scoped consumer can
+     dial it in by hand if a surrounding type-scale change
+     reintroduces a visible drift. */
+  --tugx-tide-z1b-copy-baseline-nudge: 0px;
+  /* Horizontal nudge — fine-tunes COPY's distance from the
+     trailing `::` beyond what the outer-gap + separator-margin
+     already provide. Zero by default so the trailing `::` keeps
+     symmetric 14px gutters on both sides (matching the inner
+     `::` between OK and TIME). Negative = pull COPY tighter to
+     `::`; positive = push it further. Tunable via the slot
+     token for a future callsite that wants a different rhythm. */
+  --tugx-tide-z1b-copy-left-nudge: -18px;
   transform: translateY(var(--tugx-tide-z1b-copy-baseline-nudge));
   margin-left: var(--tugx-tide-z1b-copy-left-nudge);
 }
@@ -138,7 +152,7 @@
   /* Base inter-item gap between badge → `::` → time → `•` →
      tokens. The flex container's `gap` realises this uniformly.
      Tunable via `--tugx-tide-z1b-end-state-gap`. */
-  --tugx-tide-z1b-end-state-gap: 6px;
+  --tugx-tide-z1b-end-state-gap: 12px;
   gap: var(--tugx-tide-z1b-end-state-gap);
   white-space: nowrap;
 }

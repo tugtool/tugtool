@@ -74,6 +74,23 @@ export const COPIED_FLASH_MS = 1200;
 // Props
 // ---------------------------------------------------------------------------
 
+/**
+ * The action-row affordance scale this button supports. `"2xs"` is
+ * the established default for in-header copy affordances (FileBlock,
+ * TerminalBlock, DiffBlock — buttons that sit alongside a path
+ * label in a sticky strip and need to read as chips). `"xs"` is one
+ * step up — for callsites whose surrounding text scale is larger
+ * than the chip default, where `"2xs"`'s 10 px font reads visibly
+ * smaller than its neighbours (the Z1B end-state row, whose
+ * surrounding `TugLabel size="xs"` and `TugBadge size="md"` both
+ * use 12 px).
+ *
+ * Constrained to the two-step set so the affordance can't be
+ * accidentally promoted to a primary-CTA size (`sm` / `md` / `lg`)
+ * — Copy is always a secondary action in an action row.
+ */
+export type BlockCopyButtonSize = "2xs" | "xs";
+
 export interface BlockCopyButtonProps {
   /**
    * Function returning the text to copy at click time. Consumers
@@ -108,6 +125,14 @@ export interface BlockCopyButtonProps {
    * onto the underlying `TugPushButton`.
    */
   className?: string;
+  /**
+   * Affordance-scale override; see {@link BlockCopyButtonSize}.
+   * Defaults to `"2xs"` so existing block-header callers are
+   * unchanged; pass `"xs"` from a callsite whose surrounding type
+   * is at the 12 px tier (Z1B end-state row) so the Copy chip
+   * reads at the same scale as its neighbours.
+   */
+  size?: BlockCopyButtonSize;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +145,7 @@ export function BlockCopyButton({
   "aria-label": ariaLabel,
   "data-slot": dataSlot = "block-copy",
   className,
+  size = "2xs",
 }: BlockCopyButtonProps): React.ReactElement {
   const [copied, setCopied] = React.useState<boolean>(false);
   const copiedTimerRef = React.useRef<number | null>(null);
@@ -187,7 +213,7 @@ export function BlockCopyButton({
       icon={<Copy />}
       subtype="icon-text"
       emphasis="ghost"
-      size="2xs"
+      size={size}
       disabled={disabled}
       aria-label={ariaLabel}
       onClick={() => stableClick(handleCopy)}
