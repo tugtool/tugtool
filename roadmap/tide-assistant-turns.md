@@ -3092,13 +3092,13 @@ For each adoption site, gallery-prototype the change before any production work.
 
 **References:** [L02], [L06], [L13], [L19], [L20], [L26]
 
-**Scope.** Seven follow-on items surfaced during HMR vetting of the 20.4.15 production wiring. They break into three buckets:
+**Scope.** Eight follow-on items surfaced during HMR vetting of the 20.4.15 production wiring. They break into three buckets:
 
-  - (a) **Stability** — fix the Z1B "flashing" surfaced during streaming AND on transcript resize. This is the highest-priority item — a flashing footer makes the whole surface feel unstable.
+  - (a) **Stability** — two list-view + transcript-entry boundary issues that both manifest as visible jumps / gaps: (A) the Z1B "flashing" during streaming and on resize, and (H) the gap left behind when a body kind (Bash / diff hunks) collapses without the scroller reclaiming the vacated space. Both are highest-priority — a transcript whose layout drifts under its own user-driven interactions feels broken.
   - (b) **Symmetry** — give the Z1 user half a status row that matches the asst-half's Z1B so the two halves line up vertically in the transcript.
   - (c) **Polish** — five cosmetic items: status-bar drop shadow, tighter indicator↔TIME gap, larger Z1B asst-half badge, a fix for the Context popover so the session-init breakdown actually surfaces from the ledger on reload, and consistent bottom margins under Z1B (including breathing room against the Z2 status bar).
 
-Bundled into one step (not seven ad-hoc fixes) because they share surfaces (Z1B + Z2 status bar + transcript spacing) and share root-cause investigations (the flashing diagnosis informs the spacing audit too — both touch the list-view + transcript-entry boundary).
+Bundled into one step (not eight ad-hoc fixes) because they share surfaces (Z1B + Z2 status bar + transcript spacing + TugListView windowing) and share root-cause investigations — the flashing diagnosis informs the collapse-gap fix because both live at the `TugListView` ↔ per-cell `ResizeObserver` boundary.
 
 ---
 
@@ -3230,25 +3230,70 @@ If the popover shows the empty state, one of the chains is broken — but the ch
 
 ---
 
-##### Sub-step F — Z1B asst-half badge size
+##### Sub-step F — Z1B asst-half badge: size + color-inheritance
 
-**Symptom.** The Z1B end-state badge (`TugBadge size="md"`, icon `size=13`) reads as slightly small compared to the surrounding `TugLabel` text in the row.
+**Symptoms (two).**
+
+  1. **Size.** The Z1B end-state badge (`TugBadge size="md"`, icon `size=13`) reads as slightly small compared to the surrounding `TugLabel` text in the row.
+  2. **Color.** The "OK" badge paints in `role="success"` green; on every committed row the bright green dots compound visually, drawing the eye and breaking the calm-row rhythm. The badge should blend into the row's text color so it reads as part of the line rather than a separate signal — saving the coloured tones for outcomes that warrant attention (`interrupted` / `error` / `transport_lost`).
+
+These two are coupled because both are TugBadge component-level passes against the same callsite; tuning them together avoids two consecutive HMR-vet rounds against the Z1B surface.
+
+---
+
+**Part 1 — Size.**
 
 **Design tradeoff.**
 
   - **(i) Bump the existing `md` size's metrics slightly** — affects every `md` consumer in the codebase. Cleanest if no other `md` callsite suffers.
   - **(ii) Add a new size between `md` and `lg`** (e.g., `md-plus` or rename current `lg`) — Z1B switches to it; other consumers unaffected.
-  - **(iii) Per-callsite override** — Z1B applies a CSS override on `.tide-asst-half-end-state .tug-badge`. Rejects core-component sovereignty per [L20]; not recommended.
+  - **(iii) Per-callsite override** — Z1B applies a CSS override on `.tide-z1b-end-state .tug-badge`. Rejects core-component sovereignty per [L20]; not recommended.
 
 **Recommendation (pending user review).** Audit existing `TugBadge size="md"` consumers first. If none depend on the current dimensions, go with (i) — single point of change, gallery + tide-card both pick it up. Otherwise go with (ii) — add a new size keyword.
+
+---
+
+**Part 2 — Color inheritance ("blend into surrounding text").**
+
+The current dispatch (`endStateBadgeFor`) returns `role="success"` for `complete` → bright green. In a transcript of many committed rows the greens compound into a vertical column of dots that reads first; the message content above them reads second. The badge for the `complete` outcome should inherit its color from the row's text color so it blends in by default; the actionable outcomes (`interrupted` / `error` / `transport_lost`) keep their coloured tones because attention IS warranted there.
+
+**Component-level addition — a TugBadge color-inheritance variant.**
+
+The fix lives in `TugBadge`, not at the Z1B callsite: per [L20] the component owns its tokens, and per the "no hacking around the component library for one look" rule the right move is a proper TugBadge API addition that any future callsite can pick up.
+
+Several design choices for the API:
+
+  - **(a) New role value `"inherit"`** — extend `TugBadgeRole` from 7 → 8 values; `inherit` resolves to `currentColor` for the badge's text / icon / border, dropping back to the surrounding text color. Symmetric with the existing semantic-color roles (accent / action / danger / …). Slot CSS rules for all four emphases (`filled-inherit`, `outlined-inherit`, `ghost-inherit`, `tinted-inherit`); `ghost-inherit` is the primary Z1B target (transparent bg, text + icon in `currentColor`).
+  - **(b) New role value with a semantic name (`"neutral"`, `"text"`, `"muted"`)** — same mechanism as (a), different name. Semantic naming reads cleaner ("neutral" = no-emphasis colour); the literal `"inherit"` makes the CSS-cascade behaviour explicit at the callsite.
+  - **(c) Separate `color="inherit"` prop, orthogonal to `role`** — keeps the 7-role enum stable; an explicit "this badge takes its surrounding text colour" override that wins over the role's palette. Requires adding a second axis to the badge's CSS dispatch.
+
+**Recommendation (pending user review).** Option (a) with the name `"inherit"` — it slots into the existing role axis without introducing a second dispatch dimension, and the literal name signals the cascade behaviour at the callsite. The four emphasis × `inherit` cells need explicit styling:
+
+  - `ghost-inherit` — transparent bg, `currentColor` text/icon. Primary Z1B target.
+  - `outlined-inherit` — transparent bg, `currentColor` border + text/icon (border at low alpha).
+  - `tinted-inherit` — low-alpha `currentColor` background, `currentColor` text/icon.
+  - `filled-inherit` — solid `currentColor` background. Likely an anti-pattern (inverts into the surrounding text colour); flag in the docstring that most callers want `ghost-inherit`.
+
+**Z1B adoption.** Once the `inherit` role lands:
+
+  - Branch `endStateBadgeFor` (or thread a sibling helper) so the `complete` outcome returns `role="inherit"` while the actionable outcomes keep their existing tones (`danger` / `caution` per their semantics).
+  - The gallery's TugBadge card adds a row demonstrating the new role across all four emphases so future consumers see the option.
+
+---
 
 **Tasks.**
 
 - [ ] Audit current `TugBadge size="md"` consumers (`grep -rn 'TugBadge[^>]*size="md"'`).
-- [ ] Decide on (i), (ii), or another option.
+- [ ] Decide size approach (i / ii / other).
 - [ ] Implement the size change in `tug-badge.tsx` + `tug-badge.css` (+ gallery card if a new size keyword lands).
-- [ ] Bump `endStateBadgeIcon` size in `tide-card-asst-half-stack.tsx` correspondingly.
-- [ ] HMR vet: Z1B badge reads as harmonious with surrounding TugLabel text; the gallery's TugBadge card also reflects the change.
+- [ ] Bump `endStateBadgeIcon` size in `tide-card-z1b.tsx` correspondingly.
+- [ ] Decide color-inheritance API (a / b / c / other).
+- [ ] Implement the chosen API in `tug-badge.tsx` + `tug-badge.css`. The four emphasis × `inherit` rules use `currentColor` for the badge's text/icon/border; `tinted-inherit` uses `color-mix(in srgb, currentColor 16%, transparent)` or equivalent for its background.
+- [ ] Wire the Z1B `complete` outcome to the new inheriting role via `endStateBadgeFor` (or a sibling helper) so committed `OK` rows render in the row's text color while `interrupted` / `error` / `transport_lost` keep their existing coloured tones.
+- [ ] Extend the gallery's `TugBadge` card with a row demonstrating the new role across all four emphases.
+- [ ] HMR vet: in a transcript of many committed rows, the `OK` badges blend into the surrounding text rhythm rather than punching out as a column of green dots; failure-outcome badges still read distinctly. The badge size also reads as harmonious with surrounding `TugLabel` text.
+
+**Conformance.** [L20] TugBadge stays the sole owner of its colour dispatch; the new role is added on the component, not faked at the callsite. [L19] role + emphasis combinatorics surface in the gallery so consumers can see and select the new option.
 
 ---
 
@@ -3279,6 +3324,63 @@ There is no `margin-bottom` token on the controls slot — Z1B has a top margin 
 
 ---
 
+##### Sub-step H — TugListView: collapsing cells leave a gap
+
+**Symptom.** When the user clicks a body-kind affordance that shrinks the rendered cell — e.g., the Bash / diff "Collapse" control that folds an expanded hunk view back to a one-line summary — the cell's own contents shrink, but the `TugListView` scroller does NOT reclaim the vacated space. A tall empty band appears in the transcript where the expanded hunks used to render, and the entries that should follow stay rendered at their original Y positions further down the scroll content. The user has to scroll past the gap to see the rows underneath.
+
+This is the inverse of the [Sub-step A](#step-20-4-16) "drift-and-snap" symptom: there height GROWTH outpaced the bottom-pin write; here height SHRINKAGE doesn't propagate into the height index or into the scrollport's layout. Both live at the `TugListView` ↔ per-cell `ResizeObserver` boundary, so the diagnosis informs both.
+
+**Suspect chain.**
+
+The list view tracks per-cell heights in an index and positions cells in the scrollport off that index. Cell-height changes are supposed to flow through:
+
+  1. The body kind re-renders with smaller content (collapsed hunks).
+  2. The cell wrapper's own height shrinks accordingly.
+  3. The per-cell `ResizeObserver` fires with the new measurement.
+  4. `tug-list-view.tsx` updates the height index for that cell id.
+  5. The flush re-positions every cell below the collapsed one to its new Y, and `scrollHeight` shrinks.
+  6. The user's viewport-relative anchor is preserved across the change (no visible content jump).
+
+The failure could be at any link in this chain — diagnosis pinpoints which one. Likely suspects:
+
+  - **(i) The body kind keeps the wrapper at full height across the collapse** — e.g., `display: none` on children inside a wrapper with a fixed / `min-height` outer box; or a CSS transition that lags the measurement. The ResizeObserver never sees a change; the collapse is visual only. The body kind owns the contract that "collapsed = smaller wrapper height," not just "hidden children."
+  - **(ii) The height-index update doesn't fire on shrink** — e.g., the per-cell observer's compare or threshold gate accepts grow-only deltas. The Sub-step A sync-pin work added a fast path that should be direction-agnostic; worth confirming it didn't introduce a regression here.
+  - **(iii) The re-position flush skips when no GROWTH was detected** — a likely artifact of the Sub-step A change which gates the rAF flush on `anyChanged`. If `anyChanged` is computed as `newHeight > oldHeight`, shrinks slip through.
+  - **(iv) Cell positions update, but `scrollTop` doesn't anchor** — cells reflow to their new Y, but the user's visible content jumps. The list view needs to detect a content-height shrink ABOVE the visible viewport and subtract the delta from `scrollTop` synchronously so the user's anchor row stays at the same Y on screen.
+
+**Scroll-anchoring contract.** On a cell-height change at offset `Y0` (top of the changing cell) of magnitude `delta` (positive when shrinking):
+
+  - **Change entirely above the viewport** (`Y0 + cellHeight <= scrollTop`): subtract `delta` from `scrollTop` atomically with the height-index update so the user's anchor row stays at the same on-screen Y. They didn't see the cell change; they shouldn't see the layout move either.
+  - **Change in the viewport** (`Y0 < scrollTop + viewportHeight && Y0 + cellHeight > scrollTop`): the user is looking at the affordance — they expect the cells BELOW to pull up in place. No `scrollTop` change; the visible top of the changing cell stays anchored.
+  - **Change entirely below the viewport** (`Y0 >= scrollTop + viewportHeight`): the change is off-screen below; the visible region is untouched. The height index updates so `scrollHeight` is correct, but no `scrollTop` change is needed.
+  - **Follow-bottom engaged:** if `isFollowingBottom && !isUserScrolling`, the Sub-step A sync `pinToBottom()` re-asserts; the anchoring logic above is short-circuited by the pin. Verify the pin write also handles the shrink direction.
+
+This is the scroll-anchoring discipline modern browsers apply automatically via the CSS `overflow-anchor` property — but the list view positions cells absolutely (not in flow), so the browser's anchoring is bypassed and the discipline has to be re-implemented in the windowing math.
+
+---
+
+**Tasks.**
+
+- [ ] **Diagnose.** Open the dev panel; expand a long Bash / diff cell several entries from the bottom of the transcript. Click "Collapse". Inspect:
+    - The cell wrapper's DOM height before vs after collapse (DevTools box-model).
+    - The list view's height-index entry for that cell id (one-shot `console.debug` keyed off `process.env.NODE_ENV !== "production"`).
+    - The scroller's `scrollHeight` and `scrollTop` before / after.
+    - The Y positions of the cells below the collapsed one in the rendered DOM.
+  Determine which link (i / ii / iii / iv) is broken — likely more than one.
+- [ ] **Fix per diagnosis.**
+    - If (i): the body kind's collapse implementation must shrink the wrapper, not just hide children. This is a body-kind contract, owned at the body-kind authoring layer, not the list view.
+    - If (ii) or (iii): adjust the per-cell `ResizeObserver` callback in `tug-list-view.tsx` to fire on EITHER direction of change and ensure the flush picks up shrinks. The most likely root cause sits inside the `anyChanged` compare or a gate added during Sub-step A — name the regression in the commit message so the lesson lands.
+    - If (iv): add a scroll-anchor write in the per-cell `ResizeObserver` callback, mirroring the Sub-step A sync-pin pattern but for the shrink-above-viewport case. Compute `delta` from the height-index diff; write `scrollTop -= delta` synchronously before the rAF flush so the layout move and the anchor write land in the same paint. Gate to avoid double-writes when the bottom pin already wrote `scrollTop`.
+- [ ] **HMR vet.**
+    - (a) **In-viewport collapse (primary case):** scroll so the cell with the affordance is fully visible (not at top, not at bottom). Click "Collapse". The cells below it pull up immediately; the cells above stay anchored at their on-screen Y. **No empty gap remains where the expanded content was.**
+    - (b) **Expand (inverse):** re-expand the same cell. Cells below push down; the user's anchor stays put.
+    - (c) **Collapse at the bottom (follow-bottom on):** with the viewport pinned to the bottom, collapse a near-bottom cell. The bottom pin re-asserts in the same paint (the Sub-step A sync-pin handles this; confirm it tolerates the shrink direction).
+    - (d) **Cross-body-kind:** repeat with a collapsible markdown block, a collapsible tool-call body, and any other body kind whose affordances shrink the wrapper. Same contract across all of them.
+
+**Conformance.** [L26] mount identity preserved across the collapse / expand transition — the cell wrapper survives; only its body content swaps. [D07] auto-follow-bottom semantics preserved — the user can still scroll up to break the follow. [L02] no React state mutation for scroll position — the anchor write is an imperative `scrollTop -=` on the scroller, mirroring the existing `pinToBottom` discipline.
+
+---
+
 **Tests.**
 
 - [ ] `bun x tsc --noEmit` clean.
@@ -3287,9 +3389,9 @@ There is no `margin-bottom` token on the controls slot — Z1B has a top margin 
 
 **Checkpoint.**
 
-- [ ] All seven sub-steps closed; HMR-vetted against the production tide-card.
+- [ ] All eight sub-steps closed; HMR-vetted against the production tide-card.
 - [ ] No regressions in 20.4.15-landed surfaces (Z2 row, Z1 asst-half).
-- [ ] The Z1B flashing diagnosis is documented in the commit message (root cause + fix), so the L26 lesson is recorded for future renderer-lambda authors.
+- [ ] The Z1B flashing diagnosis (Sub-step A) and the collapse-gap diagnosis (Sub-step H) are both documented in their commit messages so the L26 + windowing lessons are recorded for future authors of cell-renderer lambdas and body-kind collapse affordances.
 
 ---
 
