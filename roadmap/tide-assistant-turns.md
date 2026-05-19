@@ -3092,13 +3092,13 @@ For each adoption site, gallery-prototype the change before any production work.
 
 **References:** [L02], [L06], [L13], [L19], [L20], [L26]
 
-**Scope.** Six follow-on items surfaced during HMR vetting of the 20.4.15 production wiring. They break into three buckets:
+**Scope.** Seven follow-on items surfaced during HMR vetting of the 20.4.15 production wiring. They break into three buckets:
 
   - (a) **Stability** — fix the Z1B "flashing" surfaced during streaming AND on transcript resize. This is the highest-priority item — a flashing footer makes the whole surface feel unstable.
   - (b) **Symmetry** — give the Z1 user half a status row that matches the asst-half's Z1B so the two halves line up vertically in the transcript.
-  - (c) **Polish** — four cosmetic items: status-bar drop shadow, tighter indicator↔TIME gap, larger Z1B asst-half badge, and a fix for the Context popover so the session-init breakdown actually surfaces from the ledger on reload.
+  - (c) **Polish** — five cosmetic items: status-bar drop shadow, tighter indicator↔TIME gap, larger Z1B asst-half badge, a fix for the Context popover so the session-init breakdown actually surfaces from the ledger on reload, and consistent bottom margins under Z1B (including breathing room against the Z2 status bar).
 
-Bundled into one step (not six ad-hoc fixes) because they share surfaces (Z1B + Z2 status bar) and share root-cause investigations (the flashing diagnosis may also explain the Context popover's empty-state behaviour).
+Bundled into one step (not seven ad-hoc fixes) because they share surfaces (Z1B + Z2 status bar + transcript spacing) and share root-cause investigations (the flashing diagnosis informs the spacing audit too — both touch the list-view + transcript-entry boundary).
 
 ---
 
@@ -3252,6 +3252,33 @@ If the popover shows the empty state, one of the chains is broken — but the ch
 
 ---
 
+##### Sub-step G — Z1B bottom margin consistency + transcript bottom inset
+
+**Symptom.** Two related spacing issues in the transcript:
+
+  1. **Uneven margins between Z1B and the next row.** The gap below Z1B varies from response to response — some responses end with the Z1B sitting close to the next entry's header, others leave a larger gap. The variation reads as a layout bug; the spacing should be content-independent.
+  2. **Cramped Z1B → Z2 status bar.** When the bottom-most response in the transcript is at the bottom of the scrollport, its Z1B sits very close to the Z2 status bar — sometimes only a few pixels separate the COPY chip from the indicator dot above. There should be a reliable, generous gap there so Z1B doesn't crowd the status surface.
+
+**Suspect mechanism.**
+
+Spacing today comes from three layers:
+  - `--tugx-transcript-controls-margin-top: var(--tug-space-2xs)` — gap between the body and Z1B *inside* an entry (overridden to `2xs` in `tide-card.css` for the transcript consumer).
+  - `--tugx-list-view-row-gap: var(--tugx-tide-entry-margin)` (16px) — gap *between* entries in the list view.
+  - `--tugx-list-view-padding-block: var(--tug-space-md)` — top/bottom padding inside the list-view scroller; this is the gap between the LAST entry's Z1B and the Z2 status bar.
+
+There is no `margin-bottom` token on the controls slot — Z1B has a top margin but no bottom margin. The visible gap below Z1B depends entirely on the list-view's row-gap (between entries) or padding-block-end (against the status bar). That should be uniform — unless margin collapsing or padding from a descendant of the body is bleeding through. The "uneven margins" symptom likely points at a margin-collapse interaction (the body's last child's `margin-bottom` collapsing through Z1B and into the row-gap).
+
+**Tasks.**
+
+- [ ] **Diagnose the uneven-margin case.** Pick two adjacent assistant rows whose Z1B↔next-header gaps look different. Inspect each entry's bottom edge in DevTools — compare the body's last child's computed `margin-bottom`, Z1B's `margin-bottom` (currently none), the entry's own `margin-bottom`, and the list-view's row-gap. Identify whether margin collapsing, descendant margins, or content-dependent height drift is the source.
+- [ ] **Fix the uneven-margin case.** Likely shape: introduce `--tugx-transcript-controls-margin-bottom` on the controls slot (defaulting to a small content-independent value) so Z1B always carries its own predictable bottom margin. If margin collapsing is involved, neutralize it (e.g. apply `display: flow-root` or an equivalent context on the entry root so descendant margins can't escape past Z1B).
+- [ ] **Fix the cramped Z1B → Z2 case.** Bump the list-view's bottom padding for the transcript consumer. Current `--tugx-list-view-padding-block: var(--tug-space-md)` (~12px) reads as cramped against the status bar; trial `--tug-space-xl` (~20px) or `--tug-space-2xl` (~24px). Apply only to the bottom (`padding-block-end`) if a top bump isn't desired.
+- [ ] **HMR vet.** (a) Scroll through a session with mixed response types (markdown paragraphs, code blocks, lists, tool calls) — every Z1B↔next-row gap reads as identical. (b) Pin to bottom on a fresh turn-complete — the Z1B has visible breathing room above the Z2 status bar.
+
+**Conformance.** [L06] visible spacing through CSS tokens, never React state. [L19] new token follows the `--tugx-transcript-*` naming pattern. [L20] consumer-only — no override of cross-component tokens.
+
+---
+
 **Tests.**
 
 - [ ] `bun x tsc --noEmit` clean.
@@ -3260,7 +3287,7 @@ If the popover shows the empty state, one of the chains is broken — but the ch
 
 **Checkpoint.**
 
-- [ ] All six sub-steps closed; HMR-vetted against the production tide-card.
+- [ ] All seven sub-steps closed; HMR-vetted against the production tide-card.
 - [ ] No regressions in 20.4.15-landed surfaces (Z2 row, Z1 asst-half).
 - [ ] The Z1B flashing diagnosis is documented in the commit message (root cause + fix), so the L26 lesson is recorded for future renderer-lambda authors.
 
