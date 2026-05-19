@@ -3002,7 +3002,7 @@ Visual language coordinates with the per-area popover designs (20.4.7) — tight
 
 **Depends on:** #step-20-4-10
 
-**Status:** _not started._
+**Status:** _closed — audit complete, empty adoption set (see Outcome)._
 
 **Commit:** `feat(tide-rendering): TugThinkingIndicator adoption pass`
 
@@ -3018,19 +3018,34 @@ For each adoption site, gallery-prototype the change before any production work.
 
 **Tasks.**
 
-- [ ] Grep / walk the tide-card surface for static affordances that could become live progress indicators.
-- [ ] Gallery-prototype any candidate adoptions.
-- [ ] Document the audit outcome (which call-sites adopt; which were considered and rejected, with reason).
+- [x] Grep / walk the tide-card surface for static affordances that could become live progress indicators.
+- [x] Gallery-prototype any candidate adoptions. _(empty set — no prototypes needed.)_
+- [x] Document the audit outcome (which call-sites adopt; which were considered and rejected, with reason).
 
 **Tests.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green.
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] Audit outcome documented (even if empty).
+- [x] Audit outcome documented (even if empty).
+
+**Outcome.** Empty adoption set — `TugThinkingIndicator` is not promoted to any production call-site beyond the Z1 asst-half stack already wired in [Step 20.4.12](#step-20-4-12). The audit walked every "waiting" affordance in the tide-card surface and classified each:
+
+| Call-site | Today | Considered | Decision | Reason |
+|---|---|---|---|---|
+| `ToolWrapperChrome.StreamingPlaceholder` (`tool-wrappers/tool-wrapper-chrome.tsx`) — body of every tool wrapper while `status === "streaming"` (args still arriving from the model). | Three CSS-pulsed dots with staggered `:nth-child` delays. | Replace pulsed dots with `TugThinkingIndicator`. | **Reject.** | (1) Semantic: the body region is reserved for "tool input still streaming," not for "agent is thinking." TugThinkingIndicator's metaphor encodes deliberation; mapping it onto args-streaming would muddle the gesture. (2) Not dangling: the placeholder already pulses, and the chrome header simultaneously paints a streaming-color stripe — there is no "no-progress-indication" gap to close. (3) Decoupling: per-body-kind placeholder lifecycles should stay local to each wrapper; coupling them all to the Z1 indicator's primitive would invert the layer-2 ownership rule ([Spec S03], [L20]). |
+| `TideRestoring` panel spinner (`tide-card.tsx`, ~L583) — full-card backdrop shown while `transportState === "restoring"`. | `TugProgress variant="spinner"`. | Swap spinner for `TugThinkingIndicator`. | **Reject.** | Semantically "the wire is being re-asserted," not "the agent is thinking." A continuous spinner is the correct primitive for connection-restoration semantics; the three-bar thinking pulse would mislead users into reading the indicator as model activity rather than transport activity. |
+| `replay-loading` banner spinner (`tide-card.tsx`, ~L1611) — `iconSlot` for `TugPaneBanner` while a JSONL replay is loading. | `TugProgress variant="spinner"`. | Swap spinner for `TugThinkingIndicator`. | **Reject.** | Same reasoning as `TideRestoring`. The banner reads "Loading session…" — a transport/disk progress gesture, not a model deliberation gesture. The spinner is the correct primitive. |
+| `LoadingCell` / `tide-card-picker-pending-placeholder` (`tide-picker-cells.tsx` L316; `tide-card.tsx` L1418) — "checking…" while the picker resolves sessions for a project path. | Static text `"checking…"` with no animation. | Replace text with `TugThinkingIndicator`. | **Reject.** | (1) Wrong semantic — checking is a filesystem/DB lookup, not thinking. (2) Wrong duration shape — the wait is too brief for an animated indicator to earn its place; users may see at most half a pulse before the list paints, which reads as a flicker rather than progress. A static text placeholder is the better fit for sub-second waits. |
+| Permission dialog "awaiting decision" body (`tide-permission-dialog.tsx`). | No indicator (the user IS the dependent event). | Add `TugThinkingIndicator` to signal "waiting on you." | **Reject.** | The agent is *not* working in this state — it is blocked on the user. Adding a thinking-style indicator here would actively mislead by suggesting agent activity that isn't happening. |
+| Z1 asst-half in-flight slot ([Step 20.4.12](#step-20-4-12)) — only existing production callsite scheduled for `TugThinkingIndicator`. | Two-line stack with `TugThinkingIndicator` in Z1B during `isLivePhase`. | — | **Adopt** (already wired via 20.4.12 + 20.4.15 promotion). | This is the canonical "agent is doing work on this turn" surface. |
+
+**Why the audit landed empty.** `TugThinkingIndicator`'s semantic is narrow by design: it represents the agent *deliberating during a turn* — the slot where, by definition, there is no concurrent textual output yet. Every other "wait" in the tide-card surface is either (a) a non-agent wait (transport / disk / user-decision), where a spinner or static label fits the gesture; or (b) an agent wait that already has a different visible signal (chrome header stripe on tool wrappers). The narrow fit is by intent — promoting the indicator outside its semantic would dilute its meaning at the canonical Z1 callsite.
+
+**Polish during the audit.** None required. The `TugThinkingIndicator` primitive itself was tuned to its final defaults across [Step 20.4.10](#step-20-4-10), [Step 20.4.12](#step-20-4-12), and [Step 20.4.13](#step-20-4-13) (asymmetric short-long-short pulse, `shrinkTo = 0.5`, `sideBarRatio = 0.5`, `barWidthRatio = 0.15`, label inherits surrounding font size). No new prop, token, or visual variation was surfaced by the audit.
 
 ---
 
