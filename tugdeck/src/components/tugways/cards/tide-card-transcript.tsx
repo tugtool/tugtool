@@ -70,10 +70,9 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Check, Copy, OctagonX } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { TugBadge } from "@/components/tugways/tug-badge";
 import { HighlightSelectionAdapter, type TextSelectionAdapter } from "@/components/tugways/text-selection-adapter";
 import {
   TugListView,
@@ -84,6 +83,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
 import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transcript-tool-calls";
+import { TideAsstHalfZ1B } from "@/components/tugways/cards/tide-card-asst-half-stack";
 import { dispatch as dispatchRenderInput } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -518,14 +518,18 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   const turn = row.turn;
   const isCommitted = turn !== undefined;
   const assistantText = turn?.assistant ?? "";
-  const isInterrupted = turn?.result === "interrupted";
   const timestamp =
     turn !== undefined ? formatTranscriptTimestamp(turn.endedAt) : undefined;
-  const handleCopyButton = useCallback(() => {
-    if (assistantText.length === 0) return;
-    void navigator.clipboard?.writeText(assistantText);
-  }, [assistantText]);
-  const hasCopyBody = isCommitted && assistantText.length > 0;
+  // Session phase drives the Z1B status row's live ↔ terminal
+  // dispatch. Subscribing here keeps every code cell consistent
+  // with the rest of the row's external-state reads ([L02]).
+  const phase = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().phase,
+      [codeSessionStore],
+    ),
+  );
 
   // Permission slot — built from committed `turn.controlRequests` when
   // the cell is past `turn_complete`, otherwise from the live
@@ -652,29 +656,25 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                 streamingPath={assistantPath}
                 className="tide-card-transcript-code-body"
               />
-              {isInterrupted ? (
-                <div
-                  className="tide-card-transcript-code-interrupted"
-                  data-slot="tide-card-transcript-interrupted"
-                >
-                  <TugBadge
-                    size="sm"
-                    emphasis="tinted"
-                    role="danger"
-                    icon={<OctagonX size={12} aria-hidden="true" />}
-                  >
-                    Interrupted
-                  </TugBadge>
-                </div>
-              ) : null}
             </div>
           }
           controls={
             (() => {
-              // Z1 — invoke the per-turn trailing renderer for the
-              // assistant half. `row.turnKey` is set on every code
-              // row; `row.turn` is undefined for in-flight rows and
-              // populated post-commit.
+              // Z1B — always-mounted status / end-state row driven by
+              // the live session `phase`. The slot div is rendered
+              // unconditionally so the indicator → end-state swap
+              // preserves DOM identity ([L26]); only the child node
+              // inside swaps. The terminal end-state surfaces the
+              // tone-coded badge for all four `TurnEndReason` values,
+              // so the pre-promotion body-internal "Interrupted"
+              // badge is no longer needed (Z1B's `interrupted` badge
+              // covers that case).
+              //
+              // Optional Z1 placement-experiment renderer trails Z1B
+              // when the experiment maps an alt-datum (per-turn cost,
+              // ttft, etc.) onto the assistant row. Default
+              // production wiring leaves `renderTurnTrailing`
+              // undefined and Z1B is the sole footer.
               const trailing =
                 renderTurnTrailing !== undefined && row.turnKey !== undefined
                   ? renderTurnTrailing({
@@ -684,27 +684,16 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                     })
                   : null;
               const hasTrailing = trailing !== null && trailing !== undefined;
-              const showControls = hasCopyBody || hasTrailing;
-              return showControls ? (
+              return (
                 <>
-                  {hasCopyBody ? (
-                    <TugPushButton
-                      subtype="icon"
-                      emphasis="ghost"
-                      role="action"
-                      size="sm"
-                      icon={<Copy size={12} />}
-                      confirmation={{
-                        icon: <Check size={12} />,
-                        ariaLabel: "Copied",
-                      }}
-                      aria-label="Copy"
-                      onClick={handleCopyButton}
-                    />
-                  ) : null}
+                  <TideAsstHalfZ1B
+                    phase={phase}
+                    turn={turn}
+                    bodyText={isCommitted ? assistantText : undefined}
+                  />
                   {hasTrailing ? trailing : null}
                 </>
-              ) : null;
+              );
             })()
           }
         />

@@ -88,32 +88,37 @@
 /* ============================================================================
    .tide-telemetry-status-row — Z2 combined session-status row
    ============================================================================
-   IBM-1620-inspired instrument readout — the F5 design selected by
-   the Step 20.4 HMR study. A leftmost phase/transport indicator
-   followed by five uniform-width cells; each cell is a two-row stack:
+   IBM-1620-inspired instrument readout — the design selected by the
+   Step 20.4 HMR study and polished across the 20.4.x workshop. The
+   row carries one TugStateIndicator slot (label + popover) followed
+   by three uniform-width cells; each cell is a two-row stack:
 
      [label apparatus]   ← letterspaced uppercase label embedded in a
                             hairline rule with downward endcap ticks
      [centered value]
+
+   Per [Step 20.4.15]'s promotion, the TOTAL TIME / TOTAL TOKENS
+   cells were retired — those sums now surface inside the TIME /
+   TOKENS popovers' summary footers, so the row reads as three live
+   cells (TIME / TOKENS / CONTEXT) plus the indicator.
 
    The cells share a single apparatus width
    (`--tugx-tide-status-cell-width`), so the row's column geometry
    never jitters as values change. Values render natural-width and
    center horizontally within their cell.
 
-   Row spacing — "C-wider-gap": `var(--tug-space-2xl)` between the
-   indicator and the cells block, `var(--tug-space-lg)` horizontal
-   padding on the row so the indicator has visible breathing room from
-   the surface edge.
+   Row layout — single flex row with `justify-content: space-between`
+   on `.tide-telemetry-status-cells`; row padding-inline of
+   `var(--tug-space-2xl)` gives the indicator + cells generous
+   end margins. The indicator + cells distribute across the row's
+   width with gaps that flex uniformly as the host widens.
 
    Collapse priority (least-to-most persistent) — driven by container
    queries on the host's `container-name: tide-status`. As the host
    narrows, cells hide whole-cell (label apparatus + value together):
-     1. total-time   → ~780px
-     2. total-tokens → ~600px
-     3. time         → ~430px
-     4. tokens       → ~260px
-     5. context      → always shown (most persistent)
+     1. time    → ~430px
+     2. tokens  → ~260px
+     3. context → always shown (most persistent)
    ========================================================================= */
 
 .tide-telemetry-status-row {
@@ -124,27 +129,21 @@
   font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
   line-height: 1.2;
-  gap: var(--tug-space-2xl);
+  gap: var(--tug-space-md);
   /* Row fills its Z2 host so the cells block can distribute itself
      across the full width via `justify-content: space-between` on
      `.tide-telemetry-status-cells`. Without this the row would
      collapse to content width and the cells block would lose its
      distribution geometry. */
   width: 100%;
-  padding-inline: var(--tug-space-lg);
+  padding-inline: var(--tug-space-2xl);
   box-sizing: border-box;
 
-  /* Uniform cell width — dominant cell is TOTAL TOKENS, whose
-     letterspaced label (`TOTAL TOKENS` ≈ 12 chars × 1.18 letter-
-     spacing factor ≈ 14.2ch + 4ch internal padding ≈ 19ch).
-     Apparatus and value-wrap both consume this width so every cell
+  /* Uniform cell width — dominant cell is TOKENS / CONTEXT label
+     (~19ch including letterspacing + label-padding). Apparatus
+     and value-wrap both consume this width so every cell
      occupies an identical horizontal slot. */
   --tugx-tide-status-cell-width: 19ch;
-  /* Indicator dot diameter + outer-ring outer diameter. The dot is
-     half the ring's size, so it reads as a solid LED inside an
-     activity-signal pulse. */
-  --tugx-tide-status-indicator-size: 16px;
-  --tugx-tide-status-indicator-dot-size: 8px;
 }
 
 /* Cells block — the five F5 cells distributed across whatever
@@ -224,131 +223,45 @@
 }
 
 /* ----------------------------------------------------------------------------
-   .tide-telemetry-indicator — phase/transport/interrupt indicator
+   .tide-telemetry-status-anchor — popover-anchor affordance for the
+   indicator + per-cell triggers ([Step 20.4.15]).
 
-   Concentric dot + pulsing ring. The dot is always visible; its tone
-   encodes the session's coarse state (success / caution / danger /
-   default). The outer ring appears only when the modifier
-   `.tide-telemetry-indicator--animated` is present (active phases);
-   static states show just the bare dot.
+   Each of the four Z2 anchors (indicator, TIME, TOKENS, CONTEXT) is
+   wrapped by a `TugPopoverTrigger` that hangs this class on the
+   trigger span. The class only declares the hover hint (cursor +
+   tinted background); the popover itself opens via Radix on click,
+   so this stays a pure visible-affordance helper.
 
-   Centering — the dot and ring are both absolutely positioned at the
-   indicator's center (`top: 50%; left: 50%`) and translated by
-   `(-50%, -50%)`. The pulse keyframe combines that translate with a
-   `scale()`, so the ring grows AROUND the dot without drifting off
-   axis. `box-sizing: border-box` keeps the ring's 1px border inside
-   the declared diameter so the ring stays concentric with the dot at
-   every frame of the animation.
+   Negative margin offsets compensate for the padding so the row's
+   visual rhythm is unchanged when the trigger absorbs the click
+   target.
+
+   The hover state lives entirely in CSS, never through React state
+   ([L06]).
    ------------------------------------------------------------------------- */
 
-.tide-telemetry-indicator {
-  position: relative;
-  display: inline-block;
-  flex: 0 0 auto;
-  width: var(--tugx-tide-status-indicator-size);
-  height: var(--tugx-tide-status-indicator-size);
+.tide-telemetry-status-anchor {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  transition: background-color calc(120ms * var(--tug-timing, 1)) ease;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator-dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: var(--tugx-tide-status-indicator-dot-size);
-  height: var(--tugx-tide-status-indicator-dot-size);
-  border-radius: 999px;
-  transform: translate(-50%, -50%);
-  background-color: var(--tug7-element-global-text-normal-default-rest);
+.tide-telemetry-status-anchor:hover {
+  background-color: var(--tug7-surface-highlight-primary-normal-hover-rest);
 }
 
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: var(--tugx-tide-status-indicator-size);
-  height: var(--tugx-tide-status-indicator-size);
-  border-radius: 999px;
-  border: 1px solid var(--tug7-element-global-text-normal-default-rest);
-  box-sizing: border-box;
-  transform: translate(-50%, -50%);
-  animation: tide-telemetry-indicator-pulse 1.6s ease-out infinite;
-}
-
-/* Tone modifiers — both the dot's `background-color` and the ring's
-   `border-color` track the same token so the indicator reads as one
-   unit regardless of which layer is visible. Each rule sets only
-   color-class properties; the host status-bar surface declares the
-   `@tug-renders-on` annotation above. */
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--default .tide-telemetry-indicator-dot {
-  background-color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--default .tide-telemetry-indicator-ring {
-  border-color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--success .tide-telemetry-indicator-dot {
-  background-color: var(--tug7-element-global-text-normal-success-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--success .tide-telemetry-indicator-ring {
-  border-color: var(--tug7-element-global-text-normal-success-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--caution .tide-telemetry-indicator-dot {
-  background-color: var(--tug7-element-global-text-normal-caution-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--caution .tide-telemetry-indicator-ring {
-  border-color: var(--tug7-element-global-text-normal-caution-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--danger .tide-telemetry-indicator-dot {
-  background-color: var(--tug7-element-global-text-normal-danger-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-indicator--danger .tide-telemetry-indicator-ring {
-  border-color: var(--tug7-element-global-text-normal-danger-rest);
-}
-
-@keyframes tide-telemetry-indicator-pulse {
-  0% {
-    transform: translate(-50%, -50%) scale(0.85);
-    opacity: 0.7;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1.55);
-    opacity: 0;
-  }
-}
-
-/* Tooltip body — bold phase title + muted secondary lines describing
-   transport degradation / interrupt-in-flight. The TugTooltip
-   primitive owns the surface, padding, and font; these rules only
-   adjust intra-body layout. */
-.tide-telemetry-indicator-tooltip {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tide-telemetry-indicator-tooltip-title {
-  font-weight: 600;
-}
-
-.tide-telemetry-indicator-tooltip-secondary {
-  opacity: 0.78;
-  font-size: 0.875em;
+/* Indicator anchor — stretch to fill the row's vertical extent so
+   the hover hint reads the same height as the cell hovers. The cell
+   anchors are taller naturally (label + value stack); the indicator
+   slot is a single inline row, so without `align-self: stretch` its
+   hint would read as a much shorter box than the cells'. */
+.tide-telemetry-status-anchor[data-priority="indicator"] {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ----------------------------------------------------------------------------
@@ -450,19 +363,9 @@
 
    Breakpoints calibrated to 19ch uniform cell widths + row gaps +
    side padding. As the host narrows, whole cells (label apparatus
-   + value together) hide in priority order. */
-
-@container tide-status (max-width: 780px) {
-  .tide-telemetry-status-cell[data-priority="total-time"] {
-    display: none;
-  }
-}
-
-@container tide-status (max-width: 600px) {
-  .tide-telemetry-status-cell[data-priority="total-tokens"] {
-    display: none;
-  }
-}
+   + value together) hide in priority order — TIME first, then
+   TOKENS; CONTEXT stays as the most-persistent cell. The indicator
+   never collapses. */
 
 @container tide-status (max-width: 430px) {
   .tide-telemetry-status-cell[data-priority="time"] {

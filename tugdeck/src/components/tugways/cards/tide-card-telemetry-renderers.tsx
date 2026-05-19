@@ -32,23 +32,34 @@ import "./tide-card-telemetry-renderers.css";
 import React, { useCallback, useSyncExternalStore } from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
-import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import {
+  TugPopover,
+  TugPopoverContent,
+  TugPopoverTrigger,
+} from "@/components/tugways/tug-popover";
+import { TugStateIndicator } from "@/components/tugways/tug-state-indicator";
+import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indicator";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-import type {
-  CodeSessionPhase,
-  CodeSessionSnapshot,
-  TransportState,
-  TurnEntry,
-} from "@/lib/code-session-store/types";
+import type { TurnEntry } from "@/lib/code-session-store/types";
 import {
   deriveSessionTotals,
+  deriveTimeCellMs,
   perTurnContextSize,
 } from "@/lib/code-session-store/telemetry";
+import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
 import {
   DEFAULT_CONTEXT_MAX_TOKENS,
   resolveModelContextMax,
 } from "@/lib/model-context-max";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import { useSessionStateChanges } from "@/lib/session-state-changes-store";
+
+import {
+  ContextPopoverContent,
+  StateChangeLogPopoverContent,
+  TimePopoverContent,
+  TokensPopoverContent,
+} from "./tide-card-telemetry-popovers";
 
 // ---------------------------------------------------------------------------
 // Pure-logic formatters (exported for tests)
@@ -350,183 +361,64 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
   </span>
 );
 
-// ---------------------------------------------------------------------------
-// Phase / transport / interrupt → visual mapping for the Z2 indicator
-// ---------------------------------------------------------------------------
-
-interface IndicatorVisual {
-  /** CSS class suffix consumed by `.tide-telemetry-indicator-dot--<tone>`. */
-  tone: "default" | "success" | "caution" | "danger";
-  /** Whether the outer ring pulses (active states) or is omitted (static). */
-  animated: boolean;
-  /** Accessible label — matches the human-readable phase summary. */
-  label: string;
+/**
+ * Per-turn token-sum helper, mirroring the Z2 TOKENS cell's
+ * headline formula. Pulled to module scope so the live in-flight
+ * tokens path can reuse it without recomputation.
+ */
+function perTurnTotalTokens(turn: TurnEntry): number {
+  return (
+    turn.cost.inputTokens +
+    turn.cost.outputTokens +
+    turn.cost.cacheReadInputTokens +
+    turn.cost.cacheCreationInputTokens
+  );
 }
 
 /**
- * Map the session's `phase × transportState × interruptInFlight` triple
- * onto the indicator's visible state. Transport health dominates phase:
- * an offline wire reads as `danger` regardless of the phase the
- * reducer last assigned, and a restoring wire reads as `caution + pulse`.
- * An in-flight interrupt promotes the indicator to `caution + pulse` so
- * the user can see their stop request hasn't been lost between request
- * and ack. Otherwise the phase enum drives the tone:
- *   active (working)              → success (green) + pulse
- *   awaiting user approval         → caution (yellow) + pulse
- *   errored                        → danger (red), no pulse
- *   idle                           → default text, no pulse
- */
-function indicatorVisualFor(snap: {
-  phase: CodeSessionPhase;
-  transportState: TransportState;
-  interruptInFlight: boolean;
-}): IndicatorVisual {
-  if (snap.transportState === "offline") {
-    return { tone: "danger", animated: false, label: "offline" };
-  }
-  if (snap.transportState === "restoring") {
-    return { tone: "caution", animated: true, label: "restoring" };
-  }
-  if (snap.interruptInFlight) {
-    return { tone: "caution", animated: true, label: "interrupting" };
-  }
-  switch (snap.phase) {
-    case "errored":
-      return { tone: "danger", animated: false, label: "errored" };
-    case "submitting":
-    case "awaiting_first_token":
-    case "streaming":
-    case "tool_work":
-    case "replaying":
-      return { tone: "success", animated: true, label: snap.phase };
-    case "awaiting_approval":
-      return { tone: "caution", animated: true, label: "awaiting_approval" };
-    case "idle":
-    default:
-      return { tone: "default", animated: false, label: "idle" };
-  }
-}
-
-const PHASE_HUMAN_LABEL: Record<CodeSessionPhase, string> = {
-  idle: "Idle",
-  submitting: "Submitting message",
-  awaiting_first_token: "Awaiting first response",
-  streaming: "Streaming response",
-  tool_work: "Running tools",
-  awaiting_approval: "Awaiting your approval",
-  replaying: "Replaying session",
-  errored: "Last turn errored",
-};
-
-/**
- * Tooltip body for the Z2 indicator — phase title in bold + muted
- * secondary lines for transport degradation and interrupt-in-flight.
- * Reads the same triple that {@link indicatorVisualFor} dispatches on,
- * so the visible color/animation and the spoken description always agree.
- */
-const TideTelemetryIndicatorTooltip: React.FC<{
-  snap: {
-    phase: CodeSessionPhase;
-    transportState: TransportState;
-    interruptInFlight: boolean;
-  };
-}> = ({ snap }) => {
-  const secondaries: string[] = [];
-  if (snap.transportState === "offline") secondaries.push("Disconnected");
-  if (snap.transportState === "restoring") secondaries.push("Reconnecting…");
-  if (snap.interruptInFlight) secondaries.push("Interrupt requested");
-  return (
-    <div className="tide-telemetry-indicator-tooltip">
-      <div className="tide-telemetry-indicator-tooltip-title">
-        {PHASE_HUMAN_LABEL[snap.phase]}
-      </div>
-      {secondaries.map((s) => (
-        <div key={s} className="tide-telemetry-indicator-tooltip-secondary">
-          {s}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-/**
- * Concentric phase/transport indicator — a solid dot wrapped by an
- * optional pulsing ring. The dot is ALWAYS visible; its tone (mapped
- * via {@link indicatorVisualFor}) encodes the session's coarse state.
- * The ring is the activity-signal layer, rendered only for ACTIVE
- * (animated) phases. Hovering surfaces a TugTooltip describing the
- * state in plain English.
+ * Combined session status row — production Z2 surface promoted from
+ * the workshop gallery in [Step 20.4.15]. Layout:
  *
- * Appearance is driven entirely through CSS classes ([L06]) — the
- * tone-class selector picks the tone token; the `--animated` modifier
- * toggles the ring's visibility. No inline styles for state.
- */
-const TideTelemetryIndicator: React.FC<{
-  snap: {
-    phase: CodeSessionPhase;
-    transportState: TransportState;
-    interruptInFlight: boolean;
-  };
-}> = ({ snap }) => {
-  const v = indicatorVisualFor(snap);
-  return (
-    <TugTooltip
-      content={<TideTelemetryIndicatorTooltip snap={snap} />}
-      side="top"
-    >
-      <span
-        className={`tide-telemetry-indicator tide-telemetry-indicator--${v.tone}${
-          v.animated ? " tide-telemetry-indicator--animated" : ""
-        }`}
-        data-slot="tide-telemetry-indicator"
-        aria-label={v.label}
-      >
-        <span className="tide-telemetry-indicator-dot" />
-        {v.animated && <span className="tide-telemetry-indicator-ring" />}
-      </span>
-    </TugTooltip>
-  );
-};
-
-/**
- * Combined session status row — the canonical Z2 design chosen by the
- * Step 20.4 HMR study (F5 variant from the design spike gallery).
+ *     [TugStateIndicator (label-right)]   TIME   TOKENS   CONTEXT
  *
- * **Layout — phase/transport indicator + five uniform-width cells:**
+ * Four anchors, each opening a popover on click:
  *
- *   ●  ┌── TIME ──┐  ┌── TOKENS ──┐  ┌── TOTAL TIME ──┐  …  ┌── CONTEXT ──┐
- *        0h 0m 12s      30.3K          0h 0m 12s                30.3K / 1.00M
+ *   - **Indicator** → `StateChangeLogPopoverContent` driven by
+ *     `useSessionStateChanges(snap.tugSessionId)` against the
+ *     persisted SQLite ledger.
+ *   - **TIME** → `TimePopoverContent` — per-turn `activeMs` log +
+ *     count/total/avg footer + live in-flight footer row when a
+ *     turn is in flight.
+ *   - **TOKENS** → `TokensPopoverContent` — per-turn token-sum log +
+ *     count/total/avg footer + live in-flight footer row.
+ *   - **CONTEXT** → `ContextPopoverContent` — rich `/context`-style
+ *     breakdown when a `lastContextBreakdown` frame is present, the
+ *     5-segment `cost_update`-derived fallback otherwise.
  *
- * The leftmost slot is a concentric dot + pulsing ring keyed on the
- * session's `phase × transportState × interruptInFlight` triple — the
- * dot is always visible (its tone encodes the state), the ring only
- * renders for ACTIVE phases. Hovering surfaces a plain-English
- * tooltip via `TugTooltip`.
+ * TIME cell text is the live in-flight clock when a turn is in
+ * flight (`isLivePhase(phase)` true) and the last committed turn's
+ * `activeMs` after commit. `deriveTimeCellMs` pauses on yellow axes
+ * (awaiting-approval / transport-downtime / interrupt-in-flight)
+ * via the snapshot's union-pause bookkeeping, freezes at
+ * `turn_complete`, and re-engages on the next submit.
+ * `useLifecycleTick` provides the 1Hz heartbeat — it ticks only
+ * while in flight and reports `0` otherwise (the helper's fallback
+ * path uses the static value in that case).
  *
- * Every cell is a two-row stack: an IBM-1620 letterspaced label
- * embedded in a hairline rule with downward endcap ticks, sitting
- * above a centered value. The five cells share a single uniform
- * apparatus width (`--tugx-tide-status-cell-width`) so the row
- * never jitters — values can change width inside their cell, but
- * the cell columns themselves stay rock-stable.
+ * `TugStateIndicator` (Step 20.4.3) replaces the old internal
+ * concentric dot + tooltip combo. The indicator's `state` reads
+ * `phase × transportState × interruptInFlight`; `labelPosition="right"`
+ * surfaces the inline `PHASE_HUMAN_LABEL` text alongside the dot.
  *
- * **Formats:**
- *  - `time`/`total time` → `formatTimeAlwaysHours` (`Hh Mm SSs` shape).
- *    Per-turn time and total time both surface the seconds component
- *    so the readout never goes dark on a low-magnitude value.
- *  - `tokens`/`total tokens` → `formatTokensCaps` (`K`/`M`/`G`).
- *  - `context` → `formatTokensCaps(current) / formatTokensCaps(max)`,
- *    with the numerator color-coded by usage ratio (caution at ≥75%,
- *    danger at ≥90% via the `--tug7-element-global-text-normal-{caution,danger}`
- *    tokens). No arc gauge — the colored numerator is the entire
- *    graphical cue.
+ * Cells render TIME / TOKENS / CONTEXT only — the pre-20.4.15
+ * TOTAL TIME / TOTAL TOKENS cells were removed because the same
+ * sums surface in the TIME and TOKENS popovers' summary footers
+ * (one click reveals the per-turn rows + the cumulative totals).
  *
- * `time` / `tokens` read off the LAST COMMITTED turn — during an
- * in-flight turn the previous turn's values stay surfaced. `total
- * time` / `total tokens` use `deriveSessionTotals`. The
- * always-hours formatter is re-evaluated on the 1Hz live tick so
- * any side-channel that bumps the committed sum mid-second still
- * surfaces promptly.
+ * **Mount-identity ([L26]):** the four-cell flex row, the indicator
+ * host, and every cell are unconditionally mounted across phase /
+ * transport / interrupt transitions. Only the popovers' open/closed
+ * state and the cell values change.
  */
 export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   codeSessionStore,
@@ -549,23 +441,39 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
       [sessionMetadataStore],
     ),
   );
-  useLiveTick();
+  // Live 1Hz heartbeat — ticks only while phase is non-terminal, so
+  // the TIME cell's in-flight readout advances at the granularity
+  // the user perceives. `tickAt` is the helper's input, not a
+  // render-affecting value itself; `deriveTimeCellMs` folds it into
+  // its union-pause math.
+  const tickAt = useLifecycleTick(snap.phase);
+  // Subscribe to the persisted state-change log so the indicator's
+  // popover surfaces the live row stream. Returns the idle snapshot
+  // when no card has bound to a session id, so the subscription is
+  // cheap even before the popover opens.
+  const stateChangeSnap = useSessionStateChanges(snap.tugSessionId);
 
   const lastTurn =
     snap.transcript.length > 0
       ? snap.transcript[snap.transcript.length - 1]
       : null;
-  const perTurnActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
+  // TIME cell: live in-flight clock when a turn is in flight, or
+  // the last committed turn's activeMs as the post-commit fallback.
+  // `deriveTimeCellMs` short-circuits to the fallback path when
+  // `inflightUserMessage === null`.
+  const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
+  const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
+  // TOKENS cell: when a turn is in flight there is no live token
+  // count yet (cost_update lands at turn-complete), so the cell
+  // continues to show the last committed turn's total — matching
+  // the pre-20.4.15 behaviour for the headline cell. The popover's
+  // own in-flight footer is what surfaces a live-turn signal when
+  // one exists.
+  const perTurnTokens = lastTurn !== null ? perTurnTotalTokens(lastTurn) : 0;
   const perTurnContextTokens =
     lastTurn !== null ? perTurnContextSize(lastTurn) : 0;
   const contextMax =
     meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
-  const totals = deriveSessionTotals(snap.transcript);
-  const totalTokensSum =
-    totals.totalInputTokens +
-    totals.totalCacheReadTokens +
-    totals.totalCacheCreationTokens +
-    totals.totalOutputTokens;
 
   // Color-coded context numerator. The `/` and denominator stay
   // muted so the live numerator reads first. Threshold class is
@@ -575,85 +483,131 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
-  const indicatorSnap: Pick<
-    CodeSessionSnapshot,
-    "phase" | "transportState" | "interruptInFlight"
-  > = {
+  const indicatorState: TugStateIndicatorState = {
     phase: snap.phase,
     transportState: snap.transportState,
     interruptInFlight: snap.interruptInFlight,
   };
+
+  // Per-anchor popover content. Each popover receives only the
+  // inputs it needs — no shared context object — so future popover
+  // changes touch one factory call instead of a coupling layer.
+  // `isInflight` is computed once; both per-area popovers gate
+  // their in-flight footer on it.
+  const isInflight = snap.inflightUserMessage !== null;
+  const timePopover = (
+    <TimePopoverContent
+      transcript={snap.transcript}
+      inflight={
+        isInflight ? { currentTurnActiveMs: perTurnActiveMs } : null
+      }
+    />
+  );
+  const tokensPopover = (
+    <TokensPopoverContent
+      transcript={snap.transcript}
+      inflight={
+        // No live token count mid-turn (cost_update lands at
+        // turn-complete); the in-flight footer reads the most
+        // recent committed contribution rather than fabricating a
+        // mid-turn value the wire hasn't reported yet.
+        isInflight ? { currentTurnTokens: perTurnTokens } : null
+      }
+    />
+  );
+  const contextPopover = (
+    <ContextPopoverContent
+      transcript={snap.transcript}
+      contextMax={contextMax}
+      lastContextBreakdown={snap.lastContextBreakdown}
+    />
+  );
+  const indicatorPopover = (
+    <StateChangeLogPopoverContent rows={stateChangeSnap.rows} />
+  );
 
   return (
     <div
       className="tide-telemetry-status-row"
       data-slot="tide-telemetry-status-row"
     >
-      <TideTelemetryIndicator snap={indicatorSnap} />
+      <TugPopover>
+        <TugPopoverTrigger>
+          <span
+            className="tide-telemetry-status-anchor"
+            data-slot="tide-telemetry-status-indicator-anchor"
+            data-priority="indicator"
+          >
+            <TugStateIndicator state={indicatorState} size={16} />
+          </span>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="start" sideOffset={8} arrow>
+          {indicatorPopover}
+        </TugPopoverContent>
+      </TugPopover>
       <div className="tide-telemetry-status-cells">
-        <span
-          className="tide-telemetry-status-cell"
-          data-priority="time"
-        >
-          <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
-          <span className="tide-telemetry-status-value-wrap">
-            <span className="tide-telemetry-status-value">
-              {formatTimeAlwaysHours(perTurnActiveMs)}
-            </span>
-          </span>
-        </span>
-        <span
-          className="tide-telemetry-status-cell"
-          data-priority="tokens"
-        >
-          <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
-          <span className="tide-telemetry-status-value-wrap">
-            <span className="tide-telemetry-status-value">
-              {formatTokensCaps(perTurnContextTokens)}
-            </span>
-          </span>
-        </span>
-        <span
-          className="tide-telemetry-status-cell"
-          data-priority="total-time"
-        >
-          <TideTelemetryEndcapRuleLabel label="TOTAL TIME" ticksDirection="down" />
-          <span className="tide-telemetry-status-value-wrap">
-            <span className="tide-telemetry-status-value">
-              {formatTimeAlwaysHours(totals.totalActiveMs)}
-            </span>
-          </span>
-        </span>
-        <span
-          className="tide-telemetry-status-cell"
-          data-priority="total-tokens"
-        >
-          <TideTelemetryEndcapRuleLabel label="TOTAL TOKENS" ticksDirection="down" />
-          <span className="tide-telemetry-status-value-wrap">
-            <span className="tide-telemetry-status-value">
-              {formatTokensCaps(totalTokensSum)}
-            </span>
-          </span>
-        </span>
-        <span
-          className="tide-telemetry-status-cell"
-          data-priority="context"
-        >
-          <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
-          <span className="tide-telemetry-status-value-wrap">
+        <TugPopover>
+          <TugPopoverTrigger>
             <span
-              className="tide-telemetry-status-value tide-telemetry-status-value-context"
-              data-context-threshold={contextThreshold}
+              className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+              data-priority="time"
             >
-              <span className="tide-telemetry-status-context-numerator">
-                {formatTokensCaps(perTurnContextTokens)}
-              </span>
-              <span className="tide-telemetry-status-context-denominator">
-                {` / ${formatTokensCaps(contextMax)}`}
+              <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
+              <span className="tide-telemetry-status-value-wrap">
+                <span className="tide-telemetry-status-value">
+                  {formatTimeAlwaysHours(perTurnActiveMs)}
+                </span>
               </span>
             </span>
-          </span>
-        </span>
+          </TugPopoverTrigger>
+          <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+            {timePopover}
+          </TugPopoverContent>
+        </TugPopover>
+        <TugPopover>
+          <TugPopoverTrigger>
+            <span
+              className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+              data-priority="tokens"
+            >
+              <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
+              <span className="tide-telemetry-status-value-wrap">
+                <span className="tide-telemetry-status-value">
+                  {formatTokensCaps(perTurnTokens)}
+                </span>
+              </span>
+            </span>
+          </TugPopoverTrigger>
+          <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+            {tokensPopover}
+          </TugPopoverContent>
+        </TugPopover>
+        <TugPopover>
+          <TugPopoverTrigger>
+            <span
+              className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+              data-priority="context"
+            >
+              <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
+              <span className="tide-telemetry-status-value-wrap">
+                <span
+                  className="tide-telemetry-status-value tide-telemetry-status-value-context"
+                  data-context-threshold={contextThreshold}
+                >
+                  <span className="tide-telemetry-status-context-numerator">
+                    {formatTokensCaps(perTurnContextTokens)}
+                  </span>
+                  <span className="tide-telemetry-status-context-denominator">
+                    {` / ${formatTokensCaps(contextMax)}`}
+                  </span>
+                </span>
+              </span>
+            </span>
+          </TugPopoverTrigger>
+          <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+            {contextPopover}
+          </TugPopoverContent>
+        </TugPopover>
       </div>
     </div>
   );

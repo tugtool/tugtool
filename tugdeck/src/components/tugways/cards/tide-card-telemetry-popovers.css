@@ -1,0 +1,266 @@
+/**
+ * tide-card-telemetry-popovers.css — styling for the four Z2
+ * status-row popovers (indicator / TIME / TOKENS / CONTEXT).
+ *
+ * The popovers share a frame + row vocabulary:
+ *
+ *   PerAreaPopoverFrame
+ *     ├─ title (centered uppercase)
+ *     ├─ rule (1px)
+ *     ├─ body slot
+ *     └─ optional summary footer (separator-fronted)
+ *
+ * `data-popover-kind` on the frame root selects width/padding
+ * variants for the three popover families (default narrow row-log,
+ * wider Context, taller state-change log).
+ *
+ * Tuglaw cross-check:
+ *  - [L06] every visible state lives on CSS class / data-attribute
+ *    selectors. The popovers carry no inline style for appearance.
+ *  - [L19] file pair with the popover module; every primitive
+ *    carries `data-slot="tide-popover-*"`.
+ *  - [L20] consumers only — popovers use existing component-tier
+ *    primitives (TugBadge / TugArcGauge) and `--tug-space-*` +
+ *    `--tug7-*` tokens. No new slot family declared here.
+ *
+ * @module components/tugways/cards/tide-card-telemetry-popovers
+ */
+
+/* ============================================================================
+   Shared frame
+   ========================================================================= */
+
+.tide-popover-frame {
+  padding: var(--tug-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--tug-font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+}
+
+.tide-popover-frame[data-popover-kind="default"] {
+  min-width: 280px;
+  max-width: 360px;
+}
+
+.tide-popover-frame[data-popover-kind="context"] {
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.tide-popover-frame[data-popover-kind="state-log"] {
+  min-width: 380px;
+  max-width: 520px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-frame-title {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.625rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-frame-rule {
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-frame-footer {
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+/* ============================================================================
+   Empty body
+   ========================================================================= */
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-empty {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-style: italic;
+  padding-block: 4px;
+}
+
+/* ============================================================================
+   Row primitive (Time / Tokens)
+   ========================================================================= */
+
+.tide-popover-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: var(--tug-space-md);
+  align-items: baseline;
+  padding-block: 2px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-row-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-row-annotation {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-weight: 400;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-row-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: 600;
+  text-align: right;
+}
+
+.tide-popover-row-scroller {
+  /* Shared 10-row visible cap × ~22px per row at this font size. */
+  max-height: calc(10 * 22px);
+  overflow-y: auto;
+  /* Breathing room between the scrollbar gutter and the right-most
+     column so value digits never sit flush against the thumb. */
+  padding-right: 12px;
+}
+
+/* ============================================================================
+   Context popover body
+   ========================================================================= */
+
+.tide-context-popover-body {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--tug-space-lg);
+  padding-block: 4px;
+}
+
+.tide-context-popover-gauge {
+  width: 180px;
+  flex: 0 0 auto;
+}
+
+.tide-context-popover-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  column-gap: var(--tug-space-md);
+  row-gap: 4px;
+  align-items: baseline;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Drop the legend down so its first row sits at the gauge's
+     tick-mark band rather than at the gauge's tip; the summary
+     rows then extend below the gauge's bottom edge, balancing
+     the popover visually. */
+  padding-top: 18px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-context-popover-legend-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  display: flex;
+  align-items: center;
+}
+
+.tide-context-popover-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  flex: 0 0 auto;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-context-popover-legend-percent {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-context-popover-legend-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-context-popover-grid-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-block: 4px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-context-popover-summary-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-context-popover-summary-percent {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-context-popover-summary-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}
+
+/* ============================================================================
+   State-change log popover
+   ========================================================================= */
+
+.tide-state-log-scroller {
+  /* Tighter rows than the row-list popovers (no per-row badges or
+     borders); cap at the same 10 visible entries via the row's
+     ~18px extent. */
+  max-height: calc(10 * 18px);
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+.tide-state-log-grid {
+  display: grid;
+  grid-template-columns:
+    max-content max-content max-content max-content max-content;
+  column-gap: var(--tug-space-xl);
+  row-gap: 4px;
+  align-items: center;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-state-log-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-state-log-time {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-state-log-phase {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-state-log-transport {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-state-log-interrupt {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
