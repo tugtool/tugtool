@@ -706,22 +706,34 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
     // Mount-in-saved-state: per-cell `min-height` lock sourced from
     // the saved `meta.cellHeights` (set by the hydration effect
-    // below). Cells with a known saved height
-    // render with `style.minHeight = ${savedHeight}px`, so async
-    // sub-content (markdown, image embeds, code highlighting) fills
-    // its destined slot without shifting siblings — the anchor cell
+    // below). Cells with a known saved height render with
+    // `style.minHeight = ${savedHeight}px`, so async sub-content
+    // (markdown, image embeds, code highlighting) fills its
+    // destined slot without shifting siblings — the anchor cell
     // stays at the saved viewport position from the very first
     // paint.
     //
-    // The lock is permanent within the mount: if a cell's real
-    // content ends up SHORTER than the saved height, `min-height`
-    // keeps the cell at its saved size (acceptable trade-off —
-    // ghost space in the rare shrink case vs. siblings shifting
-    // every time). If the cell's real content is TALLER, it grows
-    // naturally past `min-height`; `ResizeObserver` reports the
-    // taller measurement and the apply effect refines `scrollTop`
-    // sub-pixelwise. Held in a ref so cell-render reads are
-    // appearance-only ([L06]) — no React state for the lock map.
+    // The lock is RELEASED per-cell once that cell's measured
+    // height reaches or exceeds the saved value (Sub-step H). The
+    // ResizeObserver callback clears `hydratedCellHeightsRef
+    // .current[index]` (set to 0) when `newHeight >= saved - 0.5`,
+    // and the next render reads the cleared entry → no more
+    // `min-height` on that cell's wrapper. This makes user-action
+    // shrinks honored: a hydrated Bash / diff cell that mounts
+    // expanded at its saved height (lock releases on first
+    // measurement) can subsequently collapse, and the wrapper
+    // shrinks with its content — no ghost space below.
+    //
+    // The pre-Sub-step-H contract was "lock is permanent within
+    // the mount" (ghost space in the shrink case vs. siblings
+    // shifting every time). The "siblings shifting" concern only
+    // applied to the async-content-fill-in window; once a cell
+    // has been measured at its saved size, sub-content is settled
+    // and releasing the lock costs nothing. The user-action
+    // collapse case is then unblocked.
+    //
+    // Held in a ref so cell-render reads are appearance-only
+    // ([L06]) — no React state for the lock map.
     const hydratedCellHeightsRef = React.useRef<readonly number[] | null>(
       null,
     );
@@ -1060,6 +1072,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         const total = dataSource.numberOfItems();
         let anyChanged = false;
         const heightIndex = heightIndexRef.current;
+        // Mutable view of the hydration-lock array — the ref's
+        // `readonly number[]` type is a contract about EXTERNAL
+        // mutation (the consumer that reads `?.[index]` shouldn't
+        // mutate). We OWN the underlying array and may release
+        // entries in place as cells reach their saved heights.
+        const hydratedHeights =
+          hydratedCellHeightsRef.current === null
+            ? null
+            : (hydratedCellHeightsRef.current as number[]);
         for (const entry of entries) {
           const target = entry.target as HTMLElement;
           const indexAttr = target.getAttribute("data-tug-list-cell-index");
@@ -1074,6 +1095,27 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           }
           const newHeight = entry.contentRect.height;
           const currentHeight = heightIndex.get(index);
+
+          // Hydration-lock release (Sub-step H). When a cell's
+          // measurement reaches or exceeds its saved-at-hydration
+          // height, drop the `min-height` lock on that cell so
+          // subsequent shrinks (user collapses an expanded Bash /
+          // diff hunk, etc.) are honored — the wrapper follows
+          // the content down instead of holding ghost space.
+          //
+          // Runs BEFORE the sub-pixel no-op gate below so a
+          // measurement that exactly matches the heightIndex (and
+          // therefore would be skipped) still releases the lock —
+          // and sets `anyChanged = true` so the rAF flush re-
+          // renders to drop the now-stale `min-height` style.
+          if (hydratedHeights !== null) {
+            const saved = hydratedHeights[index] ?? 0;
+            if (saved > 0 && newHeight >= saved - 0.5) {
+              hydratedHeights[index] = 0;
+              anyChanged = true;
+            }
+          }
+
           // Skip no-op updates — sub-pixel ResizeObserver noise
           // shouldn't force a re-window.
           if (
