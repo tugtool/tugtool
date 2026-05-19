@@ -2918,7 +2918,7 @@ The double subscription is intentional: the snapshot subscription drives re-rend
 
 **Depends on:** #step-20-4-10. (Originally also depended on #step-20-4-11, which was deferred — see its status note.)
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tide-rendering): gallery Z1 asst-half two-line stack`
 
@@ -2937,21 +2937,23 @@ Top line (model row) is persistent throughout the turn lifecycle — model name 
 
 **Tasks.**
 
-- [ ] Gallery card (or new section in an existing one): mock the two-line stack for an in-flight turn and a completed turn.
-- [ ] Wire `TugThinkingIndicator` in the in-flight status row with `animating={isLivePhase(snap)}`. (The earlier plan called for a delta-debounced derivation per 20.4.11; that step was deferred — see its status note.)
-- [ ] Reserve the end-state slot for 20.4.13 (placeholder for now).
-- [ ] Workshop typography + spacing so model row + status row read as a coherent unit, not two stacked details.
+- [x] Gallery card mocks the two-line stack for an in-flight turn and a completed turn. New `gallery-tide-asst-half-stack.tsx` registered as `gallery-tide-asst-half-stack` in the `feedback` category with the `Rows2` icon; three sections — side-by-side in-flight/terminal, live transition with a `TugSwitch`, and full phase coverage via a `TugPopupButton`.
+- [x] Wire `TugThinkingIndicator` in the in-flight status row with `animating={isLivePhase(phase)}` (the helper from `code-session-store/hooks/use-lifecycle-tick.ts`). Bars pulse for the duration of any live phase (submitting / awaiting_first_token / streaming / tool_work / awaiting_approval / replaying) and freeze on `idle` / `errored`. (The earlier plan called for a delta-debounced derivation per 20.4.11; that step was deferred — see its status note.)
+- [x] Reserve the end-state slot for 20.4.13 via `EndStatePlaceholder` — a muted italic line that occupies the same vertical slot the real end-state will, so the gallery's typographic rhythm is representative of the shipped chrome. Renders distinct copy for `errored` vs other terminal phases.
+- [x] Workshop typography + spacing: both rows use `--tug-font-size-sm` (13px, matching the transcript body) so the two rows read as a coherent label-pair rather than a sized hierarchy; the model row's `font-weight: 600` is what carries its prominence. (An earlier iteration sized the model row at `--tug-font-size-lg` to match the production transcript identifier — but that identifier sits next to an icon + timestamp + sequence number in production; standalone in the stack it dominated everything around it.) Inter-row gap is `--tug-space-2xs` (~2px) so the two rows read as one tight unit; status-row `min-height` matches `--tug-space-xl` so a phase swap that changes content (indicator at one height, end-state placeholder at another) does not jitter the vertical rhythm.
+
+**Mount-identity audit ([L26]).** The status-row container is `<div data-slot="tide-asst-half-status-slot">` and is unconditionally mounted in `Z1AsstHalfStack`; only the CHILD swaps between `<TugThinkingIndicator>` and `<EndStatePlaceholder>`. The `data-slot` attribute lets DOM tooling pin the boundary by selector during HMR vet (toggle the live-transition switch and confirm the slot div's identity survives the swap).
 
 **Tests.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green — 2209/2209 across 134 files (no new tests; the gallery card is a pure rendering surface and the indicator-driving logic is `isLivePhase`, already covered by the existing tests in `use-lifecycle-tick.test.ts`).
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] HMR-vet the in-flight indicator pulses for the duration of the live phase and freezes at `turn_complete`. (The earlier "blink-on-pause" checkpoint was tied to the deferred 20.4.11 derivation.)
-- [ ] HMR-vet that the in-flight → end-state swap preserves the status-row DOM container (no remount).
+- [ ] HMR-vet the in-flight indicator pulses for the duration of the live phase and freezes at `turn_complete`. (The earlier "blink-on-pause" checkpoint was tied to the deferred 20.4.11 derivation.) _Pending user verification against the new gallery card (`Z1 asst-half stack`, feedback category)._
+- [ ] HMR-vet that the in-flight → end-state swap preserves the status-row DOM container (no remount). _Pending user verification — toggle the "show terminal" switch in Section 2 with DevTools' Inspect on the slot div._
 
 ---
 
