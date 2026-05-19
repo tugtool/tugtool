@@ -28,9 +28,9 @@ describe("endStateBadgeFor", () => {
     });
   });
 
-  it("maps error → danger (errored)", () => {
+  it("maps error → danger (error)", () => {
     expect(endStateBadgeFor("error")).toEqual({
-      text: "errored",
+      text: "error",
       role: "danger",
     });
   });

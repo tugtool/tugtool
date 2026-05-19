@@ -42,7 +42,7 @@ export interface EndStateBadge {
  * |-------------------|---------------|----------|
  * | `complete`        | "OK"          | success  |
  * | `interrupted`     | "interrupted" | caution  |
- * | `error`           | "errored"     | danger   |
+ * | `error`           | "error"       | danger   |
  * | `transport_lost`  | "lost"        | caution  |
  *
  * `transport_lost` is mapped to `caution` (not `danger`) because
@@ -58,7 +58,7 @@ export function endStateBadgeFor(reason: TurnEndReason): EndStateBadge {
     case "interrupted":
       return { text: "interrupted", role: "caution" };
     case "error":
-      return { text: "errored", role: "danger" };
+      return { text: "error", role: "danger" };
     case "transport_lost":
       return { text: "lost", role: "caution" };
   }
