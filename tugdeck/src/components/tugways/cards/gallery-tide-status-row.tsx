@@ -71,7 +71,13 @@
 
 import "./gallery-tide-status-row.css";
 
-import React, { useEffect, useId, useState } from "react";
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -79,8 +85,11 @@ import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugStateIndicator } from "@/components/tugways/tug-state-indicator";
-import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indicator";
+import { TugStateIndicator, indicatorVisualFor } from "@/components/tugways/tug-state-indicator";
+import type {
+  TugStateIndicatorState,
+  TugStateIndicatorTone,
+} from "@/components/tugways/tug-state-indicator";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import {
@@ -108,6 +117,8 @@ import {
   computeTimeSummary,
   computeTokensSummary,
 } from "@/lib/code-session-store/telemetry";
+import { formatStateChangeRow } from "@/lib/code-session-store/state-change-formatter";
+import type { SessionStateChangeRow } from "@/lib/session-state-changes-reader";
 import type {
   TurnCost,
   TurnEntry,
@@ -567,6 +578,125 @@ const TRANSCRIPT_SCENARIOS: ReadonlyArray<TranscriptScenario> = [
 ];
 
 // ---------------------------------------------------------------------------
+// Seed data for the state-change log popover (20.4.9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Synthetic timeline of triple transitions for the indicator popover.
+ * Built from a fixed wall-clock anchor (`SEED_AT_BASE`) plus per-row
+ * offsets so the timestamps render the same `HH:MM:SS.mmm` text on
+ * every gallery mount. Each row is a real triple that appears in the
+ * production lifecycle.
+ */
+const SEED_AT_BASE = 1715961600000; // 2024-05-17 12:00:00 UTC (deterministic)
+
+const SEED_STATE_CHANGE_ROWS: ReadonlyArray<SessionStateChangeRow> = Object.freeze([
+  {
+    atMs: SEED_AT_BASE,
+    phase: "idle",
+    transportState: "online",
+    interruptInFlight: false,
+  },
+  {
+    atMs: SEED_AT_BASE + 2_400,
+    phase: "submitting",
+    transportState: "online",
+    interruptInFlight: false,
+  },
+  {
+    atMs: SEED_AT_BASE + 3_100,
+    phase: "awaiting_first_token",
+    transportState: "online",
+    interruptInFlight: false,
+  },
+  {
+    atMs: SEED_AT_BASE + 3_650,
+    phase: "streaming",
+    transportState: "online",
+    interruptInFlight: false,
+  },
+  {
+    atMs: SEED_AT_BASE + 6_180,
+    phase: "tool_work",
+    transportState: "online",
+    interruptInFlight: false,
+  },
+  {
+    atMs: SEED_AT_BASE + 9_840,
+    phase: "streaming",
+    transportState: "online",
+    interruptInFlight: false,
+  },
+  {
+    atMs: SEED_AT_BASE + 12_100,
+    phase: "idle",
+    transportState: "online",
+    interruptInFlight: false,
+  },
+]);
+
+/**
+ * Cycle the "Push next" button walks through when appending a new
+ * state-change row in the gallery. Each entry is a real triple so
+ * the popover renders the same labels the production lifecycle
+ * produces. Wraps modulo `length` so the user can push indefinitely.
+ */
+const PUSH_CYCLE: ReadonlyArray<{
+  phase: SessionStateChangeRow["phase"];
+  transportState: SessionStateChangeRow["transportState"];
+  interruptInFlight: boolean;
+}> = [
+  { phase: "submitting", transportState: "online", interruptInFlight: false },
+  { phase: "awaiting_first_token", transportState: "online", interruptInFlight: false },
+  { phase: "streaming", transportState: "online", interruptInFlight: false },
+  { phase: "tool_work", transportState: "online", interruptInFlight: false },
+  { phase: "awaiting_approval", transportState: "online", interruptInFlight: false },
+  { phase: "streaming", transportState: "offline", interruptInFlight: false },
+  { phase: "streaming", transportState: "restoring", interruptInFlight: false },
+  { phase: "streaming", transportState: "online", interruptInFlight: true },
+  { phase: "idle", transportState: "online", interruptInFlight: false },
+];
+
+/**
+ * Append a new row to the synthetic state-change log. Picks the
+ * next entry in `PUSH_CYCLE` that is NOT equal to the most recent
+ * row's triple — preserves the writer's dedupe semantics so the
+ * gallery's button can't synthesize a row the production path
+ * would have skipped.
+ */
+function appendStateChangeRow(
+  prev: readonly SessionStateChangeRow[],
+): readonly SessionStateChangeRow[] {
+  const lastAtMs = prev.length > 0 ? prev[prev.length - 1]!.atMs : SEED_AT_BASE;
+  const nextAtMs = lastAtMs + 1_500;
+  const recent =
+    prev.length === 0
+      ? null
+      : {
+          phase: prev[prev.length - 1]!.phase,
+          transportState: prev[prev.length - 1]!.transportState,
+          interruptInFlight: prev[prev.length - 1]!.interruptInFlight,
+        };
+  const candidate =
+    PUSH_CYCLE.find(
+      (c) =>
+        recent === null ||
+        c.phase !== recent.phase ||
+        c.transportState !== recent.transportState ||
+        c.interruptInFlight !== recent.interruptInFlight,
+    ) ?? PUSH_CYCLE[0]!;
+  return [
+    ...prev,
+    {
+      atMs: nextAtMs,
+      phase: candidate.phase,
+      transportState: candidate.transportState,
+      interruptInFlight: candidate.interruptInFlight,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Tokens, surfaces, base styles
 // ---------------------------------------------------------------------------
 
@@ -990,6 +1120,10 @@ function PerAreaPopoverFrame({
         maxWidth,
       }}
     >
+      {/* Centered uppercase title above a 1px rule. The rule
+          separates the title from the body the same way the
+          summary footer's borderTop separates the body from the
+          footer — consistent chrome across all four popovers. */}
       <div
         style={{
           fontFamily: MONO,
@@ -997,11 +1131,18 @@ function PerAreaPopoverFrame({
           letterSpacing: LABEL_LETTER_SPACING,
           textTransform: "uppercase",
           color: TEXT_MUTED,
-          marginBottom: 4,
+          textAlign: "center",
         }}
       >
         {title}
       </div>
+      <div
+        style={{
+          borderTop: `1px solid ${RAIL_COLOR}`,
+          marginTop: 6,
+          marginBottom: 8,
+        }}
+      />
       {children}
       {summaryFooter !== undefined && summaryFooter !== null ? (
         <div
@@ -1038,6 +1179,55 @@ function EmptyTranscriptBody(): React.ReactElement {
     </div>
   );
 }
+
+/**
+ * Per-row vertical extent (px) inside a popover row scroller. At
+ * 0.6875rem font + 2px block padding, each `PopoverRow` takes ~22px
+ * including its leading. The `POPOVER_VISIBLE_ROW_CAP` defines the
+ * popover's natural body height; rows beyond scroll.
+ *
+ * Shared across the Time, Tokens, and Session-state popovers so the
+ * cap is consistent across surfaces and a future row-density change
+ * is one-line.
+ */
+const POPOVER_ROW_HEIGHT_PX = 22;
+const POPOVER_VISIBLE_ROW_CAP = 10;
+
+/**
+ * Scrolling wrapper for popover row lists. Caps the body at the
+ * shared 10-row visible height (`POPOVER_VISIBLE_ROW_CAP * POPOVER_ROW_HEIGHT_PX`);
+ * rows beyond scroll inside the popover with no chrome change.
+ * Used by Time + Tokens popovers; the Context popover does NOT use
+ * this — its layout is a non-list arc-gauge + legend grid.
+ */
+function PopoverRowScroller({
+  children,
+}: {
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <div
+      style={{
+        maxHeight: POPOVER_VISIBLE_ROW_CAP * POPOVER_ROW_HEIGHT_PX,
+        overflowY: "auto",
+        // Breathing room between the scrollbar gutter and the
+        // right-most column so the value digits never sit flush
+        // against the scrollbar thumb.
+        paddingRight: POPOVER_SCROLL_GUTTER_PX,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Right-side padding inside any popover row scroller so the
+ * scrollbar gutter has breathing room next to the last column.
+ * Shared across the row-list popovers (Time / Tokens / State
+ * changes) so the spacing reads identical across surfaces.
+ */
+const POPOVER_SCROLL_GUTTER_PX = 12;
 
 /**
  * `Time` popover content per plan `#step-20-4-7-a`: per-turn
@@ -1089,14 +1279,16 @@ function TimePopoverContent({
       {transcript.length === 0 ? (
         <EmptyTranscriptBody />
       ) : (
-        transcript.map((t, i) => (
-          <PopoverRow
-            key={t.turnKey}
-            label={`turn ${i + 1}`}
-            value={formatTimeAlwaysHours(t.activeMs)}
-            badge={<TerminalStateBadge result={t.result} />}
-          />
-        ))
+        <PopoverRowScroller>
+          {transcript.map((t, i) => (
+            <PopoverRow
+              key={t.turnKey}
+              label={`turn ${i + 1}`}
+              value={formatTimeAlwaysHours(t.activeMs)}
+              badge={<TerminalStateBadge result={t.result} />}
+            />
+          ))}
+        </PopoverRowScroller>
       )}
     </PerAreaPopoverFrame>
   );
@@ -1157,14 +1349,16 @@ function TokensPopoverContent({
       {transcript.length === 0 ? (
         <EmptyTranscriptBody />
       ) : (
-        transcript.map((t, i) => (
-          <PopoverRow
-            key={t.turnKey}
-            label={`turn ${i + 1}`}
-            value={formatTokensCaps(perTurnTotalTokens(t))}
-            badge={<TerminalStateBadge result={t.result} />}
-          />
-        ))
+        <PopoverRowScroller>
+          {transcript.map((t, i) => (
+            <PopoverRow
+              key={t.turnKey}
+              label={`turn ${i + 1}`}
+              value={formatTokensCaps(perTurnTotalTokens(t))}
+              badge={<TerminalStateBadge result={t.result} />}
+            />
+          ))}
+        </PopoverRowScroller>
       )}
     </PerAreaPopoverFrame>
   );
@@ -1407,6 +1601,211 @@ function ContextPopoverContent({
 }
 
 // ---------------------------------------------------------------------------
+// State-change log popover (20.4.9) — indicator anchor
+// ---------------------------------------------------------------------------
+
+/**
+ * Scrolling log of every persisted state change for a session.
+ *
+ * Layout: a single shared 4-column CSS grid (timestamp · phase ·
+ * transport · interrupt) — one grid instance for all rows so the
+ * columns size to the widest cell across the entire log and every
+ * column edge lines up vertically (the dev-panel log inspector's
+ * visual language). Mono + tabular numerics throughout so the
+ * HH:MM:SS.mmm timestamps share fixed-width digits.
+ *
+ * The row list scrolls vertically when the cap (`VISIBLE_ROW_CAP`,
+ * 10 rows) is exceeded; auto-scroll keeps the most recent row in
+ * view unless the user has scrolled away from the bottom (defined
+ * as anywhere more than `AUTOSCROLL_THRESHOLD_PX` above the bottom
+ * edge). The threshold lets the latest row stay pinned even when
+ * the user "just barely" lifts off the bottom; a deliberate
+ * scroll-up frees the view.
+ *
+ * Empty state surfaces a "no history yet" line — matches the empty
+ * transcript states the Time / Tokens popovers use.
+ *
+ * Data-driven: the gallery passes synthetic `rows`; the production
+ * call site (a future tide card render) feeds the snapshot from
+ * `useSessionStateChanges(tugSessionId)`.
+ */
+function StateChangeLogPopoverContent({
+  rows,
+}: {
+  rows: readonly SessionStateChangeRow[];
+}): React.ReactElement {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Tracked as a ref (not state) so the scroll listener can read the
+  // latest value without re-binding; the auto-scroll effect re-reads
+  // it after every render. Default `true` — fresh popover should
+  // pin to the bottom on first mount.
+  const stickToBottomRef = useRef<boolean>(true);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    if (!stickToBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  });
+
+  const onScroll = (ev: React.UIEvent<HTMLDivElement>): void => {
+    const el = ev.currentTarget;
+    const distanceFromBottom =
+      el.scrollHeight - (el.scrollTop + el.clientHeight);
+    stickToBottomRef.current = distanceFromBottom <= AUTOSCROLL_THRESHOLD_PX;
+  };
+
+  if (rows.length === 0) {
+    return (
+      <PerAreaPopoverFrame
+        title="Session state changes"
+        minWidth={STATE_LOG_MIN_WIDTH}
+        maxWidth={STATE_LOG_MAX_WIDTH}
+      >
+        <EmptyStateChangeBody />
+      </PerAreaPopoverFrame>
+    );
+  }
+
+  const formatted = rows.map((r) => formatStateChangeRow(r));
+
+  return (
+    <PerAreaPopoverFrame
+      title="Session state changes"
+      minWidth={STATE_LOG_MIN_WIDTH}
+      maxWidth={STATE_LOG_MAX_WIDTH}
+    >
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        style={{
+          maxHeight: POPOVER_VISIBLE_ROW_CAP * STATE_LOG_ROW_HEIGHT_PX,
+          overflowY: "auto",
+          // Match the Time/Tokens scrollers — gutter between the
+          // last column and the scrollbar.
+          paddingRight: POPOVER_SCROLL_GUTTER_PX,
+        }}
+      >
+        {/* Shared 5-column grid: a tone dot followed by the
+            timestamp · phase · transport · interrupt columns. All
+            rows live in one grid so each column sizes to the widest
+            entry across the log — every column edge lines up
+            vertically. The tone dot mirrors the indicator's color
+            for the row's triple via `indicatorVisualFor`, with no
+            pulse (the indicator owns the animated reading; here we
+            only want the static color cue). */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "max-content max-content max-content max-content max-content",
+            columnGap: STATE_LOG_COLUMN_GAP,
+            rowGap: 4,
+            alignItems: "center",
+            fontFamily: MONO,
+            fontVariantNumeric: "tabular-nums",
+            fontSize: "0.6875rem",
+          }}
+        >
+          {rows.map((row, i) => {
+            const f = formatted[i]!;
+            const tone = indicatorVisualFor(row).tone;
+            return (
+              <React.Fragment key={`${f.atText}-${i}`}>
+                <span
+                  aria-hidden
+                  style={{
+                    width: STATE_LOG_DOT_SIZE_PX,
+                    height: STATE_LOG_DOT_SIZE_PX,
+                    borderRadius: "50%",
+                    backgroundColor: stateChangeToneColor(tone),
+                    display: "inline-block",
+                  }}
+                />
+                <span style={{ color: TEXT_MUTED }}>{f.atText}</span>
+                <span style={{ color: TEXT_NORMAL }}>{f.phase}</span>
+                <span style={{ color: TEXT_NORMAL }}>{f.transportState}</span>
+                <span style={{ color: TEXT_MUTED }}>
+                  {`interrupt: ${f.interrupt}`}
+                </span>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+    </PerAreaPopoverFrame>
+  );
+}
+
+/**
+ * "No state changes yet" body for the popover's empty path. Same
+ * muted-typographic weight as `EmptyTranscriptBody` so the empty
+ * state doesn't read as an error.
+ */
+function EmptyStateChangeBody(): React.ReactElement {
+  return (
+    <div
+      style={{
+        fontFamily: MONO,
+        fontSize: "0.6875rem",
+        color: TEXT_MUTED,
+        paddingBlock: 4,
+      }}
+    >
+      No state changes recorded yet.
+    </div>
+  );
+}
+
+/**
+ * Distance from the bottom (px) the auto-scroll considers "still
+ * pinned." If the user scrolls up further than this, the effect
+ * stops chasing new rows.
+ */
+const AUTOSCROLL_THRESHOLD_PX = 8;
+
+/** Popover width bounds. Wider than Time/Tokens since the log has
+ *  four columns of breathing room instead of two. */
+const STATE_LOG_MIN_WIDTH = 380;
+const STATE_LOG_MAX_WIDTH = 520;
+
+/**
+ * Per-row vertical extent inside the state-change scroller (px).
+ * At 0.6875rem (~11px) font + 4px rowGap, each row occupies ~18px
+ * including its leading. Distinct from the Time/Tokens
+ * `POPOVER_ROW_HEIGHT_PX` constant because the state-change rows
+ * use a tighter grid (no per-row borders or badges); shares the
+ * visible-row cap (`POPOVER_VISIBLE_ROW_CAP = 10`) so all three
+ * row-list popovers cap at the same 10 visible entries.
+ */
+const STATE_LOG_ROW_HEIGHT_PX = 18;
+const STATE_LOG_COLUMN_GAP = "var(--tug-space-xl)";
+const STATE_LOG_DOT_SIZE_PX = 8;
+
+/**
+ * Map a state-indicator tone to the matching `--tug7-*` color
+ * token the indicator's CSS uses for its dot. The popover's tone
+ * dot reads the same color as the indicator would for that triple
+ * — same source of truth, no animation. Distinct from importing
+ * the indicator's `--tugx-*` alias because the dot here is not
+ * rendered by a `TugStateIndicator` instance, so the indicator's
+ * scope-local CSS vars aren't in scope.
+ */
+function stateChangeToneColor(tone: TugStateIndicatorTone): string {
+  switch (tone) {
+    case "success":
+      return "var(--tug7-element-global-text-normal-success-rest)";
+    case "caution":
+      return "var(--tug7-element-global-text-normal-caution-rest)";
+    case "danger":
+      return "var(--tug7-element-global-text-normal-danger-rest)";
+    case "default":
+    default:
+      return "var(--tug7-element-global-text-normal-default-rest)";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Plan-of-record composed row — indicator + cells, C-wider-gap spacing
 // ---------------------------------------------------------------------------
 
@@ -1430,6 +1829,7 @@ function ComposedRow({
   v,
   state,
   popovers,
+  indicatorPopover,
 }: {
   v: StatusValues;
   state: TugStateIndicatorState;
@@ -1442,7 +1842,18 @@ function ComposedRow({
    * vetted without popovers competing for click handling.
    */
   popovers?: CellPopoverContent;
+  /**
+   * Optional popover content anchored on the indicator slot itself
+   * (the 20.4.9 state-change log lives here). When omitted the
+   * indicator renders bare. Same affordance class as the cell
+   * anchors so the hover-cursor / tinted-background hint is
+   * consistent across the row.
+   */
+  indicatorPopover?: React.ReactNode;
 }): React.ReactElement {
+  const indicatorNode = (
+    <TugStateIndicator state={state} size={16} />
+  );
   return (
     <div
       className="gallery-tide-status-row-host"
@@ -1466,13 +1877,40 @@ function ComposedRow({
     >
       <span
         style={{
+          // `align-items: stretch` so the inner clickable affordance
+          // (when present) fills the slot vertically — paired with
+          // `align-self: stretch` on the slot itself in the CSS via
+          // the `data-indicator-slot` selector. Without this, the
+          // affordance's hover hint is much shorter than the F5
+          // cells' hover hints because the indicator's intrinsic
+          // height is just the dot + label row.
           display: "inline-flex",
-          alignItems: "center",
+          alignItems: "stretch",
           flex: "0 0 auto",
           width: INDICATOR_SLOT_WIDTH,
+          alignSelf: "stretch",
         }}
+        data-indicator-slot
       >
-        <TugStateIndicator state={state} size={16} />
+        {indicatorPopover === undefined ? (
+          <span style={{ display: "inline-flex", alignItems: "center" }}>
+            {indicatorNode}
+          </span>
+        ) : (
+          <TugPopover>
+            <TugPopoverTrigger>
+              <span
+                className="gallery-tide-status-cell-clickable"
+                data-priority="indicator"
+              >
+                {indicatorNode}
+              </span>
+            </TugPopoverTrigger>
+            <TugPopoverContent side="top" align="start" sideOffset={8} arrow>
+              {indicatorPopover}
+            </TugPopoverContent>
+          </TugPopover>
+        )}
       </span>
       {buildCellNodes(v, popovers)}
     </div>
@@ -1538,6 +1976,15 @@ export function GalleryTideStatusRow(): React.ReactElement {
   const [stateIdx, setStateIdx] = useState(3); // streaming · online — animation visible
   const [transcriptIdx, setTranscriptIdx] = useState(2); // "Short session"
   const [autoTick, setAutoTick] = useState(false);
+  // Synthetic state-change log feeding the 20.4.9 indicator popover.
+  // Seeded with a brief lifecycle so the popover has visible content
+  // on first mount; the "+ state change" button appends a new
+  // triple so the auto-scroll behavior is HMR-vettable. Production
+  // populates this list from the persisted ledger via
+  // `useSessionStateChanges`.
+  const [stateChangeRows, setStateChangeRows] = useState<
+    readonly SessionStateChangeRow[]
+  >(() => SEED_STATE_CHANGE_ROWS);
 
   useEffect(() => {
     if (!autoTick) return;
@@ -1683,6 +2130,17 @@ export function GalleryTideStatusRow(): React.ReactElement {
   // alongside the cells.
   const transcript = transcriptScenario.transcript;
   const isInflight = inflight.submitAt !== null;
+
+  // Synthetic state-change rows for the indicator popover (20.4.9).
+  // Seeded from a fixture so the popover has visible content on
+  // first mount; the "Push next" button appends a new row to
+  // demonstrate the auto-scroll behavior. The production path will
+  // hydrate from `useSessionStateChanges(tugSessionId)` against the
+  // persisted ledger; the gallery's synthetic source is a stand-in.
+  const indicatorPopoverContent = (
+    <StateChangeLogPopoverContent rows={stateChangeRows} />
+  );
+
   const cellPopovers: CellPopoverContent = {
     time: (
       <TimePopoverContent
@@ -1780,6 +2238,13 @@ export function GalleryTideStatusRow(): React.ReactElement {
             size="sm"
             aria-label="transcript scenario"
           />
+          <TugPushButton
+            size="sm"
+            onClick={() => setStateChangeRows((prev) => appendStateChangeRow(prev))}
+            aria-label="append a synthetic state change to the indicator popover log"
+          >
+            + state change
+          </TugPushButton>
           <span style={{ fontFamily: MONO, fontSize: "0.6875rem", color: TEXT_MUTED, marginLeft: "auto" }}>
             context: {ratioPct}%
             {ratioPct >= 90 && <span style={{ color: TEXT_DANGER }}> ▲ danger</span>}
@@ -1803,11 +2268,19 @@ export function GalleryTideStatusRow(): React.ReactElement {
             picker drives the indicator behavior; transcript-scenario picker drives
             the per-area popovers (TIME, TOKENS, CONTEXT — click any cell). The
             Context popover renders the last committed turn's categorical
-            breakdown via a large segmented TugArcGauge (20.4.7.B). This is the
-            canonical layout that will be promoted into the production tide-card Z2
-            renderer.
+            breakdown via a large segmented TugArcGauge (20.4.7.B). The indicator
+            itself opens a state-change log popover (20.4.9) showing every
+            persisted triple transition; the "+ state change" control above
+            appends a synthetic row so the auto-scroll behavior is HMR-vettable.
+            This is the canonical layout that will be promoted into the
+            production tide-card Z2 renderer.
           </div>
-          <ComposedRow v={values} state={state} popovers={cellPopovers} />
+          <ComposedRow
+            v={values}
+            state={state}
+            popovers={cellPopovers}
+            indicatorPopover={indicatorPopoverContent}
+          />
         </section>
 
         <TugSeparator />

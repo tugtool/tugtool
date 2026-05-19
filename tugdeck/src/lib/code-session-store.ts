@@ -42,6 +42,7 @@ import {
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import type { CodeSessionEvent } from "./code-session-store/events";
 import type { Effect } from "./code-session-store/effects";
+import { publishLocalSessionStateChange } from "./session-state-changes-local-events";
 import type {
   CardSessionMode,
   CodeSessionSnapshot,
@@ -752,14 +753,27 @@ export class CodeSessionStore {
     ) {
       return;
     }
+    const atMs = Date.now();
     const frame = encodeRecordSessionStateChange({
       tugSessionId: this.tugSessionId,
-      atMs: Date.now(),
+      atMs,
       phase: next.phase,
       transportState: next.transportState,
       interruptInFlight: next.interruptInFlight,
     });
     this.conn.send(frame.feedId, frame.payload);
+    // Local notify for any popover subscribed to this card's
+    // state-change log. Same `atMs` as the wire write so the
+    // persisted row and the locally-published row carry identical
+    // timestamps — important for the popover's dedupe-on-subsequent-
+    // reload path.
+    publishLocalSessionStateChange({
+      tugSessionId: this.tugSessionId,
+      atMs,
+      phase: next.phase,
+      transportState: next.transportState,
+      interruptInFlight: next.interruptInFlight,
+    });
   }
 
   private processEffects(effects: Effect[]): void {

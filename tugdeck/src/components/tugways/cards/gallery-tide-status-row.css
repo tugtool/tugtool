@@ -148,3 +148,19 @@
 .gallery-tide-status-cell-clickable:hover {
   background-color: var(--tug7-surface-highlight-primary-normal-hover-rest);
 }
+
+/* Indicator anchor (20.4.9) — the indicator slot's clickable wraps
+   only a single text row (the TugStateIndicator's dot + inline
+   label), so its intrinsic height is much shorter than F5Cell's
+   label-stacked-on-value chrome. Stretch the affordance to fill the
+   row's vertical extent so the hover hint reads the same height as
+   the TIME / TOKENS / CONTEXT cell hovers. The outer flex row uses
+   `align-items: center` for layout; `align-self: stretch` opts the
+   indicator slot's clickable out of center alignment so its box
+   spans top-to-bottom. `display: flex; align-items: center`
+   re-centers the icon within the now-tall affordance. */
+.gallery-tide-status-cell-clickable[data-priority="indicator"] {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+}

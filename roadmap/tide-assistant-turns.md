@@ -2734,7 +2734,7 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 **Depends on:** #step-20-4-6 (popover substrate), #step-20-4-8 (state-change ledger)
 
-**Status:** _not started._
+**Status:** _done pending HMR vet._
 
 **Commit:** `feat(tide-rendering): gallery TugStateIndicator state-change log popover`
 
@@ -2744,20 +2744,20 @@ CREATE INDEX idx_ssc_session_at ON session_state_changes (tug_session_id, at_ms)
 
 **Tasks.**
 
-- [ ] Gallery popover renders the log; auto-scrolls so the most-recent entry is in view.
-- [ ] Each row: `[at-ms formatted as HH:MM:SS.mmm] · [phase] · [transportState] · [interrupt: yes/no]` (final row layout settled during gallery iteration). Row format mirrors the indicator's three-axis view, not the full 12-state matrix from [Step 20.5.A](#step-20-5-a) — IDLE and COMPLETE both display as `phase: idle`; see [Step 20.4.8](#step-20-4-8)'s coverage-and-collapses note for the full list of signals this view does not surface.
-- [ ] Live updates: when a new state-change lands, the popover (if open) appends the new row and re-scrolls if the user has not scrolled away.
+- [x] Gallery popover renders the log; auto-scrolls so the most-recent entry is in view. `StateChangeLogPopoverContent` in `gallery-tide-status-row.tsx` mounts a scrolling `<div>` whose `useLayoutEffect` writes `scrollTop = scrollHeight` whenever the row count changes and a `stickToBottom` ref is true; the ref toggles to false when the user scrolls more than `AUTOSCROLL_THRESHOLD_PX` (8 px) above the bottom edge.
+- [x] Each row: `[at-ms formatted as HH:MM:SS.mmm] · [phase] · [transportState] · [interrupt: yes/no]`. Four-column CSS grid with mono + tabular numerics; the formatter (`state-change-formatter.ts`'s `formatStateChangeRow`) is pure-logic and produces a frozen `{ atText, phase, transportState, interrupt: "yes" | "no" }` shape. Row format mirrors the indicator's three-axis view, not the full 12-state matrix from [Step 20.5.A](#step-20-5-a) — IDLE and COMPLETE both display as `phase: idle`; see [Step 20.4.8](#step-20-4-8)'s coverage-and-collapses note.
+- [x] Live updates: when a new state-change lands, the popover (if open) appends the new row and re-scrolls if the user has not scrolled away. `CodeSessionStore.maybePersistStateChange` publishes locally via `publishLocalSessionStateChange` at the same site as the wire write; `SessionStateChangesStore` subscribes to that bus and appends to the per-session snapshot, deduping against the SQL-loaded history on the timestamp + triple signature. The `useSessionStateChanges(tugSessionId)` hook surfaces the snapshot through `useSyncExternalStore` so the production callsite gets live updates without a custom React effect.
 
 **Tests.**
 
-- [ ] Pure-logic tests for the row-formatting helper.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] Pure-logic tests for the row-formatting helper. 9 cases in `state-change-formatter.test.ts` (HH/MM/SS/mmm padding, ms three-digit boundaries, interrupt yes/no collapse, axis pass-through, frozen output, real-Date smoke).
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green — 2197/2197 across 133 files (16 new tests in this step: 9 formatter + 7 store).
+- [x] `bun run audit:tokens lint` exits 0.
 
 **Checkpoint.**
 
-- [ ] HMR-vet against a multi-transition session.
+- [ ] HMR-vet against a multi-transition session. _The gallery's "+ state change" button appends a synthetic row from `PUSH_CYCLE` to drive the auto-scroll behavior; production wiring lands when the indicator popover is promoted into the tide-card Z2 renderer._
 
 ---
 
