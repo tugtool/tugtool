@@ -120,6 +120,7 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "system_metadata",
   "control_request_forward",
   "cost_update",
+  "context_breakdown",
   "error",
   // tugcode emits this after a failed `--resume` spawn. The reducer
   // rolls it into `lastError`.

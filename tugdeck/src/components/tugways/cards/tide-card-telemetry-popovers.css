@@ -72,8 +72,8 @@
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
 .tide-popover-frame-rule {
   border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  margin-top: 6px;
-  margin-bottom: 8px;
+  margin-top: 4px;
+  margin-bottom: 2px;
 }
 
 /* ============================================================================
@@ -172,7 +172,6 @@
   flex-direction: row;
   align-items: flex-start;
   gap: var(--tug-space-lg);
-  padding-block: 4px;
 }
 
 .tide-context-popover-gauge {
