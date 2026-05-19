@@ -1285,9 +1285,7 @@ fn parse_record_context_breakdown_payload(
     // it as a stable blob shape (it round-trips back through
     // `serde_json` even if the CONTROL frame's whitespace / key order
     // differed). The sub-object must be present and an object.
-    let payload_obj = value
-        .get("payload")
-        .ok_or(ControlError::Malformed)?;
+    let payload_obj = value.get("payload").ok_or(ControlError::Malformed)?;
     if !payload_obj.is_object() {
         return Err(ControlError::Malformed);
     }
@@ -7405,7 +7403,10 @@ mod tests {
         )
         .await;
 
-        let row = ledger.get_context_breakdown("claude-ctx-B").unwrap().unwrap();
+        let row = ledger
+            .get_context_breakdown("claude-ctx-B")
+            .unwrap()
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(&row.payload).unwrap();
         let cats = parsed["categories"].as_array().unwrap();
         // Second write wins.
@@ -7434,7 +7435,12 @@ mod tests {
         assert!(matches!(outcome, ControlOutcome::Handled));
 
         // No row was written.
-        assert!(ledger.get_context_breakdown("claude-anything").unwrap().is_none());
+        assert!(
+            ledger
+                .get_context_breakdown("claude-anything")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -7605,7 +7611,10 @@ mod tests {
         .expect_handled();
 
         assert_eq!(
-            ledger.list_session_state_changes("claude-anything").unwrap().len(),
+            ledger
+                .list_session_state_changes("claude-anything")
+                .unwrap()
+                .len(),
             0
         );
     }
