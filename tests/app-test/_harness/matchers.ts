@@ -182,6 +182,11 @@ export type DeckTraceEventShape = {
       editorResponderId: string;
       firstResponderId: string | null;
     }
+  | {
+      kind: "follow-bottom";
+      following: boolean;
+      source: string;
+    }
 );
 
 /**
@@ -211,6 +216,7 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "engine-paint-mirror-inactive",
   "macrotask-focus-claim",
   "caret-responder-divergence",
+  "follow-bottom",
 ] as const;
 export type HarnessKnownTraceKind = (typeof HARNESS_KNOWN_TRACE_KINDS)[number];
 
@@ -445,6 +451,8 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `macrotask-focus-claim ${fmt(e.cardId)} delegate=${fmt(e.delegate)}`;
     case "caret-responder-divergence":
       return `caret-responder-divergence editor=${fmt(e.editorResponderId)} firstResponder=${fmt(e.firstResponderId)}`;
+    case "follow-bottom":
+      return `follow-bottom ${e.following ? "engage" : "disengage"} source=${fmt(e.source)}`;
     default: {
       // Exhaustiveness pin: if a new kind is added to DeckTraceEventShape,
       // the assignment below fails because `e` is no longer `never`.

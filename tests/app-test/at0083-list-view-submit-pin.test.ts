@@ -43,11 +43,13 @@
  *     pins again;
  *   - `scrollToBottom()` while already at the bottom is a no-op.
  *
- * The disengage half is driven by the real `tug-disengage-follow-bottom`
- * DOM event — the same signal `block-fold-cue` / `diff-block` fire when
- * the user collapses a hunk — so test 2's "growth does not pin after
- * disengage" phase also covers the collapsed-block "keep the click
- * target in view" case.
+ * The disengage half is driven by a real scroll-up wheel gesture:
+ * SmartScroll's wheel handler flips `isFollowingBottom` to false on
+ * `deltaY < 0`. A block-fold collapse reaches the same
+ * `_setFollowingBottom(false)` through `useScroller().disengage` —
+ * the typed funnel that replaced the old `tug-disengage-follow-bottom`
+ * DOM event — so test 2's "growth does not pin after disengage" phase
+ * gates the auto-pin funnel against a genuine user disengage.
  *
  * `SmartScroll.maybePinToBottom` / `shouldAutoPin` are SmartScroll-level
  * and shared verbatim by `TugMarkdownView`; exercising them through
@@ -403,17 +405,22 @@ describe.skipIf(!SHOULD_RUN)(
             Math.abs(afterNoop.scrollTop - beforeNoop.scrollTop),
           ).toBeLessThanOrEqual(SCROLL_TOLERANCE_PX);
 
-          // -------- Phase D — disengage follow-bottom, then grow the
-          // list: content growth must NOT pin (the gate is false). The
-          // `tug-disengage-follow-bottom` event is the real signal a
-          // collapsed Bash/diff hunk fires, so this also covers the
-          // "collapsing a block keeps the click target in view" case.
+          // -------- Phase D — disengage follow-bottom via a real
+          // scroll-up wheel gesture, then grow the list: content
+          // growth must NOT pin (the gate is false). SmartScroll's
+          // wheel handler flips `isFollowingBottom` to false on
+          // `deltaY < 0` and enters the dragging phase; the explicit
+          // `scrollend` returns it to idle so the growth below is
+          // gated purely by `isFollowingBottom`. A collapsed Bash/diff
+          // hunk reaches the same `_setFollowingBottom(false)` through
+          // `useScroller().disengage`.
           await app.evalJS<void>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(scrollContainerSelectorFor("A"))});
-              el.dispatchEvent(new CustomEvent('tug-disengage-follow-bottom', { bubbles: true }));
+              el.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, bubbles: true }));
               el.scrollTop = 200;
               el.dispatchEvent(new Event('scroll', { bubbles: true }));
+              el.dispatchEvent(new Event('scrollend', { bubbles: true }));
             })()`,
           );
 

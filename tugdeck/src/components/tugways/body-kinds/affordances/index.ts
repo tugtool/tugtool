@@ -14,9 +14,9 @@
  *    can't drift between body kinds.
  *  - `BlockCopyButton` — Copy → Copied controlled-confirmation
  *    flash, width-stabilized so the swap doesn't jostle siblings.
- *  - `BlockFoldCue` — chevron + count label, dispatches the
- *    bubbling `tug-disengage-follow-bottom` event before the
- *    toggle so a host `TugListView` releases its auto-pin lock.
+ *  - `BlockFoldCue` — chevron + count label, releases the host
+ *    scroller's follow-bottom lock via `useScroller().disengage`
+ *    before the toggle so a host `TugListView` drops its auto-pin.
  *
  * Adding a new affordance: create another component in this
  * directory, follow the same "encapsulate the contract, expose the

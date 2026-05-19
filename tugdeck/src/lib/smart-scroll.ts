@@ -39,6 +39,8 @@
  * @module lib/smart-scroll
  */
 
+import { deckTrace } from "../deck-trace";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -445,6 +447,38 @@ export class SmartScroll {
 
   disengageFollowBottom(): void {
     this._setFollowingBottom(false);
+  }
+
+  /**
+   * Engage follow-bottom on behalf of a named `source`, recording the
+   * intent to the deck trace. This is the typed, logged funnel for
+   * follow-bottom intent crossing a component boundary — the
+   * `useScroller()` façade delegates here. `engageFollowBottom` stays
+   * as the unlogged primitive for SmartScroll's own internal paths
+   * (gesture re-engagement, keyboard End, `scrollToBottom`).
+   *
+   * `source` is a short, stable trigger tag so a follow-bottom
+   * regression in the trace can be attributed to who flipped it. The
+   * event is recorded even when the call is a no-op (already
+   * following) — the record of intent is the diagnostic value.
+   */
+  engage(source: string): void {
+    if (this._disposed) return;
+    deckTrace.record({ kind: "follow-bottom", following: true, source });
+    this.engageFollowBottom();
+  }
+
+  /**
+   * Disengage follow-bottom on behalf of a named `source`, recording
+   * the intent to the deck trace. Counterpart to {@link engage}; see
+   * its doc for the funnel rationale. The bubbling
+   * descendant-to-host signalling this replaces had no record of who
+   * fired it — `source` closes that gap.
+   */
+  disengage(source: string): void {
+    if (this._disposed) return;
+    deckTrace.record({ kind: "follow-bottom", following: false, source });
+    this.disengageFollowBottom();
   }
 
   // -------------------------------------------------------------------------

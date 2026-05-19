@@ -15,13 +15,15 @@
  *    measures the cluster's pre-click viewport position and writes
  *    the post-click `scrollTop` to keep the user's cursor over the
  *    button across the layout change.
- *  - `tug-disengage-follow-bottom` event dispatch BEFORE the
- *    toggle. A host `TugListView` listening on its scroll
- *    container catches the bubbling event and flips
- *    `isFollowingBottom` to false so the subsequent
- *    `ResizeObserver` flush (triggered by the cell-height change)
- *    bails out of `pinToBottom`. Without this, expanding a body
- *    inside a follow-bottom list scrolls the cue off-screen.
+ *  - Follow-bottom release BEFORE the toggle, via
+ *    `useScroller().disengage("block-fold")`. The nearest scrolling
+ *    host (a `TugListView`) publishes the `Scroller` façade; the
+ *    `disengage` call flips its `isFollowingBottom` to false so the
+ *    subsequent `ResizeObserver` flush (triggered by the cell-height
+ *    change) finds `shouldAutoPin` false and bails out of
+ *    `pinToBottom`. Without this, expanding a body inside a
+ *    follow-bottom list scrolls the cue off-screen. A composition
+ *    with no scrolling host above gets a no-op façade.
  *
  * The variable parts the consumer provides are minimal:
  *
@@ -49,6 +51,7 @@ import { ChevronsDown, ChevronsUp } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { useScroller } from "@/components/tugways/internal/scroller-context";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 
 // ---------------------------------------------------------------------------
@@ -61,8 +64,8 @@ export interface BlockFoldCueProps {
   /**
    * Called with the new collapsed value. The affordance has
    * already:
-   *  - Dispatched `tug-disengage-follow-bottom` on its own button
-   *    element (bubbles up to any host TugListView).
+   *  - Released the host scroller's follow-bottom lock via
+   *    `useScroller().disengage("block-fold")`.
    *  - Wrapped the call in `usePositionStableClick` so the
    *    cluster's viewport position holds across the height change.
    *
@@ -115,11 +118,17 @@ export function BlockFoldCue({
     scrollportRef,
   });
 
-  // [L07] — the click handler is `useCallback([])` (stable across
-  // renders) and reads `collapsed` + `onToggle` through latest-refs
-  // mirrored via `useLayoutEffect`. This avoids the deps-array
-  // pattern's closure-recreation churn AND matches the literal
-  // wording of L07 ("Every action handler must access current
+  // Follow-bottom handle from the nearest scrolling host. A stable
+  // singleton per [L07]: the host publishes a reference-stable façade
+  // and a host-less tree gets the module-constant no-op — so listing
+  // it in `handleClick`'s deps below never recreates the callback.
+  const scroller = useScroller();
+
+  // [L07] — the click handler is `useCallback` over the stable
+  // `scroller` singleton and reads `collapsed` + `onToggle` through
+  // latest-refs mirrored via `useLayoutEffect`. This avoids the
+  // deps-array pattern's closure-recreation churn AND matches the
+  // literal wording of L07 ("Every action handler must access current
   // state through refs or stable singletons, never stale
   // closures"). The consumer's `onToggle` may itself be deps-based
   // (e.g., FileBlock's `handleFoldToggle` recreates when
@@ -135,20 +144,17 @@ export function BlockFoldCue({
   }, [onToggle]);
 
   const handleClick = React.useCallback(() => {
-    // Dispatch BEFORE calling onToggle so any host TugListView
-    // flips `isFollowingBottom` to false before React commits the
-    // new cell height; the subsequent ResizeObserver flush bails
-    // out of `pinToBottom`. Bubbles through the DOM tree so the
-    // ancestor scroll container catches it; non-list hosts simply
-    // ignore the event. Dispatching on the button itself (rather
-    // than the block root) saves the consumer from threading a
-    // root ref through — the bubble reaches the same ancestor
-    // either way.
-    buttonRef.current?.dispatchEvent(
-      new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-    );
+    // Release follow-bottom BEFORE calling onToggle so the host
+    // stops pinning before React commits the new cell height; the
+    // subsequent ResizeObserver flush then finds `shouldAutoPin`
+    // false and bails out of `pinToBottom`. `useScroller()` resolves
+    // to the nearest scrolling host's façade (a `TugListView`), or a
+    // no-op when no host is above (standalone gallery, non-list
+    // composition). The `"block-fold"` source tags the disengage in
+    // the deck trace so a follow-bottom regression is traceable.
+    scroller.disengage("block-fold");
     onToggleRef.current(!collapsedRef.current);
-  }, []);
+  }, [scroller]);
 
   return (
     <TugPushButton

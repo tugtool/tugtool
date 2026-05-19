@@ -92,6 +92,7 @@ import { SmartScroll } from "@/lib/smart-scroll";
 import { HeightIndex } from "./internal/list-view-height-index";
 import { computeWindow } from "./internal/list-view-window";
 import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
+import { ScrollerProvider, type Scroller } from "./internal/scroller-context";
 import { useSavedRegionScroll } from "./use-component-state-preservation";
 
 // ---------------------------------------------------------------------------
@@ -790,6 +791,20 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // closed-over snapshot.
     const smartScrollRef = React.useRef<SmartScroll | null>(null);
 
+    // Follow-bottom façade published to descendants via
+    // `ScrollerProvider`. Its methods delegate to the live
+    // `SmartScroll` instance and no-op while it is `null` (pre-mount /
+    // post-dispose). `useRef` keeps the first object, so the façade
+    // identity is stable for the component's lifetime — the context
+    // value never churns, and a body-kind affordance reading
+    // `useScroller()` does not re-render on a scroll event. The
+    // object literal is re-evaluated each render and discarded by
+    // `useRef`, matching the `heightIndexRef` pattern above. [L02] [L07]
+    const scrollerFacadeRef = React.useRef<Scroller>({
+      engage: (source) => smartScrollRef.current?.engage(source),
+      disengage: (source) => smartScrollRef.current?.disengage(source),
+    });
+
     // Mount-in-saved-state for the outer scroller.
     //
     // Read the bag synchronously at render time via
@@ -1274,22 +1289,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         );
       }
 
-      // Listen for `tug-disengage-follow-bottom` — a bubbling
-      // `CustomEvent` fired by descendants whose own click handler
-      // grows a cell's content (e.g. `FileBlock` toggling its
-      // collapsed state). Without this, the ResizeObserver flush
-      // that follows the cell growth requests a `pinToBottom`, and
-      // the click target scrolls off-screen — violating the
-      // "interacting with a control does not move that control out
-      // of view" rule. Disengaging follow-bottom flips
-      // `isFollowingBottom` to false, so `SmartScroll.shouldAutoPin`
-      // is false and every growth-driven `maybePinToBottom` call
-      // becomes a no-op.
-      const onDisengage = (): void => {
-        smartScroll.disengageFollowBottom();
-      };
-      el.addEventListener("tug-disengage-follow-bottom", onDisengage);
-
       // Listen for `tug-region-scroll-set` — dispatched by CardHost's
       // `applyRegionScrolls` during cold-boot region-scroll restore
       // (Developer > Reload, cross-pane mount, HMR reload), AND
@@ -1342,7 +1341,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       el.addEventListener("tug-region-scroll-set", onRegionScrollSet);
 
       return () => {
-        el.removeEventListener("tug-disengage-follow-bottom", onDisengage);
         el.removeEventListener("tug-region-scroll-set", onRegionScrollSet);
         smartScroll.dispose();
         smartScrollRef.current = null;
@@ -1902,6 +1900,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           aria-hidden="true"
         />
         <OuterScrollportProvider scrollport={scrollportEl}>
+        <ScrollerProvider scroller={scrollerFacadeRef.current}>
         <div className="tug-list-view-window">
           {renderedRange.map(({ index, id, kind, role }) => {
             // Role-aware wrapper attributes:
@@ -1986,6 +1985,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             );
           })}
         </div>
+        </ScrollerProvider>
         </OuterScrollportProvider>
         <div
           ref={bottomSpacerRef}

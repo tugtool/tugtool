@@ -406,6 +406,20 @@ export type DeckTraceEvent = {
       editorResponderId: string;
       firstResponderId: string | null;
     }
+  | {
+      // Fired by `SmartScroll.engage` / `SmartScroll.disengage` — the
+      // typed funnel for follow-bottom intent. `following` is the
+      // requested state (true = follow the live edge, false =
+      // release it); `source` names the trigger ("block-fold",
+      // "diff-view-toggle", ...) so a follow-bottom regression can be
+      // traced to who flipped it. Recorded on every call, including
+      // calls that find the state already at the requested value —
+      // the record of intent is the diagnostic value, not just the
+      // record of transitions.
+      kind: "follow-bottom";
+      following: boolean;
+      source: string;
+    }
 );
 
 /**
@@ -433,7 +447,8 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-active" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-inactive" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>
-  | Omit<Extract<DeckTraceEvent, { kind: "caret-responder-divergence" }>, StampedFields>;
+  | Omit<Extract<DeckTraceEvent, { kind: "caret-responder-divergence" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "follow-bottom" }>, StampedFields>;
 
 // ---------------------------------------------------------------------------
 // Utilities

@@ -1384,11 +1384,11 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // cluster under the user's cursor across the height change.
 
   // Fold-cue toggle callback. The `BlockFoldCue` affordance has
-  // already dispatched `tug-disengage-follow-bottom` and routed the
-  // call through the position-stable wrapper; this callback owns
-  // the block-specific concerns: first-responder promotion (so
-  // Cmd-C after the click reaches TerminalBlock's COPY handler),
-  // controlled vs uncontrolled state mutation, and host
+  // already released the host scroller's follow-bottom lock and
+  // routed the call through the position-stable wrapper; this
+  // callback owns the block-specific concerns: first-responder
+  // promotion (so Cmd-C after the click reaches TerminalBlock's COPY
+  // handler), controlled vs uncontrolled state mutation, and host
   // notification.
   const handleFoldToggle = React.useCallback((next: boolean) => {
     chainManager?.makeFirstResponder(terminalBlockResponderId);
@@ -1449,11 +1449,10 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         )
       : null;
 
-  // Composed root ref — forwards to both the local `outerRef` (used
-  // to dispatch the disengage-follow-bottom event and read the
-  // current element in the imperative renderer) AND the responder
-  // chain's ref-callback (writes `data-responder-id` on the same
-  // element). Same pattern as FileBlock's `composedRootRef`.
+  // Composed root ref — forwards to both the local `outerRef` (read
+  // by the imperative renderer for the current element) AND the
+  // responder chain's ref-callback (writes `data-responder-id` on
+  // the same element). Same pattern as FileBlock's `composedRootRef`.
   const composedRootRef = (el: HTMLDivElement | null): void => {
     outerRef.current = el;
     terminalBlockResponder.responderRef(el);

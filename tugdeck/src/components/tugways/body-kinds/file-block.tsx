@@ -37,13 +37,13 @@
  *    lines, so the 80-line threshold catches the upper ~40% — long
  *    enough to scan-or-skip, short enough not to fold the average
  *    file.
- *  - The toggle dispatches a bubbling `tug-disengage-follow-bottom`
- *    `CustomEvent` *before* the React state update. A host like
- *    `TugListView` listens on its scroll container and calls
- *    `SmartScroll.disengageFollowBottom()`, so the ResizeObserver
- *    flush triggered by the cell-height change does not call
- *    `pinToBottom` (the post-commit pin effect bails on
- *    `!isFollowingBottom`). Without this, expanding a file inside a
+ *  - The fold cue (`BlockFoldCue`) releases the host scroller's
+ *    follow-bottom lock via `useScroller().disengage` *before* the
+ *    React state update. A host like `TugListView` publishes the
+ *    `Scroller` façade and the call flips its `isFollowingBottom` to
+ *    false, so the ResizeObserver flush triggered by the cell-height
+ *    change finds `shouldAutoPin` false and does not call
+ *    `pinToBottom`. Without this, expanding a file inside a
  *    `followBottom` list scrolls the cue off-screen — violating
  *    "interacting with a control does not move that control out of
  *    view."
@@ -466,12 +466,10 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   );
   const collapsed = collapsedProp !== undefined ? collapsedProp : localCollapsed;
 
-  // Root ref — used to dispatch the disengage-follow-bottom event so
-  // the host (e.g. `TugListView`) releases its auto-pin lock before
-  // the cell height change. Without that, the user clicks "expand",
-  // the cell grows, `ResizeObserver` requests a bottom pin, and the
-  // click target scrolls off-screen — violating "interacting with a
-  // control does not move that control out of view."
+  // Root element ref. `handleScrollMatchIntoView` reads it to
+  // compute the target line's viewport band when scrolling a search
+  // match into view; it also carries the `ref` in both the embedded
+  // and standalone render branches.
   const rootRef = React.useRef<HTMLDivElement | null>(null);
 
   // Chrome actions target — non-null when this FileBlock is composed
@@ -533,9 +531,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // longer note on diff-block.tsx for the rationale).
 
   // Fold-cue toggle callback. The `BlockFoldCue` affordance already
-  // dispatched the `tug-disengage-follow-bottom` event before
-  // invoking this; this callback owns the block-specific concerns:
-  // state mutation (controlled vs uncontrolled) and host notification
+  // released the host scroller's follow-bottom lock before invoking
+  // this; this callback owns the block-specific concerns: state
+  // mutation (controlled vs uncontrolled) and host notification
   // (`onToggleCollapsed`).
   const handleFoldToggle = React.useCallback((next: boolean) => {
     if (collapsedProp === undefined) {
@@ -856,8 +854,8 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     (className === undefined ? "" : ` ${className}`);
 
   // Fold cue label. Library-side affordance (`BlockFoldCue`) owns
-  // the chevron, position-stable click, and disengage-follow-bottom
-  // event; FileBlock just formats the count.
+  // the chevron, position-stable click, and follow-bottom release;
+  // FileBlock just formats the count.
   const showCue = overThreshold;
   const cueCountWord = lines.length === 1 ? "line" : "lines";
   const cueLabel = `${lines.length.toLocaleString()} ${cueCountWord}`;

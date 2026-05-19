@@ -86,6 +86,7 @@ import { TugChoiceGroup, type TugChoiceItem } from "@/components/tugways/tug-cho
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
+import { useScroller } from "@/components/tugways/internal/scroller-context";
 import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 import {
@@ -687,6 +688,11 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   const outerScrollportRef = React.useRef<HTMLElement | null>(null);
   outerScrollportRef.current = outerScrollport;
 
+  // Follow-bottom handle from the nearest scrolling host. The
+  // view-toggle handler below releases the host's auto-pin lock
+  // before a view-mode flip changes the document height.
+  const scroller = useScroller();
+
   // Cmd/Ctrl-wheel routes to the outer card scrollport. DiffBlock
   // does not currently install an inner scrollport (the diff body
   // flows in the document), but the contract is surface-wide: any
@@ -720,10 +726,10 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   });
 
   // Fold-cue toggle callback. The `BlockFoldCue` affordance has
-  // already dispatched `tug-disengage-follow-bottom` and routed the
-  // click through its position-stable wrapper; this callback owns
-  // DiffBlock's state mutation (controlled vs uncontrolled) and
-  // host notification.
+  // already released the host scroller's follow-bottom lock and
+  // routed the click through its position-stable wrapper; this
+  // callback owns DiffBlock's state mutation (controlled vs
+  // uncontrolled) and host notification.
   const handleFoldToggle = React.useCallback((next: boolean) => {
     if (collapsedProp === undefined) {
       setLocalCollapsed(next);
@@ -763,9 +769,10 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // re-arranges row count for hunks with unpaired removes/adds; the
   // document height can shift by ~10–20% on a large diff).
   //
-  // `tug-disengage-follow-bottom` fires BEFORE the state update so
-  // any host TugListView releases its auto-pin lock — same contract
-  // FileBlock / DiffBlock fold cues use.
+  // The handler releases follow-bottom via `scroller.disengage`
+  // BEFORE the state update so any host TugListView drops its
+  // auto-pin lock — same contract the FileBlock / DiffBlock fold
+  // cues use through `BlockFoldCue`.
   //
   // The `senderId` is `useId`-derived (gensym hygiene per
   // useResponderForm's docstring). A latest-ref carries
@@ -789,11 +796,10 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     parentId: null,
     selectValue: {
       [viewToggleSenderId]: (next: string) => {
-        // Disengage follow-bottom BEFORE the mutator runs — same
-        // contract as the fold cue toggle.
-        rootRef.current?.dispatchEvent(
-          new CustomEvent("tug-disengage-follow-bottom", { bubbles: true }),
-        );
+        // Release follow-bottom BEFORE the mutator runs — same
+        // contract as the fold cue toggle. The `"diff-view-toggle"`
+        // source tags the disengage in the deck trace.
+        scroller.disengage("diff-view-toggle");
         // Type-narrow the segment value into DiffViewMode at the
         // chain boundary. Unknown values are no-ops — the choice
         // group is configured with exactly two items so this is
@@ -1036,8 +1042,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // Copy and fold-cue come from the `body-kinds/affordances/`
   // library — the contract (position-stable click, ghost
   // typography, 2xs scale, focus-refuse, confirmation flash,
-  // width-stabilize for Copy, disengage-follow-bottom event for
-  // fold) is encapsulated there. View-toggle is a `TugChoiceGroup`
+  // width-stabilize for Copy, follow-bottom release for fold) is
+  // encapsulated there. View-toggle is a `TugChoiceGroup`
   // — both segments visible at all times via the ghost emphasis
   // bracket frame.
   const hunkCountWord = hunks.length === 1 ? "hunk" : "hunks";
