@@ -24,6 +24,9 @@
  *   state commit). Never used to commit React state.
  * - [L06] Appearance changes via CSS and DOM, never React state. Spacer heights
  *   and block visibility are managed by direct DOM writes, not React state.
+ *   Every programmatic scroll-position write routes through the single
+ *   `SmartScroll` instance (`scrollTo` / `pinToBottom` / `maybePinToBottom`);
+ *   the component never assigns `scrollContainer.scrollTop` directly.
  * - [L07] Handlers access current state through refs, never stale closures.
  * - [L19] Component authoring guide: module docstring, exported props interface,
  *   data-slot="tug-markdown-view", file pair (tsx + css).
@@ -652,11 +655,13 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     onTimingRef.current?.({ lexMs, parseMs, blockCount: engine.blockCount });
 
     // Restore scroll position, clamped to new content height.
+    // Routed through SmartScroll [L06] — it is the sole owner of
+    // every programmatic scroll-position write in this view. The
+    // write enters the programmatic phase, so the deferred scroll
+    // event this DOM rebuild emits is not misread as a user gesture.
     const maxScrollTop = engine.heightIndex.getTotalHeight() - (scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
     const scrollTop = Math.max(0, Math.min(savedScrollTop, maxScrollTop));
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollTop;
-    }
+    smartScrollRef.current?.scrollTo({ top: scrollTop });
 
     // Enter visible blocks into DOM
     engine.blockWindow.setViewportHeight(scrollContainerRef.current?.clientHeight ?? DEFAULT_VIEWPORT_HEIGHT);
@@ -829,13 +834,15 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
         // Content shrink scroll recovery: if scrollTop is now past the new bottom,
         // snap to the nearest surviving block offset above the old scroll position.
+        // The snap write is routed through SmartScroll [L06]; the
+        // `clientHeight` read stays a direct container access.
         if (scrollContainerRef.current) {
           const totalHeight = engine.heightIndex.getTotalHeight();
           const clientHeight = scrollContainerRef.current.clientHeight;
           if (oldScrollTop > totalHeight - clientHeight) {
             const blockIndex = engine.heightIndex.getBlockAtOffset(oldScrollTop);
             const newScrollTop = engine.heightIndex.getBlockOffset(blockIndex);
-            scrollContainerRef.current.scrollTop = newScrollTop;
+            smartScrollRef.current?.scrollTo({ top: newScrollTop });
           }
         }
       }
