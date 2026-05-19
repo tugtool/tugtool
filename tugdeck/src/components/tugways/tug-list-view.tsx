@@ -754,6 +754,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // wrapper refs observe / unobserve via this instance.
     const observerRef = React.useRef<ResizeObserver | null>(null);
 
+    // Previous `dataSource` seen by the ResizeObserver-install effect,
+    // used to distinguish a genuine data-source swap (clear the height
+    // index) from a mere effect re-run / mount (keep it — it may carry
+    // hydrated geometry). `null` until the first run.
+    const prevDataSourceForClearRef =
+      React.useRef<TugListViewDataSource | null>(null);
+
     // Pending rAF id for height-flush coalescing, or `null` when no
     // flush is queued. The first observer callback in a burst
     // schedules the rAF; subsequent callbacks within the same burst
@@ -783,58 +790,30 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // closed-over snapshot.
     const smartScrollRef = React.useRef<SmartScroll | null>(null);
 
-    // Pending anchor-based scroll restore. Set by the listener
-    // when CardHost dispatches `tug-region-scroll-set` carrying a
-    // `meta.anchor` payload; cleared when the user themselves
-    // scrolls (SmartScroll's phase tracking surfaces this as
-    // `isUserScrolling = true`).
-    //
-    // The companion apply effect below runs every commit while the
-    // ref is set, re-deriving the target `scrollTop` from the live
-    // `heightIndex` and writing it via SmartScroll. As cells settle
-    // their heights across subsequent commits, the target moves and
-    // the write tracks it — the anchor cell stays at the user's
-    // saved viewport position [L23] regardless of how long
-    // sub-content takes to render. When the target stops moving
-    // (heights stable), the write is a no-op (`scrollTop` already
-    // matches desired); apply is idempotent.
-    //
-    // The clear-on-user-scroll handoff is the only stop signal.
-    // No magic-number commit count, no scrollHeight-stability
-    // heuristic — the user's gesture is the unambiguous "I own
-    // this scroll position now" signal SmartScroll already tracks
-    // via its phase machine.
-    const restoreAnchorRef = React.useRef<
-      { anchorIndex: number; anchorOffset: number } | null
-    >(null);
-
     // Mount-in-saved-state for the outer scroller.
     //
     // Read the bag synchronously at render time via
     // `useSavedRegionScroll`. The hydration effect below runs on the
-    // FIRST commit, BEFORE the companion apply effect that consumes
-    // `restoreAnchorRef`, so the first paint reflects the exact
-    // saved anchor / heightIndex — no `scrollTop=0` flash, no
-    // estimated-then-refined hop.
+    // FIRST commit; the SmartScroll-install effect (later in the same
+    // commit) reads the same `savedRegionScroll` to install the
+    // restore target, and the restore-target heartbeat effect (later
+    // still) applies it before paint — so the first paint reflects
+    // the exact saved anchor / heightIndex, with no `scrollTop=0`
+    // flash and no estimated-then-refined hop.
     //
-    // Saved cell heights (`meta.cellHeights`) hydrate the live
-    // `HeightIndex` so `offsetForIndex(anchorIndex)` returns the
-    // exact saved offset on commit 1 instead of an estimate. The
-    // companion apply effect computes the right `scrollTop` from
-    // commit 1 onward.
+    // This effect's job is the geometry hydration: saved cell heights
+    // (`meta.cellHeights`) populate the live `HeightIndex` so
+    // `offsetForIndex(anchorIndex)` returns the exact saved offset on
+    // commit 1 instead of an estimate, and the `min-height` lock ref
+    // so cell wrappers render at their saved heights (locking sibling
+    // layout against async content settle). The saved anchor
+    // (`meta.anchor`) is consumed by the SmartScroll-install effect,
+    // which installs it as a `SmartScroll` restore target.
     //
-    // Saved anchor (`meta.anchor`) seeds `restoreAnchorRef.current`
-    // synchronously here — without the seed, the apply effect would
-    // no-op on commit 1 because `restoreAnchorRef` was still null;
-    // it would only act after CardHost's parent-effect dispatched
-    // `tug-region-scroll-set` (one commit later → the user-visible
-    // hop).
-    //
-    // Saved values from prior session also hydrate
-    // `prevItemCountRef` (declared below) implicitly — `cellHeights.length`
-    // counts as a previous-item-count snapshot for the auto-follow-
-    // bottom growth-detection heuristic, but that's incidental; the
-    // happy path is just the anchor + heightIndex hydration.
+    // Saved values from prior session also hydrate `prevItemCountRef`
+    // (declared below) implicitly — `cellHeights.length` counts as a
+    // previous-item-count snapshot for the auto-follow-bottom
+    // growth-detection heuristic, but that's incidental.
     //
     // [L02] saved state enters React via `useSyncExternalStore` (the
     // `useSavedRegionScroll` hook). [L03] hydration runs in
@@ -863,23 +842,6 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         );
         heightIndexRef.current.hydrate(sanitized);
         hydratedCellHeightsRef.current = sanitized;
-      }
-
-      // Stash anchor for the apply effect to consume on this commit.
-      const anchor = (meta as { anchor?: unknown }).anchor;
-      if (
-        anchor !== null &&
-        typeof anchor === "object" &&
-        "index" in anchor &&
-        "offset" in anchor
-      ) {
-        const a = anchor as { index: unknown; offset: unknown };
-        if (typeof a.index === "number" && typeof a.offset === "number") {
-          restoreAnchorRef.current = {
-            anchorIndex: a.index,
-            anchorOffset: a.offset,
-          };
-        }
       }
       // Mount-time only — runs once. Subsequent saves write into
       // `data-tug-scroll-state`; subsequent restores would mount a
@@ -1070,14 +1032,30 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // fires during the same commit sees `observerRef.current`
     // populated and observes itself.
     //
-    // Re-runs when `dataSource` identity changes (rare). On swap, the
-    // height index is cleared first — measurements from the old data
-    // source's cells are not valid for the new data source's cells
-    // at the same indices. Without the clear, a cell at index 5 in
-    // the new data source would inherit the old data source's index-
-    // 5 measurement until `ResizeObserver` reported the real height.
+    // Re-runs when `dataSource` identity changes (rare). On a genuine
+    // SWAP the height index is cleared first — the old source's
+    // per-index measurements are invalid for the new source (a cell
+    // at index 5 in the new source would otherwise inherit the old
+    // index-5 measurement until `ResizeObserver` reported the real
+    // height).
+    //
+    // The clear is gated on an ACTUAL dataSource change, NOT on every
+    // effect run. On the initial mount the height index was just
+    // populated by the hydration effect above from the saved bag's
+    // `meta.cellHeights`; clearing it there would discard the
+    // geometry the cold-boot restore needs to land accurately on the
+    // first paint. Gating on `prev !== dataSource` (rather than a
+    // run-counter) is also correct under React StrictMode's
+    // mount/unmount/mount double-invoke — the second invoke sees an
+    // unchanged dataSource and skips the clear.
     React.useLayoutEffect(() => {
-      heightIndexRef.current.clear();
+      if (
+        prevDataSourceForClearRef.current !== null &&
+        prevDataSourceForClearRef.current !== dataSource
+      ) {
+        heightIndexRef.current.clear();
+      }
+      prevDataSourceForClearRef.current = dataSource;
       const observer = new ResizeObserver((entries) => {
         const total = dataSource.numberOfItems();
         let anyChanged = false;
@@ -1228,36 +1206,73 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           onScroll: () => {
             scrollTick();
           },
-          onFollowBottomChanged: (_ss, following) => {
-            // Engagement of follow-bottom is a user-intent signal that
-            // semantically supersedes a pending cold-boot restore
-            // anchor. The five paths that reach `_setFollowingBottom
-            // (true)` — imperative `scrollToBottom`, SmartScroll's
-            // End / Cmd+ArrowDown keyboard handler, the public
-            // `engageFollowBottom`, idle re-engagement at the
-            // absolute bottom, and `_checkReEngageFollowBottom` at
-            // gesture end — all express "the user wants the live
-            // edge right now."
-            //
-            // Without this clear, the restore-anchor apply effect
-            // (below) keeps re-asserting the saved scroll position
-            // on every commit and calls `disengageFollowBottom()`
-            // unconditionally — directly undoing the engage we just
-            // received. The visible symptom: user scroll-restores
-            // mid-transcript, submits a prompt, transcript stays at
-            // the saved anchor because the restore effect overwrites
-            // both the scroll position AND the follow-bottom flag
-            // between the synchronous `scrollToBottom` and the next
-            // paint. `isUserScrolling` (the existing clear signal)
-            // covers gesture-based handoff but not user-initiated
-            // actions that bypass the gesture path (submit, End).
-            if (following) {
-              restoreAnchorRef.current = null;
-            }
-          },
         },
       });
       smartScrollRef.current = smartScroll;
+
+      // Cold-boot scroll restore is owned by `SmartScroll` (its
+      // `setRestoreTarget` / `applyRestoreTarget` API). The list
+      // view's only jobs are: (1) install the saved anchor as a
+      // restore target — here for the mount-time seed and in the
+      // `tug-region-scroll-set` listener for CardHost's retry
+      // dispatches; (2) forward a layout heartbeat via the
+      // `applyRestoreTarget` effect below. SmartScroll holds the
+      // restore state and the supersede rules (engage / user
+      // gesture clear it) — the list view holds none.
+      //
+      // `makeAnchorResolver` builds the resolver for a saved
+      // `{index, offset}` anchor. It reads the LIVE `heightIndex`
+      // each call, so as virtualized cells settle their measured
+      // heights the resolved `scrollTop` tracks the anchor cell's
+      // true position [L07] / [L23]. It returns `null` while the
+      // anchor cell is outside the data source (content not yet
+      // populated) — `applyRestoreTarget` waits for a later commit.
+      const makeAnchorResolver =
+        (anchorIndex: number, anchorOffset: number): (() => number | null) =>
+        () => {
+          const total = dataSource.numberOfItems();
+          if (anchorIndex < 0 || anchorIndex >= total) return null;
+          const cellTop = heightIndexRef.current.offsetForIndex(
+            anchorIndex,
+            estimatedHeightForKindOnly,
+          );
+          return Math.max(0, cellTop + anchorOffset);
+        };
+
+      // Parse a `meta.anchor` payload to an `{index, offset}` pair,
+      // or `null` when absent / malformed.
+      const parseAnchor = (
+        meta: unknown,
+      ): { index: number; offset: number } | null => {
+        if (meta === null || typeof meta !== "object" || !("anchor" in meta)) {
+          return null;
+        }
+        const a = (meta as { anchor: unknown }).anchor;
+        if (
+          a === null ||
+          typeof a !== "object" ||
+          !("index" in a) ||
+          !("offset" in a)
+        ) {
+          return null;
+        }
+        const ax = a as { index: unknown; offset: unknown };
+        if (typeof ax.index !== "number" || typeof ax.offset !== "number") {
+          return null;
+        }
+        return { index: ax.index, offset: ax.offset };
+      };
+
+      // Mount-time seed. The geometry hydration effect ran earlier
+      // this commit, so `heightIndex` is already populated; the
+      // restore-target heartbeat effect (below) applies the target
+      // before paint, so the first paint reflects the saved anchor.
+      const seedAnchor = parseAnchor(savedRegionScroll?.meta);
+      if (seedAnchor !== null) {
+        smartScroll.setRestoreTarget(
+          makeAnchorResolver(seedAnchor.index, seedAnchor.offset),
+        );
+      }
 
       // Listen for `tug-disengage-follow-bottom` — a bubbling
       // `CustomEvent` fired by descendants whose own click handler
@@ -1282,58 +1297,22 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // loop on every cardRoot subtree mutation until `el.scrollTop`
       // is within tolerance of `pos.y`.
       //
-      // The compute-and-apply happens inline on each dispatch. No
-      // stash, no separate apply effect — CardHost owns the settle
-      // mechanism. The shape works for both raw and anchor cases:
-      //
-      //  - **Anchor case** (`meta.anchor` present): derive
-      //    `desired = heightIndex.offsetForIndex(anchorIndex) +
-      //    anchorOffset` from the live heightIndex. As cells settle
-      //    across subsequent commits, the heightIndex grows; the
-      //    next MutationObserver-driven dispatch re-derives a
-      //    refined `desired`. The settle gate is CardHost's
-      //    `Math.abs(el.scrollTop - pos.y) <= tolerance` check —
-      //    when our computed `desired` converges to `pos.y` (and it
-      //    will, because the same content renders to the same
-      //    cumulative offset), the loop terminates. Identical to
-      //    what the raw-pixel path uses.
-      //
-      //  - **Raw case** (no `meta`): write `pos.y` directly.
+      //  - **Anchor case** (`meta.anchor` present): install the
+      //    anchor as a `SmartScroll` restore target. SmartScroll
+      //    re-applies it on every `applyRestoreTarget` heartbeat
+      //    (the effect below) until the user gestures or
+      //    follow-bottom engages — robust to cell-height drift as
+      //    sub-content settles. CardHost's retry loop terminates on
+      //    its own settle gate (`Math.abs(scrollTop - pos.y) <=
+      //    tolerance`) once the resolved offset converges.
+      //  - **Raw case** (no `meta.anchor`): write `pos.y` directly.
       //    Mirrors `tug-markdown-view`'s listener.
       //
       // `preventDefault()` signals the dispatcher that we owned the
       // apply — `applyRegionScrolls` skips its fallback direct
-      // `scrollTop` assignment.
-      //
-      // `disengageFollowBottom` on every dispatch defends against
-      // an intervening post-commit pin re-engaging the bottom-pin
-      // between dispatches. SmartScroll's `scrollTo` sets a one-
-      // shot suppress flag that keeps the deferred scroll event's
-      // idle-phase re-engagement from undoing the disengage.
-      //
-      // [L07] reads heightIndex live each dispatch — no stale closure.
-      // [L23] the framework's settle gate is the canonical mechanism;
-      //       this listener participates rather than inventing its own.
-      // Listen for `tug-region-scroll-set` — CardHost's dispatch on
-      // cold-boot restore (and on every MutationObserver-driven
-      // retry). Two cases:
-      //
-      //  - **Anchor case** (`meta.anchor` present): stash the
-      //    anchor in `restoreAnchorRef`. The companion apply
-      //    effect runs every commit until cleared (by user
-      //    scroll), re-deriving the target `scrollTop` from the
-      //    live `heightIndex` and writing it via SmartScroll.
-      //    Robust to cell-height drift — heights settle over many
-      //    commits as sub-content arrives; the apply tracks the
-      //    target through every commit.
-      //
-      //  - **Raw case** (no `meta`): write `pos.y` directly.
-      //    Mirrors `tug-markdown-view`'s listener.
-      //
-      // `preventDefault()` signals the dispatcher we owned the
-      // apply — CardHost skips its fallback direct `scrollTop`
-      // write. `disengageFollowBottom` defends against an
-      // intervening post-commit pin between dispatches.
+      // `scrollTop` assignment. `disengageFollowBottom` defends the
+      // raw-pixel branch against an intervening post-commit pin; the
+      // anchor branch's `setRestoreTarget` disengages on its own.
       const onRegionScrollSet = (event: Event): void => {
         const ce = event as CustomEvent<{
           top?: number;
@@ -1347,25 +1326,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           el.scrollLeft = ce.detail.left;
         }
 
-        // Resolve anchor metadata if present and well-shaped.
-        const meta = ce.detail.meta;
-        if (meta !== null && typeof meta === "object" && "anchor" in meta) {
-          const a = (meta as { anchor: unknown }).anchor;
-          if (
-            a !== null &&
-            typeof a === "object" &&
-            "index" in a &&
-            "offset" in a
-          ) {
-            const ax = a as { index: unknown; offset: unknown };
-            if (typeof ax.index === "number" && typeof ax.offset === "number") {
-              restoreAnchorRef.current = {
-                anchorIndex: ax.index,
-                anchorOffset: ax.offset,
-              };
-              return;
-            }
-          }
+        const anchor = parseAnchor(ce.detail.meta);
+        if (anchor !== null) {
+          smartScroll.setRestoreTarget(
+            makeAnchorResolver(anchor.index, anchor.offset),
+          );
+          return;
         }
 
         // Raw-pixel fallback.
@@ -1565,71 +1531,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       el.setAttribute("data-tug-scroll-state", JSON.stringify(meta));
     });
 
-    // Anchor-apply effect. Runs every commit while
-    // `restoreAnchorRef` is set; recomputes the target `scrollTop`
-    // from the live `heightIndex` and writes it via SmartScroll.
-    // As cells settle their heights across many commits (markdown
-    // loads, file viewer substrates measure, terminal lines re-
-    // render), `heightIndex.offsetForIndex(anchorIndex)` converges
-    // and the write becomes a no-op (`scrollTop` already equals
-    // `desired`).
+    // Restore-target heartbeat. `SmartScroll` owns the cold-boot
+    // scroll-restore policy (the resolver, the supersede rules);
+    // this effect only forwards the per-commit layout signal it
+    // needs. `applyRestoreTarget` re-resolves the installed target
+    // and writes `scrollTop` when it has drifted — so as virtualized
+    // cells settle their heights across commits (markdown loads,
+    // file-viewer substrates measure, terminal lines re-render) the
+    // restore tracks the anchor cell's true position. It is a cheap
+    // null-check no-op once no target is installed (the steady state
+    // after the first user gesture / follow-bottom engage).
     //
-    // Stop signal: the user themselves scrolling. SmartScroll's
-    // phase machine surfaces this as `isUserScrolling = true`
-    // (tracking / dragging / settling / decelerating). When that
-    // flips true, the user owns the position; we clear pending
-    // and stop fighting them.
-    //
-    // No magic-number commit count, no scrollHeight-stability
-    // heuristic — the apply is idempotent at rest (writes only
-    // when target moves) and the user's gesture is the
-    // unambiguous handoff signal SmartScroll already tracks.
-    //
-    // [L03] `useLayoutEffect` — write before paint, so the first
-    // paint after a heightIndex update reflects the corrected
+    // [L03] `useLayoutEffect` — the write lands before paint, so the
+    // first paint after a heightIndex update reflects the restored
     // `scrollTop`.
-    // [L06] direct DOM write through SmartScroll.scrollTo; no
-    // React state crossed.
-    // [L07] reads `restoreAnchorRef.current`, `dataSource`,
-    // `heightIndexRef.current`, and `smartScroll` live each
-    // commit.
-    // [L23] preserves user-visible state (anchor cell at saved
-    // viewport position) across the indefinite content-settle
-    // window; user gesture is the only mechanism that supersedes.
+    // [L06] the write is a direct DOM `scrollTop` set inside
+    // `SmartScroll`; no React state crossed.
+    // [L23] preserves the user-visible saved viewport position
+    // across the indefinite content-settle window.
     React.useLayoutEffect(() => {
-      const restore = restoreAnchorRef.current;
-      if (restore === null) return;
-      const el = scrollContainerRef.current;
-      const ss = smartScrollRef.current;
-      if (el === null || ss === null) return;
-      // User-scroll handoff: their gesture wins.
-      if (ss.isUserScrolling) {
-        restoreAnchorRef.current = null;
-        return;
-      }
-      const total = dataSource.numberOfItems();
-      if (restore.anchorIndex < 0 || restore.anchorIndex >= total) {
-        // Anchor cell not yet in the data source — wait for items.
-        return;
-      }
-      const cellTop = heightIndexRef.current.offsetForIndex(
-        restore.anchorIndex,
-        estimatedHeightForKindOnly,
-      );
-      const desired = Math.max(0, cellTop + restore.anchorOffset);
-      if (Math.abs(el.scrollTop - desired) > 0.5) {
-        ss.scrollTo({ top: desired, animated: false });
-        // Disengage ONLY when we actually fought a deviation. An
-        // idle apply (scrollTop already at desired) must leave
-        // follow-bottom alone — otherwise this effect would
-        // perpetually kill any explicit re-engagement that arrives
-        // between drifts (keyboard End, imperative scrollToBottom,
-        // idle re-engagement). The companion `onFollowBottomChanged`
-        // hook on SmartScroll (above) clears `restoreAnchorRef` the
-        // moment follow-bottom re-engages, so this branch only
-        // executes during the legitimate restore-in-progress window.
-        ss.disengageFollowBottom();
-      }
+      smartScrollRef.current?.applyRestoreTarget();
     });
 
     // Two-pass `scrollToIndex` correction per [D03]. Pass 1 lives in

@@ -4,7 +4,11 @@
  * Models UIScrollView/UIScrollViewDelegate for the web. Manages a scroll
  * container element, tracks scroll phases (idle, tracking, dragging,
  * decelerating, programmatic), provides programmatic scroll methods, fires
- * lifecycle callbacks, and includes auto-follow-bottom as a built-in feature.
+ * lifecycle callbacks, and owns two built-in scroll-position policies:
+ * auto-follow-bottom (pin to the live edge as content grows) and
+ * cold-boot scroll restore (re-place the scroller at a saved
+ * mid-content position via a consumer-supplied resolver). The two are
+ * mutually exclusive — engaging the live edge clears a pending restore.
  *
  * Architecture [D93]:
  *   The state machine is the guard for distinguishing user scrolls from
@@ -166,6 +170,20 @@ export class SmartScroll {
   // Used to determine net direction (up vs down) when the gesture ends.
   // Re-engagement at idle only fires if the gesture was net-downward.
   private _gestureStartScrollTop: number = 0;
+
+  // Pending cold-boot scroll-restore resolver, or `null` when no
+  // restore is in flight. A consumer that mounts into a saved
+  // mid-content scroll position installs a resolver via
+  // `setRestoreTarget`; it returns the desired `scrollTop` (or `null`
+  // while the target is not yet resolvable — e.g. the anchor cell is
+  // not in range, or content has not laid out). `applyRestoreTarget`
+  // re-resolves and writes the target on each layout signal the
+  // consumer forwards, until the user gestures or follow-bottom
+  // engages — at which point the restore is superseded and cleared.
+  // The resolver, not a stored pixel value, is the contract: as
+  // virtualized content settles its heights the resolved offset
+  // drifts, and the restore tracks it.
+  private _restoreTarget: (() => number | null) | null = null;
 
   // Listener function references stored for removeEventListener
   private readonly _onScroll: () => void;
@@ -341,6 +359,80 @@ export class SmartScroll {
       this._exitProgrammaticImmediate();
     }
     // animated: scrollend or timer fallback handles return to idle.
+  }
+
+  // -------------------------------------------------------------------------
+  // Public API — cold-boot scroll restore
+  //
+  // A consumer that mounts into a saved mid-content scroll position
+  // (a virtualized list / markdown view restoring `bag.regionScroll`)
+  // installs a `resolver` here. SmartScroll owns the restore policy:
+  //   - a pending restore means the scroller is being placed, not
+  //     tracking the live edge — `setRestoreTarget` disengages
+  //     follow-bottom;
+  //   - the user engaging the live edge (`scrollToBottom`, keyboard
+  //     End / Cmd+ArrowDown, idle re-engagement, gesture-end
+  //     re-engage) supersedes the restore — `_setFollowingBottom(true)`
+  //     clears it;
+  //   - a user scroll gesture supersedes the restore — `applyRestore
+  //     Target` clears it when `isUserScrolling`.
+  // The consumer's only job is to forward layout signals by calling
+  // `applyRestoreTarget` (its post-commit / ResizeObserver heartbeat);
+  // it holds no restore state of its own.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Install a cold-boot scroll-restore `resolver`. The resolver
+   * returns the desired `scrollTop`, or `null` while the target is
+   * not yet resolvable (anchor cell out of range, content not laid
+   * out). It is re-invoked on every `applyRestoreTarget` call so the
+   * restore tracks a target that drifts as virtualized content
+   * settles its heights.
+   *
+   * A pending restore is incompatible with following the live edge,
+   * so this disengages follow-bottom — the auto-pin must not fight
+   * the restore write.
+   */
+  setRestoreTarget(resolver: () => number | null): void {
+    if (this._disposed) return;
+    this._restoreTarget = resolver;
+    this._setFollowingBottom(false);
+  }
+
+  /** Drop the pending restore target, if any. */
+  clearRestoreTarget(): void {
+    this._restoreTarget = null;
+  }
+
+  /**
+   * Re-resolve the installed restore target and write `scrollTop` to
+   * it when it has drifted. No-op when no target is installed. A user
+   * scroll gesture supersedes the restore: when `isUserScrolling`,
+   * the target is cleared and nothing is written — the user owns the
+   * position from that point on.
+   *
+   * Consumers call this from their layout heartbeat (a post-commit
+   * `useLayoutEffect`, a `ResizeObserver` flush) so the restore
+   * tracks the resolved offset as content settles. The write goes
+   * through `scrollTo`, which arms the one-shot idle-re-engagement
+   * suppression so the deferred scroll event cannot flip follow-bottom
+   * back on mid-restore.
+   */
+  applyRestoreTarget(): void {
+    if (this._disposed) return;
+    const resolver = this._restoreTarget;
+    if (resolver === null) return;
+    // A user scroll gesture supersedes the restore — they own the
+    // position now. Clear so a later commit doesn't fight them.
+    if (this.isUserScrolling) {
+      this._restoreTarget = null;
+      return;
+    }
+    const desired = resolver();
+    if (desired === null) return;
+    if (Math.abs(this._container.scrollTop - desired) > 0.5) {
+      this.scrollTo({ top: desired, animated: false });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -666,6 +758,14 @@ export class SmartScroll {
   private _setFollowingBottom(following: boolean): void {
     if (this._isFollowingBottom === following) return;
     this._isFollowingBottom = following;
+    // Engaging the live edge supersedes any pending cold-boot
+    // restore: the user (or an explicit jump-to-latest) has declared
+    // the bottom is where they want to be, so a restore target that
+    // would pull them back to a saved mid-content position must be
+    // dropped. The five engage paths — `scrollToBottom`,
+    // `engageFollowBottom`, idle re-engagement, gesture-end
+    // re-engage, keyboard End / Cmd+ArrowDown — all route here.
+    if (following) this.clearRestoreTarget();
     this._callbacks.onFollowBottomChanged?.(this, following);
   }
 
