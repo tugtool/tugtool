@@ -2775,7 +2775,7 @@ _Implementer's note._ TugAnimator's public `animate()` does not expose WAAPI `de
 
 **Scope.** Net-new Tug component (NOT an extraction — the codebase has no existing three-dots indicator to refactor; `TugProgress` has spinner/bar/ring/pie variants only). Implements a compact "thinking" indicator as three vertical rectangular bars that pulse in sequence (default geometry; final shape worked out in gallery iteration). Optional human-readable label sits to the side (default right; supports left / right / hidden — mirrors `TugStateIndicator`'s label API).
 
-The `animating` prop controls whether the bars pulse or freeze in place (visible but static). The Z1 asst-half integration (20.4.12 + 20.4.13) drives this prop from a delta-debounced derivation (20.4.11), producing the "blinking caret analog" behavior: bars pulse when no text is flowing, freeze when text is actively streaming.
+The `animating` prop controls whether the bars pulse or freeze in place (visible but static). The Z1 asst-half integration (20.4.12 + 20.4.13) drives this prop from `isLivePhase(snap)` — bars pulse for the duration of the in-flight turn and freeze at `turn_complete`. (The earlier plan called for a delta-debounced "freeze while text is actively streaming" derivation via [Step 20.4.11](#step-20-4-11); that step was deferred — see its status note.)
 
 **Component-authoring conformance.** Same [L19] checklist as `TugStateIndicator` (20.4.2) — file pair, docstring with required law citations, exported Props interface with `@selector` annotations, `data-slot="tug-thinking-indicator"`, `forwardRef` with `...rest` spread + merged `style`, `@tug-pairings` in both forms, `@tug-renders-on` on every unpaired color rule, `--tugx-thinking-indicator-*` aliases resolving to `--tug7-*` in one hop ([L17]).
 
@@ -2822,7 +2822,7 @@ export interface TugThinkingIndicatorProps
 
 **Depends on:** none in 20.4.x; foundational for 20.4.12's Z1 wiring.
 
-**Status:** _not started._
+**Status:** _deferred (2026-05-18)._ The blinking-caret-analog behavior the indicator was meant to drive (pulse when no text is flowing, freeze when text is actively streaming) is a polish refinement, not a correctness requirement; the cost of carrying a new reducer-state field, a snapshot projection, a per-card stream-idle observer, and a debounce helper across the codebase outweighs the visual benefit at this point. [Step 20.4.12](#step-20-4-12)'s Z1 wiring falls back to driving `animating` from `isLivePhase(snap)` — the indicator pulses for the duration of the in-flight turn and freezes at `turn_complete`. Revisit if/when the simpler "pulses through the whole stream" behavior reads as unhelpful in practice.
 
 **Commit:** `feat(code-session): lastStreamingDeltaAt snapshot field + isStreamActive helper`
 
@@ -2916,7 +2916,7 @@ The double subscription is intentional: the snapshot subscription drives re-rend
 
 #### Step 20.4.12: Z1 asst-half scaffolding — two-line stack (gallery-only) {#step-20-4-12}
 
-**Depends on:** #step-20-4-10, #step-20-4-11
+**Depends on:** #step-20-4-10. (Originally also depended on #step-20-4-11, which was deferred — see its status note.)
 
 **Status:** _not started._
 
@@ -2931,14 +2931,14 @@ The double subscription is intentional: the snapshot subscription drives re-rend
 [status: indicator OR end-state]          ← in-flight OR terminal (status row, bottom)
 ```
 
-Top line (model row) is persistent throughout the turn lifecycle — model name reads as "who's responding." Bottom line (status row) is mode-dependent: during in-flight phases it hosts `TugThinkingIndicator` with `animating={!isStreamActive(snap, nowMs)}`; after `turn_complete` it swaps to the end-state display (designed in 20.4.13). Gallery iteration shapes typography, spacing, vertical rhythm.
+Top line (model row) is persistent throughout the turn lifecycle — model name reads as "who's responding." Bottom line (status row) is mode-dependent: during in-flight phases it hosts `TugThinkingIndicator` with `animating={isLivePhase(snap)}` (the indicator pulses for the duration of the in-flight turn and freezes at `turn_complete`); after `turn_complete` it swaps to the end-state display (designed in 20.4.13). Gallery iteration shapes typography, spacing, vertical rhythm.
 
 **Mount-identity discipline.** The status row's content swap (indicator → end-state) MUST happen inside the same DOM container with stable key + component type ([L26]) so the assistant row's focus / hover / scroll-position state is not destroyed at the turn boundary. The same `[L23]/[L26] note` recorded in the (now-superseded) Step 20.5.C applies here: build the slot once; swap content within it.
 
 **Tasks.**
 
 - [ ] Gallery card (or new section in an existing one): mock the two-line stack for an in-flight turn and a completed turn.
-- [ ] Wire `TugThinkingIndicator` in the in-flight status row with delta-debounced `animating` derivation per 20.4.11.
+- [ ] Wire `TugThinkingIndicator` in the in-flight status row with `animating={isLivePhase(snap)}`. (The earlier plan called for a delta-debounced derivation per 20.4.11; that step was deferred — see its status note.)
 - [ ] Reserve the end-state slot for 20.4.13 (placeholder for now).
 - [ ] Workshop typography + spacing so model row + status row read as a coherent unit, not two stacked details.
 
@@ -2950,7 +2950,7 @@ Top line (model row) is persistent throughout the turn lifecycle — model name 
 
 **Checkpoint.**
 
-- [ ] HMR-vet the in-flight indicator's blink-on-pause behavior: trigger a streaming pause (no deltas for a few seconds) and observe the bars start pulsing; resume deltas and observe them freeze.
+- [ ] HMR-vet the in-flight indicator pulses for the duration of the live phase and freezes at `turn_complete`. (The earlier "blink-on-pause" checkpoint was tied to the deferred 20.4.11 derivation.)
 - [ ] HMR-vet that the in-flight → end-state swap preserves the status-row DOM container (no remount).
 
 ---
@@ -3044,7 +3044,7 @@ For each adoption site, gallery-prototype the change before any production work.
 **Tasks.**
 
 - [ ] **Z2 promotion** — replace the inline indicator in production with `TugStateIndicator` (label + popover); remove `Total Time` / `Total Tokens` cells and rebalance the four-cell layout; wire live `Time` / `Tokens` / `Context` to the production renderer via the same `deriveInflightActiveMs` helper and live-tick subscription used in the gallery; wire the four popovers (Time, Tokens, Context, state-change log) to production status cells.
-- [ ] **Z1 asst-half promotion** — replace the dangling-model-name treatment in `tide-card-transcript.tsx` with the two-line stack; wire `TugThinkingIndicator` in the in-flight status row driven by the delta-debounced `isStreamActive` helper; wire the end-state display in the terminal status row. Mount-identity audit ([L26]): confirm the assistant-row chrome is not remounted by the swap.
+- [ ] **Z1 asst-half promotion** — replace the dangling-model-name treatment in `tide-card-transcript.tsx` with the two-line stack; wire `TugThinkingIndicator` in the in-flight status row driven by `isLivePhase(snap)` (the earlier plan used the delta-debounced `isStreamActive` helper from the now-deferred [Step 20.4.11](#step-20-4-11)); wire the end-state display in the terminal status row. Mount-identity audit ([L26]): confirm the assistant-row chrome is not remounted by the swap.
 - [ ] **Any adoption-audit migrations** — promote any 20.4.14 gallery prototypes to production.
 - [ ] **Update the lifecycle matrix** ([Step 20.5.A](#step-20-5-a)) Z1 asst-half row entries to reference `TugThinkingIndicator` (in-flight) and the end-state display (terminal). Strike out the now-stale `TugProgress agent` placeholders.
 - [ ] **Close out** the Step 20.4 parent status line to record completion of the 20.4.x follow-on series.
