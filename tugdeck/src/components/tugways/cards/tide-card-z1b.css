@@ -100,7 +100,7 @@
   /* Extra horizontal margin on the trailing `::` matches the
      separators inside the end-state row so the rhythm reads
      uniformly across the whole Z1B line. */
-  --tugx-tide-z1b-separator-margin: 8px;
+  --tugx-tide-z1b-separator-margin: 10px;
   margin-inline: var(--tugx-tide-z1b-separator-margin);
 }
 
@@ -125,7 +125,7 @@
      `::` between OK and TIME). Negative = pull COPY tighter to
      `::`; positive = push it further. Tunable via the slot
      token for a future callsite that wants a different rhythm. */
-  --tugx-tide-z1b-copy-left-nudge: -18px;
+  --tugx-tide-z1b-copy-left-nudge: -20px;
   transform: translateY(var(--tugx-tide-z1b-copy-baseline-nudge));
   margin-left: var(--tugx-tide-z1b-copy-left-nudge);
 }
@@ -162,6 +162,6 @@
      flex container's `gap`) so the double-colons breathe a bit
      more than the `•` separator. Set to `0` to match the base
      `gap` exactly. */
-  --tugx-tide-z1b-end-state-separator-margin: 8px;
+  --tugx-tide-z1b-end-state-separator-margin: 10px;
   margin-inline: var(--tugx-tide-z1b-end-state-separator-margin);
 }
