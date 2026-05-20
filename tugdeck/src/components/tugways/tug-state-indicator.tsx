@@ -63,7 +63,11 @@ export type TugStateIndicatorTone =
   | "caution"
   | "danger";
 
-export type TugStateIndicatorLabelPosition = "left" | "right" | "hidden";
+export type TugStateIndicatorLabelPosition =
+  | "left"
+  | "right"
+  | "hidden"
+  | "none";
 
 export interface TugStateIndicatorVisual {
   readonly tone: TugStateIndicatorTone;
@@ -129,13 +133,13 @@ export function indicatorVisualFor(
  */
 export const PHASE_HUMAN_LABEL: Record<CodeSessionPhase, string> = {
   idle: "Idle",
-  submitting: "Submitting message",
-  awaiting_first_token: "Awaiting first response",
-  streaming: "Streaming response",
-  tool_work: "Running tools",
-  awaiting_approval: "Awaiting your approval",
-  replaying: "Replaying session",
-  errored: "Last turn errored",
+  submitting: "Sending",
+  awaiting_first_token: "Waiting",
+  streaming: "Streaming",
+  tool_work: "Working",
+  awaiting_approval: "Awaiting",
+  replaying: "Replaying",
+  errored: "Error",
 };
 
 /**
@@ -156,7 +160,7 @@ const PULSE_DURATION_MS = 1600;
 
 const PULSE_KEYFRAMES: Keyframe[] = [
   { transform: "translate(-50%, -50%) scale(0.85)", opacity: 0.7 },
-  { transform: "translate(-50%, -50%) scale(1.55)", opacity: 0 },
+  { transform: "translate(-50%, -50%) scale(1.9)", opacity: 0 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -180,16 +184,17 @@ export interface TugStateIndicatorProps
   size?: number;
   /**
    * Where to render the human-readable phase label relative to the
-   * dot/ring glyph. `"hidden"` suppresses the label and surfaces the
-   * same content via {@link TugTooltip} on hover; `"left"` and
-   * `"right"` render the label inline and suppress the tooltip
-   * (the same information is already on screen).
+   * dot/ring glyph. `"left"` and `"right"` render the label inline.
+   * `"hidden"` suppresses the inline label and surfaces the same
+   * content via {@link TugTooltip} on hover. `"none"` is a bare
+   * glyph — no inline label, no tooltip — for consumers that already
+   * render the phase text right beside the indicator.
    *
    * Per [L06], the position toggle is appearance — it drives the
    * `data-label-position` attribute on the root span and CSS reads
    * it; no React state in a wrapper.
    *
-   * @selector [data-label-position="left"] | [data-label-position="right"] | [data-label-position="hidden"]
+   * @selector [data-label-position="left"] | [data-label-position="right"] | [data-label-position="hidden"] | [data-label-position="none"]
    * @default "right"
    */
   labelPosition?: TugStateIndicatorLabelPosition;
@@ -288,7 +293,7 @@ export const TugStateIndicator = React.forwardRef<
   };
 
   const labelText = labelTextFor(state, label);
-  const labelVisible = labelPosition !== "hidden";
+  const labelVisible = labelPosition === "left" || labelPosition === "right";
 
   const root = (
     <span
@@ -315,7 +320,11 @@ export const TugStateIndicator = React.forwardRef<
     </span>
   );
 
-  if (labelVisible) return root;
+  // `"hidden"` surfaces the phase via a hover tooltip; `"left"`,
+  // `"right"`, and `"none"` return the bare root — `"none"` has no
+  // inline label and no tooltip, for consumers that render the phase
+  // text themselves right beside the indicator.
+  if (labelPosition !== "hidden") return root;
 
   return (
     <TugTooltip

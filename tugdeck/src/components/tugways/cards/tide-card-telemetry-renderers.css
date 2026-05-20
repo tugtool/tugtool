@@ -96,19 +96,19 @@
                             hairline rule with downward endcap ticks
      [centered value]
 
-   The STATE cell's apparatus carries a small tone dot before its
-   label — `[● STATE]` — and its value is the human-readable phase
-   title. TIME / TOKENS / CONTEXT carry plain labels and live
-   figures. The cumulative TOTAL TIME / TOTAL TOKENS are not separate
-   cells; those sums surface inside the TIME / TOKENS popovers'
-   summary footers.
+   The STATE cell's value is the human-readable phase title, flanked
+   by two label-less state-indicator glyphs (concentric dot + pulsing
+   ring) pinned to either end of the value area. TIME / TOKENS /
+   CONTEXT carry plain labels and live figures. The cumulative TOTAL
+   TIME / TOTAL TOKENS are not separate cells; those sums surface
+   inside the TIME / TOKENS popovers' summary footers.
 
-   Cell widths come from `--tugx-tide-status-cell-width`: TIME /
-   TOKENS / CONTEXT share the 19ch default; the STATE cell overrides
-   it wider (`--tugx-tide-status-state-cell-width`) to fit the
-   longest phase title as its value. Within a cell the apparatus and
-   value-wrap both consume that width, so column geometry never
-   jitters as values change; values render natural-width and center.
+   All four cells share one width (`--tugx-tide-status-cell-width`) —
+   the STATE cell's short phase titles fit the same slot the figure
+   cells use, even with the two flanking indicator glyphs. Within a
+   cell the apparatus and value-wrap both consume that width, so
+   column geometry never jitters as values change; values render
+   natural-width and center.
 
    Row layout — single 4-cell flex layout (STATE, TIME, TOKENS,
    CONTEXT) with `justify-content: center` and a fixed inter-item
@@ -145,18 +145,13 @@
   padding-inline: var(--tug-space-2xl);
   box-sizing: border-box;
 
-  /* Default cell width — TIME / TOKENS / CONTEXT. Dominant cell is
-     the TOKENS / CONTEXT label (~19ch including letterspacing +
-     label-padding). Apparatus and value-wrap both consume this
-     width so the three figure cells occupy identical slots. */
-  --tugx-tide-status-cell-width: 19ch;
-  /* STATE cell width — wider than the figure cells because its value
-     is the human-readable phase title, and the longest ("Awaiting
-     first response") needs room. A fixed width keeps the group's
-     total width — and every cell position — constant as the phase
-     text changes. Bump this if a future phase title is added longer
-     than the current longest. */
-  --tugx-tide-status-state-cell-width: 180px;
+  /* Uniform cell width — all four cells (STATE, TIME, TOKENS,
+     CONTEXT) read this one slot, so every cell renders at an
+     identical width. Sized to clear the widest content with even
+     margins: the CONTEXT value (`NNN.NK / N.NNM`) and the STATE
+     cell's phase title flanked by its two indicator glyphs.
+     Apparatus and value-wrap both consume this width. */
+  --tugx-tide-status-cell-width: 21ch;
 }
 
 .tide-telemetry-status-cell {
@@ -173,14 +168,6 @@
   flex: 0 0 auto;
 }
 
-/* STATE cell — wider than the figure cells. Overriding the shared
-   `--tugx-tide-status-cell-width` here widens both this cell's
-   endcap apparatus and its value-wrap in one declaration, since
-   both read the variable. */
-.tide-telemetry-status-cell[data-priority="state"] {
-  --tugx-tide-status-cell-width: var(--tugx-tide-status-state-cell-width);
-}
-
 .tide-telemetry-status-value-wrap {
   /* Wrap centers its single child value within the uniform cell
      width — so values can change character count freely and remain
@@ -188,6 +175,20 @@
   display: inline-flex;
   justify-content: center;
   width: var(--tugx-tide-status-cell-width);
+}
+
+/* STATE value row — the phase title centered between two label-less
+   TugStateIndicator glyphs pinned to either end of the value area.
+   `space-between` pins the glyphs to the edges; with equal-width
+   glyphs the title stays centered on the cell axis as its text
+   changes width. `gap` guarantees a minimum channel so the longest
+   title never crowds a glyph; `align-items: center` seats the small
+   glyphs against the title's optical center. */
+.tide-telemetry-status-cell[data-priority="state"]
+  .tide-telemetry-status-value-wrap {
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--tug-space-md);
 }
 
 /* Value treatment — the row's focal data: a step up in size from the
@@ -320,16 +321,11 @@
 /* The letterspaced uppercase label. Keeps its own monospaced face —
    declared explicitly here — while the rest of the row reads in the
    sans chrome font, so the endcap apparatus stays an instrument
-   legend distinct from the values it captions. An `inline-flex` row
-   so the STATE cell's legend can seat a leading tone dot before the
-   text (`[● STATE]`); plain-text labels are a single flex item and
-   the `gap` is inert. Slight downward translate (~0.5px) nudges the
-   label's optical center onto the rule line. */
+   legend distinct from the values it captions. Slight downward
+   translate (~0.5px) nudges the label's optical center onto the
+   rule line. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-telemetry-endcap-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-family: var(--tug-font-mono, monospace);
   font-size: 0.5625rem;
@@ -339,40 +335,6 @@
   padding: 0 4px;
   transform: translateY(0.5px);
   white-space: nowrap;
-}
-
-/* Legend state dot — the `●` in the STATE cell's `[● STATE]`
-   apparatus. A small tone-colored circle ahead of the legend text;
-   the tone tracks the session triple via `indicatorVisualFor`. The
-   dot is a redundant color cue — the phase value below carries the
-   meaning — and rides inside the `aria-hidden` apparatus. Each tone
-   rule sets only `background-color`; the dot renders on the
-   status-bar surface. */
-.tide-telemetry-status-state-dot {
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-status-state-dot--default {
-  background-color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-status-state-dot--success {
-  background-color: var(--tug7-element-global-text-normal-success-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-status-state-dot--caution {
-  background-color: var(--tug7-element-global-text-normal-caution-rest);
-}
-
-/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.tide-telemetry-status-state-dot--danger {
-  background-color: var(--tug7-element-global-text-normal-danger-rest);
 }
 
 /* Endcap ticks — absolutely positioned 1px-wide vertical strokes at

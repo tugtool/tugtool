@@ -145,13 +145,13 @@ describe("indicatorVisualFor — phase mapping", () => {
 describe("labelTextFor — visible-label text", () => {
   test.each([
     ["idle", "Idle"],
-    ["submitting", "Submitting message"],
-    ["awaiting_first_token", "Awaiting first response"],
-    ["streaming", "Streaming response"],
-    ["tool_work", "Running tools"],
-    ["awaiting_approval", "Awaiting your approval"],
-    ["replaying", "Replaying session"],
-    ["errored", "Last turn errored"],
+    ["submitting", "Sending"],
+    ["awaiting_first_token", "Waiting"],
+    ["streaming", "Streaming"],
+    ["tool_work", "Working"],
+    ["awaiting_approval", "Awaiting"],
+    ["replaying", "Replaying"],
+    ["errored", "Error"],
   ] as const)(
     "phase %s resolves to canonical title %s",
     (phase, expected) => {
@@ -176,6 +176,6 @@ describe("labelTextFor — visible-label text", () => {
           interruptInFlight: true,
         }),
       ),
-    ).toBe("Streaming response");
+    ).toBe("Streaming");
   });
 });

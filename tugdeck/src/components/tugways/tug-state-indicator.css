@@ -87,6 +87,7 @@ body {
        data-label-position="right"  → row    (glyph, label)
        data-label-position="left"   → row-reverse (label, glyph)
        data-label-position="hidden" → row, label absent from the DOM
+       data-label-position="none"   → row, label absent, no tooltip
    ========================================================================= */
 
 .tug-state-indicator {
@@ -100,7 +101,8 @@ body {
   flex-direction: row-reverse;
 }
 
-.tug-state-indicator[data-label-position="hidden"] {
+.tug-state-indicator[data-label-position="hidden"],
+.tug-state-indicator[data-label-position="none"] {
   gap: 0;
 }
 
