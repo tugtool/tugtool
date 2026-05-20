@@ -426,7 +426,7 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
               // `min-height: 0` rule collapses the empty footer so
               // no phantom strip sits below the user's just-
               // submitted message. Terminal (turn defined) shows
-              // `[badge] :: [COPY]` driven by the same
+              // `[badge] • [COPY]` driven by the same
               // `endStateBadgeFor(turn.turnEndReason)` dispatch the
               // asst-half uses — so the two halves of one turn
               // always show the same outcome glyph + text + tone.

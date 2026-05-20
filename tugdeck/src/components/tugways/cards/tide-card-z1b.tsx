@@ -18,11 +18,11 @@
  * **Participant variants.** The component dispatches on `participant`:
  *
  *  - **`participant="code"`** — asst-half. Terminal state shows
- *    `[badge :: time • tokens] :: [COPY]`. In-flight state shows
+ *    `[badge • time • tokens] • [COPY]`. In-flight state shows
  *    `[TugThinkingIndicator]` (the live "agent is working on this
  *    turn" signal).
  *  - **`participant="user"`** — user-half. Terminal state shows
- *    `[badge] :: [COPY]` — the same badge as the asst-half so the
+ *    `[badge] • [COPY]` — the same badge as the asst-half so the
  *    two halves of a turn share an outcome glance, but no time /
  *    tokens (those are asst-side data). In-flight state renders
  *    nothing visible (the user message is already there; no live
@@ -208,7 +208,7 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
             aria-hidden
             className="tide-z1b-separator"
           >
-            ::
+            •
           </TugLabel>
           <span className="tide-z1b-copy">
             <BlockCopyButton
@@ -260,7 +260,7 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
  * Z1B end-state display. Two participant variants share a single
  * primitive:
  *
- *  - `participant="code"` → `[badge :: time • tokens]`
+ *  - `participant="code"` → `[badge • time • tokens]`
  *  - `participant="user"` → `[badge]` only
  *
  * Both variants drive the badge off
@@ -272,9 +272,9 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
  * the submission itself).
  *
  * The badge's `ghost` emphasis keeps it visually subordinate to
- * the identifier above; the bullet sits only between the time and
- * tokens (the badge has enough visual weight on its own to mark
- * the boundary against the time).
+ * the identifier above. A `•` separator sits between each pair of
+ * items (badge / time / tokens) — the same glyph as the trailing
+ * `•` before COPY, so the whole row reads with one separator.
  */
 function EndStateDisplay({
   participant,
@@ -305,13 +305,8 @@ function EndStateDisplay({
       </TugBadge>
       {showMetrics ? (
         <>
-          <TugLabel
-            size="xs"
-            color="muted"
-            aria-hidden
-            className="tide-z1b-end-state-separator"
-          >
-            ::
+          <TugLabel size="xs" color="muted" aria-hidden>
+            •
           </TugLabel>
           <TugLabel size="xs">{formatDurationMs(turn.activeMs)}</TugLabel>
           <TugLabel size="xs" color="muted" aria-hidden>
