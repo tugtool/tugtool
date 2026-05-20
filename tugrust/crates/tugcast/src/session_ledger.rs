@@ -393,7 +393,56 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// The `(name, declared-type)` columns the current `turn_telemetry`
+    /// `CREATE TABLE` defines, in order. The self-healing guard in
+    /// {@link bootstrap_schema} compares an on-disk table against this;
+    /// a mismatch means the schema drifted and the table is rebuilt.
+    const TURN_TELEMETRY_SCHEMA: &'static [(&'static str, &'static str)] = &[
+        ("session_id", "TEXT"),
+        ("msg_id", "TEXT"),
+        ("input_tokens", "INTEGER"),
+        ("output_tokens", "INTEGER"),
+        ("cache_creation_input_tokens", "INTEGER"),
+        ("cache_read_input_tokens", "INTEGER"),
+        ("total_cost_usd", "REAL"),
+        ("wall_clock_ms", "INTEGER"),
+        ("awaiting_approval_ms", "INTEGER"),
+        ("transport_downtime_ms", "INTEGER"),
+        ("active_ms", "INTEGER"),
+        ("ttft_ms", "INTEGER"),
+        ("ttftc_ms", "INTEGER"),
+        ("reconnect_count", "INTEGER"),
+        ("max_stream_gap_ms", "INTEGER"),
+        ("ended_at", "INTEGER"),
+        ("session_init_tokens", "INTEGER"),
+    ];
+
     fn bootstrap_schema(conn: &Connection) -> Result<(), LedgerError> {
+        // Self-healing schema guard. `CREATE TABLE IF NOT EXISTS` does
+        // not alter a table that already exists, so when a typed
+        // table's column set changes, an on-disk DB created before the
+        // change keeps its stale shape — and every `INSERT` that lists
+        // the new column set then fails. For `turn_telemetry` that
+        // failure is *silent*: the supervisor treats a telemetry-write
+        // error as non-fatal, so the symptom is total loss of per-turn
+        // metrics across reloads with nothing logged at the surface.
+        //
+        // `turn_telemetry` is a rebuildable cache of per-turn metrics —
+        // per [DM08] there is nothing in it worth preserving — so a
+        // drifted schema is resolved by DROPPING the stale table here;
+        // the `CREATE TABLE IF NOT EXISTS` below then rebuilds it (and
+        // its index) fresh. This is NOT a migration: it preserves no
+        // data. It is the [DM08] delete-and-recreate, made automatic so
+        // a schema change cannot silently strand telemetry again. The
+        // mechanism ({@link rebuild_table_if_schema_drifted}) is
+        // general; it is wired only for `turn_telemetry` — the table
+        // whose drift was observed — and a future change to another
+        // typed table can opt in with one more call.
+        Self::rebuild_table_if_schema_drifted(
+            conn,
+            "turn_telemetry",
+            Self::TURN_TELEMETRY_SCHEMA,
+        )?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -595,6 +644,54 @@ impl SessionLedger {
             END;
             ",
         )?;
+        Ok(())
+    }
+
+    /// The `(name, declared-type)` columns of `table`, in definition
+    /// order, as `PRAGMA table_info` reports them. Empty when the
+    /// table does not exist.
+    fn table_columns(
+        conn: &Connection,
+        table: &str,
+    ) -> Result<Vec<(String, String)>, LedgerError> {
+        // `table` is a compile-time constant from `bootstrap_schema`,
+        // never caller input — the `format!` carries no injection risk.
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        })?;
+        let mut columns = Vec::new();
+        for row in rows {
+            columns.push(row?);
+        }
+        Ok(columns)
+    }
+
+    /// Drop `table` when its on-disk column set no longer matches
+    /// `expected` — the [DM08] delete-and-recreate, made automatic.
+    /// No-op when the table is absent (the `CREATE TABLE IF NOT EXISTS`
+    /// will build it fresh) or already matches. See the call site in
+    /// {@link bootstrap_schema} for the rationale.
+    fn rebuild_table_if_schema_drifted(
+        conn: &Connection,
+        table: &str,
+        expected: &[(&str, &str)],
+    ) -> Result<(), LedgerError> {
+        let actual = Self::table_columns(conn, table)?;
+        if actual.is_empty() {
+            return Ok(());
+        }
+        let matches = actual.len() == expected.len()
+            && actual
+                .iter()
+                .zip(expected)
+                .all(|((an, at), (en, et))| an.as_str() == *en && at.as_str() == *et);
+        if !matches {
+            // Dropping the table also drops its indexes; the
+            // cascade trigger lives on `sessions` and survives. The
+            // batch below recreates table + index.
+            conn.execute(&format!("DROP TABLE {table}"), [])?;
+        }
         Ok(())
     }
 
@@ -2613,6 +2710,77 @@ mod tests {
         l.record_turn_telemetry(&row).unwrap();
         let read = l.list_turn_telemetry("s1").unwrap();
         assert_eq!(read[0].session_init_tokens, None);
+    }
+
+    #[test]
+    fn opening_a_db_with_a_drifted_turn_telemetry_schema_rebuilds_it() {
+        // Reproduces the silent-telemetry-loss failure: a DB created
+        // before a `turn_telemetry` column change keeps its stale
+        // shape, and every post-change `INSERT` fails. The bootstrap
+        // guard must DROP the drifted table so the `CREATE TABLE`
+        // rebuilds it — without it, this is invisible data loss.
+        let tmp = NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+        // A `turn_telemetry` of the prior 16-column shape (no
+        // `session_init_tokens`), carrying a row.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE turn_telemetry (
+                    session_id                  TEXT NOT NULL,
+                    msg_id                      TEXT NOT NULL,
+                    input_tokens                INTEGER NOT NULL DEFAULT 0,
+                    output_tokens               INTEGER NOT NULL DEFAULT 0,
+                    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+                    cache_read_input_tokens     INTEGER NOT NULL DEFAULT 0,
+                    total_cost_usd              REAL    NOT NULL DEFAULT 0,
+                    wall_clock_ms               INTEGER NOT NULL DEFAULT 0,
+                    awaiting_approval_ms        INTEGER NOT NULL DEFAULT 0,
+                    transport_downtime_ms       INTEGER NOT NULL DEFAULT 0,
+                    active_ms                   INTEGER NOT NULL DEFAULT 0,
+                    ttft_ms                     INTEGER,
+                    ttftc_ms                    INTEGER,
+                    reconnect_count             INTEGER NOT NULL DEFAULT 0,
+                    max_stream_gap_ms           INTEGER NOT NULL DEFAULT 0,
+                    ended_at                    INTEGER NOT NULL,
+                    PRIMARY KEY (session_id, msg_id)
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO turn_telemetry (session_id, msg_id, ended_at)
+                 VALUES ('stale', 'm', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        // Open via SessionLedger — bootstrap's guard sees the drift
+        // and rebuilds the table.
+        let l = SessionLedger::open(&path).unwrap();
+        // A write that lists `session_init_tokens` now succeeds — it
+        // would have failed against the stale 16-column shape.
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let row = sample_telemetry("s1", "msg-A", 1_000);
+        l.record_turn_telemetry(&row).unwrap();
+        assert_eq!(l.list_turn_telemetry("s1").unwrap(), vec![row]);
+        // The rebuild dropped the stale row — recreate, not migrate.
+        assert_eq!(l.list_turn_telemetry("stale").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn bootstrap_leaves_a_matching_turn_telemetry_untouched() {
+        // The guard is a no-op on a current-shape DB: reopening keeps
+        // the rows. (Drift-only — never a gratuitous rebuild.)
+        let tmp = NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+        {
+            let l = SessionLedger::open(&path).unwrap();
+            seed_live(&l, "s1", "ws", "card-1", millis(0));
+            l.record_turn_telemetry(&sample_telemetry("s1", "msg-A", 1_000))
+                .unwrap();
+        }
+        let l = SessionLedger::open(&path).unwrap();
+        assert_eq!(l.list_turn_telemetry("s1").unwrap().len(), 1);
     }
 
     #[test]

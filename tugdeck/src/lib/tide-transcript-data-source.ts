@@ -80,6 +80,7 @@ import type {
   TurnEntry,
 } from "@/lib/code-session-store";
 import { deriveContextWindows } from "@/lib/code-session-store/end-state";
+import type { ContextWindowStep } from "@/lib/code-session-store/end-state";
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 
 // ---------------------------------------------------------------------------
@@ -161,6 +162,38 @@ export interface TideRowDescriptor {
  */
 export class TideTranscriptDataSource implements TugListViewDataSource {
   constructor(private readonly _codeSessionStore: CodeSessionStore) {}
+
+  /**
+   * Memo of the transcript window-walk, keyed by snapshot identity.
+   * `rowAt` is called once per visible row per render; recomputing the
+   * O(turns) walk on every call would be O(rows × turns) of pointless
+   * churn (plus a fresh `cost[]` allocation each time). The snapshot
+   * reference is `Object.is`-stable between dispatches, so caching on
+   * it recomputes exactly once per change and shares the result
+   * across every `rowAt` call in the same render.
+   */
+  private _windowsMemo: {
+    snapshot: CodeSessionSnapshot;
+    windows: ReadonlyArray<ContextWindowStep>;
+  } | null = null;
+
+  /**
+   * The per-turn context-window walk for `snap`, computed once per
+   * snapshot and reused. See {@link _windowsMemo}.
+   */
+  private contextWindows(
+    snap: CodeSessionSnapshot,
+  ): ReadonlyArray<ContextWindowStep> {
+    if (this._windowsMemo !== null && this._windowsMemo.snapshot === snap) {
+      return this._windowsMemo.windows;
+    }
+    const windows = deriveContextWindows(
+      snap.transcript.map((t) => t.cost),
+      snap.sessionInitTokens ?? 0,
+    );
+    this._windowsMemo = { snapshot: snap, windows };
+    return windows;
+  }
 
   /**
    * `transcript.length * 2 + (inflightUserMessage ? 2 : 0)`. The in-flight
@@ -262,11 +295,9 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
     // window(N) − window(N−1), carry-forward over any zero-usage turn.
     // The walk needs the whole transcript: a single turn's `cost`
     // can't yield its delta (the prior turn may be a zero-usage turn,
-    // whose window is the one before IT).
-    const windows = deriveContextWindows(
-      snap.transcript.map((t) => t.cost),
-      snap.sessionInitTokens ?? 0,
-    );
+    // whose window is the one before IT). Memoized per snapshot — see
+    // {@link contextWindows}.
+    const windows = this.contextWindows(snap);
     return {
       kind: index % 2 === 0 ? "user" : "code",
       turn,
