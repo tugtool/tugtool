@@ -3464,54 +3464,46 @@ I-1 absorbed the two `0x40000000` slams. What remains raw in `TugMarkdownView`: 
 
 ---
 
-##### Sub-step J — Token-count math: per-entry vs cumulative, no session-init bootstrap
+##### Sub-step J — Token accounting: per-turn window delta from the last tool-loop iteration
 
-**Symptom.** Three related token-counting issues observed in production:
+**Status.** Sub-step J shipped twice and was wrong both times. The first pass (`aad2853b`) and the live-cell plumbing (`fdfe52dc`, Sub-step J.2) are committed; this rewrite — vetted against real session data — supersedes the *token math* of both. The `streaming_usage` wire path J.2 built is sound and is kept; only the arithmetic on top of it changes.
 
-  1. **First turn is charged with the session-init bootstrap.** Open a new tide-card, say "hello", the first committed turn reports ~30K tokens. That ~30K is the session-init context window (system prompt, system tools, custom agents, memory files, skills, etc.), NOT the cost of the user's "hello" turn alone. It should not be attributed to the first request.
-  2. **Z1B asst-half reads as cumulative-for-session.** The Z1B end-state shows token counts that grow monotonically across turns rather than reporting the per-entry incremental count. The cumulative-for-session value belongs in the `Context` cell in the Z2 status bar (and its popover); Z1B should show the per-turn delta.
-  3. **Z1B value drifts from the Context-area value.** Even taking both as "some kind of cumulative", the two surfaces disagree (e.g., Z1B reads `101.1K tokens` while Context reads `100.9K / 1.00M`). The two should never drift — they're either the same number (if Z1B is also cumulative) or one is an obvious subset of the other (if Z1B is per-turn).
+**What went wrong.** `cost_update.usage` is claude's `result.usage`, and `result.usage` is a **per-turn SUM across every tool-loop API call**. A turn that makes K tool calls re-reads the (cached) context K times, and `result.usage` adds up all K reads. `turnWindowTokens` summed those four fields and `perTurnTokens` differenced two such sums — so both surfaces scaled with the turn's *tool-call count*, not its context.
 
-**Suspect chain.**
+Measured across 10 sessions / ~1,100 real turns from the local JSONL store: the old metric runs **11–19× inflated on average, up to 147×**. One real turn (81 tool calls) reported **12,378,075 tokens** for a context window of 215,770. The committed "local diffs" turn showed **232.7K** for a real window of **~59K**. J's original verification passed only because it tested plain chat turns — one API call each, the sole case where the per-iteration sum equals the truth.
 
-The cost flow:
+**The model (vetted).** A turn = one user message → one or more assistant API calls (the tool loop). Each call reports a `usage`; `observedInput = input + cache_read + cache_creation` is that call's context size, and it grows monotonically across the turn's calls (each call's input = the prior call's input + its output + the tool result). The session's context window is therefore defined entirely by the **last** call:
 
-  1. tugcode's `cost_update` frame carries `usage` (input/output/cache-read/cache-creation tokens) for the just-completed turn.
-  2. The reducer's `handleCostUpdate` projects `usage` onto `state.lastCost`.
-  3. The reducer's `handleTurnComplete` commits the turn with `cost: { ... }` derived from the most recent `lastCost`.
-  4. `totalTokensForTurn(turn.cost)` sums every numeric field on `TurnCost`.
+  - **`window(N)`** — the resident context after turn N — = turn N's **last non-zero-usage** API call: `input + cache_read + cache_creation + output`. *The last call, never the sum across calls.*
+  - **`perTurn(N)`** — the turn's token count, on Z1B and the `TOKENS` cell — = `window(N) − window(N−1)`. **Signed**: a turn that grows the window is positive; a `/compact` that shrinks it is an honest negative. No clamp.
+  - **`sessionInit`** = `window(0)` — the context before any turn (system prompt + tools + agents + memory + skills) = the session's *first* API call's `observedInput`.
+  - **Zero-usage turn** — an interrupted/errored turn whose only API entry is a degenerate `stop_reason: "stop_sequence"` with all-zero `usage` (one or more per session, observed in every session studied). It carries the window forward: `window(N) = window(N−1)`, `perTurn(N) = 0` — there is no measurement to report honestly.
+  - **Identity** — `sessionInit + Σ perTurn(N) = window(latest)` — telescopes exactly; confirmed `residual = 0` across all ~1,100 turns, including every compaction.
+  - **Sub-agents** — a `Task` call is, from the parent's view, an ordinary `tool_use` → `tool_result`; the sub-agent's internal API churn never enters the parent turn's `usage`. No special handling. (Confirmed: zero `isSidechain` entries across 239 project sessions; were any to appear they are excluded by the same filter.)
 
-The bugs likely live in:
+For session `7635e374` the model yields window 19354 / 21852 / 21971 / 59196, perTurn +779 / +2498 / +119 / **+37225**, sessionInit 18575 — "local diffs" is **37.2K**, not 188.8K.
 
-  - **(α) tugcode's `cost_update` semantics** — does claude's `result` event carry per-turn `usage` or cumulative session usage? If cumulative, tugcode (or the reducer) needs to compute the per-turn delta by subtracting the prior cumulative from the current.
-  - **(β) Session-init attribution** — the first `cost_update`'s `usage` includes the system-prompt / tools / agents / memory / skills tokens that were emitted at session start. These need to be subtracted off the first turn's cost so the user's actual submission cost is reported in isolation.
-  - **(γ) Z1B's `totalTokensForTurn`** — if `TurnCost` itself is being populated with cumulative values, the per-entry sum will be cumulative-for-session by construction. Need to confirm whether `TurnCost` is intended as per-turn (and the bug is upstream) or as cumulative-snapshot-at-turn (and the consumer needs to compute deltas).
-  - **(δ) Drift between Z1B and Context** — if Context reads `lastContextBreakdown` (the `/context`-style snapshot) and Z1B reads `turn.cost`, the two paths source from different frames (`context_breakdown` vs `cost_update`) with potentially-different timing. The drift may reflect a frame-ordering issue or simply different categorisations of "tokens."
-
-The diagnosis must pin which of (α)–(δ) is responsible for each user-visible symptom; the symptoms are coupled but the fixes may not be.
+**The fix — where the last-iteration usage comes from.** `cost_update.usage` must stop carrying `result.usage` (the summed billing total) and carry the turn's **last `message_delta.usage`** instead — the final tool-loop iteration. tugcode already sees every `message_delta` (it emits `streaming_usage` from them, J.2); it tracks the most recent one and emits it as `cost_update.usage` at the `result` event. That single source change makes `extractTurnCost`, `TurnCost`, `turnWindowTokens`, and J.3's `context_breakdown` `observedInput` all correct at once, and makes the committed `cost_update.usage` identical to the last `streaming_usage` frame — so the live cell lands on the committed value with no jump. (`total_cost_usd` is untouched: the dollar cost is cumulative-per-session and still correct. A billing-style "tokens processed this turn" total, if ever wanted, is a separate field — not this one.)
 
 **Tasks.**
 
-- [ ] **Diagnose end-to-end.** Open a new tide-card, send a one-word message, capture the wire log: every `cost_update`, every `context_breakdown`, every `turn_complete`. For each, record `usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `usage.cache_creation_input_tokens`, plus the `context_breakdown` totals. Compute by hand what the per-turn cost SHOULD be vs what Z1B and Context currently display. Pin which step in the chain introduces the discrepancy.
-- [ ] **Decide the semantic contract.** Two distinct numbers must be defined and named:
-    - (i) **per-turn tokens** — what this user's submission cost in isolation; surfaces in Z1B (asst-half).
-    - (ii) **session-cumulative tokens** — total tokens this session has consumed; surfaces in the Context cell + popover.
-  Document the contract in `end-state.ts` / `telemetry.ts` so future contributors see the distinction.
-- [ ] **Fix session-init attribution.** Subtract the session-init bootstrap (system prompt + tools + agents + memory + skills) from the first turn's cost. Either tugcode emits the session-init `usage` as a separate frame the reducer can subtract from the first `cost_update`, or the reducer detects the first-turn case and zeros the bootstrap fields. Choose the path that requires the least coupling.
-- [ ] **Fix per-turn vs cumulative dispatch.** If `TurnCost` is currently cumulative-at-turn (suspect γ), introduce a derived per-turn helper that computes `(this turn's TurnCost) - (previous turn's TurnCost)` for the relevant fields, and have Z1B's `totalTokensForTurn` (or a renamed sibling) read that delta. Context's popover already sources from `lastContextBreakdown` independently and should stay on that path.
-- [ ] **Fix the Z1B ↔ Context drift.** Once per-turn vs cumulative are decoupled, the two surfaces should sit on disjoint data and stop competing. Verify the two always agree on "what's the cumulative total this session has consumed" by reading the same source where they overlap.
-- [ ] **HMR vet.**
-    - (a) New tide-card. Send "hello". Z1B reports a small per-turn number (likely a few hundred tokens for "hello" + response), NOT 30K.
-    - (b) Send a second message. Z1B reports per-turn for THIS message only.
-    - (c) The Context cell + popover read cumulative-for-session at every point.
-    - (d) Reload mid-session; Context restores from the persisted `context_breakdown_latest` row (Sub-step C); Z1B's per-turn numbers restore from each committed turn's `TurnCost` (already persisted in `turn_telemetry`).
-- [ ] **Test coverage.** Add or extend pure-logic tests in `end-state.test.ts` (and `telemetry.test.ts` if the helper sits there) pinning the per-turn vs cumulative contract, including the first-turn-with-session-init case.
+- [ ] **tugcode — emit the last iteration, not the sum.** `ActiveTurn` tracks the most recent `message_delta.usage` of the turn. At the `result` event, `cost_update.usage` is emitted from that tracked value, not `event.usage` (`result.usage`). Degenerate turn with no `message_delta` → last `message_start.usage`, else `{}`. Reset the tracker at each turn start.
+- [ ] **Simplify `liveTurnUsage` to the latest frame.** `observedInput` is monotonic within a turn, so the most recent `streaming_usage` frame is always the current window — no accumulation is needed. Replace `liveTurnUsage: { byMessage: Record<…> }` with `liveTurnUsage: LiveMessageUsage | null`; `handleStreamingUsage` stores the latest frame's `usage` (replace, not merge). Delete the `byMessage` map, the per-field-max merge, and `rollupLiveTurnUsage`. The cell reads `liveTurnUsage` directly.
+- [ ] **`TurnCost` / `extractTurnCost`.** No logic change — `cost_update.usage` now carries the correct (last-iteration) usage, so `extractTurnCost` freezes the right four fields. Rewrite the `TurnCost` + `extractTurnCost` docstrings: the token fields are the turn's *last tool-loop iteration's* usage; `result.usage`'s per-iteration sum is explicitly NOT what is stored, and why.
+- [ ] **`perTurnTokens` — signed, no clamp.** Remove `Math.max(0, …)`; return `window(N) − window(N−1)` signed. The first turn uses `sessionInit` as `window(N−1)`.
+- [ ] **Capture `sessionInit`.** The reducer records `sessionInitTokens` = the `observedInput` of the session's first telemetry iteration (first `streaming_usage` frame; first `cost_update` as fallback). Session-level state field, projected on the snapshot, persisted so a resumed session restores it. `perTurn(1)` reads it.
+- [ ] **Zero-usage / interrupted turn carries forward.** A committed turn with an all-zero `TurnCost` must not read as `window = 0`. The transcript window-walk carries the previous turn's window forward and reports `perTurn = 0` for that turn.
+- [ ] **Cells.** `CONTEXT` = `window` of the latest committed turn, or `liveTurnUsage` while a turn is in flight. `TOKENS` / Z1B = `perTurn` (signed; render a compaction's negative honestly, e.g. `−208.3K`).
+- [ ] **Tests.** Rewrite the J / J.2 token tests for the corrected model; pin the helpers against the captured session `7635e374` numbers (window 19354 / 21852 / 21971 / 59196, perTurn +779 / +2498 / +119 / +37225, sessionInit 18575) and a synthetic compaction turn (negative `perTurn`, `residual = 0`). Pin the zero-usage carry-forward.
+- [ ] **HMR vet.** (a) A tool-heavy turn shows a `TOKENS` figure in the tens-of-K, not the hundreds-of-K; `CONTEXT` matches Claude Code's own `/context` within a few percent. (b) `sessionInit + Σ Z1B perTurn` equals the `CONTEXT` cell. (c) A `/compact` shows a negative `perTurn` and the window drops. (d) The live cell climbs across a tool loop and lands exactly on the committed value at `turn_complete`.
 
-**Conformance.** [L02] no React state for the math — token computation lives in pure helpers off the snapshot. [L23] user-visible state is honest — Z1B and Context never disagree on cumulative totals; first-turn cost does not silently inflate to include the bootstrap. The accuracy bar across the user's `/remember`'d memory ("Context breakdown accuracy bar is 5-10%, prefer local tokenizer") still applies.
+**Conformance.** [L02] token math stays in pure helpers off the snapshot — no React state. [L23] every surface is honest: the per-turn count is the real window delta (signed), never a tool-call-count-scaled billing sum; the `CONTEXT` cell tracks the model's actual context occupancy. The corrected contract is documented in `telemetry.ts` / `end-state.ts` so the `result.usage`-is-a-sum trap is not re-entered.
 
 ---
 
 ##### Sub-step J.2 — Live (intra-turn) `Tokens` / `Context` status cells
+
+**Reconciliation note.** J.2 shipped (`fdfe52dc`). The `streaming_usage` wire path — tugcode emit, IPC event, reducer handler, live cell read — is sound and stays. But its token *math* inherited Sub-step J's `result.usage`-summing bug: `handleStreamingUsage` accumulates per-message `usage` into a `byMessage` map and `rollupLiveTurnUsage` sums it — the same per-iteration over-count. The rewritten Sub-step J corrects this: `observedInput` is monotonic within a turn, so `liveTurnUsage` collapses to the *latest* `streaming_usage` frame (no map, no sum, no rollup). The description below is the as-built J.2; the corrected math is specified in Sub-step J and lands in #4.
 
 **Symptom.** The `TIME` status cell ticks live while a turn is in flight (a 1 Hz `useLifecycleTick` heartbeat). The `TOKENS` and `CONTEXT` cells do not — they show the last committed turn's figures and sit frozen until the next `turn_complete`. The user should watch token usage and context occupancy climb as the model streams its response, the same way `TIME` advances.
 
@@ -3541,7 +3533,7 @@ The diagnosis must pin which of (α)–(δ) is responsible for each user-visible
 
 ##### Sub-step J.3 — Context-breakdown accuracy + cell ↔ popover unification
 
-**Context.** Sub-step J fixed the per-turn token math: `extractTurnCost` no longer subtracts the per-turn `usage` (it is per-turn on the wire, not cumulative); Z1B shows the `perTurnTokens` window delta; the Context cell moved to a feed-derived rollup. Those changes are correct and sit in the working tree. But J surfaced — and partly left unfixed — a second cluster of defects in the *cumulative* and *categorical* surfaces. J.3 closes them. (Its sibling J.2 wires the live intra-turn status cells — a separate concern.) Sub-step J is not complete until J.2 and J.3 land with it.
+**Context.** J.3 closes a cluster of defects in the *categorical* context surface — the `/context`-style popover breakdown. It sits on the corrected Sub-step J model: the context *total* is `window(latest)` = the last tool-loop iteration's `observedInput` (NOT a feed-derived rollup of summed `result.usage`, and NOT the `turnWindowTokens` of a summed `TurnCost` — both retired by the J rewrite). The category *split* remains a local estimate that must be made accurate. Symptom 1 below (cell vs popover disagreement) is partly resolved by the J rewrite already — once both read `window(latest)` they agree on the total; the rest of J.3 stands. Sub-step J is not complete until J.2 and J.3 land with it.
 
 **Symptoms.**
 
