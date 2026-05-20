@@ -121,6 +121,9 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "system_metadata",
   "control_request_forward",
   "cost_update",
+  // Live intra-turn token usage — high-frequency telemetry frame the
+  // reducer folds into `liveTurnUsage`; no phase change, no persist.
+  "streaming_usage",
   "context_breakdown",
   "error",
   // tugcode emits this after a failed `--resume` spawn. The reducer
@@ -371,6 +374,12 @@ export class CodeSessionStore {
       // snapshot rebuild that touches an unrelated field.
       pendingDraftRestore: this.state.pendingDraftRestore,
       lastCost: this.state.lastCost,
+      // Live intra-turn token usage. The reducer assigns a fresh
+      // `liveTurnUsage` only on a `streaming_usage` frame (and clears
+      // it to `null` at turn boundaries); passing the reference
+      // through unchanged preserves `Object.is` stability across
+      // quiescent snapshot rebuilds ([L02]).
+      liveTurnUsage: this.state.liveTurnUsage,
       // The reducer assigns a fresh `lastContextBreakdown` only when
       // a new `context_breakdown` frame lands; reading the state's
       // reference through unchanged preserves `Object.is` stability

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { SessionManager, buildClaudeArgs, buildContentBlocks, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
+import type { StreamingUsage } from "../types.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers (needed for stdin spy test and future Steps 1-4)
@@ -693,18 +694,89 @@ describe("mapStreamEvent (updated)", () => {
     expect(result.messages).toHaveLength(0);
   });
 
-  test("message_start produces no messages", () => {
+  test("message_start without usage produces no messages", () => {
     const result = mapStreamEvent({ type: "message_start", message: {} }, baseCtx, "");
     expect(result.messages).toHaveLength(0);
   });
 
-  test("message_delta produces no messages", () => {
+  test("message_delta without usage produces no messages", () => {
     const result = mapStreamEvent({ type: "message_delta", delta: { stop_reason: "end_turn" } }, baseCtx, "");
     expect(result.messages).toHaveLength(0);
   });
 
   test("message_stop produces no messages", () => {
     const result = mapStreamEvent({ type: "message_stop" }, baseCtx, "");
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("message_start with usage emits a streaming_usage frame keyed by the message id", () => {
+    const result = mapStreamEvent(
+      {
+        type: "message_start",
+        message: {
+          id: "msg_abc",
+          usage: {
+            input_tokens: 3,
+            cache_creation_input_tokens: 7327,
+            cache_read_input_tokens: 13148,
+            output_tokens: 2,
+          },
+        },
+      },
+      baseCtx,
+      "",
+    );
+    expect(result.messages).toHaveLength(1);
+    const frame = result.messages[0] as StreamingUsage;
+    expect(frame.type).toBe("streaming_usage");
+    expect(frame.msg_id).toBe("msg_abc");
+    expect(frame.usage).toEqual({
+      input_tokens: 3,
+      cache_creation_input_tokens: 7327,
+      cache_read_input_tokens: 13148,
+      output_tokens: 2,
+    });
+  });
+
+  test("message_delta with usage emits a streaming_usage frame keyed by the current message", () => {
+    const result = mapStreamEvent(
+      {
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: {
+          input_tokens: 3,
+          cache_creation_input_tokens: 7327,
+          cache_read_input_tokens: 13148,
+          output_tokens: 80,
+        },
+      },
+      baseCtx,
+      "",
+    );
+    expect(result.messages).toHaveLength(1);
+    const frame = result.messages[0] as StreamingUsage;
+    expect(frame.type).toBe("streaming_usage");
+    // `message_delta` carries no id — it keys on `ctx.msgId`, the
+    // current message slid by this message's earlier `message_start`.
+    expect(frame.msg_id).toBe("msg-1");
+    expect(frame.usage.output_tokens).toBe(80);
+  });
+
+  test("message_delta with an empty usage object emits no streaming_usage frame", () => {
+    const result = mapStreamEvent(
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: {} },
+      baseCtx,
+      "",
+    );
+    expect(result.messages).toHaveLength(0);
+  });
+
+  test("message_start with usage but no message id emits no streaming_usage frame", () => {
+    const result = mapStreamEvent(
+      { type: "message_start", message: { usage: { output_tokens: 5 } } },
+      baseCtx,
+      "",
+    );
     expect(result.messages).toHaveLength(0);
   });
 });
@@ -2899,7 +2971,10 @@ describe("protocol audit: §3e stream_event types", () => {
       };
       const result = routeTopLevelEvent(event, baseCtx);
       expect(result.streamEvent).toBeDefined();
-      // These are lifecycle events — mapStreamEvent produces no IPC for them.
+      // routeTopLevelEvent forwards the inner payload for tier-2
+      // processing. With the empty `usage: {}` here, mapStreamEvent
+      // emits no `streaming_usage` frame (the gate skips token-less
+      // payloads); the usage-bearing emit path is covered above.
     }
   });
 });

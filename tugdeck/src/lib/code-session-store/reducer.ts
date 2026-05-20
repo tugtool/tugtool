@@ -37,6 +37,7 @@ import type {
   SessionNotOwnedEvent,
   SessionStateErroredEvent,
   SessionUnknownEvent,
+  StreamingUsageEvent,
   ThinkingTextEvent,
   ToolResultEvent,
   ToolUseEvent,
@@ -53,6 +54,8 @@ import type {
   ControlRequestRecord,
   CostSnapshot,
   LastReplayResult,
+  LiveMessageUsage,
+  LiveTurnUsage,
   ToolCallState,
   TransportState,
   TurnEndReason,
@@ -62,6 +65,7 @@ import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import {
   deriveTurnTelemetry,
   mergeTurnTelemetry,
+  readUsage,
   type TurnTelemetry,
 } from "./telemetry";
 
@@ -186,6 +190,20 @@ export interface CodeSessionState {
     at: number;
   } | null;
   lastCost: CostSnapshot | null;
+  /**
+   * Live intra-turn token usage, accumulated per-message from
+   * `streaming_usage` wire frames so the `Tokens` / `Context` status
+   * cells can climb mid-turn. `null` between turns.
+   *
+   * Lifecycle: reset to `null` at `handleSend` (turn start), grown by
+   * `handleStreamingUsage` across the turn, and reset to `null` again
+   * at `handleTurnComplete` (via `resetPerTurnTelemetry`) — the
+   * committed `cost_update` is authoritative and supersedes the live
+   * approximation. The reducer assigns a fresh object only when a
+   * frame lands; quiescent reductions preserve the reference for
+   * [L02] `Object.is` stability.
+   */
+  liveTurnUsage: LiveTurnUsage | null;
   /**
    * Most-recent `/context`-style breakdown captured from a
    * `context_breakdown` wire frame. Projected onto
@@ -413,6 +431,7 @@ export function createInitialState(
     queuedSends: [],
     lastError: null,
     lastCost: null,
+    liveTurnUsage: null,
     lastContextBreakdown: null,
     committedMsgIds: new Set(),
     lastReplayResult: null,
@@ -484,6 +503,10 @@ function handleSend(
       // turn of a session is fine — `extractTurnCost` degenerates the
       // delta to `after`.
       costAtSubmit: state.lastCost,
+      // Clear last turn's live token accumulation — the new turn's
+      // `streaming_usage` frames build a fresh `liveTurnUsage` from
+      // scratch.
+      liveTurnUsage: null,
       // Reset per-turn accumulators. `transportNonOnlineSince` is
       // owned by the transport handlers — leave it alone so a
       // disconnect that started before this submit still folds into
@@ -1211,6 +1234,7 @@ function resetPerTurnTelemetry(): Pick<
   | "firstToolUseAt"
   | "costAtSubmit"
   | "interruptInFlight"
+  | "liveTurnUsage"
 > {
   return {
     awaitingApprovalSince: null,
@@ -1223,6 +1247,10 @@ function resetPerTurnTelemetry(): Pick<
     firstToolUseAt: null,
     costAtSubmit: null,
     interruptInFlight: false,
+    // The committed `cost_update` is authoritative; the live
+    // accumulation is dropped so the cells fall back to the just-
+    // committed turn's figures with no double-count.
+    liveTurnUsage: null,
   };
 }
 
@@ -1847,6 +1875,60 @@ function handleCostUpdate(
 
   return {
     state: { ...state, lastCost },
+    effects: [],
+  };
+}
+
+/**
+ * `streaming_usage` reducer handler — live intra-turn token telemetry,
+ * phase-tolerant like {@link handleCostUpdate}.
+ *
+ * Each frame carries one assistant message's current `usage` snapshot
+ * keyed by `msg_id`. The handler holds a per-message map and merges
+ * field-by-field with the per-field MAX: every token field is
+ * monotonic across a message's frames (`message_start` reports an
+ * opening snapshot, the terminal `message_delta` the final total), so
+ * the max is the message's latest authoritative value and never
+ * double-counts. The turn rollup is the SUM across messages — a
+ * tool-loop turn's per-message usages are additive and total the
+ * terminal `cost_update.usage`.
+ *
+ * Drops a frame with no `msg_id` (claude has not revealed the message
+ * id yet) — there is no key to accumulate under. No phase transition,
+ * no effect: a display-only telemetry frame.
+ */
+function handleStreamingUsage(
+  state: CodeSessionState,
+  event: StreamingUsageEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const msgId = typeof event.msg_id === "string" ? event.msg_id : "";
+  if (msgId === "") {
+    return { state, effects: [] };
+  }
+  const incoming = readUsage(event.usage);
+  const prev = state.liveTurnUsage?.byMessage[msgId];
+  const merged: LiveMessageUsage =
+    prev === undefined
+      ? incoming
+      : {
+          inputTokens: Math.max(prev.inputTokens, incoming.inputTokens),
+          outputTokens: Math.max(prev.outputTokens, incoming.outputTokens),
+          cacheCreationInputTokens: Math.max(
+            prev.cacheCreationInputTokens,
+            incoming.cacheCreationInputTokens,
+          ),
+          cacheReadInputTokens: Math.max(
+            prev.cacheReadInputTokens,
+            incoming.cacheReadInputTokens,
+          ),
+        };
+  return {
+    state: {
+      ...state,
+      liveTurnUsage: {
+        byMessage: { ...state.liveTurnUsage?.byMessage, [msgId]: merged },
+      },
+    },
     effects: [],
   };
 }
@@ -2598,6 +2680,8 @@ export function reduce(
       return handleConsumeDraftRestore(state);
     case "cost_update":
       return handleCostUpdate(state, event);
+    case "streaming_usage":
+      return handleStreamingUsage(state, event);
     case "context_breakdown":
       return handleContextBreakdown(state, event);
     case "system_metadata":

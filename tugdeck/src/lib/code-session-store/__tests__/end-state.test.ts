@@ -9,9 +9,14 @@ import { describe, expect, it } from "bun:test";
 import {
   endStateBadgeFor,
   perTurnTokens,
+  rollupLiveTurnUsage,
   turnWindowTokens,
 } from "@/lib/code-session-store/end-state";
-import type { TurnCost } from "@/lib/code-session-store/types";
+import type {
+  LiveMessageUsage,
+  LiveTurnUsage,
+  TurnCost,
+} from "@/lib/code-session-store/types";
 
 describe("endStateBadgeFor", () => {
   it("maps complete → inherit (OK)", () => {
@@ -129,5 +134,83 @@ describe("perTurnTokens", () => {
       perTurnTokens(t2, t1) +
       perTurnTokens(t3, t2);
     expect(sessionInit + sum).toBe(turnWindowTokens(t3));
+  });
+});
+
+describe("rollupLiveTurnUsage", () => {
+  function msg(overrides: Partial<LiveMessageUsage>): LiveMessageUsage {
+    return {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      ...overrides,
+    };
+  }
+
+  it("an empty byMessage map rolls up to all zeros", () => {
+    const live: LiveTurnUsage = { byMessage: {} };
+    expect(rollupLiveTurnUsage(live)).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalCostUsd: 0,
+    });
+  });
+
+  it("a single message rolls up to that message's token counts", () => {
+    const live: LiveTurnUsage = {
+      byMessage: {
+        msg_a: msg({
+          inputTokens: 3,
+          outputTokens: 80,
+          cacheCreationInputTokens: 7340,
+          cacheReadInputTokens: 13148,
+        }),
+      },
+    };
+    expect(rollupLiveTurnUsage(live)).toEqual({
+      inputTokens: 3,
+      outputTokens: 80,
+      cacheCreationInputTokens: 7340,
+      cacheReadInputTokens: 13148,
+      totalCostUsd: 0,
+    });
+  });
+
+  it("sums every token field across a multi-message tool-loop turn", () => {
+    // Real captured wire data: two assistant messages whose per-message
+    // usages sum to the turn's result.usage.
+    const live: LiveTurnUsage = {
+      byMessage: {
+        msg_a: msg({
+          inputTokens: 3,
+          outputTokens: 80,
+          cacheCreationInputTokens: 7340,
+          cacheReadInputTokens: 13148,
+        }),
+        msg_b: msg({
+          inputTokens: 1,
+          outputTokens: 12,
+          cacheCreationInputTokens: 99,
+          cacheReadInputTokens: 20488,
+        }),
+      },
+    };
+    expect(rollupLiveTurnUsage(live)).toEqual({
+      inputTokens: 4,
+      outputTokens: 92,
+      cacheCreationInputTokens: 7439,
+      cacheReadInputTokens: 33636,
+      totalCostUsd: 0,
+    });
+  });
+
+  it("the rollup carries no dollar cost — dollars land only at cost_update", () => {
+    const live: LiveTurnUsage = {
+      byMessage: { msg_a: msg({ outputTokens: 50 }) },
+    };
+    expect(rollupLiveTurnUsage(live).totalCostUsd).toBe(0);
   });
 });

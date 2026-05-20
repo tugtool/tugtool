@@ -265,6 +265,26 @@ export interface CostUpdateEvent {
 }
 
 /**
+ * `streaming_usage` — live intra-turn token usage emitted by tugcode
+ * from the streaming `message_start` / `message_delta` events of the
+ * in-flight turn. `usage` is the same four-token shape `cost_update`
+ * carries; `msg_id` is claude's `message.id` for the assistant
+ * message the usage belongs to.
+ *
+ * The reducer accumulates these per-message into `liveTurnUsage` with
+ * no phase transition and no persistence — a display-only telemetry
+ * frame, like `cost_update`. The terminal `cost_update` is
+ * authoritative and supersedes the live accumulation at turn-complete.
+ */
+export interface StreamingUsageEvent {
+  type: "streaming_usage";
+  msg_id?: string;
+  usage?: unknown;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
  * `error` — a wire-level error frame distinct from SESSION_STATE
  * errored and from transport close. Listed in the outbound event table
  * (design doc) but never captured in v2.1.105 fixtures, so tests
@@ -501,6 +521,7 @@ export type CodeSessionEvent =
   | InterruptActionEvent
   | ConsumeDraftRestoreActionEvent
   | CostUpdateEvent
+  | StreamingUsageEvent
   | ContextBreakdownEvent
   | WireErrorEvent
   | SessionStateErroredEvent

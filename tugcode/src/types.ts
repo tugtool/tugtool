@@ -302,6 +302,33 @@ export interface CostUpdate {
 }
 
 /**
+ * Live intra-turn token usage, emitted from the streaming
+ * `message_start` / `message_delta` events of the in-flight turn —
+ * one frame per event, so the client's `Tokens` / `Context` status
+ * cells can climb mid-turn instead of sitting frozen until the
+ * terminal `cost_update`.
+ *
+ * `usage` is the same four-token shape `cost_update` carries
+ * (`input_tokens` / `output_tokens` / `cache_creation_input_tokens` /
+ * `cache_read_input_tokens`); both `message_start` and `message_delta`
+ * carry the complete four fields (verified against live wire data).
+ * `msg_id` is claude's `message.id` — a tool-loop turn has several
+ * assistant messages, each with its own `message_start` +
+ * `message_delta`; the per-message usages SUM to the terminal
+ * `result.usage`, so the client keys by `msg_id` and accumulates.
+ *
+ * Display-only: drives no phase transition and is never persisted.
+ * The terminal `cost_update` is authoritative and supersedes the
+ * live accumulation at turn-complete.
+ */
+export interface StreamingUsage {
+  type: "streaming_usage";
+  msg_id: string;
+  usage: Record<string, unknown>;
+  ipc_version: number;
+}
+
+/**
  * Compact context boundary marker.
  */
 export interface CompactBoundary {
@@ -512,6 +539,7 @@ export type OutboundMessage =
   | ControlRequestForward
   | SystemMetadata
   | CostUpdate
+  | StreamingUsage
   | CompactBoundary
   | ContextBreakdown
   | ApiRetry

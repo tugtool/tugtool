@@ -347,6 +347,7 @@ function buildSyntheticSnapshot(
       : null,
     pendingDraftRestore: null,
     lastCost: null,
+    liveTurnUsage: null,
     lastContextBreakdown: null,
     lastError: null,
     lastReplayResult: null,

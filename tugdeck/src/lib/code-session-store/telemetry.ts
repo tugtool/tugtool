@@ -24,6 +24,7 @@ import type { CodeSessionState } from "./reducer";
 import type {
   CodeSessionSnapshot,
   CostSnapshot,
+  LiveMessageUsage,
   TurnCost,
   TurnEntry,
 } from "./types";
@@ -829,14 +830,7 @@ const ZERO_TURN_COST: TurnCost = Object.freeze({
   totalCostUsd: 0,
 });
 
-interface UsageView {
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationInputTokens: number;
-  cacheReadInputTokens: number;
-}
-
-const ZERO_USAGE: UsageView = Object.freeze({
+const ZERO_USAGE: LiveMessageUsage = Object.freeze({
   inputTokens: 0,
   outputTokens: 0,
   cacheCreationInputTokens: 0,
@@ -849,12 +843,12 @@ function numericField(record: Record<string, unknown>, key: string): number {
 }
 
 /**
- * Read the four token-count fields from a `cost_update.usage` payload,
- * tolerating both snake_case (the wire shape) and camelCase variants.
- * Anthropic emits snake_case; the tolerance defends against any future
- * adapter that pre-normalizes.
+ * Read the four token-count fields from a `cost_update.usage` /
+ * `streaming_usage.usage` payload, tolerating both snake_case (the
+ * wire shape) and camelCase variants. Anthropic emits snake_case; the
+ * tolerance defends against any future adapter that pre-normalizes.
  */
-function readUsage(usage: unknown): UsageView {
+export function readUsage(usage: unknown): LiveMessageUsage {
   if (usage === null || typeof usage !== "object") {
     return ZERO_USAGE;
   }

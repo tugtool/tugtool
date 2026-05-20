@@ -18,7 +18,7 @@
  * `useMemo` / render bodies.
  */
 
-import type { TurnCost, TurnEndReason } from "./types";
+import type { LiveTurnUsage, TurnCost, TurnEndReason } from "./types";
 
 /**
  * The roles a terminal-state badge can take. Subset of
@@ -138,4 +138,40 @@ export function perTurnTokens(
         cost.cacheCreationInputTokens
       : turnWindowTokens(prevCost);
   return Math.max(0, window - prevWindow);
+}
+
+/**
+ * Fold a {@link LiveTurnUsage} into a {@link TurnCost} — sum the
+ * per-message token counts across the in-flight turn's messages.
+ *
+ * The per-message usages are additive: a tool-loop turn has one
+ * assistant message per iteration, and their `streaming_usage` frames
+ * sum to the turn's terminal `cost_update.usage` (verified against
+ * live wire data). So the rollup of the live accumulation lands
+ * exactly on the committed `TurnCost` the moment the turn completes —
+ * the cells transition with no jump.
+ *
+ * `totalCostUsd` is `0`: dollar cost is cumulative-per-session and
+ * only known at the terminal `cost_update`, never mid-turn. The cell
+ * helpers ({@link turnWindowTokens} / {@link perTurnTokens}) read only
+ * the four token fields, so the zero cost is inert.
+ */
+export function rollupLiveTurnUsage(live: LiveTurnUsage): TurnCost {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let cacheReadInputTokens = 0;
+  for (const m of Object.values(live.byMessage)) {
+    inputTokens += m.inputTokens;
+    outputTokens += m.outputTokens;
+    cacheCreationInputTokens += m.cacheCreationInputTokens;
+    cacheReadInputTokens += m.cacheReadInputTokens;
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
+    totalCostUsd: 0,
+  };
 }

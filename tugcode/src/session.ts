@@ -24,6 +24,7 @@ import type {
   ReplayComplete,
   SystemMetadata,
   CostUpdate,
+  StreamingUsage,
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
@@ -817,6 +818,37 @@ export function routeTopLevelEvent(
   };
 }
 
+/** The four token-count keys a claude `usage` object carries. */
+const USAGE_TOKEN_KEYS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_creation_input_tokens",
+  "cache_read_input_tokens",
+] as const;
+
+/**
+ * Build a `streaming_usage` IPC frame from a raw claude `usage` object,
+ * or `null` when there is nothing worth emitting: an empty `msg_id`
+ * (claude has not revealed the message id yet) or a `usage` carrying
+ * none of the four token fields (a lifecycle-only payload, an empty
+ * `{}`, a malformed object). The gate keeps the high-frequency wire
+ * quiet rather than emitting an all-zero frame.
+ *
+ * The whole `usage` object is forwarded raw — same as `cost_update`
+ * does with `result.usage` — so the client reads whichever fields it
+ * needs without tugcode taking a position on the shape.
+ */
+function streamingUsageFrame(
+  msgId: string,
+  usage: unknown,
+): StreamingUsage | null {
+  if (msgId.length === 0) return null;
+  if (typeof usage !== "object" || usage === null) return null;
+  const u = usage as Record<string, unknown>;
+  if (!USAGE_TOKEN_KEYS.some((k) => typeof u[k] === "number")) return null;
+  return { type: "streaming_usage", msg_id: msgId, usage: u, ipc_version: 2 };
+}
+
 /**
  * Map a single stream-json inner event (from stream_event wrapper) to IPC messages.
  * Exported for unit testing.
@@ -847,6 +879,21 @@ export function mapStreamEvent(
     if (typeof rawId === "string" && rawId.length > 0) {
       messageId = rawId;
     }
+    // Surface the message's opening `usage` snapshot so the client's
+    // live token cells update the moment a message begins (the
+    // input + cache figures are known here; `output` is a small
+    // partial that the terminal `message_delta` finalizes).
+    const startUsage = streamingUsageFrame(
+      typeof rawId === "string" ? rawId : "",
+      message?.usage,
+    );
+    if (startUsage) messages.push(startUsage);
+  } else if (eventType === "message_delta") {
+    // The terminal per-message frame: carries the message's final,
+    // authoritative four-token `usage`. `ctx.msgId` is the current
+    // message id, slid by this message's earlier `message_start`.
+    const deltaUsage = streamingUsageFrame(ctx.msgId, event.usage);
+    if (deltaUsage) messages.push(deltaUsage);
   } else if (eventType === "content_block_start") {
     const contentBlock = event.content_block as Record<string, unknown> | undefined;
     if (contentBlock?.type === "tool_use") {

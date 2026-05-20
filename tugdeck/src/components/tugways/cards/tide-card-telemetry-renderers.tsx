@@ -47,6 +47,7 @@ import {
 } from "@/lib/code-session-store/telemetry";
 import {
   perTurnTokens,
+  rollupLiveTurnUsage,
   turnWindowTokens,
 } from "@/lib/code-session-store/end-state";
 import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
@@ -460,19 +461,39 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   // `inflightUserMessage === null`.
   const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
   const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
-  // TOKENS cell — the last committed turn's per-turn token count
-  // (`perTurnTokens`: how much that turn grew the context window),
-  // the same number Z1B shows on its asst-half. CONTEXT cell — the
-  // cumulative rollup (`turnWindowTokens`: the whole window after the
-  // last turn). The two are the per-turn / cumulative pair, and
+  // TOKENS / CONTEXT cells. While a turn is in flight the cells read
+  // the live `streaming_usage` accumulation (`liveTurnUsage`) so they
+  // climb mid-turn the way TIME does; once the turn commits — and
+  // between turns — they read the last committed turn. The live
+  // rollup is additive and lands exactly on the committed
+  // `cost_update` total, so the in-flight → committed transition is
+  // seamless (no jump).
+  //
+  // TOKENS — `perTurnTokens`: how much this turn grew the context
+  // window (the per-turn delta, the number Z1B shows). In flight the
+  // delta is measured against the last *committed* turn (the live
+  // turn IS the current one); committed, against the prior turn.
+  // CONTEXT — `turnWindowTokens`: the whole window (cumulative). The
+  // two are the per-turn / cumulative pair;
   // `session-init + Σ perTurnTokens = contextRollupTokens` holds by
-  // construction. While a turn is in flight no `cost_update` has
-  // landed, so both cells hold the last committed turn's values; the
-  // TOKENS popover's own in-flight footer carries the live signal.
+  // construction.
+  const isInflight = snap.inflightUserMessage !== null;
+  const liveCost =
+    snap.liveTurnUsage !== null
+      ? rollupLiveTurnUsage(snap.liveTurnUsage)
+      : null;
   const tokensCellValue =
-    lastTurn !== null ? perTurnTokens(lastTurn.cost, prevTurn?.cost) : 0;
+    isInflight && liveCost !== null
+      ? perTurnTokens(liveCost, lastTurn?.cost)
+      : lastTurn !== null
+        ? perTurnTokens(lastTurn.cost, prevTurn?.cost)
+        : 0;
   const contextRollupTokens =
-    lastTurn !== null ? turnWindowTokens(lastTurn.cost) : 0;
+    isInflight && liveCost !== null
+      ? turnWindowTokens(liveCost)
+      : lastTurn !== null
+        ? turnWindowTokens(lastTurn.cost)
+        : 0;
   const contextMax =
     meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
 
@@ -493,9 +514,8 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   // Per-anchor popover content. Each popover receives only the
   // inputs it needs — no shared context object — so future popover
   // changes touch one factory call instead of a coupling layer.
-  // `isInflight` is computed once; both per-area popovers gate
-  // their in-flight footer on it.
-  const isInflight = snap.inflightUserMessage !== null;
+  // `isInflight` (computed above with the cell values) gates both
+  // per-area popovers' in-flight footer.
   const timePopover = (
     <TimePopoverContent
       transcript={snap.transcript}
@@ -508,10 +528,9 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
     <TokensPopoverContent
       transcript={snap.transcript}
       inflight={
-        // No live token count mid-turn (cost_update lands at
-        // turn-complete); the in-flight footer reads the most
-        // recent committed contribution rather than fabricating a
-        // mid-turn value the wire hasn't reported yet.
+        // The in-flight footer carries the live per-turn delta —
+        // `tokensCellValue` is the live `streaming_usage` rollup
+        // while a turn is in flight (see the cell-value block above).
         isInflight ? { currentTurnTokens: tokensCellValue } : null
       }
     />
