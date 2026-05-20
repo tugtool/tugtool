@@ -118,6 +118,26 @@
  * previews and unit tests should mount inside a provider to exercise
  * the chain-native paths.
  *
+ * ## Dismissal on a layout change
+ *
+ * A popover is anchored to its trigger by Radix's Popper. Radix
+ * dismisses on a `pointerdown` outside the popover and repositions
+ * when the trigger itself resizes or scrolls — but it does not catch
+ * the trigger being *moved* by an ancestor resizing: a pane
+ * drag-resize, a window resize. The trigger's own box is unchanged,
+ * so none of Radix's observers fire, and the popover is left
+ * anchored where it opened while the trigger slides away.
+ *
+ * `TugPopoverContentShell` closes the popover on those layout
+ * changes. While open it watches the trigger's layout ancestors
+ * (captured via `triggerElRef`) with a `ResizeObserver` — any
+ * ancestor resizing means the trigger has shifted — plus a `window`
+ * `resize` listener. RO callbacks run after layout and before
+ * paint, so the popover is hidden synchronously and then closed
+ * before a detached frame can render or its exit animation can play
+ * stranded. Chasing the trigger with a per-frame reposition loop
+ * would be the wrong tool ([L05] / [L13]).
+ *
  * Laws: [L06] appearance via CSS/DOM, never React state,
  *       [L11] controls emit actions; responders handle actions,
  *       [L13] motion compliance — animation durations scale via --tug-timing,
@@ -196,6 +216,14 @@ interface TugPopoverInternalContextValue {
    * are read by the same `onCloseAutoFocus`.
    */
   onCloseAutoFocus: (event: Event) => void;
+  /**
+   * Captures the trigger DOM node. `TugPopoverTrigger` writes the
+   * element it renders here; `TugPopoverContentShell` reads it to
+   * observe the trigger's layout ancestors for resize-driven
+   * dismissal. `null` until the trigger mounts, or for popovers
+   * driven by `TugPopoverAnchor` rather than a `TugPopoverTrigger`.
+   */
+  triggerElRef: React.RefObject<HTMLElement | null>;
 }
 
 const TugPopoverInternalContext =
@@ -385,8 +413,19 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
       onOpenChangeProp?.(nextOpen);
     }
 
+    // Captures the trigger element so the open popover can watch the
+    // trigger's layout ancestors for resize-driven dismissal. Stable
+    // ref — not a `useMemo` dependency.
+    const triggerElRef = React.useRef<HTMLElement | null>(null);
+
     const contextValue = React.useMemo<TugPopoverInternalContextValue>(
-      () => ({ close, senderId, dismissOnChainActivity, onCloseAutoFocus }),
+      () => ({
+        close,
+        senderId,
+        dismissOnChainActivity,
+        onCloseAutoFocus,
+        triggerElRef,
+      }),
       [close, senderId, dismissOnChainActivity, onCloseAutoFocus],
     );
 
@@ -417,9 +456,29 @@ export interface TugPopoverTriggerProps {
 /**
  * Thin wrapper on Radix Popover.Trigger. Defaults to asChild so the caller's
  * element is used directly as the trigger without a wrapper button.
+ *
+ * In `asChild` mode the trigger element is captured into the shared
+ * `triggerElRef` (via a ref composed onto the child — Radix's `Slot`
+ * merges its own ref alongside) so the open popover can observe the
+ * trigger's layout ancestors for resize-driven dismissal.
  */
 export function TugPopoverTrigger({ asChild = true, children }: TugPopoverTriggerProps) {
-  return <Popover.Trigger asChild={asChild}>{children}</Popover.Trigger>;
+  const ctx = React.useContext(TugPopoverInternalContext);
+  const triggerElRef = ctx?.triggerElRef;
+  const captureTrigger = React.useCallback(
+    (node: HTMLElement | null) => {
+      if (triggerElRef) triggerElRef.current = node;
+    },
+    [triggerElRef],
+  );
+  const child =
+    asChild && triggerElRef !== undefined && React.isValidElement(children)
+      ? React.cloneElement(
+          children,
+          { ref: captureTrigger } as React.Attributes,
+        )
+      : children;
+  return <Popover.Trigger asChild={asChild}>{child}</Popover.Trigger>;
 }
 
 /* ---------------------------------------------------------------------------
@@ -641,6 +700,63 @@ function TugPopoverContentShell({ children }: { children: React.ReactNode }) {
 
   const handleClose = React.useCallback(() => {
     ctx?.close();
+  }, [ctx]);
+
+  // Dismiss the popover when a layout change moves its trigger.
+  // Radix only dismisses on a `pointerdown` outside the popover and
+  // repositions on the trigger's own resize / scroll — it does not
+  // catch the trigger being *moved* by an ancestor resizing (a pane
+  // drag-resize, a window resize). So the open popover watches the
+  // trigger's layout ancestors with a `ResizeObserver`: any of them
+  // resizing means the trigger has shifted. RO callbacks run after
+  // layout and before paint, so the popover is hidden synchronously
+  // and closed before a detached frame can render — no per-frame
+  // reposition loop, which would be the wrong tool ([L05] / [L13]).
+  // The `window` `resize` listener is a second, direct trigger;
+  // without a captured trigger element (anchor-driven popovers) the
+  // observer falls back to the document element.
+  React.useLayoutEffect(() => {
+    if (!ctx) return;
+    const dismiss = (): void => {
+      // Hide before the close commits so the 100ms exit animation
+      // never plays while the popover is detached from its trigger.
+      const contentEl = contentElRef.current?.parentElement;
+      if (contentEl instanceof HTMLElement) {
+        contentEl.style.visibility = "hidden";
+      }
+      ctx.close();
+    };
+    // Observe every layout ancestor of the trigger, up to <html>.
+    // A pane / card resize resizes an ancestor; a window resize
+    // resizes <html>. The trigger itself is skipped — Radix already
+    // repositions correctly when the trigger resizes.
+    const targets: Element[] = [];
+    const triggerEl = ctx.triggerElRef.current;
+    if (triggerEl) {
+      let el: Element | null = triggerEl.parentElement;
+      while (el) {
+        targets.push(el);
+        el = el.parentElement;
+      }
+    } else {
+      targets.push(document.documentElement);
+    }
+    let primed = false;
+    const observer = new ResizeObserver(() => {
+      // ResizeObserver delivers one callback at observe() time
+      // carrying the starting sizes — that is not a resize.
+      if (!primed) {
+        primed = true;
+        return;
+      }
+      dismiss();
+    });
+    for (const target of targets) observer.observe(target);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", dismiss);
+    };
   }, [ctx]);
 
   const { responderRef } = useOptionalResponder({
