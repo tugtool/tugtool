@@ -105,11 +105,11 @@ body {
    * contrast) without touching the structural CSS.
    *
    * `linear-gradient(to bottom, black 65%, transparent 100%)`: the
-   * top 65% of the preview pane paints at full opacity (the user
-   * reads ~5 lines cleanly), and the bottom 35% fades to nothing
-   * over the last ~3 lines. Anchors the gradient on a percentage of
-   * the preview height rather than absolute pixels so the fade
-   * stays proportional if `COLLAPSED_PREVIEW_LINES` ever changes.
+   * top 65% of the preview pane paints at full opacity and the
+   * bottom 35% fades to nothing. The stops are percentages of the
+   * preview height, not absolute pixels, so the fade stays
+   * proportional whatever the collapsed line cap
+   * (`DEFAULT_COLLAPSE_THRESHOLD`) is tuned to.
    */
   --tugx-term-collapsed-fade: linear-gradient(
     to bottom,
@@ -221,10 +221,10 @@ body {
  *
  * When the root carries `[data-collapsed="true"]`, the imperative
  * renderer has already replaced the body with a flat-path slice of
- * the first ~COLLAPSED_PREVIEW_LINES lines (no virtualizer, no
- * truncation banner, no footer — see `renderTerminal`). This CSS
- * adds the visual fade so the bottom of the preview reads as "more
- * content below" rather than a hard cutoff.
+ * the first `collapseThreshold` lines (no virtualizer, no truncation
+ * banner, no footer — see `renderTerminal`). This CSS adds the visual
+ * fade so the bottom of the preview reads as "more content below"
+ * rather than a hard cutoff.
  *
  * The `mask-image` linear-gradient is a CSS-only effect ([L06] — no
  * React state). `-webkit-mask-image` carries the WebKit prefix; the

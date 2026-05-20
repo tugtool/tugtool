@@ -90,13 +90,10 @@ import { useScroller } from "@/components/tugways/internal/scroller-context";
 import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
 import {
-  useComponentStatePreservation,
-  useSavedComponentState,
-} from "@/components/tugways/use-component-state-preservation";
-import {
   BlockActionsCluster,
   BlockCopyButton,
   BlockFoldCue,
+  useBlockFoldState,
 } from "./affordances";
 import { detectLanguage } from "./file-block";
 import {
@@ -635,37 +632,16 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
 
   // -- Whole-diff collapsed state -------------------------------------------
   //
-  // Computed-value pattern. Mirrors the `viewMode` resolution above:
-  // the parent's prop wins when provided, local state covers the
-  // uncontrolled case. No `useEffect` syncs a prop into state — that
-  // pattern would create a "controlled prop says X, local state
-  // says Y" divergence after a click in uncontrolled mode.
-  // Mount-in-saved-state: seed `useState`'s initializer with the saved
-  // fold (when any) so the first paint reflects the user's last-saved
-  // state. See `tuglaws/state-preservation.md` → "Restoring saved state
-  // at mount".
-  const savedComponentState = useSavedComponentState<{ collapsed?: boolean }>(
+  // Controlled / uncontrolled resolution, mount-in-saved-state, and the
+  // [A9] capture registration are all owned by `useBlockFoldState`
+  // (shared with the other fold-bearing body kinds). The diff defaults
+  // to expanded. View-mode persistence runs through tugbank (`cardId`
+  // route) on a separate key — the hook owns only the fold flag.
+  const { collapsed, setCollapsed } = useBlockFoldState({
+    collapsed: collapsedProp,
+    defaultCollapsed: false,
+    onToggleCollapsed,
     componentStatePreservationKey,
-  );
-  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(
-    () =>
-      typeof savedComponentState?.collapsed === "boolean"
-        ? savedComponentState.collapsed
-        : false,
-  );
-  const collapsed =
-    collapsedProp !== undefined ? collapsedProp : localCollapsed;
-
-  // ---- Component-state preservation (uncontrolled state) ---------------
-  //
-  // Persist `collapsed` into `bag.components` so a Developer > Reload
-  // restores the fold state. View-mode persistence runs through
-  // tugbank (`cardId` route) independently; we don't double-persist
-  // it here. DiffBlock has no inner scrollport (the hunks flow in
-  // document order), so no scroll-position field. [A9]
-  useComponentStatePreservation<{ collapsed?: boolean }>({
-    componentStatePreservationKey,
-    captureState: () => ({ collapsed }),
   });
 
   // Position-stable click: after the mutator runs (and the DOM has
@@ -724,18 +700,6 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     targetRef: viewToggleRef,
     scrollportRef: outerScrollportRef,
   });
-
-  // Fold-cue toggle callback. The `BlockFoldCue` affordance has
-  // already released the host scroller's follow-bottom lock and
-  // routed the click through its position-stable wrapper; this
-  // callback owns DiffBlock's state mutation (controlled vs
-  // uncontrolled) and host notification.
-  const handleFoldToggle = React.useCallback((next: boolean) => {
-    if (collapsedProp === undefined) {
-      setLocalCollapsed(next);
-    }
-    onToggleCollapsed?.(next);
-  }, [collapsedProp, onToggleCollapsed]);
 
   // ---- Copy text source ------------------------------------------------
   //
@@ -1075,8 +1039,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
         className="tugx-diff-fold-cue"
         data-slot="diff-fold-cue"
         collapsed={collapsed}
-        onToggle={handleFoldToggle}
-        label={cueLabel}
+        onToggle={setCollapsed}
+        collapsedLabel={cueLabel}
         ariaLabelCollapse="Collapse diff"
         ariaLabelExpand="Expand diff"
       />

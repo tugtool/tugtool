@@ -114,15 +114,12 @@ import {
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
-import {
-  useComponentStatePreservation,
-  useSavedComponentState,
-  useSavedRegionScroll,
-} from "@/components/tugways/use-component-state-preservation";
+import { useSavedRegionScroll } from "@/components/tugways/use-component-state-preservation";
 import {
   BlockActionsCluster,
   BlockCopyButton,
   BlockFoldCue,
+  useBlockFoldState,
 } from "./affordances";
 
 // ---------------------------------------------------------------------------
@@ -443,28 +440,16 @@ export const FileBlock: React.FC<FileBlockProps> = ({
 
   const overThreshold = lines.length > collapseThreshold;
 
-  // Computed-value collapse pattern. Mirrors the existing `viewMode`
-  // resolution in DiffBlock: the parent's prop wins when provided,
-  // local state covers the uncontrolled case. No `useEffect` syncs a
-  // prop into state — that pattern would create a "controlled prop
-  // says X, local state says Y" divergence after a click in
-  // uncontrolled mode. Reading the prop directly on every render keeps
-  // controlled and uncontrolled cleanly separable.
-  //
-  // Mount-in-saved-state: the saved fold (if any) seeds `useState`'s
-  // initializer so the first paint reflects the user's last-saved
-  // state. See `tuglaws/state-preservation.md` → "Restoring saved
-  // state at mount".
-  const savedComponentState = useSavedComponentState<{ collapsed?: boolean }>(
+  // Collapse state — controlled / uncontrolled resolution, mount-in-
+  // saved-state, and [A9] capture are all owned by `useBlockFoldState`
+  // (shared with the other fold-bearing body kinds). FileBlock supplies
+  // only the uncontrolled default: long files fold by default.
+  const { collapsed, setCollapsed } = useBlockFoldState({
+    collapsed: collapsedProp,
+    defaultCollapsed: overThreshold,
+    onToggleCollapsed,
     componentStatePreservationKey,
-  );
-  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(
-    () =>
-      typeof savedComponentState?.collapsed === "boolean"
-        ? savedComponentState.collapsed
-        : overThreshold,
-  );
-  const collapsed = collapsedProp !== undefined ? collapsedProp : localCollapsed;
+  });
 
   // Root element ref. `handleScrollMatchIntoView` reads it to
   // compute the target line's viewport band when scrolling a search
@@ -530,39 +515,19 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // browser's natural clamp applies (accepted behavior — see the
   // longer note on diff-block.tsx for the rationale).
 
-  // Fold-cue toggle callback. The `BlockFoldCue` affordance already
-  // released the host scroller's follow-bottom lock before invoking
-  // this; this callback owns the block-specific concerns: state
-  // mutation (controlled vs uncontrolled) and host notification
-  // (`onToggleCollapsed`).
-  const handleFoldToggle = React.useCallback((next: boolean) => {
-    if (collapsedProp === undefined) {
-      setLocalCollapsed(next);
-    }
-    onToggleCollapsed?.(next);
-  }, [collapsedProp, onToggleCollapsed]);
-
   // Ref to the embedded TugCodeView — used to resolve the live CM6
   // `EditorView` for Cmd/Ctrl-wheel routing and the region-scroll
   // restore loop.
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
 
-  // ---- Component-state preservation (fold state only) -----------------
-  //
-  // Persist the uncontrolled `collapsed` flag through the [A9] component-
-  // state-preservation axis so Developer > Reload (and cross-pane mount
-  // paths that route through CardHost) restore the fold. CM6 inner scroll
-  // position is preserved separately, via the [A9] region-scroll axis —
-  // a `data-tug-scroll-key` attribute on `view.scrollDOM` lands in
-  // `bag.regionScroll`, restored by CardHost's MutationObserver loop on
-  // mount. The two axes are deliberately split: fold is React-state
-  // (component-owned, not DOM-authority), inner scroll is DOM-authority
-  // (the scrollTop lives on the scroll element).
-  //
-  useComponentStatePreservation<{ collapsed?: boolean }>({
-    componentStatePreservationKey,
-    captureState: () => ({ collapsed }),
-  });
+  // The fold flag is persisted on the [A9] component-state axis by
+  // `useBlockFoldState` above. CM6 inner scroll position is preserved
+  // separately, via the [A9] region-scroll axis — a `data-tug-scroll-key`
+  // attribute on `view.scrollDOM` lands in `bag.regionScroll`, restored
+  // by CardHost's MutationObserver loop on mount. The two axes are
+  // deliberately split: fold is React-state (component-owned, not
+  // DOM-authority), inner scroll is DOM-authority (the scrollTop lives
+  // on the scroll element).
 
   // ---- Cmd/Ctrl-wheel routing to the outer scrollport ----------------
   //
@@ -880,8 +845,8 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           className="tugx-file-fold-cue"
           data-slot="file-fold-cue"
           collapsed={collapsed}
-          onToggle={handleFoldToggle}
-          label={cueLabel}
+          onToggle={setCollapsed}
+          collapsedLabel={cueLabel}
           ariaLabelCollapse="Collapse file"
           ariaLabelExpand="Expand file"
         />

@@ -14,7 +14,7 @@
  *        - FileBlock — Find + Copy + fold cue.
  *        - DiffBlock — Side-by-side/Inline `TugChoiceGroup` + fold cue.
  *        - TerminalBlock — Copy + fold cue. Section #3 is folded by
- *          default (the 400-line output exceeds `FOLD_THRESHOLD_LINES`)
+ *          default (the 400-line output exceeds `DEFAULT_COLLAPSE_THRESHOLD`)
  *          so the preview-with-fade is exercisable at first paint;
  *          section #4 forces `collapsed={false}` so the expanded path
  *          with virtualizer + footer is visible side-by-side.
@@ -116,8 +116,8 @@ const LONG_DIFF: DiffData = {
  * Build a 400-line terminal output. Lines vary in length so the inner
  * scroller exercises both vertical scroll past the wrapper AND
  * horizontal `scrollbar-gutter: stable` reservation. Sized over
- * `FOLD_THRESHOLD_LINES` (300) so the folded-by-default + virtualized
- * paths are exercised.
+ * `VISIBLE_THRESHOLD` (300) so both the folded-by-default preview and
+ * the virtualized expanded path are exercised.
  */
 function buildLongTerminalStdout(lineCount: number): string {
   const lines: string[] = [];

@@ -54,8 +54,8 @@
  *    `data-slot="agent-transcript-body"` on the root, this docstring.
  *  - [L20] component-token sovereignty — owns `--tugx-agent-*`;
  *    consumes `--tugx-block-*` for the shared block scaffold.
- *  - [L23] collapse state survives reload via
- *    `useComponentStatePreservation`.
+ *  - [L23] collapse state survives reload via the [A9]
+ *    component-state axis (`useBlockFoldState`).
  *
  * Decisions:
  *  - [D05] two-layer split: this body kind owns transcript rendering;
@@ -73,15 +73,12 @@ import { createPortal } from "react-dom";
 import { dispatchToolCallState } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import type { ChildToolCallsMap } from "@/components/tugways/cards/tool-wrappers/types";
-import {
-  useComponentStatePreservation,
-  useSavedComponentState,
-} from "@/components/tugways/use-component-state-preservation";
 import type { ToolCallState } from "@/lib/code-session-store";
 import {
   BlockActionsCluster,
   BlockCopyButton,
   BlockFoldCue,
+  useBlockFoldState,
 } from "./affordances";
 
 // ---------------------------------------------------------------------------
@@ -300,15 +297,6 @@ function hasRenderableContent(data: AgentTranscriptData): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Persisted state
-// ---------------------------------------------------------------------------
-
-/** Serialized state for the [A9] component-state axis. */
-interface AgentTranscriptPersistedState {
-  collapsed?: boolean;
-}
-
-// ---------------------------------------------------------------------------
 // Entry renderer
 // ---------------------------------------------------------------------------
 
@@ -379,24 +367,16 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
 }) => {
   // ---- Collapse state — logical UI state, React-owned per [L06] ------
   //
-  // Default: collapsed once the block is rendered past the [D17] depth
-  // cap. The saved state (if any) wins over the depth default so a
+  // Owned by `useBlockFoldState` (shared with the other fold-bearing
+  // body kinds): mount-in-saved-state, [A9] capture, and the toggle.
+  // AgentTranscriptBlock is purely uncontrolled — no `collapsed` prop —
+  // so it supplies only the default: collapsed once rendered past the
+  // [D17] depth cap. A saved fold wins over the depth default so a
   // Developer > Reload restores the user's explicit choice.
-  const depthCollapsed = shouldCollapseAgentDepth(depth, maxDepth);
-  const savedState = useSavedComponentState<AgentTranscriptPersistedState>(
+  const { collapsed, setCollapsed } = useBlockFoldState({
+    defaultCollapsed: shouldCollapseAgentDepth(depth, maxDepth),
     componentStatePreservationKey,
-  );
-  const [collapsed, setCollapsed] = React.useState<boolean>(
-    () => savedState?.collapsed ?? depthCollapsed,
-  );
-  useComponentStatePreservation<AgentTranscriptPersistedState>({
-    componentStatePreservationKey,
-    captureState: () => ({ collapsed }),
   });
-
-  const handleToggleCollapsed = React.useCallback((next: boolean): void => {
-    setCollapsed(next);
-  }, []);
 
   // ---- Copy source ---------------------------------------------------
   //
@@ -469,8 +449,8 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
     <>
       <BlockFoldCue
         collapsed={collapsed}
-        onToggle={handleToggleCollapsed}
-        label={composeNestedCallsLabel(nestedCallCount)}
+        onToggle={setCollapsed}
+        collapsedLabel={composeNestedCallsLabel(nestedCallCount)}
         ariaLabelCollapse="Collapse subagent transcript"
         ariaLabelExpand="Expand subagent transcript"
         data-slot="agent-transcript-fold-cue"

@@ -46,7 +46,7 @@
  *
  * Render strategy:
  *
- *   - **Flat path** for ≤ `VISIBLE_THRESHOLD` lines (default 40):
+ *   - **Flat path** for ≤ `VISIBLE_THRESHOLD` lines (default 300):
  *     every line is in the DOM. Simple, fast, no scroll container —
  *     the host owns scroll.
  *   - **Virtualized path** for > `VISIBLE_THRESHOLD` lines: the
@@ -111,15 +111,12 @@ import { BlockHeightIndex } from "@/lib/block-height-index";
 import { RenderedBlockWindow } from "@/lib/rendered-block-window";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
-import {
-  useComponentStatePreservation,
-  useSavedComponentState,
-  useSavedRegionScroll,
-} from "@/components/tugways/use-component-state-preservation";
+import { useSavedRegionScroll } from "@/components/tugways/use-component-state-preservation";
 import {
   BlockActionsCluster,
   BlockCopyButton,
   BlockFoldCue,
+  useBlockFoldState,
 } from "./affordances";
 
 // ---------------------------------------------------------------------------
@@ -227,13 +224,13 @@ export interface TerminalBlockProps {
   onToggleCollapsed?: (next: boolean) => void;
 
   /**
-   * Threshold for default-folded behavior. Defaults to
-   * `FOLD_THRESHOLD_LINES` (40 — matches `VISIBLE_THRESHOLD`'s
-   * virtualization cutoff because output that's long enough to need
-   * a self-scrolling viewport is exactly the output that benefits
-   * from a fold cue).
+   * Line cap for the expand / collapse axis. Output longer than this
+   * many lines folds by default and the collapsed preview shows the
+   * first `collapseThreshold` lines; output at or below it renders
+   * expanded with no fold cue. Defaults to
+   * {@link DEFAULT_COLLAPSE_THRESHOLD}.
    *
-   * @default FOLD_THRESHOLD_LINES
+   * @default DEFAULT_COLLAPSE_THRESHOLD
    */
   collapseThreshold?: number;
 
@@ -272,23 +269,30 @@ export interface TerminalBlockProps {
 export const VISIBLE_THRESHOLD = 300;
 
 /**
- * Default-collapse threshold in lines. Matches `VISIBLE_THRESHOLD` so
- * the same cutoff that flips rendering to the self-scrolling
- * virtualized path also flips the body kind into collapsed-by-default.
- * Below the threshold the output reads at a glance, no fold cue, no
- * scroller; above it a fold cue earns its keep by getting genuinely
- * long output out of the reader's way until they ask for it.
+ * Default line cap for the expand / collapse axis — the one tunable
+ * number behind the fold. Terminal output longer than this many lines
+ * folds by default; the collapsed preview then shows exactly this many
+ * lines and the fold cue carries a "N more lines" count for the
+ * remainder. Output at or below the cap renders expanded with no fold
+ * cue (there is nothing to collapse).
+ *
+ * 25 is the tuning point between two failure modes. Too low and the
+ * reader expands constantly just to see ordinary command output. Too
+ * high and a single `find` / `git log` / build run dominates the whole
+ * transcript — the symptom this cap exists to fix: a 300-line
+ * directory listing that rendered as 300 unbroken lines. 25 lines is
+ * about a screenful of context: enough to recognize what a command
+ * produced and decide whether to expand, while keeping any one result
+ * modest next to the conversation around it.
+ *
+ * This is the consumer-overridable default for the `collapseThreshold`
+ * prop. A wrapper that wants a different cap passes its own; tune the
+ * value here to move the default for every terminal-rendered result
+ * (Bash output, RenderInput-routed terminals) at once. Distinct from
+ * `VISIBLE_THRESHOLD`, which governs virtualization of the *expanded*
+ * body and stays high — the two are independent concerns.
  */
-export const FOLD_THRESHOLD_LINES = 300;
-
-/**
- * Number of lines the collapsed-preview pane shows above the fade
- * gradient. ~8 lines reads as "this is a sample, not the whole
- * output" — long enough to recognize the command's character, short
- * enough that the cue's "N LINES" label is the user's primary signal
- * that more exists below.
- */
-export const COLLAPSED_PREVIEW_LINES = 8;
+export const DEFAULT_COLLAPSE_THRESHOLD = 25;
 
 /**
  * Maximum retained-line count before the earliest lines are dropped
@@ -813,8 +817,8 @@ const NO_OP_TERMINAL_HANDLE: TerminalRenderHandle = {
  *
  * **Collapsed preview path.** When `collapsed` is true,
  * the renderer skips the virtualizer entirely and renders just the
- * first `COLLAPSED_PREVIEW_LINES` lines via the flat path — same
- * lines the user would see at the top of the expanded output.
+ * first `previewLineCap` lines via the flat path — same lines the
+ * user would see at the top of the expanded output.
  * Truncation banner is suppressed (the fold cue carries the "more
  * exists below" signal). Footer is suppressed (post-mortem badges
  * sit at the END of the output; revealing them during a TOP-of-file
@@ -836,6 +840,7 @@ function renderTerminal(
   data: TerminalData,
   getOuter: () => HTMLElement | null,
   collapsed: boolean = false,
+  previewLineCap: number = DEFAULT_COLLAPSE_THRESHOLD,
   anchor: "top" | "bottom" = "top",
   scrollKey: string | undefined = undefined,
   initialScrollTop: number | undefined = undefined,
@@ -860,12 +865,12 @@ function renderTerminal(
     }
   }
 
-  // Collapsed preview path — slice to the first ~8 lines, skip the
-  // truncation banner + virtualizer + footer. The fold cue (in the
-  // React-owned header) and the CSS mask-image fade together signal
-  // "more below; click to expand."
+  // Collapsed preview path — slice to the first `previewLineCap`
+  // lines, skip the truncation banner + virtualizer + footer. The
+  // fold cue (in the React-owned header) and the CSS mask-image fade
+  // together signal "more below; click to expand."
   if (collapsed && lines.length > 0) {
-    const preview = lines.slice(0, COLLAPSED_PREVIEW_LINES);
+    const preview = lines.slice(0, previewLineCap);
     appendFlatBody(body, preview);
     return NO_OP_TERMINAL_HANDLE;
   }
@@ -923,7 +928,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   headerLabel,
   collapsed: collapsedProp,
   onToggleCollapsed,
-  collapseThreshold = FOLD_THRESHOLD_LINES,
+  collapseThreshold = DEFAULT_COLLAPSE_THRESHOLD,
   componentStatePreservationKey,
 }) => {
   // Outer card — React owns the markup (header + body container);
@@ -968,58 +973,32 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   //                  is rendered, not *how* a rendered element
   //                  looks) ---------------------------------------------
   //
-  // Mirrors FileBlock's computed-collapse pattern:
-  //  - `overThreshold` is derived from the static line count (cheap
-  //    quickLineCount; no ANSI parse).
-  //  - Local state seeds from `overThreshold`.
-  //  - When the parent provides `collapsed`, the prop wins; otherwise
-  //    local state covers the uncontrolled case. No `useEffect` syncs
-  //    a prop into state — reading the prop directly on every render
-  //    keeps controlled and uncontrolled cleanly separable.
+  // `overThreshold` is derived from the static line count (cheap
+  // `quickLineCount`, no ANSI parse) and seeds the uncontrolled fold
+  // default — long output folds, short output does not. Streaming
+  // mode (`streamingStore` set) reads `lineCount` as 0 because the
+  // imperative renderer owns the growing line pool, not React state;
+  // the fold cue therefore stays hidden in streaming mode until a
+  // follow-up wires a streaming line-count subscription.
   //
-  // Streaming mode (`streamingStore` set) reads `lineCount = 0` from
-  // `data` because the imperative renderer owns the growing line
-  // pool, not React state. The fold cue therefore stays hidden in
-  // streaming mode until a follow-up phase wires a streaming line-
-  // count subscription. This is a deliberate scope cut for E.4.
+  // `useBlockFoldState` owns the rest — controlled / uncontrolled
+  // resolution, mount-in-saved-state, and [A9] capture — shared with
+  // the other fold-bearing body kinds. The virtualized scroller's
+  // `scrollTop` is preserved separately, on the [A9] region-scroll
+  // axis (a `data-tug-scroll-key` attribute on the scroller div): the
+  // two axes are split deliberately — fold is React state, inner
+  // scroll is DOM authority (scrollTop lives on the scroll element).
   const lineCount = React.useMemo(
     () => quickLineCount(initialDataRef.current),
     [],
   );
   const overThreshold = lineCount > collapseThreshold;
 
-  // ---- Component-state preservation (fold state only) -----------------
-  //
-  // Persist the uncontrolled `collapsed` flag through the [A9]
-  // component-state-preservation axis. The virtualized scroller's
-  // `scrollTop` is preserved separately, via the [A9] region-scroll
-  // axis — a `data-tug-scroll-key` attribute on the scroller div
-  // lands the position in `bag.regionScroll`. The two axes are split
-  // deliberately: fold is React-state (component-owned, not DOM-
-  // authority); inner scroll is DOM-authority (scrollTop lives on
-  // the scroll element).
-  //
-  // Mount-in-saved-state: `useSavedComponentState` reads the saved
-  // fold synchronously in render so `useState`'s initializer seeds
-  // local state with the user's last-saved value. There is no
-  // post-mount apply path — the first paint reflects the user's
-  // state. See `tuglaws/state-preservation.md` → "Restoring saved
-  // state at mount".
-  const savedComponentState = useSavedComponentState<{ collapsed?: boolean }>(
+  const { collapsed, setCollapsed } = useBlockFoldState({
+    collapsed: collapsedProp,
+    defaultCollapsed: overThreshold,
+    onToggleCollapsed,
     componentStatePreservationKey,
-  );
-  const [localCollapsed, setLocalCollapsed] = React.useState<boolean>(
-    () =>
-      typeof savedComponentState?.collapsed === "boolean"
-        ? savedComponentState.collapsed
-        : overThreshold,
-  );
-  const collapsed =
-    collapsedProp !== undefined ? collapsedProp : localCollapsed;
-
-  useComponentStatePreservation<{ collapsed?: boolean }>({
-    componentStatePreservationKey,
-    captureState: () => ({ collapsed }),
   });
 
   // Chrome actions target — non-null when this TerminalBlock is
@@ -1117,6 +1096,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       d,
       getOuterScrollport,
       collapsed,
+      collapseThreshold,
       "top",
       scrollKey,
       consumeInitialScrollTop(),
@@ -1126,7 +1106,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       refitRef.current = null;
       handle.cleanup();
     };
-  }, [collapsed, streamingStore, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
+  }, [collapsed, collapseThreshold, streamingStore, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
 
   // Streaming mode — Spec S05 binding. Reads sync on mount,
   // subscribes for updates, rAF-coalesces.
@@ -1175,6 +1155,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         next,
         getOuterScrollport,
         collapsedStreamingRef.current,
+        collapseThreshold,
         "bottom",
         scrollKey,
         consumeInitialScrollTop(),
@@ -1203,7 +1184,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       refitRef.current = null;
       cleanup();
     };
-  }, [streamingStore, streamingPath, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
+  }, [streamingStore, streamingPath, collapseThreshold, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
 
   // Streaming-mode re-render on collapse toggle. The store-subscription
   // effect above is the source of truth for streaming output, but a
@@ -1237,6 +1218,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       next,
       getOuterScrollport,
       collapsed,
+      collapseThreshold,
       "bottom",
       scrollKey,
       undefined,
@@ -1246,7 +1228,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
       refitRef.current = null;
       handle.cleanup();
     };
-  }, [collapsed, streamingStore, streamingPath, getOuterScrollport, scrollKey]);
+  }, [collapsed, collapseThreshold, streamingStore, streamingPath, getOuterScrollport, scrollKey]);
 
   // ---- Blank-frame recovery on scroll-into-view ----------------------
   //
@@ -1385,31 +1367,33 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
 
   // Fold-cue toggle callback. The `BlockFoldCue` affordance has
   // already released the host scroller's follow-bottom lock and
-  // routed the call through the position-stable wrapper; this
-  // callback owns the block-specific concerns: first-responder
-  // promotion (so Cmd-C after the click reaches TerminalBlock's COPY
-  // handler), controlled vs uncontrolled state mutation, and host
-  // notification.
+  // routed the call through the position-stable wrapper. This
+  // callback adds the one block-specific concern `useBlockFoldState`
+  // can't own — promoting TerminalBlock to first-responder so a
+  // Cmd-C right after the click reaches its COPY handler — then
+  // delegates the state mutation + host notification to `setCollapsed`.
   const handleFoldToggle = React.useCallback((next: boolean) => {
     chainManager?.makeFirstResponder(terminalBlockResponderId);
-    if (collapsedProp === undefined) {
-      setLocalCollapsed(next);
-    }
-    onToggleCollapsed?.(next);
-  }, [
-    chainManager,
-    collapsedProp,
-    onToggleCollapsed,
-    terminalBlockResponderId,
-  ]);
+    setCollapsed(next);
+  }, [chainManager, setCollapsed, terminalBlockResponderId]);
 
   // Compose the affordances cluster ONCE. Ordering: Copy
   // (the feature affordance) → fold cue (the fixed-position landmark
   // at the trailing edge). Mirrors FileBlock / DiffBlock so the
   // user's eye finds the fold cue in the same place across every
   // body kind. All three use the `body-kinds/affordances/` library.
-  const cueCountWord = lineCount === 1 ? "line" : "lines";
-  const cueLabel = `${lineCount.toLocaleString()} ${cueCountWord}`;
+  // Fold-cue labels. Collapsed: the count of lines hidden below the
+  // preview ("275 more lines") — the cue tells the reader what they
+  // gain by expanding. Expanded: the verb "Collapse" — the cue tells
+  // them what the click does. Both are handed to `BlockFoldCue`,
+  // which renders the state's label and reserves the wider one's
+  // width so toggling never resizes the button. `overThreshold`
+  // gates the cue, so the collapsed label always has a real
+  // remainder when shown.
+  const hiddenLineCount = Math.max(0, lineCount - collapseThreshold);
+  const cueCollapsedLabel = `${hiddenLineCount.toLocaleString()} more ${
+    hiddenLineCount === 1 ? "line" : "lines"
+  }`;
   // Copy is disabled when there's nothing to copy. Static-mode check
   // uses the `data` prop directly. Streaming-mode keeps Copy enabled
   // because content arrives over time via `streamingStore` and the
@@ -1431,7 +1415,8 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
           data-slot="terminal-fold-cue"
           collapsed={collapsed}
           onToggle={handleFoldToggle}
-          label={cueLabel}
+          collapsedLabel={cueCollapsedLabel}
+          expandedLabel="Collapse"
           ariaLabelCollapse="Collapse terminal output"
           ariaLabelExpand="Expand terminal output"
         />

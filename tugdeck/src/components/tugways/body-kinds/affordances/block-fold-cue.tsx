@@ -10,6 +10,14 @@
  *    me"; `ChevronsUp` when expanded → "collapse me"). Same shape
  *    across the rest / hover states; only the direction flips.
  *  - `aria-expanded` reflecting the current state.
+ *  - **Fixed button width across the label swap.** When the
+ *    collapsed and expanded labels differ (e.g. "22 more lines" vs
+ *    "Collapse"), the button reserves the width of the WIDER of the
+ *    two — both labels share one grid cell via `TugPushButton`'s
+ *    `widthStabilize`. The button never changes size when toggled,
+ *    so a click never shifts the surrounding action row. This is
+ *    structural: a consumer that passes a state-dependent label
+ *    cannot accidentally produce a width-shifting cue.
  *  - Position-stable click (`usePositionStableClick`). The fold
  *    gesture inherently changes document height, so the wrapper
  *    measures the cluster's pre-click viewport position and writes
@@ -33,7 +41,11 @@
  *    routed the call through the position-stable wrapper; the
  *    consumer's callback just owns its own state update +
  *    side effects (e.g., first-responder promotion).
- *  - `label` — the formatted count ("8 hunks", "300 lines").
+ *  - `collapsedLabel` — the label shown while collapsed, typically a
+ *    formatted count ("8 hunks", "22 more lines").
+ *  - `expandedLabel` — the label shown while expanded. Optional;
+ *    defaults to `collapsedLabel`. Pass it only when the expanded
+ *    state reads differently (e.g. the verb "Collapse").
  *  - `ariaLabelCollapse` / `ariaLabelExpand` — verb pairs for
  *    screen readers ("Collapse file" / "Expand file", etc.).
  *
@@ -75,12 +87,23 @@ export interface BlockFoldCueProps {
    */
   onToggle: (next: boolean) => void;
   /**
-   * Visible label inside the button — typically "N hunks" or "N
-   * lines". The consumer formats with locale-aware number rules
+   * Label shown while the block is COLLAPSED — typically a formatted
+   * count of what is hidden ("8 hunks", "22 more lines", "3 nested
+   * calls"). The consumer applies locale-aware number rules
    * (`toLocaleString`) and singular/plural words; the affordance
-   * just renders the resulting string.
+   * renders the resulting string.
    */
-  label: string;
+  collapsedLabel: string;
+  /**
+   * Label shown while the block is EXPANDED. Optional — defaults to
+   * `collapsedLabel`, the right choice when the label is the same in
+   * both states (a static count like "8 hunks"). Pass a distinct
+   * value when the expanded state reads differently — e.g. the verb
+   * "Collapse" against a collapsed "22 more lines". When the two
+   * differ the button reserves the wider label's width so toggling
+   * never resizes it.
+   */
+  expandedLabel?: string;
   /** ARIA label when the click would collapse the block (expanded → collapsed). */
   ariaLabelCollapse: string;
   /** ARIA label when the click would expand the block (collapsed → expanded). */
@@ -102,7 +125,8 @@ export interface BlockFoldCueProps {
 export function BlockFoldCue({
   collapsed,
   onToggle,
-  label,
+  collapsedLabel,
+  expandedLabel,
   ariaLabelCollapse,
   ariaLabelExpand,
   "data-slot": dataSlot = "block-fold-cue",
@@ -156,6 +180,16 @@ export function BlockFoldCue({
     onToggleRef.current(!collapsedRef.current);
   }, [scroller]);
 
+  // Resolve the visible label and, when the two fold states read
+  // differently, the off-state label the button must also reserve
+  // room for. `widthStabilize` overlays both in one grid cell so the
+  // button width is `max-content` of the pair — invariant across the
+  // toggle. When the labels match (a static count) there is nothing
+  // to reserve and `widthStabilize` stays off.
+  const resolvedExpandedLabel = expandedLabel ?? collapsedLabel;
+  const visibleLabel = collapsed ? collapsedLabel : resolvedExpandedLabel;
+  const offStateLabel = collapsed ? resolvedExpandedLabel : collapsedLabel;
+
   return (
     <TugPushButton
       ref={buttonRef}
@@ -168,8 +202,13 @@ export function BlockFoldCue({
       aria-expanded={!collapsed}
       aria-label={collapsed ? ariaLabelExpand : ariaLabelCollapse}
       onClick={() => stableClick(handleClick)}
+      widthStabilize={
+        visibleLabel === offStateLabel
+          ? undefined
+          : { alternateLabel: offStateLabel }
+      }
     >
-      {label}
+      {visibleLabel}
     </TugPushButton>
   );
 }

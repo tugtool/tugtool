@@ -40,10 +40,11 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 // ---------------------------------------------------------------------------
 
 /**
- * 400-line stdout — exceeds `FOLD_THRESHOLD_LINES` (300) so the
+ * 400-line stdout — exceeds `DEFAULT_COLLAPSE_THRESHOLD` (25) so the
  * uncontrolled TerminalBlock defaults to collapsed, and exceeds
- * `VISIBLE_THRESHOLD` (300) so the virtualizer's inner scroller is
- * built. Both surfaces are what AT0067 and AT0068 drive against:
+ * `VISIBLE_THRESHOLD` (300) so the expanded body builds the
+ * virtualizer's inner scroller. Both surfaces are what AT0067 and
+ * AT0068 drive against:
  *
  *   - AT0067 expands the block, saves, reloads, and asserts the
  *     TerminalBlock's `data-collapsed` attribute reflects the saved
