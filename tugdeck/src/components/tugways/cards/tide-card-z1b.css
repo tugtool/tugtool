@@ -59,16 +59,19 @@
   padding-left: 1px;
   min-height: var(--tug-space-xl, 20px);
   width: 100%;
-  /* Outer-row gap between the leading content (indicator OR
-     end-state) and the trailing chrome (the optional `::` + copy
-     button). Held at 6px to match `.tide-z1b-end-state`'s internal
-     `gap`, so the two `::` separators across the row (inner =
-     between OK and TIME; trailing = between the end-state group
-     and COPY) end up with visually-equal surrounding space: 6px
-     flex gap + 8px separator `margin-inline` = 14px on each side
-     of every `::`. Tunable via `--tugx-tide-z1b-outer-gap`. */
+  /* Outer-row flex gap — between the leading content (indicator
+     OR end-state) and the trailing chrome (the optional `::` +
+     copy button). */
   --tugx-tide-z1b-outer-gap: 12px;
   gap: var(--tugx-tide-z1b-outer-gap);
+  /* Extra `margin-inline` on the trailing `::`, added on top of
+     the outer flex gap — so the trailing `::` gutter is
+     `outer-gap + separator-margin`. Declared here on `.tide-z1b`
+     rather than on `.tide-z1b-separator` so it's also in scope
+     for the inner `::`: `.tide-z1b-end-state-separator` derives
+     its own margin from this pair via `calc()`, keeping both
+     `::` gutters identical no matter how either knob is tuned. */
+  --tugx-tide-z1b-separator-margin: 4px;
   /* End-states only: pull Z1B up by 2px so the row sits tighter
      under the body. The live variant keeps its natural rhythm —
      the indicator's pulse looks better with a hair more space
@@ -97,11 +100,36 @@
    one-line. */
 
 .tide-z1b-separator {
-  /* Extra horizontal margin on the trailing `::` matches the
-     separators inside the end-state row so the rhythm reads
-     uniformly across the whole Z1B line. */
-  --tugx-tide-z1b-separator-margin: 10px;
+  /* Trailing `::` gutter = `--tugx-tide-z1b-outer-gap` +
+     `--tugx-tide-z1b-separator-margin` (both declared on
+     `.tide-z1b`). The inner `::` is calc'd to match this — see
+     `.tide-z1b-end-state-separator`. */
   margin-inline: var(--tugx-tide-z1b-separator-margin);
+  /* COPY's border box lands flush against this `::` (the copy
+     left-nudge cancels the button's padding so its content, not
+     its box, keeps the row gutter). At rest the ghost button
+     paints no chrome and there's nothing to collide; on hover /
+     focus / confirm its border + background appear and would
+     smash into the `::`. The `:has()` rule below fades the `::`
+     out for exactly those states — every TugButton state is
+     already in the DOM (`:hover`, `:focus-visible`,
+     `data-tug-confirming`), so an ancestor selector reads it with
+     no JS and no event ([L06]). Opacity, not `display`, so the
+     `::` keeps its box and COPY never reflows. */
+  transition: opacity 80ms ease;
+}
+
+/* Fade the trailing `::` while the COPY button shows chrome — see
+   the rationale on `.tide-z1b-separator` above. */
+.tide-z1b:has(
+    .tide-z1b-copy .tug-button:is(
+      :hover,
+      :focus-visible,
+      [data-tug-confirming="true"]
+    )
+  )
+  .tide-z1b-separator {
+  opacity: 0;
 }
 
 .tide-z1b-copy {
@@ -110,22 +138,23 @@
      `size="xs"` to `BlockCopyButton` (24px tall) so the copy
      chip sits one step up from the affordance default (`2xs`,
      20px) and reads at the row's 12px type scale. The badge
-     (TugBadge size=md) is 26px tall after the Step 20.4.16
-     Sub-step F bump, so the two heights now differ by 2px —
-     close enough that `align-items: center` puts the text-
-     middles on the same line without an explicit nudge. The
+     (TugBadge size=md) is 26px tall, so the two heights differ
+     by 2px — close enough that `align-items: center` puts the
+     text-middles on the same line without an explicit nudge. The
      slot token stays so a future cascade-scoped consumer can
      dial it in by hand if a surrounding type-scale change
      reintroduces a visible drift. */
-  --tugx-tide-z1b-copy-baseline-nudge: 0px;
-  /* Horizontal nudge — fine-tunes COPY's distance from the
-     trailing `::` beyond what the outer-gap + separator-margin
-     already provide. Zero by default so the trailing `::` keeps
-     symmetric 14px gutters on both sides (matching the inner
-     `::` between OK and TIME). Negative = pull COPY tighter to
-     `::`; positive = push it further. Tunable via the slot
-     token for a future callsite that wants a different rhythm. */
-  --tugx-tide-z1b-copy-left-nudge: -20px;
+  --tugx-tide-z1b-copy-baseline-nudge: 0.5px;
+  /* Horizontal nudge — cancels the COPY button's own
+     `padding-inline` (0.75rem = 12px at `size="xs"`) so the
+     button's *content* — not its border box — sits one 12px
+     flex-gap from the trailing `::`, matching every other gap in
+     the row. The button's border box therefore lands flush
+     against the `::` box; that's intentional and harmless at rest
+     (ghost paints no chrome) and handled on hover by the `:has()`
+     fade on `.tide-z1b-separator`. Negative = pull COPY tighter
+     to `::`; positive = push it further. */
+  --tugx-tide-z1b-copy-left-nudge: -22px;
   transform: translateY(var(--tugx-tide-z1b-copy-baseline-nudge));
   margin-left: var(--tugx-tide-z1b-copy-left-nudge);
 }
@@ -149,19 +178,29 @@
 .tide-z1b-end-state {
   display: inline-flex;
   align-items: center;
-  /* Base inter-item gap between badge → `::` → time → `•` →
-     tokens. The flex container's `gap` realises this uniformly.
-     Tunable via `--tugx-tide-z1b-end-state-gap`. */
-  --tugx-tide-z1b-end-state-gap: 12px;
+  /* Inter-item flex gap inside the end-state row. This is the
+     gutter around the `•` (between time and tokens) directly;
+     the inner `::` adds compensating `margin-inline` on top so
+     its gutter stays matched to the trailing `::` regardless of
+     this value. Tune this knob alone to tighten or loosen the
+     time / `•` / tokens cluster. */
+  --tugx-tide-z1b-end-state-gap: 8px;
   gap: var(--tugx-tide-z1b-end-state-gap);
   white-space: nowrap;
 }
 
 .tide-z1b-end-state-separator {
-  /* Extra horizontal margin on the inner `::` (added ON TOP of the
-     flex container's `gap`) so the double-colons breathe a bit
-     more than the `•` separator. Set to `0` to match the base
-     `gap` exactly. */
-  --tugx-tide-z1b-end-state-separator-margin: 10px;
+  /* The inner `::` gutter must equal the trailing `::` gutter
+     (`outer-gap + separator-margin`). Its own gutter is
+     `end-state-gap + this-margin`, so this margin is the
+     difference — derived via `calc()`, not hand-set, so the two
+     `::` stay matched automatically when any knob is retuned.
+     (Holds while `end-state-gap` ≤ the trailing `::` gutter; a
+     `•` gap wider than the `::` gap would need a negative margin
+     here.) */
+  --tugx-tide-z1b-end-state-separator-margin: calc(
+    var(--tugx-tide-z1b-outer-gap) + var(--tugx-tide-z1b-separator-margin) -
+      var(--tugx-tide-z1b-end-state-gap)
+  );
   margin-inline: var(--tugx-tide-z1b-end-state-separator-margin);
 }
