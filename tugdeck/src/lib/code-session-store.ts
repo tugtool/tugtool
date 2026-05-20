@@ -42,7 +42,6 @@ import {
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import type { CodeSessionEvent } from "./code-session-store/events";
 import type { Effect } from "./code-session-store/effects";
-import { logTokenTelemetry } from "./code-session-store/token-telemetry-diagnostic";
 import { publishLocalSessionStateChange } from "./session-state-changes-local-events";
 import type {
   CardSessionMode,
@@ -733,8 +732,6 @@ export class CodeSessionStore {
     this.state = state;
     this.processEffects(effects);
     this.maybePersistStateChange(prev, state);
-    // DEV-only token-math diagnostic — see token-telemetry-diagnostic.ts.
-    logTokenTelemetry(event, prev, state, effects);
     if (prev !== state || effects.length > 0) {
       this._cachedSnapshot = null;
       this.notifyListeners();

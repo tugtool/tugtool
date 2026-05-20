@@ -19,6 +19,7 @@ import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 // Redirect console.log/warn/error to stderr to keep stdout clean for JSON-lines
 const originalLog = console.log;
@@ -193,6 +194,9 @@ async function main() {
         sessionId,
         homeDir: homedir(),
         cwd: projectDir,
+        // The project plugin dir — mirrors `SessionManager.getPluginDir()`.
+        // Its `agents/` and `skills/` fold into the breakdown.
+        pluginDir: join(projectDir, "tugplug"),
         settings: claudeCodeSettings,
       });
 

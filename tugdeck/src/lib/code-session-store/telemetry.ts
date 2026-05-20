@@ -20,6 +20,7 @@
  * @module lib/code-session-store/telemetry
  */
 
+import { deriveContextWindows } from "./end-state";
 import type { CodeSessionState } from "./reducer";
 import type {
   CodeSessionSnapshot,
@@ -157,68 +158,50 @@ export function computeTimeSummary(
 
 /**
  * Per-turn token summary for the `Tokens` status-area popover.
- * `totalTokens` is the sum across all four token categories — the
- * single number the cell headline shows — and `avgTokensPerTurn` is
- * the per-turn arithmetic mean (rounded), `0` for an empty transcript.
  *
- * The four per-category totals are exposed alongside so the renderer
- * can break the value down into "input + output + cache-read +
- * cache-creation" if the popover surface wants that detail.
+ * `perTurn` is each committed turn's SIGNED window delta — `window(N)
+ * - window(N-1)` from the transcript window-walk, the same figure Z1B
+ * shows. `totalTokens` is their sum, which telescopes to `window(latest)
+ * - sessionInit` — the conversation's message tokens. NOT a sum of raw
+ * `TurnCost` fields: summing `cache_read` across turns re-counts the
+ * resident context once per turn, a meaningless inflated number.
  */
 export interface TurnTokensSummary {
   count: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens: number;
-  totalCacheCreationTokens: number;
+  /** Each committed turn's signed `perTurn` delta, transcript order. */
+  perTurn: ReadonlyArray<number>;
+  /** Sum of `perTurn` = `window(latest) - sessionInit`. */
   totalTokens: number;
+  /** Arithmetic mean of `perTurn`, rounded; `0` for an empty transcript. */
   avgTokensPerTurn: number;
 }
 
 /**
- * Categorical tone for {@link computeContextBreakdown} and
- * {@link computeRichContextBreakdown} output. Structurally compatible
- * with `TugArcGaugeSegmentTone` (the gauge primitive's segments-mode
- * tone enum) — the gallery popover (and 20.4.10's production
- * composition) can hand a breakdown's `segments` array directly to
- * `TugArcGauge` in segments mode without mapping or casting.
+ * Categorical tone for {@link computeRichContextBreakdown} segments.
+ * Structurally compatible with `TugArcGaugeSegmentTone` (the gauge
+ * primitive's segments-mode tone enum) — the popover hands a
+ * breakdown's `segments` array straight to `TugArcGauge` in segments
+ * mode without mapping or casting.
  *
- * Two parallel vocabularies coexist:
- *
- * - **Wire-level cost tones** (`input` / `cache-read` / `cache-creation`
- *   / `output` / `remainder`): emitted by `computeContextBreakdown` —
- *   the popover's fallback view from `#step-20-4-7-c`.
- *
- * - **`/context`-style category tones** (`system_prompt` / `system_tools`
- *   / `custom_agents` / `memory_files` / `skills` / `messages` /
- *   `autocompact_buffer`): emitted by `computeRichContextBreakdown`
- *   when the snapshot carries a `lastContextBreakdown` from the
- *   tugcode → reducer → supervisor round-trip (`#step-20-4-7-d`).
- *   `mcp_tools` is intentionally absent — Tug treats MCP as out of
- *   scope; no MCP tone ever appears.
- *
- * `remainder` straddles both uses since the auto-synthesized
- * fill-the-gap slice is shape-uniform across either vocabulary.
+ * The vocabulary: the five static `/context`-style categories
+ * (`system_prompt` / `system_tools` / `custom_agents` / `memory_files`
+ * / `skills`), the feed-derived `messages` slice, the conditional
+ * reserved `autocompact_buffer`, and the auto-synthesized `remainder`.
+ * `mcp_tools` is intentionally absent — Tug treats MCP as out of scope.
  *
  * Declared locally here rather than imported from the components
  * layer so the library boundary stays one-way: `lib` doesn't depend
  * on `components`.
  */
 export type ContextBreakdownTone =
-  // Wire-level cost vocabulary.
-  | "input"
-  | "cache-read"
-  | "cache-creation"
-  | "output"
-  | "remainder"
-  // `/context`-style category vocabulary.
   | "system_prompt"
   | "system_tools"
   | "custom_agents"
   | "memory_files"
   | "skills"
   | "messages"
-  | "autocompact_buffer";
+  | "autocompact_buffer"
+  | "remainder";
 
 /**
  * One segment in a context-window categorical breakdown. Mirrors the
@@ -238,138 +221,47 @@ export interface ContextBreakdownSegment {
 }
 
 /**
- * Output shape of {@link computeContextBreakdown}: the five segments
- * needed to paint the categorical arc + the headline `totalUsed`
- * count (sum of all four non-remainder categories) + the originating
- * `contextMax` so the popover footer can render `used / max`.
+ * Output shape of {@link computeRichContextBreakdown}: the segments
+ * that paint the categorical arc + the headline `totalUsed` count +
+ * the `contextMax` cap so the popover footer can render `used / max`.
  */
 export interface ContextBreakdown {
   segments: ReadonlyArray<ContextBreakdownSegment>;
   /**
-   * Sum of input + cache-read + cache-creation + output for the turn,
-   * clamped to ≥ 0 on each axis. NOT clamped against `contextMax` —
-   * over-saturation (rare) surfaces as `totalUsed > contextMax` so
-   * the renderer can show the imbalance honestly.
+   * Resident context occupied = `bootstrap + messages` = the model's
+   * `window` — feed-exact, and identical to the `CONTEXT` cell. The
+   * reserved `autocompact_buffer` slice is NOT counted here (it is
+   * reserved headroom, not occupied content).
    */
   totalUsed: number;
-  /** The model's context-window cap as passed in (clamped to ≥ 0). */
+  /** The model's context-window cap as passed in (clamped to non-negative). */
   contextMax: number;
 }
 
 /**
- * Decompose a committed turn's token usage into the five-segment
- * shape the Context popover (`#step-20-4-7-c`) paints: the four
- * token categories Anthropic emits in `cost_update.usage` (input,
- * cache-read, cache-creation, output) plus an auto-computed
- * `remainder` slice representing the unused window capacity. The
- * remainder is `max(0, contextMax − sum-of-used)`; if the turn
- * over-saturated the window (sum > contextMax), the remainder
- * clamps to 0 and `totalUsed > contextMax` signals the imbalance.
- *
- * Negative values on any axis (defensive against malformed inputs)
- * clamp to 0. `contextMax <= 0` clamps to 0 too; the result is then
- * five-segment but with remainder = 0.
- *
- * Pure: no DOM, no React, no time source. The caller picks which
- * turn to decompose; the popover's contract is "most-recent committed
- * turn" but the helper itself takes any `TurnEntry`.
+ * Input for {@link computeRichContextBreakdown}.
  */
-export function computeContextBreakdown(
-  turn: TurnEntry,
-  contextMax: number,
-): ContextBreakdown {
-  const safeContextMax = Math.max(0, contextMax);
-  const input = Math.max(0, turn.cost.inputTokens);
-  const cacheRead = Math.max(0, turn.cost.cacheReadInputTokens);
-  const cacheCreation = Math.max(0, turn.cost.cacheCreationInputTokens);
-  const output = Math.max(0, turn.cost.outputTokens);
-  const totalUsed = input + cacheRead + cacheCreation + output;
-  const remainder = Math.max(0, safeContextMax - totalUsed);
-  return {
-    segments: [
-      { id: "input", tone: "input", value: input, label: "Input" },
-      { id: "cache-read", tone: "cache-read", value: cacheRead, label: "Cache (read)" },
-      {
-        id: "cache-creation",
-        tone: "cache-creation",
-        value: cacheCreation,
-        label: "Cache (creation)",
-      },
-      { id: "output", tone: "output", value: output, label: "Output" },
-      { id: "remainder", tone: "remainder", value: remainder, label: "Unused" },
-    ],
-    totalUsed,
-    contextMax: safeContextMax,
-  };
-}
-
-/**
- * Build the rich `/context`-style breakdown for the Context popover
- * (`#step-20-4-7-d`). Three-way resolution:
- *
- * 1. **`lastContextBreakdown` present (live or bind-attach):** return
- *    the rich per-category breakdown sourced from the
- *    `context_breakdown` wire frame. Variable length (6 or 7
- *    categories depending on autocompact-on / autocompact-off) plus
- *    the auto-synthesized `remainder` slice. The wire-frame
- *    `context_max` wins over `fallbackContextMax` — it's the
- *    authoritative cap for the model the session is running against.
- *
- * 2. **No breakdown frame, transcript has committed turns:** fall back
- *    to {@link computeContextBreakdown} against the last committed
- *    turn — the 20.4.7.C cost_update-derived view, with the original
- *    5-tone cost vocabulary. This path keeps the popover useful
- *    against older tugcode that hasn't shipped the new frame, against
- *    a tugcode session that opted out, and in the first few seconds
- *    after a fresh spawn before the first `context_breakdown` lands.
- *
- * 3. **No breakdown frame and no transcript:** return `null`. The
- *    renderer paints the empty-state body ("No committed turns yet.").
- *
- * Per the spike's 5–10% accuracy bar, the rich-path numbers are not
- * byte-exact against Claude Code's `/context` terminal output —
- * tugcode's local tokenization sits a few percent off the canonical
- * count. The popover shows numbers in the right ballpark; this is
- * intentional, not a bug.
- *
- * Pure: no DOM, no React, no time source.
- */
-export function computeRichContextBreakdown(
-  lastContextBreakdown: ContextBreakdownSnapshotInput | null,
-  transcript: ReadonlyArray<TurnEntry>,
-  fallbackContextMax: number,
-): ContextBreakdown | null {
-  if (lastContextBreakdown !== null) {
-    const safeContextMax = Math.max(0, lastContextBreakdown.contextMax);
-    const segments: ContextBreakdownSegment[] = [];
-    let totalUsed = 0;
-    for (const c of lastContextBreakdown.categories) {
-      const value = Math.max(0, c.tokens);
-      totalUsed += value;
-      segments.push({
-        id: c.id,
-        // Wire-frame category ids map 1:1 to the categorical-tone half
-        // of `ContextBreakdownTone` — the two enums were designed
-        // together (see `types.ts` `ContextBreakdownCategoryId` and
-        // `TugArcGaugeSegmentTone`). The cast is safe by construction.
-        tone: c.id,
-        value,
-        label: c.label,
-      });
-    }
-    const remainder = Math.max(0, safeContextMax - totalUsed);
-    segments.push({
-      id: "remainder",
-      tone: "remainder",
-      value: remainder,
-      label: "Unused",
-    });
-    return { segments, totalUsed, contextMax: safeContextMax };
-  }
-  if (transcript.length > 0) {
-    return computeContextBreakdown(transcript[transcript.length - 1], fallbackContextMax);
-  }
-  return null;
+export interface RichContextBreakdownInput {
+  /**
+   * tugcode's static-category estimate (the `context_breakdown` wire
+   * frame, projected onto `snap.lastContextBreakdown`). `null` until
+   * the first frame lands — the popover then has nothing to paint.
+   */
+  staticBreakdown: ContextBreakdownSnapshotInput | null;
+  /**
+   * Feed-exact bootstrap `window(0)` — `snap.sessionInitTokens`.
+   * `null` before turn 1's first streaming frame; the helper then
+   * falls back to the raw static-estimate total.
+   */
+  sessionInitTokens: number | null;
+  /**
+   * Resident context window — `window(latest)` (committed) or the
+   * live in-flight window. `null` with no turns and nothing in
+   * flight; the helper then reports `messages = 0`.
+   */
+  windowTokens: number | null;
+  /** Context-window cap (the `used / max` denominator). */
+  contextMax: number;
 }
 
 /**
@@ -388,30 +280,156 @@ export interface ContextBreakdownSnapshotInput {
   }>;
 }
 
+/** The five session-stable category ids the wire frame carries. */
+const STATIC_BREAKDOWN_IDS: ReadonlySet<string> = new Set([
+  "system_prompt",
+  "system_tools",
+  "custom_agents",
+  "memory_files",
+  "skills",
+]);
+
+/**
+ * Assemble the `/context`-style breakdown for the Context popover.
+ *
+ * The breakdown is feed-anchored: its TOTAL and its `messages` slice
+ * are exact; only the split among the five static categories is an
+ * estimate.
+ *
+ *   - The five static categories (`system_prompt` … `skills`) come
+ *     from tugcode's local tokenizer (`staticBreakdown`). They are
+ *     SCALED so they sum exactly to the bootstrap — the last category
+ *     absorbs the integer-rounding residual.
+ *   - The bootstrap is the feed-exact `sessionInitTokens` once
+ *     captured; before turn 1 it is the raw static-estimate total
+ *     (the only figure available — see the session-open requirement).
+ *   - `messages = window - bootstrap`, feed-exact (equals `Σ perTurn`).
+ *   - `autocompact_buffer`, when the frame carries it, is reserved
+ *     headroom — a segment, but NOT part of `totalUsed`.
+ *   - `remainder` fills the arc out to `contextMax`.
+ *
+ * `totalUsed = bootstrap + messages = window` — identical to the
+ * `CONTEXT` cell, by construction. Returns `null` when no
+ * `context_breakdown` frame has landed (popover empty state).
+ *
+ * Pure: no DOM, no React, no time source.
+ */
+export function computeRichContextBreakdown(
+  input: RichContextBreakdownInput,
+): ContextBreakdown | null {
+  const { staticBreakdown, sessionInitTokens, windowTokens, contextMax } =
+    input;
+  if (staticBreakdown === null) {
+    return null;
+  }
+  const safeContextMax = Math.max(0, contextMax);
+
+  // Partition the wire frame: the five static categories vs the
+  // conditional, reserved `autocompact_buffer`. A stray `messages`
+  // category (older tugcode) is ignored — `messages` is feed-derived.
+  const staticCats: Array<{
+    id: ContextBreakdownTone;
+    label: string;
+    tokens: number;
+  }> = [];
+  let autocompact: { label: string; tokens: number } | null = null;
+  for (const c of staticBreakdown.categories) {
+    if (c.id === "autocompact_buffer") {
+      autocompact = { label: c.label, tokens: Math.max(0, c.tokens) };
+      continue;
+    }
+    if (!STATIC_BREAKDOWN_IDS.has(c.id)) {
+      continue;
+    }
+    staticCats.push({
+      id: c.id,
+      label: c.label,
+      tokens: Math.max(0, c.tokens),
+    });
+  }
+  const rawStaticTotal = staticCats.reduce((acc, c) => acc + c.tokens, 0);
+
+  // Bootstrap: feed-exact `sessionInit` once captured; before turn 1
+  // the raw static-estimate total (the only figure available).
+  const bootstrap = sessionInitTokens ?? rawStaticTotal;
+  // `messages` is feed-exact: window − bootstrap. 0 before any turn.
+  const messages = Math.max(0, (windowTokens ?? bootstrap) - bootstrap);
+
+  // Scale the static split so it sums EXACTLY to the bootstrap; the
+  // last category absorbs the integer-rounding residual.
+  const scale = rawStaticTotal > 0 ? bootstrap / rawStaticTotal : 0;
+  const segments: ContextBreakdownSegment[] = [];
+  let scaledRunning = 0;
+  staticCats.forEach((c, i) => {
+    const value =
+      i === staticCats.length - 1
+        ? Math.max(0, bootstrap - scaledRunning)
+        : Math.round(c.tokens * scale);
+    scaledRunning += value;
+    segments.push({ id: c.id, tone: c.id, value, label: c.label });
+  });
+
+  segments.push({
+    id: "messages",
+    tone: "messages",
+    value: messages,
+    label: "Messages",
+  });
+
+  let reservedBuffer = 0;
+  if (autocompact !== null) {
+    reservedBuffer = autocompact.tokens;
+    segments.push({
+      id: "autocompact_buffer",
+      tone: "autocompact_buffer",
+      value: reservedBuffer,
+      label: autocompact.label,
+    });
+  }
+
+  const totalUsed = bootstrap + messages;
+  const remainder = Math.max(0, safeContextMax - totalUsed - reservedBuffer);
+  segments.push({
+    id: "remainder",
+    tone: "remainder",
+    value: remainder,
+    label: "Unused",
+  });
+
+  return { segments, totalUsed, contextMax: safeContextMax };
+}
+
 /**
  * Compute the `Tokens` popover's summary block from the committed
- * transcript. Same in-flight contract as {@link computeTimeSummary}:
- * row log + this summary cover committed turns only; the renderer
- * adds the live in-flight token contribution to the footer separately.
+ * transcript.
+ *
+ * Each turn's figure is its signed `perTurn` window delta (the
+ * transcript window-walk, `deriveContextWindows`) — the same number
+ * Z1B shows, never a sum of raw `TurnCost`. `totalTokens` telescopes
+ * to `window(latest) - sessionInit` (the conversation's messages).
+ *
+ * Same in-flight contract as {@link computeTimeSummary}: the row log
+ * and this summary cover committed turns only; the renderer adds the
+ * live in-flight contribution to the footer separately.
  */
 export function computeTokensSummary(
   transcript: ReadonlyArray<TurnEntry>,
+  sessionInitTokens: number | null,
 ): TurnTokensSummary {
-  const totals = deriveSessionTotals(transcript);
-  const totalTokens =
-    totals.totalInputTokens +
-    totals.totalOutputTokens +
-    totals.totalCacheReadTokens +
-    totals.totalCacheCreationTokens;
+  const steps = deriveContextWindows(
+    transcript.map((t) => t.cost),
+    sessionInitTokens ?? 0,
+  );
+  const perTurn = steps.map((s) => s.perTurn);
+  const totalTokens = perTurn.reduce((acc, v) => acc + v, 0);
   return {
-    count: totals.turnCount,
-    totalInputTokens: totals.totalInputTokens,
-    totalOutputTokens: totals.totalOutputTokens,
-    totalCacheReadTokens: totals.totalCacheReadTokens,
-    totalCacheCreationTokens: totals.totalCacheCreationTokens,
+    count: transcript.length,
+    perTurn,
     totalTokens,
     avgTokensPerTurn:
-      totals.turnCount === 0 ? 0 : Math.round(totalTokens / totals.turnCount),
+      transcript.length === 0
+        ? 0
+        : Math.round(totalTokens / transcript.length),
   };
 }
 

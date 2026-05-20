@@ -328,11 +328,13 @@ export interface LiveMessageUsage {
 }
 
 /**
- * Per-category identity for the `/context`-style breakdown. Mirrors
- * tugcode's wire-frame `ContextBreakdownCategoryId` enum. `mcp_tools`
- * is intentionally absent — Tug treats MCP as out of scope; no MCP
- * id ever appears on the wire, in this snapshot, or in the
- * persisted ledger row.
+ * Per-category identity carried by the `context_breakdown` wire frame
+ * — the static half of the breakdown. Mirrors tugcode's wire-frame
+ * `ContextBreakdownCategoryId` enum.
+ *
+ * `messages` is intentionally absent: it is feed-derived
+ * (`window - sessionInit`), assembled tugdeck-side, never on the wire.
+ * `mcp_tools` is intentionally absent — Tug treats MCP as out of scope.
  */
 export type ContextBreakdownCategoryId =
   | "system_prompt"
@@ -340,7 +342,6 @@ export type ContextBreakdownCategoryId =
   | "custom_agents"
   | "memory_files"
   | "skills"
-  | "messages"
   | "autocompact_buffer";
 
 /**

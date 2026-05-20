@@ -42,6 +42,7 @@ import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indi
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import {
+  computeRichContextBreakdown,
   deriveSessionTotals,
   deriveTimeCellMs,
 } from "@/lib/code-session-store/telemetry";
@@ -467,49 +468,65 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   // `inflightUserMessage === null`.
   const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
   const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
-  // TOKENS / CONTEXT cells. While a turn is in flight the cells read
-  // the latest `streaming_usage` frame (`liveTurnUsage`) so they climb
-  // mid-turn the way TIME does; once the turn commits — and between
-  // turns — they read the transcript window-walk. tugcode emits the
-  // committed `cost_update.usage` as the same last-iteration usage the
-  // final live frame carried, so the in-flight → committed transition
-  // is seamless (no jump).
+  // TOKENS / CONTEXT cells — both feed-derived. While a turn is in
+  // flight the cells read the latest `streaming_usage` frame
+  // (`liveTurnUsage`) so they climb mid-turn the way TIME does; once
+  // the turn commits — and between turns — they read the transcript
+  // window-walk.
   //
-  // CONTEXT — `window`: the resident context window. In flight it is
-  // the live frame's window; committed, the walk's latest window
-  // (carry-forward over any zero-usage turn).
   // TOKENS — `perTurn`: the signed per-turn delta `window(N) −
-  // window(N−1)` (the number Z1B shows; negative at a `/compact`). In
-  // flight it is measured against the last committed window (the live
-  // turn IS the current one). `sessionInit + Σ perTurn = window`
-  // holds by construction.
-  const sessionInit = snap.sessionInitTokens ?? 0;
+  // window(N−1)` (the number Z1B shows; negative at a `/compact`).
+  // CONTEXT — the resident context total, unified with the popover
+  // through `computeRichContextBreakdown`: `breakdown.totalUsed` is
+  // `window` by construction. Before turn 1 (no `sessionInit`, no
+  // window) the breakdown's bootstrap is tugcode's static estimate,
+  // so the cell shows a session-init figure the moment the session
+  // opens — never blank.
+  const sessionInit = snap.sessionInitTokens;
   const windows = deriveContextWindows(
     snap.transcript.map((t) => t.cost),
-    sessionInit,
+    sessionInit ?? 0,
   );
   const lastCommittedWindow =
-    windows.length > 0 ? windows[windows.length - 1].window : sessionInit;
+    windows.length > 0 ? windows[windows.length - 1].window : null;
   const isInflight = snap.inflightUserMessage !== null;
   const live = snap.liveTurnUsage;
-  const tokensCellValue =
-    isInflight && live !== null
-      ? perTurnTokens(live, lastCommittedWindow)
-      : windows.length > 0
-        ? windows[windows.length - 1].perTurn
-        : 0;
-  const contextWindowTokens =
-    isInflight && live !== null
-      ? turnWindowTokens(live)
-      : lastCommittedWindow;
+  // Resident window: the live in-flight frame, else the last committed
+  // turn's window, else `null` (no turns yet — fresh session).
+  const windowTokens =
+    isInflight && live !== null ? turnWindowTokens(live) : lastCommittedWindow;
+  // The prior window the in-flight per-turn delta is measured against.
+  const priorWindow = lastCommittedWindow ?? sessionInit ?? 0;
+  // The instant a turn is submitted the TOKENS cell clears — it must
+  // not keep showing the *previous* turn's delta until the new turn's
+  // first `streaming_usage` frame lands. So in-flight with no live
+  // frame yet reads 0; the last-committed delta is shown only between
+  // turns.
+  const tokensCellValue = isInflight
+    ? live !== null
+      ? perTurnTokens(live, priorWindow)
+      : 0
+    : windows.length > 0
+      ? windows[windows.length - 1].perTurn
+      : 0;
   const contextMax =
     meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
+  // One breakdown computation feeds BOTH the CONTEXT cell (its
+  // `totalUsed`) and the Context popover (its `segments`) — the two
+  // surfaces cannot disagree.
+  const contextBreakdown = computeRichContextBreakdown({
+    staticBreakdown: snap.lastContextBreakdown,
+    sessionInitTokens: sessionInit,
+    windowTokens,
+    contextMax,
+  });
+  const contextTotal = contextBreakdown?.totalUsed ?? windowTokens ?? 0;
 
   // Color-coded context numerator. The `/` and denominator stay
   // muted so the live numerator reads first. Threshold class is
   // applied to the wrapping span; the CSS rule paints the
   // numerator's color via descendant selector.
-  const ratio = contextMax > 0 ? contextWindowTokens / contextMax : 0;
+  const ratio = contextMax > 0 ? contextTotal / contextMax : 0;
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
@@ -535,9 +552,10 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   const tokensPopover = (
     <TokensPopoverContent
       transcript={snap.transcript}
+      sessionInitTokens={sessionInit}
       inflight={
         // The in-flight footer carries the live per-turn delta —
-        // `tokensCellValue` is the live `streaming_usage` rollup
+        // `tokensCellValue` is the signed `window − priorWindow`
         // while a turn is in flight (see the cell-value block above).
         isInflight ? { currentTurnTokens: tokensCellValue } : null
       }
@@ -545,8 +563,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   );
   const contextPopover = (
     <ContextPopoverContent
-      contextMax={contextMax}
-      lastContextBreakdown={snap.lastContextBreakdown}
+      breakdown={contextBreakdown}
     />
   );
   const indicatorPopover = (
@@ -637,10 +654,10 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
                 data-context-threshold={contextThreshold}
               >
                 <span className="tide-telemetry-status-context-numerator">
-                  {formatTokensCaps(contextWindowTokens)}
+                  {formatTokensCaps(contextTotal)}
                 </span>
                 <span className="tide-telemetry-status-context-denominator">
-                  {` / ${formatTokensCaps(contextMax)}`}
+                  {`/ ${formatTokensCaps(contextMax)}`}
                 </span>
               </span>
             </span>

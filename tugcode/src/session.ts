@@ -1747,6 +1747,11 @@ export class SessionManager {
       // helper extraction.
       await this.spawnClaudeAndWatch();
       this.writeSyntheticSessionInit(this.resolveClaudeId());
+      // Emit the `context_breakdown` immediately — claude stays silent
+      // (no `system:init`) until the first input, so the static
+      // estimate is computed from disk so the Context surface is
+      // populated the moment the session opens.
+      this.emitInitialContextBreakdown();
     }
 
     const claudeId = this.resolveClaudeId();
@@ -2549,32 +2554,40 @@ export class SessionManager {
    * unexpected event shape (missing fields, wrong types) leaves the
    * emitter untouched and produces no frame.
    */
+  /**
+   * Emit the session-open `context_breakdown` frame — the static
+   * estimate computed entirely from disk, so the Context surface
+   * populates the moment the session opens (before claude's
+   * `system:init`, which only lands once the first turn sends input).
+   * No-op when the emitter is not injected (tests).
+   */
+  private emitInitialContextBreakdown(): void {
+    const emitter = this.contextBreakdownEmitter;
+    if (emitter) writeLine(emitter.onSpawn());
+  }
+
   private maybeEmitContextBreakdown(event: Record<string, unknown>): void {
     const emitter = this.contextBreakdownEmitter;
     if (!emitter) return;
     if (event.type === "system") {
       const subtype = event.subtype;
       if (subtype === "init") {
-        const frame = emitter.onSessionInit({
-          tools: Array.isArray(event.tools) ? event.tools : [],
-          agents: Array.isArray(event.agents) ? event.agents : [],
-          skills: Array.isArray(event.skills) ? event.skills : [],
-          plugins: Array.isArray(event.plugins) ? event.plugins : [],
-        });
-        writeLine(frame);
+        // `system:init` reports the built-in tool count — the one
+        // input the filesystem can't reveal. Re-emit with it so
+        // `system_tools` switches from the flat heuristic to the
+        // exact count. A missing/empty `tools` keeps the heuristic.
+        if (Array.isArray(event.tools) && event.tools.length > 0) {
+          writeLine(emitter.onSessionInit(event.tools.length));
+        }
       } else if (subtype === "compact_boundary") {
         emitter.onCompactBoundary();
       }
     } else if (event.type === "result") {
-      const usage =
-        typeof event.usage === "object" && event.usage !== null
-          ? (event.usage as Record<string, unknown>)
-          : {};
       const modelUsage =
         typeof event.modelUsage === "object" && event.modelUsage !== null
           ? (event.modelUsage as Record<string, unknown>)
           : undefined;
-      const frame = emitter.onCostUpdate(usage, modelUsage);
+      const frame = emitter.onCostUpdate(modelUsage);
       if (frame) writeLine(frame);
     }
   }

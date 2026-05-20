@@ -19,7 +19,6 @@ import {
   deriveTimeCellMs,
   computeTimeSummary,
   computeTokensSummary,
-  computeContextBreakdown,
   computeRichContextBreakdown,
   type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
@@ -659,240 +658,129 @@ describe("computeTimeSummary", () => {
 });
 
 describe("computeTokensSummary", () => {
+  // A turn whose `turnWindowTokens` (sum of the four cost fields)
+  // equals `n` — the whole window parked in cache-read keeps the
+  // fixture terse, the way a real turn's window is cache-dominated.
+  function win(n: number) {
+    return turn({
+      cost: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: n,
+        totalCostUsd: 0,
+      },
+    });
+  }
+
   it("returns zeros for an empty transcript", () => {
-    expect(computeTokensSummary([])).toEqual({
+    expect(computeTokensSummary([], 18_575)).toEqual({
       count: 0,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      totalCacheReadTokens: 0,
-      totalCacheCreationTokens: 0,
+      perTurn: [],
       totalTokens: 0,
       avgTokensPerTurn: 0,
     });
   });
 
-  it("sums all four token categories and the cross-category total", () => {
-    const transcript = [
-      turn({
-        cost: {
-          inputTokens: 100,
-          outputTokens: 50,
-          cacheReadInputTokens: 10,
-          cacheCreationInputTokens: 5,
-          totalCostUsd: 0,
-        },
-      }),
-      turn({
-        cost: {
-          inputTokens: 200,
-          outputTokens: 75,
-          cacheReadInputTokens: 20,
-          cacheCreationInputTokens: 15,
-          totalCostUsd: 0,
-        },
-      }),
-    ];
-    const r = computeTokensSummary(transcript);
-    expect(r.count).toBe(2);
-    expect(r.totalInputTokens).toBe(300);
-    expect(r.totalOutputTokens).toBe(125);
-    expect(r.totalCacheReadTokens).toBe(30);
-    expect(r.totalCacheCreationTokens).toBe(20);
-    // total = 300 + 125 + 30 + 20 = 475
-    expect(r.totalTokens).toBe(475);
-    // avg = 475 / 2 = 237.5 → round → 238
-    expect(r.avgTokensPerTurn).toBe(238);
+  it("each turn's figure is its signed perTurn window delta", () => {
+    // Captured session 7635e374: windows 19354 / 21852 / 21971 /
+    // 59196 against sessionInit 18575 → perTurn 779 / 2498 / 119 /
+    // 37225 (the same numbers Z1B shows).
+    const r = computeTokensSummary(
+      [win(19_354), win(21_852), win(21_971), win(59_196)],
+      18_575,
+    );
+    expect(r.count).toBe(4);
+    expect(r.perTurn).toEqual([779, 2_498, 119, 37_225]);
+    // totalTokens telescopes to window(latest) − sessionInit.
+    expect(r.totalTokens).toBe(59_196 - 18_575);
+    // avg = 40621 / 4 = 10155.25 → round → 10155.
+    expect(r.avgTokensPerTurn).toBe(10_155);
   });
 
-  it("treats missing token categories as zero", () => {
-    // TurnCost defaults from TURN_ENTRY_TELEMETRY_DEFAULTS — verify the
-    // helper folds them as zero rather than NaN-propagating.
-    const transcript = [turn({}), turn({})];
-    expect(computeTokensSummary(transcript)).toEqual({
-      count: 2,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      totalCacheReadTokens: 0,
-      totalCacheCreationTokens: 0,
-      totalTokens: 0,
-      avgTokensPerTurn: 0,
-    });
-  });
-});
-
-describe("computeContextBreakdown", () => {
-  const CONTEXT_MAX = 1_000_000;
-
-  it("returns five segments in the canonical (input, cache-read, cache-creation, output, remainder) order", () => {
-    const t = turn({});
-    const ids = computeContextBreakdown(t, CONTEXT_MAX).segments.map((s) => s.id);
-    expect(ids).toEqual(["input", "cache-read", "cache-creation", "output", "remainder"]);
+  it("a /compact turn contributes an honest negative perTurn", () => {
+    const r = computeTokensSummary([win(200_000), win(60_000)], 18_575);
+    expect(r.perTurn).toEqual([181_425, -140_000]);
+    // The sum still telescopes: 60000 − 18575.
+    expect(r.totalTokens).toBe(60_000 - 18_575);
   });
 
-  it("returns a full-window remainder for a zero-usage turn", () => {
-    const t = turn({});
-    const r = computeContextBreakdown(t, CONTEXT_MAX);
-    expect(r.totalUsed).toBe(0);
-    expect(r.contextMax).toBe(CONTEXT_MAX);
-    expect(r.segments[0].value).toBe(0); // input
-    expect(r.segments[1].value).toBe(0); // cache-read
-    expect(r.segments[2].value).toBe(0); // cache-creation
-    expect(r.segments[3].value).toBe(0); // output
-    expect(r.segments[4].value).toBe(CONTEXT_MAX); // remainder
-  });
-
-  it("splits usage across the four categories and computes the remainder", () => {
-    const t = turn({
-      cost: {
-        inputTokens: 30_000,
-        outputTokens: 8_000,
-        cacheReadInputTokens: 12_000,
-        cacheCreationInputTokens: 5_000,
-        totalCostUsd: 0,
-      },
-    });
-    const r = computeContextBreakdown(t, CONTEXT_MAX);
-    expect(r.totalUsed).toBe(55_000);
-    expect(r.segments[0].value).toBe(30_000);
-    expect(r.segments[1].value).toBe(12_000);
-    expect(r.segments[2].value).toBe(5_000);
-    expect(r.segments[3].value).toBe(8_000);
-    expect(r.segments[4].value).toBe(CONTEXT_MAX - 55_000);
-  });
-
-  it("returns zero remainder when used exactly equals max", () => {
-    const t = turn({
-      cost: {
-        inputTokens: 400_000,
-        outputTokens: 100_000,
-        cacheReadInputTokens: 300_000,
-        cacheCreationInputTokens: 200_000,
-        totalCostUsd: 0,
-      },
-    });
-    const r = computeContextBreakdown(t, CONTEXT_MAX);
-    expect(r.totalUsed).toBe(CONTEXT_MAX);
-    expect(r.segments[4].value).toBe(0);
-  });
-
-  it("clamps remainder to 0 when usage exceeds max; totalUsed honors the raw sum", () => {
-    const t = turn({
-      cost: {
-        inputTokens: 800_000,
-        outputTokens: 300_000,
-        cacheReadInputTokens: 100_000,
-        cacheCreationInputTokens: 0,
-        totalCostUsd: 0,
-      },
-    });
-    const r = computeContextBreakdown(t, CONTEXT_MAX);
-    // Raw sum = 1_200_000; over-saturation surfaces honestly.
-    expect(r.totalUsed).toBe(1_200_000);
-    expect(r.segments[4].value).toBe(0);
-  });
-
-  it("clamps negative per-category values to 0", () => {
-    const t = turn({
-      cost: {
-        inputTokens: -100,
-        outputTokens: 500,
-        cacheReadInputTokens: -2_000,
-        cacheCreationInputTokens: 1_000,
-        totalCostUsd: 0,
-      },
-    });
-    const r = computeContextBreakdown(t, CONTEXT_MAX);
-    expect(r.segments[0].value).toBe(0); // input clamped
-    expect(r.segments[1].value).toBe(0); // cache-read clamped
-    expect(r.segments[2].value).toBe(1_000);
-    expect(r.segments[3].value).toBe(500);
-    expect(r.totalUsed).toBe(1_500);
-  });
-
-  it("clamps contextMax to 0 when given a negative value", () => {
-    const t = turn({
-      cost: {
-        inputTokens: 100,
-        outputTokens: 50,
-        cacheReadInputTokens: 0,
-        cacheCreationInputTokens: 0,
-        totalCostUsd: 0,
-      },
-    });
-    const r = computeContextBreakdown(t, -1);
-    expect(r.contextMax).toBe(0);
-    expect(r.segments[4].value).toBe(0);
-  });
-
-  it("preserves labels and tones across all five segments", () => {
-    const r = computeContextBreakdown(turn({}), CONTEXT_MAX);
-    expect(r.segments.map((s) => s.tone)).toEqual([
-      "input",
-      "cache-read",
-      "cache-creation",
-      "output",
-      "remainder",
-    ]);
-    expect(r.segments.map((s) => s.label)).toEqual([
-      "Input",
-      "Cache (read)",
-      "Cache (creation)",
-      "Output",
-      "Unused",
-    ]);
+  it("a null sessionInit walks from a zero bootstrap", () => {
+    const r = computeTokensSummary([win(1_000), win(3_000)], null);
+    expect(r.perTurn).toEqual([1_000, 2_000]);
+    expect(r.totalTokens).toBe(3_000);
   });
 });
 
 describe("computeRichContextBreakdown", () => {
-  const CONTEXT_MAX = 200_000;
+  const CONTEXT_MAX = 1_000_000;
 
-  const autocompactOffBreakdown = {
+  // tugcode's static estimate: the five categories, summing to 15_500.
+  const staticBreakdown = {
     contextMax: CONTEXT_MAX,
     categories: [
       { id: "system_prompt", label: "System prompt", tokens: 3_500 } as const,
-      { id: "system_tools", label: "System tools", tokens: 9_000 } as const,
-      { id: "custom_agents", label: "Custom agents", tokens: 14_200 } as const,
-      { id: "memory_files", label: "Memory files", tokens: 2_500 } as const,
-      { id: "skills", label: "Skills", tokens: 10_500 } as const,
-      { id: "messages", label: "Messages", tokens: 29_800 } as const,
+      { id: "system_tools", label: "System tools", tokens: 7_300 } as const,
+      { id: "custom_agents", label: "Custom agents", tokens: 800 } as const,
+      { id: "memory_files", label: "Memory files", tokens: 2_600 } as const,
+      { id: "skills", label: "Skills", tokens: 1_300 } as const,
     ],
   };
+  const RAW_STATIC_TOTAL = 15_500;
 
-  const autocompactOnBreakdown = {
-    contextMax: CONTEXT_MAX,
-    categories: [
-      ...autocompactOffBreakdown.categories,
-      {
-        id: "autocompact_buffer",
-        label: "Autocompact buffer",
-        tokens: 33_000,
-      } as const,
-    ],
-  };
+  it("returns null when no context_breakdown frame has landed", () => {
+    expect(
+      computeRichContextBreakdown({
+        staticBreakdown: null,
+        sessionInitTokens: 18_575,
+        windowTokens: 27_927,
+        contextMax: CONTEXT_MAX,
+      }),
+    ).toBeNull();
+  });
 
-  it("rich path with autocompact-off renders 6 categories plus remainder", () => {
-    const r = computeRichContextBreakdown(autocompactOffBreakdown, [], CONTEXT_MAX)!;
+  it("messages is feed-exact: window − sessionInit; totalUsed = window", () => {
+    const r = computeRichContextBreakdown({
+      staticBreakdown,
+      sessionInitTokens: 18_575,
+      windowTokens: 27_927,
+      contextMax: CONTEXT_MAX,
+    })!;
     expect(r).not.toBeNull();
-    const ids = r.segments.map((s) => s.id);
-    expect(ids).toEqual([
+    const messages = r.segments.find((s) => s.id === "messages")!;
+    expect(messages.value).toBe(27_927 - 18_575);
+    // totalUsed equals the window — identical to the CONTEXT cell.
+    expect(r.totalUsed).toBe(27_927);
+  });
+
+  it("scales the five static categories to sum exactly to sessionInit", () => {
+    const r = computeRichContextBreakdown({
+      staticBreakdown,
+      sessionInitTokens: 18_575,
+      windowTokens: 27_927,
+      contextMax: CONTEXT_MAX,
+    })!;
+    const staticIds = [
       "system_prompt",
       "system_tools",
       "custom_agents",
       "memory_files",
       "skills",
-      "messages",
-      "remainder",
-    ]);
-    expect(r.segments[r.segments.length - 1].tone).toBe("remainder");
-    // totalUsed = sum of static categories + messages (no buffer).
-    expect(r.totalUsed).toBe(3_500 + 9_000 + 14_200 + 2_500 + 10_500 + 29_800);
-    // remainder = contextMax - totalUsed.
-    expect(r.segments[r.segments.length - 1].value).toBe(CONTEXT_MAX - r.totalUsed);
+    ];
+    const staticSum = r.segments
+      .filter((s) => staticIds.includes(s.id))
+      .reduce((acc, s) => acc + s.value, 0);
+    // The scaled split sums EXACTLY to the feed-exact bootstrap.
+    expect(staticSum).toBe(18_575);
   });
 
-  it("rich path with autocompact-on renders 7 categories plus remainder", () => {
-    const r = computeRichContextBreakdown(autocompactOnBreakdown, [], CONTEXT_MAX)!;
-    expect(r).not.toBeNull();
+  it("segments run statics → messages → remainder; the arc fills contextMax", () => {
+    const r = computeRichContextBreakdown({
+      staticBreakdown,
+      sessionInitTokens: 18_575,
+      windowTokens: 27_927,
+      contextMax: CONTEXT_MAX,
+    })!;
     expect(r.segments.map((s) => s.id)).toEqual([
       "system_prompt",
       "system_tools",
@@ -900,92 +788,80 @@ describe("computeRichContextBreakdown", () => {
       "memory_files",
       "skills",
       "messages",
-      "autocompact_buffer",
       "remainder",
     ]);
-    // autocompact_buffer counts toward totalUsed — reserved space
-    // takes from the available capacity, so the remainder shrinks.
-    expect(r.totalUsed).toBe(
-      3_500 + 9_000 + 14_200 + 2_500 + 10_500 + 29_800 + 33_000,
-    );
-    expect(r.segments[r.segments.length - 1].value).toBe(
-      CONTEXT_MAX - r.totalUsed,
-    );
+    const arcSum = r.segments.reduce((acc, s) => acc + s.value, 0);
+    expect(arcSum).toBe(CONTEXT_MAX);
+    const remainder = r.segments[r.segments.length - 1];
+    expect(remainder.value).toBe(CONTEXT_MAX - 27_927);
   });
 
-  it("no breakdown frame falls back to computeContextBreakdown against last transcript turn", () => {
-    const t = turn({
-      cost: {
-        inputTokens: 12_000,
-        outputTokens: 1_800,
-        cacheReadInputTokens: 2_400,
-        cacheCreationInputTokens: 600,
-        totalCostUsd: 0,
-      },
-    });
-    const r = computeRichContextBreakdown(null, [t], CONTEXT_MAX)!;
-    expect(r).not.toBeNull();
-    // Fallback emits the 5-tone cost vocabulary.
-    expect(r.segments.map((s) => s.tone)).toEqual([
-      "input",
-      "cache-read",
-      "cache-creation",
-      "output",
-      "remainder",
-    ]);
-    expect(r.totalUsed).toBe(12_000 + 1_800 + 2_400 + 600);
+  it("pre-turn-1: no sessionInit, no window — bootstrap is the raw estimate", () => {
+    // The session-open case: before turn 1 the feed has nothing, so
+    // the cell shows tugcode's static-estimate total and messages = 0.
+    const r = computeRichContextBreakdown({
+      staticBreakdown,
+      sessionInitTokens: null,
+      windowTokens: null,
+      contextMax: CONTEXT_MAX,
+    })!;
+    expect(r.totalUsed).toBe(RAW_STATIC_TOTAL);
+    expect(r.segments.find((s) => s.id === "messages")!.value).toBe(0);
+    const staticSum = r.segments
+      .filter((s) => s.id !== "messages" && s.id !== "remainder")
+      .reduce((acc, s) => acc + s.value, 0);
+    expect(staticSum).toBe(RAW_STATIC_TOTAL);
   });
 
-  it("no breakdown frame and no transcript returns null", () => {
-    expect(computeRichContextBreakdown(null, [], CONTEXT_MAX)).toBeNull();
-  });
-
-  it("rich path with contextMax=0 still produces categories; remainder clamps to 0", () => {
-    const degenerateBreakdown = {
-      contextMax: 0,
-      categories: autocompactOffBreakdown.categories,
-    };
-    const r = computeRichContextBreakdown(degenerateBreakdown, [], 0)!;
-    expect(r).not.toBeNull();
-    // Remainder clamps to 0 — overflow is signaled by `totalUsed > contextMax`.
-    expect(r.segments[r.segments.length - 1].value).toBe(0);
-    expect(r.contextMax).toBe(0);
-    expect(r.totalUsed).toBeGreaterThan(0);
-  });
-
-  it("wire-frame contextMax wins over fallbackContextMax on the rich path", () => {
-    // Production case: the wire frame carries the authoritative cap;
-    // the fallbackContextMax (sourced from cost_update or a default)
-    // is only consulted on the cost_update-derived fallback path.
-    const richWith1m = {
-      contextMax: 1_000_000,
-      categories: autocompactOffBreakdown.categories,
-    };
-    const r = computeRichContextBreakdown(richWith1m, [], 200_000)!;
-    expect(r.contextMax).toBe(1_000_000);
-  });
-
-  it("rich path is meaningful with empty transcript (idle-with-bind)", () => {
-    // Per the plan: when breakdown frame is present but transcript is
-    // empty (just-bound session, no committed turns yet), the popover
-    // still shows the breakdown. Static categories + free space
-    // dominate; the renderer paints them.
-    const r = computeRichContextBreakdown(autocompactOffBreakdown, [], CONTEXT_MAX)!;
-    expect(r).not.toBeNull();
-    expect(r.segments.length).toBe(7); // 6 categories + remainder
-  });
-
-  it("clamps negative per-category tokens to 0 (defensive against malformed input)", () => {
-    const malformed = {
+  it("autocompact_buffer is a reserved segment, NOT part of totalUsed", () => {
+    const withBuffer = {
       contextMax: CONTEXT_MAX,
       categories: [
-        { id: "system_prompt", label: "System prompt", tokens: -500 } as const,
-        { id: "messages", label: "Messages", tokens: 1_000 } as const,
+        ...staticBreakdown.categories,
+        {
+          id: "autocompact_buffer",
+          label: "Autocompact buffer",
+          tokens: 33_000,
+        } as const,
       ],
     };
-    const r = computeRichContextBreakdown(malformed, [], CONTEXT_MAX)!;
-    expect(r.segments[0].value).toBe(0);
-    expect(r.segments[1].value).toBe(1_000);
-    expect(r.totalUsed).toBe(1_000);
+    const r = computeRichContextBreakdown({
+      staticBreakdown: withBuffer,
+      sessionInitTokens: 18_575,
+      windowTokens: 27_927,
+      contextMax: CONTEXT_MAX,
+    })!;
+    // totalUsed is bootstrap + messages — the reserved buffer is NOT
+    // counted (it is reserved headroom, not occupied content).
+    expect(r.totalUsed).toBe(27_927);
+    const buffer = r.segments.find((s) => s.id === "autocompact_buffer")!;
+    expect(buffer.value).toBe(33_000);
+    // remainder = contextMax − totalUsed − reservedBuffer.
+    const remainder = r.segments[r.segments.length - 1];
+    expect(remainder.value).toBe(CONTEXT_MAX - 27_927 - 33_000);
+    // The arc still fills exactly to contextMax.
+    expect(r.segments.reduce((acc, s) => acc + s.value, 0)).toBe(CONTEXT_MAX);
+  });
+
+  it("messages clamps to 0 when the window has not yet exceeded the bootstrap", () => {
+    const r = computeRichContextBreakdown({
+      staticBreakdown,
+      sessionInitTokens: 18_575,
+      windowTokens: 18_575,
+      contextMax: CONTEXT_MAX,
+    })!;
+    expect(r.segments.find((s) => s.id === "messages")!.value).toBe(0);
+    expect(r.totalUsed).toBe(18_575);
+  });
+
+  it("clamps a negative contextMax to 0; remainder clamps to 0", () => {
+    const r = computeRichContextBreakdown({
+      staticBreakdown,
+      sessionInitTokens: 18_575,
+      windowTokens: 27_927,
+      contextMax: -1,
+    })!;
+    expect(r.contextMax).toBe(0);
+    expect(r.segments[r.segments.length - 1].value).toBe(0);
   });
 });

@@ -53,7 +53,7 @@ describe("reducer / context_breakdown", () => {
     const s0 = freshState();
     const ev = frame(200_000, [
       { id: "system_prompt", label: "System prompt", tokens: 3_500 },
-      { id: "messages", label: "Messages", tokens: 12_000 },
+      { id: "custom_agents", label: "Custom agents", tokens: 12_000 },
     ]);
     const { state: s1, effects } = reduce(s0, ev);
     expect(s1.lastContextBreakdown).not.toBeNull();
@@ -77,13 +77,13 @@ describe("reducer / context_breakdown", () => {
     const { state: s1 } = reduce(
       s0,
       frame(200_000, [
-        { id: "messages", label: "Messages", tokens: 1_000 },
+        { id: "custom_agents", label: "Custom agents", tokens: 1_000 },
       ]),
     );
     const { state: s2 } = reduce(
       s1,
       frame(1_000_000, [
-        { id: "messages", label: "Messages", tokens: 25_000 },
+        { id: "custom_agents", label: "Custom agents", tokens: 25_000 },
         { id: "autocompact_buffer", label: "Autocompact buffer", tokens: 33_000 },
       ]),
     );
@@ -126,8 +126,8 @@ describe("reducer / context_breakdown", () => {
       { id: "skills", label: "Skills" } as unknown as { id: "skills"; label: string; tokens: number },
       // Tokens wrong type
       {
-        id: "messages",
-        label: "Messages",
+        id: "custom_agents",
+        label: "Custom agents",
         tokens: "lots" as unknown as number,
       },
       { id: "memory_files", label: "Memory files", tokens: 200 },
@@ -143,7 +143,7 @@ describe("reducer / context_breakdown", () => {
   test("payload identity: snapshot and effect share the same projection", () => {
     const s0 = freshState();
     const ev = frame(200_000, [
-      { id: "messages", label: "Messages", tokens: 9_999 },
+      { id: "custom_agents", label: "Custom agents", tokens: 9_999 },
     ]);
     const { state: s1, effects } = reduce(s0, ev);
     const eff = recordEffect(effects);
@@ -157,12 +157,12 @@ describe("reducer / context_breakdown", () => {
   test("autocompact_buffer category id is supported (round-trips)", () => {
     const s0 = freshState();
     const ev = frame(200_000, [
-      { id: "messages", label: "Messages", tokens: 1_000 },
+      { id: "custom_agents", label: "Custom agents", tokens: 1_000 },
       { id: "autocompact_buffer", label: "Autocompact buffer", tokens: 33_000 },
     ]);
     const { state: s1 } = reduce(s0, ev);
     const ids = s1.lastContextBreakdown!.categories.map((c) => c.id);
-    expect(ids).toEqual(["messages", "autocompact_buffer"]);
+    expect(ids).toEqual(["custom_agents", "autocompact_buffer"]);
   });
 
   test("from_supervisor_attach=true projects but skips the persist effect", () => {
@@ -173,7 +173,7 @@ describe("reducer / context_breakdown", () => {
     const s0 = freshState();
     const ev: ContextBreakdownEvent = {
       ...frame(200_000, [
-        { id: "messages", label: "Messages", tokens: 7_777 },
+        { id: "custom_agents", label: "Custom agents", tokens: 7_777 },
       ]),
       from_supervisor_attach: true,
     };
@@ -190,7 +190,7 @@ describe("reducer / context_breakdown", () => {
     // The default path — live frames from tugcode (no flag).
     const s0 = freshState();
     const ev = frame(200_000, [
-      { id: "messages", label: "Messages", tokens: 1_111 },
+      { id: "custom_agents", label: "Custom agents", tokens: 1_111 },
     ]);
     const { effects } = reduce(s0, ev);
     expect(
@@ -208,7 +208,7 @@ describe("reducer / context_breakdown", () => {
     // the no-MCP invariant by inspecting the produced state.
     const s0 = freshState();
     const ev = frame(200_000, [
-      { id: "messages", label: "Messages", tokens: 1_000 },
+      { id: "custom_agents", label: "Custom agents", tokens: 1_000 },
     ]);
     const { state: s1 } = reduce(s0, ev);
     for (const c of s1.lastContextBreakdown!.categories) {

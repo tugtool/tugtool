@@ -117,6 +117,7 @@ import {
   computeTimeSummary,
   computeTokensSummary,
 } from "@/lib/code-session-store/telemetry";
+import { deriveContextWindows } from "@/lib/code-session-store/end-state";
 import { formatStateChangeRow } from "@/lib/code-session-store/state-change-formatter";
 import type { SessionStateChangeRow } from "@/lib/session-state-changes-reader";
 import type {
@@ -1297,20 +1298,6 @@ function TimePopoverContent({
 }
 
 /**
- * Per-turn total token sum for the `Tokens` popover's row log. Mirrors
- * the headline `Tokens` cell's value across the row dimension: sum of
- * input + output + cache-read + cache-creation per committed turn.
- */
-function perTurnTotalTokens(turn: TurnEntry): number {
-  return (
-    turn.cost.inputTokens +
-    turn.cost.outputTokens +
-    turn.cost.cacheReadInputTokens +
-    turn.cost.cacheCreationInputTokens
-  );
-}
-
-/**
  * `Tokens` popover content per plan `#step-20-4-7-a`: per-turn token
  * sum log + summary footer (count, total, average) + optional in-flight
  * footer. Same in-flight contract as `TimePopoverContent`: in-flight
@@ -1325,7 +1312,8 @@ function TokensPopoverContent({
   transcript: ReadonlyArray<TurnEntry>;
   inflight: { currentTurnTokens: number } | null;
 }): React.ReactElement {
-  const summary = computeTokensSummary(transcript);
+  // Workshop card — synthetic transcript, no captured sessionInit.
+  const summary = computeTokensSummary(transcript, null);
   return (
     <PerAreaPopoverFrame
       title="Per-request log — Tokens"
@@ -1356,7 +1344,7 @@ function TokensPopoverContent({
             <PopoverRow
               key={t.turnKey}
               label={`turn ${i + 1}`}
-              value={formatTokensCaps(perTurnTotalTokens(t))}
+              value={formatTokensCaps(summary.perTurn[i] ?? 0)}
               badge={<TerminalStateBadge result={t.result} />}
             />
           ))}
@@ -1454,11 +1442,19 @@ function ContextPopoverContent({
    */
   lastContextBreakdown?: ContextBreakdownSnapshotInput | null;
 }): React.ReactElement {
-  const breakdown = computeRichContextBreakdown(
-    lastContextBreakdown ?? null,
-    transcript,
-    contextMax,
+  // Workshop card — synthesize a feed window from the scenario's
+  // transcript so the popover demos a populated `messages` slice.
+  const windows = deriveContextWindows(
+    transcript.map((t) => t.cost),
+    0,
   );
+  const breakdown = computeRichContextBreakdown({
+    staticBreakdown: lastContextBreakdown ?? null,
+    sessionInitTokens: null,
+    windowTokens:
+      windows.length > 0 ? windows[windows.length - 1].window : null,
+    contextMax,
+  });
   if (breakdown === null) {
     return (
       <PerAreaPopoverFrame title="Context window">

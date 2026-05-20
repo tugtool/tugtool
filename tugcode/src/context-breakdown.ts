@@ -1,27 +1,27 @@
-// Produces `/context`-style per-category token breakdowns of the session's
-// context window. Tokenizes static categories (system prompt, tool schemas,
-// custom agents, memory files, skills) locally; derives `messages_tokens`
-// by subtracting the static total from Claude's observed input tokens;
-// emits a {@link ContextBreakdown} wire frame for the popover.
+// Produces the static-category half of a `/context`-style token
+// breakdown — system prompt, tool schemas, custom agents, memory
+// files, skills. Tokenizes each category from disk and emits a
+// {@link ContextBreakdown} wire frame for the popover.
 //
-// Spike S3 in roadmap/tide-assistant-turns-context-breakdown-spikes.md
-// originally proposed a per-session calibration ratio to pin our local
-// estimates to observed truth. The implementation revealed the
-// calibration breaks on resumed sessions: observed_input on resume
-// includes the entire prior conversation, the anchor (static +
-// new_user_msg) is much smaller, and the resulting ratio warps every
-// static category by a too-large factor. The S3 benchmark already
-// showed raw drift is 0.5–5.6% — inside the 5–10% accuracy bar — so
-// dropping calibration is the simpler, correct thing on both fresh
-// and resumed sessions. The spike's drift benchmark appendix carries
-// the post-mortem.
+// Everything is read from the FILESYSTEM — `~/.claude/agents/`,
+// `~/.claude/skills/`, the memory files, and the project's plugin
+// directory (which tugcode itself resolves). So the breakdown is
+// computable the moment the session opens, BEFORE claude has emitted
+// `system:init` (claude is silent until it receives the first input).
+// The lone thing the filesystem cannot reveal is the built-in tool
+// COUNT — the tool schemas live inside the claude binary — so
+// `system_tools` falls back to a flat heuristic until `system:init`
+// reports the real count.
 //
-// The CLI's actual system prompt and tool schemas are opaque to us —
-// they live inside the Claude Code binary and the SDK does not surface
-// them. {@link SYSTEM_PROMPT_DEFAULT_TOKENS} and
-// {@link TOOL_SCHEMA_DEFAULT_TOKENS} are heuristic approximations.
-// File-backed categories (custom_agents, memory_files, skills) come
-// from disk reads cached by `(path, mtime)`.
+// What this module does NOT compute: the `messages` slice or the
+// breakdown total. Sub-step J's `sessionInitTokens` is a feed-exact
+// bootstrap and `window(latest)` a feed-exact total — both known on
+// the tugdeck side. tugdeck assembles the final breakdown: it scales
+// these five static categories so they sum to the feed-exact
+// `sessionInit`, then appends `messages = window - sessionInit`. So
+// this estimate only needs sane *relative* proportions among the five
+// categories — its absolute total seeds only the pre-turn-1
+// fresh-session display.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -34,31 +34,37 @@ import type { ContextBreakdown, ContextBreakdownCategory } from "./types.ts";
 /**
  * Heuristic estimate of the CLI's internal system prompt in tokens.
  * The actual bytes are CLI-internal and not addressable from the SDK
- * (see spike S1). If a future SDK release surfaces the actual count,
- * replace this constant with the SDK-provided value.
+ * (see spike S1).
  */
 export const SYSTEM_PROMPT_DEFAULT_TOKENS = 3_500;
 
 /**
- * Per-tool schema-token estimate. Built-in Claude Code tools average
- * roughly this in token count (per spike S1's reference research).
+ * Per-tool schema-token estimate. Calibrated against Claude Code's own
+ * `/context` (`system_tools` ÷ tool count ≈ 235). Used once
+ * `system:init` reports the real tool count.
  */
-export const TOOL_SCHEMA_DEFAULT_TOKENS = 500;
+export const TOOL_SCHEMA_DEFAULT_TOKENS = 235;
+
+/**
+ * Flat `system_tools` estimate for the window before `system:init`
+ * has reported the tool count — the tool schemas live inside the
+ * claude binary, so the count is not filesystem-derivable. Sized to
+ * the observed `system_tools` total (~31 built-in tools × ~235).
+ * Superseded by `toolCount × TOOL_SCHEMA_DEFAULT_TOKENS` once the
+ * first turn delivers `system:init`.
+ */
+export const SYSTEM_TOOLS_DEFAULT_TOKENS = 7_300;
 
 /**
  * Default reserved-buffer size when the user has autocompact enabled.
  * Per spike S5: current Claude Code reserves ~33k tokens when the
- * `autoCompactEnabled` setting is true. Hardcoded here rather than
- * queried from the SDK because the SDK exposes neither the setting
- * nor the buffer size.
+ * `autoCompactEnabled` setting is true.
  */
 export const AUTOCOMPACT_BUFFER_DEFAULT_TOKENS = 33_000;
 
 /**
  * Fallback context window cap when `modelUsage` does not carry one
- * (e.g., the first emit before any `cost_update` has landed). 200k
- * matches the current Sonnet/Opus default; the SDK's beta 1M-context
- * flag would override.
+ * (e.g., the first emit before any `cost_update` has landed).
  */
 export const DEFAULT_CONTEXT_MAX = 200_000;
 
@@ -99,12 +105,71 @@ export function tokenizeFileCached(
 }
 
 /**
- * Sum the token counts of every `*.md` file directly inside `dirPath`.
- * Best-effort: missing or unreadable directory returns 0 silently.
- * Used to tokenize a memory directory's full corpus (MEMORY.md +
- * sibling entry files) without hard-coding individual filenames.
+ * Extract the YAML frontmatter block from a markdown file's text — the
+ * lines between an opening `---` fence (which must be the file's first
+ * line) and the next `---` fence. Returns the block's inner text
+ * (fences excluded), or `null` when the file carries no frontmatter.
  */
-export function tokenizeMarkdownDirCached(
+export function extractFrontmatter(text: string): string | null {
+  if (!text.startsWith("---\n") && !text.startsWith("---\r\n")) {
+    return null;
+  }
+  const afterOpen = text.slice(text.indexOf("\n") + 1);
+  const close = afterOpen.search(/^---[ \t]*\r?$/m);
+  if (close < 0) {
+    return null;
+  }
+  return afterOpen.slice(0, close);
+}
+
+/**
+ * Read a file, extract its YAML frontmatter block, and return that
+ * block's token count, mtime-cached.
+ *
+ * Agent `.md` and `SKILL.md` files carry a frontmatter block (name +
+ * description + tool/model config) followed by an instruction body.
+ * Claude Code loads only the frontmatter into the system prompt; the
+ * body loads on demand and is NOT resident context. Tokenizing the
+ * whole file over-counts `custom_agents` / `skills` by 17-52×.
+ *
+ * Returns 0 when the file is missing, unreadable, or carries no
+ * frontmatter fence. The cache key is suffixed so a path tokenized
+ * both whole-file and frontmatter-only never collides.
+ */
+export function tokenizeFrontmatterCached(
+  absPath: string,
+  cache: Map<string, CacheEntry>,
+): number {
+  const cacheKey = `${absPath} frontmatter`;
+  let stat;
+  try {
+    stat = statSync(absPath);
+  } catch {
+    return 0;
+  }
+  const cached = cache.get(cacheKey);
+  if (cached && cached.mtimeMs === stat.mtimeMs) {
+    return cached.tokens;
+  }
+  let text: string;
+  try {
+    text = readFileSync(absPath, "utf-8");
+  } catch {
+    return 0;
+  }
+  const frontmatter = extractFrontmatter(text);
+  const tokens = frontmatter === null ? 0 : countTokens(frontmatter);
+  cache.set(cacheKey, { mtimeMs: stat.mtimeMs, tokens });
+  return tokens;
+}
+
+/**
+ * Sum the frontmatter token counts of every `*.md` file directly
+ * inside `dirPath`. Best-effort: a missing or unreadable directory
+ * returns 0 silently. Used for both `~/.claude/agents/` and a
+ * plugin's `agents/` directory.
+ */
+export function tokenizeAgentDirCached(
   dirPath: string,
   cache: Map<string, CacheEntry>,
 ): number {
@@ -117,22 +182,20 @@ export function tokenizeMarkdownDirCached(
   let total = 0;
   for (const name of entries) {
     if (!name.endsWith(".md")) continue;
-    total += tokenizeFileCached(join(dirPath, name), cache);
+    total += tokenizeFrontmatterCached(join(dirPath, name), cache);
   }
   return total;
 }
 
 /**
- * Sum the token counts of every `SKILL.md` under `<pluginPath>/skills/<name>/SKILL.md`.
- * Used to fold plugin-shipped skills into the breakdown's `skills`
- * category — without this walk, users with plugin-loaded skills
- * would see their skills under-count by the full plugin corpus.
+ * Sum the frontmatter token counts of every `<name>/SKILL.md` under
+ * `skillsRoot`. Best-effort: a missing directory returns 0. Used for
+ * both `~/.claude/skills/` and a plugin's `skills/` directory.
  */
-export function tokenizePluginSkills(
-  pluginPath: string,
+export function tokenizeSkillsDirCached(
+  skillsRoot: string,
   cache: Map<string, CacheEntry>,
 ): number {
-  const skillsRoot = join(pluginPath, "skills");
   let entries: string[];
   try {
     entries = readdirSync(skillsRoot);
@@ -141,7 +204,7 @@ export function tokenizePluginSkills(
   }
   let total = 0;
   for (const skillDirName of entries) {
-    total += tokenizeFileCached(
+    total += tokenizeFrontmatterCached(
       join(skillsRoot, skillDirName, "SKILL.md"),
       cache,
     );
@@ -150,21 +213,9 @@ export function tokenizePluginSkills(
 }
 
 /**
- * Sum the token counts of every `*.md` under `<pluginPath>/agents/`.
- * Used to fold plugin-shipped agents into the breakdown's
- * `custom_agents` category. Mirrors {@link tokenizePluginSkills}.
- */
-export function tokenizePluginAgents(
-  pluginPath: string,
-  cache: Map<string, CacheEntry>,
-): number {
-  return tokenizeMarkdownDirCached(join(pluginPath, "agents"), cache);
-}
-
-/**
  * Per-category token estimates for the session-stable categories.
- * `messages` is excluded — it's derived per turn from observed input
- * tokens, not tokenized locally.
+ * `messages` is excluded — it is feed-exact (`window - sessionInit`)
+ * and assembled on the tugdeck side, not tokenized here.
  */
 export interface StaticCategoryEstimates {
   system_prompt: number;
@@ -188,79 +239,65 @@ export function staticTotal(s: StaticCategoryEstimates): number {
 }
 
 /**
- * Subset of the SDK's `system:init` event fields we need for static-
- * category tokenization. Tugcode already projects this shape into
- * its `SystemMetadata` IPC — we read the same data here.
+ * Inputs for {@link computeStaticCategories}.
  *
- * Plugin entries are objects with at least a `path` field (the on-
- * disk plugin directory); we walk each plugin's `agents/` and
- * `skills/` subdirs to fold plugin-shipped content into the
- * corresponding categories.
- */
-export interface SessionInitMetadata {
-  tools: ReadonlyArray<unknown>;
-  agents: ReadonlyArray<unknown>;
-  skills: ReadonlyArray<unknown>;
-  plugins: ReadonlyArray<unknown>;
-}
-
-/**
- * Inputs for {@link computeStaticCategories} other than the metadata.
- * `cache` carries the per-(path, mtime) tokenization cache the emitter
- * threads across calls.
+ * `toolCount` is the built-in tool count from `system:init`, or `null`
+ * before `system:init` has arrived — `system_tools` then uses the
+ * flat {@link SYSTEM_TOOLS_DEFAULT_TOKENS} heuristic. `pluginDir` is
+ * the project's plugin directory (tugcode resolves it itself); its
+ * `agents/` and `skills/` subdirs fold into the corresponding
+ * categories. `cache` is the per-(path, mtime) tokenization cache.
  */
 export interface ComputeStaticCategoriesOptions {
   homeDir: string;
   cwd: string;
+  pluginDir: string;
+  toolCount: number | null;
   cache: Map<string, CacheEntry>;
 }
 
 /**
  * Encode an absolute cwd into Claude Code's project-directory naming
  * convention (`/` → `-`). Mirrors `encodeProjectDir` in
- * `tugcode/src/session.ts` — duplicated here rather than imported
- * to keep this module standalone for testing.
+ * `tugcode/src/session.ts`.
  */
 function encodeProjectDir(absDir: string): string {
   return absDir.replace(/\//g, "-");
 }
 
 /**
- * Tokenize the session's static categories using the local BPE
- * tokenizer plus heuristic constants for CLI-internal bytes
- * (`system_prompt`, `system_tools`). File-backed categories
- * (`custom_agents`, `memory_files`, `skills`) read from disk; absent
- * files contribute 0.
+ * Tokenize the session's static categories — entirely from the
+ * filesystem, with no dependency on claude's `system:init`.
  *
- * The walk covers:
- * - User-level files under `~/.claude/agents/` and
- *   `~/.claude/skills/<name>/SKILL.md` for each name in `metadata.agents`
- *   / `metadata.skills`.
- * - User-level + project memory: `~/.claude/CLAUDE.md`, `cwd/CLAUDE.md`,
- *   and every `*.md` inside
- *   `~/.claude/projects/<encoded-cwd>/memory/` (so the auto-memory
- *   `MEMORY.md` index + every sibling entry file contributes).
- * - Plugin-shipped agents and skills: for every plugin entry that
- *   carries a `path`, walk `<path>/agents/` and `<path>/skills/`.
+ * - `system_prompt`: a heuristic constant for the CLI-internal bytes.
+ * - `system_tools`: `toolCount × TOOL_SCHEMA_DEFAULT_TOKENS` once the
+ *   count is known; the flat {@link SYSTEM_TOOLS_DEFAULT_TOKENS}
+ *   heuristic before then (`toolCount === null`).
+ * - `custom_agents` / `skills`: the *frontmatter* of each agent `.md`
+ *   and `SKILL.md` under `~/.claude/{agents,skills}/` and the
+ *   project plugin's `{agents,skills}/` — name + description, the part
+ *   Claude Code loads into the system prompt. Bodies are on-demand
+ *   and excluded.
+ * - `memory_files`: the user `~/.claude/CLAUDE.md`, the project
+ *   `cwd/CLAUDE.md`, and the auto-memory index `MEMORY.md` — the three
+ *   files resident in full. Per-entry memory `*.md` files are
+ *   on-demand recall and excluded.
  */
 export function computeStaticCategories(
-  metadata: SessionInitMetadata,
   options: ComputeStaticCategoriesOptions,
 ): StaticCategoryEstimates {
-  const { homeDir, cwd, cache } = options;
+  const { homeDir, cwd, pluginDir, toolCount, cache } = options;
 
   const system_prompt = SYSTEM_PROMPT_DEFAULT_TOKENS;
 
-  const system_tools = metadata.tools.length * TOOL_SCHEMA_DEFAULT_TOKENS;
+  const system_tools =
+    toolCount === null
+      ? SYSTEM_TOOLS_DEFAULT_TOKENS
+      : toolCount * TOOL_SCHEMA_DEFAULT_TOKENS;
 
-  let custom_agents = 0;
-  for (const a of metadata.agents) {
-    if (typeof a !== "string") continue;
-    custom_agents += tokenizeFileCached(
-      join(homeDir, ".claude", "agents", `${a}.md`),
-      cache,
-    );
-  }
+  const custom_agents =
+    tokenizeAgentDirCached(join(homeDir, ".claude", "agents"), cache) +
+    tokenizeAgentDirCached(join(pluginDir, "agents"), cache);
 
   let memory_files = 0;
   memory_files += tokenizeFileCached(
@@ -268,68 +305,34 @@ export function computeStaticCategories(
     cache,
   );
   memory_files += tokenizeFileCached(join(cwd, "CLAUDE.md"), cache);
-  // Auto-memory directory: `~/.claude/projects/<encoded-cwd>/memory/`
-  // holds `MEMORY.md` (the index) plus per-entry `*.md` files the
-  // assistant maintains across sessions. Walk the whole directory so
-  // the full corpus counts toward memory_files — undercounting just
-  // MEMORY.md would miss the bulk of the user's persistent memory.
-  memory_files += tokenizeMarkdownDirCached(
-    join(homeDir, ".claude", "projects", encodeProjectDir(cwd), "memory"),
+  // The auto-memory index. Only the index is resident — the per-entry
+  // `*.md` files beside it load on demand, so the directory is NOT
+  // walked.
+  memory_files += tokenizeFileCached(
+    join(
+      homeDir,
+      ".claude",
+      "projects",
+      encodeProjectDir(cwd),
+      "memory",
+      "MEMORY.md",
+    ),
     cache,
   );
 
-  let skills = 0;
-  for (const s of metadata.skills) {
-    if (typeof s !== "string") continue;
-    skills += tokenizeFileCached(
-      join(homeDir, ".claude", "skills", s, "SKILL.md"),
-      cache,
-    );
-  }
-
-  // Walk every plugin's `agents/` and `skills/` subdirs. For users
-  // with plugins loaded (the common case in Tug development), this
-  // is the bulk of the agents/skills contribution; without it the
-  // categories would significantly under-count.
-  for (const p of metadata.plugins) {
-    if (typeof p !== "object" || p === null) continue;
-    const path = (p as { path?: unknown }).path;
-    if (typeof path !== "string" || path.length === 0) continue;
-    custom_agents += tokenizePluginAgents(path, cache);
-    skills += tokenizePluginSkills(path, cache);
-  }
+  const skills =
+    tokenizeSkillsDirCached(join(homeDir, ".claude", "skills"), cache) +
+    tokenizeSkillsDirCached(join(pluginDir, "skills"), cache);
 
   return { system_prompt, system_tools, custom_agents, memory_files, skills };
 }
 
-/**
- * Derive `messages_tokens` for the current cost_update by subtracting
- * the static-category total from observed input. Clamps to 0 — if our
- * static estimate slightly exceeds observed (rare; usually a sparse
- * first cost_update on a fresh session) the messages slice reads as
- * 0 rather than a confusing negative.
- *
- * `observedInput` should include cache-read + cache-creation tokens
- * (i.e., the full content-byte count Claude has in context, not just
- * the billed-this-turn input).
- */
-export function computeMessagesTokens(
-  observedInput: number,
-  staticTotalTokens: number,
-): number {
-  return Math.max(0, Math.round(observedInput - staticTotalTokens));
-}
-
-const CATEGORY_LABELS: Record<
-  keyof StaticCategoryEstimates | "messages" | "autocompact_buffer",
-  string
-> = {
+const CATEGORY_LABELS: Record<keyof StaticCategoryEstimates | "autocompact_buffer", string> = {
   system_prompt: "System prompt",
   system_tools: "System tools",
   custom_agents: "Custom agents",
   memory_files: "Memory files",
   skills: "Skills",
-  messages: "Messages",
   autocompact_buffer: "Autocompact buffer",
 };
 
@@ -337,28 +340,21 @@ export interface BuildFrameInput {
   sessionId: string;
   contextMax: number;
   staticEstimates: StaticCategoryEstimates;
-  messagesTokens: number;
   autocompactEnabled: boolean;
   autocompactBufferTokens?: number;
 }
 
 /**
- * Assemble the {@link ContextBreakdown} wire frame. Static categories
- * pass through unmodified — there is no per-session calibration; the
- * local tokenizer's raw output sits inside the documented 5–10%
- * accuracy bar. The autocompact buffer slice is included iff the
- * setting is enabled and the reserved count is non-zero.
+ * Assemble the {@link ContextBreakdown} wire frame — the five static
+ * categories plus, when the setting is enabled, the reserved
+ * `autocompact_buffer` slice. There is no `messages` category and no
+ * total: the frame is the *static estimate* only; tugdeck derives
+ * `messages` and the total from the feed (`window` / `sessionInit`).
  */
 export function buildContextBreakdownFrame(
   input: BuildFrameInput,
 ): ContextBreakdown {
-  const {
-    sessionId,
-    contextMax,
-    staticEstimates,
-    messagesTokens,
-    autocompactEnabled,
-  } = input;
+  const { sessionId, contextMax, staticEstimates, autocompactEnabled } = input;
   const bufferTokens =
     input.autocompactBufferTokens ?? AUTOCOMPACT_BUFFER_DEFAULT_TOKENS;
 
@@ -388,11 +384,6 @@ export function buildContextBreakdownFrame(
       label: CATEGORY_LABELS.skills,
       tokens: staticEstimates.skills,
     },
-    {
-      id: "messages",
-      label: CATEGORY_LABELS.messages,
-      tokens: messagesTokens,
-    },
   ];
 
   if (autocompactEnabled && bufferTokens > 0) {
@@ -410,26 +401,6 @@ export function buildContextBreakdownFrame(
     categories,
     ipc_version: 2,
   };
-}
-
-/**
- * Sum input + cache-read + cache-creation tokens from a `cost_update`
- * usage payload. This is content-byte truth ("what's in the model's
- * context window"), not billing truth ("what's billed this turn") —
- * cache reads are content the model sees but doesn't pay for, and we
- * want to surface them on the popover's gauge.
- */
-export function extractObservedInputTokens(
-  usage: Record<string, unknown>,
-): number {
-  const input = numericOrZero(usage.input_tokens);
-  const cacheRead = numericOrZero(usage.cache_read_input_tokens);
-  const cacheCreation = numericOrZero(usage.cache_creation_input_tokens);
-  return input + cacheRead + cacheCreation;
-}
-
-function numericOrZero(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
 /**
@@ -456,89 +427,102 @@ export function extractContextMax(
  * Constructed once per SessionManager; methods are invoked as events
  * flow through the dispatcher.
  *
- * Emit cadence (per spike S4):
- * - {@link onSessionInit}: tokenizes statics, returns the initial frame
- *   (messages_tokens = 0).
- * - {@link onCostUpdate}: recomputes messages_tokens from observed
- *   usage via subtraction from the static total.
- * - {@link onCompactBoundary}: currently a no-op — the next cost_update
- *   reflects the post-compaction state via the same subtraction.
+ * Emit cadence:
+ * - {@link onSpawn}: tokenizes the static categories from disk and
+ *   returns the initial frame — fires at session spawn, BEFORE claude
+ *   has emitted `system:init`, so the Context surface is populated the
+ *   moment the session opens. `system_tools` uses the flat heuristic.
+ * - {@link onSessionInit}: re-emits with the real tool count once
+ *   `system:init` arrives (the first turn).
+ * - {@link onCostUpdate}: re-emits with a refreshed `context_max`;
+ *   static categories re-tokenize through the mtime cache.
+ * - {@link onCompactBoundary}: a no-op.
  *
- * The caller is responsible for writing the returned frame to the
- * wire. All methods are synchronous; file IO is best-effort and uses
- * `readFileSync` against small fixture-shaped paths (CLAUDE.md,
- * agent/skill manifests, memory entries, plugin agents/skills).
- * Sub-millisecond on first call, cache-hit thereafter.
+ * The caller writes the returned frame to the wire. All methods are
+ * synchronous; file IO is best-effort `readFileSync` against small
+ * manifest-shaped paths — sub-millisecond on first call, cache-hit
+ * thereafter.
  */
 export class ContextBreakdownEmitter {
   private readonly sessionId: string;
   private readonly homeDir: string;
   private readonly cwd: string;
+  private readonly pluginDir: string;
   private readonly settings: ClaudeCodeSettings;
 
   private staticEstimates: StaticCategoryEstimates | null = null;
   private contextMax: number = DEFAULT_CONTEXT_MAX;
+  /** Built-in tool count from `system:init`; `null` until it lands. */
+  private toolCount: number | null = null;
   private readonly tokenizationCache: Map<string, CacheEntry> = new Map();
 
   constructor(opts: {
     sessionId: string;
     homeDir: string;
     cwd: string;
+    pluginDir: string;
     settings: ClaudeCodeSettings;
   }) {
     this.sessionId = opts.sessionId;
     this.homeDir = opts.homeDir;
     this.cwd = opts.cwd;
+    this.pluginDir = opts.pluginDir;
     this.settings = opts.settings;
   }
 
   /**
-   * Tokenize static categories and return the initial frame. Safe
-   * to call multiple times — subsequent calls re-tokenize through
-   * the mtime cache (cheap on hit, correct on file edit).
+   * Tokenize the static categories from disk and return the frame.
+   * Fires at session spawn — before `system:init` — so the Context
+   * surface is never blank on a fresh session.
    */
-  onSessionInit(metadata: SessionInitMetadata): ContextBreakdown {
-    this.staticEstimates = computeStaticCategories(metadata, {
-      homeDir: this.homeDir,
-      cwd: this.cwd,
-      cache: this.tokenizationCache,
-    });
-    return this.buildCurrentFrame(0);
+  onSpawn(): ContextBreakdown {
+    this.recompute();
+    return this.buildCurrentFrame();
   }
 
   /**
-   * Recompute and return the updated frame. Returns `null` if the
-   * emitter has not been initialized (no session_init yet —
-   * defensive; should not occur in practice).
+   * Re-emit once `system:init` reports the real built-in tool count,
+   * replacing the {@link SYSTEM_TOOLS_DEFAULT_TOKENS} heuristic.
+   */
+  onSessionInit(toolCount: number): ContextBreakdown {
+    this.toolCount = toolCount;
+    this.recompute();
+    return this.buildCurrentFrame();
+  }
+
+  /**
+   * Refresh `context_max` from `modelUsage` and re-emit. Returns
+   * `null` only if {@link onSpawn} never ran (defensive).
    */
   onCostUpdate(
-    usage: Record<string, unknown>,
     modelUsage?: Record<string, unknown>,
   ): ContextBreakdown | null {
-    if (!this.staticEstimates) return null;
-
+    if (this.staticEstimates === null) return null;
     this.contextMax = extractContextMax(modelUsage);
-    const observedInput = extractObservedInputTokens(usage);
-    const messagesTokens = computeMessagesTokens(
-      observedInput,
-      staticTotal(this.staticEstimates),
-    );
-
-    return this.buildCurrentFrame(messagesTokens);
+    this.recompute();
+    return this.buildCurrentFrame();
   }
 
   /**
-   * Currently a no-op. After compaction, the next `cost_update`
-   * arrives with a reduced `usage.input_tokens` total reflecting the
-   * post-compact context window; the messages-by-subtraction
-   * arithmetic in {@link onCostUpdate} surfaces the new `messages_tokens`
-   * automatically.
+   * A no-op. Compaction changes the message history, not the static
+   * categories this module tokenizes; tugdeck's feed-derived
+   * `messages` slice reflects the post-compaction window on its own.
    */
   onCompactBoundary(): void {
     // Intentionally empty; see method docstring.
   }
 
-  private buildCurrentFrame(messagesTokens: number): ContextBreakdown {
+  private recompute(): void {
+    this.staticEstimates = computeStaticCategories({
+      homeDir: this.homeDir,
+      cwd: this.cwd,
+      pluginDir: this.pluginDir,
+      toolCount: this.toolCount,
+      cache: this.tokenizationCache,
+    });
+  }
+
+  private buildCurrentFrame(): ContextBreakdown {
     return buildContextBreakdownFrame({
       sessionId: this.sessionId,
       contextMax: this.contextMax,
@@ -550,7 +534,6 @@ export class ContextBreakdownEmitter {
           memory_files: 0,
           skills: 0,
         },
-      messagesTokens,
       autocompactEnabled: this.settings.autoCompactEnabled,
       autocompactBufferTokens: AUTOCOMPACT_BUFFER_DEFAULT_TOKENS,
     });

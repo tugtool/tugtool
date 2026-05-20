@@ -244,6 +244,10 @@
 .tide-telemetry-status-context-denominator {
   color: var(--tug7-element-global-text-normal-muted-rest);
   opacity: 0.7;
+  /* Breathing room before the `/`. The numerator + denominator are
+     inline-flex items, so a leading space inside the denominator's
+     text collapses — the gap must be a margin, not a text space. */
+  margin-inline-start: var(--tug-space-sm);
 }
 
 /* ----------------------------------------------------------------------------

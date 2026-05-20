@@ -60,10 +60,9 @@ import {
 } from "@/lib/code-session-store/end-state";
 import { formatStateChangeRow } from "@/lib/code-session-store/state-change-formatter";
 import {
-  computeRichContextBreakdown,
   computeTimeSummary,
   computeTokensSummary,
-  type ContextBreakdownSnapshotInput,
+  type ContextBreakdown,
 } from "@/lib/code-session-store/telemetry";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import type { SessionStateChangeRow } from "@/lib/session-state-changes-reader";
@@ -301,37 +300,32 @@ export function TimePopoverContent({
 // Tokens popover
 // ---------------------------------------------------------------------------
 
-/** Per-turn token sum — mirrors the Z2 TOKENS cell's headline formula. */
-function perTurnTotalTokens(turn: TurnEntry): number {
-  return (
-    turn.cost.inputTokens +
-    turn.cost.outputTokens +
-    turn.cost.cacheReadInputTokens +
-    turn.cost.cacheCreationInputTokens
-  );
-}
-
 /**
- * `Tokens` popover — per-turn token-sum log + summary footer. Same
- * in-flight contract as the Time popover: in-flight turns are
- * excluded from the row log, with the live current-turn contribution
- * surfaced as a separate footer row when a turn is in flight.
+ * `Tokens` popover — per-turn token log + summary footer. Each turn's
+ * figure is its SIGNED `perTurn` window delta (`window(N) −
+ * window(N−1)`, the transcript window-walk — the same number Z1B
+ * shows), never a sum of raw `TurnCost`. A `/compact` turn reads as an
+ * honest negative. Same in-flight contract as the Time popover:
+ * in-flight turns are excluded from the row log, with the live
+ * current-turn delta surfaced as a separate footer row.
  *
  * Row + summary share a single subgrid ({@link TidePopoverRowGrid}).
  */
 export function TokensPopoverContent({
   transcript,
+  sessionInitTokens,
   inflight,
 }: {
   transcript: ReadonlyArray<TurnEntry>;
+  sessionInitTokens: number | null;
   inflight: { currentTurnTokens: number } | null;
 }): React.ReactElement {
-  const summary = computeTokensSummary(transcript);
+  const summary = computeTokensSummary(transcript, sessionInitTokens);
   const rows = transcript.map((t, i) => (
     <PopoverRow
       key={t.turnKey}
       label={`turn ${i + 1}`}
-      value={formatTokensCaps(perTurnTotalTokens(t))}
+      value={formatTokensCaps(summary.perTurn[i] ?? 0)}
       badge={<TurnEndStateBadge turn={t} />}
     />
   ));
@@ -380,54 +374,24 @@ function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
 }
 
 /**
- * `Context` popover — `/context`-style cumulative session breakdown.
- * Reads `snap.lastContextBreakdown` (populated by tugcode's
- * `context_breakdown` wire frame, which fires at session attach and
- * after every committed turn). Renders the categorical view: system
- * prompt / system tools / custom agents / memory files / skills /
- * messages + optional autocompact_buffer + auto-synthesized remainder.
+ * `Context` popover — the `/context`-style session breakdown.
  *
- * **Rich path only.** Pre-20.4.15 this surface had a `cost_update`
- * fallback that decomposed the LAST committed turn into 5 wire-level
- * segments (input / cache-read / cache-creation / output / remainder).
- * That fallback misrepresented the popover's contract: it showed a
- * single turn's tokens, not the cumulative session breakdown the
- * popover heading promises. The fallback is now removed — if no
- * `context_breakdown` frame has landed yet, the popover surfaces
- * an explicit empty state.
+ * Renders the assembled {@link ContextBreakdown} the status row hands
+ * down — the SAME object the `CONTEXT` cell reads its total from, so
+ * the two surfaces cannot disagree. Its total and `messages` slice
+ * are feed-exact (`window` / `sessionInit`); the five static
+ * categories are tugcode's local estimate, scaled to the feed-exact
+ * bootstrap. `mcp_tools` is intentionally absent — Tug treats MCP as
+ * out of scope.
  *
- * Numbers sit within the documented 5–10% accuracy bar against
- * Claude Code's `/context` terminal output — tugcode's local
- * tokenization is intentionally not byte-exact.
- *
- * `mcp_tools` is intentionally absent from the categories — Tug
- * treats MCP as out of scope.
+ * `breakdown === null` means no `context_breakdown` frame has landed
+ * yet — the popover surfaces an explicit empty state.
  */
 export function ContextPopoverContent({
-  contextMax,
-  lastContextBreakdown,
+  breakdown,
 }: {
-  contextMax: number;
-  lastContextBreakdown: ContextBreakdownSnapshotInput | null | undefined;
+  breakdown: ContextBreakdown | null;
 }): React.ReactElement {
-  if (lastContextBreakdown === null || lastContextBreakdown === undefined) {
-    return (
-      <PerAreaPopoverFrame title="Context window" kind="context">
-        <div className="tide-popover-empty">
-          Session-init breakdown not yet recorded.
-        </div>
-      </PerAreaPopoverFrame>
-    );
-  }
-  // Pass an empty transcript so the helper's fallback path (which
-  // would re-derive from the last committed turn) can never fire —
-  // when `lastContextBreakdown` is non-null the helper returns the
-  // rich breakdown directly.
-  const breakdown = computeRichContextBreakdown(
-    lastContextBreakdown,
-    [],
-    contextMax,
-  );
   if (breakdown === null) {
     return (
       <PerAreaPopoverFrame title="Context window" kind="context">

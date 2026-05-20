@@ -354,17 +354,18 @@ export interface CompactBoundary {
 }
 
 /**
- * Category identities the popover surfaces in the `/context`-style
- * breakdown. The renderer trusts the wire — only categories present
- * in {@link ContextBreakdown.categories} are painted.
+ * Category identities the `context_breakdown` wire frame carries —
+ * the *static* half of the `/context`-style breakdown.
+ *
+ * `messages` is intentionally absent: it is not a static, locally-
+ * tokenizable category. tugdeck derives it feed-exact (`window -
+ * sessionInit`) and appends it when assembling the popover breakdown.
  *
  * `autocompact_buffer` is conditional: present only when the user has
- * Claude Code's autocompact feature enabled. Absence means the
- * popover paints one fewer slice and a larger free-space remainder.
+ * Claude Code's autocompact feature enabled.
  *
  * MCP is intentionally absent — Tug treats MCP as out of scope, so
- * no `mcp_tools` id ever appears. See the parent plan step's
- * "Out of scope: MCP" section for the rationale.
+ * no `mcp_tools` id ever appears.
  */
 export type ContextBreakdownCategoryId =
   | "system_prompt"
@@ -372,7 +373,6 @@ export type ContextBreakdownCategoryId =
   | "custom_agents"
   | "memory_files"
   | "skills"
-  | "messages"
   | "autocompact_buffer";
 
 /**
@@ -388,21 +388,20 @@ export interface ContextBreakdownCategory {
 }
 
 /**
- * `/context`-style per-category token breakdown of the session's
- * context window. Emitted by tugcode at session_init, after every
- * `cost_update`, and after every `compact_boundary`; consumed by
- * tugdeck's reducer + popover. Persisted by the tugcast supervisor
- * to `context_breakdown_latest` (one row per session, UPSERT) so the
- * popover renders pre-populated on a fresh bind.
+ * The *static* half of a `/context`-style context breakdown — the
+ * five session-stable categories (system prompt, tool schemas, custom
+ * agents, memory files, skills) plus the conditional
+ * `autocompact_buffer`. Emitted by tugcode at `session_init` (so the
+ * Context surface populates the moment the session opens) and
+ * re-emitted after every `cost_update` to refresh `context_max`;
+ * consumed by tugdeck's reducer + popover. Persisted by the tugcast
+ * supervisor to `context_breakdown_latest` (one row per session,
+ * UPSERT) so the popover renders pre-populated on a fresh bind.
  *
- * Renderer fallback: when no `context_breakdown` frame has landed
- * yet, the popover shows the 20.4.7.C `cost_update`-derived 5-segment
- * view. The fallback is a feature — it keeps the popover useful
- * across the deployment matrix (older tugcode, transient
- * pre-first-frame state).
- *
- * `free_space` is intentionally NOT a column — it's derived by the
- * renderer as `context_max - sum(categories.tokens)`.
+ * This frame carries NO `messages` category and NO total — both are
+ * feed-exact and assembled tugdeck-side: tugdeck scales these static
+ * categories so they sum to the feed-exact `sessionInit`, then
+ * appends `messages = window(latest) - sessionInit`.
  */
 export interface ContextBreakdown {
   type: "context_breakdown";
