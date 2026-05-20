@@ -3511,6 +3511,81 @@ The diagnosis must pin which of (α)–(δ) is responsible for each user-visible
 
 ---
 
+##### Sub-step J.2 — Live (intra-turn) `Tokens` / `Context` status cells
+
+**Symptom.** The `TIME` status cell ticks live while a turn is in flight (a 1 Hz `useLifecycleTick` heartbeat). The `TOKENS` and `CONTEXT` cells do not — they show the last committed turn's figures and sit frozen until the next `turn_complete`. The user should watch token usage and context occupancy climb as the model streams its response, the same way `TIME` advances.
+
+**Root cause.** tugcode emits `cost_update` only from Claude's terminal `result` event — one frame per turn, at turn-complete — so no token data reaches the client mid-turn and the cells have nothing to animate. But the data exists: Claude's streaming protocol carries incremental `usage` on the raw `message_start` event (prompt input + cache tokens, known when the response begins) and on `message_delta` events (`output_tokens` accumulating as the model generates). tugcode already receives these inside its `stream_event` handling — it just doesn't surface them.
+
+**The path** — `tugcode emit → wire event → reducer field → cell read`:
+
+  - **tugcode emit.** In the `stream_event` handler, extract `usage` from `message_start` / `message_delta` and emit a lightweight `streaming_usage` IPC frame. A turn may contain multiple assistant messages (the tool loop: message → tool_use → tool_result → message); each carries its own `message_start` + `message_delta`s, so the frame reports per-message usage and the reducer accumulates across the turn.
+  - **wire event.** Add a `streaming_usage` event to the IPC protocol — the four-token `usage` shape `cost_update` already carries. High-frequency and lightweight: it must drive no phase transition and no persistence.
+  - **reducer field.** `handleStreamingUsage` accumulates the per-message `usage` into a `liveTurnUsage` state field (summing across the turn's messages). Reset at `handleSend`; superseded at `handleTurnComplete` by the authoritative `cost_update` total — the `result` event's `usage` is the turn's true sum; the streaming accumulation is the live approximation, the committed `cost_update` is the truth and replaces it.
+  - **cell read.** While `inflightUserMessage !== null`, the `TOKENS` and `CONTEXT` cells derive from `liveTurnUsage`; otherwise they show the last committed turn (current behaviour). The cells already re-render via `useSyncExternalStore`, so each `streaming_usage` frame repaints them.
+
+**Tasks.**
+
+- [ ] **tugcode emit.** Emit `streaming_usage` from the `stream_event` handler on `message_start` / `message_delta`. Verify against a real session that the per-message `usage` sums to the `result` event's `usage`.
+- [ ] **Wire event.** Add `streaming_usage` to the IPC protocol (`protocol.ts` / `events.ts` / the tugcode IPC types). Confirm it carries no phase or persistence side effects — a display-only telemetry frame.
+- [ ] **Reducer.** `handleStreamingUsage` → `liveTurnUsage` accumulation across the turn's messages; reset at `handleSend`; cleared / superseded at `handleTurnComplete`.
+- [ ] **Cell read.** `TOKENS` / `CONTEXT` cells read `liveTurnUsage` while a turn is in flight. The figures jump discretely as frames land — tokens have no continuous quantity to interpolate (unlike `TIME`); do not fabricate a smooth tick.
+- [ ] **HMR vet.** Send a long-output request: `TOKENS` and `CONTEXT` climb as the response streams, then settle exactly on the committed `cost_update` total at `turn_complete` with no visible jump or flicker.
+- [ ] **Test coverage.** Reducer tests for `handleStreamingUsage` accumulation across a multi-message (tool-loop) turn, and for the reset-at-submit / supersede-at-complete boundary.
+
+**Conformance.** [L02] streaming usage enters React only through the store; the cells read the snapshot via `useSyncExternalStore`. [L06] the cells are display-only — no React state for the figure. [L23] the live figure is an honest in-flight approximation; the committed `cost_update` is authoritative and supersedes it at turn-complete with no discontinuity.
+
+**Dependency note.** J.2 builds the streaming *plumbing* and is independent of J.3's accuracy work — the numbers it animates are whatever derivation the cells already use. J.3 may re-route the `CONTEXT` cell's source; the `liveTurnUsage` field is orthogonal and stands either way. J.2 and J.3 may land in either order.
+
+---
+
+##### Sub-step J.3 — Context-breakdown accuracy + cell ↔ popover unification
+
+**Context.** Sub-step J fixed the per-turn token math: `extractTurnCost` no longer subtracts the per-turn `usage` (it is per-turn on the wire, not cumulative); Z1B shows the `perTurnTokens` window delta; the Context cell moved to a feed-derived rollup. Those changes are correct and sit in the working tree. But J surfaced — and partly left unfixed — a second cluster of defects in the *cumulative* and *categorical* surfaces. J.3 closes them. (Its sibling J.2 wires the live intra-turn status cells — a separate concern.) Sub-step J is not complete until J.2 and J.3 land with it.
+
+**Symptoms.**
+
+  1. **Context cell and Context popover disagree.** The cell is feed-derived (`turnWindowTokens` of the last turn — accurate); the popover runs the local `context-breakdown.ts` estimate. On one captured session the cell read ~50K while the popover read 83.6K — a ~65% disagreement. One context number must have one source and one answer.
+  2. **The `context-breakdown.ts` static estimate is ~5.5× over.** Ground truth from Claude Code's own `/context` on a fresh session, against tugcode's estimate:
+
+     | category | `/context` (truth) | tugcode estimate | error |
+     |---|---|---|---|
+     | system_prompt | 3.1k | 3.5K | +13% |
+     | system_tools | 7.3k | 15.5K | +112% |
+     | custom_agents | 788 | 41.2K | **+52×** |
+     | memory_files | 2.6k | 751 | −71% |
+     | skills | 1.3k | 22.7K | **+17×** |
+     | messages | 13 | 0 | — |
+     | **total** | **15.1k** | **83.6K** | **+5.5×** |
+
+     Root cause: `computeStaticCategories` sums the *full text* of every agent `.md` and every `SKILL.md`. Claude Code loads only the agent/skill *descriptions* (the frontmatter `description`) into the system prompt — the bodies load on demand and are not resident context. `system_tools` uses a flat `500 tokens/tool` heuristic, ~2× the observed rate. `memory_files` *under*-counts (the walk misses files). The estimate is not "within the 5–10% bar" — it is off by multiples.
+  3. **`messages` category is always 0.** `messages = max(0, observedInput − staticTotal)`; with `staticTotal` at 83.6K and `observedInput` far below it, the subtraction is always negative and clamps. Fixing (2) makes it go positive.
+  4. **The Tokens popover over-counts.** `computeTokensSummary` / `deriveSessionTotals` sum the `TurnCost` token fields across the whole transcript. Now that `TurnCost` is raw per-turn `usage`, summing `cache_read` adds the re-read context once per turn — a meaningless, inflated total. A session token total is a *window snapshot*, never a sum of raw per-turn `TurnCost`.
+  5. **The `Context` cell's `/` smashes the numerator** — it renders `18.6K/ 1.00M` with no space before the slash.
+  6. **The Context surface is empty until the first turn.** A fresh session shows no context figure until a `cost_update` lands at turn-complete; it should show the session-init total immediately on session start.
+
+**Architecture — who owns which number.**
+
+  - **The context *total* is the feed's.** `cost_update.usage` `observedInput` (= `input + cache_read + cache_creation`) is the model's real context size; on a fresh-ish session it matches Claude Code's `/context` total. Authoritative — no tokenizer.
+  - **The category *split* is the estimate's.** `system_prompt / system_tools / custom_agents / memory_files / skills / messages` cannot come from the feed (it carries only aggregates). The local estimate is the only possible source — so it must be made *accurate* (inside the 5–10% bar), not merely present. The user's "no local tokenization" rule governs the totals the user reads; the categorical popover is explicitly accepted as an estimate — but an estimate that is 5.5× off is a bug, not an estimate.
+  - **`context_breakdown`'s total already equals the feed total** by construction: `total = staticTotal + messages` and `messages = observedInput − staticTotal`, so `total = observedInput`. It fails today only because `messages` clamps. Fix the estimate and the identity holds — which means **the Context cell and the popover can both source `context_breakdown` and agree exactly.** J.3 re-unifies on `context_breakdown`; J's interim feed-derived cell is retired once the estimate is trustworthy.
+
+**Tasks.**
+
+- [ ] **Fix the `context-breakdown.ts` static estimate.** Count agent/skill *descriptions*, not bodies: tokenize the `description` frontmatter of each agent `.md` and `SKILL.md`, not the whole file. Re-measure and correct `TOOL_SCHEMA_DEFAULT_TOKENS` against observed (`/context` system_tools ÷ tool count). Fix the `memory_files` walk so it counts the full memory corpus (it under-counts today). Acceptance: every category within the 5–10% bar against a `/context` capture.
+- [ ] **Verify the `messages` derivation.** With `staticTotal` corrected, confirm `messages = observedInput − staticTotal` lands positive and tracks the conversation. Pin the first-turn case — `messages` is tiny there and the `staticTotal` estimate error is proportionally largest; decide whether a small negative clamps to 0 acceptably.
+- [ ] **Unify the Context cell + popover on `context_breakdown`.** Retire J's interim feed-derived cell; both surfaces read `lastContextBreakdown`. They show the same total by construction. Decide whether `context_breakdown`'s total includes the latest turn's `output` (the `observedInput` vs `observedInput + output` term) so it reconciles with `session-init + Σ Z1B perTurnTokens`.
+- [ ] **Fix the Tokens popover.** `computeTokensSummary` must stop summing raw `TurnCost`. Decide the honest session-token surface — the last turn's window snapshot, or a sum of `perTurnTokens` deltas — and rebuild the popover's total / average on it. The per-turn row log must show each turn's `perTurnTokens`, matching Z1B.
+- [ ] **Show the session-init context immediately.** `context-breakdown.ts` emits a frame at `onSessionInit` (with `messages = 0`); confirm it reaches the reducer's `lastContextBreakdown` and the cell + popover render it before any turn. The Context surface must never be blank on a fresh session.
+- [ ] **Fix the `Context` cell `/` spacing** — a space before the slash (`18.6K / 1.00M`). CSS in `tide-card.css` under the status-bar scope, or the renderer's format string.
+- [ ] **Remove the `token-telemetry-diagnostic.ts` instrumentation** (added during J for the wire-log capture) once J.3's numbers are verified against `/context`.
+- [ ] **HMR vet.** (a) Fresh session — Context cell + popover both show the session-init total immediately, and agree, and land within ~10% of `/context`. (b) After a turn — both update; `session-init + Σ Z1B = Context` holds. (c) The Tokens popover total is a sane session figure, not an inflated cache-sum. (d) The `/` reads `N / M` with breathing room.
+- [ ] **Test coverage.** Pure-logic tests for the corrected `context-breakdown.ts` category math and the rebuilt Tokens-popover total; pin the cell ↔ popover identity.
+
+**Conformance.** [L02] token math lives in pure helpers off the snapshot; no React state. [L23] user-visible state is honest — the Context cell and popover never disagree; no surface shows an inflated cache-sum or a multiples-off estimate. The 5–10% accuracy bar (`/remember`'d) is a hard acceptance gate for the categorical estimate, not an aspiration.
+
+---
+
 ##### Sub-step K — PgUp / PgDown by entry when the top-pane is focused
 
 **Symptom.** When the user has the top-pane (the scrolling transcript) focused, PgUp / PgDown (alias: Opt+ArrowUp / Opt+ArrowDown on macOS) currently scroll by viewport-height — a generic browser-default. For a transcript organized into discrete entries (one per turn), scrolling by ENTRY is the correct unit of navigation: the user can step backward / forward through the conversation one turn at a time, with each step landing the entry at a predictable position.

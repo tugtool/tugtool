@@ -44,8 +44,11 @@ import type { TurnEntry } from "@/lib/code-session-store/types";
 import {
   deriveSessionTotals,
   deriveTimeCellMs,
-  perTurnContextSize,
 } from "@/lib/code-session-store/telemetry";
+import {
+  perTurnTokens,
+  turnWindowTokens,
+} from "@/lib/code-session-store/end-state";
 import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
 import {
   DEFAULT_CONTEXT_MAX_TOKENS,
@@ -192,8 +195,9 @@ export interface TideTelemetryProps {
 }
 
 /**
- * Window-utilization gauge — the model's view of "tokens consumed at
- * the boundary of the most-recent committed turn" divided by the
+ * Window-utilization gauge — the context-window occupancy after the
+ * most-recent committed turn (`turnWindowTokens` of its `cost_update`
+ * usage: input + output + cache-read + cache-creation) divided by the
  * static context-window max for the active model.
  *
  * Uses TugLinearGauge in `compact` density so the strip fits inside
@@ -224,7 +228,8 @@ export const TideTelemetryWindowUtilization: React.FC<TideTelemetryProps> = ({
     snap.transcript.length > 0
       ? snap.transcript[snap.transcript.length - 1]
       : null;
-  const contextTokens = lastTurn !== null ? perTurnContextSize(lastTurn) : 0;
+  const contextTokens =
+    lastTurn !== null ? turnWindowTokens(lastTurn.cost) : 0;
   const max = meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
   const maxText = formatTokens(max);
   // Render value as `current / max` so the denominator is visible
@@ -362,20 +367,6 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
 );
 
 /**
- * Per-turn token-sum helper, mirroring the Z2 TOKENS cell's
- * headline formula. Pulled to module scope so the live in-flight
- * tokens path can reuse it without recomputation.
- */
-function perTurnTotalTokens(turn: TurnEntry): number {
-  return (
-    turn.cost.inputTokens +
-    turn.cost.outputTokens +
-    turn.cost.cacheReadInputTokens +
-    turn.cost.cacheCreationInputTokens
-  );
-}
-
-/**
  * Combined session status row — production Z2 surface promoted from
  * the workshop gallery in [Step 20.4.15]. Layout:
  *
@@ -457,21 +448,31 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
     snap.transcript.length > 0
       ? snap.transcript[snap.transcript.length - 1]
       : null;
+  // The turn before `lastTurn`, when one exists — the prior context
+  // window the TOKENS-cell per-turn delta is measured against.
+  const prevTurn =
+    snap.transcript.length > 1
+      ? snap.transcript[snap.transcript.length - 2]
+      : undefined;
   // TIME cell: live in-flight clock when a turn is in flight, or
   // the last committed turn's activeMs as the post-commit fallback.
   // `deriveTimeCellMs` short-circuits to the fallback path when
   // `inflightUserMessage === null`.
   const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
   const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
-  // TOKENS cell: when a turn is in flight there is no live token
-  // count yet (cost_update lands at turn-complete), so the cell
-  // continues to show the last committed turn's total — matching
-  // the pre-20.4.15 behaviour for the headline cell. The popover's
-  // own in-flight footer is what surfaces a live-turn signal when
-  // one exists.
-  const perTurnTokens = lastTurn !== null ? perTurnTotalTokens(lastTurn) : 0;
-  const perTurnContextTokens =
-    lastTurn !== null ? perTurnContextSize(lastTurn) : 0;
+  // TOKENS cell — the last committed turn's per-turn token count
+  // (`perTurnTokens`: how much that turn grew the context window),
+  // the same number Z1B shows on its asst-half. CONTEXT cell — the
+  // cumulative rollup (`turnWindowTokens`: the whole window after the
+  // last turn). The two are the per-turn / cumulative pair, and
+  // `session-init + Σ perTurnTokens = contextRollupTokens` holds by
+  // construction. While a turn is in flight no `cost_update` has
+  // landed, so both cells hold the last committed turn's values; the
+  // TOKENS popover's own in-flight footer carries the live signal.
+  const tokensCellValue =
+    lastTurn !== null ? perTurnTokens(lastTurn.cost, prevTurn?.cost) : 0;
+  const contextRollupTokens =
+    lastTurn !== null ? turnWindowTokens(lastTurn.cost) : 0;
   const contextMax =
     meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
 
@@ -479,7 +480,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   // muted so the live numerator reads first. Threshold class is
   // applied to the wrapping span; the CSS rule paints the
   // numerator's color via descendant selector.
-  const ratio = contextMax > 0 ? perTurnContextTokens / contextMax : 0;
+  const ratio = contextMax > 0 ? contextRollupTokens / contextMax : 0;
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
@@ -511,7 +512,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
         // turn-complete); the in-flight footer reads the most
         // recent committed contribution rather than fabricating a
         // mid-turn value the wire hasn't reported yet.
-        isInflight ? { currentTurnTokens: perTurnTokens } : null
+        isInflight ? { currentTurnTokens: tokensCellValue } : null
       }
     />
   );
@@ -587,7 +588,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
             <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
             <span className="tide-telemetry-status-value-wrap">
               <span className="tide-telemetry-status-value">
-                {formatTokensCaps(perTurnTokens)}
+                {formatTokensCaps(tokensCellValue)}
               </span>
             </span>
           </span>
@@ -609,7 +610,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
                 data-context-threshold={contextThreshold}
               >
                 <span className="tide-telemetry-status-context-numerator">
-                  {formatTokensCaps(perTurnContextTokens)}
+                  {formatTokensCaps(contextRollupTokens)}
                 </span>
                 <span className="tide-telemetry-status-context-denominator">
                   {` / ${formatTokensCaps(contextMax)}`}

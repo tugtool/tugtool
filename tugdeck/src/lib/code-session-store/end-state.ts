@@ -12,7 +12,7 @@
  * information:
  *   - A terminal-state badge (OK / interrupted / errored / lost)
  *   - The turn's active-ms (machine-doing-work time)
- *   - The turn's total token count
+ *   - The turn's per-turn token count (the context-window delta)
  *
  * Pure: no DOM, no React, no side effects. Safe to call from
  * `useMemo` / render bodies.
@@ -76,16 +76,66 @@ export function endStateBadgeFor(reason: TurnEndReason): EndStateBadge {
 }
 
 /**
- * Total token count for a turn — the sum of every numeric field on
- * `TurnCost`. Same shape the per-turn Tokens cell + the Tokens
- * popover use, hoisted out of the gallery so the end-state display
- * does not duplicate the formula.
+ * Total tokens in the model's context window at this turn — every
+ * field of the per-turn `TurnCost`: the model's input (uncached
+ * `input` + `cache_read` + `cache_creation`) plus its `output`.
+ *
+ * `TurnCost` is the raw per-turn `cost_update.usage` (see
+ * `extractTurnCost`), so this is the context size AT this turn — it
+ * grows turn over turn as the conversation accumulates. It is NOT a
+ * per-turn delta; {@link perTurnTokens} computes that. Used as the
+ * window term inside `perTurnTokens` and as the session-rollup
+ * building block.
  */
-export function totalTokensForTurn(cost: TurnCost): number {
+export function turnWindowTokens(cost: TurnCost): number {
   return (
     cost.inputTokens +
     cost.outputTokens +
     cost.cacheReadInputTokens +
     cost.cacheCreationInputTokens
   );
+}
+
+/**
+ * The per-turn token count shown on the Z1B asst-half — how much this
+ * turn GREW the context window.
+ *
+ * ## Contract
+ *
+ * Z1B shows a **per-turn delta**, never a turn's gross API usage.
+ * Gross usage re-reads the entire prior conversation as `cache_read`
+ * every turn, so it tracks context size and would never sum to
+ * anything meaningful. The delta does:
+ *
+ *   `perTurnTokens(turn N) = window(N) − window(N−1)`
+ *
+ * where `window` is {@link turnWindowTokens} — `input + output +
+ * cache_read + cache_creation`, every term straight from
+ * `cost_update.usage`. No local tokenizer; all feed numbers.
+ *
+ * The deltas telescope: `session-init + Σ perTurnTokens = window(last)`
+ * — the live context rollup, exactly, by construction.
+ *
+ * **First turn** (`prevCost === undefined`): the prior window is the
+ * session-init bootstrap (system prompt + tools + agents + memory +
+ * skills), which equals this turn's *observed input* (`input +
+ * cache_read + cache_creation` — the model's input, minus its
+ * output). So the first turn's delta degenerates to its `output`: the
+ * bootstrap is attributed to session-init and never charged to turn 1.
+ *
+ * Clamped ≥ 0 to defend against a non-monotonic window (e.g.
+ * prompt-cache eviction shrinking `cache_read` between turns).
+ */
+export function perTurnTokens(
+  cost: TurnCost,
+  prevCost: TurnCost | undefined,
+): number {
+  const window = turnWindowTokens(cost);
+  const prevWindow =
+    prevCost === undefined
+      ? cost.inputTokens +
+        cost.cacheReadInputTokens +
+        cost.cacheCreationInputTokens
+      : turnWindowTokens(prevCost);
+  return Math.max(0, window - prevWindow);
 }

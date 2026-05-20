@@ -112,7 +112,10 @@ describe("telemetry — extractTurnCost", () => {
     });
   });
 
-  it("computes `after - before` for cumulative shape", () => {
+  it("token fields pass through raw — `usage` is per-turn, not subtracted", () => {
+    // `cost_update.usage` reports each turn's own usage; the four
+    // token fields are taken straight from `after`, never differenced
+    // against `before`. Only `totalCostUsd` is cumulative.
     const before = costSnap({
       totalCostUsd: 0.045,
       usage: {
@@ -131,41 +134,48 @@ describe("telemetry — extractTurnCost", () => {
         cache_read_input_tokens: 31_204,
       },
     });
-    expect(extractTurnCost(before, after)).toEqual({
-      inputTokens: 1,
-      outputTokens: 170,
-      cacheCreationInputTokens: 169,
-      cacheReadInputTokens: 18_697,
-      totalCostUsd: expect.any(Number),
-    });
-    expect(extractTurnCost(before, after).totalCostUsd).toBeCloseTo(0.015);
+    const cost = extractTurnCost(before, after);
+    expect(cost.inputTokens).toBe(4);
+    expect(cost.outputTokens).toBe(180);
+    expect(cost.cacheCreationInputTokens).toBe(6_349);
+    expect(cost.cacheReadInputTokens).toBe(31_204);
+    // `total_cost_usd` IS cumulative — it alone is differenced.
+    expect(cost.totalCostUsd).toBeCloseTo(0.06 - 0.045);
   });
 
-  it("clamps non-monotonic deltas to zero", () => {
-    const before = costSnap({
-      totalCostUsd: 1.0,
+  it("a short turn after a long one keeps its real (small) token counts", () => {
+    // Regression pin: the old `after - before` subtraction clamped a
+    // short reply following a long turn to zero tokens. Token fields
+    // are now raw, so the short turn reports its true usage.
+    const longTurn = costSnap({
+      totalCostUsd: 0.146,
       usage: {
-        input_tokens: 100,
-        output_tokens: 100,
-        cache_creation_input_tokens: 100,
-        cache_read_input_tokens: 100,
+        input_tokens: 4,
+        output_tokens: 408,
+        cache_creation_input_tokens: 9_901,
+        cache_read_input_tokens: 33_281,
       },
     });
-    const after = costSnap({
-      totalCostUsd: 0.5,
+    const shortTurn = costSnap({
+      totalCostUsd: 0.178,
       usage: {
-        input_tokens: 50,
-        output_tokens: 200,
-        cache_creation_input_tokens: 100,
-        cache_read_input_tokens: 50,
+        input_tokens: 4,
+        output_tokens: 161,
+        cache_creation_input_tokens: 402,
+        cache_read_input_tokens: 50_200,
       },
     });
-    const delta = extractTurnCost(before, after);
-    expect(delta.inputTokens).toBe(0); // 50 - 100 → clamped
-    expect(delta.outputTokens).toBe(100); // 200 - 100
-    expect(delta.cacheCreationInputTokens).toBe(0);
-    expect(delta.cacheReadInputTokens).toBe(0);
-    expect(delta.totalCostUsd).toBe(0); // 0.5 - 1.0 → clamped
+    const cost = extractTurnCost(longTurn, shortTurn);
+    expect(cost.inputTokens).toBe(4);
+    expect(cost.outputTokens).toBe(161);
+    expect(cost.cacheCreationInputTokens).toBe(402);
+    expect(cost.cacheReadInputTokens).toBe(50_200);
+  });
+
+  it("clamps totalCostUsd when cumulative cost goes non-monotonic", () => {
+    const before = costSnap({ totalCostUsd: 1.0, usage: {} });
+    const after = costSnap({ totalCostUsd: 0.5, usage: {} });
+    expect(extractTurnCost(before, after).totalCostUsd).toBe(0);
   });
 });
 

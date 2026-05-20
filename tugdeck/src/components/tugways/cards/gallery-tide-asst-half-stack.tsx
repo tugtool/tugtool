@@ -39,7 +39,7 @@
  * when the consumer supplies an `endState`: a ghost-emphasis,
  * icon-leading badge (`endStateBadgeFor` + `endStateBadgeIcon`),
  * the turn's active-ms (`formatDurationMs`), and total tokens
- * (`totalTokensForTurn` + `formatTokensCaps`), separated by `•`
+ * (`perTurnTokens` + `formatTokensCaps`), separated by `•`
  * glyphs. Terminal phases that receive no `endState` fall back to
  * `EndStatePlaceholder` — a muted "no end-state recorded" line
  * that holds the same vertical slot.
@@ -90,7 +90,7 @@ import type {
 } from "@/lib/code-session-store/types";
 import {
   endStateBadgeFor,
-  totalTokensForTurn,
+  perTurnTokens,
 } from "@/lib/code-session-store/end-state";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import {
@@ -487,10 +487,10 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
  * the time).
  *
  * The (text, role) mapping for the badge comes from
- * `endStateBadgeFor`; the total-tokens sum comes from
- * `totalTokensForTurn`. Both are pure helpers exported from
- * `code-session-store/end-state` so the gallery and the (future)
- * production renderer compute them identically. Time formatting
+ * `endStateBadgeFor`; the per-turn token count comes from
+ * `perTurnTokens`. Both are pure helpers exported from
+ * `code-session-store/end-state` so the gallery and the production
+ * renderer compute them identically. Time formatting
  * uses `formatDurationMs` (drops leading-zero parts — `7s` not
  * `0h 0m 07s`).
  */
@@ -500,7 +500,9 @@ function EndStateDisplay({
   endState: Z1AsstHalfEndState;
 }): React.ReactElement {
   const badge = endStateBadgeFor(endState.turnEndReason);
-  const tokens = totalTokensForTurn(endState.cost);
+  // Workshop card — synthetic single end-state, no prior turn; the
+  // per-turn delta degenerates to this turn's output.
+  const tokens = perTurnTokens(endState.cost, undefined);
   // Style for the `::` separators — base color + an extra
   // horizontal margin on each side (tunable via
   // `Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX`). The flex container's
@@ -877,7 +879,7 @@ export function GalleryTideAsstHalfStack(): React.ReactElement {
             would grow downward and the indicator / end-state
             would always sit underneath the most recent line.
             Each row drives `EndStateDisplay` via the same pure
-            helpers (`endStateBadgeFor`, `totalTokensForTurn`,
+            helpers (`endStateBadgeFor`, `perTurnTokens`,
             `formatDurationMs`, `formatTokensCaps`) the
             production renderer will use. `complete` → success
             badge; `interrupted` and `transport_lost` → caution

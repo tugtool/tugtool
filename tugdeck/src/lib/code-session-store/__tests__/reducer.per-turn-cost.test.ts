@@ -1,19 +1,18 @@
 /**
- * Reducer tests for the per-turn cost delta — `handleSend` snapshots
- * `lastCost` into `costAtSubmit`; `handleTurnComplete` computes the
- * `after - before` delta via `extractTurnCost` and freezes it onto the
- * committed `TurnEntry.cost`.
+ * Reducer tests for the per-turn `TurnCost` — `handleSend` snapshots
+ * `lastCost` into `costAtSubmit`; `handleTurnComplete` builds the
+ * committed `TurnEntry.cost` via `extractTurnCost`.
  *
- * Per Investigation A, `cost_update.usage` is cumulative-per-session
- * on the live wire. The helper still tolerates per-turn payloads
- * (the alternate hypothesis): for the FIRST turn of a session,
- * `costAtSubmit === null` and the delta degenerates to `after`.
+ * `cost_update.usage` is per-turn on the live wire — each turn reports
+ * its own token counts — so the four token fields are frozen onto the
+ * entry RAW, never differenced against the prior turn. `total_cost_usd`
+ * IS cumulative-per-session, so it alone is the `after − before` delta.
  *
  * Pins:
- *   - cumulative shape: per-turn delta is `after - before`,
- *   - per-turn shape (first-of-session): delta degenerates to `after`,
+ *   - token fields are this turn's raw `cost_update.usage`,
+ *   - `totalCostUsd` is the cumulative `after − before` delta,
  *   - no cost_update for a turn → committed cost is all zeros,
- *   - cost snapshot is taken at submit time, not at completion.
+ *   - the cost snapshot is taken at submit time, not at completion.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -55,7 +54,7 @@ function applyAll(
 }
 
 describe("reducer — per-turn cost delta", () => {
-  it("first-of-session turn: costAtSubmit is null and the delta degenerates to `after`", () => {
+  it("first turn: TurnCost token fields are this turn's raw cost_update usage", () => {
     const events: CodeSessionEvent[] = [
       { type: "send", text: "hi", atoms: [], turnKey: "k1" },
       {
@@ -87,8 +86,8 @@ describe("reducer — per-turn cost delta", () => {
     expect(entry.cost.totalCostUsd).toBeCloseTo(0.045);
   });
 
-  it("cumulative cost_update.usage: second turn reports the per-turn delta", () => {
-    // Turn 1: tokens=(3, 10, 6180, 12507), cost=0.045 → entry.cost == this delta.
+  it("second turn: token fields are raw per-turn usage; totalCostUsd is the cumulative delta", () => {
+    // Turn 1: usage=(3, 10, 6180, 12507), cumulative cost=0.045.
     const r1 = applyAll(fresh(), [
       { type: "send", text: "first", atoms: [], turnKey: "k1" },
       {
@@ -111,7 +110,7 @@ describe("reducer — per-turn cost delta", () => {
       },
       { type: "turn_complete", msg_id: "m1", result: "success" },
     ]);
-    // Turn 2: cumulative grows. tokens=(4, 180, 6349, 31204), cost=0.060.
+    // Turn 2: per-turn usage=(4, 180, 6349, 31204); cumulative cost=0.060.
     const r2 = applyAll(r1.state, [
       { type: "send", text: "second", atoms: [], turnKey: "k2" },
       {
@@ -135,10 +134,12 @@ describe("reducer — per-turn cost delta", () => {
       { type: "turn_complete", msg_id: "m2", result: "success" },
     ]);
     const entry2 = appended(r2.effects)[0].entry;
-    expect(entry2.cost.inputTokens).toBe(4 - 3);
-    expect(entry2.cost.outputTokens).toBe(180 - 10);
-    expect(entry2.cost.cacheCreationInputTokens).toBe(6349 - 6180);
-    expect(entry2.cost.cacheReadInputTokens).toBe(31204 - 12507);
+    // Token fields are turn 2's raw usage — NOT differenced against turn 1.
+    expect(entry2.cost.inputTokens).toBe(4);
+    expect(entry2.cost.outputTokens).toBe(180);
+    expect(entry2.cost.cacheCreationInputTokens).toBe(6349);
+    expect(entry2.cost.cacheReadInputTokens).toBe(31204);
+    // `totalCostUsd` IS cumulative — the committed value is the delta.
     expect(entry2.cost.totalCostUsd).toBeCloseTo(0.06 - 0.045);
   });
 

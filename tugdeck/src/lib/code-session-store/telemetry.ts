@@ -46,27 +46,36 @@ export function perTurnContextSize(turn: TurnEntry): number {
 }
 
 /**
- * Compute the per-turn cost delta as `after - before`, clamped ≥ 0.
- * Handles the cumulative-per-session shape (the empirically observed
- * shape per Investigation A) — the delta is the new turn's contribution.
- * Tolerates the alternate hypothesis (already per-turn) because in that
- * case `before` would equal `null` at every turn boundary and the delta
- * degenerates to `after`.
+ * Build a turn's `TurnCost` from the `cost_update` snapshots taken at
+ * the turn's boundaries (`before` = the snapshot at submit, `after` =
+ * the snapshot at completion).
  *
- *   - `before === null`: first turn of the session (or no `cost_update`
- *     ever observed before this turn). Return `after` directly.
- *   - `after === null`: no `cost_update` ever fired for this turn. Return
- *     all zeros.
- *   - Both present: compute field-wise `after - before`, clamped ≥ 0.
- *     The clamp defends against any non-monotonic `cost_update.usage`
- *     behavior (e.g. a model swap that resets the cumulative counter).
+ * **The four token fields are per-turn and pass through raw.**
+ * `cost_update.usage` reports each turn's OWN token usage — NOT a
+ * session-cumulative running total. Confirmed empirically from live
+ * wire traces: `usage.output_tokens` is non-monotonic across turns
+ * (188 → 408 → 161 in one captured session), which a cumulative
+ * counter cannot be. So the token fields are read straight off
+ * `after.usage`; there is NO turn-over-turn subtraction. An earlier
+ * revision assumed cumulative usage and differenced `after - before`
+ * — that corrupted every turn whose usage was smaller than its
+ * predecessor's (the delta went negative and clamped to 0, so a short
+ * reply after a long one reported zero tokens).
  *
- * The `usage` payload structure varies — modern Claude emits
- * `{input_tokens, output_tokens, cache_creation_input_tokens,
- *  cache_read_input_tokens}` at the top of `usage` — but the same
- * field names also appear in `modelUsage[<model>]`. This helper reads
- * from `usage` (the aggregate view); a future per-model breakdown
- * would build separate `TurnCost` records from `modelUsage`.
+ * **`totalCostUsd` IS cumulative-per-session**, so it alone is
+ * differenced: `after.totalCostUsd - before.totalCostUsd`, clamped
+ * ≥ 0. (`total_cost_usd` and `num_turns` accumulate across the
+ * session; `usage` does not — the asymmetry is the whole point of
+ * this function.)
+ *
+ *   - `after === null`: no `cost_update` fired for this turn → all zeros.
+ *   - `before === null`: first turn → the cost term is `after.totalCostUsd`.
+ *
+ * The token fields (`input_tokens`, `output_tokens`,
+ * `cache_creation_input_tokens`, `cache_read_input_tokens`) are read
+ * by {@link readUsage}; the same names also appear in
+ * `modelUsage[<model>]`, which this helper does not read (a future
+ * per-model breakdown would).
  */
 export function extractTurnCost(
   before: CostSnapshot | null,
@@ -75,18 +84,13 @@ export function extractTurnCost(
   if (after === null) {
     return ZERO_TURN_COST;
   }
-  const afterUsage = readUsage(after.usage);
-  const beforeUsage = before === null ? ZERO_USAGE : readUsage(before.usage);
+  const usage = readUsage(after.usage);
   const beforeCostUsd = before === null ? 0 : before.totalCostUsd;
   return {
-    inputTokens: clampNonNegative(afterUsage.inputTokens - beforeUsage.inputTokens),
-    outputTokens: clampNonNegative(afterUsage.outputTokens - beforeUsage.outputTokens),
-    cacheCreationInputTokens: clampNonNegative(
-      afterUsage.cacheCreationInputTokens - beforeUsage.cacheCreationInputTokens,
-    ),
-    cacheReadInputTokens: clampNonNegative(
-      afterUsage.cacheReadInputTokens - beforeUsage.cacheReadInputTokens,
-    ),
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheCreationInputTokens: usage.cacheCreationInputTokens,
+    cacheReadInputTokens: usage.cacheReadInputTokens,
     totalCostUsd: clampNonNegative(after.totalCostUsd - beforeCostUsd),
   };
 }

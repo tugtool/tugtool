@@ -124,6 +124,14 @@ export interface TideRowDescriptor {
   kind: TideTranscriptCellKind;
   /** Set for every committed row (`user` and `code`). */
   turn?: TurnEntry;
+  /**
+   * The turn committed immediately before {@link turn}, when one
+   * exists. Set on committed rows so the Z1B asst-half can compute
+   * the per-turn token delta (`perTurnTokens`) against the prior
+   * turn's context window. `undefined` for the first turn and for
+   * in-flight rows.
+   */
+  prevTurn?: TurnEntry;
   /** Set for the in-flight `user` row only. */
   inflight?: CodeSessionSnapshot["inflightUserMessage"];
   /**
@@ -247,10 +255,12 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
       return { kind: "code", turnKey: inflight.turnKey };
     }
 
-    const turn = snap.transcript[Math.floor(index / 2)];
+    const turnIndex = Math.floor(index / 2);
+    const turn = snap.transcript[turnIndex];
     return {
       kind: index % 2 === 0 ? "user" : "code",
       turn,
+      prevTurn: turnIndex > 0 ? snap.transcript[turnIndex - 1] : undefined,
       turnKey: turn?.turnKey,
     };
   }
