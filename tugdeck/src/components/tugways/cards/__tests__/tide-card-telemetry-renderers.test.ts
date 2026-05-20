@@ -10,6 +10,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   formatDurationMs,
+  formatTimeMinutesSeconds,
   formatTokens,
   formatUsd,
 } from "@/components/tugways/cards/tide-card-telemetry-renderers";
@@ -69,6 +70,26 @@ describe("formatDurationMs", () => {
   it("guards against NaN / negatives", () => {
     expect(formatDurationMs(Number.NaN)).toBe("0s");
     expect(formatDurationMs(-1)).toBe("0s");
+  });
+});
+
+describe("formatTimeMinutesSeconds", () => {
+  it("renders sub-hour spans as `Mm SSs`", () => {
+    expect(formatTimeMinutesSeconds(0)).toBe("0m 00s");
+    expect(formatTimeMinutesSeconds(7_000)).toBe("0m 07s");
+    expect(formatTimeMinutesSeconds(65_000)).toBe("1m 05s");
+    expect(formatTimeMinutesSeconds(599_000)).toBe("9m 59s");
+  });
+
+  it("surfaces hours once a span crosses the hour mark", () => {
+    expect(formatTimeMinutesSeconds(3_600_000)).toBe("1h 0m 00s");
+    expect(formatTimeMinutesSeconds(3_667_000)).toBe("1h 1m 07s");
+    expect(formatTimeMinutesSeconds(9_000_000)).toBe("2h 30m 00s");
+  });
+
+  it("guards against NaN / negatives", () => {
+    expect(formatTimeMinutesSeconds(Number.NaN)).toBe("0m 00s");
+    expect(formatTimeMinutesSeconds(-1)).toBe("0m 00s");
   });
 });
 

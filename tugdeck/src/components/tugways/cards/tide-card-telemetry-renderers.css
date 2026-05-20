@@ -89,112 +89,96 @@
    .tide-telemetry-status-row — Z2 combined session-status row
    ============================================================================
    IBM-1620-inspired instrument readout — the design selected by the
-   Step 20.4 HMR study and polished across the 20.4.x workshop. The
-   row carries one TugStateIndicator slot (label + popover) followed
-   by three uniform-width cells; each cell is a two-row stack:
+   HMR study and polished across the status-row workshop. The row
+   carries four cells, each a two-row stack:
 
      [label apparatus]   ← letterspaced uppercase label embedded in a
                             hairline rule with downward endcap ticks
      [centered value]
 
-   Per [Step 20.4.15]'s promotion, the TOTAL TIME / TOTAL TOKENS
-   cells were retired — those sums now surface inside the TIME /
-   TOKENS popovers' summary footers, so the row reads as three live
-   cells (TIME / TOKENS / CONTEXT) plus the indicator.
+   The STATE cell's apparatus carries a small tone dot before its
+   label — `[● STATE]` — and its value is the human-readable phase
+   title. TIME / TOKENS / CONTEXT carry plain labels and live
+   figures. The cumulative TOTAL TIME / TOTAL TOKENS are not separate
+   cells; those sums surface inside the TIME / TOKENS popovers'
+   summary footers.
 
-   The cells share a single apparatus width
-   (`--tugx-tide-status-cell-width`), so the row's column geometry
-   never jitters as values change. Values render natural-width and
-   center horizontally within their cell.
+   Cell widths come from `--tugx-tide-status-cell-width`: TIME /
+   TOKENS / CONTEXT share the 19ch default; the STATE cell overrides
+   it wider (`--tugx-tide-status-state-cell-width`) to fit the
+   longest phase title as its value. Within a cell the apparatus and
+   value-wrap both consume that width, so column geometry never
+   jitters as values change; values render natural-width and center.
 
-   Row layout — single 4-item flex layout (indicator, TIME, TOKENS,
-   CONTEXT) with `justify-content: space-between` and a small
-   minimum `gap`, so all four inter-item spaces flex uniformly as
-   the row widens. This is the layout vetted in the
-   `gallery-tide-status-row` reference card; the production row
-   mirrors it exactly so the gallery stays a faithful design source.
-
-   The indicator slot is pinned to a fixed width
-   (`--tugx-tide-status-indicator-slot-width`, 220px) sized for the
-   longest `PHASE_HUMAN_LABEL` ("Awaiting first response") so the
-   TIME / TOKENS / CONTEXT cells' horizontal positions stay rock-
-   stable across phase-label changes. When the label is short
-   ("Idle"), the slot still reserves its 220px — the empty band
-   inside the slot is the price of column-position stability.
+   Row layout — single 4-cell flex layout (STATE, TIME, TOKENS,
+   CONTEXT) with `justify-content: center` and a fixed inter-item
+   `gap`. The four cells pack as one centered group; the leftover
+   row width splits into two equal flexing margins on the far left
+   and right. Every cell is a fixed-width box, so the group's total
+   width is constant and the cells never shift — a static layout.
 
    Collapse priority (least-to-most persistent) — driven by container
    queries on the host's `container-name: tide-status`. As the host
    narrows, cells hide whole-cell (label apparatus + value together):
-     1. time    → ~430px
-     2. tokens  → ~260px
-     3. context → always shown (most persistent)
+     1. time            → ~430px
+     2. tokens          → ~260px
+     3. state / context → always shown (most persistent)
    ========================================================================= */
 
 .tide-telemetry-status-row {
-  /* Flat 4-item flex row: indicator slot + TIME + TOKENS + CONTEXT
-     as direct siblings. `justify-content: space-between` pushes
-     them to the row's edges and distributes the leftover width
-     across the three inter-item gaps; `gap` is the *minimum*
-     spacing the gaps shrink to as the row narrows. All four
-     inter-item spaces flex uniformly with row width — no item is
-     "stuck" to any other. The indicator slot's fixed width keeps
-     the cells' horizontal positions rock-stable across phase
-     label-text changes ("Idle" → "Awaiting first response"). */
+  /* Flat 4-cell flex row: STATE + TIME + TOKENS + CONTEXT as direct
+     siblings. `justify-content: center` packs the four cells as one
+     centered group with a fixed inter-item `gap`; the leftover row
+     width splits into two equal flexing margins on the far left and
+     right. Every cell is a fixed-width box, so the group's total
+     width is constant and the cells never shift — a static layout. */
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  font-family: var(--tug-font-mono, monospace);
+  justify-content: center;
+  font-family: var(--tug-font-family-sans);
   font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
   line-height: 1.2;
-  gap: 8px;
+  gap: var(--tug-space-2xl);
   width: 100%;
   padding-inline: var(--tug-space-2xl);
   box-sizing: border-box;
 
-  /* Uniform cell width — dominant cell is TOKENS / CONTEXT label
-     (~19ch including letterspacing + label-padding). Apparatus
-     and value-wrap both consume this width so every cell
-     occupies an identical horizontal slot. */
+  /* Default cell width — TIME / TOKENS / CONTEXT. Dominant cell is
+     the TOKENS / CONTEXT label (~19ch including letterspacing +
+     label-padding). Apparatus and value-wrap both consume this
+     width so the three figure cells occupy identical slots. */
   --tugx-tide-status-cell-width: 19ch;
-  /* Indicator slot width — sized for the longest PHASE_HUMAN_LABEL
-     ("Awaiting first response", ~23 chars in mono at 0.75rem ≈
-     173px) + 16px glyph + 6px gap + ~25px buffer. Bump this if a
-     future phase label is added longer than this. The slot's
-     `width` (not `min-width`) is what keeps the cells' positions
-     stable as the visible label text varies — the gallery's
-     reference layout uses the same 220px fix-width discipline. */
-  --tugx-tide-status-indicator-slot-width: 220px;
-}
-
-/* Indicator slot — fixed-width host for the TugStateIndicator and
-   its popover anchor. `flex: 0 0 auto` so the slot never grows
-   or shrinks with the row; `align-self: stretch` lets the inner
-   hover affordance span the row's full height (the indicator
-   itself is just one text line tall, much shorter than the cells
-   stacked above their values). The popover trigger inside reuses
-   the shared `.tide-telemetry-status-anchor` chrome. */
-.tide-telemetry-status-indicator-slot {
-  flex: 0 0 auto;
-  width: var(--tugx-tide-status-indicator-slot-width);
-  display: inline-flex;
-  align-items: stretch;
-  align-self: stretch;
+  /* STATE cell width — wider than the figure cells because its value
+     is the human-readable phase title, and the longest ("Awaiting
+     first response") needs room. A fixed width keeps the group's
+     total width — and every cell position — constant as the phase
+     text changes. Bump this if a future phase title is added longer
+     than the current longest. */
+  --tugx-tide-status-state-cell-width: 180px;
 }
 
 .tide-telemetry-status-cell {
   /* Each cell is a two-row vertical stack: label apparatus on top,
      value centered below. Cells are direct flex children of the
-     row; `flex: 0 0 auto` keeps them at their intrinsic
-     (19ch-wide) size so the row's `justify-content: space-between`
-     can distribute the leftover width across the gaps between
-     them instead of stretching individual cells. */
+     row; `flex: 0 0 auto` keeps them at their intrinsic fixed width
+     so the row's `justify-content: center` distributes the leftover
+     width into the row's flexing margins rather than stretching
+     individual cells. */
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+}
+
+/* STATE cell — wider than the figure cells. Overriding the shared
+   `--tugx-tide-status-cell-width` here widens both this cell's
+   endcap apparatus and its value-wrap in one declaration, since
+   both read the variable. */
+.tide-telemetry-status-cell[data-priority="state"] {
+  --tugx-tide-status-cell-width: var(--tugx-tide-status-state-cell-width);
 }
 
 .tide-telemetry-status-value-wrap {
@@ -206,12 +190,14 @@
   width: var(--tugx-tide-status-cell-width);
 }
 
-/* Value treatment — strong color, weight 600. Mirrors the gauge
-   primitive's value styling. */
+/* Value treatment — the row's focal data: a step up in size from the
+   row's chrome font, bold weight, strong color. `tabular-nums` so the
+   digits hold a constant column as the live values tick. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-telemetry-status-value {
   color: var(--tug7-element-global-text-normal-default-rest);
-  font-weight: 600;
+  font-size: 0.8125rem;
+  font-weight: bold;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -252,9 +238,9 @@
 
 /* ----------------------------------------------------------------------------
    .tide-telemetry-status-anchor — popover-anchor affordance for the
-   indicator + per-cell triggers ([Step 20.4.15]).
+   four cell triggers.
 
-   Each of the four Z2 anchors (indicator, TIME, TOKENS, CONTEXT) is
+   Each of the four Z2 cell anchors (STATE, TIME, TOKENS, CONTEXT) is
    wrapped by a `TugPopoverTrigger` that hangs this class on the
    trigger span. The class only declares the hover hint (cursor +
    tinted background); the popover itself opens via Radix on click,
@@ -279,17 +265,6 @@
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-telemetry-status-anchor:hover {
   background-color: var(--tug7-surface-highlight-primary-normal-hover-rest);
-}
-
-/* Indicator anchor — stretch to fill the row's vertical extent so
-   the hover hint reads the same height as the cell hovers. The cell
-   anchors are taller naturally (label + value stack); the indicator
-   slot is a single inline row, so without `align-self: stretch` its
-   hint would read as a much shorter box than the cells'. */
-.tide-telemetry-status-anchor[data-priority="indicator"] {
-  align-self: stretch;
-  display: inline-flex;
-  align-items: center;
 }
 
 /* ----------------------------------------------------------------------------
@@ -342,11 +317,21 @@
   opacity: 0.55;
 }
 
-/* The letterspaced uppercase label. Slight downward translate (~0.5px)
-   nudges the label's optical center onto the rule line. */
+/* The letterspaced uppercase label. Keeps its own monospaced face —
+   declared explicitly here — while the rest of the row reads in the
+   sans chrome font, so the endcap apparatus stays an instrument
+   legend distinct from the values it captions. An `inline-flex` row
+   so the STATE cell's legend can seat a leading tone dot before the
+   text (`[● STATE]`); plain-text labels are a single flex item and
+   the `gap` is inert. Slight downward translate (~0.5px) nudges the
+   label's optical center onto the rule line. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-telemetry-endcap-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-mono, monospace);
   font-size: 0.5625rem;
   font-weight: 500;
   letter-spacing: 0.18em;
@@ -354,6 +339,40 @@
   padding: 0 4px;
   transform: translateY(0.5px);
   white-space: nowrap;
+}
+
+/* Legend state dot — the `●` in the STATE cell's `[● STATE]`
+   apparatus. A small tone-colored circle ahead of the legend text;
+   the tone tracks the session triple via `indicatorVisualFor`. The
+   dot is a redundant color cue — the phase value below carries the
+   meaning — and rides inside the `aria-hidden` apparatus. Each tone
+   rule sets only `background-color`; the dot renders on the
+   status-bar surface. */
+.tide-telemetry-status-state-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-status-state-dot--default {
+  background-color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-status-state-dot--success {
+  background-color: var(--tug7-element-global-text-normal-success-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-status-state-dot--caution {
+  background-color: var(--tug7-element-global-text-normal-caution-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-status-state-dot--danger {
+  background-color: var(--tug7-element-global-text-normal-danger-rest);
 }
 
 /* Endcap ticks — absolutely positioned 1px-wide vertical strokes at
@@ -389,11 +408,9 @@
    declares `container-type: inline-size` + `container-name:
    tide-status` so these `@container` rules can target it.
 
-   Breakpoints calibrated to 19ch uniform cell widths + row gaps +
-   side padding. As the host narrows, whole cells (label apparatus
-   + value together) hide in priority order — TIME first, then
-   TOKENS; CONTEXT stays as the most-persistent cell. The indicator
-   never collapses. */
+   As the host narrows, whole cells (label apparatus + value
+   together) hide in priority order — TIME first, then TOKENS. The
+   STATE and CONTEXT cells stay as the most-persistent pair. */
 
 @container tide-status (max-width: 430px) {
   .tide-telemetry-status-cell[data-priority="time"] {

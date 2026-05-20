@@ -37,8 +37,14 @@ import {
   TugPopoverContent,
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
-import { TugStateIndicator } from "@/components/tugways/tug-state-indicator";
-import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indicator";
+import {
+  indicatorVisualFor,
+  labelTextFor,
+} from "@/components/tugways/tug-state-indicator";
+import type {
+  TugStateIndicatorState,
+  TugStateIndicatorTone,
+} from "@/components/tugways/tug-state-indicator";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import {
@@ -119,8 +125,9 @@ export function formatDurationMs(ms: number): string {
 /**
  * Always-hours time format — `Hh Mm SSs` shape at every magnitude.
  * `0h 0m 12s` even when below an hour; `4h 30m 00s` for a marathon
- * session. Always includes the seconds component. This is the
- * canonical time format for the Z2 status row (#step-20-4 outcome).
+ * session. Always includes the seconds component. Used by the time
+ * popover's per-turn rows, where the uniform `Hh Mm SSs` shape keeps
+ * the stacked figures column-aligned.
  */
 export function formatTimeAlwaysHours(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "0h 0m 00s";
@@ -129,6 +136,24 @@ export function formatTimeAlwaysHours(ms: number): string {
   const m = Math.floor((totalSec % 3_600) / 60);
   const s = totalSec % 60;
   return `${h}h ${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
+/**
+ * Conditional-hours time format — `Mm SSs` for any span under an
+ * hour, `Hh Mm SSs` once a single span crosses the hour mark. The
+ * status row's TIME cell uses this so the common case (turns lasting
+ * seconds or a few minutes) reads without a vestigial leading `0h`;
+ * an hour-plus turn still surfaces its hours component. Always
+ * includes a zero-padded seconds component.
+ */
+export function formatTimeMinutesSeconds(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0m 00s";
+  const totalSec = Math.max(0, Math.floor(ms / 1_000));
+  const s = (totalSec % 60).toString().padStart(2, "0");
+  const m = Math.floor((totalSec % 3_600) / 60);
+  if (totalSec < 3_600) return `${m}m ${s}s`;
+  const h = Math.floor(totalSec / 3_600);
+  return `${h}h ${m}m ${s}s`;
 }
 
 /** Format a USD cost as `$0.0123` (4 decimals when small, 2 when ≥ $1). */
@@ -358,15 +383,22 @@ export const TideTelemetryPhase: React.FC<TideTelemetryProps> = ({
  * value (down when label is above, up when label is below).
  *
  * Internal component for `TideTelemetryStatusRow`. The apparatus
- * width is fixed by the row (uniform across all cells via the
- * `--tugx-tide-status-cell-width` CSS variable on the row), so this
+ * width is fixed by the row (via the `--tugx-tide-status-cell-width`
+ * CSS variable, which the STATE cell overrides wider), so this
  * component just fills whatever width its container provides.
+ *
+ * When `dotTone` is set the legend seats a small state-tone dot
+ * before the label text — the STATE cell's `[● STATE]` apparatus.
+ * The dot is decorative (the phase value below carries the meaning);
+ * the apparatus stays `aria-hidden`.
  */
 const TideTelemetryEndcapRuleLabel: React.FC<{
   label: string;
   /** Direction the endcap ticks extend (toward the value). */
   ticksDirection: "down" | "up";
-}> = ({ label, ticksDirection }) => (
+  /** When set, a state-tone dot is rendered before the label text. */
+  dotTone?: TugStateIndicatorTone;
+}> = ({ label, ticksDirection, dotTone }) => (
   <span
     className="tide-telemetry-endcap-rule"
     data-ticks={ticksDirection}
@@ -374,7 +406,14 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
   >
     <span className="tide-telemetry-endcap-tick tide-telemetry-endcap-tick-left" />
     <span className="tide-telemetry-endcap-rule-fill" />
-    <span className="tide-telemetry-endcap-label">{label}</span>
+    <span className="tide-telemetry-endcap-label">
+      {dotTone !== undefined && (
+        <span
+          className={`tide-telemetry-status-state-dot tide-telemetry-status-state-dot--${dotTone}`}
+        />
+      )}
+      {label}
+    </span>
     <span className="tide-telemetry-endcap-rule-fill" />
     <span className="tide-telemetry-endcap-tick tide-telemetry-endcap-tick-right" />
   </span>
@@ -382,13 +421,13 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
 
 /**
  * Combined session status row — production Z2 surface promoted from
- * the workshop gallery in [Step 20.4.15]. Layout:
+ * the workshop gallery. Layout:
  *
- *     [TugStateIndicator (label-right)]   TIME   TOKENS   CONTEXT
+ *     STATE   TIME   TOKENS   CONTEXT
  *
- * Four anchors, each opening a popover on click:
+ * Four cell anchors, each opening a popover on click:
  *
- *   - **Indicator** → `StateChangeLogPopoverContent` driven by
+ *   - **STATE** → `StateChangeLogPopoverContent` driven by
  *     `useSessionStateChanges(snap.tugSessionId)` against the
  *     persisted SQLite ledger.
  *   - **TIME** → `TimePopoverContent` — per-turn `activeMs` log +
@@ -410,20 +449,24 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
  * while in flight and reports `0` otherwise (the helper's fallback
  * path uses the static value in that case).
  *
- * `TugStateIndicator` (Step 20.4.3) replaces the old internal
- * concentric dot + tooltip combo. The indicator's `state` reads
- * `phase × transportState × interruptInFlight`; `labelPosition="right"`
- * surfaces the inline `PHASE_HUMAN_LABEL` text alongside the dot.
+ * The STATE cell mirrors the other three: an endcap-rule legend
+ * above a value. Its legend carries a small state-tone dot — the
+ * `[● STATE]` apparatus — whose color reads
+ * `phase × transportState × interruptInFlight` via
+ * `indicatorVisualFor`. The value below is the human-readable phase
+ * title (`labelTextFor`): "Idle", "Running tools", "Awaiting first
+ * response". State is conveyed by the legible value text; the dot
+ * is a redundant color cue.
  *
- * Cells render TIME / TOKENS / CONTEXT only — the pre-20.4.15
- * TOTAL TIME / TOTAL TOKENS cells were removed because the same
- * sums surface in the TIME and TOKENS popovers' summary footers
+ * The row renders four cells — STATE / TIME / TOKENS / CONTEXT.
+ * Cumulative TOTAL TIME / TOTAL TOKENS are not separate cells; the
+ * same sums surface in the TIME and TOKENS popovers' summary footers
  * (one click reveals the per-turn rows + the cumulative totals).
  *
- * **Mount-identity ([L26]):** the four-cell flex row, the indicator
- * host, and every cell are unconditionally mounted across phase /
- * transport / interrupt transitions. Only the popovers' open/closed
- * state and the cell values change.
+ * **Mount-identity ([L26]):** the four-cell flex row and every cell
+ * are unconditionally mounted across phase / transport / interrupt
+ * transitions. Only the popovers' open/closed state, the cell
+ * values, and the STATE dot's tone class change.
  */
 export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   codeSessionStore,
@@ -535,6 +578,12 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
     transportState: snap.transportState,
     interruptInFlight: snap.interruptInFlight,
   };
+  // STATE cell — the legend dot's tone reads the full session triple
+  // (transport health / an in-flight interrupt dominate phase); the
+  // value text is the human-readable phase title.
+  const stateTone: TugStateIndicatorTone =
+    indicatorVisualFor(indicatorState).tone;
+  const stateLabelText = labelTextFor(indicatorState);
 
   // Per-anchor popover content. Each popover receives only the
   // inputs it needs — no shared context object — so future popover
@@ -566,45 +615,44 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
       breakdown={contextBreakdown}
     />
   );
-  const indicatorPopover = (
+  const statePopover = (
     <StateChangeLogPopoverContent rows={stateChangeSnap.rows} />
   );
 
-  // Flat 4-item flex row — indicator slot + three cells as direct
-  // siblings. The row's `justify-content: space-between` (declared
-  // in CSS) distributes them edge-to-edge with the row's `gap`
-  // serving as the *minimum* inter-item spacing; all four
-  // inter-item gaps flex uniformly with the host width. The
-  // indicator slot is pinned to a fixed width
-  // (`--tugx-tide-status-indicator-slot-width`, 220px) sized for
-  // the longest `PHASE_HUMAN_LABEL` ("Awaiting first response")
-  // so the cells' horizontal positions stay rock-stable across
-  // label-text changes. Mirrors the `gallery-tide-status-row`
-  // reference layout exactly.
+  // Flat 4-cell flex row — STATE + TIME + TOKENS + CONTEXT as direct
+  // siblings. The row's `justify-content: center` (declared in CSS)
+  // packs the four cells as one group with a fixed inter-item `gap`;
+  // the leftover width splits into equal flexing margins on the
+  // row's far left and right. Every cell is a fixed-width box (STATE
+  // wider, to fit the longest phase title as its value), so the
+  // group's width is constant and the cells never shift.
   return (
     <div
       className="tide-telemetry-status-row"
       data-slot="tide-telemetry-status-row"
     >
-      <span
-        className="tide-telemetry-status-indicator-slot"
-        data-slot="tide-telemetry-status-indicator-slot"
-      >
-        <TugPopover>
-          <TugPopoverTrigger>
-            <span
-              className="tide-telemetry-status-anchor"
-              data-slot="tide-telemetry-status-indicator-anchor"
-              data-priority="indicator"
-            >
-              <TugStateIndicator state={indicatorState} size={16} />
+      <TugPopover>
+        <TugPopoverTrigger>
+          <span
+            className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+            data-priority="state"
+          >
+            <TideTelemetryEndcapRuleLabel
+              label="STATE"
+              ticksDirection="down"
+              dotTone={stateTone}
+            />
+            <span className="tide-telemetry-status-value-wrap">
+              <span className="tide-telemetry-status-value">
+                {stateLabelText}
+              </span>
             </span>
-          </TugPopoverTrigger>
-          <TugPopoverContent side="top" align="start" sideOffset={8} arrow>
-            {indicatorPopover}
-          </TugPopoverContent>
-        </TugPopover>
-      </span>
+          </span>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+          {statePopover}
+        </TugPopoverContent>
+      </TugPopover>
       <TugPopover>
         <TugPopoverTrigger>
           <span
@@ -614,7 +662,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
             <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
             <span className="tide-telemetry-status-value-wrap">
               <span className="tide-telemetry-status-value">
-                {formatTimeAlwaysHours(perTurnActiveMs)}
+                {formatTimeMinutesSeconds(perTurnActiveMs)}
               </span>
             </span>
           </span>
