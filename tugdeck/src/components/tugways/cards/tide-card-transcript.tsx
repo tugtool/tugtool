@@ -916,6 +916,7 @@ export const TideTranscriptHost = forwardRef<
         scrollKey="tide-card-transcript"
         followBottom
         inline
+        pageByEntry
       />
     </div>
   );

@@ -3588,8 +3588,10 @@ For session `7635e374` the model yields window 19354 / 21852 / 21971 / 59196, pe
 
 **Behaviour contract.**
 
-  - **PgUp (Opt+ArrowUp):** scroll so the TOP of the previous entry is pinned to the TOP of the scroll view (with the usual list-view `padding-block-start` already in place — the user sees the entry's header at the top of the viewport).
-  - **PgDown (Opt+ArrowDown):** scroll so the BOTTOM of the next entry's Z1B area (with `padding-block-end` margin) is at the BOTTOM of the scroll view (the user sees the end-state badge / COPY chip just above the Z2 status bar).
+This is an **entry pager**, not an entry-in-view pager: each press steps exactly one entry and pins that entry's TOP flush to the TOP of the scroll viewport. PgDown advances to the next entry even when that entry is already partly or fully on screen — it is never skipped just because it was visible.
+
+  - **PgDown (Opt+ArrowDown):** step forward one entry — pin the next entry's top flush to the top of the scroll viewport.
+  - **PgUp (Opt+ArrowUp):** step back one entry — pin the previous entry's top flush to the top. From mid-entry the first PgUp snaps the current entry's top up.
   - **Edge cases:** PgUp at the topmost entry stays at the top; PgDown at the bottommost entry stays at the bottom; both are no-ops at their respective edges. PgDown when at the bottom-most entry re-engages follow-bottom (interaction with Sub-step I).
 
 **Suspect implementation surface.**
@@ -3604,16 +3606,16 @@ Likely implementation shape:
   4. On PgDown: target = `scrollTop` for `(anchorEntry.index + 1).bottomY - viewportHeight + padding-block-end`.
   5. Write `SmartScroll.scrollTo(target)` (smooth or instant — pick smooth for tactile feedback).
 
-Edge: the "entry" unit here is the data-source row (`turn entry`), which in the transcript is composed of two list-view cells (user-half + asst-half). The contract may want to treat the PAIR as a single entry — PgUp scrolls to the previous TURN's user-half top, PgDown scrolls to the next TURN's asst-half bottom. Confirm during diagnosis.
+Edge: the "entry" unit here is the data-source row (`turn entry`), which in the transcript is composed of two list-view cells (user-half + asst-half). **Resolved: one entry = one list-view cell.** Paging must visit every row — user prompts as well as assistant responses — so PgUp / PgDown step one cell at a time, not one turn-pair.
 
 **Tasks.**
 
-- [ ] **Confirm the keyboard surface.** Identify which element receives focus (the `.tug-list-view` host vs. a parent), and whether existing handlers (browser default, SmartScroll, response-settings shortcuts) already capture PageUp / PageDown / Alt+Arrow keys. Resolve any precedence conflicts.
-- [ ] **Decide the "entry" unit.** Per-list-view-cell (user-half OR asst-half) or per-turn-pair (user-half AND asst-half together). The user's verbal description ("the top of the previous entry...the bottom of the Z1B area") strongly implies per-turn-pair — confirm.
-- [ ] **Implement the handler.** Use `heightIndexRef.current` to compute target positions; route the scroll write through `SmartScroll` so the auto-follow-bottom intent tracking sees the user's navigation (PgDown at the bottom should re-engage follow-bottom; PgUp from the bottom should break it).
-- [ ] **HMR vet.**
-    - (a) PgUp from mid-transcript: the previous entry's header (Z0) pins to the top of the viewport.
-    - (b) PgDown from mid-transcript: the next entry's Z1B bottom (with breathing-room margin) pins to the bottom of the viewport.
+- [x] **Confirmed the keyboard surface.** The `.tug-list-view` host (`tabIndex={0}`) and its focusable cell wrappers receive the keydowns; `SmartScroll` registers a bubble-phase `keydown` listener on that same host (`SCROLL_KEYS` covers PageUp / PageDown / ArrowUp / ArrowDown but never `preventDefault`s them — so the browser's viewport-height page scroll was the standing behaviour). Resolved the precedence by installing the new handler **capture-phase** on the host: it runs before SmartScroll's bubble listener regardless of registration order, and `stopImmediatePropagation` keeps SmartScroll from also processing a key this handler has claimed. An `e.defaultPrevented` guard yields to any upstream document-capture handler (responder chain) — though that chain only acts on action-vocabulary keys, not paging keys.
+- [x] **Confirmed per-cell** (one entry = one `TugListView` cell). The first pass shipped per-turn-pair; the user corrected it — paging must visit *every* row, the user prompt as well as the assistant response. Since the transcript renders each half of a turn as its own cell, per-cell paging steps through all of them. The opt-in is a plain boolean `pageByEntry` prop (no cell-grouping stride — the turn-pair grouping that motivated a numeric prop is gone).
+- [x] **Implemented the handler.** Two reworks landed against user feedback. (1) The first pass derived target positions from `heightIndexRef.current.offsetForIndex` — a sum of measured cell heights, which cannot see the window's `row-gap` or the `::before` / `::after` breathing-room pseudo-elements, so it drifted every landing by one `row-gap` per entry, compounding down the list. (2) The second pass paged by *entry in view* — PageDown skipped entries that were already visible. Final design is a true **entry pager**: `internal/list-view-page-navigation.ts` (`computePageNavigation`) is the pure SELECTION half — given every entry's viewport-relative top edge it finds the current top entry (the last whose top has reached the viewport top), then steps ±1 (PageDown → current+1, PageUp → current−1, with a snap-to-current when the viewport is mid-entry). The `TugListView` keydown handler reads real entry tops via `getBoundingClientRect` (the height index cannot represent gaps / pseudo-elements), runs the selection, then routes the scroll through `SmartScroll.scrollToElement` — the browser's exact `scrollIntoView` with `block: "start"`, pinning the target entry's top flush to the viewport top in BOTH directions. PageUp additionally `disengage`s follow-bottom; a PageDown already on the last entry uses `scrollToBottom` (re-engages follow-bottom, composing with Sub-step I). Opt+ArrowUp / Opt+ArrowDown are accepted as the macOS aliases. Pure-logic tests in `internal/__tests__/list-view-page-navigation.test.ts`.
+- [ ] **HMR vet.** _Pending user verification._
+    - (a) PgUp from mid-transcript: the previous entry's header (Z0) pins flush to the top of the viewport.
+    - (b) PgDown from mid-transcript: the next entry's header (Z0) pins flush to the top of the viewport — including when that entry was already in view (entry pager, not entry-in-view pager).
     - (c) PgUp at the top entry: no-op (or scroll to the absolute top if not already there).
     - (d) PgDown at the bottom entry: scrolls to the absolute bottom AND re-engages follow-bottom (composes with Sub-step I).
     - (e) Hold Opt and press ArrowUp / ArrowDown — same behaviour as PgUp / PgDown (the macOS alias).

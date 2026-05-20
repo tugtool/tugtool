@@ -90,6 +90,7 @@ import React from "react";
 import { SmartScroll } from "@/lib/smart-scroll";
 
 import { HeightIndex } from "./internal/list-view-height-index";
+import { computePageNavigation } from "./internal/list-view-page-navigation";
 import { computeWindow } from "./internal/list-view-window";
 import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
 import { ScrollerProvider, type Scroller } from "./internal/scroller-context";
@@ -469,6 +470,33 @@ export interface TugListViewProps<
   inline?: boolean;
 
   /**
+   * Opt into PageUp / PageDown keyboard navigation by *entry*, where
+   * each cell is one entry. When `true`, the list view installs a
+   * keyboard handler so PageUp / PageDown — and the macOS
+   * Opt+ArrowUp / Opt+ArrowDown aliases — step the scroller exactly
+   * one entry at a time:
+   *
+   *  - PageDown advances to the next entry and pins its top flush to
+   *    the top of the viewport — even when that entry is already
+   *    partly or fully on screen (an *entry* pager, not an
+   *    *entry-in-view* pager). On the last entry it jumps to the live
+   *    bottom and re-engages follow-bottom.
+   *  - PageUp steps back one entry, pinning its top flush to the top.
+   *    From mid-entry the first PageUp snaps the current entry's top
+   *    up.
+   *
+   * The Tide transcript opts in so the user can step through every
+   * row — both halves of each turn (the prompt and the response) are
+   * separate cells, so navigation visits all of them. Omitted /
+   * `false` ⇒ no handler is installed and PageUp / PageDown fall
+   * through to the browser default. The selection math is pure and
+   * lives in `internal/list-view-page-navigation.ts`.
+   *
+   * @default false
+   */
+  pageByEntry?: boolean;
+
+  /**
    * Opt the list view into UITableView-style mandatory selection:
    * the list **always** has exactly one selected row. On mount (and
    * whenever the data source changes) the list seeds selection to the
@@ -553,6 +581,24 @@ const SCROLL_CORRECTION_THRESHOLD_PX = 4;
  * paths agree on the fallback identity.
  */
 const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
+
+/**
+ * True when `target` is an editable element — `<input>`,
+ * `<textarea>`, `<select>`, or any `contenteditable` host. The
+ * `cellsPerEntry` keyboard handler skips these so PageUp / PageDown
+ * typed into a cell's own editable descendant stays caret movement
+ * rather than transcript navigation. Mirrors SmartScroll's own
+ * editable-target guard.
+ */
+function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === "INPUT"
+    || target.tagName === "TEXTAREA"
+    || target.tagName === "SELECT"
+    || target.isContentEditable
+  );
+}
 
 /**
  * Resolve the effective selected index for `selectionRequired` mode.
@@ -651,6 +697,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       className,
       followBottom,
       inline,
+      pageByEntry,
       selectionRequired = false,
       onSelectionChange,
     },
@@ -1800,6 +1847,99 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // mirroring the `delegateRef` pattern above.
     const dataSourceRef = React.useRef(dataSource);
     dataSourceRef.current = dataSource;
+
+    // PageUp / PageDown by entry ([L02] DOM event listener installed
+    // in a `useLayoutEffect` per [L03]; no React state crosses the
+    // scroll write). Opt-in via `pageByEntry` — omitted means the
+    // keys fall through to the browser default. Installed once;
+    // re-runs only when the opt-in flips.
+    //
+    // Capture phase. SmartScroll's own keydown listener
+    // (`smart-scroll.ts`) is registered bubble-phase on this same
+    // container; a capture-phase listener runs first regardless of
+    // registration order, so when this handler claims a key,
+    // `stopImmediatePropagation` reaches that bubble listener and
+    // keeps SmartScroll from also entering its dragging phase /
+    // disengaging follow-bottom for a key this handler has already
+    // resolved. The scroll write itself still routes through
+    // SmartScroll so the [D07] follow-bottom intent stays coherent:
+    // PageUp disengages, PageDown onto the last cell re-engages.
+    React.useLayoutEffect(() => {
+      if (pageByEntry !== true) return;
+      const scrollEl = scrollContainerRef.current;
+      if (scrollEl === null) return;
+
+      const handleNavKey = (e: KeyboardEvent): void => {
+        if (e.defaultPrevented) return;
+        // macOS aliases Opt+Arrow onto PageUp / PageDown. Exclude
+        // Cmd / Ctrl from the arrow alias so it can't collide with
+        // SmartScroll's Cmd+ArrowDown "jump to bottom".
+        const altArrow = e.altKey && !e.metaKey && !e.ctrlKey;
+        const isUp = e.key === "PageUp" || (altArrow && e.key === "ArrowUp");
+        const isDown =
+          e.key === "PageDown" || (altArrow && e.key === "ArrowDown");
+        if (!isUp && !isDown) return;
+        // A keydown inside an editable descendant is caret movement.
+        if (isEditableEventTarget(e.target)) return;
+
+        const ss = smartScrollRef.current;
+        if (ss === null) return;
+
+        // Geometry from real DOM rects, not the height index: the
+        // index sums cell heights and so cannot see the window's
+        // `row-gap` or the breathing-room pseudo-elements, which would
+        // drift the target by one gap per entry. `inline` mode renders
+        // every cell, so the element map is complete; bail to the
+        // browser default if it somehow is not.
+        const itemCount = dataSourceRef.current.numberOfItems();
+        const cellEls: HTMLElement[] = [];
+        for (let i = 0; i < itemCount; i += 1) {
+          const el = cellElementMapRef.current.get(i);
+          if (el === undefined) return;
+          cellEls.push(el);
+        }
+        const viewTop = scrollEl.getBoundingClientRect().top;
+        const cellTops = cellEls.map(
+          (el) => el.getBoundingClientRect().top - viewTop,
+        );
+
+        const result = computePageNavigation({
+          direction: isUp ? "up" : "down",
+          cellTops,
+        });
+        if (result.kind === "none") return;
+
+        // This handler owns the key — suppress the browser's
+        // viewport-height page scroll and SmartScroll's keydown
+        // handler (see the capture-phase note above).
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        if (result.kind === "bottom") {
+          // PageDown already on the last entry — jump to the live
+          // bottom and re-engage follow-bottom ([D07], composes with
+          // Sub-step I).
+          ss.scrollToBottom(false);
+          return;
+        }
+        // Step one entry. PageUp moves away from the live edge, so
+        // break follow-bottom; PageDown to a non-last entry leaves it
+        // alone (it is already disengaged whenever the scroller is not
+        // at the bottom). `scrollToElement` runs the browser's exact
+        // `scrollIntoView`, pinning the target entry's top flush to
+        // the viewport top.
+        if (isUp) ss.disengage("page-up-key");
+        ss.scrollToElement(cellEls[result.index], {
+          animated: false,
+          block: "start",
+        });
+      };
+
+      scrollEl.addEventListener("keydown", handleNavKey, true);
+      return () => {
+        scrollEl.removeEventListener("keydown", handleNavKey, true);
+      };
+    }, [pageByEntry]);
 
     interface CellCallbacks {
       readonly ref: (el: HTMLDivElement | null) => void;
