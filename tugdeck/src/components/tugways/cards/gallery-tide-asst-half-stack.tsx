@@ -500,9 +500,16 @@ function EndStateDisplay({
   endState: Z1AsstHalfEndState;
 }): React.ReactElement {
   const badge = endStateBadgeFor(endState.turnEndReason);
-  // Workshop card — synthetic single end-state, no prior turn; the
-  // per-turn delta degenerates to this turn's output.
-  const tokens = perTurnTokens(endState.cost, undefined);
+  // Workshop card — synthetic single end-state, no prior turn. The
+  // prior window degenerates to this turn's own observed input
+  // (`input + cache_read + cache_creation`), so the per-turn delta
+  // shows the turn's `output`.
+  const tokens = perTurnTokens(
+    endState.cost,
+    endState.cost.inputTokens +
+      endState.cost.cacheReadInputTokens +
+      endState.cost.cacheCreationInputTokens,
+  );
   // Style for the `::` separators — base color + an extra
   // horizontal margin on each side (tunable via
   // `Z1B_DOUBLE_COLON_EXTRA_MARGIN_PX`). The flex container's

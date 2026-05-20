@@ -1102,6 +1102,10 @@ struct RecordTurnTelemetryPayload {
     ttftc_ms: Option<i64>,
     reconnect_count: i64,
     max_stream_gap_ms: i64,
+    /// Session-level `window(0)`; carried on every turn's telemetry so
+    /// a resumed session restores it. `None` when the client never
+    /// captured a first iteration.
+    session_init_tokens: Option<i64>,
     ended_at: i64,
 }
 
@@ -1159,6 +1163,7 @@ fn parse_record_turn_telemetry_payload(
         ttftc_ms: optional_i64(telemetry, "ttftcMs"),
         reconnect_count: i64_or(telemetry, "reconnectCount")?,
         max_stream_gap_ms: i64_or(telemetry, "maxStreamGapMs")?,
+        session_init_tokens: optional_i64(telemetry, "sessionInitTokens"),
         ended_at,
     })
 }
@@ -2454,6 +2459,7 @@ impl AgentSupervisor {
             reconnect_count: parsed.reconnect_count,
             max_stream_gap_ms: parsed.max_stream_gap_ms,
             ended_at: parsed.ended_at,
+            session_init_tokens: parsed.session_init_tokens,
         };
         if let Err(err) = ledger.record_turn_telemetry(&row) {
             tracing::warn!(

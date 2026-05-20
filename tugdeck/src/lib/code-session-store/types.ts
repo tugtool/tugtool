@@ -90,12 +90,23 @@ export interface ToolCallState {
 
 /**
  * Per-turn token + cost figures, frozen onto the committed `TurnEntry`
- * at `turn_complete`. The four token fields are the turn's RAW
- * `cost_update.usage` — `usage` is per-turn on the wire, not
- * cumulative, so it passes through without differencing. Only
- * `totalCostUsd` is a delta (`total_cost_usd` IS cumulative-per-session,
- * so the committed value is `after − before`). See `extractTurnCost`.
- * Zeros for a turn that received no `cost_update` event.
+ * at `turn_complete`.
+ *
+ * The four token fields are the turn's LAST tool-loop iteration's
+ * `usage` — `cost_update.usage`, which tugcode emits from the turn's
+ * most recent `message_delta`. They are NOT `result.usage`:
+ * `result.usage` is the SUM of `usage` across every API call of the
+ * turn, so a K-tool-call turn over-reports by ~K×. The last
+ * iteration's `input + cache_read + cache_creation + output` IS the
+ * resident context window after the turn — `turnWindowTokens` reads
+ * exactly that.
+ *
+ * Only `totalCostUsd` is a delta (`total_cost_usd` IS
+ * cumulative-per-session, so the committed value is `after − before`).
+ * See `extractTurnCost`. Zeros for a turn that received no
+ * `cost_update` event, or an interrupted turn whose only iteration was
+ * a degenerate zero-usage stop — the transcript window-walk
+ * (`deriveContextWindows`) carries the prior window forward for those.
  */
 export interface TurnCost {
   inputTokens: number;
@@ -300,43 +311,20 @@ export interface CostSnapshot {
 }
 
 /**
- * Live token usage for one in-flight assistant message, accumulated
- * from its `streaming_usage` wire frames. The four token fields
- * mirror {@link TurnCost} minus the dollar cost — dollars are
- * cumulative-per-session and only land with the terminal
- * `cost_update`, so the live shape omits them.
+ * The four-token `usage` shape carried by a `streaming_usage` /
+ * `cost_update` frame, decoded to camelCase. Mirrors {@link TurnCost}
+ * minus the dollar cost — dollars are cumulative-per-session and only
+ * land with the terminal `cost_update`, so the live shape omits them.
  *
- * A message's `message_start` reports an opening snapshot; its
- * terminal `message_delta` reports the message's final, authoritative
- * usage. Every field is monotonic across a message's frames, so the
- * reducer keeps the per-field maximum.
+ * Used both as the live in-flight `liveTurnUsage` value and as the
+ * minimal structural input to the window helpers in `end-state.ts`
+ * ({@link TurnCost} is structurally assignable to it).
  */
 export interface LiveMessageUsage {
   inputTokens: number;
   outputTokens: number;
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
-}
-
-/**
- * Live intra-turn token usage for the in-flight turn — the streaming
- * approximation the `Tokens` / `Context` status cells animate while a
- * turn is in flight, before the authoritative `cost_update` lands at
- * turn-complete.
- *
- * `byMessage` is keyed by claude's `message.id`: a tool-loop turn has
- * one assistant message per iteration, and the per-message usages SUM
- * to the turn total (verified against live wire data). The reducer
- * accumulates into this map across the turn; `rollupLiveTurnUsage`
- * (end-state.ts) folds it back into a {@link TurnCost} for the cell
- * helpers.
- *
- * `null` between turns. Reset at `handleSend`, superseded at
- * `handleTurnComplete` — the committed `cost_update` is the truth and
- * replaces the live approximation with no discontinuity.
- */
-export interface LiveTurnUsage {
-  byMessage: Readonly<Record<string, LiveMessageUsage>>;
 }
 
 /**
@@ -531,18 +519,36 @@ export interface CodeSessionSnapshot {
 
   lastCost: CostSnapshot | null;
   /**
-   * Live intra-turn token usage for the in-flight turn — accumulated
-   * from `streaming_usage` wire frames so the `Tokens` / `Context`
-   * status cells can climb mid-turn. `null` between turns.
+   * Live intra-turn token usage for the in-flight turn — the LATEST
+   * `streaming_usage` wire frame, so the `Tokens` / `Context` status
+   * cells can climb mid-turn. `null` between turns.
    *
-   * The cells read this while `inflightUserMessage !== null` and fall
-   * back to the last committed turn otherwise; the committed
-   * `cost_update` supersedes it at turn-complete. The reference is
-   * preserved across snapshot rebuilds while the reducer's underlying
-   * field doesn't change, so [L02] consumers get `Object.is`
-   * stability during quiescent renders.
+   * Not an accumulation: `observedInput` (`input + cache_read +
+   * cache_creation`) grows monotonically across a turn's API calls, so
+   * the most recent frame is always the current window. The reducer
+   * replaces this field on each frame (no per-message map). The cells
+   * read it while `inflightUserMessage !== null` and fall back to the
+   * last committed turn's window otherwise; the committed `cost_update`
+   * carries the same last-iteration usage and supersedes it at
+   * turn-complete with no discontinuity. The reference is preserved
+   * across snapshot rebuilds while the reducer's underlying field
+   * doesn't change, so [L02] consumers get `Object.is` stability during
+   * quiescent renders.
    */
-  liveTurnUsage: LiveTurnUsage | null;
+  liveTurnUsage: LiveMessageUsage | null;
+  /**
+   * `window(0)` — the resident context before any turn (system prompt
+   * + tools + agents + memory + skills). Captured by the reducer as
+   * the `observedInput` of the session's first telemetry iteration
+   * (first `streaming_usage` frame; first `cost_update` as fallback)
+   * and never overwritten. `null` until the first frame lands.
+   *
+   * The transcript window-walk uses it as the prior window for turn 1,
+   * so `sessionInitTokens + Σ perTurn = window(latest)` telescopes
+   * exactly. Persisted via `TurnTelemetry` so a resumed session
+   * restores it.
+   */
+  sessionInitTokens: number | null;
   /**
    * Most-recent `/context`-style per-category token breakdown for this
    * session. Populated by `context_breakdown` events from tugcode

@@ -55,7 +55,6 @@ import type {
   CostSnapshot,
   LastReplayResult,
   LiveMessageUsage,
-  LiveTurnUsage,
   ToolCallState,
   TransportState,
   TurnEndReason,
@@ -191,19 +190,36 @@ export interface CodeSessionState {
   } | null;
   lastCost: CostSnapshot | null;
   /**
-   * Live intra-turn token usage, accumulated per-message from
-   * `streaming_usage` wire frames so the `Tokens` / `Context` status
-   * cells can climb mid-turn. `null` between turns.
+   * Live intra-turn token usage — the LATEST `streaming_usage` wire
+   * frame so the `Tokens` / `Context` status cells can climb mid-turn.
+   * `null` between turns.
    *
-   * Lifecycle: reset to `null` at `handleSend` (turn start), grown by
-   * `handleStreamingUsage` across the turn, and reset to `null` again
-   * at `handleTurnComplete` (via `resetPerTurnTelemetry`) — the
-   * committed `cost_update` is authoritative and supersedes the live
-   * approximation. The reducer assigns a fresh object only when a
-   * frame lands; quiescent reductions preserve the reference for
-   * [L02] `Object.is` stability.
+   * Not an accumulation: `observedInput` grows monotonically across a
+   * turn's API calls, so the most recent frame is always the current
+   * window. `handleStreamingUsage` replaces this field on each frame.
+   *
+   * Lifecycle: reset to `null` at `handleSend` (turn start), replaced
+   * by `handleStreamingUsage` across the turn, and reset to `null`
+   * again at `handleTurnComplete` (via `resetPerTurnTelemetry`) — the
+   * committed `cost_update` carries the same last-iteration usage and
+   * supersedes the live frame. The reducer assigns a fresh object only
+   * when a frame lands; quiescent reductions preserve the reference
+   * for [L02] `Object.is` stability.
    */
-  liveTurnUsage: LiveTurnUsage | null;
+  liveTurnUsage: LiveMessageUsage | null;
+  /**
+   * `window(0)` — the resident context before any turn. Captured once,
+   * from the `observedInput` (`input + cache_read + cache_creation`)
+   * of the session's first telemetry iteration: the first
+   * `streaming_usage` frame, or the first `cost_update` as a fallback.
+   * Never overwritten once set. `null` until the first frame lands.
+   *
+   * Session-level — NOT reset at turn boundaries. The transcript
+   * window-walk uses it as the prior window for turn 1. Restored on
+   * resume from the first replayed `turn_complete`'s inlined
+   * `TurnTelemetry.sessionInitTokens`.
+   */
+  sessionInitTokens: number | null;
   /**
    * Most-recent `/context`-style breakdown captured from a
    * `context_breakdown` wire frame. Projected onto
@@ -432,6 +448,7 @@ export function createInitialState(
     lastError: null,
     lastCost: null,
     liveTurnUsage: null,
+    sessionInitTokens: null,
     lastContextBreakdown: null,
     committedMsgIds: new Set(),
     lastReplayResult: null,
@@ -1277,7 +1294,14 @@ function resetPerTurnTelemetry(): Pick<
  * caller's branch on `event.telemetry !== undefined` (replay path)
  * is the precondition; this helper just packages the payload.
  */
-function buildRecordTelemetryEffect(entry: TurnEntry): Effect {
+function buildRecordTelemetryEffect(
+  entry: TurnEntry,
+  sessionInitTokens: number | null,
+): Effect {
+  // `sessionInitTokens` is session-level — it is not on `TurnEntry`,
+  // so the caller passes the reducer's captured value. Persisting it
+  // on every turn's telemetry row lets a resumed session restore it
+  // from the first replayed `turn_complete`.
   const telemetry: TurnTelemetry = {
     cost: entry.cost,
     wallClockMs: entry.wallClockMs,
@@ -1288,6 +1312,7 @@ function buildRecordTelemetryEffect(entry: TurnEntry): Effect {
     ttftcMs: entry.ttftcMs,
     reconnectCount: entry.reconnectCount,
     maxStreamGapMs: entry.maxStreamGapMs,
+    sessionInitTokens,
   };
   return {
     kind: "record-telemetry",
@@ -1464,6 +1489,13 @@ function handleTurnComplete(
     endedAt,
     event.telemetry,
   );
+  // Restore `sessionInitTokens` on the resume path: the live capture
+  // (`handleStreamingUsage` / `handleCostUpdate`) never ran for a
+  // replayed session, so the value rides in on the first replayed
+  // `turn_complete`'s inlined telemetry. Keep an already-captured
+  // value; otherwise adopt the inlined one.
+  const sessionInitTokens =
+    state.sessionInitTokens ?? event.telemetry?.sessionInitTokens ?? null;
   // Close any open per-turn pause segments (awaiting-approval +
   // interrupt-in-flight) into their interval-array projections. The
   // committed `TurnEntry` above already folds the scalar
@@ -1498,6 +1530,7 @@ function handleTurnComplete(
         prevPhase: null,
         pendingUserMessage: null,
         committedMsgIds,
+        sessionInitTokens,
         ...resetPerTurnTelemetry(),
         ...closedPauseSegments,
       },
@@ -1534,6 +1567,7 @@ function handleTurnComplete(
         queuedSends: rest,
         lastError: null,
         committedMsgIds,
+        sessionInitTokens,
         // Queue-flush starts the next turn synchronously. Reset
         // per-turn telemetry as if `handleSend` had just run, then
         // snapshot the post-completion `lastCost` so the next turn's
@@ -1561,7 +1595,7 @@ function handleTurnComplete(
         // bug (the wire shape's replay-only contract is enforced by
         // tugcast's supervisor; defensively, only persist when there
         // was no inline source).
-        ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry)] : []),
+        ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry, sessionInitTokens)] : []),
         {
           kind: "send-frame",
           msg: {
@@ -1603,7 +1637,7 @@ function handleTurnComplete(
       { kind: "clear-inflight" },
       // Persist per-turn telemetry via the supervisor's SessionLedger
       // on the live path. See note above in the queue-flush branch.
-      ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry)] : []),
+      ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry, sessionInitTokens)] : []),
     ],
   };
 }
@@ -1874,7 +1908,18 @@ function handleCostUpdate(
   };
 
   return {
-    state: { ...state, lastCost },
+    // `cost_update.usage` is the turn's last-iteration usage — the
+    // `streaming_usage` path captures `sessionInitTokens` first in
+    // practice; this is the fallback for a session whose first turn
+    // produced a `cost_update` but no `streaming_usage` frame.
+    state: {
+      ...state,
+      lastCost,
+      sessionInitTokens: captureSessionInit(
+        state.sessionInitTokens,
+        readUsage(event.usage),
+      ),
+    },
     effects: [],
   };
 }
@@ -1883,19 +1928,20 @@ function handleCostUpdate(
  * `streaming_usage` reducer handler — live intra-turn token telemetry,
  * phase-tolerant like {@link handleCostUpdate}.
  *
- * Each frame carries one assistant message's current `usage` snapshot
- * keyed by `msg_id`. The handler holds a per-message map and merges
- * field-by-field with the per-field MAX: every token field is
- * monotonic across a message's frames (`message_start` reports an
- * opening snapshot, the terminal `message_delta` the final total), so
- * the max is the message's latest authoritative value and never
- * double-counts. The turn rollup is the SUM across messages — a
- * tool-loop turn's per-message usages are additive and total the
- * terminal `cost_update.usage`.
+ * `observedInput` (`input + cache_read + cache_creation`) grows
+ * monotonically across a turn's API calls — each call re-reads the
+ * prior context plus its own output and tool result — so the LATEST
+ * frame is always the current context window. The handler stores the
+ * frame's `usage` as `liveTurnUsage`, replacing the prior frame; there
+ * is no accumulation and no per-message map.
  *
- * Drops a frame with no `msg_id` (claude has not revealed the message
- * id yet) — there is no key to accumulate under. No phase transition,
- * no effect: a display-only telemetry frame.
+ * Also captures `sessionInitTokens` once: the `observedInput` of the
+ * session's first token-bearing telemetry iteration is `window(0)` —
+ * the bootstrap the transcript walk measures turn 1 against.
+ *
+ * Drops a frame with no `msg_id` — a malformed frame (tugcode gates
+ * the wire emit on a non-empty id). No phase transition, no effect: a
+ * display-only telemetry frame.
  */
 function handleStreamingUsage(
   state: CodeSessionState,
@@ -1905,32 +1951,44 @@ function handleStreamingUsage(
   if (msgId === "") {
     return { state, effects: [] };
   }
-  const incoming = readUsage(event.usage);
-  const prev = state.liveTurnUsage?.byMessage[msgId];
-  const merged: LiveMessageUsage =
-    prev === undefined
-      ? incoming
-      : {
-          inputTokens: Math.max(prev.inputTokens, incoming.inputTokens),
-          outputTokens: Math.max(prev.outputTokens, incoming.outputTokens),
-          cacheCreationInputTokens: Math.max(
-            prev.cacheCreationInputTokens,
-            incoming.cacheCreationInputTokens,
-          ),
-          cacheReadInputTokens: Math.max(
-            prev.cacheReadInputTokens,
-            incoming.cacheReadInputTokens,
-          ),
-        };
+  const usage = readUsage(event.usage);
   return {
     state: {
       ...state,
-      liveTurnUsage: {
-        byMessage: { ...state.liveTurnUsage?.byMessage, [msgId]: merged },
-      },
+      liveTurnUsage: usage,
+      sessionInitTokens: captureSessionInit(state.sessionInitTokens, usage),
     },
     effects: [],
   };
+}
+
+/**
+ * `observedInput` of a `usage` — `input + cache_read + cache_creation`,
+ * the model's resident context excluding its own output. `window(0)`
+ * for the session's first iteration; the per-turn input term elsewhere.
+ */
+function observedInput(usage: LiveMessageUsage): number {
+  return (
+    usage.inputTokens +
+    usage.cacheReadInputTokens +
+    usage.cacheCreationInputTokens
+  );
+}
+
+/**
+ * Latch `sessionInitTokens` on the first token-bearing iteration:
+ * keep an already-captured value, else adopt this iteration's
+ * `observedInput` when it is positive, else stay `null`.
+ */
+function captureSessionInit(
+  current: number | null,
+  usage: LiveMessageUsage,
+): number | null {
+  if (current !== null) {
+    return current;
+  }
+  const obs = observedInput(usage);
+  return obs > 0 ? obs : null;
 }
 
 /**

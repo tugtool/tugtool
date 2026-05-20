@@ -562,6 +562,44 @@ describe("routeTopLevelEvent", () => {
     expect(cu.modelUsage["claude-opus-4-6"]).toBeDefined();
   });
 
+  test("result cost_update.usage is the passed last-iteration usage, not result.usage", () => {
+    // `result.usage` is the per-turn SUM across every API call; the
+    // `lastIterationUsage` argument (the turn's last `message_delta`)
+    // is what `cost_update.usage` must carry.
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "",
+      usage: { input_tokens: 9_999_999, output_tokens: 9_999_999 },
+    };
+    const lastIteration = {
+      input_tokens: 4,
+      cache_read_input_tokens: 21000,
+      cache_creation_input_tokens: 38000,
+      output_tokens: 192,
+    };
+    const result = routeTopLevelEvent(event, baseCtx, lastIteration);
+    const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu.usage).toEqual(lastIteration);
+    // `resultMetadata.usage` still mirrors the raw `result.usage` —
+    // a separate surface, deliberately left untouched.
+    expect((result.resultMetadata!.usage as any).input_tokens).toBe(9_999_999);
+  });
+
+  test("result cost_update.usage is {} when no last-iteration usage is supplied", () => {
+    // A fully degenerate turn (no message_start / message_delta): the
+    // pure function emits `{}` rather than the misleading result.usage.
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "",
+      usage: { input_tokens: 200, output_tokens: 80 },
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu.usage).toEqual({});
+  });
+
   test("system/compact_boundary produces CompactBoundary IPC (explicit type check)", () => {
     const event = { type: "system", subtype: "compact_boundary" };
     const result = routeTopLevelEvent(event, baseCtx);
@@ -736,6 +774,15 @@ describe("mapStreamEvent (updated)", () => {
       cache_read_input_tokens: 13148,
       output_tokens: 2,
     });
+    // The raw `usage` is surfaced so the turn can latch it as the
+    // `cost_update.usage` fallback for a turn with no `message_delta`.
+    expect(result.messageStartUsage).toEqual({
+      input_tokens: 3,
+      cache_creation_input_tokens: 7327,
+      cache_read_input_tokens: 13148,
+      output_tokens: 2,
+    });
+    expect(result.messageDeltaUsage).toBeUndefined();
   });
 
   test("message_delta with usage emits a streaming_usage frame keyed by the current message", () => {
@@ -760,6 +807,16 @@ describe("mapStreamEvent (updated)", () => {
     // current message slid by this message's earlier `message_start`.
     expect(frame.msg_id).toBe("msg-1");
     expect(frame.usage.output_tokens).toBe(80);
+    // The raw `usage` is surfaced so the turn can latch the latest
+    // `message_delta` as `cost_update.usage` — the last tool-loop
+    // iteration, never the summed `result.usage`.
+    expect(result.messageDeltaUsage).toEqual({
+      input_tokens: 3,
+      cache_creation_input_tokens: 7327,
+      cache_read_input_tokens: 13148,
+      output_tokens: 80,
+    });
+    expect(result.messageStartUsage).toBeUndefined();
   });
 
   test("message_delta with an empty usage object emits no streaming_usage frame", () => {
@@ -769,6 +826,8 @@ describe("mapStreamEvent (updated)", () => {
       "",
     );
     expect(result.messages).toHaveLength(0);
+    // No frame -> no latched usage; the turn keeps its prior iteration.
+    expect(result.messageDeltaUsage).toBeUndefined();
   });
 
   test("message_start with usage but no message id emits no streaming_usage frame", () => {
@@ -778,6 +837,7 @@ describe("mapStreamEvent (updated)", () => {
       "",
     );
     expect(result.messages).toHaveLength(0);
+    expect(result.messageStartUsage).toBeUndefined();
   });
 });
 
@@ -2637,9 +2697,70 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
     expect(meta.permission_denials).toHaveLength(1);
   });
 
-  test("cost_update IPC emitted with all fields", async () => {
+  test("cost_update IPC carries the last-iteration usage, not result.usage", async () => {
+    // A two-iteration tool-loop turn. `result.usage` is the SUM across
+    // every API call (the inflated billing total); `cost_update.usage`
+    // must instead be the turn's LAST `message_delta` — the resident
+    // context window after the turn. The `result.usage` here is set
+    // deliberately huge to prove the wire `usage` ignores it.
     const manager = new SessionManager("/tmp/tugcode-cost-fields-" + Date.now(), crypto.randomUUID());
     const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: {
+            id: "msg_iter1",
+            usage: {
+              input_tokens: 4,
+              cache_creation_input_tokens: 1166,
+              cache_read_input_tokens: 18000,
+              output_tokens: 1,
+            },
+          },
+        },
+      },
+      {
+        type: "stream_event",
+        event: {
+          type: "message_delta",
+          delta: { stop_reason: "tool_use" },
+          usage: {
+            input_tokens: 4,
+            cache_creation_input_tokens: 1166,
+            cache_read_input_tokens: 18000,
+            output_tokens: 184,
+          },
+        },
+      },
+      {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: {
+            id: "msg_iter2",
+            usage: {
+              input_tokens: 4,
+              cache_creation_input_tokens: 38000,
+              cache_read_input_tokens: 21000,
+              output_tokens: 1,
+            },
+          },
+        },
+      },
+      {
+        type: "stream_event",
+        event: {
+          type: "message_delta",
+          delta: { stop_reason: "end_turn" },
+          usage: {
+            input_tokens: 4,
+            cache_creation_input_tokens: 38000,
+            cache_read_input_tokens: 21000,
+            output_tokens: 192,
+          },
+        },
+      },
       {
         type: "result",
         subtype: "success",
@@ -2648,7 +2769,7 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
         num_turns: 2,
         duration_ms: 3000,
         duration_api_ms: 2800,
-        usage: { input_tokens: 200, output_tokens: 80 },
+        usage: { input_tokens: 9_999_999, output_tokens: 9_999_999 },
         modelUsage: { "claude-opus-4-6": { costUSD: 0.05 } },
       },
     ]);
@@ -2660,12 +2781,89 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
 
     const cu = ipcMessages.find((m: any) => m.type === "cost_update") as any;
     expect(cu).toBeDefined();
+    // Cost / duration fields still come straight off the `result` event.
     expect(cu.total_cost_usd).toBe(0.05);
     expect(cu.num_turns).toBe(2);
     expect(cu.duration_ms).toBe(3000);
     expect(cu.duration_api_ms).toBe(2800);
-    expect(cu.usage.input_tokens).toBe(200);
     expect(cu.modelUsage["claude-opus-4-6"].costUSD).toBe(0.05);
+    // `usage` is the LAST `message_delta` — the second iteration —
+    // NOT the summed `result.usage`.
+    expect(cu.usage).toEqual({
+      input_tokens: 4,
+      cache_creation_input_tokens: 38000,
+      cache_read_input_tokens: 21000,
+      output_tokens: 192,
+    });
+  });
+
+  test("cost_update usage falls back to the last message_start for a turn with no message_delta", async () => {
+    // A degenerate/interrupted turn that opened a message but never
+    // produced its terminal `message_delta`. The last `message_start`
+    // is the best resident-window estimate available.
+    const manager = new SessionManager("/tmp/tugcode-cost-fallback-" + Date.now(), crypto.randomUUID());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: {
+            id: "msg_only",
+            usage: {
+              input_tokens: 2,
+              cache_read_input_tokens: 9000,
+              output_tokens: 1,
+            },
+          },
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        result: "",
+        total_cost_usd: 0.01,
+        usage: { input_tokens: 9_999_999, output_tokens: 9_999_999 },
+      },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+    );
+
+    const cu = ipcMessages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu).toBeDefined();
+    expect(cu.usage).toEqual({
+      input_tokens: 2,
+      cache_read_input_tokens: 9000,
+      output_tokens: 1,
+    });
+  });
+
+  test("cost_update usage is {} for a fully degenerate turn (no stream events)", async () => {
+    // No `message_start`, no `message_delta` — there is no iteration
+    // to report, so `cost_update.usage` is `{}` rather than the
+    // misleading `result.usage` sum.
+    const manager = new SessionManager("/tmp/tugcode-cost-degenerate-" + Date.now(), crypto.randomUUID());
+    const mockStdin = injectMockSubprocess(manager, [
+      {
+        type: "result",
+        subtype: "success",
+        result: "",
+        total_cost_usd: 0.01,
+        usage: { input_tokens: 200, output_tokens: 80 },
+      },
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const ipcMessages = await captureIpcOutput(() =>
+      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+    );
+
+    const cu = ipcMessages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu).toBeDefined();
+    expect(cu.total_cost_usd).toBe(0.01);
+    expect(cu.usage).toEqual({});
   });
 });
 

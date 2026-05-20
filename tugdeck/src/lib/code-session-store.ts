@@ -374,12 +374,16 @@ export class CodeSessionStore {
       // snapshot rebuild that touches an unrelated field.
       pendingDraftRestore: this.state.pendingDraftRestore,
       lastCost: this.state.lastCost,
-      // Live intra-turn token usage. The reducer assigns a fresh
-      // `liveTurnUsage` only on a `streaming_usage` frame (and clears
-      // it to `null` at turn boundaries); passing the reference
-      // through unchanged preserves `Object.is` stability across
-      // quiescent snapshot rebuilds ([L02]).
+      // Live intra-turn token usage — the latest `streaming_usage`
+      // frame. The reducer assigns a fresh `liveTurnUsage` only on a
+      // frame (and clears it to `null` at turn boundaries); passing
+      // the reference through unchanged preserves `Object.is`
+      // stability across quiescent snapshot rebuilds ([L02]).
       liveTurnUsage: this.state.liveTurnUsage,
+      // `window(0)` — captured once from the session's first telemetry
+      // iteration, never reassigned thereafter, so the reference is
+      // trivially stable.
+      sessionInitTokens: this.state.sessionInitTokens,
       // The reducer assigns a fresh `lastContextBreakdown` only when
       // a new `context_breakdown` frame lands; reading the state's
       // reference through unchanged preserves `Object.is` stability

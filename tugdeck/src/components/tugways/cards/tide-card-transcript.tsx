@@ -697,7 +697,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                   <TideZ1B
                     participant="code"
                     turn={turn}
-                    prevTurn={row.prevTurn}
+                    perTurnTokens={row.perTurnTokens}
                     bodyText={isCommitted ? assistantText : undefined}
                   />
                   {hasTrailing ? trailing : null}

@@ -51,26 +51,29 @@ export function perTurnContextSize(turn: TurnEntry): number {
  * the turn's boundaries (`before` = the snapshot at submit, `after` =
  * the snapshot at completion).
  *
- * **The four token fields are per-turn and pass through raw.**
- * `cost_update.usage` reports each turn's OWN token usage — NOT a
- * session-cumulative running total. Confirmed empirically from live
- * wire traces: `usage.output_tokens` is non-monotonic across turns
- * (188 → 408 → 161 in one captured session), which a cumulative
- * counter cannot be. So the token fields are read straight off
- * `after.usage`; there is NO turn-over-turn subtraction. An earlier
- * revision assumed cumulative usage and differenced `after - before`
- * — that corrupted every turn whose usage was smaller than its
- * predecessor's (the delta went negative and clamped to 0, so a short
- * reply after a long one reported zero tokens).
+ * The four token fields are the turn's LAST tool-loop iteration's
+ * `usage`. tugcode emits `cost_update.usage` from the turn's most
+ * recent `message_delta` — the final API call of the tool loop —
+ * whose `input + cache_read + cache_creation + output` IS the
+ * resident context window after the turn. They are read straight off
+ * `after.usage` with no turn-over-turn subtraction.
  *
- * **`totalCostUsd` IS cumulative-per-session**, so it alone is
- * differenced: `after.totalCostUsd - before.totalCostUsd`, clamped
- * ≥ 0. (`total_cost_usd` and `num_turns` accumulate across the
- * session; `usage` does not — the asymmetry is the whole point of
- * this function.)
+ * What is explicitly NOT stored: `result.usage`. `result.usage` is
+ * the SUM of `usage` across every API call of the turn, so a turn
+ * that makes K tool calls re-reads the (cached) context K times and
+ * `result.usage` over-counts by ~K times. Storing that would make
+ * `turnWindowTokens` scale with tool-call count instead of context
+ * size. tugcode's `cost_update` carries the last iteration instead;
+ * this helper just freezes it.
  *
- *   - `after === null`: no `cost_update` fired for this turn → all zeros.
- *   - `before === null`: first turn → the cost term is `after.totalCostUsd`.
+ * `totalCostUsd` IS cumulative-per-session, so it alone is
+ * differenced: `after.totalCostUsd - before.totalCostUsd`, clamped to
+ * non-negative. (`total_cost_usd` and `num_turns` accumulate across
+ * the session; `usage` is a per-turn snapshot — the asymmetry is the
+ * whole point of this function.)
+ *
+ *   - `after === null`: no `cost_update` fired for this turn -> all zeros.
+ *   - `before === null`: first turn -> the cost term is `after.totalCostUsd`.
  *
  * The token fields (`input_tokens`, `output_tokens`,
  * `cache_creation_input_tokens`, `cache_read_input_tokens`) are read
@@ -737,6 +740,18 @@ export interface TurnTelemetry {
   ttftcMs: number | null;
   reconnectCount: number;
   maxStreamGapMs: number;
+  /**
+   * `window(0)` — the session's resident context before any turn.
+   * Session-level, not per-turn: every turn's telemetry carries the
+   * same value (the reducer captures it once, at the first telemetry
+   * iteration). Persisted here, on a channel that already round-trips,
+   * so a resumed session restores `sessionInitTokens` from the first
+   * replayed `turn_complete` rather than needing a separate ledger
+   * row. `null` for a turn whose session never observed a first
+   * iteration (and for telemetry rows persisted before this field
+   * existed).
+   */
+  sessionInitTokens: number | null;
 }
 
 /**
@@ -789,6 +804,7 @@ export function deriveTurnTelemetry(
     ttftcMs,
     reconnectCount: state.transportReconnectCount,
     maxStreamGapMs: state.maxStreamGapMs,
+    sessionInitTokens: state.sessionInitTokens,
   };
 }
 

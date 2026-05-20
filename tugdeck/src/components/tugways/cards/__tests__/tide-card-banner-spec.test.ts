@@ -70,6 +70,7 @@ function baseSnap(
     pendingDraftRestore: null,
     lastCost: null,
     liveTurnUsage: null,
+    sessionInitTokens: null,
     lastContextBreakdown: null,
     lastError: null,
     lastReplayResult: null,

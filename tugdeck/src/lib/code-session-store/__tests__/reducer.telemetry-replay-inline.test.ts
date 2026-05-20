@@ -82,6 +82,7 @@ const SAMPLE_INLINE_TELEMETRY: TurnTelemetry = {
   ttftcMs: 600,
   reconnectCount: 1,
   maxStreamGapMs: 99,
+  sessionInitTokens: 18_575,
 };
 
 describe("handleTurnComplete — live path", () => {

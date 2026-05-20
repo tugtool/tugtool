@@ -1,22 +1,29 @@
 /**
- * Pure-logic tests for the Z1 asst-half end-state helpers. Pins
- * the turnEndReason → (text, role) mapping, `turnWindowTokens`, and
- * the per-turn `perTurnTokens` window-delta contract.
+ * Pure-logic tests for the Z1 asst-half end-state helpers. Pins the
+ * turnEndReason -> (text, role) mapping and the corrected token model:
+ * `turnWindowTokens` (resident window from the last tool-loop
+ * iteration), `perTurnTokens` (signed window delta), and
+ * `deriveContextWindows` (the transcript window-walk with zero-usage
+ * carry-forward).
+ *
+ * The window numbers are pinned against captured session `7635e374`:
+ * a real "local diffs" session whose four turns walk
+ *   sessionInit 18575 -> window 19354 / 21852 / 21971 / 59196
+ *   perTurn      +779 / +2498 / +119 / +37225
+ * (the same numbers in the Sub-step J spec). Before the fix the
+ * fourth turn's `result.usage` sum read 188.8K; the model reads the
+ * honest 37.2K.
  */
 
 import { describe, expect, it } from "bun:test";
 
 import {
+  deriveContextWindows,
   endStateBadgeFor,
   perTurnTokens,
-  rollupLiveTurnUsage,
   turnWindowTokens,
 } from "@/lib/code-session-store/end-state";
-import type {
-  LiveMessageUsage,
-  LiveTurnUsage,
-  TurnCost,
-} from "@/lib/code-session-store/types";
+import type { TurnCost } from "@/lib/code-session-store/types";
 
 describe("endStateBadgeFor", () => {
   it("maps complete → inherit (OK)", () => {
@@ -67,8 +74,18 @@ function cost(overrides: Partial<TurnCost>): TurnCost {
   };
 }
 
+/**
+ * A `TurnCost` whose `turnWindowTokens` equals `window`. The window
+ * helpers read only the sum of the four token fields, so parking the
+ * whole window in `cacheReadInputTokens` keeps the fixtures terse —
+ * a real turn's window is dominated by cache-read anyway.
+ */
+function win(window: number): TurnCost {
+  return cost({ cacheReadInputTokens: window });
+}
+
 describe("turnWindowTokens", () => {
-  it("sums every token field — the context-window total at this turn", () => {
+  it("sums every token field — the resident context window", () => {
     expect(
       turnWindowTokens(
         cost({
@@ -81,136 +98,74 @@ describe("turnWindowTokens", () => {
     ).toBe(1000);
   });
 
-  it("returns 0 for a zero-cost turn", () => {
+  it("returns 0 for a zero-usage turn", () => {
     expect(turnWindowTokens(cost({}))).toBe(0);
   });
 });
 
 describe("perTurnTokens", () => {
-  // Real captured per-turn usages from a live session.
-  const t1 = cost({
-    inputTokens: 2940,
-    cacheReadInputTokens: 9824,
-    cacheCreationInputTokens: 5245,
-    outputTokens: 188,
-  }); // window = 18197, observedInput = 18009
-  const t2 = cost({
-    inputTokens: 4,
-    cacheReadInputTokens: 33281,
-    cacheCreationInputTokens: 9901,
-    outputTokens: 408,
-  }); // window = 43594
-  const t3 = cost({
-    inputTokens: 4,
-    cacheReadInputTokens: 50200,
-    cacheCreationInputTokens: 402,
-    outputTokens: 161,
-  }); // window = 50767
-
-  it("first turn (no prior turn): delta degenerates to this turn's output", () => {
-    // prevWindow = observed input (input + cache_read + cache_creation);
-    // window − prevWindow = output. The session-init bootstrap lives in
-    // cache_read / cache_creation and is excluded — never charged to
-    // turn 1.
-    expect(perTurnTokens(t1, undefined)).toBe(188);
+  it("signed delta — window(N) minus the prior window", () => {
+    // Session 7635e374 turn 2: window 21852, prior window 19354.
+    expect(perTurnTokens(win(21852), 19354)).toBe(2498);
   });
 
-  it("subsequent turn: delta is window(turn) − window(prevTurn)", () => {
-    expect(perTurnTokens(t2, t1)).toBe(43594 - 18197);
-    expect(perTurnTokens(t3, t2)).toBe(50767 - 43594);
+  it("first turn — measured against sessionInit", () => {
+    // Session 7635e374 turn 1: window 19354, sessionInit 18575.
+    expect(perTurnTokens(win(19354), 18575)).toBe(779);
   });
 
-  it("clamps to 0 when the window shrank (e.g. prompt-cache eviction)", () => {
-    const big = cost({ cacheReadInputTokens: 50000 });
-    const small = cost({ cacheReadInputTokens: 10000 });
-    expect(perTurnTokens(small, big)).toBe(0);
-  });
-
-  it("session-init + Σ perTurnTokens telescopes to the final window", () => {
-    const sessionInit =
-      t1.inputTokens + t1.cacheReadInputTokens + t1.cacheCreationInputTokens;
-    const sum =
-      perTurnTokens(t1, undefined) +
-      perTurnTokens(t2, t1) +
-      perTurnTokens(t3, t2);
-    expect(sessionInit + sum).toBe(turnWindowTokens(t3));
+  it("negative when the window shrank — a /compact turn", () => {
+    // No clamp: a turn that compacts the context reports the honest
+    // negative. The old metric clamped this to 0.
+    expect(perTurnTokens(win(60000), 200000)).toBe(-140000);
   });
 });
 
-describe("rollupLiveTurnUsage", () => {
-  function msg(overrides: Partial<LiveMessageUsage>): LiveMessageUsage {
-    return {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheCreationInputTokens: 0,
-      cacheReadInputTokens: 0,
-      ...overrides,
-    };
-  }
-
-  it("an empty byMessage map rolls up to all zeros", () => {
-    const live: LiveTurnUsage = { byMessage: {} };
-    expect(rollupLiveTurnUsage(live)).toEqual({
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheCreationInputTokens: 0,
-      cacheReadInputTokens: 0,
-      totalCostUsd: 0,
-    });
+describe("deriveContextWindows", () => {
+  it("pins the captured session 7635e374 window walk", () => {
+    const steps = deriveContextWindows(
+      [win(19354), win(21852), win(21971), win(59196)],
+      18575,
+    );
+    expect(steps.map((s) => s.window)).toEqual([19354, 21852, 21971, 59196]);
+    expect(steps.map((s) => s.perTurn)).toEqual([779, 2498, 119, 37225]);
   });
 
-  it("a single message rolls up to that message's token counts", () => {
-    const live: LiveTurnUsage = {
-      byMessage: {
-        msg_a: msg({
-          inputTokens: 3,
-          outputTokens: 80,
-          cacheCreationInputTokens: 7340,
-          cacheReadInputTokens: 13148,
-        }),
-      },
-    };
-    expect(rollupLiveTurnUsage(live)).toEqual({
-      inputTokens: 3,
-      outputTokens: 80,
-      cacheCreationInputTokens: 7340,
-      cacheReadInputTokens: 13148,
-      totalCostUsd: 0,
-    });
+  it("telescopes: sessionInit + Σ perTurn = window(latest)", () => {
+    const sessionInit = 18575;
+    const steps = deriveContextWindows(
+      [win(19354), win(21852), win(21971), win(59196)],
+      sessionInit,
+    );
+    const sum = steps.reduce((acc, s) => acc + s.perTurn, 0);
+    expect(sessionInit + sum).toBe(steps[steps.length - 1].window);
   });
 
-  it("sums every token field across a multi-message tool-loop turn", () => {
-    // Real captured wire data: two assistant messages whose per-message
-    // usages sum to the turn's result.usage.
-    const live: LiveTurnUsage = {
-      byMessage: {
-        msg_a: msg({
-          inputTokens: 3,
-          outputTokens: 80,
-          cacheCreationInputTokens: 7340,
-          cacheReadInputTokens: 13148,
-        }),
-        msg_b: msg({
-          inputTokens: 1,
-          outputTokens: 12,
-          cacheCreationInputTokens: 99,
-          cacheReadInputTokens: 20488,
-        }),
-      },
-    };
-    expect(rollupLiveTurnUsage(live)).toEqual({
-      inputTokens: 4,
-      outputTokens: 92,
-      cacheCreationInputTokens: 7439,
-      cacheReadInputTokens: 33636,
-      totalCostUsd: 0,
-    });
+  it("a zero-usage turn carries the prior window forward, perTurn 0", () => {
+    // Turn 2 is an interrupted/errored turn with an all-zero TurnCost:
+    // window(2) = window(1), perTurn(2) = 0. Turn 3 measures against
+    // the carried-forward window, not 0.
+    const steps = deriveContextWindows(
+      [win(19354), cost({}), win(21971)],
+      18575,
+    );
+    expect(steps.map((s) => s.window)).toEqual([19354, 19354, 21971]);
+    expect(steps.map((s) => s.perTurn)).toEqual([779, 0, 2617]);
   });
 
-  it("the rollup carries no dollar cost — dollars land only at cost_update", () => {
-    const live: LiveTurnUsage = {
-      byMessage: { msg_a: msg({ outputTokens: 50 }) },
-    };
-    expect(rollupLiveTurnUsage(live).totalCostUsd).toBe(0);
+  it("a /compact turn reports a negative perTurn; the identity still holds", () => {
+    const sessionInit = 18575;
+    const steps = deriveContextWindows(
+      [win(200000), win(60000), win(65000)],
+      sessionInit,
+    );
+    expect(steps.map((s) => s.window)).toEqual([200000, 60000, 65000]);
+    expect(steps.map((s) => s.perTurn)).toEqual([181425, -140000, 5000]);
+    const sum = steps.reduce((acc, s) => acc + s.perTurn, 0);
+    expect(sessionInit + sum).toBe(65000);
+  });
+
+  it("an empty transcript yields no steps", () => {
+    expect(deriveContextWindows([], 18575)).toEqual([]);
   });
 });

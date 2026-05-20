@@ -289,6 +289,20 @@ export interface SystemMetadata {
 
 /**
  * Cost and usage summary emitted after each turn completes per PN-19.
+ *
+ * `usage` carries the turn's LAST tool-loop iteration's `usage` — the
+ * most recent `message_delta` of the turn (or last `message_start`
+ * when the turn produced no `message_delta`; `{}` for a fully
+ * degenerate turn). It is NOT `result.usage`: `result.usage` is the
+ * SUM of `usage` across every API call of the turn, so a turn making
+ * K tool calls re-reads the (cached) context K times and over-counts
+ * by ~K×. The last iteration's `input + cache_read + cache_creation +
+ * output` IS the resident context window after the turn — the figure
+ * the client's per-turn / context surfaces need.
+ *
+ * `total_cost_usd` and `num_turns` are unchanged — those genuinely
+ * accumulate across the session and are read straight off the `result`
+ * event.
  */
 export interface CostUpdate {
   type: "cost_update";
@@ -312,14 +326,17 @@ export interface CostUpdate {
  * (`input_tokens` / `output_tokens` / `cache_creation_input_tokens` /
  * `cache_read_input_tokens`); both `message_start` and `message_delta`
  * carry the complete four fields (verified against live wire data).
- * `msg_id` is claude's `message.id` — a tool-loop turn has several
- * assistant messages, each with its own `message_start` +
- * `message_delta`; the per-message usages SUM to the terminal
- * `result.usage`, so the client keys by `msg_id` and accumulates.
+ * `msg_id` is claude's `message.id`.
+ *
+ * `observedInput` (`input + cache_read + cache_creation`) grows
+ * monotonically across a turn's API calls — each call re-reads the
+ * prior call's context plus its own output and tool result. So the
+ * MOST RECENT frame is always the current window; the client keeps
+ * the latest frame and does not accumulate across `msg_id`s. The
+ * terminal `cost_update` carries this same last-iteration `usage` and
+ * supersedes the live frame at turn-complete with no discontinuity.
  *
  * Display-only: drives no phase transition and is never persisted.
- * The terminal `cost_update` is authoritative and supersedes the
- * live accumulation at turn-complete.
  */
 export interface StreamingUsage {
   type: "streaming_usage";

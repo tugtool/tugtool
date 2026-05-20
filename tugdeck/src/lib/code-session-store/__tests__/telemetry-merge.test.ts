@@ -46,6 +46,7 @@ function fakeStateForDerive(overrides: Partial<CodeSessionState> = {}): CodeSess
     maxStreamGapMs: 0,
     costAtSubmit: null,
     lastCost: null,
+    sessionInitTokens: null,
     ...overrides,
   } as unknown as CodeSessionState;
 }
@@ -66,6 +67,7 @@ const ZERO_TELEMETRY: TurnTelemetry = {
   ttftcMs: null,
   reconnectCount: 0,
   maxStreamGapMs: 0,
+  sessionInitTokens: null,
 };
 
 describe("deriveTurnTelemetry", () => {
@@ -79,6 +81,7 @@ describe("deriveTurnTelemetry", () => {
       firstToolUseAt: 1_300,
       transportReconnectCount: 2,
       maxStreamGapMs: 250,
+      sessionInitTokens: 18_575,
       costAtSubmit: null,
       lastCost: {
         totalCostUsd: 0.05,
@@ -113,6 +116,7 @@ describe("deriveTurnTelemetry", () => {
       ttftcMs: 300,
       reconnectCount: 2,
       maxStreamGapMs: 250,
+      sessionInitTokens: 18_575,
     });
   });
 
@@ -170,6 +174,7 @@ describe("mergeTurnTelemetry", () => {
     ttftcMs: 600,
     reconnectCount: 1,
     maxStreamGapMs: 99,
+    sessionInitTokens: 18_575,
   };
 
   const derivedPayload: TurnTelemetry = {
@@ -188,6 +193,7 @@ describe("mergeTurnTelemetry", () => {
     ttftcMs: null,
     reconnectCount: 0,
     maxStreamGapMs: 0,
+    sessionInitTokens: null,
   };
 
   it("(case a — live) returns derived block when inline is undefined", () => {

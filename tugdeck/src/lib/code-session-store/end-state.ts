@@ -18,7 +18,7 @@
  * `useMemo` / render bodies.
  */
 
-import type { LiveTurnUsage, TurnCost, TurnEndReason } from "./types";
+import type { LiveMessageUsage, TurnEndReason } from "./types";
 
 /**
  * The roles a terminal-state badge can take. Subset of
@@ -76,102 +76,105 @@ export function endStateBadgeFor(reason: TurnEndReason): EndStateBadge {
 }
 
 /**
- * Total tokens in the model's context window at this turn — every
- * field of the per-turn `TurnCost`: the model's input (uncached
- * `input` + `cache_read` + `cache_creation`) plus its `output`.
+ * The resident context window after a turn — `window(N)`. Sum of all
+ * four token fields of the turn's LAST tool-loop iteration's `usage`:
+ * the model's input (`input` + `cache_read` + `cache_creation`) plus
+ * its `output`.
  *
- * `TurnCost` is the raw per-turn `cost_update.usage` (see
- * `extractTurnCost`), so this is the context size AT this turn — it
- * grows turn over turn as the conversation accumulates. It is NOT a
- * per-turn delta; {@link perTurnTokens} computes that. Used as the
- * window term inside `perTurnTokens` and as the session-rollup
- * building block.
+ * `TurnCost` carries the last iteration's `usage` (see
+ * `extractTurnCost`), NOT the per-iteration sum `result.usage` would
+ * give — so this is the model's true context occupancy after the
+ * turn. It is NOT a per-turn delta; `perTurnTokens` and
+ * `deriveContextWindows` compute that.
+ *
+ * A zero-usage turn (an interrupted/errored turn with no measurable
+ * iteration) returns `0` here — callers that need the resident window
+ * use `deriveContextWindows`, which carries the prior window forward
+ * across such turns.
  */
-export function turnWindowTokens(cost: TurnCost): number {
+export function turnWindowTokens(usage: LiveMessageUsage): number {
   return (
-    cost.inputTokens +
-    cost.outputTokens +
-    cost.cacheReadInputTokens +
-    cost.cacheCreationInputTokens
+    usage.inputTokens +
+    usage.outputTokens +
+    usage.cacheReadInputTokens +
+    usage.cacheCreationInputTokens
   );
 }
 
 /**
- * The per-turn token count shown on the Z1B asst-half — how much this
- * turn GREW the context window.
+ * The signed per-turn token count — how much this turn changed the
+ * resident context window:
  *
- * ## Contract
+ *   perTurnTokens(N) = window(N) - prevWindow
  *
- * Z1B shows a **per-turn delta**, never a turn's gross API usage.
- * Gross usage re-reads the entire prior conversation as `cache_read`
- * every turn, so it tracks context size and would never sum to
- * anything meaningful. The delta does:
+ * where `window(N)` is `turnWindowTokens` of this turn's
+ * last-iteration `usage` and `prevWindow` is the resident window after
+ * the prior turn (the caller resolves it: `sessionInitTokens` for the
+ * first turn, the prior turn's window otherwise).
  *
- *   `perTurnTokens(turn N) = window(N) − window(N−1)`
+ * Signed, never clamped. A turn that grows the window is positive; a
+ * `/compact` that shrinks it is an honest negative. The deltas
+ * telescope: `sessionInit + sum of perTurnTokens = window(latest)`,
+ * exactly, by construction. No local tokenizer — every term is a feed
+ * number.
  *
- * where `window` is {@link turnWindowTokens} — `input + output +
- * cache_read + cache_creation`, every term straight from
- * `cost_update.usage`. No local tokenizer; all feed numbers.
- *
- * The deltas telescope: `session-init + Σ perTurnTokens = window(last)`
- * — the live context rollup, exactly, by construction.
- *
- * **First turn** (`prevCost === undefined`): the prior window is the
- * session-init bootstrap (system prompt + tools + agents + memory +
- * skills), which equals this turn's *observed input* (`input +
- * cache_read + cache_creation` — the model's input, minus its
- * output). So the first turn's delta degenerates to its `output`: the
- * bootstrap is attributed to session-init and never charged to turn 1.
- *
- * Clamped ≥ 0 to defend against a non-monotonic window (e.g.
- * prompt-cache eviction shrinking `cache_read` between turns).
+ * This is the per-turn primitive used for the in-flight turn (whose
+ * `usage` is never all-zero once a frame has landed). For a whole
+ * committed transcript — including the zero-usage carry-forward — use
+ * `deriveContextWindows`, which special-cases a turn whose `usage` is
+ * all-zero (this helper would read its `window` as `0` and report
+ * `-prevWindow`).
  */
 export function perTurnTokens(
-  cost: TurnCost,
-  prevCost: TurnCost | undefined,
+  usage: LiveMessageUsage,
+  prevWindow: number,
 ): number {
-  const window = turnWindowTokens(cost);
-  const prevWindow =
-    prevCost === undefined
-      ? cost.inputTokens +
-        cost.cacheReadInputTokens +
-        cost.cacheCreationInputTokens
-      : turnWindowTokens(prevCost);
-  return Math.max(0, window - prevWindow);
+  return turnWindowTokens(usage) - prevWindow;
+}
+
+/** One turn's resident context window and the signed delta into it. */
+export interface ContextWindowStep {
+  /**
+   * `window(N)` — the resident context tokens after this turn. Equals
+   * `turnWindowTokens` of the turn's `usage`, EXCEPT a zero-usage turn
+   * carries the prior turn's window forward.
+   */
+  window: number;
+  /**
+   * `window(N) - window(N-1)`, signed. `0` for a zero-usage turn.
+   * This is the figure the `TOKENS` cell and Z1B show.
+   */
+  perTurn: number;
 }
 
 /**
- * Fold a {@link LiveTurnUsage} into a {@link TurnCost} — sum the
- * per-message token counts across the in-flight turn's messages.
+ * Walk a transcript's per-turn `usage` and produce, per turn, the
+ * resident context window and the signed per-turn delta into it.
  *
- * The per-message usages are additive: a tool-loop turn has one
- * assistant message per iteration, and their `streaming_usage` frames
- * sum to the turn's terminal `cost_update.usage` (verified against
- * live wire data). So the rollup of the live accumulation lands
- * exactly on the committed `TurnCost` the moment the turn completes —
- * the cells transition with no jump.
+ *   - `window(0)` = `sessionInit` (the bootstrap before any turn).
+ *   - `window(N)` = `turnWindowTokens` of turn N's `usage`, EXCEPT a
+ *     zero-usage turn (`turnWindowTokens === 0` — an interrupted /
+ *     errored turn with no measurable iteration) carries the prior
+ *     window forward: `window(N) = window(N-1)`.
+ *   - `perTurn(N)` = `window(N) - window(N-1)`, signed — `0` for a
+ *     zero-usage turn, negative at a `/compact`.
  *
- * `totalCostUsd` is `0`: dollar cost is cumulative-per-session and
- * only known at the terminal `cost_update`, never mid-turn. The cell
- * helpers ({@link turnWindowTokens} / {@link perTurnTokens}) read only
- * the four token fields, so the zero cost is inert.
+ * Identity: `sessionInit + sum of perTurn = window(latest)` —
+ * telescopes exactly, every turn including compactions.
+ *
+ * Pure: no DOM, no React, no time source. Safe in `useMemo` / render.
  */
-export function rollupLiveTurnUsage(live: LiveTurnUsage): TurnCost {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheCreationInputTokens = 0;
-  let cacheReadInputTokens = 0;
-  for (const m of Object.values(live.byMessage)) {
-    inputTokens += m.inputTokens;
-    outputTokens += m.outputTokens;
-    cacheCreationInputTokens += m.cacheCreationInputTokens;
-    cacheReadInputTokens += m.cacheReadInputTokens;
+export function deriveContextWindows(
+  usages: ReadonlyArray<LiveMessageUsage>,
+  sessionInit: number,
+): ReadonlyArray<ContextWindowStep> {
+  const steps: ContextWindowStep[] = [];
+  let prevWindow = sessionInit;
+  for (const usage of usages) {
+    const raw = turnWindowTokens(usage);
+    const window = raw === 0 ? prevWindow : raw;
+    steps.push({ window, perTurn: window - prevWindow });
+    prevWindow = window;
   }
-  return {
-    inputTokens,
-    outputTokens,
-    cacheCreationInputTokens,
-    cacheReadInputTokens,
-    totalCostUsd: 0,
-  };
+  return steps;
 }

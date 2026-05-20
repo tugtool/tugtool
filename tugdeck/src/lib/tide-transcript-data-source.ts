@@ -79,6 +79,7 @@ import type {
   CodeSessionSnapshot,
   TurnEntry,
 } from "@/lib/code-session-store";
+import { deriveContextWindows } from "@/lib/code-session-store/end-state";
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 
 // ---------------------------------------------------------------------------
@@ -125,13 +126,13 @@ export interface TideRowDescriptor {
   /** Set for every committed row (`user` and `code`). */
   turn?: TurnEntry;
   /**
-   * The turn committed immediately before {@link turn}, when one
-   * exists. Set on committed rows so the Z1B asst-half can compute
-   * the per-turn token delta (`perTurnTokens`) against the prior
-   * turn's context window. `undefined` for the first turn and for
-   * in-flight rows.
+   * The committed turn's signed per-turn token count — `window(N) −
+   * window(N−1)` from the transcript window-walk (`deriveContextWindows`),
+   * with zero-usage carry-forward. Set on every committed row; the Z1B
+   * asst-half renders it (the user half ignores it). `undefined` for
+   * in-flight rows. Negative at a `/compact` turn.
    */
-  prevTurn?: TurnEntry;
+  perTurnTokens?: number;
   /** Set for the in-flight `user` row only. */
   inflight?: CodeSessionSnapshot["inflightUserMessage"];
   /**
@@ -257,10 +258,19 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
 
     const turnIndex = Math.floor(index / 2);
     const turn = snap.transcript[turnIndex];
+    // Signed per-turn token delta from the transcript window-walk —
+    // window(N) − window(N−1), carry-forward over any zero-usage turn.
+    // The walk needs the whole transcript: a single turn's `cost`
+    // can't yield its delta (the prior turn may be a zero-usage turn,
+    // whose window is the one before IT).
+    const windows = deriveContextWindows(
+      snap.transcript.map((t) => t.cost),
+      snap.sessionInitTokens ?? 0,
+    );
     return {
       kind: index % 2 === 0 ? "user" : "code",
       turn,
-      prevTurn: turnIndex > 0 ? snap.transcript[turnIndex - 1] : undefined,
+      perTurnTokens: windows[turnIndex]?.perTurn,
       turnKey: turn?.turnKey,
     };
   }

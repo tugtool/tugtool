@@ -408,6 +408,13 @@ export interface EventMappingContext {
  * subsequent events whose claude shape doesn't carry an id directly
  * (`content_block_delta`, `content_block_start`) emit under the right key.
  * Absent on events that don't reveal the id.
+ *
+ * `messageStartUsage` / `messageDeltaUsage` carry the raw token-bearing
+ * `usage` object whenever a `message_start` / `message_delta` revealed
+ * one. `dispatchEventToTurn` latches them onto `ActiveTurn` so the
+ * terminal `result` event can emit `cost_update.usage` from the turn's
+ * LAST tool-loop iteration — never `result.usage`, which is the
+ * per-turn SUM across every iteration. Absent on every other event.
  */
 export interface EventMappingResult {
   messages: OutboundMessage[];
@@ -415,6 +422,8 @@ export interface EventMappingResult {
   partialText: string;
   gotResult: boolean;
   messageId?: string;
+  messageStartUsage?: Record<string, unknown>;
+  messageDeltaUsage?: Record<string, unknown>;
 }
 
 /**
@@ -462,10 +471,21 @@ export interface TopLevelRoutingResult {
  * Route a single top-level stdout message to IPC outbound messages.
  * Handles all 8+ top-level message types per D03.
  * Exported for unit testing.
+ *
+ * `lastIterationUsage` is the `usage` of the turn's LAST tool-loop
+ * iteration — the most recent `message_delta` (or `message_start`
+ * fallback) `ActiveTurn` latched while draining the turn. The `result`
+ * branch emits it as `cost_update.usage`. `result.usage` (on the event
+ * itself) is deliberately NOT used for the wire `usage`: it is the
+ * per-turn SUM across every API call, so a K-tool-call turn would
+ * over-report context by ~K×. `result.usage` still flows into
+ * `resultMetadata.usage` untouched. Omitted (pure-function callers
+ * with no turn) → `cost_update.usage` is `{}`.
  */
 export function routeTopLevelEvent(
   event: Record<string, unknown>,
-  ctx: EventMappingContext
+  ctx: EventMappingContext,
+  lastIterationUsage?: Record<string, unknown> | null
 ): TopLevelRoutingResult {
   const messages: OutboundMessage[] = [];
   let gotResult = false;
@@ -746,13 +766,19 @@ export function routeTopLevelEvent(
       // Emit CostUpdate from result event. The final assistant_text and
       // turn_complete are emitted by handleUserMessage with fresh seq values
       // so they pass through the frontend ordering buffer's dedup logic.
+      //
+      // `usage` carries the turn's LAST tool-loop iteration's usage
+      // (`lastIterationUsage`), NOT `result.usage`. `result.usage` is a
+      // SUM across every API call of the turn — a context-window snapshot
+      // it is not. The last iteration's `input + cache_read +
+      // cache_creation + output` IS the resident context after the turn.
       const costMsg: CostUpdate = {
         type: "cost_update",
         total_cost_usd: (event.total_cost_usd as number) || 0,
         num_turns: (event.num_turns as number) || 0,
         duration_ms: (event.duration_ms as number) || 0,
         duration_api_ms: (event.duration_api_ms as number) || 0,
-        usage: (event.usage as Record<string, unknown>) || {},
+        usage: lastIterationUsage ?? {},
         modelUsage: (event.modelUsage as Record<string, unknown>) || {},
         ipc_version: 2,
       };
@@ -863,6 +889,8 @@ export function mapStreamEvent(
   let partialText = accumulatedPartialText;
   let gotResult = false;
   let messageId: string | undefined;
+  let messageStartUsage: Record<string, unknown> | undefined;
+  let messageDeltaUsage: Record<string, unknown> | undefined;
 
   const eventType = event.type as string | undefined;
 
@@ -887,13 +915,24 @@ export function mapStreamEvent(
       typeof rawId === "string" ? rawId : "",
       message?.usage,
     );
-    if (startUsage) messages.push(startUsage);
+    if (startUsage) {
+      messages.push(startUsage);
+      // Latch the raw `usage` so the turn can fall back to the last
+      // `message_start` when it produced no `message_delta` at all.
+      messageStartUsage = startUsage.usage;
+    }
   } else if (eventType === "message_delta") {
     // The terminal per-message frame: carries the message's final,
     // authoritative four-token `usage`. `ctx.msgId` is the current
     // message id, slid by this message's earlier `message_start`.
     const deltaUsage = streamingUsageFrame(ctx.msgId, event.usage);
-    if (deltaUsage) messages.push(deltaUsage);
+    if (deltaUsage) {
+      messages.push(deltaUsage);
+      // Latch the raw `usage`: the most recent `message_delta` of the
+      // turn is the last tool-loop iteration, and `dispatchEventToTurn`
+      // emits it as `cost_update.usage` at the terminal `result`.
+      messageDeltaUsage = deltaUsage.usage;
+    }
   } else if (eventType === "content_block_start") {
     const contentBlock = event.content_block as Record<string, unknown> | undefined;
     if (contentBlock?.type === "tool_use") {
@@ -970,7 +1009,15 @@ export function mapStreamEvent(
     });
   }
 
-  return { messages, newRev, partialText, gotResult, messageId };
+  return {
+    messages,
+    newRev,
+    partialText,
+    gotResult,
+    messageId,
+    messageStartUsage,
+    messageDeltaUsage,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1036,6 +1083,21 @@ class ActiveTurn {
   partialText: string = "";
   /** True once the drain has seen claude's terminal `result` event for this turn. */
   gotResult: boolean = false;
+  /**
+   * The `usage` of the turn's most recent `message_delta` — the latest
+   * tool-loop iteration. `dispatchEventToTurn` emits this as
+   * `cost_update.usage` at the terminal `result` event. `null` until
+   * the first `message_delta` lands. A fresh `ActiveTurn` per
+   * `handleUserMessage` IS the per-turn reset.
+   */
+  lastMessageDeltaUsage: Record<string, unknown> | null = null;
+  /**
+   * The `usage` of the turn's most recent `message_start`. The
+   * `cost_update.usage` fallback for a degenerate turn that produced no
+   * `message_delta` at all (an interrupt before the first iteration's
+   * terminal frame). `null` until the first `message_start` lands.
+   */
+  lastMessageStartUsage: Record<string, unknown> | null = null;
   /** True if `handleInterrupt` was invoked while this turn was active. */
   interrupted: boolean = false;
   /**
@@ -2565,8 +2627,15 @@ export class SessionManager {
       rev: turn.rev,
     };
 
-    // Tier 1: route the top-level message type.
-    const routeResult = routeTopLevelEvent(event, ctx);
+    // Tier 1: route the top-level message type. The turn's last
+    // tool-loop iteration's `usage` (latest `message_delta`, else last
+    // `message_start`) is handed in so the `result` branch emits it as
+    // `cost_update.usage` — not `result.usage`, the per-iteration sum.
+    const routeResult = routeTopLevelEvent(
+      event,
+      ctx,
+      turn.lastMessageDeltaUsage ?? turn.lastMessageStartUsage,
+    );
 
     // Slide the per-turn pointer to claude's most recent `message.id`.
     // Top-level `assistant` snapshots carry it directly; nothing rejects,
@@ -2623,6 +2692,16 @@ export class SessionManager {
       }
       turn.rev = streamResult.newRev;
       turn.partialText = streamResult.partialText;
+      // Latch this iteration's `usage`. The latest `message_delta` is
+      // the turn's last tool-loop iteration; `routeTopLevelEvent` reads
+      // the latched value at the terminal `result` to build
+      // `cost_update.usage`.
+      if (streamResult.messageStartUsage !== undefined) {
+        turn.lastMessageStartUsage = streamResult.messageStartUsage;
+      }
+      if (streamResult.messageDeltaUsage !== undefined) {
+        turn.lastMessageDeltaUsage = streamResult.messageDeltaUsage;
+      }
     }
 
     // Handle control_request: emit ControlRequestForward and store for

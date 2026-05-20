@@ -46,8 +46,8 @@ import {
   deriveTimeCellMs,
 } from "@/lib/code-session-store/telemetry";
 import {
+  deriveContextWindows,
   perTurnTokens,
-  rollupLiveTurnUsage,
   turnWindowTokens,
 } from "@/lib/code-session-store/end-state";
 import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
@@ -81,9 +81,15 @@ export function formatTokens(n: number): string {
  * Same magnitudes as `formatTokens` but with **uppercase** suffixes —
  * `K` (kilo), `M` (mega), `G` (giga). Instrument-shorthand convention
  * adopted for the Z2 status row in #step-20-4.
+ *
+ * Signed: a negative count renders with a leading U+2212 minus sign
+ * (`-208.3K`). The per-turn token figure is a signed window delta — a
+ * `/compact` turn shrinks the window — and the cell shows that
+ * honestly rather than clamping a real shrink to `0`.
  */
 export function formatTokensCaps(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "0";
+  if (!Number.isFinite(n)) return "0";
+  if (n < 0) return `−${formatTokensCaps(-n)}`;
   if (n < 1_000) return String(Math.round(n));
   if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}K`;
   if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -197,9 +203,10 @@ export interface TideTelemetryProps {
 
 /**
  * Window-utilization gauge — the context-window occupancy after the
- * most-recent committed turn (`turnWindowTokens` of its `cost_update`
- * usage: input + output + cache-read + cache-creation) divided by the
- * static context-window max for the active model.
+ * most-recent committed turn (`window(latest)` from the transcript
+ * window-walk: the last turn's last-iteration `input + output +
+ * cache-read + cache-creation`) divided by the static context-window
+ * max for the active model.
  *
  * Uses TugLinearGauge in `compact` density so the strip fits inside
  * a status-bar or prompt-entry footer without dominating layout.
@@ -225,12 +232,17 @@ export const TideTelemetryWindowUtilization: React.FC<TideTelemetryProps> = ({
       [sessionMetadataStore],
     ),
   );
-  const lastTurn =
-    snap.transcript.length > 0
-      ? snap.transcript[snap.transcript.length - 1]
-      : null;
+  // Resident context after the latest committed turn — the transcript
+  // window-walk (carry-forward over any zero-usage turn). `0` for a
+  // fresh session before `sessionInitTokens` is captured.
+  const windows = deriveContextWindows(
+    snap.transcript.map((t) => t.cost),
+    snap.sessionInitTokens ?? 0,
+  );
   const contextTokens =
-    lastTurn !== null ? turnWindowTokens(lastTurn.cost) : 0;
+    windows.length > 0
+      ? windows[windows.length - 1].window
+      : snap.sessionInitTokens ?? 0;
   const max = meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
   const maxText = formatTokens(max);
   // Render value as `current / max` so the denominator is visible
@@ -449,12 +461,6 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
     snap.transcript.length > 0
       ? snap.transcript[snap.transcript.length - 1]
       : null;
-  // The turn before `lastTurn`, when one exists — the prior context
-  // window the TOKENS-cell per-turn delta is measured against.
-  const prevTurn =
-    snap.transcript.length > 1
-      ? snap.transcript[snap.transcript.length - 2]
-      : undefined;
   // TIME cell: live in-flight clock when a turn is in flight, or
   // the last committed turn's activeMs as the post-commit fallback.
   // `deriveTimeCellMs` short-circuits to the fallback path when
@@ -462,38 +468,40 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
   const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
   // TOKENS / CONTEXT cells. While a turn is in flight the cells read
-  // the live `streaming_usage` accumulation (`liveTurnUsage`) so they
-  // climb mid-turn the way TIME does; once the turn commits — and
-  // between turns — they read the last committed turn. The live
-  // rollup is additive and lands exactly on the committed
-  // `cost_update` total, so the in-flight → committed transition is
-  // seamless (no jump).
+  // the latest `streaming_usage` frame (`liveTurnUsage`) so they climb
+  // mid-turn the way TIME does; once the turn commits — and between
+  // turns — they read the transcript window-walk. tugcode emits the
+  // committed `cost_update.usage` as the same last-iteration usage the
+  // final live frame carried, so the in-flight → committed transition
+  // is seamless (no jump).
   //
-  // TOKENS — `perTurnTokens`: how much this turn grew the context
-  // window (the per-turn delta, the number Z1B shows). In flight the
-  // delta is measured against the last *committed* turn (the live
-  // turn IS the current one); committed, against the prior turn.
-  // CONTEXT — `turnWindowTokens`: the whole window (cumulative). The
-  // two are the per-turn / cumulative pair;
-  // `session-init + Σ perTurnTokens = contextRollupTokens` holds by
-  // construction.
+  // CONTEXT — `window`: the resident context window. In flight it is
+  // the live frame's window; committed, the walk's latest window
+  // (carry-forward over any zero-usage turn).
+  // TOKENS — `perTurn`: the signed per-turn delta `window(N) −
+  // window(N−1)` (the number Z1B shows; negative at a `/compact`). In
+  // flight it is measured against the last committed window (the live
+  // turn IS the current one). `sessionInit + Σ perTurn = window`
+  // holds by construction.
+  const sessionInit = snap.sessionInitTokens ?? 0;
+  const windows = deriveContextWindows(
+    snap.transcript.map((t) => t.cost),
+    sessionInit,
+  );
+  const lastCommittedWindow =
+    windows.length > 0 ? windows[windows.length - 1].window : sessionInit;
   const isInflight = snap.inflightUserMessage !== null;
-  const liveCost =
-    snap.liveTurnUsage !== null
-      ? rollupLiveTurnUsage(snap.liveTurnUsage)
-      : null;
+  const live = snap.liveTurnUsage;
   const tokensCellValue =
-    isInflight && liveCost !== null
-      ? perTurnTokens(liveCost, lastTurn?.cost)
-      : lastTurn !== null
-        ? perTurnTokens(lastTurn.cost, prevTurn?.cost)
+    isInflight && live !== null
+      ? perTurnTokens(live, lastCommittedWindow)
+      : windows.length > 0
+        ? windows[windows.length - 1].perTurn
         : 0;
-  const contextRollupTokens =
-    isInflight && liveCost !== null
-      ? turnWindowTokens(liveCost)
-      : lastTurn !== null
-        ? turnWindowTokens(lastTurn.cost)
-        : 0;
+  const contextWindowTokens =
+    isInflight && live !== null
+      ? turnWindowTokens(live)
+      : lastCommittedWindow;
   const contextMax =
     meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
 
@@ -501,7 +509,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
   // muted so the live numerator reads first. Threshold class is
   // applied to the wrapping span; the CSS rule paints the
   // numerator's color via descendant selector.
-  const ratio = contextMax > 0 ? contextRollupTokens / contextMax : 0;
+  const ratio = contextMax > 0 ? contextWindowTokens / contextMax : 0;
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
@@ -629,7 +637,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
                 data-context-threshold={contextThreshold}
               >
                 <span className="tide-telemetry-status-context-numerator">
-                  {formatTokensCaps(contextRollupTokens)}
+                  {formatTokensCaps(contextWindowTokens)}
                 </span>
                 <span className="tide-telemetry-status-context-denominator">
                   {` / ${formatTokensCaps(contextMax)}`}

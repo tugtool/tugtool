@@ -1272,6 +1272,7 @@ fn inject_replay_telemetry(
         "ttftcMs": row.ttftc_ms,
         "reconnectCount": row.reconnect_count,
         "maxStreamGapMs": row.max_stream_gap_ms,
+        "sessionInitTokens": row.session_init_tokens,
     });
     if let serde_json::Value::Object(ref mut obj) = value {
         obj.insert("telemetry".to_string(), telemetry);
@@ -1701,6 +1702,7 @@ mod tests {
             reconnect_count: 0,
             max_stream_gap_ms: 90,
             ended_at: 1_000,
+            session_init_tokens: Some(18_575),
         }
     }
 
@@ -1721,6 +1723,8 @@ mod tests {
         assert_eq!(telemetry["ttftcMs"], 300);
         assert_eq!(telemetry["reconnectCount"], 0);
         assert_eq!(telemetry["maxStreamGapMs"], 90);
+        // `window(0)` round-trips so a resumed session restores it.
+        assert_eq!(telemetry["sessionInitTokens"], 18_575);
         // Original fields preserved.
         assert_eq!(parsed["type"], "turn_complete");
         assert_eq!(parsed["msg_id"], "msg-A");

@@ -209,6 +209,12 @@ pub struct TurnTelemetryRow {
     pub reconnect_count: i64,
     pub max_stream_gap_ms: i64,
     pub ended_at: i64,
+    /// `window(0)` — the session's resident context before any turn.
+    /// Session-level rather than per-turn (every row of a session
+    /// carries the same value); persisted here so a resumed session
+    /// restores it. `None` for a session that never observed a first
+    /// telemetry iteration, and for rows written before this field.
+    pub session_init_tokens: Option<i64>,
 }
 
 /// One row of the `session_metadata` table — the LIVE-ONLY
@@ -458,6 +464,14 @@ impl SessionLedger {
                 reconnect_count             INTEGER NOT NULL DEFAULT 0,
                 max_stream_gap_ms           INTEGER NOT NULL DEFAULT 0,
                 ended_at                    INTEGER NOT NULL,
+                -- `window(0)` — the session's resident context before
+                -- any turn. Session-level, not per-turn: every row of a
+                -- session carries the same value. Persisted here (on the
+                -- channel that already round-trips) so a resumed session
+                -- restores it from the first replayed `turn_complete`.
+                -- Nullable: a turn whose session never observed a first
+                -- iteration has no value to record.
+                session_init_tokens         INTEGER,
                 PRIMARY KEY (session_id, msg_id)
             );
 
@@ -1145,7 +1159,8 @@ impl SessionLedger {
                 wall_clock_ms, awaiting_approval_ms, transport_downtime_ms, active_ms,
                 ttft_ms, ttftc_ms,
                 reconnect_count, max_stream_gap_ms,
-                ended_at
+                ended_at,
+                session_init_tokens
             ) VALUES (
                 ?1, ?2,
                 ?3, ?4,
@@ -1154,7 +1169,8 @@ impl SessionLedger {
                 ?8, ?9, ?10, ?11,
                 ?12, ?13,
                 ?14, ?15,
-                ?16
+                ?16,
+                ?17
             )",
             params![
                 row.session_id,
@@ -1173,6 +1189,7 @@ impl SessionLedger {
                 row.reconnect_count,
                 row.max_stream_gap_ms,
                 row.ended_at,
+                row.session_init_tokens,
             ],
         )?;
         Ok(())
@@ -1195,7 +1212,8 @@ impl SessionLedger {
                     wall_clock_ms, awaiting_approval_ms, transport_downtime_ms, active_ms,
                     ttft_ms, ttftc_ms,
                     reconnect_count, max_stream_gap_ms,
-                    ended_at
+                    ended_at,
+                    session_init_tokens
              FROM turn_telemetry
              WHERE session_id = ?1
              ORDER BY ended_at ASC, msg_id ASC",
@@ -1477,6 +1495,7 @@ fn turn_telemetry_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Tu
         reconnect_count: row.get(13)?,
         max_stream_gap_ms: row.get(14)?,
         ended_at: row.get(15)?,
+        session_init_tokens: row.get(16)?,
     })
 }
 
@@ -2567,6 +2586,7 @@ mod tests {
             reconnect_count: 0,
             max_stream_gap_ms: 90,
             ended_at,
+            session_init_tokens: Some(18_575),
         }
     }
 
@@ -2579,6 +2599,20 @@ mod tests {
         let read = l.list_turn_telemetry("s1").unwrap();
         assert_eq!(read.len(), 1);
         assert_eq!(read[0], row);
+    }
+
+    #[test]
+    fn record_turn_telemetry_persists_null_session_init_tokens() {
+        // `window(0)` is nullable — a session that never observed a
+        // first telemetry iteration records `None`, round-tripped as
+        // SQL NULL.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let mut row = sample_telemetry("s1", "msg-A", 1_000);
+        row.session_init_tokens = None;
+        l.record_turn_telemetry(&row).unwrap();
+        let read = l.list_turn_telemetry("s1").unwrap();
+        assert_eq!(read[0].session_init_tokens, None);
     }
 
     #[test]

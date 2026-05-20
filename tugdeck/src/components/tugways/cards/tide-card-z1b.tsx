@@ -93,10 +93,7 @@ import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/blo
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugThinkingIndicator } from "@/components/tugways/tug-thinking-indicator";
-import {
-  endStateBadgeFor,
-  perTurnTokens,
-} from "@/lib/code-session-store/end-state";
+import { endStateBadgeFor } from "@/lib/code-session-store/end-state";
 import type {
   TurnEntry,
   TurnEndReason,
@@ -137,12 +134,13 @@ export interface TideZ1BProps {
    */
   turn?: TurnEntry;
   /**
-   * The turn committed immediately before {@link turn}. The asst-half
-   * uses it to compute the per-turn token delta against the prior
-   * turn's context window (`perTurnTokens`). `undefined` for the
-   * first turn and for in-flight / user rows.
+   * The committed turn's signed per-turn token count — `window(N) −
+   * window(N−1)` from the transcript window-walk, computed by the
+   * transcript data source. The asst-half renders it; the user half
+   * ignores it. `undefined` for in-flight / user rows. Negative at a
+   * `/compact` turn.
    */
-  prevTurn?: TurnEntry;
+  perTurnTokens?: number;
   /**
    * Plain-text source for the copy-button affordance. When non-
    * empty AND `turn` is defined, the row's trailing edge renders
@@ -164,7 +162,7 @@ export interface TideZ1BProps {
 export const TideZ1B: React.FC<TideZ1BProps> = ({
   participant,
   turn,
-  prevTurn,
+  perTurnTokens,
   bodyText,
 }) => {
   // Per-row mode dispatch. `turn !== undefined` is the data
@@ -197,7 +195,7 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
         <EndStateDisplay
           participant={participant}
           turn={turn}
-          prevTurn={prevTurn}
+          perTurnTokens={perTurnTokens}
         />
       ) : participant === "code" ? (
         <TugThinkingIndicator animating={true} labelPosition="hidden" />
@@ -281,15 +279,15 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
 function EndStateDisplay({
   participant,
   turn,
-  prevTurn,
+  perTurnTokens,
 }: {
   participant: TideZ1BParticipant;
   turn: TurnEntry;
-  prevTurn: TurnEntry | undefined;
+  perTurnTokens: number | undefined;
 }): React.ReactElement {
   const badge = endStateBadgeFor(turn.turnEndReason);
   const showMetrics = participant === "code";
-  const tokens = showMetrics ? perTurnTokens(turn.cost, prevTurn?.cost) : 0;
+  const tokens = showMetrics ? perTurnTokens ?? 0 : 0;
   return (
     <span
       className="tide-z1b-end-state"
