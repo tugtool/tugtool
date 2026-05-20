@@ -438,11 +438,7 @@ impl SessionLedger {
         // general; it is wired only for `turn_telemetry` — the table
         // whose drift was observed — and a future change to another
         // typed table can opt in with one more call.
-        Self::rebuild_table_if_schema_drifted(
-            conn,
-            "turn_telemetry",
-            Self::TURN_TELEMETRY_SCHEMA,
-        )?;
+        Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -650,10 +646,7 @@ impl SessionLedger {
     /// The `(name, declared-type)` columns of `table`, in definition
     /// order, as `PRAGMA table_info` reports them. Empty when the
     /// table does not exist.
-    fn table_columns(
-        conn: &Connection,
-        table: &str,
-    ) -> Result<Vec<(String, String)>, LedgerError> {
+    fn table_columns(conn: &Connection, table: &str) -> Result<Vec<(String, String)>, LedgerError> {
         // `table` is a compile-time constant from `bootstrap_schema`,
         // never caller input — the `format!` carries no injection risk.
         let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
