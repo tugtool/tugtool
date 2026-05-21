@@ -1180,15 +1180,42 @@ export class SessionManager {
    */
   private stdoutDrainTask: Promise<void> | null = null;
   /**
-   * The currently-in-flight turn, set at the top of
-   * {@link handleUserMessage} and cleared in its `finally`. The
-   * stdout drain dispatches every parsed claude event into this
-   * field's value; when it's `null`, events are routed through
-   * {@link handleInterTurnEvent} instead. Single-threaded JS
-   * guarantees the drain and `handleUserMessage` see a consistent
-   * view without locks.
+   * The currently-in-flight turn. Opened either by
+   * {@link handleUserMessage} (the idle case — no turn running) or by
+   * the stdout drain (a buffered follow-on turn — see
+   * {@link handleClaudeLine}); closed by the drain when claude's
+   * `result` lands or its stdout EOFs. The stdout drain dispatches
+   * every parsed claude event into this field's value; when it's
+   * `null`, events route through {@link handleInterTurnEvent} unless a
+   * turn input is pending. Single-threaded JS guarantees the drain and
+   * `handleUserMessage` see a consistent view without locks.
    */
   private activeTurn: ActiveTurn | null = null;
+  /**
+   * FIFO of user messages written to claude's stdin while a turn was
+   * already in flight — submitted but not yet bracketed by an
+   * `ActiveTurn`. claude buffers a mid-turn `user_message` and runs it
+   * as a separate follow-on turn with its own `result`; the stdout
+   * drain opens an `ActiveTurn` for that turn and claims the head of
+   * this FIFO as the turn's user-message payload. Empty in the common,
+   * non-overlapping case (one turn fully completes before the next
+   * `handleUserMessage`), so the drain-open path in
+   * {@link handleClaudeLine} is dormant in normal operation.
+   *
+   * Exception: when claude *merges* a mid-turn message into the
+   * running turn — it does this at an agent-loop iteration boundary;
+   * see `probe-tool-overlap.ts` — no follow-on turn is produced and
+   * the merged message's entry is left stale here. tugcode cannot
+   * distinguish merge from buffer at submit time (claude emits no
+   * signal for it), so a stale entry mislabels at most one later
+   * turn's replay-synthetic `user_message_replay` text; the wire
+   * `turn_complete` bracketing is unaffected. Threading the user's
+   * merge-vs-queue intent down from tugdeck is a follow-on concern.
+   */
+  private pendingTurnInputs: Array<{
+    text: string;
+    attachments: ReadonlyArray<Attachment>;
+  }> = [];
   /**
    * True once the stdout drain has observed EOF on claude's stdout.
    * Read by {@link handleUserMessage} as a fast-path check before
@@ -2534,8 +2561,27 @@ export class SessionManager {
       console.log(`Skipping non-JSON line: ${line}`);
       return;
     }
+    // Open a turn for a buffered follow-on. `handleUserMessage` opens
+    // the turn for the idle case; when it instead queued the message
+    // (a turn was already running), claude runs it as a separate turn
+    // after the current one's `result`. Those events would otherwise
+    // arrive with `activeTurn === null` and be dropped as inter-turn —
+    // the overlapping-turn routing bug. The drain claims the head of
+    // `pendingTurnInputs` as the follow-on turn's user-message payload.
+    if (this.activeTurn === null && this.pendingTurnInputs.length > 0) {
+      this.openTurnFromPending();
+    }
     if (this.activeTurn !== null) {
-      this.dispatchEventToTurn(this.activeTurn, event);
+      const turn = this.activeTurn;
+      this.dispatchEventToTurn(turn, event);
+      // `result` ends the turn — `dispatchEventToTurn` latched
+      // `gotResult` and resolved `turn.completion`. Clear the slot so
+      // the next claude event opens a fresh turn instead of
+      // dispatching into a finished one. Turn ownership is
+      // `result`-bounded and lives here, not in `handleUserMessage`.
+      if (turn.gotResult) {
+        this.activeTurn = null;
+      }
     } else {
       this.handleInterTurnEvent(event);
     }
@@ -2547,6 +2593,24 @@ export class SessionManager {
     // sequence. The emitter is silent when not initialized or when
     // the event is not a trigger.
     this.maybeEmitContextBreakdown(event);
+  }
+
+  /**
+   * Open an `ActiveTurn` for the head of {@link pendingTurnInputs} and
+   * install it as {@link activeTurn}. Called by the stdout drain when
+   * claude's events for a buffered follow-on turn begin to arrive
+   * (see {@link handleClaudeLine}). A fresh `seq` is allocated here,
+   * at turn-open, so the user-half `seq` orders just before the
+   * turn's own frames. No-op when the FIFO is empty.
+   */
+  private openTurnFromPending(): void {
+    const pending = this.pendingTurnInputs.shift();
+    if (pending === undefined) return;
+    this.activeTurn = new ActiveTurn(
+      this.nextSeq(),
+      pending.text,
+      pending.attachments,
+    );
   }
 
   /**
@@ -2933,6 +2997,10 @@ export class SessionManager {
     // Latch the flag before any branch — handleUserMessage's
     // fast-path read after this point must see "EOF observed."
     this.claudeStdoutEofObserved = true;
+    // claude's stdout is gone: no follow-on turn will ever be
+    // bracketed, so drop any still-queued inputs rather than let a
+    // respawn's drain claim them for an unrelated turn.
+    this.pendingTurnInputs.length = 0;
     const turn = this.activeTurn;
     if (turn === null) {
       logSessionLifecycle("tugcode.claude_stdout_eof", {
@@ -2967,11 +3035,20 @@ export class SessionManager {
       }
     }
     turn.finish();
+    // Turn ownership is drain-bounded: clear the slot now the turn is
+    // finished. `handleUserMessage` no longer clears it — it no longer
+    // owns the turn lifecycle.
+    this.activeTurn = null;
   }
 
   /**
-   * Handle user_message: convert attachments to content blocks, write to stdin,
-   * and process events with two-tier routing.
+   * Handle user_message: convert attachments to content blocks and
+   * write them to claude's stdin. If no turn is running, open the
+   * `ActiveTurn` for it and await its completion; if a turn is
+   * already in flight, queue the message in {@link pendingTurnInputs}
+   * and return — claude buffers it and the stdout drain opens its
+   * follow-on turn. Turn ownership is drain-bounded: one `ActiveTurn`
+   * per claude `result`, never one per `handleUserMessage` call.
    */
   async handleUserMessage(msg: UserMessage): Promise<void> {
     // Step R0d cold-boot order may dispatch handleUserMessage before
@@ -3028,35 +3105,43 @@ export class SessionManager {
     // `signalEofToActiveTurn`), not a resume_failed.
     this.claudeReceivedInput = true;
 
-    // Step R1e: install the active turn and let the stdout drain
-    // dispatch claude's response into it. The turn's completion
-    // promise resolves when the drain sees `turn_complete`
-    // (via `dispatchEventToTurn`'s `gotResult` branch) or when
-    // claude's stdout EOFs (via `signalEofToActiveTurn`).
+    // Turn ownership is drain-bounded — one `ActiveTurn` per claude
+    // `result`. If no turn is running and nothing is queued ahead of
+    // this message, it starts a turn: open the `ActiveTurn` now so an
+    // immediate `runReplay` adopts a live turn and the pre-claude
+    // submission window brackets exactly as before, then await the
+    // drain bracketing it (`result`) or claude's stdout EOFing.
+    //
+    // If a turn IS already in flight (or messages are queued ahead),
+    // claude buffers this message and runs it as a follow-on turn with
+    // its own `result`. Queue it; the stdout drain opens its
+    // `ActiveTurn` when claude's events for it arrive (see
+    // `handleClaudeLine`). Queuing — never installing a second
+    // `ActiveTurn` here — is the fix for the overlapping-turn routing
+    // bug: a second install would clobber the running turn's slot and
+    // strand both turns' events.
     //
     // The turn's `currentMessageId` slot is null until claude reveals
-    // its `message.id` on the first stream event (`message_start` or
-    // top-level `assistant` snapshot). userText / userAttachments are
-    // the source of truth for the in-flight turn's `user_message_replay`
-    // payload during a mid-turn `runReplay` — they hold what the user
-    // submitted in this call.
-    const turn = new ActiveTurn(
-      this.nextSeq(),
-      msg.text,
-      msg.attachments ?? [],
-    );
-    this.activeTurn = turn;
-    try {
+    // its `message.id` on the first stream event. `userText` /
+    // `userAttachments` are the source of truth for the in-flight
+    // turn's `user_message_replay` payload during a mid-turn
+    // `runReplay`.
+    if (this.activeTurn === null && this.pendingTurnInputs.length === 0) {
+      const turn = new ActiveTurn(
+        this.nextSeq(),
+        msg.text,
+        msg.attachments ?? [],
+      );
+      this.activeTurn = turn;
+      // The drain clears `this.activeTurn` when it brackets the turn;
+      // this await only lets callers that sequence on turn completion
+      // (the tests, any future awaiting caller) observe it.
       await turn.completion;
-    } catch (err) {
-      writeLine({
-        type: "error",
-        message: `Turn failed: ${err}`,
-        recoverable: true,
-        ipc_version: 2,
+    } else {
+      this.pendingTurnInputs.push({
+        text: msg.text,
+        attachments: msg.attachments ?? [],
       });
-    } finally {
-      this.activeTurn = null;
     }
   }
 

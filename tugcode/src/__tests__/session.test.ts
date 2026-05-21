@@ -4363,3 +4363,161 @@ describe("emitInflightTurnFromActiveTurn", () => {
     expect(types).not.toContain("turn_cancelled");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Overlapping-turn routing
+//
+// A `user_message` submitted while a turn is already in flight must
+// not clobber the running turn or strand the follow-on turn's events.
+// Turn ownership is drain-bounded: one `ActiveTurn` per claude
+// `result`. `handleUserMessage` opens the turn for the idle case and
+// queues an overlapping message in `pendingTurnInputs`; the stdout
+// drain opens the follow-on turn when claude's events for it arrive.
+// ---------------------------------------------------------------------------
+
+describe("overlapping-turn routing", () => {
+  // System-init line shared by the scripted turns below.
+  const initLine = (sid: string) => ({
+    type: "system",
+    subtype: "init",
+    session_id: sid,
+    cwd: "/p",
+    tools: ["Read"],
+    model: "m",
+    permissionMode: "acceptEdits",
+    slash_commands: [],
+    plugins: [],
+    agents: [],
+    skills: [],
+    claude_code_version: "2.1",
+  });
+  const textDelta = (text: string) => ({
+    type: "stream_event",
+    event: { type: "content_block_delta", delta: { type: "text_delta", text } },
+  });
+  const resultLine = { type: "result", subtype: "success", result: "" };
+
+  // Count the `user`-envelope writes to claude's stdin.
+  const userWriteCount = (writes: string[]): number =>
+    writes.filter((w) => {
+      try {
+        return (JSON.parse(w.replace(/\n$/, "")) as { type?: string }).type === "user";
+      } catch {
+        return false;
+      }
+    }).length;
+
+  test("a message queued mid-turn runs as a bracketed follow-on turn", async () => {
+    // claude buffered the mid-turn message and runs it as turn 2 — the
+    // regression case: pre-fix, turn 2's events arrived with no active
+    // turn and were dropped as inter-turn, so turn 2 never completed.
+    const manager = new SessionManager(
+      "/tmp/tugcode-overlap-buffered-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const writes: string[] = [];
+    const mockStdin = injectMockSubprocess(manager, [
+      initLine("sess-overlap"),
+      textDelta("TurnOne"),
+      resultLine,
+      initLine("sess-overlap"),
+      textDelta("TurnTwo"),
+      resultLine,
+    ]);
+    mockStdin.write = (data: unknown) => writes.push(String(data));
+
+    const captured = await captureIpcOutput(async () => {
+      const p1 = manager.handleUserMessage({
+        type: "user_message",
+        text: "first",
+        attachments: [],
+      });
+      const p2 = manager.handleUserMessage({
+        type: "user_message",
+        text: "second",
+        attachments: [],
+      });
+      await Promise.all([p1, p2]);
+    });
+
+    // Both turns bracketed — two turn_complete frames.
+    const turnCompletes = captured.filter((m: any) => m.type === "turn_complete");
+    expect(turnCompletes.length).toBe(2);
+
+    // The follow-on turn's content was routed, not dropped.
+    const turnTwoIdx = captured.findIndex(
+      (m: any) => m.type === "assistant_text" && m.text === "TurnTwo",
+    );
+    expect(turnTwoIdx).toBeGreaterThan(-1);
+
+    // ...and it streamed after the first turn closed.
+    const firstTcIdx = captured.findIndex((m: any) => m.type === "turn_complete");
+    expect(turnTwoIdx).toBeGreaterThan(firstTcIdx);
+
+    // Both messages reached claude's stdin.
+    expect(userWriteCount(writes)).toBe(2);
+  });
+
+  test("a merged mid-turn message brackets as a single turn", async () => {
+    // claude merged the mid-turn message into the running turn (one
+    // `result`). tugcode brackets exactly one turn — no spurious
+    // second turn_complete — and both messages still reached claude.
+    const manager = new SessionManager(
+      "/tmp/tugcode-overlap-merged-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const writes: string[] = [];
+    const mockStdin = injectMockSubprocess(manager, [
+      initLine("sess-merged"),
+      textDelta("Merged"),
+      resultLine,
+    ]);
+    mockStdin.write = (data: unknown) => writes.push(String(data));
+
+    const captured = await captureIpcOutput(async () => {
+      const p1 = manager.handleUserMessage({
+        type: "user_message",
+        text: "first",
+        attachments: [],
+      });
+      const p2 = manager.handleUserMessage({
+        type: "user_message",
+        text: "second",
+        attachments: [],
+      });
+      await Promise.all([p1, p2]);
+    });
+
+    const turnCompletes = captured.filter((m: any) => m.type === "turn_complete");
+    expect(turnCompletes.length).toBe(1);
+    expect(userWriteCount(writes)).toBe(2);
+  });
+
+  test("a single non-overlapping turn brackets unchanged", async () => {
+    const manager = new SessionManager(
+      "/tmp/tugcode-overlap-single-" + Date.now(),
+      crypto.randomUUID(),
+    );
+    const mockStdin = injectMockSubprocess(manager, [
+      initLine("sess-single"),
+      textDelta("OnlyTurn"),
+      resultLine,
+    ]);
+    mockStdin.write = (_data: unknown) => {};
+
+    const captured = await captureIpcOutput(() =>
+      manager.handleUserMessage({
+        type: "user_message",
+        text: "only",
+        attachments: [],
+      }),
+    );
+
+    const turnCompletes = captured.filter((m: any) => m.type === "turn_complete");
+    expect(turnCompletes.length).toBe(1);
+    // The turn-input FIFO was never touched; the drain cleared the
+    // active turn on `result`.
+    expect((manager as any).pendingTurnInputs.length).toBe(0);
+    expect((manager as any).activeTurn).toBeNull();
+  });
+});

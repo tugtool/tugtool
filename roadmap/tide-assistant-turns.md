@@ -4599,7 +4599,7 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 
 **Depends on:** #step-20-5-d (parent), #step-20-5-d-4 (the request-cancellation spike that surfaced this)
 
-**Status:** _not started._
+**Status:** _complete. The turn model is now `result`-bounded. `handleUserMessage` opens an `ActiveTurn` only for the idle case (no turn running, nothing queued ahead); the stdout drain owns turn open/close — it opens a follow-on turn from the new `pendingTurnInputs` FIFO when claude's events for a buffered message arrive, and clears `this.activeTurn` on every `result` / EOF (`handleUserMessage` no longer clears it). A `user_message` arriving mid-turn is written to claude's stdin and queued in the FIFO — never installed as a competing `ActiveTurn`, the clobber that stranded both turns' events. One refinement from the plan sketch: rather than `ActiveTurn` carrying 1:N user messages, the "N" lives in the `pendingTurnInputs` FIFO and `ActiveTurn` stays 1:1 with one claude `result` — cleaner separation, and it leaves the non-overlap path (all of current production — tugdeck client-queues, so tugcode never sees overlap) byte-identical to before. The merge case (claude folds a mid-turn message into the running turn — `probe-tool-overlap.ts`) leaves a stale FIFO entry tugcode cannot detect from claude's stream; documented in the `pendingTurnInputs` docstring as a bounded, replay-synthetic-only imperfection ([Step 20.5.D.5](#step-20-5-d-5) closes it by threading the user's merge-vs-queue intent down from tugdeck). `main.ts` needed no change — its fire-and-forget `handleUserMessage` dispatch is correct now the handler is overlap-safe. `bunx tsc --noEmit` clean; full tugcode suite 427/427 green (replay / cold-boot / EOF / interrupt paths pass unchanged); `probe-overlap.ts` re-run through the fixed tugcode brackets BOTH turns — turn 2 emits its `turn_complete` where pre-fix it never did._
 
 **Commit:** `fix(tugcode): result-bounded turn model for overlapping sends`
 
@@ -4631,24 +4631,24 @@ The bug is **latent today** — tugdeck's `CodeSessionStore` holds mid-turn send
 
 **Tasks.**
 
-- [ ] Separate turn ownership from `handleUserMessage` — `ActiveTurn` open/close driven by claude's `result`, not by the dispatch call.
-- [ ] Make a mid-turn `user_message` a forward-and-record: written to claude's stdin, recorded in a FIFO, no `this.activeTurn` clobber.
-- [ ] Make `ActiveTurn` carry 1:N user messages; fix the `user_message_replay` payload for a mid-turn `runReplay`.
-- [ ] Verify the early-exit / stderr / EOF watchers and the cold-boot + replay paths still hold their invariants.
+- [x] Separate turn ownership from `handleUserMessage` — `ActiveTurn` open/close driven by claude's `result` (the drain clears `this.activeTurn` on `gotResult` / EOF), not by the dispatch call.
+- [x] Make a mid-turn `user_message` a forward-and-record: written to claude's stdin, queued in the `pendingTurnInputs` FIFO, no `this.activeTurn` clobber. The drain opens the follow-on turn from the FIFO head.
+- [x] Mid-turn `user_message` ↔ turn association — the `pendingTurnInputs` FIFO holds the overflow; `ActiveTurn` stays 1:1 with one claude `result` (cleaner than 1:N on the turn). The non-overlap `user_message_replay` payload is unchanged; the merge-case stale-entry residual is documented for [Step 20.5.D.5](#step-20-5-d-5).
+- [x] Verify the early-exit / stderr / EOF watchers and the cold-boot + replay paths still hold their invariants — full tugcode suite (incl. all `replay-*.test.ts`) green.
 
 **Tests.**
 
-- [ ] Overlapping `handleUserMessage` against a merged (tool) turn — one `turn_complete`, both user messages associated, every event routed.
-- [ ] Overlapping `handleUserMessage` against a buffered (text) turn — two `turn_complete`s in order, no dropped events.
-- [ ] Regression: a single, non-overlapping turn brackets exactly as before.
+- [x] Overlapping `handleUserMessage` against a merged (one-`result`) turn — exactly one `turn_complete`, both messages reach claude's stdin.
+- [x] Overlapping `handleUserMessage` against a buffered (two-`result`) turn — two `turn_complete`s in order, the follow-on turn's content routed not dropped.
+- [x] Regression: a single, non-overlapping turn brackets unchanged; the FIFO is untouched and `activeTurn` is cleared on `result`.
 
 **Conformance.** Transport-layer fix — no tuglaws apply (tugcode, not tugdeck). The contract is the stream-json event stream tugdeck's `CodeSessionStore` consumes: `turn_complete` bracketing stays correct for one turn and becomes correct for overlapping turns.
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean in `tugcode/`.
-- [ ] tugcode's test suite green.
-- [ ] **Probe vet (manual, user-gated)** — `probe-overlap.ts` (tugcode-routed) shows *both* turns complete: turn 2 emits its `turn_complete`. The raw probes `probe-btw-overlap.ts` / `probe-tool-overlap.ts` stay as the reference for claude's underlying behavior.
+- [x] `bunx tsc --noEmit` clean in `tugcode/`.
+- [x] tugcode's test suite green — 427/427.
+- [x] **Probe vet** — `probe-overlap.ts` (tugcode-routed) shows *both* turns complete: `turn_complete #1` for the first turn, `turn_complete #2` for the buffered follow-on (pre-fix turn 2 never bracketed). The raw probes `probe-btw-overlap.ts` / `probe-tool-overlap.ts` stay as the reference for claude's underlying behavior.
 
 ---
 
