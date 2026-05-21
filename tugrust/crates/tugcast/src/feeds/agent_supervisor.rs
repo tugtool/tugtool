@@ -2631,8 +2631,7 @@ impl AgentSupervisor {
         // (the popover's "no state changes recorded" bug after reload).
         // A genuinely unknown id still yields an empty ledger read —
         // the same "no history yet" the client renders either way.
-        let claude_id = resolved_claude_id
-            .unwrap_or_else(|| tug_session_id_str.clone());
+        let claude_id = resolved_claude_id.unwrap_or_else(|| tug_session_id_str.clone());
         let rows = match ledger.list_session_state_changes(&claude_id) {
             Ok(r) => r,
             Err(err) => {
@@ -7739,13 +7738,7 @@ mod tests {
             .record_session_state_change("sess-reload-race", 100, "idle", "online", false)
             .unwrap();
         ledger
-            .record_session_state_change(
-                "sess-reload-race",
-                200,
-                "submitting",
-                "online",
-                false,
-            )
+            .record_session_state_change("sess-reload-race", 200, "submitting", "online", false)
             .unwrap();
 
         while rx.try_recv().is_ok() {}
