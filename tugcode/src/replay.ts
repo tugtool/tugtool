@@ -30,16 +30,19 @@
 //   assistant_text                   `is_partial: false` (terminal
 //                                    text only — replay doesn't
 //                                    stream per-token deltas).
-//   turn_complete                    `result: "success"`. Emitted only
-//                                    when an assistant entry's
-//                                    `stop_reason === "end_turn"`. The
-//                                    trailing in-flight assistant entry
-//                                    of an unfinished cycle emits its
-//                                    content frames per-entry but no
-//                                    terminal — the live drain
-//                                    continuing post-replay produces
-//                                    the eventual `turn_complete` when
-//                                    claude's `result` lands.
+//   turn_complete                    `result: "success"`. Emitted when
+//                                    an assistant entry's `stop_reason`
+//                                    is a clean terminal — `end_turn`,
+//                                    `stop_sequence`, `max_tokens`, or
+//                                    `refusal`. The trailing in-flight
+//                                    assistant entry of an unfinished
+//                                    cycle (`tool_use` / `pause_turn` /
+//                                    no stop_reason) emits its content
+//                                    frames per-entry but no terminal —
+//                                    the live drain continuing
+//                                    post-replay produces the eventual
+//                                    `turn_complete` when claude's
+//                                    `result` lands.
 
 import type {
   AssistantText,
@@ -192,7 +195,8 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
  * Per-cycle context for the JSONL → frame translator.
  *
  * "Cycle" = one user submission + claude's response (one or more
- * assistant entries, ending with `stop_reason === "end_turn"`).
+ * assistant entries, ending with a clean terminal `stop_reason` —
+ * `end_turn`, `stop_sequence`, `max_tokens`, or `refusal`).
  *
  * Each `assistant` JSONL entry emits its content frames immediately,
  * keyed on its own `message.id` — multi-message claude cycles produce
@@ -208,9 +212,9 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
  * it. `turnsCommitted` advances once per `end_turn` (the count
  * surfaced via `replay_complete.count`).
  *
- * A cycle that survives end-of-file (no terminal `end_turn` ever
- * arrived — the JSONL was truncated mid-stream, e.g. by a reload while
- * claude is still responding) needs no special EOF flush: each
+ * A cycle that survives end-of-file (no clean terminal `stop_reason`
+ * ever arrived — the JSONL was truncated mid-stream, e.g. by a reload
+ * while claude is still responding) needs no special EOF flush: each
  * assistant entry has already emitted its content per-entry. The
  * absence of `turn_complete` keeps the reducer's `pendingUserMessage`
  * and per-msg-id scratch populated until the live drain produces the
@@ -238,7 +242,7 @@ export interface TranslateContext {
   pendingUserAttachments: Attachment[];
   /**
    * True between the cycle's first `assistant` entry (which emits
-   * `user_message_replay`) and its terminal `end_turn` (which emits
+   * `user_message_replay`) and its clean terminal entry (which emits
    * `turn_complete` and resets the flag). Used to suppress repeated
    * `user_message_replay` emits across multi-message claude turns:
    * the user submission appears once on the wire, even though the
@@ -259,9 +263,11 @@ export interface TranslateContext {
   /**
    * Counter for synthetic msg_ids assigned to orphan-interrupted
    * submissions (user entries with no following assistant cycle).
-   * Bumped each time `handleUserEntry` flushes a prior `pendingUserText`
-   * as an interrupted TurnEntry. The id format is `orphan-<n>` so it
-   * cannot collide with claude's `msg_<base62>` ids.
+   * Bumped each time a prior `pendingUserText` is flushed as an
+   * interrupted TurnEntry — by `handleUserEntry` when a following
+   * user entry arrives, or at end-of-JSONL when the caller asked for
+   * a dangling-terminal synthesis. The id format is `orphan-<n>` so
+   * it cannot collide with claude's `msg_<base62>` ids.
    */
   orphanCounter: number;
   /** Telemetry sink. */
@@ -306,6 +312,33 @@ const SKIPPED_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * `assistant` `stop_reason` values that close a cycle cleanly — the
+ * turn finished and the terminal `turn_complete { result: "success" }`
+ * fires. These are the API's non-continuation stop reasons:
+ *
+ *   - `end_turn`       claude finished its response normally
+ *   - `stop_sequence`  a configured stop sequence was hit
+ *   - `max_tokens`     the response hit the output-token ceiling
+ *   - `refusal`        claude declined to continue
+ *
+ * `tool_use` and `pause_turn` are NOT here — the cycle legitimately
+ * continues (a tool result or a resumed turn follows). A `null` /
+ * absent `stop_reason` is likewise non-terminal (the JSONL was
+ * truncated mid-stream). The Step 20.5.B.1 corpus audit found only
+ * `end_turn` and `stop_sequence` in practice; `max_tokens` / `refusal`
+ * are included because they are valid API terminals a future session
+ * could carry. Recognising all four keeps a last turn that ended on a
+ * non-`end_turn` terminal from being mislabelled `interrupted` by the
+ * `synthesizeDanglingTerminal` synthetic ([replay-1]).
+ */
+const TERMINAL_STOP_REASONS: ReadonlySet<string> = new Set([
+  "end_turn",
+  "stop_sequence",
+  "max_tokens",
+  "refusal",
+]);
+
+/**
  * Per-call options for {@link translateJsonlEntry}.
  *
  * Threaded by the session-level loop when peek-ahead detects shape
@@ -314,9 +347,10 @@ const SKIPPED_TOP_LEVEL_TYPES: ReadonlySet<string> = new Set([
 export interface TranslateJsonlEntryOptions {
   /**
    * When true, the per-entry translator skips emitting `turn_complete`
-   * for an `assistant` entry whose `stop_reason === "end_turn"`,
-   * leaving `ctx.cycleOpen` true so a following same-msg_id entry's
-   * content frames land in the same cycle.
+   * for an `assistant` entry whose `stop_reason` is a clean terminal
+   * ({@link TERMINAL_STOP_REASONS}), leaving `ctx.cycleOpen` true so a
+   * following same-msg_id entry's content frames land in the same
+   * cycle.
    *
    * The session-level loop sets this when the immediately-following
    * non-skipped JSONL entry is another `assistant` entry sharing the
@@ -354,12 +388,12 @@ export interface TranslateJsonlEntryOptions {
  *     separately-keyed assistant streams on the wire — one per
  *     `message.id`. That matches the live shape (one id per claude
  *     message; no canonicalization).
- *   - An `assistant` entry with `stop_reason: "end_turn"` additionally
- *     emits a terminal `turn_complete` and increments
- *     `ctx.turnsCommitted` (which feeds `replay_complete.count`),
- *     UNLESS `options.suppressTurnComplete` is true (set by the
- *     session-level loop when peek-ahead detects a same-msg_id
- *     continuation entry; see {@link TranslateJsonlEntryOptions}).
+ *   - An `assistant` entry whose `stop_reason` is a clean terminal
+ *     ({@link TERMINAL_STOP_REASONS}) additionally emits a terminal
+ *     `turn_complete` and increments `ctx.turnsCommitted` (which feeds
+ *     `replay_complete.count`), UNLESS `options.suppressTurnComplete`
+ *     is true (set by the session-level loop when peek-ahead detects a
+ *     same-msg_id continuation entry; see {@link TranslateJsonlEntryOptions}).
  *   - The cycle's `user_message_replay` fires on the FIRST `assistant`
  *     entry of the cycle (when `pendingUserText` is consumed). Each
  *     subsequent `assistant` entry within the same cycle skips
@@ -773,17 +807,24 @@ function handleAssistantEntry(
     out.push(assistant);
   }
 
-  // Cycle terminal: only on `stop_reason === "end_turn"`, AND only
-  // when the session-level loop hasn't asked us to defer. Suppression
-  // applies when peek-ahead identified a same-msg_id continuation
-  // entry — claude's SDK split a single assistant message across two
-  // JSONL records (each with `end_turn`), and we want exactly one
-  // `turn_complete` to land at the end of the run rather than two
-  // (the second of which the reducer would dedupe, stranding pending
-  // state). Bumps `turnsCommitted` so `replay_complete.count`
-  // reflects committed cycles; closes the cycle so the next user
-  // submission starts fresh.
-  if (stopReason === "end_turn" && options?.suppressTurnComplete !== true) {
+  // Cycle terminal: on a clean terminal `stop_reason`
+  // (`TERMINAL_STOP_REASONS` — `end_turn`, `stop_sequence`,
+  // `max_tokens`, `refusal`), AND only when the session-level loop
+  // hasn't asked us to defer. Suppression applies when peek-ahead
+  // identified a same-msg_id continuation entry — claude's SDK split a
+  // single assistant message across two JSONL records (each carrying
+  // the terminal stop_reason), and we want exactly one `turn_complete`
+  // to land at the end of the run rather than two (the second of which
+  // the reducer would dedupe, stranding pending state). `tool_use`,
+  // `pause_turn`, and a null / absent stop_reason are non-terminal —
+  // the cycle legitimately continues. Bumps `turnsCommitted` so
+  // `replay_complete.count` reflects committed cycles; closes the
+  // cycle so the next user submission starts fresh.
+  if (
+    stopReason !== null &&
+    TERMINAL_STOP_REASONS.has(stopReason) &&
+    options?.suppressTurnComplete !== true
+  ) {
     const turnComplete: TurnComplete = {
       type: "turn_complete",
       msg_id: entryMsgId,
@@ -805,10 +846,12 @@ function handleAssistantEntry(
 // content frames immediately when its line is processed, regardless of
 // `stop_reason`. The trailing entry of an unfinished cycle has already
 // emitted; only the cycle-terminal `turn_complete` is absent (because
-// `stop_reason` was not `end_turn`). The live drain continuing
+// `stop_reason` was not a clean terminal). The live drain continuing
 // post-replay produces the eventual `turn_complete` naturally when
 // claude's `result` lands. The translateJsonlSession loop body no
-// longer needs an EOF-time flush.
+// longer needs an EOF-time flush for assistant content — but it does
+// flush a stranded trailing user-only orphan on a cold resume; see
+// `synthesizeDanglingTerminal`.
 
 // ---------------------------------------------------------------------------
 // Session-level async iterator
@@ -848,18 +891,29 @@ export interface TranslateSessionOptions {
    * synchronous; production never sets it. */
   disableYield?: boolean;
   /**
-   * When `true`, a cycle still open at end-of-JSONL (an assistant
-   * entry that never reached `end_turn`) gets a synthetic terminal
-   * `turn_complete { result: "interrupted" }` before `replay_complete`
-   * — so a resumed session whose final turn was abandoned mid-flight
-   * commits that turn instead of stranding an in-flight row ([replay-1]).
+   * When `true`, end-of-JSONL state that no live turn will resolve is
+   * committed before `replay_complete` rather than left stranded:
+   *
+   *   - a cycle still open at EOF (an assistant entry that never
+   *     reached a clean terminal `stop_reason`) gets a synthetic
+   *     `turn_complete { result: "interrupted" }` ([replay-1]);
+   *   - a trailing user submission with no following assistant entry
+   *     (the user submitted and quit before any output) is flushed via
+   *     `flushPendingOrphan` as a `user_message_replay` +
+   *     `turn_complete { result: "interrupted" }` pair ([W2]).
+   *
+   * Both cover the cold-resume case: a resumed session whose final
+   * turn — or final bare prompt — was abandoned mid-flight commits it
+   * instead of stranding an in-flight row or silently dropping the
+   * prompt.
    *
    * `runReplay` sets this from the absence of a live `ActiveTurn`:
    * `true` on a cold resume (no live turn will continue the JSONL),
    * `false` on reload-mid-stream (a live `ActiveTurn` is still
-   * producing the turn and the live drain delivers the real
-   * `turn_complete`). Default `false` — the safe choice for any
-   * caller that hasn't reasoned about live continuation.
+   * producing the turn / carrying the trailing submission, and the
+   * live drain delivers the real `turn_complete`). Default `false` —
+   * the safe choice for any caller that hasn't reasoned about live
+   * continuation.
    */
   synthesizeDanglingTerminal?: boolean;
 }
@@ -871,11 +925,12 @@ export interface TranslateSessionOptions {
  *
  * `count` mirrors the per-wire `replay_complete.count` and counts
  * cycles committed via `turn_complete{result: "success"}` (one per
- * `assistant` JSONL entry whose `stop_reason === "end_turn"`) plus
- * orphan-interrupted cycles flushed via `flushPendingOrphan` (one per
- * orphaned user submission with no following assistant cycle). A
- * trailing in-flight cycle (assistant entry without `end_turn`)
- * counts only when {@link TranslateSessionOptions.synthesizeDanglingTerminal}
+ * `assistant` JSONL entry whose `stop_reason` is a clean terminal)
+ * plus orphan-interrupted cycles flushed via `flushPendingOrphan` (one
+ * per orphaned user submission with no following assistant cycle,
+ * including a trailing orphan flushed at EOF). A trailing in-flight
+ * cycle (assistant entry with no clean terminal `stop_reason`) counts
+ * only when {@link TranslateSessionOptions.synthesizeDanglingTerminal}
  * is set — the EOF-time synthetic `turn_complete` then commits it.
  * Without that option the cycle is left open (its content frames are
  * still emitted per-entry) and the live drain produces the eventual
@@ -1082,9 +1137,9 @@ export async function* translateJsonlSession(
   }
 
   // The trailing in-flight assistant entry (if any) has already
-  // emitted its content frames per-entry above; the absence of an
-  // `end_turn` stop_reason means no `turn_complete` fired, so the
-  // reducer's `pendingUserMessage` + per-msg-id scratch stay open.
+  // emitted its content frames per-entry above; the absence of a
+  // clean terminal `stop_reason` means no `turn_complete` fired, so
+  // the reducer's `pendingUserMessage` + per-msg-id scratch stay open.
   //
   // Two outcomes for that open cycle, decided by the caller via
   // `synthesizeDanglingTerminal`:
@@ -1110,6 +1165,29 @@ export async function* translateJsonlSession(
     ctx.turnsCommitted += 1;
     ctx.cycleOpen = false;
     ctx.cycleMsgId = null;
+  }
+
+  // A trailing user submission with no following `assistant` entry
+  // (the user submitted and then quit before any output) leaves
+  // `ctx.pendingUserText` stranded: `flushPendingOrphan` runs only
+  // from `handleUserEntry` on the *next* user entry, and there is no
+  // next entry. Without an EOF flush the resumed transcript silently
+  // loses the user's last prompt ([W2] — 9 of 282 audited sessions).
+  //
+  // Flush it here, gated on `synthesizeDanglingTerminal` for the same
+  // reason as the dangling-cycle synthetic above: on reload-mid-stream
+  // the trailing submission IS the live `ActiveTurn`, which
+  // `runReplay`'s `emitInflightTurnFromActiveTurn` already delivers —
+  // flushing it here would double it. Ordered AFTER the dangling-cycle
+  // synthetic: a session can carry both (4 of the 9 audited [W2]
+  // sessions also had a dangling tool cycle) — the open cycle's turn
+  // closes first, then the trailing prompt commits as its own turn.
+  // `flushPendingOrphan` is idempotent on empty pending state, so this
+  // is a no-op for any session without a stranded submission.
+  if (synthesizeDanglingTerminal) {
+    for (const msg of flushPendingOrphan(ctx)) {
+      yield msg;
+    }
   }
 
   const complete: ReplayComplete = {

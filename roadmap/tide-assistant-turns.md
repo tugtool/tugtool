@@ -4057,7 +4057,7 @@ These gaps are invisible at the [Step 20.5.A](#step-20-5-a) spec level — 20.5.
 
 **Depends on:** #step-20-5-b-1 (the corpus audit that confirmed [W1] / [W2]), #step-20-5-b ([replay-1])
 
-**Status:** _not started._
+**Status:** _complete. Both translator fixes landed in `tugcode/src/replay.ts`, translator-side only: a `TERMINAL_STOP_REASONS` set (`end_turn` / `stop_sequence` / `max_tokens` / `refusal`) replaces the `end_turn`-only terminal check ([W1]); an EOF `flushPendingOrphan` call — gated on `synthesizeDanglingTerminal`, ordered after the dangling-cycle synthetic — commits a stranded trailing prompt ([W2]). New translator suite `replay-eof-orphan.test.ts` (13 cases) + a `[W2]` reducer test in `code-session-store.replay.test.ts`. `tsc --noEmit` clean (tugcode + tugdeck); `bun test` green (413 tugcode, 2278 tugdeck). The re-run corpus audit reports `(none)` under "[W1] clean-terminal dangling" (the fix closes those cycles) and `(none)` under "synthetic does NOT fully rebalance"; a `stop_sequence`-last session shifts from the Δ=1 "open at EOF" bucket to Δ=0 balanced, as expected. The audit script's stop-reason annotation still labels `stop_sequence` "NOT recognised (W1)" — now stale; [Step 20.5.B.1.b](#step-20-5-b-1-b) refreshes the census._
 
 **Commit:** `fix(replay): flush trailing orphans at EOF + recognise all clean terminal stops`
 
@@ -4079,23 +4079,23 @@ These gaps are invisible at the [Step 20.5.A](#step-20-5-a) spec level — 20.5.
 
 **Tasks.**
 
-- [ ] `replay.ts` — `TERMINAL_STOP_REASONS` set replacing the `end_turn`-only terminal check.
-- [ ] `replay.ts` — EOF `flushPendingOrphan` call, gated on `synthesizeDanglingTerminal`, ordered after the dangling-cycle synthetic.
-- [ ] Translator tests — orphan flush (on / off); each clean terminal closes a cycle; non-terminals don't.
-- [ ] Reducer test — a flushed EOF orphan commits an empty-assistant `interrupted` turn.
+- [x] `replay.ts` — `TERMINAL_STOP_REASONS` set replacing the `end_turn`-only terminal check. _Done — `end_turn` / `stop_sequence` / `max_tokens` / `refusal`; `tool_use` / `pause_turn` / `null` stay non-terminal. Docstrings + the header content-ordering comment updated to match._
+- [x] `replay.ts` — EOF `flushPendingOrphan` call, gated on `synthesizeDanglingTerminal`, ordered after the dangling-cycle synthetic. _Done — relies on `flushPendingOrphan`'s existing empty-state idempotency; no-op for any session without a stranded submission._
+- [x] Translator tests — orphan flush (on / off); each clean terminal closes a cycle; non-terminals don't. _Done — `tugcode/src/__tests__/replay-eof-orphan.test.ts`, 13 cases (incl. the dangling-cycle + trailing-orphan double-loss ordering and the [W1] mid-session cascade guard)._
+- [x] Reducer test — a flushed EOF orphan commits an empty-assistant `interrupted` turn. _Done — added to `code-session-store.replay.test.ts`._
 
 **Tests.**
 
-- [ ] A JSONL ending with a user-text entry and no assistant: with `synthesizeDanglingTerminal` → one `user_message_replay` + one `turn_complete { result: "interrupted" }`; without → neither (the live path owns it).
-- [ ] A session whose last assistant entry is `stop_reason: "stop_sequence"` (also `max_tokens`, `refusal`) emits a terminal `turn_complete { result: "success" }`; the cycle closes; no dangling synthetic fires.
-- [ ] `tool_use`, `pause_turn`, and a `null` stop-reason do NOT close the cycle (regression guard).
-- [ ] Reducer: a flushed EOF orphan → `TurnEntry` with empty `assistant`, `turnEndReason: "interrupted"`; post-`replay_complete` phase is `idle`.
+- [x] A JSONL ending with a user-text entry and no assistant: with `synthesizeDanglingTerminal` → one `user_message_replay` + one `turn_complete { result: "interrupted" }`; without → neither (the live path owns it). _Pass._
+- [x] A session whose last assistant entry is `stop_reason: "stop_sequence"` (also `max_tokens`, `refusal`) emits a terminal `turn_complete { result: "success" }`; the cycle closes; no dangling synthetic fires. _Pass — parametrized over all four terminals._
+- [x] `tool_use`, `pause_turn`, and a `null` stop-reason do NOT close the cycle (regression guard). _Pass._
+- [x] Reducer: a flushed EOF orphan → `TurnEntry` with empty `assistant`, `turnEndReason: "interrupted"`; post-`replay_complete` phase is `idle`. _Pass._
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean (tugcode + tugdeck).
-- [ ] `bun test` green (tugcode + tugdeck).
-- [ ] Re-run `replay-corpus-audit.ts`: the `stop_sequence` session no longer appears under "[W1] clean-terminal dangling"; cycle-balance / synthetic-rebalance otherwise unchanged.
+- [x] `bun x tsc --noEmit` clean (tugcode + tugdeck). _Both clean._
+- [x] `bun test` green (tugcode + tugdeck). _413 tugcode, 2278 tugdeck, 0 fail._
+- [x] Re-run `replay-corpus-audit.ts`: the `stop_sequence` session no longer appears under "[W1] clean-terminal dangling"; cycle-balance / synthetic-rebalance otherwise unchanged. _Done — "[W1] clean-terminal dangling" reports `(none)`; "synthetic does NOT fully rebalance" reports `(none)`. The W1 fix legitimately rebalances a `stop_sequence`-last session (Δ=1 → Δ=0); the remaining cycle-count drift (267 → 266 translated) is live-corpus drift between audit runs, not a translator regression._
 
 ---
 
@@ -4128,7 +4128,7 @@ These gaps are invisible at the [Step 20.5.A](#step-20-5-a) spec level — 20.5.
 
 **Tasks.**
 
-- [ ] Extend the corpus harness — compaction / overload example ids; a string-`content` flag.
+- [ ] Extend the corpus harness — compaction / overload example ids; a string-`content` flag; refresh the now-stale `stop_reason` annotation (the translator recognises `stop_sequence` / `max_tokens` / `refusal` as clean terminals as of [Step 20.5.B.1.a](#step-20-5-b-1-a)).
 - [ ] Re-run the harness; confirm the [W5a] string-content shape and quantify it.
 - [ ] `replay.ts` — normalise string-valued `message.content` ([W5a]).
 - [ ] Pin `deriveContextWindows` over a real post-`/compact` negative-delta sequence ([W5c]).

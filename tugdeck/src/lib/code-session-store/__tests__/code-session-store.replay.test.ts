@@ -639,3 +639,61 @@ describe("CodeSessionStore — [replay-1] dangling-turn terminal", () => {
     expect(snap.inflightUserMessage).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// [W2] — a flushed EOF orphan commits as an empty-assistant interrupted turn
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — [W2] flushed EOF orphan", () => {
+  /** A `turn_complete { result: "interrupted" }` — the shape tugcode's
+   *  replay translator emits (paired with a `user_message_replay`
+   *  keyed on a synthetic `orphan-<n>` id) when it flushes a trailing
+   *  user submission stranded at end-of-JSONL. */
+  function turnCompleteInterrupted(msgId: string) {
+    return {
+      type: "turn_complete",
+      msg_id: msgId,
+      seq: 1,
+      result: "interrupted",
+      ipc_version: IPC_VERSION,
+    };
+  }
+
+  it("commits a flushed trailing-orphan as an empty-assistant interrupted turn", () => {
+    const { store, conn } = makeStore();
+
+    emit(conn, replayStarted());
+    // A real turn ahead of the orphan, so transcript ordering is
+    // exercised too.
+    emit(conn, userMessageReplay("msg-1", "first prompt"));
+    emit(conn, assistantText("msg-1", "first reply"));
+    emit(conn, turnComplete("msg-1", "success"));
+
+    // The translator's EOF orphan flush ([W2]): a user_message_replay
+    // + turn_complete{interrupted} keyed on a synthetic orphan id,
+    // with NO assistant_text between them — the user quit before any
+    // output landed.
+    emit(conn, userMessageReplay("orphan-0", "one more thing"));
+    emit(conn, turnCompleteInterrupted("orphan-0"));
+    emit(conn, replayComplete(2));
+
+    const snap = store.getSnapshot();
+    // Bracket closed cleanly to `idle` — the orphan's turn_complete
+    // cleared `pendingUserMessage`, so chain-link-13 did not fire.
+    expect(snap.phase).toBe("idle");
+    expect(snap.canSubmit).toBe(true);
+    expect(snap.inflightUserMessage).toBeNull();
+    expect(snap.transcript.length).toBe(2);
+
+    const orphan = snap.transcript[1];
+    expect(orphan.msgId).toBe("orphan-0");
+    expect(orphan.userMessage.text).toBe("one more thing");
+    // No assistant_text was emitted — the committed turn carries empty
+    // assistant content (the flushed-orphan shape, [W2]).
+    expect(orphan.assistant).toBe("");
+    // The interrupted result round-trips: the row renders the
+    // `interrupted` badge, not `error`.
+    expect(orphan.turnEndReason).toBe("interrupted");
+    expect(orphan.result).toBe("interrupted");
+  });
+});
