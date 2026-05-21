@@ -1479,16 +1479,23 @@ function handleTurnComplete(
   }
 
   const isSuccess = event.result === "success";
-  // Choose the terminal reason for this completion. A wire-side
-  // `turn_complete(error)` that landed because the user pressed Stop
-  // (CASE B) maps to `"interrupted"` — `interruptInFlight` is the
-  // distinguishing signal set by `handleInterrupt`. Otherwise an
-  // error-result completion is a genuine `"error"`.
+  // Choose the terminal reason for this completion:
+  //  - `result: "interrupted"` is an explicit cut-off terminal —
+  //    tugcode's replay translator emits it for orphan-interrupted
+  //    submissions and for a dangling cold-resume turn ([replay-1]).
+  //    Honored directly so a replayed interrupted turn is not
+  //    mislabelled `error` (the replay path has no `interruptInFlight`).
+  //  - a wire-side `turn_complete(error)` that landed because the user
+  //    pressed Stop (CASE B) maps to `"interrupted"` via the live
+  //    `interruptInFlight` signal set by `handleInterrupt`.
+  //  - otherwise an error-result completion is a genuine `"error"`.
   const turnEndReason: TurnEndReason = isSuccess
     ? "complete"
-    : state.interruptInFlight
+    : event.result === "interrupted"
       ? "interrupted"
-      : "error";
+      : state.interruptInFlight
+        ? "interrupted"
+        : "error";
   // Pass `event.telemetry` straight through: when the supervisor
   // attached a persisted telemetry block (replay path), buildTurnEntry
   // adopts it via `mergeTurnTelemetry`; when it's undefined (live

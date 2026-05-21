@@ -2121,6 +2121,14 @@ export class SessionManager {
 
     const iter = translateJsonlSession(input, {
       telemetry: this.replayTelemetry,
+      // A cycle left open at end-of-JSONL has no live `ActiveTurn` to
+      // continue it on a cold resume (`inflight === null`) — ask the
+      // translator to synthesize its terminal `turn_complete` so the
+      // dangling turn commits instead of stranding an in-flight row
+      // ([replay-1]). When `inflight !== null` this IS a live turn
+      // still streaming (reload-mid-stream); leave it for the live
+      // drain + `emitInflightTurnFromActiveTurn` as before.
+      synthesizeDanglingTerminal: inflight === null,
     });
 
     try {

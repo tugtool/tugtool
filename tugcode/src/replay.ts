@@ -247,6 +247,16 @@ export interface TranslateContext {
    */
   cycleOpen: boolean;
   /**
+   * `message.id` of the currently-open cycle's most-recent `assistant`
+   * entry, or `null` when no cycle is open. Tracked so that — when the
+   * JSONL ends with a cycle still open and the caller asked for a
+   * dangling-terminal synthesis (`synthesizeDanglingTerminal`) — the
+   * EOF-time synthetic `turn_complete` can key on the same id the
+   * cycle's content frames carried. Reset to `null` by the terminal
+   * `turn_complete` emit alongside `cycleOpen`.
+   */
+  cycleMsgId: string | null;
+  /**
    * Counter for synthetic msg_ids assigned to orphan-interrupted
    * submissions (user entries with no following assistant cycle).
    * Bumped each time `handleUserEntry` flushes a prior `pendingUserText`
@@ -267,6 +277,7 @@ export function makeTranslateContext(
     pendingUserText: null,
     pendingUserAttachments: [],
     cycleOpen: false,
+    cycleMsgId: null,
     orphanCounter: 0,
     telemetry,
   };
@@ -654,6 +665,13 @@ function handleAssistantEntry(
     ctx.cycleOpen = true;
   }
 
+  // Track the open cycle's most-recent assistant id so an EOF-time
+  // dangling-terminal synthetic can key on it. Only real ids are
+  // recorded — an entry with no `message.id` leaves the prior value.
+  if (entryMsgId.length > 0) {
+    ctx.cycleMsgId = entryMsgId;
+  }
+
   // Accumulate this entry's content into per-message locals. Each
   // assistant entry is its own keyed unit on the wire; nothing carries
   // across entries.
@@ -776,6 +794,7 @@ function handleAssistantEntry(
     out.push(turnComplete);
     ctx.turnsCommitted += 1;
     ctx.cycleOpen = false;
+    ctx.cycleMsgId = null;
   }
 
   return out;
@@ -828,6 +847,21 @@ export interface TranslateSessionOptions {
   /** Disable the inter-batch yield. Tests set this to keep
    * synchronous; production never sets it. */
   disableYield?: boolean;
+  /**
+   * When `true`, a cycle still open at end-of-JSONL (an assistant
+   * entry that never reached `end_turn`) gets a synthetic terminal
+   * `turn_complete { result: "interrupted" }` before `replay_complete`
+   * — so a resumed session whose final turn was abandoned mid-flight
+   * commits that turn instead of stranding an in-flight row ([replay-1]).
+   *
+   * `runReplay` sets this from the absence of a live `ActiveTurn`:
+   * `true` on a cold resume (no live turn will continue the JSONL),
+   * `false` on reload-mid-stream (a live `ActiveTurn` is still
+   * producing the turn and the live drain delivers the real
+   * `turn_complete`). Default `false` — the safe choice for any
+   * caller that hasn't reasoned about live continuation.
+   */
+  synthesizeDanglingTerminal?: boolean;
 }
 
 /**
@@ -840,10 +874,12 @@ export interface TranslateSessionOptions {
  * `assistant` JSONL entry whose `stop_reason === "end_turn"`) plus
  * orphan-interrupted cycles flushed via `flushPendingOrphan` (one per
  * orphaned user submission with no following assistant cycle). A
- * trailing in-flight cycle (assistant entry without `end_turn`) emits
- * its content frames per-entry but does NOT count — the translator
- * doesn't synthesize a terminal for it; the live drain produces the
- * eventual `turn_complete` when claude's `result` lands.
+ * trailing in-flight cycle (assistant entry without `end_turn`)
+ * counts only when {@link TranslateSessionOptions.synthesizeDanglingTerminal}
+ * is set — the EOF-time synthetic `turn_complete` then commits it.
+ * Without that option the cycle is left open (its content frames are
+ * still emitted per-entry) and the live drain produces the eventual
+ * `turn_complete` when claude's `result` lands.
  */
 export interface TranslateSessionResult {
   count: number;
@@ -873,6 +909,7 @@ export async function* translateJsonlSession(
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
   const telemetry = opts.telemetry ?? DEFAULT_TELEMETRY;
   const yieldBetweenBatches = opts.disableYield !== true;
+  const synthesizeDanglingTerminal = opts.synthesizeDanglingTerminal === true;
 
   const started: ReplayStarted = {
     type: "replay_started",
@@ -1045,12 +1082,35 @@ export async function* translateJsonlSession(
   }
 
   // The trailing in-flight assistant entry (if any) has already
-  // emitted its content frames per-entry above. Its absence of an
-  // `end_turn` stop_reason means no `turn_complete` fired — the
-  // reducer's `pendingUserMessage` and per-msg-id scratch stay
-  // populated until the live drain produces the eventual
-  // `turn_complete` when claude's `result` lands. No EOF-time flush
-  // is needed.
+  // emitted its content frames per-entry above; the absence of an
+  // `end_turn` stop_reason means no `turn_complete` fired, so the
+  // reducer's `pendingUserMessage` + per-msg-id scratch stay open.
+  //
+  // Two outcomes for that open cycle, decided by the caller via
+  // `synthesizeDanglingTerminal`:
+  //   - `false` (default — the reload-mid-stream path, where a live
+  //     `ActiveTurn` is still producing the turn): leave the cycle
+  //     open. `runReplay`'s `emitInflightTurnFromActiveTurn` plus the
+  //     post-bracket live drain deliver the eventual `turn_complete`.
+  //   - `true` (a cold resume — no live turn continues this JSONL):
+  //     no `turn_complete` will ever arrive, so emit a synthetic one
+  //     keyed on the open cycle's assistant id. `result: "interrupted"`
+  //     commits the dangling turn as a terminal `interrupted`
+  //     TurnEntry instead of stranding an in-flight row that animates
+  //     its thinking indicator forever ([replay-1]).
+  if (ctx.cycleOpen && synthesizeDanglingTerminal) {
+    const danglingTerminal: TurnComplete = {
+      type: "turn_complete",
+      msg_id: ctx.cycleMsgId ?? "",
+      seq: ctx.globalSeq++,
+      result: "interrupted",
+      ipc_version: IPC_VERSION,
+    };
+    yield danglingTerminal;
+    ctx.turnsCommitted += 1;
+    ctx.cycleOpen = false;
+    ctx.cycleMsgId = null;
+  }
 
   const complete: ReplayComplete = {
     type: "replay_complete",

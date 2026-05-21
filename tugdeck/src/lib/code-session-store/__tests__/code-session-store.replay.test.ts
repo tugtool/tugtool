@@ -577,3 +577,65 @@ describe("CodeSessionStore — per-turn paths populated across replay bracket ([
     expect(store.streamingDocument.get(`turn.${tk2}.assistant`)).toBe("A2");
   });
 });
+
+// ---------------------------------------------------------------------------
+// [replay-1] — a dangling cold-resume turn commits instead of stranding
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — [replay-1] dangling-turn terminal", () => {
+  /** A `turn_complete { result: "interrupted" }` — the shape tugcode's
+   *  replay translator synthesizes at end-of-JSONL for a cycle that
+   *  never reached `end_turn` (a cold resume of an abandoned turn). */
+  function turnCompleteInterrupted(msgId: string) {
+    return {
+      type: "turn_complete",
+      msg_id: msgId,
+      seq: 1,
+      result: "interrupted",
+      ipc_version: IPC_VERSION,
+    };
+  }
+
+  it("commits a replayed dangling turn (result: interrupted) as a terminal interrupted TurnEntry", () => {
+    const { store, conn } = makeStore();
+
+    emit(conn, replayStarted());
+    emit(conn, userMessageReplay("msg-d", "do the thing"));
+    emit(conn, assistantText("msg-d", "starting on it"));
+    // tugcode's synthetic dangling-cycle terminal.
+    emit(conn, turnCompleteInterrupted("msg-d"));
+    emit(conn, replayComplete(1));
+
+    const snap = store.getSnapshot();
+    // Bracket closed cleanly to `idle` — chain-link-13 did NOT fire,
+    // because the synthetic turn_complete cleared `pendingUserMessage`.
+    expect(snap.phase).toBe("idle");
+    // The dangling turn is a committed terminal entry — no in-flight
+    // row, so the transcript renders `EndStateDisplay`, not a forever-
+    // animating `TugThinkingIndicator`.
+    expect(snap.inflightUserMessage).toBeNull();
+    expect(snap.transcript.length).toBe(1);
+    expect(snap.transcript[0].msgId).toBe("msg-d");
+    expect(snap.transcript[0].turnEndReason).toBe("interrupted");
+    expect(snap.transcript[0].result).toBe("interrupted");
+  });
+
+  it("regression guard — a replay with NO terminal for the last turn keeps chain-link-13 (phase → streaming)", () => {
+    // Reload-mid-stream: tugcode left the cycle open
+    // (`synthesizeDanglingTerminal` false) because a live ActiveTurn
+    // is still producing the turn. `pendingUserMessage` survives the
+    // bracket; chain-link-13 transitions to `streaming` so the live
+    // drain's eventual `turn_complete` commits the turn naturally.
+    const { store, conn } = makeStore();
+
+    emit(conn, replayStarted());
+    emit(conn, userMessageReplay("msg-live", "still streaming"));
+    emit(conn, assistantText("msg-live", "partial repl"));
+    // No turn_complete — the cycle is genuinely still live.
+    emit(conn, replayComplete(0));
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("streaming");
+    expect(snap.inflightUserMessage).not.toBeNull();
+  });
+});

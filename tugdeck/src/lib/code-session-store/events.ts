@@ -115,7 +115,15 @@ export interface ToolUseStructuredEvent {
 }
 
 /**
- * `turn_complete` — closes the active turn with success or error.
+ * `turn_complete` — closes the active turn.
+ *
+ * `result`:
+ *  - `"success"` — the turn finished cleanly (`stop_reason: end_turn`).
+ *  - `"error"` — the turn ended on a protocol error.
+ *  - `"interrupted"` — an explicit cut-off terminal. tugcode's replay
+ *    translator emits this for orphan-interrupted submissions and for
+ *    a dangling cold-resume turn (a JSONL cycle with no `end_turn`);
+ *    the reducer commits it with `turnEndReason: "interrupted"`.
  *
  * `telemetry` is populated on the replay path only: when the
  * supervisor reads a per-turn telemetry row from the SessionLedger
@@ -128,7 +136,7 @@ export interface ToolUseStructuredEvent {
 export interface TurnCompleteEvent {
   type: "turn_complete";
   msg_id: string;
-  result: "success" | "error";
+  result: "success" | "error" | "interrupted";
   tug_session_id?: string;
   telemetry?: import("./telemetry").TurnTelemetry;
   [key: string]: unknown;
