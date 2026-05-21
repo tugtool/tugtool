@@ -1,0 +1,37 @@
+/**
+ * tide-card-phase-indicator.css — the Z4 prompt-entry-footer phase
+ * indicator.
+ *
+ * One rule: the muted status line `TidePhaseIndicator` renders into
+ * the prompt-entry toolbar's footer-content slot. The slot
+ * (`.tug-prompt-entry-footer-content`) owns layout — flex sizing,
+ * centering — so this file styles only the line's own type treatment
+ * per [L20]. The component publishes the live lifecycle state as a
+ * `data-state` attribute ([L06]); no per-state rule is authored yet
+ * (every visible state shares one treatment), but the hook is in
+ * place for future per-state tuning without a code change.
+ *
+ * Conformance:
+ *  - [L06] appearance is CSS off a `data-state` attribute; the
+ *    component sets no appearance in React.
+ *  - [L16] the one color-setting rule sets `color` without a
+ *    background, so it carries an explicit `@tug-renders-on` naming
+ *    the prompt-entry control surface it inherits.
+ *  - [L20] no new token slots — the line consumes existing global
+ *    scale + element tokens.
+ */
+
+/* The Z4 phase line — a muted, single-line status string. Sized to
+   the status-row chrome font; ellipsised so a long "Running {tool}"
+   never widens the toolbar. Sets `color` only and inherits the
+   prompt-entry control surface. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+.tide-phase-indicator {
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
