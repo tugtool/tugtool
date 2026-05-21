@@ -4184,7 +4184,7 @@ This step does three things:
 
 **Depends on:** #step-20-5-a (the state-to-zone matrix this step implements), #step-20-5-b (inline-dialog primitives — done), #step-20-4 (zone slot infrastructure), [#step-20-3-4] (per-turn telemetry persistence — done 2026-05-16)
 
-**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.2.B](#step-20-5-d-2-b) (restore-reveal residual glitches) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past; D.2.B inserted 2026-05-21 after a post-D.2.A capture showed two residual relaunch glitches (a picker-sheet flash, a wrong first-paint scroll position) — see the reconciliation note below._
+**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.2.B](#step-20-5-d-2-b) (restore-reveal residual glitches) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.4.A](#step-20-5-d-4-a) (tugcode result-bounded turn model) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past; D.2.B inserted 2026-05-21 after a post-D.2.A capture showed two residual relaunch glitches (a picker-sheet flash, a wrong first-paint scroll position) — see the reconciliation note below; D.4.A inserted 2026-05-21 after the D.4 spike's stream-json probes found claude merges a mid-turn message into a running tool turn while tugcode's turn model cannot route overlapping sends._
 
 **Commit:** _per sub-step._
 
@@ -4198,7 +4198,7 @@ This step does three things:
 - **"Ship the chosen telemetry placement defaults"** — done: [Step 20.4.13](#step-20-4-13) / [Step 20.4.15](#step-20-4-15) shipped Z2 = `statusRow` as the production default; the dev placement-experiment harness stays behind the `import.meta.env.DEV` guard.
 - **The `#step-20-3-4` dependency** — satisfied: per-turn telemetry persistence shipped 2026-05-16, so the shipped placements read correct values across HMR / Reload / relaunch ([L23]).
 
-**The foundation-first split.** What genuinely remains is the lifecycle state machine itself plus the surfaces that need it — Z5's submit button, the transcript-replay paint gate, and Z2 / Z4. It lands as five sub-steps:
+**The foundation-first split.** What genuinely remains is the lifecycle state machine itself plus the surfaces that need it — Z5's submit button, the transcript-replay paint gate, and Z2 / Z4. It lands as a sequence of sub-steps:
 
 | Sub-step | Deliverable | Primary file(s) |
 |---|---|---|
@@ -4208,9 +4208,10 @@ This step does three things:
 | [20.5.D.2.B](#step-20-5-d-2-b) | Restore-reveal residual glitches — the picker-sheet flash + the first-paint scroll position | `tide-card.tsx`, `tide-session-restore.ts`, `tug-list-view.tsx` |
 | [20.5.D.3](#step-20-5-d-3) | Z5 submit-button state machine — the new disabled / label modes | `tug-prompt-entry.tsx` + `.css` |
 | [20.5.D.4](#step-20-5-d-4) | Request cancellation UX mini-spike — design + vet the pull-down / queued / interrupt affordance family | plan + a gallery / HMR vet surface |
+| [20.5.D.4.A](#step-20-5-d-4-a) | tugcode result-bounded turn model — route overlapping / mid-turn sends; turn lifecycle bound to claude's `result` | `tugcode/src/session.ts`, `main.ts` |
 | [20.5.D.5](#step-20-5-d-5) | Cross-zone coordination (Z2 / Z4) + matrix verification + landing the D.4 queued design | `tide-card.tsx`, zone renderers |
 
-D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.2.A follows directly: [DT10] suppressed the transcript host's own intermediate paint, but a frame-by-frame capture of a cold relaunch showed the restore still flickers through six distinct states (two separate loading surfaces, an ungated banner that lingers and reflows, a focus beat that lands last) — D.2.A collapses those to one delay-gated placeholder and one coordinated reveal. D.2.B mops up the two residual glitches a post-D.2.A capture surfaced — the project-picker sheet briefly flashing during the pre-registry window of the startup restore pass, and the transcript's first paint landing at the wrong scroll position (jump-to-bottom button visible) when the saved state was scrolled to the bottom. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it.
+D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.2.A follows directly: [DT10] suppressed the transcript host's own intermediate paint, but a frame-by-frame capture of a cold relaunch showed the restore still flickers through six distinct states (two separate loading surfaces, an ungated banner that lingers and reflows, a focus beat that lands last) — D.2.A collapses those to one delay-gated placeholder and one coordinated reveal. D.2.B mops up the two residual glitches a post-D.2.A capture surfaced — the project-picker sheet briefly flashing during the pre-registry window of the startup restore pass, and the transcript's first paint landing at the wrong scroll position (jump-to-bottom button visible) when the saved state was scrolled to the bottom. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it. D.4.A is a tugcode transport fix the D.4 spike forced: its raw stream-json probes proved claude's turn boundary is its `result` — a mid-turn message merges into a running *tool* turn (one `result`, the answer folded in) — while tugcode equates one `user_message` to one turn and mis-routes overlapping sends. D.4.A makes tugcode's turn model `result`-bounded so D.5's btw-send path has a correct transport foundation.
 
 **Conformance (applies to every sub-step).** All phase-driven UI goes through `useLifecycleState()` — no zone reads `phase` or `awaitingApprovalSince` directly ([L02]). Appearance changes flip a `data-*` attribute / class and CSS does the visual ([L06]). State preservation: label / content transitions must not flicker, and DOM nodes that carry focus or scroll position stay mounted across mode changes ([L23] / [L26]).
 
@@ -4594,9 +4595,66 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 
 ---
 
+#### Step 20.5.D.4.A: tugcode result-bounded turn model {#step-20-5-d-4-a}
+
+**Depends on:** #step-20-5-d (parent), #step-20-5-d-4 (the request-cancellation spike that surfaced this)
+
+**Status:** _not started._
+
+**Commit:** `fix(tugcode): result-bounded turn model for overlapping sends`
+
+**References:** `tugcode/src/session.ts` (`SessionManager` — `handleUserMessage`, the `ActiveTurn` type, the stdout drain), `tugcode/src/main.ts` (the IPC dispatch loop — the fire-and-forget `handleUserMessage` dispatch), `tugcode/probe-overlap.ts` / `probe-btw-overlap.ts` / `probe-tool-overlap.ts` (the empirical evidence), [#step-20-5-d-4] (the cancellation design this unblocks), [#step-20-5-d-5] (the consumer)
+
+**Why this step exists.** The [Step 20.5.D.4](#step-20-5-d-4) spike ran three raw stream-json probes against the `claude` CLI to settle the mid-turn-submit policy. They turned up a transport truth and a latent tugcode bug that together gate the cancellation design:
+
+- **claude's turn boundary is its `result`, not a `user_message`.** `probe-tool-overlap.ts` started a turn reading four files one at a time and injected a second `user_message` after the 2nd tool call. claude consumed it at the next agent-loop iteration boundary and **folded it into the running turn** — a single `result`, `num_turns=5`, whose text carried both the file summaries and the injected question's answer. A message sent into a pure-*text* turn (no iteration boundaries) is instead buffered and run as a separate later turn with its own `result` (`probe-overlap.ts`, `probe-btw-overlap.ts`). `/btw` itself is a TUI-only command — rejected in stream-json mode (`"/btw isn't available in this environment."`) — so the mid-turn merge is the real protocol-level mechanism, not a `/btw` channel.
+- **tugcode equates one `user_message` → one turn → one `ActiveTurn`.** `handleUserMessage` writes the message to claude's stdin unconditionally, constructs an `ActiveTurn`, and assigns `this.activeTurn`; `main.ts` dispatches `handleUserMessage` fire-and-forget (not awaited). Two overlapping sends run two concurrent `handleUserMessage` calls — the second **clobbers `this.activeTurn`**, so the first turn's `result` routes into the wrong `ActiveTurn`, the first call's completion promise never resolves, and any buffered follow-on turn's events arrive with `this.activeTurn === null` and are dropped. `probe-overlap.ts` (which runs through tugcode) reproduces it exactly: turn 1 completes, turn 2 never emits a `turn_complete`.
+
+The bug is **latent today** — tugdeck's `CodeSessionStore` holds mid-turn sends in `queuedSends` and releases one per `turn_complete`, so tugcode never sees two overlapping `user_message`s. But [Step 20.5.D.5](#step-20-5-d-5)'s vetted **"C"** design adds a *btw send* — a mid-turn message forwarded immediately so claude merges it — which makes overlap a first-class, routed path. tugcode must be correct before that lands.
+
+**The fix — turn ownership moves from `handleUserMessage` to the drain.** Today `handleUserMessage` *owns* a turn: it constructs the `ActiveTurn` and awaits its completion, conflating "a message was submitted" with "a turn is in progress." The fix separates the two:
+
+- A `user_message` is **always written to claude's stdin** and recorded in a FIFO of submitted-but-unbracketed messages. It no longer unconditionally creates or replaces `this.activeTurn`.
+- The **`ActiveTurn` lifecycle is bound to claude's event stream**: the stdout drain opens an `ActiveTurn` on the first assistant activity after idle and closes it on `result` (→ `turn_complete`). One `ActiveTurn` per `result`.
+- A turn that **merged** N mid-turn sends is one `ActiveTurn` carrying N user messages; a **buffered** send produces its own later `ActiveTurn`. The `ActiveTurn` ↔ `user_message` association becomes 1:N, not 1:1 — `ActiveTurn` must stop assuming it owns exactly one user message (this affects the `user_message_replay` payload for a mid-turn `runReplay`).
+- `main.ts` dispatch stays non-blocking, but a mid-turn `handleUserMessage` must be a safe forward-and-record, never a competing turn.
+
+**Constraints / risks.**
+- The early-exit watcher, the stderr reader, and `signalEofToActiveTurn` all read `activeTurn` / `claudeReceivedInput` — the refactor must preserve their invariants (a claude crash mid-turn still emits exactly one canonical terminal frame).
+- The cold-boot readiness gate (`claudeReadyPromise`) and the replay paths (`runReplay`, the `[W2]` orphan-flush) sequence against `handleUserMessage` — keep them working.
+- Out of scope: any tugdeck-side change, the btw-send UI, the cancellation UI. D.4.A is transport-only — it makes overlap *correct*; it does not add a user-facing feature.
+
+**Artifacts.**
+- `tugcode/src/session.ts` — `handleUserMessage` (forward-and-record, no turn ownership), the `ActiveTurn` type (1:N user messages), the stdout drain (turn open/close driven by the event stream).
+- `tugcode/src/main.ts` — the IPC dispatch loop, if the fire-and-forget dispatch needs adjustment.
+- `tugcode/src/__tests__/` — a new test covering overlapping `handleUserMessage` (merged-turn and buffered-turn routing).
+
+**Tasks.**
+
+- [ ] Separate turn ownership from `handleUserMessage` — `ActiveTurn` open/close driven by claude's `result`, not by the dispatch call.
+- [ ] Make a mid-turn `user_message` a forward-and-record: written to claude's stdin, recorded in a FIFO, no `this.activeTurn` clobber.
+- [ ] Make `ActiveTurn` carry 1:N user messages; fix the `user_message_replay` payload for a mid-turn `runReplay`.
+- [ ] Verify the early-exit / stderr / EOF watchers and the cold-boot + replay paths still hold their invariants.
+
+**Tests.**
+
+- [ ] Overlapping `handleUserMessage` against a merged (tool) turn — one `turn_complete`, both user messages associated, every event routed.
+- [ ] Overlapping `handleUserMessage` against a buffered (text) turn — two `turn_complete`s in order, no dropped events.
+- [ ] Regression: a single, non-overlapping turn brackets exactly as before.
+
+**Conformance.** Transport-layer fix — no tuglaws apply (tugcode, not tugdeck). The contract is the stream-json event stream tugdeck's `CodeSessionStore` consumes: `turn_complete` bracketing stays correct for one turn and becomes correct for overlapping turns.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean in `tugcode/`.
+- [ ] tugcode's test suite green.
+- [ ] **Probe vet (manual, user-gated)** — `probe-overlap.ts` (tugcode-routed) shows *both* turns complete: turn 2 emits its `turn_complete`. The raw probes `probe-btw-overlap.ts` / `probe-tool-overlap.ts` stay as the reference for claude's underlying behavior.
+
+---
+
 #### Step 20.5.D.5: Cross-zone content coordination + matrix verification {#step-20-5-d-5}
 
-**Depends on:** #step-20-5-d-1 (the hook), #step-20-5-d-2, #step-20-5-d-3, #step-20-5-d-4 (the request-cancellation design this step lands)
+**Depends on:** #step-20-5-d-1 (the hook), #step-20-5-d-2, #step-20-5-d-3, #step-20-5-d-4 (the request-cancellation design this step lands), #step-20-5-d-4-a (the tugcode turn-model fix the btw-send path needs)
 
 **Status:** _not started._
 
@@ -4609,6 +4667,8 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 _Cross-zone coordination._ The remaining matrix-driven zones consume the hook: Z2's status bar (live counts → frozen during AWAITING_USER → "Restoring session…" during REPLAYING → "Disconnected" during TRANSPORT_DOWN) and Z4's prompt-entry footer (the phase indicators — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}"). This **begins with an audit**: the shipped `statusRow` (Z2) and the prompt-entry chrome already react to parts of the snapshot; reconcile what they do against the matrix and wire only the genuine gaps through `useLifecycleState()` ([L02] — no zone reads `phase` directly).
 
 _Request cancellation._ Land the **cancellation design** captured in [Step 20.5.D.4](#step-20-5-d-4) — **that step's "Cancellation behavior spec" is the contract**, implemented verbatim into the real tide card. In brief: a mid-turn submit **queues** (dispatched on idle); queued sends are **transcript ghost rows** (one ✕-cancellable ghosted user row each); the **`+` queue button** appears in Z5 only once the user types mid-turn (progressive disclosure — a plain submit → wait → submit flow never surfaces it); **Stop ≡ Esc** peel the newest cancellable thing (queued sends LIFO, then the turn); the C2 / C3 threshold is `firstAssistantDeltaAt` / `firstToolUseAt`. Plus the data-model changes D.4 scoped (expose the queued payloads on the snapshot; a per-item queue-cancel reducer event; the `deriveSubmitButtonMode` revision; widen `handleInterrupt` CASE A). This half may be split into its own sub-step at execution time if the surface proves large.
+
+**Reframe (2026-05-21) — the D.4 finding.** [Step 20.5.D.4.A](#step-20-5-d-4-a)'s raw stream-json probes showed claude merges a mid-turn `user_message` into a running *tool* turn (one `result`, the answer folded in). That makes the D.4 spec's queue — held client-side, flushed on `turn_complete` — only *one* of the two affordances in the vetted **"C"** design: (1) the **queued send** (cancellable, deferred, the `+` button) — the D.4 spec above, unchanged, lands here; (2) a **btw send** — a mid-turn message forwarded immediately so claude folds it into the running turn. The btw send depends on the [Step 20.5.D.4.A](#step-20-5-d-4-a) tugcode turn-model fix *and* on new tug-card UI to represent a mid-turn-merged message and its answer; that UI is **explicitly deferred** (not D.5). So D.5 lands the queued-send affordance and the cross-zone work; the btw send is carved as a follow-on once D.4.A is in and the tug-card UI is designed. The D.4 "Cancellation behavior spec" is therefore the contract for the queued send — but no longer "verbatim as the whole story": the btw path is the acknowledged second half of C.
 
 Closes 20.5.D with the **end-to-end matrix test** — drive a fixture session through every distinct matrix row, assert each zone.
 
