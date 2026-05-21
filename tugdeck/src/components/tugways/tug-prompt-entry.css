@@ -134,14 +134,26 @@ body {
   padding: 0 var(--tug-space-md);
 }
 
-/* Empty-input submit-button gate [L06][L22].
+/* Z5 submit-button modes [L06].
  *
- * When the root is `data-empty="true"` and we're not in an interrupt-
- * capable turn, the submit button is visually disabled and refuses
- * pointer input. The functional gate lives in `performSubmit`
- * (`isEffectivelyEmpty` check); this rule is the CSS half of the pair.
- * A route atom on its own counts as empty — see `isEffectivelyEmpty`. */
-.tug-prompt-entry[data-empty="true"][data-can-interrupt="false"] .tug-prompt-entry-submit-button {
+ * The submit button is one node whose mode is carried by `data-mode`
+ * — `submit` / `stop` / `awaiting-user` / `stopping` / `reconnecting`
+ * / `restoring` (see `resolveSubmitButtonView`). The four inert modes
+ * are natively `disabled`, so their dimmed, pointer-inert look comes
+ * from `TugPushButton`'s own disabled tokens — no per-mode rule
+ * needed here; the icon glyph + `aria-label` already distinguish
+ * them. `data-mode` is kept as the styling hook for future per-mode
+ * treatment (the deferred queued-Submit visual).
+ *
+ * Empty-input gate [L06][L22]: in `submit` mode, an empty editor
+ * (`data-empty="true"` on the root) visually disables the button and
+ * refuses pointer input. The functional half is `performSubmit`'s
+ * `isEffectivelyEmpty` check; this is the CSS half. Scoped to
+ * `data-mode="submit"` so it never touches `stop` (a turn is running
+ * — the button stays live) or the natively-disabled modes. A route
+ * atom on its own counts as empty — see `isEffectivelyEmpty`. */
+.tug-prompt-entry[data-empty="true"]
+  .tug-prompt-entry-submit-button[data-mode="submit"] {
   opacity: var(--tugx-control-disabled-opacity, 0.45);
   pointer-events: none;
   cursor: not-allowed;

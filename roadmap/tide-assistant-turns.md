@@ -4457,7 +4457,7 @@ The fourth captured frame is the target — transcript at the bottom, no jump-to
 
 **Depends on:** #step-20-5-d-1 (the hook provides `submitButtonMode`)
 
-**Status:** _not started._
+**Status:** _complete. New pure module `tug-prompt-entry-submit-button.ts` (`resolveSubmitButtonView`) projects a `TideSubmitButtonMode` onto the button's view — `data-mode` / `aria-label` / `disabled` / icon glyph / danger-role — one branch-free `switch` over the six kinds. `tug-prompt-entry.tsx` reads `submitButtonMode` via `useLifecycleState(codeSessionStore)` and renders the existing single `<TugPushButton>` from that view ([L26] — one node, no branched elements; only `data-mode` / `disabled` / `aria-label` / the icon glyph change). The four inert modes (awaiting-user / stopping / reconnecting / restoring) are natively `disabled` — which alone blocks click, keyboard activation, the chain action-dispatch, and tab-order — and `performSubmit` (the shared keyboard + pointer path the editor's Return also reaches) gates on `resolveSubmitButtonView(mode).disabled`, so a disabled mode does not fire on Enter. Behavior corrections vs the pre-D.3 `canInterrupt` toggle: `awaiting_approval` was a live red **Stop**, now the disabled "Awaiting your input"; an in-flight turn over a dead wire was **Stop**, now disabled "Reconnecting…"; an interrupt-in-flight turn was **Stop**, now disabled "Stopping…". The `submitButtonMode.queued` flag is read through but does not change the view (a queued Submit renders as an ordinary Submit — distinct visual deferred to D.4; QUEUED_NEXT_TURN is also unreachable in the current UI, since no path enqueues a mid-turn `send`). `tug-prompt-entry.css` — the empty-input gate is re-scoped from the old `[data-can-interrupt="false"]` root proxy to the precise `[data-mode="submit"]` on the button. Mount identity is structural — one `<TugPushButton>` JSX element, never branched — so it holds by construction. New `tug-prompt-entry-submit-button.test.ts` (8 cases, one per mode + the `queued` wire-through + the disabled-set). `tsc --noEmit` clean; `bun test` green (2339/0); `audit:tokens lint` zero violations._
 
 **Commit:** `feat(tide-rendering): Z5 submit-button lifecycle state machine`
 
@@ -4473,26 +4473,27 @@ The fourth captured frame is the target — transcript at the bottom, no jump-to
 
 **Artifacts.**
 
-- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` — the submit / stop button consumes `submitButtonMode`; one button node, `data-mode`-driven; `aria-label` per mode.
-- `tugdeck/src/components/tugways/tug-prompt-entry.css` — the per-`data-mode` visual treatment.
-- a Z5 mode-mapping test (pure, against the hook's `submitButtonMode`) + a mount-identity / focus-survival test.
+- `tugdeck/src/components/tugways/tug-prompt-entry-submit-button.ts` — _new_ pure module: `resolveSubmitButtonView` + `SubmitButtonView`.
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` — the submit / stop button consumes `submitButtonMode` via `useLifecycleState`; one button node, `data-mode`-driven; `aria-label` per mode; `performSubmit` gated on the disabled modes.
+- `tugdeck/src/components/tugways/tug-prompt-entry.css` — the empty-input gate re-scoped to `[data-mode="submit"]`.
+- `tugdeck/src/components/tugways/__tests__/tug-prompt-entry-submit-button.test.ts` — _new_ Z5 mode-mapping tests.
 
 **Tasks.**
 
-- [ ] Single `<button>` node; `data-mode` attribute drives the per-mode visual via CSS; `aria-label` per mode.
-- [ ] Keyboard activation respects disabled modes (no Enter-fire when disabled).
-- [ ] Mount-identity + focus-survival verification.
+- [x] Single `<button>` node; `data-mode` attribute drives the per-mode visual via CSS; `aria-label` per mode.
+- [x] Keyboard activation respects disabled modes (no Enter-fire when disabled). _Native `disabled` blocks the button; `performSubmit` gates the editor's Return path on `resolveSubmitButtonView(mode).disabled`._
+- [x] Mount-identity + focus-survival verification. _Structural: one `<TugPushButton>` JSX element, never branched — the DOM node is the same across every mode by construction. Focus survival across a turn is the HMR vet._
 
 **Tests.**
 
-- [ ] The button's label / disabled / `aria-label` match the matrix Z5 column for every `submitButtonMode` (the `queued` flag's distinct visual deferred to [Step 20.5.D.4](#step-20-5-d-4) — a queued Submit asserts here as an ordinary Submit).
-- [ ] The same `<button>` DOM node persists across mode transitions; textarea + button focus survive a fixture turn.
+- [x] `tug-prompt-entry-submit-button.test.ts` — the button's `data-mode` / `aria-label` / `disabled` / icon / danger match the matrix Z5 column for every `submitButtonMode` kind (the `queued` flag asserted as a no-op on the view — a queued Submit renders as an ordinary Submit); plus the disabled-set (exactly the four inert modes), which is also `performSubmit`'s Enter-gate.
+- [x] The same `<button>` DOM node persists across mode transitions — structural (one JSX element, no branching); textarea + button focus survival across a fixture turn is the HMR vet (an RTL mount-identity test is precluded by the no-fake-DOM rule).
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green. _2339/0._
+- [x] `bun run audit:tokens lint` exits 0.
 - [ ] **HMR vet (manual, user-gated)** — drive a turn; confirm the button doesn't flicker or lose focus across SUBMITTING → STREAMING → COMPLETE; confirm a permission dialog flips it to "Awaiting your input" (disabled).
 
 ---

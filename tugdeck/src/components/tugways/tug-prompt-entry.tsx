@@ -59,6 +59,7 @@ import type {
 } from "@/lib/tug-text-types";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type { CodeSessionPhase, CodeSessionStore } from "@/lib/code-session-store";
+import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { PromptHistoryStore } from "@/lib/prompt-history-store";
 
@@ -74,6 +75,7 @@ import {
 import { createRoutePrefixExtension } from "./tug-prompt-entry/route-prefix-extension";
 import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { TugPushButton } from "./tug-push-button";
+import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import { TugPopover, TugPopoverContent, TugPopoverTrigger } from "./tug-popover";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
@@ -601,6 +603,22 @@ export const TugPromptEntry = React.forwardRef<
     snapRef.current = snap;
   }, [snap]);
 
+  // Z5 submit-button state machine. The button's whole view — label,
+  // icon, `disabled`, `data-mode` — is a pure function of the
+  // lifecycle-derived `submitButtonMode` (six kinds: submit / stop /
+  // awaiting-user / stopping / reconnecting / restoring). Reading it
+  // through `useLifecycleState` keeps the matrix the single source of
+  // truth ([L02]); `resolveSubmitButtonView` is the pure projection.
+  // The mode is mirrored to a ref so `performSubmit` — the shared
+  // keyboard + pointer submit path — can gate on it without going
+  // stale ([L07]).
+  const submitButtonMode = useLifecycleState(codeSessionStore).submitButtonMode;
+  const submitView = resolveSubmitButtonView(submitButtonMode);
+  const submitButtonModeRef = useRef(submitButtonMode);
+  useLayoutEffect(() => {
+    submitButtonModeRef.current = submitButtonMode;
+  }, [submitButtonMode]);
+
   // CASE A interrupt restore. When the user cancels a submission
   // before claude has produced any content (the dividing line is the
   // first delta carrying an `msg_id`; see the reducer's
@@ -783,6 +801,15 @@ export const TugPromptEntry = React.forwardRef<
     const view = editor?.view() ?? null;
     const snap = snapRef.current;
     if (editor === null || view === null) return;
+    // Z5 disabled-mode gate. When `submitButtonMode` is one of the
+    // four inert kinds (awaiting-user / stopping / reconnecting /
+    // restoring) the button is `disabled` — a native-disabled button
+    // already rejects click + the chain dispatch, but the editor's
+    // Return key reaches `performSubmit` directly, so it is gated
+    // here too. A disabled mode does not fire on Enter.
+    if (resolveSubmitButtonView(submitButtonModeRef.current).disabled) {
+      return;
+    }
     // [D05] Submit is interrupt: SUBMIT routes to `interrupt()`
     // during an in-flight turn and to `send()` otherwise.
     if (snap.canInterrupt) {
@@ -1371,17 +1398,25 @@ export const TugPromptEntry = React.forwardRef<
               {snap.queuedSends}
             </span>
           )}
+          {/*
+            ONE button node across every mode ([L26]) — only
+            `data-mode` / `disabled` / `aria-label` / the icon glyph
+            change. `data-mode` drives the per-mode visual via CSS
+            ([L06]); `submitView` is the pure projection of the
+            lifecycle `submitButtonMode`.
+          */}
           <TugPushButton
             className="tug-prompt-entry-submit-button"
+            data-mode={submitView.dataMode}
             action={TUG_ACTIONS.SUBMIT}
             subtype="icon"
             size="lg"
             emphasis="filled"
-            role={snap.canInterrupt ? "danger" : "action"}
-            disabled={!snap.canSubmit && !snap.canInterrupt}
-            aria-label={snap.canInterrupt ? "Stop turn" : "Send prompt"}
+            role={submitView.danger ? "danger" : "action"}
+            disabled={submitView.disabled}
+            aria-label={submitView.ariaLabel}
             icon={
-              snap.canInterrupt
+              submitView.icon === "stop"
                 ? <Square size={14} strokeWidth={3} />
                 : <ArrowUp size={16} strokeWidth={2.5} />
             }
