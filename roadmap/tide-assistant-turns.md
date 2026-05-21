@@ -3796,9 +3796,9 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 | State | Entry condition | Reducer signal |
 |---|---|---|
 | IDLE | No active turn. Initial state and the steady state after each COMPLETE until the user submits again. | `phase === "idle"` AND `interruptInFlight === false` |
-| SUBMITTING | User pressed Enter; `send` frame in flight; no events received yet. | `phase === "submitting"` |
-| AWAITING_FIRST_TOKEN | Send acknowledged by supervisor; awaiting Claude's first response token. **This is where Z1's `TugThinkingIndicator` ([Step 20.4.10](#step-20-4-10)) shows** — superseding the prior plan to use a TugProgress variant ([Step 20.5.C](#step-20-5-c), now superseded). | `phase === "awaiting_first_token"` |
-| STREAMING | First `assistant_delta` arrived; response body streaming. | `phase === "streaming"` |
+| SUBMITTING | User pressed Enter; `send` frame in flight; no `assistant_text` / `thinking_text` / `tool_use` received yet. | `phase === "submitting"` |
+| AWAITING_FIRST_TOKEN | **One** text event (`assistant_text` *or* `thinking_text`) has arrived — the `submitting → awaiting_first_token` transition in `handleTextDelta`. The name is historical: despite "awaiting", the first token has *already* landed, and a *thinking* partial counts. **This is where Z1's `TugThinkingIndicator` shows.** | `phase === "awaiting_first_token"` |
+| STREAMING | **Two or more** text events have arrived — `handleTextDelta`'s `awaiting_first_token → streaming`. Count-based, not channel-based: a turn still only *thinking* reaches STREAMING with zero answer text. The genuine "answer has begun" signal is `firstAssistantDeltaAt` / `firstToolUseAt` (reducer state, set on the first **assistant-channel** delta / first `tool_use`), NOT this phase — see [Step 20.5.D.4](#step-20-5-d-4)'s threshold. | `phase === "streaming"` |
 | TOOL_WORK | `tool_use` sent; awaiting `tool_result`. | `phase === "tool_work"` |
 | AWAITING_USER | `control_request_forward` arrived; awaiting Allow/Deny (permission) or answer (question). | `phase === "awaiting_approval"` (canonical) — equivalently `pendingApproval !== null \|\| pendingQuestion !== null` |
 | INTERRUPTING | User clicked Stop or Esc; `interrupt` frame in flight; awaiting `turn_complete`. Brief transient. | `interruptInFlight === true` |
@@ -3848,7 +3848,13 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 | ERRORED | reserved | Z1A: model + timestamp from the partially-committed turn (when one exists). Z1B: `EndStateDisplay` rendered against that partial `TurnEntry` (`error` badge, danger tone); when no `TurnEntry` was committed, Z1B is empty but its slot div stays mounted ([L26]). | "Session error: {lastError.cause}" badge | project badge | (default) | **Submit** (enabled — user may retry; submit clears the error per current reducer semantics) |
 | COMPLETE | reserved | Z1A: model + timestamp of the just-committed turn. Z1B: `EndStateDisplay` — tone-coded ghost badge (`complete` / `interrupted` / `error` / `transport_lost`) + active-ms + total tokens + a trailing `BlockCopyButton` keyed off the assistant text. | session cum totals (frozen, includes this turn) | project badge | (default) | **Submit** |
 | TRANSPORT_DOWN (overlay) | reserved | Z1A: unchanged. Z1B: whatever the underlying phase's row above resolves to — frozen visually (the indicator keeps pulsing per its phase-driven `animating` flag; freezes are signalled on Z2/Z5 not Z1B). | "Disconnected — reconnecting" badge replaces live counts | project badge | (default) | **"Reconnecting…"** (disabled). When `transportState === "restoring"`, label is "Reconnecting…" too (the binding ack is part of the reconnect); when `"offline"`, label is "Reconnecting…" (we don't expose the offline/restoring distinction to the user — both are "session unusable"). |
-| QUEUED_NEXT_TURN (overlay) | reserved | Z1A: unchanged. Z1B: unchanged from the current turn's row. | (current turn's live counts) | project badge | (default) | Submit visually marked "will send on idle" |
+| QUEUED_NEXT_TURN (overlay) | reserved | Z1A / Z1B: unchanged from the current turn's row. **Plus** one *ghosted user row* per queued send, appended at the transcript foot, in submit order, each ✕-cancellable — see the note below. | (current turn's live counts) | project badge | (default) | **`[+] [■]`** — primary Stop button + a `+` queue button to its left; see the note. |
+
+**QUEUED_NEXT_TURN — the queue UI.** A prompt submitted while a turn runs is *queued* ([Step 20.5.D.4](#step-20-5-d-4)), not interrupted. Two surfaces:
+- **Transcript ghost rows.** Each queued send is a **ghosted user row** at the foot of the transcript — one per send, in submit order, de-emphasized to read as "not yet sent," each carrying a ✕ that cancels it (a true un-send: no wire traffic). `turn_complete(success)` flushes the head of the queue into a real turn.
+- **Z5 button group.** While a turn is live (the SUBMITTING / AWAITING_FIRST_TOKEN / STREAMING / TOOL_WORK rows above) Z5 is the primary **Stop** (`■`) button. A **`+` queue button** appears to its left **only once the user types into the prompt-entry mid-turn** — progressive disclosure, so a plain submit → wait → submit flow never surfaces queuing. Stop ≡ Esc: both peel the newest cancellable thing — the newest queued send first, then (queue empty) the running turn.
+
+Full behavior — the C1/C2/C3 cases, the threshold, the gesture map — is [Step 20.5.D.4](#step-20-5-d-4)'s cancellation spec.
 
 **REPLAYING transcript suppression.** The REPLAYING row encodes [DT10](#dt10-replay-transcript-suppression): a resumed session reconstructs its committed turns one `turn_complete` at a time, and painting each intermediate state makes the transcript visibly accumulate while the viewport chases the live edge — the restore FOUC the lifecycle investigation diagnosed. The transcript host therefore gates its visible render on `state !== "replaying"`, holding its pre-replay paint across the window and doing one reconstructed paint at `replay_complete`. The implementation lands in [Step 20.5.D](#step-20-5-d); this row is its contract.
 
@@ -4502,9 +4508,13 @@ The fourth captured frame is the target — transcript at the bottom, no jump-to
 
 **Depends on:** #step-20-5-d-3 (the concrete Z5 button the spike designs against), #step-20-5-d-1 (`submitButtonMode` / the `queued` flag)
 
-**Status:** _not started._
+**Status:** _complete. A real-`CodeSessionStore`-driven gallery card (`gallery-request-cancellation`) served as the iterative vet surface; once the design was settled the card was **deleted** — it was a throwaway vet vehicle, and the captured cancellation behavior spec below is the deliverable. [Step 20.5.D.5](#step-20-5-d-5) wires the spec into the real tide card._
 
-**Commit:** _spike — a [Step 20.5.A](#step-20-5-a) matrix update plus the vet surface; the message is set at execution time per the outcome._
+_**Vetted decisions (2026-05-21).** (1) **Mid-turn submit queues.** A prompt submitted while a turn runs is held and dispatched on the next idle — not interrupted (the pre-spike behavior), not blocked. This is the path the architecture was already built for: the matrix's QUEUED_NEXT_TURN row, D.3's `submit{queued}` button mode, and the reducer's `queuedSends` payload array all anticipate it. (2) **Pull-down extends through thinking.** The clean un-send (C2) stays available while Claude is only thinking — no answer text, no tool call yet — and locks to a committed `interrupted` turn (C3) at the first answer text or `tool_use`._
+
+_**Investigation findings (reconciles the stale text below).** (a) **C2 is already wired end-to-end** — `tug-prompt-entry.tsx` has a `CASE A interrupt restore` `useLayoutEffect` that reads `snap.pendingDraftRestore`, seeds the editor via `editor.restoreState`, and dispatches `consumePendingDraftRestore`. The "last mile is unwired" claim below is stale; pulling down a pre-content request and getting the text back works today. (b) **The queue machinery is fully built but UI-dead.** The reducer's `send` handler enqueues a mid-turn send as a full `{text, atoms, turnKey}` payload (`queuedSends` in reducer state is an array, not a count), and `handleTurnComplete(success)` flushes one. But no UI path ever enqueues — `performSubmit` calls `interrupt()` on a mid-turn submit, never `send()` — so `queuedSends` is never non-empty, QUEUED_NEXT_TURN is unreachable, and the queue badge is dead. (c) **The C2/C3 threshold cannot be stated in phase terms.** `submitting → awaiting_first_token → streaming` is a text-event **count** ladder (`handleTextDelta` drives it for `assistant_text` AND `thinking_text` alike) — after two thinking partials the phase is `streaming` with zero answer text. The real "answer has begun" signal is `firstAssistantDeltaAt !== null || firstToolUseAt !== null` (reducer state, set on the first assistant-channel delta / first `tool_use`). "Pull-down through thinking" = CASE A while both are null; the current `phase === "submitting"` gate is wrong for it._
+
+**Commit:** `plan(tide-rendering): capture the request-cancellation spec (D.4)`
 
 **References:** [#step-20-5-a] (the QUEUED_NEXT_TURN matrix row + the lifecycle states the cancellation thresholds key off), [#step-20-5-d-1] (`deriveSubmitButtonMode` — where the Z5 reading lands), [D-T3-07] (queue-during-turn), [DT07](#dt07-esc-semantics) (Esc semantics), `tugdeck/src/lib/code-session-store/reducer.ts` (the CASE A / CASE B interrupt split + `pendingDraftRestore`), [L02], [L06]
 
@@ -4516,45 +4526,71 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 - **(C2) Pull down a pre-content request** — Esc / cancel while `phase === "submitting"`, before Claude's first content frame. The request reached the server (a turn happens server-side, recorded in Claude Code's JSONL), but locally it can be discarded: no transcript turn, no per-turn telemetry, the prompt text returns to the editor. ("As if never sent" is therefore precise *locally* — a cold resume still reconstructs the aborted turn from the JSONL via the [W2] orphan-flush path.)
 - **(C3) Interrupt a running turn** — Esc / cancel after content has arrived. Commits a `turnEndReason: "interrupted"` turn. Existing, unchanged.
 
-**Current state — what exists, what is broken.** The reducer already implements the C2 / C3 split — `handleInterrupt`'s **CASE A** (interrupt while `phase === "submitting"`) vs **CASE B** (interrupt after the first content frame), covered by `code-session-store.interrupt.test.ts`. CASE A captures the in-flight submission into a `pendingDraftRestore` slot, clears the in-flight pair, returns phase straight to `idle`, and suppresses the wire's `turn_complete(error)` echo — no committed turn, and deliberately *no* INTERRUPTING dwell. **But the last mile is unwired: no UI component reads `pendingDraftRestore`** — so a CASE A pull-down today discards the turn correctly yet *loses the user's text*, which never returns to the editor. C1 (cancel a queued send) has no design or affordance at all. That gap is the "inconsistent, uncontrolled" behavior this spike closes — the architecture is right (CASE A / CASE B; no new lifecycle state), the design + the last mile are missing.
+**Current state — what exists, what is broken** (corrected by the investigation findings above). The reducer implements the C2 / C3 split — `handleInterrupt`'s **CASE A** (interrupt while `phase === "submitting"`) vs **CASE B** (interrupt after the first content frame), covered by `code-session-store.interrupt.test.ts`. CASE A captures the in-flight submission into a `pendingDraftRestore` slot, clears the in-flight pair, returns phase straight to `idle`, and suppresses the wire's `turn_complete(error)` echo — no committed turn, no INTERRUPTING dwell — and `tug-prompt-entry.tsx` **does** read `pendingDraftRestore` and restore the editor, so C2's text-return works. CASE B sets `interruptInFlight` and commits a `turnEndReason: "interrupted"` turn on the wire's `turn_complete(error)`. What is genuinely missing is **the queue's UI**: the reducer enqueues and flushes correctly, but no affordance enqueues, surfaces, or cancels a held send — C1 has no design at all. And two threshold gaps: CASE A's `phase === "submitting"` line closes the pull-down window at the first *thinking* partial (the vetted decision wants it open through thinking), and the C2/C3 threshold must be re-expressed against `firstAssistantDeltaAt` / `firstToolUseAt`, not phase. The architecture is right (CASE A / CASE B; no new lifecycle state); the design + the queue's last mile + the threshold reconciliation are what this spike closes.
 
 **Design questions.**
 
-1. **The C2 / C3 threshold.** CASE A's line is `phase === "submitting"` = before Claude's first content frame of *any* kind — and a *thinking* partial counts (it flips `submitting → awaiting_first_token`). With extended thinking on, the pull-down window can close sub-second while the user still sees no answer. Does the window stay at "first content frame," or extend through thinking — locking in only on the first *answer text* or *tool_use*? (The classification latches at Esc-time.)
-2. **Z5 — the queued / cancellable Submit.** The queued visual (badge, count, label); does queuing override Stop or coexist; how each of C1 / C2 / C3 presents on the button.
+1. **The C2 / C3 threshold.** _Decided (2026-05-21): extend through thinking._ The clean pull-down stays open while Claude has produced no answer text and no `tool_use`, and locks to interrupt at the first of either — `firstAssistantDeltaAt !== null || firstToolUseAt !== null` (NOT `phase`, which counts thinking partials). The classification latches at cancel-time.
+2. **Z5 — the queued / cancellable Submit.** The queued visual (badge, count, label); does queuing override Stop or coexist; how each of C1 / C2 / C3 presents on the button. _Surfaced on the vet surface for review._
 3. **Where a queued / pulled-down prompt's content surfaces.** A held prompt has content (text + atoms). A prompt-entry "pending" strip? A transcript ghost row? Both? The QUEUED_NEXT_TURN matrix row names no zone for the content itself.
 4. **Esc + cancel-button mapping** across C1 / C2 / C3 — what each gesture does in each state, reconciled with [DT07].
 5. **Multiple queued sends** — `queuedSends` is a count; is `N > 1` reachable, and if so an ordered, individually-cancellable queue or a single "pending"?
 
-**Data-model flag.** Two retention gaps the chosen design will likely need closed:
-- `CodeSessionSnapshot.queuedSends` is a bare `number` — a count, not the queued payloads. C1's restore / review / edit needs the queued text + atoms retained in the reducer.
-- `pendingDraftRestore` exists but has no consumer — C2's restore needs a UI component to read it, seed the editor, and dispatch `consume_draft_restore`.
+**Data-model flag** (reconciled by the investigation findings). Two gaps the chosen design closes — both narrower than the original framing:
+- The reducer **already** retains the queued payloads (`queuedSends` in reducer state is `Array<{text, atoms, turnKey}>`); only the **snapshot** projects `.length`. C1's restore / review / edit needs the snapshot to expose the payloads (and `deriveSubmitButtonMode` / the lifecycle to read them), not new retention.
+- `pendingDraftRestore` **already has a consumer** (`tug-prompt-entry.tsx`). No new C2 wiring is needed; the consumer just needs to keep working once the threshold widens.
+- _New_ gap surfaced: the C2/C3 threshold signal (`firstAssistantDeltaAt` / `firstToolUseAt`) is reducer state, not on the snapshot. If the Z5 button must visually distinguish "pull-down" from "interrupt", the lifecycle needs that signal exposed; if `interrupt()` alone classifies (the reducer reads its own state), no snapshot change is needed. The vet decides whether the button distinguishes.
 
-**Phase-semantics drift to reconcile.** The threshold is defined in phase terms, and the phases have drifted: 20.5.A's state-definition table calls `awaiting_first_token` "send acknowledged, awaiting the first token," but the reducer enters `awaiting_first_token` *on* the first content partial (`handleTextDelta`). The spike must pin the real semantics and reconcile 20.5.A so the threshold is stated against truth, not a misnamed phase.
+**Phase-semantics drift to reconcile.** Worse than first framed: `submitting → awaiting_first_token → streaming` is a text-event **count** ladder — `handleTextDelta` drives it identically for `assistant_text` and `thinking_text`, so `awaiting_first_token` means "one text event seen" and `streaming` means "≥ two", neither distinguishing thinking from answer. 20.5.A's state-definition table mis-describes both. The spike reconciles 20.5.A to the real (count-based) semantics and states the threshold against `firstAssistantDeltaAt` / `firstToolUseAt` instead.
 
-**Deliverable.**
+**Cancellation behavior spec (vetted 2026-05-21).** The load-bearing deliverable — [Step 20.5.D.5](#step-20-5-d-5) wires this verbatim.
 
-- A **vettable surface** — a gallery scenario or HMR-able mockup of the cancellation states (queued, pre-content pull-down, running interrupt) — so the user can review how each looks, feels, and works.
-- A **captured decision**: the [Step 20.5.A](#step-20-5-a) matrix's QUEUED_NEXT_TURN row rewritten from placeholder to a real spec; the cancellation behavior spec (the three cases, the C2 / C3 threshold, the Esc / button mapping); `deriveSubmitButtonMode` confirmed or revised; the `awaiting_first_token` definition reconciled.
-- The data-model changes drafted — queued-payload retention and the `pendingDraftRestore` consumer — with scope + where they land.
+- **Submitting during a turn → queue.** A prompt submitted (editor Enter) while a turn runs is **queued** — held in `queuedSends`, dispatched on the next idle (`turn_complete(success)` flushes the head, FIFO). Not interrupted, not blocked.
+- **Queued sends are transcript ghost rows.** Each queued send renders as a **ghosted user row** appended at the foot of the transcript — one row per send, in submit order, de-emphasized to read as "not yet sent," each carrying a ✕ cancel. The queue's UI lives in the transcript, not in a prompt-entry strip.
+- **C1 — cancel a queued send.** Via the ghost row's ✕, or Esc (peel-newest). A true un-send — the send was never dispatched: no wire traffic, no server turn. The cancelled send's `text` + `atoms` route through the draft-restore slot; the prompt-entry editor seeds from it **iff the editor is currently empty**, else the slot is dropped (a cancel never clobbers in-progress editor content).
+- **C2 — pull down a pre-content turn.** Cancel the running turn while **no answer text and no `tool_use`** has arrived (`firstAssistantDeltaAt === null && firstToolUseAt === null` — thinking does NOT close the window). Discarded locally: no committed `TurnEntry`, no per-turn telemetry; the prompt returns to the editor via the draft-restore slot. `handleInterrupt` CASE A — its gate **widens** from `phase === "submitting"` to the two-null condition.
+- **C3 — interrupt a running turn.** Cancel after answer text / `tool_use` has arrived. Commits a `turnEndReason: "interrupted"` turn. `handleInterrupt` CASE B — unchanged.
+- **The C2/C3 threshold** latches at cancel-time: `firstAssistantDeltaAt === null && firstToolUseAt === null` → C2 pull-down; else → C3 interrupt.
+- **Z5 is a button group** (vetted 2026-05-21).
+  - _Idle / complete / errored:_ a single primary button — **Submit** (`↑`).
+  - _Turn running:_ the primary button becomes **Stop** (`■`). A **`+` queue button** appears to its left **only once the user types into the prompt-entry while the turn is in flight** — progressive disclosure: a plain `submit → wait for the response → submit again` flow never surfaces the queue feature at all; typing mid-turn is what reveals it. An empty editor mid-turn shows only `[■]`; typing reveals `[+] [■]`; clearing the editor hides the `+` again. The `+` queues the editor's content (the pointer twin of editor Enter). The four disabled lifecycle modes (stopping / reconnecting / restoring / awaiting-user, per [Step 20.5.D.3](#step-20-5-d-3)) show only the disabled primary button.
+- **Stop ≡ Esc — both peel the newest.** The Stop button and the Esc key do the *same* thing: peel the newest cancellable thing — the most-recently-queued send first (LIFO); only with the queue empty does the gesture reach the running turn (pull-down / interrupt per the threshold). A turn with N queued sends therefore takes N + 1 Stop/Esc presses to fully unwind — each press removes one visible ghost row, then the last stops the turn. Esc still dismisses any open dialog / popover first via the responder chain ([DT07]).
+- **Editor Enter (with text):** idle → start a turn; turn running → queue a send (identical to the `+` button).
+- **Ghost-row ✕:** cancels that one queued send — *targeted*, vs Stop/Esc's peel-newest.
+- **`deriveSubmitButtonMode` revision.** The primary button's in-flight mode stays `stop` **unconditionally** — the QUEUED_NEXT_TURN overlay does not change it; the `queued_next` branch in `deriveSubmitButtonMode` and the `TideSubmitButtonMode["submit"]` `queued` field are retired (D.5). The `+` queue button is a **separate control**, not a `submitButtonMode` kind. Implementation (D.5): the prompt-entry **mounts** the `+` whenever the primary button's mode is `stop`, and **CSS-gates its visibility** on the prompt-entry's `data-empty="false"` attribute — the same `data-empty` signal [Step 20.5.D.3](#step-20-5-d-3)'s empty-gate already uses, so the progressive-disclosure reveal costs no per-keystroke React state ([L06] / [L22]). `queued_next` stays a `TideLifecycleOverlay` (it drives the transcript ghost rows). This resolves the open reading [Step 20.5.D.1](#step-20-5-d-1) flagged.
+
+**Data-model changes for [Step 20.5.D.5](#step-20-5-d-5).**
+- Expose the `queuedSends` payloads on the snapshot — the reducer already retains `Array<{text, atoms, turnKey}>`; the snapshot currently projects only `.length`. The ghost rows need the text.
+- Add a reducer event to cancel **one** queued send by key/index — `interrupt()` clears the whole queue; the per-row ✕ and the Stop/Esc peel-newest both need per-item removal.
+- Add the **`+` queue button** to the prompt-entry Z5 group — a new control, shown alongside the primary button while its mode is `stop`; click queues the editor draft (the pointer twin of editor Enter).
+- Wire the Stop button to **peel-newest** (≡ Esc), not a direct turn-interrupt — it interrupts the turn only once the queue is empty.
+- Widen `handleInterrupt` CASE A from `phase === "submitting"` to `firstAssistantDeltaAt === null && firstToolUseAt === null` (in-flight phase).
+- Route a cancelled queued send's payload through the draft-restore slot — unify with C2's existing `pendingDraftRestore` consumer.
+- `performSubmit`: a mid-turn submit calls `send()` (queue) instead of `interrupt()`.
+
+**Deliverable** (done).
+
+- A **vettable surface** — a real-`CodeSessionStore`-driven gallery card was built, iterated against user feedback, and **deleted at close-out** (a throwaway vet vehicle; the spec is the lasting deliverable).
+- A **captured decision** — the cancellation behavior spec above; the [Step 20.5.A](#step-20-5-a) matrix QUEUED_NEXT_TURN row rewritten + the ghost-row note; the `submitting` / `awaiting_first_token` / `streaming` state-definitions reconciled to the count ladder; the `deriveSubmitButtonMode` revision recorded.
+- The **data-model changes** drafted above with scope and where they land.
 
 **Conformance.** Design + plan work; no production wiring beyond the vet surface. The matrix update + the cancellation spec are the load-bearing deliverables — [Step 20.5.D.5](#step-20-5-d-5) reads them.
 
 **Tasks.**
 
-- [ ] Investigate the cancellation family against the design questions; sketch the options for C1 / C2 / C3.
-- [ ] Build the vettable surface (gallery scenario / HMR mockup) covering the queued state, the pre-content pull-down, and the running interrupt.
-- [ ] Pin the real `submitting` / `awaiting_first_token` / `streaming` semantics from the reducer; reconcile 20.5.A's state-definition.
-- [ ] Decide the C2 / C3 threshold (thinking in or out of the pull-down window).
-- [ ] Draft the data-model changes — queued-payload retention; the `pendingDraftRestore` consumer.
-- [ ] User reviews and vets the surface.
-- [ ] Capture the decision — rewrite the 20.5.A QUEUED_NEXT_TURN matrix row from placeholder to spec; record the cancellation behavior spec; confirm or revise `deriveSubmitButtonMode`.
+- [x] Investigate the cancellation family against the design questions; sketch the options for C1 / C2 / C3. _Findings recorded in the Status above; the stale "Current state" / data-model / phase-drift text reconciled._
+- [x] Build the vettable surface — a real-`CodeSessionStore`-driven gallery card; iterated against user feedback through the queued / pull-down / interrupt cases, then deleted at close-out (the captured spec is the deliverable).
+- [x] Pin the real `submitting` / `awaiting_first_token` / `streaming` semantics from the reducer. _Count ladder, not channel-based — recorded above; 20.5.A's state-definition reconciliation is part of the capture task._
+- [x] Decide the C2 / C3 threshold. _Decided: extend through thinking — see the vetted decisions._
+- [x] Draft the data-model changes — recorded in the reconciled Data-model flag above (expose the queued payloads on the snapshot; the threshold signal `firstAssistantDeltaAt` / `firstToolUseAt` if the button must distinguish).
+- [x] User reviews and vets the surface. _Vetted 2026-05-21 — four design answers folded into the cancellation spec: ghost rows (not a prompt-entry strip), one ✕-cancellable row per send, a neutral Z5 button, Esc peels newest-first._
+- [x] Capture the decision — the cancellation behavior spec above; the 20.5.A QUEUED_NEXT_TURN matrix row rewritten + the ghost-row note; the `submitting` / `awaiting_first_token` / `streaming` state-definitions reconciled; the `deriveSubmitButtonMode` revision recorded.
 
 **Checkpoint.**
 
-- [ ] The user has reviewed and vetted the request-cancellation design.
-- [ ] The 20.5.A matrix QUEUED_NEXT_TURN row is a real spec, not a placeholder; the cancellation behavior (C1 / C2 / C3 + threshold) is written down.
-- [ ] [Step 20.5.D.5](#step-20-5-d-5) has no remaining cancellation-design decisions; the data-model prerequisites are drafted.
+- [x] The user has reviewed and vetted the request-cancellation design.
+- [x] The 20.5.A matrix QUEUED_NEXT_TURN row is a real spec, not a placeholder; the cancellation behavior (C1 / C2 / C3 + threshold) is written down.
+- [x] [Step 20.5.D.5](#step-20-5-d-5) has no remaining cancellation-design decisions; the data-model prerequisites are drafted.
 
 ---
 
@@ -4568,7 +4604,13 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 
 **References:** [#step-20-5-a] (the matrix — the full contract), [#step-20-5-d-4] (the request-cancellation design), [L02], [L06], [L23]
 
-**Scope.** The remaining matrix-driven zones consume the hook: Z2's status bar (live counts → frozen during AWAITING_USER → "Restoring session…" during REPLAYING → "Disconnected" during TRANSPORT_DOWN) and Z4's prompt-entry footer (the phase indicators — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}"). This sub-step **begins with an audit**: the shipped `statusRow` (Z2) and the prompt-entry chrome already react to parts of the snapshot; reconcile what they do against the matrix and wire only the genuine gaps through `useLifecycleState()` ([L02] — no zone reads `phase` directly). It also lands the **request-cancellation affordance** vetted in [Step 20.5.D.4](#step-20-5-d-4) — the C1 / C2 / C3 cancellation behavior, the queued Z5 visual + the held-prompt content surface, and the data-model changes that spike scoped (queued-payload retention; the `pendingDraftRestore` consumer). Closes 20.5.D with the end-to-end matrix test — drive a fixture session through every distinct matrix row, assert each zone.
+**Scope.** Two halves, then the closing test.
+
+_Cross-zone coordination._ The remaining matrix-driven zones consume the hook: Z2's status bar (live counts → frozen during AWAITING_USER → "Restoring session…" during REPLAYING → "Disconnected" during TRANSPORT_DOWN) and Z4's prompt-entry footer (the phase indicators — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}"). This **begins with an audit**: the shipped `statusRow` (Z2) and the prompt-entry chrome already react to parts of the snapshot; reconcile what they do against the matrix and wire only the genuine gaps through `useLifecycleState()` ([L02] — no zone reads `phase` directly).
+
+_Request cancellation._ Land the **cancellation design** captured in [Step 20.5.D.4](#step-20-5-d-4) — **that step's "Cancellation behavior spec" is the contract**, implemented verbatim into the real tide card. In brief: a mid-turn submit **queues** (dispatched on idle); queued sends are **transcript ghost rows** (one ✕-cancellable ghosted user row each); the **`+` queue button** appears in Z5 only once the user types mid-turn (progressive disclosure — a plain submit → wait → submit flow never surfaces it); **Stop ≡ Esc** peel the newest cancellable thing (queued sends LIFO, then the turn); the C2 / C3 threshold is `firstAssistantDeltaAt` / `firstToolUseAt`. Plus the data-model changes D.4 scoped (expose the queued payloads on the snapshot; a per-item queue-cancel reducer event; the `deriveSubmitButtonMode` revision; widen `handleInterrupt` CASE A). This half may be split into its own sub-step at execution time if the surface proves large.
+
+Closes 20.5.D with the **end-to-end matrix test** — drive a fixture session through every distinct matrix row, assert each zone.
 
 **Conformance.** [L02] — zones read the matrix row via `useLifecycleState()`. [L06] — phase-driven appearance via CSS / DOM. [L23] — zone content swaps happen inside the stable slot DOM container; no remount.
 
@@ -4576,20 +4618,32 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` — zone renderers consume `useLifecycleState()` for matrix-driven content.
 - the Z2 (`statusRow`) / Z4 zone renderers — phase-driven transitions wired through the hook where not already.
+- the cancellation surface — `reducer.ts` / `types.ts` (queued-payload snapshot exposure, the per-item queue-cancel event, the CASE A widening), `lifecycle-state.ts` (the `deriveSubmitButtonMode` revision), `tug-prompt-entry.tsx` (`performSubmit` queues mid-turn; the `+` queue button; Stop ≡ Esc peel-newest), the transcript host (queued ghost rows).
 - `tugdeck/src/components/tugways/cards/__tests__/tide-card-lifecycle-coordination.test.tsx` — _new_ — end-to-end matrix tests.
 
 **Tasks.**
 
+_Cross-zone coordination._
 - [ ] Audit the shipped Z2 (`statusRow`) and Z4 chrome against the matrix; record what already matches vs. the gaps.
 - [ ] Wire the gaps through `useLifecycleState()` — Z2 status-bar transitions, Z4 phase indicators.
-- [ ] Land the request-cancellation affordance per the [Step 20.5.D.4](#step-20-5-d-4) spike — the C1 / C2 / C3 cancellation behavior, the queued Z5 visual + the held-prompt content surface, and the data-model changes it scoped.
+
+_Request cancellation_ — implements the [Step 20.5.D.4](#step-20-5-d-4) cancellation behavior spec:
+- [ ] Expose the `queuedSends` payloads on the snapshot (the reducer already retains the `{text, atoms, turnKey}` array).
+- [ ] `deriveSubmitButtonMode` revision — in-flight → `stop` unconditional; retire the `queued_next` branch + the `TideSubmitButtonMode["submit"]` `queued` field; update `lifecycle-state.test.ts`.
+- [ ] `performSubmit` — a mid-turn submit calls `send()` (queue), not `interrupt()`.
+- [ ] The `+` queue button — mounted alongside the primary Z5 button when its mode is `stop`; CSS-gated visible on `data-empty="false"` (progressive disclosure — appears only once the user types mid-turn).
+- [ ] Queued sends as transcript ghost rows — one ✕-cancellable ghosted user row each; a new reducer event to cancel one queued send by key.
+- [ ] Stop ≡ Esc → peel-newest (queued sends LIFO, then the turn); widen `handleInterrupt` CASE A to `firstAssistantDeltaAt === null && firstToolUseAt === null`.
+- [ ] Cancelled queued / pulled-down sends route through the draft-restore slot (unify with the existing `pendingDraftRestore` consumer).
+
+_Verification._
 - [ ] End-to-end matrix tests — every distinct matrix row.
 
 **Tests.**
 
 - [ ] Z2 shows live counts in STREAMING, frozen + "awaiting input" badge in AWAITING_USER, "Restoring session…" in REPLAYING, "Disconnected" in TRANSPORT_DOWN.
 - [ ] Z4 shows the matrix's phase indicator for AWAITING_FIRST_TOKEN / STREAMING / TOOL_WORK.
-- [ ] The request-cancellation affordance matches the [Step 20.5.D.4](#step-20-5-d-4) decision — a queued send (C1) and a pre-content request (C2) both pull back to the editor; a running turn (C3) commits interrupted.
+- [ ] The request-cancellation behavior matches the [Step 20.5.D.4](#step-20-5-d-4) spec — mid-turn submit queues (ghost row); the `+` reveals only on mid-turn typing; a queued send (C1) and a pre-content turn (C2) pull back to the editor; a running turn past the threshold (C3) commits interrupted; Stop ≡ Esc peel newest-first.
 - [ ] End-to-end: a fixture session driven through each distinct matrix row paints each zone per the matrix.
 
 **Checkpoint.**
