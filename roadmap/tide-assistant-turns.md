@@ -4178,7 +4178,7 @@ This step does three things:
 
 **Depends on:** #step-20-5-a (the state-to-zone matrix this step implements), #step-20-5-b (inline-dialog primitives — done), #step-20-4 (zone slot infrastructure), [#step-20-3-4] (per-turn telemetry persistence — done 2026-05-16)
 
-**Status:** _**split into five sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family) — see the reconciliation note below._
+**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past — see the reconciliation note below._
 
 **Commit:** _per sub-step._
 
@@ -4198,11 +4198,12 @@ This step does three things:
 |---|---|---|
 | [20.5.D.1](#step-20-5-d-1) | Lifecycle foundation — `deriveLifecycleSnapshot` (the matrix as one switch) + `useLifecycleState` hook + pure per-matrix-row tests | _new_ `lifecycle-state.ts`, `use-lifecycle-state.ts` |
 | [20.5.D.2](#step-20-5-d-2) | `[DT10]` transcript-replay paint gate — the restore-FOUC fix | `tide-card.tsx` transcript host |
+| [20.5.D.2.A](#step-20-5-d-2-a) | Restore-reveal coordination — collapse the six-state relaunch flicker to one delay-gated placeholder + one reveal | `tide-card.tsx`, `tide-card-banner-spec.ts` |
 | [20.5.D.3](#step-20-5-d-3) | Z5 submit-button state machine — the new disabled / label modes | `tug-prompt-entry.tsx` + `.css` |
 | [20.5.D.4](#step-20-5-d-4) | Request cancellation UX mini-spike — design + vet the pull-down / queued / interrupt affordance family | plan + a gallery / HMR vet surface |
 | [20.5.D.5](#step-20-5-d-5) | Cross-zone coordination (Z2 / Z4) + matrix verification + landing the D.4 queued design | `tide-card.tsx`, zone renderers |
 
-D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it.
+D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.2.A follows directly: [DT10] suppressed the transcript host's own intermediate paint, but a frame-by-frame capture of a cold relaunch showed the restore still flickers through six distinct states (two separate loading surfaces, an ungated banner that lingers and reflows, a focus beat that lands last) — D.2.A collapses those to one delay-gated placeholder and one coordinated reveal. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it.
 
 **Conformance (applies to every sub-step).** All phase-driven UI goes through `useLifecycleState()` — no zone reads `phase` or `awaitingApprovalSince` directly ([L02]). Appearance changes flip a `data-*` attribute / class and CSS does the visual ([L06]). State preservation: label / content transitions must not flicker, and DOM nodes that carry focus or scroll position stay mounted across mode changes ([L23] / [L26]).
 
@@ -4317,6 +4318,71 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 - [x] `bun x tsc --noEmit` clean.
 - [x] `bun test` green. _2316/0._
 - [ ] **HMR vet (manual, user-gated)** — resume a multi-turn session; confirm the transcript reveals once, fully reconstructed, with no scroll-chase FOUC.
+
+---
+
+#### Step 20.5.D.2.A: Restore-reveal coordination — collapse the six-state relaunch flicker {#step-20-5-d-2-a}
+
+**Depends on:** #step-20-5-d-2 ([DT10] gates the transcript's own paint — the transcript half of the reveal), #step-20-5-d-1 (the lifecycle hook)
+
+**Status:** _not started._
+
+**Commit:** `fix(tide-rendering): coordinate the session-restore reveal (D.2.A)`
+
+**References:** [DT10](#dt10-replay-transcript-suppression), [#step-20-5-a] (the REPLAYING matrix row), `tide-card.tsx` (`TideCardContent` / `TideCardServicesGate` / `TideRestoring` / `TideCardBody`), `tide-card-banner-spec.ts` (`deriveTideCardBannerSpec` — the `replay-loading` kind this step retires), `tide-session-restore` / `tideRestoreRegistry` / `cancelTideRestore`, `reducer.ts` (`replayPreflightActive` / `replaySoftBudgetElapsed` / `REPLAY_SOFT_BUDGET_MS`), [L02], [L05], [L06], [L23], [L26]
+
+**Scope — why this step exists.** [DT10] (Step 20.5.D.2) suppressed the transcript host's *own* intermediate paint, and it did. But a frame-by-frame capture of a cold relaunch + session restore still shows **six distinct visual states** flickering past — fast enough to read as "flashing" rather than information. [DT10] fixed one surface; nothing coordinates the surfaces *around* it. The captured sequence:
+
+| Frame | What shows | Driven by |
+|---|---|---|
+| 1 | Full-card **"Restoring session"** placeholder — centered panel, spinner, Cancel | `TideRestoring` — `services === null` + `tideRestoreRegistry` entry, and/or `transportState === "restoring"` |
+| 2 | `Loading session…` banner + empty transcript + Z2 **STATE: Replaying** | `TideCardBody` mounts; `phase === "replaying"`; the [DT10] gate hides the transcript |
+| 3 | banner + **painted** transcript + Z2 **STATE: Idle** | `replay_complete` fired; [DT10] gate lifted; banner still up — held by `TugPaneBanner minMountedMs: 500` |
+| 4 | ≈ frame 3 | banner exit animation running |
+| 5 | banner gone → transcript **reflows up**, the Z1A model header appears | the banner's unmount frees ~40px and reflows the transcript pane |
+| 6 | prompt-entry gains caret / first-responder | focus lands last, as its own beat |
+
+Root causes, all outside [DT10]'s remit: **(a) two separate loading surfaces** — the full-card `TideRestoring` placeholder *and* the `Loading session…` banner — appear back-to-back; **(b) the banner is not delay-gated** — it shows on every resume, not just slow ones; **(c) it lingers** past `replay_complete` (`minMountedMs` hold + exit animation, frames 3–4); **(d) its unmount reflows the transcript** (frame 4→5); **(e) focus lands a frame later** (frame 5→6).
+
+**Goal — at most two states.** A cold relaunch + restore shows: **(1)** _conditionally, only when the restore exceeds ~2s_ — a single loading affordance, the centered **"Restoring session"** placeholder (delay-gated; keeps its Cancel escape hatch); **(2)** the final ready state — fully-painted transcript, settled Z2, and the prompt-entry **focused + first-responder**, in one coordinated reveal. A sub-2s restore (the common case) shows only state 2.
+
+**Design decisions (user-vetted 2026-05-21).**
+
+- **One loading affordance: the centered placeholder, delay-gated.** The `Loading session…` banner is retired from the restore flow; the existing centered `TideRestoring` panel is the single affordance. It is shown only after the restore has been in progress longer than `REPLAY_SOFT_BUDGET_MS` (~2s). Under budget, no loading affordance appears at all — the card holds a quiet empty interior (the `TideRestoring` backdrop with no centered panel) and then does the single reveal.
+- **The placeholder spans the whole restore window.** Today the centered placeholder covers only the pre-body window (`services === null` / `transportState === "restoring"`) and the banner covers the `phase === "replaying"` window. D.2.A routes the *entire* restore — pre-services, transport-restoring, replay preflight, and `phase === "replaying"` (resume mode) — to `TideRestoring`. `TideCardBody` is not routed in until the restore is genuinely done (`replay_complete`, whatever the outcome).
+- **The placeholder keeps Cancel.** A genuinely stuck restore stays abortable to the picker via `cancelTideRestore`.
+- **One reveal.** `TideCardBody` mounts once, at restore-complete, against a transcript the reducer has already fully reconstructed — so there is no intermediate transcript paint (the cold path no longer needs [DT10]'s gate; [DT10] still governs the mid-session-reconnect path, where the body stays mounted) — and the prompt-entry is focused + first-responder in the same beat. Because the body mounts whole, there is no banner mount/unmount and therefore no reflow.
+
+**Conformance.** [L26] — on the cold-relaunch path `TideCardBody` (and the transcript host inside it) mounts exactly once, at restore-complete, with content final; no remount, no per-turn re-render. The `CodeSessionStore` reducer ingests the replay bracket independently of whether the body is mounted, so holding the body unmounted during replay loses nothing — and a delayed *first* mount is not an unmount, so it carries no identity to break. On the mid-session-reconnect path the body stays mounted and [DT10]'s paint gate (not a remount) governs. [L06] — the placeholder's delay-gated panel is a visibility concern: the `TideRestoring` backdrop is present for the whole window; the centered panel fades in via a one-shot CSS transition once the budget elapses. The body-vs-placeholder routing is genuine structure, not appearance, so it stays a React conditional. [L05] — the reveal-time focus routes through the single-channel focus dispatcher (`cardDidActivate` → `applyBagFocus`), fired synchronously on the body's mount-when-already-first-responder; no timing-derived macrotask claim. [L23] — the single reveal happens at final transcript geometry, so the saved scroll anchor / draft restore resolve once, against a settled height. [L02] — the restore-progress signals are read from the `CodeSessionStore` snapshot via `useSyncExternalStore`.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — `TideCardContent` / `TideCardServicesGate` routing extended so the whole restore window routes to `TideRestoring`; `TideRestoring` gains the delay-gated centered panel (backdrop always, panel after budget); `TideCardBody` mount gated to restore-complete; reveal-time focus coordinated.
+- `tugdeck/src/components/tugways/cards/tide-card.css` — the delay-gated panel fade-in.
+- `tugdeck/src/components/tugways/cards/tide-card-banner-spec.ts` — the `replay-loading` banner kind (preflight + active-phase branches) retired; `error` / `transport` / `replay-timeout` kinds unchanged.
+- `tugdeck/src/components/tugways/cards/__tests__/tide-card-banner-spec.test.ts` — `replay-loading` cases dropped; the retained precedence chain re-pinned.
+- a test pinning the restore-progress signal set (placement at the executor's discretion — a reducer test if a new store signal is added; the routing / mount-gating / focus is React glue left to the HMR vet per the no-fake-DOM rule).
+
+**Tasks.**
+
+- [ ] **Audit first.** Catalog the six captured states against their triggers; separate the **cold-relaunch** path (the capture) from the **mid-session transport-reconnect** path; confirm the `CodeSessionStore` reducer ingests `replay_started` / `turn_complete` / `replay_complete` with `TideCardBody` unmounted; confirm the `cardDidActivate` focus path fires synchronously on a mount-when-already-first-responder; and determine the single restore-progress signal set — _in progress_ / _elapsed > budget_ / _complete_ — that spans pre-services + preflight + `phase === "replaying"` (candidates: `replayPreflightActive`, `replaySoftBudgetElapsed`, or a new store-level "restore began at" stamp; a local `TideRestoring` timer is unsound because the component remounts at the `services` boundary). Record the findings in the Status line.
+- [ ] Route the whole restore window (pre-services, transport-restoring, replay preflight, `phase === "replaying"` resume) to `TideRestoring`; mount `TideCardBody` only at restore-complete.
+- [ ] Delay-gate the centered panel: `TideRestoring` shows only its quiet backdrop until the restore exceeds `REPLAY_SOFT_BUDGET_MS`, then fades the centered panel (title + spinner + Cancel) in.
+- [ ] Retire the `replay-loading` banner kind from `deriveTideCardBannerSpec` (superseded by the placeholder); leave `error` / `transport` / `replay-timeout` intact.
+- [ ] Coordinate the reveal: `TideCardBody` mounts whole with the transcript fully reconstructed and the prompt-entry focused + first-responder in the same beat — no separate focus frame, no banner reflow.
+- [ ] Chase the residual ½px transcript hop the [DT10] HMR vet flagged; confirm the whole-body single mount removes it (the cold path no longer toggles `visibility` on the transcript host).
+- [ ] Keep the mid-session transport-reconnect path coherent — it still routes through [DT10]'s gate (body stays mounted; transcript paint suppressed, not remounted).
+
+**Tests.**
+
+- [ ] `deriveTideCardBannerSpec` pure-logic test updated: the `replay-loading` kind is gone; the `error` / `transport` / `replay-timeout` precedence chain still holds branch-by-branch.
+- [ ] If a new store-level restore-progress signal is added, a `CodeSessionStore` reducer test pins it across the replay bracket (real-engine, the `code-session-store.replay.test.ts` pattern).
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] **HMR vet (manual, user-gated)** — relaunch with an existing multi-turn session; frame-step a screen capture and confirm **at most two states**: the centered placeholder appears only if the restore exceeds ~2s, and the final state reveals once — fully-painted transcript, settled Z2, prompt-entry focused and ready to type, with no banner, no reflow, and no separate focus frame.
 
 ---
 
