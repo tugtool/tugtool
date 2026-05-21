@@ -551,7 +551,10 @@ pub async fn execute_probe(
     let mut ws = TestWs::connect(tugcast.port).await;
 
     let card_id = format!("probe-{}", probe.name);
-    let tug_session_id = format!("sess-{}", probe.name);
+    // claude 2.1.x rejects non-UUID --session-id values; the probe name
+    // rides through logs via `card_id`, so a raw UUID here costs no
+    // debuggability. See `fresh_session_id` for the full rationale.
+    let tug_session_id = crate::common::fresh_session_id();
     ws.send_spawn_session(&card_id, &tug_session_id, project_dir)
         .await;
 

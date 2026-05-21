@@ -49,7 +49,7 @@ use tempfile::NamedTempFile;
 
 mod common;
 
-use common::{TestTugcast, TestWs, real_claude_enabled};
+use common::{TestTugcast, TestWs, fresh_session_id, real_claude_enabled};
 
 /// Skeleton guard — every test begins with this; returns early when
 /// `TUG_REAL_CLAUDE` is not set so a developer running
@@ -91,7 +91,8 @@ async fn test_single_session_end_to_end() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-1";
-    let tug_session_id = "sess-end-to-end";
+    let tug_session_id = uuid::Uuid::new_v4().to_string();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -159,7 +160,8 @@ async fn test_subscription_auth_source() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-auth";
-    let tug_session_id = "sess-auth";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -240,7 +242,8 @@ async fn test_heartbeat_survives_long_turn() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-hb";
-    let tug_session_id = "sess-hb";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -298,8 +301,10 @@ async fn test_two_sessions_never_cross() {
     let tc = spawn_tugcast().await;
     let mut ws = TestWs::connect(tc.port).await;
 
-    let sess_a = "sess-cross-a";
-    let sess_b = "sess-cross-b";
+    let sess_a = fresh_session_id();
+    let sess_a = sess_a.as_str();
+    let sess_b = fresh_session_id();
+    let sess_b = sess_b.as_str();
 
     ws.send_spawn_session("card-a", sess_a, &tc.project_dir)
         .await;
@@ -355,7 +360,8 @@ async fn test_lazy_spawn_no_subprocess_until_first_input() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-lazy";
-    let tug_session_id = "sess-lazy";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -398,7 +404,8 @@ async fn test_orphan_input_rejected() {
     // (emitted by `dispatch_one` when the ledger has no entry for the
     // claimed id) is accepted here too for forward-compatibility with
     // any future reordering of the checks.
-    ws.send_code_input("sess-orphan", "hello").await;
+    let orphan_id = fresh_session_id();
+    ws.send_code_input(&orphan_id, "hello").await;
     ws.await_control_reject(
         &["session_not_owned", "session_unknown"],
         Duration::from_secs(5),
@@ -419,7 +426,8 @@ async fn test_reset_session_reinitializes() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-reset";
-    let tug_session_id = "sess-reset";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -477,7 +485,8 @@ async fn test_supervisor_rebind_on_startup() {
     let project_dir = std::env::current_dir().expect("cwd");
 
     let card_id = "card-rebind";
-    let tug_session_id = "sess-rebind";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     {
         let tc = TestTugcast::spawn(&project_dir, bank_path.clone()).await;
@@ -524,8 +533,10 @@ async fn test_p5_cross_client_distinct_sessions() {
     let mut ws_a = TestWs::connect(tc.port).await;
     let mut ws_b = TestWs::connect(tc.port).await;
 
-    let sess_a = "sess-p5-a";
-    let sess_b = "sess-p5-b";
+    let sess_a = fresh_session_id();
+    let sess_a = sess_a.as_str();
+    let sess_b = fresh_session_id();
+    let sess_b = sess_b.as_str();
 
     ws_a.send_spawn_session("card-p5-a", sess_a, &tc.project_dir)
         .await;
@@ -577,7 +588,8 @@ async fn test_session_metadata_reaches_late_subscriber() {
     let tc = spawn_tugcast().await;
 
     let card_id = "card-meta";
-    let tug_session_id = "sess-meta";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     // Round 1: W1 drives a session until system_metadata has had a
     // chance to arrive and be cached in latest_metadata.
@@ -629,8 +641,10 @@ async fn test_session_metadata_two_sessions_no_clobber_real_claude() {
     let tc = spawn_tugcast().await;
     let mut ws = TestWs::connect(tc.port).await;
 
-    let sess_a = "sess-meta-a";
-    let sess_b = "sess-meta-b";
+    let sess_a = fresh_session_id();
+    let sess_a = sess_a.as_str();
+    let sess_b = fresh_session_id();
+    let sess_b = sess_b.as_str();
 
     ws.send_spawn_session("card-meta-a", sess_a, &tc.project_dir)
         .await;
@@ -695,7 +709,8 @@ async fn test_send_interrupt_reaches_tugcode() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-interrupt";
-    let tug_session_id = "sess-interrupt";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -747,7 +762,8 @@ async fn test_send_tool_approval_roundtrip() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-approval";
-    let tug_session_id = "sess-approval";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -818,7 +834,8 @@ async fn test_send_session_command_new_respawns() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-cmd-new";
-    let tug_session_id = "sess-cmd-new";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;
@@ -887,7 +904,8 @@ async fn test_send_model_change_behavioral() {
     let mut ws = TestWs::connect(tc.port).await;
 
     let card_id = "card-model";
-    let tug_session_id = "sess-model";
+    let tug_session_id = fresh_session_id();
+    let tug_session_id = tug_session_id.as_str();
 
     ws.send_spawn_session(card_id, tug_session_id, &tc.project_dir)
         .await;

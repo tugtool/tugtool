@@ -126,8 +126,20 @@ pub enum FailureKind {
         slots: Vec<String>,
     },
     /// A probe's canonical sequence has the same events as golden but
-    /// in a different order. Reordering required slots fails.
+    /// in a genuine transposition — neither sequence is a subsequence
+    /// of the other. Reordering required slots fails.
     ReorderedSequence {
+        probe_name: String,
+        golden: Vec<String>,
+        current: Vec<String>,
+    },
+    /// A probe's canonical sequence differs from golden only by the
+    /// insertion or deletion of an event type that still appears
+    /// elsewhere — one sequence is a subsequence of the other. This is
+    /// optional interstitial-event variance (e.g. `assistant_text`
+    /// narration the model emits between tool calls on some runs but
+    /// not others), not a transposition, so it warns rather than fails.
+    OptionalSequenceVariance {
         probe_name: String,
         golden: Vec<String>,
         current: Vec<String>,
@@ -265,6 +277,13 @@ fn format_kind(kind: &FailureKind) -> String {
             current,
         } => {
             format!("ReorderedSequence: {probe_name} golden={golden:?} current={current:?}")
+        }
+        FailureKind::OptionalSequenceVariance {
+            probe_name,
+            golden,
+            current,
+        } => {
+            format!("OptionalSequenceVariance: {probe_name} golden={golden:?} current={current:?}")
         }
         FailureKind::MissingProbe { probe_name } => {
             format!("MissingProbe: {probe_name}")
@@ -512,6 +531,14 @@ fn diff_event_shape(
     }
 }
 
+/// Returns `true` if `needle` is a (not necessarily contiguous)
+/// subsequence of `haystack` — every element of `needle` appears in
+/// `haystack` in the same relative order.
+fn is_subsequence(needle: &[String], haystack: &[String]) -> bool {
+    let mut hay = haystack.iter();
+    needle.iter().all(|n| hay.any(|h| h == n))
+}
+
 fn diff_probe_sequence(
     probe_name: &str,
     golden: &[String],
@@ -542,13 +569,26 @@ fn diff_probe_sequence(
             slots: added,
         });
     }
-    // Same set of events, different canonical order → reorder fail.
+    // Same set of events, different canonical order.
     if g_set == c_set && g_canon != c_canon {
-        report.fail(FailureKind::ReorderedSequence {
-            probe_name: probe_name.to_string(),
-            golden: g_canon,
-            current: c_canon,
-        });
+        if is_subsequence(&c_canon, &g_canon) || is_subsequence(&g_canon, &c_canon) {
+            // One sequence is the other with an in-set event type
+            // inserted/deleted at a repeated (non-consecutive)
+            // position — optional interstitial-event variance, not a
+            // transposition. Genuine reorders, where neither sequence
+            // is a subsequence of the other, still fail below.
+            report.warn(FailureKind::OptionalSequenceVariance {
+                probe_name: probe_name.to_string(),
+                golden: g_canon,
+                current: c_canon,
+            });
+        } else {
+            report.fail(FailureKind::ReorderedSequence {
+                probe_name: probe_name.to_string(),
+                golden: g_canon,
+                current: c_canon,
+            });
+        }
     }
 }
 
@@ -1044,6 +1084,24 @@ mod differ_tests {
         let report = diff_schemas(&golden, &current);
         assert_fail_kind(&report, |k| {
             matches!(k, FailureKind::ReorderedSequence { probe_name, .. }
+                if probe_name == "test-01")
+        });
+    }
+
+    // ---- 14b. Probe sequence: optional interstitial event → warn
+
+    #[test]
+    fn probe_sequence_optional_interstitial_variance_warns() {
+        // current is golden with one in-set event (`a`) deleted at a
+        // repeated, non-consecutive position. `a` still appears, so it
+        // is not a removed slot; current is a subsequence of golden, so
+        // it is interstitial-event variance, not a transposition.
+        let golden = schema_with_probe_seq("test-01", &["x", "a", "y", "a", "z"]);
+        let current = schema_with_probe_seq("test-01", &["x", "y", "a", "z"]);
+        let report = diff_schemas(&golden, &current);
+        assert!(!report.has_failures());
+        assert_warn_kind(&report, |k| {
+            matches!(k, FailureKind::OptionalSequenceVariance { probe_name, .. }
                 if probe_name == "test-01")
         });
     }

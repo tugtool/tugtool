@@ -96,6 +96,19 @@ pub fn real_claude_enabled() -> bool {
     }
 }
 
+/// Mint a fresh session id for a real-claude test or capture probe.
+///
+/// claude 2.1.x validates `--session-id` / `--resume` and rejects any
+/// value that is not a UUID (`Error: Invalid session ID. Must be a
+/// valid UUID.`). The tug session id is forwarded verbatim to claude,
+/// so test session ids must be real UUIDs — human-readable labels like
+/// `"sess-foo"` make the spawned claude process exit before emitting a
+/// single event. Production is unaffected: tugdeck always generates
+/// UUID session ids.
+pub fn fresh_session_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 /// Reserve an ephemeral TCP port by binding-then-releasing. The port
 /// may be reclaimed by another process in between, but for integration
 /// tests on a mostly-idle loopback this is good enough and simpler than
