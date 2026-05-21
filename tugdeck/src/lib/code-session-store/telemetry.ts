@@ -27,6 +27,7 @@ import type {
   CostSnapshot,
   LiveMessageUsage,
   TurnCost,
+  TurnEndReason,
   TurnEntry,
 } from "./types";
 
@@ -770,6 +771,27 @@ export interface TurnTelemetry {
    * existed).
    */
   sessionInitTokens: number | null;
+  /**
+   * The turn's terminal classification — `complete` / `interrupted` /
+   * `error` / `transport_lost`.
+   *
+   * Carried on the persisted block (not derivable from telemetry
+   * state) so a resumed session recovers the original outcome instead
+   * of re-deriving it. The live re-derivation reads `turn_complete`'s
+   * `result` plus the reducer-runtime `interruptInFlight` flag — but
+   * `interruptInFlight` never runs on the replay path, so a turn the
+   * wire recorded as `result: "error"` because the user pressed Stop
+   * (CASE B) would replay as `error` rather than `interrupted`.
+   * Persisting the reason here closes that gap (`buildTurnEntry`
+   * prefers this value over the re-derivation).
+   *
+   * Optional: absent on the live-derived block (`deriveTurnTelemetry`
+   * does not classify — the reason is decided by `handleTurnComplete`)
+   * and on telemetry rows persisted before this field existed.
+   * `buildTurnEntry` falls back to the freshly-derived reason when it
+   * is absent.
+   */
+  turnEndReason?: TurnEndReason;
 }
 
 /**

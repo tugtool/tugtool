@@ -255,3 +255,93 @@ describe("handleTurnComplete — replay path", () => {
     expect(recordTelemetryEffects(effects)).toHaveLength(0);
   });
 });
+
+describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
+  it("recovers `interrupted` from the inline block when replay re-derivation would say `error`", () => {
+    // A turn the user interrupted commits on the wire as
+    // `result: "error"` (CASE B). On the live path `interruptInFlight`
+    // distinguishes it from a genuine protocol error; on the replay
+    // path that flag never ran, so the re-derivation alone would
+    // mislabel the turn `error`. The persisted telemetry block carries
+    // the original `turnEndReason` and `buildTurnEntry` prefers it.
+    const initial = fresh();
+    const { state: afterReplayStarted } = applyAll(initial, [
+      { type: "replay_started" },
+    ]);
+
+    const { effects } = applyAll(afterReplayStarted, [
+      {
+        type: "user_message_replay",
+        msg_id: "msg-int",
+        text: "interrupted turn",
+        attachments: [],
+        turnKey: "tk-int",
+      },
+      {
+        type: "turn_complete",
+        msg_id: "msg-int",
+        result: "error",
+        telemetry: { ...SAMPLE_INLINE_TELEMETRY, turnEndReason: "interrupted" },
+      },
+    ]);
+
+    const turns = appended(effects);
+    expect(turns).toHaveLength(1);
+    // The persisted reason wins over the `error` re-derivation.
+    expect(turns[0].entry.turnEndReason).toBe("interrupted");
+    expect(turns[0].entry.result).toBe("interrupted");
+  });
+
+  it("falls back to the re-derived reason when the inline block omits `turnEndReason`", () => {
+    // A telemetry row persisted before the field existed: the inline
+    // block has no `turnEndReason`, so the freshly-derived reason
+    // stands. During replay `interruptInFlight` is false, so a
+    // `result: "error"` turn derives `error`.
+    const initial = fresh();
+    const { state: afterReplayStarted } = applyAll(initial, [
+      { type: "replay_started" },
+    ]);
+
+    const { effects } = applyAll(afterReplayStarted, [
+      {
+        type: "user_message_replay",
+        msg_id: "msg-pre",
+        text: "pre-field turn",
+        attachments: [],
+        turnKey: "tk-pre",
+      },
+      {
+        type: "turn_complete",
+        msg_id: "msg-pre",
+        result: "error",
+        telemetry: SAMPLE_INLINE_TELEMETRY,
+      },
+    ]);
+
+    const turns = appended(effects);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].entry.turnEndReason).toBe("error");
+  });
+
+  it("live path persists the derived `turnEndReason` on the record-telemetry effect", () => {
+    // The live commit's record-telemetry effect must carry the
+    // terminal reason so the NEXT resume can recover it.
+    const initial = fresh();
+    const { effects } = applyAll(initial, [
+      { type: "send", text: "hello", atoms: [], turnKey: "tk1" },
+      {
+        type: "assistant_text",
+        msg_id: "msg-A",
+        text: "hi",
+        is_partial: false,
+        rev: 0,
+        seq: 0,
+      },
+      { type: "turn_complete", msg_id: "msg-A", result: "success" },
+    ]);
+
+    const persists = recordTelemetryEffects(effects);
+    expect(persists).toHaveLength(1);
+    expect(persists[0].telemetry.turnEndReason).toBe("complete");
+  });
+});

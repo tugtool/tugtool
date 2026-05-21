@@ -1313,6 +1313,10 @@ function buildRecordTelemetryEffect(
     reconnectCount: entry.reconnectCount,
     maxStreamGapMs: entry.maxStreamGapMs,
     sessionInitTokens,
+    // Persist the terminal reason so a future resume recovers it
+    // instead of re-deriving (the re-derivation can't tell an
+    // interrupted turn from an errored one — [replay-2]).
+    turnEndReason: entry.turnEndReason,
   };
   return {
     kind: "record-telemetry",
@@ -1340,6 +1344,14 @@ function buildTurnEntry(
   // `mergeTurnTelemetry` for the contract.
   const derivedTelemetry = deriveTurnTelemetry(state, submitAt, endedAt);
   const telemetry = mergeTurnTelemetry(inlineTelemetry, derivedTelemetry);
+  // The terminal reason is recovered from the persisted telemetry
+  // block on the replay path — `mergeTurnTelemetry` adopted the inline
+  // block wholesale, so `telemetry.turnEndReason` is the value the
+  // live reducer classified during the original turn. The live path
+  // carries no inline block, so the freshly-passed `reason` stands.
+  // Without this, a replayed interrupted turn (wire `result: "error"`,
+  // no live `interruptInFlight`) mis-commits as `error` ([replay-2]).
+  const effectiveReason: TurnEndReason = telemetry.turnEndReason ?? reason;
   return {
     msgId,
     turnKey: state.pendingUserMessage?.turnKey ?? `msg-${msgId}`,
@@ -1352,7 +1364,7 @@ function buildTurnEntry(
     assistant: scratchEntry.assistant,
     toolCalls: Array.from(state.toolCallMap.values()),
     controlRequests: state.controlRequestLog,
-    result: reason === "complete" ? "success" : "interrupted",
+    result: effectiveReason === "complete" ? "success" : "interrupted",
     endedAt,
     wallClockMs: telemetry.wallClockMs,
     awaitingApprovalMs: telemetry.awaitingApprovalMs,
@@ -1362,7 +1374,7 @@ function buildTurnEntry(
     ttftcMs: telemetry.ttftcMs,
     reconnectCount: telemetry.reconnectCount,
     maxStreamGapMs: telemetry.maxStreamGapMs,
-    turnEndReason: reason,
+    turnEndReason: effectiveReason,
     cost: telemetry.cost,
   };
 }
