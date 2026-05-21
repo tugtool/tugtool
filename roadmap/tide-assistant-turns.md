@@ -4178,7 +4178,7 @@ This step does three things:
 
 **Depends on:** #step-20-5-a (the state-to-zone matrix this step implements), #step-20-5-b (inline-dialog primitives — done), #step-20-4 (zone slot infrastructure), [#step-20-3-4] (per-turn telemetry persistence — done 2026-05-16)
 
-**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past — see the reconciliation note below._
+**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.2.B](#step-20-5-d-2-b) (restore-reveal residual glitches) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past; D.2.B inserted 2026-05-21 after a post-D.2.A capture showed two residual relaunch glitches (a picker-sheet flash, a wrong first-paint scroll position) — see the reconciliation note below._
 
 **Commit:** _per sub-step._
 
@@ -4199,11 +4199,12 @@ This step does three things:
 | [20.5.D.1](#step-20-5-d-1) | Lifecycle foundation — `deriveLifecycleSnapshot` (the matrix as one switch) + `useLifecycleState` hook + pure per-matrix-row tests | _new_ `lifecycle-state.ts`, `use-lifecycle-state.ts` |
 | [20.5.D.2](#step-20-5-d-2) | `[DT10]` transcript-replay paint gate — the restore-FOUC fix | `tide-card.tsx` transcript host |
 | [20.5.D.2.A](#step-20-5-d-2-a) | Restore-reveal coordination — collapse the six-state relaunch flicker to one delay-gated placeholder + one reveal | `tide-card.tsx`, `tide-card-banner-spec.ts` |
+| [20.5.D.2.B](#step-20-5-d-2-b) | Restore-reveal residual glitches — the picker-sheet flash + the first-paint scroll position | `tide-card.tsx`, `tide-session-restore.ts`, `tug-list-view.tsx` |
 | [20.5.D.3](#step-20-5-d-3) | Z5 submit-button state machine — the new disabled / label modes | `tug-prompt-entry.tsx` + `.css` |
 | [20.5.D.4](#step-20-5-d-4) | Request cancellation UX mini-spike — design + vet the pull-down / queued / interrupt affordance family | plan + a gallery / HMR vet surface |
 | [20.5.D.5](#step-20-5-d-5) | Cross-zone coordination (Z2 / Z4) + matrix verification + landing the D.4 queued design | `tide-card.tsx`, zone renderers |
 
-D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.2.A follows directly: [DT10] suppressed the transcript host's own intermediate paint, but a frame-by-frame capture of a cold relaunch showed the restore still flickers through six distinct states (two separate loading surfaces, an ungated banner that lingers and reflows, a focus beat that lands last) — D.2.A collapses those to one delay-gated placeholder and one coordinated reveal. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it.
+D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.2.A follows directly: [DT10] suppressed the transcript host's own intermediate paint, but a frame-by-frame capture of a cold relaunch showed the restore still flickers through six distinct states (two separate loading surfaces, an ungated banner that lingers and reflows, a focus beat that lands last) — D.2.A collapses those to one delay-gated placeholder and one coordinated reveal. D.2.B mops up the two residual glitches a post-D.2.A capture surfaced — the project-picker sheet briefly flashing during the pre-registry window of the startup restore pass, and the transcript's first paint landing at the wrong scroll position (jump-to-bottom button visible) when the saved state was scrolled to the bottom. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it.
 
 **Conformance (applies to every sub-step).** All phase-driven UI goes through `useLifecycleState()` — no zone reads `phase` or `awaitingApprovalSince` directly ([L02]). Appearance changes flip a `data-*` attribute / class and CSS does the visual ([L06]). State preservation: label / content transitions must not flicker, and DOM nodes that carry focus or scroll position stay mounted across mode changes ([L23] / [L26]).
 
@@ -4389,6 +4390,62 @@ Root causes, all outside [DT10]'s remit: **(a) two separate loading surfaces** �
 - [x] `bun x tsc --noEmit` clean.
 - [x] `bun test` green. _2325/0._
 - [ ] **HMR vet (manual, user-gated)** — relaunch with an existing multi-turn session; frame-step a screen capture and confirm **at most two states**: the centered placeholder appears only if the restore exceeds ~2s, and the final state reveals once — fully-painted transcript, settled Z2, prompt-entry focused and ready to type, with no banner, no reflow, and no separate focus frame.
+
+---
+
+#### Step 20.5.D.2.B: Restore-reveal residual glitches — picker-sheet flash + first-paint scroll {#step-20-5-d-2-b}
+
+**Depends on:** #step-20-5-d-2-a (the restore-reveal coordination this cleans up after)
+
+**Status:** _not started._
+
+**Commit:** `fix(tide-rendering): kill the restore picker-flash + scroll glitch (D.2.B)`
+
+**References:** [#step-20-5-d-2-a], `tide-card.tsx` (`TideCardContent` / `TideProjectPicker`), `tide-session-restore.ts` (`restoreTideSessions` / `tideRestoreRegistry`), `tug-list-view.tsx` (the `savedRegionScroll` / `meta.cellHeights` / `meta.anchor` / `followBottom` first-paint restore), `smart-scroll.ts`, `useSavedRegionScroll`, [AT0014] / [AT0069] (the cold-boot scroll-restore app-test contracts), [L02], [L03], [L23], [L26]
+
+**Scope — why this step exists.** [Step 20.5.D.2.A](#step-20-5-d-2-a) collapsed the six-state relaunch flicker, but a post-D.2.A frame-by-frame capture surfaced **two residual glitches** on a cold relaunch + restore:
+
+| Frame | What shows | Verdict |
+|---|---|---|
+| grid | bare deck canvas, no card content yet | **OK** — acceptable cold-start baseline, not a glitch to fix |
+| picker sheet | a partial `TideProjectPicker` `TugSheet` ("checking…", "FORGET ALL SESSIONS FOR THIS PATH", Cancel / Open) drops from the title bar, then vanishes | **glitch G1** — must never appear on a relaunch restore |
+| wrong scroll | the transcript paints **not at the bottom** with the **jump-to-bottom button visible**, though the saved region-scroll state was scrolled to the bottom | **glitch G2** — the first painted frame must reproduce the saved scroll position |
+
+The fourth captured frame is the target — transcript at the bottom, no jump-to-bottom button, prompt focused.
+
+**G1 — picker-sheet flash.** `TideCardContent` renders `TideProjectPicker` for an unbound card whenever there is no binding *and* no `tideRestoreRegistry` entry. On a cold relaunch there is a window — card mount through `restoreTideSessions` sending `list_card_bindings` and its response handler firing `fireRestore` — during which the registry has no entry yet, so `TideCardContent` falls through to the picker. The picker is on the first-responder card → its `cardDidActivate` initial-sync fires `presentSheet` → the `TugSheet` drops. When `fireRestore` then creates the registry entry, `TideCardContent` flips to `TideRestoring` and the picker unmounts mid-sheet-animation — the captured "bit of the sheet." (`tide-session-restore.ts`'s own docstring names this flash as the reason the registry exists; the registry closes the *post*-`fireRestore` window but not the `list_card_bindings` round-trip ahead of it.)
+
+**G2 — first-paint scroll position.** The transcript host mounts once, at replay-complete (D.2.A), with the full reconstructed data — but the first painted scroll position lands short of the saved bottom and `followBottom` is not engaged, so the jump-to-bottom button shows before a correction lands. The list view's first-paint restore reads `savedRegionScroll.meta` (`cellHeights` for `HeightIndex` hydration, `anchor` for the `SmartScroll` restore target) and separately auto-pins to bottom on a mount-with-`followBottom`. The diagnosis must pin which mechanism mis-resolves: a near-bottom saved `anchor` resolving short against not-yet-measured heights, the anchor restore target winning over the bottom pin, or the saved bag not carrying `cellHeights` for the `tide-card-transcript` scrollKey.
+
+**Goal.** A cold relaunch restore shows the bare deck grid (briefly — fine) then the final ready state: **no picker sheet ever**, and the transcript painted **at the saved scroll position on its first frame** (for a scrolled-to-bottom save: `followBottom` engaged, bottom pinned, no jump-to-bottom button, no correction hop).
+
+**Conformance.** [L23] — the saved scroll position is user-visible state; the first painted frame must reproduce it (the [AT0069] first-paint contract), and the picker must never flash over a card that is mid-restore. [L03] — scroll-restore registrations stay in `useLayoutEffect` so the first paint sees them. [L02] — the restore-pass-settled signal enters React via `useSyncExternalStore`. [L26] — no remount churn: the transcript host still mounts exactly once.
+
+**Artifacts.**
+
+- `tugdeck/src/lib/tide-session-restore.ts` — a restore-pass-settled signal (subscribable), settled on every exit path of `restoreTideSessions` (the `list_card_bindings_ok` handler, a timeout, and the no-tide-cards / no-connection early-outs).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — `TideCardContent`'s picker branch gated on the restore-pass-settled signal.
+- the list-view / scroll-restore surface (`tug-list-view.tsx`, `smart-scroll.ts`, and/or the region-scroll save path) — exact set determined by the G2 diagnosis.
+- tests per below.
+
+**Tasks.**
+
+- [ ] **Diagnose first.** G1: confirm the pre-registry window and the picker's `cardDidActivate`-driven sheet present. G2: instrument a relaunch and pin which restore mechanism mis-resolves the first-paint scroll — saved `anchor` vs the bottom pin vs missing `cellHeights` for the `tide-card-transcript` scrollKey. Record findings in the Status line.
+- [ ] G1: add the restore-pass-settled signal to `tide-session-restore.ts`, settled on every exit path of `restoreTideSessions`; gate `TideCardContent`'s picker branch on it so an unbound tide card holds `TideRestoring` until the startup restore pass has settled.
+- [ ] G2: fix the transcript's first-paint scroll so the saved position is reproduced on the first painted frame — for the captured scrolled-to-bottom save, `followBottom` engaged and the bottom pinned, with no jump-to-bottom flash and no correction hop.
+- [ ] Confirm a genuine fresh tide card (no ledger binding) still shows the picker promptly once the restore pass settles — the gate must not strand a real new card.
+- [ ] Confirm the bare deck grid before card content is the only pre-reveal frame and is acceptable as-is (baseline, no fix).
+
+**Tests.**
+
+- [ ] Pure-logic test for the restore-pass-settled signal and the `TideCardContent` picker-gate predicate.
+- [ ] G2 scroll restore — an app-test extending the [AT0014] / [AT0069] cold-boot scroll-restore coverage to the tide transcript, or the HMR vet if the harness cannot drive a tide replay-restore; placement at the executor's discretion per the no-fake-DOM rule.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] **HMR vet (manual, user-gated)** — relaunch with an existing multi-turn session scrolled to the bottom; frame-step a screen capture and confirm no picker sheet appears at any point and the transcript's first painted frame is at the bottom with no jump-to-bottom button.
 
 ---
 
