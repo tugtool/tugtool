@@ -936,31 +936,39 @@ export const TugPromptEntry = React.forwardRef<
   // ([Q07]=a), so the handler is a single setRouteState +
   // refocus-the-editor.
   //
-  // CANCEL_DIALOG is conditionally registered (only when there is an
-  // in-flight turn — and therefore something cancellable). Both
-  // Escape and Cmd-. map to CANCEL_DIALOG in `keybinding-map.ts`; the
-  // chain walks from first responder upward so any visible popover /
-  // sheet / alert dismisses first via its own CANCEL_DIALOG handler
-  // ([DT07]). When nothing dialog-like is in the chain and a turn is
-  // in flight, the walk reaches us and we `peelNewest()` — the
-  // unified Stop ≡ Esc gesture: peel the newest cancellable thing,
-  // a queued send first (LIFO), then the running turn once the queue
-  // is empty. Identical to clicking the red Stop button (the SUBMIT
-  // handler's stop branch calls the same `peelNewest()`).
+  // CANCEL_DIALOG is conditionally registered — only when a turn is in
+  // flight AND no interrupt is already in flight (`canInterrupt &&
+  // !interruptInFlight`), i.e. exactly when there is still something
+  // cancellable. Both Escape and Cmd-. map to CANCEL_DIALOG in
+  // `keybinding-map.ts`; the chain walks from first responder upward so
+  // any visible popover / sheet / alert dismisses first via its own
+  // CANCEL_DIALOG handler ([DT07]). When nothing dialog-like is in the
+  // chain and a turn is in flight, the walk reaches us and we
+  // `peelNewest()` — the unified Stop ≡ Esc gesture: peel the newest
+  // cancellable thing, a queued send first (LIFO), then the running
+  // turn once the queue is empty. Identical to clicking the red Stop
+  // button (the SUBMIT handler's stop branch calls the same
+  // `peelNewest()`).
   //
   // Conditional registration matters: the chain marks an action as
   // handled iff its key exists in the responder's actions map
   // (`lookupHandler` is `node.actions[action]`). Registering
   // CANCEL_DIALOG unconditionally would suppress the bubble-phase
-  // event (preventDefault + stopImmediatePropagation) even when
-  // canInterrupt is false — and that would break editor-internal
+  // event (preventDefault + stopImmediatePropagation) even when there
+  // is nothing to cancel — and that would break editor-internal
   // Escape semantics (CodeMirror's autocomplete dismiss). The
   // `useResponder` hook's R5 live-lookup proxy reads
-  // `optionsRef.current.actions` on every dispatch, so the
-  // conditional spread reflects the current snapshot's
-  // `canInterrupt` value at dispatch time. (`canInterrupt` is true
-  // whenever the queue is non-empty — the queue only fills mid-turn —
-  // so it correctly gates "is there anything to peel.")
+  // `optionsRef.current.actions` on every dispatch, so the conditional
+  // spread reflects the current snapshot at dispatch time.
+  //
+  // The `!interruptInFlight` clause closes the Esc-during-INTERRUPTING
+  // gap: once a CASE B interrupt is in flight the turn is already
+  // being torn down and `handleInterrupt` cleared its queue, so there
+  // is nothing left to peel — and the Stop button is itself already
+  // disabled (`submitButtonMode` is `stopping`), so dropping the Esc
+  // handler too keeps Esc ≡ the Stop button. Without it, a second Esc
+  // would re-fire `interrupt()` on a turn already interrupting (a
+  // redundant wire frame + a clobbered interrupt-segment timestamp).
   //
   // The handler lives at THIS responder (TugPromptEntry's) rather
   // than further up the chain (card-content) because the chain walk
@@ -1019,7 +1027,7 @@ export const TugPromptEntry = React.forwardRef<
         const next = !maximizedRef.current;
         onMaximizeChangeRef.current?.(next);
       },
-      ...(snap.canInterrupt
+      ...(snap.canInterrupt && !snap.interruptInFlight
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
               codeSessionStore.peelNewest();
