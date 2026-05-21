@@ -2,8 +2,8 @@
  * `tide-card-phase-indicator` — the Z4 prompt-entry-footer phase
  * indicator: its pure projection and the component that renders it.
  *
- * Z4 of the tide-card lifecycle matrix (Step 20.5.A) is a short status
- * line in the prompt-entry toolbar — it tells the user, right where
+ * Z4 of the tide-card lifecycle matrix is a short status line in the
+ * prompt-entry toolbar — it tells the user, right where
  * they type, what the in-flight turn is doing. The matrix gives Z4
  * content in exactly three lifecycle states —
  *

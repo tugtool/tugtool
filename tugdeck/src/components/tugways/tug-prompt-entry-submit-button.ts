@@ -54,11 +54,9 @@ export interface SubmitButtonView {
 }
 
 /**
- * Project a `submitButtonMode` onto the submit button's view.
- *
- * The `submit` kind's `queued` flag is read through but does not
- * change the view — a queued Submit renders as an ordinary Submit;
- * its distinct "will send on idle" visual is a deferred design.
+ * Project a `submitButtonMode` onto the submit button's view. A turn
+ * in flight is always `stop` — a mid-turn submit queues through the
+ * separate `+` button rather than changing this primary button.
  */
 export function resolveSubmitButtonView(
   mode: TideSubmitButtonMode,

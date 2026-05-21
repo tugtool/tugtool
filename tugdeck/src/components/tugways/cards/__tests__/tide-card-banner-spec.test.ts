@@ -39,7 +39,7 @@ function baseSnap(
     pendingApproval: null,
     pendingQuestion: null,
     controlRequestLog: [],
-    queuedSends: 0,
+    queuedSends: [],
     transcript: [],
     inflightUserMessage: null,
     pendingDraftRestore: null,

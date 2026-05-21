@@ -7,8 +7,8 @@
  * matrix's Z4 column: one case per `TideLifecycleState`, asserting the
  * three in-flight states carry their indicator line and every other
  * state resolves to the empty Z4 cell (`text: null`). The component's
- * rendered DOM + the always-mounted footer slot are the Step 20.5.D.5.C
- * end-to-end matrix test's job, per the no-fake-DOM rule.
+ * rendered DOM + the always-mounted footer slot are the end-to-end
+ * matrix test's job, per the no-fake-DOM rule.
  */
 
 import { describe, it, expect } from "bun:test";

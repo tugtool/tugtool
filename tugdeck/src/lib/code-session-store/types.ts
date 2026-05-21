@@ -375,6 +375,22 @@ export interface ContextBreakdownSnapshot {
 }
 
 /**
+ * A user message submitted while a turn was already running — held in
+ * the reducer's `queuedSends` FIFO and dispatched on the next idle
+ * (`handleTurnComplete(success)` flushes the head). `turnKey` is minted
+ * at the queueing `send` and travels with the entry so the flushed
+ * turn keeps the same React-key seed.
+ *
+ * Surfaced on `CodeSessionSnapshot.queuedSends` so the transcript can
+ * paint one ghost row per queued send.
+ */
+export interface QueuedSend {
+  text: string;
+  atoms: ReadonlyArray<AtomSegment>;
+  turnKey: string;
+}
+
+/**
  * Public snapshot returned by `CodeSessionStore.getSnapshot()`. Stable
  * reference between dispatches that produce no change — callers can use
  * `useSyncExternalStore` without tearing ([D11]).
@@ -439,7 +455,18 @@ export interface CodeSessionSnapshot {
    * during quiescent renders.
    */
   controlRequestLog: ReadonlyArray<ControlRequestRecord>;
-  queuedSends: number;
+  /**
+   * User messages submitted while a turn was running, in submit order
+   * — the reducer's FIFO of held sends, drained head-first on each
+   * `turn_complete(success)`. Empty between turns and whenever nothing
+   * is queued. The transcript paints one ghost row per entry; consumers
+   * needing only the count read `.length`.
+   *
+   * The reducer rebuilds the array only on enqueue / flush / clear, so
+   * the reference is `Object.is`-stable across quiescent snapshot
+   * rebuilds ([L02]).
+   */
+  queuedSends: ReadonlyArray<QueuedSend>;
 
   transcript: ReadonlyArray<TurnEntry>;
 

@@ -333,6 +333,15 @@
   font-size: 1em;
 }
 
+/* Ghost row — a queued send awaiting dispatch (the QUEUED_NEXT_TURN
+   overlay). Painted as an ordinary user row, then de-emphasized so it
+   reads as "not yet sent." Opacity alone — no token-governed color
+   property — carries the ghosting; the row is render-only here, and
+   the per-row ✕ cancel is a follow-on. */
+.tide-card-transcript-ghost-row {
+  opacity: 0.5;
+}
+
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
    wraps inside the row column. The default `--tugx-md-block-padding-x`
    is `1rem` (a soft default for stand-alone consumers); inside a

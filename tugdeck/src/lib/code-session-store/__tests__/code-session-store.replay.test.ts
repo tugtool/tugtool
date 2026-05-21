@@ -218,7 +218,7 @@ describe("CodeSessionStore — defensive drops while replaying", () => {
 
     expect(framesAfter).toBe(framesBefore);
     expect(store.getSnapshot().inflightUserMessage).toBeNull();
-    expect(store.getSnapshot().queuedSends).toBe(0);
+    expect(store.getSnapshot().queuedSends.length).toBe(0);
     expect(store.getSnapshot().phase).toBe("replaying");
   });
 

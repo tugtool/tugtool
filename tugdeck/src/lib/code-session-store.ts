@@ -56,6 +56,7 @@ export type {
   TransportState,
   TurnEntry,
   ToolCallState,
+  QueuedSend,
   ControlRequestForward,
   ControlRequestRecord,
   CostSnapshot,
@@ -357,7 +358,12 @@ export class CodeSessionStore {
       // consumers get the `Object.is` stability they need to avoid
       // spurious re-renders during quiescent ticks.
       controlRequestLog: this.state.controlRequestLog,
-      queuedSends: this.state.queuedSends.length,
+      // The reducer rebuilds `queuedSends` only on enqueue / flush /
+      // clear; passing the reference through unchanged preserves
+      // `Object.is` stability across quiescent snapshot rebuilds so
+      // `useSyncExternalStore` consumers ([L02]) don't see spurious
+      // queue churn.
+      queuedSends: this.state.queuedSends,
       transcript: this._transcript,
       // [D10] Mirror the reducer's `pendingUserMessage` onto the
       // snapshot as `inflightUserMessage`. Pass the reference through

@@ -43,7 +43,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
     expect(snap.canInterrupt).toBe(false);
     expect(snap.pendingApproval).toBeNull();
     expect(snap.pendingQuestion).toBeNull();
-    expect(snap.queuedSends).toBe(0);
+    expect(snap.queuedSends.length).toBe(0);
     expect(snap.transcript.length).toBe(0);
     expect(snap.inflightUserMessage).toBeNull();
     expect(snap.lastCost).toBeNull();

@@ -46,7 +46,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Bot, Command, Maximize2, Minimize2, Settings, Shell, Square } from "lucide-react";
+import { ArrowUp, Bot, Command, Maximize2, Minimize2, Plus, Settings, Shell, Square } from "lucide-react";
 import { EditorView } from "@codemirror/view";
 
 import { cn } from "@/lib/utils";
@@ -404,7 +404,6 @@ export function buildEditingStateFromDraftRestore(
  *                         "errored"]                — from snap.phase (React-rendered)
  * @selector [data-can-interrupt="true" | "false"]  — from snap.canInterrupt (React-rendered)
  * @selector [data-can-submit="true" | "false"]     — from snap.canSubmit (React-rendered)
- * @selector [data-queued]                          — presence when snap.queuedSends > 0
  * @selector [data-errored]                         — presence when snap.lastError !== null
  * @selector [data-pending-approval]                — presence when snap.pendingApproval !== null
  * @selector [data-pending-question]                — presence when snap.pendingQuestion !== null
@@ -819,22 +818,24 @@ export const TugPromptEntry = React.forwardRef<
     if (resolveSubmitButtonView(submitButtonModeRef.current).disabled) {
       return;
     }
-    // [D05] Submit is interrupt: SUBMIT routes to `interrupt()`
-    // during an in-flight turn and to `send()` otherwise.
-    if (snap.canInterrupt) {
-      codeSessionStore.interrupt();
-      return;
-    }
-    // Blocked submit ([D-T3-08]). `canSubmit` is false either because
-    // the card is `replaying` (drop — a deferred send committing
-    // post-replay would surprise the user) or because the transport
-    // is still settling on a fresh / reconnecting card (defer — the
-    // submission is valid, it just landed a beat early). Deferral
-    // arms `pendingSubmitRef`; the flush effect below re-fires
-    // `performSubmit` the instant `canSubmit` flips true, so the
-    // keyboard path never silently no-ops. An empty editor is never
-    // armed — nothing to flush.
-    if (!snap.canSubmit) {
+    // A mid-turn submit queues — the reducer's `handleSend` enqueues
+    // a `send` dispatched while a turn runs ([D-T3-07]). The earlier
+    // "submit is interrupt" branch is retired: the primary Stop button
+    // interrupts through the SUBMIT action handler; editor Return and
+    // the `+` button queue. `performSubmit` is now uniformly "submit
+    // the editor draft" — `codeSessionStore.send()` below, which the
+    // reducer routes to a turn start (idle) or the queue (mid-turn).
+    //
+    // Blocked submit ([D-T3-08]): `canSubmit` AND `canInterrupt` both
+    // false means the card is `replaying` (drop — a deferred send
+    // committing post-replay would surprise the user) or the
+    // transport is still settling on a fresh / reconnecting card
+    // (defer — the submission is valid, it just landed a beat early).
+    // Deferral arms `pendingSubmitRef`; the flush effect below
+    // re-fires `performSubmit` the instant `canSubmit` flips true. A
+    // turn in flight is NOT blocked — it falls through to `send()`
+    // and queues.
+    if (!snap.canSubmit && !snap.canInterrupt) {
       if (
         classifyBlockedSubmit(snap.phase) === "defer" &&
         !isEffectivelyEmpty(view)
@@ -985,7 +986,16 @@ export const TugPromptEntry = React.forwardRef<
         setRouteState(nextRoute);
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
-        performSubmit();
+        // The primary Z5 button dispatches SUBMIT in every mode. When
+        // a turn is running the button is Stop — interrupt it; in any
+        // submit-family mode, run the submit. Editor Return reaches
+        // `performSubmit` directly (never via this action), so an
+        // in-flight Return queues rather than stopping the turn.
+        if (submitButtonModeRef.current.kind === "stop") {
+          codeSessionStore.interrupt();
+        } else {
+          performSubmit();
+        }
       },
       [TUG_ACTIONS.TOGGLE_MAXIMIZE]: (_event: ActionEvent) => {
         // Controlled-component routing per [L11]: the entry doesn't
@@ -1306,7 +1316,6 @@ export const TugPromptEntry = React.forwardRef<
         data-errored={snap.lastError ? "" : undefined}
         data-pending-approval={snap.pendingApproval ? "" : undefined}
         data-pending-question={snap.pendingQuestion ? "" : undefined}
-        data-queued={snap.queuedSends > 0 ? "" : undefined}
         data-empty="true"
         className={cn("tug-prompt-entry", className)}
       >
@@ -1399,13 +1408,28 @@ export const TugPromptEntry = React.forwardRef<
               {footerContent}
             </div>
           )}
-          {snap.queuedSends > 0 && (
-            <span
-              className="tug-prompt-entry-queue-badge"
-              aria-live="polite"
-            >
-              {snap.queuedSends}
-            </span>
+          {/*
+            Z5 `+` queue button — mounted alongside the primary Stop
+            button while a turn runs (mode `stop`). CSS-gated on the
+            entry root's `data-empty` attribute: hidden until the
+            editor holds a draft, so a plain submit → wait → submit
+            flow never surfaces it ([L06] / [L22] — no per-keystroke
+            React state). Click queues the draft — the pointer twin of
+            editor Return — via a direct `onClick` on `performSubmit`,
+            never the SUBMIT action, so it does not route through the
+            Stop branch of the SUBMIT handler.
+          */}
+          {submitView.dataMode === "stop" && (
+            <TugPushButton
+              className="tug-prompt-entry-queue-button"
+              subtype="icon"
+              size="lg"
+              emphasis="filled"
+              role="action"
+              onClick={performSubmit}
+              aria-label="Queue prompt"
+              icon={<Plus size={16} strokeWidth={2.5} />}
+            />
           )}
           {/*
             ONE button node across every mode ([L26]) — only

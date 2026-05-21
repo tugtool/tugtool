@@ -7,8 +7,9 @@
  *    lifecycle states), plus the precedence between overlapping
  *    signals (errored / replaying / interruptInFlight).
  *  - `submitButtonMode` — the matrix's Z5 column for every state, plus
- *    the TRANSPORT_DOWN (`reconnecting`) and QUEUED_NEXT_TURN
- *    (`queued`) overlay effects.
+ *    the TRANSPORT_DOWN (`reconnecting`) overlay effect. QUEUED_NEXT_TURN
+ *    no longer bears on Z5 — a mid-turn submit queues instead of
+ *    changing the primary button.
  *  - `overlays` — `transport_down` / `queued_next`.
  *  - [DT09] — `deriveLifecycleSnapshot` returns the previous reference
  *    when no matrix-relevant signal moved, a fresh one when any did.
@@ -44,7 +45,7 @@ function signals(
     phase: "idle",
     transportState: "online",
     interruptInFlight: false,
-    queuedSends: 0,
+    queuedSends: [],
     transcript: [],
     ...overrides,
   };
@@ -160,7 +161,6 @@ describe("deriveLifecycleSnapshot — submitButtonMode (Z5 column)", () => {
       expect(derive(s).submitButtonMode).toEqual({
         kind: "submit",
         disabled: false,
-        queued: false,
       });
     }
   });
@@ -211,24 +211,30 @@ describe("deriveLifecycleSnapshot — submitButtonMode (Z5 column)", () => {
     }
   });
 
-  it("QUEUED_NEXT_TURN overlay → a queued Submit, not Stop, while a turn runs", () => {
-    // The matrix's QUEUED_NEXT_TURN row shows Z5 as a queued-Submit
-    // ("will send on idle") even though a turn is in flight.
+  it("QUEUED_NEXT_TURN does not change the in-flight Stop button", () => {
+    // A mid-turn submit queues rather than overriding Z5 — the primary
+    // button stays Stop regardless of how many sends are queued.
     expect(
-      derive(signals({ phase: "streaming", queuedSends: 1 })).submitButtonMode,
-    ).toEqual({ kind: "submit", disabled: false, queued: true });
+      derive(signals({ phase: "streaming", queuedSends: [{}] }))
+        .submitButtonMode,
+    ).toEqual({ kind: "stop" });
   });
 
-  it("QUEUED_NEXT_TURN on an idle card flags the Submit as queued", () => {
+  it("QUEUED_NEXT_TURN does not change the idle Submit button", () => {
     expect(
-      derive(signals({ phase: "idle", queuedSends: 2 })).submitButtonMode,
-    ).toEqual({ kind: "submit", disabled: false, queued: true });
+      derive(signals({ phase: "idle", queuedSends: [{}, {}] }))
+        .submitButtonMode,
+    ).toEqual({ kind: "submit", disabled: false });
   });
 
   it("TRANSPORT_DOWN outranks QUEUED_NEXT_TURN", () => {
     expect(
       derive(
-        signals({ phase: "streaming", queuedSends: 1, transportState: "offline" }),
+        signals({
+          phase: "streaming",
+          queuedSends: [{}],
+          transportState: "offline",
+        }),
       ).submitButtonMode,
     ).toEqual({ kind: "reconnecting" });
   });
@@ -250,18 +256,18 @@ describe("deriveLifecycleSnapshot — overlays", () => {
     }
   });
 
-  it("queued_next when queuedSends > 0", () => {
-    expect(derive(signals({ queuedSends: 1 })).overlays.has("queued_next")).toBe(
-      true,
-    );
-    expect(derive(signals({ queuedSends: 0 })).overlays.has("queued_next")).toBe(
-      false,
-    );
+  it("queued_next when the queue is non-empty", () => {
+    expect(
+      derive(signals({ queuedSends: [{}] })).overlays.has("queued_next"),
+    ).toBe(true);
+    expect(
+      derive(signals({ queuedSends: [] })).overlays.has("queued_next"),
+    ).toBe(false);
   });
 
   it("both overlays coexist", () => {
     const { overlays } = derive(
-      signals({ transportState: "offline", queuedSends: 1 }),
+      signals({ transportState: "offline", queuedSends: [{}] }),
     );
     expect([...overlays].sort()).toEqual(["queued_next", "transport_down"]);
   });
@@ -291,7 +297,7 @@ describe("deriveLifecycleSnapshot — [DT09] reference stability", () => {
   it("a new overlay breaks reference stability", () => {
     const first = derive(signals({ phase: "streaming" }));
     const afterQueue = derive(
-      signals({ phase: "streaming", queuedSends: 1 }),
+      signals({ phase: "streaming", queuedSends: [{}] }),
       first,
     );
     expect(afterQueue).not.toBe(first);
@@ -332,18 +338,18 @@ describe("lifecycleSnapshotsEqual", () => {
     expect(
       lifecycleSnapshotsEqual(
         derive(signals({ phase: "streaming" })),
-        derive(signals({ phase: "streaming", queuedSends: 1 })),
+        derive(signals({ phase: "streaming", queuedSends: [{}] })),
       ),
     ).toBe(false);
   });
 
-  it("unequal on a different submitButtonMode queued flag", () => {
-    // Same `idle` state, but queued vs not — the submit modes differ.
-    expect(
-      lifecycleSnapshotsEqual(
-        derive(signals({ phase: "idle" })),
-        derive(signals({ phase: "idle", queuedSends: 1 })),
-      ),
-    ).toBe(false);
+  it("equal submitButtonMode across queue depth, but unequal snapshots", () => {
+    // A queued send no longer changes Z5 — idle with and without a
+    // queue resolves to the same `submitButtonMode`. The snapshots
+    // still differ, on the `queued_next` overlay.
+    const plain = derive(signals({ phase: "idle" }));
+    const queued = derive(signals({ phase: "idle", queuedSends: [{}] }));
+    expect(queued.submitButtonMode).toEqual(plain.submitButtonMode);
+    expect(lifecycleSnapshotsEqual(plain, queued)).toBe(false);
   });
 });

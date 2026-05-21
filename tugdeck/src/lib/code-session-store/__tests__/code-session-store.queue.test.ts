@@ -94,7 +94,7 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
     store.send("a", []);
     store.send("b", []);
     store.send("c", []);
-    expect(store.getSnapshot().queuedSends).toBe(3);
+    expect(store.getSnapshot().queuedSends.length).toBe(3);
     expect(userMessageFrames(conn).map((f) => f.text)).toEqual(["first"]);
 
     // Subscribe *after* the send + driveToStreaming so we count only
@@ -110,7 +110,7 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
 
     let snap = store.getSnapshot();
     expect(snap.phase).toBe("submitting");
-    expect(snap.queuedSends).toBe(2);
+    expect(snap.queuedSends.length).toBe(2);
     expect(snap.transcript.length).toBe(1);
     expect(userMessageFrames(conn).map((f) => f.text)).toEqual([
       "first",
@@ -124,7 +124,7 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
 
     snap = store.getSnapshot();
     expect(snap.phase).toBe("submitting");
-    expect(snap.queuedSends).toBe(1);
+    expect(snap.queuedSends.length).toBe(1);
     expect(snap.transcript.length).toBe(2);
     expect(userMessageFrames(conn).map((f) => f.text)).toEqual([
       "first",
@@ -138,7 +138,7 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
 
     snap = store.getSnapshot();
     expect(snap.phase).toBe("submitting");
-    expect(snap.queuedSends).toBe(0);
+    expect(snap.queuedSends.length).toBe(0);
     expect(snap.transcript.length).toBe(3);
     expect(userMessageFrames(conn).map((f) => f.text)).toEqual([
       "first",
@@ -153,7 +153,7 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
 
     snap = store.getSnapshot();
     expect(snap.phase).toBe("idle");
-    expect(snap.queuedSends).toBe(0);
+    expect(snap.queuedSends.length).toBe(0);
     expect(snap.transcript.length).toBe(4);
   });
 
@@ -166,7 +166,7 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
 
     store.send("a", []);
     store.send("b", []);
-    expect(store.getSnapshot().queuedSends).toBe(2);
+    expect(store.getSnapshot().queuedSends.length).toBe(2);
 
     conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
       type: "turn_complete",
@@ -177,9 +177,40 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
 
     const snap = store.getSnapshot();
     expect(snap.phase).toBe("idle");
-    expect(snap.queuedSends).toBe(0);
+    expect(snap.queuedSends.length).toBe(0);
     expect(snap.transcript[0].result).toBe("interrupted");
     // No flushed user_message frame was written — only "first".
     expect(userMessageFrames(conn).map((f) => f.text)).toEqual(["first"]);
+  });
+
+  it("surfaces the queued-send payloads on the snapshot, in submit order", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("first", []);
+    driveToStreaming(conn, store, FIXTURE_IDS.MSG_ID_N(1));
+
+    // Queue three mid-stream sends. The snapshot exposes the full
+    // payloads — text, atoms, turnKey — not just a count, so the
+    // transcript can paint a ghost row per send.
+    store.send("alpha", []);
+    store.send("bravo", []);
+    store.send("charlie", []);
+
+    const queued = store.getSnapshot().queuedSends;
+    expect(queued.map((q) => q.text)).toEqual(["alpha", "bravo", "charlie"]);
+    // Each entry carries the turnKey minted at its queueing `send`;
+    // the three are distinct.
+    expect(new Set(queued.map((q) => q.turnKey)).size).toBe(3);
+    expect(
+      queued.every((q) => typeof q.turnKey === "string" && q.turnKey.length > 0),
+    ).toBe(true);
+
+    // The flushed head leaves the array; the tail keeps its order.
+    dispatchTurnCompleteSuccess(conn, FIXTURE_IDS.MSG_ID_N(1));
+    expect(store.getSnapshot().queuedSends.map((q) => q.text)).toEqual([
+      "bravo",
+      "charlie",
+    ]);
   });
 });

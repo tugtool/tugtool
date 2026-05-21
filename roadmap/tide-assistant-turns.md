@@ -4710,7 +4710,7 @@ This **begins with an audit.** The shipped Z2 status row (`tide-card-telemetry-r
 
 **Depends on:** #step-20-5-d-4 (the "Cancellation behavior spec" — the contract), #step-20-5-d-3 (the Z5 submit button this extends), #step-20-5-d-1 (`deriveSubmitButtonMode` / the lifecycle snapshot)
 
-**Status:** _not started. The queue half of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec — everything that makes a mid-turn submit queue and become visible, short of cancelling it ([Step 20.5.D.5.B](#step-20-5-d-5-b))._
+**Status:** _complete. The queue half of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec is wired live. **Snapshot** — `CodeSessionSnapshot.queuedSends` changed from a `number` to `ReadonlyArray<QueuedSend>` (the new `QueuedSend` type — `{text, atoms, turnKey}`); the reducer already retained the payload array, the snapshot now projects it whole rather than just `.length`. **`deriveSubmitButtonMode`** — an in-flight turn is `{kind:"stop"}` unconditionally; the `queued_next` branch and the `TideSubmitButtonMode["submit"]` `queued` field are retired (`queued_next` stays a `TideLifecycleOverlay` — it drives the ghost rows). **`performSubmit`** — the pre-cancellation "submit is interrupt" branch is gone: a mid-turn submit falls through to `codeSessionStore.send()`, which the reducer routes to the queue; the primary Stop button interrupts through the SUBMIT action handler (it branches on the button mode), so editor Return and the `+` button queue while the Stop button still stops. **The `+` queue button** — a new control mounted alongside the primary button whenever its mode is `stop`, CSS-gated on the entry root's `data-empty` so it reveals only once the user types mid-turn (no per-keystroke React state). **Ghost rows** — the transcript data source grew a `"ghost"` kind: one de-emphasized user row per queued send at the transcript foot, in submit order (render-only — the ✕ un-send is [Step 20.5.D.5.B](#step-20-5-d-5-b)). The pre-cancellation `tug-prompt-entry-queue-badge` count pill — superseded by the ghost rows + the vetted `[+] [■]` Z5 group — was removed. `tsc` clean; `bun test` green (2350 pass); `audit:tokens lint` 0 violations._
 
 **Commit:** `feat(tide-rendering): mid-turn submit queues + ghost rows`
 
@@ -4732,31 +4732,31 @@ Per D.4's investigation findings the reducer machinery is built but UI-dead: the
 
 **Artifacts.**
 
-- `reducer.ts` / `types.ts` — the `queuedSends` payloads exposed on `CodeSessionSnapshot`.
+- `types.ts` / `code-session-store.ts` — the new `QueuedSend` type; `CodeSessionSnapshot.queuedSends` carries the payload array (the reducer already retained it — no reducer change).
 - `lifecycle-state.ts` — the `deriveSubmitButtonMode` revision; the `TideSubmitButtonMode` `queued` field retired.
-- `tug-prompt-entry.tsx` / `.css` — `performSubmit` queues mid-turn; the `+` queue button mounted + CSS-gated.
-- the transcript host (`tide-card-transcript.tsx`) + a ghost-row component — queued sends rendered as ghosted user rows.
-- `lifecycle-state.test.ts`, `tug-prompt-entry-submit-button.test.ts` — updated for the revision.
+- `tug-prompt-entry.tsx` / `.css` / `tug-prompt-entry-submit-button.ts` — `performSubmit` queues mid-turn; the `+` queue button mounted + CSS-gated; the superseded queue badge removed.
+- `tide-transcript-data-source.ts` (the `"ghost"` cell kind) + `tide-card-transcript.tsx` (`GhostRowCell`) + `tide-card.css` — queued sends rendered as ghosted user rows.
+- `lifecycle-state.test.ts`, `tug-prompt-entry-submit-button.test.ts`, `code-session-store.queue.test.ts` — updated for the revision + the queued-payload projection test.
 
 **Tasks.**
 
-- [ ] Expose the `queuedSends` payloads on the snapshot (the reducer already retains the `{text, atoms, turnKey}` array).
-- [ ] `deriveSubmitButtonMode` revision — in-flight → `stop` unconditional; retire the `queued_next` branch + the `submit.queued` field; update the pure-logic tests.
-- [ ] `performSubmit` — a mid-turn submit calls `send()` (queue), not `interrupt()`.
-- [ ] The `+` queue button — mounted alongside the primary Z5 button when its mode is `stop`; CSS-gated visible on `data-empty="false"`.
-- [ ] Transcript ghost rows — one ghosted user row per queued send, in submit order (render only; the ✕ is D.5.B).
+- [x] Expose the `queuedSends` payloads on the snapshot (the reducer already retains the `{text, atoms, turnKey}` array). _Done — `CodeSessionSnapshot.queuedSends` is now `ReadonlyArray<QueuedSend>`; the store passes the reducer array through `Object.is`-stably._
+- [x] `deriveSubmitButtonMode` revision — in-flight → `stop` unconditional; retire the `queued_next` branch + the `submit.queued` field; update the pure-logic tests. _Done — `lifecycle-state.test.ts` + `tug-prompt-entry-submit-button.test.ts` revised._
+- [x] `performSubmit` — a mid-turn submit calls `send()` (queue), not `interrupt()`. _Done — the Stop button interrupts via the SUBMIT action handler instead._
+- [x] The `+` queue button — mounted alongside the primary Z5 button when its mode is `stop`; CSS-gated visible on `data-empty="false"`. _Done; the superseded `tug-prompt-entry-queue-badge` removed._
+- [x] Transcript ghost rows — one ghosted user row per queued send, in submit order (render only; the ✕ is [Step 20.5.D.5.B](#step-20-5-d-5-b)). _Done — a `"ghost"` cell kind + `GhostRowCell`._
 
 **Tests.**
 
-- [ ] Pure-logic — `deriveSubmitButtonMode`: in-flight is `stop` regardless of `queuedSends`; the retired `queued` field is gone.
-- [ ] Pure-logic — the queued-payload snapshot projection: `queuedSends` payloads surface with text in submit order.
+- [x] Pure-logic — `deriveSubmitButtonMode`: in-flight is `stop` regardless of `queuedSends`; the retired `queued` field is gone. _`lifecycle-state.test.ts`._
+- [x] Pure-logic — the queued-payload snapshot projection: `queuedSends` payloads surface with text in submit order. _`code-session-store.queue.test.ts` — a real-store test driving three mid-turn sends, asserting the payload text + order + distinct turnKeys + head-drain on flush._
 - [ ] The rendered ghost rows / `+` reveal are asserted by the [Step 20.5.D.5.C](#step-20-5-d-5-c) end-to-end matrix test; the HMR vet below is the human confirm.
 
 **Checkpoint.**
 
-- [ ] `bunx tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
+- [x] `bunx tsc --noEmit` clean.
+- [x] `bun test` green. _2350 pass, 0 fail._
+- [x] `bun run audit:tokens lint` exits 0.
 - [ ] **HMR vet (manual, user-gated)** — submit mid-turn; confirm the ghost row + the `[+] [■]` group; confirm the `+` is hidden until mid-turn typing; confirm `turn_complete` flushes the head.
 
 ---

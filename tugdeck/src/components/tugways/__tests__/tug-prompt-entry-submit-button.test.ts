@@ -27,7 +27,6 @@ describe("resolveSubmitButtonView — Z5 mode → view", () => {
     const mode: TideSubmitButtonMode = {
       kind: "submit",
       disabled: false,
-      queued: false,
     };
     expect(resolveSubmitButtonView(mode)).toEqual({
       dataMode: "submit",
@@ -36,24 +35,6 @@ describe("resolveSubmitButtonView — Z5 mode → view", () => {
       icon: "submit",
       danger: false,
     });
-  });
-
-  it("submit — the `queued` flag is wired through but does not change the view", () => {
-    // A queued Submit renders as an ordinary Submit; the distinct
-    // "will send on idle" visual is a deferred design.
-    const queued: TideSubmitButtonMode = {
-      kind: "submit",
-      disabled: false,
-      queued: true,
-    };
-    const plain: TideSubmitButtonMode = {
-      kind: "submit",
-      disabled: false,
-      queued: false,
-    };
-    expect(resolveSubmitButtonView(queued)).toEqual(
-      resolveSubmitButtonView(plain),
-    );
   });
 
   it("stop — enabled, danger role, stop glyph", () => {
@@ -111,7 +92,7 @@ describe("resolveSubmitButtonView — Z5 mode → view", () => {
     // submit / stop fire, the rest do not.
     const fires = (m: TideSubmitButtonMode): boolean =>
       !resolveSubmitButtonView(m).disabled;
-    expect(fires({ kind: "submit", disabled: false, queued: false })).toBe(true);
+    expect(fires({ kind: "submit", disabled: false })).toBe(true);
     expect(fires({ kind: "stop" })).toBe(true);
     expect(fires({ kind: "awaiting_user" })).toBe(false);
     expect(fires({ kind: "stopping" })).toBe(false);

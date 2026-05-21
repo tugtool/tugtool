@@ -463,6 +463,43 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
 };
 
 // ---------------------------------------------------------------------------
+// `GhostRowCell` — a queued send awaiting dispatch.
+//
+// One ghost row per `queuedSends` entry, painted de-emphasized at the
+// transcript foot so a mid-turn submit reads as "queued, not yet
+// sent." Render-only: no copy menu, and no per-row cancel affordance
+// yet — the ✕ un-send is a follow-on. When the queued send flushes,
+// the reducer promotes it to the in-flight pair and this ghost row
+// unmounts — see {@link TideTranscriptCellKind} for the key/kind
+// transition.
+// ---------------------------------------------------------------------------
+
+const GhostRowCell: React.FC<
+  TugListViewCellProps<TideTranscriptDataSource>
+> = ({ index, dataSource }) => {
+  const row = dataSource.rowAt(index);
+  const queued = row.queued;
+  // The adapter only emits a `ghost` kind alongside a `queued`
+  // payload; this guard is defensive against an out-of-range read.
+  if (queued === undefined) return null;
+  const text = stripUserBodyPrefix(queued.text);
+  return (
+    <div
+      className="tide-card-transcript-ghost-row"
+      data-slot="tide-transcript-ghost-row"
+    >
+      <TugTranscriptEntry
+        participant="user"
+        identifier={USER_IDENTIFIER}
+        body={
+          <span className="tide-card-transcript-user-body">{text}</span>
+        }
+      />
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // `CodeRowCell` — single renderer for the assistant row.
 //
 // Handles both the in-flight phase (data flowing from the live
@@ -938,20 +975,30 @@ export const TideTranscriptHost = forwardRef<
     (p) => <UserRowCell {...p} renderTurnTrailing={renderTurnTrailing} />,
     [renderTurnTrailing],
   );
+  // `GhostRowCell` takes no card-scoped props, so the renderer has an
+  // empty dep list — a permanently stable reference, the same [L26]
+  // discipline the `user` / `code` renderers follow.
+  const ghostRenderer = useCallback<
+    TugListViewCellRenderer<TideTranscriptDataSource>
+  >(
+    (p) => <GhostRowCell {...p} />,
+    [],
+  );
   const cellRenderers = useMemo<
     Record<string, TugListViewCellRenderer<TideTranscriptDataSource>>
   >(
     () => ({
       "user": userRenderer,
       "code": codeRenderer,
+      "ghost": ghostRenderer,
     }),
-    [userRenderer, codeRenderer],
+    [userRenderer, codeRenderer, ghostRenderer],
   );
 
   const delegate = useMemo<TugListViewDelegate>(
     () => ({
       estimatedHeightForKind: (kind: string) =>
-        kind === "user" ? ESTIMATED_HEIGHT_USER : ESTIMATED_HEIGHT_CODE,
+        kind === "code" ? ESTIMATED_HEIGHT_CODE : ESTIMATED_HEIGHT_USER,
     }),
     [],
   );

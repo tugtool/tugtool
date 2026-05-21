@@ -4,10 +4,14 @@
  * adjacent rows (`user`, `code`); the in-flight turn — if present —
  * appends another two rows (also `user`, `code`) at the end.
  *
- * Index layout (with `n = transcript.length`, `f = inflightUserMessage`):
+ * Index layout (with `n = transcript.length`, `f = inflightUserMessage`,
+ * `q = queuedSends.length`):
  *
- *   indices 0..2n-1   committed turns, alternating user / code.
- *   indices 2n..2n+1  in-flight pair (only when f !== null).
+ *   indices 0..2n-1     committed turns, alternating user / code.
+ *   indices 2n..2n+1    in-flight pair (only when f !== null).
+ *   the trailing q rows ghost rows — one per queued send, in submit
+ *                       order — when q > 0 (the QUEUED_NEXT_TURN
+ *                       overlay; see {@link TideTranscriptCellKind}).
  *
  * **Single `"code"` kind, zero remounts per turn.** Earlier revisions
  * split the assistant row into `"code-streaming"` and `"code-committed"`
@@ -77,6 +81,7 @@ import { useEffect, useMemo } from "react";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type {
   CodeSessionSnapshot,
+  QueuedSend,
   TurnEntry,
 } from "@/lib/code-session-store";
 import { deriveContextWindows } from "@/lib/code-session-store/end-state";
@@ -109,8 +114,16 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
  * branches on row payload presence (`row.turn !== undefined` ⇒
  * committed) for the small chrome differences that genuinely vary
  * by phase.
+ *
+ * `"ghost"` is a third kind, and — unlike a `code-*` split — a sound
+ * one: a ghost row is a *standalone* row (one queued send, no turn
+ * pair), a genuinely distinct identity, not one row's life split in
+ * two. It never morphs in place into a `user` / `code` row: when a
+ * queued send flushes, its ghost row (keyed `${turnKey}-ghost`)
+ * unmounts and the in-flight pair (keyed `${turnKey}-user` / `-code`)
+ * mounts — a real queued -> sent transition, correctly a remount.
  */
-export type TideTranscriptCellKind = "user" | "code";
+export type TideTranscriptCellKind = "user" | "code" | "ghost";
 
 /**
  * Typed row descriptor returned by `rowAt(index)`. Cell renderers
@@ -136,6 +149,8 @@ export interface TideRowDescriptor {
   perTurnTokens?: number;
   /** Set for the in-flight `user` row only. */
   inflight?: CodeSessionSnapshot["inflightUserMessage"];
+  /** Set for a `ghost` row only — the queued send it paints. */
+  queued?: QueuedSend;
   /**
    * Stable per-turn React-key seed. Present on every `code-*` row
    * (both inflight and committed). The unified `CodeRowCell`
@@ -225,13 +240,18 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
   }
 
   /**
-   * `transcript.length * 2 + (inflightUserMessage ? 2 : 0)`. The in-flight
-   * pair (when present) occupies the last two indices; committed turns
-   * occupy indices 0..2n-1 in transcript order.
+   * `transcript.length * 2 + (inflightUserMessage ? 2 : 0) +
+   * queuedSends.length`. Committed turns occupy indices 0..2n-1 in
+   * transcript order; the in-flight pair (when present) the next two;
+   * one ghost row per queued send the trailing `q`.
    */
   numberOfItems(): number {
     const snap = this._codeSessionStore.getSnapshot();
-    return snap.transcript.length * 2 + (snap.inflightUserMessage !== null ? 2 : 0);
+    return (
+      snap.transcript.length * 2 +
+      (snap.inflightUserMessage !== null ? 2 : 0) +
+      snap.queuedSends.length
+    );
   }
 
   /**
@@ -260,6 +280,16 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
     const snap = this._codeSessionStore.getSnapshot();
     const committedCount = snap.transcript.length;
     const inflight = snap.inflightUserMessage;
+    const ghostBase = committedCount * 2 + (inflight !== null ? 2 : 0);
+
+    // Ghost rows — keyed `${turnKey}-ghost`, distinct from the
+    // `${turnKey}-user` / `-code` keys the same `turnKey` takes once
+    // the send flushes, so the queued → sent transition is a clean
+    // unmount + mount (a real transition, not the seamless
+    // inflight → committed one).
+    if (index >= ghostBase) {
+      return `${snap.queuedSends[index - ghostBase].turnKey}-ghost`;
+    }
 
     // Use the per-turn React-key seed (`turnKey`) for both the
     // in-flight and committed pair. `turnKey` is generated at
@@ -289,6 +319,13 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
    * {@link TideTranscriptCellKind}.
    */
   kindForIndex(index: number): TideTranscriptCellKind {
+    const snap = this._codeSessionStore.getSnapshot();
+    const ghostBase =
+      snap.transcript.length * 2 +
+      (snap.inflightUserMessage !== null ? 2 : 0);
+    // Trailing rows past the committed turns + in-flight pair are
+    // queued-send ghost rows.
+    if (index >= ghostBase) return "ghost";
     // Single `"code"` kind for the assistant row, regardless of
     // streaming/committed state — see {@link TideTranscriptCellKind}
     // for the rationale (the unified kind eliminates the lambda-
@@ -308,6 +345,15 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
     const snap = this._codeSessionStore.getSnapshot();
     const committedCount = snap.transcript.length;
     const inflight = snap.inflightUserMessage;
+    const ghostBase = committedCount * 2 + (inflight !== null ? 2 : 0);
+
+    // Ghost row — one queued send, painted de-emphasized at the
+    // transcript foot. No `turn` (never committed) and no `inflight`
+    // (not the running turn); the `queued` payload carries its text.
+    if (index >= ghostBase) {
+      const queued = snap.queuedSends[index - ghostBase];
+      return { kind: "ghost", queued, turnKey: queued.turnKey };
+    }
 
     if (inflight !== null && index >= committedCount * 2) {
       if (index === committedCount * 2) {

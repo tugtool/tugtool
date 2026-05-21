@@ -18,7 +18,6 @@
    ========================================================================= */
 
 /* @tug-pairings {
- *   --tug7-element-badge-text-tinted-action-rest     | --tug7-surface-badge-primary-tinted-action-rest    | content
  *   --tug7-element-field-border-normal-danger-rest   | --tug7-surface-global-primary-normal-control-rest | informational
  *   --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-control-rest | content
  * } */
@@ -27,7 +26,6 @@
  * @tug-pairings
  * | Element                                             | Surface                                              | Role          | Context                                                            |
  * |-----------------------------------------------------|------------------------------------------------------|---------------|--------------------------------------------------------------------|
- * | --tug7-element-badge-text-tinted-action-rest        | --tug7-surface-badge-primary-tinted-action-rest      | content       | .tug-prompt-entry-queue-badge (color + background)                 |
  * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring           |
  * | --tug7-element-global-text-normal-muted-rest        | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-status-content (color) — status row text         |
  */
@@ -187,26 +185,20 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
-   .tug-prompt-entry-queue-badge — compact pill beside the submit button
+   .tug-prompt-entry-queue-button — the `+` mid-turn queue control
    ----------------------------------------------------------------------------
-   Rendered conditionally by the component when `snap.queuedSends > 0`. The
-   badge shares tinted-action role tokens with other submit-surface badges
-   so queued-work signals read the same across the UI.
+   Mounted alongside the primary Stop button whenever a turn is in
+   flight (Z5 mode `stop`). Progressive disclosure: it is visible only
+   once the editor holds a draft — the `data-empty` attribute on the
+   entry root (maintained by a substrate update listener, the same
+   signal the submit button's empty-gate reads) hides it via CSS, so
+   the reveal costs no per-keystroke React state ([L06] / [L22]). The
+   TugPushButton primitive owns the button's own visual; this rule is
+   only the disclosure gate.
    ----------------------------------------------------------------------------- */
 
-.tug-prompt-entry-queue-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  border-radius: 9px;
-  background-color: var(--tug7-surface-badge-primary-tinted-action-rest);
-  color: var(--tug7-element-badge-text-tinted-action-rest);
+.tug-prompt-entry[data-empty="true"] .tug-prompt-entry-queue-button {
+  display: none;
 }
 
 /* ----------------------------------------------------------------------------

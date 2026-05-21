@@ -186,12 +186,12 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
     store.send("a", []);
     store.send("b", []);
     store.send("c", []);
-    expect(store.getSnapshot().queuedSends).toBe(3);
+    expect(store.getSnapshot().queuedSends.length).toBe(3);
     // Only the original user_message has been written so far.
     expect(conn.recordedFramesExcludingStateChange.length).toBe(1);
 
     store.interrupt();
-    expect(store.getSnapshot().queuedSends).toBe(0);
+    expect(store.getSnapshot().queuedSends.length).toBe(0);
 
     // Outbound so far: user_message "first", interrupt.
     expect(conn.recordedFramesExcludingStateChange.length).toBe(2);
@@ -216,7 +216,7 @@ describe("CodeSessionStore — synthetic queue clear on interrupt (Step 7)", () 
 
     const snap = store.getSnapshot();
     expect(snap.phase).toBe("idle");
-    expect(snap.queuedSends).toBe(0);
+    expect(snap.queuedSends.length).toBe(0);
     expect(snap.transcript.length).toBe(1);
     expect(snap.transcript[0].result).toBe("interrupted");
 
@@ -366,7 +366,7 @@ describe("CodeSessionStore — CASE A interrupt (submitting → no transcript en
     expect(mid.pendingDraftRestore?.atoms).toEqual([]);
     // In-flight pair stops rendering immediately.
     expect(mid.inflightUserMessage).toBeNull();
-    expect(mid.queuedSends).toBe(0);
+    expect(mid.queuedSends.length).toBe(0);
     // Phase returns to idle so the user can resubmit without waiting
     // for the wire round-trip.
     expect(mid.phase).toBe("idle");
@@ -581,12 +581,12 @@ describe("CodeSessionStore — CASE A interrupt (submitting → no transcript en
     // The reducer's `handleSend` falls through to the queued path for
     // any non-{idle,errored,replaying} phase including submitting.
     store.send("queued follow-up", []);
-    expect(store.getSnapshot().queuedSends).toBe(1);
+    expect(store.getSnapshot().queuedSends.length).toBe(1);
 
     store.interrupt();
     const snap = store.getSnapshot();
     expect(snap.phase).toBe("idle");
-    expect(snap.queuedSends).toBe(0);
+    expect(snap.queuedSends.length).toBe(0);
     expect(snap.pendingDraftRestore?.text).toBe("first draft");
   });
 

@@ -59,12 +59,15 @@ export type TideLifecycleOverlay = "transport_down" | "queued_next";
  * The Z5 submit-button mode — the matrix's Z5 column. The `submit`
  * kind carries `disabled` (the lifecycle never sets it `true`; the
  * Z5 consumer ANDs in editor-draft emptiness — see
- * {@link deriveSubmitButtonMode}) and `queued` (the QUEUED_NEXT_TURN
- * "will send on idle" visual). The remaining kinds are all disabled
- * buttons: `awaiting_user` / `stopping` / `reconnecting` / `restoring`.
+ * {@link deriveSubmitButtonMode}). A turn in flight is always `stop`:
+ * a mid-turn submit queues rather than overriding the primary button,
+ * so QUEUED_NEXT_TURN no longer bears on this mode (the `+` queue
+ * button is a separate control, and the queue surfaces as transcript
+ * ghost rows). The remaining kinds are all disabled buttons:
+ * `awaiting_user` / `stopping` / `reconnecting` / `restoring`.
  */
 export type TideSubmitButtonMode =
-  | { kind: "submit"; disabled: boolean; queued: boolean }
+  | { kind: "submit"; disabled: boolean }
   | { kind: "stop" }
   | { kind: "awaiting_user" }
   | { kind: "stopping" }
@@ -89,7 +92,11 @@ export interface LifecycleStoreSignals {
   phase: CodeSessionPhase;
   transportState: TransportState;
   interruptInFlight: boolean;
-  queuedSends: number;
+  /**
+   * Only `.length` is read — a non-empty queue raises the
+   * QUEUED_NEXT_TURN overlay.
+   */
+  queuedSends: ReadonlyArray<unknown>;
   /**
    * Only `.length` is read — it splits the `idle` phase into COMPLETE
    * (a turn has committed) vs a never-used IDLE.
@@ -143,7 +150,7 @@ function deriveOverlays(
   // TRANSPORT_DOWN covers both `offline` (no wire) and `restoring`
   // (wire back, binding not re-ack'd) — anything but `online`.
   if (s.transportState !== "online") overlays.add("transport_down");
-  if (s.queuedSends > 0) overlays.add("queued_next");
+  if (s.queuedSends.length > 0) overlays.add("queued_next");
   return overlays;
 }
 
@@ -167,12 +174,12 @@ function deriveSubmitButtonMode(
     case "awaiting_first_token":
     case "streaming":
     case "tool_work":
-      // A turn is in flight → Stop, UNLESS the user has queued a next
-      // send: the matrix's QUEUED_NEXT_TURN row shows Z5 as a
-      // queued-Submit ("will send on idle"), not Stop.
-      return overlays.has("queued_next")
-        ? { kind: "submit", disabled: false, queued: true }
-        : { kind: "stop" };
+      // A turn is in flight → Stop, unconditionally. A mid-turn submit
+      // queues (the reducer's `queuedSends` FIFO) rather than changing
+      // the primary button; the queue is reached through the separate
+      // `+` button and surfaces as transcript ghost rows. The
+      // QUEUED_NEXT_TURN overlay therefore does not bear on Z5.
+      return { kind: "stop" };
     case "idle":
     case "complete":
     case "errored":
@@ -180,11 +187,7 @@ function deriveSubmitButtonMode(
       // matrix's "disabled if prompt empty" (IDLE) is editor-draft
       // emptiness — not a lifecycle signal — which the Z5
       // submit-button consumer ANDs in locally.
-      return {
-        kind: "submit",
-        disabled: false,
-        queued: overlays.has("queued_next"),
-      };
+      return { kind: "submit", disabled: false };
     default: {
       const exhaustive: never = state;
       return exhaustive;
@@ -213,7 +216,7 @@ function submitButtonModesEqual(
 ): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "submit" && b.kind === "submit") {
-    return a.disabled === b.disabled && a.queued === b.queued;
+    return a.disabled === b.disabled;
   }
   // Every other kind is a nullary tag — same `kind` is full equality.
   return true;
