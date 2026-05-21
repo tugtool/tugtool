@@ -12,6 +12,11 @@
 resolver = "2"
 members = ["tugmark-wasm", "tugdiff-wasm"]
 
+[workspace.package]
+description = "Tug: An IDE for AI coding"
+repository = "https://github.com/tugtool/tugtool"
+license = "MIT"
+
 [profile.release]
 opt-level = 3
 lto = true
