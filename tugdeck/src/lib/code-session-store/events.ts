@@ -212,6 +212,21 @@ export interface ConsumeDraftRestoreActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.cancelQueuedSend`. Not
+ * a wire event. Removes one entry from `queuedSends` by `turnKey` — a
+ * true un-send of a mid-turn submission that was queued but never
+ * dispatched (no wire traffic, no server turn). The reducer routes the
+ * removed entry's `text` + `atoms` through `pendingDraftRestore` so the
+ * prompt-entry can offer the prompt back (seeded iff the editor is
+ * empty — a cancel never clobbers in-progress content). A no-op if the
+ * `turnKey` is no longer queued (it flushed first — a race).
+ */
+export interface CancelQueuedSendActionEvent {
+  type: "cancel_queued_send";
+  turnKey: string;
+}
+
+/**
  * `context_breakdown` — `/context`-style per-category token breakdown
  * emitted by tugcode at session_init, after each `cost_update`, and
  * after `compact_boundary`. Also emitted by the tugcast supervisor
@@ -528,6 +543,7 @@ export type CodeSessionEvent =
   | RespondQuestionActionEvent
   | InterruptActionEvent
   | ConsumeDraftRestoreActionEvent
+  | CancelQueuedSendActionEvent
   | CostUpdateEvent
   | StreamingUsageEvent
   | ContextBreakdownEvent

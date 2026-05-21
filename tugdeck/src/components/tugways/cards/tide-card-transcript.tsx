@@ -76,6 +76,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
+import { X } from "lucide-react";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { HighlightSelectionAdapter, type TextSelectionAdapter } from "@/components/tugways/text-selection-adapter";
 import {
@@ -93,6 +94,7 @@ import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markd
 import { TideJumpToBottomButton } from "@/components/tugways/cards/tide-jump-to-bottom-button";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
@@ -467,22 +469,30 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
 //
 // One ghost row per `queuedSends` entry, painted de-emphasized at the
 // transcript foot so a mid-turn submit reads as "queued, not yet
-// sent." Render-only: no copy menu, and no per-row cancel affordance
-// yet — the ✕ un-send is a follow-on. When the queued send flushes,
-// the reducer promotes it to the in-flight pair and this ghost row
-// unmounts — see {@link TideTranscriptCellKind} for the key/kind
-// transition.
+// sent." It carries a ✕ that un-sends that one queued message — a
+// targeted cancel, distinct from the Stop / Esc peel-newest gesture.
+// When the queued send flushes, the reducer promotes it to the
+// in-flight pair and this ghost row unmounts — see
+// {@link TideTranscriptCellKind} for the key/kind transition.
 // ---------------------------------------------------------------------------
 
-const GhostRowCell: React.FC<
-  TugListViewCellProps<TideTranscriptDataSource>
-> = ({ index, dataSource }) => {
+interface GhostRowCellProps
+  extends TugListViewCellProps<TideTranscriptDataSource> {
+  codeSessionStore: CodeSessionStore;
+}
+
+const GhostRowCell: React.FC<GhostRowCellProps> = ({
+  index,
+  dataSource,
+  codeSessionStore,
+}) => {
   const row = dataSource.rowAt(index);
   const queued = row.queued;
   // The adapter only emits a `ghost` kind alongside a `queued`
   // payload; this guard is defensive against an out-of-range read.
   if (queued === undefined) return null;
   const text = stripUserBodyPrefix(queued.text);
+  const turnKey = queued.turnKey;
   return (
     <div
       className="tide-card-transcript-ghost-row"
@@ -493,6 +503,19 @@ const GhostRowCell: React.FC<
         identifier={USER_IDENTIFIER}
         body={
           <span className="tide-card-transcript-user-body">{text}</span>
+        }
+        controls={
+          // `TugIconButton` is focus-refusing — un-sending a queued
+          // message must not steal focus from an editor the user may
+          // be composing in. `cancelQueuedSend` removes this one entry
+          // and routes its text back through `pendingDraftRestore`.
+          <TugIconButton
+            icon={<X size={14} strokeWidth={2.5} />}
+            aria-label="Cancel queued message"
+            tone="danger"
+            size="sm"
+            onClick={() => codeSessionStore.cancelQueuedSend(turnKey)}
+          />
         }
       />
     </div>
@@ -975,14 +998,15 @@ export const TideTranscriptHost = forwardRef<
     (p) => <UserRowCell {...p} renderTurnTrailing={renderTurnTrailing} />,
     [renderTurnTrailing],
   );
-  // `GhostRowCell` takes no card-scoped props, so the renderer has an
-  // empty dep list — a permanently stable reference, the same [L26]
-  // discipline the `user` / `code` renderers follow.
+  // `codeSessionStore` is stable for the card's lifetime (same as the
+  // `codeRenderer` deps note above), so `ghostRenderer` stays a stable
+  // reference — the [L26] discipline the `user` / `code` renderers
+  // follow.
   const ghostRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
   >(
-    (p) => <GhostRowCell {...p} />,
-    [],
+    (p) => <GhostRowCell {...p} codeSessionStore={codeSessionStore} />,
+    [codeSessionStore],
   );
   const cellRenderers = useMemo<
     Record<string, TugListViewCellRenderer<TideTranscriptDataSource>>

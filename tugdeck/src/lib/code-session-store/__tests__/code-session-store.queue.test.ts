@@ -214,3 +214,92 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
     ]);
   });
 });
+
+describe("CodeSessionStore — cancelling and peeling queued sends", () => {
+  it("cancelQueuedSend removes the targeted send and offers it back via pendingDraftRestore", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("first", []);
+    driveToStreaming(conn, store, FIXTURE_IDS.MSG_ID_N(1));
+
+    store.send("alpha", []);
+    store.send("bravo", []);
+    store.send("charlie", []);
+    const queued = store.getSnapshot().queuedSends;
+    expect(queued.map((q) => q.text)).toEqual(["alpha", "bravo", "charlie"]);
+
+    // Cancel the middle send, targeted by its turnKey.
+    store.cancelQueuedSend(queued[1].turnKey);
+
+    const snap = store.getSnapshot();
+    expect(snap.queuedSends.map((q) => q.text)).toEqual(["alpha", "charlie"]);
+    // The un-sent prompt is offered back through the draft-restore slot.
+    expect(snap.pendingDraftRestore?.text).toBe("bravo");
+    // A true un-send — no wire traffic; only "first" ever went out.
+    expect(userMessageFrames(conn).map((f) => f.text)).toEqual(["first"]);
+  });
+
+  it("cancelQueuedSend is a no-op for an unknown turnKey", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("first", []);
+    driveToStreaming(conn, store, FIXTURE_IDS.MSG_ID_N(1));
+    store.send("alpha", []);
+
+    store.cancelQueuedSend("no-such-turnkey");
+
+    expect(store.getSnapshot().queuedSends.map((q) => q.text)).toEqual([
+      "alpha",
+    ]);
+    expect(store.getSnapshot().pendingDraftRestore).toBeNull();
+  });
+
+  it("peelNewest drains the queue newest-first (LIFO), then interrupts the turn", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("first", []);
+    driveToStreaming(conn, store, FIXTURE_IDS.MSG_ID_N(1));
+    store.send("alpha", []);
+    store.send("bravo", []);
+    expect(store.getSnapshot().queuedSends.map((q) => q.text)).toEqual([
+      "alpha",
+      "bravo",
+    ]);
+
+    const framesBeforePeel = conn.recordedFramesExcludingStateChange.length;
+
+    // First peel — the newest queued send ("bravo") goes; a true
+    // un-send, so no wire frame.
+    store.peelNewest();
+    expect(store.getSnapshot().queuedSends.map((q) => q.text)).toEqual([
+      "alpha",
+    ]);
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(
+      framesBeforePeel,
+    );
+
+    // Second peel — "alpha" goes; the queue is now empty; still no
+    // wire frame.
+    store.peelNewest();
+    expect(store.getSnapshot().queuedSends.length).toBe(0);
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(
+      framesBeforePeel,
+    );
+
+    // Third peel — the queue is empty, so the gesture reaches the
+    // running turn: one `interrupt` frame on the wire.
+    store.peelNewest();
+    expect(conn.recordedFramesExcludingStateChange.length).toBe(
+      framesBeforePeel + 1,
+    );
+    expect(
+      conn.recordedFramesExcludingStateChange[framesBeforePeel].decoded,
+    ).toEqual({
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      type: "interrupt",
+    });
+  });
+});

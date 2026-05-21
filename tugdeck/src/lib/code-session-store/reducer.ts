@@ -24,6 +24,7 @@ import type { AtomSegment } from "../tug-atom-img";
 import type { Effect } from "./effects";
 import type {
   AssistantTextEvent,
+  CancelQueuedSendActionEvent,
   CodeSessionEvent,
   ContextBreakdownEvent,
   ControlRequestForwardEvent,
@@ -582,38 +583,42 @@ function handleInterrupt(
     return { state, effects: [] };
   }
 
-  // CASE A — interrupt fired while `phase === "submitting"`. The
-  // dividing line between A and B is the first content frame from
-  // claude carrying an `msg_id` (verified across `tugcode/src/types.ts`
-  // — no per-turn ack frames precede content; `tugcode/src/session.ts`
-  // writes the `user_message` to claude's stdin and waits on the
-  // active turn whose `currentMessageId` slot stays null until the
-  // first stream event; the `tugcode/probe-case-a.ts` wire-trace
-  // confirms an aborted-no-content cycle emits exactly
-  // `system_metadata` → `cost_update` → `turn_complete{msg_id: "",
-  // result: "error"}` and nothing else). In reducer terms that's the
-  // `submitting → awaiting_first_token` transition (text/thinking
-  // partial) or the `submitting → tool_work` transition (tool_use
-  // first). The `submitting` phase is the silent window: the wire
-  // received our `user_message` but no `msg_id` is bound on this side
-  // yet, so there is nothing meaningful to commit as an interrupted
-  // `TurnEntry`. The user's intent is "claude hadn't picked it up; let
-  // me re-edit and resubmit" — capture the pending message into a
-  // one-shot restore slot, clear the in-flight pair so the transcript
-  // stops rendering it, and return the phase to `idle` so the user
-  // can resubmit immediately without waiting for the wire's
+  // CASE A — interrupt fired before claude produced any answer-channel
+  // content: no `assistant_text` delta and no `tool_use` yet
+  // (`firstAssistantDeltaAt === null && firstToolUseAt === null`). The
+  // dividing line between A and B is the first *answer* — thinking
+  // does NOT cross it: a turn that has emitted only `thinking_text` is
+  // still a clean pull-down, because thinking is not an answer and
+  // there is nothing committable as an interrupted `TurnEntry`. (Phase
+  // cannot express this line — `submitting → awaiting_first_token →
+  // streaming` is a text-event count ladder driven identically by
+  // `assistant_text` and `thinking_text`, so `phase` advances on
+  // thinking alone; `firstAssistantDeltaAt` / `firstToolUseAt` are the
+  // real "answer has begun" signals.) The user's intent is "pull it
+  // back and re-edit" — capture the pending message into a one-shot
+  // restore slot, clear the in-flight pair so the transcript stops
+  // rendering it, and return the phase to `idle` so the user can
+  // resubmit immediately without waiting for the wire's
   // `turn_complete(error)` round-trip.
   //
-  // Wire echo handling: increment `pendingCaseAEchoes` so the
-  // matching `turn_complete(error)` (carrying `msg_id: ""`) is
-  // suppressed by the gate at the top of `handleTurnComplete`. The
-  // counter (rather than a boolean) is what makes back-to-back CASE
-  // A cancels and re-submit-before-echo races correct: each abort
-  // claims its own pending suppression, decremented in FIFO order as
-  // wire echoes arrive. Late content frames
-  // (`assistant_text` / `thinking_text` / `tool_use`) hit their own
-  // phase guards and drop with phase `idle` — no scratch leakage.
-  if (state.phase === "submitting") {
+  // Wire echo handling: increment `pendingCaseAEchoes` so the matching
+  // `turn_complete(error)` is suppressed by the gate at the top of
+  // `handleTurnComplete`. That gate keys on `state.activeMsgId ===
+  // null` — which the reset below establishes — NOT on the echo's
+  // `msg_id`, so it suppresses correctly whether the aborted cycle
+  // carried no `msg_id` (the not-yet-started case, `msg_id: ""` —
+  // verified via `tugcode/probe-case-a.ts`) or a real one (the
+  // thinking-only case, where a `thinking_text` partial had already
+  // bound `activeMsgId`). The counter (rather than a boolean) makes
+  // back-to-back CASE A cancels and re-submit-before-echo races
+  // correct: each abort claims its own pending suppression slot,
+  // decremented in FIFO order as wire echoes arrive. Late content
+  // frames hit their own phase guards and drop with phase `idle` —
+  // no scratch leakage.
+  if (
+    state.firstAssistantDeltaAt === null &&
+    state.firstToolUseAt === null
+  ) {
     const pending = state.pendingUserMessage;
     // Carry the pending submission into the restore slot. If
     // `pendingUserMessage` is somehow null (defensive — handleSend
@@ -675,9 +680,14 @@ function handleInterrupt(
       },
       effects: [
         { kind: "send-frame", msg: { type: "interrupt" } },
-        // Defensive: if any partial slipped past the phase guards into
-        // the in-flight streaming document before the interrupt fired,
-        // wipe it so the transcript's in-flight pane lands clean.
+        // `clear-inflight` is a no-op under the per-turn-paths
+        // streaming architecture (each turn writes its own
+        // `turn.${turnKey}.*` paths). The in-flight pair stops
+        // rendering because `pendingUserMessage` is now `null`; a
+        // thinking-only pull-down's per-turn streaming paths are simply
+        // never read again — the next turn mints a fresh `turnKey`.
+        // The effect is still emitted for turn-boundary symmetry with
+        // `handleTurnComplete`.
         { kind: "clear-inflight" },
       ],
     };
@@ -742,6 +752,35 @@ function handleConsumeDraftRestore(
   }
   return {
     state: { ...state, pendingDraftRestore: null },
+    effects: [],
+  };
+}
+
+/**
+ * Cancel one queued send, identified by the `turnKey` its ghost row
+ * carries. The send was queued mid-turn but never dispatched, so
+ * removing it is a pure local edit — no wire frame. The un-sent
+ * prompt routes back through `pendingDraftRestore`; the prompt-entry
+ * seeds the editor from it iff the editor is empty (a cancel never
+ * clobbers in-progress content). A no-op when the `turnKey` is no
+ * longer queued — it flushed first, racing the cancel.
+ */
+function handleCancelQueuedSend(
+  state: CodeSessionState,
+  event: CancelQueuedSendActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const target = state.queuedSends.find((q) => q.turnKey === event.turnKey);
+  if (target === undefined) {
+    return { state, effects: [] };
+  }
+  return {
+    state: {
+      ...state,
+      queuedSends: state.queuedSends.filter(
+        (q) => q.turnKey !== event.turnKey,
+      ),
+      pendingDraftRestore: { text: target.text, atoms: target.atoms },
+    },
     effects: [],
   };
 }
@@ -2755,6 +2794,8 @@ export function reduce(
       return handleInterrupt(state);
     case "consume_draft_restore":
       return handleConsumeDraftRestore(state);
+    case "cancel_queued_send":
+      return handleCancelQueuedSend(state, event);
     case "cost_update":
       return handleCostUpdate(state, event);
     case "streaming_usage":

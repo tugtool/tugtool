@@ -4763,7 +4763,7 @@ Per D.4's investigation findings the reducer machinery is built but UI-dead: the
 
 **Depends on:** #step-20-5-d-5-a (the queue mechanism this cancels), #step-20-5-d-4 (the cancellation behavior spec — the C1 / C2 / C3 cases + the gesture map)
 
-**Status:** _not started. The pull-back half of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec — the three cancellation cases and the unified Stop ≡ Esc gesture, on top of the queue [Step 20.5.D.5.A](#step-20-5-d-5-a) built._
+**Status:** _complete. The pull-back half of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec. **C1 (cancel a queued send)** — a new `cancel_queued_send` reducer event removes one entry from `queuedSends` by `turnKey` and routes its `{text, atoms}` through `pendingDraftRestore`; `CodeSessionStore.cancelQueuedSend()` dispatches it; the transcript ghost row carries a focus-refusing `TugIconButton` ✕ that calls it. A true un-send — no wire frame. **C2 (pull down a pre-content turn)** — `handleInterrupt`'s CASE A gate widened from `phase === "submitting"` to `firstAssistantDeltaAt === null && firstToolUseAt === null`, so the pull-down window stays open through *thinking* and closes only at the first answer-channel delta / `tool_use`. The CASE A wire-echo suppression already keys on `activeMsgId === null` (which CASE A's body sets), not on the echo's `msg_id`, so it suppresses the thinking-turn's real-`msg_id` `turn_complete(error)` unchanged. **C3** — CASE B unchanged. **Stop ≡ Esc** — the primary Stop button (the SUBMIT action handler's stop branch) and Esc (the `CANCEL_DIALOG` handler) both call the new `CodeSessionStore.peelNewest()`: peel the newest queued send (LIFO), reaching the running turn via `interrupt()` only once the queue is empty. Esc's dialog-dismiss precedence is unchanged — the responder chain still walks first-responder-first ([DT07]). **Draft-restore unification** — the prompt-entry's `pendingDraftRestore` consumer now seeds the editor only when it is empty, so a cancel never clobbers in-progress content (a CASE A pull-down lands on an empty editor, so the guard is a no-op there). `tsc` clean; `bun test` green (2344 pass — 5 new: CASE-A-through-thinking ×2, cancel / peel ×3); `audit:tokens lint` 0 violations._
 
 **Commit:** `feat(tide-rendering): request pull-back — C1/C2/C3 + Stop-equals-Esc`
 
@@ -4781,30 +4781,31 @@ Per D.4's investigation findings the reducer machinery is built but UI-dead: the
 
 **Artifacts.**
 
-- `reducer.ts` — the per-item queue-cancel event; the `handleInterrupt` CASE A gate widening; the C1 / C2 draft-restore routing.
-- `tug-prompt-entry.tsx` — Stop ≡ Esc wired to peel-newest (not a direct turn-interrupt); the Esc responder.
-- the ghost-row component — the ✕ dispatches the per-item cancel.
-- `code-session-store.interrupt.test.ts` / `code-session-store.queue.test.ts` — updated for the widened CASE A + the per-item cancel.
+- `events.ts` / `reducer.ts` — the `cancel_queued_send` event + `handleCancelQueuedSend`; the `handleInterrupt` CASE A gate widening + the draft-restore routing.
+- `code-session-store.ts` — the `cancelQueuedSend()` + `peelNewest()` methods.
+- `tug-prompt-entry.tsx` — Stop ≡ Esc both wired to `peelNewest()`; the `pendingDraftRestore` consumer's editor-empty gate.
+- `tide-card-transcript.tsx` — the `GhostRowCell` ✕ (a focus-refusing `TugIconButton`) dispatching the per-item cancel.
+- `code-session-store.interrupt.test.ts` / `code-session-store.queue.test.ts` — the widened CASE A + the per-item cancel / peel.
 
 **Tasks.**
 
-- [ ] Per-item queue-cancel reducer event — remove one queued send by key; route its payload through the draft-restore slot.
-- [ ] Ghost-row ✕ — dispatches the per-item cancel (C1).
-- [ ] Widen `handleInterrupt` CASE A to `firstAssistantDeltaAt === null && firstToolUseAt === null` (C2 threshold); CASE B unchanged (C3).
-- [ ] Stop ≡ Esc → peel-newest — queued sends LIFO, then the running turn; Esc dialog-dismiss precedence preserved ([DT07]).
-- [ ] Draft-restore unification — C1 + C2 seed the editor iff it is empty.
+- [x] Per-item queue-cancel reducer event — remove one queued send by key; route its payload through the draft-restore slot. _Done — `cancel_queued_send` event + `handleCancelQueuedSend`; `CodeSessionStore.cancelQueuedSend()`._
+- [x] Ghost-row ✕ — dispatches the per-item cancel (C1). _Done — a focus-refusing `TugIconButton` in `GhostRowCell`._
+- [x] Widen `handleInterrupt` CASE A to `firstAssistantDeltaAt === null && firstToolUseAt === null` (C2 threshold); CASE B unchanged (C3). _Done — the suppression gate already keys on `activeMsgId`, so it holds for a thinking turn's real-`msg_id` echo._
+- [x] Stop ≡ Esc → peel-newest — queued sends LIFO, then the running turn; Esc dialog-dismiss precedence preserved ([DT07]). _Done — `CodeSessionStore.peelNewest()`; both the Stop button's SUBMIT-handler branch and the `CANCEL_DIALOG` handler call it._
+- [x] Draft-restore unification — C1 + C2 seed the editor iff it is empty. _Done — the `pendingDraftRestore` consumer gates on `isEffectivelyEmpty`._
 
 **Tests.**
 
-- [ ] Reducer / pure-logic — the per-item cancel removes the right send + populates `pendingDraftRestore`; CASE A fires for thinking-only, CASE B for post-content.
+- [x] Reducer / pure-logic (real-store) — the per-item cancel removes the right send + populates `pendingDraftRestore`; `peelNewest` drains LIFO then interrupts; CASE A fires for thinking-only, CASE B for post-content. _`code-session-store.queue.test.ts` (+3) and `code-session-store.interrupt.test.ts` (+2)._
 - [ ] The rendered C1 / C2 / C3 + Stop ≡ Esc behavior is asserted by the [Step 20.5.D.5.C](#step-20-5-d-5-c) end-to-end matrix test; the HMR vet below is the human confirm.
 
 **Checkpoint.**
 
-- [ ] `bunx tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual, user-gated)** — queue two sends; Esc peels them newest-first, then stops the turn; ✕ a specific ghost row; pull a thinking-only turn back to the editor.
+- [x] `bunx tsc --noEmit` clean.
+- [x] `bun test` green. _2344 pass, 0 fail._
+- [x] `bun run audit:tokens lint` exits 0.
+- [x] **HMR vet (manual, user-gated)** — queue two sends; Esc peels them newest-first, then stops the turn; ✕ a specific ghost row; pull a thinking-only turn back to the editor. _Confirmed by the user._
 
 ---
 

@@ -685,3 +685,115 @@ describe("CodeSessionStore — CASE B at the awaiting_first_token boundary", () 
     expect(end.pendingDraftRestore).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// CASE A extends through thinking
+// ---------------------------------------------------------------------------
+//
+// The CASE A / CASE B dividing line is the first *answer* — an
+// `assistant_text` delta or a `tool_use` — NOT the first content of
+// any kind. A turn that has emitted only `thinking_text` is still a
+// clean pull-down: thinking is not an answer, so there is nothing
+// committable as an interrupted `TurnEntry`. The gate is
+// `firstAssistantDeltaAt === null && firstToolUseAt === null`; `phase`
+// cannot express it (the phase ladder advances on thinking partials
+// too).
+
+describe("CodeSessionStore — CASE A interrupt extends through thinking", () => {
+  it("a thinking-only turn interrupts as CASE A — no transcript entry, draft restored", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("think about this", []);
+    expect(store.getSnapshot().phase).toBe("submitting");
+
+    // Two thinking partials — the phase ladder advances to `streaming`,
+    // but no answer-channel delta and no tool_use has landed.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "thinking_text",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: "msg-thinking-only",
+      text: "hmm",
+      is_partial: true,
+      rev: 0,
+      seq: 0,
+    });
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "thinking_text",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: "msg-thinking-only",
+      text: " more",
+      is_partial: true,
+      rev: 1,
+      seq: 0,
+    });
+    expect(store.getSnapshot().phase).toBe("streaming");
+    expect(store.getSnapshot().activeMsgId).toBe("msg-thinking-only");
+
+    store.interrupt();
+
+    // CASE A: pulled back to idle, the prompt captured for re-edit, no
+    // committed TurnEntry — thinking is not an answer.
+    const mid = store.getSnapshot();
+    expect(mid.phase).toBe("idle");
+    expect(mid.pendingDraftRestore?.text).toBe("think about this");
+    expect(mid.inflightUserMessage).toBeNull();
+    expect(mid.transcript).toEqual([]);
+    expect(mid.activeMsgId).toBeNull();
+
+    // The wire's turn_complete(error) carries the real msg_id (a
+    // thinking partial bound it), but the suppression gate keys on
+    // `activeMsgId === null`, which CASE A established — so it is
+    // suppressed and no transcript entry lands.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "turn_complete",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: "msg-thinking-only",
+      result: "error",
+    });
+    expect(store.getSnapshot().transcript).toEqual([]);
+    expect(store.getSnapshot().phase).toBe("idle");
+  });
+
+  it("an answer-channel delta after thinking crosses to CASE B — interrupt commits the turn", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    store.send("answer me", []);
+    // Thinking first, then an `assistant_text` delta — the first
+    // answer-channel content crosses the CASE A / B line.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "thinking_text",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: "msg-then-answer",
+      text: "considering",
+      is_partial: true,
+      rev: 0,
+      seq: 0,
+    });
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "assistant_text",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: "msg-then-answer",
+      text: "The ",
+      is_partial: true,
+      rev: 1,
+      seq: 0,
+    });
+
+    store.interrupt();
+
+    // CASE B: no draft restore — the turn commits as interrupted.
+    expect(store.getSnapshot().pendingDraftRestore).toBeNull();
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "turn_complete",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: "msg-then-answer",
+      result: "error",
+    });
+    const end = store.getSnapshot();
+    expect(end.transcript.length).toBe(1);
+    expect(end.transcript[0].result).toBe("interrupted");
+  });
+});

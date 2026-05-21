@@ -627,17 +627,21 @@ export const TugPromptEntry = React.forwardRef<
     submitButtonModeRef.current = submitButtonMode;
   }, [submitButtonMode]);
 
-  // CASE A interrupt restore. When the user cancels a submission
-  // before claude has produced any content (the dividing line is the
-  // first delta carrying an `msg_id`; see the reducer's
-  // `handleInterrupt` for the full grounding), the store captures
-  // the prompt that was in flight onto
-  // `snap.pendingDraftRestore` and clears `inflightUserMessage` so
-  // the transcript stops rendering the in-flight pair. This effect
-  // observes the slot's identity, seeds the editor with the captured
-  // text + atoms, and dispatches `consumePendingDraftRestore` so the
-  // slot clears in the next snapshot — guaranteeing the restore is
-  // applied exactly once per CASE A, even if the parent re-renders.
+  // Draft restore. Two store actions populate `pendingDraftRestore`:
+  // a CASE A interrupt pulling a pre-content turn back to re-edit, and
+  // a queued-send cancel un-sending a mid-turn submission. Either way
+  // the store captures the prompt onto `snap.pendingDraftRestore`;
+  // this effect observes the slot's identity, seeds the editor, and
+  // dispatches `consumePendingDraftRestore` so the slot clears in the
+  // next snapshot — the restore applies exactly once even if the
+  // parent re-renders.
+  //
+  // The editor is seeded ONLY when it is empty: a cancel must never
+  // clobber a draft the user is composing. A CASE A pull-down always
+  // lands on an empty editor (it was cleared at submit), so the guard
+  // is a no-op there; a queued-send cancel can fire while the user is
+  // mid-compose, and there the slot is dropped — consumed but not
+  // applied.
   //
   // [L02] state enters via the snap from useSyncExternalStore.
   // [L03] useLayoutEffect ensures the doc replacement is visible in
@@ -652,9 +656,11 @@ export const TugPromptEntry = React.forwardRef<
     if (restoreSlot === null) return;
     const editor = textEditorRef.current;
     if (editor === null) return;
-    editor.restoreState(
-      buildEditingStateFromDraftRestore(restoreSlot.text, restoreSlot.atoms),
-    );
+    if (isEffectivelyEmpty(editor.view() ?? null)) {
+      editor.restoreState(
+        buildEditingStateFromDraftRestore(restoreSlot.text, restoreSlot.atoms),
+      );
+    }
     codeSessionStore.consumePendingDraftRestore();
   }, [restoreSlot, codeSessionStore]);
 
@@ -930,14 +936,17 @@ export const TugPromptEntry = React.forwardRef<
   // ([Q07]=a), so the handler is a single setRouteState +
   // refocus-the-editor.
   //
-  // CANCEL_DIALOG is conditionally registered (only when an
-  // in-flight turn can be interrupted). Both Escape and Cmd-. map
-  // to CANCEL_DIALOG in `keybinding-map.ts`; the chain walks from
-  // first responder upward so any visible popover / sheet / alert
-  // dismisses first via its own CANCEL_DIALOG handler. When nothing
-  // dialog-like is in the chain and a turn is in flight, the walk
-  // reaches us and we route through to the store's interrupt() —
-  // same behavior as clicking the red Stop button.
+  // CANCEL_DIALOG is conditionally registered (only when there is an
+  // in-flight turn — and therefore something cancellable). Both
+  // Escape and Cmd-. map to CANCEL_DIALOG in `keybinding-map.ts`; the
+  // chain walks from first responder upward so any visible popover /
+  // sheet / alert dismisses first via its own CANCEL_DIALOG handler
+  // ([DT07]). When nothing dialog-like is in the chain and a turn is
+  // in flight, the walk reaches us and we `peelNewest()` — the
+  // unified Stop ≡ Esc gesture: peel the newest cancellable thing,
+  // a queued send first (LIFO), then the running turn once the queue
+  // is empty. Identical to clicking the red Stop button (the SUBMIT
+  // handler's stop branch calls the same `peelNewest()`).
   //
   // Conditional registration matters: the chain marks an action as
   // handled iff its key exists in the responder's actions map
@@ -949,14 +958,16 @@ export const TugPromptEntry = React.forwardRef<
   // `useResponder` hook's R5 live-lookup proxy reads
   // `optionsRef.current.actions` on every dispatch, so the
   // conditional spread reflects the current snapshot's
-  // `canInterrupt` value at dispatch time.
+  // `canInterrupt` value at dispatch time. (`canInterrupt` is true
+  // whenever the queue is non-empty — the queue only fills mid-turn —
+  // so it correctly gates "is there anything to peel.")
   //
   // The handler lives at THIS responder (TugPromptEntry's) rather
   // than further up the chain (card-content) because the chain walk
   // reaches us first — closer to the first responder is the natural
   // place for a behavior that's semantically owned by the prompt
-  // entry (which already owns the submit / interrupt branching for
-  // the Stop button via `performSubmit`).
+  // entry (which already owns the submit / peel branching for the
+  // Stop button via the SUBMIT action handler).
   const { ResponderScope, responderRef } = useResponder({
     id,
     actions: {
@@ -987,12 +998,15 @@ export const TugPromptEntry = React.forwardRef<
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         // The primary Z5 button dispatches SUBMIT in every mode. When
-        // a turn is running the button is Stop — interrupt it; in any
-        // submit-family mode, run the submit. Editor Return reaches
-        // `performSubmit` directly (never via this action), so an
-        // in-flight Return queues rather than stopping the turn.
+        // a turn is running the button is Stop — it peels the newest
+        // cancellable thing (a queued send first, LIFO; the running
+        // turn once the queue is empty), the same `peelNewest()`
+        // gesture Esc invokes. In any submit-family mode it runs the
+        // submit. Editor Return reaches `performSubmit` directly
+        // (never via this action), so an in-flight Return queues
+        // rather than peeling.
         if (submitButtonModeRef.current.kind === "stop") {
-          codeSessionStore.interrupt();
+          codeSessionStore.peelNewest();
         } else {
           performSubmit();
         }
@@ -1008,7 +1022,7 @@ export const TugPromptEntry = React.forwardRef<
       ...(snap.canInterrupt
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
-              codeSessionStore.interrupt();
+              codeSessionStore.peelNewest();
             },
           }
         : {}),

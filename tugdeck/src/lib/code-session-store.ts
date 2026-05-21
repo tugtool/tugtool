@@ -539,6 +539,37 @@ export class CodeSessionStore {
   }
 
   /**
+   * Un-send one queued mid-turn submission, identified by the
+   * `turnKey` its transcript ghost row carries. The send was queued
+   * but never dispatched, so this is a pure local removal — no wire
+   * frame. The reducer offers the prompt back through
+   * `pendingDraftRestore`. A no-op if the send already flushed (a race
+   * with `turn_complete`) or the store is disposed.
+   */
+  cancelQueuedSend(turnKey: string): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "cancel_queued_send", turnKey });
+  }
+
+  /**
+   * Peel the newest cancellable thing — the unified Stop / Esc
+   * gesture. The most-recently-queued send is peeled first (LIFO);
+   * only once the queue is empty does the gesture reach the running
+   * turn (`interrupt()` — CASE A pull-down or CASE B interrupt per the
+   * threshold). A turn with N queued sends therefore takes N + 1 peels
+   * to fully unwind. A no-op when the store is disposed.
+   */
+  peelNewest(): void {
+    if (this._disposed) return;
+    const queued = this.getSnapshot().queuedSends;
+    if (queued.length > 0) {
+      this.cancelQueuedSend(queued[queued.length - 1].turnKey);
+      return;
+    }
+    this.interrupt();
+  }
+
+  /**
    * Respond to a pending permission prompt. Emits a `tool_approval`
    * frame and restores the phase that was active before the
    * `control_request_forward` arrived (typically `tool_work`).
