@@ -36,7 +36,6 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-transcript";
 import { useTidePlacementSlots } from "./tide-card-placement-experiment";
-import { TidePhaseIndicator } from "./tide-card-phase-indicator";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -2284,18 +2283,13 @@ export function TideCardBody({
     statusBarContent ?? experimentSlots.statusBarContent;
   const effectiveRenderTurnTrailing =
     renderTurnTrailing ?? experimentSlots.renderTurnTrailing;
-  // Z4 — prompt-entry footer. The lifecycle phase indicator
-  // ("Awaiting first token" / "Claude is thinking" / "Running {tool}")
-  // is the production default; an explicit `footerContent` prop
-  // (tests / gallery) or a dev placement-experiment Z4 assignment
-  // overrides it. The indicator renders nothing outside the three
-  // in-flight states the matrix gives Z4 content for, so the slot is
-  // a transparent flex spacer the rest of the time — but always
-  // mounted ([L23]: zone content swaps inside a stable container).
+  // Z4 — prompt-entry footer. No production occupant: the lifecycle
+  // phase is already surfaced by the Z2 status row's STATE cell, so a
+  // footer phase line would only duplicate it. An explicit
+  // `footerContent` prop (tests / gallery) or a dev placement-
+  // experiment Z4 assignment can still fill the slot.
   const effectiveFooterContent =
-    footerContent ??
-    experimentSlots.promptFooterContent ??
-    <TidePhaseIndicator codeSessionStore={codeSessionStore} />;
+    footerContent ?? experimentSlots.promptFooterContent;
   // Z3 — prompt-entry status row. The project-path badge is the
   // current default occupant; the experiment harness overrides it
   // when the mapping assigns a datum to Z3.
