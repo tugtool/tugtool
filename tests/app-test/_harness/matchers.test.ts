@@ -456,6 +456,11 @@ const EVENT_FIXTURES: Record<
     editorResponderId: "card-1-entry-editor",
     firstResponderId: "card-1-content",
   },
+  "follow-bottom": {
+    kind: "follow-bottom",
+    following: true,
+    source: "submit",
+  },
 };
 
 describe("summarizeEvent — exhaustive per-kind coverage", () => {

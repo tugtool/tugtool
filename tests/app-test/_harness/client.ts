@@ -735,6 +735,45 @@ export function bindTideSession(
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
 
+/**
+ * One step in driving a bound tide card's `CodeSessionStore` through
+ * the lifecycle matrix — mirrors `TideSessionDriveAction` on the
+ * `test-surface.ts` side (the two graphs are kept structurally
+ * identical; the JSON wire is the contract).
+ *
+ *  - `send` — submit a user message; a mid-turn `send` queues.
+ *  - `ingestFrame` — feed a decoded wire frame into the store
+ *    (`feedId` is a `FeedId` value — `CODE_OUTPUT` is `0x40`;
+ *    `decoded` is the frame payload, with a `tug_session_id`
+ *    matching the bound session).
+ *  - `interrupt` — `store.interrupt()`.
+ *  - `transportClose` / `transportReconnect` — drive the transport
+ *    overlay.
+ */
+export type TideSessionDriveAction =
+  | { op: "send"; text: string; atoms?: unknown[] }
+  | { op: "ingestFrame"; feedId: number; decoded: unknown }
+  | { op: "interrupt" }
+  | { op: "transportClose" }
+  | { op: "transportReconnect" };
+
+/**
+ * Drive a bound tide card's `CodeSessionStore` one step through the
+ * lifecycle matrix via `window.__tug.driveTideSession`. The card must
+ * already be bound (`bindTideSession`); the surface throws otherwise.
+ */
+export function driveTideSession(
+  caller: HarnessCaller,
+  cardId: string,
+  action: TideSessionDriveAction,
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const script = callSurface(
+    `(window.__tug.driveTideSession(${lit(cardId)}, ${lit(action)}), null)`,
+  );
+  return caller.evalJS<null>(script, evalOpts).then(() => undefined);
+}
+
 // ---------------------------------------------------------------------------
 // RPC-verb wrappers (native gestures, accessibility preflight,
 // Swift-computed screen bounds)

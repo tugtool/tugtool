@@ -91,6 +91,7 @@ export type {
   SelectionSnapshot,
   StartTugcodeOptions,
   StartTugcodeResult,
+  TideSessionDriveAction,
   TugcodeTranscript,
   TugcodeTranscriptTurn,
 } from "./client";
@@ -530,6 +531,20 @@ export class App {
     },
   ): Promise<void> {
     return client.bindTideSession(this as HarnessCaller, cardId, options);
+  }
+
+  /**
+   * Drive a bound tide card's `CodeSessionStore` one step through the
+   * lifecycle matrix — `send` a user message, `ingestFrame` a decoded
+   * wire frame, `interrupt`, or drive the transport overlay. The card
+   * must be bound first (`bindTideSession`). Frames flow through the
+   * store's real `frameToEvent` → `dispatch` path.
+   */
+  driveTideSession(
+    cardId: string,
+    action: client.TideSessionDriveAction,
+  ): Promise<void> {
+    return client.driveTideSession(this as HarnessCaller, cardId, action);
   }
 
   // -------------------------------------------------------------------

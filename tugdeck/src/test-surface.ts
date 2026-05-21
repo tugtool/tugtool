@@ -43,6 +43,8 @@ import {
   cardSessionBindingStore,
   type CardSessionMode,
 } from "./lib/card-session-binding-store";
+import { cardServicesStore } from "./lib/card-services-store";
+import type { AtomSegment } from "./lib/tug-atom-img";
 import { dispatchAction } from "./action-dispatch";
 
 // ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ import { dispatchAction } from "./action-dispatch";
  * tolerant of mid-navigation `evaluateJavaScript` errors.
  * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.5.0" as const;
+export const SURFACE_VERSION = "1.6.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -205,6 +207,28 @@ export interface SeedDeckStateArgs {
   cardStates?: Record<string, CardStateBag>;
   focusCardId?: string;
 }
+
+/**
+ * One step in driving a bound tide card's `CodeSessionStore` through
+ * the lifecycle matrix — consumed by {@link TugTestSurface.driveTideSession}.
+ *
+ *  - `send` — submit a user message (`store.send`); a mid-turn `send`
+ *    queues, exactly as the prompt-entry does.
+ *  - `ingestFrame` — feed a decoded wire frame into the store as if it
+ *    arrived off the connection (`feedId` is a `FeedId` value;
+ *    `decoded` carries a matching `tug_session_id`). Drives
+ *    STREAMING / TOOL_WORK / AWAITING_USER / COMPLETE / ERRORED /
+ *    REPLAYING.
+ *  - `interrupt` — `store.interrupt()`.
+ *  - `transportClose` / `transportReconnect` — drive the transport
+ *    overlay without touching the real shared connection.
+ */
+export type TideSessionDriveAction =
+  | { op: "send"; text: string; atoms?: AtomSegment[] }
+  | { op: "ingestFrame"; feedId: number; decoded: unknown }
+  | { op: "interrupt" }
+  | { op: "transportClose" }
+  | { op: "transportReconnect" };
 
 /**
  * Viewport-relative DOMRect shape returned by
@@ -550,6 +574,21 @@ export interface TugTestSurface {
       sessionMode?: CardSessionMode;
     },
   ): void;
+
+  // ---- Tide lifecycle-matrix driving (SURFACE_VERSION 1.6.0) ----
+
+  /**
+   * Drive a bound tide card's `CodeSessionStore` one step through the
+   * lifecycle matrix. Resolves the card's services via
+   * `cardServicesStore`; throws if the card is not bound (call
+   * `bindTideSession` first). See {@link TideSessionDriveAction} for
+   * the step vocabulary.
+   *
+   * The app-test matrix-coordination test drives a tide card through
+   * every distinct matrix row with this and asserts the rendered
+   * Z1 / Z2 / Z5 zones. Test-mode-only.
+   */
+  driveTideSession(cardId: string, action: TideSessionDriveAction): void;
 
   /**
    * Read the deck's current `hasFocus` state. The deck's
@@ -1314,6 +1353,40 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         projectDir: options?.projectDir ?? "/tmp/test-project",
         sessionMode: options?.sessionMode ?? "new",
       });
+    },
+
+    driveTideSession(cardId: string, action: TideSessionDriveAction): void {
+      const services = cardServicesStore.getServices(cardId);
+      if (services === null) {
+        throw new Error(
+          `driveTideSession: card "${cardId}" has no bound session — ` +
+            `call bindTideSession("${cardId}") first`,
+        );
+      }
+      const store = services.codeSessionStore;
+      switch (action.op) {
+        case "send":
+          store.send(action.text, action.atoms ?? []);
+          return;
+        case "ingestFrame":
+          store._ingestFrameForTest(action.feedId, action.decoded);
+          return;
+        case "interrupt":
+          store.interrupt();
+          return;
+        case "transportClose":
+          store._simulateTransportForTest("close");
+          return;
+        case "transportReconnect":
+          store._simulateTransportForTest("reconnect");
+          return;
+        default: {
+          const exhaustive: never = action;
+          throw new Error(
+            `driveTideSession: unknown action ${JSON.stringify(exhaustive)}`,
+          );
+        }
+      }
     },
 
     getHasFocus(): boolean {

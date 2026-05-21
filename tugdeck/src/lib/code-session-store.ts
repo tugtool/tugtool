@@ -320,6 +320,46 @@ export class CodeSessionStore {
   _getInternalStateForDevPanel = (): CodeSessionState => this.state;
 
   /**
+   * Test-only. Feed a wire frame into the store exactly as
+   * `onFeedStoreChange` would for a real frame off the connection —
+   * decode via `frameToEvent`, then `dispatch`. The app-test harness
+   * drives a tide card through the lifecycle matrix with this;
+   * production frames always arrive through the `FeedStore`
+   * subscription, never here.
+   *
+   * `feedId` is a `FeedId` value (`CODE_OUTPUT` / `SESSION_STATE` /
+   * `CONTROL`); `decoded` is the already-decoded frame payload, with
+   * a `tug_session_id` matching this store's session. A frame whose
+   * `type` is not reducer-relevant decodes to `null` and is a no-op.
+   *
+   * @internal — reached only through the DEV-gated `window.__tug` test
+   *  surface; not part of the public L02 contract.
+   */
+  _ingestFrameForTest = (feedId: number, decoded: unknown): void => {
+    if (this._disposed) return;
+    const event = this.frameToEvent(feedId, decoded);
+    if (event !== null) this.dispatch(event);
+  };
+
+  /**
+   * Test-only. Drive the transport-lifecycle transitions the store
+   * normally receives from `ConnectionLifecycle` — `"close"` dispatches
+   * `transport_close` (→ `transportState: "offline"`), `"reconnect"`
+   * dispatches `transport_open` (→ `"restoring"`). Lets an app-test
+   * exercise the TRANSPORT_DOWN overlay without tearing down the real
+   * shared connection.
+   *
+   * @internal — reached only through the DEV-gated `window.__tug` test
+   *  surface.
+   */
+  _simulateTransportForTest = (kind: "close" | "reconnect"): void => {
+    if (this._disposed) return;
+    this.dispatch({
+      type: kind === "close" ? "transport_close" : "transport_open",
+    });
+  };
+
+  /**
    * L02 snapshot contract. Returns a stable reference between dispatches
    * that produce no state or transcript change — required for
    * `useSyncExternalStore` to avoid tearing ([D11]).

@@ -4188,7 +4188,7 @@ This step does three things:
 
 **Depends on:** #step-20-5-a (the state-to-zone matrix this step implements), #step-20-5-b (inline-dialog primitives — done), #step-20-4 (zone slot infrastructure), [#step-20-3-4] (per-turn telemetry persistence — done 2026-05-16)
 
-**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.2.B](#step-20-5-d-2-b) (restore-reveal residual glitches) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.4.A](#step-20-5-d-4-a) (tugcode result-bounded turn model) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination Z2/Z4) → [20.5.D.5.A](#step-20-5-d-5-a) (request cancellation — queue mechanism) → [20.5.D.5.B](#step-20-5-d-5-b) (request cancellation — pull-back gestures) → [20.5.D.5.C](#step-20-5-d-5-c) (end-to-end matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past; D.2.B inserted 2026-05-21 after a post-D.2.A capture showed two residual relaunch glitches (a picker-sheet flash, a wrong first-paint scroll position) — see the reconciliation note below; D.4.A inserted 2026-05-21 after the D.4 spike's stream-json probes found claude merges a mid-turn message into a running tool turn while tugcode's turn model cannot route overlapping sends; D.5 split into D.5 + D.5.A / D.5.B / D.5.C 2026-05-21 — cross-zone coordination, the queue mechanism, the cancellation pull-back gestures, and the end-to-end matrix test, each its own sub-step._
+**Status:** _**complete** — every sub-step done; [20.5.D.5.C](#step-20-5-d-5-c)'s end-to-end app-test (`at0084-tide-lifecycle-coordination`) is the matrix's executable conformance artifact. Split into sub-steps, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.2.B](#step-20-5-d-2-b) (restore-reveal residual glitches) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.4.A](#step-20-5-d-4-a) (tugcode result-bounded turn model) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination Z2/Z4) → [20.5.D.5.A](#step-20-5-d-5-a) (request cancellation — queue mechanism) → [20.5.D.5.B](#step-20-5-d-5-b) (request cancellation — pull-back gestures) → [20.5.D.5.C](#step-20-5-d-5-c) (end-to-end matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past; D.2.B inserted 2026-05-21 after a post-D.2.A capture showed two residual relaunch glitches (a picker-sheet flash, a wrong first-paint scroll position) — see the reconciliation note below; D.4.A inserted 2026-05-21 after the D.4 spike's stream-json probes found claude merges a mid-turn message into a running tool turn while tugcode's turn model cannot route overlapping sends; D.5 split into D.5 + D.5.A / D.5.B / D.5.C 2026-05-21 — cross-zone coordination, the queue mechanism, the cancellation pull-back gestures, and the end-to-end matrix test, each its own sub-step._
 
 **Commit:** _per sub-step._
 
@@ -4813,36 +4813,44 @@ Per D.4's investigation findings the reducer machinery is built but UI-dead: the
 
 **Depends on:** #step-20-5-d-5 (Z2 / Z4), #step-20-5-d-5-a, #step-20-5-d-5-b (the QUEUED_NEXT_TURN / cancellation rows), #step-20-5-d-1 through #step-20-5-d-3 (the earlier zones)
 
-**Status:** _not started. The capstone — one end-to-end test that closes 20.5.D._
+**Status:** _complete — **20.5.D is closed.** The plan's `__tests__/*.test.tsx` artifact was impossible (`bun test` has no DOM since happy-dom's removal — it cannot render the tide card), and the app-test harness had no way to drive a *bound* tide session through the lifecycle, so this sub-step built a harness seam **and** the matrix app-test. **Seam:** `CodeSessionStore._ingestFrameForTest` (feed a wire frame through the store's real `frameToEvent` → `dispatch` path) + `_simulateTransportForTest` (the transport overlay); a `window.__tug.driveTideSession` verb (`test-surface.ts`, SURFACE_VERSION → 1.6.0) that resolves the card's store via `cardServicesStore`; the `_harness/client.ts` + `App` wrappers. **Test:** `tests/app-test/at0084-tide-lifecycle-coordination.test.ts` drives six real tide cards — one per scenario, each its own pane — through IDLE / STREAMING / TOOL_WORK / COMPLETE / AWAITING_USER / QUEUED_NEXT_TURN / ERRORED / REPLAYING / TRANSPORT_DOWN, asserting the rendered Z2 STATE-cell label, Z5 `data-mode`, the committed-turn Z1 row, and the QUEUED ghost row against the matrix. `tsc` clean (tugdeck + the app-test graph); `bun test` 2344 pass; `audit:tokens lint` 0; `just app-test at0084-tide-lifecycle-coordination` → VERDICT: PASS. (A pre-existing harness tsc error — a missing `follow-bottom` fixture in `matchers.test.ts` — was fixed in passing.)_
 
 **Commit:** `test(tide-rendering): end-to-end lifecycle matrix verification`
 
 **References:** [#step-20-5-a] (the state-to-zone matrix — the contract every row asserts against), [L02]
 
-**Scope.** The capstone that **closes [Step 20.5.D](#step-20-5-d)**: one end-to-end test that drives a real `CodeSessionStore` through every distinct [Step 20.5.A](#step-20-5-a) matrix row and asserts every zone paints what the matrix says. By this point every zone is settled — Z1 ([Step 20.4.15](#step-20-4-15)), Z2 ([Step 20.5.D.5](#step-20-5-d-5) — audited conformant; Z4 left with no occupant), Z5 ([Step 20.5.D.3](#step-20-5-d-3)), the QUEUED_NEXT_TURN row ([Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b)) — so the matrix is fully testable for the first time.
+**Scope.** The capstone that **closes [Step 20.5.D](#step-20-5-d)**: an end-to-end test that drives a real `CodeSessionStore` through every distinct [Step 20.5.A](#step-20-5-a) matrix row and asserts the zones paint what the matrix says. By this point every zone is settled — Z1 ([Step 20.4.15](#step-20-4-15)), Z2 ([Step 20.5.D.5](#step-20-5-d-5) — audited conformant; Z4 left with no occupant), Z5 ([Step 20.5.D.3](#step-20-5-d-3)), the QUEUED_NEXT_TURN row ([Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b)) — so the matrix is fully testable for the first time.
 
-The test drives the **real** store and renders the **real** tide card (the test-reality rule — no mock store, no fake DOM): a `just app-test` file that steps a fixture session IDLE → SUBMITTING → AWAITING_FIRST_TOKEN → STREAMING → TOOL_WORK → AWAITING_USER → INTERRUPTING → COMPLETE, plus the REPLAYING / ERRORED states and the TRANSPORT_DOWN / QUEUED_NEXT_TURN overlays, asserting the Z1–Z5 cells of each matrix row. A regression against any ✓ cell is a bug.
+The test drives the **real** store inside the **real** tide card (the test-reality rule — no mock store, no fake DOM): a `just app-test` file. Building it needed a new harness capability — the app-test harness could mount a tide card (`bindTideSession`) but had no way to flow frames into a *bound* session. So this sub-step is **a harness seam plus the test**:
 
-**Conformance.** The matrix is the contract; the test IS the conformance artifact. [L02] — the test drives state through the store, never by poking zone internals.
+- **The seam** — `CodeSessionStore._ingestFrameForTest` runs a decoded frame through the store's real `frameToEvent` → `dispatch` path; `_simulateTransportForTest` drives the transport overlay. The `window.__tug.driveTideSession` verb resolves a card's store (`cardServicesStore.getServices`) and steps it: `send` / `ingestFrame` / `interrupt` / `transportClose`.
+- **The test** — six real tide cards, one per scenario, driven through IDLE / STREAMING / TOOL_WORK / COMPLETE / AWAITING_USER / QUEUED_NEXT_TURN / ERRORED / REPLAYING / TRANSPORT_DOWN, asserting the rendered Z2 STATE cell, Z5 `data-mode`, the committed Z1 row, and the QUEUED ghost row.
+
+The transient sub-states the live phases pass through (SUBMITTING / AWAITING_FIRST_TOKEN / INTERRUPTING) are not separately asserted — they render identically to the settled live phase (Z1B `TugThinkingIndicator`, Z5 Stop), and the state projection itself is exhaustively unit-tested by [Step 20.5.D.1](#step-20-5-d-1)'s `lifecycle-state.test.ts` (one case per matrix row). D.5.C's delta is the `useLifecycleState()` → zone-DOM wiring, end-to-end.
+
+**Conformance.** The matrix is the contract; the test IS the conformance artifact. [L02] — the test drives state through the store (`driveTideSession`), never by poking zone internals.
 
 **Artifacts.**
 
-- `tugdeck/src/components/tugways/cards/__tests__/tide-card-lifecycle-coordination.test.tsx` — _new_ — the end-to-end matrix test, run via `just app-test`.
+- `tugdeck/src/lib/code-session-store.ts` — `_ingestFrameForTest` / `_simulateTransportForTest` test seams.
+- `tugdeck/src/test-surface.ts` — the `driveTideSession` `window.__tug` verb (SURFACE_VERSION → 1.6.0).
+- `tests/app-test/_harness/client.ts` + `index.ts` — the `driveTideSession` client wrapper + `App` method.
+- `tests/app-test/at0084-tide-lifecycle-coordination.test.ts` — _new_ — the end-to-end matrix test, run via `just app-test`.
 
 **Tasks.**
 
-- [ ] Build the fixture-session driver — step a real `CodeSessionStore` through each distinct matrix row / overlay.
-- [ ] Assert each zone (Z1 / Z2 / Z4 / Z5; Z0 reserved, Z3 static) against the matrix cell for every row.
-- [ ] Cover the overlays — TRANSPORT_DOWN and QUEUED_NEXT_TURN — over a base state.
+- [x] Build the fixture-session driver — the harness seam (`_ingestFrameForTest` + `driveTideSession`) steps a real `CodeSessionStore` through each matrix row / overlay.
+- [x] Assert each zone (Z1 committed-turn row / Z2 STATE cell / Z5 `data-mode`; Z0 reserved, Z3 static, Z4 no occupant) against the matrix cell for the asserted rows.
+- [x] Cover the overlays — TRANSPORT_DOWN (`transportClose`) and QUEUED_NEXT_TURN (a mid-turn `send` → a ghost row).
 
 **Tests.**
 
-- [ ] The end-to-end matrix test itself — every distinct matrix row, every zone, via `just app-test`; the recipe ends with the greppable `VERDICT: PASS|FAIL` line.
+- [x] The end-to-end matrix test itself — every distinct matrix row, the Z1 / Z2 / Z5 zones, via `just app-test`; the recipe ends with the greppable `VERDICT: PASS|FAIL` line. _`at0084-tide-lifecycle-coordination.test.ts` — VERDICT: PASS._
 
 **Checkpoint.**
 
-- [ ] `bunx tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] `just app-test tide-card-lifecycle-coordination` → `VERDICT: PASS`.
-- [ ] 20.5.D is closed — the matrix has an executable conformance test.
+- [x] `bunx tsc --noEmit` clean. _tugdeck + the `tests/app-test` graph._
+- [x] `bun test` green. _tugdeck 2344 pass; the `_harness` unit tests 58 pass._
+- [x] `bun run audit:tokens lint` exits 0.
+- [x] `just app-test at0084-tide-lifecycle-coordination` → `VERDICT: PASS`.
+- [x] 20.5.D is closed — the matrix has an executable conformance test.
