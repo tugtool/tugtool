@@ -4397,7 +4397,11 @@ Root causes, all outside [DT10]'s remit: **(a) two separate loading surfaces** �
 
 **Depends on:** #step-20-5-d-2-a (the restore-reveal coordination this cleans up after)
 
-**Status:** _not started._
+**Status:** _complete._
+
+_**Diagnosis.** **G1** — confirmed: `TideCardContent` falls through to `TideProjectPicker` for an unbound card with no `tideRestoreRegistry` entry, and on a cold relaunch that is true for the whole `list_card_bindings` round-trip — from card mount until the response handler fires `fireRestore`. The picker is on the first-responder card, so its `cardDidActivate` initial-sync drops the `TugSheet`; `fireRestore` then creates the registry entry and `TideCardContent` flips to `TideRestoring`, unmounting the picker mid-animation. **G2** — confirmed: the cold-boot restore (`tug-list-view.tsx`'s `onRegionScrollSet`, fed by CardHost's `applyRegionScrolls`) unconditionally `disengageFollowBottom`s and installs the saved `{index, offset}` anchor as the `SmartScroll` restore target — even when the user was following the bottom at save time. Disengaging follow-bottom shows the jump-to-bottom button (its visibility tracks `isFollowingBottom`, not "scrollTop < max"), and the near-bottom anchor can resolve short of the true bottom against not-yet-measured cell heights. The saved `data-tug-scroll-state` `meta` carried no "was at the bottom" flag, so the restore could not tell the at-bottom case from an arbitrary mid-list position._
+
+_**Landed.** **G1** — `RestorePassGate` in `tide-session-restore.ts`: a one-shot subscribable boolean, settled on every exit path of `restoreTideSessions` (the no-tide-cards early-out, the `list_card_bindings_ok` handler, and a 5s timeout backstop for a response that never lands). `TideCardContent` reads it via `useSyncExternalStore`; an unbound card with no registry entry holds a new `TideRestoring variant="pass-pending"` (backdrop only — no panel, no Cancel, no project label) until the pass settles, then falls through to the picker only if genuinely a fresh card. **G2** — `tug-list-view.tsx`: the `data-tug-scroll-state` save writer now records `meta.atBottom` (from `SmartScroll.isFollowingBottom`); the mount seed and `onRegionScrollSet` restore an at-bottom list by re-engaging follow-bottom and pinning (`scrollToBottom` — exact `scrollHeight − clientHeight`, jump-to-bottom affordance stays hidden) instead of installing the near-bottom anchor. Non-at-bottom saves keep the anchor path unchanged; pre-`atBottom` bags fall back to the anchor path. New `restore-pass-gate.test.ts` (6 cases pinning the idempotency invariant). `tsc --noEmit` clean; `bun test` green (2331/0). Plan-step numbers were also swept out of the code comments authored across D.1 / D.2 / D.2.A / D.2.B per the project convention._
 
 **Commit:** `fix(tide-rendering): kill the restore picker-flash + scroll glitch (D.2.B)`
 
@@ -4423,29 +4427,29 @@ The fourth captured frame is the target — transcript at the bottom, no jump-to
 
 **Artifacts.**
 
-- `tugdeck/src/lib/tide-session-restore.ts` — a restore-pass-settled signal (subscribable), settled on every exit path of `restoreTideSessions` (the `list_card_bindings_ok` handler, a timeout, and the no-tide-cards / no-connection early-outs).
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — `TideCardContent`'s picker branch gated on the restore-pass-settled signal.
-- the list-view / scroll-restore surface (`tug-list-view.tsx`, `smart-scroll.ts`, and/or the region-scroll save path) — exact set determined by the G2 diagnosis.
-- tests per below.
+- `tugdeck/src/lib/tide-session-restore.ts` — `RestorePassGate` (a subscribable one-shot signal), settled on every exit path of `restoreTideSessions` (the `list_card_bindings_ok` handler, a 5s timeout backstop, and the no-tide-cards early-out).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — `TideCardContent`'s picker branch gated on the restore-pass signal; `TideRestoring` gains the `pass-pending` (backdrop-only) variant.
+- `tugdeck/src/components/tugways/tug-list-view.tsx` — the `data-tug-scroll-state` save writer records `meta.atBottom`; the mount seed and `onRegionScrollSet` restore an at-bottom list by re-engaging follow-bottom + pinning instead of the near-bottom anchor.
+- `tugdeck/src/__tests__/restore-pass-gate.test.ts` — _new_ pure-logic tests for `RestorePassGate`.
 
 **Tasks.**
 
-- [ ] **Diagnose first.** G1: confirm the pre-registry window and the picker's `cardDidActivate`-driven sheet present. G2: instrument a relaunch and pin which restore mechanism mis-resolves the first-paint scroll — saved `anchor` vs the bottom pin vs missing `cellHeights` for the `tide-card-transcript` scrollKey. Record findings in the Status line.
-- [ ] G1: add the restore-pass-settled signal to `tide-session-restore.ts`, settled on every exit path of `restoreTideSessions`; gate `TideCardContent`'s picker branch on it so an unbound tide card holds `TideRestoring` until the startup restore pass has settled.
-- [ ] G2: fix the transcript's first-paint scroll so the saved position is reproduced on the first painted frame — for the captured scrolled-to-bottom save, `followBottom` engaged and the bottom pinned, with no jump-to-bottom flash and no correction hop.
-- [ ] Confirm a genuine fresh tide card (no ledger binding) still shows the picker promptly once the restore pass settles — the gate must not strand a real new card.
-- [ ] Confirm the bare deck grid before card content is the only pre-reveal frame and is acceptable as-is (baseline, no fix).
+- [x] **Diagnose first.** G1 — confirmed the pre-registry window (the `list_card_bindings` round-trip) and the picker's `cardDidActivate`-driven sheet present. G2 — pinned the mis-resolving mechanism: the cold-boot restore unconditionally disengages follow-bottom and installs the near-bottom anchor, even for an at-bottom save. Findings recorded in the Status line.
+- [x] G1: `RestorePassGate` in `tide-session-restore.ts`, settled on every exit path of `restoreTideSessions`; `TideCardContent`'s picker branch gated on it so an unbound tide card holds the `pass-pending` placeholder until the startup restore pass settles.
+- [x] G2: the at-bottom restore re-engages follow-bottom and pins (`scrollToBottom`) instead of resolving the near-bottom anchor — the first painted frame is the true bottom, follow-bottom engaged, no jump-to-bottom button, no correction hop.
+- [x] Confirm a genuine fresh tide card still shows the picker — once the pass settles, an unbound card with no registry entry falls through to `TideProjectPicker`; a card the user adds after startup sees the already-settled gate and shows the picker immediately.
+- [x] Confirm the bare deck grid before card content is the accepted baseline — no fix; the brief pre-registry window now shows the quiet `pass-pending` backdrop rather than a picker sheet.
 
 **Tests.**
 
-- [ ] Pure-logic test for the restore-pass-settled signal and the `TideCardContent` picker-gate predicate.
-- [ ] G2 scroll restore — an app-test extending the [AT0014] / [AT0069] cold-boot scroll-restore coverage to the tide transcript, or the HMR vet if the harness cannot drive a tide replay-restore; placement at the executor's discretion per the no-fake-DOM rule.
+- [x] `restore-pass-gate.test.ts` — pure-logic cases for `RestorePassGate`: starts unsettled, `_settle` flips + notifies once, idempotent across re-settles (the reconnect / timeout-race invariant), unsubscribe, and a post-settle subscriber is not retroactively notified. The `TideCardContent` picker-gate wiring is React glue, left to the HMR vet per the no-fake-DOM rule.
+- [x] G2 scroll restore — the `meta.atBottom` save/restore is DOM-and-`SmartScroll` glue; its visible outcome is the HMR vet below (an automated cold-boot scroll app-test for the tide transcript would need harness machinery to drive a real replay-restore, which does not exist).
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] **HMR vet (manual, user-gated)** — relaunch with an existing multi-turn session scrolled to the bottom; frame-step a screen capture and confirm no picker sheet appears at any point and the transcript's first painted frame is at the bottom with no jump-to-bottom button.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green. _2331/0._
+- [x] **HMR vet (manual, user-gated)** — relaunch with an existing multi-turn session scrolled to the bottom; frame-step a screen capture and confirm no picker sheet appears at any point and the transcript's first painted frame is at the bottom with no jump-to-bottom button. _Verified 2026-05-21 — no picker sheet, first paint at the bottom._
 
 ---
 

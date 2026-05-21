@@ -1,8 +1,8 @@
 /**
  * `lifecycle-state` — the Tide card lifecycle state machine.
  *
- * `deriveLifecycleSnapshot` encodes the Step 20.5.A state-to-zone
- * coordination matrix as one pure projection: it reads the
+ * `deriveLifecycleSnapshot` encodes the tide-card lifecycle
+ * state-to-zone coordination matrix as one pure projection: it reads the
  * matrix-relevant signals off the `CodeSessionStore` snapshot and
  * returns the matrix row — the `TideLifecycleState`, the active
  * `TideLifecycleOverlay`s, and the derived Z5 `submitButtonMode`.
@@ -32,7 +32,7 @@ import type { CodeSessionPhase, TransportState } from "./types";
 // ---------------------------------------------------------------------------
 
 /**
- * The ten lifecycle states of the Step 20.5.A matrix. Eight map 1:1
+ * The ten lifecycle states of the tide-card lifecycle matrix. Eight map 1:1
  * onto a `CodeSessionPhase`; two are projections with no raw phase of
  * their own — INTERRUPTING (an interrupt round-trip is in flight) and
  * COMPLETE (`idle` once at least one turn has committed).
@@ -178,8 +178,8 @@ function deriveSubmitButtonMode(
     case "errored":
       // The lifecycle never disables a submit-mode button. The
       // matrix's "disabled if prompt empty" (IDLE) is editor-draft
-      // emptiness — not a lifecycle signal — which the Z5 consumer
-      // (Step 20.5.D.3) ANDs in locally.
+      // emptiness — not a lifecycle signal — which the Z5
+      // submit-button consumer ANDs in locally.
       return {
         kind: "submit",
         disabled: false,
@@ -242,7 +242,7 @@ export function lifecycleSnapshotsEqual(
 // ---------------------------------------------------------------------------
 
 /**
- * Project the store snapshot onto the Step 20.5.A matrix row. Pure: a
+ * Project the store snapshot onto the lifecycle matrix row. Pure: a
  * deterministic function of its arguments.
  *
  * `previous` is the [DT09] reference-stability hook — pass the caller's

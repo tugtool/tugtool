@@ -91,6 +91,7 @@ import {
   fireRestore,
   getRestoreStartedAt,
   clearRestoreStartedAt,
+  restorePassGate,
 } from "@/lib/tide-session-restore";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
@@ -421,6 +422,15 @@ export function TideCardContent({
     tideRestoreRegistry.subscribe,
     tideRestoreRegistry.getSnapshot,
   );
+  // Has the startup restore pass settled? Until it has, an unbound
+  // card cannot tell "fresh card" from "restore not yet registered"
+  // — see `restorePassGate`. Holding the picker behind this keeps
+  // the project-picker sheet from flashing during the
+  // `list_card_bindings` round-trip.
+  const restorePassSettled = useSyncExternalStore(
+    restorePassGate.subscribe,
+    restorePassGate.getSnapshot,
+  );
   if (services !== null) {
     return (
       <TideCardServicesGate
@@ -440,6 +450,20 @@ export function TideCardContent({
         variant="binding"
         cardId={cardId}
         projectDir={expectation.projectDir}
+      />
+    );
+  }
+  if (!restorePassSettled) {
+    // Restore pass still in flight — this unbound card may yet have a
+    // ledger binding. Hold the quiet `pass-pending` placeholder
+    // rather than flashing the picker; once the pass settles this
+    // re-renders to either `TideRestoring` (a registry entry landed)
+    // or the picker (genuinely a fresh card).
+    return (
+      <TideRestoring
+        variant="pass-pending"
+        cardId={cardId}
+        projectDir=""
       />
     );
   }
@@ -463,9 +487,9 @@ export function TideCardContent({
  *   - **cold restore** — on a relaunch, a resume-mode card walks
  *     replay preflight → `phase === "replaying"` → `replay_complete`
  *     before its body has ever mounted. `deriveColdRestoreActive`
- *     ([Step 20.5.D.2.A]) is true across that window; the body is
- *     held unmounted so it mounts exactly once, against a fully
- *     reconstructed transcript, and reveals in a single paint.
+ *     is true across that window; the body is held unmounted so it
+ *     mounts exactly once, against a fully reconstructed transcript,
+ *     and reveals in a single paint.
  *
  * The cold-restore branch is gated on a one-shot `revealed` latch:
  * once the body has mounted, a *later* `phase === "replaying"` (a
@@ -561,7 +585,7 @@ function TideCardServicesGate({
  * The single loading affordance for a tide-card restore — shown while
  * a persisted session is being re-asserted: the registry has a pending
  * restore expectation, `transportState === "restoring"`, or the
- * cold-restore replay window is still in progress (Step 20.5.D.2.A).
+ * cold-restore replay window is still in progress.
  *
  * **Delay-gated.** The backdrop fills the card for the whole window,
  * but the centered panel (title, project, spinner, Cancel) appears
@@ -574,14 +598,23 @@ function TideCardServicesGate({
  * remount at the `services`-null boundary, which a component-local
  * timer could not.
  *
- * Restore is a hard-stop beat: the panel carries Cancel so a genuinely
- * stuck restore can drop to the picker via `cancelTideRestore`.
+ * Restore is a hard-stop beat: the `binding` variant's panel carries
+ * Cancel so a genuinely stuck restore can drop to the picker via
+ * `cancelTideRestore`.
  *
- * The `variant="binding"` discriminator is kept on the type so CSS
- * (`data-variant="binding"`) and tests can target this surface
- * unambiguously, even though it's currently the only kind.
+ * Two variants:
+ *   - `binding` — a specific session is being restored (a registry
+ *     expectation, transport-restoring, or the cold-restore replay
+ *     window). Backdrop + the delay-gated centered panel.
+ *   - `pass-pending` — the startup restore pass has not settled yet,
+ *     so it is not yet known whether this unbound card has a session
+ *     to restore. Backdrop only — no panel: there is no project to
+ *     name and nothing to Cancel.
+ *
+ * The discriminator drives `data-variant` so CSS and tests can target
+ * each surface unambiguously.
  */
-type TideRestoringVariant = "binding";
+type TideRestoringVariant = "binding" | "pass-pending";
 
 interface TideRestoringProps {
   variant: TideRestoringVariant;
@@ -621,7 +654,8 @@ function TideRestoring({
     );
   });
   useEffect(() => {
-    if (panelVisible) return;
+    // The `pass-pending` variant never renders the panel — no timer.
+    if (variant !== "binding" || panelVisible) return;
     const startedAt = getRestoreStartedAt(cardId);
     const elapsed = startedAt === undefined ? 0 : Date.now() - startedAt;
     const remaining = RESTORE_PLACEHOLDER_DELAY_MS - elapsed;
@@ -631,7 +665,7 @@ function TideRestoring({
     }
     const handle = setTimeout(() => setPanelVisible(true), remaining);
     return () => clearTimeout(handle);
-  }, [panelVisible, cardId]);
+  }, [variant, panelVisible, cardId]);
 
   const title = "Restoring session";
   const spinnerLabel = `Restoring session from ${projectDir}`;
@@ -644,13 +678,15 @@ function TideRestoring({
       data-variant={variant}
     >
       {/*
-        Backdrop always; panel only past the delay. The panel is
-        conditionally rendered (not opacity-hidden) so a fast restore
-        neither animates an unseen spinner nor announces "Restoring
-        session" through `aria-live`. When it does mount, a CSS
-        keyframe fades it in ([L06] — appearance via CSS).
+        Backdrop always; the centered panel only on the `binding`
+        variant and only past the delay. The panel is conditionally
+        rendered (not opacity-hidden) so a fast restore — and the
+        `pass-pending` variant, which never has a panel — neither
+        animates an unseen spinner nor announces "Restoring session"
+        through `aria-live`. When it does mount, a CSS keyframe fades
+        it in ([L06] — appearance via CSS).
       */}
-      {panelVisible ? (
+      {variant === "binding" && panelVisible ? (
         <div
           className="tide-card-restoring-panel"
           data-testid="tide-card-restoring-panel"

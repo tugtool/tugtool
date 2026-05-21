@@ -413,7 +413,7 @@
    inline rather than modal. Max-width so it reads as a focused
    status rather than sprawling to fill large cards.
 
-   Delay-gated (Step 20.5.D.2.A): `TideRestoring` mounts this panel
+   Delay-gated: `TideRestoring` mounts this panel
    only once the restore has run past `RESTORE_PLACEHOLDER_DELAY_MS`,
    so for a fast restore it never appears. When it does mount, this
    one-shot keyframe fades it in so the centered panel arrives as a

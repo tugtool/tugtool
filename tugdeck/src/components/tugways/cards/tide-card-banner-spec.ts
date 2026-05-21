@@ -20,7 +20,7 @@
  *      active. Surfaces the failure copy briefly before dismissing.
  *   4. **none** — no banner.
  *
- * **Retired (Step 20.5.D.2.A).** This helper once carried a
+ * **Retired.** This helper once carried a
  * `replay-loading` kind — a "Loading session…" strip shown during the
  * cold-boot preflight beat and the `phase === "replaying"` window. It
  * is gone: the restore-reveal coordination of D.2.A routes the whole
@@ -94,8 +94,8 @@ export interface TideCardBannerCtx {
  * - none otherwise
  *
  * The cold-restore loading window is NOT a banner — it is the
- * `TideRestoring` placeholder (Step 20.5.D.2.A); this helper runs only
- * once `TideCardBody` is mounted, i.e. after the restore has resolved.
+ * `TideRestoring` placeholder; this helper runs only once
+ * `TideCardBody` is mounted, i.e. after the restore has resolved.
  */
 export function deriveTideCardBannerSpec(
   snap: CodeSessionSnapshot,

@@ -1353,11 +1353,35 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         return { index: ax.index, offset: ax.offset };
       };
 
+      // `meta.atBottom` — true when the list was following the bottom
+      // at save time. Such a list restores by re-engaging follow-bottom
+      // and pinning (exact: `scrollHeight - clientHeight`), NOT by an
+      // `{index, offset}` anchor. The anchor path disengages
+      // follow-bottom on restore, which leaves the jump-to-bottom
+      // affordance showing over a list that is in fact at the bottom,
+      // and resolves a near-bottom offset that can land short of the
+      // true bottom against not-yet-measured cell heights. Absent on
+      // pre-`atBottom` bags → falls back to the anchor path.
+      const parseAtBottom = (meta: unknown): boolean =>
+        meta !== null &&
+        typeof meta === "object" &&
+        (meta as { atBottom?: unknown }).atBottom === true;
+
       // Mount-time seed. The geometry hydration effect ran earlier
       // this commit, so `heightIndex` is already populated; the
       // restore-target heartbeat effect (below) applies the target
       // before paint, so the first paint reflects the saved anchor.
-      const seedAnchor = parseAnchor(savedRegionScroll?.meta);
+      //
+      // A list saved at the bottom installs no anchor target: an
+      // anchor resolver disengages follow-bottom (leaving the
+      // jump-to-bottom affordance showing over a list that is at the
+      // bottom) and resolves a near-bottom offset that can land short
+      // of the true bottom. Such a list is constructed following the
+      // bottom, so the mount pin lands it exactly; `onRegionScrollSet`
+      // re-pins on the cold-boot restore beat.
+      const seedAnchor = parseAtBottom(savedRegionScroll?.meta)
+        ? null
+        : parseAnchor(savedRegionScroll?.meta);
       if (seedAnchor !== null) {
         smartScroll.setRestoreTarget(
           makeAnchorResolver(seedAnchor.index, seedAnchor.offset),
@@ -1381,6 +1405,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       //    tolerance`) once the resolved offset converges.
       //  - **Raw case** (no `meta.anchor`): write `pos.y` directly.
       //    Mirrors `tug-markdown-view`'s listener.
+      //  - **At-bottom case** (`meta.atBottom`): re-engage follow-bottom
+      //    and pin — exact (`scrollHeight - clientHeight`), and it
+      //    keeps follow-bottom engaged so the jump-to-bottom affordance
+      //    stays hidden. Wins over the anchor / raw cases, and must run
+      //    before `disengageFollowBottom`.
       //
       // `preventDefault()` signals the dispatcher that we owned the
       // apply — `applyRegionScrolls` skips its fallback direct
@@ -1394,6 +1423,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           meta?: unknown;
         }>;
         event.preventDefault();
+
+        if (parseAtBottom(ce.detail.meta)) {
+          // `scrollToBottom` re-engages follow-bottom and pins.
+          smartScroll.scrollToBottom(false);
+          return;
+        }
+
         smartScroll.disengageFollowBottom("region-scroll-restore");
 
         if (typeof ce.detail.left === "number") {
@@ -1593,7 +1629,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // free at human-scale list sizes. See `state-preservation.md`
       // → "Saving geometry for first-paint accuracy."
       const cellHeights = heightIndexRef.current.snapshot();
-      const meta: { anchor: { index: number; offset: number }; cellHeights?: number[]; scrollHeight?: number } = {
+      const meta: {
+        anchor: { index: number; offset: number };
+        cellHeights?: number[];
+        scrollHeight?: number;
+        atBottom?: boolean;
+      } = {
         anchor: { index: anchorIndex, offset: anchorOffset },
       };
       if (cellHeights.length > 0) meta.cellHeights = cellHeights;
@@ -1601,6 +1642,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // consumed at restore today; documented in the schema so
       // future cross-version layout checks have a hook.
       meta.scrollHeight = el.scrollHeight;
+      // `atBottom` — true when the list is following the bottom. The
+      // restore path keys off this to re-engage follow-bottom and pin
+      // (exact, jump-to-bottom affordance hidden) instead of resolving
+      // the near-bottom anchor. Omitted when false to keep the bag
+      // clean; a non-follow-bottom list never sets it.
+      const ss = smartScrollRef.current;
+      if (ss !== null && ss.isFollowingBottom) meta.atBottom = true;
       el.setAttribute("data-tug-scroll-state", JSON.stringify(meta));
     });
 

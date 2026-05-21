@@ -1,6 +1,6 @@
 /**
  * `useLifecycleState` — subscribes a tide-card component to its
- * `CodeSessionStore` and projects the Step 20.5.A matrix-row lifecycle
+ * `CodeSessionStore` and projects the matrix-row lifecycle
  * snapshot. Every zone that coordinates on lifecycle (Z5's submit
  * button, the transcript-replay paint gate, Z2 / Z4) reads this one
  * hook so the matrix has a single executable source of truth.

@@ -705,8 +705,9 @@ describe("CodeSessionStore — [W2] flushed EOF orphan", () => {
 // ---------------------------------------------------------------------------
 // [DT10] — the lifecycle `state` the transcript-replay paint gate reads
 //
-// Step 20.5.D.2 wires `TideTranscriptHost` to suppress its *visible*
-// paint while the lifecycle `state` is REPLAYING. The visible-paint
+// The [DT10] transcript-replay paint gate wires `TideTranscriptHost`
+// to suppress its *visible* paint while the lifecycle `state` is
+// REPLAYING. The visible-paint
 // suppression itself — a `data-replaying` attribute + a CSS
 // `visibility: hidden` rule — is React/CSS glue, left to the manual
 // HMR vet + real-app coverage per the project's no-fake-DOM rule.

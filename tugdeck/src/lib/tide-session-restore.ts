@@ -86,6 +86,17 @@ const TIDE_COMPONENT_ID = "tide";
  */
 const RESTORE_TIMEOUT_MS = 10_000;
 
+/**
+ * Backstop for the startup restore pass: if `list_card_bindings_ok`
+ * never lands, settle the pass gate anyway after this long so an
+ * unbound tide card is not stranded on the restore placeholder. The
+ * `list_card_bindings` query reads the supervisor's in-memory ledger
+ * and answers in tens of ms in the healthy case; a response past this
+ * window means the server is effectively dead, at which point the
+ * card should fall through to the picker.
+ */
+const RESTORE_PASS_SETTLE_TIMEOUT_MS = 5_000;
+
 /** Per-card restore context — enough to drive Retry and Cancel copy. */
 export interface RestoreExpectation {
   readonly tugSessionId: string;
@@ -192,6 +203,66 @@ export function getRestoreStartedAt(cardId: string): number | undefined {
 export function clearRestoreStartedAt(cardId: string): void {
   restoreStartedAt.delete(cardId);
 }
+
+// ---------------------------------------------------------------------------
+// Restore-pass gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-app gate: has the startup restore pass settled?
+ *
+ * `restoreTideSessions` sends `list_card_bindings` and only learns
+ * which cards have a session to restore when the response lands. In
+ * the window before that, a tide card that mounts unbound has no
+ * `tideRestoreRegistry` entry yet — and `TideCardContent` would fall
+ * through to the project picker, dropping its `TugSheet` for the
+ * round-trip until `fireRestore` flips the card to `TideRestoring`.
+ * That is the picker-sheet flash.
+ *
+ * This gate closes the window. `TideCardContent` holds an unbound
+ * card on the restore placeholder until the gate is settled; only
+ * then does an unbound card with no restore expectation fall through
+ * to the picker — by which point it is genuinely a fresh card, not
+ * one mid-restore.
+ *
+ * One-shot: `false` at boot, `true` once the first `restoreTideSessions`
+ * pass resolves, never back. Settled on every exit path of
+ * `restoreTideSessions` — the no-tide-cards early-out, the
+ * `list_card_bindings_ok` handler, and a timeout backstop for a
+ * response that never lands.
+ *
+ * Exported as a class (not just the `restorePassGate` singleton) so
+ * the idempotency invariant — a reconnect re-fire or a timeout racing
+ * the response must not re-notify — is unit-testable on a fresh
+ * instance.
+ */
+export class RestorePassGate {
+  private settled = false;
+  private listeners: Array<() => void> = [];
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.push(listener);
+    return () => {
+      const idx = this.listeners.indexOf(listener);
+      if (idx >= 0) this.listeners.splice(idx, 1);
+    };
+  };
+
+  getSnapshot = (): boolean => this.settled;
+
+  /**
+   * Mark the startup restore pass resolved. Idempotent — the first
+   * settle wins; later calls (a reconnect pass, a timeout racing the
+   * response) are no-ops.
+   */
+  _settle(): void {
+    if (this.settled) return;
+    this.settled = true;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+export const restorePassGate = new RestorePassGate();
 
 // ---------------------------------------------------------------------------
 // Subscription wiring — installed once at startup by `restoreTideSessions`.
@@ -321,7 +392,19 @@ export function restoreTideSessions(
       .cards.filter((c) => c.componentId === TIDE_COMPONENT_ID)
       .map((c) => c.id),
   );
-  if (tideCardIds.size === 0) return;
+  if (tideCardIds.size === 0) {
+    // No tide cards to restore — the pass is trivially settled.
+    restorePassGate._settle();
+    return;
+  }
+
+  // Backstop: settle the pass gate even if `list_card_bindings_ok`
+  // never lands, so an unbound tide card is not stranded on the
+  // restore placeholder. Cleared in the response handler below; a
+  // late fire is a harmless no-op (`_settle` is idempotent).
+  const passSettleTimeout = setTimeout(() => {
+    restorePassGate._settle();
+  }, RESTORE_PASS_SETTLE_TIMEOUT_MS);
 
   // Subscribe once for the matching response, then drop the
   // subscription. The bus is process-global, so we filter by the
@@ -329,6 +412,7 @@ export function restoreTideSessions(
   const reason = opts?.reason ?? "startup";
   const unsubscribe = subscribeToListCardBindingsOk(({ bindings }) => {
     unsubscribe();
+    clearTimeout(passSettleTimeout);
     let resumedCount = 0;
     let freshCount = 0;
     // Track which cards we've already fired for. Multiple ledger rows
@@ -368,6 +452,11 @@ export function restoreTideSessions(
         reason,
       });
     }
+    // The startup restore pass has resolved: every card with a ledger
+    // binding now has a `tideRestoreRegistry` entry (or a fresh-spawn
+    // in flight). An unbound card with neither is genuinely a fresh
+    // card and may fall through to the picker.
+    restorePassGate._settle();
   });
 
   // Fire the request. `action-dispatch` decodes the response and

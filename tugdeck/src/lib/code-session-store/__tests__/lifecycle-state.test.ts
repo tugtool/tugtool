@@ -1,6 +1,6 @@
 /**
- * Pure-logic tests for `lifecycle-state.ts` — the Step 20.5.A
- * state-to-zone matrix encoded as `deriveLifecycleSnapshot`.
+ * Pure-logic tests for `lifecycle-state.ts` — the tide-card
+ * lifecycle state-to-zone matrix encoded as `deriveLifecycleSnapshot`.
  *
  * Coverage:
  *  - `state` — one assertion per distinct matrix row (the ten

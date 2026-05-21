@@ -1,6 +1,6 @@
 /**
  * `tide-card-restore-gate` — the pure predicate behind the Tide card's
- * cold-restore reveal gate (Step 20.5.D.2.A).
+ * cold-restore reveal gate.
  *
  * On a cold relaunch a tide card with a persisted session walks
  * pre-services → transport-restoring → replay preflight →

@@ -1,6 +1,6 @@
 /**
  * Pure-logic tests for `deriveColdRestoreActive` — the snapshot-
- * derivable half of the Step 20.5.D.2.A cold-restore reveal gate.
+ * derivable half of the cold-restore reveal gate.
  *
  * The predicate decides whether `TideCardServicesGate` holds the
  * `TideRestoring` placeholder (true) or mounts `TideCardBody` (false).

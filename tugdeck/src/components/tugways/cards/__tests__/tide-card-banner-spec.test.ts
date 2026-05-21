@@ -8,7 +8,7 @@
  * > none) is exercised branch-by-branch, plus the dismissed-error
  * fall-through.
  *
- * The `replay-loading` kind was retired in Step 20.5.D.2.A — the
+ * The `replay-loading` kind was retired — the
  * cold-restore loading window is the `TideRestoring` placeholder, not
  * a banner, and this helper now runs only once the body is mounted.
  * The last describe block pins that retirement: a preflight-active or
@@ -215,7 +215,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
 });
 
 /**
- * Step 20.5.D.2.A retired the `replay-loading` banner kind. The
+ * The `replay-loading` banner kind was retired. The
  * cold-restore loading window is now held by the `TideRestoring`
  * placeholder, and `deriveTideCardBannerSpec` runs only once
  * `TideCardBody` is mounted — after the restore has resolved. These
