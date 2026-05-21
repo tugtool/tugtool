@@ -18,11 +18,15 @@
  *     for the same id is a logged no-op.
  *   - `send` / live deltas during `replaying` are dropped
  *     defensively.
+ *   - [DT10] — the lifecycle `state` the transcript-replay paint gate
+ *     reads holds REPLAYING for the whole window while the transcript
+ *     reconstructs underneath, and leaves it once at `replay_complete`.
  */
 
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { deriveLifecycleSnapshot } from "@/lib/code-session-store/lifecycle-state";
 import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
@@ -695,5 +699,94 @@ describe("CodeSessionStore — [W2] flushed EOF orphan", () => {
     // `interrupted` badge, not `error`.
     expect(orphan.turnEndReason).toBe("interrupted");
     expect(orphan.result).toBe("interrupted");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [DT10] — the lifecycle `state` the transcript-replay paint gate reads
+//
+// Step 20.5.D.2 wires `TideTranscriptHost` to suppress its *visible*
+// paint while the lifecycle `state` is REPLAYING. The visible-paint
+// suppression itself — a `data-replaying` attribute + a CSS
+// `visibility: hidden` rule — is React/CSS glue, left to the manual
+// HMR vet + real-app coverage per the project's no-fake-DOM rule.
+// What is unit-testable, and what the gate's correctness rests on, is
+// the *contract the gate keys off*: driving the real `CodeSessionStore`
+// reducer through a replay bracket, the `state` from
+// `deriveLifecycleSnapshot` must (a) hold REPLAYING for the whole
+// window — so the gate never lifts mid-window — while the transcript
+// reconstructs underneath one `turn_complete` at a time, and (b) leave
+// REPLAYING exactly once, at `replay_complete` — the host's single
+// reveal. These tests pin that contract against the real engine.
+// ---------------------------------------------------------------------------
+
+describe("CodeSessionStore — [DT10] transcript-replay paint gate", () => {
+  it("holds REPLAYING for the whole window while the transcript reconstructs underneath", () => {
+    const { store, conn } = makeStore();
+
+    // Pre-replay: an unused card derives IDLE — the gate is open.
+    expect(deriveLifecycleSnapshot(store.getSnapshot()).state).toBe("idle");
+
+    emit(conn, replayStarted());
+    // Gate engaged: the host suppresses its visible paint.
+    expect(deriveLifecycleSnapshot(store.getSnapshot()).state).toBe(
+      "replaying",
+    );
+
+    // Each replayed turn commits a `TurnEntry` to the transcript —
+    // the [DT10] contract is that turns reconstruct one
+    // `turn_complete` at a time underneath the gate. The lifecycle
+    // `state` stays REPLAYING across every intermediate commit, so
+    // the host never lifts the paint mid-window.
+    for (let n = 1; n <= 3; n += 1) {
+      const id = `msg-${n}`;
+      emit(conn, userMessageReplay(id, `prompt ${n}`));
+      emit(conn, assistantText(id, `reply ${n}`));
+      emit(conn, turnComplete(id, "success"));
+      const snap = store.getSnapshot();
+      // The transcript grew — the data source is reconstructing.
+      expect(snap.transcript.length).toBe(n);
+      // ...but the lifecycle state has not left REPLAYING, so the
+      // paint gate stays engaged across every intermediate commit.
+      expect(deriveLifecycleSnapshot(snap).state).toBe("replaying");
+    }
+
+    // `replay_complete` closes the bracket: the state leaves REPLAYING
+    // in a single transition — the host's one reveal — and the
+    // fully-reconstructed transcript is already in place.
+    emit(conn, replayComplete(3));
+    const done = store.getSnapshot();
+    expect(done.phase).toBe("idle");
+    expect(done.transcript.length).toBe(3);
+    expect(deriveLifecycleSnapshot(done).state).toBe("complete");
+  });
+
+  it("the derived REPLAYING snapshot is reference-stable across intermediate turn commits ([DT09])", () => {
+    const { store, conn } = makeStore();
+    emit(conn, replayStarted());
+
+    // First replayed turn — `transcript.length` 0 → 1 flips the
+    // `transcript.length > 0` matrix signal, so this snapshot is a
+    // fresh reference relative to the empty-transcript REPLAYING
+    // snapshot.
+    emit(conn, userMessageReplay("msg-1", "p1"));
+    emit(conn, assistantText("msg-1", "r1"));
+    emit(conn, turnComplete("msg-1", "success"));
+    const afterTurn1 = deriveLifecycleSnapshot(store.getSnapshot());
+    expect(afterTurn1.state).toBe("replaying");
+
+    // Subsequent turns only grow `transcript.length` further — not a
+    // matrix-relevant signal once it is already > 0 — so threading
+    // the previous result hands back the SAME reference. The host's
+    // `data-replaying` attribute therefore never churns as turns
+    // reconstruct mid-window.
+    emit(conn, userMessageReplay("msg-2", "p2"));
+    emit(conn, assistantText("msg-2", "r2"));
+    emit(conn, turnComplete("msg-2", "success"));
+    const afterTurn2 = deriveLifecycleSnapshot(
+      store.getSnapshot(),
+      afterTurn1,
+    );
+    expect(afterTurn2).toBe(afterTurn1);
   });
 });

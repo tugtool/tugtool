@@ -49,14 +49,20 @@
  *
  * Tuglaws:
  *  - [L02] `CodeRowCell` reads `pendingApproval` / `controlRequestLog`
- *    via `useSyncExternalStore`.
+ *    via `useSyncExternalStore`; the host reads its lifecycle `state`
+ *    via `useLifecycleState`.
+ *  - [L06] the [DT10] transcript-replay paint gate suppresses the
+ *    host's visible render across the JSONL replay window via a
+ *    `data-replaying` attribute + a `visibility: hidden` CSS rule —
+ *    the subtree is never unmounted, only painted dark.
  *  - [L22] `TugMarkdownBlock` observes the `PropertyStore` directly
  *    and writes the DOM imperatively per delta.
  *  - [L23] preserves scroll position across what was previously a
  *    teardown event (the in-flight → committed transition).
  *  - [L26] stable React-reconciliation identity (key + component
  *    type + renderer reference) across that same transition is the
- *    upstream invariant L23 rides on here.
+ *    upstream invariant L23 rides on here; the [DT10] gate likewise
+ *    keeps the host's DOM container mounted across the replay window.
  */
  
 import React, {
@@ -95,6 +101,7 @@ import type {
   ControlRequestForward,
   ControlRequestRecord,
 } from "@/lib/code-session-store";
+import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
@@ -856,6 +863,27 @@ export const TideTranscriptHost = forwardRef<
   const dataSource = useTideTranscriptDataSource(codeSessionStore);
   const streamingStore = codeSessionStore.streamingDocument;
 
+  // [DT10] transcript-replay paint gate. While the card's lifecycle
+  // `state` is REPLAYING — the JSONL replay window bracketed by
+  // `replay_started` / `replay_complete` — the reducer keeps
+  // committing replayed turns to the data source one `turn_complete`
+  // at a time, and the inner `TugListView` re-renders as usual. What
+  // changes is purely visual: a `data-replaying` attribute on the
+  // host root drives a `visibility: hidden` CSS rule that holds the
+  // pane's paint dark across the whole window, so the user never
+  // watches the transcript accumulate turn-by-turn while the viewport
+  // chases the live edge (the restore FOUC). At `replay_complete` the
+  // state leaves `replaying`, the attribute drops, and the
+  // fully-reconstructed transcript paints exactly once, at the
+  // restored scroll anchor. The subtree is never unmounted — only
+  // paint is gated ([L06]) — so the host keeps mount identity ([L26])
+  // and the inner list view's height index stays measured (the gate
+  // is `visibility`, not `display`, precisely so `ResizeObserver`
+  // keeps sizing cells underneath). `state` is read from the
+  // lifecycle hook, never `phase` directly ([L02]).
+  const lifecycle = useLifecycleState(codeSessionStore);
+  const isReplaying = lifecycle.state === "replaying";
+
   // One renderer per kind ([L26] — renderer reference is the third
   // identity input React reconciles against; distinct lambdas count
   // as distinct component types). With the data source unified to a
@@ -983,6 +1011,7 @@ export const TideTranscriptHost = forwardRef<
       className="tide-card-transcript"
       data-slot="tide-card-transcript"
       data-testid="tide-card-transcript"
+      data-replaying={isReplaying || undefined}
     >
       <TugListView
         ref={listViewRef}

@@ -193,6 +193,28 @@
   font-size: calc(14px * var(--tugx-tide-magnification));
 }
 
+/* [DT10] transcript-replay paint gate. While the card's lifecycle
+   state is REPLAYING — the JSONL replay window bracketed by
+   `replay_started` / `replay_complete` — the reducer reconstructs the
+   committed turns one `turn_complete` at a time. Painting each
+   intermediate state makes the transcript visibly accumulate while
+   the viewport chases the live edge: the restore FOUC. `TideTranscript
+   Host` sets `data-replaying` for the duration of that window; this
+   rule holds the pane's paint dark until it clears, so the transcript
+   reveals exactly once — fully reconstructed, at the restored scroll
+   anchor.
+
+   `visibility: hidden`, not `display: none`: the subtree keeps its
+   layout box, so the inner list view's `ResizeObserver` still measures
+   cells as they commit and the height index is final by the time the
+   gate lifts — the scroll restore then resolves once against a settled
+   transcript height. The subtree is never unmounted ([L06] — paint is
+   gated via a data-attr + CSS, never by conditional rendering; [L26] —
+   the host keeps its mount identity across the window). */
+.tide-card-transcript[data-replaying] {
+  visibility: hidden;
+}
+
 .tide-card-transcript .tug-list-view {
   --tugx-list-view-row-gap: var(--tugx-tide-entry-margin);
   --tugx-list-view-padding-block: var(--tug-space-md);

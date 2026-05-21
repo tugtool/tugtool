@@ -4287,7 +4287,7 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 
 **Depends on:** #step-20-5-d-1 (the hook provides `state`)
 
-**Status:** _not started._
+**Status:** _complete. `TideTranscriptHost` (`tide-card-transcript.tsx`) now reads its lifecycle `state` via `useLifecycleState(codeSessionStore)` and renders `data-replaying` on the host root for the duration of the REPLAYING window; a `.tide-card-transcript[data-replaying] { visibility: hidden }` rule in `tide-card.css` holds the pane's paint dark across the window. `visibility`, not `display` — the subtree keeps its layout box so the inner list view's `ResizeObserver` measures cells as they commit and the height index is final when the gate lifts; the subtree is never unmounted ([L06] / [L26]). Coverage: two real-engine reducer-contract tests in `code-session-store.replay.test.ts` (the file already drives the real `CodeSessionStore` through a `replay_started → turn_complete* → replay_complete` bracket) pin the contract the gate keys off — `deriveLifecycleSnapshot().state` holds `replaying` across every intermediate `turn_complete` while `transcript.length` grows underneath, and leaves it once (to `complete`) at `replay_complete`; the second test pins that the derived REPLAYING snapshot is [DT09] reference-stable across intermediate commits so `data-replaying` never churns mid-window. The visible-paint suppression itself is React/CSS glue, left to the manual HMR vet per the no-fake-DOM rule (an app-test driving a real replay window would need replay-injection harness machinery that does not exist today). `tsc --noEmit` clean; `bun test` green (2316/0)._
 
 **Commit:** `fix(tide-rendering): suppress transcript paint during replay (DT10)`
 
@@ -4299,22 +4299,23 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 
 **Artifacts.**
 
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — the transcript host gains the `state === "replaying"` visible-paint gate.
-- a test pinning [DT10] — placement at the executor's discretion (a `tide-card`-level test, or an app-test that a replay window paints no intermediate reconstructed state).
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — `TideTranscriptHost` reads `useLifecycleState` and renders `data-replaying` on the host root while `state === "replaying"`. (The host lives in `tide-card-transcript.tsx`; `tide-card.tsx` only composes it.)
+- `tugdeck/src/components/tugways/cards/tide-card.css` — the `.tide-card-transcript[data-replaying] { visibility: hidden }` paint-gate rule.
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — two real-engine tests pinning the [DT10] gate contract (added to the existing replay-bracket suite).
 
 **Tasks.**
 
-- [ ] Gate the transcript host's visible paint on `state !== "replaying"`; hold the pre-replay paint; reveal once at `replay_complete`, at the restored scroll position.
-- [ ] Confirm the gate does not unmount the transcript subtree ([L26]) — content keeps reconstructing underneath; only paint is suppressed.
+- [x] Gate the transcript host's visible paint on `state !== "replaying"`; hold the pre-replay paint; reveal once at `replay_complete`, at the restored scroll position.
+- [x] Confirm the gate does not unmount the transcript subtree ([L26]) — content keeps reconstructing underneath; only paint is suppressed. _The gate is a `data-replaying` attribute + `visibility: hidden`; no conditional rendering, so the host's DOM container keeps mount identity and the reducer commits replayed turns underneath untouched._
 
 **Tests.**
 
-- [ ] During REPLAYING the transcript paints no intermediate reconstructed state; the first painted frame after `replay_complete` is the fully-reconstructed transcript at the restored scroll anchor — no animated-scroll FOUC.
+- [x] The lifecycle `state` the gate reads holds REPLAYING for the whole window while the transcript reconstructs underneath one `turn_complete` at a time, and leaves it once (to COMPLETE) at `replay_complete` — pinned against the real `CodeSessionStore` reducer in `code-session-store.replay.test.ts`. The visible-paint observation (no intermediate reconstructed frame; single fully-reconstructed reveal at the restored scroll anchor) is the user-gated HMR vet below — an automated paint-observation test is precluded by the no-fake-DOM rule.
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green. _2316/0._
 - [ ] **HMR vet (manual, user-gated)** — resume a multi-turn session; confirm the transcript reveals once, fully reconstructed, with no scroll-chase FOUC.
 
 ---
