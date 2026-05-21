@@ -21,10 +21,14 @@
  *   - A: the clean turn lifecycle — IDLE → STREAMING → TOOL_WORK →
  *        COMPLETE.
  *   - B: AWAITING_USER (a permission forward).
- *   - C: QUEUED_NEXT_TURN (a mid-turn submit → a transcript ghost row).
+ *   - C: QUEUED_NEXT_TURN — two mid-turn submits paint two ghost rows;
+ *        the Stop button peels the newest (LIFO), the ghost row's ✕
+ *        un-sends a targeted one (C1).
  *   - D: ERRORED (a wire error frame).
  *   - E: REPLAYING (a replay window).
  *   - F: TRANSPORT_DOWN (the wire goes offline).
+ *   - G: C2 — a CASE A pull-down (interrupt before any answer content).
+ *   - H: C3 — a CASE B interrupt (answer content has begun).
  *
  * The matrix is the contract; a regression against any asserted cell
  * is a bug.
@@ -48,7 +52,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const FEED_CODE_OUTPUT = 0x40;
 
 /** Card ids — one per matrix scenario; `tug_session_id` is `test-session-<id>`. */
-const CARD_IDS = ["A", "B", "C", "D", "E", "F"] as const;
+const CARD_IDS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
 type CardId = (typeof CARD_IDS)[number];
 
 function sessionIdFor(cardId: CardId): string {
@@ -133,6 +137,18 @@ function turnCompleteSuccess(
   };
 }
 
+function turnCompleteError(
+  cardId: CardId,
+  msgId: string,
+): Record<string, unknown> {
+  return {
+    type: "turn_complete",
+    tug_session_id: sessionIdFor(cardId),
+    msg_id: msgId,
+    result: "error",
+  };
+}
+
 function controlRequestForward(cardId: CardId): Record<string, unknown> {
   return {
     type: "control_request_forward",
@@ -187,6 +203,28 @@ function ghostRowCount(app: App, cardId: CardId): Promise<number> {
   return app.evalJS<number>(
     `document.querySelectorAll(
       '[data-card-id="${cardId}"] [data-slot="tide-transcript-ghost-row"]').length`,
+  );
+}
+
+/** The body text of each ghost row, in DOM (submit) order. */
+function ghostRowTexts(app: App, cardId: CardId): Promise<string[]> {
+  return app.evalJS<string[]>(
+    `Array.from(document.querySelectorAll(
+      '[data-card-id="${cardId}"] [data-slot="tide-transcript-ghost-row"] .tide-card-transcript-user-body'
+    )).map(function (el) { return el.textContent; })`,
+  );
+}
+
+/** Wait until card `cardId` has exactly `n` transcript ghost rows. */
+async function waitForGhostRowCount(
+  app: App,
+  cardId: CardId,
+  n: number,
+): Promise<void> {
+  await app.waitForCondition<boolean>(
+    `document.querySelectorAll(
+      '[data-card-id="${cardId}"] [data-slot="tide-transcript-ghost-row"]').length === ${n}`,
+    { timeoutMs: 5000 },
   );
 }
 
@@ -246,7 +284,7 @@ describe.skipIf(!SHOULD_RUN)(
   "AT0084: tide-card lifecycle state-to-zone matrix",
   () => {
     test(
-      "every distinct matrix row paints the zones the matrix specifies",
+      "every matrix row and cancellation gesture paints the zones the matrix specifies",
       async () => {
         const app = await launchTugApp({
           testName: "at0084-tide-lifecycle-coordination",
@@ -332,32 +370,53 @@ describe.skipIf(!SHOULD_RUN)(
             "AWAITING_USER: Z2 STATE cell reads Awaiting",
           ).toBe("Awaiting");
 
-          // --- Card C: QUEUED_NEXT_TURN -----------------------------
-          // A submit, one delta to reach a live phase, then a mid-turn
-          // submit — which queues and paints a transcript ghost row.
+          // --- Card C: QUEUED_NEXT_TURN + Stop-peel + C1 (✕) --------
+          // A submit, one delta to reach a live phase, then two
+          // mid-turn submits — each queues and paints a ghost row.
           await app.driveTideSession("C", { op: "send", text: "first" });
           await app.driveTideSession("C", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: assistantText("C", "msg-C", "working", 0),
           });
-          await app.driveTideSession("C", {
-            op: "send",
-            text: "queued follow-up",
-          });
-          await app.waitForCondition<boolean>(
-            `document.querySelectorAll(
-              '[data-card-id="C"] [data-slot="tide-transcript-ghost-row"]').length === 1`,
-            { timeoutMs: 5000 },
-          );
+          await app.driveTideSession("C", { op: "send", text: "queued-1" });
+          await app.driveTideSession("C", { op: "send", text: "queued-2" });
+          await waitForGhostRowCount(app, "C", 2);
           expect(
             await ghostRowCount(app, "C"),
-            "QUEUED_NEXT_TURN: one ghost row for the queued send",
-          ).toBe(1);
+            "QUEUED_NEXT_TURN: one ghost row per queued send",
+          ).toBe(2);
           expect(
             await submitButtonMode(app, "C"),
             "QUEUED_NEXT_TURN: the primary Z5 button stays Stop",
           ).toBe("stop");
+
+          // The Stop button peels the newest cancellable thing — with
+          // the queue non-empty that is the most-recent queued send
+          // (LIFO), not the running turn. "queued-2" goes; "queued-1"
+          // stays; the turn keeps running. (Esc invokes the identical
+          // `peelNewest()` path — see `code-session-store.queue.test`.)
+          await app.click('[data-card-id="C"] .tug-prompt-entry-submit-button');
+          await waitForGhostRowCount(app, "C", 1);
+          expect(
+            await ghostRowTexts(app, "C"),
+            "Stop peels LIFO — the newest queued send goes first",
+          ).toEqual(["queued-1"]);
+          expect(
+            await submitButtonMode(app, "C"),
+            "the peel hit the queue, not the turn — Z5 stays Stop",
+          ).toBe("stop");
+
+          // C1 — the ghost row's ✕ un-sends that one queued message.
+          await app.click(
+            '[data-card-id="C"] [data-slot="tide-transcript-ghost-row"] ' +
+              '[data-slot="tug-icon-button"]',
+          );
+          await waitForGhostRowCount(app, "C", 0);
+          expect(
+            await ghostRowCount(app, "C"),
+            "C1: the ✕ removed the last queued send",
+          ).toBe(0);
 
           // --- Card D: ERRORED --------------------------------------
           await app.driveTideSession("D", {
@@ -395,6 +454,45 @@ describe.skipIf(!SHOULD_RUN)(
           // Reconnecting mode, overriding the base state.
           await app.driveTideSession("F", { op: "transportClose" });
           await waitForSubmitMode(app, "F", "reconnecting");
+
+          // --- Card G: C2 — CASE A pull-down ------------------------
+          // A submit with no answer content yet; interrupt pulls it
+          // back to idle with no committed turn — a clean un-send.
+          await app.driveTideSession("G", { op: "send", text: "pull me back" });
+          await waitForSubmitMode(app, "G", "stop");
+          await app.driveTideSession("G", { op: "interrupt" });
+          await waitForSubmitMode(app, "G", "submit");
+          expect(
+            await stateCellLabel(app, "G"),
+            "CASE A: Z2 STATE cell returns to Idle",
+          ).toBe("Idle");
+          expect(
+            await committedUserRowCount(app, "G"),
+            "CASE A: no committed turn — a clean pull-down",
+          ).toBe(0);
+
+          // --- Card H: C3 — CASE B interrupt ------------------------
+          // A submit plus an answer-channel delta crosses into CASE B;
+          // interrupt + the wire's turn_complete(error) commits one
+          // interrupted turn.
+          await app.driveTideSession("H", { op: "send", text: "interrupt me" });
+          await app.driveTideSession("H", {
+            op: "ingestFrame",
+            feedId: FEED_CODE_OUTPUT,
+            decoded: assistantText("H", "msg-H", "partial", 0),
+          });
+          await waitForSubmitMode(app, "H", "stop");
+          await app.driveTideSession("H", { op: "interrupt" });
+          await app.driveTideSession("H", {
+            op: "ingestFrame",
+            feedId: FEED_CODE_OUTPUT,
+            decoded: turnCompleteError("H", "msg-H"),
+          });
+          await waitForSubmitMode(app, "H", "submit");
+          expect(
+            await committedUserRowCount(app, "H"),
+            "CASE B: the interrupted turn commits one transcript row",
+          ).toBe(1);
         } finally {
           await app.close();
         }
