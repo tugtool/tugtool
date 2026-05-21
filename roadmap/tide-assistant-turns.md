@@ -2,7 +2,7 @@
 
 ## Tide Assistant Turns — Request/Response Lifecycle & Telemetry {#tide-assistant-turns}
 
-**Purpose:** Build the request/response *turn* surface for tide cards — the layer that wraps each user-prompt → assistant-response interaction. Where [`tide-assistant-rendering.md`](./tide-assistant-rendering.md) covers content rendering (body kinds, tool wrappers, markdown / diff / terminal / file viewer / etc.), this plan covers everything that happens *around* a single turn: gauge primitives for the displays it powers, multi-clock telemetry collection on `CodeSessionStore`, the six-zone placement architecture (Z0–Z5) the tide card uses for those displays, the lifecycle state machine that coordinates them, and the on-demand `/context`-style drill-down surface.
+**Purpose:** Build the request/response *turn* surface for tide cards — the layer that wraps each user-prompt → assistant-response interaction. Where [`tide-assistant-rendering.md`](./tide-assistant-rendering.md) covers content rendering (body kinds, tool wrappers, markdown / diff / terminal / file viewer / etc.), this plan covers everything that happens *around* a single turn: gauge primitives for the displays it powers, multi-clock telemetry collection on `CodeSessionStore`, the six-zone placement architecture (Z0–Z5) the tide card uses for those displays, and the lifecycle state machine that coordinates them.
 
 This plan was extracted from [`tide-assistant-rendering.md`](./tide-assistant-rendering.md) Step 20.x; see that doc for the surrounding rendering-layer context. Polish-plan Steps 13 / 14 / 15 (thinking + tool surfaces, mid-stream behaviors, `control_request_forward` UI) are audited and gap-closed in [Step 20.5.B](#step-20-5-b).
 
@@ -49,9 +49,8 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 - Reducer-level tests cover awaiting-approval accumulation, transport-downtime accumulation, per-turn cost delta math, terminal-state branches.
 - All six zones (Z0–Z5) formalized in the API contract. Z0 + Z1-user-half ship empty/reserved (slot mechanism present; default content `null`). Z3 (prompt-entry top) retains project-path badge as its default; renderer registry can replace it.
 - Z5 submit button coordinates with the lifecycle state machine: Submit / Stop / "Awaiting your input" / "Stopping…" / "Reconnecting…" / queued-visual. Same DOM node across mode transitions, verified via mount-identity probe.
-- `useLifecycleState()` hook returns a snapshot that drives Z1 (per-turn indicator), Z2 (status bar), and Z5 (button mode) consistently — every distinct row of the state-to-zone matrix has an end-to-end test. Reference-stable per [DT09]; merges UI-local state per [DT08].
+- `useLifecycleState()` hook returns a snapshot that drives Z2 (status bar) and Z5 (button mode) consistently — every distinct row of the state-to-zone matrix has an end-to-end test. Reference-stable per [DT09].
 - `useLifecycleTick(intervalMs)` provides the 1-second ticker that drives Z2's live-elapsed readouts during in-flight turns; idle when phase is terminal (no leaked timers).
-- `/context`-style drill-down surface available via 📊 affordance at right edge of Z2; renders the full telemetry breakdown (per-turn table, per-tool expansion, reconnect / stream-gap diagnostics, raw `cost_update` payload). Opens without changing persistent text-entry focus destination.
 - `tide-question-dialog` exists (fills polish-plan §Step 15 gap); both permission and question dialogs wire to `awaitingApprovalSince`.
 - `tailSpacer="80cqh"` either removed (if [L26] mount-identity work obviates it) or correctly documented with the real reason (if it serves streaming jitter / visual comfort).
 - `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint` all green at every step.
@@ -71,7 +70,6 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 9. **Cross-zone lifecycle coordination** — Z2, Z5 and the transcript-replay paint gate read the same `useLifecycleState()` snapshot; matrix-coherence enforced by construction. (Z1's asst-half is driven per-row off `turn === undefined`, not the session phase — see [Step 20.4.15](#step-20-4-15).)
 10. **Polish-plan 13 / 14 / 15 audit and gap-close** — including `tide-question-dialog` (the confirmed missing inline-dialog variant).
 11. **Ship default telemetry placements** from the [Step 20.4](#step-20-4) HMR study as production zone content — Z2 = `statusRow`, landed in [Step 20.4.15](#step-20-4-15).
-12. **`/context`-style drill-down sheet** — full telemetry breakdown surface triggered by Z2 📊 affordance ([Step 20.5.E](#step-20-5-e)).
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -79,7 +77,6 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 - **Z0 default content + Z1 user-half default content.** Reserved/empty slots in 20.4 and 20.5. The slot mechanism exists; default content is `null`. Future content (card-level metadata for Z0; timestamps / edit affordances for Z1 user-half) lands in subsequent steps.
 - **Allow-with-edits on permission dialog.** Inherited non-goal from polish-plan §Step 15; requires a structured editor over `tool_use.input` — defer to a follow-on phase.
 - **Re-run buttons on tool blocks.** Security-policy-laden; the permission-mode story for re-run isn't settled. (Same as rendering doc's non-goal.)
-- **Persisting drill-down sort / expansion state** across reloads. The drill-down is a transient inspection surface; persistent UI state is not the right shape for it.
 - **Multi-card telemetry aggregation.** Each tide card has its own session and its own telemetry. Cross-card aggregation (e.g., "total tokens used across all my tide cards today") is out of scope.
 
 #### Dependencies / Prerequisites {#dependencies}
@@ -114,7 +111,6 @@ From the stream-json corpus:
 - Same baseline constraints as [`tide-assistant-rendering.md`](./tide-assistant-rendering.md): bun (not npm), HMR-only (no manual builds), no localStorage / sessionStorage / IndexedDB, app-test harness for real-DOM testing (no fake-DOM), [L19] / [L20] token compliance with `bun run audit:tokens lint` clean, both `brio` and `harmony` themes verified.
 - **[L26] mount identity is critical for Z5.** The submit button must NOT swap DOM nodes between mode transitions. Render one `<button>` whose `data-mode` / label / disabled / aria-label change; CSS handles per-mode visual.
 - **Awaiting-user covers permission AND question dialogs** uniformly. `awaitingApprovalMs` semantic broadened from the original name (kept for source-compat) to include both.
-- **Drill-down must not capture persistent text-entry focus** per [`feedback_persistent_text_entry`]. Opening the drill-down doesn't change the persistent focus destination; closing returns focus to wherever it was.
 - **Reducer touches `Date.now()` only at discrete transition points** (enter/exit dialog, connect/disconnect, first delta, etc.). Live-running clocks live in pure-logic helpers, not in reducer state.
 
 #### Assumptions {#assumptions}
@@ -129,13 +125,9 @@ From the stream-json corpus:
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [QT01] Drill-down sheet orientation — right-sliding vs. bottom-sliding? (OPEN) {#qt01-drilldown-orientation}
+#### [QT01] Drill-down sheet orientation — right-sliding vs. bottom-sliding? (SUPERSEDED) {#qt01-drilldown-orientation}
 
-**Question:** The `/context`-style drill-down ([Step 20.5.E](#step-20-5-e)) is a sheet that slides over the transcript while leaving Z2 + Z5 visible at the edges. Should it slide from the right (sidebar style) or from the bottom (drawer style)?
-
-**Decision target:** During [Step 20.5.E](#step-20-5-e) implementation. Decide based on tide-card aspect ratio in typical use — if cards are tall-and-narrow, bottom-sliding reads better; if wide, right-sliding does.
-
-**Status:** Deferred to implementation.
+**Superseded (2026-05-21).** Moot — the `/context`-style drill-down sheet (Step 20.5.E) was deleted. The on-demand telemetry detail it would have hosted is served by the tide-card status-row popovers (Context / Time / Tokens / State) shipped in [Step 20.4](#step-20-4); there is no sheet, so there is no orientation to decide.
 
 #### [QT02] `cost_update.usage` shape — cumulative or per-turn? (OPEN) {#qt02-cost-update-semantic}
 
@@ -199,13 +191,9 @@ Local decisions specific to this plan. Broader rendering-layer decisions (e.g., 
 
 **Tradeoff:** Adds a layer of indirection between the raw store snapshot and the UI. Pays for itself the first time we change the matrix.
 
-#### [DT04] Drill-down is a sheet, not a modal (DECIDED) {#dt04-drilldown-sheet}
+#### [DT04] Drill-down is a sheet, not a modal (SUPERSEDED) {#dt04-drilldown-sheet}
 
-**Decision:** The `/context`-style drill-down ([Step 20.5.E](#step-20-5-e)) is a sheet that slides over the transcript while leaving Z2 (source of the affordance) and Z5 (primary action) visible at the edges. NOT a modal that hides the source of truth.
-
-**Reasoning:** The drill-down's purpose is inspection — the user wants to see the detail behind the summary in Z2. A modal that hides Z2 breaks that mental model. A sheet preserves the spatial reference and keeps Z5 reachable if the user wants to take action.
-
-**Open detail:** Right-sliding vs. bottom-sliding deferred to [QT01](#qt01-drilldown-orientation).
+**Superseded (2026-05-21).** The `/context`-style drill-down (Step 20.5.E) was deleted — the per-cell status-row popovers ([Step 20.4](#step-20-4)) supersede the monolithic drill-down surface. A popover is anchored chrome, not a sheet, so the sheet-vs-modal question is moot.
 
 #### [DT05] `awaitingApprovalMs` name kept despite broadened semantic (DECIDED) {#dt05-awaiting-approval-naming}
 
@@ -228,7 +216,7 @@ For clarity across the document, key terms with potentially-ambiguous names:
 
 #### [DT07] Esc semantics — foreground-element-first, two-step cancellation (DECIDED) {#dt07-esc-semantics}
 
-**Decision:** The Esc key dismisses the topmost overlay or dialog if any is foregrounded (drill-down sheet, `TugInlineDialog`); otherwise it interrupts the in-flight turn (equivalent to clicking Stop).
+**Decision:** The Esc key dismisses the topmost overlay or dialog if any is foregrounded (`TugInlineDialog`); otherwise it interrupts the in-flight turn (equivalent to clicking Stop).
 
 **Concrete behavior by lifecycle state:**
 
@@ -237,7 +225,6 @@ For clarity across the document, key terms with potentially-ambiguous names:
 | IDLE / COMPLETE | nothing (or blur textarea — UX-comfort detail, not load-bearing) |
 | SUBMITTING / STREAMING / TOOL_WORK | trigger interrupt → INTERRUPTING |
 | AWAITING_USER | dismiss the dialog only — equivalent to a normal deny / cancel response, NOT a turn cancellation. Lifecycle resumes through STREAMING / TOOL_WORK. |
-| DRILLDOWN_OPEN (overlay) | close the drill-down sheet (lifecycle continues underneath) |
 | INTERRUPTING | nothing (already interrupting) |
 
 **Consequence — two-step cancellation from AWAITING_USER.** A user who wants to abort the entire turn while a dialog is up must press Esc twice: first Esc dismisses the dialog (auto-denies / cancels the dialog action; the turn resumes), then a second Esc (now no dialog foregrounded) interrupts the turn.
@@ -250,28 +237,20 @@ For clarity across the document, key terms with potentially-ambiguous names:
 
 **Alternatives considered:** Single-step cancellation that combines dialog-dismiss + interrupt in one Esc from AWAITING_USER. Rejected because it merges two distinct intents and the "deny + cancel" combo is rare in practice.
 
-#### [DT08] `deriveLifecycleSnapshot` accepts UI-local state as a second argument (DECIDED) {#dt08-lifecycle-snapshot-merges-ui-state}
+#### [DT08] `deriveLifecycleSnapshot` accepts UI-local state as a second argument (SUPERSEDED) {#dt08-lifecycle-snapshot-merges-ui-state}
 
-**Decision:** `deriveLifecycleSnapshot(storeSnapshot, uiState): TideLifecycleSnapshot` takes a second argument carrying UI-local flags that the reducer doesn't and shouldn't track. Initially only `{ drilldownOpen: boolean }`; structured as an object so future UI overlays can extend it without churn.
-
-**Reasoning:**
-- The function stays pure (output is a deterministic function of inputs); testability preserved.
-- The reducer doesn't pollute its state with UI-presentation concerns (drill-down open/close is presentation, not session state).
-- The `useLifecycleState` hook composes the two: subscribes to the store via `useSyncExternalStore`, reads the UI-local flag via `useState` or a UI-only zustand store, and calls `deriveLifecycleSnapshot(storeSnapshot, uiState)` to project both into the same matrix-row signal.
-- Future overlays (e.g., a help sheet, a settings popover) add fields to `uiState` without reshaping the reducer or the matrix.
-
-**Alternative considered:** Two derive functions (`deriveSessionLifecycle(store)` + `deriveOverlayLifecycle(uiState)`) with the consumer merging. Rejected because it splits the "one switch encodes the matrix" promise — the matrix has overlay rows, so all signals belong in one derivation.
+**Superseded (2026-05-21).** This decision existed solely to feed the `DRILLDOWN_OPEN` overlay — `uiState` carried `{ drilldownOpen }`. With the `/context`-style drill-down (Step 20.5.E) deleted, `DRILLDOWN_OPEN` is retired and there is no UI-local signal for the matrix to merge: every matrix row now derives from the `CodeSessionStore` snapshot alone. `deriveLifecycleSnapshot` is a single-argument pure function (`storeSnapshot`, plus the optional `previous` for [DT09] reference stability). If a future UI-local overlay appears, the `uiState` second argument can be reintroduced then — cheaply, and against a concrete consumer rather than speculatively.
 
 #### [DT09] `useLifecycleState` returns a stable snapshot reference when matrix-relevant signals are unchanged (DECIDED) {#dt09-snapshot-reference-stability}
 
-**Decision:** `deriveLifecycleSnapshot` returns a structurally-memoized result — if the matrix-relevant signals (`phase`, `pendingApproval !== null`, `transportState`, `interruptInFlight`, `queuedSends > 0`, `uiState.drilldownOpen`) are unchanged from the previous call, return the previous result's same reference. Implementation: a small wrapper that compares the derived `{ state, overlays, submitButtonMode }` tuple to the previous return and returns the prior object when shallow-equal.
+**Decision:** `deriveLifecycleSnapshot` returns a structurally-memoized result — if the matrix-relevant signals (`phase`, `transportState`, `interruptInFlight`, `queuedSends > 0`, `transcript.length > 0`) are unchanged from the previous call, return the previous result's same reference. Implementation: pass the previous result as the optional second argument and the function compares the derived `{ state, overlays, submitButtonMode }` tuple to it, returning the prior object when structurally equal.
 
 **Reasoning:**
 - `useSyncExternalStore` triggers a re-render whenever the snapshot reference changes. Without reference stability, every `assistant_delta` (which mutates the store snapshot but does not change any matrix-relevant signal) re-renders every consumer of `useLifecycleState` — Z1 (per turn), Z2, Z5. At 50+ deltas/sec during streaming, that's 50+ renders/sec across 5+ subscribers.
 - Reference stability bounds re-renders to the events that actually change lifecycle state. Stream deltas do not (they only change content); they only re-render the renderers that subscribe to content (the per-turn assistant body).
 - The reducer's snapshot itself is reference-stable per field per [D10] — this hook extends that discipline upward into the derived lifecycle layer.
 
-**Test:** `deriveLifecycleSnapshot(snapshotA, uiState) === deriveLifecycleSnapshot(snapshotB, uiState)` (`Object.is`) when the matrix-relevant signals of A and B are equal, even when other snapshot fields differ.
+**Test:** `deriveLifecycleSnapshot(snapshotB, deriveLifecycleSnapshot(snapshotA))` returns the first result (`Object.is`) when the matrix-relevant signals of A and B are equal, even when other snapshot fields differ.
 
 #### [DT10] Transcript paint suppressed during REPLAYING — single reveal at `replay_complete` (DECIDED) {#dt10-replay-transcript-suppression}
 
@@ -1295,7 +1274,7 @@ The store can also accept appends from the Swift host via the existing `dispatch
 
 The consequence surfaced during [#step-20-4]'s HMR study: after `Developer > Reload`, the tide card rebinds its session and replays the JSONL. The transcript rehydrates with full text content but every restored `TurnEntry.cost` field reads zero and every `*Ms` field reads zero, because the side-channel that wrote them is gone. The window-utilization gauge correctly reports `0 / 200.0k`. This is the data, not the chip.
 
-[L23] is unambiguous about this class of data: _"Selection, focus, scroll position (outer and inner regions), form-control values, and content payloads are user data — the user put them there. A re-lex, re-parse, DOM rebuild, tab switch, pane activation, cross-pane move, app cmd-tab cycle, or cold boot must preserve these invariants."_ Per-turn telemetry is content payload in the [L24] data-zone sense — it is data that non-rendering consumers (the gauge, the drill-down, the sum across turns, a future export feature) depend on, not appearance state — and the user generated it by submitting turns. It MUST survive HMR, full reload, and app relaunch. The current design does not satisfy that. The gap is a [#step-20-3] design omission, recoverable here.
+[L23] is unambiguous about this class of data: _"Selection, focus, scroll position (outer and inner regions), form-control values, and content payloads are user data — the user put them there. A re-lex, re-parse, DOM rebuild, tab switch, pane activation, cross-pane move, app cmd-tab cycle, or cold boot must preserve these invariants."_ Per-turn telemetry is content payload in the [L24] data-zone sense — it is data that non-rendering consumers (the gauge, the sum across turns, a future export feature) depend on, not appearance state — and the user generated it by submitting turns. It MUST survive HMR, full reload, and app relaunch. The current design does not satisfy that. The gap is a [#step-20-3] design omission, recoverable here.
 
 **Scope.** A three-part investigation followed by an architecture decision and a follow-up implementation plan recorded as a sub-step. _No persistence is shipped in 20.3.3 itself_ — this step's deliverable is the design.
 
@@ -1427,7 +1406,7 @@ The consequence surfaced during [#step-20-4]'s HMR study: after `Developer > Rel
 - **A says "everything LIVE-ONLY is fundamentally unrecoverable from JSONL"** → some persistence is mandatory; the question becomes _which_.
 - **B1.b (client computes, server stores via SessionLedger expansion) is feasible and the merge proof in C passes** → ship B1.b. It's the obvious destination: same durability domain as the existing ledger, cascade-on-DELETE already exists, `(session_id, msg_id)` is the natural stable join key, the reducer stays the single source of truth for the computation, and Rust scope is bounded to schema + one inbound handler + one replay-path telemetry-attach. Open `#step-20-3-4` with the implementation scope.
 - **B1.b surfaces an unforeseen complication in C** (e.g., the merge would require restructuring `CodeSessionStore` construction in a way that fights [L02]; the inline-telemetry shape on `turn_complete` collides with an existing consumer; the inbound message dispatch path can't carry the payload size) → fall back to B2 (tugbank-local) as a fast bridge, AND open a follow-on Rust spike to remove the blocker so B1.b can land later. Document both decisions clearly so the bridge code has a planned exit.
-- **All B options carry hidden complications surfaced in C** → narrow the chosen scope to "persist cost only, defer timing" or "persist cumulative session totals only, defer per-turn breakdown." Document the trade clearly and call out what [#step-20-5-d] / [#step-20-5-e] lose by the narrowing.
+- **All B options carry hidden complications surfaced in C** → narrow the chosen scope to "persist cost only, defer timing" or "persist cumulative session totals only, defer per-turn breakdown." Document the trade clearly and call out what [#step-20-5-d] loses by the narrowing.
 
 **Conformance — what L23 requires.**
 
@@ -1847,9 +1826,8 @@ Beyond the `[1m]` regression: this step closes off the entire class of "live-onl
 │  ║【Z1 user half】 ║  ║  [copy]【Z1 asst half】                              │
 │  ╚═════════════════╝  ╚═══════════════════════╝                              │
 │                                                                             │
-├═════════════════════════════════════════════ ←【Z2: status bar】       [📊]│
+├═════════════════════════════════════════════ ←【Z2: status bar】           │
 │ (flex 0 0 auto, content-sized, never scrolls — outside TugListView)         │
-│ (📊 affordance at right edge opens /context-style drill-down — see 20.5.E)  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ═════════ ↑ split-pane sash (transcript ↔ prompt-entry resize) ═════════════
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1863,7 +1841,7 @@ Beyond the `[1m]` regression: this step closes off the entire class of "live-onl
 
   - **Z0: top of card (reserved).** _New_ slot — a `flex: 0 0 auto`, content-sized row at the very top of the top split-panel, above `TideTranscriptHost`. **Empty / reserved through 20.4 and 20.5.** Reserved for future card-level metadata (session name, model badge, pinned status, etc.). When its content is `null` the row collapses to zero height — the slot exists in the API contract but costs zero visually until something fills it.
   - **Z1: per-turn trailing — unified slot keyed by half.** _New_ slot — adjacent to the existing icon-only copy button on the assistant row's chrome, and at the symmetric trailing position on the user row. Per-turn (one slot per turn-half). Single API keyed by `half: "user" | "assistant"`; the transcript wires it twice per turn (once on the user row, once on the assistant row). The **user half is empty / reserved through 20.4 and 20.5** — the slot mechanism exists and the renderer registry can target it, but our chosen default content is `null`. Reserving the user half now avoids API churn when future content (timestamps, edit affordances, "show raw prompt" toggles) wants to live there. Architectural addition to `tide-card-transcript.tsx`'s row chrome.
-  - **Z2: status bar (bottom of top split-panel, outside TugListView).** _New_ slot — a `flex: 0 0 auto`, content-sized row that lives at the bottom of the upper `TugSplitPanel`, **outside** the scrolling `TugListView`. The top split-panel becomes a flex column: `[Z0 header (flex 0 0 auto)] + [TugListView (flex 1 1 auto, scrolls)] + [Z2 status bar (flex 0 0 auto, never scrolls)]`. TugListView keeps its scroll behavior unchanged (no `position: sticky` inside the virtualized scroller); the transcript↔prompt-entry sash stays exactly as today; no `tug-split-pane` changes; layout shift on telemetry update is contained (Z2 grows into space TugListView ceded, no scroll repositioning). Z2 also hosts the `📊` drill-down affordance at its right edge — that affordance wires in [#step-20-5.E](#step-20-5-e).
+  - **Z2: status bar (bottom of top split-panel, outside TugListView).** _New_ slot — a `flex: 0 0 auto`, content-sized row that lives at the bottom of the upper `TugSplitPanel`, **outside** the scrolling `TugListView`. The top split-panel becomes a flex column: `[Z0 header (flex 0 0 auto)] + [TugListView (flex 1 1 auto, scrolls)] + [Z2 status bar (flex 0 0 auto, never scrolls)]`. TugListView keeps its scroll behavior unchanged (no `position: sticky` inside the virtualized scroller); the transcript↔prompt-entry sash stays exactly as today; no `tug-split-pane` changes; layout shift on telemetry update is contained (Z2 grows into space TugListView ceded, no scroll repositioning).
   - **Z3: prompt-entry top.** The existing `statusContent` slot above the prompt-entry input — same DOM slot as before, just renamed under the new spatial numbering. Currently holds the project-path badge by default. **No invariant reserves this location for the project path** — Z3 is a generic addressable zone like any other, and the project-path badge is one possible occupant.
   - **Z4: prompt-entry footer.** _New_ slot — between the route buttons (`Code` / `Shell` / `Command`) and the submit button. Currently empty space. Architectural addition to `TugPromptEntry`.
   - **Z5: submit-button area.** _Not a content slot — a state-coordinated interactive zone._ The submit button is structurally present already in `TugPromptEntry`'s footer. Its label / disabled state / visual treatment is driven by the lifecycle state machine documented in [#step-20-5.A](#step-20-5-a) and wired in [#step-20-5.D](#step-20-5-d). 20.4 does NOT touch the button; it only formalizes Z5 in the naming contract so renderer-registry consumers can reason about all five zones uniformly.
@@ -1910,13 +1888,10 @@ interface TugPromptEntryProps {
 | Per-turn cost | `turn.cost.totalCostUsd` | maybe | — | — | — |
 | Per-turn TTFT | `turn.ttftMs` | maybe | — | — | — |
 | Phase / "Claude is thinking" indicator | `snapshot.phase` | — | — | maybe | ✓ |
-| `/context`-style on-demand drill-down (affordance) | aggregate of above | — | open via 📊 affordance at right edge | — | — |
 
 The "✓" / "maybe" / "—" marks are starting positions, not decisions. The study confirms or rearranges.
 
 **Experimentation tooling.** Implement a small dev-mode display selector — keyboard shortcut or query-string flag — that toggles which datum renders in which slot. The goal is to make A/B comparisons during the HMR vet cheap. Production builds ship with the selector behind a guard (e.g., `import.meta.env.DEV`); the placement decisions captured at the end of this step land as the default content of each slot in [#step-20-5.D](#step-20-5-d).
-
-**`/context`-style on-demand surface.** Deferred to [#step-20-5.E](#step-20-5-e). 20.4's contribution: the `📊` affordance host site (right edge of Z2) is part of Z2's layout from day one, even though the affordance itself wires in 20.5.E. Reserving the host site here means 20.5.E adds the click target without re-laying-out Z2.
 
 **Artifacts.**
 
@@ -2695,7 +2670,6 @@ _Implementer's note._ Schema lives in `tugcast::session_ledger` (alongside `sess
 - **`pendingApproval` vs `pendingQuestion`** — both collapse under `phase === "awaiting_approval"`. The ledger row says "user was awaited," not "for what." [DT07]'s Esc semantics distinguishes them; this ledger doesn't.
 - **`queuedSends`** — the QUEUED_NEXT_TURN overlay does not change the triple. Toggling this overlay produces zero ledger rows.
 - **`turnEndReason`** — the `complete | interrupted | error | transport_lost` distinction lives on `TurnEntry`, not here. After any turn ends the ledger sees `phase=idle`; the reason is recovered from the turns table.
-- **DRILLDOWN_OPEN** — UI-local state, never reducer-tracked; never written.
 
 **Schema co-evolution.** If [Step 20.4.2](#step-20-4-2) ever adds a fourth axis to `TugStateIndicator`'s props (or [Step 20.5.A](#step-20-5-a)'s matrix grows a new tone-bearing signal), this ledger's schema MUST grow a corresponding column in the same step. The three artifacts — indicator props, matrix state-definitions table, ledger schema — co-evolve as one.
 
@@ -3695,15 +3669,15 @@ The Bash body kind likely renders its output as a `TerminalBlock` or similar —
 
 ---
 
-#### Step 20.5: Lifecycle coordination + Z5 + drill-down — split into four sub-steps {#step-20-5}
+#### Step 20.5: Lifecycle coordination + Z5 {#step-20-5}
 
 **Depends on:** #step-20-4 (slot infrastructure + placement decisions from the HMR study)
 
-**Status:** _in progress — 20.5.A + 20.5.B complete (lifecycle spec landed as the canonical artifact; polish-13/14/15 audited, the question dialog and both replay end-state bugs closed). Remaining: ~~20.5.C~~ (superseded by Step 20.4.10–20.4.13) → 20.5.D → 20.5.E, gated sequentially._
+**Status:** _in progress — 20.5.A + 20.5.B complete (lifecycle spec landed as the canonical artifact; polish-13/14/15 audited, the question dialog and both replay end-state bugs closed). Remaining: ~~20.5.C~~ (superseded by Step 20.4.10–20.4.13) → 20.5.D. ~~20.5.E~~ (the `/context`-style drill-down) was deleted 2026-05-21 — superseded by the tide-card status-row popovers shipped in Step 20.4._
 
-**Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), ~~studies and adds the `agent` role to `TugProgress` for Z1's SUBMITTING-state immediate-feedback indicator (20.5.C)~~ — _superseded; the Z1 asst-half indicator is `TugThinkingIndicator` per [Step 20.4.10](#step-20-4-10) instead of a TugProgress variant_, wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.D), and ships the on-demand `/context`-style drill-down surface (20.5.E).
+**Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), ~~studies and adds the `agent` role to `TugProgress` for Z1's SUBMITTING-state immediate-feedback indicator (20.5.C)~~ — _superseded; the Z1 asst-half indicator is `TugThinkingIndicator` per [Step 20.4.10](#step-20-4-10) instead of a TugProgress variant_, and wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.D).
 
-The remaining sub-steps are gated sequentially: 20.5.A is the spec that everything else references; 20.5.B closes pre-existing gaps so downstream work builds on working primitives; 20.5.D is the big lifecycle implementation; 20.5.E layers the drill-down on top. The Z1 asst-half indicator work that was 20.5.C now lives in [Step 20.4.10](#step-20-4-10)–[Step 20.4.13](#step-20-4-13) and ships via [Step 20.4.15](#step-20-4-15).
+The remaining sub-steps are gated sequentially: 20.5.A is the spec that everything else references; 20.5.B closes pre-existing gaps so downstream work builds on working primitives; 20.5.D is the big lifecycle implementation. The Z1 asst-half indicator work that was 20.5.C now lives in [Step 20.4.10](#step-20-4-10)–[Step 20.4.13](#step-20-4-13) and ships via [Step 20.4.15](#step-20-4-15). The `/context`-style drill-down surface that was 20.5.E was deleted — the per-cell status-row popovers shipped in [Step 20.4](#step-20-4) (Context / Time / Tokens / State) supersede it.
 
 **References:** [#step-20-3] (data model), [#step-20-4] (slot infrastructure + study outcome), [polish-plan #step-13](./tugplan-tide-card-polish.md#step-13), [polish-plan #step-14](./tugplan-tide-card-polish.md#step-14), [polish-plan #step-15](./tugplan-tide-card-polish.md#step-15), [L02], [L23], [L26]
 
@@ -3815,8 +3789,6 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
     • QUEUED_NEXT_TURN   ← queuedSends > 0
                            (user typed + submitted during STREAMING/
                             TOOL_WORK; queued for auto-flush on idle)
-    • DRILLDOWN_OPEN     ← user opened the /context-style breakdown
-                           (Esc closes the sheet, not the turn — DT07)
 ```
 
 **State definitions.** Signals refer to the actual `CodeSessionPhase` enum (`types.ts:32` — `idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`) and the snapshot's existing fields (`pendingApproval`, `pendingQuestion`, `transportState`, `inflightUserMessage`, `queuedSends`, plus the new `interruptInFlight` from [Step 20.3](#step-20-3)):
@@ -3835,9 +3807,8 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 | COMPLETE | Just-finished turn; `TurnEntry` frozen onto transcript. Same `phase === "idle"` as IDLE but the just-frozen turn drives Z1 final-metrics display. | `phase === "idle"` AND `transcript.length > 0` AND `interruptInFlight === false` |
 | TRANSPORT_DOWN (overlay) | Wire not usable. Can apply during any non-IDLE state; covers BOTH `offline` (no wire) AND `restoring` (wire back, binding not re-ack'd). | `transportState !== "online"` |
 | QUEUED_NEXT_TURN (overlay) | User submitted a second prompt while a turn was in flight; queued for auto-flush on idle. | `queuedSends > 0` |
-| DRILLDOWN_OPEN (overlay) | User opened the `/context`-style breakdown via the Z2 affordance. | UI-local state (not reducer-tracked; merged into the lifecycle snapshot by `deriveLifecycleSnapshot` per [DT08](#dt08-lifecycle-snapshot-merges-ui-state)) |
 
-**Persistence projection.** The subset `(phase, transportState, interruptInFlight)` is the *indicator-tone axis set*: exactly what [`TugStateIndicator`](#step-20-4-2) reads as props, and exactly what [Step 20.4.8](#step-20-4-8)'s `session_state_changes` ledger persists. The invariant is **ledger axes ≡ indicator's tone axes ⊆ matrix signals**: signals in this table that are NOT in that triple (transcript length, `pendingApproval` / `pendingQuestion` distinction, `queuedSends`, `turnEndReason`, DRILLDOWN_OPEN) are deliberately not persisted as state-change rows; consumers recover them from other tables (`TurnEntry`s for `turnEndReason`, transcript-length count for IDLE↔COMPLETE) or accept that they're not historically replayable. **Known gap — closed in [Step 20.5.B](#step-20-5-b).** The "`TurnEntry`s for `turnEndReason`" clause assumes a committed `TurnEntry` survives a resume; it does not. A resumed session *rebuilds* each `TurnEntry` from replayed frames and re-derives `turnEndReason` from `turn_complete.result` + the runtime-only `interruptInFlight` — which cannot distinguish an interrupted turn from an errored one on the replay path. Persisting the per-turn end reason is [Step 20.5.B](#step-20-5-b)'s [replay-2] gap-close. If this matrix grows a new tone-bearing signal, all three artifacts (indicator props, this table, ledger schema) co-evolve in the same step.
+**Persistence projection.** The subset `(phase, transportState, interruptInFlight)` is the *indicator-tone axis set*: exactly what [`TugStateIndicator`](#step-20-4-2) reads as props, and exactly what [Step 20.4.8](#step-20-4-8)'s `session_state_changes` ledger persists. The invariant is **ledger axes ≡ indicator's tone axes ⊆ matrix signals**: signals in this table that are NOT in that triple (transcript length, `pendingApproval` / `pendingQuestion` distinction, `queuedSends`, `turnEndReason`) are deliberately not persisted as state-change rows; consumers recover them from other tables (`TurnEntry`s for `turnEndReason`, transcript-length count for IDLE↔COMPLETE) or accept that they're not historically replayable. **Known gap — closed in [Step 20.5.B](#step-20-5-b).** The "`TurnEntry`s for `turnEndReason`" clause assumes a committed `TurnEntry` survives a resume; it does not. A resumed session *rebuilds* each `TurnEntry` from replayed frames and re-derives `turnEndReason` from `turn_complete.result` + the runtime-only `interruptInFlight` — which cannot distinguish an interrupted turn from an errored one on the replay path. Persisting the per-turn end reason is [Step 20.5.B](#step-20-5-b)'s [replay-2] gap-close. If this matrix grows a new tone-bearing signal, all three artifacts (indicator props, this table, ledger schema) co-evolve in the same step.
 
 **Replay fidelity.** REPLAYING is a first-class state above, but the lifecycle map alone does not say which per-turn *artifacts* survive a resume — and the [Step 20.5.B.1](#step-20-5-b-1) corpus audit (the real translator run over ~280 on-disk sessions) showed the honest answer is mixed. This matrix is the contract; a row that reads ✗ is a known gap with its closing step named. The reducer / translator must satisfy it; a regression against any ✓ row is a bug.
 
@@ -3878,7 +3849,6 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 | COMPLETE | reserved | Z1A: model + timestamp of the just-committed turn. Z1B: `EndStateDisplay` — tone-coded ghost badge (`complete` / `interrupted` / `error` / `transport_lost`) + active-ms + total tokens + a trailing `BlockCopyButton` keyed off the assistant text. | session cum totals (frozen, includes this turn) | project badge | (default) | **Submit** |
 | TRANSPORT_DOWN (overlay) | reserved | Z1A: unchanged. Z1B: whatever the underlying phase's row above resolves to — frozen visually (the indicator keeps pulsing per its phase-driven `animating` flag; freezes are signalled on Z2/Z5 not Z1B). | "Disconnected — reconnecting" badge replaces live counts | project badge | (default) | **"Reconnecting…"** (disabled). When `transportState === "restoring"`, label is "Reconnecting…" too (the binding ack is part of the reconnect); when `"offline"`, label is "Reconnecting…" (we don't expose the offline/restoring distinction to the user — both are "session unusable"). |
 | QUEUED_NEXT_TURN (overlay) | reserved | Z1A: unchanged. Z1B: unchanged from the current turn's row. | (current turn's live counts) | project badge | (default) | Submit visually marked "will send on idle" |
-| DRILLDOWN_OPEN (overlay) | reserved | dimmed | dimmed | dimmed | dimmed | dimmed (drill-down surface is the focus) |
 
 **REPLAYING transcript suppression.** The REPLAYING row encodes [DT10](#dt10-replay-transcript-suppression): a resumed session reconstructs its committed turns one `turn_complete` at a time, and painting each intermediate state makes the transcript visibly accumulate while the viewport chases the live edge — the restore FOUC the lifecycle investigation diagnosed. The transcript host therefore gates its visible render on `state !== "replaying"`, holding its pre-replay paint across the window and doing one reconstructed paint at `replay_complete`. The implementation lands in [Step 20.5.D](#step-20-5-d); this row is its contract.
 
@@ -4212,7 +4182,7 @@ This step does three things:
 
 **Commit:** _per sub-step._
 
-**References:** [#step-20-5-a] (the matrix), [#step-20-3] (the `CodeSessionSnapshot` fields driving coordination), [#step-20-4] (the zones), [L02], [L06], [L23], [L26], [DT08], [DT09], [DT10]
+**References:** [#step-20-5-a] (the matrix), [#step-20-3] (the `CodeSessionSnapshot` fields driving coordination), [#step-20-4] (the zones), [L02], [L06], [L23], [L26], [DT09], [DT10]
 
 **Scope.** Implement the [Step 20.5.A](#step-20-5-a) state-to-zone coordination matrix: the lifecycle state machine becomes a real `deriveLifecycleSnapshot` function — the matrix encoded as one switch — exposed via a `useLifecycleState()` hook, and the surfaces that genuinely need phase coordination consume it. The matrix is the contract; a regression against any of its ✓ cells is a bug.
 
@@ -4242,13 +4212,13 @@ D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix th
 
 **Depends on:** #step-20-5-d (parent), #step-20-5-a (the matrix this encodes), [#step-20-3] (the `CodeSessionSnapshot` fields the switch reads)
 
-**Status:** _complete. `lifecycle-state.ts` — `deriveLifecycleSnapshot` encodes the 20.5.A matrix as one pure switch: `state` (the ten rows, with errored / replaying / interrupt precedence), `overlays`, and the Z5 `submitButtonMode`. `use-lifecycle-state.ts` — the `useSyncExternalStore` + per-card `useRef` wrapper. `lifecycle-state.test.ts` — 38 pure-logic cases. `tsc --noEmit` clean; `bun test` green (2317 tugdeck). Three refinements of the design sketch, all noted in the module docstrings: (1) `submitButtonMode` extracted as a named `TideSubmitButtonMode` type — Step 20.5.D.3 consumes it; (2) `deriveLifecycleSnapshot` takes an optional third `previous` argument as the [DT09] reference-stability mechanism (pure — the hook threads it from a per-card `useRef`, so stability is per-card and a module cache cannot thrash); (3) the first argument is typed `LifecycleStoreSignals` — the narrow matrix-relevant subset of `CodeSessionSnapshot`, which structurally satisfies it — so the function states its true dependency surface and a pure test supplies a literal without fabricating ~30 unrelated fields. One matrix reading flagged for the [20.5.D.4](#step-20-5-d-4) queued-UI spike: QUEUED_NEXT_TURN is followed literally in `deriveSubmitButtonMode` — it shows a queued-Submit (not Stop) even while a turn is in flight; the spike revisits whether that is the wanted affordance._
+**Status:** _complete. `lifecycle-state.ts` — `deriveLifecycleSnapshot` encodes the 20.5.A matrix as one pure switch: `state` (the ten rows, with errored / replaying / interrupt precedence), `overlays`, and the Z5 `submitButtonMode`. `use-lifecycle-state.ts` — the `useSyncExternalStore` + per-card `useRef` wrapper. `lifecycle-state.test.ts` — 35 pure-logic cases. `tsc --noEmit` clean; `bun test` green. Three refinements of the design sketch, all noted in the module docstrings: (1) `submitButtonMode` extracted as a named `TideSubmitButtonMode` type — Step 20.5.D.3 consumes it; (2) `deriveLifecycleSnapshot` takes an optional second `previous` argument as the [DT09] reference-stability mechanism (pure — the hook threads it from a per-card `useRef`, so stability is per-card and a module cache cannot thrash); (3) the first argument is typed `LifecycleStoreSignals` — the narrow matrix-relevant subset of `CodeSessionSnapshot`, which structurally satisfies it — so the function states its true dependency surface and a pure test supplies a literal without fabricating ~30 unrelated fields. The `uiState` / `drilldown_open` machinery the original sketch carried was retired with the 20.5.E drill-down (2026-05-21); `deriveLifecycleSnapshot` is single-argument. One matrix reading flagged for the [20.5.D.4](#step-20-5-d-4) queued-UI spike: QUEUED_NEXT_TURN is followed literally in `deriveSubmitButtonMode` — it shows a queued-Submit (not Stop) even while a turn is in flight; the spike revisits whether that is the wanted affordance._
 
 **Commit:** `feat(tide-rendering): lifecycle-state module + useLifecycleState hook`
 
-**References:** [#step-20-5-a] (the state-to-zone matrix — the literal source for the switch), [#step-20-3] (`CodeSessionSnapshot`: `phase` / `pendingApproval` / `pendingQuestion` / `transportState` / `interruptInFlight` / `queuedSends`), [L02], [DT08], [DT09]
+**References:** [#step-20-5-a] (the state-to-zone matrix — the literal source for the switch), [#step-20-3] (`CodeSessionSnapshot`: `phase` / `transportState` / `interruptInFlight` / `queuedSends` / `transcript`), [L02], [DT09]
 
-**Scope.** The 20.5.A matrix is a table; this sub-step makes it executable. `deriveLifecycleSnapshot` is a pure function — one switch — projecting `(CodeSessionSnapshot, TideLifecycleUiState)` onto a `TideLifecycleSnapshot` (the matrix row: `state`, `overlays`, `submitButtonMode`). `useLifecycleState()` is the `useSyncExternalStore` wrapper. No UI integration here — the foundation lands and is unit-tested in isolation; D.2–D.4 consume it.
+**Scope.** The 20.5.A matrix is a table; this sub-step makes it executable. `deriveLifecycleSnapshot` is a pure function — one switch — projecting the `CodeSessionStore` snapshot onto a `TideLifecycleSnapshot` (the matrix row: `state`, `overlays`, `submitButtonMode`). `useLifecycleState()` is the `useSyncExternalStore` wrapper. No UI integration here — the foundation lands and is unit-tested in isolation; D.2–D.5 consume it.
 
 **Design — the `useLifecycleState` hook.** Sketch:
 
@@ -4260,12 +4230,12 @@ export type TideLifecycleState =
   | "streaming" | "tool_work" | "awaiting_user"
   | "interrupting" | "replaying" | "errored" | "complete";
 
-export type TideLifecycleOverlay = "transport_down" | "queued_next" | "drilldown_open";
+export type TideLifecycleOverlay = "transport_down" | "queued_next";
 
 export interface TideLifecycleSnapshot {
   state: TideLifecycleState;
   overlays: ReadonlySet<TideLifecycleOverlay>;
-  // Z5-relevant derived fields:
+  // Z5-relevant derived field:
   submitButtonMode:
     | { kind: "submit"; disabled: boolean; queued: boolean }
     | { kind: "stop" }
@@ -4275,48 +4245,41 @@ export interface TideLifecycleSnapshot {
     | { kind: "restoring" };      // disabled — REPLAYING state
 }
 
-export interface TideLifecycleUiState {
-  drilldownOpen: boolean;
-  // Future UI-local overlays add fields here per [DT08].
-}
-
-// Per [DT08]: takes both store and UI state; pure-of-inputs.
 // Per [DT09]: returns the previous reference when matrix-relevant signals unchanged.
 export function deriveLifecycleSnapshot(
   storeSnapshot: CodeSessionSnapshot,
-  uiState: TideLifecycleUiState,
+  previous?: TideLifecycleSnapshot,
 ): TideLifecycleSnapshot;
 ```
 
-`useLifecycleState()` composes three sources: (1) `useSyncExternalStore` on `CodeSessionStore` per [L02]; (2) a UI-local `useState` for `TideLifecycleUiState` (`drilldownOpen` and future presentation flags); (3) `deriveLifecycleSnapshot(storeSnapshot, uiState)` to project both into the same matrix-row signal, with the reference-stable return guarantee of [DT09].
+`useLifecycleState()` composes two sources: (1) `useSyncExternalStore` on `CodeSessionStore` per [L02]; (2) `deriveLifecycleSnapshot(storeSnapshot, previous)` to project the snapshot onto the matrix-row signal, threaded with the previous result from a per-card `useRef` for the reference-stable return guarantee of [DT09].
 
-The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one source of truth, trivially testable. The switch reads the actual `CodeSessionPhase` enum (`idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`) plus `pendingApproval` / `pendingQuestion` / `transportState` / `queuedSends` / `interruptInFlight`, and derives the matrix's projected states that have no raw phase of their own — COMPLETE (`idle` with ≥ 1 committed turn), INTERRUPTING (`interruptInFlight`), AWAITING_USER (`awaiting_approval`).
+The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one source of truth, trivially testable. The switch reads the actual `CodeSessionPhase` enum (`idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`) plus `transportState` / `queuedSends` / `interruptInFlight` / `transcript.length`, and derives the matrix's projected states that have no raw phase of their own — COMPLETE (`idle` with ≥ 1 committed turn), INTERRUPTING (`interruptInFlight`), AWAITING_USER (`awaiting_approval`).
 
-**Conformance.** [L02] — the hook is the single `useSyncExternalStore` boundary; `lifecycle-state.ts` is a pure module (no DOM, no React). [DT08] — `deriveLifecycleSnapshot` takes both `storeSnapshot` and `uiState`. [DT09] — it returns the previous reference when no matrix-relevant signal changed; a growing `assistant` string must not produce a new snapshot.
+**Conformance.** [L02] — the hook is the single `useSyncExternalStore` boundary; `lifecycle-state.ts` is a pure module (no DOM, no React). [DT09] — `deriveLifecycleSnapshot` returns the previous reference when no matrix-relevant signal changed; a growing `assistant` string must not produce a new snapshot.
 
 **Artifacts.**
 
-- `tugdeck/src/lib/code-session-store/lifecycle-state.ts` — _new_ — `TideLifecycleState`, `TideLifecycleOverlay`, `TideLifecycleSnapshot`, `TideLifecycleUiState`, `deriveLifecycleSnapshot`.
-- `tugdeck/src/lib/code-session-store/hooks/use-lifecycle-state.ts` — _new_ — the `useSyncExternalStore` + `useState(uiState)` + `deriveLifecycleSnapshot` composition.
-- `tugdeck/src/lib/code-session-store/__tests__/lifecycle-state.test.ts` — _new_ — pure-logic tests, one per distinct matrix row + the [DT08] / [DT09] guarantees.
+- `tugdeck/src/lib/code-session-store/lifecycle-state.ts` — _new_ — `TideLifecycleState`, `TideLifecycleOverlay`, `TideSubmitButtonMode`, `TideLifecycleSnapshot`, `LifecycleStoreSignals`, `deriveLifecycleSnapshot`, `lifecycleSnapshotsEqual`.
+- `tugdeck/src/lib/code-session-store/hooks/use-lifecycle-state.ts` — _new_ — the `useSyncExternalStore` + per-card `useRef` + `deriveLifecycleSnapshot` composition.
+- `tugdeck/src/lib/code-session-store/__tests__/lifecycle-state.test.ts` — _new_ — pure-logic tests, one per distinct matrix row + the [DT09] guarantee.
 
 **Tasks.**
 
 - [x] `lifecycle-state.ts` — the types + `deriveLifecycleSnapshot` as the 20.5.A matrix encoded in one switch. _Done — `deriveLifecycleState` / `deriveOverlays` / `deriveSubmitButtonMode` compose the projection; `lifecycleSnapshotsEqual` is the [DT09] primitive._
-- [x] `use-lifecycle-state.ts` — the hook: `useSyncExternalStore` on `CodeSessionStore`, the caller's `TideLifecycleUiState` (a stable default pre-20.5.E), `deriveLifecycleSnapshot` to project. _Done — per-card `useRef` threads `previous` for [DT09]._
-- [x] Pure tests — one per matrix row + the [DT08] / [DT09] guarantees. _Done — `lifecycle-state.test.ts`, 38 cases._
+- [x] `use-lifecycle-state.ts` — the hook: `useSyncExternalStore` on `CodeSessionStore`, `deriveLifecycleSnapshot` to project. _Done — per-card `useRef` threads `previous` for [DT09]._
+- [x] Pure tests — one per matrix row + the [DT09] guarantee. _Done — `lifecycle-state.test.ts`, 35 cases._
 
 **Tests.**
 
 - [x] `deriveLifecycleSnapshot` returns the correct `state` for every `phase` / `transportState` / `interruptInFlight` / `queuedSends` combination the matrix lists distinctly — IDLE, SUBMITTING, AWAITING_FIRST_TOKEN, STREAMING, TOOL_WORK, AWAITING_USER, INTERRUPTING, REPLAYING, ERRORED, COMPLETE — plus the errored / replaying / interrupt precedence. _Pass._
 - [x] `submitButtonMode` matches the matrix Z5 column for every state, plus the TRANSPORT_DOWN / QUEUED_NEXT_TURN overlay effects (`reconnecting`, `queued`) and their precedence. _Pass._
 - [x] **[DT09]** — `deriveLifecycleSnapshot` with `previous` threaded returns the prior reference when no matrix-relevant signal moved, a fresh one when any did. _Pass._
-- [x] **[DT08]** — `uiState.drilldownOpen` projects into `overlays`; the same `storeSnapshot` with a different `uiState` returns a distinct result. _Pass._
 
 **Checkpoint.**
 
 - [x] `bun x tsc --noEmit` clean. _Done._
-- [x] `bun test` green. _Done — 2317 tugdeck, 0 fail._
+- [x] `bun test` green. _Done — 0 fail._
 
 ---
 
@@ -4485,63 +4448,3 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
 - [ ] **HMR vet (manual, user-gated)** — drive a session through each matrix state; visually confirm zone coordination matches the matrix.
-
----
-
-#### Step 20.5.E: `/context`-style on-demand drill-down surface {#step-20-5-e}
-
-**Depends on:** #step-20-5-d (lifecycle hook + Z2 affordance host site)
-
-**Status:** _not started._
-
-**Commit:** `feat(tide-rendering): /context-style telemetry drill-down surface (Z2 📊 affordance)`
-
-**References:** [#step-20-5-a] (DRILLDOWN_OPEN overlay state), [#step-20-5-d] (lifecycle hook), [#step-20-3] (telemetry data exposed by the drill-down), [#step-20-4] (Z2 affordance host site)
-
-**Scope.** Build the on-demand `/context`-style breakdown surface that surfaces the FULL telemetry detail — every field on every `TurnEntry`, per-model breakdown if multiple models were used, the live `cost_update` payload, the gauge thresholds, the four-clock breakdown (`wallClockMs` / `awaitingApprovalMs` / `transportDowntimeMs` / `activeMs`), per-tool wall via `ToolCall.toolWallMs`, latency markers (`ttftMs` / `ttftcMs`), and reconnect / stream-gap diagnostics. Mirrors the terminal Claude Code's `/context` behavior.
-
-**Trigger.** A small `📊` affordance at the right edge of Z2 (host site already reserved by [#step-20-4]). Click opens the drill-down; Esc and outside-click close it. The drill-down toggles the `DRILLDOWN_OPEN` overlay in the lifecycle state from 20.5.A.
-
-**Surface choice.** A **sheet** (or sidebar) rather than a modal. A modal would hide the source-of-truth zones (especially Z2, the source of the affordance); a sheet that slides over the transcript but leaves Z2 + Z5 visible at the edges preserves the user's spatial mental model. Decide between right-sliding sheet vs. bottom-sliding sheet during implementation based on tide-card aspect ratio.
-
-**Content layout.** Hierarchical, scannable:
-
-- **Header:** session ID, model name, context window utilization (full gauge from [#step-20-1], not the compact strip).
-- **Per-turn table:** one row per committed turn — turn index, `wallClockMs`, `awaitingApprovalMs`, `transportDowntimeMs`, `activeMs`, `ttftMs`, `ttftcMs`, tokens (in / out / cache_read / cache_creation), cost USD, `turnEndReason`. Sortable.
-- **Per-tool breakdown** (collapsed by default): for each turn that had tool calls, expand to show per-tool `toolWallMs` + tool name + arg summary.
-- **Reconnect / stream-gap diagnostics:** count of reconnects across the session; longest stream gap; etc.
-- **Live cost_update payload (raw):** the latest `cost_update` JSON, formatted, for debugging. Collapsed by default.
-
-**Conformance.** All data via [#step-20-3]'s `telemetry.ts` helpers — no direct snapshot scraping. [L02] for the lifecycle/data subscription. [L06] for appearance. The drill-down is read-only — no mutations, no input capture beyond Esc-to-close. Does NOT claim responder identity persistently — opening the drill-down doesn't change the persistent text-entry destination per [feedback_persistent_text_entry].
-
-**Artifacts.**
-
-- `tugdeck/src/components/tugways/cards/tide-telemetry-drilldown.tsx` + `.css` + `.test.ts` — _new component_. Renders the sheet body. Receives data via the telemetry helpers; receives open/close via prop.
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire the `📊` affordance on Z2's right edge to a local UI state that toggles the drill-down; pass open state into `tide-telemetry-drilldown`. Toggle the `DRILLDOWN_OPEN` overlay in `useLifecycleState` so the dimming behavior from the matrix applies.
-- `tugdeck/src/lib/code-session-store/lifecycle-state.ts` — per [DT08](#dt08-lifecycle-snapshot-merges-ui-state), `deriveLifecycleSnapshot` already accepts `uiState: TideLifecycleUiState` as its second argument from [Step 20.5.D](#step-20-5-d). This step adds the `drilldownOpen: boolean` field's PRODUCER side: when 20.5.D landed, `drilldownOpen` defaulted to `false`; this step adds the toggle (UI-local `useState` in the `TideCard` composition; mutated by the `📊` affordance handler and the Esc handler in the drill-down sheet). The matrix's DRILLDOWN_OPEN overlay then derives automatically from the existing snapshot derivation.
-- `tugdeck/src/components/tugways/cards/__tests__/tide-telemetry-drilldown.test.tsx` — fixture renders with a multi-turn transcript; assert every per-turn field shows; assert sort works; assert per-tool expansion works; assert Esc closes.
-
-**Tasks.**
-
-- [ ] **Drill-down component** — render header, per-turn table, per-tool expansion, diagnostics, raw payload.
-- [ ] **Z2 affordance** — wire `📊` click to open the drill-down; aria-label "Open telemetry drill-down."
-- [ ] **Sheet shell** — slide-in surface with Esc + outside-click close; trap focus inside while open per a11y conventions.
-- [ ] **Lifecycle overlay** — `DRILLDOWN_OPEN` projected into `useLifecycleState` so the matrix's dimming behavior applies to Z0–Z4 + Z5.
-- [ ] **Sort + expand interactions** — per-turn table sort by any column; per-tool expansion on row click.
-
-**Tests.**
-
-- [ ] Drill-down renders all per-turn fields from a fixture transcript.
-- [ ] Sort changes order without losing selected row.
-- [ ] Per-tool expansion shows `toolWallMs` for each tool call.
-- [ ] Esc closes the drill-down and the lifecycle overlay clears.
-- [ ] Outside-click closes the drill-down.
-- [ ] Opening the drill-down does NOT change the persistent text-entry focus destination per [feedback_persistent_text_entry]; closing returns focus to wherever it was.
-- [ ] Lifecycle overlay matrix row applies: Z0–Z5 dim while DRILLDOWN_OPEN.
-
-**Checkpoint.**
-
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual)** — run a multi-turn session with one tool call and one permission dialog; open the drill-down via the Z2 `📊` affordance; verify every field from [#step-20-3] surfaces correctly; verify the per-tool expansion shows `toolWallMs`; verify Esc closes cleanly.

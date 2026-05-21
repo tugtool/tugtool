@@ -3,25 +3,21 @@
  *
  * `deriveLifecycleSnapshot` encodes the Step 20.5.A state-to-zone
  * coordination matrix as one pure projection: it reads the
- * matrix-relevant signals off the `CodeSessionStore` snapshot (plus
- * the UI-local `TideLifecycleUiState`) and returns the matrix row —
- * the `TideLifecycleState`, the active `TideLifecycleOverlay`s, and
- * the derived Z5 `submitButtonMode`. Every zone that coordinates on
- * lifecycle reads this one snapshot (via `useLifecycleState`), so the
- * matrix has exactly one executable source of truth and a regression
- * against any matrix cell is a single-file diff.
+ * matrix-relevant signals off the `CodeSessionStore` snapshot and
+ * returns the matrix row — the `TideLifecycleState`, the active
+ * `TideLifecycleOverlay`s, and the derived Z5 `submitButtonMode`.
+ * Every zone that coordinates on lifecycle reads this one snapshot
+ * (via `useLifecycleState`), so the matrix has exactly one executable
+ * source of truth and a regression against any matrix cell is a
+ * single-file diff.
  *
  * Pure module — no DOM, no React, no time source. The
  * `useSyncExternalStore` subscription lives in
  * `hooks/use-lifecycle-state.ts`.
  *
  * Conformance:
- *   - [DT08] — `deriveLifecycleSnapshot` takes the store snapshot AND
- *     a `TideLifecycleUiState` second argument; UI-presentation flags
- *     the reducer must not track (drill-down open) merge in here, so
- *     the matrix's overlay rows derive from one switch.
- *   - [DT09] — reference-stable: pass the previous result as the third
- *     argument and the function hands it straight back when no
+ *   - [DT09] — reference-stable: pass the previous result as the
+ *     second argument and the function hands it straight back when no
  *     matrix-relevant signal moved, so a stream of `assistant_delta`s
  *     (content churn, not lifecycle) does not re-render the hook's
  *     consumers.
@@ -55,13 +51,9 @@ export type TideLifecycleState =
 
 /**
  * The matrix's overlay rows — orthogonal conditions that can apply on
- * top of any base state. `transport_down` and `queued_next` derive
- * from the store snapshot; `drilldown_open` is UI-local ([DT08]).
+ * top of any base state, both derived from the store snapshot.
  */
-export type TideLifecycleOverlay =
-  | "transport_down"
-  | "queued_next"
-  | "drilldown_open";
+export type TideLifecycleOverlay = "transport_down" | "queued_next";
 
 /**
  * The Z5 submit-button mode — the matrix's Z5 column. The `submit`
@@ -84,16 +76,6 @@ export interface TideLifecycleSnapshot {
   state: TideLifecycleState;
   overlays: ReadonlySet<TideLifecycleOverlay>;
   submitButtonMode: TideSubmitButtonMode;
-}
-
-/**
- * UI-local presentation flags that the reducer does not and should
- * not track ([DT08]). Today only the drill-down sheet's open state;
- * structured as an object so future UI overlays extend it without
- * reshaping the derivation.
- */
-export interface TideLifecycleUiState {
-  drilldownOpen: boolean;
 }
 
 /**
@@ -156,14 +138,12 @@ function deriveLifecycleState(s: LifecycleStoreSignals): TideLifecycleState {
 /** The active overlay set — the matrix's overlay rows. */
 function deriveOverlays(
   s: LifecycleStoreSignals,
-  uiState: TideLifecycleUiState,
 ): ReadonlySet<TideLifecycleOverlay> {
   const overlays = new Set<TideLifecycleOverlay>();
   // TRANSPORT_DOWN covers both `offline` (no wire) and `restoring`
   // (wire back, binding not re-ack'd) — anything but `online`.
   if (s.transportState !== "online") overlays.add("transport_down");
   if (s.queuedSends > 0) overlays.add("queued_next");
-  if (uiState.drilldownOpen) overlays.add("drilldown_open");
   return overlays;
 }
 
@@ -262,8 +242,8 @@ export function lifecycleSnapshotsEqual(
 // ---------------------------------------------------------------------------
 
 /**
- * Project the store snapshot + UI-local state onto the Step 20.5.A
- * matrix row. Pure: a deterministic function of its three arguments.
+ * Project the store snapshot onto the Step 20.5.A matrix row. Pure: a
+ * deterministic function of its arguments.
  *
  * `previous` is the [DT09] reference-stability hook — pass the caller's
  * last result and the function returns it unchanged when no
@@ -276,11 +256,10 @@ export function lifecycleSnapshotsEqual(
  */
 export function deriveLifecycleSnapshot(
   storeSnapshot: LifecycleStoreSignals,
-  uiState: TideLifecycleUiState,
   previous?: TideLifecycleSnapshot,
 ): TideLifecycleSnapshot {
   const state = deriveLifecycleState(storeSnapshot);
-  const overlays = deriveOverlays(storeSnapshot, uiState);
+  const overlays = deriveOverlays(storeSnapshot);
   const submitButtonMode = deriveSubmitButtonMode(state, overlays);
   const next: TideLifecycleSnapshot = { state, overlays, submitButtonMode };
   if (previous !== undefined && lifecycleSnapshotsEqual(previous, next)) {

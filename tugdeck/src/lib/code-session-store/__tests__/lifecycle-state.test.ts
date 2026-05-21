@@ -9,10 +9,9 @@
  *  - `submitButtonMode` — the matrix's Z5 column for every state, plus
  *    the TRANSPORT_DOWN (`reconnecting`) and QUEUED_NEXT_TURN
  *    (`queued`) overlay effects.
- *  - `overlays` — `transport_down` / `queued_next` / `drilldown_open`.
+ *  - `overlays` — `transport_down` / `queued_next`.
  *  - [DT09] — `deriveLifecycleSnapshot` returns the previous reference
  *    when no matrix-relevant signal moved, a fresh one when any did.
- *  - [DT08] — `uiState.drilldownOpen` projects into `overlays`.
  *  - `lifecycleSnapshotsEqual` — the structural-equality primitive.
  *
  * The derivation reads a narrow `LifecycleStoreSignals` shape (the
@@ -30,7 +29,6 @@ import {
   lifecycleSnapshotsEqual,
   type LifecycleStoreSignals,
   type TideLifecycleSnapshot,
-  type TideLifecycleUiState,
 } from "../lifecycle-state";
 
 // ---------------------------------------------------------------------------
@@ -55,15 +53,11 @@ function signals(
 /** A transcript with one committed turn — splits COMPLETE from IDLE. */
 const ONE_TURN: ReadonlyArray<unknown> = [{}];
 
-const UI_CLOSED: TideLifecycleUiState = { drilldownOpen: false };
-const UI_OPEN: TideLifecycleUiState = { drilldownOpen: true };
-
 function derive(
   s: LifecycleStoreSignals,
-  ui: TideLifecycleUiState = UI_CLOSED,
   previous?: TideLifecycleSnapshot,
 ): TideLifecycleSnapshot {
-  return deriveLifecycleSnapshot(s, ui, previous);
+  return deriveLifecycleSnapshot(s, previous);
 }
 
 // ---------------------------------------------------------------------------
@@ -265,23 +259,11 @@ describe("deriveLifecycleSnapshot — overlays", () => {
     );
   });
 
-  it("drilldown_open from uiState", () => {
-    expect(derive(signals(), UI_OPEN).overlays.has("drilldown_open")).toBe(true);
-    expect(derive(signals(), UI_CLOSED).overlays.has("drilldown_open")).toBe(
-      false,
-    );
-  });
-
-  it("multiple overlays coexist", () => {
+  it("both overlays coexist", () => {
     const { overlays } = derive(
       signals({ transportState: "offline", queuedSends: 1 }),
-      UI_OPEN,
     );
-    expect([...overlays].sort()).toEqual([
-      "drilldown_open",
-      "queued_next",
-      "transport_down",
-    ]);
+    expect([...overlays].sort()).toEqual(["queued_next", "transport_down"]);
   });
 });
 
@@ -295,17 +277,13 @@ describe("deriveLifecycleSnapshot — [DT09] reference stability", () => {
     // A streaming `assistant_delta` mutates content but not the
     // matrix-relevant signals — modelled here as a second call with an
     // equal-but-distinct signals object (a fresh `transcript` array).
-    const second = derive(
-      signals({ phase: "streaming", transcript: [] }),
-      UI_CLOSED,
-      first,
-    );
+    const second = derive(signals({ phase: "streaming", transcript: [] }), first);
     expect(second).toBe(first);
   });
 
   it("returns a fresh reference when a matrix-relevant signal changes", () => {
     const first = derive(signals({ phase: "streaming" }));
-    const afterPhase = derive(signals({ phase: "idle" }), UI_CLOSED, first);
+    const afterPhase = derive(signals({ phase: "idle" }), first);
     expect(afterPhase).not.toBe(first);
     expect(afterPhase.state).toBe("idle");
   });
@@ -314,7 +292,6 @@ describe("deriveLifecycleSnapshot — [DT09] reference stability", () => {
     const first = derive(signals({ phase: "streaming" }));
     const afterQueue = derive(
       signals({ phase: "streaming", queuedSends: 1 }),
-      UI_CLOSED,
       first,
     );
     expect(afterQueue).not.toBe(first);
@@ -325,27 +302,6 @@ describe("deriveLifecycleSnapshot — [DT09] reference stability", () => {
     const b = derive(signals({ phase: "streaming" }));
     expect(b).not.toBe(a);
     expect(lifecycleSnapshotsEqual(a, b)).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// [DT08] — uiState projection
-// ---------------------------------------------------------------------------
-
-describe("deriveLifecycleSnapshot — [DT08] uiState merges in", () => {
-  it("the same store signals with a different uiState yields a distinct result", () => {
-    const closed = derive(signals({ phase: "streaming" }), UI_CLOSED);
-    const opened = derive(signals({ phase: "streaming" }), UI_OPEN, closed);
-    expect(opened).not.toBe(closed);
-    expect(opened.overlays.has("drilldown_open")).toBe(true);
-    expect(closed.overlays.has("drilldown_open")).toBe(false);
-  });
-
-  it("drilldown_open does not change state or submitButtonMode", () => {
-    const closed = derive(signals({ phase: "streaming" }), UI_CLOSED);
-    const opened = derive(signals({ phase: "streaming" }), UI_OPEN);
-    expect(opened.state).toBe(closed.state);
-    expect(opened.submitButtonMode).toEqual(closed.submitButtonMode);
   });
 });
 

@@ -8,20 +8,16 @@
  * Composition:
  *   1. `useSyncExternalStore` on the `CodeSessionStore` — the [L02]
  *      boundary for external state.
- *   2. The caller's `TideLifecycleUiState` (UI-local presentation
- *      flags the reducer does not track — [DT08]). A card with no
- *      drill-down producer yet (pre-Step 20.5.E) omits it and gets the
- *      stable default.
- *   3. `deriveLifecycleSnapshot(storeSnapshot, uiState, previous)` —
- *      the pure matrix projection, threaded with the previous result
- *      from a per-card `useRef` so [DT09] reference stability holds
- *      per card (a module-level cache would thrash when two cards
- *      stream at once).
+ *   2. `deriveLifecycleSnapshot(storeSnapshot, previous)` — the pure
+ *      matrix projection, threaded with the previous result from a
+ *      per-card `useRef` so [DT09] reference stability holds per card
+ *      (a module-level cache would thrash when two cards stream at
+ *      once).
  *
  * Conformance:
  *   - [L02] — `useSyncExternalStore` is the only external-state
  *     subscription; `lifecycle-state.ts` itself is pure.
- *   - [DT08] / [DT09] — see `lifecycle-state.ts`.
+ *   - [DT09] — see `lifecycle-state.ts`.
  *
  * The hook's React glue (`useSyncExternalStore` + the `useRef` render
  * cache) is left to real-app / integration coverage per the project's
@@ -38,16 +34,7 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 import {
   deriveLifecycleSnapshot,
   type TideLifecycleSnapshot,
-  type TideLifecycleUiState,
 } from "../lifecycle-state";
-
-/**
- * Stable default UI state — a card whose drill-down producer has not
- * landed yet (the producer is Step 20.5.E) passes no `uiState`. The
- * same reference every render keeps `deriveLifecycleSnapshot`'s
- * [DT09] equality check from seeing a spurious input change.
- */
-const DEFAULT_UI_STATE: TideLifecycleUiState = { drilldownOpen: false };
 
 /**
  * Subscribe to `store` and return the current matrix-row lifecycle
@@ -58,7 +45,6 @@ const DEFAULT_UI_STATE: TideLifecycleUiState = { drilldownOpen: false };
  */
 export function useLifecycleState(
   store: CodeSessionStore,
-  uiState: TideLifecycleUiState = DEFAULT_UI_STATE,
 ): TideLifecycleSnapshot {
   const storeSnapshot = useSyncExternalStore(
     store.subscribe,
@@ -70,11 +56,7 @@ export function useLifecycleState(
   // the render's inputs, so a double-invoked render recomputes the
   // identical result.
   const previousRef = useRef<TideLifecycleSnapshot | undefined>(undefined);
-  const snapshot = deriveLifecycleSnapshot(
-    storeSnapshot,
-    uiState,
-    previousRef.current,
-  );
+  const snapshot = deriveLifecycleSnapshot(storeSnapshot, previousRef.current);
   previousRef.current = snapshot;
   return snapshot;
 }
