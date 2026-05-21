@@ -749,7 +749,7 @@ The full set of stream-json event types this phase renders. Authoritative shape 
 | `tool_use_structured` | server → client | tool wrapper's body | typed structured shape per tool |
 | `control_request_forward` (`is_question:false`) | server → client | `PermissionDialog` | answer with `tool_approval` |
 | `control_request_forward` (`is_question:true`) | server → client | `QuestionDialog` | answer with `question_answer` |
-| `cost_update` | server → client | `TideMeterChrome` (snapshot-derived card status strip) | drives window-utilization gauge + cumulative session-tokens readouts ([#step-20-3](./tide-assistant-turns.md#step-20-3)) |
+| `cost_update` | server → client | `TideMeterChrome` (snapshot-derived card status strip) | drives window-utilization gauge + cumulative session-tokens readouts ([#step-20-3](./archive/tide-assistant-turns.md#step-20-3)) |
 | `turn_complete` | server → client | finalize current turn | `result: "success" \| "error"` |
 | `error` | server → client | `ErrorBlock` | `recoverable` flag drives variant |
 
@@ -926,7 +926,7 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | Tool wrapper (per Table T02) | tool_use family | code row body, in turn order |
 | PermissionDialog | control_request_forward (is_question:false) | inline, transcript flow |
 | QuestionDialog | control_request_forward (is_question:true) | inline, transcript flow |
-| TideMeterChrome | snapshot derivations: `lastCost.usage` + `transcript[]` + `inflightUserMessage` | card status row (four numbers: window utilization gauge, last-turn time, cumulative session tokens, cumulative session time — see [#step-20-3](./tide-assistant-turns.md#step-20-3)) |
+| TideMeterChrome | snapshot derivations: `lastCost.usage` + `transcript[]` + `inflightUserMessage` | card status row (four numbers: window utilization gauge, last-turn time, cumulative session tokens, cumulative session time — see [#step-20-3](./archive/tide-assistant-turns.md#step-20-3)) |
 | SessionInitBanner | session_init / system_metadata change [D03] | top of card |
 | ErrorBlock | error | inline, transcript flow |
 | CautionBadge | drift detection [D04] | both card chrome + inline at offending event |
@@ -1003,10 +1003,10 @@ Per L19/L20, every component owns a slot. Slot prefix → component:
 | `--tugx-thinking-*` | ThinkingBlock |
 | `--tugx-idialog-*` | TugInlineDialog ([#step-18-5](#step-18-5)) |
 | `--tugx-dialog-button-*` | TugDialogButton ([#step-18-6](#step-18-6)) |
-| `--tugx-gauge-*` | TugLinearGauge ([#step-20-1](./tide-assistant-turns.md#step-20-1)) / TugArcGauge ([#step-20-2](./tide-assistant-turns.md#step-20-2)) — color slots shared; geometry slots namespaced per gauge |
+| `--tugx-gauge-*` | TugLinearGauge ([#step-20-1](./archive/tide-assistant-turns.md#step-20-1)) / TugArcGauge ([#step-20-2](./archive/tide-assistant-turns.md#step-20-2)) — color slots shared; geometry slots namespaced per gauge |
 | `--tugx-perm-*` | PermissionDialog |
 | `--tugx-quest-*` | QuestionDialog |
-| `--tugx-tide-meter-*` | TideMeterChrome ([#step-20-3](./tide-assistant-turns.md#step-20-3)) |
+| `--tugx-tide-meter-*` | TideMeterChrome ([#step-20-3](./archive/tide-assistant-turns.md#step-20-3)) |
 | `--tugx-banner-*` | SessionInitBanner |
 | `--tugx-err-*` | ErrorBlock |
 | `--tugx-caut-*` | CautionBadge |
@@ -1036,7 +1036,7 @@ ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, Grep
 
 **List L05: Stream-event chrome renderers (one-line names)** {#l05-chrome}
 
-ThinkingBlock, PermissionDialog, QuestionDialog, TideMeterChrome ([#step-20-3](./tide-assistant-turns.md#step-20-3) — card status strip), SessionInitBanner, ErrorBlock, CautionBadge.
+ThinkingBlock, PermissionDialog, QuestionDialog, TideMeterChrome ([#step-20-3](./archive/tide-assistant-turns.md#step-20-3) — card status strip), SessionInitBanner, ErrorBlock, CautionBadge.
 
 ---
 
@@ -1060,7 +1060,7 @@ ThinkingBlock, PermissionDialog, QuestionDialog, TideMeterChrome ([#step-20-3](.
 | `tugdeck/src/components/tugways/chrome/tide-thinking-block.{tsx,css}` | [D14] |
 | `tugdeck/src/components/tugways/chrome/tide-permission-dialog.{tsx,css}` | [D13] |
 | `tugdeck/src/components/tugways/chrome/tide-question-dialog.{tsx,css}` | [D13] |
-| `tugdeck/src/components/tugways/chrome/tide-meter-chrome.{tsx,css}` | card status strip — four numbers ([#step-20-3](./tide-assistant-turns.md#step-20-3)) |
+| `tugdeck/src/components/tugways/chrome/tide-meter-chrome.{tsx,css}` | card status strip — four numbers ([#step-20-3](./archive/tide-assistant-turns.md#step-20-3)) |
 | `tugdeck/src/components/tugways/chrome/tide-session-init-banner.{tsx,css}` | [D03] |
 | `tugdeck/src/components/tugways/chrome/tide-error-block.{tsx,css}` | error rendering |
 | `tugdeck/src/components/tugways/chrome/tide-caution-badge.{tsx,css}` | [D04] |
@@ -5454,24 +5454,24 @@ The existing tests in `reducer.replay-inflight-survival.test.ts` assert on `stat
 
 ---
 
-#### Step 20.x — extracted to `tide-assistant-turns.md` {#step-20-extracted}
+#### Step 20.x — extracted, shipped, and archived as `archive/tide-assistant-turns.md` {#step-20-extracted}
 
-The Step 20.x sequence (gauge primitives, per-turn telemetry data model, transcript `tailSpacer` spike, six-zone placement architecture, lifecycle state machine + Z5 coordination, `/context`-style drill-down) was extracted into a focused companion plan at [`tide-assistant-turns.md`](./tide-assistant-turns.md). The original cut covered Steps 20.1, 20.2, 20.3, 20.3.5, 20.4, 20.5 (including sub-steps 20.5.A through 20.5.D).
+The Step 20.x sequence (gauge primitives, per-turn telemetry data model, transcript `tailSpacer` spike, six-zone placement architecture, lifecycle state machine + Z5 coordination, `/context`-style drill-down) was extracted into a focused companion plan. **That plan has shipped in full and is now archived** to [`archive/tide-assistant-turns.md`](./archive/tide-assistant-turns.md); its `/context`-breakdown spike record (S1–S6) is archived alongside it at [`archive/tide-assistant-turns-context-breakdown-spikes.md`](./archive/tide-assistant-turns-context-breakdown-spikes.md). The original cut covered Steps 20.1, 20.2, 20.3, 20.3.5, 20.4, 20.5 (including sub-steps 20.5.A through 20.5.D); the companion plan grew additional sub-steps across the 20.4.x range through implementation.
 
-The turns plan stands on its own — it has its own Plan Metadata, Phase Overview, Open Questions, and Design Decisions — and depends on this plan only for the rendering substrate (renderer dispatch, body kinds, tool wrappers). Where this document still needs to reference a 20.x step (e.g., Step 21's `Depends on:`), the cross-file link form `./tide-assistant-turns.md#step-20-N` is used.
+The turns plan stood on its own — it had its own Plan Metadata, Phase Overview, Open Questions, and Design Decisions — and depended on this plan only for the rendering substrate (renderer dispatch, body kinds, tool wrappers). Where this document still references a 20.x step (e.g., Step 21's `Depends on:`), the cross-file link form `./archive/tide-assistant-turns.md#step-20-N` resolves into the archived plan.
 
-Entry points into the turns plan:
-- Gauge primitives — [`tide-assistant-turns.md#step-20-1`](./tide-assistant-turns.md#step-20-1) (TugLinearGauge), [`tide-assistant-turns.md#step-20-2`](./tide-assistant-turns.md#step-20-2) (TugArcGauge)
-- Per-turn telemetry data model — [`tide-assistant-turns.md#step-20-3`](./tide-assistant-turns.md#step-20-3)
-- `tailSpacer="80cqh"` spike — [`tide-assistant-turns.md#step-20-3-5`](./tide-assistant-turns.md#step-20-3-5)
-- Six-zone placement architecture — [`tide-assistant-turns.md#step-20-4`](./tide-assistant-turns.md#step-20-4)
-- Lifecycle map + Z5 coordination + drill-down — [`tide-assistant-turns.md#step-20-5`](./tide-assistant-turns.md#step-20-5)
+Entry points into the archived turns plan:
+- Gauge primitives — [`#step-20-1`](./archive/tide-assistant-turns.md#step-20-1) (TugLinearGauge), [`#step-20-2`](./archive/tide-assistant-turns.md#step-20-2) (TugArcGauge)
+- Per-turn telemetry data model — [`#step-20-3`](./archive/tide-assistant-turns.md#step-20-3)
+- `tailSpacer="80cqh"` spike — [`#step-20-3-5`](./archive/tide-assistant-turns.md#step-20-3-5)
+- Six-zone placement architecture — [`#step-20-4`](./archive/tide-assistant-turns.md#step-20-4)
+- Lifecycle map + Z5 coordination + drill-down — [`#step-20-5`](./archive/tide-assistant-turns.md#step-20-5)
 
 ---
 
 #### Step 21: Drift detection + caution badge surfacing {#step-21}
 
-**Depends on:** #step-13, [`#step-20-3`](./tide-assistant-turns.md#step-20-3) (the chrome surface where the aggregate caution chip lives — extracted to `tide-assistant-turns.md`)
+**Depends on:** #step-13, [`#step-20-3`](./archive/tide-assistant-turns.md#step-20-3) (the chrome surface where the aggregate caution chip lives — extracted to `tide-assistant-turns.md`)
 
 **Commit:** `feat(tide-rendering): drift detection — caution badge in card chrome and inline at offending events`
 
@@ -5479,7 +5479,7 @@ Entry points into the turns plan:
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` (drift detector logic)
-- Extension to `tide-meter-chrome.tsx` (formerly `tide-cost-chrome.tsx` — renamed in [#step-20-3](./tide-assistant-turns.md#step-20-3)) for aggregate caution chip in card chrome
+- Extension to `tide-meter-chrome.tsx` (formerly `tide-cost-chrome.tsx` — renamed in [#step-20-3](./archive/tide-assistant-turns.md#step-20-3)) for aggregate caution chip in card chrome
 - Inline caution at the offending event already lands via the [#step-13](#step-13) DefaultToolWrapper integration
 - Pinned-catalog version constant alongside the dispatch (read from a build-time constant)
 
@@ -5747,7 +5747,7 @@ Entry points into the turns plan:
 
 #### Step 29.5: Gallery cards for remaining renderers (batch 2) {#step-29-5}
 
-**Depends on:** #step-14-5, #step-15, #step-16, #step-17, #step-18, #step-19, [`#step-20-3`](./tide-assistant-turns.md#step-20-3) (TideMeterChrome — extracted), #step-21, #step-22, #step-23, #step-24, #step-25, #step-26, #step-27, #step-28, #step-29
+**Depends on:** #step-14-5, #step-15, #step-16, #step-17, #step-18, #step-19, [`#step-20-3`](./archive/tide-assistant-turns.md#step-20-3) (TideMeterChrome — extracted), #step-21, #step-22, #step-23, #step-24, #step-25, #step-26, #step-27, #step-28, #step-29
 
 **Commit:** `feat(gallery): cards for stretch content, structured blocks, dialogs, agent transcript, cost chrome, tool wrappers (rest)`
 
@@ -5795,7 +5795,7 @@ Entry points into the turns plan:
 
 #### Step 30: Phase exit integration checkpoint {#step-30}
 
-**Depends on:** #step-2, #step-3, #step-4, #step-14, #step-14-5, #step-15, #step-16, #step-17, #step-18, #step-19, [`#step-20-3`](./tide-assistant-turns.md#step-20-3) (TideMeterChrome — extracted), #step-21, #step-22, #step-23, #step-24, #step-25, #step-26, #step-27, #step-28, #step-29, #step-29-5
+**Depends on:** #step-2, #step-3, #step-4, #step-14, #step-14-5, #step-15, #step-16, #step-17, #step-18, #step-19, [`#step-20-3`](./archive/tide-assistant-turns.md#step-20-3) (TideMeterChrome — extracted), #step-21, #step-22, #step-23, #step-24, #step-25, #step-26, #step-27, #step-28, #step-29, #step-29-5
 
 **Commit:** `N/A (verification only)`
 
@@ -5885,7 +5885,7 @@ Entry points into the turns plan:
 | AgentTranscriptBlock + TaskToolBlock | Replay `test-22-subagent-spawn.jsonl`; nested call renders correctly |
 | PermissionDialog | Replay `test-11-permission-deny-roundtrip.jsonl` |
 | QuestionDialog | Synthetic AskUserQuestion fixture |
-| TideMeterChrome | Send a turn; verify the window gauge fills, last-turn-time live-ticks during streaming and locks on `turn_complete`, cumulative numbers grow monotonically ([#step-20-3](./tide-assistant-turns.md#step-20-3)) |
+| TideMeterChrome | Send a turn; verify the window gauge fills, last-turn-time live-ticks during streaming and locks on `turn_complete`, cumulative numbers grow monotonically ([#step-20-3](./archive/tide-assistant-turns.md#step-20-3)) |
 | Drift detection | Synthetic version-mismatch + unknown-shape fixtures |
 | KaTeXBlock | Inline + display math fixtures; lazy-load verified |
 | MermaidBlock | Diagram fixture; lazy-load verified |

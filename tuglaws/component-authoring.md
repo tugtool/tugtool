@@ -931,7 +931,7 @@ There is no current fix for the document-shrink-clamp case. When a click *shrink
 
 **What still works after retirement.** `usePositionStableClick` continues to keep the click target stable for layout changes that don't shrink the document — Copy buttons, view-toggle swaps, Find row mounts, icon swaps. The hook's scope is unchanged; only the spacer-backed "even collapsing fold cues work" guarantee is gone.
 
-**Reference: the retirement.** See `roadmap/tide-assistant-turns.md` Step 20.3.5 for the full spike record (git archaeology on `d8da960a`, identification of "document-shrink-clamp protection" as the original cause, cost/benefit re-evaluation, and the decision to retire).
+**Reference: the retirement.** See `roadmap/archive/tide-assistant-turns.md` Step 20.3.5 for the full spike record (git archaeology on `d8da960a`, identification of "document-shrink-clamp protection" as the original cause, cost/benefit re-evaluation, and the decision to retire).
 
 ### Emphasis × Role
 
