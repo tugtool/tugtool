@@ -46,8 +46,13 @@
 }
 
 .tide-popover-frame[data-popover-kind="default"] {
-  min-width: 280px;
-  max-width: 360px;
+  /* Sized for the four-column per-turn row — entry-number pair,
+     request preview (capped at 24 chars), end-state badge, and a
+     non-wrapping value. The narrower cap squeezed the value's `auto`
+     track until "0h 0m 02s" wrapped to three lines; this range lets
+     the row breathe and the popover sizes to content within it. */
+  min-width: 380px;
+  max-width: 560px;
 }
 
 .tide-popover-frame[data-popover-kind="context"] {
@@ -102,8 +107,18 @@
    ========================================================================= */
 
 .tide-popover-row-grid {
+  /* Right-edge gutter shared by the scroller AND the summary footer.
+     It does double duty: keeps the value column clear of the
+     scrollbar thumb, and — because both blocks inset by the SAME
+     amount — keeps their subgrid tracks column-aligned across the
+     divider. Padding only on the scroller (the old approach) shifted
+     the scroller's subgrid left of the summary's. */
+  --tide-popover-scroll-gutter: 12px;
   display: grid;
-  grid-template-columns: max-content max-content auto;
+  /* label · preview · annotation · value — see PopoverRow's
+     four-column contract. The value column flexes; the rest size to
+     their widest content across every row (scroller + summary). */
+  grid-template-columns: max-content max-content max-content auto;
   row-gap: 0;
 }
 
@@ -114,9 +129,19 @@
   /* Shared 10-row visible cap × ~22px per row at this font size. */
   max-height: calc(10 * 22px);
   overflow-y: auto;
-  /* Breathing room between the scrollbar gutter and the right-most
-     column so value digits never sit flush against the thumb. */
-  padding-right: 12px;
+  padding-right: var(--tide-popover-scroll-gutter);
+}
+
+/* Summary footer — the same subgrid + right gutter as the scroller,
+   so the label / annotation / value column edges line up vertically
+   across the divider. The summary rows are NOT inside the scroller
+   (they must stay always-visible), so they need their own matching
+   gutter; without it the scroller's tracks drift left of these. */
+.tide-popover-row-grid-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  padding-right: var(--tide-popover-scroll-gutter);
 }
 
 .tide-popover-row-grid-empty {
@@ -128,6 +153,9 @@
   grid-column: 1 / -1;
   border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
   margin-block: 6px;
+  /* Match the row blocks' right inset so the rule ends flush with the
+     value column rather than overhanging into the scrollbar gutter. */
+  margin-inline-end: var(--tide-popover-scroll-gutter);
 }
 
 /* Each row is a subgrid spanning the three columns; the grid cells
@@ -161,6 +189,73 @@
   color: var(--tug7-element-global-text-normal-default-rest);
   font-weight: 600;
   text-align: right;
+  /* A value like "0h 0m 02s" carries spaces — it must read as one
+     unit, never broken across lines when the column is tight. */
+  white-space: nowrap;
+}
+
+/* The `#N · #N+1` entry-number pair occupying a per-turn row's label
+   cell — two click targets plus a muted separator dot. */
+.tide-popover-turn-pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-turn-pair-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Turn-number entry rendered as a click target — scrolls the
+   transcript to that entry's row. Reset to inherit the row-label's
+   muted mono treatment, but carry a faint underline AT REST so every
+   number reads as clickable (not just the hovered one); hover / focus
+   brightens both the text and the underline. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-popover-row-turn {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  vertical-align: baseline;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--tug7-element-global-text-normal-muted-rest);
+  text-underline-offset: 2px;
+  transition:
+    color 80ms ease,
+    text-decoration-color 80ms ease;
+}
+
+.tide-popover-row-turn:hover,
+.tide-popover-row-turn:focus-visible {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-decoration-color: currentColor;
+}
+
+.tide-popover-row-turn:focus-visible {
+  outline: none;
+}
+
+/* Request-string preview cell — holds the end-truncated TugLabel.
+   `min-width: 0` lets the cell shrink below its content's intrinsic
+   width; the label text is pre-truncated in JS so the column sizes
+   to the widest preview via the grid's `max-content` track. */
+.tide-popover-row-preview {
+  min-width: 0;
+}
+
+/* The preview TugLabel — match the popover's mono row rhythm rather
+   than the label primitive's default size token ([L20] cascade-
+   scoped override; the `muted` color + `mono` props carry the rest). */
+.tide-popover-row .tide-popover-row-request {
+  font-size: inherit;
+  line-height: inherit;
 }
 
 /* ============================================================================

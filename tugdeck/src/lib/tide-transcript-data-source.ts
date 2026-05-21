@@ -151,6 +151,35 @@ export interface TideRowDescriptor {
 }
 
 // ---------------------------------------------------------------------------
+// Index-layout helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * List-view row index of committed turn `turnIndex`'s **user** row.
+ *
+ * The adapter lays each committed turn out as two adjacent rows —
+ * `user` at `2k`, `code` at `2k+1` (see the module docstring's index
+ * layout). A consumer holding only the turn index (e.g. the Z2
+ * telemetry popovers, which iterate `snapshot.transcript`) uses this
+ * to address the turn's user row for a scroll-into-view.
+ *
+ * The transcript renders each row's `#NNNN` sequence badge as
+ * `rowIndex + 1`.
+ */
+export function userRowIndexForTurn(turnIndex: number): number {
+  return turnIndex * 2;
+}
+
+/**
+ * List-view row index of committed turn `turnIndex`'s **assistant**
+ * (`code`) row — the user row's immediate successor. See
+ * {@link userRowIndexForTurn} for the two-rows-per-turn layout.
+ */
+export function assistantRowIndexForTurn(turnIndex: number): number {
+  return turnIndex * 2 + 1;
+}
+
+// ---------------------------------------------------------------------------
 // Adapter
 // ---------------------------------------------------------------------------
 

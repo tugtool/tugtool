@@ -2587,13 +2587,15 @@ impl AgentSupervisor {
     /// render a "no history" state.
     ///
     /// Errors broadcast `list_session_state_changes_err
-    /// { tug_session_id, reason }`. The three quietly-dropped cases
-    /// from the writer (no ledger, no session entry, no
-    /// claude_session_id) all surface as empty arrays here — the
-    /// reader can't distinguish "session not found on supervisor"
-    /// from "no history yet"; the popover renders the same empty
-    /// state for both, and the gallery + smoke tests cover the live
-    /// path explicitly.
+    /// { tug_session_id, reason }`. When no `session_ledger` is wired
+    /// the response is an empty array. When the in-memory map cannot
+    /// resolve a `claude_session_id` (no session entry, or a resumed
+    /// entry whose id has not landed yet) the read falls back to
+    /// `tug_session_id` as the ledger key — identical to the claude
+    /// id by the post-Phase-B invariant — so the persisted history
+    /// survives a tugdeck reload that races the resume handshake. A
+    /// genuinely unknown id still reads as an empty array; the popover
+    /// renders the same "no history yet" state either way.
     async fn do_list_session_state_changes(&self, parsed: ListSessionStateChangesPayload) {
         let tug_session_id_str = parsed.tug_session_id.as_str().to_owned();
         let Some(ledger) = self.session_ledger.as_ref() else {
@@ -2608,7 +2610,7 @@ impl AgentSupervisor {
             ));
             return;
         };
-        let claude_id = {
+        let resolved_claude_id = {
             let outer = self.ledger.lock().await;
             match outer.get(&parsed.tug_session_id) {
                 Some(entry_arc) => {
@@ -2618,18 +2620,19 @@ impl AgentSupervisor {
                 None => None,
             }
         };
-        let Some(claude_id) = claude_id else {
-            let body = serde_json::json!({
-                "action": "list_session_state_changes_ok",
-                "tug_session_id": tug_session_id_str,
-                "rows": serde_json::Value::Array(Vec::new()),
-            });
-            let _ = self.control_tx.send(Frame::new(
-                FeedId::CONTROL,
-                serde_json::to_vec(&body).expect("list_session_state_changes_ok serializes"),
-            ));
-            return;
-        };
+        // Resolve the ledger key. The in-memory entry may not yet carry
+        // the resumed session's claude id — after a tugdeck reload the
+        // popover's `list_session_state_changes` request can race ahead
+        // of the resume handshake that sets `claude_session_id`. Post-
+        // Phase-B the tug and claude session ids are identical by
+        // invariant, and `session_state_changes` rows are keyed by the
+        // claude id, so falling back to `tug_session_id` recovers the
+        // persisted history instead of returning a spurious empty array
+        // (the popover's "no state changes recorded" bug after reload).
+        // A genuinely unknown id still yields an empty ledger read —
+        // the same "no history yet" the client renders either way.
+        let claude_id = resolved_claude_id
+            .unwrap_or_else(|| tug_session_id_str.clone());
         let rows = match ledger.list_session_state_changes(&claude_id) {
             Ok(r) => r,
             Err(err) => {
@@ -7717,6 +7720,50 @@ mod tests {
         assert_eq!(response["tug_session_id"], "sess-never");
         let rows = response["rows"].as_array().expect("rows array");
         assert_eq!(rows.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn list_session_state_changes_falls_back_to_tug_session_id() {
+        // Reload race: the popover sends `list_session_state_changes`
+        // before the resumed session's `claude_session_id` has landed
+        // in the in-memory map. With NO in-memory entry to resolve, the
+        // read falls back to `tug_session_id` as the ledger key (equal
+        // to the claude id by the post-Phase-B invariant) and recovers
+        // the persisted history rather than returning a spurious empty
+        // array — the popover's "no state changes recorded" bug.
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
+        ledger
+            .record_spawn("sess-reload-race", "ws-1", "/proj/x", "card-9", 1_000)
+            .unwrap();
+        ledger
+            .record_session_state_change("sess-reload-race", 100, "idle", "online", false)
+            .unwrap();
+        ledger
+            .record_session_state_change(
+                "sess-reload-race",
+                200,
+                "submitting",
+                "online",
+                false,
+            )
+            .unwrap();
+
+        while rx.try_recv().is_ok() {}
+
+        sup.handle_control(
+            "list_session_state_changes",
+            &list_state_changes_payload("sess-reload-race"),
+            10,
+        )
+        .await
+        .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_session_state_changes_ok");
+        assert_eq!(response["tug_session_id"], "sess-reload-race");
+        let rows = response["rows"].as_array().expect("rows array");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["phase"], "idle");
+        assert_eq!(rows[1]["phase"], "submitting");
     }
 
     #[tokio::test]

@@ -2033,6 +2033,19 @@ export function TideCardBody({
     entryDelegateRef.current?.focus();
   }, [entryDelegateRef]);
 
+  // Z2 telemetry popovers → transcript scroll. The Time / Tokens
+  // popovers render each turn's `#NNNN` entry pair as buttons;
+  // clicking one lands here with that entry's transcript row index.
+  // `block: "start"` pins the entry's top flush to the viewport top.
+  // The handle is read at call time ([L07]) so a not-yet-mounted
+  // transcript is a safe no-op.
+  const handleScrollToRow = useCallback((rowIndex: number): void => {
+    transcriptRef.current?.scrollToIndex(rowIndex, {
+      block: "start",
+      animated: true,
+    });
+  }, []);
+
   // Card-content responder scope for key-card-routed keyboard
   // shortcuts. Registers a `kind: "card-content"` node under the
   // tide card's body element; any keybinding with `scope: "key-card"`
@@ -2172,6 +2185,7 @@ export function TideCardBody({
   const experimentSlots = useTidePlacementSlots({
     codeSessionStore,
     sessionMetadataStore,
+    onScrollToRow: handleScrollToRow,
   });
   const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
   const effectiveStatusBarContent =

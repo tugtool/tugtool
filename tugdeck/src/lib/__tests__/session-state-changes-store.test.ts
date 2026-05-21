@@ -138,6 +138,41 @@ describe("SessionStateChangesStore — live append", () => {
     expect(snap.rows[1]!.phase).toBe("submitting");
   });
 
+  it("keeps local publishes that arrived while the load was still pending", async () => {
+    // Reload replay burst: a run of transitions publishes locally
+    // before the server load settles. `onLocalChange` appends them to
+    // the still-`pending` snapshot; the load merge must keep them
+    // rather than discarding the pending-window rows.
+    const conn = makeConn();
+    const store = new SessionStateChangesStore(asConn(conn));
+    store.getSnapshot("sess-H"); // kicks load → pending
+    publishLocalSessionStateChange({
+      tugSessionId: "sess-H",
+      atMs: 500,
+      phase: "replaying",
+      transportState: "online",
+      interruptInFlight: false,
+    });
+    // The load resolves with the persisted history — a distinct row.
+    publishListSessionStateChangesOk({
+      tug_session_id: "sess-H",
+      rows: [
+        {
+          at_ms: 100,
+          phase: "idle",
+          transport_state: "online",
+          interrupt_in_flight: false,
+        },
+      ],
+    });
+    await flushMicrotasks();
+    const snap = store.getSnapshot("sess-H");
+    expect(snap.status).toBe("ready");
+    expect(snap.rows.length).toBe(2);
+    expect(snap.rows[0]!.phase).toBe("idle");
+    expect(snap.rows[1]!.phase).toBe("replaying");
+  });
+
   it("ignores local publishes for sessions that no one is observing", () => {
     const conn = makeConn();
     const store = new SessionStateChangesStore(asConn(conn));

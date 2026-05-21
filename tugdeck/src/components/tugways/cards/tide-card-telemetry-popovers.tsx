@@ -9,17 +9,26 @@
  * rule, then either a 3-column row grid (Time / Tokens / state-change
  * log) or a 2-column gauge + legend layout (Context).
  *
- * **Three-column shared grid (Time / Tokens).** The row list AND the
+ * **Four-column shared grid (Time / Tokens).** The row list AND the
  * summary footer share a single CSS grid via `subgrid`, so the
- * label / annotation / value columns line up vertically across every
- * row in both blocks. Without the shared grid, each row would be its
- * own grid and column edges would drift with content widths.
+ * label / preview / annotation / value columns line up vertically
+ * across every row in both blocks. Without the shared grid, each row
+ * would be its own grid and column edges would drift with content
+ * widths.
  *
  * **End-state badge consistency.** Per-turn rows display the badge
  * produced by `endStateBadgeFor(turn.turnEndReason)` — the same
  * dispatch the Z1B end-state display uses. The popover and the Z1B
  * footer therefore always read the same text ("OK" / "interrupted" /
  * "error" / "lost") and tone for a given turn.
+ *
+ * **Turn-number affordance.** Each per-turn row's label is the PAIR
+ * of `#NNNN` transcript entry numbers the turn spans — the user-half
+ * row and the assistant-half row. When the host threads an
+ * `onScrollToRow` handler down, each number is an independently
+ * clickable button that scrolls the transcript to that entry's row —
+ * a control-style action, no popover-local state. The row also
+ * carries an end-truncated preview of the turn's request string.
  *
  * Conformance:
  *  - [L02] popover content is a function of inputs only — `transcript`,
@@ -60,8 +69,52 @@ import {
 } from "@/lib/code-session-store/telemetry";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import type { SessionStateChangeRow } from "@/lib/session-state-changes-reader";
+import {
+  assistantRowIndexForTurn,
+  userRowIndexForTurn,
+} from "@/lib/tide-transcript-data-source";
+import { formatSequenceNumber } from "@/components/tugways/tug-transcript-entry";
+import { TugLabel } from "@/components/tugways/tug-label";
 
 import { formatTimeAlwaysHours, formatTokensCaps } from "./tide-card-telemetry-renderers";
+
+// ---------------------------------------------------------------------------
+// Cross-popover callback contract
+// ---------------------------------------------------------------------------
+
+/**
+ * Invoked when the user clicks a `#NNNN` entry number in the Time /
+ * Tokens popover — scrolls the transcript so that entry's row is in
+ * view. `rowIndex` is a transcript list-view row index: a turn shows
+ * BOTH of its entries (user row + assistant row), each independently
+ * clickable, so the handler is keyed by row rather than by turn. See
+ * `userRowIndexForTurn` / `assistantRowIndexForTurn`. Supplied by the
+ * tide card, which owns the transcript's imperative handle; omitted in
+ * the gallery / fixtures, where the numbers render as inert text.
+ */
+export type ScrollToRowHandler = (rowIndex: number) => void;
+
+/**
+ * Per-turn request-preview cap. The user-half prompt is collapsed to a
+ * single line and end-truncated to this many characters so the popover
+ * row stays compact.
+ */
+const REQUEST_PREVIEW_MAX_CHARS = 24;
+
+/**
+ * One-line, end-truncated preview of a turn's user prompt. Drops the
+ * `>` Code-route prefix (matching the transcript's user row) and
+ * collapses internal whitespace so a multi-line prompt reads as one
+ * tidy line.
+ */
+function requestPreviewText(turn: TurnEntry): string {
+  let text = turn.userMessage.text.trim();
+  if (text.startsWith("> ")) text = text.slice(2);
+  else if (text.startsWith(">")) text = text.slice(1);
+  text = text.replace(/\s+/g, " ").trim();
+  if (text.length <= REQUEST_PREVIEW_MAX_CHARS) return text;
+  return `${text.slice(0, REQUEST_PREVIEW_MAX_CHARS - 1)}…`;
+}
 
 // ---------------------------------------------------------------------------
 // Shared frame
@@ -107,34 +160,40 @@ function PerAreaPopoverFrame({
 }
 
 // ---------------------------------------------------------------------------
-// Row primitives — subgrid-shared 3-column layout
+// Row primitives — subgrid-shared 4-column layout
 // ---------------------------------------------------------------------------
 
 /**
- * One row in a Time / Tokens popover. Renders three grid cells (label
- * / annotation / value) into the surrounding {@link TidePopoverRowGrid}
- * via CSS subgrid. Columns size to the widest content across EVERY
- * row in the grid (both the scrollable row list and the summary
- * footer), so the label / annotation / value edges line up
+ * One row in a Time / Tokens popover. Renders four grid cells (label /
+ * preview / annotation / value) into the surrounding
+ * {@link TidePopoverRowGrid} via CSS subgrid. Columns size to the
+ * widest content across EVERY row in the grid (both the scrollable
+ * row list and the summary footer), so the column edges line up
  * vertically end-to-end.
  *
- * Three-column contract:
- *   col 1 → label (muted, left-aligned, e.g. "turn 1" / "total")
- *   col 2 → annotation (badge or hint, right-aligned within the
+ * Four-column contract:
+ *   col 1 → label (muted, left-aligned — the turn's `#NNNN` entry
+ *           pair for per-turn rows, "turns" / "total" / "avg" for the
+ *           summary rows)
+ *   col 2 → preview (the turn's request-string preview; empty on the
+ *           summary rows)
+ *   col 3 → annotation (badge or hint, right-aligned within the
  *           column so it abuts the value)
- *   col 3 → value (normal, right-aligned, e.g. "30.1K" / "0h 0m 02s")
+ *   col 4 → value (normal, right-aligned, e.g. "30.1K" / "0h 0m 02s")
  *
- * `label` accepts a `ReactNode` so a future caller can prepend
- * swatches inline (the Context popover used to do this in the
- * gallery; it now uses a separate body).
+ * `label` and `preview` accept a `ReactNode`; `preview` is omitted on
+ * the summary rows, whose cell then renders empty (the column still
+ * exists so the summary stays column-aligned with the per-turn rows).
  */
 function PopoverRow({
   label,
+  preview,
   value,
   hint,
   badge,
 }: {
   label: React.ReactNode;
+  preview?: React.ReactNode;
   value: string;
   hint?: string;
   badge?: React.ReactNode;
@@ -142,11 +201,93 @@ function PopoverRow({
   return (
     <div className="tide-popover-row" data-slot="tide-popover-row">
       <span className="tide-popover-row-label">{label}</span>
+      <span className="tide-popover-row-preview">{preview ?? null}</span>
       <span className="tide-popover-row-annotation">
         {badge !== undefined ? badge : hint !== undefined ? hint : null}
       </span>
       <span className="tide-popover-row-value">{value}</span>
     </div>
+  );
+}
+
+/**
+ * One transcript entry number — `#NNNN` in the format the transcript
+ * stamps on its entries (via {@link formatSequenceNumber}, where the
+ * sequence is `rowIndex + 1`).
+ *
+ * When `onScrollToRow` is supplied the number renders as a button
+ * that scrolls the transcript to that entry's row; otherwise it is
+ * inert text (gallery / fixtures, with no transcript to drive). The
+ * click is a control-style action — fire-and-forget to the handler
+ * the tide card threaded down; no popover-local state.
+ */
+function TurnNumberButton({
+  rowIndex,
+  onScrollToRow,
+}: {
+  rowIndex: number;
+  onScrollToRow?: ScrollToRowHandler;
+}): React.ReactElement {
+  const sequenceText = formatSequenceNumber(rowIndex + 1);
+  if (onScrollToRow === undefined) {
+    return (
+      <span className="tide-popover-row-turn-static">{sequenceText}</span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="tide-popover-row-turn"
+      data-slot="tide-popover-row-turn"
+      aria-label={`Scroll the transcript to entry ${sequenceText}`}
+      onClick={() => onScrollToRow(rowIndex)}
+    >
+      {sequenceText}
+    </button>
+  );
+}
+
+/**
+ * Per-turn row label — the PAIR of transcript entry numbers a turn
+ * spans: the user-half row (`#N`) and the assistant-half row
+ * (`#N+1`). Each number is independently clickable, so the reader
+ * can jump to either side of the turn. Mirrors the transcript's
+ * own two-entries-per-turn structure.
+ */
+function TurnEntryPair({
+  turnIndex,
+  onScrollToRow,
+}: {
+  turnIndex: number;
+  onScrollToRow?: ScrollToRowHandler;
+}): React.ReactElement {
+  return (
+    <span className="tide-popover-turn-pair" data-slot="tide-popover-turn-pair">
+      <TurnNumberButton
+        rowIndex={userRowIndexForTurn(turnIndex)}
+        onScrollToRow={onScrollToRow}
+      />
+      <span className="tide-popover-turn-pair-sep" aria-hidden>
+        ·
+      </span>
+      <TurnNumberButton
+        rowIndex={assistantRowIndexForTurn(turnIndex)}
+        onScrollToRow={onScrollToRow}
+      />
+    </span>
+  );
+}
+
+/**
+ * The turn's request-string preview cell — an end-truncated
+ * `TugLabel` (see {@link requestPreviewText}). Muted + mono so it
+ * sits quietly between the entry-number pair and the end-state badge.
+ */
+function RequestPreview({ turn }: { turn: TurnEntry }): React.ReactElement {
+  return (
+    <TugLabel className="tide-popover-row-request" mono color="muted">
+      {requestPreviewText(turn)}
+    </TugLabel>
   );
 }
 
@@ -157,9 +298,14 @@ function PopoverRow({
  * vertically across every row — including across the divider that
  * separates the scrolling list from the summary rows.
  *
- * The row list lives inside a `<div>` with `max-height` + `overflow-y:
- * auto` capped at the shared 10-row visible height; the summary rows
- * sit below the divider and are always visible.
+ * The row list lives inside a scroller `<div>` with `max-height` +
+ * `overflow-y: auto` capped at the shared 10-row visible height; the
+ * summary rows sit in a sibling `<div>` below the divider and are
+ * always visible. Both wrappers carry the SAME right-edge gutter
+ * (`--tide-popover-scroll-gutter`) so their subgrid tracks inset
+ * equally — the scroller's columns and the summary's columns line up
+ * across the divider. (Padding the scroller alone drifts its columns
+ * left of the summary's by the gutter width.)
  *
  * If the row list is empty, the grid degenerates to "summary only"
  * (or to the caller's `empty` content when no summary applies).
@@ -191,7 +337,12 @@ function TidePopoverRowGrid({
       {hasSummary ? (
         <>
           <div className="tide-popover-row-grid-divider" aria-hidden />
-          {summaryRows}
+          <div
+            className="tide-popover-row-grid-summary"
+            data-slot="tide-popover-row-grid-summary"
+          >
+            {summaryRows}
+          </div>
         </>
       ) : null}
     </div>
@@ -246,15 +397,18 @@ function EmptyTranscriptBody(): React.ReactElement {
 export function TimePopoverContent({
   transcript,
   inflight,
+  onScrollToRow,
 }: {
   transcript: ReadonlyArray<TurnEntry>;
   inflight: { currentTurnActiveMs: number } | null;
+  onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
   const summary = computeTimeSummary(transcript);
   const rows = transcript.map((t, i) => (
     <PopoverRow
       key={t.turnKey}
-      label={`turn ${i + 1}`}
+      label={<TurnEntryPair turnIndex={i} onScrollToRow={onScrollToRow} />}
+      preview={<RequestPreview turn={t} />}
       value={formatTimeAlwaysHours(t.activeMs)}
       badge={<TurnEndStateBadge turn={t} />}
     />
@@ -309,16 +463,19 @@ export function TokensPopoverContent({
   transcript,
   sessionInitTokens,
   inflight,
+  onScrollToRow,
 }: {
   transcript: ReadonlyArray<TurnEntry>;
   sessionInitTokens: number | null;
   inflight: { currentTurnTokens: number } | null;
+  onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
   const summary = computeTokensSummary(transcript, sessionInitTokens);
   const rows = transcript.map((t, i) => (
     <PopoverRow
       key={t.turnKey}
-      label={`turn ${i + 1}`}
+      label={<TurnEntryPair turnIndex={i} onScrollToRow={onScrollToRow} />}
+      preview={<RequestPreview turn={t} />}
       value={formatTokensCaps(summary.perTurn[i] ?? 0)}
       badge={<TurnEndStateBadge turn={t} />}
     />

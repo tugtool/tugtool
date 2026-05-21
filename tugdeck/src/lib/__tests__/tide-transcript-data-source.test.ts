@@ -36,7 +36,11 @@ import {
   loadGoldenProbe,
 } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
-import { TideTranscriptDataSource } from "@/lib/tide-transcript-data-source";
+import {
+  assistantRowIndexForTurn,
+  TideTranscriptDataSource,
+  userRowIndexForTurn,
+} from "@/lib/tide-transcript-data-source";
 
 function buildStore(): { store: CodeSessionStore; conn: TestFrameChannel } {
   const conn = new TestFrameChannel();
@@ -363,5 +367,47 @@ describe("TideTranscriptDataSource — subscribe + getVersion", () => {
     // No state change between reads — identity stable.
     const v1b = ds.getVersion();
     expect(Object.is(v1, v1b)).toBe(true);
+  });
+});
+
+describe("userRowIndexForTurn / assistantRowIndexForTurn", () => {
+  it("maps a 0-based turn index onto its user / assistant row pair", () => {
+    // Each committed turn is two rows — user at 2k, code at 2k+1.
+    expect(userRowIndexForTurn(0)).toBe(0);
+    expect(assistantRowIndexForTurn(0)).toBe(1);
+    expect(userRowIndexForTurn(1)).toBe(2);
+    expect(assistantRowIndexForTurn(1)).toBe(3);
+    expect(userRowIndexForTurn(2)).toBe(4);
+    expect(assistantRowIndexForTurn(2)).toBe(5);
+  });
+
+  it("addresses the `user` / `code` rows of a real multi-turn data source", () => {
+    // Pin the mapping against the live adapter the Z2 popovers'
+    // entry-number scroll relies on: each turn shows BOTH entry
+    // numbers, and clicking one must land on the matching transcript
+    // row. The displayed sequence number is that row index + 1.
+    const probe = loadGoldenProbe("v2.1.105", "test-01-basic-round-trip");
+    const { store, conn } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    store.send("first", []);
+    for (const event of probe.events) {
+      conn.dispatchDecoded(FeedId.CODE_OUTPUT, event);
+    }
+    const msgId2 = FIXTURE_IDS.MSG_ID_N(2);
+    store.send("second", []);
+    driveSyntheticSuccessTurn(conn, msgId2, "second response text");
+
+    expect(ds.numberOfItems()).toBe(4);
+    expect(ds.kindForIndex(userRowIndexForTurn(0))).toBe("user");
+    expect(ds.kindForIndex(assistantRowIndexForTurn(0))).toBe("code");
+    expect(ds.kindForIndex(userRowIndexForTurn(1))).toBe("user");
+    expect(ds.kindForIndex(assistantRowIndexForTurn(1))).toBe("code");
+    // Turn 0 spans transcript entries #0001 (user) and #0002 (code);
+    // turn 1 spans #0003 and #0004. `#NNNN` is row index + 1.
+    expect(userRowIndexForTurn(0) + 1).toBe(1);
+    expect(assistantRowIndexForTurn(0) + 1).toBe(2);
+    expect(userRowIndexForTurn(1) + 1).toBe(3);
+    expect(assistantRowIndexForTurn(1) + 1).toBe(4);
   });
 });

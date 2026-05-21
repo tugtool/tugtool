@@ -796,6 +796,18 @@ export interface TideTranscriptHandle {
    * `scrollToBottom`.
    */
   scrollToBottom(options?: { animated?: boolean }): void;
+
+  /**
+   * Scroll the transcript so the row at `index` is in view. Thin
+   * pass-through to the inner `TugListView`'s `scrollToIndex`. The
+   * Z2 telemetry popovers drive this to jump to a turn the user
+   * clicked by its `#NNNN` number; out-of-range indices clamp to
+   * first / last (the list view's own tolerance).
+   */
+  scrollToIndex(
+    index: number,
+    options?: { block?: ScrollLogicalPosition; animated?: boolean },
+  ): void;
 }
 
 export const TideTranscriptHost = forwardRef<
@@ -906,6 +918,12 @@ export const TideTranscriptHost = forwardRef<
     () => ({
       scrollToBottom(options?: { animated?: boolean }): void {
         listViewRef.current?.scrollToBottom(options);
+      },
+      scrollToIndex(
+        index: number,
+        options?: { block?: ScrollLogicalPosition; animated?: boolean },
+      ): void {
+        listViewRef.current?.scrollToIndex(index, options);
       },
     }),
     [],

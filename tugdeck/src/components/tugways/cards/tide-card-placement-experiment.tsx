@@ -54,6 +54,7 @@ import {
   TideTelemetryStatusRow,
   TideTelemetryWindowUtilization,
 } from "./tide-card-telemetry-renderers";
+import type { ScrollToRowHandler } from "./tide-card-telemetry-popovers";
 import type {
   TideTurnTrailingContext,
   TideTurnTrailingRenderer,
@@ -197,6 +198,13 @@ export interface TideCardPlacementSlots {
 export interface UseTidePlacementSlotsInput {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore: SessionMetadataStore;
+  /**
+   * Forwarded to {@link TideTelemetryStatusRow} when it occupies Z2 —
+   * lets the status row's Time / Tokens popovers scroll the transcript
+   * on a `#NNNN` entry-number click. The tide card supplies it from
+   * the transcript's imperative handle.
+   */
+  onScrollToRow?: ScrollToRowHandler;
 }
 
 /**
@@ -221,7 +229,7 @@ export function useTidePlacementSlots(
     EMPTY_PLACEMENT_MAP,
   );
 
-  const { codeSessionStore, sessionMetadataStore } = input;
+  const { codeSessionStore, sessionMetadataStore, onScrollToRow } = input;
 
   // Effective Z2 — explicit mapping wins, but a null / unset value
   // falls back to `statusRow` (the Step 20.4 HMR-study outcome).
@@ -260,11 +268,12 @@ export function useTidePlacementSlots(
             <TideTelemetryStatusRow
               codeSessionStore={codeSessionStore}
               sessionMetadataStore={sessionMetadataStore}
+              onScrollToRow={onScrollToRow}
             />
           );
       }
     },
-    [codeSessionStore, sessionMetadataStore],
+    [codeSessionStore, sessionMetadataStore, onScrollToRow],
   );
 
   const renderTurnTrailing = useMemo<TideTurnTrailingRenderer | undefined>(

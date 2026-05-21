@@ -67,6 +67,7 @@ import {
   StateChangeLogPopoverContent,
   TimePopoverContent,
   TokensPopoverContent,
+  type ScrollToRowHandler,
 } from "./tide-card-telemetry-popovers";
 
 // ---------------------------------------------------------------------------
@@ -222,6 +223,22 @@ function useLiveTick(): number {
 export interface TideTelemetryProps {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore?: SessionMetadataStore;
+}
+
+/**
+ * Props for {@link TideTelemetryStatusRow} — the session telemetry
+ * props plus the optional transcript-scroll handler the Time / Tokens
+ * popovers thread onto their per-turn `#NNNN` entry numbers.
+ */
+export interface TideTelemetryStatusRowProps extends TideTelemetryProps {
+  /**
+   * Scrolls the transcript to a transcript row when the user clicks
+   * its `#NNNN` entry number in the Time / Tokens popover. The tide
+   * card supplies it (it owns the transcript's imperative handle);
+   * omitted in the gallery / fixtures, where the numbers render as
+   * inert text.
+   */
+  onScrollToRow?: ScrollToRowHandler;
 }
 
 /**
@@ -451,9 +468,10 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
  * transitions. Only the popovers' open/closed state and the cell
  * values change; the STATE indicators reconcile tone in place.
  */
-export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
+export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   codeSessionStore,
   sessionMetadataStore,
+  onScrollToRow,
 }) => {
   const snap = useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -577,6 +595,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
       inflight={
         isInflight ? { currentTurnActiveMs: perTurnActiveMs } : null
       }
+      onScrollToRow={onScrollToRow}
     />
   );
   const tokensPopover = (
@@ -589,6 +608,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryProps> = ({
         // while a turn is in flight (see the cell-value block above).
         isInflight ? { currentTurnTokens: tokensCellValue } : null
       }
+      onScrollToRow={onScrollToRow}
     />
   );
   const contextPopover = (

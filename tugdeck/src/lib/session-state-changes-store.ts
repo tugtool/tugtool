@@ -125,8 +125,17 @@ export class SessionStateChangesStore {
     // kicked. Dedupe on `(atMs, phase, transportState,
     // interruptInFlight)` — the local publish and the server load
     // carry identical triples at identical timestamps.
+    //
+    // Every cached row counts as an addition, INCLUDING those
+    // appended while the snapshot was still `pending`: a replay
+    // burst right after a reload publishes a run of transitions
+    // before the load settles, and `onLocalChange` keeps the
+    // snapshot `pending` while appending them. The prior
+    // `status === "pending" ? []` branch discarded exactly those
+    // replay-published rows. A freshly-minted pending snapshot has
+    // `rows: []`, so this stays a no-op when nothing was appended.
     const existing = this.snapshots.get(tugSessionId);
-    const additions = existing?.status === "pending" ? [] : existing?.rows ?? [];
+    const additions = existing?.rows ?? [];
     const merged = mergeRows(result.rows, additions);
     this.snapshots.set(tugSessionId, {
       status: "ready",

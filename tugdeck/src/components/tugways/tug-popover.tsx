@@ -167,6 +167,7 @@ import React from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import { useCardLifecycle } from "@/lib/card-lifecycle";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 import { useServicePopupBinding } from "./use-service-popup-binding";
@@ -366,6 +367,24 @@ export const TugPopover = React.forwardRef<TugPopoverHandle, TugPopoverProps>(
       }),
       [close],
     );
+
+    // Card-lifecycle dismissal. A popover is a transient surface; when
+    // the user switches cards, a popover left open on the outgoing
+    // card must not linger as a floating overlay across the incoming
+    // card (Radix renders content in a portal, so it does not unmount
+    // with the deactivating card's subtree). `observeCardWillDeactivate
+    // (null, …)` fires for ANY card transition — and since only one
+    // card is active at a time, an open popover necessarily belongs to
+    // the card that is deactivating. `useCardLifecycle` returns `null`
+    // outside a provider (standalone previews, unit tests); the effect
+    // no-ops cleanly there.
+    const cardLifecycle = useCardLifecycle();
+    React.useEffect(() => {
+      if (cardLifecycle === null) return;
+      return cardLifecycle.observeCardWillDeactivate(null, () => {
+        if (openRef.current) close();
+      });
+    }, [cardLifecycle, close]);
 
     // Radix-level dismissal (Escape via DismissableLayer, click-outside
     // via DismissableLayer, explicit TugPopoverClose activation). In

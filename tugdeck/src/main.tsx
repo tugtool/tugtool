@@ -14,6 +14,7 @@ import { cardServicesStore } from "./lib/card-services-store";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { restoreTideSessions } from "./lib/tide-session-restore";
 import { attachTideSessionLedgerStore } from "./lib/tide-session-ledger-store";
+import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import {
   ConnectionLifecycle,
@@ -284,6 +285,15 @@ if (!container) {
   // to `session_updated` push frames, and invalidates on reconnect. The
   // picker reads via `useSessionLedger(workspaceKey)` (step 5).
   attachTideSessionLedgerStore(connection);
+
+  // Wire the per-session state-change store to the connection. Without
+  // this the singleton is never created — `useSessionStateChanges`
+  // finds no active store and the Z2 STATE popover renders a permanent
+  // "no state changes recorded yet", even though the supervisor's
+  // ledger holds the rows. The store dispatches
+  // `list_session_state_changes` on first observation of a session and
+  // appends live triple transitions from the local pub/sub bus.
+  attachSessionStateChangesStore(connection);
 
   // Re-assert session bindings for tide cards that were alive before
   // this page reload. The deck layout is materialized;
