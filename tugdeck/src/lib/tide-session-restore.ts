@@ -157,6 +157,43 @@ class TideRestoreRegistry {
 export const tideRestoreRegistry = new TideRestoreRegistry();
 
 // ---------------------------------------------------------------------------
+// Restore-start clock
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-card `Date.now()` of when the current restore began — stamped by
+ * `fireRestore` the moment `spawn_session(mode=resume)` is sent.
+ *
+ * The `TideRestoring` placeholder delay-gates its centered panel on
+ * this: the panel appears only once the restore has run longer than
+ * the budget, so a fast restore shows nothing and a slow one explains
+ * itself. The stamp must outlive the `tideRestoreRegistry` entry —
+ * that entry clears the instant the binding lands, well before the
+ * post-services replay window finishes — and it must survive the
+ * `TideRestoring` remount at the `services`-null boundary, so a
+ * component-local timer cannot hold it. A module-level map keyed by
+ * `cardId` is the one reference both the pre-services and the
+ * cold-restore-in-body renders of `TideRestoring` can read.
+ *
+ * Lifecycle: stamped (and re-stamped) by every `fireRestore`; cleared
+ * by `clearRestoreStartedAt` when the card body reveals. Every path
+ * that shows `TideRestoring` is preceded by a `fireRestore`, so a
+ * missing stamp (`getRestoreStartedAt` → `undefined`) means "treat as
+ * just started" — the safe fallback that arms the full budget.
+ */
+const restoreStartedAt = new Map<string, number>();
+
+/** `Date.now()` of the in-flight restore for `cardId`, if any. */
+export function getRestoreStartedAt(cardId: string): number | undefined {
+  return restoreStartedAt.get(cardId);
+}
+
+/** Drop the restore-start stamp once the card body has revealed. */
+export function clearRestoreStartedAt(cardId: string): void {
+  restoreStartedAt.delete(cardId);
+}
+
+// ---------------------------------------------------------------------------
 // Subscription wiring — installed once at startup by `restoreTideSessions`.
 // ---------------------------------------------------------------------------
 
@@ -392,6 +429,10 @@ export function fireRestore(
   // If a previous restore was in flight (Retry after cancel/timeout),
   // drop the old timer before arming a new one.
   tideRestoreRegistry._clear(cardId);
+  // Stamp the restore-start clock — the `TideRestoring` placeholder
+  // delay-gates its panel on this. Re-stamped on a Retry / reconnect
+  // re-fire so the budget always runs from the live attempt.
+  restoreStartedAt.set(cardId, Date.now());
   sendSpawnSession(connection, cardId, tugSessionId, projectDir, "resume");
   tideRestoreRegistry._register(
     cardId,

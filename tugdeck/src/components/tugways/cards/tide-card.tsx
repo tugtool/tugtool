@@ -69,6 +69,8 @@ import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { deriveTideCardBannerSpec } from "./tide-card-banner-spec";
+import { deriveColdRestoreActive } from "./tide-card-restore-gate";
+import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import type { EditorSettingsStore } from "@/lib/editor-settings-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
@@ -87,6 +89,8 @@ import {
   tideRestoreRegistry,
   cancelTideRestore,
   fireRestore,
+  getRestoreStartedAt,
+  clearRestoreStartedAt,
 } from "@/lib/tide-session-restore";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
@@ -447,20 +451,34 @@ export function TideCardContent({
 // ---------------------------------------------------------------------------
 
 /**
- * Routes between `TideCardBody` and `TideRestoring` based on the
- * per-card store's `transportState` ([D01]). When the wire is `online`
- * the body renders normally; when it's `restoring` (between
- * `transport_open` and `transport_settled`) the same placeholder used
- * by the registry-driven path takes over until the binding is
- * re-acked. The hint text + Cancel button are still useful even when
- * the registry has no entry — the UI is honestly "we know the wire is
- * back; we don't yet know if your session survived."
+ * Routes between `TideCardBody` and `TideRestoring`. The body renders
+ * once the card is genuinely ready; until then the single
+ * `TideRestoring` placeholder holds.
+ *
+ * Two restore windows route to the placeholder:
+ *
+ *   - **transport-restoring** — `transportState === "restoring"`
+ *     ([D01]), between `transport_open` and `transport_settled`. A
+ *     hard-stop with Cancel; the wire is being re-asserted.
+ *   - **cold restore** — on a relaunch, a resume-mode card walks
+ *     replay preflight → `phase === "replaying"` → `replay_complete`
+ *     before its body has ever mounted. `deriveColdRestoreActive`
+ *     ([Step 20.5.D.2.A]) is true across that window; the body is
+ *     held unmounted so it mounts exactly once, against a fully
+ *     reconstructed transcript, and reveals in a single paint.
+ *
+ * The cold-restore branch is gated on a one-shot `revealed` latch:
+ * once the body has mounted, a *later* `phase === "replaying"` (a
+ * mid-session transport reconnect) must NOT route back to the
+ * placeholder — that path stays on [DT10]'s in-body transcript-paint
+ * gate, body mounted. The latch flips the first render the cold
+ * restore is no longer active and never flips back.
  *
  * Why a wrapper rather than an early return inside `TideCardBody`:
  * `TideCardBody` calls many hooks after the snapshot read; an early
  * return there would change hook order between renders. Localizing
- * the transportState read in this thin gate keeps `TideCardBody`'s
- * hook list stable.
+ * the routing read in this thin gate keeps `TideCardBody`'s hook list
+ * stable.
  *
  * The gate also reads `projectDir` reactively from the binding store
  * so the placeholder's project label keeps up with any rebind that
@@ -475,9 +493,17 @@ function TideCardServicesGate({
   renderTurnTrailing,
   footerContent,
 }: TideCardBodyProps) {
+  // Two narrow selectors, not the whole snapshot: each returns a
+  // primitive, so the gate re-renders only when the routing decision
+  // could actually change — not on every `turn_complete` that ticks
+  // the snapshot during the replay window ([L02]).
   const transportState = useSyncExternalStore(
     services.codeSessionStore.subscribe,
     () => services.codeSessionStore.getSnapshot().transportState,
+  );
+  const coldRestoreActive = useSyncExternalStore(
+    services.codeSessionStore.subscribe,
+    () => deriveColdRestoreActive(services.codeSessionStore.getSnapshot()),
   );
   const projectDir = useSyncExternalStore(
     cardSessionBindingStore.subscribe,
@@ -487,12 +513,25 @@ function TideCardServicesGate({
     ),
   );
 
-  // Only the transport-restoring beat takes the full-card backdrop —
-  // it's a hard-stop with Cancel (the wire is being re-asserted; the
-  // user can drop to the picker). Replay windows and the cold-boot
-  // preflight beat are informational; the body's banner surface
-  // covers them while the transcript pane fills in behind it.
-  if (transportState === "restoring") {
+  // One-shot reveal latch — see the component docstring. The cold
+  // restore is over the moment `deriveColdRestoreActive` is false;
+  // from then on the body owns the card for this services instance.
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    if (!coldRestoreActive && !revealed) {
+      setRevealed(true);
+      // The restore is done — drop the restore-start stamp so a much-
+      // later reconnect can't read a stale "began at" and flash the
+      // placeholder panel open immediately.
+      clearRestoreStartedAt(cardId);
+    }
+  }, [coldRestoreActive, revealed, cardId]);
+
+  // Transport-restoring is a hard-stop backdrop with Cancel; it
+  // applies whether or not the body has revealed before (a reconnect
+  // re-asserts the wire). The cold-restore branch applies only before
+  // the first reveal.
+  if (transportState === "restoring" || (!revealed && coldRestoreActive)) {
     return (
       <TideRestoring
         variant="binding"
@@ -519,22 +558,28 @@ function TideCardServicesGate({
 // ---------------------------------------------------------------------------
 
 /**
- * Full-card backdrop shown while the per-card binding is being
- * (re-)acked by the supervisor — i.e., `transportState === "restoring"`
- * or the registry has a pending restore expectation. Project label,
- * spinner, Cancel button.
+ * The single loading affordance for a tide-card restore — shown while
+ * a persisted session is being re-asserted: the registry has a pending
+ * restore expectation, `transportState === "restoring"`, or the
+ * cold-restore replay window is still in progress (Step 20.5.D.2.A).
  *
- * Binding-restore is a hard-stop beat: the wire is being re-asserted
- * and the user can drop to the picker via Cancel. Replay-window and
- * preflight beats are intentionally NOT routed here — those are
- * informational and surface as a banner above the transcript instead
- * (see `deriveTideCardBannerSpec`).
+ * **Delay-gated.** The backdrop fills the card for the whole window,
+ * but the centered panel (title, project, spinner, Cancel) appears
+ * only once the restore has run longer than `RESTORE_PLACEHOLDER_DELAY_MS`.
+ * A fast restore therefore shows only a quiet empty backdrop, sub-
+ * perceptibly, before the body reveals; a slow one explains itself.
+ * The delay is measured from the restore-start stamp
+ * (`getRestoreStartedAt`) so it spans the whole window — pre-services
+ * spawn, preflight, and replay alike — and survives this component's
+ * remount at the `services`-null boundary, which a component-local
+ * timer could not.
+ *
+ * Restore is a hard-stop beat: the panel carries Cancel so a genuinely
+ * stuck restore can drop to the picker via `cancelTideRestore`.
  *
  * The `variant="binding"` discriminator is kept on the type so CSS
  * (`data-variant="binding"`) and tests can target this surface
- * unambiguously, even though it's currently the only kind. Adding a
- * future hard-stop variant (e.g. some other backdrop beat) would be a
- * one-line addition rather than re-wiring callers.
+ * unambiguously, even though it's currently the only kind.
  */
 type TideRestoringVariant = "binding";
 
@@ -546,6 +591,14 @@ interface TideRestoringProps {
   projectDir: string;
 }
 
+/**
+ * Delay before `TideRestoring` reveals its centered panel — mirrors
+ * `REPLAY_SOFT_BUDGET_MS` so "the restore is taking long enough to
+ * explain itself" is one threshold across the codebase. Under it, the
+ * restore shows only the quiet backdrop.
+ */
+const RESTORE_PLACEHOLDER_DELAY_MS = REPLAY_SOFT_BUDGET_MS;
+
 function TideRestoring({
   variant,
   cardId,
@@ -554,6 +607,31 @@ function TideRestoring({
   const handleCancel = useCallback(() => {
     cancelTideRestore(cardId);
   }, [cardId]);
+
+  // Delay gate. The restore-start stamp persists across this
+  // component's remount at the `services`-null boundary, so each
+  // mount recomputes the elapsed time against the same reference and
+  // the panel reveal lands at a stable wall-clock moment. A missing
+  // stamp means "treat as just started" — arm the full delay.
+  const [panelVisible, setPanelVisible] = useState<boolean>(() => {
+    const startedAt = getRestoreStartedAt(cardId);
+    return (
+      startedAt !== undefined &&
+      Date.now() - startedAt >= RESTORE_PLACEHOLDER_DELAY_MS
+    );
+  });
+  useEffect(() => {
+    if (panelVisible) return;
+    const startedAt = getRestoreStartedAt(cardId);
+    const elapsed = startedAt === undefined ? 0 : Date.now() - startedAt;
+    const remaining = RESTORE_PLACEHOLDER_DELAY_MS - elapsed;
+    if (remaining <= 0) {
+      setPanelVisible(true);
+      return;
+    }
+    const handle = setTimeout(() => setPanelVisible(true), remaining);
+    return () => clearTimeout(handle);
+  }, [panelVisible, cardId]);
 
   const title = "Restoring session";
   const spinnerLabel = `Restoring session from ${projectDir}`;
@@ -565,37 +643,51 @@ function TideRestoring({
       data-testid="tide-card-restoring"
       data-variant={variant}
     >
-      <div className="tide-card-restoring-panel" role="status" aria-live="polite">
-        <h2
-          className="tide-card-restoring-title"
-          data-testid="tide-card-restoring-title"
+      {/*
+        Backdrop always; panel only past the delay. The panel is
+        conditionally rendered (not opacity-hidden) so a fast restore
+        neither animates an unseen spinner nor announces "Restoring
+        session" through `aria-live`. When it does mount, a CSS
+        keyframe fades it in ([L06] — appearance via CSS).
+      */}
+      {panelVisible ? (
+        <div
+          className="tide-card-restoring-panel"
+          data-testid="tide-card-restoring-panel"
+          role="status"
+          aria-live="polite"
         >
-          {title}
-        </h2>
-        <p
-          className="tide-card-restoring-project"
-          title={projectDir}
-          data-testid="tide-card-restoring-project"
-        >
-          {projectDir}
-        </p>
-        <div className="tide-card-restoring-footer">
-          <span className="tide-card-restoring-spinner">
-            <TugProgress
-              variant="spinner"
-              size="sm"
-              aria-label={spinnerLabel}
-            />
-          </span>
-          <TugPushButton
-            emphasis="outlined"
-            onClick={handleCancel}
-            data-testid="tide-card-restoring-cancel"
+          <h2
+            className="tide-card-restoring-title"
+            data-testid="tide-card-restoring-title"
           >
-            Cancel
-          </TugPushButton>
+            {title}
+          </h2>
+          <p
+            className="tide-card-restoring-project"
+            title={projectDir}
+            data-testid="tide-card-restoring-project"
+          >
+            {projectDir}
+          </p>
+          <div className="tide-card-restoring-footer">
+            <span className="tide-card-restoring-spinner">
+              <TugProgress
+                variant="spinner"
+                size="sm"
+                aria-label={spinnerLabel}
+              />
+            </span>
+            <TugPushButton
+              emphasis="outlined"
+              onClick={handleCancel}
+              data-testid="tide-card-restoring-cancel"
+            >
+              Cancel
+            </TugPushButton>
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -1578,43 +1670,6 @@ function renderTideCardBanner(
             ? "Lost the connection to tugcast. Trying to reconnect…"
             : "The connection is back. Re-acknowledging your session…"
         }
-      />
-    );
-  }
-  if (spec.kind === "replay-loading") {
-    // Pre-soft-budget (turnsCount === null) keeps the strip generic;
-    // a non-null count promotes it to "(N turns)" — useful signal
-    // once the user has been waiting long enough that detail reads
-    // as reassurance instead of noise. Status variant + default tone
-    // signals "transient, recoverable". The strip uses a real
-    // animated `TugProgress` spinner via `iconSlot` rather than the
-    // static Lucide loader glyph; the message stands alone (no
-    // redundant bold label that just repeats the message text).
-    const message =
-      typeof spec.turnsCount === "number" && spec.turnsCount > 0
-        ? `Loading session… (${spec.turnsCount} ${spec.turnsCount === 1 ? "turn" : "turns"})`
-        : "Loading session…";
-    return (
-      <TugPaneBanner
-        visible={true}
-        variant="status"
-        tone="default"
-        // Hold the loading strip for at least 500ms after first paint.
-        // The motivating case: a JSONL replay that resolves before the
-        // soft-budget fires (well under 100ms) would otherwise flash
-        // the strip and vanish — the user sees motion they can't read,
-        // which reads as "something flashed and broke." The default is
-        // 500 anyway; passing it explicitly here documents intent at
-        // the motivating call site.
-        minMountedMs={500}
-        iconSlot={
-          <TugProgress
-            variant="spinner"
-            size="sm"
-            aria-label="Loading session"
-          />
-        }
-        message={message}
       />
     );
   }

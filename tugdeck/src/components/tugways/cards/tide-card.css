@@ -411,7 +411,14 @@
 
 /* Inner panel — borrows the visual weight of TugAlert content but
    inline rather than modal. Max-width so it reads as a focused
-   status rather than sprawling to fill large cards. */
+   status rather than sprawling to fill large cards.
+
+   Delay-gated (Step 20.5.D.2.A): `TideRestoring` mounts this panel
+   only once the restore has run past `RESTORE_PLACEHOLDER_DELAY_MS`,
+   so for a fast restore it never appears. When it does mount, this
+   one-shot keyframe fades it in so the centered panel arrives as a
+   soft beat rather than a hard pop ([L06] — appearance via CSS, the
+   panel's existence via React). */
 .tide-card-restoring-panel {
   display: flex;
   flex-direction: column;
@@ -424,6 +431,23 @@
   border: 1px solid var(--tugx-alert-border, var(--tug7-element-global-stroke-neutral-muted-rest));
   border-radius: 0.5rem;
   box-sizing: border-box;
+  animation: tide-card-restoring-panel-in
+    var(--tug-motion-duration-moderate, 200ms) ease-out both;
+}
+
+@keyframes tide-card-restoring-panel-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tide-card-restoring-panel {
+    animation: none;
+  }
 }
 
 .tide-card-restoring-title {

@@ -3,11 +3,16 @@
  * helper that decides which banner kind the Tide card surfaces.
  *
  * The helper is pure and synchronous, so each test crafts a minimal
- * `CodeSessionSnapshot` and asserts the returned spec. No render,
- * no real store. The precedence chain (preflight > error > transport
- * > replay-timeout > replay-loading > none, with replay-loading via
- * active phase gated on `sessionMode === "resume"`) is exercised
- * branch-by-branch, plus the dismissed-error fall-through.
+ * `CodeSessionSnapshot` and asserts the returned spec. No render, no
+ * real store. The precedence chain (error > transport > replay-timeout
+ * > none) is exercised branch-by-branch, plus the dismissed-error
+ * fall-through.
+ *
+ * The `replay-loading` kind was retired in Step 20.5.D.2.A — the
+ * cold-restore loading window is the `TideRestoring` placeholder, not
+ * a banner, and this helper now runs only once the body is mounted.
+ * The last describe block pins that retirement: a preflight-active or
+ * `phase === "replaying"` snapshot no longer produces a banner.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -16,33 +21,7 @@ import {
   deriveTideCardBannerSpec,
   type TideCardBannerSpec,
 } from "@/components/tugways/cards/tide-card-banner-spec";
-import type {
-  CodeSessionSnapshot,
-  TurnEntry,
-} from "@/lib/code-session-store";
-import { TURN_ENTRY_TELEMETRY_DEFAULTS } from "@/lib/code-session-store/testing/turn-entry-defaults";
-
-/**
- * Minimal `TurnEntry` stub for tests that only care about
- * `transcript.length`. The helper reads the count to drive
- * `turnsCount` on the replay-loading spec; the entry's content
- * is irrelevant to that derivation. Per-field correctness is
- * exercised by the store's own tests.
- */
-function fakeTurn(msgId: string): TurnEntry {
-  return {
-    turnKey: `turnkey-${msgId}`,
-    msgId,
-    userMessage: { text: "", attachments: [], submitAt: 0 },
-    thinking: "",
-    assistant: "",
-    toolCalls: [],
-    controlRequests: [],
-    result: "success",
-    endedAt: 0,
-    ...TURN_ENTRY_TELEMETRY_DEFAULTS,
-  };
-}
+import type { CodeSessionSnapshot } from "@/lib/code-session-store";
 
 function baseSnap(
   overrides: Partial<CodeSessionSnapshot> = {},
@@ -53,10 +32,6 @@ function baseSnap(
     interruptInFlight: false,
     tugSessionId: "tug-1",
     displayLabel: "test",
-    // Default fixtures to "new" — Step 2 will exercise both modes
-    // explicitly. Step 1 is purely additive (the helper does not yet
-    // read sessionMode), so this default does not affect any existing
-    // assertion in this file.
     sessionMode: "new",
     activeMsgId: null,
     canSubmit: true,
@@ -210,165 +185,97 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
     expect(spec).toEqual({ kind: "transport", state: "restoring" });
   });
 
-  it("preflight wins over a transient error during the cold-boot bridge", () => {
-    // Even if a stale frame replays an error into the new store
-    // during cold boot, the preflight beat keeps the banner stable.
-    // Once preflight clears (replay_started / replay_complete /
-    // transport_close / 12s tick) normal precedence resumes and the
-    // error surfaces if still set.
+  it("replay-timeout surfaces while the dwell window is active", () => {
     const spec = deriveTideCardBannerSpec(
-      baseSnap({
-        replayPreflightActive: true,
-        lastError: {
-          cause: "session_state_errored",
-          message: "stale flash",
-          at: 1_700_000_000_000,
-        },
-      }),
+      baseSnap({ replayTimeoutDwellActive: true }),
       { dismissedAt: null },
     );
-    expect(spec).toEqual({ kind: "replay-loading", turnsCount: null });
+    expect(spec).toEqual({ kind: "replay-timeout" });
   });
 
-  it("preflight wins over a transient transport blip during the cold-boot bridge", () => {
-    // Same logic as the error case: a brief offline/restoring blip
-    // during cold boot shouldn't flash a transport banner over the
-    // resume UX.
-    const spec = deriveTideCardBannerSpec(
-      baseSnap({
-        replayPreflightActive: true,
-        transportState: "offline",
-      }),
-      { dismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "replay-loading", turnsCount: null });
-  });
-
-  it("once preflight clears, suppressed errors surface naturally", () => {
+  it("error outranks an active replay-timeout dwell", () => {
     const at = 1_700_000_000_000;
     const spec = deriveTideCardBannerSpec(
       baseSnap({
-        replayPreflightActive: false,
-        lastError: {
-          cause: "session_state_errored",
-          message: "real error",
-          at,
-        },
+        replayTimeoutDwellActive: true,
+        lastError: { cause: "wire_error", message: "boom", at },
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec.kind).toBe("error");
+  });
+
+  it("transport outranks an active replay-timeout dwell", () => {
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({ replayTimeoutDwellActive: true, transportState: "offline" }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "transport", state: "offline" });
+  });
+});
+
+/**
+ * Step 20.5.D.2.A retired the `replay-loading` banner kind. The
+ * cold-restore loading window is now held by the `TideRestoring`
+ * placeholder, and `deriveTideCardBannerSpec` runs only once
+ * `TideCardBody` is mounted — after the restore has resolved. These
+ * tests pin that the replay-window signals (`replayPreflightActive`,
+ * `phase === "replaying"`) no longer produce a banner, and — the
+ * inverse of the old precedence — no longer suppress an error or
+ * transport banner either.
+ */
+describe("deriveTideCardBannerSpec — replay-loading retired (D.2.A)", () => {
+  it("replayPreflightActive alone produces no banner", () => {
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({ replayPreflightActive: true }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "none" });
+  });
+
+  it("phase=replaying in resume mode produces no banner", () => {
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({ phase: "replaying", sessionMode: "resume" }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "none" });
+  });
+
+  it("phase=replaying in new mode produces no banner", () => {
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({ phase: "replaying", sessionMode: "new" }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({ kind: "none" });
+  });
+
+  it("preflight no longer masks an error — the error surfaces", () => {
+    // Old behavior: a preflight beat suppressed transient errors so a
+    // stale frame couldn't flash the banner. With the body now held
+    // unmounted across the whole cold-restore window, this helper
+    // never runs during preflight; if it somehow does, the error is
+    // shown rather than swallowed.
+    const at = 1_700_000_000_000;
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({
+        replayPreflightActive: true,
+        lastError: { cause: "session_state_errored", message: "boom", at },
       }),
       { dismissedAt: null },
     );
     expect(spec).toEqual({
       kind: "error",
       cause: "session_state_errored",
-      message: "real error",
+      message: "boom",
       at,
     });
   });
-});
 
-/**
- * Branch 5 of the precedence chain — replay-loading driven by
- * `phase === "replaying"` (the live JSONL replay window). This
- * branch is gated on `sessionMode === "resume"` because the
- * new-mode JSONL-missing round-trip has nothing user-visible to
- * communicate; banner mount during that window would steal caret
- * focus from the just-focused editor for the duration of the
- * banner's `minMountedMs` + exit animation. See module docstring
- * branch 5 / [V03] in `tugplan-tide-session-init-orchestration.md`
- * for the full rationale.
- *
- * Branch 1 (preflight) is *not* mode-gated by the helper itself —
- * production correctness depends on `notifyResumeBindingLanded()`
- * being gated upstream in `cardServicesStore`. The helper takes
- * the snapshot at face value. The third test below pins that
- * surface so a future reader does not assume branch 1 is mode-aware
- * and remove the upstream gate by mistake. ([R01])
- *
- * [L11] the banner is a status surface, not a responder; this
- *       helper makes the kind decision and the consumer renders;
- *       there is no state ownership change here.
- * [L23] suppressing the silly banner *removes* a transition that
- *       was destroying caret state — this gate is L23-positive.
- */
-describe("deriveTideCardBannerSpec — replay-loading via active phase", () => {
-  it("returns kind=none for new mode during the JSONL-missing round-trip", () => {
-    // Models the production new-session bind path: services
-    // construct, `sendRequestReplay` fires, `replay_started` lands
-    // → `phase === "replaying"`. With `sessionMode: "new"` the
-    // helper returns `none`; the banner never mounts and the
-    // freshly-focused editor keeps its caret.
+  it("preflight no longer masks a transport blip — the transport banner surfaces", () => {
     const spec = deriveTideCardBannerSpec(
-      baseSnap({
-        phase: "replaying",
-        sessionMode: "new",
-      }),
+      baseSnap({ replayPreflightActive: true, transportState: "offline" }),
       { dismissedAt: null },
     );
-    expect(spec).toEqual({ kind: "none" });
-  });
-
-  it("returns kind=replay-loading with turnsCount=null for resume mode pre-soft-budget", () => {
-    // Soft-budget flag has not yet flipped: the banner shows the
-    // generic "Loading session…" copy without a turn count.
-    const spec = deriveTideCardBannerSpec(
-      baseSnap({
-        phase: "replaying",
-        sessionMode: "resume",
-      }),
-      { dismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "replay-loading", turnsCount: null });
-  });
-
-  it("returns kind=replay-loading with the transcript count once soft-budget elapses (resume mode)", () => {
-    // After the soft-budget timer fires, the banner promotes its
-    // copy to "Loading session… (N turns)". The count comes from
-    // the transcript already committed during the replay window.
-    const spec = deriveTideCardBannerSpec(
-      baseSnap({
-        phase: "replaying",
-        sessionMode: "resume",
-        replaySoftBudgetElapsed: true,
-        transcript: [fakeTurn("m1"), fakeTurn("m2")],
-      }),
-      { dismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "replay-loading", turnsCount: 2 });
-  });
-
-  it("preflight branch is NOT mode-gated by the helper itself (production guard is upstream)", () => {
-    // Defensive: if `replayPreflightActive: true` ever appears with
-    // `sessionMode: "new"`, branch 1 still fires. Production never
-    // emits this combination because `cardServicesStore` only calls
-    // `notifyResumeBindingLanded()` for resume bindings, but the
-    // helper's surface contract is "trust the snapshot." Removing
-    // the upstream gate must not silently change the helper's
-    // behavior, so this case is pinned. [R01]
-    const spec = deriveTideCardBannerSpec(
-      baseSnap({
-        replayPreflightActive: true,
-        sessionMode: "new",
-      }),
-      { dismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "replay-loading", turnsCount: null });
-  });
-
-  it("kind=none when phase is replaying but neither preflight nor resume mode applies (new-mode tail)", () => {
-    // Edge-case completeness: the soft-budget flag is irrelevant for
-    // new-mode because branch 5 short-circuits to `none` before
-    // reading it. This test pins that semantics so a future helper
-    // refactor that re-orders the conditions does not accidentally
-    // surface the banner for a new-mode tail.
-    const spec = deriveTideCardBannerSpec(
-      baseSnap({
-        phase: "replaying",
-        sessionMode: "new",
-        replaySoftBudgetElapsed: true,
-        transcript: [fakeTurn("m1")],
-      }),
-      { dismissedAt: null },
-    );
-    expect(spec).toEqual({ kind: "none" });
+    expect(spec).toEqual({ kind: "transport", state: "offline" });
   });
 });

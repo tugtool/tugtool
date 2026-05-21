@@ -8,54 +8,29 @@
  *
  * Precedence (highest first):
  *
- *   1. **replay-loading via preflight** — `replayPreflightActive` is
- *      true. The cold-boot bridge between binding rehydrate and the
- *      first `replay_started` event is informational; the user
- *      explicitly asked to resume a session and is waiting for it.
- *      During this window we suppress transient errors and transport
- *      blips so the banner stays a stable "Loading session"
- *      beat instead of flashing through error / transport / loading
- *      kinds during a noisy startup. Preflight clears on the first
- *      of `replay_started` / `replay_complete` / `transport_close` /
- *      a 12s last-resort tick — at which point normal precedence
- *      resumes.
- *   2. **error** — `lastError` is set, the cause is banner-routable
+ *   1. **error** — `lastError` is set, the cause is banner-routable
  *      (i.e. not `resume_failed`), and the error has not been
  *      user-dismissed by `at` timestamp.
- *   3. **transport** — `transportState !== "online"`. Covers
+ *   2. **transport** — `transportState !== "online"`. Covers
  *      idle-offline (and, defensively, restoring; the gate already
  *      routes restoring to a backdrop, so this branch is a no-op
  *      in production).
- *   4. **replay-timeout** — the most recent replay completed with a
+ *   3. **replay-timeout** — the most recent replay completed with a
  *      `replay_timeout` outcome and the dwell window (1.5s) is still
  *      active. Surfaces the failure copy briefly before dismissing.
- *   5. **replay-loading via active phase** — `phase === "replaying"`
- *      (live replay window) AND `sessionMode === "resume"`. The
- *      soft-budget flag promotes the banner copy from the generic
- *      "Loading session…" to the count-aware "Loading session…
- *      (N turns)" once the wait has lasted long enough that progress
- *      detail reads as reassurance rather than noise.
+ *   4. **none** — no banner.
  *
- *      The `sessionMode === "resume"` gate is what suppresses the
- *      "Loading session…" flash that new-mode bindings would
- *      otherwise see during their JSONL-missing replay round-trip.
- *      `sendRequestReplay` fires on every binding land
- *      (`cardServicesStore._construct`) so the post-content rebind
- *      case — a session that started new but accumulated turns now
- *      has JSONL to replay on reconnect — still works; for a fresh
- *      new session, the wire returns `replay_complete{jsonl_missing}`
- *      within ~50ms and there is nothing user-visible to communicate.
- *      Banner mount during that window would set `inert` on
- *      `.tug-pane-body`, blur the just-focused editor, and force a
- *      ~700ms refocus dance (`minMountedMs` + exit) for no benefit —
- *      see `tugplan-tide-session-init-orchestration.md` [V03] for
- *      the focus-contract analysis. Branch 1 (preflight) is already
- *      implicitly resume-only upstream because
- *      `notifyResumeBindingLanded()` is gated on
- *      `binding.sessionMode === "resume"` in `cardServicesStore`;
- *      this branch's mode guard mirrors that semantics at the
- *      active-phase branch.
- *   6. **none** — no banner.
+ * **Retired (Step 20.5.D.2.A).** This helper once carried a
+ * `replay-loading` kind — a "Loading session…" strip shown during the
+ * cold-boot preflight beat and the `phase === "replaying"` window. It
+ * is gone: the restore-reveal coordination of D.2.A routes the whole
+ * cold-restore window to the centered `TideRestoring` placeholder and
+ * holds `TideCardBody` unmounted until `replay_complete`, so a
+ * replay-window banner had no surface to mount on and nothing left to
+ * communicate. The placeholder, delay-gated, is the single loading
+ * affordance. The `error` / `transport` / `replay-timeout` kinds stay
+ * — those are genuine outcomes shown on the mounted body after the
+ * restore resolves.
  *
  * Why a separate module: the helper is pure, takes a snapshot, and
  * returns a discriminated union. Testing it in isolation
@@ -98,18 +73,6 @@ export type TideCardBannerSpec =
       kind: "transport";
       state: "offline" | "restoring";
     }
-  | {
-      kind: "replay-loading";
-      /**
-       * Number of turns committed to the transcript so far in this
-       * replay window. `null` until the soft-budget flag elapses (or
-       * during the preflight beat where no replay window has opened
-       * yet). The body promotes the copy from "Loading session…"
-       * to "Loading session… (N turns)" once a non-null count
-       * lands.
-       */
-      turnsCount: number | null;
-    }
   | { kind: "replay-timeout" };
 
 /**
@@ -124,25 +87,20 @@ export interface TideCardBannerCtx {
 
 /**
  * Pure derivation. Mutually exclusive by construction:
- * - preflight wins over everything (cold-boot bridge — see module
- *   docstring for why we suppress transient errors here)
- * - error wins next when present and not dismissed
+ * - error wins when present and not dismissed
  * - transport wins when no error is showing and the wire is not online
- * - replay-timeout wins over the active-phase replay-loading (the
- *   dwell is brief and stamps the most-recent outcome before any new
- *   window opens)
- * - replay-loading covers the live replay window when
- *   `sessionMode === "resume"` (see branch 5 / module docstring for
- *   why new-mode bindings skip this branch)
+ * - replay-timeout wins when the most-recent replay timed out and the
+ *   dwell window is still active
  * - none otherwise
+ *
+ * The cold-restore loading window is NOT a banner — it is the
+ * `TideRestoring` placeholder (Step 20.5.D.2.A); this helper runs only
+ * once `TideCardBody` is mounted, i.e. after the restore has resolved.
  */
 export function deriveTideCardBannerSpec(
   snap: CodeSessionSnapshot,
   ctx: TideCardBannerCtx,
 ): TideCardBannerSpec {
-  if (snap.replayPreflightActive) {
-    return { kind: "replay-loading", turnsCount: null };
-  }
   if (
     snap.lastError !== null &&
     snap.lastError.cause !== "resume_failed" &&
@@ -160,22 +118,6 @@ export function deriveTideCardBannerSpec(
   }
   if (snap.replayTimeoutDwellActive) {
     return { kind: "replay-timeout" };
-  }
-  // Branch 5 — replay-loading via active phase. Resume-mode only.
-  // For new-mode bindings, the JSONL replay is a brief no-op
-  // round-trip (`replay_started` → `replay_complete{jsonl_missing}`)
-  // with nothing to communicate; banner mount + `inert` toggle
-  // would just steal caret focus from the just-mounted editor for
-  // ~700ms ([V03] in `tugplan-tide-session-init-orchestration.md`).
-  // Branch 1 (preflight) is already implicitly resume-only because
-  // `notifyResumeBindingLanded()` is gated on
-  // `binding.sessionMode === "resume"` in `cardServicesStore`; this
-  // mode guard mirrors that semantics at the active-phase branch.
-  if (snap.phase === "replaying" && snap.sessionMode === "resume") {
-    return {
-      kind: "replay-loading",
-      turnsCount: snap.replaySoftBudgetElapsed ? snap.transcript.length : null,
-    };
   }
   return { kind: "none" };
 }
