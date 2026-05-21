@@ -40,6 +40,18 @@
  * null and the subscription is skipped — the menu still renders and
  * opens/closes normally, it just doesn't get the chain-reactive dismiss.
  *
+ * ## Sub-menu open state is locally controlled
+ *
+ * Each `Sub` is a controlled component bound to a single `openSubKey`
+ * value, so exactly one sub-menu is open at a time. Hovering a
+ * sub-trigger sets `openSubKey` directly from an `onPointerEnter`
+ * handler, switching the visible sub-menu on the same commit the
+ * cursor lands — Radix's own pointer-grace heuristic would otherwise
+ * keep the previous sub-menu open while the cursor sits on a sibling.
+ * Hovering a plain top-level item clears `openSubKey` so no stale
+ * sub-menu lingers. Keyboard open/close still flows through Radix via
+ * `onOpenChange`.
+ *
  * **Authoritative references:**
  * - [D02] TugPopupMenu takes a single ReactNode trigger prop
  *
@@ -48,7 +60,7 @@
 
 import "../tug-menu.css";
 
-import React, { useContext, useLayoutEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
@@ -193,6 +205,20 @@ export function TugPopupMenu({
   // back into our setOpen via onOpenChange.
   const [open, setOpen] = useState(defaultOpen);
 
+  // Which sub-menu is currently open, keyed by the entry's render key.
+  // `null` means no sub-menu is open. Each `Sub` is controlled against
+  // this single value so only one sub-menu shows at a time and it
+  // always tracks the hovered sub-trigger — see the "Sub-menu open
+  // state is locally controlled" note above.
+  const [openSubKey, setOpenSubKey] = useState<string | null>(null);
+
+  // Every close path funnels through `open`, so resetting here covers
+  // selection, Escape, click-outside, and chain dismiss alike: a reopen
+  // always starts with every sub-menu collapsed.
+  useEffect(() => {
+    if (!open) setOpenSubKey(null);
+  }, [open]);
+
   // captureOnOpen() must run as soon as the menu is asked to open,
   // before Radix's FocusScope grabs DOM focus and overwrites
   // first-responder semantics. [D06] / [D07] / (#service-binding).
@@ -298,8 +324,18 @@ export function TugPopupMenu({
   /**
    * Render a list of menu entries. Extracted so the same logic handles
    * both top-level content and sub-menu content.
+   *
+   * `topLevel` marks the root menu. Only root entries steer
+   * `openSubKey` on hover: hovering a root sub-trigger opens its
+   * sub-menu and hovering a plain root item closes whatever was open.
+   * Entries nested inside a sub-menu must not touch `openSubKey` —
+   * doing so would close the sub-menu the cursor is currently in.
    */
-  function renderEntries(entries: TugPopupMenuEntry[], keyPrefix: string) {
+  function renderEntries(
+    entries: TugPopupMenuEntry[],
+    keyPrefix: string,
+    topLevel: boolean,
+  ) {
     return entries.map((entry, idx) => {
       if ("type" in entry && entry.type === "separator") {
         return (
@@ -320,9 +356,27 @@ export function TugPopupMenu({
         );
       }
       if ("type" in entry && entry.type === "sub") {
+        const subKey = `${keyPrefix}-sub-${idx}`;
         return (
-          <DropdownMenuPrimitive.Sub key={`${keyPrefix}-sub-${idx}`}>
-            <DropdownMenuPrimitive.SubTrigger className="tug-menu-item tug-menu-sub-trigger">
+          <DropdownMenuPrimitive.Sub
+            key={subKey}
+            open={openSubKey === subKey}
+            onOpenChange={(next) => {
+              // `next` true: a request to open this sub-menu (hover,
+              // click, or ArrowRight). `next` false: a request to
+              // close it (ArrowLeft, Escape, or the parent menu
+              // closing) — only honored when this sub is the open one.
+              setOpenSubKey((cur) =>
+                next ? subKey : cur === subKey ? null : cur,
+              );
+            }}
+          >
+            <DropdownMenuPrimitive.SubTrigger
+              className="tug-menu-item tug-menu-sub-trigger"
+              // Switch the open sub-menu the instant the cursor lands,
+              // ahead of Radix's pointer-grace heuristic.
+              onPointerEnter={() => setOpenSubKey(subKey)}
+            >
               {entry.icon !== undefined && (
                 <span className="tug-menu-item-icon" aria-hidden="true">
                   {entry.icon}
@@ -338,7 +392,7 @@ export function TugPopupMenu({
                 className={cn("tug-menu-content", inDialog && "tug-menu-in-dialog")}
                 sideOffset={4}
               >
-                {renderEntries(entry.items, `${keyPrefix}-sub-${idx}`)}
+                {renderEntries(entry.items, subKey, false)}
               </DropdownMenuPrimitive.SubContent>
             </DropdownMenuPrimitive.Portal>
           </DropdownMenuPrimitive.Sub>
@@ -351,6 +405,10 @@ export function TugPopupMenu({
           className="tug-menu-item"
           disabled={item.disabled}
           onSelect={(event) => handleItemSelect(item.id, event)}
+          // Hovering a plain root item dismisses any open sub-menu.
+          // Nested items leave `openSubKey` alone — the cursor is
+          // inside the sub-menu they belong to.
+          onPointerEnter={topLevel ? () => setOpenSubKey(null) : undefined}
         >
           {item.icon !== undefined && (
             <span className="tug-menu-item-icon" aria-hidden="true">
@@ -376,7 +434,7 @@ export function TugPopupMenu({
           data-testid={dataTestId}
           onCloseAutoFocus={onCloseAutoFocus}
         >
-          {renderEntries(items, "root")}
+          {renderEntries(items, "root", true)}
         </DropdownMenuPrimitive.Content>
       </DropdownMenuPrimitive.Portal>
     </DropdownMenuPrimitive.Root>
