@@ -21,12 +21,6 @@
  * footer therefore always read the same text ("OK" / "interrupted" /
  * "error" / "lost") and tone for a given turn.
  *
- * Polished in `gallery-tide-status-row.tsx` (workshop) and promoted
- * here for production use by [Step 20.4.15]. The promotion translates
- * the gallery's inline-style layout into class-driven CSS per [L19]
- * / [L20]; the row-grid alignment is tightened from per-row grids
- * to a subgrid-shared 3-column grid so columns align consistently.
- *
  * Conformance:
  *  - [L02] popover content is a function of inputs only — `transcript`,
  *    `inflight`, `contextMax`, `rows`. The status-row owns the

@@ -159,10 +159,6 @@
  * / CONTEXT cells and the `TugStateIndicator`) is to wrap the cell in
  * `TugPopoverTrigger` and apply a `cursor: pointer` + subtle
  * hover-tinted background class so the click target is discoverable.
- * The gallery's `gallery-tide-status-row` card (the "Popover substrate
- * — status-cell anchor" section + `.gallery-tide-status-cell-clickable`
- * in its companion CSS) is the worked example that 20.4.7 + 20.4.9
- * will reuse for the per-area popovers and the indicator ledger.
  */
 
 import "./tug-popover.css";

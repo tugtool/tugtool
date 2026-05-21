@@ -90,8 +90,6 @@ import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugStateIndicator } from "./gallery-tug-state-indicator";
 import { GalleryTugThinkingIndicator } from "./gallery-tug-thinking-indicator";
-import { GalleryTideAsstHalfStack } from "./gallery-tide-asst-half-stack";
-import { GalleryTideStatusRow } from "./gallery-tide-status-row";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -696,21 +694,6 @@ export function registerGalleryCards(): void {
   // Feedback & Status
   // ===========================================================================
 
-  // Design spike for the tide-card Z2 status row layout. Six variants
-  // exploring stability strategies (fixed-width values, CSS Grid
-  // pinning, stacked badges, all-gauges, sparkline tails) + a scenario
-  // picker that walks through realistic value ranges so jitter /
-  // stability are empirically visible.
-  registerCard({
-    componentId: "gallery-tide-status-row",
-    contentFactory: (_cardId) => <GalleryTideStatusRow />,
-    defaultMeta: { title: "Tide Status Row", icon: "Activity", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
   registerCard({
     componentId: "gallery-tug-arc-gauge",
     contentFactory: (_cardId) => <GalleryTugArcGauge />,
@@ -735,16 +718,6 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-thinking-indicator",
     contentFactory: (_cardId) => <GalleryTugThinkingIndicator />,
     defaultMeta: { title: "TugThinkingIndicator", icon: "Hourglass", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-tide-asst-half-stack",
-    contentFactory: (_cardId) => <GalleryTideAsstHalfStack />,
-    defaultMeta: { title: "Z1 asst-half stack", icon: "Rows2", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

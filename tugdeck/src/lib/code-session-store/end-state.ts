@@ -1,12 +1,10 @@
 /**
- * Pure-logic helpers for the Z1 asst-half end-state display.
+ * Pure-logic helpers for the tide-card Z1B end-state display.
  *
- * Used by the gallery's `gallery-tide-asst-half-stack.tsx` workshop
- * card and (when 20.4.15 lands) by the production tide-card Z1
- * asst-half renderer. The helpers are pinned here, not inline in
- * the gallery, so the mapping from `TurnEndReason` to badge text
- * and tone has one source of truth across the workshop and
- * production callsites.
+ * Used by the production Z1B status row (`tide-card-z1b.tsx`). The
+ * helpers live in this module, not inline in the component, so the
+ * mapping from `TurnEndReason` to badge text and tone has one
+ * source of truth.
  *
  * The end-state display surfaces three pieces of post-turn
  * information:
