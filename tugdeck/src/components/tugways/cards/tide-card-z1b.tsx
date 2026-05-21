@@ -142,11 +142,14 @@ export interface TideZ1BProps {
    */
   perTurnTokens?: number;
   /**
-   * Plain-text source for the copy-button affordance. When non-
-   * empty AND `turn` is defined, the row's trailing edge renders
-   * a `BlockCopyButton` whose `getText` returns this string.
-   * Suppressed for in-flight rows (nothing to copy yet) and for
-   * empty-body committed rows.
+   * The markdown the copy-button affordance writes to the clipboard.
+   * The user half passes the submitted message text; the code half
+   * passes the full turn serialized by `turnEntryToMarkdown` (every
+   * tool call's input/output plus the assistant prose). When non-
+   * empty AND `turn` is defined, the row's trailing edge renders a
+   * `BlockCopyButton` whose `getText` returns this string. Suppressed
+   * for in-flight rows (nothing to copy yet) and for empty-body
+   * committed rows.
    */
   bodyText?: string;
 }

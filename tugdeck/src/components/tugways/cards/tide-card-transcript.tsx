@@ -83,6 +83,7 @@ import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-blo
 import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transcript-tool-calls";
 import { TideZ1B } from "@/components/tugways/cards/tide-card-z1b";
 import { dispatch as dispatchRenderInput } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
+import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
@@ -535,7 +536,15 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   // there's no opportunity for kind and payload to disagree.
   const turn = row.turn;
   const isCommitted = turn !== undefined;
-  const assistantText = turn?.assistant ?? "";
+  // Full-turn markdown for the Z1B COPY affordance — every tool
+  // call's input/output followed by the assistant prose. Serialized
+  // once per committed turn (the turn is frozen post-commit, so the
+  // memo runs a single time). `undefined` for the in-flight row,
+  // which keeps COPY suppressed until the turn commits.
+  const copyMarkdown = useMemo(
+    () => (turn !== undefined ? turnEntryToMarkdown(turn) : undefined),
+    [turn],
+  );
   const timestamp =
     turn !== undefined ? formatTranscriptTimestamp(turn.endedAt) : undefined;
 
@@ -698,7 +707,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                     participant="code"
                     turn={turn}
                     perTurnTokens={row.perTurnTokens}
-                    bodyText={isCommitted ? assistantText : undefined}
+                    bodyText={copyMarkdown}
                   />
                   {hasTrailing ? trailing : null}
                 </>
