@@ -511,32 +511,35 @@ export interface CodeSessionSnapshot {
   } | null;
 
   /**
-   * One-shot restore slot populated when the user interrupts a turn
-   * before claude has produced any content (CASE A — `phase ===
-   * "submitting"`, no `activeMsgId`). Carries the user's exact prompt
-   * (text + atoms) at submit time so the prompt-entry editor can seed
-   * its document for re-edit.
+   * One-shot restore slot — carries a prompt (text + atoms) the
+   * prompt-entry editor can seed back into its document for re-edit.
+   * Two paths populate it:
    *
-   * Lifecycle:
-   *   - Set by `handleInterrupt` the moment `interrupt()` fires while
-   *     the phase is `submitting`. Simultaneously cleared:
-   *     `pendingUserMessage` (so the in-flight pair stops rendering),
-   *     `queuedSends` (current `interrupt()` semantics).
-   *   - Consumed by the prompt entry via
-   *     {@link CodeSessionStore.consumePendingDraftRestore} once it has
-   *     applied the restore to the editor. The consume call is what
-   *     transitions this slot back to `null`; until then it survives
-   *     subsequent snapshot rebuilds so a remount or late mount of the
-   *     prompt entry still picks it up.
+   *   - **CASE A interrupt** — the user pulls a turn back before any
+   *     answer-channel content has begun (`firstAssistantDeltaAt ===
+   *     null && firstToolUseAt === null`; thinking does not cross the
+   *     line). `handleInterrupt` captures `pendingUserMessage` here,
+   *     clears the in-flight pair and the queue, and returns `phase`
+   *     to `idle`.
+   *   - **Queued-send cancel** — `cancelQueuedSend` un-sends one
+   *     never-dispatched queued submission and routes its prompt here.
+   *
+   * Consumed by the prompt entry via
+   * {@link CodeSessionStore.consumePendingDraftRestore} once it has
+   * applied the restore — and only when the editor is empty, so a
+   * cancel never clobbers in-progress content. The consume call is
+   * what transitions this slot back to `null`; until then it survives
+   * subsequent snapshot rebuilds so a remount or late mount of the
+   * prompt entry still picks it up.
    *
    * The reference is preserved across snapshot rebuilds while the slot
    * is non-null so `useSyncExternalStore` consumers ([L02]) get
    * `Object.is` stability — a `useLayoutEffect` keyed on the slot's
    * identity fires once per restore, not on every parent render.
    *
-   * The wire's `turn_complete(error)` that arrives after the interrupt
-   * round-trip does NOT clear or repopulate this slot — the reducer
-   * routes that path via the internal `interruptOrigin` flag and skips
+   * The wire's `turn_complete(error)` that arrives after a CASE A
+   * interrupt round-trip does NOT clear or repopulate this slot — the
+   * reducer's `pendingCaseAEchoes` gate suppresses that echo and skips
    * appending a transcript entry, so a CASE A interrupt produces zero
    * `TurnEntry` regardless of the wire echo's timing.
    */

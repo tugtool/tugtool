@@ -7,10 +7,8 @@
  *    lifecycle states), plus the precedence between overlapping
  *    signals (errored / replaying / interruptInFlight).
  *  - `submitButtonMode` — the matrix's Z5 column for every state, plus
- *    the TRANSPORT_DOWN (`reconnecting`) overlay effect. QUEUED_NEXT_TURN
- *    no longer bears on Z5 — a mid-turn submit queues instead of
- *    changing the primary button.
- *  - `overlays` — `transport_down` / `queued_next`.
+ *    the TRANSPORT_DOWN (`reconnecting`) overlay effect.
+ *  - `overlays` — `transport_down`.
  *  - [DT09] — `deriveLifecycleSnapshot` returns the previous reference
  *    when no matrix-relevant signal moved, a fresh one when any did.
  *  - `lifecycleSnapshotsEqual` — the structural-equality primitive.
@@ -45,7 +43,6 @@ function signals(
     phase: "idle",
     transportState: "online",
     interruptInFlight: false,
-    queuedSends: [],
     transcript: [],
     ...overrides,
   };
@@ -211,33 +208,6 @@ describe("deriveLifecycleSnapshot — submitButtonMode (Z5 column)", () => {
     }
   });
 
-  it("QUEUED_NEXT_TURN does not change the in-flight Stop button", () => {
-    // A mid-turn submit queues rather than overriding Z5 — the primary
-    // button stays Stop regardless of how many sends are queued.
-    expect(
-      derive(signals({ phase: "streaming", queuedSends: [{}] }))
-        .submitButtonMode,
-    ).toEqual({ kind: "stop" });
-  });
-
-  it("QUEUED_NEXT_TURN does not change the idle Submit button", () => {
-    expect(
-      derive(signals({ phase: "idle", queuedSends: [{}, {}] }))
-        .submitButtonMode,
-    ).toEqual({ kind: "submit", disabled: false });
-  });
-
-  it("TRANSPORT_DOWN outranks QUEUED_NEXT_TURN", () => {
-    expect(
-      derive(
-        signals({
-          phase: "streaming",
-          queuedSends: [{}],
-          transportState: "offline",
-        }),
-      ).submitButtonMode,
-    ).toEqual({ kind: "reconnecting" });
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -253,23 +223,8 @@ describe("deriveLifecycleSnapshot — overlays", () => {
     for (const transportState of ["offline", "restoring"] as const) {
       const { overlays } = derive(signals({ transportState }));
       expect(overlays.has("transport_down")).toBe(true);
+      expect(overlays.size).toBe(1);
     }
-  });
-
-  it("queued_next when the queue is non-empty", () => {
-    expect(
-      derive(signals({ queuedSends: [{}] })).overlays.has("queued_next"),
-    ).toBe(true);
-    expect(
-      derive(signals({ queuedSends: [] })).overlays.has("queued_next"),
-    ).toBe(false);
-  });
-
-  it("both overlays coexist", () => {
-    const { overlays } = derive(
-      signals({ transportState: "offline", queuedSends: [{}] }),
-    );
-    expect([...overlays].sort()).toEqual(["queued_next", "transport_down"]);
   });
 });
 
@@ -296,11 +251,11 @@ describe("deriveLifecycleSnapshot — [DT09] reference stability", () => {
 
   it("a new overlay breaks reference stability", () => {
     const first = derive(signals({ phase: "streaming" }));
-    const afterQueue = derive(
-      signals({ phase: "streaming", queuedSends: [{}] }),
+    const afterTransport = derive(
+      signals({ phase: "streaming", transportState: "offline" }),
       first,
     );
-    expect(afterQueue).not.toBe(first);
+    expect(afterTransport).not.toBe(first);
   });
 
   it("omitting `previous` always yields a fresh reference", () => {
@@ -338,18 +293,8 @@ describe("lifecycleSnapshotsEqual", () => {
     expect(
       lifecycleSnapshotsEqual(
         derive(signals({ phase: "streaming" })),
-        derive(signals({ phase: "streaming", queuedSends: [{}] })),
+        derive(signals({ phase: "streaming", transportState: "offline" })),
       ),
     ).toBe(false);
-  });
-
-  it("equal submitButtonMode across queue depth, but unequal snapshots", () => {
-    // A queued send no longer changes Z5 — idle with and without a
-    // queue resolves to the same `submitButtonMode`. The snapshots
-    // still differ, on the `queued_next` overlay.
-    const plain = derive(signals({ phase: "idle" }));
-    const queued = derive(signals({ phase: "idle", queuedSends: [{}] }));
-    expect(queued.submitButtonMode).toEqual(plain.submitButtonMode);
-    expect(lifecycleSnapshotsEqual(plain, queued)).toBe(false);
   });
 });

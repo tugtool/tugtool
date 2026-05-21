@@ -50,10 +50,13 @@ export type TideLifecycleState =
   | "complete";
 
 /**
- * The matrix's overlay rows — orthogonal conditions that can apply on
- * top of any base state, both derived from the store snapshot.
+ * The matrix's overlay row — an orthogonal condition that can apply on
+ * top of any base state, derived from the store snapshot. `transport_down`
+ * is the sole overlay; the matrix's QUEUED_NEXT_TURN condition needs no
+ * derived value here — it surfaces directly as transcript ghost rows off
+ * the snapshot's `queuedSends`.
  */
-export type TideLifecycleOverlay = "transport_down" | "queued_next";
+export type TideLifecycleOverlay = "transport_down";
 
 /**
  * The Z5 submit-button mode — the matrix's Z5 column. The `submit`
@@ -92,11 +95,6 @@ export interface LifecycleStoreSignals {
   phase: CodeSessionPhase;
   transportState: TransportState;
   interruptInFlight: boolean;
-  /**
-   * Only `.length` is read — a non-empty queue raises the
-   * QUEUED_NEXT_TURN overlay.
-   */
-  queuedSends: ReadonlyArray<unknown>;
   /**
    * Only `.length` is read — it splits the `idle` phase into COMPLETE
    * (a turn has committed) vs a never-used IDLE.
@@ -142,7 +140,7 @@ function deriveLifecycleState(s: LifecycleStoreSignals): TideLifecycleState {
   }
 }
 
-/** The active overlay set — the matrix's overlay rows. */
+/** The active overlay set — the matrix's overlay row. */
 function deriveOverlays(
   s: LifecycleStoreSignals,
 ): ReadonlySet<TideLifecycleOverlay> {
@@ -150,7 +148,6 @@ function deriveOverlays(
   // TRANSPORT_DOWN covers both `offline` (no wire) and `restoring`
   // (wire back, binding not re-ack'd) — anything but `online`.
   if (s.transportState !== "online") overlays.add("transport_down");
-  if (s.queuedSends.length > 0) overlays.add("queued_next");
   return overlays;
 }
 
@@ -177,8 +174,8 @@ function deriveSubmitButtonMode(
       // A turn is in flight → Stop, unconditionally. A mid-turn submit
       // queues (the reducer's `queuedSends` FIFO) rather than changing
       // the primary button; the queue is reached through the separate
-      // `+` button and surfaces as transcript ghost rows. The
-      // QUEUED_NEXT_TURN overlay therefore does not bear on Z5.
+      // `+` button and surfaces as transcript ghost rows, so it does
+      // not bear on Z5.
       return { kind: "stop" };
     case "idle":
     case "complete":

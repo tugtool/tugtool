@@ -532,24 +532,25 @@ export class CodeSessionStore {
    * `idle` / `errored` — accidental double-clicks don't spam the
    * server.
    *
-   * Behavior splits on phase:
+   * Behavior splits on whether any *answer-channel* content has begun
+   * — an `assistant_text` delta or a `tool_use`
+   * (`firstAssistantDeltaAt === null && firstToolUseAt === null`).
+   * Thinking does not cross the line: a turn that has emitted only
+   * `thinking_text` is still a clean pull-down.
    *
-   *   - **CASE A** (`phase === "submitting"`, no `activeMsgId`) — the
-   *     wire received our `user_message` but claude has not produced
-   *     anything keyed to a `msg_id` yet. The reducer captures
-   *     `pendingUserMessage` into `pendingDraftRestore` for the prompt
-   *     entry to seed back into the editor, clears the in-flight pair
-   *     so the transcript stops rendering it, and returns `phase` to
-   *     `idle`. The wire's eventual `turn_complete(error)` is
-   *     suppressed via the reducer-internal `interruptOrigin` flag —
-   *     no `TurnEntry` is appended.
-   *   - **CASE B** (`phase ∈ {awaiting_first_token, streaming,
-   *     tool_work, awaiting_approval}`) — claude has produced at least
-   *     one content frame. Phase stays put (or restores from
-   *     `awaiting_approval` to its `prevPhase`), the wire's
-   *     `turn_complete(error)` commits a `TurnEntry` carrying whatever
-   *     scratch has accumulated with `result: "interrupted"`. Existing
-   *     behavior, unchanged.
+   *   - **CASE A** (no answer content yet) — the wire received our
+   *     `user_message` and claude may have thought, but produced
+   *     nothing committable. The reducer captures `pendingUserMessage`
+   *     into `pendingDraftRestore` for the prompt entry to seed back
+   *     into the editor, clears the in-flight pair so the transcript
+   *     stops rendering it, and returns `phase` to `idle`. The wire's
+   *     eventual `turn_complete(error)` is suppressed by the
+   *     `pendingCaseAEchoes` gate — no `TurnEntry` is appended.
+   *   - **CASE B** (answer content has begun) — claude has produced at
+   *     least one `assistant_text` delta or `tool_use`. Phase stays put
+   *     (or restores from `awaiting_approval` to its `prevPhase`), the
+   *     wire's `turn_complete(error)` commits a `TurnEntry` carrying
+   *     whatever scratch has accumulated with `result: "interrupted"`.
    */
   interrupt(): void {
     if (this._disposed) return;
