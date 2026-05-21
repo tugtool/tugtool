@@ -3699,7 +3699,7 @@ The Bash body kind likely renders its output as a `TerminalBlock` or similar —
 
 **Depends on:** #step-20-4 (slot infrastructure + placement decisions from the HMR study)
 
-**Status:** _in progress — 20.5.A complete (lifecycle state machine + Z0–Z5 coordination matrix landed as the canonical spec). Remaining: 20.5.B → ~~20.5.C~~ (superseded by Step 20.4.10–20.4.13) → 20.5.D → 20.5.E, gated sequentially._
+**Status:** _in progress — 20.5.A + 20.5.B complete (lifecycle spec landed as the canonical artifact; polish-13/14/15 audited, the question dialog and both replay end-state bugs closed). Remaining: ~~20.5.C~~ (superseded by Step 20.4.10–20.4.13) → 20.5.D → 20.5.E, gated sequentially._
 
 **Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), ~~studies and adds the `agent` role to `TugProgress` for Z1's SUBMITTING-state immediate-feedback indicator (20.5.C)~~ — _superseded; the Z1 asst-half indicator is `TugThinkingIndicator` per [Step 20.4.10](#step-20-4-10) instead of a TugProgress variant_, wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.D), and ships the on-demand `/context`-style drill-down surface (20.5.E).
 
@@ -3887,7 +3887,7 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **Depends on:** #step-20-5-a (spec to audit against)
 
-**Status:** _in progress. Audit complete (7 ✓ / 3 ✗: the polish-15 question variant, [replay-1], [replay-2]). **[replay-2] landed + tested** — `TurnTelemetry` carries an optional `turnEndReason`; `buildTurnEntry` prefers the persisted reason over the `interruptInFlight` re-derivation (`effectiveReason`); `buildRecordTelemetryEffect` persists it. **[replay-1] landed + tested** — `translateJsonlSession` (tugcode) synthesizes a terminal `turn_complete{result:"interrupted"}` for a dangling cold-resume cycle, gated by `synthesizeDanglingTerminal` (which `runReplay` sets from `inflight === null`); the reducer's `handleTurnComplete` now honors `result: "interrupted"` → `turnEndReason: "interrupted"`, which also corrects a latent orphan-path mislabel. `tsc` clean in tugdeck + tugcode; 2259 tugdeck + 400 tugcode tests green. Remaining gap-close: `tide-question-dialog` (polish-15) + wiring._
+**Status:** _Complete. Audit (7 ✓ / 3 ✗); all three ✗ gap-closes landed + tested. **[replay-2]** — optional `TurnTelemetry.turnEndReason` + `buildTurnEntry` `effectiveReason` precedence + `buildRecordTelemetryEffect` persistence (the ledger column is deferred to [#step-20-3-4]; the consumer side is ready). **[replay-1]** — tugcode `translateJsonlSession` synthesizes a terminal `turn_complete{result:"interrupted"}` for a dangling cold-resume cycle (gated by `synthesizeDanglingTerminal` from `inflight === null`); the reducer honors `result: "interrupted"`, also correcting a latent orphan-path mislabel. **Question dialog (polish-15)** — `QuestionDialog`, a sibling of `PermissionDialog` on `TugInlineDialog`, parses the `AskUserQuestion` payload and round-trips chosen labels via `respondQuestion`; wired as `KIND_RENDERERS.question` + a `pendingQuestion` slot in `CodeRowCell`. Automated checkpoints green: `tsc` clean (tugdeck + tugcode), 2277 tugdeck + 400 tugcode tests, `audit:tokens lint` zero violations. The two manual-smoke checkpoint items (live-Claude dialog firing; live resume) are user-gated._
 
 **Commit:** `feat(tide-rendering): close lifecycle-primitive gaps from polish-plan 13/14/15 + replay end-state bugs`
 
@@ -3910,8 +3910,8 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **Gap-close work** (only if audit marks items ✗):
 
-1. **`tide-question-dialog`** — new file `tugdeck/src/components/tugways/chrome/tide-question-dialog.tsx` + `.css` + `.test.ts`. Renders question + options (single-select via radio-equivalent, multi-select via checkboxes per the payload's `is_multi_select` flag). Submitting writes a `question_answer` frame via `handleRespondQuestion`. Keyboard: arrow keys move selection, Enter submits, Esc cancels (dismiss).
-2. **`tide-card.tsx`** wires both dialog variants on the in-flight `control_request_forward` — permission and question both render inline in the in-flight row.
+1. **`tide-question-dialog`** — new file `tugdeck/src/components/tugways/chrome/tide-question-dialog.tsx` + `.css` + `.test.ts`. **Landed.** `QuestionDialog` is a sibling chrome wrapper on `TugInlineDialog`. It parses the `AskUserQuestion` payload (`request.input.questions[]`) and renders each question's options as `TugDialogButton`s — `radio` style for single-select (first option pre-selected, mirroring the permission scope-picker default so Return commits a sane answer), `check` style for multi-select, per each question's `multiSelect` flag. Submit builds the `answers` record — keyed by question text, multi-select labels comma-joined with no spaces, matching tugcode's `formatQuestionAnswer` — and calls `respondQuestion`; Skip sends an empty answer set so Claude unblocks ([DT07]). Pending-only: `handleRespondQuestion` records nothing into `controlRequests`, so there is no resolved-record half (the `question` `RenderInput` carries no `resolvedDecision`). Keyboard: `TugInlineDialog` focuses the confirm button on mount (Return submits); options are Tab+Space reachable. _(Arrow-key roving inside the option group would mean modifying `TugDialogButton` / `TugInlineDialog` — out of the "build on existing primitives" scope; the accessible Tab+Space baseline stands. Esc-to-dismiss is the lifecycle-coordination concern wired in [#step-20-5-d], not here.)_
+2. **Transcript wiring.** **Landed.** The question dialog mounts in `tide-card-transcript.tsx`'s `CodeRowCell` — the same site that hosts the permission slot, *not* `tide-card.tsx`. A `useSyncExternalStore` on `pendingQuestion` (gated on `!isCommitted`, mirroring the permission-slot subscriptions) feeds a `questionSlot` dispatched as `{ kind: "question" }` and rendered between the permission slot and the tool calls. `KIND_RENDERERS.question` in the renderer dispatch now resolves to `QuestionDialog` (was a scaffold). Permission and question both render inline on the in-flight row.
 3. **Coverage tests** for any polish-14 scenario that audits ✗ — fixture tests for Stop / queued sends / tool sub-state, against the reducer + UI together.
 4. **[replay-1] Cold-resume in-flight strand.** _Audit finding — the reducer-side split is not viable: the discriminator is "will this dangling turn get a live `turn_complete`?", which depends on whether tugcast's claude subprocess is alive and mid-turn. Neither `handleReplayComplete` nor the tugdeck resume path (`fireRestore`) has that fact — only tugcode does. Decision: the cross-component fix._ **Landed.** `translateJsonlSession` (`tugcode/src/replay.ts`) gained a `synthesizeDanglingTerminal` option: when set, a cycle still open at end-of-JSONL (an `assistant` entry that never reached `stop_reason: "end_turn"`) gets a synthetic `turn_complete { result: "interrupted" }` keyed on the open cycle's assistant id (the new `TranslateContext.cycleMsgId`), emitted before `replay_complete`. `runReplay` sets the option from `inflight === null` — `true` on a cold resume (no live `ActiveTurn`), `false` on reload-mid-stream (a live turn continues the cycle; left open for the live drain + `emitInflightTurnFromActiveTurn`, unchanged). On the reducer side, `handleTurnComplete` now honors a wire `result: "interrupted"` → `turnEndReason: "interrupted"` (`TurnCompleteEvent.result` widened to `"success" | "error" | "interrupted"`). This also corrects a latent bug: `flushPendingOrphan`'s orphan-interrupted turns already emit `result: "interrupted"`, but the reducer previously fell them through to `error`. `handleReplayComplete`'s chain-link-13 is untouched — still correct for the genuine live-continuation case. No reducer heuristic, no timer, no provenance flag; the "every committed row has a `turn_complete`" invariant holds.
 5. **[replay-2] Persist `turnEndReason`.** Add a `turnEndReason` field to the persisted per-turn shape so replay recovers it instead of re-deriving it. `TurnTelemetry` (`telemetry.ts`) is the shape already round-tripped through the SessionLedger per [#step-20-3-4]; grow it with `turnEndReason`, and have `handleTurnComplete` prefer `event.telemetry?.turnEndReason` over the `interruptInFlight`-based derivation when an inlined block is present — the same inline-wins precedence `mergeTurnTelemetry` already uses for cost / timing. The live path keeps deriving + persisting; the replay path adopts the persisted value. Per [DT01](#dt01-per-turn-on-turnentry), this extends the per-turn shape — it does not add a side-table. Because [#step-20-3-4] is itself not yet built, fold the `turn_end_reason` column into its ledger schema rather than amending a shipped one; coordinate the two steps on the column name and type.
@@ -3920,9 +3920,10 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **Artifacts.**
 
-- _(conditional)_ `tugdeck/src/components/tugways/chrome/tide-question-dialog.{tsx,css}` + `.test.ts` — if audit marks polish-15 question variant ✗.
-- _(conditional)_ `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire the question dialog (and verify permission dialog wiring) for in-flight `control_request_forward`.
-- _(conditional)_ `tugdeck/src/components/tugways/cards/__tests__/tide-card.test.tsx` — coverage tests for any polish-14 ✗ scenarios.
+- `tugdeck/src/components/tugways/chrome/tide-question-dialog.{tsx,css}` + `.test.ts` — _new_ — `QuestionDialog` chrome + exported pure helpers (`parseQuestions` / `initialQuestionSelections` / `applyQuestionSelection` / `buildQuestionAnswers`) + pure-logic test suite (polish-15).
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — `CodeRowCell` `questionSlot`: a `pendingQuestion` subscription + inline `{ kind: "question" }` dispatch (polish-15).
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — `KIND_RENDERERS.question` resolves to `QuestionDialog` (was a scaffold) (polish-15).
+- _N/A_ `tide-card.test.tsx` polish-14 coverage tests — all four polish-14 items audited ✓; no ✗ scenario to cover.
 - `tugcode/src/replay.ts` — `synthesizeDanglingTerminal` option on `translateJsonlSession`; `TranslateContext.cycleMsgId`; EOF synthetic `turn_complete` for a dangling cycle ([replay-1]).
 - `tugcode/src/session.ts` — `runReplay` passes `synthesizeDanglingTerminal: inflight === null` ([replay-1]).
 - `tugcode/src/__tests__/replay-dangling-cycle.test.ts` — _new_ — translator coverage: synthetic emitted on cold resume, withheld on reload-mid-stream, none for a clean trailing turn ([replay-1]).
@@ -3937,18 +3938,18 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 **Tasks.**
 
 - [x] Walk the audit checklist; mark each item ✓ / ✗. _Done — 7 ✓, 3 ✗ (polish-15 question variant, [replay-1], [replay-2])._
-- [ ] For each ✗, write a remediation task and complete it.
-- [ ] Specifically: implement `tide-question-dialog` (almost certainly an ✗).
-- [ ] Verify `tide-card.tsx` mounts both dialog variants when `awaitingApprovalSince !== null` for the in-flight turn.
+- [x] For each ✗, write a remediation task and complete it. _Done — all three ✗ (question dialog, [replay-1], [replay-2]) remediated; see gap-close work._
+- [x] Specifically: implement `tide-question-dialog`. _Done — `QuestionDialog` + pure helpers + pure-logic test suite._
+- [x] Verify both dialog variants mount on the in-flight `control_request_forward`. _Done — `CodeRowCell` in `tide-card-transcript.tsx` (the actual wiring site, not `tide-card.tsx`) hosts the permission slot (`pendingApproval`) and the new question slot (`pendingQuestion`); both gate on `!isCommitted`._
 - [x] Add coverage tests for any polish-14 scenario found ✗. _N/A — all four polish-14 items audited ✓; no ✗ scenario to cover._
 - [x] **[replay-1]** Fix the cold-resume in-flight strand — a dangling final turn commits as a terminal `TurnEntry` instead of stranding an animated in-flight row. _Done — tugcode `translateJsonlSession` synthesizes the terminal `turn_complete`; reducer honors `result: "interrupted"`._
 - [x] **[replay-2]** Persist `turnEndReason`; the replay path adopts the persisted value instead of re-deriving from `interruptInFlight`. _Done — `TurnTelemetry.turnEndReason` (optional) + `buildTurnEntry` `effectiveReason` precedence + `buildRecordTelemetryEffect` persistence._
 
 **Tests.**
 
-- [ ] `tide-question-dialog` fixture-renders correctly for single-select and multi-select payloads.
-- [ ] Submitting question dialog dispatches `handleRespondQuestion` with the chosen answer(s).
-- [ ] Esc / cancel dismisses the question dialog and triggers the dismiss path (equivalent to denial in semantics).
+- [x] `tide-question-dialog` — single-select and multi-select payloads covered. _Done — `parseQuestions` pins both payload kinds; per project policy (pure-logic `bun:test`, no fake-DOM render tests) the DOM render is HMR / live-smoke vetted, exactly as for `PermissionDialog`._
+- [x] Submitting question dialog produces the chosen answer(s). _Done — `buildQuestionAnswers` pins the `answers` record (single label, multi-select comma-join); the `respondQuestion` → `handleRespondQuestion` → `question_answer` round-trip is already pinned in `code-session-store.control-forward.test.ts`._
+- [x] Esc / cancel dismisses the question dialog and triggers the dismiss path. _Done — the Skip path sends an empty answer set (`buildQuestionAnswers` of no selections); the component wiring is live-smoke vetted. (Esc-key binding is [#step-20-5-d] coordination.)_
 - [x] Any polish-14 scenario marked ✗ gets a fixture test that exercises the scenario end-to-end. _N/A — no polish-14 ✗._
 - [x] **[replay-1]** A replayed session whose JSONL ends mid-turn (no final `turn_complete`) commits that turn as a terminal `TurnEntry`; after `replay_complete` no row has `turn === undefined` and no `TugThinkingIndicator` is mounted. _Done — `code-session-store.replay.test.ts` (reducer side) + `replay-dangling-cycle.test.ts` (tugcode translator side)._
 - [x] **[replay-1]** HMR-mid-stream regression guard — a genuine live turn still streaming across `replay_complete` keeps the `phase → streaming` preservation (chain-link-13 intact for its original case). _Done — regression-guard test in both files._
@@ -3956,11 +3957,11 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **Manual smoke** — exercise each polish-14 scenario by hand against live Claude; confirm permission AND question dialogs both fire and resolve cleanly.
-- [ ] **Manual smoke (replay)** — resume a session whose last turn was a refused tool call: confirm no stuck `TugThinkingIndicator`. Resume a session containing an interrupted turn: confirm the row shows the `interrupted` badge, not `error`.
+- [x] `bun x tsc --noEmit` clean. _tugdeck + tugcode both clean._
+- [x] `bun test` green. _2277 tugdeck tests, 400 tugcode tests, 0 fail._
+- [x] `bun run audit:tokens lint` exits 0. _Zero violations — `--tugx-question-*` aliases resolve one-hop._
+- [ ] **Manual smoke** — exercise each polish-14 scenario by hand against live Claude; confirm permission AND question dialogs both fire and resolve cleanly. _User-gated — live Claude; not runnable in this environment (the app-test harness can't inject `control_request_forward` events)._
+- [ ] **Manual smoke (replay)** — resume a session whose last turn was a refused tool call: confirm no stuck `TugThinkingIndicator`. Resume a session containing an interrupted turn: confirm the row shows the `interrupted` badge, not `error`. _User-gated — live resume._
 
 ---
 

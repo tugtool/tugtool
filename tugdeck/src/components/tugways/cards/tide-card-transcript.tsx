@@ -584,6 +584,19 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
       [codeSessionStore, isCommitted],
     ),
   );
+  // Live `pendingQuestion` for the in-flight cell — gated on
+  // `isCommitted` the same way as `pendingApproval`: a committed cell
+  // never hosts a live question (and a question leaves no committed
+  // record), so the closure returns the stable `null` and
+  // `useSyncExternalStore`'s Object.is check skips the re-render.
+  const pendingQuestion = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () =>
+        isCommitted ? null : codeSessionStore.getSnapshot().pendingQuestion,
+      [codeSessionStore, isCommitted],
+    ),
+  );
   const permissionSlot = useMemo<React.ReactNode>(() => {
     type SlotEntry = {
       request: ControlRequestForward;
@@ -634,6 +647,23 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
     streamingStore,
   ]);
 
+  // Question slot — the live `pendingQuestion` rendered as an inline
+  // `QuestionDialog` on the in-flight assistant row. Unlike the
+  // permission slot there is no committed-record half: a question
+  // leaves no `turn.controlRequests` entry (`handleRespondQuestion`
+  // records nothing), so this slot is in-flight-only and empties the
+  // moment the user answers or skips.
+  const questionSlot = useMemo<React.ReactNode>(() => {
+    if (isCommitted || pendingQuestion === null) return null;
+    const { Component, props } = dispatchRenderInput(
+      { kind: "question", request: pendingQuestion },
+      { store: streamingStore, session: codeSessionStore },
+    );
+    return (
+      <Component key={pendingQuestion.request_id || "question"} {...props} />
+    );
+  }, [isCommitted, pendingQuestion, streamingStore, codeSessionStore]);
+
   // In-flight `msg_id` threaded onto streaming tool wrappers. For
   // committed rows we already have the canonical `turn.msgId`.
   const inflightMsgId = useSyncExternalStore(
@@ -664,6 +694,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                 streamingPath={thinkingPath}
               />
               {permissionSlot}
+              {questionSlot}
               <TranscriptToolCalls
                 streamingStore={streamingStore}
                 streamingPath={toolsPath}

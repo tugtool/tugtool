@@ -1,0 +1,80 @@
+/* @tug-pairings:
+   - --tugx-idialog-*       (TugInlineDialog owns the dialog frame)
+   - --tugx-dialog-button-* (TugDialogButton owns each option row)
+   `QuestionDialog` delegates the dialog frame to `TugInlineDialog` and
+   every option row to `TugDialogButton`; this stylesheet owns only the
+   layout of the question stack placed inside the primitive's children
+   slot — no colors, no borders, no surfaces of its own.
+*/
+
+/**
+ * tide-question-dialog.css — `QuestionDialog` chrome.
+ *
+ * The dialog frame (icon column, title, description, actions row) is
+ * the `TugInlineDialog` primitive (`--tugx-idialog-*`); each option
+ * row is a `TugDialogButton` (`--tugx-dialog-button-*`). What stays
+ * here is the small flex layout for the question stack the component
+ * renders into the primitive's `children` slot:
+ *
+ *   - `.tide-question-dialog-questions` — the stack; gaps consecutive
+ *     questions in the multi-question layout.
+ *   - `.tide-question-dialog-question` — one question: its heading
+ *     (multi-question layout only) above its option group.
+ *   - `.tide-question-dialog-question-heading` — the question text
+ *     shown above its options when more than one question is asked.
+ *   - `.tide-question-dialog-options` — the option list (a flex
+ *     column of `TugDialogButton`s).
+ *
+ * Tuglaw cross-check:
+ *  - [L17] every `--tugx-question-*` slot resolves to a `--tug-*` base
+ *    token in one hop.
+ *  - [L19] component-authoring guide — file pair, module docstring,
+ *    `data-slot` on each container.
+ *  - [L20] component-token sovereignty — owns `--tugx-question-*`;
+ *    composes no other component's token family.
+ */
+
+/* ---- Component-tier aliases — question-dialog layout only [L17] ---- */
+
+body {
+  /* Gap between consecutive questions (multi-question payload). */
+  --tugx-question-stack-gap: var(--tug-space-lg);
+  /* Gap between a question's heading and its option group. */
+  --tugx-question-group-gap: var(--tug-space-sm);
+  /* Gap between option rows. */
+  --tugx-question-option-gap: var(--tug-space-2xs);
+
+  /* Question-text heading (multi-question layout). */
+  --tugx-question-heading-size: var(--tug-font-size-sm);
+  --tugx-question-heading-weight: 600;
+}
+
+/* ---- Question stack ---- */
+
+.tide-question-dialog-questions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-question-stack-gap);
+}
+
+.tide-question-dialog-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-question-group-gap);
+}
+
+/* Color is inherited from the dialog's children slot — this rule sets
+ * weight + size only, no `color`, so it carries no surface pairing. */
+.tide-question-dialog-question-heading {
+  font-size: var(--tugx-question-heading-size);
+  font-weight: var(--tugx-question-heading-weight);
+  line-height: 1.4;
+}
+
+/* ---- Option list ---- */
+
+.tide-question-dialog-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-question-option-gap);
+}

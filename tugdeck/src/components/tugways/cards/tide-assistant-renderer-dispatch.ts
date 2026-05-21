@@ -78,6 +78,7 @@ import { GrepToolBlock } from "./tool-wrappers/grep-tool-block";
 import { TaskToolBlock } from "./tool-wrappers/task-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
+import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
 import type {
   CautionFlag,
   ChildToolCallsMap,
@@ -312,7 +313,7 @@ export function registeredTools(): ReadonlyArray<string> {
 //   user_text      → existing user-row primitive (no separate renderer
 //                    needed; routes here for symmetry)
 //   permission     → PermissionDialog (real renderer; #step-18)
-//   question       → QuestionDialog at #step-19
+//   question       → QuestionDialog (real renderer; #step-20-5-b)
 //   cost           → CostChrome at #step-20
 //   system_metadata→ SessionInitBanner at #step-29
 //   error          → ErrorBlock at #step-29
@@ -359,7 +360,7 @@ export const KIND_RENDERERS: {
   thinking: makeScaffoldRenderer("thinking"),
   user_text: makeScaffoldRenderer("user_text"),
   permission: PermissionDialog,
-  question: makeScaffoldRenderer("question"),
+  question: QuestionDialog,
   cost: makeScaffoldRenderer("cost"),
   system_metadata: makeScaffoldRenderer("system_metadata"),
   error: makeScaffoldRenderer("error"),
