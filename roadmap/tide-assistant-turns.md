@@ -68,9 +68,9 @@ Both problems collapse to a missing **state-coordinated turn surface**. This pla
 6. **Six-zone placement architecture** — slot props on `TideCard` (Z0 header, Z2 status bar), `TideCardTranscript` (Z1 unified trailing slot keyed by half), `TugPromptEntry` (Z3 retains existing `statusContent`, Z4 new footer). Z5 (submit button) acknowledged in the contract; structurally present already.
 7. **Lifecycle state machine + state-to-zone coordination matrix** — landed as a documented spec in [Step 20.5.A](#step-20-5-a); implemented as `useLifecycleState()` hook in [Step 20.5.D](#step-20-5-d).
 8. **Z5 submit-button state coordination** — single DOM-node button with `data-mode` attribute driven by the lifecycle snapshot.
-9. **Cross-zone lifecycle coordination** — Z1, Z2, Z5 all read the same `useLifecycleState()` snapshot; matrix-coherence enforced by construction.
+9. **Cross-zone lifecycle coordination** — Z2, Z5 and the transcript-replay paint gate read the same `useLifecycleState()` snapshot; matrix-coherence enforced by construction. (Z1's asst-half is driven per-row off `turn === undefined`, not the session phase — see [Step 20.4.15](#step-20-4-15).)
 10. **Polish-plan 13 / 14 / 15 audit and gap-close** — including `tide-question-dialog` (the confirmed missing inline-dialog variant).
-11. **Ship default telemetry placements** from the [Step 20.4](#step-20-4) HMR study as production zone content ([Step 20.5.D](#step-20-5-d)).
+11. **Ship default telemetry placements** from the [Step 20.4](#step-20-4) HMR study as production zone content — Z2 = `statusRow`, landed in [Step 20.4.15](#step-20-4-15).
 12. **`/context`-style drill-down sheet** — full telemetry breakdown surface triggered by Z2 📊 affordance ([Step 20.5.E](#step-20-5-e)).
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -4206,19 +4206,48 @@ This step does three things:
 
 #### Step 20.5.D: Z5 + lifecycle-coordinated zone content (ship the matrix) {#step-20-5-d}
 
-**Depends on:** #step-20-5-a (matrix spec), #step-20-5-b (primitives working), #step-20-5-c (TugProgress agent-role variant chosen for Z1), #step-20-4 (slot infrastructure + chosen telemetry placement defaults), [#step-20-3-4] (telemetry persistence implementation — without this the shipped placements would read zero across HMR / Reload / app relaunch, violating [L23]; the design is in [#step-20-3-3])
+**Depends on:** #step-20-5-a (the state-to-zone matrix this step implements), #step-20-5-b (inline-dialog primitives — done), #step-20-4 (zone slot infrastructure), [#step-20-3-4] (per-turn telemetry persistence — done 2026-05-16)
+
+**Status:** _**split into four sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe — see the reconciliation note below._
+
+**Commit:** _per sub-step._
+
+**References:** [#step-20-5-a] (the matrix), [#step-20-3] (the `CodeSessionSnapshot` fields driving coordination), [#step-20-4] (the zones), [L02], [L06], [L23], [L26], [DT08], [DT09], [DT10]
+
+**Scope.** Implement the [Step 20.5.A](#step-20-5-a) state-to-zone coordination matrix: the lifecycle state machine becomes a real `deriveLifecycleSnapshot` function — the matrix encoded as one switch — exposed via a `useLifecycleState()` hook, and the surfaces that genuinely need phase coordination consume it. The matrix is the contract; a regression against any of its ✓ cells is a bug.
+
+**Reconciliation note (2026-05-21).** This step was authored before the [Step 20.4.10](#step-20-4-10)–[Step 20.4.15](#step-20-4-15) Z1 reframe and the [Step 20.5.B](#step-20-5-b) / [Step 20.5.B.1](#step-20-5-b-1) replay work. Three parts of the original scope are obsolete and are dropped:
+
+- **Z1 asst-half coordination** — originally "swap a `TugProgress` variant for per-turn metrics on COMPLETE." Superseded: [Step 20.5.C](#step-20-5-c) (the `TugProgress` `agent`-role primitive) is itself superseded, and [Step 20.4.15](#step-20-4-15) shipped the production Z1 asst-half as the `TideZ1B` two-line stack — `TugThinkingIndicator` on the in-flight row, `EndStateDisplay` on committed rows — driven per-row off `turn === undefined`, **not** the session phase. Z1 needs nothing from the lifecycle hook; the matrix's Z1 column is already authoritative (see the 20.5.A matrix-edit policy).
+- **"Ship the chosen telemetry placement defaults"** — done: [Step 20.4.13](#step-20-4-13) / [Step 20.4.15](#step-20-4-15) shipped Z2 = `statusRow` as the production default; the dev placement-experiment harness stays behind the `import.meta.env.DEV` guard.
+- **The `#step-20-3-4` dependency** — satisfied: per-turn telemetry persistence shipped 2026-05-16, so the shipped placements read correct values across HMR / Reload / relaunch ([L23]).
+
+**The foundation-first split.** What genuinely remains is the lifecycle state machine itself plus the surfaces that need it — Z5's submit button, the transcript-replay paint gate, and Z2 / Z4. It lands as four sub-steps:
+
+| Sub-step | Deliverable | Primary file(s) |
+|---|---|---|
+| [20.5.D.1](#step-20-5-d-1) | Lifecycle foundation — `deriveLifecycleSnapshot` (the matrix as one switch) + `useLifecycleState` hook + pure per-matrix-row tests | _new_ `lifecycle-state.ts`, `use-lifecycle-state.ts` |
+| [20.5.D.2](#step-20-5-d-2) | `[DT10]` transcript-replay paint gate — the restore-FOUC fix | `tide-card.tsx` transcript host |
+| [20.5.D.3](#step-20-5-d-3) | Z5 submit-button state machine — the new disabled / label modes | `tug-prompt-entry.tsx` + `.css` |
+| [20.5.D.4](#step-20-5-d-4) | Cross-zone coordination (Z2 / Z4) + end-to-end matrix verification | `tide-card.tsx`, zone renderers |
+
+D.1 is the dependency for D.2–D.4 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work.
+
+**Conformance (applies to every sub-step).** All phase-driven UI goes through `useLifecycleState()` — no zone reads `phase` or `awaitingApprovalSince` directly ([L02]). Appearance changes flip a `data-*` attribute / class and CSS does the visual ([L06]). State preservation: label / content transitions must not flicker, and DOM nodes that carry focus or scroll position stay mounted across mode changes ([L23] / [L26]).
+
+---
+
+#### Step 20.5.D.1: Lifecycle foundation — `deriveLifecycleSnapshot` + `useLifecycleState` {#step-20-5-d-1}
+
+**Depends on:** #step-20-5-d (parent), #step-20-5-a (the matrix this encodes), [#step-20-3] (the `CodeSessionSnapshot` fields the switch reads)
 
 **Status:** _not started._
 
-**Commit:** `feat(tide-rendering): Z5 submit-button state machine + cross-zone lifecycle coordination`
+**Commit:** `feat(tide-rendering): lifecycle-state module + useLifecycleState hook`
 
-**References:** [#step-20-5-a] (the matrix this step implements), [#step-20-3] (data fields driving the coordination), [#step-20-4] (zones being coordinated), [L02], [L06], [L23], [L26]
+**References:** [#step-20-5-a] (the state-to-zone matrix — the literal source for the switch), [#step-20-3] (`CodeSessionSnapshot`: `phase` / `pendingApproval` / `pendingQuestion` / `transportState` / `interruptInFlight` / `queuedSends`), [L02], [DT08], [DT09]
 
-**Scope.** Implement the state-to-zone coordination matrix from 20.5.A. Three layers of work:
-
-1. **Z5 submit-button state machine.** Wire the lifecycle state (`phase`, `pendingApproval`, `pendingQuestion`, `transportState`, `interruptInFlight`, `queuedSends`) to the submit button's label / disabled state / visual treatment. New modes from the matrix: `"Awaiting your input"`, `"Stopping…"`, `"Reconnecting…"`, `"Restoring…"`, plus the "will send on idle" queued-visual on the default Submit. Same state machine drives keyboard activation semantics (e.g., disabled states don't fire on Enter).
-2. **Cross-zone coordination.** The same lifecycle state drives Z2's status-bar transitions (live → frozen during awaiting → frozen at complete), Z1's per-turn ⏳ indicators (ticking / paused / final), and any phase-driven affordances elsewhere. The coordination is encoded once as a small `useLifecycleState()` hook that returns the current matrix-row's values; each zone's renderer reads from it via `useSyncExternalStore` per [L02].
-3. **Ship the chosen telemetry placement defaults** from 20.4's HMR study. The default mapping of `{datum → zone}` lands as the production content of each zone. The dev-mode experimentation harness stays behind `import.meta.env.DEV` for future iteration.
+**Scope.** The 20.5.A matrix is a table; this sub-step makes it executable. `deriveLifecycleSnapshot` is a pure function — one switch — projecting `(CodeSessionSnapshot, TideLifecycleUiState)` onto a `TideLifecycleSnapshot` (the matrix row: `state`, `overlays`, `submitButtonMode`). `useLifecycleState()` is the `useSyncExternalStore` wrapper. No UI integration here — the foundation lands and is unit-tested in isolation; D.2–D.4 consume it.
 
 **Design — the `useLifecycleState` hook.** Sketch:
 
@@ -4258,55 +4287,154 @@ export function deriveLifecycleSnapshot(
 ): TideLifecycleSnapshot;
 ```
 
-`useLifecycleState()` composes three sources:
-1. `useSyncExternalStore` on `CodeSessionStore` (the session snapshot) — per [L02].
-2. A UI-local `useState` (or small ui-only store) for `drilldownOpen` and future presentation flags.
-3. `deriveLifecycleSnapshot(storeSnapshot, uiState)` to project both into the same matrix-row signal, with the reference-stable return guarantee from [DT09].
+`useLifecycleState()` composes three sources: (1) `useSyncExternalStore` on `CodeSessionStore` per [L02]; (2) a UI-local `useState` for `TideLifecycleUiState` (`drilldownOpen` and future presentation flags); (3) `deriveLifecycleSnapshot(storeSnapshot, uiState)` to project both into the same matrix-row signal, with the reference-stable return guarantee of [DT09].
 
-The matrix from [Step 20.5.A](#step-20-5-a) is encoded literally in `deriveLifecycleSnapshot` — one switch statement, one source of truth, trivially testable in isolation. The switch reads from the actual `CodeSessionPhase` enum (`idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`) plus the snapshot's `pendingApproval` / `pendingQuestion` / `transportState` / `queuedSends` / `interruptInFlight` fields.
+The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one source of truth, trivially testable. The switch reads the actual `CodeSessionPhase` enum (`idle | submitting | awaiting_first_token | streaming | tool_work | awaiting_approval | replaying | errored`) plus `pendingApproval` / `pendingQuestion` / `transportState` / `queuedSends` / `interruptInFlight`, and derives the matrix's projected states that have no raw phase of their own — COMPLETE (`idle` with ≥ 1 committed turn), INTERRUPTING (`interruptInFlight`), AWAITING_USER (`awaiting_approval`).
 
-**Conformance.** All UI changes go through the lifecycle hook — no zone reads `phase` or `awaitingApprovalSince` directly. [L02] (useSyncExternalStore for external state), [L06] (appearance via DOM/CSS — e.g., Z5's mode flips a `data-mode` attribute, CSS handles the visual), [L23] (preserve user-visible state — Z5 label transitions must not flicker between modes; Z1's content swap from `TugProgress` (during SUBMITTING / AWAITING_FIRST_TOKEN) to per-turn metrics (in COMPLETE) happens **inside the same slot DOM container** so no parent-row remount occurs, no scroll or focus loss), [L26] (mount identity — Z5 button DOM node identity stable across mode changes; Z1 slot DOM container stable across content-type changes; do NOT remount a different `<button>` per Z5 mode and do NOT remount the slot per Z1 content change).
+**Conformance.** [L02] — the hook is the single `useSyncExternalStore` boundary; `lifecycle-state.ts` is a pure module (no DOM, no React). [DT08] — `deriveLifecycleSnapshot` takes both `storeSnapshot` and `uiState`. [DT09] — it returns the previous reference when no matrix-relevant signal changed; a growing `assistant` string must not produce a new snapshot.
 
 **Artifacts.**
 
-- `tugdeck/src/lib/code-session-store/lifecycle-state.ts` — _new module_ — `TideLifecycleState`, `TideLifecycleOverlay`, `TideLifecycleSnapshot`, `deriveLifecycleSnapshot`.
-- `tugdeck/src/lib/code-session-store/__tests__/lifecycle-state.test.ts` — pure-logic tests for every row of the matrix (one test per state × overlay combination that the matrix lists distinctly).
-- `tugdeck/src/lib/code-session-store/hooks/use-lifecycle-state.ts` — _new hook_ — `useSyncExternalStore` wrapper.
-- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` — Z5 wire-up: button consumes `submitButtonMode` from the hook; flips `data-mode` for CSS; label / disabled / aria-label per mode.
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire chosen telemetry placement defaults from 20.4's study into Z0 / Z1 / Z2 / Z3 / Z4. Each placement renderer consumes `useLifecycleState()` for the matrix-driven content (e.g., Z2's "live counts" renderer switches to "frozen + awaiting badge" when `state === "awaiting_user"`). Also gates the transcript pane's visible render on `state !== "replaying"` per [DT10](#dt10-replay-transcript-suppression) — the transcript holds its pre-replay paint across the replay window and reveals once, fully reconstructed, at the restored scroll position.
-- `tugdeck/src/components/tugways/cards/__tests__/tide-card-lifecycle-coordination.test.tsx` — end-to-end matrix tests: drive a fixture session through each state and assert each zone's content matches the matrix row.
-
-**Mount-identity check.** [L26] — Z5's submit button is the most likely place to accidentally break responder identity. The button MUST stay the same DOM node across mode changes; ONLY its label / disabled / `data-mode` attribute / event handler change. Do NOT render `<button>Submit</button>` in one branch and `<button>Stop</button>` in another — render one `<button>` whose content + attributes are mode-driven. Verify focus survives mode transitions: tab into the textarea, type, focus the button, switch state through a fixture turn — focus identity must persist.
+- `tugdeck/src/lib/code-session-store/lifecycle-state.ts` — _new_ — `TideLifecycleState`, `TideLifecycleOverlay`, `TideLifecycleSnapshot`, `TideLifecycleUiState`, `deriveLifecycleSnapshot`.
+- `tugdeck/src/lib/code-session-store/hooks/use-lifecycle-state.ts` — _new_ — the `useSyncExternalStore` + `useState(uiState)` + `deriveLifecycleSnapshot` composition.
+- `tugdeck/src/lib/code-session-store/__tests__/lifecycle-state.test.ts` — _new_ — pure-logic tests, one per distinct matrix row + the [DT08] / [DT09] guarantees.
 
 **Tasks.**
 
-- [ ] **Lifecycle module + hook** — `lifecycle-state.ts` + `use-lifecycle-state.ts`. Implement `deriveLifecycleSnapshot` as the matrix encoded in one switch.
-- [ ] **Z5 wire-up** — single `<button>` DOM node with `data-mode` attribute; CSS handles per-mode visual; aria-label per mode; keyboard activation respects disabled states.
-- [ ] **Cross-zone coordination** — Z1 / Z2 renderers consume the hook; Z2 swaps live counts for "awaiting" badge during AWAITING_USER, etc.
-- [ ] **[DT10] REPLAYING transcript gate** — the `TideCard` composition holds the transcript's visible render across the replay window and does one reconstructed paint at `replay_complete`, at the restored scroll position. No intermediate replay state paints.
-- [ ] **Ship placement defaults** — wire 20.4's HMR-study winners into each zone's default content. Experimentation harness stays behind DEV guard.
-- [ ] **Mount-identity verification** — button node stable across mode changes; focus survives; matrix-row transitions don't flicker.
-- [ ] **End-to-end matrix tests** — every distinct row of the matrix gets a fixture test.
+- [ ] `lifecycle-state.ts` — the types + `deriveLifecycleSnapshot` as the 20.5.A matrix encoded in one switch.
+- [ ] `use-lifecycle-state.ts` — the hook: `useSyncExternalStore` on `CodeSessionStore`, UI-local `useState` for `TideLifecycleUiState`, `deriveLifecycleSnapshot` to project.
+- [ ] Pure tests — one per matrix row + the [DT08] / [DT09] guarantees.
 
 **Tests.**
 
-- [ ] `deriveLifecycleSnapshot` returns the correct `state` for each combination of `phase` / `pendingApproval` / `pendingQuestion` / `transportState` / `interruptInFlight` / `queuedSends` — every row of the matrix gets a test, including the new AWAITING_FIRST_TOKEN, REPLAYING, ERRORED rows.
-- [ ] `submitButtonMode` matches the matrix for every state × overlay combination.
-- [ ] **[DT09]** `deriveLifecycleSnapshot` returns reference-stable result: two calls with snapshots that differ only in content fields (e.g., growing `assistant` text but same `phase` / `transportState` / etc.) return `Object.is`-equal results. Two calls where any matrix-relevant signal differs return distinct references.
-- [ ] **[DT08]** `deriveLifecycleSnapshot` projects `uiState.drilldownOpen` into the overlays set; same `storeSnapshot` with different `uiState` returns distinct results.
-- [ ] Z2's renderer shows live counts in STREAMING, frozen + badge in AWAITING_USER, "Disconnected" in TRANSPORT_DOWN overlay, "Restoring session…" in REPLAYING.
-- [ ] Z1's per-turn indicator: TugProgress during SUBMITTING / AWAITING_FIRST_TOKEN, live elapsed ticking during STREAMING / TOOL_WORK, paused during AWAITING_USER, frozen final in COMPLETE / ERRORED.
-- [ ] **[DT10]** During REPLAYING the transcript paints no intermediate reconstructed state; the first painted frame after `replay_complete` is the fully-reconstructed transcript at the restored scroll anchor — no animated-scroll FOUC.
-- [ ] Z5 button: same DOM node across mode transitions; aria-label reflects current mode; disabled in AWAITING_USER / INTERRUPTING / REPLAYING / TRANSPORT_DOWN.
-- [ ] Mount-identity: textarea focus survives Z5 mode changes.
-- [ ] **[L23]** Z1 content swap (TugProgress → per-turn metrics on COMPLETE) does NOT scroll the transcript or steal focus — verify via app-test that an existing focus position survives a turn's completion.
+- [ ] `deriveLifecycleSnapshot` returns the correct `state` for every `phase` / `pendingApproval` / `pendingQuestion` / `transportState` / `interruptInFlight` / `queuedSends` combination the matrix lists distinctly — IDLE, SUBMITTING, AWAITING_FIRST_TOKEN, STREAMING, TOOL_WORK, AWAITING_USER, INTERRUPTING, REPLAYING, ERRORED, COMPLETE.
+- [ ] `submitButtonMode` matches the matrix Z5 column for every state, plus the TRANSPORT_DOWN / QUEUED_NEXT_TURN overlay effects (`reconnecting`, `queued`).
+- [ ] **[DT09]** — two calls whose snapshots differ only in content fields (a growing `assistant` string, same `phase` / `transportState` / etc.) return `Object.is`-equal results; any matrix-relevant difference returns a distinct reference.
+- [ ] **[DT08]** — `uiState.drilldownOpen` projects into `overlays`; the same `storeSnapshot` with a different `uiState` returns a distinct result.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+
+---
+
+#### Step 20.5.D.2: `[DT10]` transcript-replay paint gate {#step-20-5-d-2}
+
+**Depends on:** #step-20-5-d-1 (the hook provides `state`)
+
+**Status:** _not started._
+
+**Commit:** `fix(tide-rendering): suppress transcript paint during replay (DT10)`
+
+**References:** [DT10](#dt10-replay-transcript-suppression), [#step-20-5-a] (the REPLAYING matrix row), [L02], [L06], [L26]
+
+**Scope.** Implements [DT10]. A resumed session reconstructs its committed turns one `turn_complete` at a time; painting each intermediate state makes the transcript visibly accumulate while the viewport chases the live edge — the restore FOUC the lifecycle investigation diagnosed (Bug 1). The transcript host gates its **visible paint** on `state !== "replaying"` (from `useLifecycleState()`), holding its pre-replay paint across the replay window and doing one reconstructed paint at `replay_complete`, at the restored scroll anchor.
+
+**Conformance.** [L06] — the gate is a visibility concern: the transcript subtree stays mounted (its reducer keeps committing replayed turns underneath); only the visible paint is suppressed, via a `data-*` / class toggle + CSS, never by unmounting. [L26] — the transcript host DOM container is not remounted across the replay window; mount identity holds. [L02] — the gate reads `state` from the hook, not `phase` directly.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — the transcript host gains the `state === "replaying"` visible-paint gate.
+- a test pinning [DT10] — placement at the executor's discretion (a `tide-card`-level test, or an app-test that a replay window paints no intermediate reconstructed state).
+
+**Tasks.**
+
+- [ ] Gate the transcript host's visible paint on `state !== "replaying"`; hold the pre-replay paint; reveal once at `replay_complete`, at the restored scroll position.
+- [ ] Confirm the gate does not unmount the transcript subtree ([L26]) — content keeps reconstructing underneath; only paint is suppressed.
+
+**Tests.**
+
+- [ ] During REPLAYING the transcript paints no intermediate reconstructed state; the first painted frame after `replay_complete` is the fully-reconstructed transcript at the restored scroll anchor — no animated-scroll FOUC.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] **HMR vet (manual, user-gated)** — resume a multi-turn session; confirm the transcript reveals once, fully reconstructed, with no scroll-chase FOUC.
+
+---
+
+#### Step 20.5.D.3: Z5 submit-button state machine {#step-20-5-d-3}
+
+**Depends on:** #step-20-5-d-1 (the hook provides `submitButtonMode`)
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): Z5 submit-button lifecycle state machine`
+
+**References:** [#step-20-5-a] (the Z5 matrix column), [L06], [L23], [L26]
+
+**Scope.** The submit / stop button in `tug-prompt-entry.tsx` consumes `submitButtonMode` from the hook. Today the button toggles submit ↔ stop ([D-T3-06]); the matrix adds the disabled / transient modes: "Awaiting your input" (AWAITING_USER), "Stopping…" (INTERRUPTING), "Reconnecting…" (TRANSPORT_DOWN overlay), "Restoring…" (REPLAYING), plus the "will send on idle" queued visual on the default Submit. The same `submitButtonMode` governs keyboard activation — a disabled mode does not fire on Enter.
+
+**Conformance.** [L06] — the mode flips a `data-mode` attribute; CSS handles the per-mode visual. [L26] — ONE `<button>` DOM node across every mode; only label / disabled / `data-mode` / handler change. Do NOT render `<button>Submit</button>` in one branch and `<button>Stop</button>` in another. [L23] — label transitions must not flicker, and focus on the button survives a mode change mid-turn.
+
+**Mount-identity check.** [L26] — the button is the most likely place to break responder identity. Verify: tab into the textarea, type, focus the button, drive a fixture turn through SUBMITTING → STREAMING → COMPLETE — the button is the same DOM node throughout and focus identity persists.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/tug-prompt-entry.tsx` — the submit / stop button consumes `submitButtonMode`; one button node, `data-mode`-driven; `aria-label` per mode.
+- `tugdeck/src/components/tugways/tug-prompt-entry.css` — the per-`data-mode` visual treatment.
+- a Z5 mode-mapping test (pure, against the hook's `submitButtonMode`) + a mount-identity / focus-survival test.
+
+**Tasks.**
+
+- [ ] Single `<button>` node; `data-mode` attribute drives the per-mode visual via CSS; `aria-label` per mode.
+- [ ] Keyboard activation respects disabled modes (no Enter-fire when disabled).
+- [ ] Mount-identity + focus-survival verification.
+
+**Tests.**
+
+- [ ] The button's label / disabled / `aria-label` match the matrix Z5 column for every `submitButtonMode`.
+- [ ] The same `<button>` DOM node persists across mode transitions; textarea + button focus survive a fixture turn.
 
 **Checkpoint.**
 
 - [ ] `bun x tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual)** — drive a session through each matrix state; visually confirm zone coordination matches the matrix; confirm Z5 button doesn't flicker or lose focus across transitions; confirm AWAITING_USER (triggered by a permission dialog) freezes Z2's clock and shows the "Awaiting your input" Z5 mode.
+- [ ] **HMR vet (manual, user-gated)** — drive a turn; confirm the button doesn't flicker or lose focus across SUBMITTING → STREAMING → COMPLETE; confirm a permission dialog flips it to "Awaiting your input" (disabled).
+
+---
+
+#### Step 20.5.D.4: Cross-zone content coordination + matrix verification {#step-20-5-d-4}
+
+**Depends on:** #step-20-5-d-1 (the hook), #step-20-5-d-2, #step-20-5-d-3
+
+**Status:** _not started._
+
+**Commit:** `feat(tide-rendering): cross-zone lifecycle coordination + matrix e2e`
+
+**References:** [#step-20-5-a] (the matrix — the full contract), [L02], [L06], [L23]
+
+**Scope.** The remaining matrix-driven zones consume the hook: Z2's status bar (live counts → frozen during AWAITING_USER → "Restoring session…" during REPLAYING → "Disconnected" during TRANSPORT_DOWN) and Z4's prompt-entry footer (the phase indicators — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}"). This sub-step **begins with an audit**: the shipped `statusRow` (Z2) and the prompt-entry chrome already react to parts of the snapshot; reconcile what they do against the matrix and wire only the genuine gaps through `useLifecycleState()` ([L02] — no zone reads `phase` directly). Closes 20.5.D with the end-to-end matrix test — drive a fixture session through every distinct matrix row, assert each zone.
+
+**Conformance.** [L02] — zones read the matrix row via `useLifecycleState()`. [L06] — phase-driven appearance via CSS / DOM. [L23] — zone content swaps happen inside the stable slot DOM container; no remount.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — zone renderers consume `useLifecycleState()` for matrix-driven content.
+- the Z2 (`statusRow`) / Z4 zone renderers — phase-driven transitions wired through the hook where not already.
+- `tugdeck/src/components/tugways/cards/__tests__/tide-card-lifecycle-coordination.test.tsx` — _new_ — end-to-end matrix tests.
+
+**Tasks.**
+
+- [ ] Audit the shipped Z2 (`statusRow`) and Z4 chrome against the matrix; record what already matches vs. the gaps.
+- [ ] Wire the gaps through `useLifecycleState()` — Z2 status-bar transitions, Z4 phase indicators.
+- [ ] End-to-end matrix tests — every distinct matrix row.
+
+**Tests.**
+
+- [ ] Z2 shows live counts in STREAMING, frozen + "awaiting input" badge in AWAITING_USER, "Restoring session…" in REPLAYING, "Disconnected" in TRANSPORT_DOWN.
+- [ ] Z4 shows the matrix's phase indicator for AWAITING_FIRST_TOKEN / STREAMING / TOOL_WORK.
+- [ ] End-to-end: a fixture session driven through each distinct matrix row paints each zone per the matrix.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR vet (manual, user-gated)** — drive a session through each matrix state; visually confirm zone coordination matches the matrix.
 
 ---
 
