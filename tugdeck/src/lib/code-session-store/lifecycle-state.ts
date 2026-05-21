@@ -1,0 +1,290 @@
+/**
+ * `lifecycle-state` — the Tide card lifecycle state machine.
+ *
+ * `deriveLifecycleSnapshot` encodes the Step 20.5.A state-to-zone
+ * coordination matrix as one pure projection: it reads the
+ * matrix-relevant signals off the `CodeSessionStore` snapshot (plus
+ * the UI-local `TideLifecycleUiState`) and returns the matrix row —
+ * the `TideLifecycleState`, the active `TideLifecycleOverlay`s, and
+ * the derived Z5 `submitButtonMode`. Every zone that coordinates on
+ * lifecycle reads this one snapshot (via `useLifecycleState`), so the
+ * matrix has exactly one executable source of truth and a regression
+ * against any matrix cell is a single-file diff.
+ *
+ * Pure module — no DOM, no React, no time source. The
+ * `useSyncExternalStore` subscription lives in
+ * `hooks/use-lifecycle-state.ts`.
+ *
+ * Conformance:
+ *   - [DT08] — `deriveLifecycleSnapshot` takes the store snapshot AND
+ *     a `TideLifecycleUiState` second argument; UI-presentation flags
+ *     the reducer must not track (drill-down open) merge in here, so
+ *     the matrix's overlay rows derive from one switch.
+ *   - [DT09] — reference-stable: pass the previous result as the third
+ *     argument and the function hands it straight back when no
+ *     matrix-relevant signal moved, so a stream of `assistant_delta`s
+ *     (content churn, not lifecycle) does not re-render the hook's
+ *     consumers.
+ *
+ * @module lib/code-session-store/lifecycle-state
+ */
+
+import type { CodeSessionPhase, TransportState } from "./types";
+
+// ---------------------------------------------------------------------------
+// Matrix vocabulary
+// ---------------------------------------------------------------------------
+
+/**
+ * The ten lifecycle states of the Step 20.5.A matrix. Eight map 1:1
+ * onto a `CodeSessionPhase`; two are projections with no raw phase of
+ * their own — INTERRUPTING (an interrupt round-trip is in flight) and
+ * COMPLETE (`idle` once at least one turn has committed).
+ */
+export type TideLifecycleState =
+  | "idle"
+  | "submitting"
+  | "awaiting_first_token"
+  | "streaming"
+  | "tool_work"
+  | "awaiting_user"
+  | "interrupting"
+  | "replaying"
+  | "errored"
+  | "complete";
+
+/**
+ * The matrix's overlay rows — orthogonal conditions that can apply on
+ * top of any base state. `transport_down` and `queued_next` derive
+ * from the store snapshot; `drilldown_open` is UI-local ([DT08]).
+ */
+export type TideLifecycleOverlay =
+  | "transport_down"
+  | "queued_next"
+  | "drilldown_open";
+
+/**
+ * The Z5 submit-button mode — the matrix's Z5 column. The `submit`
+ * kind carries `disabled` (the lifecycle never sets it `true`; the
+ * Z5 consumer ANDs in editor-draft emptiness — see
+ * {@link deriveSubmitButtonMode}) and `queued` (the QUEUED_NEXT_TURN
+ * "will send on idle" visual). The remaining kinds are all disabled
+ * buttons: `awaiting_user` / `stopping` / `reconnecting` / `restoring`.
+ */
+export type TideSubmitButtonMode =
+  | { kind: "submit"; disabled: boolean; queued: boolean }
+  | { kind: "stop" }
+  | { kind: "awaiting_user" }
+  | { kind: "stopping" }
+  | { kind: "reconnecting" }
+  | { kind: "restoring" };
+
+/** One row of the matrix — what `deriveLifecycleSnapshot` projects. */
+export interface TideLifecycleSnapshot {
+  state: TideLifecycleState;
+  overlays: ReadonlySet<TideLifecycleOverlay>;
+  submitButtonMode: TideSubmitButtonMode;
+}
+
+/**
+ * UI-local presentation flags that the reducer does not and should
+ * not track ([DT08]). Today only the drill-down sheet's open state;
+ * structured as an object so future UI overlays extend it without
+ * reshaping the derivation.
+ */
+export interface TideLifecycleUiState {
+  drilldownOpen: boolean;
+}
+
+/**
+ * The `CodeSessionSnapshot` fields `deriveLifecycleSnapshot` reads.
+ * The full `CodeSessionSnapshot` structurally satisfies this — the
+ * function declares the narrow shape so its dependency surface is
+ * explicit and a pure-logic test supplies a literal without
+ * fabricating the snapshot's ~30 unrelated fields.
+ */
+export interface LifecycleStoreSignals {
+  phase: CodeSessionPhase;
+  transportState: TransportState;
+  interruptInFlight: boolean;
+  queuedSends: number;
+  /**
+   * Only `.length` is read — it splits the `idle` phase into COMPLETE
+   * (a turn has committed) vs a never-used IDLE.
+   */
+  transcript: ReadonlyArray<unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Derivation — the matrix encoded as one switch
+// ---------------------------------------------------------------------------
+
+/**
+ * The base lifecycle state. Precedence: a sticky session error and the
+ * replay window dominate; an in-flight interrupt overrides whichever
+ * in-flight phase it landed on; the remaining phases map 1:1; `idle`
+ * splits into COMPLETE / IDLE on whether any turn has committed.
+ */
+function deriveLifecycleState(s: LifecycleStoreSignals): TideLifecycleState {
+  if (s.phase === "errored") return "errored";
+  if (s.phase === "replaying") return "replaying";
+  if (s.interruptInFlight) return "interrupting";
+  switch (s.phase) {
+    case "submitting":
+      return "submitting";
+    case "awaiting_first_token":
+      return "awaiting_first_token";
+    case "streaming":
+      return "streaming";
+    case "tool_work":
+      return "tool_work";
+    case "awaiting_approval":
+      // The matrix collapses permission and question prompts into one
+      // AWAITING_USER state; `phase === "awaiting_approval"` is the
+      // canonical signal (equivalently `pendingApproval !== null ||
+      // pendingQuestion !== null`).
+      return "awaiting_user";
+    case "idle":
+      return s.transcript.length > 0 ? "complete" : "idle";
+    default: {
+      const exhaustive: never = s.phase;
+      return exhaustive;
+    }
+  }
+}
+
+/** The active overlay set — the matrix's overlay rows. */
+function deriveOverlays(
+  s: LifecycleStoreSignals,
+  uiState: TideLifecycleUiState,
+): ReadonlySet<TideLifecycleOverlay> {
+  const overlays = new Set<TideLifecycleOverlay>();
+  // TRANSPORT_DOWN covers both `offline` (no wire) and `restoring`
+  // (wire back, binding not re-ack'd) — anything but `online`.
+  if (s.transportState !== "online") overlays.add("transport_down");
+  if (s.queuedSends > 0) overlays.add("queued_next");
+  if (uiState.drilldownOpen) overlays.add("drilldown_open");
+  return overlays;
+}
+
+/** The Z5 submit-button mode — the matrix's Z5 column. */
+function deriveSubmitButtonMode(
+  state: TideLifecycleState,
+  overlays: ReadonlySet<TideLifecycleOverlay>,
+): TideSubmitButtonMode {
+  // Transport down trumps everything — neither submit nor stop can
+  // reach the wire, so the button is an inert "Reconnecting…".
+  if (overlays.has("transport_down")) return { kind: "reconnecting" };
+
+  switch (state) {
+    case "replaying":
+      return { kind: "restoring" };
+    case "interrupting":
+      return { kind: "stopping" };
+    case "awaiting_user":
+      return { kind: "awaiting_user" };
+    case "submitting":
+    case "awaiting_first_token":
+    case "streaming":
+    case "tool_work":
+      // A turn is in flight → Stop, UNLESS the user has queued a next
+      // send: the matrix's QUEUED_NEXT_TURN row shows Z5 as a
+      // queued-Submit ("will send on idle"), not Stop.
+      return overlays.has("queued_next")
+        ? { kind: "submit", disabled: false, queued: true }
+        : { kind: "stop" };
+    case "idle":
+    case "complete":
+    case "errored":
+      // The lifecycle never disables a submit-mode button. The
+      // matrix's "disabled if prompt empty" (IDLE) is editor-draft
+      // emptiness — not a lifecycle signal — which the Z5 consumer
+      // (Step 20.5.D.3) ANDs in locally.
+      return {
+        kind: "submit",
+        disabled: false,
+        queued: overlays.has("queued_next"),
+      };
+    default: {
+      const exhaustive: never = state;
+      return exhaustive;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Structural equality — the [DT09] reference-stability primitive
+// ---------------------------------------------------------------------------
+
+function overlaySetsEqual(
+  a: ReadonlySet<TideLifecycleOverlay>,
+  b: ReadonlySet<TideLifecycleOverlay>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const overlay of a) {
+    if (!b.has(overlay)) return false;
+  }
+  return true;
+}
+
+function submitButtonModesEqual(
+  a: TideSubmitButtonMode,
+  b: TideSubmitButtonMode,
+): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "submit" && b.kind === "submit") {
+    return a.disabled === b.disabled && a.queued === b.queued;
+  }
+  // Every other kind is a nullary tag — same `kind` is full equality.
+  return true;
+}
+
+/**
+ * Structural equality of two lifecycle snapshots — the matrix row is
+ * unchanged iff `state`, the overlay set, and `submitButtonMode` all
+ * match. The [DT09] reference-stability check in
+ * {@link deriveLifecycleSnapshot} is built on this.
+ */
+export function lifecycleSnapshotsEqual(
+  a: TideLifecycleSnapshot,
+  b: TideLifecycleSnapshot,
+): boolean {
+  if (a === b) return true;
+  return (
+    a.state === b.state &&
+    overlaySetsEqual(a.overlays, b.overlays) &&
+    submitButtonModesEqual(a.submitButtonMode, b.submitButtonMode)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The public projection
+// ---------------------------------------------------------------------------
+
+/**
+ * Project the store snapshot + UI-local state onto the Step 20.5.A
+ * matrix row. Pure: a deterministic function of its three arguments.
+ *
+ * `previous` is the [DT09] reference-stability hook — pass the caller's
+ * last result and the function returns it unchanged when no
+ * matrix-relevant signal moved (so a content-only `assistant_delta`
+ * does not produce a fresh object and re-render every zone). Omit it
+ * and every call returns a fresh snapshot. The `useLifecycleState`
+ * hook threads it from a per-card `useRef`, so the stability is
+ * per-card — a module-level cache would thrash when two cards stream
+ * at once.
+ */
+export function deriveLifecycleSnapshot(
+  storeSnapshot: LifecycleStoreSignals,
+  uiState: TideLifecycleUiState,
+  previous?: TideLifecycleSnapshot,
+): TideLifecycleSnapshot {
+  const state = deriveLifecycleState(storeSnapshot);
+  const overlays = deriveOverlays(storeSnapshot, uiState);
+  const submitButtonMode = deriveSubmitButtonMode(state, overlays);
+  const next: TideLifecycleSnapshot = { state, overlays, submitButtonMode };
+  if (previous !== undefined && lifecycleSnapshotsEqual(previous, next)) {
+    return previous;
+  }
+  return next;
+}
