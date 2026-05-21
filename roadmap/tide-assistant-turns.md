@@ -3699,7 +3699,7 @@ The Bash body kind likely renders its output as a `TerminalBlock` or similar —
 
 **Depends on:** #step-20-4 (slot infrastructure + placement decisions from the HMR study)
 
-**Status:** _not started — split into 20.5.A → 20.5.B → ~~20.5.C~~ (superseded by Step 20.4.10–20.4.13) → 20.5.D → 20.5.E, gated sequentially._
+**Status:** _in progress — 20.5.A complete (lifecycle state machine + Z0–Z5 coordination matrix landed as the canonical spec). Remaining: 20.5.B → ~~20.5.C~~ (superseded by Step 20.4.10–20.4.13) → 20.5.D → 20.5.E, gated sequentially._
 
 **Scope overview.** [#step-20-4] establishes the placement zones (Z0–Z4) as display-only slots and decides default content via HMR study. Step 20.5 closes the tide-card request/response lifecycle: it documents the state machine that drives everything (20.5.A), audits and closes gaps against polish-plan Steps 13 / 14 / 15 (20.5.B), ~~studies and adds the `agent` role to `TugProgress` for Z1's SUBMITTING-state immediate-feedback indicator (20.5.C)~~ — _superseded; the Z1 asst-half indicator is `TugThinkingIndicator` per [Step 20.4.10](#step-20-4-10) instead of a TugProgress variant_, wires Z5 + cross-zone lifecycle coordination + the chosen telemetry placement defaults (20.5.D), and ships the on-demand `/context`-style drill-down surface (20.5.E).
 
@@ -3713,7 +3713,7 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 
 **Depends on:** none — pure documentation step.
 
-**Status:** _not started._
+**Status:** _Complete. The state diagram, state-definitions table, and state-to-zone coordination matrix in this section are the landed canonical artifact that 20.5.B / 20.5.D / 20.5.E implement against; [DT10](#dt10-replay-transcript-suppression) (REPLAYING transcript-paint suppression) landed in the decision-tables section and is cross-referenced from the REPLAYING diagram box, state-definitions row, and matrix row. Landing reconciled three spec/code drifts against the 20.4.15-shipped primitives: the AWAITING_FIRST_TOKEN diagram box named the superseded `TugProgress`; the matrix intro named a non-existent `data-slot="tide-asst-half-z1b"` (production `TideZ1B` uses `data-slot="tide-z1b"`); and the matrix-edit policy / STREAMING row attributed Z1B's content swap to `isLivePhase(phase)` when `TideZ1B` in fact drives it per-row off `turn === undefined` (session `phase` is deliberately not an input). All snapshot fields the state-definitions table references — `phase`, `transportState`, `interruptInFlight`, `pendingApproval`, `pendingQuestion`, `queuedSends`, `transcript`, `lastError`, `inflightUserMessage` — were verified present on `CodeSessionSnapshot` (`types.ts`) with the claimed shapes._
 
 **Commit:** `plan(tide-rendering): lifecycle state machine + Z0–Z5 coordination matrix`
 
@@ -3737,7 +3737,7 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
    │   ┌────────────────────┐                                     │
    │   │ AWAITING_FIRST_    │ ← phase=awaiting_first_token        │
    │   │       TOKEN        │   (post-send, pre-first-token —     │
-   │   └─────┬──────────────┘    where Z1 TugProgress shows)      │
+   │   └─────┬──────────────┘    where Z1B's indicator shows)     │
    │         │ first assistant_delta                              │
    │         ▼                                                    │
    │   ┌─────────────┐                                            │
@@ -3841,14 +3841,14 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 
 **The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract [Step 20.5.D](#step-20-5-d) implements:
 
-Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4.15](#step-20-4-15): Z1A (model name + timestamp + sequence) on top, the body in the middle, Z1B (status / end-state row) on the bottom. Z1A is mounted unconditionally across every state in which the transcript is painted — the model name + timestamp never disappear; only Z1B's content swaps. (REPLAYING is the exception: the transcript is not painted during replay — see [DT10](#dt10-replay-transcript-suppression) and the REPLAYING row below.) Z1B is itself an always-mounted slot (`<div data-slot="tide-asst-half-z1b">`) per the [L26] contract validated in [Step 20.4.12](#step-20-4-12); the cell below names only what swaps INSIDE the slot.
+Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4.15](#step-20-4-15): Z1A (model name + timestamp + sequence) on top, the body in the middle, Z1B (status / end-state row) on the bottom. Z1A is mounted unconditionally across every state in which the transcript is painted — the model name + timestamp never disappear; only Z1B's content swaps. (REPLAYING is the exception: the transcript is not painted during replay — see [DT10](#dt10-replay-transcript-suppression) and the REPLAYING row below.) Z1B is itself an always-mounted slot (`<div data-slot="tide-z1b">`) per the [L26] contract validated in [Step 20.4.12](#step-20-4-12); the cell below names only what swaps INSIDE the slot.
 
 | State | Z0 (top of card) | Z1 (per-turn trailing — asst half) | Z2 (status bar) | Z3 (prompt-entry top) | Z4 (prompt-entry footer) | Z5 (submit button) |
 |---|---|---|---|---|---|---|
 | IDLE | reserved | Z1A: model + timestamp from the most-recent committed turn. Z1B: prior-turn `EndStateDisplay` (badge + active-ms + tokens) — the just-frozen turn's end-state stays surfaced. | session cumulative totals (frozen) | project badge | (default content per 20.4 study) | **Submit** (disabled if prompt empty) |
 | SUBMITTING | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`) — no streaming deltas yet. | live cum + this-turn elapsed (ticking via [useLifecycleTick](#step-20-3)) | project badge | (default) | **Stop** |
 | AWAITING_FIRST_TOKEN | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`). | live cum + this-turn elapsed (ticking) | project badge | "Awaiting first token" indicator | **Stop** |
-| STREAMING | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`) — bars pulse for the duration of the live phase. (The earlier "freeze while text is actively streaming" derivation from the deferred [Step 20.4.11](#step-20-4-11) is not wired; `isLivePhase(phase)` is the sole driver.) | live cum + this-turn elapsed + window util (ticking) | project badge | "Claude is thinking" indicator | **Stop** |
+| STREAMING | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`) — bars pulse for the duration of the live phase. (The earlier "freeze while text is actively streaming" derivation from the deferred [Step 20.4.11](#step-20-4-11) is not wired — `TideZ1B` hardcodes `animating={true}` in its in-flight-row mode, so the bars pulse for the whole live phase with no streaming-vs-thinking sub-state.) | live cum + this-turn elapsed + window util (ticking) | project badge | "Claude is thinking" indicator | **Stop** |
 | TOOL_WORK | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`). | live cum + this-turn elapsed (ticking) | project badge | "Running {tool_name}" | **Stop** |
 | AWAITING_USER | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`) — `awaiting_approval` is a live phase, so the indicator continues to pulse; the "paused" semantic surfaces on Z2 (yellow indicator) and Z5 (disabled), not by freezing Z1B's animation. | live cum (frozen during pause) + "awaiting input" badge | project badge | (default) | **"Awaiting your input"** (disabled) |
 | INTERRUPTING | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`) — phase is still live until `turn_complete` arrives; the interrupt-in-flight signal surfaces on Z2 (caution tone) and Z5, not Z1B. | live cum frozen | project badge | (default) | **"Stopping…"** (disabled, transient) |
@@ -3861,7 +3861,7 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **REPLAYING transcript suppression.** The REPLAYING row encodes [DT10](#dt10-replay-transcript-suppression): a resumed session reconstructs its committed turns one `turn_complete` at a time, and painting each intermediate state makes the transcript visibly accumulate while the viewport chases the live edge — the restore FOUC the lifecycle investigation diagnosed. The transcript host therefore gates its visible render on `state !== "replaying"`, holding its pre-replay paint across the window and doing one reconstructed paint at `replay_complete`. The implementation lands in [Step 20.5.D](#step-20-5-d); this row is its contract.
 
-**Matrix-edit policy.** [Step 20.5.C](#step-20-5-c) is **superseded** by [Step 20.4.10](#step-20-4-10) through [Step 20.4.13](#step-20-4-13); [Step 20.4.15](#step-20-4-15) authoritatively wired the production Z1 asst-half cells per the polish-plan above. Every Z1 asst-half cell in the matrix now says (a) which content the two-line stack's status row (Z1B) shows for that state — `TugThinkingIndicator` while `isLivePhase(phase)` is true, `EndStateDisplay` otherwise — and (b) what the model row (Z1A) shows (always present; model name + timestamp from the active or committed turn). Earlier framings ("per-turn live elapsed", "TugProgress agent") are retired — Z1B is the canonical surface for both signals. (REPLAYING is the lone exception — the transcript is not painted during replay, so its matrix row carries no Z1 cell content; see [DT10](#dt10-replay-transcript-suppression).)
+**Matrix-edit policy.** [Step 20.5.C](#step-20-5-c) is **superseded** by [Step 20.4.10](#step-20-4-10) through [Step 20.4.13](#step-20-4-13); [Step 20.4.15](#step-20-4-15) authoritatively wired the production Z1 asst-half cells per the polish-plan above. Every Z1 asst-half cell in the matrix now says (a) which content the two-line stack's status row (Z1B) shows for that state — `TugThinkingIndicator` on the in-flight row, `EndStateDisplay` on committed rows; `TideZ1B` ([Step 20.4.15](#step-20-4-15)) drives this per-row off `turn === undefined` (row not yet committed), NOT the session `phase`, so committed rows in a multi-turn transcript never re-derive in-flight-ness from a session-wide signal — and (b) what the model row (Z1A) shows (always present; model name + timestamp from the active or committed turn). Earlier framings ("per-turn live elapsed", "TugProgress agent") are retired — Z1B is the canonical surface for both signals. (REPLAYING is the lone exception — the transcript is not painted during replay, so its matrix row carries no Z1 cell content; see [DT10](#dt10-replay-transcript-suppression).)
 
 **Two coordination invariants exposed by the matrix.**
 
@@ -3874,12 +3874,12 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **Tasks.**
 
-- [ ] Land the state diagram (above) into the plan as the canonical reference.
-- [ ] Land the state-to-zone coordination matrix (above) as the contract for 20.5.D.
-- [ ] Cross-reference [#step-20-3]'s `awaitingApprovalMs` / `turnEndReason` fields from the matrix.
-- [ ] Land [DT10](#dt10-replay-transcript-suppression) (REPLAYING transcript-paint suppression) and cross-reference it from the REPLAYING entries of the state diagram, the state-definitions table, and the coordination matrix.
+- [x] Land the state diagram (above) into the plan as the canonical reference.
+- [x] Land the state-to-zone coordination matrix (above) as the contract for 20.5.D.
+- [x] Cross-reference [#step-20-3]'s `awaitingApprovalMs` / `turnEndReason` fields from the matrix.
+- [x] Land [DT10](#dt10-replay-transcript-suppression) (REPLAYING transcript-paint suppression) and cross-reference it from the REPLAYING entries of the state diagram, the state-definitions table, and the coordination matrix.
 
-**Checkpoint.** No build/test/lint — this is plan-only.
+**Checkpoint.** No build/test/lint — this is plan-only. _Done — diagram + matrix + state definitions landed; concrete code references audited against `CodeSessionSnapshot` / `CodeSessionPhase` / `TideZ1B` and the three drifts reconciled (see Status)._
 
 ---
 
