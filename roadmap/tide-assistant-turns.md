@@ -3839,6 +3839,26 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 
 **Persistence projection.** The subset `(phase, transportState, interruptInFlight)` is the *indicator-tone axis set*: exactly what [`TugStateIndicator`](#step-20-4-2) reads as props, and exactly what [Step 20.4.8](#step-20-4-8)'s `session_state_changes` ledger persists. The invariant is **ledger axes ≡ indicator's tone axes ⊆ matrix signals**: signals in this table that are NOT in that triple (transcript length, `pendingApproval` / `pendingQuestion` distinction, `queuedSends`, `turnEndReason`, DRILLDOWN_OPEN) are deliberately not persisted as state-change rows; consumers recover them from other tables (`TurnEntry`s for `turnEndReason`, transcript-length count for IDLE↔COMPLETE) or accept that they're not historically replayable. **Known gap — closed in [Step 20.5.B](#step-20-5-b).** The "`TurnEntry`s for `turnEndReason`" clause assumes a committed `TurnEntry` survives a resume; it does not. A resumed session *rebuilds* each `TurnEntry` from replayed frames and re-derives `turnEndReason` from `turn_complete.result` + the runtime-only `interruptInFlight` — which cannot distinguish an interrupted turn from an errored one on the replay path. Persisting the per-turn end reason is [Step 20.5.B](#step-20-5-b)'s [replay-2] gap-close. If this matrix grows a new tone-bearing signal, all three artifacts (indicator props, this table, ledger schema) co-evolve in the same step.
 
+**Replay fidelity.** REPLAYING is a first-class state above, but the lifecycle map alone does not say which per-turn *artifacts* survive a resume — and the [Step 20.5.B.1](#step-20-5-b-1) corpus audit (the real translator run over ~280 on-disk sessions) showed the honest answer is mixed. This matrix is the contract; a row that reads ✗ is a known gap with its closing step named. The reducer / translator must satisfy it; a regression against any ✓ row is a bug.
+
+| Per-turn artifact | Round-trips a resume? | Mechanism / gap |
+|---|---|---|
+| User message text | ✓ | `user_message_replay` from the JSONL `user` entry |
+| Assistant text / thinking | ✓ | `assistant_text` / `thinking_text` from the JSONL `assistant` entry |
+| Tool calls (name / input / result) | ✓ | `tool_use` + `tool_result` from the JSONL |
+| Tool-call nesting (subagent grouping) | ✗ | subagent internals live in separate `subagents/*.jsonl` files replay never reads ([W3]); the main JSONL carries no non-null `parent_tool_use_id` |
+| `turnEndReason` (`complete` / `interrupted` / `error`) | ✓ | persisted on `TurnTelemetry.turnEndReason` ([replay-2]); the pre-[replay-2] re-derivation mislabelled interrupted turns |
+| A genuinely-dangling final turn (cut off mid-tool) | ✓ | tugcode synthesizes a terminal `turn_complete` ([replay-1]) |
+| A trailing user-only orphan (submission, no response) | ✗ → ✓ | dropped today; `flushPendingOrphan`-at-EOF closes it ([W2] / [Step 20.5.B.1.a](#step-20-5-b-1-a)) |
+| A clean non-`end_turn` terminal (`stop_sequence` / `max_tokens` / `refusal`) | ~ → ✓ | mislabelled `interrupted` today; clean-terminal recognition fixes it ([W1] / [Step 20.5.B.1.a](#step-20-5-b-1-a)) |
+| Permission / question records | ✗ | `control_request_forward` is gate-suppressed during the replay window; the decision is not re-emitted as a `ControlRequestRecord` ([W4]) |
+| Per-turn telemetry (cost / 4-clock timing) | ✓ _pending_ | inlined on `turn_complete` from the SessionLedger; the consumer side is ready, persistence is [#step-20-3-4] |
+| Compaction summary text | ✗ → ✓ | string-valued `message.content` dropped today ([W5] / [Step 20.5.B.1.b](#step-20-5-b-1-b)) |
+| Context-window numbers | ✓ | derived from per-turn `usage`; `deriveContextWindows` carries signed deltas, incl. a `/compact` negative |
+| Transient API errors (`overloaded_error`) | ✗ _(by design)_ | a `system` / `api_error` entry, intentionally skipped — a 529 is transient ([W5]) |
+
+A committed turn may therefore have **empty assistant content** — a flushed trailing-orphan ([W2]) is a valid COMPLETE turn whose user message drew no response. The COMPLETE row of the matrix below (Z1's trailing `BlockCopyButton`, keyed off the assistant text) must tolerate that: an empty `bodyText` suppresses the copy button, the row otherwise renders normally.
+
 **The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract [Step 20.5.D](#step-20-5-d) implements:
 
 Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4.15](#step-20-4-15): Z1A (model name + timestamp + sequence) on top, the body in the middle, Z1B (status / end-state row) on the bottom. Z1A is mounted unconditionally across every state in which the transcript is painted — the model name + timestamp never disappear; only Z1B's content swaps. (REPLAYING is the exception: the transcript is not painted during replay — see [DT10](#dt10-replay-transcript-suppression) and the REPLAYING row below.) Z1B is itself an always-mounted slot (`<div data-slot="tide-z1b">`) per the [L26] contract validated in [Step 20.4.12](#step-20-4-12); the cell below names only what swaps INSIDE the slot.
@@ -3962,6 +3982,168 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 - [x] `bun run audit:tokens lint` exits 0. _Zero violations — `--tugx-question-*` aliases resolve one-hop._
 - [ ] **Manual smoke** — exercise each polish-14 scenario by hand against live Claude; confirm permission AND question dialogs both fire and resolve cleanly. _User-gated — live Claude; not runnable in this environment (the app-test harness can't inject `control_request_forward` events)._
 - [ ] **Manual smoke (replay)** — resume a session whose last turn was a refused tool call: confirm no stuck `TugThinkingIndicator`. Resume a session containing an interrupted turn: confirm the row shows the `interrupted` badge, not `error`. _User-gated — live resume._
+
+---
+
+#### Step 20.5.B.1: Replay fidelity — corpus audit + JSONL-shape hardening {#step-20-5-b-1}
+
+**Depends on:** #step-20-5-b ([replay-1] / [replay-2] — the replay end-state fixes this hardens on top of)
+
+**Status:** _audit complete; planning closed. The corpus audit harness was built, run against 282 real sessions, and the findings recorded + triaged below. Headline: the translator's structural contract holds (zero I1/I3/I4/I5 violations on 267 translated sessions); the real gaps are [W2] (~3% of sessions silently drop a trailing user prompt) and [W1] last-turn (`stop_sequence` mislabel, rare); [W1]-cascade and [W3]-as-framed are not real. The fixes are authored as [Step 20.5.B.1.a](#step-20-5-b-1-a) ([W2] / [W1]) and [Step 20.5.B.1.b](#step-20-5-b-1-b) ([W5]); the [Step 20.5.A](#step-20-5-a) replay-fidelity matrix landed. This step closes when 20.5.B.1.a / .b land._
+
+**Commit:** `feat(tide-rendering): replay-fidelity corpus audit harness`
+
+**References:** [#step-20-5-a] (the lifecycle state machine the replay path must honour), [#step-20-5-b] ([replay-1] / [replay-2]), [#step-20-3] (per-turn data the replay path must reconstruct)
+
+**Scope.** [Step 20.5.B](#step-20-5-b) closed two replay end-state bugs — [replay-1] (a dangling cold-resume cycle strands an in-flight row) and [replay-2] (an interrupted turn replays as `error`). Closing them made clear the replay path — `translateJsonlSession` (`tugcode/src/replay.ts`) → wire events → the `CodeSessionStore` reducer → the tide-card transcript — carries a wider set of **JSONL-shape fidelity gaps**: shapes the live path handles that a resumed session reconstructs wrong or drops outright. This step (a) builds a **corpus audit harness** that runs the real translator over the on-disk Claude Code JSONL corpus and checks structural invariants, (b) records the weak points the 20.5.B investigation already found, and (c) — once the audit quantifies which gaps bite real data — fans out into fix sub-steps (20.5.B.1.a, .b, …).
+
+The corpus is the asset. `~/.claude/projects/` holds ~4,000 real session JSONLs spanning months of Claude Code use — every entry shape, stop-reason, subagent nesting, compaction, and interrupt the tool has ever produced. No hand-authored fixture set matches it. The audit turns that corpus into a regression surface; the fix sub-steps then distil the failing shapes into curated in-repo fixtures for permanent CI coverage.
+
+**Weak points (from the 20.5.B replay investigation).** Each is a hypothesis the corpus audit confirms or refutes with a real-data frequency:
+
+- **[W1] Only `stop_reason: "end_turn"` closes a cycle.** `translateJsonlEntry` (`replay.ts`) emits the terminal `turn_complete` and resets `ctx.cycleOpen` only on `end_turn`. Real corpus data carries `stop_sequence`; `max_tokens` / `refusal` / `pause_turn` are valid API terminals too. A *last* turn ending on one trips [replay-1]'s `synthesizeDanglingTerminal` synthetic and is mislabelled `interrupted` though it finished cleanly. A *middle* turn ending on one leaves `ctx.cycleOpen` stuck true → the next turn's `user_message_replay` is suppressed and its user text is mis-flushed as an `orphan-N` → cascading corruption of every later turn in the session.
+- **[W2] A trailing user-only orphan is dropped at EOF.** `flushPendingOrphan` is called only from `handleUserEntry` (on the *next* user entry), never after the translate loop. A JSONL ending with a user submission and no assistant entry (the user quit before any output) strands `ctx.pendingUserText` — no `user_message_replay`, no terminal — and the resumed transcript silently loses the user's last prompt. Same family as [replay-1]; [replay-1]'s `cycleOpen`-gated synthetic does not cover the pre-assistant case.
+- **[W3] Subagent tool nesting is lost on replay.** The translator's `tool_use` emitter reads `id` / `name` / `input` only — never `parent_tool_use_id`. The live path threads that into `ToolCallState.parentToolUseId` so `TaskToolBlock` groups child calls under their `Agent`; replayed sessions render every tool call flat.
+- **[W4] Permission / question records do not survive replay.** `control_request_forward` is gate-suppressed during the replay window (`session.ts`), and the allow/deny decision is not re-emitted by the translator as anything that rebuilds a `ControlRequestRecord`. A resumed session loses its `[Tool — Allowed/Denied]` resolved-permission artifacts and its `AskUserQuestion` history.
+- **[W5] Compaction and error-shape replay are unverified.** A `/compact` shrinks the context window (a negative per-turn delta the `deriveContextWindows` walk must absorb); `overloaded_error` blocks are an error shape mid-turn. Neither has a fixture.
+
+These gaps are invisible at the [Step 20.5.A](#step-20-5-a) spec level — 20.5.A documents REPLAYING as a state but never says which per-turn artifacts survive a resume. A **replay-fidelity matrix** (per artifact: assistant text / tool calls / tool nesting / permission records / `turnEndReason` / telemetry — does it round-trip a resume?) belongs in 20.5.A; adding it is one of the fix sub-steps.
+
+**The corpus audit harness.** `tugcode/scripts/replay-corpus-audit.ts` — a run-on-demand QA harness (not a CI test; CI has no corpus). It walks `~/.claude/projects/`, and per session JSONL (under a size cap; giant files are raw-scanned only): runs the real `translateJsonlSession`, then checks structural invariants —
+- **[I1]** brackets: exactly one `replay_started` first, exactly one `replay_complete` last.
+- **[I2]** cycle balance: `count(user_message_replay) === count(turn_complete)`. An imbalance is a stranded cycle (W1) or — classified from the raw scan — a dropped trailing orphan (W2).
+- **[I3]** the translator never throws.
+- **[I4]** `turn_complete` `msg_id`s carry no duplicate that the reducer would dedupe-drop.
+- **[I5]** `replay_complete.count` equals the emitted `turn_complete` count.
+— and aggregates a raw-shape census: top-level entry types (unhandled-type detection), assistant `stop_reason` distribution (W1), trailing-orphan sessions (W2), `parent_tool_use_id` sessions (W3), compaction / `overloaded_error` / interrupt-marker sessions (W5). The report names example session ids per violation class so a fix sub-step can pull them straight into a fixture.
+
+**Conformance.** The harness imports and runs the *real* `translateJsonlSession` — no mock translator, no synthetic-only fixtures — over real data. It is read-only over the corpus. It lives in `scripts/` (not `__tests__/`) because it depends on the developer's on-disk session corpus, which CI does not have; the permanent CI coverage is the curated fixtures the fix sub-steps add.
+
+**Artifacts.**
+
+- `tugcode/scripts/replay-corpus-audit.ts` — _new_ — the corpus audit harness (corpus walk + real-translator run + invariant checks + raw-shape census + report).
+- `roadmap/tide-assistant-turns.md` (this file) — the audit's findings recorded below; fix sub-steps appended as 20.5.B.1.a … once triaged.
+
+**Tasks.**
+
+- [x] Build `replay-corpus-audit.ts` — corpus walk, real-translator run, invariants I1–I5, raw-shape census. _Done._
+- [x] Run it against `~/.claude/projects/`; record the findings under "Corpus audit findings". _Done — 282 sessions; see findings._
+- [x] Triage W1–W5 against the findings. _Done — see "Triage" above._
+- [x] Open fix sub-steps for the gaps that bite real data, each carrying a curated corpus-derived fixture. _Done — [Step 20.5.B.1.a](#step-20-5-b-1-a) ([W2] EOF orphan flush + [W1] clean-terminal recognition) and [Step 20.5.B.1.b](#step-20-5-b-1-b) ([W5] compaction string-content fix + error-shape semantics) authored below._
+- [x] Add the replay-fidelity matrix to [Step 20.5.A](#step-20-5-a) (and the COMPLETE-row empty-assistant addendum). _Done — landed as the "Replay fidelity" block in 20.5.A._
+
+**Corpus audit findings.** _First run — 282 main sessions under `~/.claude/projects/` (267 translated; 10 raw-scanned over the 4 MB cap; 5 huge-skipped over 64 MB; 0 read failures; 0 sessions with malformed lines)._
+
+- **Structural invariants I1 / I3 / I4 / I5 — zero violations across all 267 translated sessions.** Brackets always well-formed; the translator never threw; no duplicate `turn_complete` `msg_id`; `replay_complete.count` always matched the emitted terminal count. The translator's structural contract is solid on real data.
+- **[I2] cycle balance — 253 balanced, 14 with one cycle open at EOF, 0 with imbalance ≥ 2.** The `[replay-1]` `synthesizeDanglingTerminal` synthetic rebalanced **all 14** (0 sessions "still imbalanced with the synthetic on").
+- **[W1] — downgraded.** The cascade failure mode (a mid-session non-`end_turn` terminal corrupting later turns) **does not occur** — 0 sessions with imbalance ≥ 2; in practice claude-code never ends a *middle* turn on a non-`end_turn`/`tool_use` stop. The last-turn case is real but rare: **1 session** ends on `stop_sequence` — on a cold resume `[replay-1]`'s synthetic commits that cleanly-finished turn as `interrupted`. (`stop_sequence` occurs 35× across entries — otherwise mid-cycle and harmless; `(null)` stop_reason 34×.)
+- **[W2] — confirmed, the highest-frequency real gap.** **9 of 282 sessions (~3%)** end with a trailing user submission and no assistant response; their last prompt is silently dropped on replay (`flushPendingOrphan` is never called at EOF). 4 of the 9 also carry a dangling tool cycle — a double loss.
+- **[W3] — reframed, not a translator bug.** `parent_tool_use_id` is **never non-null in a main session JSONL** (0 sessions). Subagent tool calls do not appear in the main transcript — they live in separate `subagents/*.jsonl` files that replay never reads. Whether a resumed session *should* surface subagent internals is a separate, lower-priority question; there is nothing for the translator to "preserve."
+- **[W5] — present, no crash, semantics unverified.** 8 sessions carry compaction markers, 6 carry `overloaded_error` blocks; the translator threw on none. Structural invariants do not check *semantic* correctness (the negative context-window delta a `/compact` produces, the error-turn shape) — that needs a deeper check.
+- **Entry-type coverage — complete.** Every top-level type in the corpus (`assistant`, `user`, `attachment`, `last-prompt`, `permission-mode`, `ai-title`, `file-history-snapshot`, `system`, `queue-operation`) is translated or in `SKIPPED_TOP_LEVEL_TYPES`. No unhandled type.
+
+**Triage.** [W2] (silent data loss, ~3%) → fix first. [W1] last-turn clean-terminal — the translator should treat `stop_sequence` / `max_tokens` / `refusal` as cycle terminals so those turns commit `complete` and the `[replay-1]` synthetic fires only for genuinely-dangling `tool_use` / `(null)` cycles → fix alongside [W2]. [W5] semantic-correctness check → a deeper sub-step. [W1] cascade and [W3]-as-framed → not real; closed with no code change. [W4] (permission/question records lost on replay) is not corpus-measurable here — it is reducer/session-side, not translator-side — and remains an open known gap.
+
+**State machine ([Step 20.5.A]) — no structural change required; one spec-completeness gap.** The corpus contains no shape the existing state graph cannot absorb: a `stop_sequence` / cut-off turn lands in COMPLETE carrying a `turnEndReason` the existing vocabulary already has; a flushed trailing-orphan is a COMPLETE turn with empty assistant content; a `/compact` is an ordinary turn. No new lifecycle state or transition is forced by the data. The one real 20.5.A deficiency the investigation confirms is **spec completeness** — 20.5.A documents REPLAYING as a state but never says which per-turn artifacts survive a resume (`turnEndReason` needed [replay-2]; permission records do not survive — [W4]; subagent internals do not — [W3]; telemetry rides on [#step-20-3-4]). Adding the **replay-fidelity matrix** (Tasks, below) closes it. One small addendum: 20.5.A's COMPLETE row should note that a committed turn may have empty assistant content (the flushed trailing-orphan, [W2]).
+
+**Checkpoint.**
+
+- [x] `bun x tsc --noEmit` clean (tugcode) — the harness typechecks (`scripts/` is in `tugcode/tsconfig.json`).
+- [x] The harness runs to completion against the on-disk corpus and emits its report. _Done — 282 sessions, ~no perceptible runtime issues._
+
+---
+
+#### Step 20.5.B.1.a: Replay fidelity — EOF orphan flush + clean-terminal recognition {#step-20-5-b-1-a}
+
+**Depends on:** #step-20-5-b-1 (the corpus audit that confirmed [W1] / [W2]), #step-20-5-b ([replay-1])
+
+**Status:** _not started._
+
+**Commit:** `fix(replay): flush trailing orphans at EOF + recognise all clean terminal stops`
+
+**References:** [#step-20-5-b-1] ([W1] / [W2] + the corpus findings), [#step-20-5-b] ([replay-1])
+
+**Scope.** The [Step 20.5.B.1](#step-20-5-b-1) corpus audit confirmed two real translator gaps. Both fixes are in `tugcode/src/replay.ts`; the reducer already absorbs the corrected output.
+
+**[W2] — a trailing user-only orphan is dropped at EOF.** 9 of 282 corpus sessions end with a user submission and no assistant response. `flushPendingOrphan` is called only from `handleUserEntry` (on the *next* user entry); a session whose final entry is that submission strands `ctx.pendingUserText` — no `user_message_replay`, no terminal — and the resumed transcript silently loses the user's last prompt. _Fix:_ after the translate loop, when `synthesizeDanglingTerminal` is set (a cold resume — no live `ActiveTurn` will continue the session), call `flushPendingOrphan(ctx)` to commit any stranded `pendingUserText` as a `user_message_replay` + `turn_complete { result: "interrupted" }` pair. Gated on `synthesizeDanglingTerminal` for the same reason as the [replay-1] dangling-cycle synthetic: on reload-mid-stream the trailing submission IS the live `ActiveTurn`, which `runReplay`'s `emitInflightTurnFromActiveTurn` already delivers — flushing it here would double it. When a session has both a dangling cycle and a trailing orphan (4 of the 9), the dangling-cycle synthetic fires first (it closes the earlier turn), then the orphan flush.
+
+**[W1] — only `end_turn` closes a cycle.** `translateJsonlEntry` emits the terminal `turn_complete` only on `stop_reason === "end_turn"`. The corpus carries `stop_sequence` (1 session ends on it); `max_tokens` and `refusal` are valid API terminals too. A last turn ending on one is left `cycleOpen`, so [replay-1]'s synthetic commits a cleanly-finished turn as `interrupted`. (The audit found **no** mid-session occurrence — the cascade failure mode does not happen — so this is a last-turn correctness fix only.) _Fix:_ replace the `end_turn`-only check with a `TERMINAL_STOP_REASONS` set — `end_turn`, `stop_sequence`, `max_tokens`, `refusal` — each emitting the terminal `turn_complete { result: "success" }` (the reducer maps `success → turnEndReason: "complete"`). `tool_use`, `pause_turn`, and a `null` / absent stop-reason stay non-terminal (the cycle legitimately continues). The `suppressTurnComplete` same-`message.id` peek is unchanged.
+
+**Conformance.** `tugcode/src/replay.ts` only — translator-side. No reducer change ([replay-1]'s `result: "interrupted"` handling and the `success → complete` path already exist). No new architecture.
+
+**Artifacts.**
+
+- `tugcode/src/replay.ts` — `TERMINAL_STOP_REASONS` set; EOF `flushPendingOrphan` call.
+- `tugcode/src/__tests__/replay-eof-orphan.test.ts` — _new_ — minimal fixtures distilled from the corpus shapes (a trailing user-text orphan; `stop_sequence` / `max_tokens` / `refusal` terminals; `tool_use` / `pause_turn` / `null` regression guards).
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — a reducer test: a flushed EOF orphan commits a `TurnEntry` with empty `assistant` content and `turnEndReason: "interrupted"`, phase → `idle`.
+
+**Tasks.**
+
+- [ ] `replay.ts` — `TERMINAL_STOP_REASONS` set replacing the `end_turn`-only terminal check.
+- [ ] `replay.ts` — EOF `flushPendingOrphan` call, gated on `synthesizeDanglingTerminal`, ordered after the dangling-cycle synthetic.
+- [ ] Translator tests — orphan flush (on / off); each clean terminal closes a cycle; non-terminals don't.
+- [ ] Reducer test — a flushed EOF orphan commits an empty-assistant `interrupted` turn.
+
+**Tests.**
+
+- [ ] A JSONL ending with a user-text entry and no assistant: with `synthesizeDanglingTerminal` → one `user_message_replay` + one `turn_complete { result: "interrupted" }`; without → neither (the live path owns it).
+- [ ] A session whose last assistant entry is `stop_reason: "stop_sequence"` (also `max_tokens`, `refusal`) emits a terminal `turn_complete { result: "success" }`; the cycle closes; no dangling synthetic fires.
+- [ ] `tool_use`, `pause_turn`, and a `null` stop-reason do NOT close the cycle (regression guard).
+- [ ] Reducer: a flushed EOF orphan → `TurnEntry` with empty `assistant`, `turnEndReason: "interrupted"`; post-`replay_complete` phase is `idle`.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean (tugcode + tugdeck).
+- [ ] `bun test` green (tugcode + tugdeck).
+- [ ] Re-run `replay-corpus-audit.ts`: the `stop_sequence` session no longer appears under "[W1] clean-terminal dangling"; cycle-balance / synthetic-rebalance otherwise unchanged.
+
+---
+
+#### Step 20.5.B.1.b: Replay fidelity — compaction + error-shape semantics {#step-20-5-b-1-b}
+
+**Depends on:** #step-20-5-b-1 (the corpus audit — [W5])
+
+**Status:** _not started._
+
+**Commit:** `fix(replay): handle string-valued message.content (compaction summary)`
+
+**References:** [#step-20-5-b-1] ([W5]), [#step-20-3] (`deriveContextWindows` — the per-turn context-window walk)
+
+**Scope.** The corpus audit flagged 8 sessions with compaction markers and 6 with `overloaded_error` blocks; the translator threw on none, but structural invariants do not verify *semantic* correctness. Inspecting the real shapes found one real bug and one acceptable-as-is case.
+
+**[W5a] — string-valued `message.content` drops the compaction summary.** A `/compact` continuation entry is a `type: "user"` entry whose `message.content` is a **plain string** (`"This session is being continued from a previous conversation…"`), not the usual `content: [{ type: "text", … }]` array. `handleUserEntry` does `for (const block of content)` — iterating a string yields its *characters*, each a non-block that falls through — so the summary text is silently dropped and the resumed transcript's post-compaction user message is empty. No crash (matches the audit's zero `[I3]` throws), but real data loss. _Fix:_ `handleUserEntry` (and, defensively, `translateJsonlEntry`'s assistant branch) must handle `typeof message.content === "string"` — treat the whole string as the entry's text. A one-branch normalisation at the head of each content walk.
+
+**[W5b] — `overloaded_error` is a skipped `system` entry — acceptable, to be documented.** An API overload surfaces as a `type: "system"`, `subtype: "api_error"` entry (`error.status: 529`) — already in `SKIPPED_TOP_LEVEL_TYPES`, so replay drops it. A 529 is transient: the turn either recovered (its content is in the following assistant entries) or is genuinely dangling (handled by [replay-1]). Confirm this is intended and record it in [Step 20.5.A](#step-20-5-a)'s replay-fidelity matrix rather than surfacing transient infrastructure errors in a resumed transcript.
+
+**[W5c] — context-window negative delta on `/compact`.** A compaction shrinks the resident context window; the next turn's `usage` is much smaller, so its per-turn delta is negative. `deriveContextWindows` (`end-state.ts`) already documents signed deltas ("a `/compact` that shrinks it is an honest negative") — expected to be correct, but no test pins it against a real post-compaction `usage` sequence. Add that pin.
+
+**Conformance.** `tugcode/src/replay.ts` for [W5a]; a doc note + a test for [W5b] / [W5c]. No reducer change.
+
+**Artifacts.**
+
+- `tugcode/scripts/replay-corpus-audit.ts` — extend the census to surface compaction / overload example session ids and to flag string-valued `message.content`.
+- `tugcode/src/replay.ts` — string-content normalisation in the content walks ([W5a]).
+- `tugcode/src/__tests__/replay-compaction.test.ts` — _new_ — a compaction-continuation fixture (string `content`); assert the summary text reaches `user_message_replay`.
+- `tugdeck/src/lib/code-session-store/__tests__/` — a `deriveContextWindows` pin over a post-compaction negative-delta `usage` sequence ([W5c]).
+
+**Tasks.**
+
+- [ ] Extend the corpus harness — compaction / overload example ids; a string-`content` flag.
+- [ ] Re-run the harness; confirm the [W5a] string-content shape and quantify it.
+- [ ] `replay.ts` — normalise string-valued `message.content` ([W5a]).
+- [ ] Pin `deriveContextWindows` over a real post-`/compact` negative-delta sequence ([W5c]).
+- [ ] Record the [W5b] `overloaded_error`-is-skipped decision in [Step 20.5.A](#step-20-5-a)'s replay-fidelity matrix.
+
+**Tests.**
+
+- [ ] A compaction-continuation `user` entry (string `content`) → its summary text reaches `user_message_replay` (not dropped, not iterated as characters).
+- [ ] `deriveContextWindows` over a post-`/compact` `usage` drop yields the correct signed-negative per-turn delta.
+
+**Checkpoint.**
+
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] Re-run `replay-corpus-audit.ts`; the string-`content` flag confirms the compaction sessions now translate with non-empty user text.
 
 ---
 
