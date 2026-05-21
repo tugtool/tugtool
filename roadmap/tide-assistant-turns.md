@@ -4208,7 +4208,7 @@ This step does three things:
 
 **Depends on:** #step-20-5-a (the state-to-zone matrix this step implements), #step-20-5-b (inline-dialog primitives — done), #step-20-4 (zone slot infrastructure), [#step-20-3-4] (per-turn telemetry persistence — done 2026-05-16)
 
-**Status:** _**split into four sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe — see the reconciliation note below._
+**Status:** _**split into five sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (queued-request UI mini-spike) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 (the queued-UI spike) inserted 2026-05-21 — see the reconciliation note below._
 
 **Commit:** _per sub-step._
 
@@ -4222,16 +4222,17 @@ This step does three things:
 - **"Ship the chosen telemetry placement defaults"** — done: [Step 20.4.13](#step-20-4-13) / [Step 20.4.15](#step-20-4-15) shipped Z2 = `statusRow` as the production default; the dev placement-experiment harness stays behind the `import.meta.env.DEV` guard.
 - **The `#step-20-3-4` dependency** — satisfied: per-turn telemetry persistence shipped 2026-05-16, so the shipped placements read correct values across HMR / Reload / relaunch ([L23]).
 
-**The foundation-first split.** What genuinely remains is the lifecycle state machine itself plus the surfaces that need it — Z5's submit button, the transcript-replay paint gate, and Z2 / Z4. It lands as four sub-steps:
+**The foundation-first split.** What genuinely remains is the lifecycle state machine itself plus the surfaces that need it — Z5's submit button, the transcript-replay paint gate, and Z2 / Z4. It lands as five sub-steps:
 
 | Sub-step | Deliverable | Primary file(s) |
 |---|---|---|
 | [20.5.D.1](#step-20-5-d-1) | Lifecycle foundation — `deriveLifecycleSnapshot` (the matrix as one switch) + `useLifecycleState` hook + pure per-matrix-row tests | _new_ `lifecycle-state.ts`, `use-lifecycle-state.ts` |
 | [20.5.D.2](#step-20-5-d-2) | `[DT10]` transcript-replay paint gate — the restore-FOUC fix | `tide-card.tsx` transcript host |
 | [20.5.D.3](#step-20-5-d-3) | Z5 submit-button state machine — the new disabled / label modes | `tug-prompt-entry.tsx` + `.css` |
-| [20.5.D.4](#step-20-5-d-4) | Cross-zone coordination (Z2 / Z4) + end-to-end matrix verification | `tide-card.tsx`, zone renderers |
+| [20.5.D.4](#step-20-5-d-4) | Queued-request UI mini-spike — design + vet the queued affordance | plan + a gallery / HMR vet surface |
+| [20.5.D.5](#step-20-5-d-5) | Cross-zone coordination (Z2 / Z4) + matrix verification + landing the D.4 queued design | `tide-card.tsx`, zone renderers |
 
-D.1 is the dependency for D.2–D.4 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work.
+D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.4 is a design-oriented mini-spike, not an implementation step: the matrix's QUEUED_NEXT_TURN row is a thin, never-vetted placeholder, so D.4 designs the queued-request affordance (and surfaces any data-model gap) for the user to review before D.5 wires it.
 
 **Conformance (applies to every sub-step).** All phase-driven UI goes through `useLifecycleState()` — no zone reads `phase` or `awaitingApprovalSince` directly ([L02]). Appearance changes flip a `data-*` attribute / class and CSS does the visual ([L06]). State preservation: label / content transitions must not flicker, and DOM nodes that carry focus or scroll position stay mounted across mode changes ([L23] / [L26]).
 
@@ -4241,7 +4242,7 @@ D.1 is the dependency for D.2–D.4 — every later sub-step reads the matrix th
 
 **Depends on:** #step-20-5-d (parent), #step-20-5-a (the matrix this encodes), [#step-20-3] (the `CodeSessionSnapshot` fields the switch reads)
 
-**Status:** _not started._
+**Status:** _complete. `lifecycle-state.ts` — `deriveLifecycleSnapshot` encodes the 20.5.A matrix as one pure switch: `state` (the ten rows, with errored / replaying / interrupt precedence), `overlays`, and the Z5 `submitButtonMode`. `use-lifecycle-state.ts` — the `useSyncExternalStore` + per-card `useRef` wrapper. `lifecycle-state.test.ts` — 38 pure-logic cases. `tsc --noEmit` clean; `bun test` green (2317 tugdeck). Three refinements of the design sketch, all noted in the module docstrings: (1) `submitButtonMode` extracted as a named `TideSubmitButtonMode` type — Step 20.5.D.3 consumes it; (2) `deriveLifecycleSnapshot` takes an optional third `previous` argument as the [DT09] reference-stability mechanism (pure — the hook threads it from a per-card `useRef`, so stability is per-card and a module cache cannot thrash); (3) the first argument is typed `LifecycleStoreSignals` — the narrow matrix-relevant subset of `CodeSessionSnapshot`, which structurally satisfies it — so the function states its true dependency surface and a pure test supplies a literal without fabricating ~30 unrelated fields. One matrix reading flagged for the [20.5.D.4](#step-20-5-d-4) queued-UI spike: QUEUED_NEXT_TURN is followed literally in `deriveSubmitButtonMode` — it shows a queued-Submit (not Stop) even while a turn is in flight; the spike revisits whether that is the wanted affordance._
 
 **Commit:** `feat(tide-rendering): lifecycle-state module + useLifecycleState hook`
 
@@ -4301,21 +4302,21 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 
 **Tasks.**
 
-- [ ] `lifecycle-state.ts` — the types + `deriveLifecycleSnapshot` as the 20.5.A matrix encoded in one switch.
-- [ ] `use-lifecycle-state.ts` — the hook: `useSyncExternalStore` on `CodeSessionStore`, UI-local `useState` for `TideLifecycleUiState`, `deriveLifecycleSnapshot` to project.
-- [ ] Pure tests — one per matrix row + the [DT08] / [DT09] guarantees.
+- [x] `lifecycle-state.ts` — the types + `deriveLifecycleSnapshot` as the 20.5.A matrix encoded in one switch. _Done — `deriveLifecycleState` / `deriveOverlays` / `deriveSubmitButtonMode` compose the projection; `lifecycleSnapshotsEqual` is the [DT09] primitive._
+- [x] `use-lifecycle-state.ts` — the hook: `useSyncExternalStore` on `CodeSessionStore`, the caller's `TideLifecycleUiState` (a stable default pre-20.5.E), `deriveLifecycleSnapshot` to project. _Done — per-card `useRef` threads `previous` for [DT09]._
+- [x] Pure tests — one per matrix row + the [DT08] / [DT09] guarantees. _Done — `lifecycle-state.test.ts`, 38 cases._
 
 **Tests.**
 
-- [ ] `deriveLifecycleSnapshot` returns the correct `state` for every `phase` / `pendingApproval` / `pendingQuestion` / `transportState` / `interruptInFlight` / `queuedSends` combination the matrix lists distinctly — IDLE, SUBMITTING, AWAITING_FIRST_TOKEN, STREAMING, TOOL_WORK, AWAITING_USER, INTERRUPTING, REPLAYING, ERRORED, COMPLETE.
-- [ ] `submitButtonMode` matches the matrix Z5 column for every state, plus the TRANSPORT_DOWN / QUEUED_NEXT_TURN overlay effects (`reconnecting`, `queued`).
-- [ ] **[DT09]** — two calls whose snapshots differ only in content fields (a growing `assistant` string, same `phase` / `transportState` / etc.) return `Object.is`-equal results; any matrix-relevant difference returns a distinct reference.
-- [ ] **[DT08]** — `uiState.drilldownOpen` projects into `overlays`; the same `storeSnapshot` with a different `uiState` returns a distinct result.
+- [x] `deriveLifecycleSnapshot` returns the correct `state` for every `phase` / `transportState` / `interruptInFlight` / `queuedSends` combination the matrix lists distinctly — IDLE, SUBMITTING, AWAITING_FIRST_TOKEN, STREAMING, TOOL_WORK, AWAITING_USER, INTERRUPTING, REPLAYING, ERRORED, COMPLETE — plus the errored / replaying / interrupt precedence. _Pass._
+- [x] `submitButtonMode` matches the matrix Z5 column for every state, plus the TRANSPORT_DOWN / QUEUED_NEXT_TURN overlay effects (`reconnecting`, `queued`) and their precedence. _Pass._
+- [x] **[DT09]** — `deriveLifecycleSnapshot` with `previous` threaded returns the prior reference when no matrix-relevant signal moved, a fresh one when any did. _Pass._
+- [x] **[DT08]** — `uiState.drilldownOpen` projects into `overlays`; the same `storeSnapshot` with a different `uiState` returns a distinct result. _Pass._
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
+- [x] `bun x tsc --noEmit` clean. _Done._
+- [x] `bun test` green. _Done — 2317 tugdeck, 0 fail._
 
 ---
 
@@ -4365,7 +4366,9 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 
 **References:** [#step-20-5-a] (the Z5 matrix column), [L06], [L23], [L26]
 
-**Scope.** The submit / stop button in `tug-prompt-entry.tsx` consumes `submitButtonMode` from the hook. Today the button toggles submit ↔ stop ([D-T3-06]); the matrix adds the disabled / transient modes: "Awaiting your input" (AWAITING_USER), "Stopping…" (INTERRUPTING), "Reconnecting…" (TRANSPORT_DOWN overlay), "Restoring…" (REPLAYING), plus the "will send on idle" queued visual on the default Submit. The same `submitButtonMode` governs keyboard activation — a disabled mode does not fire on Enter.
+**Scope.** The submit / stop button in `tug-prompt-entry.tsx` consumes `submitButtonMode` from the hook. Today the button toggles submit ↔ stop ([D-T3-06]); the matrix adds the disabled / transient modes: "Awaiting your input" (AWAITING_USER), "Stopping…" (INTERRUPTING), "Reconnecting…" (TRANSPORT_DOWN overlay), "Restoring…" (REPLAYING). The same `submitButtonMode` governs keyboard activation — a disabled mode does not fire on Enter.
+
+**Queued visual deferred.** `submitButtonMode.queued` (QUEUED_NEXT_TURN) is wired through to the button, but its distinct *visual* — the "will send on idle" treatment — is deferred to the [Step 20.5.D.4](#step-20-5-d-4) queued-request mini-spike. Until that design is vetted, a queued Submit renders as an ordinary Submit: the data path is correct, only the paint is deferred. This sub-step ships every `submitButtonMode` kind — only the `queued` flag's distinct visual waits on D.4.
 
 **Conformance.** [L06] — the mode flips a `data-mode` attribute; CSS handles the per-mode visual. [L26] — ONE `<button>` DOM node across every mode; only label / disabled / `data-mode` / handler change. Do NOT render `<button>Submit</button>` in one branch and `<button>Stop</button>` in another. [L23] — label transitions must not flicker, and focus on the button survives a mode change mid-turn.
 
@@ -4385,7 +4388,7 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 
 **Tests.**
 
-- [ ] The button's label / disabled / `aria-label` match the matrix Z5 column for every `submitButtonMode`.
+- [ ] The button's label / disabled / `aria-label` match the matrix Z5 column for every `submitButtonMode` (the `queued` flag's distinct visual deferred to [Step 20.5.D.4](#step-20-5-d-4) — a queued Submit asserts here as an ordinary Submit).
 - [ ] The same `<button>` DOM node persists across mode transitions; textarea + button focus survive a fixture turn.
 
 **Checkpoint.**
@@ -4397,17 +4400,62 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 
 ---
 
-#### Step 20.5.D.4: Cross-zone content coordination + matrix verification {#step-20-5-d-4}
+#### Step 20.5.D.4: Queued-request UI mini-spike {#step-20-5-d-4}
 
-**Depends on:** #step-20-5-d-1 (the hook), #step-20-5-d-2, #step-20-5-d-3
+**Depends on:** #step-20-5-d-3 (the concrete Z5 button the spike designs against), #step-20-5-d-1 (`submitButtonMode` / the `queued` flag)
+
+**Status:** _not started._
+
+**Commit:** _spike — a [Step 20.5.A](#step-20-5-a) matrix update plus the vet surface; the message is set at execution time per the outcome._
+
+**References:** [#step-20-5-a] (the QUEUED_NEXT_TURN matrix row — the placeholder this spike replaces), [#step-20-5-d-1] (`deriveSubmitButtonMode` — where the Z5 reading lands), [D-T3-07] (queue-during-turn), [L02], [L06]
+
+**Scope.** A design-oriented mini-spike, not an implementation step. The matrix's QUEUED_NEXT_TURN row is a thin, never-vetted placeholder — "Submit visually marked 'will send on idle'" — and there is no design for the queued-request affordance: how a user sees, reviews, edits, or cancels a prompt queued while a turn is still running. [Step 20.5.D.1](#step-20-5-d-1) encoded the placeholder literally (a queued send shows a queued-Submit, overriding Stop); [Step 20.5.D.3](#step-20-5-d-3) wires the `submitButtonMode.queued` flag through but defers its distinct visual to this step. The spike designs the affordance, produces a surface the user can review and vet, and captures the decision back into the matrix so [Step 20.5.D.5](#step-20-5-d-5) wires a vetted design rather than a guess.
+
+**Design questions.**
+
+1. **Z5 — the queued Submit.** What is the queued visual (a badge, a count, a label change)? Does queuing a next send *override* Stop (the current literal-matrix encoding) or coexist with it — and if it overrides, how does the user still stop the running turn?
+2. **Where the queued prompt surfaces.** A queued prompt has *content* (text + atoms). Does it surface in the bottom pane (the prompt-entry area — a "pending" strip / stack), as a ghost row in the transcript (top pane), or both? The QUEUED_NEXT_TURN matrix row names no zone for the queued content itself.
+3. **Acting on a queued prompt.** Review / edit / cancel — what affordances, and where?
+4. **Multiple queued sends.** `queuedSends` is a count; is `N > 1` reachable, and if so does the UI represent an ordered, individually-cancellable queue or just a single "pending"?
+
+**Data-model flag.** `CodeSessionSnapshot.queuedSends` is a bare `number` — a count, not the queued payloads. Any affordance that shows / edits / cancels the *pending prompt* needs the queued text + atoms retained in the reducer, not just a tally. The spike must determine whether the chosen design needs that, and if so draft the data-model change (a reducer / state change — possibly a follow-on sub-step, possibly folded into [Step 20.5.D.5](#step-20-5-d-5)).
+
+**Deliverable.**
+
+- A **vettable surface** — a gallery scenario or an HMR-able mockup of the queued states — so the user can review how it looks, feels, and works.
+- A **captured decision**: the [Step 20.5.A](#step-20-5-a) matrix's QUEUED_NEXT_TURN row rewritten from placeholder to a real spec (Z5 + the zone(s) that host the queued content), and the `deriveSubmitButtonMode` reading confirmed or revised (a one-line change in [`lifecycle-state.ts`](#step-20-5-d-1) if revised).
+- If the design needs queued payloads: the data-model change drafted (scope + where it lands).
+
+**Conformance.** Design + plan work; no production wiring beyond the vet surface. The matrix update is the load-bearing deliverable — [Step 20.5.D.5](#step-20-5-d-5) reads it.
+
+**Tasks.**
+
+- [ ] Investigate the queued-request affordance against the four design questions; sketch the options.
+- [ ] Build the vettable surface (gallery scenario / HMR mockup) covering the queued Z5 state and the queued-prompt content surface.
+- [ ] Determine whether the design needs queued *payloads* retained; if so, draft the data-model change.
+- [ ] User reviews and vets the surface.
+- [ ] Capture the decision — rewrite the 20.5.A QUEUED_NEXT_TURN matrix row from placeholder to spec; confirm or revise `deriveSubmitButtonMode`.
+
+**Checkpoint.**
+
+- [ ] The user has reviewed and vetted the queued-request design.
+- [ ] The 20.5.A matrix QUEUED_NEXT_TURN row is a real spec, not a placeholder.
+- [ ] [Step 20.5.D.5](#step-20-5-d-5) has no remaining queued-design decisions; any data-model prerequisite is drafted.
+
+---
+
+#### Step 20.5.D.5: Cross-zone content coordination + matrix verification {#step-20-5-d-5}
+
+**Depends on:** #step-20-5-d-1 (the hook), #step-20-5-d-2, #step-20-5-d-3, #step-20-5-d-4 (the queued-request design this step lands)
 
 **Status:** _not started._
 
 **Commit:** `feat(tide-rendering): cross-zone lifecycle coordination + matrix e2e`
 
-**References:** [#step-20-5-a] (the matrix — the full contract), [L02], [L06], [L23]
+**References:** [#step-20-5-a] (the matrix — the full contract), [#step-20-5-d-4] (the queued-request design), [L02], [L06], [L23]
 
-**Scope.** The remaining matrix-driven zones consume the hook: Z2's status bar (live counts → frozen during AWAITING_USER → "Restoring session…" during REPLAYING → "Disconnected" during TRANSPORT_DOWN) and Z4's prompt-entry footer (the phase indicators — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}"). This sub-step **begins with an audit**: the shipped `statusRow` (Z2) and the prompt-entry chrome already react to parts of the snapshot; reconcile what they do against the matrix and wire only the genuine gaps through `useLifecycleState()` ([L02] — no zone reads `phase` directly). Closes 20.5.D with the end-to-end matrix test — drive a fixture session through every distinct matrix row, assert each zone.
+**Scope.** The remaining matrix-driven zones consume the hook: Z2's status bar (live counts → frozen during AWAITING_USER → "Restoring session…" during REPLAYING → "Disconnected" during TRANSPORT_DOWN) and Z4's prompt-entry footer (the phase indicators — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}"). This sub-step **begins with an audit**: the shipped `statusRow` (Z2) and the prompt-entry chrome already react to parts of the snapshot; reconcile what they do against the matrix and wire only the genuine gaps through `useLifecycleState()` ([L02] — no zone reads `phase` directly). It also lands the **queued-request affordance** vetted in [Step 20.5.D.4](#step-20-5-d-4) — the queued Z5 visual and the queued-prompt content surface, plus any data-model change that spike scoped. Closes 20.5.D with the end-to-end matrix test — drive a fixture session through every distinct matrix row, assert each zone.
 
 **Conformance.** [L02] — zones read the matrix row via `useLifecycleState()`. [L06] — phase-driven appearance via CSS / DOM. [L23] — zone content swaps happen inside the stable slot DOM container; no remount.
 
@@ -4421,12 +4469,14 @@ The matrix is encoded literally in `deriveLifecycleSnapshot` — one switch, one
 
 - [ ] Audit the shipped Z2 (`statusRow`) and Z4 chrome against the matrix; record what already matches vs. the gaps.
 - [ ] Wire the gaps through `useLifecycleState()` — Z2 status-bar transitions, Z4 phase indicators.
+- [ ] Land the queued-request affordance per the [Step 20.5.D.4](#step-20-5-d-4) spike — the queued Z5 visual + the queued-prompt content surface (and any data-model change it scoped).
 - [ ] End-to-end matrix tests — every distinct matrix row.
 
 **Tests.**
 
 - [ ] Z2 shows live counts in STREAMING, frozen + "awaiting input" badge in AWAITING_USER, "Restoring session…" in REPLAYING, "Disconnected" in TRANSPORT_DOWN.
 - [ ] Z4 shows the matrix's phase indicator for AWAITING_FIRST_TOKEN / STREAMING / TOOL_WORK.
+- [ ] The queued-request affordance matches the [Step 20.5.D.4](#step-20-5-d-4) decision — the queued Z5 visual and the queued-prompt content surface.
 - [ ] End-to-end: a fixture session driven through each distinct matrix row paints each zone per the matrix.
 
 **Checkpoint.**
