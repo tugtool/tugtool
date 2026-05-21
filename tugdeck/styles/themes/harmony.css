@@ -293,9 +293,9 @@ body {
   --tug7-element-control-icon-filled-accent-rest: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-accent-hover: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-accent-active: --tug-color(indigo, i: 3, t: 100);
-  --tug7-element-control-border-filled-accent-rest: --tug-color(orange, i: 55, t: 35);
-  --tug7-element-control-border-filled-accent-hover: --tug-color(orange, i: 65, t: 40);
-  --tug7-element-control-border-filled-accent-active: --tug-color(orange, i: 90, t: 35);
+  --tug7-element-control-border-filled-accent-rest: --tug-color(orange, i: 55, t: 45);
+  --tug7-element-control-border-filled-accent-hover: --tug-color(orange, i: 55, t: 40);
+  --tug7-element-control-border-filled-accent-active: --tug-color(orange, i: 65, t: 60);
 
   /* Filled Action */
   --tug7-surface-control-primary-filled-action-rest: --tug-color(blue, i: 50, t: 45);
@@ -307,9 +307,9 @@ body {
   --tug7-element-control-icon-filled-action-rest: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-action-hover: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-action-active: --tug-color(indigo, i: 3, t: 100);
-  --tug7-element-control-border-filled-action-rest: --tug-color(blue, i: 55, t: 34);
-  --tug7-element-control-border-filled-action-hover: --tug-color(blue, i: 65, t: 40);
-  --tug7-element-control-border-filled-action-active: --tug-color(blue, i: 90, t: 35);
+  --tug7-element-control-border-filled-action-rest: --tug-color(blue, i: 50, t: 45);
+  --tug7-element-control-border-filled-action-hover: --tug-color(blue, i: 55, t: 40);
+  --tug7-element-control-border-filled-action-active: --tug-color(blue, i: 90, t: 50);
 
   /* Filled Danger */
   --tug7-surface-control-primary-filled-danger-rest: --tug-color(red, t: 45);
@@ -321,9 +321,9 @@ body {
   --tug7-element-control-icon-filled-danger-rest: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-danger-hover: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-danger-active: --tug-color(indigo, i: 3, t: 100);
-  --tug7-element-control-border-filled-danger-rest: --tug-color(red, i: 55, t: 33);
-  --tug7-element-control-border-filled-danger-hover: --tug-color(red, i: 65, t: 40);
-  --tug7-element-control-border-filled-danger-active: --tug-color(red, i: 90, t: 35);
+  --tug7-element-control-border-filled-danger-rest: --tug-color(red, t: 45);
+  --tug7-element-control-border-filled-danger-hover: --tug-color(red, i: 55, t: 40);
+  --tug7-element-control-border-filled-danger-active: --tug-color(red, i: 90, t: 50);
 
   /* Filled Agent */
   --tug7-surface-control-primary-filled-agent-rest: --tug-color(violet, t: 45);
@@ -349,8 +349,8 @@ body {
   --tug7-element-control-icon-filled-data-rest: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-data-hover: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-data-active: --tug-color(indigo, i: 3, t: 100);
-  --tug7-element-control-border-filled-data-rest: --tug-color(teal, i: 55, t: 35);
-  --tug7-element-control-border-filled-data-hover: --tug-color(teal, i: 65, t: 40);
+  --tug7-element-control-border-filled-data-rest: --tug-color(teal, t: 45);
+  --tug7-element-control-border-filled-data-hover: --tug-color(teal, i: 55, t: 40);
   --tug7-element-control-border-filled-data-active: --tug-color(teal, i: 90, t: 35);
 
   /* Filled Success */
