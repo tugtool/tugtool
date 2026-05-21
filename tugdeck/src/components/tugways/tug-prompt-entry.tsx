@@ -156,6 +156,15 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
  */
 const DEFAULT_ROUTE = "❯";
 
+/**
+ * Separator joining `sessionId` + `route` into the in-memory
+ * history-provider cache key. U+001F (ASCII Unit Separator) — a
+ * control character that cannot occur in a session id, so the two
+ * fields can never collide on a different split. An escape sequence,
+ * never a raw byte, so the source file stays plain text.
+ */
+const HISTORY_KEY_SEP = "\u001f";
+
 // ---------------------------------------------------------------------------
 // Preserved state shape + migration
 // ---------------------------------------------------------------------------
@@ -677,13 +686,13 @@ export const TugPromptEntry = React.forwardRef<
   );
 
   // History keys on the session's id. The provider cache is keyed by
-  // `${sessionId} ${route}` so a route change for the same
+  // `${sessionId}${HISTORY_KEY_SEP}${route}` so a route change for the same
   // session reuses the cached provider (preserving its cursor + draft
   // state).
   const historyProvidersRef = useRef<Record<string, HistoryProvider>>({});
   const currentHistoryProvider = useMemo<HistoryProvider>(() => {
     const sessionId = snap.tugSessionId;
-    const cacheKey = `${sessionId} ${route}`;
+    const cacheKey = `${sessionId}${HISTORY_KEY_SEP}${route}`;
     const cached = historyProvidersRef.current[cacheKey];
     if (cached) return cached;
     const fresh = historyStore.createRouteProvider(sessionId, route);
