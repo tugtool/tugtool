@@ -30,7 +30,8 @@
  * Plus a raw-shape census: top-level entry types, assistant
  * `stop_reason` distribution (W1), trailing user-only orphans (W2),
  * `parent_tool_use_id` sessions (W3), compaction / overloaded_error /
- * interrupt-marker sessions (W5).
+ * interrupt-marker sessions (W5), and string-valued `message.content`
+ * split genuine-submission vs slash-command scaffolding (W5a).
  *
  * Each session is translated twice — with `synthesizeDanglingTerminal`
  * off (the reload-mid-stream default) and on (the cold-resume path,
@@ -69,10 +70,10 @@ for (let i = 2; i < process.argv.length; i += 1) {
   else if (arg === "--limit") sessionLimit = Number(process.argv[++i]);
 }
 
-/** Assistant stop-reasons that genuinely end a turn. The translator
- *  only treats `end_turn` as a cycle terminal — the rest are the W1
- *  hypothesis. `tool_use` is a NON-terminal continuation (the cycle
- *  legitimately stays open for the tool_result). */
+/** Assistant stop-reasons that close a cycle cleanly. As of
+ *  Step 20.5.B.1.a the translator recognises all four (`replay.ts`
+ *  `TERMINAL_STOP_REASONS`); `tool_use` / `pause_turn` / a null
+ *  stop_reason are non-terminal continuations. */
 const CLEAN_TERMINAL_STOPS = new Set([
   "end_turn",
   "stop_sequence",
@@ -81,6 +82,31 @@ const CLEAN_TERMINAL_STOPS = new Set([
 ]);
 
 const INTERRUPT_MARKER = "[Request interrupted by user]";
+
+/** Bare-string `message.content` prefixes Claude Code uses for slash-
+ *  command scaffolding — the translator skips these (mirrors
+ *  `replay.ts` `COMMAND_SCAFFOLDING_PREFIXES`). Re-stated here rather
+ *  than imported: the raw scan is deliberately independent of the
+ *  translator, so a drift between the two is itself observable. */
+const COMMAND_SCAFFOLDING_PREFIXES = [
+  "<command-name>",
+  "<command-message>",
+  "<command-args>",
+  "<local-command-stdout>",
+  "<local-command-caveat>",
+];
+
+/** True when a bare-string `user` `message.content` is Claude Code
+ *  scaffolding (slash-command markers, or the `isCompactSummary`
+ *  continuation block) rather than a genuine submission. */
+function isScaffoldingString(
+  entry: Record<string, unknown>,
+  content: string,
+): boolean {
+  if (entry.isCompactSummary === true) return true;
+  const trimmed = content.trimStart();
+  return COMMAND_SCAFFOLDING_PREFIXES.some((p) => trimmed.startsWith(p));
+}
 
 // ---------------------------------------------------------------------------
 // Corpus discovery
@@ -130,6 +156,12 @@ interface RawScan {
   hasCompaction: boolean;
   hasOverloadedError: boolean;
   hasInterruptMarker: boolean;
+  /** `user` entries whose `message.content` is a bare string ([W5a]). */
+  stringContentUserEntries: number;
+  /** Of `stringContentUserEntries`, how many are Claude Code
+   *  scaffolding the translator skips — the rest are genuine
+   *  submissions normalised to text. */
+  stringContentScaffolding: number;
   malformedLines: number;
   lineCount: number;
 }
@@ -147,6 +179,8 @@ function rawScan(text: string): RawScan {
     hasCompaction: /"isCompactSummary"|"subtype":"compact/.test(text),
     hasOverloadedError: text.includes('"overloaded_error"'),
     hasInterruptMarker: text.includes(INTERRUPT_MARKER),
+    stringContentUserEntries: 0,
+    stringContentScaffolding: 0,
     malformedLines: 0,
     lineCount: 0,
   };
@@ -171,13 +205,32 @@ function rawScan(text: string): RawScan {
         entry.message !== null && typeof entry.message === "object"
           ? (entry.message as Record<string, unknown>)
           : null;
-      const content = Array.isArray(message?.content) ? message!.content : [];
-      const hasText = content.some(
-        (b) =>
-          b !== null &&
-          typeof b === "object" &&
-          (b as Record<string, unknown>).type === "text",
-      );
+      const rawContent = message?.content;
+      // `hasText` drives the trailing-orphan (W2) classification: a
+      // trailing user entry "with text" is a genuine submission with
+      // no response. Account for the [W5a] bare-string shape — a
+      // genuine string submission has text; scaffolding does not count
+      // as a transcript submission.
+      let hasText = false;
+      if (typeof rawContent === "string") {
+        if (type === "user") {
+          scan.stringContentUserEntries += 1;
+          if (isScaffoldingString(entry, rawContent)) {
+            scan.stringContentScaffolding += 1;
+          } else {
+            hasText = rawContent.trim().length > 0;
+          }
+        } else {
+          hasText = rawContent.trim().length > 0;
+        }
+      } else if (Array.isArray(rawContent)) {
+        hasText = rawContent.some(
+          (b) =>
+            b !== null &&
+            typeof b === "object" &&
+            (b as Record<string, unknown>).type === "text",
+        );
+      }
       lastUserAssistant = { role: type, hasText };
       if (type === "assistant") {
         const stop =
@@ -327,8 +380,14 @@ async function main(): Promise<void> {
   let w3ParentToolUse = 0;
   let w5Compaction = 0;
   let w5Overloaded = 0;
+  const w5CompactionExamples: string[] = [];
+  const w5OverloadedExamples: string[] = [];
   let interruptMarker = 0;
   let malformedSessions = 0;
+  // [W5a] string-valued message.content census.
+  let stringContentUserEntries = 0;
+  let stringContentScaffolding = 0;
+  let sessionsWithGenuineStringPrompt = 0;
 
   let done = 0;
   for (const path of toProcess) {
@@ -361,10 +420,21 @@ async function main(): Promise<void> {
     mergeCounts(stopReasons, scan.stopReasons);
     if (scan.trailingUserOrphan) record(w2TrailingOrphan, "w2", id);
     if (scan.hasParentToolUseId) w3ParentToolUse += 1;
-    if (scan.hasCompaction) w5Compaction += 1;
-    if (scan.hasOverloadedError) w5Overloaded += 1;
+    if (scan.hasCompaction) {
+      w5Compaction += 1;
+      if (w5CompactionExamples.length < 10) w5CompactionExamples.push(id);
+    }
+    if (scan.hasOverloadedError) {
+      w5Overloaded += 1;
+      if (w5OverloadedExamples.length < 10) w5OverloadedExamples.push(id);
+    }
     if (scan.hasInterruptMarker) interruptMarker += 1;
     if (scan.malformedLines > 0) malformedSessions += 1;
+    stringContentUserEntries += scan.stringContentUserEntries;
+    stringContentScaffolding += scan.stringContentScaffolding;
+    if (scan.stringContentUserEntries - scan.stringContentScaffolding > 0) {
+      sessionsWithGenuineStringPrompt += 1;
+    }
 
     if (size > translateCapBytes) {
       rawOnly += 1;
@@ -492,15 +562,37 @@ async function main(): Promise<void> {
   section("[W3 / W5] raw-shape census");
   console.log(`  [W3] sessions with a non-null parent_tool_use_id (subagent nesting) : ${w3ParentToolUse} (${pct(w3ParentToolUse, toProcess.length)})`);
   console.log(`  [W5] sessions with compaction markers                             : ${w5Compaction}`);
+  if (w5CompactionExamples.length > 0) {
+    console.log(`       e.g. ${w5CompactionExamples.join(", ")}`);
+  }
   console.log(`  [W5] sessions with overloaded_error blocks                        : ${w5Overloaded}`);
+  if (w5OverloadedExamples.length > 0) {
+    console.log(`       e.g. ${w5OverloadedExamples.join(", ")}`);
+  }
   console.log(`       sessions with the "${INTERRUPT_MARKER}" marker      : ${interruptMarker}`);
+
+  section("[W5a] string-valued user message.content");
+  console.log("  Claude Code persists a plain-text user message as a bare string.");
+  console.log("  The translator normalises a genuine submission to text and skips");
+  console.log("  slash-command / compaction scaffolding (replay.ts `contentBlocks` /");
+  console.log("  `isNonSubmissionUserString`). Pre-fix, every string-content entry");
+  console.log("  was char-iterated to nothing — genuine prompts silently dropped.");
+  const genuineStringEntries =
+    stringContentUserEntries - stringContentScaffolding;
+  console.log(`  total string-content user entries           : ${stringContentUserEntries}`);
+  console.log(`    genuine submissions (normalised to text)  : ${genuineStringEntries}`);
+  console.log(`    command/compaction scaffolding (skipped)  : ${stringContentScaffolding}`);
+  console.log(`  sessions carrying >=1 genuine string prompt : ${sessionsWithGenuineStringPrompt} (${pct(sessionsWithGenuineStringPrompt, toProcess.length)})`);
 
   section("assistant stop_reason distribution (occurrences across all entries)");
   for (const [reason, n] of [...stopReasons.entries()].sort((a, b) => b[1] - a[1])) {
     const flag = CLEAN_TERMINAL_STOPS.has(reason)
-      ? reason === "end_turn" ? "" : "  ← clean terminal NOT recognised by translator (W1)"
-      : reason === "tool_use" ? "  (non-terminal continuation)"
-      : "  ← unrecognised";
+      ? "  (clean terminal — closes a cycle)"
+      : reason === "tool_use" || reason === "pause_turn"
+        ? "  (non-terminal continuation)"
+        : reason === "(null)"
+          ? "  (non-terminal — truncated mid-stream)"
+          : "  ← unrecognised";
     console.log(`  ${reason.padEnd(16)} ${String(n).padStart(8)}${flag}`);
   }
 

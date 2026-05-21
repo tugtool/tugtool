@@ -13,6 +13,13 @@
  * (the same numbers in the Sub-step J spec). Before the fix the
  * fourth turn's `result.usage` sum read 188.8K; the model reads the
  * honest 37.2K.
+ *
+ * The `/compact` negative-delta path is additionally pinned against
+ * captured session `2fc6b18d` ([W5c]), whose first compaction
+ * boundary drops the resident window 900517 -> 36391 (its
+ * `compactMetadata` reads preTokens 901438 / postTokens 4696):
+ * `deriveContextWindows` reports the honest -864126 per-turn delta,
+ * unclamped.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -163,6 +170,33 @@ describe("deriveContextWindows", () => {
     expect(steps.map((s) => s.perTurn)).toEqual([181425, -140000, 5000]);
     const sum = steps.reduce((acc, s) => acc + s.perTurn, 0);
     expect(sessionInit + sum).toBe(65000);
+  });
+
+  it("pins a real /compact window drop from captured session 2fc6b18d ([W5c])", () => {
+    // The end_turn resident windows straddling the first compaction
+    // boundary of captured session 2fc6b18d (compactMetadata:
+    // preTokens 901438 -> postTokens 4696):
+    //   pre-compaction window  900517   <- prevWindow seed here
+    //   post-compaction turn 1  36391   (perTurn -864126)
+    //   turn 2                 100468   (perTurn  +64077)
+    //   turn 3                 126616   (perTurn  +26148)
+    //   turn 4                 131877   (perTurn   +5261)
+    //   turn 5                 134284   (perTurn   +2407)
+    // The compaction turn's delta is a large honest negative — no
+    // clamp — and the telescoping identity still closes exactly.
+    const preCompactionWindow = 900517;
+    const steps = deriveContextWindows(
+      [win(36391), win(100468), win(126616), win(131877), win(134284)],
+      preCompactionWindow,
+    );
+    expect(steps.map((s) => s.window)).toEqual([
+      36391, 100468, 126616, 131877, 134284,
+    ]);
+    expect(steps.map((s) => s.perTurn)).toEqual([
+      -864126, 64077, 26148, 5261, 2407,
+    ]);
+    const sum = steps.reduce((acc, s) => acc + s.perTurn, 0);
+    expect(preCompactionWindow + sum).toBe(134284);
   });
 
   it("an empty transcript yields no steps", () => {

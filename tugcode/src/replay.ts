@@ -78,6 +78,34 @@ const IPC_VERSION = 2;
 const DEFAULT_BATCH_SIZE = 16;
 
 /**
+ * One content block inside a JSONL `message.content` array. Fields are
+ * optional and loosely typed — Claude's per-session JSONL is an
+ * internal persistence format whose shape evolves across releases.
+ *
+ * Content-block `type` values seen across surveyed JSONLs:
+ *   - `text`        — assistant or user text
+ *   - `tool_use`    — assistant tool invocation
+ *   - `tool_result` — user-side tool response, keyed by tool_use_id
+ *   - `thinking`    — extended-thinking content
+ *   - `image`       — base64-encoded image attachment in user submission
+ */
+export interface JsonlContentBlock {
+  type?: string;
+  text?: string;
+  thinking?: string;
+  // tool_use blocks
+  id?: string;
+  name?: string;
+  input?: unknown;
+  // tool_result blocks
+  tool_use_id?: string;
+  is_error?: boolean;
+  content?: unknown;
+  // image blocks
+  source?: { type?: string; media_type?: string; data?: string };
+}
+
+/**
  * Permissive shape for a single JSONL line, covering the variants
  * observed across surveyed JSONL files. Fields are optional and
  * loosely typed because Claude's per-session JSONL is an internal
@@ -99,13 +127,6 @@ const DEFAULT_BATCH_SIZE = 16;
  *   - `ai-title`                — auto-generated session title
  *   - `system`                  — `system_init`-style bookkeeping
  *   - `permission-mode`         — UI-visible at the chrome layer
- *
- * Content-block `type` values inside `message.content[]`:
- *   - `text`        — assistant or user text
- *   - `tool_use`    — assistant tool invocation
- *   - `tool_result` — user-side tool response, keyed by tool_use_id
- *   - `thinking`    — extended-thinking content
- *   - `image`       — base64-encoded image attachment in user submission
  */
 export interface JsonlEntry {
   type?: string;
@@ -114,25 +135,27 @@ export interface JsonlEntry {
     role?: string;
     model?: string;
     stop_reason?: string | null;
-    content?: ReadonlyArray<{
-      type?: string;
-      text?: string;
-      thinking?: string;
-      // tool_use blocks
-      id?: string;
-      name?: string;
-      input?: unknown;
-      // tool_result blocks
-      tool_use_id?: string;
-      is_error?: boolean;
-      content?: unknown;
-      // image blocks
-      source?: { type?: string; media_type?: string; data?: string };
-    }>;
+    /**
+     * Message content. Usually an array of {@link JsonlContentBlock}s,
+     * but Claude Code persists a plain-text message — a `user`
+     * submission with no attachments, or (defensively) an `assistant`
+     * message — as a bare STRING. {@link contentBlocks} normalises
+     * both shapes before the per-entry content walk.
+     */
+    content?: string | ReadonlyArray<JsonlContentBlock>;
   };
   uuid?: string;
   parentUuid?: string | null;
   timestamp?: string;
+  /**
+   * Set by Claude Code on the `user` JSONL entry carrying a `/compact`
+   * continuation summary ("This session is being continued from a
+   * previous conversation…"). The translator skips these — the summary
+   * is CLI-internal continuation context, not a transcript-visible
+   * user submission (Claude Code's own UI hides it behind a "Compacted"
+   * marker too). See {@link isNonSubmissionUserString}.
+   */
+  isCompactSummary?: boolean;
   /**
    * Structured tool result, sibling to `message.content`. Claude Code
    * persists this as the camelCase `toolUseResult` field on `user`
@@ -339,6 +362,71 @@ const TERMINAL_STOP_REASONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Normalise a JSONL `message.content` field into a block array.
+ *
+ * Claude Code persists a plain-text message as a bare STRING
+ * `message.content`, not the usual `[{ type: "text", … }]` array — a
+ * `user` submission with no attachments is the common case (~280 such
+ * entries across the surveyed corpus). Iterating that string with the
+ * per-entry `for…of` content walk yields its *characters*, each a
+ * non-block that falls through, so the text is silently dropped. (The
+ * assistant side is block-array in every surveyed JSONL; the string
+ * branch covers it defensively.) Wrapping a string as one synthetic
+ * `text` block lets both content walks treat it uniformly. A non-string
+ * `content` (the array shape, or absent) passes through unchanged.
+ */
+function contentBlocks(
+  rawContent: string | ReadonlyArray<JsonlContentBlock> | undefined,
+): ReadonlyArray<JsonlContentBlock> {
+  if (typeof rawContent === "string") {
+    return [{ type: "text", text: rawContent }];
+  }
+  return rawContent ?? [];
+}
+
+/**
+ * Tag prefixes Claude Code wraps slash-command scaffolding in when it
+ * persists the interaction as `user` JSONL entries: the `<command-name>`
+ * / `<command-message>` / `<command-args>` markers of a slash
+ * invocation and the `<local-command-stdout>` / `<local-command-caveat>`
+ * output blocks. These are CLI-internal bookkeeping — the expanded
+ * skill body that follows a slash command is a separate ordinary
+ * `user` entry that replays on its own.
+ */
+const COMMAND_SCAFFOLDING_PREFIXES: readonly string[] = [
+  "<command-name>",
+  "<command-message>",
+  "<command-args>",
+  "<local-command-stdout>",
+  "<local-command-caveat>",
+];
+
+/**
+ * True when a `user` entry's bare-string `message.content` is NOT a
+ * genuine transcript submission, so the translator skips it rather
+ * than surfacing it as a turn:
+ *
+ *   - the `isCompactSummary` continuation block (the "This session is
+ *     being continued…" summary a `/compact` injects) — CLI-internal
+ *     continuation context, hidden in Claude Code's own UI;
+ *   - slash-command scaffolding ({@link COMMAND_SCAFFOLDING_PREFIXES}).
+ *
+ * Surfacing these would inject junk orphan turns into a resumed
+ * transcript (a `/compact` alone persists four-plus consecutive
+ * scaffolding strings). A genuine plain-text submission returns
+ * `false` and is normalised to a text block by {@link contentBlocks}.
+ */
+function isNonSubmissionUserString(entry: JsonlEntry, text: string): boolean {
+  if (entry.isCompactSummary === true) {
+    return true;
+  }
+  const trimmed = text.trimStart();
+  return COMMAND_SCAFFOLDING_PREFIXES.some((prefix) =>
+    trimmed.startsWith(prefix),
+  );
+}
+
+/**
  * Per-call options for {@link translateJsonlEntry}.
  *
  * Threaded by the session-level loop when peek-ahead detects shape
@@ -377,7 +465,12 @@ export interface TranslateJsonlEntryOptions {
  *   - A `user` entry with `text` content captures into
  *     `ctx.pendingUserText`; emits nothing yet (the cycle's user
  *     side appears on the wire once the first `assistant` entry of
- *     the cycle binds it to claude's `message.id`).
+ *     the cycle binds it to claude's `message.id`). `message.content`
+ *     may be a bare string (a plain-text submission persisted without
+ *     the block-array wrapper) — {@link contentBlocks} normalises it;
+ *     a bare-string entry that is Claude Code scaffolding (slash-
+ *     command markers, the `/compact` summary) is skipped outright
+ *     (see {@link isNonSubmissionUserString}).
  *   - A `user` entry with `tool_result` blocks emits one
  *     `tool_result` outbound per block immediately. The reducer
  *     pairs them with the prior `tool_use` by `tool_use_id`; no
@@ -492,7 +585,21 @@ function handleUserEntry(
   entry: JsonlEntry,
   ctx: TranslateContext,
 ): OutboundMessage[] {
-  const content = entry.message?.content ?? [];
+  const rawContent = entry.message?.content;
+  // A `user` entry persisted with a bare-string `message.content` is
+  // either a plain-text submission (no attachments) or Claude Code
+  // command scaffolding. Skip the scaffolding outright — the
+  // `<command-*>` / `<local-command-*>` markers and the `/compact`
+  // continuation summary are CLI-internal, not transcript submissions.
+  // A genuine string submission falls through to `contentBlocks`,
+  // which wraps it as one synthetic text block for the walk below.
+  if (
+    typeof rawContent === "string" &&
+    isNonSubmissionUserString(entry, rawContent)
+  ) {
+    return [];
+  }
+  const content = contentBlocks(rawContent);
   // A user entry can carry `text` blocks (a fresh user submission)
   // or `tool_result` blocks (a response to a prior tool_use). The two
   // cases never mix in surveyed JSONLs — but the translator treats
@@ -670,7 +777,7 @@ function handleAssistantEntry(
   ctx: TranslateContext,
   options?: TranslateJsonlEntryOptions,
 ): OutboundMessage[] {
-  const content = entry.message?.content ?? [];
+  const content = contentBlocks(entry.message?.content);
   const stopReason = entry.message?.stop_reason ?? null;
   const entryMsgId =
     typeof entry.message?.id === "string" ? entry.message.id : "";

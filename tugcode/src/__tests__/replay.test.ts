@@ -13,6 +13,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  type JsonlContentBlock,
   type JsonlEntry,
   type ReplayInput,
   type ReplayTelemetry,
@@ -982,9 +983,7 @@ describe("translateJsonlSession — unknown shapes", () => {
         msgId: "m1",
         stopReason: "end_turn",
         content: [
-          { type: "future_block_2030", text: "ignored" } as NonNullable<
-            NonNullable<JsonlEntry["message"]>["content"]
-          >[number],
+          { type: "future_block_2030", text: "ignored" } as JsonlContentBlock,
           { type: "text", text: "real reply" },
         ],
       }),

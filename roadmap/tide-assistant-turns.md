@@ -3853,9 +3853,10 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 | A clean non-`end_turn` terminal (`stop_sequence` / `max_tokens` / `refusal`) | ~ → ✓ | mislabelled `interrupted` today; clean-terminal recognition fixes it ([W1] / [Step 20.5.B.1.a](#step-20-5-b-1-a)) |
 | Permission / question records | ✗ | `control_request_forward` is gate-suppressed during the replay window; the decision is not re-emitted as a `ControlRequestRecord` ([W4]) |
 | Per-turn telemetry (cost / 4-clock timing) | ✓ _pending_ | inlined on `turn_complete` from the SessionLedger; the consumer side is ready, persistence is [#step-20-3-4] |
-| Compaction summary text | ✗ → ✓ | string-valued `message.content` dropped today ([W5] / [Step 20.5.B.1.b](#step-20-5-b-1-b)) |
-| Context-window numbers | ✓ | derived from per-turn `usage`; `deriveContextWindows` carries signed deltas, incl. a `/compact` negative |
-| Transient API errors (`overloaded_error`) | ✗ _(by design)_ | a `system` / `api_error` entry, intentionally skipped — a 529 is transient ([W5]) |
+| Plain-text user prompts (string `message.content`) | ✗ → ✓ | Claude Code persists a plain prompt (no attachments) as a bare-string `message.content`; the content walk iterated the string's *characters* and dropped it. Normalised to one text block ([W5a] / [Step 20.5.B.1.b](#step-20-5-b-1-b)) — the corpus carries 899 such genuine prompts across 23% of sessions |
+| `/compact` summary + slash-command scaffolding | ✗ _(by design)_ | the `isCompactSummary` continuation block and `<command-*>` / `<local-command-*>` string entries are Claude-Code-internal bookkeeping, not transcript submissions — recognised and skipped, not surfaced ([W5a]); a post-`/compact` continuation turn therefore replays with an empty user message |
+| Context-window numbers | ✓ | derived from per-turn `usage`; `deriveContextWindows` carries signed deltas, incl. a `/compact` negative — pinned against a real captured compaction drop ([W5c]) |
+| Transient API errors (`overloaded_error`) | ✗ _(by design)_ | a `system` / `api_error` entry (`error.status: 529`), intentionally skipped — a 529 is transient: the turn either recovered or is genuinely dangling (handled by [replay-1]) ([W5b]) |
 
 A committed turn may therefore have **empty assistant content** — a flushed trailing-orphan ([W2]) is a valid COMPLETE turn whose user message drew no response. The COMPLETE row of the matrix below (Z1's trailing `BlockCopyButton`, keyed off the assistant text) must tolerate that: an empty `bodyText` suppresses the copy button, the row otherwise renders normally.
 
@@ -3989,7 +3990,7 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **Depends on:** #step-20-5-b ([replay-1] / [replay-2] — the replay end-state fixes this hardens on top of)
 
-**Status:** _audit complete; planning closed. The corpus audit harness was built, run against 282 real sessions, and the findings recorded + triaged below. Headline: the translator's structural contract holds (zero I1/I3/I4/I5 violations on 267 translated sessions); the real gaps are [W2] (~3% of sessions silently drop a trailing user prompt) and [W1] last-turn (`stop_sequence` mislabel, rare); [W1]-cascade and [W3]-as-framed are not real. The fixes are authored as [Step 20.5.B.1.a](#step-20-5-b-1-a) ([W2] / [W1]) and [Step 20.5.B.1.b](#step-20-5-b-1-b) ([W5]); the [Step 20.5.A](#step-20-5-a) replay-fidelity matrix landed. This step closes when 20.5.B.1.a / .b land._
+**Status:** _**complete.** The corpus audit harness was built, run against the real session corpus, and the findings recorded + triaged below. Headline: the translator's structural contract holds (zero I1/I3/I4/I5 violations on 267 translated sessions); the real gaps were [W2] (~3% of sessions silently drop a trailing user prompt), [W1] last-turn (`stop_sequence` mislabel, rare), and [W5a] — which the [Step 20.5.B.1.b](#step-20-5-b-1-b) investigation found is **far broader than the audit's compaction-summary hypothesis**: Claude Code persists every plain-text prompt as a bare string, and 899 such genuine prompts across 23% of sessions were char-iterated to nothing on replay. [W1]-cascade and [W3]-as-framed are not real. The fixes landed as [Step 20.5.B.1.a](#step-20-5-b-1-a) ([W2] EOF orphan flush / [W1] clean-terminal recognition) and [Step 20.5.B.1.b](#step-20-5-b-1-b) ([W5a] string-content normalisation; [W5b] / [W5c] documented + pinned); the [Step 20.5.A](#step-20-5-a) replay-fidelity matrix landed and was corrected. Both sub-steps complete — this step is closed._
 
 **Commit:** `feat(tide-rendering): replay-fidelity corpus audit harness`
 
@@ -4103,47 +4104,47 @@ These gaps are invisible at the [Step 20.5.A](#step-20-5-a) spec level — 20.5.
 
 **Depends on:** #step-20-5-b-1 (the corpus audit — [W5])
 
-**Status:** _not started._
+**Status:** _complete. The [W5a] investigation found the gap is far broader than the audit's "compaction summary" framing: Claude Code persists **every plain-text user submission** (one with no attachments) as a bare-string `message.content` — the extended corpus audit counts **899 such genuine prompts across 66 sessions (23%)**, all silently char-iterated to nothing on replay today. Fix landed translator-side: `contentBlocks` normalises a bare-string `message.content` into one synthetic text block; `isNonSubmissionUserString` recognises Claude Code scaffolding (the `<command-*>` / `<local-command-*>` slash-command markers + the `isCompactSummary` continuation block, 789 corpus entries) and the translator skips it — genuine prompts replay, scaffolding does not surface as junk turns. The skip-scaffolding behaviour was a user decision (the literal "treat every string as text" injects 4–5 orphan turns per `/compact`). [W5b] (`overloaded_error` skipped by design) is recorded in the [Step 20.5.A](#step-20-5-a) replay-fidelity matrix; [W5c] — `deriveContextWindows` was already correct, now pinned against a real captured `/compact` window drop. New `replay-string-content.test.ts` (11 cases) + a `deriveContextWindows` pin in `end-state.test.ts`. `tsc --noEmit` clean (tugcode + tugdeck); `bun test` green; the re-run corpus audit's new [W5a] census quantifies the shape and its stale [W1] `stop_reason` annotation is refreshed._
 
-**Commit:** `fix(replay): handle string-valued message.content (compaction summary)`
+**Commit:** `fix(replay): normalise string-valued message.content`
 
 **References:** [#step-20-5-b-1] ([W5]), [#step-20-3] (`deriveContextWindows` — the per-turn context-window walk)
 
-**Scope.** The corpus audit flagged 8 sessions with compaction markers and 6 with `overloaded_error` blocks; the translator threw on none, but structural invariants do not verify *semantic* correctness. Inspecting the real shapes found one real bug and one acceptable-as-is case.
+**Scope.** The corpus audit flagged compaction / `overloaded_error` sessions; the translator threw on none, but structural invariants do not verify *semantic* correctness. Inspecting the real shapes found one real bug (broader than the audit hypothesis) and two acceptable-as-is cases.
 
-**[W5a] — string-valued `message.content` drops the compaction summary.** A `/compact` continuation entry is a `type: "user"` entry whose `message.content` is a **plain string** (`"This session is being continued from a previous conversation…"`), not the usual `content: [{ type: "text", … }]` array. `handleUserEntry` does `for (const block of content)` — iterating a string yields its *characters*, each a non-block that falls through — so the summary text is silently dropped and the resumed transcript's post-compaction user message is empty. No crash (matches the audit's zero `[I3]` throws), but real data loss. _Fix:_ `handleUserEntry` (and, defensively, `translateJsonlEntry`'s assistant branch) must handle `typeof message.content === "string"` — treat the whole string as the entry's text. A one-branch normalisation at the head of each content walk.
+**[W5a] — string-valued `message.content` is silently dropped.** Claude Code persists a plain-text message as a bare **string** `message.content`, not the usual `content: [{ type: "text", … }]` array — a `user` submission with no attachments is the common case, and a `/compact` continuation summary is one too. `handleUserEntry` did `for (const block of content)` — iterating a string yields its *characters*, each a non-block that falls through — so the text was silently dropped. No crash (matches the audit's zero `[I3]` throws), but real data loss. The audit hypothesised this as a compaction-summary edge case (~8 sessions); inspecting the corpus showed it is **the persistence shape for ordinary prompts** — 899 genuine string submissions, 789 string scaffolding entries (slash-command `<command-*>` / `<local-command-*>` markers, `isCompactSummary`). _Fix:_ `contentBlocks` (`replay.ts`) normalises a bare-string `message.content` into one synthetic `text` block, used by both the `user` and (defensively) the `assistant` content walks; `isNonSubmissionUserString` recognises the scaffolding shapes so the translator skips them. _Decision (user):_ surface genuine prompts, skip scaffolding — the literal "treat every string as text" would inject 4–5 orphan-interrupted turns per `/compact` from its consecutive scaffolding cluster (summary + caveat + command marker + `Compacted` stdout). A post-`/compact` continuation turn therefore replays with an empty user message — consistent with Claude Code's own UI, which hides the summary.
 
-**[W5b] — `overloaded_error` is a skipped `system` entry — acceptable, to be documented.** An API overload surfaces as a `type: "system"`, `subtype: "api_error"` entry (`error.status: 529`) — already in `SKIPPED_TOP_LEVEL_TYPES`, so replay drops it. A 529 is transient: the turn either recovered (its content is in the following assistant entries) or is genuinely dangling (handled by [replay-1]). Confirm this is intended and record it in [Step 20.5.A](#step-20-5-a)'s replay-fidelity matrix rather than surfacing transient infrastructure errors in a resumed transcript.
+**[W5b] — `overloaded_error` is a skipped `system` entry — acceptable, documented.** An API overload surfaces as a `type: "system"`, `subtype: "api_error"` entry (`error.status: 529`, with `retryAttempt` / `retryInMs`) — already in `SKIPPED_TOP_LEVEL_TYPES`, so replay drops it. A 529 is transient: the turn either recovered (its content is in the following assistant entries) or is genuinely dangling (handled by [replay-1]). Confirmed intended; recorded in [Step 20.5.A](#step-20-5-a)'s replay-fidelity matrix rather than surfacing transient infrastructure errors in a resumed transcript. No code change.
 
-**[W5c] — context-window negative delta on `/compact`.** A compaction shrinks the resident context window; the next turn's `usage` is much smaller, so its per-turn delta is negative. `deriveContextWindows` (`end-state.ts`) already documents signed deltas ("a `/compact` that shrinks it is an honest negative") — expected to be correct, but no test pins it against a real post-compaction `usage` sequence. Add that pin.
+**[W5c] — context-window negative delta on `/compact`.** A compaction shrinks the resident context window; the next turn's `usage` is much smaller, so its per-turn delta is negative. `deriveContextWindows` (`end-state.ts`) already documents and computes signed deltas correctly ("a `/compact` that shrinks it is an honest negative") — but no test pinned it against a real post-compaction `usage` sequence. Pin added; no code change.
 
-**Conformance.** `tugcode/src/replay.ts` for [W5a]; a doc note + a test for [W5b] / [W5c]. No reducer change.
+**Conformance.** `tugcode/src/replay.ts` for [W5a]; a census extension for the harness; a doc note (the 20.5.A matrix) + a test for [W5b] / [W5c]. No reducer change.
 
 **Artifacts.**
 
-- `tugcode/scripts/replay-corpus-audit.ts` — extend the census to surface compaction / overload example session ids and to flag string-valued `message.content`.
-- `tugcode/src/replay.ts` — string-content normalisation in the content walks ([W5a]).
-- `tugcode/src/__tests__/replay-compaction.test.ts` — _new_ — a compaction-continuation fixture (string `content`); assert the summary text reaches `user_message_replay`.
-- `tugdeck/src/lib/code-session-store/__tests__/` — a `deriveContextWindows` pin over a post-compaction negative-delta `usage` sequence ([W5c]).
+- `tugcode/src/replay.ts` — `JsonlContentBlock` extracted as a named type; `JsonlEntry.message.content` widened to `string | ReadonlyArray<JsonlContentBlock>`; `JsonlEntry.isCompactSummary`; `contentBlocks` normaliser; `COMMAND_SCAFFOLDING_PREFIXES` + `isNonSubmissionUserString`; `handleUserEntry` / `handleAssistantEntry` route through `contentBlocks` ([W5a]).
+- `tugcode/scripts/replay-corpus-audit.ts` — `[W5a]` string-content census (genuine vs scaffolding); compaction / overload example session ids; refreshed stop-reason annotation; raw-scan `hasText` made string-aware so the W2 trailing-orphan census counts a trailing string prompt.
+- `tugcode/src/__tests__/replay-string-content.test.ts` — _new_ — genuine string prompt round-trips; each scaffolding prefix + `isCompactSummary` is skipped; a full `/compact` sequence yields no junk turns; defensive assistant string content.
+- `tugdeck/src/lib/code-session-store/__tests__/end-state.test.ts` — a `deriveContextWindows` pin over the real post-`/compact` negative-delta sequence of captured session `2fc6b18d` ([W5c]).
 
 **Tasks.**
 
-- [ ] Extend the corpus harness — compaction / overload example ids; a string-`content` flag; refresh the now-stale `stop_reason` annotation (the translator recognises `stop_sequence` / `max_tokens` / `refusal` as clean terminals as of [Step 20.5.B.1.a](#step-20-5-b-1-a)).
-- [ ] Re-run the harness; confirm the [W5a] string-content shape and quantify it.
-- [ ] `replay.ts` — normalise string-valued `message.content` ([W5a]).
-- [ ] Pin `deriveContextWindows` over a real post-`/compact` negative-delta sequence ([W5c]).
-- [ ] Record the [W5b] `overloaded_error`-is-skipped decision in [Step 20.5.A](#step-20-5-a)'s replay-fidelity matrix.
+- [x] Extend the corpus harness — compaction / overload example ids; a string-`content` census; refresh the now-stale `stop_reason` annotation (the translator recognises `stop_sequence` / `max_tokens` / `refusal` as clean terminals as of [Step 20.5.B.1.a](#step-20-5-b-1-a)). _Done — also made the raw-scan `hasText` string-aware so the W2 census no longer undercounts a trailing string prompt._
+- [x] Re-run the harness; confirm the [W5a] string-content shape and quantify it. _Done — 1688 string-content user entries: 899 genuine submissions, 789 scaffolding; 66 sessions (23%) carry a genuine string prompt._
+- [x] `replay.ts` — normalise string-valued `message.content` ([W5a]); skip scaffolding per the user decision. _Done._
+- [x] Pin `deriveContextWindows` over a real post-`/compact` negative-delta sequence ([W5c]). _Done — captured session `2fc6b18d`, window 900517 → 36391 (perTurn −864126)._
+- [x] Record the [W5b] `overloaded_error`-is-skipped decision in [Step 20.5.A](#step-20-5-a)'s replay-fidelity matrix. _Done — and the matrix's "Compaction summary text" row was corrected: the real ✗→✓ artifact is plain-text user prompts; the summary itself is ✗ by design._
 
 **Tests.**
 
-- [ ] A compaction-continuation `user` entry (string `content`) → its summary text reaches `user_message_replay` (not dropped, not iterated as characters).
-- [ ] `deriveContextWindows` over a post-`/compact` `usage` drop yields the correct signed-negative per-turn delta.
+- [x] A genuine string-content `user` entry → its text reaches `user_message_replay` (not dropped, not iterated as characters); a scaffolding / `isCompactSummary` string entry is skipped, not surfaced. _Pass._
+- [x] `deriveContextWindows` over a post-`/compact` `usage` drop yields the correct signed-negative per-turn delta; the telescoping identity holds. _Pass._
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] Re-run `replay-corpus-audit.ts`; the string-`content` flag confirms the compaction sessions now translate with non-empty user text.
+- [x] `bun x tsc --noEmit` clean (tugcode + tugdeck). _Both clean._
+- [x] `bun test` green (tugcode + tugdeck). _0 fail._
+- [x] Re-run `replay-corpus-audit.ts`; the `[W5a]` census quantifies the string-content shape and structural invariants stay clean. _Done — I1/I3/I4/I5 zero violations; I2 255 balanced / 12 open; [W5a] census: 899 genuine string prompts the translator now normalises._
 
 ---
 
