@@ -4184,7 +4184,7 @@ This step does three things:
 
 **Depends on:** #step-20-5-a (the state-to-zone matrix this step implements), #step-20-5-b (inline-dialog primitives — done), #step-20-4 (zone slot infrastructure), [#step-20-3-4] (per-turn telemetry persistence — done 2026-05-16)
 
-**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.2.B](#step-20-5-d-2-b) (restore-reveal residual glitches) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.4.A](#step-20-5-d-4-a) (tugcode result-bounded turn model) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination + matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past; D.2.B inserted 2026-05-21 after a post-D.2.A capture showed two residual relaunch glitches (a picker-sheet flash, a wrong first-paint scroll position) — see the reconciliation note below; D.4.A inserted 2026-05-21 after the D.4 spike's stream-json probes found claude merges a mid-turn message into a running tool turn while tugcode's turn model cannot route overlapping sends._
+**Status:** _**split into sub-steps**, foundation-first: [20.5.D.1](#step-20-5-d-1) (lifecycle foundation) → [20.5.D.2](#step-20-5-d-2) ([DT10] transcript-replay paint gate) → [20.5.D.2.A](#step-20-5-d-2-a) (restore-reveal coordination) → [20.5.D.2.B](#step-20-5-d-2-b) (restore-reveal residual glitches) → [20.5.D.3](#step-20-5-d-3) (Z5 submit-button state machine) → [20.5.D.4](#step-20-5-d-4) (request cancellation UX mini-spike) → [20.5.D.4.A](#step-20-5-d-4-a) (tugcode result-bounded turn model) → [20.5.D.5](#step-20-5-d-5) (cross-zone coordination Z2/Z4) → [20.5.D.5.A](#step-20-5-d-5-a) (request cancellation — queue mechanism) → [20.5.D.5.B](#step-20-5-d-5-b) (request cancellation — pull-back gestures) → [20.5.D.5.C](#step-20-5-d-5-c) (end-to-end matrix verification). Reconciled 2026-05-21 against the 20.4.10–20.4.15 reframe; D.4 inserted 2026-05-21 (and widened from a queued-request spike to the full request-cancellation family); D.2.A inserted 2026-05-21 after a frame-by-frame relaunch capture showed [DT10] fixed the transcript half but six restore states still flicker past; D.2.B inserted 2026-05-21 after a post-D.2.A capture showed two residual relaunch glitches (a picker-sheet flash, a wrong first-paint scroll position) — see the reconciliation note below; D.4.A inserted 2026-05-21 after the D.4 spike's stream-json probes found claude merges a mid-turn message into a running tool turn while tugcode's turn model cannot route overlapping sends; D.5 split into D.5 + D.5.A / D.5.B / D.5.C 2026-05-21 — cross-zone coordination, the queue mechanism, the cancellation pull-back gestures, and the end-to-end matrix test, each its own sub-step._
 
 **Commit:** _per sub-step._
 
@@ -4209,9 +4209,12 @@ This step does three things:
 | [20.5.D.3](#step-20-5-d-3) | Z5 submit-button state machine — the new disabled / label modes | `tug-prompt-entry.tsx` + `.css` |
 | [20.5.D.4](#step-20-5-d-4) | Request cancellation UX mini-spike — design + vet the pull-down / queued / interrupt affordance family | plan + a gallery / HMR vet surface |
 | [20.5.D.4.A](#step-20-5-d-4-a) | tugcode result-bounded turn model — route overlapping / mid-turn sends; turn lifecycle bound to claude's `result` | `tugcode/src/session.ts`, `main.ts` |
-| [20.5.D.5](#step-20-5-d-5) | Cross-zone coordination (Z2 / Z4) + matrix verification + landing the D.4 queued design | `tide-card.tsx`, zone renderers |
+| [20.5.D.5](#step-20-5-d-5) | Cross-zone coordination — Z2 status bar + Z4 prompt-entry footer consume the lifecycle hook | `tide-card.tsx`, the Z2 / Z4 renderers |
+| [20.5.D.5.A](#step-20-5-d-5-a) | Request cancellation — queue mechanism: mid-turn submit queues, ghost rows, the `+` button | `reducer.ts`, `lifecycle-state.ts`, `tug-prompt-entry.tsx` |
+| [20.5.D.5.B](#step-20-5-d-5-b) | Request cancellation — pull-back gestures: C1 / C2 / C3, Stop ≡ Esc peel-newest | `reducer.ts`, `tug-prompt-entry.tsx` |
+| [20.5.D.5.C](#step-20-5-d-5-c) | End-to-end matrix verification — every matrix row, every zone | `tide-card-lifecycle-coordination.test.tsx` |
 
-D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.2.A follows directly: [DT10] suppressed the transcript host's own intermediate paint, but a frame-by-frame capture of a cold relaunch showed the restore still flickers through six distinct states (two separate loading surfaces, an ungated banner that lingers and reflows, a focus beat that lands last) — D.2.A collapses those to one delay-gated placeholder and one coordinated reveal. D.2.B mops up the two residual glitches a post-D.2.A capture surfaced — the project-picker sheet briefly flashing during the pre-registry window of the startup restore pass, and the transcript's first paint landing at the wrong scroll position (jump-to-bottom button visible) when the saved state was scrolled to the bottom. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it. D.4.A is a tugcode transport fix the D.4 spike forced: its raw stream-json probes proved claude's turn boundary is its `result` — a mid-turn message merges into a running *tool* turn (one `result`, the answer folded in) — while tugcode equates one `user_message` to one turn and mis-routes overlapping sends. D.4.A makes tugcode's turn model `result`-bounded so D.5's btw-send path has a correct transport foundation.
+D.1 is the dependency for D.2–D.5 — every later sub-step reads the matrix through the hook ([L02]; per the Conformance below, no zone reads `phase` directly). D.2 is sequenced right after the foundation because it closes the restore-FOUC bug ([DT10]) — Bug 1 of the lifecycle investigation that opened this work. D.2.A follows directly: [DT10] suppressed the transcript host's own intermediate paint, but a frame-by-frame capture of a cold relaunch showed the restore still flickers through six distinct states (two separate loading surfaces, an ungated banner that lingers and reflows, a focus beat that lands last) — D.2.A collapses those to one delay-gated placeholder and one coordinated reveal. D.2.B mops up the two residual glitches a post-D.2.A capture surfaced — the project-picker sheet briefly flashing during the pre-registry window of the startup restore pass, and the transcript's first paint landing at the wrong scroll position (jump-to-bottom button visible) when the saved state was scrolled to the bottom. D.4 is a design-oriented mini-spike, not an implementation step: request cancellation — pulling a request back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled. D.4 designs the cancellation family (pull-down / queued / interrupt) and surfaces its data-model gaps for the user to review before D.5 wires it. D.4.A is a tugcode transport fix the D.4 spike forced: its raw stream-json probes proved claude's turn boundary is its `result` — a mid-turn message merges into a running *tool* turn (one `result`, the answer folded in) — while tugcode equates one `user_message` to one turn and mis-routes overlapping sends. D.4.A makes tugcode's turn model `result`-bounded so the eventual btw-send path has a correct transport foundation. D.5 is split four ways: cross-zone coordination (D.5 — Z2 / Z4 consume the lifecycle hook), the request-cancellation landing as a queue-then-pull-back pair (D.5.A queues a mid-turn submit and shows it; D.5.B adds C1 / C2 / C3 + Stop ≡ Esc), and D.5.C — the end-to-end matrix test that drives a fixture through every row and closes 20.5.D.
 
 **Conformance (applies to every sub-step).** All phase-driven UI goes through `useLifecycleState()` — no zone reads `phase` or `awaitingApprovalSince` directly ([L02]). Appearance changes flip a `data-*` attribute / class and CSS does the visual ([L06]). State preservation: label / content transitions must not flicker, and DOM nodes that carry focus or scroll position stay mounted across mode changes ([L23] / [L26]).
 
@@ -4509,7 +4512,7 @@ The fourth captured frame is the target — transcript at the bottom, no jump-to
 
 **Depends on:** #step-20-5-d-3 (the concrete Z5 button the spike designs against), #step-20-5-d-1 (`submitButtonMode` / the `queued` flag)
 
-**Status:** _complete. A real-`CodeSessionStore`-driven gallery card (`gallery-request-cancellation`) served as the iterative vet surface; once the design was settled the card was **deleted** — it was a throwaway vet vehicle, and the captured cancellation behavior spec below is the deliverable. [Step 20.5.D.5](#step-20-5-d-5) wires the spec into the real tide card._
+**Status:** _complete. A real-`CodeSessionStore`-driven gallery card (`gallery-request-cancellation`) served as the iterative vet surface; once the design was settled the card was **deleted** — it was a throwaway vet vehicle, and the captured cancellation behavior spec below is the deliverable. [Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b) wire the spec into the real tide card._
 
 _**Vetted decisions (2026-05-21).** (1) **Mid-turn submit queues.** A prompt submitted while a turn runs is held and dispatched on the next idle — not interrupted (the pre-spike behavior), not blocked. This is the path the architecture was already built for: the matrix's QUEUED_NEXT_TURN row, D.3's `submit{queued}` button mode, and the reducer's `queuedSends` payload array all anticipate it. (2) **Pull-down extends through thinking.** The clean un-send (C2) stays available while Claude is only thinking — no answer text, no tool call yet — and locks to a committed `interrupted` turn (C3) at the first answer text or `tool_use`._
 
@@ -4519,7 +4522,7 @@ _**Investigation findings (reconciles the stale text below).** (a) **C2 is alrea
 
 **References:** [#step-20-5-a] (the QUEUED_NEXT_TURN matrix row + the lifecycle states the cancellation thresholds key off), [#step-20-5-d-1] (`deriveSubmitButtonMode` — where the Z5 reading lands), [D-T3-07] (queue-during-turn), [DT07](#dt07-esc-semantics) (Esc semantics), `tugdeck/src/lib/code-session-store/reducer.ts` (the CASE A / CASE B interrupt split + `pendingDraftRestore`), [L02], [L06]
 
-**Scope.** A design-oriented mini-spike, not an implementation step. **Cancelling a request — pulling it back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled.** This spike designs the whole cancellation family as one coherent affordance, produces a surface the user can review and vet, and captures the decision into the matrix + the reducer's interrupt split so [Step 20.5.D.5](#step-20-5-d-5) wires a vetted design rather than a guess.
+**Scope.** A design-oriented mini-spike, not an implementation step. **Cancelling a request — pulling it back, whether queued or already in flight — was never designed, so the behavior today is inconsistent and uncontrolled.** This spike designs the whole cancellation family as one coherent affordance, produces a surface the user can review and vet, and captures the decision into the matrix + the reducer's interrupt split so [Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b) wire a vetted design rather than a guess.
 
 Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, each "pulling the request back":
 
@@ -4544,7 +4547,7 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 
 **Phase-semantics drift to reconcile.** Worse than first framed: `submitting → awaiting_first_token → streaming` is a text-event **count** ladder — `handleTextDelta` drives it identically for `assistant_text` and `thinking_text`, so `awaiting_first_token` means "one text event seen" and `streaming` means "≥ two", neither distinguishing thinking from answer. 20.5.A's state-definition table mis-describes both. The spike reconciles 20.5.A to the real (count-based) semantics and states the threshold against `firstAssistantDeltaAt` / `firstToolUseAt` instead.
 
-**Cancellation behavior spec (vetted 2026-05-21).** The load-bearing deliverable — [Step 20.5.D.5](#step-20-5-d-5) wires this verbatim.
+**Cancellation behavior spec (vetted 2026-05-21).** The load-bearing deliverable — [Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b) wire this.
 
 - **Submitting during a turn → queue.** A prompt submitted (editor Enter) while a turn runs is **queued** — held in `queuedSends`, dispatched on the next idle (`turn_complete(success)` flushes the head, FIFO). Not interrupted, not blocked.
 - **Queued sends are transcript ghost rows.** Each queued send renders as a **ghosted user row** appended at the foot of the transcript — one row per send, in submit order, de-emphasized to read as "not yet sent," each carrying a ✕ cancel. The queue's UI lives in the transcript, not in a prompt-entry strip.
@@ -4560,7 +4563,7 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 - **Ghost-row ✕:** cancels that one queued send — *targeted*, vs Stop/Esc's peel-newest.
 - **`deriveSubmitButtonMode` revision.** The primary button's in-flight mode stays `stop` **unconditionally** — the QUEUED_NEXT_TURN overlay does not change it; the `queued_next` branch in `deriveSubmitButtonMode` and the `TideSubmitButtonMode["submit"]` `queued` field are retired (D.5). The `+` queue button is a **separate control**, not a `submitButtonMode` kind. Implementation (D.5): the prompt-entry **mounts** the `+` whenever the primary button's mode is `stop`, and **CSS-gates its visibility** on the prompt-entry's `data-empty="false"` attribute — the same `data-empty` signal [Step 20.5.D.3](#step-20-5-d-3)'s empty-gate already uses, so the progressive-disclosure reveal costs no per-keystroke React state ([L06] / [L22]). `queued_next` stays a `TideLifecycleOverlay` (it drives the transcript ghost rows). This resolves the open reading [Step 20.5.D.1](#step-20-5-d-1) flagged.
 
-**Data-model changes for [Step 20.5.D.5](#step-20-5-d-5).**
+**Data-model changes for [Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b).**
 - Expose the `queuedSends` payloads on the snapshot — the reducer already retains `Array<{text, atoms, turnKey}>`; the snapshot currently projects only `.length`. The ghost rows need the text.
 - Add a reducer event to cancel **one** queued send by key/index — `interrupt()` clears the whole queue; the per-row ✕ and the Stop/Esc peel-newest both need per-item removal.
 - Add the **`+` queue button** to the prompt-entry Z5 group — a new control, shown alongside the primary button while its mode is `stop`; click queues the editor draft (the pointer twin of editor Enter).
@@ -4575,7 +4578,7 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 - A **captured decision** — the cancellation behavior spec above; the [Step 20.5.A](#step-20-5-a) matrix QUEUED_NEXT_TURN row rewritten + the ghost-row note; the `submitting` / `awaiting_first_token` / `streaming` state-definitions reconciled to the count ladder; the `deriveSubmitButtonMode` revision recorded.
 - The **data-model changes** drafted above with scope and where they land.
 
-**Conformance.** Design + plan work; no production wiring beyond the vet surface. The matrix update + the cancellation spec are the load-bearing deliverables — [Step 20.5.D.5](#step-20-5-d-5) reads them.
+**Conformance.** Design + plan work; no production wiring beyond the vet surface. The matrix update + the cancellation spec are the load-bearing deliverables — [Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b) read them.
 
 **Tasks.**
 
@@ -4591,7 +4594,7 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 
 - [x] The user has reviewed and vetted the request-cancellation design.
 - [x] The 20.5.A matrix QUEUED_NEXT_TURN row is a real spec, not a placeholder; the cancellation behavior (C1 / C2 / C3 + threshold) is written down.
-- [x] [Step 20.5.D.5](#step-20-5-d-5) has no remaining cancellation-design decisions; the data-model prerequisites are drafted.
+- [x] [Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b) have no remaining cancellation-design decisions; the data-model prerequisites are drafted.
 
 ---
 
@@ -4599,18 +4602,18 @@ Three cancellation cases, one UX family — Esc (per [DT07]) or the Z5 button, e
 
 **Depends on:** #step-20-5-d (parent), #step-20-5-d-4 (the request-cancellation spike that surfaced this)
 
-**Status:** _complete. The turn model is now `result`-bounded. `handleUserMessage` opens an `ActiveTurn` only for the idle case (no turn running, nothing queued ahead); the stdout drain owns turn open/close — it opens a follow-on turn from the new `pendingTurnInputs` FIFO when claude's events for a buffered message arrive, and clears `this.activeTurn` on every `result` / EOF (`handleUserMessage` no longer clears it). A `user_message` arriving mid-turn is written to claude's stdin and queued in the FIFO — never installed as a competing `ActiveTurn`, the clobber that stranded both turns' events. One refinement from the plan sketch: rather than `ActiveTurn` carrying 1:N user messages, the "N" lives in the `pendingTurnInputs` FIFO and `ActiveTurn` stays 1:1 with one claude `result` — cleaner separation, and it leaves the non-overlap path (all of current production — tugdeck client-queues, so tugcode never sees overlap) byte-identical to before. The merge case (claude folds a mid-turn message into the running turn — `probe-tool-overlap.ts`) leaves a stale FIFO entry tugcode cannot detect from claude's stream; documented in the `pendingTurnInputs` docstring as a bounded, replay-synthetic-only imperfection ([Step 20.5.D.5](#step-20-5-d-5) closes it by threading the user's merge-vs-queue intent down from tugdeck). `main.ts` needed no change — its fire-and-forget `handleUserMessage` dispatch is correct now the handler is overlap-safe. `bunx tsc --noEmit` clean; full tugcode suite 427/427 green (replay / cold-boot / EOF / interrupt paths pass unchanged); `probe-overlap.ts` re-run through the fixed tugcode brackets BOTH turns — turn 2 emits its `turn_complete` where pre-fix it never did._
+**Status:** _complete. The turn model is now `result`-bounded. `handleUserMessage` opens an `ActiveTurn` only for the idle case (no turn running, nothing queued ahead); the stdout drain owns turn open/close — it opens a follow-on turn from the new `pendingTurnInputs` FIFO when claude's events for a buffered message arrive, and clears `this.activeTurn` on every `result` / EOF (`handleUserMessage` no longer clears it). A `user_message` arriving mid-turn is written to claude's stdin and queued in the FIFO — never installed as a competing `ActiveTurn`, the clobber that stranded both turns' events. One refinement from the plan sketch: rather than `ActiveTurn` carrying 1:N user messages, the "N" lives in the `pendingTurnInputs` FIFO and `ActiveTurn` stays 1:1 with one claude `result` — cleaner separation, and it leaves the non-overlap path (all of current production — tugdeck client-queues, so tugcode never sees overlap) byte-identical to before. The merge case (claude folds a mid-turn message into the running turn — `probe-tool-overlap.ts`) leaves a stale FIFO entry tugcode cannot detect from claude's stream; documented in the `pendingTurnInputs` docstring as a bounded, replay-synthetic-only imperfection (a later btw-send follow-on closes it by threading the user's merge-vs-queue intent down from tugdeck). `main.ts` needed no change — its fire-and-forget `handleUserMessage` dispatch is correct now the handler is overlap-safe. `bunx tsc --noEmit` clean; full tugcode suite 427/427 green (replay / cold-boot / EOF / interrupt paths pass unchanged); `probe-overlap.ts` re-run through the fixed tugcode brackets BOTH turns — turn 2 emits its `turn_complete` where pre-fix it never did._
 
 **Commit:** `fix(tugcode): result-bounded turn model for overlapping sends`
 
-**References:** `tugcode/src/session.ts` (`SessionManager` — `handleUserMessage`, the `ActiveTurn` type, the stdout drain), `tugcode/src/main.ts` (the IPC dispatch loop — the fire-and-forget `handleUserMessage` dispatch), `tugcode/probe-overlap.ts` / `probe-btw-overlap.ts` / `probe-tool-overlap.ts` (the empirical evidence), [#step-20-5-d-4] (the cancellation design this unblocks), [#step-20-5-d-5] (the consumer)
+**References:** `tugcode/src/session.ts` (`SessionManager` — `handleUserMessage`, the `ActiveTurn` type, the stdout drain), `tugcode/src/main.ts` (the IPC dispatch loop — the fire-and-forget `handleUserMessage` dispatch), `tugcode/probe-overlap.ts` / `probe-btw-overlap.ts` / `probe-tool-overlap.ts` (the empirical evidence), [#step-20-5-d-4] (the cancellation design this unblocks)
 
 **Why this step exists.** The [Step 20.5.D.4](#step-20-5-d-4) spike ran three raw stream-json probes against the `claude` CLI to settle the mid-turn-submit policy. They turned up a transport truth and a latent tugcode bug that together gate the cancellation design:
 
 - **claude's turn boundary is its `result`, not a `user_message`.** `probe-tool-overlap.ts` started a turn reading four files one at a time and injected a second `user_message` after the 2nd tool call. claude consumed it at the next agent-loop iteration boundary and **folded it into the running turn** — a single `result`, `num_turns=5`, whose text carried both the file summaries and the injected question's answer. A message sent into a pure-*text* turn (no iteration boundaries) is instead buffered and run as a separate later turn with its own `result` (`probe-overlap.ts`, `probe-btw-overlap.ts`). `/btw` itself is a TUI-only command — rejected in stream-json mode (`"/btw isn't available in this environment."`) — so the mid-turn merge is the real protocol-level mechanism, not a `/btw` channel.
 - **tugcode equates one `user_message` → one turn → one `ActiveTurn`.** `handleUserMessage` writes the message to claude's stdin unconditionally, constructs an `ActiveTurn`, and assigns `this.activeTurn`; `main.ts` dispatches `handleUserMessage` fire-and-forget (not awaited). Two overlapping sends run two concurrent `handleUserMessage` calls — the second **clobbers `this.activeTurn`**, so the first turn's `result` routes into the wrong `ActiveTurn`, the first call's completion promise never resolves, and any buffered follow-on turn's events arrive with `this.activeTurn === null` and are dropped. `probe-overlap.ts` (which runs through tugcode) reproduces it exactly: turn 1 completes, turn 2 never emits a `turn_complete`.
 
-The bug is **latent today** — tugdeck's `CodeSessionStore` holds mid-turn sends in `queuedSends` and releases one per `turn_complete`, so tugcode never sees two overlapping `user_message`s. But [Step 20.5.D.5](#step-20-5-d-5)'s vetted **"C"** design adds a *btw send* — a mid-turn message forwarded immediately so claude merges it — which makes overlap a first-class, routed path. tugcode must be correct before that lands.
+The bug is **latent today** — tugdeck's `CodeSessionStore` holds mid-turn sends in `queuedSends` and releases one per `turn_complete`, so tugcode never sees two overlapping `user_message`s. But [Step 20.5.D.4](#step-20-5-d-4)'s vetted **"C"** design adds a *btw send* — a mid-turn message forwarded immediately so claude merges it — which makes overlap a first-class, routed path. tugcode must be correct before that lands.
 
 **The fix — turn ownership moves from `handleUserMessage` to the drain.** Today `handleUserMessage` *owns* a turn: it constructs the `ActiveTurn` and awaits its completion, conflating "a message was submitted" with "a turn is in progress." The fix separates the two:
 
@@ -4633,7 +4636,7 @@ The bug is **latent today** — tugdeck's `CodeSessionStore` holds mid-turn send
 
 - [x] Separate turn ownership from `handleUserMessage` — `ActiveTurn` open/close driven by claude's `result` (the drain clears `this.activeTurn` on `gotResult` / EOF), not by the dispatch call.
 - [x] Make a mid-turn `user_message` a forward-and-record: written to claude's stdin, queued in the `pendingTurnInputs` FIFO, no `this.activeTurn` clobber. The drain opens the follow-on turn from the FIFO head.
-- [x] Mid-turn `user_message` ↔ turn association — the `pendingTurnInputs` FIFO holds the overflow; `ActiveTurn` stays 1:1 with one claude `result` (cleaner than 1:N on the turn). The non-overlap `user_message_replay` payload is unchanged; the merge-case stale-entry residual is documented for [Step 20.5.D.5](#step-20-5-d-5).
+- [x] Mid-turn `user_message` ↔ turn association — the `pendingTurnInputs` FIFO holds the overflow; `ActiveTurn` stays 1:1 with one claude `result` (cleaner than 1:N on the turn). The non-overlap `user_message_replay` payload is unchanged; the merge-case stale-entry residual is documented as a btw-send follow-on concern.
 - [x] Verify the early-exit / stderr / EOF watchers and the cold-boot + replay paths still hold their invariants — full tugcode suite (incl. all `replay-*.test.ts`) green.
 
 **Tests.**
@@ -4652,63 +4655,192 @@ The bug is **latent today** — tugdeck's `CodeSessionStore` holds mid-turn send
 
 ---
 
-#### Step 20.5.D.5: Cross-zone content coordination + matrix verification {#step-20-5-d-5}
+#### Step 20.5.D.5: Cross-zone content coordination (Z2 + Z4) {#step-20-5-d-5}
 
-**Depends on:** #step-20-5-d-1 (the hook), #step-20-5-d-2, #step-20-5-d-3, #step-20-5-d-4 (the request-cancellation design this step lands), #step-20-5-d-4-a (the tugcode turn-model fix the btw-send path needs)
+**Depends on:** #step-20-5-d-1 (the `useLifecycleState` hook), #step-20-5-d-2 (the transcript host — the hook's first consumer + the pattern), #step-20-5-d-3 (Z5 — done, so the matrix's Z5 column is settled)
 
-**Status:** _not started._
+**Status:** _not started. D.5 was split into four sub-steps 2026-05-21 (D.5 + D.5.A / D.5.B / D.5.C); this section is the first — cross-zone coordination for the two remaining unwired zones, Z2 and Z4._
 
-**Commit:** `feat(tide-rendering): cross-zone lifecycle coordination + matrix e2e`
+**Commit:** `feat(tide-rendering): Z2 / Z4 lifecycle-coordinated zone content`
 
-**References:** [#step-20-5-a] (the matrix — the full contract), [#step-20-5-d-4] (the request-cancellation design), [L02], [L06], [L23]
+**References:** [#step-20-5-a] (the state-to-zone matrix — the Z2 / Z4 columns are the contract), [#step-20-5-d-1] (`useLifecycleState`), [L02], [L06], [L23]
 
-**Scope.** Two halves, then the closing test.
+**Scope.** The matrix's two remaining unwired zones consume the lifecycle hook. Z1 was wired by [Step 20.4.15](#step-20-4-15) (`TideZ1B`), Z5 by [Step 20.5.D.3](#step-20-5-d-3); Z0 is reserved and Z3 is the static project badge. What is left is **Z2 (status bar)** and **Z4 (prompt-entry footer)** — and `useLifecycleState()` currently has exactly one consumer (the transcript host, [Step 20.5.D.2](#step-20-5-d-2)).
 
-_Cross-zone coordination._ The remaining matrix-driven zones consume the hook: Z2's status bar (live counts → frozen during AWAITING_USER → "Restoring session…" during REPLAYING → "Disconnected" during TRANSPORT_DOWN) and Z4's prompt-entry footer (the phase indicators — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}"). This **begins with an audit**: the shipped `statusRow` (Z2) and the prompt-entry chrome already react to parts of the snapshot; reconcile what they do against the matrix and wire only the genuine gaps through `useLifecycleState()` ([L02] — no zone reads `phase` directly).
+This **begins with an audit.** The shipped Z2 status row (`tide-card-telemetry-renderers.tsx` — the "Combined session status row" promoted in [Step 20.4](#step-20-4)) and the prompt-entry chrome already react to parts of the snapshot. Reconcile what each zone does today against the matrix's Z2 / Z4 columns and wire only the genuine gaps through the hook — no zone reads `phase` directly ([L02]).
 
-_Request cancellation._ Land the **cancellation design** captured in [Step 20.5.D.4](#step-20-5-d-4) — **that step's "Cancellation behavior spec" is the contract**, implemented verbatim into the real tide card. In brief: a mid-turn submit **queues** (dispatched on idle); queued sends are **transcript ghost rows** (one ✕-cancellable ghosted user row each); the **`+` queue button** appears in Z5 only once the user types mid-turn (progressive disclosure — a plain submit → wait → submit flow never surfaces it); **Stop ≡ Esc** peel the newest cancellable thing (queued sends LIFO, then the turn); the C2 / C3 threshold is `firstAssistantDeltaAt` / `firstToolUseAt`. Plus the data-model changes D.4 scoped (expose the queued payloads on the snapshot; a per-item queue-cancel reducer event; the `deriveSubmitButtonMode` revision; widen `handleInterrupt` CASE A). This half may be split into its own sub-step at execution time if the surface proves large.
+- **Z2 (status bar)** — per the matrix: live cumulative + this-turn elapsed during the live phases; frozen counts + an "awaiting input" badge in AWAITING_USER; "Restoring session…" in REPLAYING; "Disconnected — reconnecting" in TRANSPORT_DOWN.
+- **Z4 (prompt-entry footer)** — per the matrix: the phase indicator — "Awaiting first token" (AWAITING_FIRST_TOKEN), "Claude is thinking" (STREAMING), "Running {tool_name}" (TOOL_WORK); default content otherwise.
 
-**Reframe (2026-05-21) — the D.4 finding.** [Step 20.5.D.4.A](#step-20-5-d-4-a)'s raw stream-json probes showed claude merges a mid-turn `user_message` into a running *tool* turn (one `result`, the answer folded in). That makes the D.4 spec's queue — held client-side, flushed on `turn_complete` — only *one* of the two affordances in the vetted **"C"** design: (1) the **queued send** (cancellable, deferred, the `+` button) — the D.4 spec above, unchanged, lands here; (2) a **btw send** — a mid-turn message forwarded immediately so claude folds it into the running turn. The btw send depends on the [Step 20.5.D.4.A](#step-20-5-d-4-a) tugcode turn-model fix *and* on new tug-card UI to represent a mid-turn-merged message and its answer; that UI is **explicitly deferred** (not D.5). So D.5 lands the queued-send affordance and the cross-zone work; the btw send is carved as a follow-on once D.4.A is in and the tug-card UI is designed. The D.4 "Cancellation behavior spec" is therefore the contract for the queued send — but no longer "verbatim as the whole story": the btw path is the acknowledged second half of C.
+[Step 20.5.A](#step-20-5-a)'s coordination invariant 1 is the direct validator: `awaitingApprovalSince` drives Z1's pause, Z2's frozen-counts + badge, and Z5's disabled mode off one state field — a de-sync between the three is a data-plumbing bug.
 
-Closes 20.5.D with the **end-to-end matrix test** — drive a fixture session through every distinct matrix row, assert each zone.
-
-**Conformance.** [L02] — zones read the matrix row via `useLifecycleState()`. [L06] — phase-driven appearance via CSS / DOM. [L23] — zone content swaps happen inside the stable slot DOM container; no remount.
+**Conformance.** [L02] — Z2 / Z4 read the matrix row via `useLifecycleState()`, never `phase` directly. [L06] — phase-driven appearance flips a `data-*` attribute / class; CSS does the visual. [L23] — zone content swaps inside the stable slot DOM container; no remount.
 
 **Artifacts.**
 
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — zone renderers consume `useLifecycleState()` for matrix-driven content.
-- the Z2 (`statusRow`) / Z4 zone renderers — phase-driven transitions wired through the hook where not already.
-- the cancellation surface — `reducer.ts` / `types.ts` (queued-payload snapshot exposure, the per-item queue-cancel event, the CASE A widening), `lifecycle-state.ts` (the `deriveSubmitButtonMode` revision), `tug-prompt-entry.tsx` (`performSubmit` queues mid-turn; the `+` queue button; Stop ≡ Esc peel-newest), the transcript host (queued ghost rows).
-- `tugdeck/src/components/tugways/cards/__tests__/tide-card-lifecycle-coordination.test.tsx` — _new_ — end-to-end matrix tests.
+- `tugdeck/src/components/tugways/cards/tide-card-telemetry-renderers.tsx` — the Z2 status row consumes `useLifecycleState()` for its matrix-driven states.
+- the Z4 prompt-entry footer renderer (`footerContent` on `tide-card.tsx`) — the phase indicator wired through the hook.
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — wiring where the zone renderers receive the lifecycle state.
+- a pure `state → Z2 content` / `state → Z4 indicator` projection module, if the audit finds the mapping cleanly extractable (the [Step 20.5.D.3](#step-20-5-d-3) `resolveSubmitButtonView` pattern).
 
 **Tasks.**
 
-_Cross-zone coordination._
-- [ ] Audit the shipped Z2 (`statusRow`) and Z4 chrome against the matrix; record what already matches vs. the gaps.
-- [ ] Wire the gaps through `useLifecycleState()` — Z2 status-bar transitions, Z4 phase indicators.
-
-_Request cancellation_ — implements the [Step 20.5.D.4](#step-20-5-d-4) cancellation behavior spec:
-- [ ] Expose the `queuedSends` payloads on the snapshot (the reducer already retains the `{text, atoms, turnKey}` array).
-- [ ] `deriveSubmitButtonMode` revision — in-flight → `stop` unconditional; retire the `queued_next` branch + the `TideSubmitButtonMode["submit"]` `queued` field; update `lifecycle-state.test.ts`.
-- [ ] `performSubmit` — a mid-turn submit calls `send()` (queue), not `interrupt()`.
-- [ ] The `+` queue button — mounted alongside the primary Z5 button when its mode is `stop`; CSS-gated visible on `data-empty="false"` (progressive disclosure — appears only once the user types mid-turn).
-- [ ] Queued sends as transcript ghost rows — one ✕-cancellable ghosted user row each; a new reducer event to cancel one queued send by key.
-- [ ] Stop ≡ Esc → peel-newest (queued sends LIFO, then the turn); widen `handleInterrupt` CASE A to `firstAssistantDeltaAt === null && firstToolUseAt === null`.
-- [ ] Cancelled queued / pulled-down sends route through the draft-restore slot (unify with the existing `pendingDraftRestore` consumer).
-
-_Verification._
-- [ ] End-to-end matrix tests — every distinct matrix row.
+- [ ] Audit the shipped Z2 status row and the prompt-entry footer / Z4 chrome against the matrix's Z2 / Z4 columns; record what already matches vs. the genuine gaps.
+- [ ] Wire the Z2 gaps through `useLifecycleState()` — the AWAITING_USER frozen-counts + "awaiting input" badge, the REPLAYING "Restoring session…" badge, the TRANSPORT_DOWN "Disconnected" badge.
+- [ ] Wire the Z4 phase indicator through `useLifecycleState()` — "Awaiting first token" / "Claude is thinking" / "Running {tool_name}".
 
 **Tests.**
 
-- [ ] Z2 shows live counts in STREAMING, frozen + "awaiting input" badge in AWAITING_USER, "Restoring session…" in REPLAYING, "Disconnected" in TRANSPORT_DOWN.
-- [ ] Z4 shows the matrix's phase indicator for AWAITING_FIRST_TOKEN / STREAMING / TOOL_WORK.
-- [ ] The request-cancellation behavior matches the [Step 20.5.D.4](#step-20-5-d-4) spec — mid-turn submit queues (ghost row); the `+` reveals only on mid-turn typing; a queued send (C1) and a pre-content turn (C2) pull back to the editor; a running turn past the threshold (C3) commits interrupted; Stop ≡ Esc peel newest-first.
-- [ ] End-to-end: a fixture session driven through each distinct matrix row paints each zone per the matrix.
+- [ ] Pure-logic — the extractable `state → Z2 content` / `state → Z4 indicator` projection, one case per matrix row (the no-fake-DOM rule: pure projection tests, not rendered-DOM assertions).
+- [ ] The rendered Z2 / Z4 behavior is asserted by the [Step 20.5.D.5.C](#step-20-5-d-5-c) end-to-end matrix test; the HMR vet below is the human confirm.
 
 **Checkpoint.**
 
-- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bunx tsc --noEmit` clean.
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
-- [ ] **HMR vet (manual, user-gated)** — drive a session through each matrix state; visually confirm zone coordination matches the matrix.
+- [ ] **HMR vet (manual, user-gated)** — drive a session through the live phases / AWAITING_USER / a reconnect; confirm Z2 + Z4 track the matrix.
+
+---
+
+#### Step 20.5.D.5.A: Request cancellation — queue mechanism {#step-20-5-d-5-a}
+
+**Depends on:** #step-20-5-d-4 (the "Cancellation behavior spec" — the contract), #step-20-5-d-3 (the Z5 submit button this extends), #step-20-5-d-1 (`deriveSubmitButtonMode` / the lifecycle snapshot)
+
+**Status:** _not started. The queue half of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec — everything that makes a mid-turn submit queue and become visible, short of cancelling it ([Step 20.5.D.5.B](#step-20-5-d-5-b))._
+
+**Commit:** `feat(tide-rendering): mid-turn submit queues + ghost rows`
+
+**References:** [#step-20-5-d-4] (the "Cancellation behavior spec" — the queue surfaces + the `deriveSubmitButtonMode` revision), [#step-20-5-a] (the QUEUED_NEXT_TURN matrix row), `tugdeck/src/lib/code-session-store/reducer.ts` (the `send` handler already enqueues; `handleTurnComplete(success)` already flushes the head), [L02], [L06], [L22]
+
+**Scope.** Land the **queue mechanism** of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec — a mid-turn submit *queues and becomes visible*, short of cancelling it.
+
+Per D.4's investigation findings the reducer machinery is built but UI-dead: the `send` handler enqueues a mid-turn send as a full `{text, atoms, turnKey}` payload (`queuedSends` is an array) and `handleTurnComplete(success)` flushes the head — but no UI path enqueues (`performSubmit` calls `interrupt()` on a mid-turn submit), so `queuedSends` is never non-empty and QUEUED_NEXT_TURN is unreachable. This sub-step wires the live path:
+
+- **`performSubmit` queues mid-turn.** A submit (editor Enter or the `+` button) while a turn runs calls `send()` — enqueue — instead of `interrupt()`. An idle submit is unchanged.
+- **Snapshot exposes the queued payloads.** The reducer retains `Array<{text, atoms, turnKey}>`; the snapshot currently projects only `.length`. Expose the payloads so the ghost rows can render their text.
+- **`deriveSubmitButtonMode` revision.** The in-flight primary button is `stop` **unconditionally** — the QUEUED_NEXT_TURN overlay no longer changes it. Retire the `queued_next` branch and the `TideSubmitButtonMode["submit"]` `queued` field; `queued_next` stays a `TideLifecycleOverlay` (it drives the ghost rows). Update `lifecycle-state.test.ts` + `tug-prompt-entry-submit-button.test.ts` (the `queued`-flag cases).
+- **The `+` queue button.** A separate control mounted alongside the primary Z5 button whenever its mode is `stop`; CSS-gated visible on the prompt-entry's `data-empty="false"` — progressive disclosure, so a plain submit → wait → submit flow never surfaces it, and the reveal costs no per-keystroke React state ([L06] / [L22]). Click queues the editor draft (the pointer twin of editor Enter).
+- **Transcript ghost rows.** Each queued send renders as a **ghosted user row** at the foot of the transcript, in submit order, de-emphasized to read as "not yet sent." Render only — the ✕ cancel is [Step 20.5.D.5.B](#step-20-5-d-5-b). The existing `turn_complete(success)` flush already drains the head into a real turn.
+
+[Step 20.5.D.4.A](#step-20-5-d-4-a) made tugcode route the eventual flush correctly: a queued send dispatched on idle is the non-overlapping case tugcode always handled, so this queue mechanism sits on the safe transport path.
+
+**Conformance.** [L02] — the button mode + the queued payloads come off `useLifecycleState()` / the snapshot. [L06] / [L22] — the `+` reveal is a CSS gate on `data-empty`, no per-keystroke React state. [L23] — the ghost rows append inside the stable transcript container; no sibling remount.
+
+**Artifacts.**
+
+- `reducer.ts` / `types.ts` — the `queuedSends` payloads exposed on `CodeSessionSnapshot`.
+- `lifecycle-state.ts` — the `deriveSubmitButtonMode` revision; the `TideSubmitButtonMode` `queued` field retired.
+- `tug-prompt-entry.tsx` / `.css` — `performSubmit` queues mid-turn; the `+` queue button mounted + CSS-gated.
+- the transcript host (`tide-card-transcript.tsx`) + a ghost-row component — queued sends rendered as ghosted user rows.
+- `lifecycle-state.test.ts`, `tug-prompt-entry-submit-button.test.ts` — updated for the revision.
+
+**Tasks.**
+
+- [ ] Expose the `queuedSends` payloads on the snapshot (the reducer already retains the `{text, atoms, turnKey}` array).
+- [ ] `deriveSubmitButtonMode` revision — in-flight → `stop` unconditional; retire the `queued_next` branch + the `submit.queued` field; update the pure-logic tests.
+- [ ] `performSubmit` — a mid-turn submit calls `send()` (queue), not `interrupt()`.
+- [ ] The `+` queue button — mounted alongside the primary Z5 button when its mode is `stop`; CSS-gated visible on `data-empty="false"`.
+- [ ] Transcript ghost rows — one ghosted user row per queued send, in submit order (render only; the ✕ is D.5.B).
+
+**Tests.**
+
+- [ ] Pure-logic — `deriveSubmitButtonMode`: in-flight is `stop` regardless of `queuedSends`; the retired `queued` field is gone.
+- [ ] Pure-logic — the queued-payload snapshot projection: `queuedSends` payloads surface with text in submit order.
+- [ ] The rendered ghost rows / `+` reveal are asserted by the [Step 20.5.D.5.C](#step-20-5-d-5-c) end-to-end matrix test; the HMR vet below is the human confirm.
+
+**Checkpoint.**
+
+- [ ] `bunx tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR vet (manual, user-gated)** — submit mid-turn; confirm the ghost row + the `[+] [■]` group; confirm the `+` is hidden until mid-turn typing; confirm `turn_complete` flushes the head.
+
+---
+
+#### Step 20.5.D.5.B: Request cancellation — pull-back gestures (C1 / C2 / C3) {#step-20-5-d-5-b}
+
+**Depends on:** #step-20-5-d-5-a (the queue mechanism this cancels), #step-20-5-d-4 (the cancellation behavior spec — the C1 / C2 / C3 cases + the gesture map)
+
+**Status:** _not started. The pull-back half of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec — the three cancellation cases and the unified Stop ≡ Esc gesture, on top of the queue [Step 20.5.D.5.A](#step-20-5-d-5-a) built._
+
+**Commit:** `feat(tide-rendering): request pull-back — C1/C2/C3 + Stop-equals-Esc`
+
+**References:** [#step-20-5-d-4] (the C1 / C2 / C3 cases, the threshold, the gesture map), `tugdeck/src/lib/code-session-store/reducer.ts` (the `handleInterrupt` CASE A / CASE B split + `pendingDraftRestore`), [DT07](#dt07-esc-semantics) (Esc semantics), [L02], [L23]
+
+**Scope.** Land the **pull-back** half of the [Step 20.5.D.4](#step-20-5-d-4) cancellation spec — the three cancellation cases and the unified Stop ≡ Esc gesture, on the queue [Step 20.5.D.5.A](#step-20-5-d-5-a) built.
+
+- **C1 — cancel a queued send.** The ghost row's ✕, plus a new reducer event to remove one queued send by key/index — a true un-send (never dispatched: no wire traffic, no server turn). `interrupt()` clears the whole queue; the per-row ✕ needs per-item removal.
+- **C2 — pull down a pre-content turn.** Widen `handleInterrupt` CASE A's gate from `phase === "submitting"` to `firstAssistantDeltaAt === null && firstToolUseAt === null` — the pull-down window stays open through *thinking* and closes at the first answer-channel delta / `tool_use`. (D.4 pinned this: `phase` counts thinking partials, so it is the wrong signal.)
+- **C3 — interrupt a running turn.** Cancel after answer text / `tool_use`. `handleInterrupt` CASE B — unchanged. The C2 / C3 split latches at cancel-time on the threshold above.
+- **Stop ≡ Esc — peel the newest.** The Stop button and the Esc key do the same thing: peel the newest cancellable thing — the most-recently-queued send first (LIFO), and only with the queue empty does the gesture reach the running turn (C2 / C3). Esc still dismisses an open dialog / popover first via the responder chain ([DT07]).
+- **Draft-restore unification.** A cancelled queued send (C1) and a pulled-down turn (C2) both route their `text` + `atoms` through the existing `pendingDraftRestore` slot — the prompt-entry editor seeds from it iff the editor is currently empty (a cancel never clobbers in-progress editor content). `pendingDraftRestore` already has a consumer (`tug-prompt-entry.tsx`); C1 / C2 reuse it.
+
+**Conformance.** [L02] — the gesture reads the queue + the threshold off the snapshot / `useLifecycleState()`. [DT07] — Esc precedence (dialog dismiss → peel-newest) goes through the responder chain. [L23] — a ghost row's ✕-removal does not remount sibling rows.
+
+**Artifacts.**
+
+- `reducer.ts` — the per-item queue-cancel event; the `handleInterrupt` CASE A gate widening; the C1 / C2 draft-restore routing.
+- `tug-prompt-entry.tsx` — Stop ≡ Esc wired to peel-newest (not a direct turn-interrupt); the Esc responder.
+- the ghost-row component — the ✕ dispatches the per-item cancel.
+- `code-session-store.interrupt.test.ts` / `code-session-store.queue.test.ts` — updated for the widened CASE A + the per-item cancel.
+
+**Tasks.**
+
+- [ ] Per-item queue-cancel reducer event — remove one queued send by key; route its payload through the draft-restore slot.
+- [ ] Ghost-row ✕ — dispatches the per-item cancel (C1).
+- [ ] Widen `handleInterrupt` CASE A to `firstAssistantDeltaAt === null && firstToolUseAt === null` (C2 threshold); CASE B unchanged (C3).
+- [ ] Stop ≡ Esc → peel-newest — queued sends LIFO, then the running turn; Esc dialog-dismiss precedence preserved ([DT07]).
+- [ ] Draft-restore unification — C1 + C2 seed the editor iff it is empty.
+
+**Tests.**
+
+- [ ] Reducer / pure-logic — the per-item cancel removes the right send + populates `pendingDraftRestore`; CASE A fires for thinking-only, CASE B for post-content.
+- [ ] The rendered C1 / C2 / C3 + Stop ≡ Esc behavior is asserted by the [Step 20.5.D.5.C](#step-20-5-d-5-c) end-to-end matrix test; the HMR vet below is the human confirm.
+
+**Checkpoint.**
+
+- [ ] `bunx tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] **HMR vet (manual, user-gated)** — queue two sends; Esc peels them newest-first, then stops the turn; ✕ a specific ghost row; pull a thinking-only turn back to the editor.
+
+---
+
+#### Step 20.5.D.5.C: End-to-end matrix verification {#step-20-5-d-5-c}
+
+**Depends on:** #step-20-5-d-5 (Z2 / Z4), #step-20-5-d-5-a, #step-20-5-d-5-b (the QUEUED_NEXT_TURN / cancellation rows), #step-20-5-d-1 through #step-20-5-d-3 (the earlier zones)
+
+**Status:** _not started. The capstone — one end-to-end test that closes 20.5.D._
+
+**Commit:** `test(tide-rendering): end-to-end lifecycle matrix verification`
+
+**References:** [#step-20-5-a] (the state-to-zone matrix — the contract every row asserts against), [L02]
+
+**Scope.** The capstone that **closes [Step 20.5.D](#step-20-5-d)**: one end-to-end test that drives a real `CodeSessionStore` through every distinct [Step 20.5.A](#step-20-5-a) matrix row and asserts every zone paints what the matrix says. By this point every zone is wired — Z1 ([Step 20.4.15](#step-20-4-15)), Z2 / Z4 ([Step 20.5.D.5](#step-20-5-d-5)), Z5 ([Step 20.5.D.3](#step-20-5-d-3)), the QUEUED_NEXT_TURN row ([Step 20.5.D.5.A](#step-20-5-d-5-a) / [B](#step-20-5-d-5-b)) — so the matrix is fully testable for the first time.
+
+The test drives the **real** store and renders the **real** tide card (the test-reality rule — no mock store, no fake DOM): a `just app-test` file that steps a fixture session IDLE → SUBMITTING → AWAITING_FIRST_TOKEN → STREAMING → TOOL_WORK → AWAITING_USER → INTERRUPTING → COMPLETE, plus the REPLAYING / ERRORED states and the TRANSPORT_DOWN / QUEUED_NEXT_TURN overlays, asserting the Z1–Z5 cells of each matrix row. A regression against any ✓ cell is a bug.
+
+**Conformance.** The matrix is the contract; the test IS the conformance artifact. [L02] — the test drives state through the store, never by poking zone internals.
+
+**Artifacts.**
+
+- `tugdeck/src/components/tugways/cards/__tests__/tide-card-lifecycle-coordination.test.tsx` — _new_ — the end-to-end matrix test, run via `just app-test`.
+
+**Tasks.**
+
+- [ ] Build the fixture-session driver — step a real `CodeSessionStore` through each distinct matrix row / overlay.
+- [ ] Assert each zone (Z1 / Z2 / Z4 / Z5; Z0 reserved, Z3 static) against the matrix cell for every row.
+- [ ] Cover the overlays — TRANSPORT_DOWN and QUEUED_NEXT_TURN — over a base state.
+
+**Tests.**
+
+- [ ] The end-to-end matrix test itself — every distinct matrix row, every zone, via `just app-test`; the recipe ends with the greppable `VERDICT: PASS|FAIL` line.
+
+**Checkpoint.**
+
+- [ ] `bunx tsc --noEmit` clean.
+- [ ] `bun test` green.
+- [ ] `bun run audit:tokens lint` exits 0.
+- [ ] `just app-test tide-card-lifecycle-coordination` → `VERDICT: PASS`.
+- [ ] 20.5.D is closed — the matrix has an executable conformance test.
