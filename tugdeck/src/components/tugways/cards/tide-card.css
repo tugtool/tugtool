@@ -166,6 +166,8 @@
    the overrides reuse existing `--tug-space-*` and
    `--tugx-list-view-*` tokens. */
 .tide-card-transcript {
+  /* Positioning context for the floating jump-to-latest button. */
+  position: relative;
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;

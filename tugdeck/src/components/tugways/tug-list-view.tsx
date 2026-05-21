@@ -440,6 +440,20 @@ export interface TugListViewProps<
   followBottom?: boolean;
 
   /**
+   * Observe auto-follow-bottom intent. Invoked once on mount with the
+   * initial state, then on every SmartScroll follow-bottom transition
+   * — user scroll-up disengages; idle / gesture-end / explicit jump
+   * re-engage. `following === false` means the user has scrolled away
+   * from the live edge — the signal a "jump to latest" affordance keys
+   * its visibility on.
+   *
+   * [L06] consumers drive appearance from this callback through DOM
+   * attributes, never React state — follow-bottom intent must not
+   * round-trip through render.
+   */
+  onFollowBottomChange?: (following: boolean) => void;
+
+  /**
    * Skip windowing — render every cell in document order with no
    * spacers, no overscan, no `computeWindow` math. Use for lists
    * where rendering every cell is acceptable (transcripts, settings
@@ -700,6 +714,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       pageByEntry,
       selectionRequired = false,
       onSelectionChange,
+      onFollowBottomChange,
     },
     ref,
   ) {
@@ -837,6 +852,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // call sees the live `isFollowingBottom` flag rather than a
     // closed-over snapshot.
     const smartScrollRef = React.useRef<SmartScroll | null>(null);
+
+    // Latest `onFollowBottomChange` — read from the SmartScroll
+    // callback (installed once on mount) so a consumer that passes a
+    // fresh callback each render is still observed. [L07]
+    const onFollowBottomChangeRef = React.useRef(onFollowBottomChange);
+    onFollowBottomChangeRef.current = onFollowBottomChange;
 
     // Follow-bottom façade published to descendants via
     // `ScrollerProvider`. Its methods delegate to the live
@@ -1268,9 +1289,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           onScroll: () => {
             scrollTick();
           },
+          onFollowBottomChanged: (_ss, following) => {
+            onFollowBottomChangeRef.current?.(following);
+          },
         },
       });
       smartScrollRef.current = smartScroll;
+      // Surface the initial follow-bottom intent: `onFollowBottomChanged`
+      // fires only on transitions, so a consumer's observer would
+      // otherwise miss the mount-time state.
+      onFollowBottomChangeRef.current?.(smartScroll.isFollowingBottom);
 
       // Cold-boot scroll restore is owned by `SmartScroll` (its
       // `setRestoreTarget` / `applyRestoreTarget` API). The list

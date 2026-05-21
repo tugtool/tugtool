@@ -84,6 +84,7 @@ import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transc
 import { TideZ1B } from "@/components/tugways/cards/tide-card-z1b";
 import { dispatch as dispatchRenderInput } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
+import { TideJumpToBottomButton } from "@/components/tugways/cards/tide-jump-to-bottom-button";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
@@ -910,6 +911,23 @@ export const TideTranscriptHost = forwardRef<
     [],
   );
 
+  // Floating "scroll to latest" button. It is always mounted ([L26]);
+  // its visibility is appearance state ([L06]) — `handleFollowBottom
+  // Change` writes a `data-visible` attribute straight onto the button
+  // DOM node as the list view's SmartScroll engages / disengages
+  // follow-bottom. The follow-bottom intent never enters React state.
+  const jumpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const handleFollowBottomChange = useCallback((following: boolean): void => {
+    const btn = jumpButtonRef.current;
+    if (btn !== null) btn.dataset.visible = String(!following);
+  }, []);
+  const handleJumpToBottom = useCallback((): void => {
+    // Non-animated clamp — the same definite jump to the true bottom
+    // the End key performs. The animated path eases toward a sentinel
+    // offset and lands short of a tall transcript's end.
+    listViewRef.current?.scrollToBottom();
+  }, []);
+
   return (
     <div
       ref={rootRef}
@@ -924,9 +942,11 @@ export const TideTranscriptHost = forwardRef<
         cellRenderers={cellRenderers}
         scrollKey="tide-card-transcript"
         followBottom
+        onFollowBottomChange={handleFollowBottomChange}
         inline
         pageByEntry
       />
+      <TideJumpToBottomButton ref={jumpButtonRef} onClick={handleJumpToBottom} />
     </div>
   );
 });
