@@ -273,6 +273,19 @@ For clarity across the document, key terms with potentially-ambiguous names:
 
 **Test:** `deriveLifecycleSnapshot(snapshotA, uiState) === deriveLifecycleSnapshot(snapshotB, uiState)` (`Object.is`) when the matrix-relevant signals of A and B are equal, even when other snapshot fields differ.
 
+#### [DT10] Transcript paint suppressed during REPLAYING — single reveal at `replay_complete` (DECIDED) {#dt10-replay-transcript-suppression}
+
+**Decision:** While `phase === "replaying"`, the tide-card transcript pane does not paint the reconstruction in progress. It holds its pre-replay visible state — the `TideRestoring` placeholder on a cold resume (reload / relaunch), or the last painted transcript on a mid-session reconnect — across the whole replay window, and does exactly one reconstructed paint after `replay_complete`, already at the restored scroll position. Replayed turns are still committed to the data source one `turn_complete` at a time as today; what changes is that the transcript host gates its *visible* render on `state !== "replaying"` (from `useLifecycleState()`).
+
+**Reasoning:**
+- A resumed session reconstructs its committed turns incrementally (`reducer.ts` `handleTurnComplete`, replaying branch). With the transcript live and `followBottom` engaged, every commit re-windows and re-pins — the user watches turns accumulate and the viewport chase the live edge. That intermediate-state painting is a FOUC: the pane should appear once, at the proper scroll/message position.
+- The cold-boot scroll restore (`SmartScroll` restore target vs. `followBottom`) then resolves once, against a transcript whose height is final, instead of racing a still-growing data source.
+- The bracket already exists: `replay_started` / `replay_complete` delimit the window with no new signal needed. `state === "replaying"` is the consumer-facing form.
+
+**Consequence — the REPLAYING matrix row has no Z1 cell.** Earlier matrix drafts put a `TugThinkingIndicator` on "the row currently being replayed," swapping to `EndStateDisplay` per row as reconstruction finished. There is no such per-row animation under this decision — the transcript is not visible during replay, so there is nothing to animate. REPLAYING is the matrix's only state in which a zone is not painted at all rather than painted with state-specific content.
+
+**Alternative considered:** Keep the incremental paint but freeze the scroll position and disengage `followBottom` during replay. Rejected — turns still pop in visibly below the fold, and the saved region-scroll anchor still resolves against a transcript whose height is still changing. Suppress-then-reveal is the only framing that guarantees a single first paint at the final geometry.
+
 ---
 
 ### Execution Steps {#execution-steps}
@@ -3777,10 +3790,10 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
   Parallel-terminal-with-context states (NOT routed through COMPLETE;
   the session is in a persistent non-ready state):
     ┌───────────┐   phase=replaying; reducer reconstructing committed
-    │ REPLAYING │   turns from past frames after transport reconnect.
-    │  (Z5      │   Brief but visible. Cleared automatically when
-    │  disabled)│   replay completes → IDLE / COMPLETE as appropriate.
-    └───────────┘
+    │ REPLAYING │   turns from past frames after reload / relaunch /
+    │  (Z5      │   transport reconnect. Transcript paint is suppressed
+    │  disabled)│   until replay_complete — one reveal at the restored
+    └───────────┘   position, never the incremental fill-in [DT10].
     ┌───────────┐   phase=errored; session has a sticky error
     │  ERRORED  │   (lastError populated). Persists until user clears
     │  (Z5      │   or resubmits. Distinct from COMPLETE because no
@@ -3817,18 +3830,18 @@ The remaining sub-steps are gated sequentially: 20.5.A is the spec that everythi
 | TOOL_WORK | `tool_use` sent; awaiting `tool_result`. | `phase === "tool_work"` |
 | AWAITING_USER | `control_request_forward` arrived; awaiting Allow/Deny (permission) or answer (question). | `phase === "awaiting_approval"` (canonical) — equivalently `pendingApproval !== null \|\| pendingQuestion !== null` |
 | INTERRUPTING | User clicked Stop or Esc; `interrupt` frame in flight; awaiting `turn_complete`. Brief transient. | `interruptInFlight === true` |
-| REPLAYING | After a transport reconnect, reducer is reconstructing committed turns from past frames. Z5 disabled. | `phase === "replaying"` |
+| REPLAYING | After a reload / relaunch / transport reconnect, reducer is reconstructing committed turns from past frames. Z5 disabled; transcript paint suppressed until `replay_complete` ([DT10](#dt10-replay-transcript-suppression)). | `phase === "replaying"` |
 | ERRORED | Sticky session error (`lastError` populated). Distinct from COMPLETE+turnEndReason="error" — this is a session-level error state, not a per-turn one. Persists until user resubmits. | `phase === "errored"` |
 | COMPLETE | Just-finished turn; `TurnEntry` frozen onto transcript. Same `phase === "idle"` as IDLE but the just-frozen turn drives Z1 final-metrics display. | `phase === "idle"` AND `transcript.length > 0` AND `interruptInFlight === false` |
 | TRANSPORT_DOWN (overlay) | Wire not usable. Can apply during any non-IDLE state; covers BOTH `offline` (no wire) AND `restoring` (wire back, binding not re-ack'd). | `transportState !== "online"` |
 | QUEUED_NEXT_TURN (overlay) | User submitted a second prompt while a turn was in flight; queued for auto-flush on idle. | `queuedSends > 0` |
 | DRILLDOWN_OPEN (overlay) | User opened the `/context`-style breakdown via the Z2 affordance. | UI-local state (not reducer-tracked; merged into the lifecycle snapshot by `deriveLifecycleSnapshot` per [DT08](#dt08-lifecycle-snapshot-merges-ui-state)) |
 
-**Persistence projection.** The subset `(phase, transportState, interruptInFlight)` is the *indicator-tone axis set*: exactly what [`TugStateIndicator`](#step-20-4-2) reads as props, and exactly what [Step 20.4.8](#step-20-4-8)'s `session_state_changes` ledger persists. The invariant is **ledger axes ≡ indicator's tone axes ⊆ matrix signals**: signals in this table that are NOT in that triple (transcript length, `pendingApproval` / `pendingQuestion` distinction, `queuedSends`, `turnEndReason`, DRILLDOWN_OPEN) are deliberately not persisted as state-change rows; consumers recover them from other tables (`TurnEntry`s for `turnEndReason`, transcript-length count for IDLE↔COMPLETE) or accept that they're not historically replayable. If this matrix grows a new tone-bearing signal, all three artifacts (indicator props, this table, ledger schema) co-evolve in the same step.
+**Persistence projection.** The subset `(phase, transportState, interruptInFlight)` is the *indicator-tone axis set*: exactly what [`TugStateIndicator`](#step-20-4-2) reads as props, and exactly what [Step 20.4.8](#step-20-4-8)'s `session_state_changes` ledger persists. The invariant is **ledger axes ≡ indicator's tone axes ⊆ matrix signals**: signals in this table that are NOT in that triple (transcript length, `pendingApproval` / `pendingQuestion` distinction, `queuedSends`, `turnEndReason`, DRILLDOWN_OPEN) are deliberately not persisted as state-change rows; consumers recover them from other tables (`TurnEntry`s for `turnEndReason`, transcript-length count for IDLE↔COMPLETE) or accept that they're not historically replayable. **Known gap — closed in [Step 20.5.B](#step-20-5-b).** The "`TurnEntry`s for `turnEndReason`" clause assumes a committed `TurnEntry` survives a resume; it does not. A resumed session *rebuilds* each `TurnEntry` from replayed frames and re-derives `turnEndReason` from `turn_complete.result` + the runtime-only `interruptInFlight` — which cannot distinguish an interrupted turn from an errored one on the replay path. Persisting the per-turn end reason is [Step 20.5.B](#step-20-5-b)'s [replay-2] gap-close. If this matrix grows a new tone-bearing signal, all three artifacts (indicator props, this table, ledger schema) co-evolve in the same step.
 
 **The state-to-zone coordination matrix.** What each zone shows / does in each state. This is the contract [Step 20.5.D](#step-20-5-d) implements:
 
-Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4.15](#step-20-4-15): Z1A (model name + timestamp + sequence) on top, the body in the middle, Z1B (status / end-state row) on the bottom. Z1A is mounted unconditionally across every state — the model name + timestamp never disappear; only Z1B's content swaps. Z1B is itself an always-mounted slot (`<div data-slot="tide-asst-half-z1b">`) per the [L26] contract validated in [Step 20.4.12](#step-20-4-12); the cell below names only what swaps INSIDE the slot.
+Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4.15](#step-20-4-15): Z1A (model name + timestamp + sequence) on top, the body in the middle, Z1B (status / end-state row) on the bottom. Z1A is mounted unconditionally across every state in which the transcript is painted — the model name + timestamp never disappear; only Z1B's content swaps. (REPLAYING is the exception: the transcript is not painted during replay — see [DT10](#dt10-replay-transcript-suppression) and the REPLAYING row below.) Z1B is itself an always-mounted slot (`<div data-slot="tide-asst-half-z1b">`) per the [L26] contract validated in [Step 20.4.12](#step-20-4-12); the cell below names only what swaps INSIDE the slot.
 
 | State | Z0 (top of card) | Z1 (per-turn trailing — asst half) | Z2 (status bar) | Z3 (prompt-entry top) | Z4 (prompt-entry footer) | Z5 (submit button) |
 |---|---|---|---|---|---|---|
@@ -3839,14 +3852,16 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 | TOOL_WORK | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`). | live cum + this-turn elapsed (ticking) | project badge | "Running {tool_name}" | **Stop** |
 | AWAITING_USER | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`) — `awaiting_approval` is a live phase, so the indicator continues to pulse; the "paused" semantic surfaces on Z2 (yellow indicator) and Z5 (disabled), not by freezing Z1B's animation. | live cum (frozen during pause) + "awaiting input" badge | project badge | (default) | **"Awaiting your input"** (disabled) |
 | INTERRUPTING | reserved | Z1A: live model + submit timestamp. Z1B: `TugThinkingIndicator` (`animating={true}`) — phase is still live until `turn_complete` arrives; the interrupt-in-flight signal surfaces on Z2 (caution tone) and Z5, not Z1B. | live cum frozen | project badge | (default) | **"Stopping…"** (disabled, transient) |
-| REPLAYING | reserved | Z1A: model + timestamp from the row being reconstructed. Z1B: `TugThinkingIndicator` (`animating={true}`) on the row currently being replayed; once reconstruction finishes for that row Z1B swaps to the row's `EndStateDisplay`. | "Restoring session…" badge replaces live counts | project badge | (default) | **"Restoring…"** (disabled) |
+| REPLAYING | reserved | transcript turn rows are not painted during replay — Z1 / Z1A / Z1B do not render; the transcript holds its pre-replay paint (the `TideRestoring` placeholder on a cold resume; the last painted transcript on a mid-session reconnect) and does its single reconstructed paint at `replay_complete` ([DT10](#dt10-replay-transcript-suppression)). | "Restoring session…" badge replaces live counts | project badge | (default) | **"Restoring…"** (disabled) |
 | ERRORED | reserved | Z1A: model + timestamp from the partially-committed turn (when one exists). Z1B: `EndStateDisplay` rendered against that partial `TurnEntry` (`error` badge, danger tone); when no `TurnEntry` was committed, Z1B is empty but its slot div stays mounted ([L26]). | "Session error: {lastError.cause}" badge | project badge | (default) | **Submit** (enabled — user may retry; submit clears the error per current reducer semantics) |
 | COMPLETE | reserved | Z1A: model + timestamp of the just-committed turn. Z1B: `EndStateDisplay` — tone-coded ghost badge (`complete` / `interrupted` / `error` / `transport_lost`) + active-ms + total tokens + a trailing `BlockCopyButton` keyed off the assistant text. | session cum totals (frozen, includes this turn) | project badge | (default) | **Submit** |
 | TRANSPORT_DOWN (overlay) | reserved | Z1A: unchanged. Z1B: whatever the underlying phase's row above resolves to — frozen visually (the indicator keeps pulsing per its phase-driven `animating` flag; freezes are signalled on Z2/Z5 not Z1B). | "Disconnected — reconnecting" badge replaces live counts | project badge | (default) | **"Reconnecting…"** (disabled). When `transportState === "restoring"`, label is "Reconnecting…" too (the binding ack is part of the reconnect); when `"offline"`, label is "Reconnecting…" (we don't expose the offline/restoring distinction to the user — both are "session unusable"). |
 | QUEUED_NEXT_TURN (overlay) | reserved | Z1A: unchanged. Z1B: unchanged from the current turn's row. | (current turn's live counts) | project badge | (default) | Submit visually marked "will send on idle" |
 | DRILLDOWN_OPEN (overlay) | reserved | dimmed | dimmed | dimmed | dimmed | dimmed (drill-down surface is the focus) |
 
-**Matrix-edit policy.** [Step 20.5.C](#step-20-5-c) is **superseded** by [Step 20.4.10](#step-20-4-10) through [Step 20.4.13](#step-20-4-13); [Step 20.4.15](#step-20-4-15) authoritatively wired the production Z1 asst-half cells per the polish-plan above. Every Z1 asst-half cell in the matrix now says (a) which content the two-line stack's status row (Z1B) shows for that state — `TugThinkingIndicator` while `isLivePhase(phase)` is true, `EndStateDisplay` otherwise — and (b) what the model row (Z1A) shows (always present; model name + timestamp from the active or committed turn). Earlier framings ("per-turn live elapsed", "TugProgress agent") are retired — Z1B is the canonical surface for both signals.
+**REPLAYING transcript suppression.** The REPLAYING row encodes [DT10](#dt10-replay-transcript-suppression): a resumed session reconstructs its committed turns one `turn_complete` at a time, and painting each intermediate state makes the transcript visibly accumulate while the viewport chases the live edge — the restore FOUC the lifecycle investigation diagnosed. The transcript host therefore gates its visible render on `state !== "replaying"`, holding its pre-replay paint across the window and doing one reconstructed paint at `replay_complete`. The implementation lands in [Step 20.5.D](#step-20-5-d); this row is its contract.
+
+**Matrix-edit policy.** [Step 20.5.C](#step-20-5-c) is **superseded** by [Step 20.4.10](#step-20-4-10) through [Step 20.4.13](#step-20-4-13); [Step 20.4.15](#step-20-4-15) authoritatively wired the production Z1 asst-half cells per the polish-plan above. Every Z1 asst-half cell in the matrix now says (a) which content the two-line stack's status row (Z1B) shows for that state — `TugThinkingIndicator` while `isLivePhase(phase)` is true, `EndStateDisplay` otherwise — and (b) what the model row (Z1A) shows (always present; model name + timestamp from the active or committed turn). Earlier framings ("per-turn live elapsed", "TugProgress agent") are retired — Z1B is the canonical surface for both signals. (REPLAYING is the lone exception — the transcript is not painted during replay, so its matrix row carries no Z1 cell content; see [DT10](#dt10-replay-transcript-suppression).)
 
 **Two coordination invariants exposed by the matrix.**
 
@@ -3862,6 +3877,7 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 - [ ] Land the state diagram (above) into the plan as the canonical reference.
 - [ ] Land the state-to-zone coordination matrix (above) as the contract for 20.5.D.
 - [ ] Cross-reference [#step-20-3]'s `awaitingApprovalMs` / `turnEndReason` fields from the matrix.
+- [ ] Land [DT10](#dt10-replay-transcript-suppression) (REPLAYING transcript-paint suppression) and cross-reference it from the REPLAYING entries of the state diagram, the state-definitions table, and the coordination matrix.
 
 **Checkpoint.** No build/test/lint — this is plan-only.
 
@@ -3873,11 +3889,11 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 
 **Status:** _not started._
 
-**Commit:** `feat(tide-rendering): close lifecycle-primitive gaps from polish-plan 13/14/15 (incl. question dialog)`
+**Commit:** `feat(tide-rendering): close lifecycle-primitive gaps from polish-plan 13/14/15 + replay end-state bugs`
 
-**References:** [polish-plan #step-13](./tugplan-tide-card-polish.md#step-13), [polish-plan #step-14](./tugplan-tide-card-polish.md#step-14), [polish-plan #step-15](./tugplan-tide-card-polish.md#step-15), [#step-20-5-a]
+**References:** [polish-plan #step-13](./tugplan-tide-card-polish.md#step-13), [polish-plan #step-14](./tugplan-tide-card-polish.md#step-14), [polish-plan #step-15](./tugplan-tide-card-polish.md#step-15), [#step-20-5-a], [#step-20-3-4] (per-turn telemetry persistence — the [replay-2] end-reason column folds into its schema), [DT01](#dt01-per-turn-on-turnentry)
 
-**Scope.** Walk the current code against polish-plan Steps 13 (thinking + tool surfaces), 14 (mid-stream behaviors), and 15 (`control_request_forward` UI). Document what's done; identify gaps; close the gaps so 20.5.D builds on working primitives. Known gap from the preliminary audit: `tide-question-dialog` (only the permission variant has a chrome wrapper today).
+**Scope.** Walk the current code against polish-plan Steps 13 (thinking + tool surfaces), 14 (mid-stream behaviors), and 15 (`control_request_forward` UI). Document what's done; identify gaps; close the gaps so 20.5.D builds on working primitives. Known gap from the preliminary audit: `tide-question-dialog` (only the permission variant has a chrome wrapper today). Two further gaps are pre-identified — both REPLAYING end-state bugs surfaced by the [Step 20.5.A](#step-20-5-a) lifecycle investigation: a resumed turn left without a `turn_complete` strands an in-flight row animating `TugThinkingIndicator` forever ([replay-1]), and replayed interrupted turns mis-render as `error` ([replay-2]). Both are pre-marked ✗ in the checklist; the gap-close section carries their remediation.
 
 **Audit checklist** (each item gets a ✓ if implemented, ✗ + remediation task if not):
 
@@ -3889,12 +3905,16 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 - [ ] **[polish-14.4]** No regressions on basic round-trip.
 - [ ] **[polish-15] permission variant** — `chrome/tide-permission-dialog.tsx` exists; confirm it's mounted in `tide-card.tsx` when a permission `control_request_forward` arrives.
 - [ ] **[polish-15] question variant** — `chrome/tide-question-dialog.tsx` does NOT exist. **Gap to close.** Build it as a sibling chrome wrapper around `TugInlineDialog`, parallel to the permission variant. Wires to existing `handleRespondQuestion` reducer handler. Supports single-select and multi-select question payloads.
+- [ ] **[replay-1] ✗ (pre-identified)** REPLAYING end-state — a replayed turn that never gets a `turn_complete`. On a cold resume whose final turn was incomplete at quit (a refused or still-awaiting-approval tool call), that turn's JSONL window carries no `turn_complete`. `handleReplayComplete`'s chain-link-13 sees `pendingUserMessage !== null`, transitions `phase → streaming`, and preserves the in-flight cycle expecting a *live* `turn_complete` — which never arrives, because the wire is a fresh resume, not a continuation. `TideZ1B` keys its `TugThinkingIndicator` purely off `turn === undefined`, so the stranded in-flight row animates indefinitely. Chain-link-13 is correct for HMR-mid-stream (a live `turn_complete` *is* coming) and wrong for cold resume — the two cases must be distinguished.
+- [ ] **[replay-2] ✗ (pre-identified)** REPLAYING end-state — an interrupted turn replays as `error`. `handleTurnComplete` derives `turnEndReason` as `isSuccess ? "complete" : interruptInFlight ? "interrupted" : "error"`. `interruptInFlight` is reducer-runtime state set by `handleInterrupt`, which never runs on the replay path; the persisted `TurnTelemetry` block carries no end-reason field. An interrupted turn — recorded on the wire as `result: "error"` — therefore replays as `turnEndReason: "error"`, and every resumed session shows `error` badges where the live session showed `interrupted`. The per-turn end reason is not persisted anywhere recoverable (see [Step 20.5.A](#step-20-5-a)'s amended Persistence-projection note).
 
 **Gap-close work** (only if audit marks items ✗):
 
 1. **`tide-question-dialog`** — new file `tugdeck/src/components/tugways/chrome/tide-question-dialog.tsx` + `.css` + `.test.ts`. Renders question + options (single-select via radio-equivalent, multi-select via checkboxes per the payload's `is_multi_select` flag). Submitting writes a `question_answer` frame via `handleRespondQuestion`. Keyboard: arrow keys move selection, Enter submits, Esc cancels (dismiss).
 2. **`tide-card.tsx`** wires both dialog variants on the in-flight `control_request_forward` — permission and question both render inline in the in-flight row.
 3. **Coverage tests** for any polish-14 scenario that audits ✗ — fixture tests for Stop / queued sends / tool sub-state, against the reducer + UI together.
+4. **[replay-1] Cold-resume in-flight strand.** In `handleReplayComplete`, the `pendingUserMessage !== null` branch (chain-link-13) currently transitions `phase → streaming` for every case. Split it. The genuine HMR-mid-stream case (a live turn still streaming across the bracket) keeps the `phase → streaming` preservation. The cold-resume case (the replay window closed with no live wire continuing the turn — the common reload / relaunch path) instead commits the dangling turn as a terminal `TurnEntry` with a non-`error` reason (`turnEndReason: "interrupted"` — the turn was cut off mid-flight, not a protocol error), so the row leaves in-flight and `TideZ1B` renders its `EndStateDisplay`. The distinguishing signal is resume provenance; if no clean in-reducer signal exists, thread a provenance flag from the resume path. _(Cross-stack alternative, noted for tugcast follow-up, not in this tugdeck step's scope: the replay translator emits a terminal `turn_complete` at end-of-JSONL for a dangling turn — cleaner for the reducer's "every committed row has a `turn_complete`" invariant. Adopt only if the reducer-side split proves awkward.)_
+5. **[replay-2] Persist `turnEndReason`.** Add a `turnEndReason` field to the persisted per-turn shape so replay recovers it instead of re-deriving it. `TurnTelemetry` (`telemetry.ts`) is the shape already round-tripped through the SessionLedger per [#step-20-3-4]; grow it with `turnEndReason`, and have `handleTurnComplete` prefer `event.telemetry?.turnEndReason` over the `interruptInFlight`-based derivation when an inlined block is present — the same inline-wins precedence `mergeTurnTelemetry` already uses for cost / timing. The live path keeps deriving + persisting; the replay path adopts the persisted value. Per [DT01](#dt01-per-turn-on-turnentry), this extends the per-turn shape — it does not add a side-table. Because [#step-20-3-4] is itself not yet built, fold the `turn_end_reason` column into its ledger schema rather than amending a shipped one; coordinate the two steps on the column name and type.
 
 **Conformance.** Build only on existing primitives. No new architecture in this step — it's a known-gap-closer, not a redesign. The lifecycle state machine from 20.5.A defines the target behavior; this step ensures the primitives behind that behavior actually exist before 20.5.D wires coordination on top.
 
@@ -3903,6 +3923,10 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 - _(conditional)_ `tugdeck/src/components/tugways/chrome/tide-question-dialog.{tsx,css}` + `.test.ts` — if audit marks polish-15 question variant ✗.
 - _(conditional)_ `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire the question dialog (and verify permission dialog wiring) for in-flight `control_request_forward`.
 - _(conditional)_ `tugdeck/src/components/tugways/cards/__tests__/tide-card.test.tsx` — coverage tests for any polish-14 ✗ scenarios.
+- _(conditional)_ `tugdeck/src/lib/code-session-store/reducer.ts` — `handleReplayComplete` cold-resume vs. HMR-mid-stream split ([replay-1]); `handleTurnComplete` inline-`turnEndReason` precedence ([replay-2]).
+- _(conditional)_ `tugdeck/src/lib/code-session-store/telemetry.ts` — `turnEndReason` field on `TurnTelemetry`; `mergeTurnTelemetry` carries it ([replay-2]).
+- _(conditional)_ tugcast SessionLedger — `turn_end_reason` column folded into [#step-20-3-4]'s still-unbuilt per-turn telemetry schema + replay-attach path ([replay-2]).
+- _(conditional)_ `tugdeck/src/lib/code-session-store/__tests__/code-session-store.replay.test.ts` — coverage for both REPLAYING end-state scenarios.
 - `roadmap/tide-assistant-rendering.md` (this file) — append audit findings to this step's status line for the historical record.
 
 **Tasks.**
@@ -3912,6 +3936,8 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 - [ ] Specifically: implement `tide-question-dialog` (almost certainly an ✗).
 - [ ] Verify `tide-card.tsx` mounts both dialog variants when `awaitingApprovalSince !== null` for the in-flight turn.
 - [ ] Add coverage tests for any polish-14 scenario found ✗.
+- [ ] **[replay-1]** Fix the cold-resume in-flight strand — a dangling final turn commits as a terminal `interrupted` `TurnEntry` instead of stranding an animated in-flight row.
+- [ ] **[replay-2]** Persist `turnEndReason`; the replay path adopts the persisted value instead of re-deriving from `interruptInFlight`.
 
 **Tests.**
 
@@ -3919,6 +3945,9 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 - [ ] Submitting question dialog dispatches `handleRespondQuestion` with the chosen answer(s).
 - [ ] Esc / cancel dismisses the question dialog and triggers the dismiss path (equivalent to denial in semantics).
 - [ ] Any polish-14 scenario marked ✗ gets a fixture test that exercises the scenario end-to-end.
+- [ ] **[replay-1]** A replayed session whose JSONL ends mid-turn (no final `turn_complete`) commits that turn as a terminal `TurnEntry` (`turnEndReason: "interrupted"`); after `replay_complete` no row has `turn === undefined` and no `TugThinkingIndicator` is mounted.
+- [ ] **[replay-1]** HMR-mid-stream regression guard — a genuine live turn still streaming across `replay_complete` keeps the `phase → streaming` preservation (chain-link-13 intact for its original case).
+- [ ] **[replay-2]** A turn interrupted in a live session, persisted, then replayed on resume keeps `turnEndReason: "interrupted"` — `TideZ1B` shows the `interrupted` badge, not `error`. Golden fixture: an inlined telemetry block carrying `turnEndReason: "interrupted"` wins over the `interruptInFlight`-false replay derivation.
 
 **Checkpoint.**
 
@@ -3926,6 +3955,7 @@ Every Z1 asst-half cell below assumes the **two-line stack** wired in [Step 20.4
 - [ ] `bun test` green.
 - [ ] `bun run audit:tokens lint` exits 0.
 - [ ] **Manual smoke** — exercise each polish-14 scenario by hand against live Claude; confirm permission AND question dialogs both fire and resolve cleanly.
+- [ ] **Manual smoke (replay)** — resume a session whose last turn was a refused tool call: confirm no stuck `TugThinkingIndicator`. Resume a session containing an interrupted turn: confirm the row shows the `interrupted` badge, not `error`.
 
 ---
 
@@ -4054,7 +4084,7 @@ The matrix from [Step 20.5.A](#step-20-5-a) is encoded literally in `deriveLifec
 - `tugdeck/src/lib/code-session-store/__tests__/lifecycle-state.test.ts` — pure-logic tests for every row of the matrix (one test per state × overlay combination that the matrix lists distinctly).
 - `tugdeck/src/lib/code-session-store/hooks/use-lifecycle-state.ts` — _new hook_ — `useSyncExternalStore` wrapper.
 - `tugdeck/src/components/tugways/tug-prompt-entry.tsx` + `.css` — Z5 wire-up: button consumes `submitButtonMode` from the hook; flips `data-mode` for CSS; label / disabled / aria-label per mode.
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire chosen telemetry placement defaults from 20.4's study into Z0 / Z1 / Z2 / Z3 / Z4. Each placement renderer consumes `useLifecycleState()` for the matrix-driven content (e.g., Z2's "live counts" renderer switches to "frozen + awaiting badge" when `state === "awaiting_user"`).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — wire chosen telemetry placement defaults from 20.4's study into Z0 / Z1 / Z2 / Z3 / Z4. Each placement renderer consumes `useLifecycleState()` for the matrix-driven content (e.g., Z2's "live counts" renderer switches to "frozen + awaiting badge" when `state === "awaiting_user"`). Also gates the transcript pane's visible render on `state !== "replaying"` per [DT10](#dt10-replay-transcript-suppression) — the transcript holds its pre-replay paint across the replay window and reveals once, fully reconstructed, at the restored scroll position.
 - `tugdeck/src/components/tugways/cards/__tests__/tide-card-lifecycle-coordination.test.tsx` — end-to-end matrix tests: drive a fixture session through each state and assert each zone's content matches the matrix row.
 
 **Mount-identity check.** [L26] — Z5's submit button is the most likely place to accidentally break responder identity. The button MUST stay the same DOM node across mode changes; ONLY its label / disabled / `data-mode` attribute / event handler change. Do NOT render `<button>Submit</button>` in one branch and `<button>Stop</button>` in another — render one `<button>` whose content + attributes are mode-driven. Verify focus survives mode transitions: tab into the textarea, type, focus the button, switch state through a fixture turn — focus identity must persist.
@@ -4064,6 +4094,7 @@ The matrix from [Step 20.5.A](#step-20-5-a) is encoded literally in `deriveLifec
 - [ ] **Lifecycle module + hook** — `lifecycle-state.ts` + `use-lifecycle-state.ts`. Implement `deriveLifecycleSnapshot` as the matrix encoded in one switch.
 - [ ] **Z5 wire-up** — single `<button>` DOM node with `data-mode` attribute; CSS handles per-mode visual; aria-label per mode; keyboard activation respects disabled states.
 - [ ] **Cross-zone coordination** — Z1 / Z2 renderers consume the hook; Z2 swaps live counts for "awaiting" badge during AWAITING_USER, etc.
+- [ ] **[DT10] REPLAYING transcript gate** — the `TideCard` composition holds the transcript's visible render across the replay window and does one reconstructed paint at `replay_complete`, at the restored scroll position. No intermediate replay state paints.
 - [ ] **Ship placement defaults** — wire 20.4's HMR-study winners into each zone's default content. Experimentation harness stays behind DEV guard.
 - [ ] **Mount-identity verification** — button node stable across mode changes; focus survives; matrix-row transitions don't flicker.
 - [ ] **End-to-end matrix tests** — every distinct row of the matrix gets a fixture test.
@@ -4076,6 +4107,7 @@ The matrix from [Step 20.5.A](#step-20-5-a) is encoded literally in `deriveLifec
 - [ ] **[DT08]** `deriveLifecycleSnapshot` projects `uiState.drilldownOpen` into the overlays set; same `storeSnapshot` with different `uiState` returns distinct results.
 - [ ] Z2's renderer shows live counts in STREAMING, frozen + badge in AWAITING_USER, "Disconnected" in TRANSPORT_DOWN overlay, "Restoring session…" in REPLAYING.
 - [ ] Z1's per-turn indicator: TugProgress during SUBMITTING / AWAITING_FIRST_TOKEN, live elapsed ticking during STREAMING / TOOL_WORK, paused during AWAITING_USER, frozen final in COMPLETE / ERRORED.
+- [ ] **[DT10]** During REPLAYING the transcript paints no intermediate reconstructed state; the first painted frame after `replay_complete` is the fully-reconstructed transcript at the restored scroll anchor — no animated-scroll FOUC.
 - [ ] Z5 button: same DOM node across mode transitions; aria-label reflects current mode; disabled in AWAITING_USER / INTERRUPTING / REPLAYING / TRANSPORT_DOWN.
 - [ ] Mount-identity: textarea focus survives Z5 mode changes.
 - [ ] **[L23]** Z1 content swap (TugProgress → per-turn metrics on COMPLETE) does NOT scroll the transcript or steal focus — verify via app-test that an existing focus position survives a turn's completion.
