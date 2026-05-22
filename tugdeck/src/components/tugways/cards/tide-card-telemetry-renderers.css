@@ -191,6 +191,14 @@
   gap: var(--tug-space-md);
 }
 
+/* Nudge the two flanking indicator glyphs a couple of px inward from
+   the value-wrap edges. A margin on the glyphs only — the value-wrap
+   keeps its `--tugx-tide-status-cell-width`, so the STATE cell stays
+   the same width as every other status cell and nothing relays out. */
+.tide-telemetry-status-cell[data-priority="state"] .tug-state-indicator {
+  margin-inline: 2px;
+}
+
 /* Value treatment — the row's focal data: a step up in size from the
    row's chrome font, bold weight, strong color. `tabular-nums` so the
    digits hold a constant column as the live values tick. */
