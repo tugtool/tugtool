@@ -35,6 +35,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-transcript";
+import { TideCardSashGrip } from "./tide-card-sash-grip";
 import { useTidePlacementSlots } from "./tide-card-placement-experiment";
 import { TideVersionBadge } from "../chrome/tide-version-badge";
 import { TugPaneBanner } from "../tug-pane-banner";
@@ -2463,7 +2464,31 @@ export function TideCardBody({
               className="tide-card-status-bar"
               data-slot="tide-card-status-bar"
             >
-              {effectiveStatusBarContent}
+              {/*
+                Z2 status content flanked by a sash grip at each end.
+                The grips resize the split-pane sash directly below —
+                the status bar would otherwise mask the sash's thin
+                hit line. Rendered only when Z2 has content: an empty
+                slot leaves the wrapper `:empty`, which collapses the
+                whole strip (CSS) and restores the bare-sash layout.
+              */}
+              {effectiveStatusBarContent != null && (
+                <>
+                  <TideCardSashGrip
+                    entryPanelRef={entryPanelRef}
+                    side="start"
+                    disabled={maximized}
+                  />
+                  <div className="tide-card-status-bar-main">
+                    {effectiveStatusBarContent}
+                  </div>
+                  <TideCardSashGrip
+                    entryPanelRef={entryPanelRef}
+                    side="end"
+                    disabled={maximized}
+                  />
+                </>
+              )}
             </div>
           </div>
         </TugSplitPanel>

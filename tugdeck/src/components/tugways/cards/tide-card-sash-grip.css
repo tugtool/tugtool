@@ -1,0 +1,71 @@
+/* ============================================================================
+   tide-card-sash-grip.css
+   ============================================================================
+   Z2 sash grip — a pointer drag-handle pinned to each end of the Tide
+   card's status bar. Drives the horizontal split-pane sash the status
+   bar sits on; see `tide-card-sash-grip.tsx`.
+
+   Renders on the Z2 status-bar surface
+   (`--tug7-surface-card-primary-normal-status-rest`).
+   ========================================================================= */
+
+.tide-card-sash-grip {
+  /* Fixed-width box at the end of the status-bar flex row; stretches
+     to the bar's full content height so the grab target is as tall
+     as Z2 itself. */
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tugx-tide-sash-grip-width);
+  border-radius: var(--tug-radius-sm);
+  color: var(--tug7-element-global-icon-normal-muted-rest);
+  /* The sash splits the card top/bottom — a vertical resize cursor. */
+  cursor: ns-resize;
+  /* Touch drags resize the sash; they must never scroll the card. */
+  touch-action: none;
+  transition:
+    background-color calc(120ms * var(--tug-timing, 1)) ease,
+    color calc(120ms * var(--tug-timing, 1)) ease;
+
+  --tugx-tide-sash-grip-width: 2rem;
+}
+
+/* Hover + active-drag share one treatment: the grip lifts to a
+   tinted background with a full-strength icon, so the affordance
+   reads the same whether the pointer is poised over it or mid-drag
+   (and travelling off it under pointer capture). */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-card-sash-grip:hover,
+.tide-card-sash-grip[data-dragging] {
+  background-color: var(--tug7-surface-highlight-primary-normal-hover-rest);
+  color: var(--tug7-element-global-icon-normal-default-rest);
+}
+
+/* Maximized card — the sash is frozen, so the grip is inert and
+   dimmed. `pointer-events: none` makes the dim state unambiguous:
+   no hover lift, no drag. */
+.tide-card-sash-grip[data-disabled] {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+.tide-card-sash-grip-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Drag-cursor lock. The grip captures the pointer at drag start, so
+   pointer events keep flowing to it — but the pointer itself travels
+   over the transcript and entry pane, which would otherwise show
+   their own cursors. This root-scoped rule, toggled by
+   `tide-card-sash-grip.tsx` for the drag's duration, holds the
+   resize cursor everywhere and suppresses text selection ([L06] —
+   appearance via a DOM class, not React state). */
+html.tide-card-sash-dragging,
+html.tide-card-sash-dragging * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}

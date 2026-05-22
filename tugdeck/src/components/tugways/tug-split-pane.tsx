@@ -82,6 +82,7 @@ import "./tug-split-pane.css";
 import React from "react";
 import {
   Group,
+  type GroupImperativeHandle,
   type Layout,
   Panel,
   type PanelImperativeHandle,
@@ -162,6 +163,18 @@ interface TugSplitPaneWriteContextValue {
    * restore.
    */
   registerPanel(id: string, entry: RegisteredPanelEntry): () => void;
+  /**
+   * Persist the group's current layout through the user-drag path —
+   * the same code `onLayoutChanged` runs at the end of a native sash
+   * drag. An external drag handle (a grip that lives outside the
+   * sash — e.g. the Tide card's Z2 status-bar grips) applies live
+   * sizes through `TugSplitPanelHandle.dragResizePixels` with the
+   * gate held, so nothing is written mid-drag, then calls this once
+   * on pointer release so the settled layout — flex-grow ratios and
+   * pinned pixel sizes — lands in tugbank exactly as a sash drag
+   * would. No-ops when the pane has no `storageKey`.
+   */
+  commitLayout(): void;
 }
 const TugSplitPaneWriteContext =
   React.createContext<TugSplitPaneWriteContextValue | null>(null);
@@ -172,6 +185,7 @@ const TugSplitPaneWriteContext =
 // across renders in the standalone case.
 const FALLBACK_GET_USER_SIZE = (): number => 0;
 const FALLBACK_REGISTER_PANEL = (): (() => void) => () => {};
+const FALLBACK_COMMIT_LAYOUT = (): void => {};
 
 // ---- Types ----
 
@@ -307,6 +321,14 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
       [ref],
     );
 
+    // --- Library group handle ---
+    //
+    // The imperative `GroupImperativeHandle` (distinct from the DOM
+    // `groupElRef` above). `commitLayout` reads `getLayout()` from it
+    // to fetch the group's live layout for the external-drag-handle
+    // persistence path.
+    const groupRef = React.useRef<GroupImperativeHandle | null>(null);
+
     // --- Panel registry (populated by descendant TugSplitPanels) ---
     //
     // Descendants register themselves in `useLayoutEffect` so the
@@ -347,11 +369,6 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
       [],
     );
 
-    const contextValue = React.useMemo<TugSplitPaneWriteContextValue>(
-      () => ({ syncFlagRef, getUserSize, registerPanel }),
-      [getUserSize, registerPanel],
-    );
-
     // --- Path A: user drag and library-driven container resize ---
     //
     // The library fires `onLayoutChanged` at pointerup for drags AND
@@ -359,8 +376,11 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
     // `preserve-pixel-size` panels. When the sync flag is clear, we're
     // on a user-/library-driven path: update userSize and persist.
     // When the flag is set, we're inside a transient write from
-    // `setTransientSize` / `restoreUserSize` / pixel-pin restore —
-    // bail out so neither userSize nor tugbank gets clobbered.
+    // `setTransientSize` / `restoreUserSize` / `dragResizePixels` /
+    // pixel-pin restore — bail out so neither userSize nor tugbank
+    // gets clobbered. (`dragResizePixels`'s commit call re-enters
+    // this handler deliberately, with the flag clear, via
+    // `commitLayout` below.)
     //
     // For pinned panels (registered with `pinned: true`), we additionally
     // read their pixel size from the layout map and the group's
@@ -399,6 +419,26 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
         putSplitPaneLayout(storageKey, { layout, pixels });
       },
       [storageKey, orientation],
+    );
+
+    // --- Path A, invoked imperatively: external-drag-handle commit ---
+    //
+    // `commitLayout` routes the group's *current* layout through
+    // `handleLayoutChanged` — the one writer of userSize + tugbank.
+    // An external drag handle gates its mid-drag resizes (no write)
+    // and calls this once on pointer release. The sync flag is clear
+    // here (we are outside any `writeGated` window), so the write
+    // proceeds. The library's `getLayout()` is the live layout the
+    // gated resizes already applied; persisting it mirrors the
+    // pointer-up write of a native sash drag.
+    const commitLayout = React.useCallback((): void => {
+      const group = groupRef.current;
+      if (group) handleLayoutChanged(group.getLayout());
+    }, [handleLayoutChanged]);
+
+    const contextValue = React.useMemo<TugSplitPaneWriteContextValue>(
+      () => ({ syncFlagRef, getUserSize, registerPanel, commitLayout }),
+      [getUserSize, registerPanel, commitLayout],
     );
 
     // --- Pixel-pin restore ---
@@ -466,6 +506,7 @@ export const TugSplitPane = React.forwardRef<HTMLDivElement, TugSplitPaneProps>(
           orientation={libraryOrientation}
           defaultLayout={storedFlexGrow ?? undefined}
           elementRef={setGroupElRef}
+          groupRef={groupRef}
           onLayoutChanged={handleLayoutChanged}
           className={cn("tug-split-pane", `tug-split-pane-${orientation}`, className)}
           data-slot="tug-split-pane"
@@ -541,6 +582,29 @@ export interface TugSplitPanelHandle {
    * the library's store synchronously.
    */
   getSize(): number;
+  /**
+   * Current library-displayed size in CSS pixels. Companion to
+   * `getSize()` for callers that work in pixels — e.g. an external
+   * drag handle tracking pointer deltas.
+   */
+  getSizePixels(): number;
+  /**
+   * Resize the panel to a pixel size as part of an external drag
+   * gesture — a drag handle that lives outside the sash (the Tide
+   * card's Z2 status-bar grips).
+   *
+   * While `commit` is false (the default) the resize is visual-only:
+   * gated exactly like `setTransientSize`, so neither the user-size
+   * map nor tugbank is touched — the right behavior for the stream of
+   * pointer-move updates during a drag. Pass `commit: true` on the
+   * final call of the gesture (pointer release) to additionally route
+   * the settled layout through the persistence path, the same write a
+   * native sash drag performs at pointer-up.
+   *
+   * The library clamps the request to the panel's `minSize` /
+   * `maxSize`; the return value is the pixel size actually applied.
+   */
+  dragResizePixels(px: number, options?: { commit?: boolean }): number;
   /**
    * Write a transient display size (0..100, percentage). Used for
    * content-driven auto-resize.
@@ -656,6 +720,7 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
     const syncFlagRef = writeContext?.syncFlagRef ?? localSyncFlagRef;
     const getUserSize = writeContext?.getUserSize ?? FALLBACK_GET_USER_SIZE;
     const registerPanel = writeContext?.registerPanel ?? FALLBACK_REGISTER_PANEL;
+    const commitLayout = writeContext?.commitLayout ?? FALLBACK_COMMIT_LAYOUT;
 
     // Register with the enclosing TugSplitPane so it can read this
     // panel's imperative handle for pixel-aware persistence and pixel-
@@ -698,6 +763,22 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
       return panel.getSize().asPercentage;
     }, [syncFlagRef]);
 
+    // Pixel-valued sibling of `writeGated` — same gated mechanism,
+    // pixel input/output instead of percentage. Used by the external-
+    // drag-handle path (`dragResizePixels`), which tracks the sash in
+    // pixels because the pinned entry panel is pixel-sized.
+    const writeGatedPixels = React.useCallback((px: number): number => {
+      const panel = panelRef.current;
+      if (!panel) return 0;
+      syncFlagRef.current = true;
+      try {
+        panel.resize(`${px}px`);
+      } finally {
+        syncFlagRef.current = false;
+      }
+      return panel.getSize().inPixels;
+    }, [syncFlagRef]);
+
     // Helper: run a short flex-grow tween via TugAnimator / WAAPI.
     // The library store + inline style are already at the target
     // (writeGated ran before this); WAAPI overlays the visual tween
@@ -733,6 +814,19 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
         getSize() {
           return panelRef.current?.getSize().asPercentage ?? 0;
         },
+        getSizePixels() {
+          return panelRef.current?.getSize().inPixels ?? 0;
+        },
+        dragResizePixels(px, options) {
+          // Gated resize — visual only — for the mid-drag stream. On
+          // the final call (`commit`), `commitLayout` then persists
+          // the settled layout exactly as a native sash drag's
+          // pointer-up does. Gating the resize even on the commit
+          // call keeps persistence to a single deterministic write.
+          const applied = writeGatedPixels(px);
+          if (options?.commit) commitLayout();
+          return applied;
+        },
         setTransientSize(pct, options) {
           const fromPct = panelRef.current?.getSize().asPercentage ?? 0;
           const applied = writeGated(pct);
@@ -748,7 +842,14 @@ export const TugSplitPanel = React.forwardRef<TugSplitPanelHandle, TugSplitPanel
           return applied;
         },
       }),
-      [writeGated, animateFlexGrow, getUserSize, resolvedId],
+      [
+        writeGated,
+        writeGatedPixels,
+        commitLayout,
+        animateFlexGrow,
+        getUserSize,
+        resolvedId,
+      ],
     );
 
     return (

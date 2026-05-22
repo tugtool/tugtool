@@ -17,6 +17,14 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  /* Width floor — the card never narrows enough to clip the Z2
+     status row. The row carries four fixed-width cells (4 × 21ch at
+     its 11px font ≈ 554px) plus inter-cell + edge gaps (≈ 120px);
+     the status bar adds a sash grip at each end (2 × 2rem) with its
+     own gaps + padding (≈ 96px). That sums to ≈ 770px; 800px clears
+     it with a little breathing room so the instrument readout and
+     its grips always lay out without clipping. */
+  min-width: 800px;
 }
 
 /* Entry pane wrapper — a TugBox rendered plain + inset={false}.
@@ -80,13 +88,13 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  /* Center the entire status-bar group horizontally. The combined
-     status-row renderer is a single child `div` containing every
-     datum + bullet separator; `justify-content: center` keeps the
-     group balanced across the card width as items collapse. Single-
-     item renderers (the prior placement-experiment defaults) still
-     sit centered the same way — a one-item group centers identically
-     to a five-item one. */
+  /* Three-part row: a sash grip at each end (fixed width) with the
+     status content between them in `.tide-card-status-bar-main`.
+     That wrapper is `flex: 1 1 auto`, so it absorbs the row width
+     the grips leave and the status-row renderer inside centers its
+     own cells. `justify-content: center` is inert while `main`
+     flexes, but is kept so a future content-sized Z2 occupant (one
+     not `width: 100%`) still centers between the grips. */
   justify-content: center;
   gap: var(--tug-space-md);
   padding: var(--tug-space-md);
@@ -144,6 +152,18 @@
    collapses. */
 .tide-card-status-bar:empty {
   display: none;
+}
+
+/* Z2 status content, flanked by the two sash grips. `flex: 1 1 auto`
+   lets it absorb the row width the grips leave; `min-width: 0` lets
+   it shrink below content so the grips stay pinned to the card's
+   edges. The status-row renderer inside is `width: 100%` and centers
+   its own cells — this wrapper just reserves the middle band. */
+.tide-card-status-bar-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
 }
 
 /* Renderer-specific styling for the telemetry chips (window
