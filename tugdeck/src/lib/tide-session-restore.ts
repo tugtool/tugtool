@@ -489,6 +489,18 @@ function isCardBinding(value: unknown): value is CardBinding {
  * Mints a fresh `tug_session_id`. The supervisor will allocate a new
  * ledger row; the previous zero-turn row remains as a closed-state
  * crumb (eventually swept by age).
+ *
+ * Registers a `tideRestoreRegistry` hold for the pre-binding window.
+ * Without it, `restorePassGate` settles the instant this pass
+ * resolves and the still-unbound card falls straight through to the
+ * project picker — its `TugSheet` flashing for the `spawn_session`
+ * round-trip. The hold keeps the card on the quiet `TideRestoring`
+ * backdrop instead. It clears on binding arrival (success), on a
+ * `spawn_session_error` via `notifySpawnRejected` (rejection), or on
+ * the timeout backstop. A `new`-mode spawn has no JSONL to replay, so
+ * the hold spans only the bind round-trip — typically single-digit
+ * milliseconds, below the placeholder's panel-reveal budget, so a
+ * healthy fresh spawn shows only the quiet backdrop.
  */
 function fireFreshSpawn(
   cardId: string,
@@ -496,12 +508,30 @@ function fireFreshSpawn(
   connection: TugConnection,
 ): void {
   const tugSessionId = crypto.randomUUID();
-  // Drop any prior in-flight restore timer for this card. The fresh
-  // spawn doesn't go through the restore-registry — there's nothing
-  // to "restore," and a `spawn_session_ok` ack will populate
-  // `cardSessionBindingStore` directly.
+  // Drop any prior in-flight restore timer before arming a new hold.
   tideRestoreRegistry._clear(cardId);
+  // Stamp the restore-start clock — the `TideRestoring` placeholder
+  // delay-gates its centered panel on this, so a fast fresh spawn
+  // shows only the backdrop and a slow one explains itself.
+  restoreStartedAt.set(cardId, Date.now());
   sendSpawnSession(connection, cardId, tugSessionId, projectDir, "new");
+  tideRestoreRegistry._register(
+    cardId,
+    { tugSessionId, projectDir },
+    () => {
+      // Timeout backstop: no `spawn_session_ok`, no rejection. Drop
+      // the hold so the card falls through to the picker; the ledger
+      // row is preserved server-side, so the next reload retries.
+      if (!tideRestoreRegistry.has(cardId)) return;
+      tideRestoreRegistry._clear(cardId);
+      logSessionLifecycle("restore.fresh_spawn_timed_out", {
+        card_id: cardId,
+        tug_session_id: tugSessionId,
+        project_dir: projectDir,
+        timeout_ms: RESTORE_TIMEOUT_MS,
+      });
+    },
+  );
 }
 
 /**
@@ -566,4 +596,21 @@ export function cancelTideRestore(cardId: string): void {
     card_id: cardId,
     tug_session_id: expectation.tugSessionId,
   });
+}
+
+/**
+ * Drop a card's in-flight restore / fresh-spawn hold because tugcast
+ * rejected its `spawn_session` outright — a `spawn_session_error`
+ * CONTROL frame, e.g. the project directory no longer exists.
+ *
+ * Clears the `tideRestoreRegistry` entry so `TideCardContent` falls
+ * through from the `TideRestoring` placeholder to the project picker,
+ * which surfaces the rejection through `tideSpawnErrorStore`'s banner.
+ * No picker notice is set — the spawn-error banner is the notice.
+ *
+ * A no-op when the card has no registry entry: a rejection that races
+ * a card the user never had on a restore hold simply does nothing.
+ */
+export function notifySpawnRejected(cardId: string): void {
+  tideRestoreRegistry._clear(cardId);
 }

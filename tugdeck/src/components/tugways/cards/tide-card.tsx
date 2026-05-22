@@ -2399,7 +2399,15 @@ export function TideCardBody({
         orientation="horizontal"
         showHandle={false}
         disabled={maximized}
-        storageKey="tide.prompt-entry"
+        // Per-card storage key. The entry-pane sash position is a
+        // per-card preference: a single shared key would let every
+        // tide card's mount-time layout write clobber every other
+        // card's saved sash position, and on relaunch each card would
+        // paint at whatever card last wrote the shared entry before
+        // snapping to its own — a visible shift. `cardId` is stable
+        // across relaunch (the ledger restore matches on it) and
+        // across cross-pane moves, so the pref persists with the card.
+        storageKey={`tide.prompt-entry.${cardId}`}
       >
         {/*
           Top pane: multi-turn transcript. `TideTranscriptHost` mounts a
