@@ -1588,12 +1588,8 @@ function TideProjectPickerForm({
         />
       </label>
       <PickerCellProvider value={cellContextValue}>
-        <TugBox
-          variant="bordered"
-          label="Recent Project Paths"
-          labelPosition="legend"
-          className="tide-card-picker-box"
-        >
+        <div className="tide-card-picker-section">
+          <span className="tide-card-picker-label">Recent Project Paths</span>
           <div className="tide-card-picker-recents-host">
             {recents.length > 0 ? (
               <TugListView
@@ -1615,13 +1611,9 @@ function TideProjectPickerForm({
               </div>
             )}
           </div>
-        </TugBox>
-        <TugBox
-          variant="bordered"
-          label="Sessions"
-          labelPosition="legend"
-          className="tide-card-picker-box"
-        >
+        </div>
+        <div className="tide-card-picker-section">
+          <span className="tide-card-picker-label">Sessions</span>
           <div className="tide-card-picker-sessions-host">
             {sessionsReady ? (
               <TugListView
@@ -1674,7 +1666,7 @@ function TideProjectPickerForm({
               </TugPushButton>
             </TugConfirmPopover>
           </div>
-        </TugBox>
+        </div>
       </PickerCellProvider>
       <div className="tug-sheet-actions">
         {dirMissing && (
