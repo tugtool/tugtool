@@ -424,15 +424,15 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 - `tugdeck/src/lib/host-facts-store.ts` — `HostFactsStore` with `subscribe` / `getSnapshot`, the one-shot fetch, and the parser.
 
 **Tasks:**
-- [ ] Implement `HostFactsStore`: fetch once on construction, parse per Spec S01, tolerate unknown fields, hold empty state until resolved.
-- [ ] Expose a `useSyncExternalStore`-friendly snapshot ([L02]).
+- [x] Implement `HostFactsStore`: fetch once on construction, parse per Spec S01, tolerate unknown fields, hold empty state until resolved. — `tugdeck/src/lib/host-facts-store.ts`; constructor fires one `GET /api/host`; `parseHostFacts` is strict on the two contract fields and ignores extras.
+- [x] Expose a `useSyncExternalStore`-friendly snapshot ([L02]). — `subscribe` / `getSnapshot` (stable, pre-bound) + `useHostFacts()` hook; snapshot object assigned once.
 
 **Tests:**
-- [ ] `bun:test`: the parser maps a Spec S01 literal to the snapshot; missing / extra fields are tolerated; a failed fetch leaves the empty snapshot.
+- [x] `bun:test`: the parser maps a Spec S01 literal to the snapshot; missing / extra fields are tolerated; a failed fetch leaves the empty snapshot. — 15 tests in `src/lib/__tests__/host-facts-store.test.ts` (parser + store: success, reject, non-2xx, malformed body, subscriber notify/unsub, snapshot stability).
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test src/lib/__tests__/host-facts-store.test.ts`
+- [x] `bun run check` — clean.
+- [x] `bun test src/lib/__tests__/host-facts-store.test.ts` — 15 pass.
 
 ---
 
