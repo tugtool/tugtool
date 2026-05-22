@@ -203,6 +203,14 @@ export interface TugStateIndicatorProps
    * label resolves to {@link PHASE_HUMAN_LABEL}`[state.phase]`.
    */
   label?: string;
+  /**
+   * Multiplier applied to the inner dot's diameter while the indicator
+   * is idle (the `default` tone). Lets the dot read quiet when nothing
+   * is happening; the glyph box and the ring are untouched, and any
+   * active tone renders the dot at full size.
+   * @default 1.0
+   */
+  scale?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +226,7 @@ export const TugStateIndicator = React.forwardRef<
     size = 16,
     labelPosition = "right",
     label,
+    scale = 1.0,
     className,
     style,
     ...rest
@@ -287,8 +296,18 @@ export const TugStateIndicator = React.forwardRef<
     };
   }, []);
 
+  // Idle is the resting state — the `default` tone. There, shrink ONLY
+  // the inner dot by `scale` so the resting indicator reads quiet; the
+  // glyph box and the ring keep their full geometry (the ring is
+  // hidden while idle, and shows at full size only when a turn runs).
+  const idle = v.tone === "default";
   const rootStyle: React.CSSProperties = {
     ["--tugx-state-indicator-size" as string]: `${size}px`,
+    ...(idle
+      ? {
+          ["--tugx-state-indicator-dot-size" as string]: `${(size / 2) * scale}px`,
+        }
+      : {}),
     ...style,
   };
 

@@ -1,13 +1,12 @@
 /**
  * GalleryTranscriptEntry — visual showcase for TugTranscriptEntry.
  *
- * Mounts all four participant variants stacked with realistic mock content
+ * Mounts all three participant variants stacked with realistic mock content
  * so the design can be reviewed in isolation:
  *
  *   - user    — a "tell me a haiku" submission rendered as plain text.
  *   - code    — a haiku response as plain JSX (markdown-styled).
  *   - shell   — mock `git status` output in a `<pre>` block.
- *   - command — mock `:cost` output in a labeled-values list.
  *
  * The data is mock. Live transcript wiring (`CodeSessionStore`, streaming,
  * a per-row `TugMarkdownView` for `code` rows, atom rendering for user
@@ -25,7 +24,7 @@
 import "./gallery.css";
 
 import React from "react";
-import { Copy, RefreshCw } from "lucide-react";
+import { Copy } from "lucide-react";
 
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { TugBadge } from "@/components/tugways/tug-badge";
@@ -45,17 +44,6 @@ Changes not staged for commit:
   modified:   styles/themes/brio.css
 
 no changes added to commit (use "git add")`;
-
-interface CostRow {
-  label: string;
-  value: string;
-}
-
-const MOCK_COST_ROWS: ReadonlyArray<CostRow> = [
-  { label: "Total cost", value: "$1.23" },
-  { label: "Total turns", value: "5" },
-  { label: "Duration", value: "4m 32s" },
-];
 
 // ---------------------------------------------------------------------------
 // Mock body components
@@ -98,24 +86,6 @@ const PRE_STYLE: React.CSSProperties = {
   fontSize: "var(--tug-font-size-xs)",
   margin: 0,
   whiteSpace: "pre-wrap",
-};
-
-const COST_DL_STYLE: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "auto 1fr",
-  columnGap: "var(--tug-space-md)",
-  rowGap: "var(--tug-space-2xs)",
-  margin: 0,
-  fontSize: "var(--tug-font-size-sm)",
-};
-
-const COST_DT_STYLE: React.CSSProperties = {
-  color: "var(--tug7-element-global-text-normal-muted-rest)",
-};
-
-const COST_DD_STYLE: React.CSSProperties = {
-  margin: 0,
-  fontFamily: "var(--tug-font-family-mono)",
 };
 
 // ---------------------------------------------------------------------------
@@ -165,31 +135,6 @@ export function GalleryTranscriptEntry(): React.ReactElement {
           <TugBadge size="sm" emphasis="tinted" role="success">
             exit 0
           </TugBadge>
-        }
-      />
-      <TugTranscriptEntry
-        participant="command"
-        identifier=":cost"
-        timestamp="2:12 PM"
-        body={
-          <dl style={COST_DL_STYLE}>
-            {MOCK_COST_ROWS.map((row) => (
-              <React.Fragment key={row.label}>
-                <dt style={COST_DT_STYLE}>{row.label}</dt>
-                <dd style={COST_DD_STYLE}>{row.value}</dd>
-              </React.Fragment>
-            ))}
-          </dl>
-        }
-        controls={
-          <TugPushButton
-            subtype="icon"
-            emphasis="ghost"
-            role="action"
-            size="sm"
-            icon={<RefreshCw size={12} />}
-            aria-label="Refresh"
-          />
         }
       />
     </div>

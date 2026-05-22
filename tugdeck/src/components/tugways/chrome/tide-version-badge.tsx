@@ -225,7 +225,7 @@ export function TideVersionBadge({
     <TugPopover>
       <TugPopoverTrigger>
         <TugBadge
-          role={hasDrift ? "caution" : "agent"}
+          role={hasDrift ? "caution" : "inherit"}
           emphasis="tinted"
           size="sm"
           icon={hasDrift ? <TriangleAlert aria-hidden="true" /> : undefined}

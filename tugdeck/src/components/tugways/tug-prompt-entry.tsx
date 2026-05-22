@@ -421,17 +421,6 @@ export interface TugPromptEntryProps {
   /** Drop handler for dragging files from Finder. Forwarded to TugTextEditor. */
   dropHandler?: DropHandler;
   /**
-   * Optional synchronous pre-send interceptor. Called before
-   * `codeSessionStore.send(...)` on every submission, with the active
-   * route and the submitted atoms. Returning `true` suppresses the
-   * store send; returning `false` or omitting the prop falls through.
-   * The input is cleared on either path.
-   */
-  localCommandHandler?: (
-    route: string | null,
-    atoms: ReadonlyArray<AtomSegment>,
-  ) => boolean;
-  /**
    * Fires synchronously just before the input is cleared on a successful
    * submit. Distinguishes a genuine user submit from incidental empty
    * states (manual delete, undo-to-empty). Hosts use this hook to drive
@@ -566,7 +555,6 @@ export const TugPromptEntry = React.forwardRef<
     historyStore,
     completionProviders,
     dropHandler,
-    localCommandHandler,
     onBeforeSubmit,
     onAfterSubmit,
     statusContent,
@@ -702,14 +690,6 @@ export const TugPromptEntry = React.forwardRef<
     return fresh;
   }, [historyStore, route, snap.tugSessionId]);
 
-  // Live ref for the optional localCommandHandler so `performSubmit`
-  // (the shared submit closure) reads the latest callback without
-  // rebuilding on every render. [L07]
-  const localCommandHandlerRef = useRef(localCommandHandler);
-  useLayoutEffect(() => {
-    localCommandHandlerRef.current = localCommandHandler;
-  }, [localCommandHandler]);
-
   // Live refs for `onBeforeSubmit` / `onAfterSubmit` so an inline
   // closure passed by the host doesn't churn `performSubmit`'s
   // identity. [L07]
@@ -795,8 +775,7 @@ export const TugPromptEntry = React.forwardRef<
   // handler (button click, Cmd+Enter, etc.) and the Return /
   // Shift+Return keyboard path (via the substrate's `onSubmit`).
   // Single closure means keyboard and pointer converge on the same
-  // interrupt-vs-send decision, the same localCommandHandler
-  // intercept, and the same clear-and-route teardown.
+  // interrupt-vs-send decision and the same clear-and-route teardown.
   //
   // Stable identity (`useCallback` with deps that are themselves
   // stable — `codeSessionStore` is a prop reference); policy is read
@@ -865,14 +844,7 @@ export const TugPromptEntry = React.forwardRef<
         .map((a) => ({ position: a.position - 1, segment: a.segment }))
       : positionedAtoms;
     const sendAtoms: AtomSegment[] = atomsAdjusted.map((a) => a.segment);
-    // Pre-send interceptor seam — `localCommandHandler` is called
-    // BEFORE the store send so a host can intercept a submission. It
-    // receives the post-strip atoms list as plain `AtomSegment[]`.
-    const handled =
-      localCommandHandlerRef.current?.(currentRoute, sendAtoms) ?? false;
-    if (!handled) {
-      codeSessionStore.send(strippedText, sendAtoms);
-    }
+    codeSessionStore.send(strippedText, sendAtoms);
     // Record the submission in per-session history, keyed by the
     // session's id. The route field is what lets
     // `RouteHistoryProvider` filter this entry into the current
@@ -1344,6 +1316,7 @@ export const TugPromptEntry = React.forwardRef<
               value={route}
               senderId={routeIndicatorSenderId}
               size="xs"
+              sidePadding="sm"
               aria-label="Route"
             />
             {/*

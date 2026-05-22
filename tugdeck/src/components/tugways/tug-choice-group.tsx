@@ -146,6 +146,14 @@ export interface TugChoiceGroupProps
    * @default false
    */
   animated?: boolean;
+  /**
+   * Optional extra horizontal padding inside each segment, giving the
+   * items more breathing room when the group should read as a touch
+   * more prominent. The selection indicator covers it automatically.
+   * Off by default.
+   * @selector [data-side-padding="xs" | "sm" | "md"]
+   */
+  sidePadding?: "xs" | "sm" | "md";
   /** Accessible label for the group. */
   "aria-label"?: string;
   /**
@@ -183,6 +191,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       role,
       disabled = false,
       animated = false,
+      sidePadding,
       className,
       style,
       "aria-label": ariaLabel,
@@ -225,6 +234,8 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       const segEl = segmentRefs.current[activeIndex];
       const indEl = indicatorRef.current;
       if (!segEl || !indEl) return;
+      // `offsetWidth` is the segment's border box — `sidePadding` widens
+      // that box, so the indicator covers the extra padding for free.
       indEl.style.transform = `translateX(${segEl.offsetLeft}px)`;
       indEl.style.width = `${segEl.offsetWidth}px`;
     }, []);
@@ -308,6 +319,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
         aria-disabled={effectiveDisabled || undefined}
         data-role={role}
         data-emphasis={emphasis}
+        data-side-padding={sidePadding}
         data-disabled={effectiveDisabled || undefined}
         className={cn(
           "tug-choice-group",

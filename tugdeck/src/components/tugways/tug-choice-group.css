@@ -163,31 +163,31 @@
 /* Segment size padding + font */
 
 .tug-choice-group-2xs .tug-choice-group-segment {
-  padding: 0 var(--tug-space-md);  /* 0 8px */
+  padding: 0 calc(var(--tug-space-md) + var(--tugx-choice-group-side-padding, 0px));  /* 0 8px + sidePadding */
   font-size: 0.625rem;  /* 10px — matches tug-button-2xs-font-size */
   border-radius: calc(var(--tug-radius-sm) - 2px);
 }
 
 .tug-choice-group-xs .tug-choice-group-segment {
-  padding: 0 var(--tug-space-md);  /* 0 8px */
+  padding: 0 calc(var(--tug-space-md) + var(--tugx-choice-group-side-padding, 0px));  /* 0 8px + sidePadding */
   font-size: var(--tug-font-size-2xs);  /* 11px */
   border-radius: calc(var(--tug-radius-sm) - 2px);
 }
 
 .tug-choice-group-sm .tug-choice-group-segment {
-  padding: 0 var(--tug-space-lg);  /* 0 12px */
+  padding: 0 calc(var(--tug-space-lg) + var(--tugx-choice-group-side-padding, 0px));  /* 0 12px + sidePadding */
   font-size: var(--tug-font-size-xs);  /* 12px */
   border-radius: calc(var(--tug-radius-md) - 3px);
 }
 
 .tug-choice-group-md .tug-choice-group-segment {
-  padding: 0 var(--tug-space-xl);  /* 0 16px */
+  padding: 0 calc(var(--tug-space-xl) + var(--tugx-choice-group-side-padding, 0px));  /* 0 16px + sidePadding */
   font-size: var(--tug-font-size-sm);  /* 13px */
   border-radius: calc(var(--tug-radius-lg) - 3px);
 }
 
 .tug-choice-group-lg .tug-choice-group-segment {
-  padding: 0 var(--tug-space-2xl);  /* 0 20px */
+  padding: 0 calc(var(--tug-space-2xl) + var(--tugx-choice-group-side-padding, 0px));  /* 0 20px + sidePadding */
   font-size: var(--tug-font-size-md);  /* 14px */
   border-radius: calc(var(--tug-radius-xl) - 3px);
 }
@@ -476,3 +476,13 @@
 .tug-choice-group[data-emphasis="ghost"][data-disabled] .tug-choice-group-indicator {
   background-color: var(--tug7-surface-control-primary-ghost-action-hover);
 }
+
+/* `sidePadding` — optional extra horizontal padding inside each
+   segment, opt-in via the prop, for a touch more prominence. The data
+   attribute lives on the root; the value feeds the per-size segment
+   padding `calc()` above, so the sliding indicator (sized off the
+   segment's border box) covers it for free. [L06] — appearance keyed
+   off a data attribute, not React state. */
+.tug-choice-group[data-side-padding="xs"] { --tugx-choice-group-side-padding: var(--tug-space-xs); }
+.tug-choice-group[data-side-padding="sm"] { --tugx-choice-group-side-padding: var(--tug-space-sm); }
+.tug-choice-group[data-side-padding="md"] { --tugx-choice-group-side-padding: var(--tug-space-md); }

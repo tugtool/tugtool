@@ -7,7 +7,7 @@
  * style — no per-row container, no chat bubbles, no left-vs-right
  * alignment by speaker.
  *
- * Four participants are supported: `user`, `code`, `shell`, `command`.
+ * Three participants are supported: `user`, `code`, `shell`.
  * Per-variant differences come exclusively from `[data-participant="..."]`
  * cascade onto `--tugx-transcript-*` tokens — adding a participant is a
  * token + a registry entry, never a primitive edit.
@@ -58,7 +58,7 @@
 import "./tug-transcript-entry.css";
 
 import React from "react";
-import { Bot, Command, Shell, User } from "lucide-react";
+import { Bot, Shell, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -72,7 +72,7 @@ import { cn } from "@/lib/utils";
  * {@link PARTICIPANT_ICONS}, and (optionally) defining new
  * `--tugx-transcript-*-<participant>` flavor tokens. No primitive edit.
  */
-export type Participant = "user" | "code" | "shell" | "command";
+export type Participant = "user" | "code" | "shell";
 
 /**
  * Icon rendered in the gutter for each participant. Lucide glyphs picked
@@ -81,12 +81,11 @@ export type Participant = "user" | "code" | "shell" | "command";
  *   - `User` for `user` — the human in the session.
  *   - `Bot` for `code` — the assistant.
  *   - `Shell` for `shell` — shell command output.
- *   - `Command` for `command` — `:` surface built-ins.
  *
- * The route prefix character (`>` / `$` / `:`) lives alongside the typed
+ * The route prefix character (`>` / `$`) lives alongside the typed
  * input itself — in the body for `user`, in the identifier for `shell`
- * and `command` — not in the gutter. New participants extend this
- * registry with whatever icon a future design pass calls for.
+ * — not in the gutter. New participants extend this registry with
+ * whatever icon a future design pass calls for.
  */
 // Icon pixel size — tracks the identifier font-size in lockstep so
 // the header reads as a single proportional unit. Identifier is
@@ -104,7 +103,6 @@ const PARTICIPANT_ICONS: Record<Participant, React.ReactNode> = {
   user: <User size={ICON_PIXEL_SIZE} />,
   code: <Bot size={ICON_PIXEL_SIZE} />,
   shell: <Shell size={ICON_PIXEL_SIZE} />,
-  command: <Command size={ICON_PIXEL_SIZE} />,
 };
 
 // ---------------------------------------------------------------------------

@@ -146,6 +146,13 @@ export interface TugOptionGroupProps
    * @selector [data-disabled]
    */
   disabled?: boolean;
+  /**
+   * Optional extra horizontal padding inside each item, giving the
+   * items more breathing room when the group should read as a touch
+   * more prominent. Off by default.
+   * @selector [data-side-padding="xs" | "sm" | "md"]
+   */
+  sidePadding?: "xs" | "sm" | "md";
   /** Accessible label for the toolbar. */
   "aria-label"?: string;
   /**
@@ -177,6 +184,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
       emphasis = "default",
       role,
       disabled = false,
+      sidePadding,
       className,
       style,
       "aria-label": ariaLabel,
@@ -289,6 +297,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
         aria-disabled={effectiveDisabled || undefined}
         data-role={role}
         data-emphasis={emphasis}
+        data-side-padding={sidePadding}
         data-disabled={effectiveDisabled || undefined}
         className={cn(
           "tug-option-group",

@@ -2348,7 +2348,7 @@ export function TideCardBody({
     ),
   );
   const projectStatusContent = projectDir !== null ? (
-    <TugBadge size="sm" emphasis="tinted" role="data">
+    <TugBadge size="sm" emphasis="tinted" role="inherit">
       Project: {projectDir}
     </TugBadge>
   ) : null;
