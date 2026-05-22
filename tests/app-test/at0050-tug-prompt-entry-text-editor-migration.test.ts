@@ -116,7 +116,7 @@ async function readSegmentState(
     `(function(){
       var card = document.querySelector('[data-card-id="A"]');
       if (!card) return null;
-      var labelMap = { "❯": "Code", "$": "Shell", ":": "Command" };
+      var labelMap = { "❯": "Code", "$": "Shell" };
       var target = labelMap[${JSON.stringify(routeValue)}];
       if (!target) return null;
       var btns = card.querySelectorAll('button[role="radio"]');
@@ -134,7 +134,6 @@ async function clickSegment(app: App, routeValue: string): Promise<void> {
   const labelMap: Record<string, string> = {
     "❯": "Code",
     $: "Shell",
-    ":": "Command",
   };
   const label = labelMap[routeValue];
   expect(label, `unknown route value ${routeValue}`).toBeDefined();

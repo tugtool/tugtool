@@ -171,6 +171,16 @@
   flex: 0 0 auto;
 }
 
+/* Optical nudge: the sash grip and the maximize toggle read a pixel
+   high against the status-row text — drop both down 1px. Purely
+   visual; `position: relative` shifts the paint without moving the
+   layout box, so the row's flex metrics are unchanged. */
+.tide-card-status-bar > .tide-card-sash-grip,
+.tide-card-status-bar > .tide-card-maximize-toggle {
+  position: relative;
+  top: 1px;
+}
+
 /* ----------------------------------------------------------------------------
    Split-pane sash — slimmed to a hairline
    ----------------------------------------------------------------------------

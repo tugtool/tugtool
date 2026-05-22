@@ -13,7 +13,7 @@
  *     `RouteLifecycle` ([D02]). Default is `❯` (Prompt).
  *   - The segment control is the canonical control: clicks dispatch
  *     SELECT_VALUE → `routeLifecycle.setRoute`.
- *   - One-shot prefix detection: typing / pasting `>` `$` `:` (or the
+ *   - One-shot prefix detection: typing / pasting `>` `$` (or the
  *     chevron alias) at offset 0 fires `routeLifecycle.setRoute(matched)` once.
  *     The character stays in the doc as plain text per [Q05]=a.
  *     Deletion of the leading prefix is NOT a route flip per [Q06]=b.
@@ -46,7 +46,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Bot, Command, Plus, Shell, Square } from "lucide-react";
+import { ArrowUp, Bot, Plus, Shell, Square } from "lucide-react";
 import { EditorView } from "@codemirror/view";
 
 import { cn } from "@/lib/utils";
@@ -92,22 +92,21 @@ import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
 // ---------------------------------------------------------------------------
 
 /**
- * The three routes surfaced in the segment control. Each segment is
+ * The two routes surfaced in the segment control. Each segment is
  * `[icon][gap][name]` — a lucide gutter glyph (matching the
  * participant iconography in `TugTranscriptEntry`) plus the route's
- * display name. The route prefix character (`>` / `$` / `:`) is no
+ * display name. The route prefix character (`>` / `$`) is no
  * longer painted in the segment label; it lives on as a hidden
  * power-user feature, since `route-prefix-extension` still flips the
  * route when the user types one of those characters at offset 0 of
  * the editor. The visible affordances are the segment icon + name
  * and the keyboard shortcuts wired in `keybinding-map.ts`
- * (⇧⌘C → Code, ⇧⌘S → Shell, ⇧⌘: → Command), which dispatch
- * `SELECT_ROUTE` to this entry's responder.
+ * (⇧⌘C → Code, ⇧⌘S → Shell), which dispatch `SELECT_ROUTE` to this
+ * entry's responder.
  */
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: "❯", label: "Code",    icon: <Bot /> },
-  { value: "$", label: "Shell",   icon: <Shell /> },
-  { value: ":", label: "Command", icon: <Command /> },
+  { value: "❯", label: "Code",  icon: <Bot /> },
+  { value: "$", label: "Shell", icon: <Shell /> },
 ];
 
 /**
@@ -122,7 +121,6 @@ const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
   "❯": "❯",
   ">": "❯",
   "$": "$",
-  ":": ":",
 };
 
 /**
@@ -132,8 +130,6 @@ const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
  *   Prompts are long-form, so naïve Return should stay a newline.
  * - `$` (Shell): Return submits; Shift+Return inserts a newline.
  *   Shell invocations are typically a single line.
- * - `:` (Command): Return submits; Shift+Return inserts a newline.
- *   Commands are one-liners in practice.
  *
  * The substrate's shift inversion means we only need to declare the
  * unshifted action per route; Shift+Return is the opposite
@@ -142,7 +138,6 @@ const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
 const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
   "❯": "newline",
   "$": "submit",
-  ":": "submit",
 };
 
 /**
@@ -426,10 +421,11 @@ export interface TugPromptEntryProps {
   /** Drop handler for dragging files from Finder. Forwarded to TugTextEditor. */
   dropHandler?: DropHandler;
   /**
-   * Optional synchronous interceptor for local `:`-surface commands. Called
-   * before `codeSessionStore.send(...)` on every submission. Returning `true`
-   * suppresses the store send; returning `false` or omitting the prop falls
-   * through. The input is cleared on either path. [D06]
+   * Optional synchronous pre-send interceptor. Called before
+   * `codeSessionStore.send(...)` on every submission, with the active
+   * route and the submitted atoms. Returning `true` suppresses the
+   * store send; returning `false` or omitting the prop falls through.
+   * The input is cleared on either path.
    */
   localCommandHandler?: (
     route: string | null,
@@ -505,7 +501,7 @@ export interface TugPromptEntryProps {
   /**
    * Manual Return-key override. When set, wins over the entry's
    * per-route default (which makes Return insert a newline on the
-   * Prompt route and submit on Shell / Command). When omitted, the
+   * Prompt route and submit on Shell). When omitted, the
    * per-route default applies.
    *
    * Numpad Enter is always "submit" inside `tug-prompt-entry` — the
@@ -515,7 +511,7 @@ export interface TugPromptEntryProps {
   returnAction?: "submit" | "newline";
   /**
    * Per-route placeholder text for the embedded editor, keyed by the
-   * route value (`❯` Code / `$` Shell / `:` Command — see
+   * route value (`❯` Code / `$` Shell — see
    * `ROUTE_ITEMS`). The entry looks up the active route and forwards
    * the match to `TugTextEditor`; routes absent from the map — or an
    * undefined prop entirely — render no placeholder. The tide-card
@@ -869,9 +865,9 @@ export const TugPromptEntry = React.forwardRef<
         .map((a) => ({ position: a.position - 1, segment: a.segment }))
       : positionedAtoms;
     const sendAtoms: AtomSegment[] = atomsAdjusted.map((a) => a.segment);
-    // [D06] localCommandHandler seam — called BEFORE the store send
-    // so local `:`-surface commands can intercept. Receives the
-    // post-strip atoms list as plain `AtomSegment[]` (no positions).
+    // Pre-send interceptor seam — `localCommandHandler` is called
+    // BEFORE the store send so a host can intercept a submission. It
+    // receives the post-strip atoms list as plain `AtomSegment[]`.
     const handled =
       localCommandHandlerRef.current?.(currentRoute, sendAtoms) ?? false;
     if (!handled) {
@@ -987,7 +983,7 @@ export const TugPromptEntry = React.forwardRef<
         textEditorRef.current?.focus();
       },
       [TUG_ACTIONS.SELECT_ROUTE]: (event: ActionEvent) => {
-        // Keyboard-shortcut path (⇧⌘C / ⇧⌘S / ⇧⌘:). The keymap puts
+        // Keyboard-shortcut path (⇧⌘C / ⇧⌘S). The keymap puts
         // the canonical route character on `event.value`; we narrow
         // to string and gate against unknown values. Same semantics
         // as the segment-control click path above, minus the focus
@@ -1342,18 +1338,20 @@ export const TugPromptEntry = React.forwardRef<
             />
           </div>
           <div className="tug-prompt-entry-toolbar">
-            {/* Z4A — route choice-group, fixed at the leading edge. */}
+            {/* Z4A — leading-fixed slot; currently the route choice-group. */}
             <TugChoiceGroup
               items={[...ROUTE_ITEMS]}
               value={route}
               senderId={routeIndicatorSenderId}
               size="xs"
-              aria-label="Command route"
+              aria-label="Route"
             />
             {/*
-              Z4B floats centred between Z4A and Z5 via two equal flex
-              spacers — the free width splits evenly, so Z4B's centre
-              lands at the midpoint of the Z4A–Z5 gap ([D05]).
+              Z4B — centred-floating slot; currently the indicator
+              cluster. Two equal flex spacers flank it, so the free
+              width splits evenly and Z4B's centre lands at the midpoint
+              of the Z4A–Z5 gap ([D05]). Z4A / Z4B are layout positions
+              — the occupant placed in each is free to change.
             */}
             <div className="tug-prompt-entry-toolbar-spacer" aria-hidden="true" />
             <div

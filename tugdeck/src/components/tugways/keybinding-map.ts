@@ -199,7 +199,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "Digit7", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 7 },
   { key: "Digit8", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 8 },
   { key: "Digit9", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 9 },
-  // tug-prompt-entry route shortcuts. ⇧⌘C / ⇧⌘S / ⇧⌘: switch the
+  // tug-prompt-entry route shortcuts. ⇧⌘C / ⇧⌘S switch the
   // route segment without leaving the editor. The handler lives on
   // tug-prompt-entry's responder (default `first-responder` scope —
   // dispatch from the editor walks up to the entry). The `value`
@@ -210,7 +210,6 @@ export const KEYBINDINGS: KeyBinding[] = [
   // shortcut is owned by the responder chain regardless of focus.
   { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "❯", preventDefaultOnMatch: true },
   { key: "KeyS", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "$", preventDefaultOnMatch: true },
-  { key: "Semicolon", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: ":", preventDefaultOnMatch: true },
 ];
 
 // ---- matchKeybinding ----

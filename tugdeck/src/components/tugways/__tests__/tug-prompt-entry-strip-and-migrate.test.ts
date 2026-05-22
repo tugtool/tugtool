@@ -27,7 +27,6 @@ const ALIAS_MAP = {
   "❯": "❯",
   ">": "❯",
   "$": "$",
-  ":": ":",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -53,10 +52,6 @@ describe("computeSubmitText — strip-on-match", () => {
 
   it("doc=`$ ls`, route=`$` → strips the `$`", () => {
     expect(computeSubmitText("$ ls", "$", ALIAS_MAP)).toBe(" ls");
-  });
-
-  it("doc=`:save`, route=`:` → strips the `:`", () => {
-    expect(computeSubmitText(":save", ":", ALIAS_MAP)).toBe("save");
   });
 
   it("doc=`❯ hi`, route=`❯` → strips the `❯` (display character also matches)", () => {
@@ -92,7 +87,7 @@ describe("coerceRestorePayload — new shape", () => {
 
   it("defaults maximized to false when omitted", () => {
     const result = coerceRestorePayload({
-      route: ":",
+      route: "$",
       draft: null,
     });
     expect(result.maximized).toBe(false);
@@ -130,8 +125,8 @@ describe("coerceRestorePayload — legacy `perRoute` migration", () => {
     });
     expect(result.route).toBe("$");
     expect(result.draft).toEqual(shellDraft);
-    // The Code and Command drafts are dropped per [Q07]=a; only the
-    // current-route draft survives migration.
+    // The Code draft and the legacy `:`-route draft are dropped per
+    // [Q07]=a; only the current-route (`$`) draft survives migration.
     expect(result.maximized).toBe(false);
   });
 

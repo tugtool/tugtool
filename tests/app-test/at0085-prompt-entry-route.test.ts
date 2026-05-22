@@ -28,9 +28,9 @@
  *   uses, exercised by [AT0024]):
  *
  *   1. A non-default route (`$` Shell) survives `appReload` — Risk R02.
- *   2. A choice-group segment click flips `❯` Code → `:` Command.
+ *   2. A choice-group segment click flips `❯` Code → `$` Shell.
  *   3. The ⇧⌘C SELECT_ROUTE keybinding flips `$` Shell → `❯` Code.
- *   4. Typing a route-prefix character flips `❯` Code → `:` Command.
+ *   4. Typing a route-prefix character flips `❯` Code → `$` Shell.
  *
  * The live route is read off the choice group's active segment
  * (`[data-state="active"]`): `TugChoiceGroup value={route}` is a direct
@@ -55,22 +55,20 @@ const TEST_TIMEOUT_MS = 90_000;
 // `tug-prompt-entry.tsx`. The choice group renders these in this order.
 const ROUTE_CODE = "❯";
 const ROUTE_SHELL = "$";
-const ROUTE_COMMAND = ":";
 
 /** Segment label rendered for each route value. */
 const LABEL_BY_ROUTE: Readonly<Record<string, string>> = {
   [ROUTE_CODE]: "Code",
   [ROUTE_SHELL]: "Shell",
-  [ROUTE_COMMAND]: "Command",
 };
 
 const EDITOR_SELECTOR =
   '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 const ACTIVE_SEGMENT_SELECTOR =
   '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment[data-state="active"]';
-/** The Command segment — third of the three route segments. */
-const COMMAND_SEGMENT_SELECTOR =
-  '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment:nth-of-type(3)';
+/** The Shell segment — second of the two route segments. */
+const SHELL_SEGMENT_SELECTOR =
+  '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment:nth-of-type(2)';
 
 // ---------------------------------------------------------------------------
 // Deck shape + mount
@@ -210,7 +208,7 @@ async function runRoundtripScenario(): Promise<void> {
 }
 
 /**
- * Test 2 — the choice-group click trigger. A click on the Command
+ * Test 2 — the choice-group click trigger. A click on the Shell
  * segment dispatches SELECT_VALUE, which the entry's handler turns into
  * `routeLifecycle.setRoute`.
  */
@@ -220,13 +218,13 @@ async function runClickTriggerScenario(): Promise<void> {
     await mountCard(app, {});
     await waitForRoute(app, ROUTE_CODE);
 
-    await app.click(COMMAND_SEGMENT_SELECTOR);
+    await app.click(SHELL_SEGMENT_SELECTOR);
 
-    await waitForRoute(app, ROUTE_COMMAND);
+    await waitForRoute(app, ROUTE_SHELL);
     expect(
       await readActiveRouteLabel(app),
-      "a choice-group click must flip the route to Command",
-    ).toBe(LABEL_BY_ROUTE[ROUTE_COMMAND]);
+      "a choice-group click must flip the route to Shell",
+    ).toBe(LABEL_BY_ROUTE[ROUTE_SHELL]);
   } finally {
     await app.close();
   }
@@ -277,7 +275,7 @@ async function runKeybindingTriggerScenario(): Promise<void> {
 }
 
 /**
- * Test 4 — the route-prefix extension trigger. Typing `:` at offset 0 of
+ * Test 4 — the route-prefix extension trigger. Typing `$` at offset 0 of
  * the editor makes the route-prefix extension call `routeLifecycle.setRoute`.
  */
 async function runPrefixTriggerScenario(): Promise<void> {
@@ -287,15 +285,15 @@ async function runPrefixTriggerScenario(): Promise<void> {
     await waitForRoute(app, ROUTE_CODE);
 
     await focusEditor(app);
-    // `:` at offset 0 of the empty doc — `ROUTE_PREFIX_ALIAS[":"]` is the
-    // Command route.
-    await app.nativeType(":");
+    // `$` at offset 0 of the empty doc — `ROUTE_PREFIX_ALIAS["$"]` is the
+    // Shell route.
+    await app.nativeType("$");
 
-    await waitForRoute(app, ROUTE_COMMAND);
+    await waitForRoute(app, ROUTE_SHELL);
     expect(
       await readActiveRouteLabel(app),
-      "typing a route-prefix character must flip the route to Command",
-    ).toBe(LABEL_BY_ROUTE[ROUTE_COMMAND]);
+      "typing a route-prefix character must flip the route to Shell",
+    ).toBe(LABEL_BY_ROUTE[ROUTE_SHELL]);
   } finally {
     await app.close();
   }

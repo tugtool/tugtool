@@ -106,9 +106,9 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-toolbar — the row under the editor
    ----------------------------------------------------------------------------
-   Three zones: Z4A (route choice-group, fixed-leading), Z4B (the
-   indicator slot, floating-centred), and Z5 (the queue + submit / stop
-   buttons, fixed-trailing). Two equal flex spacers flank Z4B so it
+   Three zones: Z4A (leading-fixed) and Z4B (centred-floating) are the
+   prompt-entry toolbar's two sub-slots; Z5 (the queue + submit / stop
+   buttons) is fixed-trailing. Two equal flex spacers flank Z4B so it
    centres in the gap between Z4A and Z5 ([D05]). Naturally pinned to
    the bottom by the parent flex-column; sizes to its content height.
    ----------------------------------------------------------------------------- */
@@ -158,9 +158,10 @@ body {
   cursor: not-allowed;
 }
 
-/* Z4B — the indicator slot. Content-sized (`flex: 0 0 auto`); the two
-   spacers below do the centring. The host owns only the layout box per
-   [L20] — composed children declare their own tokens. */
+/* The indicator slot — the toolbar's `indicatorsContent` cluster.
+   Content-sized (`flex: 0 0 auto`); the two spacers do the centring.
+   Currently the `Z4B` (centred) occupant. The host owns only the layout
+   box per [L20] — composed children declare their own tokens. */
 .tug-prompt-entry-indicators {
   flex: 0 0 auto;
   display: flex;

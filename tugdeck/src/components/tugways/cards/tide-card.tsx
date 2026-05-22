@@ -180,7 +180,7 @@ const SHEET_EXIT_ANIMATION_MS = 220;
 
 /**
  * Placeholder copy for the prompt entry, keyed by the active route
- * value (`❯` Code / `$` Shell / `:` Command — see `ROUTE_ITEMS` in
+ * value (`❯` Code / `$` Shell — see `ROUTE_ITEMS` in
  * `tug-prompt-entry.tsx`). Forwarded as `placeholderByRoute`; the
  * entry shows the match for the active route and falls back to no
  * placeholder for any unlisted route. Tide-specific — the gallery
@@ -189,7 +189,6 @@ const SHEET_EXIT_ANIMATION_MS = 220;
 const TIDE_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
   "❯": "Ask Claude to build, fix, or explain",
   "$": "Run a shell command",
-  ":": "Type a command",
 };
 
 const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [

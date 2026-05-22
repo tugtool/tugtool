@@ -65,10 +65,13 @@ body {
      scope. */
   --tugx-state-indicator-surface: var(--tug7-surface-global-primary-normal-default-rest);
 
-  /* Tone colors — one hop to base text tokens per [L17]. Sharing the
-     `text-normal-<tone>-rest` family keeps the indicator visually
-     consistent with text-tone usage elsewhere in the UI. */
-  --tugx-state-indicator-tone-default: var(--tug7-element-global-text-normal-default-rest);
+  /* Tone colors — one hop to base text tokens per [L17]. The active
+     tones (success / caution / danger) share the `text-normal-<tone>-
+     rest` family, keeping the indicator consistent with text-tone
+     usage elsewhere. The `default` (idle) tone resolves to the muted
+     text token instead — a calmer, greyer dot than the label text
+     beside it, so a settled `Idle` state reads quiet. */
+  --tugx-state-indicator-tone-default: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-state-indicator-tone-success: var(--tug7-element-global-text-normal-success-rest);
   --tugx-state-indicator-tone-caution: var(--tug7-element-global-text-normal-caution-rest);
   --tugx-state-indicator-tone-danger:  var(--tug7-element-global-text-normal-danger-rest);
