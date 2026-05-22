@@ -182,7 +182,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 
 **Plan to resolve:** Implement option (c) in [#step-21](#step-21) and adjust based on dogfooding feel.
 
-**Resolution:** OPEN — initial implementation is (c), landed in [#step-21](#step-21): the inline `TideCautionBadge` marks the offending event, and the aggregate `TideDriftCaution` chip lives in the Z3 prompt-entry chrome (the Step 20.x `tide-meter-chrome.tsx` the plan named never shipped). Revisit the chrome placement after dogfooding.
+**Resolution:** OPEN — initial implementation is (c), landed in [#step-21](#step-21): the inline `TideCautionBadge` marks the offending event, and the aggregate surface is `TideVersionBadge` in the Z3 prompt-entry chrome (the Step 20.x `tide-meter-chrome.tsx` the plan named never shipped) — an always-on Claude Code version badge that escalates to a caution tone on drift. Revisit the chrome placement after dogfooding.
 
 #### [Q04] What's the cap on retained lines for very large Bash output? (OPEN) {#q04-terminal-line-cap}
 
@@ -5471,7 +5471,7 @@ Entry points into the archived turns plan:
 
 #### Step 21: Drift detection + caution badge surfacing {#step-21}
 
-**Status:** implemented — three drift detectors + the `summarizeDrift` aggregate + deduped triage logging landed in the dispatch; `TideDriftCaution` chip ships in a new Z3 prompt-entry caution slot; `version` exposed on `SessionMetadataStore`. tsc clean, `bun test` 2389/2389, `audit:tokens lint` zero violations.
+**Status:** implemented — three drift detectors + the `summarizeDrift` aggregate + deduped triage logging landed in the dispatch; the aggregate surface is `TideVersionBadge`, an always-on Claude Code version badge in a new Z3 prompt-entry caution slot that escalates to a caution tone on drift; `version` exposed on `SessionMetadataStore`. `version_drift` keys on the `major.minor` line so daily patch churn is not flagged. tsc clean, `bun test` green, `audit:tokens lint` zero violations.
 
 **Depends on:** #step-13, [`#step-20-3`](./archive/tide-assistant-turns.md#step-20-3) (per-turn telemetry / card chrome — extracted to `tide-assistant-turns.md`)
 
@@ -5480,19 +5480,19 @@ Entry points into the archived turns plan:
 **References:** [D04], [Q03], `tide.md#p15-stream-json-version-gate`, (#chrome)
 
 **Implementation notes.**
-- **Card-chrome surface — Z3, not the Step 20.x chrome.** The plan's `tide-meter-chrome.tsx` never shipped: the Step 20.x turns plan's chrome evolved into `tide-card-telemetry-renderers.tsx` (the `TideTelemetryStatusRow` IBM-1620 instrument). The aggregate chip is `TideDriftCaution` (`chrome/tide-drift-caution.tsx`), placed in **Z3 — the prompt-entry top row** — rather than crammed into the tightly-balanced Z2 status row. Z3 had no slot for a caution affordance, so this step adds a `cautionContent` prop to `TugPromptEntry`: a trailing-edge status-row slot that `:empty`-collapses, so the chip (which renders nothing when there is no drift) leaves no gap.
+- **Card-chrome surface — Z3, not the Step 20.x chrome.** The plan's `tide-meter-chrome.tsx` never shipped: the Step 20.x turns plan's chrome evolved into `tide-card-telemetry-renderers.tsx` (the `TideTelemetryStatusRow` IBM-1620 instrument). The aggregate surface is `TideVersionBadge` (`chrome/tide-version-badge.tsx`), placed in **Z3 — the prompt-entry top row** — rather than crammed into the tightly-balanced Z2 status row. Z3 had no slot for it, so this step adds a `cautionContent` prop to `TugPromptEntry`: a trailing-edge status-row slot. `TideVersionBadge` is **always on** — it shows the running Claude Code version as a quiet `TugBadge` and escalates to a caution tone (warning icon, running + validated versions, drift count) when `summarizeDrift` finds drift.
 - **`unknown_shape` is a top-level shallow check per [D04].** `STRUCTURED_RESULT_SCHEMAS` declares each tool's required *top-level* `structured_result` fields. Only `read` has a load-bearing one (`file: object`); Bash / Edit / Glob / Grep / Agent narrow every structured field defensively and degrade gracefully, so they have no schema and no shape they can fail. `file.content` is deliberately **not** required — an image Read legitimately omits it ([D04]'s "field presence and types at top level, not deep validation" governs over the task bullet's `file`-missing-`content` example). A registered wrapper whose present, non-error structured result fails its schema falls back to `DefaultToolWrapper` (`JsonTreeBlock`) with the `unknown_shape` caution.
-- **`PINNED_CATALOG_VERSION = "2.1.105"`** — the stream-json catalog the renderers are validated against (the [#step-14](#step-14) fixture-replay scope). A live `system_metadata.version` that differs raises `version_drift`; this constant moves in lockstep with the fixture-replay catalog scope ([#step-30](#step-30)).
-- **`version` on `SessionMetadataStore`.** The aggregate chip needs the runtime version to count `version_drift`; `SessionMetadataSnapshot` gained a `version` field (parsed from `system_metadata.version`) — a down-payment on `tide.md#p15-stream-json-version-gate`'s version capture.
-- **Console logging is deduped.** `logDriftEvent` keys each occurrence (`toolUseId:reason` / `version:<v>`) and logs once via `console.warn`; `TideDriftCaution`'s effect drives it, so the pure dispatch routing stays side-effect-free and re-renders never spam.
+- **`version_drift` keys on the `major.minor` line, not the patch.** `VALIDATED_CC_VERSION` is the Claude Code version the renderers were last validated against (the most recent `just capture-capabilities` baseline). Anthropic ships Claude Code patch releases almost daily and they essentially never change stream-json shapes, so `versionDriftCaution` compares only the `major.minor` line — a patch difference within the validated line is not drift. The badge stays quiet through daily churn and flags `version_drift` only at the rare minor-version boundary, where shapes have historically diverged.
+- **`version` on `SessionMetadataStore`.** `TideVersionBadge` needs the runtime version both to display and to drift-check; `SessionMetadataSnapshot` gained a `version` field (parsed from `system_metadata.version`) — a down-payment on `tide.md#p15-stream-json-version-gate`'s version capture.
+- **Console logging is deduped.** `logDriftEvent` keys each occurrence (`toolUseId:reason` / `version:<v>`) and logs once via `console.warn`; `TideVersionBadge`'s effect drives it, so the pure dispatch routing stays side-effect-free and re-renders never spam.
 - **Inline marker.** `unknown_tool` and `unknown_shape` both route through `DefaultToolWrapper`, so the [#step-13](#step-13) `ToolWrapperChrome` → `TideCautionBadge` wiring paints the inline chip with no wrapper changes. The `version_drift` inline marker is threaded onto the `system_metadata` dispatch props for [#step-29](#step-29)'s `SessionInitBanner` to surface.
 
 **Artifacts:**
-- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — drift detector logic: `PINNED_CATALOG_VERSION`, `STRUCTURED_RESULT_SCHEMAS` + `checkStructuredShape`, `detectVersionDrift` / `versionDriftCaution`, `detectToolCallDrift`, `summarizeDrift`, `logDriftEvent`.
-- `tugdeck/src/components/tugways/chrome/tide-drift-caution.{tsx,css}` — `TideDriftCaution`, the aggregate caution chip + click-expand report popover (`--tugx-drift-*` slots; rides the shared `--tugx-block-tone-caution-*` surface; composes `TideCautionBadge`).
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — drift detector logic: `VALIDATED_CC_VERSION`, `versionLine`, `STRUCTURED_RESULT_SCHEMAS` + `checkStructuredShape`, `detectVersionDrift` / `versionDriftCaution`, `detectToolCallDrift`, `summarizeDrift`, `logDriftEvent`.
+- `tugdeck/src/components/tugways/chrome/tide-version-badge.{tsx,css}` — `TideVersionBadge`, the always-on version badge + click-expand report popover (`--tugx-verbadge-*` report slots; composes `TugBadge` for the chip and `TideCautionBadge` for the report rows).
 - `tugdeck/src/components/tugways/tug-prompt-entry.{tsx,css}` — new `cautionContent` Z3 status-row slot.
 - `tugdeck/src/lib/session-metadata-store.ts` — `version` field on `SessionMetadataSnapshot`.
-- Updated: `tide-card.tsx` mounts `TideDriftCaution` in the prompt-entry `cautionContent` slot.
+- Updated: `tide-card.tsx` mounts `TideVersionBadge` in the prompt-entry `cautionContent` slot.
 - Inline caution at the offending event lands via the [#step-13](#step-13) DefaultToolWrapper integration — no wrapper changes needed.
 
 **Tasks:**

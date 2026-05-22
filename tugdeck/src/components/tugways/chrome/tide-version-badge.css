@@ -1,0 +1,103 @@
+/* @tug-pairings:
+   - the click-expand report's title / version / detail text set
+     `color` alone and carry a `@tug-renders-on` annotation naming the
+     popover surface. The badge itself is a composed `TugBadge` — it
+     owns its surface and tokens; this file declares none for it.
+   `TideVersionBadge` is the always-on Claude Code version badge plus
+   its click-expand report. The badge is a `TugBadge`; only the report
+   geometry lives here, under `--tugx-verbadge-*`.
+*/
+
+/**
+ * tide-version-badge.css — `TideVersionBadge` report styling. The
+ * badge is a composed `TugBadge`; only the popover report is dressed
+ * here.
+ *
+ * Tuglaw cross-check:
+ *  - [L16] the report's colour-only text rules each carry a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-verbadge-*` resolves to `--tug-*` in one hop.
+ *  - [L19] file pair; the report node carries
+ *    `data-slot="tide-version-badge-report"`.
+ *  - [L20] component-token sovereignty — owns `--tugx-verbadge-*`
+ *    only; the composed `TugBadge` keeps its own tokens.
+ */
+
+/* ---- Component-tier aliases — report geometry [L17] ---- */
+
+body {
+  --tugx-verbadge-gap:        var(--tug-space-xs);
+  --tugx-verbadge-padding:    var(--tug-space-sm);
+  --tugx-verbadge-size:       var(--tug-font-size-xs);
+  --tugx-verbadge-label-gap:  var(--tug-space-md);
+}
+
+/* ---- Trigger badge ---- */
+
+/* The badge is a `TugBadge` (its own surface + tokens); the only thing
+ * this consumer adds is the pointer cursor — the badge opens the
+ * version / drift report popover on click. */
+.tide-version-badge {
+  cursor: pointer;
+}
+
+/* ---- Click-expand report (inside TugPopoverContent) ---- */
+
+.tide-version-badge-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-verbadge-gap);
+  padding: var(--tugx-verbadge-padding);
+  font-size: var(--tugx-verbadge-size);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-version-badge-report-title {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: 600;
+}
+
+/* Running / validated version rows — a label column and a value. */
+.tide-version-badge-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tide-version-badge-version-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tugx-verbadge-label-gap);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-version-badge-version-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-version-badge-version-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-variant-numeric: tabular-nums;
+}
+
+.tide-version-badge-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-verbadge-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tide-version-badge-report-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-version-badge-report-detail {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-variant-numeric: tabular-nums;
+}

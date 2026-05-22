@@ -280,7 +280,7 @@ The contract is surface-wide, not body-kind-specific: any new inner scroller a b
 | `Z0` | `TideCard` · `headerContent` | — | reserved — empty |
 | `Z1` | transcript row · `renderTurnTrailing`, keyed by `half` | user half: —; assistant half: `Z1A` model · timestamp + `Z1B` thinking-indicator ↔ end-state display | user half reserved; assistant half shipped |
 | `Z2` | `TideCard` · `statusBarContent` | `TideTelemetryStatusRow` — STATE · TIME · TOKENS · CONTEXT | shipped |
-| `Z3` | `TugPromptEntry` · `statusContent` + `cautionContent` | project-path badge · drift-caution chip | shipped |
+| `Z3` | `TugPromptEntry` · `statusContent` + `cautionContent` | project-path badge · Claude Code version badge | shipped |
 | `Z4` | `TugPromptEntry` · `footerContent` | — | reserved — empty |
 | `Z5` | `TugPromptEntry` submit button (no slot) | lifecycle-driven Submit / Stop / Awaiting / Stopping / Reconnecting | shipped |
 

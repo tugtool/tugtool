@@ -271,13 +271,14 @@ body {
    flex-growing status content and the tools / maximize toggles. The
    leading status content (`flex: 1 1 auto`) pushes it rightward.
    `:empty` collapses the wrapper so a conditionally-visible chip
-   (e.g. the drift-caution chip, which renders nothing when there is
+   (e.g. the drift-caution badge, which renders nothing when there is
    no drift) leaves no flex gap behind. The slot owns no chrome — the
-   composed chip carries its own. */
+   composed chip carries its own. It shares `status-content`'s
+   `font-size` so a badge sits in an identical line box in either
+   slot, keeping the two Z3 badges on a common baseline. */
 .tug-prompt-entry-status-caution {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
+  font-size: var(--tug-font-size-xs);
 }
 
 .tug-prompt-entry-status-caution:empty {

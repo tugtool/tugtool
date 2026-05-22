@@ -25,7 +25,7 @@ import React from "react";
 
 import {
   KIND_RENDERERS,
-  PINNED_CATALOG_VERSION,
+  VALIDATED_CC_VERSION,
   _resetDriftLogForTests,
   _resetToolWrapperRegistryForTests,
   checkStructuredShape,
@@ -40,6 +40,7 @@ import {
   resolveToolWrapper,
   summarizeDrift,
   versionDriftCaution,
+  versionLine,
   type DispatchContext,
   type RenderInput,
 } from "./tide-assistant-renderer-dispatch";
@@ -369,33 +370,57 @@ describe("extractMetadataVersion", () => {
   });
 });
 
+describe("versionLine", () => {
+  it("reduces a version to its major.minor line", () => {
+    expect(versionLine("2.1.148")).toBe("2.1");
+    expect(versionLine("2.1.105")).toBe("2.1");
+    expect(versionLine("2.2.0")).toBe("2.2");
+    expect(versionLine("3.0.17")).toBe("3.0");
+  });
+
+  it("returns a sub-two-segment version whole", () => {
+    expect(versionLine("2")).toBe("2");
+    expect(versionLine("")).toBe("");
+  });
+});
+
 describe("versionDriftCaution", () => {
-  it("returns null when the version matches the pinned catalog", () => {
-    expect(versionDriftCaution(PINNED_CATALOG_VERSION)).toBeNull();
+  it("returns null when the version is on the validated minor line", () => {
+    expect(versionDriftCaution(VALIDATED_CC_VERSION)).toBeNull();
+  });
+
+  it("returns null for a patch difference within the validated line", () => {
+    // The validated baseline is a `2.1.x` line; a different patch on
+    // the same line is normal daily churn, not drift.
+    const samePatchLine = `${versionLine(VALIDATED_CC_VERSION)}.99999`;
+    expect(versionDriftCaution(samePatchLine)).toBeNull();
   });
 
   it("returns null when no version has been captured yet", () => {
     expect(versionDriftCaution(null)).toBeNull();
   });
 
-  it("flags a divergent version with both versions in the detail", () => {
-    expect(versionDriftCaution("9.9.9")).toEqual({
+  it("flags a version on a different minor line, both versions in the detail", () => {
+    expect(versionDriftCaution("2.2.0")).toEqual({
       reason: "version_drift",
-      detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}`,
+      detail: `2.2.0 ≠ ${VALIDATED_CC_VERSION}`,
     });
   });
 });
 
 describe("detectVersionDrift", () => {
-  it("flags a `system_metadata` payload whose version diverges", () => {
-    expect(detectVersionDrift({ version: "9.9.9" })).toEqual({
+  it("flags a `system_metadata` payload on a different minor line", () => {
+    expect(detectVersionDrift({ version: "2.2.0" })).toEqual({
       reason: "version_drift",
-      detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}`,
+      detail: `2.2.0 ≠ ${VALIDATED_CC_VERSION}`,
     });
   });
 
-  it("returns null for a matching version or a versionless payload", () => {
-    expect(detectVersionDrift({ version: PINNED_CATALOG_VERSION })).toBeNull();
+  it("returns null for a same-line version or a versionless payload", () => {
+    expect(detectVersionDrift({ version: VALIDATED_CC_VERSION })).toBeNull();
+    expect(
+      detectVersionDrift({ version: `${versionLine(VALIDATED_CC_VERSION)}.0` }),
+    ).toBeNull();
     expect(detectVersionDrift({})).toBeNull();
     expect(detectVersionDrift(null)).toBeNull();
   });
@@ -507,16 +532,16 @@ describe("dispatch — shape drift routing", () => {
 });
 
 describe("dispatch — system_metadata version drift", () => {
-  it("raises a version_drift caution for a divergent system_metadata version", () => {
+  it("raises a version_drift caution for a different-minor system_metadata version", () => {
     const input: RenderInput = {
       kind: "system_metadata",
-      metadata: { type: "system_metadata", version: "9.9.9" },
+      metadata: { type: "system_metadata", version: "2.2.0" },
     };
     const result = dispatch(input, fakeContext);
     expect(result.Component).toBe(KIND_RENDERERS.system_metadata);
     expect(result.caution).toEqual({
       reason: "version_drift",
-      detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}`,
+      detail: `2.2.0 ≠ ${VALIDATED_CC_VERSION}`,
     });
     // Threaded onto props so the #step-29 SessionInitBanner can paint
     // the inline marker.
@@ -525,10 +550,13 @@ describe("dispatch — system_metadata version drift", () => {
     );
   });
 
-  it("raises no caution when the system_metadata version matches the pinned catalog", () => {
+  it("raises no caution for a version on the validated minor line", () => {
     const input: RenderInput = {
       kind: "system_metadata",
-      metadata: { type: "system_metadata", version: PINNED_CATALOG_VERSION },
+      metadata: {
+        type: "system_metadata",
+        version: `${versionLine(VALIDATED_CC_VERSION)}.0`,
+      },
     };
     const result = dispatch(input, fakeContext);
     expect(result.caution).toBeUndefined();
@@ -546,7 +574,7 @@ describe("summarizeDrift", () => {
     expect(
       summarizeDrift({
         toolCalls: [fakeToolCall("Edit")],
-        version: PINNED_CATALOG_VERSION,
+        version: VALIDATED_CC_VERSION,
       }),
     ).toEqual({ count: 0, events: [] });
   });
@@ -563,7 +591,7 @@ describe("summarizeDrift", () => {
           structuredResult: { type: "text" },
         }),
       ],
-      version: "9.9.9",
+      version: "2.2.0",
     });
     expect(summary.count).toBe(3);
     // Tool drift in transcript order, version drift appended last.
@@ -576,13 +604,19 @@ describe("summarizeDrift", () => {
       toolName: "ZzzUnknown",
       toolUseId: "tu-a",
     });
-    expect(summary.events[2]).toMatchObject({ version: "9.9.9" });
+    expect(summary.events[2]).toMatchObject({ version: "2.2.0" });
   });
 
-  it("omits version drift when the version matches or is absent", () => {
+  it("omits version drift on the validated minor line or an absent version", () => {
     expect(summarizeDrift({ toolCalls: [], version: null }).count).toBe(0);
     expect(
-      summarizeDrift({ toolCalls: [], version: PINNED_CATALOG_VERSION }).count,
+      summarizeDrift({ toolCalls: [], version: VALIDATED_CC_VERSION }).count,
+    ).toBe(0);
+    expect(
+      summarizeDrift({
+        toolCalls: [],
+        version: `${versionLine(VALIDATED_CC_VERSION)}.0`,
+      }).count,
     ).toBe(0);
   });
 });
@@ -633,17 +667,17 @@ describe("logDriftEvent", () => {
     const warn = spyOn(console, "warn").mockImplementation(() => {});
     try {
       logDriftEvent({
-        caution: { reason: "version_drift", detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}` },
-        version: "9.9.9",
+        caution: { reason: "version_drift", detail: `2.2.0 ≠ ${VALIDATED_CC_VERSION}` },
+        version: "2.2.0",
       });
       logDriftEvent({
-        caution: { reason: "version_drift", detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}` },
-        version: "9.9.9",
+        caution: { reason: "version_drift", detail: `2.2.0 ≠ ${VALIDATED_CC_VERSION}` },
+        version: "2.2.0",
       });
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn.mock.calls[0]?.[1]).toMatchObject({
         reason: "version_drift",
-        version: "9.9.9",
+        version: "2.2.0",
       });
     } finally {
       warn.mockRestore();

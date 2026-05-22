@@ -36,7 +36,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-transcript";
 import { useTidePlacementSlots } from "./tide-card-placement-experiment";
-import { TideDriftCaution } from "../chrome/tide-drift-caution";
+import { TideVersionBadge } from "../chrome/tide-version-badge";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -2497,7 +2497,7 @@ export function TideCardBody({
                 onAfterSubmit={handleAfterSubmit}
                 statusContent={effectivePromptStatusContent}
                 cautionContent={
-                  <TideDriftCaution
+                  <TideVersionBadge
                     codeSessionStore={codeSessionStore}
                     sessionMetadataStore={sessionMetadataStore}
                   />

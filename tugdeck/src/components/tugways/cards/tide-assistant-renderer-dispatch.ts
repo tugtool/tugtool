@@ -36,7 +36,7 @@
  * Three drift signals are detected and surfaced as a `caution` —
  * inline at the offending event (the tool-wrapper chrome paints a
  * `TideCautionBadge` from the threaded `caution` prop) and, in
- * aggregate, on the card chrome (`TideDriftCaution` counts
+ * aggregate, on the card chrome (`TideVersionBadge` counts
  * `summarizeDrift`'s events):
  *
  *  - `unknown_tool` — a `tool_call` whose name is not in the registry
@@ -47,8 +47,9 @@
  *    falls back to `DefaultToolWrapper` — `JsonTreeBlock` over the raw
  *    payload — per [D04].
  *  - `version_drift` — a `system_metadata` event whose `version`
- *    diverges from `PINNED_CATALOG_VERSION`, the stream-json catalog
- *    version the renderers are validated against.
+ *    is on a different `major.minor` line than `VALIDATED_CC_VERSION`
+ *    (a patch difference within the validated line is not drift —
+ *    see `versionLine`).
  *
  * `detectToolCallDrift` and `detectVersionDrift` are the per-event
  * detectors; `summarizeDrift` walks a whole transcript with them to
@@ -312,26 +313,28 @@ export function registeredTools(): ReadonlyArray<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Drift detection — pinned catalog version, structured-result schemas,
-// per-event detectors, the transcript-wide aggregate, and triage logging.
+// Drift detection — validated catalog version, structured-result
+// schemas, per-event detectors, the transcript-wide aggregate, and
+// triage logging.
 // ---------------------------------------------------------------------------
 
 /**
- * The stream-json catalog version the Tide renderers are validated
- * against — the version the fixture-replay test (#step-14) drives the
- * dispatch through. A live `system_metadata.version` that differs is
- * `version_drift`: the running Claude Code is a version the renderers
- * were not exercised against, so event shapes may have diverged. This
- * is the render-time complement to `tide.md#p15-stream-json-version-gate`'s
- * server-side divergence telemetry.
+ * The Claude Code stream-json version the Tide renderers were last
+ * validated against — the most recent `just capture-capabilities`
+ * baseline. `TideVersionBadge` displays it as the "validated against"
+ * reference, and `versionDriftCaution` compares its `major.minor`
+ * line against the running session's.
  *
- * Build-time constant: bump it in lockstep with the fixture-replay
- * catalog scope — when the replay test is extended to a newer `v<x>/`
- * catalog (#step-30), this constant moves with it. `system_metadata`
- * emits the bare version (`"2.1.105"`), so the constant carries no
- * `v` prefix.
+ * Build-time constant. Bump it whenever a fresh capture advances the
+ * golden catalog. Note that `version_drift` keys on the `major.minor`
+ * *line* (see `versionLine`), so a stale patch number here is
+ * harmless for drift detection — it only shows as a slightly old
+ * "validated against" figure until the next capture. `system_metadata`
+ * emits the bare version (`"2.1.147"`), so the constant carries no
+ * `v` prefix. This is the render-time complement to
+ * `tide.md#p15-stream-json-version-gate`'s server-side telemetry.
  */
-export const PINNED_CATALOG_VERSION = "2.1.105";
+export const VALIDATED_CC_VERSION = "2.1.147";
 
 /**
  * Expected runtime type for a required top-level field in a tool's
@@ -424,16 +427,32 @@ export function extractMetadataVersion(metadata: unknown): string | null {
 }
 
 /**
- * `version_drift` detector over a bare version string — compares it
- * against `PINNED_CATALOG_VERSION`. Returns a `CautionFlag` when they
- * differ, `null` when they match or `version` is `null` (a session
- * with no captured version yet cannot be judged drifted).
+ * The `major.minor` line of a version string — `"2.1.148"` → `"2.1"`.
+ * A version with fewer than two dotted segments is returned whole.
+ * Drift compares lines, not patches: Anthropic ships Claude Code patch
+ * releases almost daily and they essentially never change stream-json
+ * shapes, whereas a minor bump is where event shapes have historically
+ * diverged. Comparing lines keeps the badge quiet through normal daily
+ * churn and loud only at the rare, meaningful boundary.
+ */
+export function versionLine(version: string): string {
+  const parts = version.split(".");
+  return parts.length >= 2 ? `${parts[0]}.${parts[1]}` : version;
+}
+
+/**
+ * `version_drift` detector over a bare version string — compares its
+ * `major.minor` line against `VALIDATED_CC_VERSION`'s. Returns a
+ * `CautionFlag` when the lines differ, `null` when they match (any
+ * patch difference within the validated line included) or `version`
+ * is `null` (a session with no captured version yet).
  */
 export function versionDriftCaution(version: string | null): CautionFlag | null {
-  if (version === null || version === PINNED_CATALOG_VERSION) return null;
+  if (version === null) return null;
+  if (versionLine(version) === versionLine(VALIDATED_CC_VERSION)) return null;
   return {
     reason: "version_drift",
-    detail: `${version} ≠ ${PINNED_CATALOG_VERSION}`,
+    detail: `${version} ≠ ${VALIDATED_CC_VERSION}`,
   };
 }
 
