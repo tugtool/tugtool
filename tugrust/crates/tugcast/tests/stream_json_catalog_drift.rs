@@ -60,7 +60,7 @@ use serde_json::Value;
 // unit tests and the real-claude-gated drift regression test. Keep
 // unconditional so the differ's 24 unit tests still run in standard
 // `cargo nextest run` invocations.
-use common::catalog::{EventShape, Schema, canonical_type_sequence};
+use common::catalog::{EventShape, Schema, canonical_type_sequence, shape_sequence};
 
 // Real-claude-only imports — only used by
 // `stream_json_catalog_drift_regression` and its helper
@@ -125,20 +125,25 @@ pub enum FailureKind {
         probe_name: String,
         slots: Vec<String>,
     },
-    /// A probe's canonical sequence has the same events as golden but
-    /// in a genuine transposition — neither sequence is a subsequence
-    /// of the other. Reordering required slots fails.
+    /// A probe's *shape sequence* has the same events as golden but in
+    /// a genuine transposition — neither sequence is a subsequence of
+    /// the other. The shape sequence (`shape_sequence`) drops
+    /// position-insensitive interstitials and collapses tool-activity
+    /// runs, so a flagged reorder is a transposition of the turn
+    /// skeleton itself (e.g. `cost_update` before `assistant_text`),
+    /// not agent tool-call-count variance. `golden` / `current` are
+    /// the reduced shape sequences that were compared.
     ReorderedSequence {
         probe_name: String,
         golden: Vec<String>,
         current: Vec<String>,
     },
-    /// A probe's canonical sequence differs from golden only by the
+    /// A probe's shape sequence differs from golden only by the
     /// insertion or deletion of an event type that still appears
     /// elsewhere — one sequence is a subsequence of the other. This is
-    /// optional interstitial-event variance (e.g. `assistant_text`
-    /// narration the model emits between tool calls on some runs but
-    /// not others), not a transposition, so it warns rather than fails.
+    /// optional interstitial-event variance (e.g. `thinking_text` the
+    /// model emits on some runs but not others), not a transposition,
+    /// so it warns rather than fails.
     OptionalSequenceVariance {
         probe_name: String,
         golden: Vec<String>,
@@ -545,11 +550,13 @@ fn diff_probe_sequence(
     current: &[String],
     report: &mut DiffReport,
 ) {
+    // ---- Event-type *set* comparison — strict. ----
+    // Computed on the consecutive-collapsed canonical, where every
+    // event type stays individually visible: a probe that loses
+    // `tool_use_structured`, or gains a brand-new event type, is
+    // caught here regardless of the order-comparison reduction below.
     let g_canon = canonical_type_sequence(golden);
     let c_canon = canonical_type_sequence(current);
-    if g_canon == c_canon {
-        return;
-    }
 
     let g_set: BTreeSet<String> = g_canon.iter().cloned().collect();
     let c_set: BTreeSet<String> = c_canon.iter().cloned().collect();
@@ -569,25 +576,37 @@ fn diff_probe_sequence(
             slots: added,
         });
     }
-    // Same set of events, different canonical order.
-    if g_set == c_set && g_canon != c_canon {
-        if is_subsequence(&c_canon, &g_canon) || is_subsequence(&g_canon, &c_canon) {
-            // One sequence is the other with an in-set event type
-            // inserted/deleted at a repeated (non-consecutive)
-            // position — optional interstitial-event variance, not a
-            // transposition. Genuine reorders, where neither sequence
-            // is a subsequence of the other, still fail below.
-            report.warn(FailureKind::OptionalSequenceVariance {
-                probe_name: probe_name.to_string(),
-                golden: g_canon,
-                current: c_canon,
-            });
-        } else {
-            report.fail(FailureKind::ReorderedSequence {
-                probe_name: probe_name.to_string(),
-                golden: g_canon,
-                current: c_canon,
-            });
+
+    // ---- Event-type *order* comparison — supple. ----
+    // Runs on the structural shape reduction (`shape_sequence`):
+    // position-insensitive interstitials dropped, contiguous
+    // tool-activity runs collapsed. Agent tool-call-count and
+    // interleaving variance is therefore benign by construction; only
+    // a genuine transposition of the turn skeleton fails. Gated on the
+    // event-type sets matching — if they differ, the set drift above
+    // already covers it and a reorder finding would be redundant.
+    if g_set == c_set {
+        let g_shape = shape_sequence(golden);
+        let c_shape = shape_sequence(current);
+        if g_shape != c_shape {
+            if is_subsequence(&c_shape, &g_shape) || is_subsequence(&g_shape, &c_shape) {
+                // One shape is the other with an in-set event type
+                // inserted/deleted at a repeated (non-consecutive)
+                // position — optional interstitial-event variance, not
+                // a transposition. Genuine reorders, where neither
+                // shape is a subsequence of the other, still fail.
+                report.warn(FailureKind::OptionalSequenceVariance {
+                    probe_name: probe_name.to_string(),
+                    golden: g_shape,
+                    current: c_shape,
+                });
+            } else {
+                report.fail(FailureKind::ReorderedSequence {
+                    probe_name: probe_name.to_string(),
+                    golden: g_shape,
+                    current: c_shape,
+                });
+            }
         }
     }
 }
@@ -1137,6 +1156,170 @@ mod differ_tests {
         );
         let report = diff_schemas(&golden, &current);
         assert_eq!(report.findings.len(), 0);
+    }
+
+    // ---- 15b. Tool-call count variance (golden 3 calls, current 2) → ok
+
+    #[test]
+    fn probe_sequence_tool_call_count_variance_is_ok() {
+        // The agent made three tool calls on the golden capture and
+        // two on the current one — pure agent non-determinism. Both
+        // tool-activity runs collapse to a single `tool_activity`
+        // token, so the shape sequences are identical.
+        let golden = schema_with_probe_seq(
+            "test-21-glob-tool",
+            &[
+                "session_init",
+                "system_metadata",
+                "assistant_text",
+                "tool_use",
+                "tool_result",
+                "tool_use_structured",
+                "tool_use",
+                "tool_result",
+                "tool_use_structured",
+                "tool_use",
+                "tool_result",
+                "tool_use_structured",
+                "assistant_text",
+                "cost_update",
+                "turn_complete",
+            ],
+        );
+        let current = schema_with_probe_seq(
+            "test-21-glob-tool",
+            &[
+                "session_init",
+                "system_metadata",
+                "assistant_text",
+                "tool_use",
+                "tool_result",
+                "tool_use_structured",
+                "tool_use",
+                "tool_result",
+                "tool_use_structured",
+                "assistant_text",
+                "cost_update",
+                "turn_complete",
+            ],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert_eq!(report.findings.len(), 0, "{}", report.format_report());
+    }
+
+    // ---- 15c. streaming_usage interleaving variance → ok
+
+    #[test]
+    fn probe_sequence_streaming_usage_interleaving_is_ok() {
+        // `streaming_usage` frames flush at non-deterministic points.
+        // Both probes emit them; they just land in different slots.
+        // `shape_sequence` drops them, so the shapes match.
+        let golden = schema_with_probe_seq(
+            "test-02",
+            &[
+                "session_init",
+                "system_metadata",
+                "streaming_usage",
+                "assistant_text",
+                "streaming_usage",
+                "cost_update",
+                "turn_complete",
+            ],
+        );
+        let current = schema_with_probe_seq(
+            "test-02",
+            &[
+                "session_init",
+                "streaming_usage",
+                "system_metadata",
+                "assistant_text",
+                "cost_update",
+                "streaming_usage",
+                "turn_complete",
+            ],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert_eq!(report.findings.len(), 0, "{}", report.format_report());
+    }
+
+    // ---- 15d. Genuine turn-skeleton reorder still fails
+
+    #[test]
+    fn probe_sequence_genuine_reorder_still_fails() {
+        // `cost_update` moves ahead of `assistant_text` — a real
+        // transposition of the turn skeleton the reducer relies on.
+        // No interstitial / tool-activity events are involved, so the
+        // shape reduction does not mask it.
+        let golden = schema_with_probe_seq(
+            "test-01",
+            &[
+                "session_init",
+                "system_metadata",
+                "assistant_text",
+                "cost_update",
+                "turn_complete",
+            ],
+        );
+        let current = schema_with_probe_seq(
+            "test-01",
+            &[
+                "session_init",
+                "system_metadata",
+                "cost_update",
+                "assistant_text",
+                "turn_complete",
+            ],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert_fail_kind(&report, |k| {
+            matches!(k, FailureKind::ReorderedSequence { probe_name, .. }
+                if probe_name == "test-01")
+        });
+    }
+
+    // ---- 15e. A vanished tool / interstitial event type still fails
+
+    #[test]
+    fn probe_sequence_vanished_event_type_still_fails() {
+        // The tool-activity collapse must not blind the set check: a
+        // probe that stops emitting `tool_use_structured` entirely is
+        // real drift, caught by the event-type set comparison.
+        let golden = schema_with_probe_seq(
+            "test-21-glob-tool",
+            &[
+                "session_init",
+                "system_metadata",
+                "tool_use",
+                "tool_result",
+                "tool_use_structured",
+                "streaming_usage",
+                "cost_update",
+                "turn_complete",
+            ],
+        );
+        let current = schema_with_probe_seq(
+            "test-21-glob-tool",
+            &[
+                "session_init",
+                "system_metadata",
+                "tool_use",
+                "tool_result",
+                "cost_update",
+                "turn_complete",
+            ],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert_fail_kind(&report, |k| {
+            matches!(k, FailureKind::RemovedSequenceSlots { probe_name, slots }
+                if probe_name == "test-21-glob-tool"
+                && slots.contains(&"tool_use_structured".to_string()))
+        });
+        // `streaming_usage` also vanished — likewise caught by the set
+        // check, even though its *position* is otherwise ignored.
+        assert_fail_kind(&report, |k| {
+            matches!(k, FailureKind::RemovedSequenceSlots { slots, .. }
+                if slots.contains(&"streaming_usage".to_string()))
+        });
     }
 
     // ---- 16. Probe missing in current → fail

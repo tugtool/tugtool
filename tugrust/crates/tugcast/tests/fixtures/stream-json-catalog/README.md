@@ -4,12 +4,12 @@ This directory holds the **authoritative machine-readable golden fixtures** for 
 
 > **Layer caveat [D07].** Fixtures reflect the layer that `CodeSessionStore` actually consumes — *after* tugcast framing and *after* tugcode wrapping — not raw `claude` stream-json. Drift in any of the three layers (claude itself, tugcode's wrapper, tugcast's framing) is equally disruptive to the reducer, so one fixture catalog catches all three.
 
-**Source of truth.** If the README ever disagrees with [`roadmap/tugplan-golden-stream-json-catalog.md`](../../../../../../roadmap/tugplan-golden-stream-json-catalog.md) — specifically the [`#deep-version-bump-runbook`](../../../../../../roadmap/tugplan-golden-stream-json-catalog.md#deep-version-bump-runbook) deep dive — the tugplan wins. This file is a rendering of that deep dive. Any change to the workflow goes into the tugplan first, then propagates here.
+**Source of truth.** The originating design — the [`#deep-version-bump-runbook`](../../../../../../roadmap/archive/tugplan-golden-stream-json-catalog.md#deep-version-bump-runbook) deep dive in [`roadmap/archive/tugplan-golden-stream-json-catalog.md`](../../../../../../roadmap/archive/tugplan-golden-stream-json-catalog.md) — has shipped and is archived. **This README is the living reference** for the catalog as it stands. Where the differ has evolved since the original plan (e.g. the `shape_sequence` order reduction described under "Classification criteria" below), this file is authoritative and the archived tugplan is historical context.
 
 **Cross-links:**
 - [`roadmap/tide.md#p2-followup-golden-catalog`](../../../../../../roadmap/tide.md#p2-followup-golden-catalog) — the originating §T0.5 tide item
 - [`roadmap/transport-exploration.md`](../../../../../../roadmap/transport-exploration.md) — human-readable prose catalog of stream-json event types (may lag behind these fixtures; see its version banner)
-- [`roadmap/tugplan-golden-stream-json-catalog.md`](../../../../../../roadmap/tugplan-golden-stream-json-catalog.md) — the spec of record for this catalog, the differ, and the runbook below
+- [`roadmap/archive/tugplan-golden-stream-json-catalog.md`](../../../../../../roadmap/archive/tugplan-golden-stream-json-catalog.md) — the archived originating design for this catalog, the differ, and the runbook below
 
 ## Fixture layout
 
@@ -132,6 +132,13 @@ env -u ANTHROPIC_API_KEY TUG_REAL_CLAUDE=1 \
 ### Classification criteria
 
 For each shape difference the diff surfaces, assign it to exactly one of three classes.
+
+**What the differ absorbs before you ever see it.** The per-probe sequence comparison does not run on the raw event stream — it runs on a *shape reduction* (`shape_sequence` in `tests/common/catalog.rs`). Two kinds of run-to-run non-determinism are collapsed out and never reach the classification step:
+
+- **Streaming-partial and usage-frame counts.** Consecutive `assistant_text` / `thinking_text` partials collapse to one (token batching makes the count non-deterministic). `streaming_usage` frames are dropped from the *order* comparison entirely — they flush at transport-dependent points and the reducer reads them by recency, not by position.
+- **Tool-call count and interleaving.** A contiguous run of `tool_use` / `tool_result` / `tool_use_structured` events collapses to a single `tool_activity` token. Whether the agent made two `Glob` calls or three on a given capture, batched them in parallel, or interleaved their events differently is agent non-determinism, not protocol shape — `CodeSessionStore` pairs those events by `tool_use_id`, never by sequence position.
+
+The event-type **set** check stays strict through all of this: a probe that *stops* emitting `tool_use_structured` or `streaming_usage`, or emits a brand-new event type, still fails (`RemovedSequenceSlots`) or warns (`NewSequenceSlots`). Only the *ordering* check is reduced. So a `ReorderedSequence` finding is now always a genuine transposition of the turn skeleton — never the agent doing N versus N±1 tool calls.
 
 #### Benign — no consumer change needed
 

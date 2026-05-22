@@ -466,6 +466,23 @@ Key-based replacement happens before value-based. `NUMERIC_NORMALIZE_ALLOWLIST` 
 
 **Why `content` is *not* in `TEXT_CONTENT_KEYS`.** An earlier draft of this Deep Dive listed `["text", "output", "content"]`. The implementation intentionally drops `"content"`. In Anthropic's raw stream-json, `content` is frequently an **array of typed content blocks** (e.g. `[{ "type": "text", "text": "..." }, { "type": "tool_use", ... }]`) rather than a leaf string. Collapsing `content` unconditionally to `{{text:len=N}}` would erase that structural polymorphism and hide real shape drift (e.g. a new block variant being introduced). The walker recurses into `content` instead, and the inner leaf `text` field is what gets collapsed. If a future claude version starts emitting a top-level `content: "string"` leaf, we add it to the allowlist at that point rather than pre-emptively.
 
+> **Amendment (2026-05-22) — `shape_sequence` order reduction.** The
+> per-probe sequence comparison was later generalized beyond the
+> consecutive-duplicate collapse Steps 4 and 6 shipped. The differ now
+> runs its *order* check on a *shape reduction* (`shape_sequence` in
+> `tests/common/catalog.rs`): position-insensitive interstitial events
+> (`streaming_usage`) are dropped, and a contiguous tool-call run
+> (`tool_use` / `tool_result` / `tool_use_structured`) collapses to a
+> single `tool_activity` token, ahead of the consecutive-duplicate
+> collapse. This makes the order check supple to agent
+> tool-call-count and usage-frame-interleaving non-determinism, which
+> the original consecutive-collapse did not absorb (a probe where the
+> agent made two Glob calls on one capture and three on the next was
+> falsely flagged as `ReorderedSequence`). The event-type *set* check
+> stays strict — a vanished or new event type still fails or warns.
+> The catalog README's "Classification criteria" section is the
+> living reference; this plan is the archived design record.
+
 #### Version bump runbook — updating the golden standard when claude ships a new version {#deep-version-bump-runbook}
 
 This section is the authoritative spec for the Layer A version-bump workflow. Step 7 renders it verbatim (with file-location tweaks) as `tests/fixtures/stream-json-catalog/README.md` so a developer hitting a drift-test failure finds the runbook in the fixture dir itself. Any change to the workflow happens **here first**, then propagates to the README.

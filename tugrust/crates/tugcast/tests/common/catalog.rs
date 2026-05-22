@@ -793,10 +793,76 @@ pub fn canonical_type_sequence(types: &[String]) -> Vec<String> {
     out
 }
 
+/// Event types whose *position* in a probe's sequence is not
+/// reducer-relevant: usage-accounting frames the transport flushes at
+/// non-deterministic points. [`shape_sequence`] drops them before the
+/// order comparison. Their existence and field shape are still pinned
+/// — by the event-type *set* comparison in `diff_probe_sequence` and
+/// by the per-event-type schema — so dropping them here loses nothing.
+pub const INTERSTITIAL_EVENT_TYPES: &[&str] = &["streaming_usage"];
+
+/// Event types that constitute a tool-call cycle. [`shape_sequence`]
+/// collapses a contiguous run of these to a single
+/// [`TOOL_ACTIVITY_MARKER`]: how many tool calls the agent made,
+/// whether it batched them in parallel, and how their
+/// `tool_use` / `tool_result` / `tool_use_structured` events
+/// interleave is agent non-determinism, not protocol shape —
+/// `CodeSessionStore` pairs those events by `tool_use_id`, never by
+/// sequence position.
+pub const TOOL_ACTIVITY_EVENT_TYPES: &[&str] =
+    &["tool_use", "tool_result", "tool_use_structured"];
+
+/// The single token a contiguous tool-activity run reduces to in
+/// [`shape_sequence`].
+pub const TOOL_ACTIVITY_MARKER: &str = "tool_activity";
+
+/// Reduce a probe's event-type sequence to its **order-comparison
+/// shape**: drop position-insensitive interstitial events
+/// ([`INTERSTITIAL_EVENT_TYPES`]), collapse each contiguous
+/// tool-activity run ([`TOOL_ACTIVITY_EVENT_TYPES`]) to one
+/// [`TOOL_ACTIVITY_MARKER`], and collapse consecutive duplicates.
+///
+/// This is the order-sensitive complement to the event-type *set*
+/// check in `diff_probe_sequence`. The set check pins *which* event
+/// types a probe emits — a vanished or new type still fails or warns.
+/// This reduction pins their *order* while tolerating the two large
+/// sources of run-to-run non-determinism: variable streaming-partial
+/// and usage-frame counts, and variable tool-call counts. A genuine
+/// transposition — `cost_update` moving before `assistant_text`, say —
+/// still surfaces as a difference between two reduced sequences.
+///
+/// Generalizes [`canonical_type_sequence`]'s consecutive-duplicate
+/// collapse: where that erases a variable `assistant_text` *partial*
+/// count, this additionally erases a variable tool-call *cycle* count
+/// and usage-frame interleaving.
+pub fn shape_sequence(types: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for t in types {
+        let t = t.as_str();
+        if INTERSTITIAL_EVENT_TYPES.contains(&t) {
+            continue;
+        }
+        let token = if TOOL_ACTIVITY_EVENT_TYPES.contains(&t) {
+            TOOL_ACTIVITY_MARKER
+        } else {
+            t
+        };
+        if out.last().map(String::as_str) != Some(token) {
+            out.push(token.to_string());
+        }
+    }
+    out
+}
+
 /// Compare the first stability run against the rest. Returns a
-/// diagnostic string if any subsequent run's **canonical** event-type
-/// sequence (see [`canonical_sequence`]) differs from the first,
-/// otherwise `None`.
+/// diagnostic string if any subsequent run's **shape sequence** (see
+/// [`shape_sequence`]) differs from the first, otherwise `None`.
+///
+/// The comparison is on the shape reduction, not the raw sequence, so
+/// a probe whose only run-to-run variance is streaming-partial count,
+/// usage-frame interleaving, or tool-call count is *stable* — it does
+/// not flap to `ShapeUnstable`. Genuine shape divergence across runs
+/// still surfaces.
 ///
 /// Extracted as a pure helper so the shape-comparison logic is
 /// unit-testable without driving real claude.
@@ -804,12 +870,22 @@ pub fn stability_outcome(first: &CapturedProbe, rest: &[CapturedProbe]) -> Optio
     if rest.is_empty() {
         return None;
     }
-    let first_seq = canonical_sequence(&first.events);
+    let shape_of = |probe: &CapturedProbe| -> Vec<String> {
+        shape_sequence(
+            &probe
+                .events
+                .iter()
+                .filter_map(event_type_of)
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+        )
+    };
+    let first_seq = shape_of(first);
     for (idx, run) in rest.iter().enumerate() {
-        let seq = canonical_sequence(&run.events);
+        let seq = shape_of(run);
         if seq != first_seq {
             return Some(format!(
-                "canonical event-type sequence differs at stability run {}/{} for {}: \
+                "event-type shape sequence differs at stability run {}/{} for {}: \
                  first={:?}, run={:?}",
                 idx + 2,
                 rest.len() + 1,
