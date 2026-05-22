@@ -58,6 +58,7 @@ import {
 import { DEFAULT_BLOCK_TRANSFORMERS } from "@/lib/markdown/block-transformers";
 import { enhanceFencedCode } from "@/lib/markdown/enhance-fenced-code";
 import { enhanceMath } from "@/lib/markdown/enhance-math";
+import { enhanceMermaid } from "@/lib/markdown/enhance-mermaid";
 import {
   buildByteToCharMap,
   decodeBlocks,
@@ -369,6 +370,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     el.innerHTML = cachedHtml;
     enhanceFencedCode(el);
     void enhanceMath(el);
+    void enhanceMermaid(el);
 
     // Find the first child with a higher block index to insert before it.
     // This preserves ascending document order regardless of insertion sequence.
@@ -755,6 +757,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
           existingEl.innerHTML = sanitized;
           enhanceFencedCode(existingEl);
           void enhanceMath(existingEl);
+          void enhanceMermaid(existingEl);
           // Store estimate here; real measurement happens in doSetRegion's
           // consolidated measurement pass (one forced layout for all blocks).
           engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));

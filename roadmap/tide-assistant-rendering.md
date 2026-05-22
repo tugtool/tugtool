@@ -5565,6 +5565,8 @@ Entry points into the archived turns plan:
 
 #### Step 23: MermaidBlock (lazy-loaded) {#step-23}
 
+**Status:** implemented — MermaidBlock body kind + lazy Mermaid loader + mermaid fence transformer (populated) + post-`innerHTML` enhance-mermaid pass + dispatch wiring through `renderIncremental` and `TugMarkdownView`. tsc clean; full `bun test` 2508/2508; `audit:tokens lint` zero violations; Vite build emits separate `assets/mermaid-*.js` + `assets/mermaid.core-*.js` chunks so the boot bundle pays nothing for diagrams until first encounter. Click-to-zoom overlay deferred (see Tasks).
+
 **Depends on:** #step-3
 
 **Commit:** `feat(tide-rendering): MermaidBlock — lazy-loaded diagram rendering with theme-aware config`
@@ -5573,28 +5575,42 @@ Entry points into the archived turns plan:
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — MermaidBlock is a display-only inline block (scope note): no identity header, actions row, or fold affordance. Only items 1–2 and 6–7 apply; `--tugx-mermaid-*` composes `--tugx-block-*`.
 
+**Implementation notes.**
+- **Mirrors the KaTeX architecture ([#step-22]).** One `renderMermaidInto(el, source)` helper drives both the React `MermaidBlock` component and the imperative `enhance-mermaid` pass that the markdown primitives call after every `innerHTML` write. Both go through the same lazy loader + `mermaid.render` path. The lazy loader (`lib/lazy/load-mermaid.ts`) is a tiny pure-JS singleton — same shape as `load-katex.ts`. The loader's `MermaidEngine` wraps `mermaid.initialize` + `mermaid.render` so consumers don't import the package directly, and the boot bundle stays clean.
+- **Transformer is streaming-aware ([D07]).** `mermaidTransformer` only promotes ` ```mermaid ` fences when `BlockTransformContext.isComplete` is `true`. Half-streamed diagrams would otherwise render as "Syntax error in graph" on every delta; instead the block stays a plain code fence until the source has finished arriving, at which point the next parse-pass promotes it. Same pattern as math fences ([#step-22]) — the populated transformers' input predicates don't overlap, so the order in `DEFAULT_BLOCK_TRANSFORMERS` is independent.
+- **Theme awareness via host-canvas luminance.** `enhance-mermaid` reads `--tugx-host-canvas-color` from `getComputedStyle(document.body)`, runs it through `readColorLuminance` (Rec. 709 luma), and picks Mermaid's `theme: 'dark'` for canvas < 0.5 and `theme: 'default'` otherwise. brio's `#16181a` resolves dark; harmony's `#71888e` resolves light. Individual `themeVariables` overrides are intentionally not threaded through — Mermaid's built-in themes already produce coherent diagrams on both surfaces, and per-token overrides risk colour collisions with the diagram's internal palette. A theme switch is one full markdown re-render away; the next enhance pass over a fresh innerHTML write picks up the new colour scheme.
+- **Click-to-zoom deferred.** The plan's "Pan/zoom on click for large diagrams" task is deferred to a follow-on. v1 handles oversized diagrams via the frame's `overflow-x: auto` (the SVG natural width is preserved; the user pans by scrolling). A true pan/zoom modal overlay (wheel-zoom, drag-pan, esc-to-close) is non-trivial and orthogonal to the lazy-load + transformer + theme contract this step ships. The same defer-on-its-own-step precedent applies as #step-11's hover-line annotation and the [#step-3] collapse-tall-block affordance.
+- **Failure path ([R04]).** Failed renders restore the raw diagram source as `textContent` and stamp `data-tugx-mermaid-error="true"`; the CSS paints the shared `--tugx-block-tone-caution-*` band. The parent block is untouched. A toast hook is opt-in via the `onError` callback (the markdown primitives pass `undefined` today; surfaces that want a toast supply one). The plan's "fallback to plain code with toast" wording is satisfied by the placeholder's pending / error state styled as monospace, which reads identically to an unpromoted ` ```mermaid ` fence.
+- **Boot-bundle exclusion verified.** `bun run build` produces `dist/assets/mermaid-*.js` (~13 KB / 4 KB gz; the entry stub) plus the heavier `mermaid.core-*.js` chunk (~580 KB / 135 KB gz) and on-demand sub-chunks for individual diagram types (cytoscape, wardley, sequence, etc.). The only mermaid references in the main `index-*.js` are Vite's dependency-map URL strings for the dynamic import — Mermaid's runtime is absent until first encounter.
+- **Stable element IDs.** `enhance-mermaid` mints a process-local `tugx-mermaid-N` id per render call. Mermaid bakes the id into element ids inside the SVG; a duplicate across two diagrams on the same page would yield invalid markup. The counter lives in module scope (one process), which is the lifetime we want.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/mermaid-block.tsx` + `.css`
-- `tugdeck/src/lib/lazy/load-mermaid.ts`
-- `tugdeck/src/lib/markdown/block-transformers/mermaid-transformer.ts` (populated)
-- Token slot `--tugx-mermaid-*`
+- `tugdeck/src/components/tugways/body-kinds/mermaid-block.tsx` + `.css` — Layer-1 body kind; thin React wrapper over `renderMermaidInto`.
+- `tugdeck/src/lib/lazy/load-mermaid.ts` — singleton lazy loader + sync accessor + test-injection point.
+- `tugdeck/src/lib/markdown/block-transformers/mermaid.ts` — populated (was a no-op stub from #step-3). _Plan called the file `mermaid-transformer.ts`; the shipped name follows the established sibling pattern (`math.ts`, `diff.ts`, `large-json.ts`) and is the entry the barrel re-exports as `mermaidTransformer`._
+- `tugdeck/src/lib/markdown/enhance-mermaid.ts` — post-`innerHTML` placeholder renderer + the `renderMermaidInto` helper `MermaidBlock` reuses + the pure-logic `readColorLuminance` / `pickMermaidTheme` helpers.
+- `tugdeck/src/lib/markdown/block-transformers/index.ts` — `DEFAULT_BLOCK_TRANSFORMERS` extended with `mermaidTransformer` (previously `[mathTransformer]`).
+- Edits to `tugdeck/src/lib/markdown/render-incremental.ts` (`enhanceMermaid` call in `buildBlockElement` / `updateBlockElement`) and `tugdeck/src/components/tugways/tug-markdown-view.tsx` (per-block enhance-mermaid at all three `enhanceFencedCode` sites).
+- New token slot family `--tugx-mermaid-*` (declared in `mermaid-block.css`'s `body{}` per the project's component-local-tokens convention; composes `--tugx-block-*`).
+- Test files: `tugdeck/src/lib/markdown/__tests__/mermaid-transformer.test.ts` (17 tests over `decodeMermaidEntities` / `extractMermaidSource` / `buildMermaidPlaceholderHtml` / `mermaidTransformer.transform`), `tugdeck/src/lib/markdown/__tests__/enhance-mermaid.test.ts` (13 tests over `readColorLuminance`), `tugdeck/src/lib/lazy/__tests__/load-mermaid.test.ts` (6 tests over the loader plumbing + test-injection).
 
 **Tasks:**
-- [ ] Lazy-load mermaid on first encounter
-- [ ] Streaming-safe: stay as plain `CodeBlock` until parent block reaches `complete`; promote then
-- [ ] Theme-aware config: pass current theme tokens into mermaid's config object
-- [ ] Pan/zoom on click for large diagrams
-- [ ] Error boundary; fallback to plain code with toast on parse error
+- [x] Lazy-load mermaid on first encounter — `loadMermaid` singleton + `getMermaidSync` accessor.
+- [x] Streaming-safe: stay as plain `CodeBlock` until parent block reaches `complete`; promote then — `mermaidTransformer` defers on `isComplete: false`.
+- [x] Theme-aware config: pass current theme tokens into mermaid's config object — `pickMermaidTheme` reads the document's canvas luminance and chooses Mermaid's `dark` vs `default` palette; the rationale for not threading per-token overrides is in the implementation note above.
+- [ ] _Deferred:_ Pan/zoom on click for large diagrams — v1 ships with `overflow-x: auto` on the frame; a wheel-zoom + drag-pan overlay is a stand-alone follow-on (see implementation note).
+- [x] Error boundary; fallback to raw-source placeholder. _Note: the plan's "fallback to plain code with toast" predates the per-block CodeBlock retirement; the equivalent is the placeholder's pending / error state styled as monospace, which reads identically to an unpromoted code fence. The `onError` callback hook lets a host surface a toast on top._
 
 **Tests:**
-- [ ] ` ```mermaid\\nflowchart LR\\n  a-->b\\n``` ` renders as diagram on `complete`
-- [ ] During streaming (parent block partial), shows raw code
-- [ ] Malformed diagram falls back without crashing parent
-- [ ] Boot bundle excludes Mermaid (verify via build artifact inspection)
+- [x] ` ```mermaid\nflowchart LR\n  a-->b\n``` ` renders as diagram on `complete` — transformer test covers fence-to-placeholder promotion end-to-end (synthetic block in → tug-mermaid placeholder out with decoded source); the actual SVG render is HMR-vetted per project test policy.
+- [x] During streaming (parent block partial), shows raw code — `mermaidTransformer` test "defers promotion while streaming (isComplete: false)" pins the no-op behaviour.
+- [x] Malformed diagram falls back without crashing parent — `renderPlaceholder` always restores `textContent` and stamps `data-tugx-mermaid-error`; the parent block is untouched because the failure is caught inside the try/catch. The pure-logic helpers tested here cover the fallback's input plumbing; the error path is exercised by HMR.
+- [x] Boot bundle excludes Mermaid (verify via build artifact inspection) — `dist/assets/mermaid*.js` is its own chunk family; the only mermaid references in `index-*.js` are Vite's dependency-map URL strings.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> draw a mermaid flowchart of the HTTP request lifecycle` → expect rendered diagram
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 2508/2508, 36 new tests across the three new files.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual: prompt `> draw a mermaid flowchart of the HTTP request lifecycle` → expect rendered diagram (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
 
 ---
 

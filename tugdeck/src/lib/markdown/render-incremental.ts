@@ -60,6 +60,7 @@
 import { DEFAULT_BLOCK_TRANSFORMERS } from "./block-transformers";
 import { enhanceFencedCode } from "./enhance-fenced-code";
 import { enhanceMath } from "./enhance-math";
+import { enhanceMermaid } from "./enhance-mermaid";
 import {
   parseMarkdownToSanitizedBlocks,
   type ParseMarkdownOptions,
@@ -178,6 +179,7 @@ function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   void enhanceMath(el);
+  void enhanceMermaid(el);
   return el;
 }
 
@@ -189,6 +191,7 @@ function updateBlockElement(
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   void enhanceMath(el);
+  void enhanceMermaid(el);
 }
 
 /**

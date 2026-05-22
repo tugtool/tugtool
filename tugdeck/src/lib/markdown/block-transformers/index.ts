@@ -108,6 +108,7 @@ export { diffTransformer } from "./diff";
 export { largeJsonTransformer } from "./large-json";
 
 import { mathTransformer } from "./math";
+import { mermaidTransformer } from "./mermaid";
 
 /**
  * The default transformer list applied by the shared markdown
@@ -117,10 +118,12 @@ import { mathTransformer } from "./math";
  *
  * Order is significant in principle — `applyBlockTransformers` flat-
  * maps in array order — but the populated transformers' input
- * predicates (lang === "math" / "latex" / "tex" for math; future
- * fences for the others) don't overlap. Adding a new transformer
- * here lights it up across the whole markdown pipeline.
+ * predicates (lang === "math" / "latex" / "tex" for math; lang ===
+ * "mermaid" for mermaid; future fences for the others) don't
+ * overlap. Adding a new transformer here lights it up across the
+ * whole markdown pipeline.
  */
 export const DEFAULT_BLOCK_TRANSFORMERS: ReadonlyArray<BlockTransformer> = [
   mathTransformer,
+  mermaidTransformer,
 ];
