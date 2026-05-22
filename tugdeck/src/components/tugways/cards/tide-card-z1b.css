@@ -13,7 +13,10 @@
  * trailing button: `--tugx-tide-z1b-copy-pad-cancel` (structural
  * — cancels the button's intrinsic padding) and
  * `--tugx-tide-z1b-copy-snug` (the tuning knob that snugs COPY
- * against the trailing `•`).
+ * against the trailing `•`). The row's left indent is set per
+ * mode — `--tugx-tide-z1b-indent-live` nudges the thinking
+ * indicator and `--tugx-tide-z1b-indent-terminal` nudges the
+ * end-state row, each tunable independently of the other.
  *
  * Tuglaw cross-check:
  *  - [L06] all visible state lives on CSS class / data-attribute
@@ -58,12 +61,14 @@
      row-middle line; with the inline badge (no fixed height) the
      text baselines also align. */
   align-items: center;
-  /* Uniform 2px left indent so the indicator and the inline
-     end-state badge both shift 2px right relative to the row
-     identifier above them. The same padding applies to both
-     variants so the indicator and end-state share the same
-     horizontal start. */
-  padding-left: 1px;
+  /* Left indent for the Z1B row — nudges the row right of the
+     identifier above it. Two knobs, one per mode: the thinking
+     indicator and the end-state badge carry different internal
+     whitespace, so each aligns to the identifier at its own
+     offset. Each token is applied on its `data-mode` rule below;
+     raise to nudge further right, lower toward 0 to sit flush. */
+  --tugx-tide-z1b-indent-live: 3.5px;      /* thinking indicator */
+  --tugx-tide-z1b-indent-terminal: 0px;  /* end-state row */
   min-height: var(--tug-space-xl, 20px);
   width: 100%;
   /* The single spacing knob for the whole row. Applied as the
@@ -76,11 +81,21 @@
   margin-top: 0;
 }
 
-/* End-states sit 2px tighter under the body; the live variant
-   keeps its natural rhythm — the indicator's pulse looks better
-   with a hair more space above it. */
+/* Thinking-indicator (live) row. `--tugx-tide-z1b-indent-live` is
+   this mode's own left-indent knob — tune it independently of the
+   terminal row's. */
+.tide-z1b[data-mode="live"] {
+  padding-left: var(--tugx-tide-z1b-indent-live);
+}
+
+/* End-state (terminal) row. Sits 2px tighter under the body — the
+   live variant keeps its natural rhythm; the indicator's pulse
+   looks better with a hair more space above it.
+   `--tugx-tide-z1b-indent-terminal` is this mode's left-indent
+   knob. */
 .tide-z1b[data-mode="terminal"] {
   margin-top: 2px;
+  padding-left: var(--tugx-tide-z1b-indent-terminal);
 }
 
 /* User-half in-flight collapses to zero — no visible footer below
