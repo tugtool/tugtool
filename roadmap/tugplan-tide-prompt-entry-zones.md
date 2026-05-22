@@ -360,10 +360,10 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Update [D97] in `tuglaws/design-decisions.md` — six-zone diagram and table reflect `Z4A` / `Z4B`, the relocated badges, and the reduced `Z3`.
-- [ ] Add `tuglaws/route-lifecycle.md` — the `RouteLifecycle` pipe, modeled on `lifecycle-delegates.md`'s structure.
-- [ ] Add a cross-link from `tuglaws/lifecycle-delegates.md` to `route-lifecycle.md` (sibling pipe, finer scope).
-- [ ] Record the host-facts and route-lifecycle decisions as global `[D##]` entries in `design-decisions.md`.
+- [x] Update [D97] in `tuglaws/design-decisions.md` — six-zone diagram and table reflect `Z4A` / `Z4B`, the relocated badges, and the reduced `Z3`. — diagram, table, and prose redrawn to the as-built layout: `Z4` split into `Z4A`/`Z4B`, badges in `Z4B`, maximize toggle + sash grip relocated to `Z2`, `Z3` collapsed to zero height.
+- [x] Add `tuglaws/route-lifecycle.md` — the `RouteLifecycle` pipe, modeled on `lifecycle-delegates.md`'s structure. — added; also indexed in `tuglaws/INDEX.md`.
+- [x] Add a cross-link from `tuglaws/lifecycle-delegates.md` to `route-lifecycle.md` (sibling pipe, finer scope). — added to its scope paragraph and its Cross-Links section.
+- [x] Record the host-facts and route-lifecycle decisions as global `[D##]` entries in `design-decisions.md`. — `[D98]` (host facts) and `[D99]` (`RouteLifecycle`) added under a new "Tide Prompt Entry" section.
 
 ---
 
@@ -558,15 +558,15 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 - `tuglaws/lifecycle-delegates.md` — cross-link to `route-lifecycle.md`.
 
 **Tasks:**
-- [ ] Redraw the [D97] six-zone diagram and table with `Z4A` / `Z4B`, relocated badges, reduced `Z3`.
-- [ ] Write `route-lifecycle.md` following the structure of `lifecycle-delegates.md`.
-- [ ] Add the cross-link and the global decision entries.
+- [x] Redraw the [D97] six-zone diagram and table with `Z4A` / `Z4B`, relocated badges, reduced `Z3`. — done; the diagram, table, and prose describe the as-built layout, including the design-redirect deviations (maximize toggle moved `Z3` → `Z2`, sash grip restyled into `Z2`, `Z3` collapsed rather than merely shortened).
+- [x] Write `route-lifecycle.md` following the structure of `lifecycle-delegates.md`. — `tuglaws/route-lifecycle.md`; indexed in `tuglaws/INDEX.md`.
+- [x] Add the cross-link and the global decision entries. — cross-link added to `lifecycle-delegates.md`; `[D98]` (host facts) and `[D99]` (`RouteLifecycle`) added to `design-decisions.md`.
 
 **Tests:**
-- [ ] N/A (docs).
+- [x] N/A (docs).
 
 **Checkpoint:**
-- [ ] Manual review — diagram matches the shipped layout; `route-lifecycle.md` matches `route-lifecycle.ts`.
+- [x] Manual review — diagram matches the shipped layout; `route-lifecycle.md` matches `route-lifecycle.ts`. — diagram verified at 80-column width against the as-built `tide-card.tsx` / `tug-prompt-entry.tsx` zone wiring; `route-lifecycle.md` verified against `route-lifecycle.ts` (store + delegate surfaces, synchronous dispatch, no drain queue, no initial-sync replay).
 
 ---
 

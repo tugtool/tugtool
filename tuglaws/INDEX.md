@@ -15,6 +15,7 @@
 - [card-state-model.md](card-state-model.md) — Selection, focus, scroll, and form-control values across tabs, pane activation, and reload. The per-axis contract; cross-refs `state-preservation.md` for the underlying protocol.
 - [state-preservation.md](state-preservation.md) — The [A9] save/restore protocol end-to-end: `useComponentStatePreservation`, `useCardStatePreservation`, FocusSnapshot, CardStateBag. Read this for the mechanism; read `card-state-model.md` for the per-axis contract.
 - [lifecycle-delegates.md](lifecycle-delegates.md) — The deck-level `TugCardDelegate` event pipe: construction, activation, deactivation, move, resize, destruction. The `MessageChannel` drain queue; `CardHost` portal lifecycle.
+- [route-lifecycle.md](route-lifecycle.md) — The per-prompt-entry `RouteLifecycle` pipe: how the command route is held as external state and how route changes reach observers. The route-scoped sibling of `lifecycle-delegates.md` — synchronous, finer-grained.
 - [responder-chain.md](responder-chain.md) — The tree of components that own semantic state, and the walk that routes typed actions through them. Read before writing any component that emits or handles an action.
 - [action-naming.md](action-naming.md) — The action vocabulary. Every action has one canonical `kebab-case` name, exported as a `TUG_ACTIONS.*` constant, referenced by constant at every call site.
 - [component-authoring.md](component-authoring.md) — The component author's checklist. How to build a tugways component end-to-end — files, hooks, attributes, tokens, tests.

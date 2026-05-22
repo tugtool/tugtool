@@ -242,7 +242,7 @@ The contract is surface-wide, not body-kind-specific: any new inner scroller a b
 
 **D96.** **Any code path that lands a `TurnEntry` on `state.transcript` must also seed the per-turn `streamingDocument` paths (`turn.${turnKey}.{assistant,thinking,tools}`) from the entry's payload.** This is the write-side counterpart to [L26]'s post-unification render contract: the assistant row's `CodeRowCell` observes `turn.${turnKey}.${channel}` exclusively (no fallback to `TurnEntry.*` fields), so a turn that exists on the snapshot but whose per-turn paths are empty renders blank — a textbook [L23] violation. Today the only such code path is `code-session-store/reducer.ts`'s `append-transcript` effect, paired with the `write-inflight` effects emitted by `handleTextDelta` / `handleToolUse` / `handleToolResult` / `handleToolUseStructured` for both live and replay events (the live↔replay symmetry restored by Step 18.9). Any future analogue — out-of-band ingestion, server-pushed transcript snapshot, debug-tool import, hot-reload state restore — must replicate the seeding using `serializeToolCalls` (`reducer.ts`) for the tools channel and the raw string for assistant/thinking. The reducer's pattern is the reference implementation; deviating from it without seeding strips the corresponding content from every rendered cell that comes through the alternate path. [L23], [L26]
 
-**D97.** The tide card is partitioned into **six placement zones, `Z0`-`Z5`, numbered spatially top-to-bottom.** Each zone is an addressable slot the telemetry renderers and the assistant-rendering registry target by ID: five are `ReactNode` slot props on a host component, and `Z5` is a state-coordinated interactive area rather than a content slot. Spatial numbering means any zone is findable by intuition, and a future zone inserts at its position with a clean downstream renumber — `Z0` is unambiguously "what you see first."
+**D97.** The tide card is partitioned into **six placement zones, `Z0`-`Z5`, numbered spatially top-to-bottom**, with `Z4` subdivided into the `Z4A` route control and the `Z4B` indicator slot. Each zone is an addressable slot the telemetry renderers and the assistant-rendering registry target by ID: five are `ReactNode` slot props on a host component (`Z0`, `Z1`, `Z2`, `Z3`, `Z4B`), while `Z4A` is the fixed route choice-group and `Z5` is a state-coordinated interactive area — neither a content slot. Spatial numbering means any zone is findable by intuition, and a future zone inserts at its position with a clean downstream renumber — `Z0` is unambiguously "what you see first."
 
 ```
 ┌─ tide card · transcript pane ────────────────────────────────────────────────┐
@@ -262,16 +262,17 @@ The contract is surface-wide, not body-kind-specific: any new inner scroller a b
 │   └──────────────────────────────────────────────────────────────────────┘   │
 │                                                                              │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ Z2   status bar — STATE · TIME · TOKENS · CONTEXT                            │
+│ Z2   [grip]  STATE · TIME · TOKENS · CONTEXT                      [maximize] │
 │      flex 0 0 auto · never scrolls · sits outside TugListView                │
 └──────────────────────────────────────────────────────────────────────────────┘
              ↑↓  split-pane sash — transcript / prompt-entry resize
 ┌─ tide card · prompt-entry pane ──────────────────────────────────────────────┐
-│ Z3   [ Project: /path ]        [ drift caution ]        [ maximize ]         │
+│ Z3   prompt-entry status row — reserved (collapses to zero height)           │
 │                                                                              │
 │   Ask Claude to build, fix, or explain                                       │
 │                                                                              │
-│ [Code] [Shell] [Command]      Z4 · footer (reserved)      Z5 · submit        │
+│ [Code][Shell][Command]   [Project: /path]  [Claude Code 2.1.148]      [ ↑ ]  │
+│ Z4A routes (leading) · Z4B indicators (centered) · Z5 submit (trailing)      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -279,11 +280,22 @@ The contract is surface-wide, not body-kind-specific: any new inner scroller a b
 |------|------------------|------------------|--------|
 | `Z0` | `TideCard` · `headerContent` | — | reserved — empty |
 | `Z1` | transcript row · `renderTurnTrailing`, keyed by `half` | user half: —; assistant half: `Z1A` model · timestamp + `Z1B` thinking-indicator ↔ end-state display | user half reserved; assistant half shipped |
-| `Z2` | `TideCard` · `statusBarContent` | `TideTelemetryStatusRow` — STATE · TIME · TOKENS · CONTEXT | shipped |
-| `Z3` | `TugPromptEntry` · `statusContent` + `cautionContent` | project-path badge · Claude Code version badge | shipped |
-| `Z4` | `TugPromptEntry` · `footerContent` | — | reserved — empty |
+| `Z2` | `TideCard` · `statusBarContent` | `TideTelemetryStatusRow` — STATE · TIME · TOKENS · CONTEXT, flanked by the leading sash grip and the trailing maximize toggle | shipped |
+| `Z3` | `TugPromptEntry` · `statusContent` + `cautionContent` | — (the tide card no longer fills it) | reserved — collapsed |
+| `Z4A` | `TugPromptEntry` route choice-group (no slot) | `Code` / `Shell` / `Command` route control | shipped |
+| `Z4B` | `TugPromptEntry` · `indicatorsContent` | project-path badge · Claude Code version badge | shipped |
 | `Z5` | `TugPromptEntry` submit button (no slot) | lifecycle-driven Submit / Stop / Awaiting / Stopping / Reconnecting | shipped |
 
 The transcript pane (the upper `TugSplitPanel`) is a flex column — `Z0` header, `TugListView` (`flex 1 1 auto`, scrolls), `Z2` status bar — so a telemetry update in `Z2` grows into space the list cedes without repositioning the scroll, and `Z2`, living *outside* `TugListView`, never scrolls with the transcript. `Z1` is per-turn rather than card-level: one trailing slot wired twice per turn (`half: "user" | "assistant"`), spatially inside the transcript pane between `Z0` and `Z2`. `Z5` is the submit button — a single DOM node whose label / `disabled` / `data-mode` are driven by the lifecycle state machine and which is never swapped across mode transitions, per [L26].
 
-A zone's *location* is contract; its *occupant* is not. `Z3` carries the project-path badge by default, but no invariant reserves it for that — every zone is a generic addressable slot. `Z0`, the `Z1` user half, and `Z4` are reserved: the slot exists in the API, default content is `null`, and the row collapses to zero height until something fills it. Established by the Step 20.x turn-surface work (archived as `roadmap/archive/tide-assistant-turns.md`); `Z3`'s `cautionContent` slot was added by the assistant-rendering drift-detection work. [L26]
+The prompt-entry toolbar lays out three zones in one flex row: `Z4A` (the route choice-group) is pinned to the leading edge, `Z5` (the submit button) to the trailing edge, and `Z4B` (`indicatorsContent`) floats centred between them — two equal flex spacers split the free width so `Z4B`'s centre sits at the midpoint of the `Z4A`–`Z5` gap. `Z4B` carries the project-path badge and the Claude Code version badge: the identity chrome naming what the active route targets. The maximize toggle and the prompt-area sash grip are card chrome, not zone occupants — both sit in the `Z2` status bar (grip on the leading edge, maximize on the trailing edge), which is why the `Z3` prompt-entry status row, once home to the badges and the toggle, is now empty and collapsed.
+
+A zone's *location* is contract; its *occupant* is not — every zone is a generic addressable slot. `Z0`, the `Z1` user half, and `Z3` are reserved: the slot exists in the API, default content is `null`, and the row collapses to zero height until something fills it (the tide card leaves `Z3` empty today, so its row has no height). Established by the Step 20.x turn-surface work (archived as `roadmap/archive/tide-assistant-turns.md`); `Z3`'s `cautionContent` slot was added by the assistant-rendering drift-detection work; the `Z4A` / `Z4B` split and the `Z2` chrome relocations came from the prompt-entry-zones work (`roadmap/tugplan-tide-prompt-entry-zones.md`). [L26]
+
+---
+
+## Tide Prompt Entry
+
+**D98.** Host facts — the backend's network `hostname` and the basename of its login shell — are resolved by tugcast and served at a read-only `GET /api/host` endpoint, then read into tugdeck's `HostFactsStore` through `useSyncExternalStore`. The browser cannot know the backend's real hostname or `$SHELL` (`window.location.hostname` is only the URL host), and the facts are static for a server's lifetime, so the store fires the fetch exactly once and caches the result. The endpoint is loopback-restricted like the other `/api` handlers; the response shape `{ hostname, shell }` is a cross-stack contract, pinned by a Rust serialization test and a `bun:test` parser test. A failed or pending fetch leaves the store empty, and consumers treat an empty snapshot as "not yet known." [L02]
+
+**D99.** Each Tide prompt entry owns a `RouteLifecycle` — a per-prompt-entry pipe that holds the authoritative command route (`❯` Code / `$` Shell / `:` Command) and announces every change. It offers two surfaces over one fire path: a store surface (`subscribe` + `getRoute`) that renderers read through `useSyncExternalStore` ([L02]), and a synchronous delegate/observer surface (`observeRouteWillChange` / `observeRouteDidChange`, `useRouteDelegate`) for imperative reactors. The route is no longer component `useState`: once it has a consumer outside the component that owns it, it is external state and must enter React through `useSyncExternalStore`. Unlike the deck-level `CardLifecycle`, `RouteLifecycle` is scoped per prompt entry, provided through `RouteLifecycleContext`, surfaces a single `(prev, next)` will/did pair, and dispatches synchronously — route consumers re-render content and have no gesture-focus-lock hazard, so there is no `MessageChannel` drain. See [route-lifecycle.md](route-lifecycle.md). [L02], [L03]

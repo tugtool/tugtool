@@ -12,7 +12,7 @@ Cards are constructed by a content factory the deck owns. The factory returns Re
 
 The delegate model is the channel through which the deck announces those framework-driven moments to observers and to content code that needs to react. A delegate is a single object with optional methods, supplied to a registration hook; missing methods are no-ops. This mirrors the Apple-style delegate pattern. The framework fires every moment unconditionally; consumers opt in to the moments they care about by implementing the matching method.
 
-This document is strictly about the deck-level `TugCardDelegate` event pipe. The preservation-layer callbacks (`onCardActivated`, `onSave`, `onRestore`) are a separate protocol that rides atop this pipe and lives in [state-preservation.md](state-preservation.md), not here.
+This document is strictly about the deck-level `TugCardDelegate` event pipe. The preservation-layer callbacks (`onCardActivated`, `onSave`, `onRestore`) are a separate protocol that rides atop this pipe and lives in [state-preservation.md](state-preservation.md), not here. The route-scoped sibling pipe — one `RouteLifecycle` per prompt entry, surfacing route changes rather than card moments — is [route-lifecycle.md](route-lifecycle.md).
 
 ---
 
@@ -202,6 +202,7 @@ Historical / secondary planning — kept for context, not authoritative.
 
 ## Cross-Links
 
+- [route-lifecycle.md](route-lifecycle.md) — The route-scoped sibling pipe. `RouteLifecycle` surfaces one moment — a prompt-entry route change — as a synchronous `(prev, next)` will/did pair, with no `MessageChannel` drain. Per-prompt-entry scope rather than deck-level; finer-grained than this pipe, and modeled on the same observer-vs-delegate split.
 - [state-preservation.md](state-preservation.md) — The preservation-layer protocol that rides atop this pipe. `onCardActivated`, `onSave`, `onRestore` are not delegate methods; they are preservation callbacks. When `cardDidActivate` fires, the preservation layer dispatches `onCardActivated` on the corresponding card's preservation record; when `cardWillDeactivate` fires, the preservation layer captures the bag.
 - [card-state-model.md](card-state-model.md) — The per-axis contract for selection, focus, scroll, and form-control values across the transitions this pipe surfaces.
 - [pane-model.md](pane-model.md) — The Deck → Pane → Card hierarchy. Move and resize fire on the card identity; the pane chrome is what physically moves. Cards never set their own position, size, or z-order ([L09]).
