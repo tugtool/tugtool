@@ -27,28 +27,54 @@ function rejectingFetch(): HostFactsFetch {
 
 describe("parseHostFacts", () => {
   it("maps a Spec S01 literal to a HostFacts snapshot", () => {
-    expect(parseHostFacts({ hostname: "studio.local", shell: "zsh" })).toEqual({
-      hostname: "studio.local",
-      shell: "zsh",
-    });
-  });
-
-  it("accepts an empty shell — the value sent when $SHELL is unset", () => {
-    expect(parseHostFacts({ hostname: "studio.local", shell: "" })).toEqual({
-      hostname: "studio.local",
-      shell: "",
-    });
-  });
-
-  it("tolerates unknown extra fields, keeping only hostname and shell", () => {
     expect(
       parseHostFacts({
         hostname: "studio.local",
         shell: "zsh",
+        shellPath: "/bin/zsh",
+      }),
+    ).toEqual({
+      hostname: "studio.local",
+      shell: "zsh",
+      shellPath: "/bin/zsh",
+    });
+  });
+
+  it("accepts an empty shell — the value sent when $SHELL is unset", () => {
+    expect(
+      parseHostFacts({ hostname: "studio.local", shell: "", shellPath: "" }),
+    ).toEqual({
+      hostname: "studio.local",
+      shell: "",
+      shellPath: "",
+    });
+  });
+
+  it("tolerates unknown extra fields, keeping only the contract fields", () => {
+    expect(
+      parseHostFacts({
+        hostname: "studio.local",
+        shell: "zsh",
+        shellPath: "/bin/zsh",
         platform: "linux",
         extra: 42,
       }),
-    ).toEqual({ hostname: "studio.local", shell: "zsh" });
+    ).toEqual({
+      hostname: "studio.local",
+      shell: "zsh",
+      shellPath: "/bin/zsh",
+    });
+  });
+
+  it("treats shellPath as additive — missing falls back to empty", () => {
+    // Older tugcast servers may predate the `shellPath` field. The
+    // parser keeps producing a HostFacts so the snapshot is well-formed;
+    // the Shell-route badge then falls back to `shell` for display.
+    expect(parseHostFacts({ hostname: "studio.local", shell: "zsh" })).toEqual({
+      hostname: "studio.local",
+      shell: "zsh",
+      shellPath: "",
+    });
   });
 
   it("returns null when a contract field is missing", () => {
@@ -75,23 +101,30 @@ describe("parseHostFacts", () => {
 describe("HostFactsStore", () => {
   it("resolves the snapshot from a successful fetch", async () => {
     const store = new HostFactsStore(
-      okFetch({ hostname: "studio.local", shell: "zsh" }),
+      okFetch({ hostname: "studio.local", shell: "zsh", shellPath: "/bin/zsh" }),
     );
     await store.ready();
     expect(store.getSnapshot()).toEqual({
       hostname: "studio.local",
       shell: "zsh",
+      shellPath: "/bin/zsh",
     });
   });
 
   it("ignores unknown fields in the fetched body", async () => {
     const store = new HostFactsStore(
-      okFetch({ hostname: "studio.local", shell: "zsh", platform: "linux" }),
+      okFetch({
+        hostname: "studio.local",
+        shell: "zsh",
+        shellPath: "/bin/zsh",
+        platform: "linux",
+      }),
     );
     await store.ready();
     expect(store.getSnapshot()).toEqual({
       hostname: "studio.local",
       shell: "zsh",
+      shellPath: "/bin/zsh",
     });
   });
 
@@ -115,14 +148,14 @@ describe("HostFactsStore", () => {
 
   it("starts empty before the fetch resolves", () => {
     const store = new HostFactsStore(
-      okFetch({ hostname: "studio.local", shell: "zsh" }),
+      okFetch({ hostname: "studio.local", shell: "zsh", shellPath: "/bin/zsh" }),
     );
     expect(store.getSnapshot()).toBeNull();
   });
 
   it("notifies a subscriber once when the fetch resolves", async () => {
     const store = new HostFactsStore(
-      okFetch({ hostname: "studio.local", shell: "zsh" }),
+      okFetch({ hostname: "studio.local", shell: "zsh", shellPath: "/bin/zsh" }),
     );
     let ticks = 0;
     store.subscribe(() => {
@@ -134,7 +167,7 @@ describe("HostFactsStore", () => {
 
   it("does not notify an unsubscribed listener", async () => {
     const store = new HostFactsStore(
-      okFetch({ hostname: "studio.local", shell: "zsh" }),
+      okFetch({ hostname: "studio.local", shell: "zsh", shellPath: "/bin/zsh" }),
     );
     let ticks = 0;
     const unsubscribe = store.subscribe(() => {
@@ -147,7 +180,7 @@ describe("HostFactsStore", () => {
 
   it("getSnapshot returns a stable reference after resolution", async () => {
     const store = new HostFactsStore(
-      okFetch({ hostname: "studio.local", shell: "zsh" }),
+      okFetch({ hostname: "studio.local", shell: "zsh", shellPath: "/bin/zsh" }),
     );
     await store.ready();
     expect(store.getSnapshot()).toBe(store.getSnapshot());

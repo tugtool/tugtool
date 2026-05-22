@@ -638,8 +638,8 @@ async fn test_tell_rejects_non_loopback() {
 // ── Host facts API integration test ───────────────────────────────────────
 
 /// `GET /api/host` is wired and returns the Spec S01 shape: a 200 with a
-/// JSON object carrying string `hostname` and `shell` fields. `hostname` is
-/// resolved on the test host and is non-empty there.
+/// JSON object carrying string `hostname`, `shell`, and `shellPath` fields.
+/// `hostname` is resolved on the test host and is non-empty there.
 #[tokio::test]
 async fn test_host_endpoint_returns_spec_s01_shape() {
     use axum::extract::connect_info::MockConnectInfo;
@@ -665,6 +665,7 @@ async fn test_host_endpoint_returns_spec_s01_shape() {
     let obj = json.as_object().expect("/api/host returns a JSON object");
     assert!(obj.get("hostname").map(|v| v.is_string()).unwrap_or(false));
     assert!(obj.get("shell").map(|v| v.is_string()).unwrap_or(false));
+    assert!(obj.get("shellPath").map(|v| v.is_string()).unwrap_or(false));
     assert!(
         !obj["hostname"].as_str().unwrap().is_empty(),
         "hostname resolves to a non-empty value on the test host",

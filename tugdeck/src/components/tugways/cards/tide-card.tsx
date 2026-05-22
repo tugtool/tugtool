@@ -37,7 +37,7 @@ import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry
 import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-transcript";
 import { TideCardSashGrip } from "./tide-card-sash-grip";
 import { useTidePlacementSlots } from "./tide-card-placement-experiment";
-import { TideVersionBadge } from "../chrome/tide-version-badge";
+import { TideRouteIndicatorBadge } from "../chrome/tide-route-indicator-badge";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -2531,7 +2531,7 @@ export function TideCardBody({
                 indicatorsContent={
                   <>
                     {effectivePromptStatusContent}
-                    <TideVersionBadge
+                    <TideRouteIndicatorBadge
                       codeSessionStore={codeSessionStore}
                       sessionMetadataStore={sessionMetadataStore}
                     />

@@ -1,13 +1,15 @@
 //! HTTP handler for the `GET /api/host` endpoint.
 //!
 //! Exposes static facts about the host tugcast runs on — its network
-//! `hostname` and the basename of the login `$SHELL` — so the frontend
-//! can name what each prompt-entry route targets. Read-only; restricted
-//! to loopback connections like the other `/api` handlers.
+//! `hostname`, the basename of the login `$SHELL`, and the full
+//! `$SHELL` path — so the frontend can name what each prompt-entry
+//! route targets. Read-only; restricted to loopback connections like
+//! the other `/api` handlers.
 //!
-//! The response shape is fixed by Spec S01: `{ "hostname": <str>, "shell":
-//! <str> }`. Both values are resolved once per request from the running
-//! process's environment; host facts do not change over a server's lifetime.
+//! The response shape is fixed by Spec S01: `{ "hostname": <str>,
+//! "shell": <str>, "shellPath": <str> }`. All values are resolved once
+//! per request from the running process's environment; host facts do
+//! not change over a server's lifetime.
 
 use std::net::SocketAddr;
 
@@ -30,14 +32,26 @@ pub(crate) struct HostFacts {
     /// The basename of the login shell (`$SHELL` → `zsh`, `bash`, …).
     /// Empty when `$SHELL` is unset, per Spec S01.
     shell: String,
+    /// The full `$SHELL` path (`/bin/zsh`, `/usr/local/bin/fish`, …).
+    /// Empty when `$SHELL` is unset. Serialized as `shellPath` —
+    /// camelCase matches the cross-stack convention `HostFactsStore`
+    /// already parses.
+    #[serde(rename = "shellPath")]
+    shell_path: String,
 }
 
 impl HostFacts {
     /// Resolve host facts from the running process's environment.
     fn resolve() -> Self {
+        let shell_path = std::env::var("SHELL").ok().unwrap_or_default();
         HostFacts {
             hostname: resolve_hostname(),
-            shell: shell_basename(std::env::var("SHELL").ok().as_deref()),
+            shell: shell_basename(if shell_path.is_empty() {
+                None
+            } else {
+                Some(shell_path.as_str())
+            }),
+            shell_path,
         }
     }
 }
@@ -79,9 +93,9 @@ fn shell_basename(shell_path: Option<&str>) -> String {
 
 /// Handle `GET /api/host`.
 ///
-/// Returns `{ "hostname": <str>, "shell": <str> }` (Spec S01) with
-/// `Content-Type: application/json`. Read-only; restricted to loopback
-/// connections like the other `/api` handlers.
+/// Returns `{ "hostname": <str>, "shell": <str>, "shellPath": <str> }`
+/// (Spec S01) with `Content-Type: application/json`. Read-only;
+/// restricted to loopback connections like the other `/api` handlers.
 pub(crate) async fn get_host(ConnectInfo(addr): ConnectInfo<SocketAddr>) -> Response {
     if !addr.ip().is_loopback() {
         warn!("get_host: rejected non-loopback connection from {}", addr);
@@ -103,14 +117,17 @@ mod tests {
         let facts = HostFacts {
             hostname: "studio.local".to_owned(),
             shell: "zsh".to_owned(),
+            shell_path: "/bin/zsh".to_owned(),
         };
         let json = serde_json::to_value(&facts).expect("HostFacts serializes");
         let obj = json.as_object().expect("serializes to a JSON object");
 
-        // Exactly the two Spec S01 fields, both JSON strings.
-        assert_eq!(obj.len(), 2);
+        // The three Spec S01 fields, all JSON strings; `shellPath` is
+        // serialized camelCase to match the cross-stack convention.
+        assert_eq!(obj.len(), 3);
         assert_eq!(obj.get("hostname").and_then(|v| v.as_str()), Some("studio.local"));
         assert_eq!(obj.get("shell").and_then(|v| v.as_str()), Some("zsh"));
+        assert_eq!(obj.get("shellPath").and_then(|v| v.as_str()), Some("/bin/zsh"));
     }
 
     #[test]

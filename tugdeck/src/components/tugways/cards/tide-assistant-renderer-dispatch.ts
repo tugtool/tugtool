@@ -36,7 +36,7 @@
  * Three drift signals are detected and surfaced as a `caution` —
  * inline at the offending event (the tool-wrapper chrome paints a
  * `TideCautionBadge` from the threaded `caution` prop) and, in
- * aggregate, on the card chrome (`TideVersionBadge` counts
+ * aggregate, on the card chrome (`TideRouteIndicatorBadge` counts
  * `summarizeDrift`'s events):
  *
  *  - `unknown_tool` — a `tool_call` whose name is not in the registry
@@ -321,7 +321,7 @@ export function registeredTools(): ReadonlyArray<string> {
 /**
  * The Claude Code stream-json version the Tide renderers were last
  * validated against — the most recent `just capture-capabilities`
- * baseline. `TideVersionBadge` displays it as the "validated against"
+ * baseline. `TideRouteIndicatorBadge` displays it as the "validated against"
  * reference, and `versionDriftCaution` compares its `major.minor`
  * line against the running session's.
  *

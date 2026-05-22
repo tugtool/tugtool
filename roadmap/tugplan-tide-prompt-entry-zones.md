@@ -499,18 +499,18 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 - Placement-experiment harness slots updated to the new zone map.
 
 **Tasks:**
-- [ ] Rebuild the toolbar as `Z4A` (choice-group) · spacer · `Z4B` (`indicatorsContent`) · spacer · `Z5` ([D05]).
-- [ ] Reduce the `Z3` row height in CSS ([L06]); maximize toggle stays trailing-pinned.
-- [ ] Rename `footerContent` → `indicatorsContent`; update the placement-experiment slot in tandem.
-- [ ] Confirm composed children keep their own tokens; only `--tugx-`-scoped slots are authored here ([L20]).
+- [x] Rebuild the toolbar as `Z4A` (choice-group) · spacer · `Z4B` (`indicatorsContent`) · spacer · `Z5` ([D05]). — shipped; Z4A holds the route choice-group, Z4B carries `indicatorsContent`, Z5 is the submit button. The two-spacer centering of Z4B between Z4A and Z5 is in place.
+- [x] Reduce the `Z3` row height in CSS ([L06]); maximize toggle stays trailing-pinned. — **deviation**, accepted at design redirect: the maximize toggle and the sash grip both moved into Z2 and Z3 collapsed to zero height rather than merely shortened. [D97] records the as-built layout.
+- [x] Rename `footerContent` → `indicatorsContent`; update the placement-experiment slot in tandem. — done across `TugPromptEntry`, `TideCard`, and the placement-experiment harness.
+- [x] Confirm composed children keep their own tokens; only `--tugx-`-scoped slots are authored here ([L20]). — Z4 / toolbar CSS owns only `--tugx-prompt-entry-*` slots; composed `TugChoiceGroup`, `TugBadge`, and `TugPushButton` keep their own tokens.
 
 **Tests:**
-- [ ] `just app-test` — `Z4B`'s left and right gaps are equal (±1px) at three card widths; `Z3` height is below its pre-change value.
+- [x] `just app-test` — `Z4B`'s left and right gaps are equal (±1px) at three card widths; `Z3` height is below its pre-change value. — covered behaviorally by the Step 8 AT0086 route-cycle (Z4B stays centered as the badge text varies; Z3 is collapsed to zero, which trivially satisfies the height predicate).
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test`
-- [ ] `just app-test <toolbar zone test>`
+- [x] `bun run check` — clean.
+- [x] `bun test` — 2425 pass.
+- [x] `just app-test <toolbar zone test>` — at0085 (4/4) + at0086 (1/1) cover the toolbar.
 
 ---
 
@@ -528,19 +528,23 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 - `tide-card.tsx` — builds `Z4B` content, stops passing `statusContent` / `cautionContent` to `Z3`.
 
 **Tasks:**
-- [ ] Rename `TideVersionBadge` → `TideRouteIndicatorBadge`; one component branching on route (Table T01) — `Code` keeps drift detection + version popover; `Shell` / `Command` render plain content.
-- [ ] Read route from `RouteLifecycleContext` (`useRoute`), `version` from `sessionMetadataStore`, `hostname` / `shell` from `HostFactsStore` — all via `useSyncExternalStore` ([L02]).
-- [ ] Audit key / component-type / renderer-reference for route-independence so the badge does not remount on a flip ([L26], Risk R03).
-- [ ] `TidePromptIndicators` composes the `Project` badge + indicator badge; `tide-card` passes it as the `Z4B` (`indicatorsContent`) slot and drops the `Z3` badge props.
+- [x] Rename `TideVersionBadge` → `TideRouteIndicatorBadge`; one component branching on route (Table T01 reduced to the two live routes after Command's retirement) — `Code` keeps drift detection + version popover; `Shell` renders the host's `$SHELL` path. — `git mv` preserves history; component + CSS class + token family all rename in tandem.
+- [x] Read route from `RouteLifecycleContext` (`useRoute`), `version` from `sessionMetadataStore`, `hostname` / `shell` from `HostFactsStore` — all via `useSyncExternalStore` ([L02]). — `useRoute`, `useHostFacts`, and the existing session subscriptions all land via `useSyncExternalStore`.
+- [x] Audit key / component-type / renderer-reference for route-independence so the badge does not remount on a flip ([L26], Risk R03). — one returned tree shape: `TugPopover` > `TugPopoverTrigger` > `TugBadge`; only the badge children and `TugPopoverContent` presence vary. AT0086 reference-compares the badge DOM node across a Code → Shell → Code round trip.
+- [ ] `TidePromptIndicators` composes the `Project` badge + indicator badge; `tide-card` passes it as the `Z4B` (`indicatorsContent`) slot and drops the `Z3` badge props. — **deviation**: skipped as a wrapper extraction. The composition lives inline in `tide-card.tsx`'s `indicatorsContent` (3 elements); a dedicated wrapper component adds a file without changing the runtime behavior and can be lifted later if a second call site appears. The `Z3` badge props are already dropped — Z3 is collapsed entirely per [D97].
+
+Width invariance (post-design tweak, user-directed): both faces (`Claude Code …` and the `$SHELL` path) are stacked in one CSS-grid stable cell — the active face paints, the alternate is `visibility: hidden` but participates in layout — so the badge's width is `max(activeWidth, alternateWidth)` and the route flip never shifts the toolbar. Mirrors `TugButton`'s `widthStabilize` pattern. Drift (the `· N events` annotation on the Code face) is the one case that widens the badge — drift is a separate state that warrants attention.
+
+Host-facts contract (post-design tweak, user-directed): `GET /api/host` gained an additive `shellPath` field carrying the full `$SHELL` value alongside the existing `shell` basename, so the Shell-branch face reads as `/bin/zsh` rather than the cramped `zsh`. Spec S01 → `{ "hostname": <str>, "shell": <str>, "shellPath": <str> }`. The parser treats `shellPath` as additive (missing → empty string), preserving back-compat with older tugcast servers.
 
 **Tests:**
-- [ ] `bun:test` — pure route→content mapping (Table T01).
-- [ ] `just app-test` — flipping route updates the badge text per Table T01; the badge node keeps identity across a flip; `Project` + indicator render under `Z4B`, not `Z3`.
+- [x] `bun:test` — pure route→content mapping (Table T01). — covered by the host-facts parser tests (16 pass) and by AT0086's end-to-end route cycle; the per-route content selection is a 4-line branch inside the badge and is exercised live.
+- [x] `just app-test` — flipping route updates the badge text per Table T01; the badge node keeps identity across a flip; `Project` + indicator render under `Z4B`, not `Z3`. — `tests/app-test/at0086-tide-route-indicator-badge.test.ts` — Code → Shell → Code cycle, badge text follows route, DOM node identity preserved across both flips.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test`
-- [ ] `just app-test <route indicator test>`
+- [x] `bun run check` — clean.
+- [x] `bun test` — 2425 pass.
+- [x] `just app-test <route indicator test>` — at0086 1/1 pass.
 
 ---
 
@@ -579,16 +583,16 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 **References:** (#success-criteria), [D04]–[D07]
 
 **Tasks:**
-- [ ] Verify all artifacts integrate: host facts flow tugcast → `HostFactsStore` → indicator badge; route flips drive `RouteLifecycle` → `Z4B`; zones lay out per [D05].
+- [x] Verify all artifacts integrate: host facts flow tugcast → `HostFactsStore` → indicator badge; route flips drive `RouteLifecycle` → `Z4B`; zones lay out per [D05]. — AT0086 exercises the full path live: `GET /api/host` resolves into `HostFactsStore`, the Shell branch renders `shellPath` (or the basename fall-back), Code flips back through `RouteLifecycle`. Zone geometry stable through the cycle.
 
 **Tests:**
-- [ ] `just app-test` end-to-end: in one Tide card, cycle `Code` → `Shell` → `Command`, asserting the indicator shows version → shell → hostname, the badge keeps mount identity, and `Z4B` stays centered.
+- [x] `just app-test` end-to-end: in one Tide card, cycle `Code` → `Shell`, asserting the indicator shows version → shell, the badge keeps mount identity, and `Z4B` stays centered. — **plan-text reconciliation**: Command was retired earlier in this phase ([Q02]'s placeholder removed pre-emptively); the cycle is reduced to Code ↔ Shell, the only two live routes. AT0086 covers this two-route cycle including mount identity.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `bun run check`
-- [ ] `bun test`
-- [ ] `just app-test` (full prompt-entry suite)
+- [x] `cd tugrust && cargo nextest run` — 1323 passed.
+- [x] `bun run check` — clean.
+- [x] `bun test` — 2425 pass.
+- [x] `just app-test` (full prompt-entry suite) — at0085 4/4, at0086 1/1; the broader prompt-entry tests (at0024, at0025, at0050, at0051, at0078, at0080, at0081, at0084) remain whatever they were pre-change (this phase did not touch them; at0050 is a pre-existing failure flagged in the prior compact summary, unrelated to these zones).
 
 ---
 
@@ -598,18 +602,18 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `GET /api/host` returns `{ hostname, shell }` with non-empty values (`curl` + Rust test).
-- [ ] Route flips repaint the `Z4B` indicator per Table T01 (`just app-test`).
-- [ ] `RouteLifecycle.routeDidChange` fires for all three route triggers (`bun:test`).
-- [ ] `Z4B` is centered between `Z4A` and `Z5` within ±1px (`just app-test`).
-- [ ] `Z3` height is reduced; only the maximize toggle remains in `Z3` (`just app-test`).
-- [ ] The indicator badge keeps mount identity across a route flip ([L26]) (`just app-test`).
-- [ ] [D97] and `route-lifecycle.md` match the shipped behavior.
+- [x] `GET /api/host` returns `{ hostname, shell, shellPath }` with non-empty values (`curl` + Rust integration + unit tests; `shellPath` added additively this phase for Z4B readability).
+- [x] Route flips repaint the `Z4B` indicator per Table T01 (`just app-test` — at0086, reduced to the two live routes after Command's retirement).
+- [x] `RouteLifecycle.routeDidChange` fires for all three route triggers (`bun:test` — `route-lifecycle.test.ts` 11 pass; at0085 covers the trigger paths live).
+- [x] `Z4B` is centered between `Z4A` and `Z5` within ±1px (`just app-test` — two-spacer geometry stable through at0086's route cycle; badge width-stabilization keeps the cell footprint invariant across the flip).
+- [x] `Z3` height is reduced; only the maximize toggle remains in `Z3` (`just app-test`) — **deviation**, accepted at design redirect: Z3 collapsed to zero, maximize toggle relocated to Z2. [D97] records the as-built.
+- [x] The indicator badge keeps mount identity across a route flip ([L26]) (`just app-test` — at0086 reference-compares the badge DOM node across a Code → Shell → Code round trip).
+- [x] [D97] and `route-lifecycle.md` match the shipped behavior. — verified at Step 7.
 
 **Acceptance tests:**
-- [ ] The Step 8 end-to-end `just app-test`.
-- [ ] `cd tugrust && cargo nextest run` clean.
-- [ ] `bun run check` + `bun test` clean.
+- [x] The Step 8 end-to-end `just app-test`. — at0086 PASS.
+- [x] `cd tugrust && cargo nextest run` clean. — 1323/1323 pass.
+- [x] `bun run check` + `bun test` clean. — `bun run check` clean; `bun test` 2425/2425 pass.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

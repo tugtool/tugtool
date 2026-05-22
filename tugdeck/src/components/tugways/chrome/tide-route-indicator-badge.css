@@ -1,0 +1,136 @@
+/* @tug-pairings:
+   - the click-expand report's title / version / detail text set
+     `color` alone and carry a `@tug-renders-on` annotation naming the
+     popover surface. The badge itself is a composed `TugBadge` — it
+     owns its surface and tokens; this file declares none for it.
+   `TideRouteIndicatorBadge` is the Z4B route-aware indicator badge
+   plus its click-expand report. The badge is a `TugBadge`; only the
+   report geometry lives here, under `--tugx-route-indicator-*`.
+*/
+
+/**
+ * tide-route-indicator-badge.css — `TideRouteIndicatorBadge` report
+ * styling. The badge is a composed `TugBadge`; only the popover
+ * report is dressed here.
+ *
+ * Tuglaw cross-check:
+ *  - [L16] the report's colour-only text rules each carry a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-route-indicator-*` resolves to `--tug-*` in one hop.
+ *  - [L19] file pair; the report node carries
+ *    `data-slot="tide-route-indicator-badge-report"`.
+ *  - [L20] component-token sovereignty — owns `--tugx-route-indicator-*`
+ *    only; the composed `TugBadge` keeps its own tokens.
+ */
+
+/* ---- Component-tier aliases — report geometry [L17] ---- */
+
+body {
+  --tugx-route-indicator-gap:        var(--tug-space-xs);
+  --tugx-route-indicator-padding:    var(--tug-space-sm);
+  --tugx-route-indicator-size:       var(--tug-font-size-xs);
+  --tugx-route-indicator-label-gap:  var(--tug-space-md);
+}
+
+/* ---- Trigger badge ---- */
+
+/* The badge is a `TugBadge` (its own surface + tokens); the only thing
+ * this consumer adds is the pointer cursor — the badge opens the
+ * version / drift report popover on click. The Shell branch has no
+ * report to expand to, so the pointer cursor is suppressed there to
+ * match what clicking actually does. */
+.tide-route-indicator-badge {
+  cursor: pointer;
+}
+
+.tide-route-indicator-badge[data-route="shell"] {
+  cursor: default;
+}
+
+/* ---- Width-stabilized face ----
+   Active and alternate faces are stacked in one CSS-grid cell. The
+   active face paints; the alternate keeps `visibility: hidden` but
+   participates in layout — the cell sizes to
+   `max(activeWidth, alternateWidth)`, so the route flip never changes
+   the badge's footprint. Mirrors `TugButton`'s `widthStabilize`
+   pattern; the data-attribute names are kept consistent on purpose. */
+.tide-route-indicator-badge-face {
+  display: inline-grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  align-items: center;
+  justify-items: center;
+}
+
+.tide-route-indicator-badge-face > [data-tug-stable-label="active"],
+.tide-route-indicator-badge-face > [data-tug-stable-label="alternate"] {
+  grid-row: 1;
+  grid-column: 1;
+  white-space: nowrap;
+}
+
+.tide-route-indicator-badge-face > [data-tug-stable-label="alternate"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---- Click-expand report (inside TugPopoverContent) ---- */
+
+.tide-route-indicator-badge-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-route-indicator-gap);
+  padding: var(--tugx-route-indicator-padding);
+  font-size: var(--tugx-route-indicator-size);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-route-indicator-badge-report-title {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: 600;
+}
+
+/* Running / validated version rows — a label column and a value. */
+.tide-route-indicator-badge-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tide-route-indicator-badge-version-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tugx-route-indicator-label-gap);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-route-indicator-badge-version-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-route-indicator-badge-version-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-variant-numeric: tabular-nums;
+}
+
+.tide-route-indicator-badge-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-route-indicator-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tide-route-indicator-badge-report-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-route-indicator-badge-report-detail {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-variant-numeric: tabular-nums;
+}

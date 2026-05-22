@@ -25,23 +25,42 @@ export interface HostFacts {
   hostname: string;
   /** The login shell's basename, e.g. `zsh`; empty if `$SHELL` is unset. */
   shell: string;
+  /**
+   * The full `$SHELL` path, e.g. `/bin/zsh` or `/usr/local/bin/fish`;
+   * empty if `$SHELL` is unset. Added alongside `shell` so consumers
+   * that want the full path (the Z4B Shell-route indicator badge does,
+   * for readability and to keep the badge from looking tiny next to
+   * the longer Code face) don't have to reconstruct it.
+   */
+  shellPath: string;
 }
 
 /**
  * Parse a `GET /api/host` response body into {@link HostFacts}.
  *
- * Strict on the two contract fields, lenient on everything else: a
- * non-object body, or a `hostname` / `shell` that is missing or not a
- * string, yields `null` — the store then stays empty per Spec S01.
- * Unknown extra fields are ignored, so a future server that adds fields
- * stays compatible (Risk R01). An empty-string `shell` is valid: that is
- * what the endpoint sends when `$SHELL` is unset.
+ * Strict on the two contract fields `hostname` and `shell`, lenient on
+ * everything else: a non-object body, or a `hostname` / `shell` that is
+ * missing or not a string, yields `null` — the store then stays empty
+ * per Spec S01. Unknown extra fields are ignored, so a future server
+ * that adds fields stays compatible (Risk R01). An empty-string `shell`
+ * is valid: that is what the endpoint sends when `$SHELL` is unset.
+ *
+ * `shellPath` is treated as additive: when the server omits it (older
+ * tugcast that predates the field), the parser falls back to the empty
+ * string so the snapshot is well-formed. The Shell-route indicator
+ * badge falls back to `shell` then to a `shell` placeholder, so a
+ * missing `shellPath` only changes the displayed text, never the
+ * parsed-vs-null verdict.
  */
 export function parseHostFacts(raw: unknown): HostFacts | null {
   if (raw === null || typeof raw !== "object") return null;
-  const { hostname, shell } = raw as Record<string, unknown>;
+  const { hostname, shell, shellPath } = raw as Record<string, unknown>;
   if (typeof hostname !== "string" || typeof shell !== "string") return null;
-  return { hostname, shell };
+  return {
+    hostname,
+    shell,
+    shellPath: typeof shellPath === "string" ? shellPath : "",
+  };
 }
 
 /**
