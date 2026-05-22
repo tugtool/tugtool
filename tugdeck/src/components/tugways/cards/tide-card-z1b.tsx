@@ -17,30 +17,30 @@
  *
  * **Participant variants.** The component dispatches on `participant`:
  *
- *  - **`participant="code"`** — asst-half. Terminal state shows
- *    `[badge • time • tokens] • [COPY]`. In-flight state shows
+ *  - **`participant="code"`** — asst-half. Committed state shows
+ *    `[badge • time • tokens] • [COPY]`, the badge driven by
+ *    `endStateBadgeFor(turn.turnEndReason)`. In-flight state shows
  *    `[TugThinkingIndicator]` (the live "agent is working on this
  *    turn" signal).
- *  - **`participant="user"`** — user-half. Terminal state shows
- *    `[badge] • [COPY]` — the same badge as the asst-half so the
- *    two halves of a turn share an outcome glance, but no time /
- *    tokens (those are asst-side data). In-flight state renders
- *    nothing visible (the user message is already there; no live
- *    indicator on the user row).
- *
- * Both variants drive the badge off `endStateBadgeFor(turn.turnEndReason)`
- * — the same pure helper — so a turn's two halves always agree on
- * the outcome glyph + text + tone. Vertical symmetry by
- * construction.
+ *  - **`participant="user"`** — user-half. Always shows
+ *    `[badge] • [COPY]` with a static "OK" badge — no time /
+ *    tokens (those are asst-side data). The user's submission is
+ *    complete the instant it posts, so the row carries its end-
+ *    state immediately, in-flight and committed alike, and the
+ *    badge never reflects `turn.turnEndReason`: an interrupt or
+ *    error belongs to the *response*, not to the act of
+ *    submitting.
  *
  * **Mode dispatch — purely per-row.** The component takes one
  * data-driving prop: `turn`. The data source's invariant is "a row
  * with `turn === undefined` is the (single) in-flight row; a row
  * with `turn !== undefined` is a committed row." Z1B dispatches
- * directly on that:
+ * directly on that, per participant:
  *
- *  - `turn !== undefined` → committed → `terminal` mode.
- *  - `turn === undefined` → in-flight → `live` (code) or `idle` (user).
+ *  - user half → always `terminal` (the submission is complete the
+ *    instant it posts; `turn` only adds the copy text once it lands).
+ *  - code half, `turn !== undefined` → committed → `terminal` mode.
+ *  - code half, `turn === undefined` → in-flight → `live` mode.
  *
  * The session `phase` is deliberately NOT an input here. Phase is
  * a session-wide signal; using it would force every assistant row
@@ -168,17 +168,22 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
   perTurnTokens,
   bodyText,
 }) => {
-  // Per-row mode dispatch. `turn !== undefined` is the data
-  // source's "this row is committed" signal; the absence of a
-  // turn is the data source's "this row is the in-flight row."
-  // Both halves share the SAME signal, but the in-flight branch
-  // differs: code shows the indicator, user renders nothing.
-  const hasEndState = turn !== undefined;
-  const mode: "live" | "terminal" | "idle" = hasEndState
-    ? "terminal"
-    : participant === "code"
-      ? "live"
-      : "idle";
+  const isUserHalf = participant === "user";
+  // Per-row mode dispatch.
+  //
+  //  - User half: the submission is complete the instant it posts,
+  //    so the row always carries its end-state — in-flight and
+  //    committed alike. Always `terminal`.
+  //  - Code half: `turn !== undefined` is the data source's "this
+  //    row is committed" signal; while in-flight (`turn ===
+  //    undefined`) the live thinking indicator stands in.
+  const hasEndState = isUserHalf || turn !== undefined;
+  const mode: "live" | "terminal" = hasEndState ? "terminal" : "live";
+  // End-state reason. The user half is pinned to `complete` — its
+  // badge reports "the message was submitted," never the response's
+  // outcome, so an interrupt / error never bleeds onto the user row.
+  const reason: TurnEndReason =
+    isUserHalf || turn === undefined ? "complete" : turn.turnEndReason;
   const showCopy =
     hasEndState && bodyText !== undefined && bodyText.length > 0;
   const bodyTextForCopy = bodyText ?? "";
@@ -197,12 +202,13 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
       {hasEndState ? (
         <EndStateDisplay
           participant={participant}
+          reason={reason}
           turn={turn}
           perTurnTokens={perTurnTokens}
         />
-      ) : participant === "code" ? (
+      ) : (
         <TugThinkingIndicator animating={true} labelPosition="hidden" />
-      ) : null}
+      )}
       {showCopy ? (
         <>
           <TugLabel
@@ -266,13 +272,15 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
  *  - `participant="code"` → `[badge • time • tokens]`
  *  - `participant="user"` → `[badge]` only
  *
- * Both variants drive the badge off
- * `endStateBadgeFor(turn.turnEndReason)` so the two halves of one
- * turn always show the same outcome glyph + text + tone. The
- * asst-half adds the per-turn time + tokens; the user-half omits
- * them because they're asst-side data (a user message doesn't
- * have an active-ms or token-cost field directly attributable to
- * the submission itself).
+ * The badge is driven by the caller-supplied `reason`: the code
+ * half passes `turn.turnEndReason`; the user half passes a fixed
+ * `complete` so its badge always reads "OK" — the user's
+ * submission is done the instant it posts, independent of how the
+ * response ends. The asst-half adds the per-turn time + tokens;
+ * the user-half omits them because they're asst-side data (a user
+ * message has no active-ms or token-cost attributable to the
+ * submission itself), and its `turn` may still be `undefined`
+ * while the response is in-flight.
  *
  * The badge's `ghost` emphasis keeps it visually subordinate to
  * the identifier above. A `•` separator sits between each pair of
@@ -281,16 +289,16 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
  */
 function EndStateDisplay({
   participant,
+  reason,
   turn,
   perTurnTokens,
 }: {
   participant: TideZ1BParticipant;
-  turn: TurnEntry;
+  reason: TurnEndReason;
+  turn: TurnEntry | undefined;
   perTurnTokens: number | undefined;
 }): React.ReactElement {
-  const badge = endStateBadgeFor(turn.turnEndReason);
-  const showMetrics = participant === "code";
-  const tokens = showMetrics ? perTurnTokens ?? 0 : 0;
+  const badge = endStateBadgeFor(reason);
   return (
     <span
       className="tide-z1b-end-state"
@@ -301,12 +309,12 @@ function EndStateDisplay({
         size="md"
         emphasis="ghost"
         role={badge.role}
-        icon={endStateBadgeIcon(turn.turnEndReason)}
+        icon={endStateBadgeIcon(reason)}
         iconGap={5}
       >
         {badge.text}
       </TugBadge>
-      {showMetrics ? (
+      {participant === "code" && turn !== undefined ? (
         <>
           <TugLabel size="xs" color="muted" aria-hidden>
             •
@@ -315,7 +323,9 @@ function EndStateDisplay({
           <TugLabel size="xs" color="muted" aria-hidden>
             •
           </TugLabel>
-          <TugLabel size="xs">{`${formatTokensCaps(tokens)} tokens`}</TugLabel>
+          <TugLabel size="xs">
+            {`${formatTokensCaps(perTurnTokens ?? 0)} tokens`}
+          </TugLabel>
         </>
       ) : null}
     </span>

@@ -39,20 +39,16 @@
    visual treatment for each branch:
 
      live      → TugThinkingIndicator pulses; no trailing copy
-                 (`participant="code"` only)
+                 (`participant="code"` in-flight only)
      terminal  → EndStateDisplay + optional trailing copy
                  (both participants; user shows `[badge] • [COPY]`,
                   code shows `[badge • time • tokens] • [COPY]`)
-     idle      → no children render (slot still mounted)
-                 (`participant="user"` only — the user row has no
-                  live indicator while in-flight; the user message
-                  itself is the in-flight signal)
 
-   The slot's `min-height` keeps the vertical rhythm consistent
-   across modes. The `idle` mode (user in-flight) collapses to
-   zero so the empty footer doesn't reserve a phantom strip below
-   the user's message — the L26 contract is about mount identity,
-   not visible space.
+   The user half is always `terminal` — its submission completes
+   the instant it posts, so the end-state row shows immediately,
+   in-flight and committed alike. `live` is reached only by the
+   in-flight code half. The slot's `min-height` keeps the vertical
+   rhythm consistent across both modes.
    ========================================================================= */
 
 .tide-z1b {
@@ -96,13 +92,6 @@
 .tide-z1b[data-mode="terminal"] {
   margin-top: 2px;
   padding-left: var(--tugx-tide-z1b-indent-terminal);
-}
-
-/* User-half in-flight collapses to zero — no visible footer below
-   the user's just-submitted message. The slot div stays mounted
-   ([L26]); only its visible box collapses. */
-.tide-z1b[data-mode="idle"] {
-  min-height: 0;
 }
 
 /* ============================================================================

@@ -430,17 +430,13 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
           }
           controls={
             (() => {
-              // Z1B — always-mounted status / end-state row driven
-              // by `row.turn`. In-flight (turn === undefined) the
-              // user-half renders nothing inside the slot but keeps
-              // the slot div mounted ([L26]); the slot's
-              // `min-height: 0` rule collapses the empty footer so
-              // no phantom strip sits below the user's just-
-              // submitted message. Terminal (turn defined) shows
-              // `[badge] • [COPY]` driven by the same
-              // `endStateBadgeFor(turn.turnEndReason)` dispatch the
-              // asst-half uses — so the two halves of one turn
-              // always show the same outcome glyph + text + tone.
+              // Z1B — always-mounted status / end-state row. The
+              // user half shows its end-state immediately: a static
+              // "OK" badge plus COPY, in-flight and committed alike,
+              // because the user's submission is complete the
+              // instant it posts. The badge never reflects
+              // `turn.turnEndReason` — an interrupt / error belongs
+              // to the *response*, not the act of submitting.
               //
               // Optional Z1 placement-experiment renderer trails
               // Z1B when the experiment maps an alt-datum onto the
