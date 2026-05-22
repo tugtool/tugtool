@@ -2533,7 +2533,6 @@ export function TideCardBody({
                 highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
-                componentStatePreservationKey="entry-chrome"
                 placeholderByRoute={TIDE_PROMPT_PLACEHOLDER_BY_ROUTE}
               />
             </TugBox>

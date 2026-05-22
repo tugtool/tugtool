@@ -46,7 +46,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Bot, Command, Maximize2, Minimize2, Plus, Settings, Shell, Square } from "lucide-react";
+import { ArrowUp, Bot, Command, Maximize2, Minimize2, Plus, Shell, Square } from "lucide-react";
 import { EditorView } from "@codemirror/view";
 
 import { cn } from "@/lib/utils";
@@ -76,15 +76,10 @@ import { createRoutePrefixExtension } from "./tug-prompt-entry/route-prefix-exte
 import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { TugPushButton } from "./tug-push-button";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
-import { TugPopover, TugPopoverContent, TugPopoverTrigger } from "./tug-popover";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
-import {
-  useComponentStatePreservation,
-  useSavedComponentState,
-} from "./use-component-state-preservation";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { getDeckStore } from "@/lib/deck-store-registry";
@@ -477,11 +472,6 @@ export interface TugPromptEntryProps {
    */
   footerContent?: React.ReactNode;
   /**
-   * Optional content rendered inside a `TugPopover` anchored to a
-   * toggle button on the trailing edge of the status row.
-   */
-  toolsContent?: React.ReactNode;
-  /**
    * When defined, renders a maximize toggle on the leading edge of the
    * status row. The entry is a controlled component for this state.
    */
@@ -520,13 +510,6 @@ export interface TugPromptEntryProps {
    */
   returnAction?: "submit" | "newline";
   /**
-   * Opt the entry into the Component State Preservation Protocol
-   * for its chrome state ([D13], [A9]). Only `toolsOpen` (the tools
-   * popover open/closed flag) is preserved via this hook. The active
-   * route + draft live in `bag.content` via `useCardStatePreservation`.
-   */
-  componentStatePreservationKey?: string;
-  /**
    * Per-route placeholder text for the embedded editor, keyed by the
    * route value (`❯` Code / `$` Shell / `:` Command — see
    * `ROUTE_ITEMS`). The entry looks up the active route and forwards
@@ -535,14 +518,6 @@ export interface TugPromptEntryProps {
    * supplies route-specific copy; the gallery prompt-entry omits it.
    */
   placeholderByRoute?: Readonly<Record<string, string>>;
-}
-
-/**
- * Serialized shape of TugPromptEntry's chrome state via
- * `useComponentStatePreservation`.
- */
-interface TugPromptEntryChromeState {
-  toolsOpen: boolean;
 }
 
 /**
@@ -597,7 +572,6 @@ export const TugPromptEntry = React.forwardRef<
     statusContent,
     cautionContent,
     footerContent,
-    toolsContent,
     maximized,
     onMaximizeChange,
     className,
@@ -605,7 +579,6 @@ export const TugPromptEntry = React.forwardRef<
     lineNumbers,
     highlightActiveLineGutter,
     returnAction: returnActionOverride,
-    componentStatePreservationKey,
     placeholderByRoute,
   } = props;
 
@@ -1317,34 +1290,7 @@ export const TugPromptEntry = React.forwardRef<
   const hasStatusRow =
     statusContent !== undefined ||
     cautionContent !== undefined ||
-    toolsContent !== undefined ||
     maximized !== undefined;
-
-  // Tools popover open state. The entry is the single source of
-  // truth — TugPopover runs in controlled mode via the `open` /
-  // `onOpenChange` pair.
-  //
-  // Mount-in-saved-state: `useSavedComponentState` reads the saved
-  // `toolsOpen` synchronously in render so `useState`'s initializer
-  // seeds the popover state with the user's last-saved value.
-  const savedChromeState = useSavedComponentState<TugPromptEntryChromeState>(
-    componentStatePreservationKey,
-  );
-  const [toolsOpen, setToolsOpen] = React.useState<boolean>(() =>
-    typeof savedChromeState?.toolsOpen === "boolean"
-      ? savedChromeState.toolsOpen
-      : false,
-  );
-
-  // Component State Preservation Protocol opt-in for the popover's
-  // open state. Hook no-ops when `componentStatePreservationKey` is
-  // undefined or rendered outside a card. Route + draft ride
-  // `bag.content` via `useCardStatePreservation` above; this hook
-  // only carries the popover flag.
-  useComponentStatePreservation<TugPromptEntryChromeState>({
-    componentStatePreservationKey,
-    captureState: () => ({ toolsOpen }),
-  });
 
   return (
     <RouteLifecycleContext.Provider value={routeLifecycle}>
@@ -1378,40 +1324,14 @@ export const TugPromptEntry = React.forwardRef<
                 Growing spacer — the single flex-grow element of the
                 status row. It splits the row into a leading group
                 (`statusContent` + `cautionContent`, content-sized, in
-                normal inline flow) and a trailing group (the tools /
-                maximize toggles, pinned to the trailing edge),
-                independent of which optional slots are populated.
+                normal inline flow) and a trailing group (the maximize
+                toggle, pinned to the trailing edge), independent of
+                which optional slots are populated.
               */}
               <div
                 className="tug-prompt-entry-status-spacer"
                 aria-hidden="true"
               />
-              {toolsContent !== undefined && (
-                <TugPopover
-                  open={toolsOpen}
-                  onOpenChange={setToolsOpen}
-                  dismissOnChainActivity={false}
-                >
-                  <TugPopoverTrigger>
-                    <TugPushButton
-                      className="tug-prompt-entry-tools-toggle"
-                      subtype="icon"
-                      size="xs"
-                      emphasis={toolsOpen ? "filled" : "ghost"}
-                      role={toolsOpen ? "accent" : "action"}
-                      aria-label="Toggle tools"
-                      icon={<Settings size={12} strokeWidth={2} aria-hidden="true" />}
-                    />
-                  </TugPopoverTrigger>
-                  <TugPopoverContent
-                    side="bottom"
-                    align="end"
-                    className="tug-prompt-entry-tools-popover"
-                  >
-                    {toolsContent}
-                  </TugPopoverContent>
-                </TugPopover>
-              )}
               {maximized !== undefined && (
                 <TugPushButton
                   className="tug-prompt-entry-maximize-toggle"

@@ -187,10 +187,10 @@ Component-level state preservation — gaps surfaced from the L23 audit of the s
 - **Tests:** `at0030-virtual-focus.test.ts`.
 - **Summary:** `tug-radio-group`, `tug-choice-group`, `tug-option-group` capture their selected value via [A9] (see [state-preservation.md](state-preservation.md)). The narrower "focused but not selected" axis is deferred — niche edge case.
 
-#### [AT0031] `tug-prompt-entry` chrome state (`route`, `toolsOpen`)
-- **Status:** ✅ closed for `gallery-prompt-entry` at Step 25G; tide-card lazy-mount gap documented.
-- **Tests:** `at0031-prompt-entry-chrome.test.ts`.
-- **Summary:** `toolsOpen` rides `bag.components.entry-chrome`; `route` stays in `bag.content.currentRoute` (it's the index into `perRoute`, splitting would force two-phase restore [L23 violation]). Tide's lazy `TugPromptEntry` mount falls outside the [A9c] orchestrator's one-shot restore window — separate follow-up gap.
+#### [AT0031] `tug-prompt-entry` chrome state (`route`) — retired
+- **Status:** ⊘ retired — the tools popover was removed from the prompt-entry design (it was never in production Tide; only the gallery card mounted it). Its `toolsOpen` axis and `at0031-prompt-entry-chrome.test.ts` were deleted with it.
+- **Tests:** none — the `route` axis is now gated by `at0085-prompt-entry-route.test.ts`.
+- **Summary:** `tug-prompt-entry` no longer exposes a `bag.components` chrome surface. The `route` axis rides `bag.content.route` and round-trips through `at0085-prompt-entry-route.test.ts`.
 
 ### EM-card focus follow-up gates (AT0032–AT0036)
 

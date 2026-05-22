@@ -25,7 +25,7 @@
  * ## Test matrix
  *
  *   4 tests, one card (`gallery-prompt-entry` — the same wrapper Tide
- *   uses, exercised by [AT0024] / [AT0031]):
+ *   uses, exercised by [AT0024]):
  *
  *   1. A non-default route (`$` Shell) survives `appReload` — Risk R02.
  *   2. A choice-group segment click flips `❯` Code → `:` Command.

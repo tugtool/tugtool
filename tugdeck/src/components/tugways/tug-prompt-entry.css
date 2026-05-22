@@ -251,8 +251,8 @@ body {
   flex: 0 0 auto;
   flex-direction: row;
   /* Align items by their bottom edges so the badge on the leading side
-     and the tools-toggle on the trailing side share a baseline — even
-     though the two components render at different heights. */
+     and the maximize toggle on the trailing side share a baseline —
+     even though the two components render at different heights. */
   align-items: flex-end;
   gap: var(--tug-space-sm);
   padding: var(--tug-space-md);
@@ -293,35 +293,15 @@ body {
 
 /* Growing spacer — the row's single flex-grow element. It absorbs the
    free space between the leading group (status content + caution) and
-   the trailing toggles, pinning the toggles to the trailing edge while
-   the leading group stays in normal inline flow. */
+   the trailing maximize toggle, pinning the toggle to the trailing edge
+   while the leading group stays in normal inline flow. */
 .tug-prompt-entry-status-spacer {
   flex: 1 1 auto;
 }
 
-/* Tools toggle button — a TugPushButton subtype="icon" that acts as the
-   trigger for a TugPopover rendered inside the status row. The entry
-   owns no CSS for the button's chrome — TugPushButton's tokens stay
-   in its own slot [L20]. */
-
 /* Maximize toggle button — a TugPushButton subtype="icon" rendered on
-   the leading edge of the status row. Dispatches TOGGLE_MAXIMIZE
+   the trailing edge of the status row. Dispatches TOGGLE_MAXIMIZE
    through the responder chain [L11]; the entry's `useResponder`
    intercepts and re-emits via the `onMaximizeChange` controlled
-   callback. As with `.tug-prompt-entry-tools-toggle`, the entry owns no
-   CSS for the button's chrome — TugPushButton's tokens stay in its
-   own slot [L20]. */
-
-/* ----------------------------------------------------------------------------
-   .tug-prompt-entry-tools-popover — content node of the tools popover
-   ----------------------------------------------------------------------------
-   Inline-flex row; the TugPopover wrapper owns background/border/shadow.
-   ----------------------------------------------------------------------------- */
-
-.tug-prompt-entry-tools-popover {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--tug-space-sm);
-  padding: var(--tug-space-xs);
-}
+   callback. The entry owns no CSS for the button's chrome —
+   TugPushButton's tokens stay in its own slot [L20]. */

@@ -21,27 +21,20 @@
  *     skills and agents. Wrapped in a position-0 gate so `/` mid-text
  *     produces an empty popup (D5.c P1).
  *   • A local `PromptHistoryStore` for arrow-up/down recall.
- *   • A per-card `EditorSettingsStore` whose CSS variables cascade from
- *     the entry-pane TugBox down to the input editor. The tools panel
- *     (toggled via the button on the status row) exposes font-family
- *     and font-size popup buttons that write back to the store.
  *
  * The entry is mounted inside a `TugBox` with `inset={false}` so the
  * pane fills edge-to-edge. The split pane's grip pill is suppressed via
  * `showHandle={false}` — the sash line remains draggable.
  */
 
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
-import { TugPopupButton } from "../tug-popup-button";
-import type { TugPopupButtonItem } from "../tug-popup-button";
 import { useResponderForm } from "../use-responder-form";
-import { TUG_ACTIONS } from "../action-vocabulary";
 import { CodeSessionStore } from "@/lib/code-session-store";
 import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
@@ -49,7 +42,6 @@ import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-sto
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { FeedStore, type FeedStoreFilter } from "@/lib/feed-store";
-import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { presentWorkspaceKey } from "@/card-registry";
 import { FeedId } from "@/protocol";
@@ -71,47 +63,9 @@ import "./gallery-prompt-entry.css";
  */
 export const GALLERY_TUG_SESSION_ID = "gallery-prompt-entry-session";
 
-const EDITOR_FONT_OPTIONS: TugPopupButtonItem<string>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: "plex-sans", label: "IBM Plex Sans" },
-  { action: TUG_ACTIONS.SET_VALUE, value: "inter", label: "Inter" },
-  { action: TUG_ACTIONS.SET_VALUE, value: "hack", label: "Hack (mono)" },
-];
-
-const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: 11, label: "11 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 12, label: "12 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 13, label: "13 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 14, label: "14 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 15, label: "15 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
-];
-
-const LETTER_SPACING_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.35, label: "-0.35 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.25, label: "-0.25 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.15, label: "-0.15 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.10, label: "-0.10 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: -0.05, label: "-0.05 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0, label: "Normal" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0.05, label: "+0.05 px" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 0.10, label: "+0.10 px" },
-];
-
 /** Percentage the entry panel pegs to when the user clicks Maximize.
  *  Mirrors the panel's `maxSize="90%"` upper bound — keep them in sync. */
 const ENTRY_PANEL_MAX_PCT = 90;
-
-const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.1, label: "1.1" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.2, label: "1.2" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.3, label: "1.3" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.4, label: "1.4" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.5, label: "1.5" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.6, label: "1.6" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.7, label: "1.7" },
-  { action: TUG_ACTIONS.SET_VALUE, value: 1.8, label: "1.8" },
-];
 
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
@@ -245,31 +199,6 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     };
   }, []);
 
-  // --- EditorSettingsStore for the tools-panel controls. ---
-  // Constructed once per card; binds via the paneRef below so the
-  // `--tug-font-family-editor` / `--tug-font-size-editor` / `--tug-letter-spacing-editor`
-  // custom properties cascade from the pane down to the embedded input.
-  const editorStoreRef = useRef<EditorSettingsStore | null>(null);
-  if (editorStoreRef.current === null) {
-    editorStoreRef.current = new EditorSettingsStore();
-  }
-  const editorStore = editorStoreRef.current;
-  const editorSettings = useSyncExternalStore(
-    editorStore.subscribe,
-    editorStore.getSnapshot,
-  );
-
-  const paneRef = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => {
-    const el = paneRef.current;
-    if (!el) return;
-    // `regenerateAtoms` re-renders the SVG atom glyphs when the editor
-    // font changes via the tools popover — atoms must track the editor
-    // font so a chosen monospace actually reaches the atom chip labels.
-    editorStore.bind(el, () => entryDelegateRef.current?.regenerateAtoms());
-    return () => editorStore.unbind();
-  }, [editorStore]);
-
   // --- Content-driven panel growth for the entry pane. ---
   // The bottom TugSplitPanel grows toward `maxSize` as the editor
   // overflows and snaps back to the user's library-resolved size on
@@ -315,65 +244,14 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     entryPanelRef.current?.restoreUserSize({ animated: true });
   }, [maximized]);
 
-  // --- Responder scope for tools-panel popup buttons. ---
-  const fontPopupId = useId();
-  const fontSizePopupId = useId();
-  const letterSpacingPopupId = useId();
-  const lineHeightPopupId = useId();
-  const { ResponderScope, responderRef } = useResponderForm({
-    setValueString: {
-      [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
-    },
-    setValueNumber: {
-      [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
-      [letterSpacingPopupId]: (v: number) => editorStore.set({ letterSpacing: v }),
-      [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
-    },
-  });
+  // --- Responder scope for the card. ---
+  const { ResponderScope, responderRef } = useResponderForm({});
 
-  // --- Status row + tools panel content. ---
+  // --- Status row content. ---
   const statusContent = (
     <TugBadge size="sm" emphasis="tinted" role="data">
       Project path /gallery/demo
     </TugBadge>
-  );
-
-  const letterSpacingLabel =
-    editorSettings.letterSpacing === 0
-      ? "Normal"
-      : `${editorSettings.letterSpacing > 0 ? "+" : ""}${editorSettings.letterSpacing.toFixed(2)} px`;
-
-  const toolsContent = (
-    <>
-      <TugPopupButton
-        topLabel="Font"
-        label={EDITOR_FONT_OPTIONS.find(f => f.value === editorSettings.fontId)?.label ?? "Font"}
-        items={EDITOR_FONT_OPTIONS}
-        senderId={fontPopupId}
-        size="sm"
-      />
-      <TugPopupButton
-        topLabel="Size"
-        label={`${editorSettings.fontSize}px`}
-        items={FONT_SIZE_OPTIONS}
-        senderId={fontSizePopupId}
-        size="sm"
-      />
-      <TugPopupButton
-        topLabel="Tracking"
-        label={letterSpacingLabel}
-        items={LETTER_SPACING_OPTIONS}
-        senderId={letterSpacingPopupId}
-        size="sm"
-      />
-      <TugPopupButton
-        topLabel="Leading"
-        label={editorSettings.lineHeight.toFixed(1)}
-        items={LINE_HEIGHT_OPTIONS}
-        senderId={lineHeightPopupId}
-        size="sm"
-      />
-    </>
   );
 
   return (
@@ -396,10 +274,11 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
         >
           <ResponderScope>
             <TugBox
-              ref={(el) => {
-                paneRef.current = el as HTMLDivElement | null;
-                (responderRef as (node: Element | null) => void)(el as Element | null);
-              }}
+              ref={(el) =>
+                (responderRef as (node: Element | null) => void)(
+                  el as Element | null,
+                )
+              }
               variant="plain"
               inset={false}
               className="gallery-prompt-entry-entry-pane"
@@ -413,10 +292,8 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
                 completionProviders={completionProviders}
                 onBeforeSubmit={handleBeforeSubmit}
                 statusContent={statusContent}
-                toolsContent={toolsContent}
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
-                componentStatePreservationKey="entry-chrome"
               />
             </TugBox>
           </ResponderScope>
