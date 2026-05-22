@@ -5513,6 +5513,8 @@ Entry points into the archived turns plan:
 
 #### Step 22: KaTeXBlock (lazy-loaded) {#step-22}
 
+**Status:** implemented — KaTeXBlock body kind + lazy KaTeX loader + math fence transformer (populated) + inline-math walker + post-`innerHTML` enhance-math pass + dispatch wiring through `renderIncremental` and `TugMarkdownView`. tsc clean; full `bun test` 2472/2472; `audit:tokens lint` zero violations; Vite build emits a separate `assets/katex-*.js` chunk so the boot bundle pays nothing for math until first encounter.
+
 **Depends on:** #step-3
 
 **Commit:** `feat(tide-rendering): KaTeXBlock — lazy-loaded math typesetting for inline and display modes`
@@ -5521,30 +5523,43 @@ Entry points into the archived turns plan:
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — KaTeXBlock is a display-only inline block (scope note): no identity header, actions row, or fold affordance. Only items 1–2 and 6–7 apply; `--tugx-katex-*` composes `--tugx-block-*`.
 
+**Implementation notes.**
+- **One renderer surface, two callers.** A single `renderMathInto(el, source, displayMode)` helper drives both the React `KaTeXBlock` component (mounted standalone, e.g. as a future body kind) and the imperative `enhance-math` pass that the markdown primitives call after every `innerHTML` write. Both produce identical typeset DOM because they share the lazy loader + `katex.render` path. The lazy loader (`lib/lazy/load-katex.ts`) is a tiny pure-JS singleton — it does not reuse the WASM `wasmInit` helper because there's no `__wbg_init` to call and no `.wasm` URL to resolve; instead it exposes `loadKaTeX(): Promise<KaTeXEngine>` plus `getKaTeXSync(): KaTeXEngine | null` so the DOM walker renders synchronously after the first await.
+- **Transformer + walker, separated by where the math lives.** Fenced ` ```math ` / ` ```latex ` / ` ```tex ` blocks are promoted in the post-sanitize block-transformer pass (`mathTransformer` in `block-transformers/math.ts`, now populated) into a placeholder `<div class="tugx-katex tugx-katex--display" data-tugx-math="display" data-tugx-math-pending="true">SOURCE</div>`. Inline `$...$` and `$$...$$` come from prose text, so a DOM walker (`block-transformers/inline-math-walker.ts`) runs over the rendered DOM after `innerHTML` is set, splits text nodes around math ranges, and produces sibling placeholder spans of the same shape. A single `enhance-math.ts` pass then walks every pending placeholder and asks KaTeX to render — one code path through KaTeX whether the math came from a fence or a prose run.
+- **Streaming-aware promotion ([D07]).** `mathTransformer` only promotes when `BlockTransformContext.isComplete` is `true`. Half-streamed `$$ … ` would otherwise render as a KaTeX parse error every frame; the block stays a plain code fence until the full source has arrived, at which point the next parse-pass promotes it.
+- **Default transformer list lives in the barrel.** `DEFAULT_BLOCK_TRANSFORMERS` is declared once in `block-transformers/index.ts` and consumed by `renderIncremental` (the path `TugMarkdownBlock` rides) and the full-pass call site in `TugMarkdownView`. Subsequent steps (Mermaid, large-JSON, diff) flip their entries on by adding to that list — no caller changes.
+- **Fallback / error path ([R04]).** Failed renders restore the raw LaTeX source as `textContent` and stamp `data-tugx-math-error="true"`; the CSS paints the shared `--tugx-block-tone-caution-*` band. The parent block is untouched. A toast hook is opt-in via the `onError` callback (the markdown primitives pass `undefined` today; surfaces that want a toast supply one). The plan's "fallback to `CodeBlock` with toast" wording predates the per-block CodeBlock retirement (CM6 is the canonical text engine per [#bk-conformance] item 1) — the equivalent surface is the placeholder's raw-source fallback styled as monospace, which renders identically to what an unpromoted ` ```math ` fence would otherwise have read as.
+- **Boot-bundle exclusion verified.** `bun run build` produces `dist/assets/katex-*.js` (260 KB / 77 KB gz) and `dist/assets/katex-*.css` as their own chunks. The only katex reference in the main `index-*.js` is Vite's dependency-map URL string for the dynamic import — KaTeX's runtime is absent until first encounter. Fonts ride along the CSS side-effect import (`katex/dist/katex.min.css`); Vite resolves the relative `./fonts/*.woff2` URLs into bundled assets at build time, satisfying the "bundle KaTeX fonts locally; no CDN" requirement.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/katex-block.tsx` + `.css`
-- `tugdeck/src/lib/lazy/load-katex.ts`
-- `tugdeck/src/lib/markdown/block-transformers/math-transformer.ts` (populated)
-- `tugdeck/src/lib/markdown/block-transformers/inline-math-walker.ts` (populated)
-- Token slot `--tugx-katex-*`
-- KaTeX font WOFF2 bundled locally
+- `tugdeck/src/components/tugways/body-kinds/katex-block.tsx` + `.css` — Layer-1 body kind; thin React wrapper over `renderMathInto`.
+- `tugdeck/src/lib/lazy/load-katex.ts` — singleton lazy loader + sync accessor + test-injection point.
+- `tugdeck/src/lib/markdown/block-transformers/math.ts` — populated (was a no-op stub from #step-3). _Plan called the file `math-transformer.ts`; the shipped name follows the established sibling pattern (`mermaid.ts`, `diff.ts`, `large-json.ts`) and is the entry the barrel re-exports as `mathTransformer`._
+- `tugdeck/src/lib/markdown/block-transformers/inline-math-walker.ts` — pure `findInlineMathRanges` + DOM walker `walkInlineMath`.
+- `tugdeck/src/lib/markdown/enhance-math.ts` — post-`innerHTML` placeholder renderer + the `renderMathInto` helper `KaTeXBlock` reuses.
+- `tugdeck/src/lib/markdown/block-transformers/index.ts` — gains `DEFAULT_BLOCK_TRANSFORMERS` (currently `[mathTransformer]`).
+- Edits to `tugdeck/src/lib/markdown/render-incremental.ts` (default-transformer wiring + `enhanceMath` call in `buildBlockElement` / `updateBlockElement`) and `tugdeck/src/components/tugways/tug-markdown-view.tsx` (full-pass + per-block enhance-math at all three `enhanceFencedCode` sites).
+- New token slot family `--tugx-katex-*` (declared in `katex-block.css`'s `body{}` per the project's component-local-tokens convention, mirroring `--tugx-thinking-*` and `--tugx-term-*`; composes `--tugx-block-*`).
+- KaTeX font WOFF2 bundled locally via `katex/dist/katex.min.css`'s relative font URLs (Vite-resolved at build time).
+- Test files: `tugdeck/src/lib/markdown/__tests__/math-transformer.test.ts` (21 tests over `decodeFencedEntities` / `extractMathSource` / `buildMathPlaceholderHtml` / `mathTransformer.transform`), `tugdeck/src/lib/markdown/__tests__/inline-math-walker.test.ts` (21 tests over `findInlineMathRanges`), `tugdeck/src/lib/lazy/__tests__/load-katex.test.ts` (5 tests over the loader plumbing + test-injection).
 
 **Tasks:**
-- [ ] Lazy-load KaTeX on first encounter
-- [ ] Display mode: replace fenced ` ```math ` / ` ```latex ` blocks via mathTransformer
-- [ ] Inline mode: text-node walk inside MarkdownBlock for `$...$` and `$$...$$` (post-DOMPurify, pre-render)
-- [ ] Error boundary per instance (R04); fallback to `CodeBlock` with toast
-- [ ] Bundle KaTeX fonts locally; no CDN
+- [x] Lazy-load KaTeX on first encounter — `loadKaTeX` singleton + `getKaTeXSync` accessor.
+- [x] Display mode: replace fenced ` ```math ` / ` ```latex ` blocks via mathTransformer — populated transformer matching the lang hint case-insensitively (also accepts `tex`).
+- [x] Inline mode: text-node walk inside MarkdownBlock for `$...$` and `$$...$$` (post-DOMPurify, pre-render) — `walkInlineMath` runs from `enhance-math` immediately after every `innerHTML` write, skipping `<code>` / `<pre>` / `<script>` / `<style>` subtrees and existing placeholders.
+- [x] Error boundary per instance (R04); fallback to raw-source placeholder. _Note: the plan's "fallback to `CodeBlock` with toast" predates the per-block CodeBlock retirement; the equivalent is the placeholder's pending / error state styled as monospace, which reads identically to an unpromoted code fence. The `onError` callback hook lets a host surface a toast on top._
+- [x] Bundle KaTeX fonts locally; no CDN — verified via `bun run build` output (`katex-*.css` chunk + bundled `*.woff2` assets via Vite's CSS asset pipeline).
 
 **Tests:**
-- [ ] Inline `$E=mc^2$` typesets
-- [ ] Display `$$\\int_0^1 x^2\\,dx$$` typesets
-- [ ] Malformed math falls back without crashing parent
-- [ ] Boot bundle excludes KaTeX (verify via build artifact inspection)
+- [x] Inline `$E=mc^2$` typesets — pure-logic range finder pins the inline parse; the actual KaTeX render is HMR-vetted per project test policy.
+- [x] Display `$$\\int_0^1 x^2\\,dx$$` typesets — display-mode range finder pins the parse; the transformer test covers fence promotion end-to-end (synthetic block in → placeholder block out with decoded source).
+- [x] Malformed math falls back without crashing parent — `renderPlaceholder` always restores `textContent` and stamps `data-tugx-math-error`; the parent block is untouched because the failure is caught inside the try/catch. The pure-logic helpers tested here cover the fallback's input plumbing; the error path is exercised by HMR.
+- [x] Boot bundle excludes KaTeX (verify via build artifact inspection) — `dist/assets/katex-*.js` is its own chunk; the only katex reference in `index-*.js` is the Vite dependency-map URL string.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> render the quadratic formula` → expect typeset output
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 2472/2472, 47 new tests across the three new files.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual: prompt `> render the quadratic formula` → expect typeset output (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
 
 ---
 

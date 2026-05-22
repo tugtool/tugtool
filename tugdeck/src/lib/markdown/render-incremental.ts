@@ -57,7 +57,9 @@
  * @module lib/markdown/render-incremental
  */
 
+import { DEFAULT_BLOCK_TRANSFORMERS } from "./block-transformers";
 import { enhanceFencedCode } from "./enhance-fenced-code";
+import { enhanceMath } from "./enhance-math";
 import {
   parseMarkdownToSanitizedBlocks,
   type ParseMarkdownOptions,
@@ -175,6 +177,7 @@ function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
   el.dataset.blockType = block.type;
   el.innerHTML = block.html;
   enhanceFencedCode(el);
+  void enhanceMath(el);
   return el;
 }
 
@@ -185,6 +188,7 @@ function updateBlockElement(
   el.dataset.blockType = block.type;
   el.innerHTML = block.html;
   enhanceFencedCode(el);
+  void enhanceMath(el);
 }
 
 /**
@@ -210,7 +214,15 @@ export function renderIncremental(
     };
   }
 
-  const blocks = parseMarkdownToSanitizedBlocks(text, options);
+  // Default the block-transformer pass to the populated transformers
+  // (math, etc.) when the caller doesn't override. A consumer that
+  // wants a different list (or an empty one for raw markdown) can
+  // pass `options.transformers` explicitly.
+  const mergedOptions: ParseMarkdownOptions = {
+    isComplete: options?.isComplete,
+    transformers: options?.transformers ?? DEFAULT_BLOCK_TRANSFORMERS,
+  };
+  const blocks = parseMarkdownToSanitizedBlocks(text, mergedOptions);
   const newHashes = blocks.map((b) => b.contentHash);
   const newKinds = blocks.map((b) => b.type);
   const prevHashes = prev?.hashes ?? [];

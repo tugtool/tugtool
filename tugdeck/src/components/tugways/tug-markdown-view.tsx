@@ -55,7 +55,9 @@ import {
   getDOMPurify,
   SANITIZE_CONFIG,
 } from "@/lib/markdown/dompurify-instance";
+import { DEFAULT_BLOCK_TRANSFORMERS } from "@/lib/markdown/block-transformers";
 import { enhanceFencedCode } from "@/lib/markdown/enhance-fenced-code";
+import { enhanceMath } from "@/lib/markdown/enhance-math";
 import {
   buildByteToCharMap,
   decodeBlocks,
@@ -366,6 +368,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     el.dataset.blockIndex = String(index);
     el.innerHTML = cachedHtml;
     enhanceFencedCode(el);
+    void enhanceMath(el);
 
     // Find the first child with a higher block index to insert before it.
     // This preserves ascending document order regardless of insertion sequence.
@@ -612,7 +615,12 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     // the wall-clock cost of the whole pipeline.
     const lexMs = 0;
     const parseStart = performance.now();
-    const blocks = parseMarkdownToSanitizedBlocks(text);
+    // The default transformer list runs the math (and future)
+    // promotions; if no fence matches, every transformer flat-maps
+    // a single block back unchanged.
+    const blocks = parseMarkdownToSanitizedBlocks(text, {
+      transformers: DEFAULT_BLOCK_TRANSFORMERS,
+    });
     const parseMs = performance.now() - parseStart;
 
     engine.blockCount = blocks.length;
@@ -746,6 +754,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         if (existingEl) {
           existingEl.innerHTML = sanitized;
           enhanceFencedCode(existingEl);
+          void enhanceMath(existingEl);
           // Store estimate here; real measurement happens in doSetRegion's
           // consolidated measurement pass (one forced layout for all blocks).
           engine.heightIndex.setHeight(globalIdx, estimateBlockHeight(newRegionBlocks[i]));

@@ -106,3 +106,21 @@ export { mermaidTransformer } from "./mermaid";
 export { mathTransformer } from "./math";
 export { diffTransformer } from "./diff";
 export { largeJsonTransformer } from "./large-json";
+
+import { mathTransformer } from "./math";
+
+/**
+ * The default transformer list applied by the shared markdown
+ * primitives (`TugMarkdownBlock` + `TugMarkdownView`). Each entry is
+ * a populated transformer; pass-through stubs are left out so they
+ * don't burn cycles flat-mapping over every block list.
+ *
+ * Order is significant in principle — `applyBlockTransformers` flat-
+ * maps in array order — but the populated transformers' input
+ * predicates (lang === "math" / "latex" / "tex" for math; future
+ * fences for the others) don't overlap. Adding a new transformer
+ * here lights it up across the whole markdown pipeline.
+ */
+export const DEFAULT_BLOCK_TRANSFORMERS: ReadonlyArray<BlockTransformer> = [
+  mathTransformer,
+];
