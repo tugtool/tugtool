@@ -509,6 +509,14 @@
   gap: var(--tug-space-lg, 16px);
 }
 
+/* "Directory doesn't exist" warning in the picker action row. Sits
+   left of Cancel: `margin-right: auto` claims the row's free space so
+   the buttons stay pinned to the right edge. */
+.tide-card-picker-dir-warning {
+  margin-right: auto;
+  align-self: center;
+}
+
 /* One-shot notice surfaced above the form when the picker is
    re-presented after a session failure (e.g. resume failed).
    @tug-renders-on: surface.global.attention.muted */

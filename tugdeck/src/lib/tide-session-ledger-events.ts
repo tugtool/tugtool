@@ -58,7 +58,11 @@ function makeBus<T>() {
 }
 
 const sessionUpdatedBus = makeBus<SessionUpdatedPush>();
-const listSessionsOkBus = makeBus<{ project_dir: string; sessions: SessionRow[] }>();
+const listSessionsOkBus = makeBus<{
+  project_dir: string;
+  sessions: SessionRow[];
+  dir_exists: boolean;
+}>();
 const listSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 const listCardBindingsOkBus = makeBus<{ bindings: CardBinding[] }>();
 const listCardBindingsErrBus = makeBus<{ reason: string }>();

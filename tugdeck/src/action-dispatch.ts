@@ -44,6 +44,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import { tideSpawnErrorStore } from "./lib/tide-spawn-error-store";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
@@ -527,9 +528,31 @@ export function initActionDispatch(
       console.warn("list_sessions_ok: missing or invalid fields", payload);
       return;
     }
+    // `dir_exists` gates the picker's Open button. Absent (older
+    // tugcast) defaults to `true` so the dialog fails open — part 2's
+    // spawn-error banner is the backstop.
+    const dirExists =
+      typeof payload.dir_exists === "boolean" ? payload.dir_exists : true;
     publishListSessionsOk({
       project_dir: projectDir,
       sessions: sessions as SessionRow[],
+      dir_exists: dirExists,
+    });
+  });
+  // spawn_session_error: the supervisor rejected a `spawn_session`
+  // (e.g. the project directory no longer exists). The router echoes
+  // the originating `card_id` so the failure routes to that card's
+  // spawn-error banner — the unbound card has no CodeSessionStore to
+  // carry it.
+  registerAction("spawn_session_error", (payload) => {
+    const cardId = payload.card_id;
+    if (typeof cardId !== "string") {
+      console.warn("spawn_session_error: missing card_id", payload);
+      return;
+    }
+    const detail = payload.detail;
+    tideSpawnErrorStore.set(cardId, {
+      reason: typeof detail === "string" ? detail : "unknown",
     });
   });
   registerAction("list_sessions_err", (payload) => {

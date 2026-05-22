@@ -841,10 +841,41 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                                         ControlIntercept::Handled => {}
                                                         ControlIntercept::HandledError { detail } => {
                                                             warn!(client_id, action, detail, "session control rejected");
-                                                            let _ = send_control_json(&mut socket, FeedId::CONTROL, &serde_json::json!({
+                                                            // Echo the rejected payload's identifying
+                                                            // fields so the client can route the error
+                                                            // to the originating card. A `spawn_session`
+                                                            // rejection, in particular, must reach that
+                                                            // card's spawn-error banner — without
+                                                            // `card_id` the client cannot tell which
+                                                            // unbound card the failed spawn belonged to.
+                                                            let mut err = serde_json::json!({
                                                                 "type": "error",
                                                                 "detail": detail,
-                                                            })).await;
+                                                            });
+                                                            if let Some(obj) = err.as_object_mut() {
+                                                                if action == "spawn_session" {
+                                                                    obj.insert(
+                                                                        "action".into(),
+                                                                        "spawn_session_error".into(),
+                                                                    );
+                                                                }
+                                                                if let Some(cid) = payload
+                                                                    .get("card_id")
+                                                                    .and_then(|v| v.as_str())
+                                                                {
+                                                                    obj.insert("card_id".into(), cid.into());
+                                                                }
+                                                                if let Some(sid) = payload
+                                                                    .get("tug_session_id")
+                                                                    .and_then(|v| v.as_str())
+                                                                {
+                                                                    obj.insert(
+                                                                        "tug_session_id".into(),
+                                                                        sid.into(),
+                                                                    );
+                                                                }
+                                                            }
+                                                            let _ = send_control_json(&mut socket, FeedId::CONTROL, &err).await;
                                                         }
                                                         ControlIntercept::PassThrough => {
                                                             crate::actions::dispatch_action(

@@ -48,6 +48,13 @@ export interface WorkspaceSnapshot {
   status: WorkspaceLoadStatus;
   rows: readonly SessionRow[];
   error?: { reason: string };
+  /**
+   * Whether `projectDir` is an existing directory on the tugcast host,
+   * from `list_sessions_ok.dir_exists`. `undefined` until the first
+   * settle. The picker reads it to disable Open before a doomed
+   * `spawn_session` is sent.
+   */
+  dirExists?: boolean;
 }
 
 const EMPTY_ROWS: readonly SessionRow[] = Object.freeze([]);
@@ -155,7 +162,7 @@ export class TideSessionLedgerStore {
 
   private installSubscriptions(): void {
     this.disposers.push(
-      subscribeToListSessionsOk(({ project_dir, sessions }) => {
+      subscribeToListSessionsOk(({ project_dir, sessions, dir_exists }) => {
         const sorted = [...sessions].sort(
           (a, b) => b.last_used_at - a.last_used_at,
         );
@@ -170,6 +177,7 @@ export class TideSessionLedgerStore {
         this.snapshots.set(project_dir, {
           status: "ready",
           rows: Object.freeze(sorted),
+          dirExists: dir_exists,
         });
         this.tick();
       }),
@@ -250,6 +258,7 @@ export class TideSessionLedgerStore {
     this.snapshots.set(projectDir, {
       status: "ready",
       rows: Object.freeze(nextRows),
+      dirExists: cached.dirExists,
     });
     this.tick();
   }
@@ -265,6 +274,7 @@ export class TideSessionLedgerStore {
     this.snapshots.set(located.projectDir, {
       status: "ready",
       rows: Object.freeze(nextRows),
+      dirExists: cached.dirExists,
     });
     this.tick();
   }

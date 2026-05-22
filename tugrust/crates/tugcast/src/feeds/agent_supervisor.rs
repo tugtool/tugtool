@@ -2142,13 +2142,27 @@ impl AgentSupervisor {
     /// newest-first. The picker passes the user's typed path, which
     /// matches the value originally recorded at `record_spawn` time —
     /// so no client-side canonicalization is needed.
+    ///
+    /// The response also carries `dir_exists` — a filesystem check on
+    /// `project_dir` — so the picker can disable its Open button before
+    /// a doomed `spawn_session` is ever sent. tugdeck has no filesystem
+    /// access of its own, so this read piggybacks on the per-path query
+    /// the picker already issues.
     async fn do_list_sessions(&self, project_dir: &str) {
+        // `false` covers both a missing path and a non-directory — the
+        // picker only needs the binary "is this an openable directory"
+        // signal.
+        let dir_exists = tokio::fs::metadata(project_dir)
+            .await
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
         let Some(ledger) = self.session_ledger.as_ref() else {
             // No ledger wired — emit an empty response so a confused client
             // doesn't sit on a pending state forever.
             let body = serde_json::json!({
                 "action": "list_sessions_ok",
                 "project_dir": project_dir,
+                "dir_exists": dir_exists,
                 "sessions": serde_json::Value::Array(Vec::new()),
             });
             let _ = self.control_tx.send(Frame::new(
@@ -2176,6 +2190,7 @@ impl AgentSupervisor {
         let body = serde_json::json!({
             "action": "list_sessions_ok",
             "project_dir": project_dir,
+            "dir_exists": dir_exists,
             "sessions": rows,
         });
         let _ = self.control_tx.send(Frame::new(

@@ -44,6 +44,7 @@ import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugInput } from "../tug-input";
 import { TugPushButton } from "../tug-push-button";
+import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,
   type TugConfirmPopoverHandle,
@@ -95,6 +96,12 @@ import {
 } from "@/lib/tide-session-restore";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store";
+import {
+  useSpawnError,
+  spawnErrorMessage,
+  tideSpawnErrorStore,
+  type SpawnError,
+} from "@/lib/tide-spawn-error-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
 import { useTideCardObserver } from "./use-tide-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
@@ -935,6 +942,32 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
     },
   });
 
+  // Spawn-rejection banner. When tugcast rejects this card's
+  // `spawn_session` (e.g. the project directory no longer exists),
+  // `action-dispatch` records it in `tideSpawnErrorStore` keyed by
+  // `cardId`. The picker is already mounted and waiting, so the
+  // `useSyncExternalStore` subscription re-renders it here — the card
+  // has no `CodeSessionStore` yet (the session never came up), so this
+  // is the surface for the failure.
+  const spawnError = useSpawnError(cardId);
+  // Hold the last error so the banner's content stays stable through
+  // its exit animation after `spawnError` clears.
+  const lastSpawnErrorRef = useRef<SpawnError | null>(null);
+  if (spawnError !== null) lastSpawnErrorRef.current = spawnError;
+  const shownSpawnError = lastSpawnErrorRef.current;
+
+  // Drop the card's spawn-error when the picker unmounts (the card
+  // bound or closed) so a later card reusing this id starts clean.
+  useEffect(() => () => tideSpawnErrorStore.clear(cardId), [cardId]);
+
+  // Banner recovery: clear the error and re-present the picker sheet
+  // so the user can choose a directory that exists.
+  const handleSpawnErrorRetry = useCallback(() => {
+    tideSpawnErrorStore.clear(cardId);
+    shownRef.current = false;
+    presentSheet();
+  }, [cardId, presentSheet]);
+
   return (
     <div
       className="tide-card-picker-backdrop"
@@ -943,6 +976,35 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
       aria-hidden="true"
     >
       {renderSheet()}
+      <TugPaneBanner
+        visible={spawnError !== null}
+        variant="error"
+        tone="danger"
+        minMountedMs={0}
+        label="Can't open project"
+        message={
+          shownSpawnError !== null
+            ? spawnErrorMessage(shownSpawnError.reason)
+            : ""
+        }
+        detailIcon="folder-x"
+        detailTitle="Can't open project"
+        footer={
+          <TugPushButton
+            emphasis="filled"
+            role="action"
+            onClick={handleSpawnErrorRetry}
+            data-testid="tide-card-spawn-error-retry"
+          >
+            Choose Directory
+          </TugPushButton>
+        }
+      >
+        <p>
+          Tide couldn&apos;t start a session here. Choose a directory that
+          exists and try again.
+        </p>
+      </TugPaneBanner>
     </div>
   );
 }
@@ -1453,7 +1515,13 @@ function TideProjectPickerForm({
   // Sessions list (+ Forget-all button) → Cancel/Open.
   const sessionsPending = sessionsDataSource.isPending();
   const nonLiveCount = sessionsDataSource.nonLiveCount();
-  const openDisabled = trimmedPath.length === 0;
+  // The `list_sessions` round-trip carries a filesystem existence check
+  // for the typed path. An explicit `false` (path confirmed missing)
+  // disables Open so a doomed `spawn_session` is never sent; `undefined`
+  // (still checking) leaves Open enabled — the spawn-error banner is the
+  // backstop for the race window.
+  const dirMissing = sessionsDataSource.dirExists() === false;
+  const openDisabled = trimmedPath.length === 0 || dirMissing;
 
   return (
     <PickerFormResponderScope>
@@ -1588,6 +1656,15 @@ function TideProjectPickerForm({
         </TugBox>
       </PickerCellProvider>
       <div className="tug-sheet-actions">
+        {dirMissing && (
+          <TugLabel
+            className="tide-card-picker-dir-warning"
+            color="muted"
+            data-testid="tide-card-picker-dir-warning"
+          >
+            {"Directory doesn't exist"}
+          </TugLabel>
+        )}
         <TugPushButton emphasis="outlined" role="action" onClick={onCancel}>
           Cancel
         </TugPushButton>

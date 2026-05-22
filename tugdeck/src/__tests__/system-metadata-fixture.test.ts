@@ -41,19 +41,19 @@ describe("createFixtureSessionMetadataStore", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const snapshot = store.getSnapshot();
 
-    // Payload counts for the shipped v2.1.112 capture:
-    //   slash_commands: 23  (13 upgrade to "skill", 10 stay "local")
-    //   agents: 16
-    //   total after dedup: 39
-    expect(snapshot.slashCommands.length).toBe(39);
+    // Payload counts for the shipped v2.1.147 capture:
+    //   slash_commands: 29  (16 upgrade to "skill", 13 stay "local")
+    //   agents: 17
+    //   total after dedup: 46
+    expect(snapshot.slashCommands.length).toBe(46);
 
     const byCategory = new Map<string, number>();
     for (const cmd of snapshot.slashCommands) {
       byCategory.set(cmd.category, (byCategory.get(cmd.category) ?? 0) + 1);
     }
-    expect(byCategory.get("local")).toBe(10);
-    expect(byCategory.get("skill")).toBe(13);
-    expect(byCategory.get("agent")).toBe(16);
+    expect(byCategory.get("local")).toBe(13);
+    expect(byCategory.get("skill")).toBe(16);
+    expect(byCategory.get("agent")).toBe(17);
   });
 
   it("narrows `tug` to the 16 tugplug-prefixed entries", () => {

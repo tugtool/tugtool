@@ -299,6 +299,16 @@ export class TideSessionsDataSource implements TugListViewDataSource {
     );
   }
 
+  /**
+   * Whether the queried `projectDir` is a directory that exists on the
+   * tugcast host. `undefined` until the `list_sessions_ok` settle
+   * carries the check; the picker form disables Open on an explicit
+   * `false`.
+   */
+  dirExists(): boolean | undefined {
+    return this.inputs.ledger.dirExists;
+  }
+
   setInputsWithoutNotify(next: SessionsInputs): boolean {
     if (
       this.inputs.query === next.query &&

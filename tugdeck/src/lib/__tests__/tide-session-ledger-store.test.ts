@@ -79,6 +79,7 @@ describe("TideSessionLedgerStore", () => {
     });
     store.getSnapshot("ws-1");
     publishListSessionsOk({
+      dir_exists: true,
       project_dir: "ws-1",
       sessions: [
         makeRow({ session_id: "s1", last_used_at: 100 }),
@@ -90,6 +91,18 @@ describe("TideSessionLedgerStore", () => {
     expect(snap.rows.map((r) => r.session_id)).toEqual(["s2", "s1"]);
     expect(ticks).toBeGreaterThanOrEqual(1);
     unsub();
+    store.dispose();
+  });
+
+  it("carries dir_exists from list_sessions_ok into the snapshot", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    publishListSessionsOk({
+      project_dir: "ws-1",
+      dir_exists: false,
+      sessions: [],
+    });
+    expect(store.getSnapshot("ws-1").dirExists).toBe(false);
     store.dispose();
   });
 
@@ -107,6 +120,7 @@ describe("TideSessionLedgerStore", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
+      dir_exists: true,
       project_dir: "ws-1",
       sessions: [makeRow({ session_id: "s1" })],
     });
@@ -120,6 +134,7 @@ describe("TideSessionLedgerStore", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
+      dir_exists: true,
       project_dir: "ws-1",
       sessions: [
         makeRow({ session_id: "s1", last_used_at: 100, turn_count: 0 }),
@@ -140,6 +155,7 @@ describe("TideSessionLedgerStore", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
+      dir_exists: true,
       project_dir: "ws-1",
       sessions: [
         makeRow({ session_id: "s1" }),
@@ -155,7 +171,7 @@ describe("TideSessionLedgerStore", () => {
   it("session_updated for an uncached workspace is ignored", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");
-    publishListSessionsOk({ project_dir: "ws-1", sessions: [] });
+    publishListSessionsOk({ project_dir: "ws-1", sessions: [], dir_exists: true });
     // Push for a workspace we never subscribed to.
     publishSessionUpdated({
       session_id: "other",
@@ -169,6 +185,7 @@ describe("TideSessionLedgerStore", () => {
     const { store, conn } = newStore();
     store.getSnapshot("ws-1");
     publishListSessionsOk({
+      dir_exists: true,
       project_dir: "ws-1",
       sessions: [makeRow({ session_id: "s1" })],
     });
