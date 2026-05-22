@@ -304,10 +304,12 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 **Verification:**
 - [x] `bun run check` + `bun test` green (2350 pass / 0 fail).
 - [x] Correct-by-construction: `TugListView`'s cell click handler (`tug-list-view.tsx` `clickCb`) fires `delegate.onSelect(index)` on every activation of a `cell`-role row — the already-selected row included — and `keyDownCb` does the same for Space/Enter with `stopPropagation()` so the form's `onKeyDown` does not double-handle. Verified in source.
-- [x] **Plan amendment — automated coverage relocated.** With no fake-DOM render harness (happy-dom removed 2026-05-13), a `bun:test` render test of `TideProjectPickerForm` is not possible — the original "new test against `TideProjectPickerForm`" item cannot run under `bun test`. Rather than a standalone picker app-test that duplicates the picker-sheet setup, the recents-re-click assertion is folded into [Step 3](#step-3)'s app-test, which already drives the real session sheet in a running app for the Cmd-A reproduction. One picker app-test, shared setup, both picker-input glitches covered.
+- [x] **Plan amendment — automated coverage relocated.** With no fake-DOM render harness (happy-dom removed 2026-05-13), a `bun:test` render test of `TideProjectPickerForm` is not possible — the original "new test against `TideProjectPickerForm`" item cannot run under `bun test`. Rather than a standalone picker app-test that duplicates the picker-sheet setup, the recents-re-click assertion is folded into [Step 3](#step-3)'s app-test, which already drives the real session sheet in a running app for the Cmd-A reproduction. One picker app-test, shared setup, both picker-input glitches covered. **Note:** Step 3 is now deferred — this app-test lands with it. The fix itself remains correct-by-construction (verified above); only the regression test waits.
 - [ ] Manual: edit the `Project path`, click the highlighted recent — the input snaps back to that path.
 
 #### Step 3 — Diagnose and fix Cmd-A select-all in `Project path` {#step-3}
+
+**Status:** ⏸️ Deferred — 2026-05-21. Deferred at the user's direction. The Cmd-A failure is judged a symptom of broader focus / keyboard / first-responder / tab-order issues that warrant one comprehensive treatment rather than a point fix; the user is gathering notes for that work. This step — and the picker app-test it carries (which also covers Step 2's recents-re-click assertion) — resumes once that work lands.
 
 **Files:**
 - To be determined by diagnosis. Candidates: `tugdeck/src/components/tugways/use-text-input-responder.tsx` (`handleSelectAll`, line 635), `tugdeck/src/components/tugways/cards/tide-card.tsx` (`TideProjectPickerForm` — `handleFormKeyDown`, the recents-seed `setPath` re-render), `tugdeck/src/components/tugways/responder-chain-provider.tsx` (`captureListener`).
@@ -332,20 +334,22 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 
 #### Step 4 — `TugListRow` primitive + gallery card {#step-4}
 
+**Status:** ✅ Complete — 2026-05-21. Three notes for Step 5: (1) `TugListRowLayoutContext` and the exported `TugListRowLayoutProvider` were created in `tug-list-row.tsx` — the row primitive owns the context that configures it — so Step 5's `TugListView` only imports and wraps with the provider. (2) The `flush` variant is transparent and inherits its text color from the host surface; only `pill` paints its own foreground, which keeps the `@tug-pairings` block honest (a `flush` row genuinely renders on the container's surface). (3) `tug-list-row.css` is not in the audit tool's hand-curated `COMPONENT_CSS_FILES` list (which omits most post-legacy components), so `audit:tokens lint` does not scan it — but the file follows the component-authoring conventions in full anyway: `@tug-pairings` compact + expanded blocks, `@tug-renders-on` on the one color-without-background rule, one-hop `--tugx-list-row-*` aliases.
+
 **Files:**
 - New: `tugdeck/src/components/tugways/tug-list-row.tsx`, `tug-list-row.css`, `cards/gallery-tug-list-row.tsx`, `__tests__/tug-list-row.test.ts`.
 - `tugdeck/src/components/tugways/cards/gallery-registrations.tsx` (register the card).
 
 **Work:**
-- Build `TugListRow` per the [Specification](#spec-tug-list-row): `flush` / `pill` variants, `leading` / `trailing` slots, `trailingReveal`, `title` / `subtitle` / `children`, `selected` / `disabled`. Presentational only — no `onClick` ([D2]).
-- CSS: own the `--tugx-list-row-*` token family ([L20]); one-hop resolution to base tokens ([L17]); declare pairings in the header ([L16]); state via `data-` attributes + CSS ([L06]). The `pill` cascade borrows `TugDialogButton`'s outlined-action rest/hover/active/selected treatment so the two primitives read as a family.
-- Add `data-slot="tug-list-row"` and the exported props interface per [component-authoring.md] / [L19].
-- Gallery card: demo both variants, leading/trailing accessories, `trailingReveal: "hover"`, and selected/disabled/hover states side by side.
-- Test: pure-logic only — variant resolution (prop vs context vs default), `children`-overrides-`title` precedence. No DOM-render test.
+- [x] Build `TugListRow` per the [Specification](#spec-tug-list-row): `flush` / `pill` variants, `leading` / `trailing` slots, `trailingReveal`, `title` / `subtitle` / `children`, `selected` / `disabled`. Presentational only — no `onClick`.
+- [x] CSS: own the `--tugx-list-row-*` token family ([L20]); one-hop resolution to base tokens ([L17]); declare pairings in the header ([L16]); state via `data-` attributes + CSS ([L06]). The `pill` cascade borrows `TugDialogButton`'s outlined-action rest/hover/selected treatment so the two primitives read as a family.
+- [x] Add `data-slot="tug-list-row"` and the exported props interface per [component-authoring.md] / [L19].
+- [x] Gallery card: demo both variants, leading/trailing accessories, `trailingReveal: "hover"`, selected/disabled/hover states, consumer-owned selection, and the `children` escape hatch.
+- [x] Test: pure-logic only — variant resolution (prop vs context vs default), `children`-overrides-`title` precedence. No DOM-render test.
 
 **Verification:**
-- `bun run check` + `bun test` + `bun run audit:tokens lint` green.
-- Manual: the `TugListRow` gallery card renders both variants and all states correctly.
+- [x] `bun run check` + `bun test` (2358 pass / 0 fail, 8 new) + `bun run audit:tokens lint` (zero violations) green.
+- [ ] Manual: the `TugListRow` gallery card renders both variants and all states correctly.
 
 #### Step 5 — `TugListView` `rowLayout` prop {#step-5}
 

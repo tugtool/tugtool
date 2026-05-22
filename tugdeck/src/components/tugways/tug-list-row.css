@@ -1,0 +1,207 @@
+/**
+ * tug-list-row.css — `TugListRow` primitive.
+ *
+ * `TugListRow` is presentational row chrome — leading / content /
+ * trailing layout in two variants (`flush`, `pill`). It paints its
+ * own foreground only in the `pill` variant, which carries an opaque
+ * surface; the `flush` variant is transparent and inherits its text
+ * color from the enclosing surface (a `TugListView`, a `TugBox`),
+ * exactly as the host intends.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance via `data-` attributes (`data-variant`,
+ *    `data-selected`, `data-disabled`, `data-reveal`) + CSS, never
+ *    React state.
+ *  - [L15] token-driven state visuals; rest → hover → selected are
+ *    color transitions only.
+ *  - [L16] every foreground rule declares its surface — see the
+ *    `@tug-pairings` block and the `@tug-renders-on` annotation.
+ *  - [L17] every `--tugx-list-row-*` alias resolves to a `--tug7-*` /
+ *    `--tug-*` base token in one hop.
+ *  - [L19] component authoring guide — file pair, docstring,
+ *    `data-slot="tug-list-row"`.
+ *  - [L20] component-token sovereignty — owns `--tugx-list-row-*`;
+ *    composes no other component's tokens. Accessory children keep
+ *    their own.
+ *
+ * @tug-pairings
+ * | Element                              | Surface                              | Role    | Context                                          |
+ * |--------------------------------------|--------------------------------------|---------|--------------------------------------------------|
+ * | --tugx-list-row-text                 | --tugx-list-row-pill-rest-bg         | content | .tug-list-row[data-variant="pill"] (color)       |
+ * | --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg         | control | .tug-list-row[data-variant="pill"] (border)      |
+ * | --tugx-list-row-subtitle-color       | --tugx-list-row-pill-rest-bg         | content | .tug-list-row-subtitle (color)                   |
+ * | --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg        | content | .tug-list-row[data-variant="pill"]:hover (color) |
+ * | --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg        | control | .tug-list-row[data-variant="pill"]:hover (border)|
+ * | --tugx-list-row-text                 | --tugx-list-row-pill-selected-bg     | content | .tug-list-row[data-variant="pill"][data-selected] (color)  |
+ * | --tugx-list-row-pill-selected-border | --tugx-list-row-pill-selected-bg     | control | .tug-list-row[data-variant="pill"][data-selected] (border) |
+ *
+ * The `flush` variant is transparent and paints no foreground of its
+ * own — its text color is inherited from the host surface — so it
+ * contributes no pairings.
+ */
+
+/* @tug-pairings {
+  --tugx-list-row-text                 | --tugx-list-row-pill-rest-bg     | content
+  --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg     | control
+  --tugx-list-row-subtitle-color       | --tugx-list-row-pill-rest-bg     | content
+  --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg    | content
+  --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg    | control
+  --tugx-list-row-text                 | --tugx-list-row-pill-selected-bg | content
+  --tugx-list-row-pill-selected-border | --tugx-list-row-pill-selected-bg | control
+} */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* Layout */
+  --tugx-list-row-gap:               var(--tug-space-sm);
+  --tugx-list-row-padding-block:     var(--tug-space-sm);
+  --tugx-list-row-padding-inline:    var(--tug-space-md);
+  --tugx-list-row-content-gap:       var(--tug-space-2xs);
+  --tugx-list-row-pill-radius:       var(--tug-radius-md);
+
+  /* Typography */
+  --tugx-list-row-title-size:        var(--tug-font-size-sm);
+  --tugx-list-row-subtitle-size:     var(--tug-font-size-xs);
+
+  /* Text */
+  --tugx-list-row-text:              var(--tug7-element-global-text-normal-default-rest);
+  --tugx-list-row-subtitle-color:    var(--tug7-element-global-text-normal-muted-rest);
+
+  /* flush variant — transparent rest; tinted hover / selected fills */
+  --tugx-list-row-flush-hover-bg:    var(--tug7-surface-control-primary-ghost-action-hover);
+  --tugx-list-row-flush-selected-bg: var(--tug7-surface-selection-primary-normal-plain-rest);
+
+  /* pill variant — outlined-action lineage, shared with TugDialogButton */
+  --tugx-list-row-pill-rest-bg:         var(--tug7-surface-control-primary-outlined-action-rest);
+  --tugx-list-row-pill-rest-border:     var(--tug7-element-control-border-outlined-action-rest);
+  --tugx-list-row-pill-hover-bg:        var(--tug7-surface-control-primary-outlined-action-hover);
+  --tugx-list-row-pill-hover-border:    var(--tug7-element-control-border-outlined-action-hover);
+  --tugx-list-row-pill-selected-bg:     var(--tug7-surface-tone-primary-normal-active-rest);
+  --tugx-list-row-pill-selected-border: var(--tug7-element-tone-border-normal-active-rest);
+}
+
+/* ---- Base ---- */
+
+.tug-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-list-row-gap);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--tugx-list-row-padding-block) var(--tugx-list-row-padding-inline);
+  /* Color + background are set per-variant so each variant declares a
+     complete foreground-on-surface context. State transitions are
+     color-only per [L15]. */
+  transition: background-color 100ms ease, border-color 100ms ease;
+}
+
+/* ---- Slots ---- */
+
+.tug-list-row-leading {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The content column flexes to fill the row; `min-width: 0` lets a
+   long title truncate instead of forcing the row wider than its
+   container. */
+.tug-list-row-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-list-row-content-gap);
+}
+
+.tug-list-row-trailing {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---- Title / subtitle ---- */
+
+/* Title inherits `color` from the row (pill sets it explicitly;
+   flush inherits from the host surface). Single line, ellipsis. */
+.tug-list-row-title {
+  font-size: var(--tugx-list-row-title-size);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* @tug-renders-on: --tugx-list-row-pill-rest-bg */
+.tug-list-row-subtitle {
+  font-size: var(--tugx-list-row-subtitle-size);
+  color: var(--tugx-list-row-subtitle-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Variant: flush ----
+   Edge-to-edge, transparent rest, no rounding. Text color is
+   inherited from the host surface — a `flush` row paints no
+   foreground of its own. Row dividers are the enclosing container's
+   responsibility (a `TugListView` with `rowLayout="flush"` draws
+   them); a `flush` row cannot know whether it is the last row, so it
+   paints no divider itself. */
+.tug-list-row[data-variant="flush"] {
+  background-color: transparent;
+  border-radius: 0;
+}
+
+.tug-list-row[data-variant="flush"]:hover:not([data-disabled="true"]) {
+  background-color: var(--tugx-list-row-flush-hover-bg);
+}
+
+.tug-list-row[data-variant="flush"][data-selected="true"] {
+  background-color: var(--tugx-list-row-flush-selected-bg);
+}
+
+/* ---- Variant: pill ----
+   A discrete bordered, rounded row. Lineage is TugDialogButton's
+   outlined-action treatment. Carries an opaque surface, so it sets
+   its own text color. */
+.tug-list-row[data-variant="pill"] {
+  background-color: var(--tugx-list-row-pill-rest-bg);
+  color: var(--tugx-list-row-text);
+  border: 1px solid var(--tugx-list-row-pill-rest-border);
+  border-radius: var(--tugx-list-row-pill-radius);
+}
+
+.tug-list-row[data-variant="pill"]:hover:not([data-disabled="true"]) {
+  background-color: var(--tugx-list-row-pill-hover-bg);
+  border-color: var(--tugx-list-row-pill-hover-border);
+}
+
+.tug-list-row[data-variant="pill"][data-selected="true"] {
+  background-color: var(--tugx-list-row-pill-selected-bg);
+  border-color: var(--tugx-list-row-pill-selected-border);
+}
+
+/* ---- Disabled ----
+   Shared across variants — dimmed, not-allowed cursor. The enclosing
+   container is responsible for refusing activation; this is the
+   visual half only. */
+.tug-list-row[data-disabled="true"] {
+  opacity: var(--tugx-control-disabled-opacity);
+  cursor: not-allowed;
+}
+
+/* ---- Trailing reveal ----
+   `data-reveal="hover"` keeps the trailing accessory hidden until the
+   row is hovered or holds focus — the closed-state row reads clean,
+   the accessory surfaces on approach. */
+.tug-list-row-trailing[data-reveal="hover"] {
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.tug-list-row:hover .tug-list-row-trailing[data-reveal="hover"],
+.tug-list-row:focus-within .tug-list-row-trailing[data-reveal="hover"] {
+  opacity: 1;
+}

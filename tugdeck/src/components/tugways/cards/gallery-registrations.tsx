@@ -70,6 +70,7 @@ import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
 import { GalleryListViewHeaders } from "./gallery-list-view-headers";
+import { GalleryTugListRow } from "./gallery-tug-list-row";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
 import { GalleryAtom } from "./gallery-atom";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
@@ -644,6 +645,21 @@ export function registerGalleryCards(): void {
       icon: "List",
       closable: true,
     },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.dataViews,
+  });
+
+  // `TugListRow` — the presentational row-chrome primitive composed by
+  // `TugListView` cell renderers (and usable standalone). The card
+  // catalogs both variants, the accessory slots, the trailing-reveal
+  // policy, the state inputs, and the consumer-owned-selection
+  // contract.
+  registerCard({
+    componentId: "gallery-tug-list-row",
+    contentFactory: (_cardId) => <GalleryTugListRow />,
+    defaultMeta: { title: "TugListRow", icon: "List", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
