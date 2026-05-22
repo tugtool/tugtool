@@ -14,13 +14,17 @@
  * `PickerCellContext`.
  *
  * Recents cells:
- *  - `path-recent` — selection is owned by `TugListView`'s
- *    `selectionRequired` mode: the list view marks the selected row's
- *    wrapper `data-selected="true"` and the CSS styles the path text
- *    from there. The list always has one recent selected; the form's
- *    `onSelectionChange` fills the project-path input from it. Match
- *    ranges from the matcher (the picker form's data source attaches
- *    them) drive `<mark>` highlights inside the path text.
+ *  - `path-recent` — composes a `pill`-variant `TugListRow` (the
+ *    variant is inherited from the Recents list's `rowLayout` via
+ *    `TugListRowLayoutContext`, not repeated per cell). Selection is
+ *    owned by `TugListView`'s `selectionRequired` mode; the list view
+ *    passes the owned selected state in through the cell's `selected`
+ *    prop, which the cell forwards to `TugListRow` so the pill paints
+ *    its selected treatment. The form's `onSelectionChange` /
+ *    `delegate.onSelect` fill the project-path input from the
+ *    selected (or re-activated) recent. Match ranges from the matcher
+ *    (attached by the picker form's data source) drive `<mark>`
+ *    highlights inside the path text.
  *
  * Sessions cells:
  *  - `session-new` — single-row "New session". Selected when
@@ -76,6 +80,7 @@ import type {
   TugListViewCellProps,
   TugListViewCellRenderer,
 } from "@/components/tugways/tug-list-view";
+import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 import type {
@@ -163,30 +168,37 @@ function renderHighlighted(
 // ---------------------------------------------------------------------------
 
 /**
- * Path-recent cell. Renders the path text with `<mark>` highlights at
- * the matcher's match ranges.
+ * Path-recent cell. Composes a `TugListRow` — `variant` inherited as
+ * `pill` from the Recents list's `rowLayout` — and renders the path
+ * text with `<mark>` highlights at the matcher's match ranges as the
+ * row's `children`. RTL middle-ellipsis path text is not a plain
+ * title, so it rides the `children` escape hatch, not the `title`
+ * prop.
  *
- * Selection is owned by `TugListView`'s `selectionRequired` mode: the
- * list view marks the selected row's wrapper
- * (`.tug-list-view-cell[data-selected="true"]`) and the CSS styles
- * the descendant `.tide-card-picker-path-recent` from there. The cell
- * itself carries no selected state. The form's `onSelectionChange`
- * mirrors the selected recent into the project-path input.
+ * Selection is owned by `TugListView`'s `selectionRequired` mode. The
+ * list view passes the owned selected state in through the cell's
+ * `selected` prop; the cell forwards it to `TugListRow`, whose pill
+ * `[data-selected]` treatment paints the highlight. The cell derives
+ * no selection itself. The form's `onSelectionChange` mirrors the
+ * selected recent into the project-path input.
  */
 export const PathRecentCell: TugListViewCellRenderer<TideRecentsDataSource> = ({
   index,
   dataSource,
+  selected,
 }: TugListViewCellProps<TideRecentsDataSource>) => {
   const row = dataSource.rowAt(index);
   return (
-    <div
-      className="tide-card-picker-path-recent"
-      data-testid="tide-card-picker-path-recent"
-      title={row.path}
-      aria-label={row.path}
-    >
-      {renderHighlighted(row.path, row.matches)}
-    </div>
+    <TugListRow selected={selected}>
+      <div
+        className="tide-card-picker-path-recent"
+        data-testid="tide-card-picker-path-recent"
+        title={row.path}
+        aria-label={row.path}
+      >
+        {renderHighlighted(row.path, row.matches)}
+      </div>
+    </TugListRow>
   );
 };
 

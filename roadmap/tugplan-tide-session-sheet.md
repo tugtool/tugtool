@@ -369,21 +369,28 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 - [x] `bun run check` + `bun test` green — **2358 pass / 0 fail, identical to Step 4**: every existing `TugListView` test passes **unmodified** (proof of non-breaking). `bun run audit:tokens lint` zero violations.
 - [ ] Manual: a `TugListView` with no `rowLayout` (transcript, gallery) is byte-identical; a `TugListRow` with no `variant`, inside a `rowLayout="pill"` list, picks up `pill` from context (exercised for real by the picker migration in Step 6).
 
-#### Step 6 — Migrate the Recents list to `TugListRow` (`pill`) {#step-6}
+#### Step 6 — Migrate the Recents list to `TugListRow` (`flush`) {#step-6}
+
+**Status:** ✅ Complete — 2026-05-21. First built with `rowLayout="pill"`; on visual review the user chose **`flush`** — edge-to-edge rows read better for single-line path content than discrete bordered pills. Revised to `flush` (the row separators come for free from Step 5's `rowLayout="flush"` CSS — a hairline below every cell but the last). The two structural amendments below are variant-agnostic and stand unchanged.
+
+Two amendments. (1) **Files** also includes `tug-list-view.tsx`: the plan said "`selected` is fed from the cell wrapper's `data-selected` source," but feeding selection that way would force the picker CSS to either reach into `TugListRow`'s `--tugx-list-row-*` tokens or duplicate their base-token values (drift risk — not test-of-time). The clean design is a small additive `selected: boolean` field on `TugListViewCellProps`: `selectionRequired` mode already computes the owned selected index, so the list view surfaces it *two ways from one source* — `data-selected` on the wrapper (the CSS-cascade hook, kept) and the `selected` cell prop (the render-logic hook). `PathRecentCell` forwards the prop straight into `TugListRow`'s own `selected` mechanism — no token reach-in, no duplication, selection still owned solely by the list view. (2) `PathRecentCell` composes `<TugListRow>` with **no** `variant` prop — it inherits the variant from the Recents list's `rowLayout` through `TugListRowLayoutContext`, the DRY path [Q2]/[D4] designed.
+
+**Forward note for [Step 8](#step-8):** the plan's premise there — "with pill rows carrying their own borders, the box border is redundant → switch to `plain`" — does **not** hold for the Recents box now: `flush` rows have no border of their own and need an enclosing frame, so the Recents `TugBox` likely stays `bordered`. Re-evaluate at Step 8 per list.
 
 **Files:**
+- `tugdeck/src/components/tugways/tug-list-view.tsx` (additive `TugListViewCellProps.selected` — see Status).
 - `tugdeck/src/components/tugways/cards/tide-picker-cells.tsx` (`PathRecentCell`).
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` (Recents `TugListView` — add `rowLayout="pill"`).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (Recents `TugListView` — `rowLayout="flush"`, className drops the shared `tide-card-picker-list-view`).
 - `tugdeck/src/components/tugways/cards/tide-card.css` (retire the bespoke `.tide-card-picker-path-recent` row chrome that `TugListRow` now owns).
 
 **Work:**
-- `PathRecentCell` composes `<TugListRow variant="pill">` with the RTL middle-ellipsis path + `<mark>` highlights as `children` (the [D6] escape hatch). `selected` is fed from the cell wrapper's `data-selected` source so the `selectionRequired` highlight survives.
-- Set `rowLayout="pill"` on the Recents `TugListView`.
-- Trim `tide-card.css`: keep only what `TugListRow` does not own (the match-highlight `<mark>` styling, RTL/ellipsis path rules); delete row padding/hover/selected/divider rules now owned by the primitive.
+- [x] `PathRecentCell` composes `TugListRow` with the RTL middle-ellipsis path + `<mark>` highlights as `children` (the escape hatch). `selected` is forwarded from the new `TugListViewCellProps.selected` so the `selectionRequired` highlight is painted by `TugListRow`'s `[data-selected]` treatment.
+- [x] Set `rowLayout="flush"` on the Recents `TugListView`; drop `tide-card-picker-list-view` from its className so the shared bespoke iOS-table rules no longer apply — `rowLayout="flush"` now drives the zero gap and the `:not(:last-child)` hairline dividers from `tug-list-view.css`.
+- [x] Trim `tide-card.css`: `.tide-card-picker-path-recent` keeps only content-level treatment (mono family, RTL/ellipsis, font-smoothing pin); row padding / hover / selected rules are deleted — `TugListRow` owns them. `cursor: pointer` moves to the cell wrapper. `.tide-card-picker-match` `<mark>` styling is untouched.
 
 **Verification:**
-- `bun run check` + `bun test` green (incl. the Step 2 test).
-- Manual: the Recents list shows discrete pill rows; selection highlight, hover, and click-to-fill all still work.
+- [x] `bun run check` + `bun test` green — **2358 pass / 0 fail, identical to Step 5**: the additive required `selected` field broke no cell renderer and no test. `bun run audit:tokens lint` zero violations. (No `bun:test` "Step 2 test" exists — that coverage was relocated to the deferred Step 3 app-test.)
+- [ ] Manual: the Recents list shows edge-to-edge `flush` rows with hairline separators between them; selection highlight, hover, and click-to-fill all still work.
 
 #### Step 7 — Migrate the Sessions list to `TugListRow` (`pill`) {#step-7}
 

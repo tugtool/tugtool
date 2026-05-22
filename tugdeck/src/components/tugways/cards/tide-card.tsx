@@ -1599,11 +1599,12 @@ function TideProjectPickerForm({
               <TugListView
                 dataSource={recentsDataSource}
                 selectionRequired
+                rowLayout="flush"
                 delegate={recentsDelegate}
                 onSelectionChange={applyRecentPath}
                 cellRenderers={RECENTS_CELL_RENDERERS}
                 scrollKey="tide-card-picker-recents"
-                className="tide-card-picker-recents-list tide-card-picker-list-view"
+                className="tide-card-picker-recents-list"
               />
             ) : (
               <div

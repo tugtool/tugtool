@@ -289,6 +289,18 @@ export interface TugListViewCellProps<
   kind: string;
   /** The active data source. Cell renderers query it for content. */
   dataSource: DS;
+  /**
+   * `true` when this row is the `selectionRequired`-owned selected
+   * row. The list view computes it from its owned selected index and
+   * passes it alongside the wrapper's `data-selected` attribute, so a
+   * cell renderer can forward selection into a presentational child
+   * (e.g. `TugListRow`'s `selected` prop) without re-deriving it.
+   *
+   * Always `false` when `selectionRequired` is off — the list view
+   * holds no selection then and the consumer owns it (typically
+   * through its own context, read inside the cell renderer).
+   */
+  selected: boolean;
 }
 
 /**
@@ -2159,13 +2171,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //    selectors that don't yet know about roles.
             const wrapperTabIndex = role === "cell" ? 0 : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
-            // `selectionRequired` mode — mark the owned selected row so
-            // consumers can style it via
-            // `.tug-list-view-cell[data-selected="true"]`. Absent
-            // entirely when the feature is off (`effectiveSelectedIndex`
-            // is `null`), keeping the default-cell DOM shape unchanged.
-            const wrapperSelectedAttr =
-              effectiveSelectedIndex === index ? "true" : undefined;
+            // `selectionRequired` mode — the owned selected row.
+            // Surfaced two ways from the one source: `data-selected`
+            // on the wrapper (the CSS-cascade hook,
+            // `.tug-list-view-cell[data-selected="true"]`) and the
+            // `selected` cell prop (the render-logic hook a cell
+            // renderer forwards into a presentational child). The
+            // wrapper attribute is absent entirely when the feature
+            // is off, keeping the default-cell DOM shape unchanged.
+            const cellSelected = effectiveSelectedIndex === index;
+            const wrapperSelectedAttr = cellSelected ? "true" : undefined;
             // `min-height` lock: when the bag carried
             // `meta.cellHeights[index]`, render the cell wrapper
             // at the saved height so async sub-content fills its
@@ -2226,6 +2241,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   id={id}
                   kind={kind}
                   dataSource={dataSource}
+                  selected={cellSelected}
                 />
               </div>
             );

@@ -691,7 +691,8 @@
 
 /* iOS UITableView-style row dividers — every cell except the last
    gets a 1px bottom border so the list reads as a proper table.
-   Applies to both recents and sessions lists. */
+   Applies to the Sessions list; the Recents list moved to `pill`
+   `TugListRow`s, which carry their own borders. */
 .tide-card-picker-list-view .tug-list-view-cell {
   border-bottom:
     1px solid var(--tug7-element-global-border-normal-muted-rest);
@@ -701,45 +702,31 @@
   border-bottom: none;
 }
 
-/* path-recent — recent project paths in the master list. Padding +
-   hover + selected background make these read as proper list rows
-   (not lines of plain text). Finder-style ellipsis-at-start
-   truncation per [D07].
-   `-webkit-font-smoothing: antialiased` pins the macOS text-
-   rendering mode regardless of background — without it, the OS
-   recalculates subpixel anti-aliasing whenever the row's background
-   color changes (transparent → tinted on selection), and the text
-   appears to shift fractionally horizontally. */
+/* path-recent — the path text inside a `pill` `TugListRow`. The row
+   chrome — padding, border, hover and selected fills — belongs to
+   `TugListRow`; this rule owns only the content-level treatment: the
+   mono family, Finder-style ellipsis-at-start truncation, and the
+   `-webkit/-moz-font-smoothing` pin that keeps the macOS text-
+   rendering mode stable as the row background shifts between rest and
+   selected (without it the OS recalculates subpixel anti-aliasing and
+   the path appears to shift fractionally). The text color is left to
+   `TugListRow`'s pill cascade — the path inherits it. */
 .tide-card-picker-recents-list .tide-card-picker-path-recent {
   font-family: var(--tug-font-family-mono);
   font-size: var(--tug-font-size-sm, 0.875rem);
-  padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   direction: rtl;
   unicode-bidi: plaintext;
-  color: var(--tug7-element-global-text-normal-default-rest);
-  cursor: pointer;
-  background: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-.tide-card-picker-recents-list .tide-card-picker-path-recent:hover {
-  background: var(--tug7-surface-control-primary-ghost-action-hover);
-}
-
-/* Selected recent — `TugListView`'s `selectionRequired` mode owns
-   the selection and marks the row wrapper `data-selected="true"`; the
-   list always has exactly one recent selected. Visually anchors the
-   master/detail relationship: the user sees which recent the Sessions
-   list below is for. */
-.tide-card-picker-recents-list
-  .tug-list-view-cell[data-selected="true"]
-  .tide-card-picker-path-recent {
-  background: var(--tug7-surface-selection-primary-normal-plain-rest);
-  color: var(--tug7-element-global-text-normal-default-rest);
+/* The whole recent row is a click target — the `TugListView` cell
+   wrapper owns activation; the pointer cursor is the affordance. */
+.tide-card-picker-recents-list .tug-list-view-cell {
+  cursor: pointer;
 }
 
 /* Match-range highlight (the matcher attaches ranges when the typed
