@@ -14,9 +14,11 @@ import {
   registerCard,
   getRegistration,
   getAllRegistrations,
+  getStackSizePolicy,
+  DEFAULT_SIZE_POLICY,
   _resetForTest,
 } from "../card-registry";
-import type { CardRegistration } from "../card-registry";
+import type { CardRegistration, CardSizePolicy } from "../card-registry";
 
 // ---- Helpers ----
 
@@ -26,6 +28,11 @@ function makeRegistration(componentId: string): CardRegistration {
     contentFactory: () => null,
     defaultMeta: { title: `${componentId} card`, closable: true },
   };
+}
+
+/** Register a card type carrying an explicit size policy. */
+function registerSized(componentId: string, sizePolicy: CardSizePolicy): void {
+  registerCard({ ...makeRegistration(componentId), sizePolicy });
 }
 
 beforeEach(() => {
@@ -170,5 +177,93 @@ describe("CardRegistration – family, acceptsFamilies, defaultCards, defaultTit
     expect(reg!.acceptsFamilies).toBeUndefined();
     expect(reg!.defaultCards).toBeUndefined();
     expect(reg!.defaultTitle).toBeUndefined();
+  });
+});
+
+// ---- getStackSizePolicy — pane-level aggregation across a stack ----
+
+describe("getStackSizePolicy", () => {
+  it("returns DEFAULT_SIZE_POLICY for an empty stack", () => {
+    expect(getStackSizePolicy([])).toEqual(DEFAULT_SIZE_POLICY);
+  });
+
+  it("takes the element-wise max of the cards' minimums", () => {
+    registerSized("wide", {
+      min: { width: 800, height: 240 },
+      preferred: { width: 900, height: 600 },
+    });
+    registerSized("tall", {
+      min: { width: 300, height: 700 },
+      preferred: { width: 400, height: 800 },
+    });
+    const policy = getStackSizePolicy(["wide", "tall"]);
+    expect(policy.min).toEqual({ width: 800, height: 700 });
+  });
+
+  it("takes the element-wise min of the cards' defined maximums", () => {
+    registerSized("capped", {
+      min: { width: 200, height: 150 },
+      max: { width: 1000, height: 900 },
+      preferred: { width: 400, height: 300 },
+    });
+    registerSized("tighter", {
+      min: { width: 200, height: 150 },
+      max: { width: 700, height: 1200 },
+      preferred: { width: 400, height: 300 },
+    });
+    expect(getStackSizePolicy(["capped", "tighter"]).max).toEqual({
+      width: 700,
+      height: 900,
+    });
+  });
+
+  it("omits max when every card in the stack is unbounded", () => {
+    registerSized("free-a", {
+      min: { width: 200, height: 150 },
+      preferred: { width: 400, height: 300 },
+    });
+    registerSized("free-b", {
+      min: { width: 250, height: 180 },
+      preferred: { width: 400, height: 300 },
+    });
+    expect(getStackSizePolicy(["free-a", "free-b"]).max).toBeUndefined();
+  });
+
+  it("an unbounded card does not relax a bounded sibling's ceiling", () => {
+    registerSized("capped", {
+      min: { width: 200, height: 150 },
+      max: { width: 1000, height: 900 },
+      preferred: { width: 400, height: 300 },
+    });
+    registerSized("free", {
+      min: { width: 200, height: 150 },
+      preferred: { width: 400, height: 300 },
+    });
+    expect(getStackSizePolicy(["capped", "free"]).max).toEqual({
+      width: 1000,
+      height: 900,
+    });
+  });
+
+  it("treats an unregistered id as DEFAULT_SIZE_POLICY", () => {
+    registerSized("narrow", {
+      min: { width: 100, height: 100 },
+      preferred: { width: 200, height: 200 },
+    });
+    // DEFAULT_SIZE_POLICY.min (250 × 180) floors the result.
+    expect(getStackSizePolicy(["narrow", "ghost"]).min).toEqual(
+      DEFAULT_SIZE_POLICY.min,
+    );
+  });
+
+  it("floors preferred to the aggregated minimum", () => {
+    registerSized("wide-min-small-pref", {
+      min: { width: 800, height: 600 },
+      preferred: { width: 400, height: 300 },
+    });
+    expect(getStackSizePolicy(["wide-min-small-pref"]).preferred).toEqual({
+      width: 800,
+      height: 600,
+    });
   });
 });

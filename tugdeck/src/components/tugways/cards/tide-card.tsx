@@ -2767,7 +2767,15 @@ export function registerTideCard(): void {
       FeedId.FILETREE,
     ],
     sizePolicy: {
-      min: { width: 320, height: 240 },
+      // The width floor is set by the Z2 status row, the card's
+      // widest fixed-content surface: four 21ch instrument cells plus
+      // inter-cell/edge gaps (≈ 674px) and a sash grip at each end
+      // with its gaps + padding (≈ 96px) ≈ 770px, rounded to 800 for
+      // breathing room. `getStackSizePolicy` lifts the hosting pane's
+      // resize floor to this value (or higher, if a wider card shares
+      // the pane), so the instrument readout never clips. The height
+      // floor is comfortable for a few transcript turns.
+      min: { width: 800, height: 240 },
       // Default size opens the card tall enough for an extended
       // transcript to read as a continuous column, not a porthole,
       // and wide enough to give the Choose Session sheet (caps at

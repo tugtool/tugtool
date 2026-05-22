@@ -1429,7 +1429,16 @@ export function TugPane({
   // and restored when the card expands.
   const COLLAPSED_FRAME_HEIGHT = CARD_TITLE_BAR_HEIGHT + 2;
 
-  const frameHeight = collapsed ? COLLAPSED_FRAME_HEIGHT : size.height;
+  // Persisted size can predate the current floor — a card kind
+  // raised its policy `min`, or a wider sibling joined the stack, so
+  // the stored width/height may sit below `minSize`. Clamp the
+  // rendered frame up to the floor: the pane paints at its true
+  // minimum immediately, and the next move or resize commits the
+  // corrected size back to the store.
+  const renderWidth = Math.max(size.width, minSize.width);
+  const frameHeight = collapsed
+    ? COLLAPSED_FRAME_HEIGHT
+    : Math.max(size.height, minSize.height);
 
   const handleFrameCollapseToggle = useCallback(() => {
     onCardCollapsed?.(id);
@@ -1456,7 +1465,7 @@ export function TugPane({
         position: "absolute",
         left: position.x,
         top: position.y,
-        width: size.width,
+        width: renderWidth,
         height: frameHeight,
         zIndex,
         boxSizing: "border-box",

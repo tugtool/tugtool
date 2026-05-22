@@ -17,14 +17,12 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  /* Width floor — the card never narrows enough to clip the Z2
-     status row. The row carries four fixed-width cells (4 × 21ch at
-     its 11px font ≈ 554px) plus inter-cell + edge gaps (≈ 120px);
-     the status bar adds a sash grip at each end (2 × 2rem) with its
-     own gaps + padding (≈ 96px). That sums to ≈ 770px; 800px clears
-     it with a little breathing room so the instrument readout and
-     its grips always lay out without clipping. */
-  min-width: 800px;
+  /* No `min-width` here — a leaf cannot widen its container, it only
+     overflows and clips. The card's width floor is declared as
+     `sizePolicy.min.width` in `registerTideCard`; the hosting pane's
+     resize clamp honors it (aggregated across the stack by
+     `getStackSizePolicy`), so the card box is always wide enough and
+     this surface never needs to constrain its own width. */
 }
 
 /* Entry pane wrapper — a TugBox rendered plain + inset={false}.

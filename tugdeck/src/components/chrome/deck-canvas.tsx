@@ -28,7 +28,7 @@ import { CardHost } from "./card-host";
 import { CanvasOverlayRoot } from "./canvas-overlay-root";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
-import { getRegistration, getSizePolicy } from "@/card-registry";
+import { getRegistration, getStackSizePolicy } from "@/card-registry";
 import type { TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
@@ -410,7 +410,13 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             key={stackState.id}
             stackState={stackState}
             meta={registration.defaultMeta}
-            sizePolicy={getSizePolicy(componentId)}
+            // A pane is one box shared by every tab in the stack, so
+            // its resize floor must clear the widest card kind it
+            // hosts — not just the active tab. `getStackSizePolicy`
+            // takes the element-wise max of the stack's mins.
+            sizePolicy={getStackSizePolicy(
+              stackCards.map((c) => c.componentId),
+            )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}

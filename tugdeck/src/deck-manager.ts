@@ -38,7 +38,7 @@ import {
   validateDeckState,
 } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
-import { getRegistration, getSizePolicy } from "./card-registry";
+import { getRegistration, getSizePolicy, getStackSizePolicy } from "./card-registry";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -1053,15 +1053,16 @@ export class DeckManager implements IDeckManagerStore {
         const x = GAP + col * (tileW + GAP);
         const y = GAP + row * (tileH + GAP);
 
-        const activeCard = cardsById.get(win.activeCardId);
-        const fallbackCard =
-          activeCard ?? cardsById.get(win.cardIds[0]);
-        const componentId = fallbackCard?.componentId;
-        const policy = componentId ? getSizePolicy(componentId) : undefined;
-        const minW = policy?.min.width ?? 250;
-        const minH = policy?.min.height ?? 180;
-        const width = Math.max(minW, tileW);
-        const height = Math.max(minH, tileH);
+        // Tile size floors at the stack-aggregated minimum — the
+        // pane must fit every card kind it hosts, not just the
+        // active tab. An empty / unresolved stack yields
+        // `DEFAULT_SIZE_POLICY` (250 × 180).
+        const componentIds = win.cardIds
+          .map((cid) => cardsById.get(cid)?.componentId)
+          .filter((id): id is string => id !== undefined);
+        const policy = getStackSizePolicy(componentIds);
+        const width = Math.max(policy.min.width, tileW);
+        const height = Math.max(policy.min.height, tileH);
 
         return {
           ...win,

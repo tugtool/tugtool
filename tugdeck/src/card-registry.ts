@@ -192,6 +192,62 @@ export function getSizePolicy(componentId: string): CardSizePolicy {
 }
 
 /**
+ * Aggregate size policy for a TugPane hosting a stack of cards.
+ *
+ * A pane is one box shared by all its tabs, so it must satisfy every
+ * hosted card kind at once. `getSizePolicy` answers for a single
+ * card type; a pane that consults only its active tab would let a
+ * narrow tab's policy float the resize floor below what a wider tab
+ * needs, clipping that tab's content on the next tab switch. This
+ * helper resolves the whole stack:
+ *
+ *  - `min` — element-wise MAX of the cards' mins. The pane fits the
+ *    widest / tallest minimum, so no hosted card ever clips.
+ *  - `max` — element-wise MIN of the cards' *defined* maxes. An
+ *    unbounded card imposes no ceiling; when every card is unbounded
+ *    the result omits `max`.
+ *  - `preferred` — the first card's, floored to the aggregated `min`
+ *    so the result stays a well-formed policy (`preferred >= min`).
+ *    TugPane does not read `preferred` — only `addCard` does, and it
+ *    sizes one card at a time, never a stack — so the carried value
+ *    is immaterial to pane sizing.
+ *
+ * Each id resolves through `getSizePolicy`, so unknown ids contribute
+ * `DEFAULT_SIZE_POLICY`. An empty list returns `DEFAULT_SIZE_POLICY`.
+ */
+export function getStackSizePolicy(
+  componentIds: readonly string[],
+): CardSizePolicy {
+  if (componentIds.length === 0) return DEFAULT_SIZE_POLICY;
+  const policies = componentIds.map(getSizePolicy);
+
+  let minWidth = 0;
+  let minHeight = 0;
+  let maxWidth = Infinity;
+  let maxHeight = Infinity;
+  for (const policy of policies) {
+    minWidth = Math.max(minWidth, policy.min.width);
+    minHeight = Math.max(minHeight, policy.min.height);
+    if (policy.max !== undefined) {
+      maxWidth = Math.min(maxWidth, policy.max.width);
+      maxHeight = Math.min(maxHeight, policy.max.height);
+    }
+  }
+
+  const aggregated: CardSizePolicy = {
+    min: { width: minWidth, height: minHeight },
+    preferred: {
+      width: Math.max(policies[0].preferred.width, minWidth),
+      height: Math.max(policies[0].preferred.height, minHeight),
+    },
+  };
+  if (Number.isFinite(maxWidth) && Number.isFinite(maxHeight)) {
+    aggregated.max = { width: maxWidth, height: maxHeight };
+  }
+  return aggregated;
+}
+
+/**
  * True when the card type is registered and declares
  * `engineKind: "em"` — i.e., its content factory owns its own focus
  * via `useCardStatePreservation`'s `onCardActivated` callback. Used by
