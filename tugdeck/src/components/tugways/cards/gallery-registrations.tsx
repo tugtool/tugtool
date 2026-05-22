@@ -175,13 +175,15 @@ export function TugPopupButtonDemo() {
  * contract.
  */
 const ALL_BADGE_ROLES: TugBadgeRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution", "inherit"];
-const ALL_BADGE_SIZES: TugBadgeSize[] = ["sm", "md", "lg"];
+const ALL_BADGE_SIZES: TugBadgeSize[] = ["2xs", "xs", "sm", "md", "lg", "xl", "2xl"];
 const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
 
 /**
  * GalleryBadge -- TugBadge showcase gallery tab.
  *
- * Shows tinted and ghost emphasis across all 8 roles at all sizes.
+ * A leading Sizes section ramps the full size scale at a single
+ * role; the matrices below show tinted and ghost emphasis across
+ * all 8 roles at all sizes.
  * The eighth role (`inherit`) paints text / icon / border in
  * `currentColor` so the badge blends into the surrounding text —
  * primary callsite is the Z1B end-state "OK" tone in the
@@ -196,6 +198,39 @@ const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
 export function GalleryBadge() {
   return (
     <div className="cg-content" data-testid="gallery-badge">
+
+      {/* ---- Sizes ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">TugBadge — Sizes</TugLabel>
+        <div className="cg-matrix">
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" color="muted">text only</TugLabel>
+            <div className="cg-variant-row">
+              <div className="cg-size-group">
+                {ALL_BADGE_SIZES.map((size) => (
+                  <TugBadge key={size} emphasis="tinted" role="action" size={size}>
+                    {size}
+                  </TugBadge>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" color="muted">icon + text</TugLabel>
+            <div className="cg-variant-row">
+              <div className="cg-size-group">
+                {ALL_BADGE_SIZES.map((size) => (
+                  <TugBadge key={size} emphasis="tinted" role="action" size={size} icon={<Star />}>
+                    {size}
+                  </TugBadge>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TugSeparator />
 
       {ALL_BADGE_EMPHASES.map((emphasis) => (
         <React.Fragment key={emphasis}>
@@ -746,7 +781,7 @@ export function registerGalleryCards(): void {
     defaultMeta: { title: "TugBadge", icon: "Tag", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.feedback,
   });
 
