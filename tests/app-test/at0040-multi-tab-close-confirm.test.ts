@@ -1,23 +1,26 @@
 /**
- * at0040-multi-tab-close-confirm.test.ts — title-bar X behavior on
- * single-tab vs multi-tab panes, active vs inactive.
+ * at0040-multi-tab-close-confirm.test.ts — title-bar X close
+ * confirmation, a pane-level feature applied uniformly to every pane.
  *
  * ## Behavior matrix
  *
- *   1. **Active single-tab.** Click X → pane closes immediately.
- *   2. **Active multi-tab.** Click X → "Close N Tabs?" popover opens
- *      and STAYS open until the user confirms or cancels. Confirm
- *      closes the entire pane; cancel does nothing.
- *   3. **Inactive single-tab.** Click X → pane closes silently
- *      without bringing the pane forward (`data-no-activate` is
- *      preserved for this branch — the user has nothing to lose).
- *   4. **Inactive multi-tab.** Click X → pane comes forward
- *      (activates) AND the "Close N Tabs?" popover opens. Same
- *      confirm/cancel semantics as case 2. The user needs to see
- *      what they're about to discard.
+ *   1. **Plain click, single-tab.** Click X → "Close Card?" popover
+ *      opens and STAYS open until the user confirms or cancels.
+ *      Confirm ("Close") closes the pane; cancel keeps it.
+ *   2. **Plain click, multi-tab.** Click X → "Close N Tabs?" popover
+ *      opens and STAYS open. Confirm ("Close All") closes the entire
+ *      pane; cancel keeps it.
+ *   3. **Option-click.** Option(alt)-click X → the pane closes
+ *      immediately, no popover. The power-user escape hatch, single-
+ *      and multi-tab alike.
+ *   4. **Inactive pane.** Click X on a background pane → the pane
+ *      comes forward (activates) AND the confirm popover opens. The
+ *      user needs to see what they are about to discard. Holds for
+ *      single-tab and multi-tab background panes alike — the X
+ *      button carries no `data-no-activate`.
  *
  * Case 2 also gates the "popover-flash" regression that motivated
- * this whole pass: if `Popover.Trigger`'s auto-toggle ever ends up
+ * the original pass: if `Popover.Trigger`'s auto-toggle ever ends up
  * composed onto the X button again, the popover briefly opens and
  * immediately closes via the toggle inverting the just-opened state
  * on the trailing `click` event. Any future change that reintroduces
@@ -29,6 +32,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import type { App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
@@ -62,6 +66,26 @@ function popoverButtonByText(label: string): string {
     }
     return null;
   })()`;
+}
+
+/**
+ * Option(alt)-click an element. `holdModifier` buffers native verbs
+ * into one atomic RPC with the modifier held; `evalJS` is not allowed
+ * inside that scope, so the element's viewport-center point is
+ * resolved beforehand.
+ */
+async function optionClickElement(app: App, selector: string): Promise<void> {
+  const point = await app.evalJS<{ x: number; y: number }>(
+    `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (el === null) throw new Error("[at0040] option-click target missing: " + ${JSON.stringify(selector)});
+      var r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`,
+  );
+  await app.holdModifier(["alt"], async (inner) => {
+    await inner.rpcCall<void>("nativeClick", { viewportPoint: point });
+  });
 }
 
 /** Two cards in a single pane → multi-tab pane. */
@@ -127,7 +151,7 @@ function inactiveMultiTabDeckShape() {
   };
 }
 
-/** Inactive single-tab variant — case 3. */
+/** Inactive single-tab variant — case 4, single-tab cell. */
 function inactiveSingleTabDeckShape() {
   return {
     cards: [
@@ -182,12 +206,59 @@ function activeSingleTabDeckShape() {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "at0040: title-bar X close behavior across the four cells of (active|inactive) × (single|multi)",
+  "at0040: title-bar X close confirmation — a uniform pane feature",
   () => {
     test(
-      "case 1 — active single-tab: X closes the pane immediately",
+      "case 1 — single-tab: X opens 'Close Card?' popover and the popover STAYS open",
       async () => {
-        const app = await launchTugApp({ testName: "at0040-c1-active-single" });
+        const app = await launchTugApp({ testName: "at0040-c1-single-open" });
+        try {
+          await app.enableDeckTrace(true);
+          await app.seedDeckState({
+            state: activeSingleTabDeckShape(),
+            focusCardId: "A",
+          });
+          await app.waitForCondition<boolean>(
+            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          );
+
+          await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
+
+          // Sleep past the flash-bug window to gate that the popover holds.
+          await pause(300);
+
+          const popoverState = await app.evalJS<{ present: boolean; text: string | null }>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)});
+              if (el === null) return { present: false, text: null };
+              return { present: true, text: el.textContent };
+            })()`,
+          );
+          expect(
+            popoverState.present,
+            "confirm popover must still be in the DOM 300ms after the X click",
+          ).toBe(true);
+          expect(
+            popoverState.text ?? "",
+            "popover prompt must read 'Close Card?'",
+          ).toContain("Close Card?");
+
+          // Pane must still exist — confirm wasn't pressed.
+          const paneStillExists = await app.evalJS<boolean>(
+            `document.querySelector('[data-pane-id="p1"]') !== null`,
+          );
+          expect(paneStillExists, "pane must still exist while popover is open").toBe(true);
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "case 1 — single-tab: confirming 'Close' closes the pane",
+      async () => {
+        const app = await launchTugApp({ testName: "at0040-c1-single-confirm" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({
@@ -200,15 +271,22 @@ describe.skipIf(!SHOULD_RUN)(
 
           await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
           await app.waitForCondition<boolean>(
-            `document.querySelector('[data-pane-id="p1"]') === null`,
+            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
             { timeoutMs: 2000 },
           );
 
-          // No popover ever rendered — single-tab path bypasses it.
-          const popoverPresent = await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
+          await app.evalJS<void>(
+            `(function(){
+              var btn = ${popoverButtonByText("Close")};
+              if (btn === null) throw new Error("[at0040] Close button missing");
+              btn.click();
+            })()`,
           );
-          expect(popoverPresent, "no confirm popover should render for single-tab close").toBe(false);
+
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-pane-id="p1"]') === null`,
+            { timeoutMs: 2000 },
+          );
         } finally {
           await app.close();
         }
@@ -217,9 +295,53 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "case 2 — active multi-tab: X opens 'Close 2 Tabs?' popover and the popover STAYS open",
+      "case 1 — single-tab: Cancel keeps the pane and dismisses the popover",
       async () => {
-        const app = await launchTugApp({ testName: "at0040-c2-active-multi" });
+        const app = await launchTugApp({ testName: "at0040-c1-single-cancel" });
+        try {
+          await app.enableDeckTrace(true);
+          await app.seedDeckState({
+            state: activeSingleTabDeckShape(),
+            focusCardId: "A",
+          });
+          await app.waitForCondition<boolean>(
+            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          );
+
+          await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
+            { timeoutMs: 2000 },
+          );
+
+          await app.evalJS<void>(
+            `(function(){
+              var btn = ${popoverButtonByText("Cancel")};
+              if (btn === null) throw new Error("[at0040] Cancel button missing");
+              btn.click();
+            })()`,
+          );
+
+          // Popover dismisses, pane stays.
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) === null`,
+            { timeoutMs: 2000 },
+          );
+          const paneStillExists = await app.evalJS<boolean>(
+            `document.querySelector('[data-pane-id="p1"]') !== null`,
+          );
+          expect(paneStillExists, "pane must still exist after cancel").toBe(true);
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "case 2 — multi-tab: X opens 'Close 2 Tabs?' popover and the popover STAYS open",
+      async () => {
+        const app = await launchTugApp({ testName: "at0040-c2-multi-open" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({
@@ -265,9 +387,9 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "case 2 — confirming 'Close All' closes the entire pane",
+      "case 2 — multi-tab: confirming 'Close All' closes the entire pane",
       async () => {
-        const app = await launchTugApp({ testName: "at0040-c2-confirm" });
+        const app = await launchTugApp({ testName: "at0040-c2-multi-confirm" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({
@@ -305,9 +427,44 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "case 2 — Cancel keeps the pane and dismisses the popover",
+      "case 3 — Option-click on X closes a single-tab pane immediately, no popover",
       async () => {
-        const app = await launchTugApp({ testName: "at0040-c2-cancel" });
+        const app = await launchTugApp({ testName: "at0040-c3-option-single" });
+        try {
+          await app.enableDeckTrace(true);
+          await app.seedDeckState({
+            state: activeSingleTabDeckShape(),
+            focusCardId: "A",
+          });
+          await app.waitForCondition<boolean>(
+            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          );
+
+          await optionClickElement(app, paneCloseButtonSelector("p1"));
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-pane-id="p1"]') === null`,
+            { timeoutMs: 2000 },
+          );
+
+          // No popover ever rendered — Option-click bypasses it.
+          const popoverPresent = await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
+          );
+          expect(
+            popoverPresent,
+            "no confirm popover should render for an Option-click close",
+          ).toBe(false);
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "case 3 — Option-click on X closes a multi-tab pane immediately, no popover",
+      async () => {
+        const app = await launchTugApp({ testName: "at0040-c3-option-multi" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({
@@ -318,29 +475,19 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
           );
 
-          await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
+          await optionClickElement(app, paneCloseButtonSelector("p1"));
           await app.waitForCondition<boolean>(
+            `document.querySelector('[data-pane-id="p1"]') === null`,
+            { timeoutMs: 2000 },
+          );
+
+          const popoverPresent = await app.evalJS<boolean>(
             `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) !== null`,
-            { timeoutMs: 2000 },
           );
-
-          await app.evalJS<void>(
-            `(function(){
-              var btn = ${popoverButtonByText("Cancel")};
-              if (btn === null) throw new Error("[at0040] Cancel button missing");
-              btn.click();
-            })()`,
-          );
-
-          // Popover dismisses, pane stays.
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)}) === null`,
-            { timeoutMs: 2000 },
-          );
-          const paneStillExists = await app.evalJS<boolean>(
-            `document.querySelector('[data-pane-id="p1"]') !== null`,
-          );
-          expect(paneStillExists, "pane must still exist after cancel").toBe(true);
+          expect(
+            popoverPresent,
+            "no confirm popover should render for an Option-click close",
+          ).toBe(false);
         } finally {
           await app.close();
         }
@@ -349,9 +496,9 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "case 3 — inactive single-tab: X closes the pane WITHOUT activating it first",
+      "case 4 — inactive single-tab: X activates the pane AND opens the confirm popover",
       async () => {
-        const app = await launchTugApp({ testName: "at0040-c3-inactive-single" });
+        const app = await launchTugApp({ testName: "at0040-c4-inactive-single" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({
@@ -369,23 +516,30 @@ describe.skipIf(!SHOULD_RUN)(
           expect(activeBefore, "C must be active before the click").toBe("C");
 
           await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
+          await pause(300);
 
-          // p1 must be removed from the DOM.
-          await app.waitForCondition<boolean>(
-            `document.querySelector('[data-pane-id="p1"]') === null`,
-            { timeoutMs: 2000 },
-          );
-
-          // C must STILL be the active card — the close on the
-          // inactive single-tab pane must not steal first responder
-          // from the active pane.
+          // Clicking X on an inactive single-tab pane brings it
+          // forward — A becomes the new active card.
           const activeAfter = await app.evalJS<string | null>(
             `window.__tug.getActiveCardId()`,
           );
           expect(
             activeAfter,
-            "case 3: C must remain active — clicking X on an inactive single-tab pane should not bring it forward",
-          ).toBe("C");
+            "case 4: A must be active — clicking X on an inactive pane must bring it forward",
+          ).toBe("A");
+
+          // And the popover must be open with the single-tab prompt.
+          const popoverState = await app.evalJS<{ present: boolean; text: string | null }>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(CONFIRM_POPOVER_SELECTOR)});
+              if (el === null) return { present: false, text: null };
+              return { present: true, text: el.textContent };
+            })()`,
+          );
+          expect(popoverState.present, "popover must be open").toBe(true);
+          expect(popoverState.text ?? "", "popover must read 'Close Card?'").toContain(
+            "Close Card?",
+          );
         } finally {
           await app.close();
         }
@@ -418,14 +572,14 @@ describe.skipIf(!SHOULD_RUN)(
           await pause(300);
 
           // After the click, p1's active card (A) must be the new
-          // first responder — clicking X on an inactive MULTI-tab
-          // pane brings the pane forward.
+          // first responder — clicking X on an inactive pane brings
+          // the pane forward.
           const activeAfter = await app.evalJS<string | null>(
             `window.__tug.getActiveCardId()`,
           );
           expect(
             activeAfter,
-            "case 4: A must be active — clicking X on an inactive multi-tab pane must bring the pane forward",
+            "case 4: A must be active — clicking X on an inactive pane must bring it forward",
           ).toBe("A");
 
           // And the popover must be open with the right prompt.
