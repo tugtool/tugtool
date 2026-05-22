@@ -635,6 +635,67 @@ async fn test_tell_rejects_non_loopback() {
     assert!(body_str.contains(r#""message":"forbidden""#));
 }
 
+// ── Host facts API integration test ───────────────────────────────────────
+
+/// `GET /api/host` is wired and returns the Spec S01 shape: a 200 with a
+/// JSON object carrying string `hostname` and `shell` fields. `hostname` is
+/// resolved on the test host and is non-empty there.
+#[tokio::test]
+async fn test_host_endpoint_returns_spec_s01_shape() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let (app, _token) = build_test_app(7890);
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/host")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = json_body(response).await;
+    let obj = json.as_object().expect("/api/host returns a JSON object");
+    assert!(obj.get("hostname").map(|v| v.is_string()).unwrap_or(false));
+    assert!(obj.get("shell").map(|v| v.is_string()).unwrap_or(false));
+    assert!(
+        !obj["hostname"].as_str().unwrap().is_empty(),
+        "hostname resolves to a non-empty value on the test host",
+    );
+}
+
+/// `GET /api/host` rejects non-loopback connections with 403, like the
+/// other `/api` handlers.
+#[tokio::test]
+async fn test_host_endpoint_rejects_non_loopback() {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let (app, _token) = build_test_app(7890);
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
+    let app_with_connect_info = app.layer(MockConnectInfo(addr));
+
+    let response = app_with_connect_info
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/host")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
 // ── Defaults API integration test helpers ─────────────────────────────────
 
 /// Build a test app wired to a temporary tugbank database.

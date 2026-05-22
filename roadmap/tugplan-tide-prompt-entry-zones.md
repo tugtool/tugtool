@@ -397,18 +397,18 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 - Hostname-resolution dependency (if a crate is added): `THIRD_PARTY_NOTICES.md` entry + consuming-file comment per [L21].
 
 **Tasks:**
-- [ ] Implement the read-only `GET /api/host` endpoint per [Q01] / [D04].
-- [ ] Resolve `hostname` (host network name) and `shell` (`$SHELL` basename, empty if unset).
-- [ ] Serialize per Spec S01.
-- [ ] If a hostname crate is added, verify its license and add the [L21] notice.
+- [x] Implement the read-only `GET /api/host` endpoint per [Q01] / [D04]. — `crates/tugcast/src/host.rs` (`get_host`), wired in `server.rs`.
+- [x] Resolve `hostname` (host network name) and `shell` (`$SHELL` basename, empty if unset). — `hostname` via `libc::gethostname(2)`; `shell` via `shell_basename($SHELL)`.
+- [x] Serialize per Spec S01. — `HostFacts` derives `Serialize`; `axum::Json` sets `Content-Type: application/json`.
+- [x] If a hostname crate is added, verify its license and add the [L21] notice. — N/A: no new crate; `libc` is already a tugcast dependency, so no [L21] notice was required.
 
 **Tests:**
-- [ ] Rust unit test: the handler serializes `{ hostname, shell }` with the Spec S01 field names; `shell` is the basename, empty on unset `$SHELL`.
+- [x] Rust unit test: the handler serializes `{ hostname, shell }` with the Spec S01 field names; `shell` is the basename, empty on unset `$SHELL`. — 4 unit tests in `host.rs` + 2 HTTP integration tests in `integration_tests.rs`.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `cd tugrust && cargo build` (clean under `-D warnings`)
-- [ ] `curl` against a running tugcast returns the Spec S01 shape.
+- [x] `cd tugrust && cargo nextest run` — 1323 passed.
+- [x] `cd tugrust && cargo build` (clean under `-D warnings`) — clean.
+- [x] `curl` against a running tugcast returns the Spec S01 shape. — `{"hostname":"orbit.local","shell":"zsh"}`, `200`, `application/json`.
 
 ---
 

@@ -253,6 +253,7 @@ pub(crate) fn build_app(
         .route("/ws", get(crate::router::ws_handler))
         .route("/api/tell", post(tell_handler))
         .route("/api/eval", post(eval_handler))
+        .route("/api/host", get(crate::host::get_host))
         .with_state(router)
         .layer(cors);
 
