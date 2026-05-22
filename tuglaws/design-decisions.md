@@ -242,3 +242,48 @@ The contract is surface-wide, not body-kind-specific: any new inner scroller a b
 
 **D96.** **Any code path that lands a `TurnEntry` on `state.transcript` must also seed the per-turn `streamingDocument` paths (`turn.${turnKey}.{assistant,thinking,tools}`) from the entry's payload.** This is the write-side counterpart to [L26]'s post-unification render contract: the assistant row's `CodeRowCell` observes `turn.${turnKey}.${channel}` exclusively (no fallback to `TurnEntry.*` fields), so a turn that exists on the snapshot but whose per-turn paths are empty renders blank — a textbook [L23] violation. Today the only such code path is `code-session-store/reducer.ts`'s `append-transcript` effect, paired with the `write-inflight` effects emitted by `handleTextDelta` / `handleToolUse` / `handleToolResult` / `handleToolUseStructured` for both live and replay events (the live↔replay symmetry restored by Step 18.9). Any future analogue — out-of-band ingestion, server-pushed transcript snapshot, debug-tool import, hot-reload state restore — must replicate the seeding using `serializeToolCalls` (`reducer.ts`) for the tools channel and the raw string for assistant/thinking. The reducer's pattern is the reference implementation; deviating from it without seeding strips the corresponding content from every rendered cell that comes through the alternate path. [L23], [L26]
 
+**D97.** The tide card is partitioned into **six placement zones, `Z0`-`Z5`, numbered spatially top-to-bottom.** Each zone is an addressable slot the telemetry renderers and the assistant-rendering registry target by ID: five are `ReactNode` slot props on a host component, and `Z5` is a state-coordinated interactive area rather than a content slot. Spatial numbering means any zone is findable by intuition, and a future zone inserts at its position with a clean downstream renumber — `Z0` is unambiguously "what you see first."
+
+```
+┌─ tide card · transcript pane ────────────────────────────────────────────────┐
+│ Z0   top of card — reserved (empty until its slot is filled)                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│ TideTranscriptHost  →  TugListView          scrolls · flex 1 1 auto          │
+│                                                                              │
+│   ┌─ user row ───────────────────────────────────────────────────────────┐   │
+│   │ "count lines of code..."                                Z1 user half │   │
+│   │                                                           (reserved) │   │
+│   └──────────────────────────────────────────────────────────────────────┘   │
+│   ┌─ assistant row ──────────────────────────────────────────────────────┐   │
+│   │ [ markdown body · tool-call blocks · thinking ]                      │   │
+│   │                                               Z1A  model · timestamp │   │
+│   │ [copy]                                    Z1B  indicator ↔ end-state │   │
+│   └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Z2   status bar — STATE · TIME · TOKENS · CONTEXT                            │
+│      flex 0 0 auto · never scrolls · sits outside TugListView                │
+└──────────────────────────────────────────────────────────────────────────────┘
+             ↑↓  split-pane sash — transcript / prompt-entry resize
+┌─ tide card · prompt-entry pane ──────────────────────────────────────────────┐
+│ Z3   [ Project: /path ]        [ drift caution ]        [ maximize ]         │
+│                                                                              │
+│   Ask Claude to build, fix, or explain                                       │
+│                                                                              │
+│ [Code] [Shell] [Command]      Z4 · footer (reserved)      Z5 · submit        │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Zone | Host · slot prop | Current occupant | Status |
+|------|------------------|------------------|--------|
+| `Z0` | `TideCard` · `headerContent` | — | reserved — empty |
+| `Z1` | transcript row · `renderTurnTrailing`, keyed by `half` | user half: —; assistant half: `Z1A` model · timestamp + `Z1B` thinking-indicator ↔ end-state display | user half reserved; assistant half shipped |
+| `Z2` | `TideCard` · `statusBarContent` | `TideTelemetryStatusRow` — STATE · TIME · TOKENS · CONTEXT | shipped |
+| `Z3` | `TugPromptEntry` · `statusContent` + `cautionContent` | project-path badge · drift-caution chip | shipped |
+| `Z4` | `TugPromptEntry` · `footerContent` | — | reserved — empty |
+| `Z5` | `TugPromptEntry` submit button (no slot) | lifecycle-driven Submit / Stop / Awaiting / Stopping / Reconnecting | shipped |
+
+The transcript pane (the upper `TugSplitPanel`) is a flex column — `Z0` header, `TugListView` (`flex 1 1 auto`, scrolls), `Z2` status bar — so a telemetry update in `Z2` grows into space the list cedes without repositioning the scroll, and `Z2`, living *outside* `TugListView`, never scrolls with the transcript. `Z1` is per-turn rather than card-level: one trailing slot wired twice per turn (`half: "user" | "assistant"`), spatially inside the transcript pane between `Z0` and `Z2`. `Z5` is the submit button — a single DOM node whose label / `disabled` / `data-mode` are driven by the lifecycle state machine and which is never swapped across mode transitions, per [L26].
+
+A zone's *location* is contract; its *occupant* is not. `Z3` carries the project-path badge by default, but no invariant reserves it for that — every zone is a generic addressable slot. `Z0`, the `Z1` user half, and `Z4` are reserved: the slot exists in the API, default content is `null`, and the row collapses to zero height until something fills it. Established by the Step 20.x turn-surface work (archived as `roadmap/archive/tide-assistant-turns.md`); `Z3`'s `cautionContent` slot was added by the assistant-rendering drift-detection work. [L26]
