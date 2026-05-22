@@ -26,9 +26,10 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 // ---- Types ----
 
 type MockupRole = "accent" | "action" | "agent" | "data" | "danger" | "success" | "caution";
-type MockupSize = "sm" | "md" | "lg";
+type MockupSize = "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
 
 const ALL_ROLES: MockupRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution"];
+const ALL_SIZES: MockupSize[] = ["2xs", "xs", "sm", "md", "lg", "xl", "2xl"];
 
 // NOTE: the `action` keys in ROLE_HUE and ROLE_ICONS below are role-prop
 // values (one of MockupRole), not chain-action names from `TUG_ACTIONS`.
@@ -183,6 +184,15 @@ export function GalleryBadgeMockup() {
   function resetShape() { setRadius(DEFAULTS.radius); }
   function resetAll() { resetFg(); resetBg(); resetBorder(); resetShape(); }
 
+  // Slider-driven appearance props, bundled so the All-Roles matrix can
+  // spread them onto every MockupBadge without restating each control.
+  const sliderProps = {
+    fgIntensity, fgTone,
+    bgIntensity, bgTone, bgAlpha,
+    borderIntensity, borderTone, borderAlpha, borderWidth,
+    radius,
+  };
+
   return (
     <ResponderScope>
     <div className="cg-content" data-testid="gallery-badge-mockup-content" ref={responderRef as (el: HTMLDivElement | null) => void}>
@@ -225,24 +235,16 @@ export function GalleryBadgeMockup() {
           {ALL_ROLES.map((role) => (
             <div key={role} className="badge-mockup-row">
               <div className="badge-mockup-row-label">{role}</div>
-              <MockupBadge role={role} size="sm" fgIntensity={fgIntensity} fgTone={fgTone} bgIntensity={bgIntensity} bgTone={bgTone} bgAlpha={bgAlpha} borderIntensity={borderIntensity} borderTone={borderTone} borderAlpha={borderAlpha} borderWidth={borderWidth} radius={radius}>
-                {role}
-              </MockupBadge>
-              <MockupBadge role={role} size="md" fgIntensity={fgIntensity} fgTone={fgTone} bgIntensity={bgIntensity} bgTone={bgTone} bgAlpha={bgAlpha} borderIntensity={borderIntensity} borderTone={borderTone} borderAlpha={borderAlpha} borderWidth={borderWidth} radius={radius}>
-                {role}
-              </MockupBadge>
-              <MockupBadge role={role} size="lg" fgIntensity={fgIntensity} fgTone={fgTone} bgIntensity={bgIntensity} bgTone={bgTone} bgAlpha={bgAlpha} borderIntensity={borderIntensity} borderTone={borderTone} borderAlpha={borderAlpha} borderWidth={borderWidth} radius={radius}>
-                {role}
-              </MockupBadge>
-              <MockupBadge role={role} size="sm" fgIntensity={fgIntensity} fgTone={fgTone} bgIntensity={bgIntensity} bgTone={bgTone} bgAlpha={bgAlpha} borderIntensity={borderIntensity} borderTone={borderTone} borderAlpha={borderAlpha} borderWidth={borderWidth} radius={radius} icon={ROLE_ICONS[role]}>
-                {role}
-              </MockupBadge>
-              <MockupBadge role={role} size="md" fgIntensity={fgIntensity} fgTone={fgTone} bgIntensity={bgIntensity} bgTone={bgTone} bgAlpha={bgAlpha} borderIntensity={borderIntensity} borderTone={borderTone} borderAlpha={borderAlpha} borderWidth={borderWidth} radius={radius} icon={ROLE_ICONS[role]}>
-                {role}
-              </MockupBadge>
-              <MockupBadge role={role} size="lg" fgIntensity={fgIntensity} fgTone={fgTone} bgIntensity={bgIntensity} bgTone={bgTone} bgAlpha={bgAlpha} borderIntensity={borderIntensity} borderTone={borderTone} borderAlpha={borderAlpha} borderWidth={borderWidth} radius={radius} icon={ROLE_ICONS[role]}>
-                {role}
-              </MockupBadge>
+              {ALL_SIZES.map((size) => (
+                <MockupBadge key={size} role={role} size={size} {...sliderProps}>
+                  {role}
+                </MockupBadge>
+              ))}
+              {ALL_SIZES.map((size) => (
+                <MockupBadge key={`${size}-icon`} role={role} size={size} {...sliderProps} icon={ROLE_ICONS[role]}>
+                  {role}
+                </MockupBadge>
+              ))}
             </div>
           ))}
         </div>

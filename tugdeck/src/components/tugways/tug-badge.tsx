@@ -49,8 +49,9 @@ export type TugBadgeRole =
   | "caution"
   | "inherit";
 
-/** TugBadge size names */
-export type TugBadgeSize = "sm" | "md" | "lg";
+/** TugBadge size names. `2xs` is the most compact — for count or
+ * status chips tucked into dense rows — through to the prominent `2xl`. */
+export type TugBadgeSize = "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
 
 /**
  * TugBadge props interface.
@@ -70,7 +71,7 @@ export interface TugBadgeProps extends Omit<React.ComponentPropsWithoutRef<"span
   role?: TugBadgeRole;
   /**
    * Badge size.
-   * @selector .tug-badge-size-sm | .tug-badge-size-md | .tug-badge-size-lg
+   * @selector .tug-badge-size-2xs | .tug-badge-size-xs | .tug-badge-size-sm | .tug-badge-size-md | .tug-badge-size-lg | .tug-badge-size-xl | .tug-badge-size-2xl
    * @default "sm"
    */
   size?: TugBadgeSize;
