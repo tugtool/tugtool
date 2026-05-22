@@ -40,7 +40,7 @@ describe("parsePlacementEntry", () => {
         Z0: "window",
         Z2: "tokens",
         Z3: "active",
-        Z4: "phase",
+        Z4B: "phase",
         Z1: "perTurnDuration",
       }),
     );
@@ -48,7 +48,7 @@ describe("parsePlacementEntry", () => {
       Z0: "window",
       Z2: "tokens",
       Z3: "active",
-      Z4: "phase",
+      Z4B: "phase",
       Z1: "perTurnDuration",
     });
   });

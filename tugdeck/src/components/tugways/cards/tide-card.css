@@ -86,13 +86,14 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  /* Three-part row: a sash grip at each end (fixed width) with the
-     status content between them in `.tide-card-status-bar-main`.
-     That wrapper is `flex: 1 1 auto`, so it absorbs the row width
-     the grips leave and the status-row renderer inside centers its
+  /* Three-part row: a sash grip on the leading end and the maximize
+     toggle on the trailing end (both fixed width), with the status
+     content between them in `.tide-card-status-bar-main`. That
+     wrapper is `flex: 1 1 auto`, so it absorbs the row width the end
+     controls leave and the status-row renderer inside centers its
      own cells. `justify-content: center` is inert while `main`
      flexes, but is kept so a future content-sized Z2 occupant (one
-     not `width: 100%`) still centers between the grips. */
+     not `width: 100%`) still centers in the row. */
   justify-content: center;
   gap: var(--tug-space-md);
   padding: var(--tug-space-md);
@@ -162,6 +163,27 @@
   min-width: 0;
   display: flex;
   justify-content: center;
+}
+
+/* Maximize toggle — Z2's trailing control. `flex: 0 0 auto` keeps it
+   at its content size so it never shrinks against the status row. */
+.tide-card-maximize-toggle {
+  flex: 0 0 auto;
+}
+
+/* ----------------------------------------------------------------------------
+   Split-pane sash — slimmed to a hairline
+   ----------------------------------------------------------------------------
+   The transcript / prompt-entry sash reads as the same separator line
+   as the Z2 status bar's `border-top`: 1px, in the same border color.
+   Scoped to the Tide card's split pane — other split panes keep the
+   TugSplitPane 3px default. [L20] — the consuming card overrides the
+   primitive's own `--tug-split-*` slots. The hit area is left at the
+   primitive's default so the thinner line stays easy to grab.
+   ----------------------------------------------------------------------------- */
+.tide-card .tug-split-pane {
+  --tug-split-sash-thickness: 1px;
+  --tugx-split-sash-bg: var(--tug7-element-global-border-normal-default-rest);
 }
 
 /* Renderer-specific styling for the telemetry chips (window

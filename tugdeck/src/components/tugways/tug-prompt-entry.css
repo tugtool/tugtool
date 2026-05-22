@@ -106,10 +106,11 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-toolbar — the row under the editor
    ----------------------------------------------------------------------------
-   Hosts the route indicator, queue badge (when present), and the submit /
-   stop button. Naturally pinned to the bottom by the parent flex-column.
-   The toolbar sizes to its content; the submit button anchors to the
-   trailing edge via `margin-inline-start: auto` on the last child.
+   Three zones: Z4A (route choice-group, fixed-leading), Z4B (the
+   indicator slot, floating-centred), and Z5 (the queue + submit / stop
+   buttons, fixed-trailing). Two equal flex spacers flank Z4B so it
+   centres in the gap between Z4A and Z5 ([D05]). Naturally pinned to
+   the bottom by the parent flex-column; sizes to its content height.
    ----------------------------------------------------------------------------- */
 
 .tug-prompt-entry-toolbar {
@@ -157,31 +158,22 @@ body {
   cursor: not-allowed;
 }
 
-/* Submit button anchors to the trailing edge; the route indicator +
-   optional queue badge float on the leading side. `margin-inline-start:
-   auto` works in both LTR and RTL. The footer-content slot fills the
-   middle when present, so the auto-margin on the trailing child still
-   positions submit at the right edge without stranding the slot in
-   the middle. */
-.tug-prompt-entry-toolbar > :last-child {
-  margin-inline-start: auto;
-}
-
-/* Footer-content slot — placement zone for prompt-entry footer
-   content (per-card telemetry, phase indicator, etc.). The host owns
-   only the layout box per [L20] — composed children declare their own
-   tokens. Sized to grow into the available middle space so the submit
-   button stays pinned to the trailing edge via the auto-margin rule
-   above; `justify-content: center` horizontally centers the chip
-   within the slot. */
-.tug-prompt-entry-footer-content {
-  flex: 1 1 auto;
-  min-width: 0;
+/* Z4B — the indicator slot. Content-sized (`flex: 0 0 auto`); the two
+   spacers below do the centring. The host owns only the layout box per
+   [L20] — composed children declare their own tokens. */
+.tug-prompt-entry-indicators {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: center;
   gap: var(--tug-space-sm);
+}
+
+/* The two equal flex spacers flanking Z4B. Each absorbs an equal share
+   of the toolbar's free width, so Z4B's centre lands at the midpoint of
+   the gap between Z4A's trailing edge and Z5's leading edge ([D05]). */
+.tug-prompt-entry-toolbar-spacer {
+  flex: 1 1 auto;
 }
 
 /* ----------------------------------------------------------------------------
@@ -239,23 +231,23 @@ body {
    .tug-prompt-entry-status — the row above the input
    ----------------------------------------------------------------------------
    A leading group — caller-supplied status content plus an optional caution
-   slot, both content-sized and in normal inline flow — then a growing spacer,
-   then a trailing group — the optional tools disclosure + maximize toggles
-   pinned to the trailing edge. The spacer is the row's single flex-grow
-   element, so the leading/trailing split holds whichever optional slots are
-   populated. The row keeps its content height; the input below flexes to fill.
+   slot, both content-sized and in normal inline flow. When the host card
+   leaves both slots empty, `hasStatusRow` is false and the row is not
+   rendered at all: its former occupants — the badges and the maximize
+   toggle — moved to the Z4B indicator strip and the Z2 status bar.
+   Compact vertical padding when the row does render.
    ----------------------------------------------------------------------------- */
 
 .tug-prompt-entry-status {
   display: flex;
   flex: 0 0 auto;
   flex-direction: row;
-  /* Align items by their bottom edges so the badge on the leading side
-     and the maximize toggle on the trailing side share a baseline —
-     even though the two components render at different heights. */
+  /* Align items by their bottom edges so the status content and the
+     caution slot share a baseline even when the two render at
+     different heights. */
   align-items: flex-end;
   gap: var(--tug-space-sm);
-  padding: var(--tug-space-md);
+  padding: var(--tug-space-xs) var(--tug-space-md);
   min-height: 24px;
 }
 
@@ -290,18 +282,3 @@ body {
 .tug-prompt-entry-status-caution:empty {
   display: none;
 }
-
-/* Growing spacer — the row's single flex-grow element. It absorbs the
-   free space between the leading group (status content + caution) and
-   the trailing maximize toggle, pinning the toggle to the trailing edge
-   while the leading group stays in normal inline flow. */
-.tug-prompt-entry-status-spacer {
-  flex: 1 1 auto;
-}
-
-/* Maximize toggle button — a TugPushButton subtype="icon" rendered on
-   the trailing edge of the status row. Dispatches TOGGLE_MAXIMIZE
-   through the responder chain [L11]; the entry's `useResponder`
-   intercepts and re-emits via the `onMaximizeChange` controlled
-   callback. The entry owns no CSS for the button's chrome —
-   TugPushButton's tokens stay in its own slot [L20]. */

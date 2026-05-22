@@ -1,7 +1,7 @@
 /**
  * tide-card-placement-experiment.tsx — dev-only A/B harness for the
  * tide card's display-only placement zones (Z0, Z1-assistant, Z2, Z3,
- * Z4). Lets us answer "which datum reads best in which zone" without
+ * Z4B). Lets us answer "which datum reads best in which zone" without
  * an HMR loop per swap.
  *
  * The placement mapping ({ zone → datum }) persists through tugbank
@@ -13,7 +13,7 @@
  * Control surface — a window-global exposed in dev builds only:
  *
  *   ```js
- *   window.tugTidePlacement.set({ Z2: "window", Z4: "phase" })
+ *   window.tugTidePlacement.set({ Z2: "window", Z4B: "phase" })
  *   window.tugTidePlacement.set({ Z1: "perTurnDuration" })
  *   window.tugTidePlacement.clear()                  // wipe to empty defaults
  *   window.tugTidePlacement.get()                    // read current mapping
@@ -64,7 +64,7 @@ import type {
 // Datums + zones
 // ---------------------------------------------------------------------------
 
-/** Session-scoped datums — eligible for zones Z0 / Z2 / Z3 / Z4. */
+/** Session-scoped datums — eligible for zones Z0 / Z2 / Z3 / Z4B. */
 export type SessionDatum =
   | "window"
   | "tokens"
@@ -103,7 +103,7 @@ export interface PlacementMap {
   Z0?: SessionDatum | null;
   Z2?: SessionDatum | null;
   Z3?: SessionDatum | null;
-  Z4?: SessionDatum | null;
+  Z4B?: SessionDatum | null;
   Z1?: TurnDatum | null;
 }
 
@@ -115,7 +115,7 @@ export const EMPTY_PLACEMENT_MAP: PlacementMap = Object.freeze({
   Z0: null,
   Z2: null,
   Z3: null,
-  Z4: null,
+  Z4B: null,
   Z1: null,
 });
 
@@ -154,7 +154,7 @@ export function parsePlacementEntry(entry: TaggedValue | undefined): PlacementMa
     Z0: isSessionDatum(r.Z0) ? r.Z0 : null,
     Z2: isSessionDatum(r.Z2) ? r.Z2 : null,
     Z3: isSessionDatum(r.Z3) ? r.Z3 : null,
-    Z4: isSessionDatum(r.Z4) ? r.Z4 : null,
+    Z4B: isSessionDatum(r.Z4B) ? r.Z4B : null,
     Z1: isTurnDatum(r.Z1) ? r.Z1 : null,
   };
 }
@@ -191,7 +191,7 @@ export interface TideCardPlacementSlots {
   headerContent?: React.ReactNode;
   statusBarContent?: React.ReactNode;
   promptStatusContent?: React.ReactNode;
-  promptFooterContent?: React.ReactNode;
+  promptIndicatorsContent?: React.ReactNode;
   renderTurnTrailing?: TideTurnTrailingRenderer;
 }
 
@@ -299,7 +299,7 @@ export function useTidePlacementSlots(
     headerContent: sessionNode(mapping.Z0),
     statusBarContent: sessionNode(effectiveZ2),
     promptStatusContent: sessionNode(mapping.Z3),
-    promptFooterContent: sessionNode(mapping.Z4),
+    promptIndicatorsContent: sessionNode(mapping.Z4B),
     renderTurnTrailing,
   };
 }
@@ -327,7 +327,7 @@ export interface TideTidePlacementGlobal {
     turn: ReadonlyArray<TurnDatum>;
   };
   /** Catalog of configurable zones. */
-  readonly zones: ReadonlyArray<"Z0" | "Z1" | "Z2" | "Z3" | "Z4">;
+  readonly zones: ReadonlyArray<"Z0" | "Z1" | "Z2" | "Z3" | "Z4B">;
 }
 
 interface WindowWithPlacement {
@@ -358,7 +358,7 @@ export function installTidePlacementGlobal(): void {
       return EMPTY_PLACEMENT_MAP;
     },
     datums: { session: SESSION_DATUMS, turn: TURN_DATUMS },
-    zones: ["Z0", "Z1", "Z2", "Z3", "Z4"],
+    zones: ["Z0", "Z1", "Z2", "Z3", "Z4B"],
   };
   w.tugTidePlacement = api;
 }

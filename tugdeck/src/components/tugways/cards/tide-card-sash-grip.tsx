@@ -1,13 +1,18 @@
 /**
  * tide-card-sash-grip.tsx — Z2 sash grip.
  *
- * A pointer drag-handle pinned to one end of the Tide card's Z2
- * status bar. The status bar sits between the transcript and the
+ * A pointer drag-handle pinned to the leading end of the Tide card's
+ * Z2 status bar. The status bar sits between the transcript and the
  * prompt entry, directly above the split-pane sash; with the bar
  * occupying that band, the sash's own thin hit line is easy to miss.
- * A grip at each end of the bar gives the sash a generous, obvious
- * grab target — the user can resize the card from the status bar
- * itself, not just the hairline below it.
+ * The grip gives the sash a generous, obvious grab target — the user
+ * can resize the card from the status bar itself, not just the
+ * hairline below it.
+ *
+ * The grip renders as a `TugPushButton` (icon subtype) so it is
+ * visually identical to the Z2 maximize control on the bar's trailing
+ * end — same chrome, same size — while its pointer handlers drive a
+ * sash drag rather than a click.
  *
  * The grip drives the bottom (prompt-entry) panel directly: a pointer
  * drag tracks `clientY` against the panel's pixel size captured at
@@ -27,8 +32,8 @@
  *  - [L07] the pointer handlers read drag bookkeeping from a ref.
  *  - [L19] file pair (`.tsx` + `.css`); root carries
  *    `data-slot="tide-card-sash-grip"`.
- *  - [L20] owns only the `--tugx-tide-sash-grip-*` slots; no base
- *    tokens authored.
+ *  - [L20] composes `TugPushButton`, which owns its chrome tokens;
+ *    this file authors only the sash-resize affordance on top.
  *
  * @module components/tugways/cards/tide-card-sash-grip
  */
@@ -39,6 +44,7 @@ import React, { useCallback, useRef } from "react";
 import { GripHorizontal } from "lucide-react";
 
 import type { TugSplitPanelHandle } from "../tug-split-pane";
+import { TugPushButton } from "../tug-push-button";
 
 /**
  * Document-root class applied for the duration of a drag so the
@@ -86,7 +92,7 @@ export function TideCardSashGrip({
   const dragRef = useRef<DragState | null>(null);
 
   const handlePointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLButtonElement>) => {
       // Left button only. Bail when react-resizable-panels' document
       // capture-phase handler already claimed this pointer-down for
       // the sash's own hit region — the grip's bottom edge can overlap
@@ -111,7 +117,7 @@ export function TideCardSashGrip({
   );
 
   const handlePointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLButtonElement>) => {
       const drag = dragRef.current;
       if (drag === null || event.pointerId !== drag.pointerId) return;
       const panel = entryPanelRef.current;
@@ -127,7 +133,7 @@ export function TideCardSashGrip({
   );
 
   const handlePointerEnd = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLButtonElement>) => {
       const drag = dragRef.current;
       if (drag === null || event.pointerId !== drag.pointerId) return;
       dragRef.current = null;
@@ -149,18 +155,26 @@ export function TideCardSashGrip({
   );
 
   return (
-    <div
+    <TugPushButton
       className="tide-card-sash-grip"
       data-slot="tide-card-sash-grip"
       data-side={side}
-      data-disabled={disabled || undefined}
+      subtype="icon"
+      size="xs"
+      emphasis="ghost"
+      role="action"
+      disabled={disabled}
+      // Pointer-only redundant affordance: not in the tab order and
+      // hidden from the a11y tree — the split pane's own sash stays
+      // keyboard-focusable for arrow-key resize.
+      tabIndex={-1}
       aria-hidden="true"
+      aria-label="Resize prompt area"
+      icon={<GripHorizontal aria-hidden="true" />}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
-    >
-      <GripHorizontal className="tide-card-sash-grip-icon" aria-hidden="true" />
-    </div>
+    />
   );
 }

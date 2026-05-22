@@ -46,7 +46,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Bot, Command, Maximize2, Minimize2, Plus, Shell, Square } from "lucide-react";
+import { ArrowUp, Bot, Command, Plus, Shell, Square } from "lucide-react";
 import { EditorView } from "@codemirror/view";
 
 import { cn } from "@/lib/utils";
@@ -463,20 +463,24 @@ export interface TugPromptEntryProps {
    */
   cautionContent?: React.ReactNode;
   /**
-   * Optional content rendered in the toolbar between the route choice
-   * group and the submit button. Sits on its own flex line, content-
-   * sized, and stretches to fill the available middle space; the
-   * submit button stays pinned to the trailing edge. When `undefined`
-   * the slot is not rendered (the toolbar collapses back to the
-   * route-group + submit layout it had before this slot existed).
+   * `Z4B` — the indicator slot. Optional content rendered in the
+   * toolbar between the route choice group (`Z4A`) and the submit
+   * button (`Z5`), floated to the centre of the gap between them by a
+   * pair of equal flex spacers ([D05]). Content-sized; `undefined`
+   * renders an empty slot, leaving `Z4A` and `Z5` at the row's edges.
    */
-  footerContent?: React.ReactNode;
+  indicatorsContent?: React.ReactNode;
   /**
-   * When defined, renders a maximize toggle on the leading edge of the
-   * status row. The entry is a controlled component for this state.
+   * The entry pane's maximize state, owned by the host card. The entry
+   * renders no maximize control itself — the host card does, in its own
+   * chrome — but it persists this value in its editing-state snapshot
+   * and re-emits it through `onMaximizeChange` on restore.
    */
   maximized?: boolean;
-  /** Fires when the user clicks the maximize toggle. */
+  /**
+   * Called on restore to re-emit the persisted maximize state to the
+   * host card, which owns the live `maximized` state.
+   */
   onMaximizeChange?: (next: boolean) => void;
   /** Caller-supplied className merged with the root. */
   className?: string;
@@ -571,7 +575,7 @@ export const TugPromptEntry = React.forwardRef<
     onAfterSubmit,
     statusContent,
     cautionContent,
-    footerContent,
+    indicatorsContent,
     maximized,
     onMaximizeChange,
     className,
@@ -1010,14 +1014,6 @@ export const TugPromptEntry = React.forwardRef<
           performSubmit();
         }
       },
-      [TUG_ACTIONS.TOGGLE_MAXIMIZE]: (_event: ActionEvent) => {
-        // Controlled-component routing per [L11]: the entry doesn't
-        // own `maximized` itself — the parent does — so the handler
-        // reads the current value through a ref [L07] and re-emits
-        // via the controlled callback.
-        const next = !maximizedRef.current;
-        onMaximizeChangeRef.current?.(next);
-      },
       ...(snap.canInterrupt && !snap.interruptInFlight
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
@@ -1287,10 +1283,10 @@ export const TugPromptEntry = React.forwardRef<
   );
 
   // Render the status row only when there is something to put in it.
+  // The maximize control no longer lives here — the host card renders
+  // it in its own chrome — so `maximized` does not gate the row.
   const hasStatusRow =
-    statusContent !== undefined ||
-    cautionContent !== undefined ||
-    maximized !== undefined;
+    statusContent !== undefined || cautionContent !== undefined;
 
   return (
     <RouteLifecycleContext.Provider value={routeLifecycle}>
@@ -1320,35 +1316,6 @@ export const TugPromptEntry = React.forwardRef<
                   {cautionContent}
                 </div>
               )}
-              {/*
-                Growing spacer — the single flex-grow element of the
-                status row. It splits the row into a leading group
-                (`statusContent` + `cautionContent`, content-sized, in
-                normal inline flow) and a trailing group (the maximize
-                toggle, pinned to the trailing edge), independent of
-                which optional slots are populated.
-              */}
-              <div
-                className="tug-prompt-entry-status-spacer"
-                aria-hidden="true"
-              />
-              {maximized !== undefined && (
-                <TugPushButton
-                  className="tug-prompt-entry-maximize-toggle"
-                  subtype="icon"
-                  size="xs"
-                  emphasis={maximized ? "filled" : "ghost"}
-                  role={maximized ? "accent" : "action"}
-                  aria-label={maximized ? "Restore size" : "Maximize"}
-                  aria-pressed={maximized}
-                  icon={
-                    maximized
-                      ? <Minimize2 strokeWidth={2} aria-hidden="true" />
-                      : <Maximize2 strokeWidth={2} aria-hidden="true" />
-                  }
-                  action={TUG_ACTIONS.TOGGLE_MAXIMIZE}
-                />
-              )}
             </div>
           )}
           <div className="tug-prompt-entry-input-area">
@@ -1375,6 +1342,7 @@ export const TugPromptEntry = React.forwardRef<
             />
           </div>
           <div className="tug-prompt-entry-toolbar">
+            {/* Z4A — route choice-group, fixed at the leading edge. */}
             <TugChoiceGroup
               items={[...ROUTE_ITEMS]}
               value={route}
@@ -1382,14 +1350,19 @@ export const TugPromptEntry = React.forwardRef<
               size="xs"
               aria-label="Command route"
             />
-            {footerContent !== undefined && (
-              <div
-                className="tug-prompt-entry-footer-content"
-                data-slot="tug-prompt-entry-footer-content"
-              >
-                {footerContent}
-              </div>
-            )}
+            {/*
+              Z4B floats centred between Z4A and Z5 via two equal flex
+              spacers — the free width splits evenly, so Z4B's centre
+              lands at the midpoint of the Z4A–Z5 gap ([D05]).
+            */}
+            <div className="tug-prompt-entry-toolbar-spacer" aria-hidden="true" />
+            <div
+              className="tug-prompt-entry-indicators"
+              data-slot="tug-prompt-entry-indicators"
+            >
+              {indicatorsContent}
+            </div>
+            <div className="tug-prompt-entry-toolbar-spacer" aria-hidden="true" />
             {/*
               Z5 `+` queue button — mounted alongside the primary Stop
               button while a turn runs (mode `stop`). CSS-gated on the

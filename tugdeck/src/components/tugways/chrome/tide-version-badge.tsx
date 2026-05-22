@@ -34,8 +34,11 @@
  * that turn commits — the badge is a session-level summary, not a live
  * per-streaming-event marker.
  *
- * Renders nothing until the session reports a version (`system_metadata`
- * has not arrived yet) — there is no version to show.
+ * The badge always shows a version: the live `system_metadata` version
+ * when the session has reported one, otherwise the most recent version
+ * seen in any prior session (persisted to tugbank), or `?` when none has
+ * ever been seen. Each live version is persisted as it arrives, so the
+ * next session has a fallback before its own `system_metadata` lands.
  *
  * Laws:
  *  - [L02] external state enters through `useSyncExternalStore` — the
@@ -74,8 +77,38 @@ import {
 } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import { useTugbankValue } from "@/lib/use-tugbank-value";
+import type { TaggedValue } from "@/lib/tugbank-client";
 
 import { TideCautionBadge } from "./tide-caution-badge";
+
+// ── Last-known version persistence ─────────────────────────────────────────
+
+/**
+ * tugbank slot for the most recent Claude Code version seen in any
+ * session. The badge falls back to it before the live session's
+ * `system_metadata` lands, so a version number shows immediately.
+ */
+const CC_VERSION_DOMAIN = "dev.tugtool.tide";
+const CC_VERSION_KEY = "ccVersion";
+
+/** Read the persisted last-known version from its tugbank tagged value. */
+function parseLastKnownVersion(entry: TaggedValue | undefined): string | null {
+  return entry?.kind === "string" && typeof entry.value === "string"
+    ? entry.value
+    : null;
+}
+
+/** Persist `version` as the last-known Claude Code version (fire-and-forget). */
+function persistLastKnownVersion(version: string): void {
+  fetch(`/api/defaults/${CC_VERSION_DOMAIN}/${CC_VERSION_KEY}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: version }),
+  }).catch((err) => {
+    console.warn("[TideVersionBadge] persist version failed:", err);
+  });
+}
 
 export interface TideVersionBadgeProps {
   /**
@@ -111,7 +144,7 @@ export function TideVersionBadge({
   codeSessionStore,
   sessionMetadataStore,
   className,
-}: TideVersionBadgeProps): React.ReactElement | null {
+}: TideVersionBadgeProps): React.ReactElement {
   // Narrowed to `transcript` — the only snapshot field the drift walk
   // reads. The committed transcript array's reference changes once per
   // turn commit, so the badge does not re-render on every streaming
@@ -137,6 +170,15 @@ export function TideVersionBadge({
     ),
   );
 
+  // Last version seen in any prior session — the fallback the badge
+  // shows before the live `system_metadata` version lands. [L02].
+  const lastKnownVersion = useTugbankValue<string | null>(
+    CC_VERSION_DOMAIN,
+    CC_VERSION_KEY,
+    parseLastKnownVersion,
+    null,
+  );
+
   const summary = useMemo(() => {
     const toolCalls = transcript.flatMap((turn) => turn.toolCalls);
     return summarizeDrift({ toolCalls, version });
@@ -148,8 +190,17 @@ export function TideVersionBadge({
     for (const event of summary.events) logDriftEvent(event);
   }, [summary]);
 
-  // No version yet — `system_metadata` has not landed. Nothing to show.
-  if (version === null) return null;
+  // Persist each live version as it arrives so the next session has a
+  // fallback. Skipped when it already matches what's stored.
+  useEffect(() => {
+    if (version !== null && version !== lastKnownVersion) {
+      persistLastKnownVersion(version);
+    }
+  }, [version, lastKnownVersion]);
+
+  // The version shown on the badge face: the live version when the
+  // session has reported one, else the last-known version.
+  const displayVersion = version ?? lastKnownVersion;
 
   const hasDrift = summary.count > 0;
   const cls =
@@ -157,16 +208,17 @@ export function TideVersionBadge({
       ? "tide-version-badge"
       : `tide-version-badge ${className}`;
 
-  // Quiet: just the running version. Caution: the running version,
-  // the validated baseline when it actually differs, and the drift
-  // count.
+  // `?` when no version is known at all; otherwise the display version,
+  // with the validated baseline and drift count appended on drift.
   let face: string;
-  if (!hasDrift) {
-    face = `Claude Code ${version}`;
-  } else if (version !== VALIDATED_CC_VERSION) {
+  if (displayVersion === null) {
+    face = "Claude Code ?";
+  } else if (!hasDrift) {
+    face = `Claude Code ${displayVersion}`;
+  } else if (version !== null && version !== VALIDATED_CC_VERSION) {
     face = `Claude Code ${version} · validated ${VALIDATED_CC_VERSION} · ${eventCountLabel(summary.count)}`;
   } else {
-    face = `Claude Code ${version} · ${eventCountLabel(summary.count)}`;
+    face = `Claude Code ${displayVersion} · ${eventCountLabel(summary.count)}`;
   }
 
   return (
@@ -193,7 +245,9 @@ export function TideVersionBadge({
           <div className="tide-version-badge-versions">
             <div className="tide-version-badge-version-row">
               <span className="tide-version-badge-version-label">running</span>
-              <span className="tide-version-badge-version-value">{version}</span>
+              <span className="tide-version-badge-version-value">
+                {version ?? "—"}
+              </span>
             </div>
             <div className="tide-version-badge-version-row">
               <span className="tide-version-badge-version-label">

@@ -46,6 +46,7 @@ import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugInput } from "../tug-input";
 import { TugPushButton } from "../tug-push-button";
+import { Maximize2, Minimize2 } from "lucide-react";
 import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,
@@ -2369,16 +2370,14 @@ export function TideCardBody({
     statusBarContent ?? experimentSlots.statusBarContent;
   const effectiveRenderTurnTrailing =
     renderTurnTrailing ?? experimentSlots.renderTurnTrailing;
-  // Z4 — prompt-entry footer. No production occupant: the lifecycle
-  // phase is already surfaced by the Z2 status row's STATE cell, so a
-  // footer phase line would only duplicate it. An explicit
-  // `footerContent` prop (tests / gallery) or a dev placement-
-  // experiment Z4 assignment can still fill the slot.
+  // Z4B — prompt-entry indicator slot. Step 6 fills it with the badge
+  // cluster; until then an explicit `footerContent` prop (tests /
+  // gallery) or a dev placement-experiment Z4B assignment fills it.
   const effectiveFooterContent =
-    footerContent ?? experimentSlots.promptFooterContent;
-  // Z3 — prompt-entry status row. The project-path badge is the
-  // current default occupant; the experiment harness overrides it
-  // when the mapping assigns a datum to Z3.
+    footerContent ?? experimentSlots.promptIndicatorsContent;
+  // Project badge — the leading occupant of the Z4B indicator cluster.
+  // The project-path badge is the default; the placement-experiment
+  // harness overrides it when its mapping assigns a datum to Z3.
   const effectivePromptStatusContent =
     experimentSlots.promptStatusContent ?? projectStatusContent;
 
@@ -2459,12 +2458,13 @@ export function TideCardBody({
               data-slot="tide-card-status-bar"
             >
               {/*
-                Z2 status content flanked by a sash grip at each end.
-                The grips resize the split-pane sash directly below —
-                the status bar would otherwise mask the sash's thin
-                hit line. Rendered only when Z2 has content: an empty
-                slot leaves the wrapper `:empty`, which collapses the
-                whole strip (CSS) and restores the bare-sash layout.
+                Z2 status content with a sash grip on the leading end
+                and the maximize toggle on the trailing end. The grip
+                resizes the split-pane sash directly below — the status
+                bar would otherwise mask the sash's thin hit line.
+                Rendered only when Z2 has content: an empty slot leaves
+                the wrapper `:empty`, which collapses the whole strip
+                (CSS) and restores the bare-sash layout.
               */}
               {effectiveStatusBarContent != null && (
                 <>
@@ -2476,10 +2476,25 @@ export function TideCardBody({
                   <div className="tide-card-status-bar-main">
                     {effectiveStatusBarContent}
                   </div>
-                  <TideCardSashGrip
-                    entryPanelRef={entryPanelRef}
-                    side="end"
-                    disabled={maximized}
+                  {/*
+                    Maximize toggle — Z2's trailing control, in the
+                    place the trailing sash grip used to hold. The sash
+                    stays draggable from the leading grip.
+                  */}
+                  <TugPushButton
+                    className="tide-card-maximize-toggle"
+                    subtype="icon"
+                    size="xs"
+                    emphasis={maximized ? "filled" : "ghost"}
+                    role={maximized ? "accent" : "action"}
+                    aria-label={maximized ? "Restore size" : "Maximize"}
+                    aria-pressed={maximized}
+                    icon={
+                      maximized
+                        ? <Minimize2 strokeWidth={2} aria-hidden="true" />
+                        : <Maximize2 strokeWidth={2} aria-hidden="true" />
+                    }
+                    onClick={() => setMaximized(!maximized)}
                   />
                 </>
               )}
@@ -2514,14 +2529,16 @@ export function TideCardBody({
                 completionProviders={completionProviders}
                 onBeforeSubmit={handleBeforeSubmit}
                 onAfterSubmit={handleAfterSubmit}
-                statusContent={effectivePromptStatusContent}
-                cautionContent={
-                  <TideVersionBadge
-                    codeSessionStore={codeSessionStore}
-                    sessionMetadataStore={sessionMetadataStore}
-                  />
+                indicatorsContent={
+                  <>
+                    {effectivePromptStatusContent}
+                    <TideVersionBadge
+                      codeSessionStore={codeSessionStore}
+                      sessionMetadataStore={sessionMetadataStore}
+                    />
+                    {effectiveFooterContent}
+                  </>
                 }
-                footerContent={effectiveFooterContent}
                 lineWrap={editorSettings.lineWrap}
                 lineNumbers={editorSettings.lineNumbers}
                 highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
