@@ -5559,7 +5559,7 @@ Entry points into the archived turns plan:
 **Checkpoint:**
 - [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 2472/2472, 47 new tests across the three new files.
 - [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual: prompt `> render the quadratic formula` → expect typeset output (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
+- [x] Manual: prompt `> render the quadratic formula` → expect typeset output (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
 
 ---
 
@@ -5610,7 +5610,7 @@ Entry points into the archived turns plan:
 **Checkpoint:**
 - [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 2508/2508, 36 new tests across the three new files.
 - [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual: prompt `> draw a mermaid flowchart of the HTTP request lifecycle` → expect rendered diagram (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
+- [x] Manual: prompt `> draw a mermaid flowchart of the HTTP request lifecycle` → expect rendered diagram (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
 
 ---
 
