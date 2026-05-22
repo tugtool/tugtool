@@ -182,7 +182,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 
 **Plan to resolve:** Implement option (c) in [#step-21](#step-21) and adjust based on dogfooding feel.
 
-**Resolution:** OPEN — initial implementation is (c).
+**Resolution:** OPEN — initial implementation is (c), landed in [#step-21](#step-21): the inline `TideCautionBadge` marks the offending event, and the aggregate `TideDriftCaution` chip lives in the Z3 prompt-entry chrome (the Step 20.x `tide-meter-chrome.tsx` the plan named never shipped). Revisit the chrome placement after dogfooding.
 
 #### [Q04] What's the cap on retained lines for very large Bash output? (OPEN) {#q04-terminal-line-cap}
 
@@ -5471,31 +5471,43 @@ Entry points into the archived turns plan:
 
 #### Step 21: Drift detection + caution badge surfacing {#step-21}
 
-**Depends on:** #step-13, [`#step-20-3`](./archive/tide-assistant-turns.md#step-20-3) (the chrome surface where the aggregate caution chip lives — extracted to `tide-assistant-turns.md`)
+**Status:** implemented — three drift detectors + the `summarizeDrift` aggregate + deduped triage logging landed in the dispatch; `TideDriftCaution` chip ships in a new Z3 prompt-entry caution slot; `version` exposed on `SessionMetadataStore`. tsc clean, `bun test` 2389/2389, `audit:tokens lint` zero violations.
+
+**Depends on:** #step-13, [`#step-20-3`](./archive/tide-assistant-turns.md#step-20-3) (per-turn telemetry / card chrome — extracted to `tide-assistant-turns.md`)
 
 **Commit:** `feat(tide-rendering): drift detection — caution badge in card chrome and inline at offending events`
 
 **References:** [D04], [Q03], `tide.md#p15-stream-json-version-gate`, (#chrome)
 
+**Implementation notes.**
+- **Card-chrome surface — Z3, not the Step 20.x chrome.** The plan's `tide-meter-chrome.tsx` never shipped: the Step 20.x turns plan's chrome evolved into `tide-card-telemetry-renderers.tsx` (the `TideTelemetryStatusRow` IBM-1620 instrument). The aggregate chip is `TideDriftCaution` (`chrome/tide-drift-caution.tsx`), placed in **Z3 — the prompt-entry top row** — rather than crammed into the tightly-balanced Z2 status row. Z3 had no slot for a caution affordance, so this step adds a `cautionContent` prop to `TugPromptEntry`: a trailing-edge status-row slot that `:empty`-collapses, so the chip (which renders nothing when there is no drift) leaves no gap.
+- **`unknown_shape` is a top-level shallow check per [D04].** `STRUCTURED_RESULT_SCHEMAS` declares each tool's required *top-level* `structured_result` fields. Only `read` has a load-bearing one (`file: object`); Bash / Edit / Glob / Grep / Agent narrow every structured field defensively and degrade gracefully, so they have no schema and no shape they can fail. `file.content` is deliberately **not** required — an image Read legitimately omits it ([D04]'s "field presence and types at top level, not deep validation" governs over the task bullet's `file`-missing-`content` example). A registered wrapper whose present, non-error structured result fails its schema falls back to `DefaultToolWrapper` (`JsonTreeBlock`) with the `unknown_shape` caution.
+- **`PINNED_CATALOG_VERSION = "2.1.105"`** — the stream-json catalog the renderers are validated against (the [#step-14](#step-14) fixture-replay scope). A live `system_metadata.version` that differs raises `version_drift`; this constant moves in lockstep with the fixture-replay catalog scope ([#step-30](#step-30)).
+- **`version` on `SessionMetadataStore`.** The aggregate chip needs the runtime version to count `version_drift`; `SessionMetadataSnapshot` gained a `version` field (parsed from `system_metadata.version`) — a down-payment on `tide.md#p15-stream-json-version-gate`'s version capture.
+- **Console logging is deduped.** `logDriftEvent` keys each occurrence (`toolUseId:reason` / `version:<v>`) and logs once via `console.warn`; `TideDriftCaution`'s effect drives it, so the pure dispatch routing stays side-effect-free and re-renders never spam.
+- **Inline marker.** `unknown_tool` and `unknown_shape` both route through `DefaultToolWrapper`, so the [#step-13](#step-13) `ToolWrapperChrome` → `TideCautionBadge` wiring paints the inline chip with no wrapper changes. The `version_drift` inline marker is threaded onto the `system_metadata` dispatch props for [#step-29](#step-29)'s `SessionInitBanner` to surface.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` (drift detector logic)
-- Extension to `tide-meter-chrome.tsx` (formerly `tide-cost-chrome.tsx` — renamed in [#step-20-3](./archive/tide-assistant-turns.md#step-20-3)) for aggregate caution chip in card chrome
-- Inline caution at the offending event already lands via the [#step-13](#step-13) DefaultToolWrapper integration
-- Pinned-catalog version constant alongside the dispatch (read from a build-time constant)
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — drift detector logic: `PINNED_CATALOG_VERSION`, `STRUCTURED_RESULT_SCHEMAS` + `checkStructuredShape`, `detectVersionDrift` / `versionDriftCaution`, `detectToolCallDrift`, `summarizeDrift`, `logDriftEvent`.
+- `tugdeck/src/components/tugways/chrome/tide-drift-caution.{tsx,css}` — `TideDriftCaution`, the aggregate caution chip + click-expand report popover (`--tugx-drift-*` slots; rides the shared `--tugx-block-tone-caution-*` surface; composes `TideCautionBadge`).
+- `tugdeck/src/components/tugways/tug-prompt-entry.{tsx,css}` — new `cautionContent` Z3 status-row slot.
+- `tugdeck/src/lib/session-metadata-store.ts` — `version` field on `SessionMetadataSnapshot`.
+- Updated: `tide-card.tsx` mounts `TideDriftCaution` in the prompt-entry `cautionContent` slot.
+- Inline caution at the offending event lands via the [#step-13](#step-13) DefaultToolWrapper integration — no wrapper changes needed.
 
 **Tasks:**
-- [ ] Detect three drift signals: (1) unknown tool name (already wired in step 1), (2) unknown structured_result shape (shallow schema check), (3) `system_metadata.version` ≠ pinned catalog
-- [ ] Aggregate caution counter on card chrome: "drift detected: 3 events" with click-expand listing the offending events
-- [ ] Inline caution chip on each offending event (DefaultToolWrapper already; extend to bespoke wrappers when their structured_result fails the schema check)
-- [ ] Console-log every drift event for triage; include event type, tool_name, version, summary
+- [x] Detect three drift signals: (1) unknown tool name (already wired in step 1), (2) unknown structured_result shape (shallow schema check), (3) `system_metadata.version` ≠ pinned catalog
+- [x] Aggregate caution counter on card chrome: "drift detected: 3 events" with click-expand listing the offending events
+- [x] Inline caution chip on each offending event (DefaultToolWrapper already; extend to bespoke wrappers when their structured_result fails the schema check)
+- [x] Console-log every drift event for triage; include event type, tool_name, version, summary
 
 **Tests:**
-- [ ] Synthetic version-mismatch fixture → both card-chrome chip and inline-event marker
-- [ ] Synthetic unknown-tool fixture → caution chip present
-- [ ] Synthetic shape-mismatch fixture (e.g., `tool_use_structured.file` missing `content`) → caution + JsonTree fallback
+- [x] Synthetic version-mismatch fixture → both card-chrome chip and inline-event marker — `dispatch — system_metadata version drift` (caution on result + threaded onto props) + `summarizeDrift` (version drift counted in the aggregate)
+- [x] Synthetic unknown-tool fixture → caution chip present — `detectToolCallDrift` + `summarizeDrift` unknown-tool cases
+- [x] Synthetic shape-mismatch fixture → caution + JsonTree fallback — `dispatch — shape drift routing` (a registered Read with a bad `structured_result` shape routes to `DefaultToolWrapper` with an `unknown_shape` caution)
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 2389 pass / 0 fail. `bun run audit:tokens lint` — zero violations.
 
 ---
 

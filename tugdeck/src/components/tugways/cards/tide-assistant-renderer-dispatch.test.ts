@@ -20,16 +20,26 @@
  *  - registeredTools() reports the registry's coverage.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach, spyOn } from "bun:test";
 import React from "react";
 
 import {
   KIND_RENDERERS,
+  PINNED_CATALOG_VERSION,
+  _resetDriftLogForTests,
   _resetToolWrapperRegistryForTests,
+  checkStructuredShape,
+  detectToolCallDrift,
+  detectVersionDrift,
   dispatch,
+  dispatchToolCallState,
+  extractMetadataVersion,
+  logDriftEvent,
   registerToolWrapper,
   registeredTools,
   resolveToolWrapper,
+  summarizeDrift,
+  versionDriftCaution,
   type DispatchContext,
   type RenderInput,
 } from "./tide-assistant-renderer-dispatch";
@@ -68,6 +78,7 @@ FakeEditWrapper.displayName = "FakeEditWrapper";
 
 beforeEach(() => {
   _resetToolWrapperRegistryForTests();
+  _resetDriftLogForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -287,5 +298,355 @@ describe("registeredTools", () => {
     const names = registeredTools();
     expect(names).toEqual(["agent"]);
     expect(names).not.toContain("task");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift detection — shallow structured-result shape check
+// ---------------------------------------------------------------------------
+
+describe("checkStructuredShape", () => {
+  it("returns null when every required field is present and well-typed", () => {
+    expect(checkStructuredShape({ file: {} }, { file: "object" })).toBeNull();
+    expect(
+      checkStructuredShape(
+        { file: { content: "x" }, type: "text" },
+        { file: "object" },
+      ),
+    ).toBeNull();
+  });
+
+  it("reports a missing required field", () => {
+    expect(checkStructuredShape({ type: "text" }, { file: "object" })).toBe(
+      "file: missing",
+    );
+  });
+
+  it("reports a wrong-typed field, naming the actual type", () => {
+    expect(checkStructuredShape({ file: "x" }, { file: "object" })).toBe(
+      "file: expected object, got string",
+    );
+    // An array is not an `object` (the schema's "object" excludes arrays).
+    expect(checkStructuredShape({ file: [] }, { file: "object" })).toBe(
+      "file: expected object, got array",
+    );
+    // `null` is reported distinctly from a plain object.
+    expect(checkStructuredShape({ file: null }, { file: "object" })).toBe(
+      "file: expected object, got null",
+    );
+  });
+
+  it("checks the `array` type via Array.isArray", () => {
+    expect(checkStructuredShape({ items: [] }, { items: "array" })).toBeNull();
+    expect(checkStructuredShape({ items: {} }, { items: "array" })).toBe(
+      "items: expected array, got object",
+    );
+  });
+
+  it("returns the first mismatch across a multi-field schema", () => {
+    const schema = { file: "object", type: "string" } as const;
+    expect(checkStructuredShape({ type: "text" }, schema)).toBe("file: missing");
+    expect(checkStructuredShape({ file: {}, type: 42 }, schema)).toBe(
+      "type: expected string, got number",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift detection — version drift
+// ---------------------------------------------------------------------------
+
+describe("extractMetadataVersion", () => {
+  it("pulls a string `version` from a metadata object", () => {
+    expect(extractMetadataVersion({ version: "2.1.105" })).toBe("2.1.105");
+  });
+
+  it("returns null for a non-string version or a non-object payload", () => {
+    expect(extractMetadataVersion({ version: 42 })).toBeNull();
+    expect(extractMetadataVersion({})).toBeNull();
+    expect(extractMetadataVersion(null)).toBeNull();
+    expect(extractMetadataVersion("system_metadata")).toBeNull();
+  });
+});
+
+describe("versionDriftCaution", () => {
+  it("returns null when the version matches the pinned catalog", () => {
+    expect(versionDriftCaution(PINNED_CATALOG_VERSION)).toBeNull();
+  });
+
+  it("returns null when no version has been captured yet", () => {
+    expect(versionDriftCaution(null)).toBeNull();
+  });
+
+  it("flags a divergent version with both versions in the detail", () => {
+    expect(versionDriftCaution("9.9.9")).toEqual({
+      reason: "version_drift",
+      detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}`,
+    });
+  });
+});
+
+describe("detectVersionDrift", () => {
+  it("flags a `system_metadata` payload whose version diverges", () => {
+    expect(detectVersionDrift({ version: "9.9.9" })).toEqual({
+      reason: "version_drift",
+      detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}`,
+    });
+  });
+
+  it("returns null for a matching version or a versionless payload", () => {
+    expect(detectVersionDrift({ version: PINNED_CATALOG_VERSION })).toBeNull();
+    expect(detectVersionDrift({})).toBeNull();
+    expect(detectVersionDrift(null)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift detection — per-tool-call detector
+// ---------------------------------------------------------------------------
+
+describe("detectToolCallDrift", () => {
+  it("flags an unknown tool name", () => {
+    expect(detectToolCallDrift(fakeToolCall("ZzzUnknown"))).toEqual({
+      reason: "unknown_tool",
+      detail: "ZzzUnknown",
+    });
+  });
+
+  it("does not flag an audit-confirmed default-routed tool", () => {
+    expect(detectToolCallDrift(fakeToolCall("TaskUpdate"))).toBeNull();
+  });
+
+  it("does not flag a registered wrapper with no shape schema", () => {
+    registerToolWrapper("edit", FakeEditWrapper);
+    expect(detectToolCallDrift(fakeToolCall("Edit"))).toBeNull();
+  });
+
+  it("does not flag a registered Read with a well-shaped structured result", () => {
+    registerToolWrapper("read", FakeEditWrapper);
+    expect(
+      detectToolCallDrift(
+        fakeToolCall("Read", { structuredResult: { file: { content: "x" } } }),
+      ),
+    ).toBeNull();
+  });
+
+  it("flags a registered Read whose structured result fails the shape schema", () => {
+    registerToolWrapper("read", FakeEditWrapper);
+    expect(
+      detectToolCallDrift(
+        fakeToolCall("Read", { structuredResult: { type: "text" } }),
+      ),
+    ).toEqual({ reason: "unknown_shape", detail: "Read: file: missing" });
+  });
+
+  it("does not shape-check an absent (null) structured result — that is the streaming window", () => {
+    registerToolWrapper("read", FakeEditWrapper);
+    expect(
+      detectToolCallDrift(fakeToolCall("Read", { structuredResult: null })),
+    ).toBeNull();
+  });
+
+  it("does not shape-check an errored tool call — an error result is allowed to diverge", () => {
+    registerToolWrapper("read", FakeEditWrapper);
+    expect(
+      detectToolCallDrift(
+        fakeToolCall("Read", {
+          status: "error",
+          structuredResult: { type: "text" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("treats an unregistered Read as unknown_tool, not unknown_shape", () => {
+    // `read` is not in the registry (reset in beforeEach) — a registry
+    // miss is unknown_tool; the shape schema only governs registered tools.
+    expect(
+      detectToolCallDrift(
+        fakeToolCall("Read", { structuredResult: { type: "text" } }),
+      ),
+    ).toEqual({ reason: "unknown_tool", detail: "Read" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift detection — dispatch wiring (shape drift + version drift)
+// ---------------------------------------------------------------------------
+
+describe("dispatch — shape drift routing", () => {
+  it("routes a registered Read with a bad structured shape to DefaultToolWrapper + caution", () => {
+    registerToolWrapper("read", FakeEditWrapper);
+    const input: RenderInput = {
+      kind: "tool_call",
+      toolCall: fakeToolCall("Read", { structuredResult: { file: 42 } }),
+      msgId: "m1",
+    };
+    const result = dispatch(input, fakeContext);
+    expect(result.Component).toBe(DefaultToolWrapper);
+    expect(result.caution).toEqual({
+      reason: "unknown_shape",
+      detail: "Read: file: expected object, got number",
+    });
+    // The caution is threaded onto the props so the chrome paints the
+    // inline `TideCautionBadge`.
+    expect((result.props as { caution?: unknown }).caution).toEqual(
+      result.caution,
+    );
+  });
+
+  it("routes a registered Read with a good structured shape to its bespoke wrapper", () => {
+    registerToolWrapper("read", FakeEditWrapper);
+    const result = dispatchToolCallState(
+      fakeToolCall("Read", { structuredResult: { file: { content: "x" } } }),
+      "m1",
+    );
+    expect(result.Component).toBe(FakeEditWrapper);
+    expect(result.caution).toBeUndefined();
+  });
+});
+
+describe("dispatch — system_metadata version drift", () => {
+  it("raises a version_drift caution for a divergent system_metadata version", () => {
+    const input: RenderInput = {
+      kind: "system_metadata",
+      metadata: { type: "system_metadata", version: "9.9.9" },
+    };
+    const result = dispatch(input, fakeContext);
+    expect(result.Component).toBe(KIND_RENDERERS.system_metadata);
+    expect(result.caution).toEqual({
+      reason: "version_drift",
+      detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}`,
+    });
+    // Threaded onto props so the #step-29 SessionInitBanner can paint
+    // the inline marker.
+    expect((result.props as { caution?: unknown }).caution).toEqual(
+      result.caution,
+    );
+  });
+
+  it("raises no caution when the system_metadata version matches the pinned catalog", () => {
+    const input: RenderInput = {
+      kind: "system_metadata",
+      metadata: { type: "system_metadata", version: PINNED_CATALOG_VERSION },
+    };
+    const result = dispatch(input, fakeContext);
+    expect(result.caution).toBeUndefined();
+    expect((result.props as { caution?: unknown }).caution).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift detection — transcript-wide aggregate
+// ---------------------------------------------------------------------------
+
+describe("summarizeDrift", () => {
+  it("returns a zero summary for a clean transcript", () => {
+    registerToolWrapper("edit", FakeEditWrapper);
+    expect(
+      summarizeDrift({
+        toolCalls: [fakeToolCall("Edit")],
+        version: PINNED_CATALOG_VERSION,
+      }),
+    ).toEqual({ count: 0, events: [] });
+  });
+
+  it("counts tool-call drift and version drift across the session", () => {
+    registerToolWrapper("edit", FakeEditWrapper);
+    registerToolWrapper("read", FakeEditWrapper);
+    const summary = summarizeDrift({
+      toolCalls: [
+        fakeToolCall("ZzzUnknown", { toolUseId: "tu-a" }),
+        fakeToolCall("Edit", { toolUseId: "tu-b" }),
+        fakeToolCall("Read", {
+          toolUseId: "tu-c",
+          structuredResult: { type: "text" },
+        }),
+      ],
+      version: "9.9.9",
+    });
+    expect(summary.count).toBe(3);
+    // Tool drift in transcript order, version drift appended last.
+    expect(summary.events.map((e) => e.caution.reason)).toEqual([
+      "unknown_tool",
+      "unknown_shape",
+      "version_drift",
+    ]);
+    expect(summary.events[0]).toMatchObject({
+      toolName: "ZzzUnknown",
+      toolUseId: "tu-a",
+    });
+    expect(summary.events[2]).toMatchObject({ version: "9.9.9" });
+  });
+
+  it("omits version drift when the version matches or is absent", () => {
+    expect(summarizeDrift({ toolCalls: [], version: null }).count).toBe(0);
+    expect(
+      summarizeDrift({ toolCalls: [], version: PINNED_CATALOG_VERSION }).count,
+    ).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift detection — triage logging
+// ---------------------------------------------------------------------------
+
+describe("logDriftEvent", () => {
+  it("logs a drift event once, with reason / toolName / version / summary", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      logDriftEvent({
+        caution: { reason: "unknown_tool", detail: "ZzzUnknown" },
+        toolName: "ZzzUnknown",
+        toolUseId: "tu-1",
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[1]).toEqual({
+        reason: "unknown_tool",
+        toolName: "ZzzUnknown",
+        version: undefined,
+        summary: "ZzzUnknown",
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("dedupes a repeated drift occurrence — logged once, not on every re-detect", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const event = {
+        caution: { reason: "unknown_shape" as const, detail: "Read: file: missing" },
+        toolName: "Read",
+        toolUseId: "tu-7",
+      };
+      logDriftEvent(event);
+      logDriftEvent(event);
+      logDriftEvent(event);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("logs version drift keyed on the version string", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      logDriftEvent({
+        caution: { reason: "version_drift", detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}` },
+        version: "9.9.9",
+      });
+      logDriftEvent({
+        caution: { reason: "version_drift", detail: `9.9.9 ≠ ${PINNED_CATALOG_VERSION}` },
+        version: "9.9.9",
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[1]).toMatchObject({
+        reason: "version_drift",
+        version: "9.9.9",
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

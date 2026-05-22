@@ -31,6 +31,13 @@ export interface SessionMetadataSnapshot {
   model: string | null;
   permissionMode: string | null;
   cwd: string | null;
+  /**
+   * Claude Code's stream-json format version (`system_metadata.version`,
+   * e.g. `"2.1.105"`). `null` before the metadata event lands. Read by
+   * the Tide card's drift-caution surface to compare against the pinned
+   * catalog version.
+   */
+  version: string | null;
   slashCommands: SlashCommandInfo[];
 }
 
@@ -41,6 +48,7 @@ const EMPTY_SNAPSHOT: SessionMetadataSnapshot = {
   model: null,
   permissionMode: null,
   cwd: null,
+  version: null,
   slashCommands: [],
 };
 
@@ -138,6 +146,7 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
     // key silently returned null for every live payload.
     permissionMode: typeof p.permissionMode === "string" ? p.permissionMode : null,
     cwd: typeof p.cwd === "string" ? p.cwd : null,
+    version: typeof p.version === "string" ? p.version : null,
     slashCommands,
   };
 }

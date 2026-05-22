@@ -1,0 +1,100 @@
+/* @tug-pairings:
+   - --tugx-block-tone-caution-bg / --tugx-block-tone-caution-color
+     (shared caution tone; from tugx-block.css) — the trigger chip
+     sets both, so it is self-documenting.
+   - the popover report's title / detail text set `color` alone and
+     carry a `@tug-renders-on` annotation naming the popover surface.
+   `TideDriftCaution` is the card-chrome aggregate drift chip plus its
+   click-expand report. The chip rides the shared caution tone (so the
+   colour is uniform wherever a caution surface appears); its bespoke
+   geometry lives here under `--tugx-drift-*`.
+*/
+
+/**
+ * tide-drift-caution.css — `TideDriftCaution` chip + report.
+ *
+ * Tuglaw cross-check:
+ *  - [L16] the chip rule sets both `background` and `color`, so it is
+ *    self-documenting — no `@tug-renders-on` needed; the report's
+ *    colour-only text rules each carry one.
+ *  - [L17] `--tugx-drift-*` resolves to `--tug-*` in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="tide-drift-caution"` on the chip.
+ *  - [L20] component-token sovereignty — owns `--tugx-drift-*`;
+ *    consumes the shared `--tugx-block-tone-caution-*` tones and
+ *    composes `TideCautionBadge` (which keeps its own tokens).
+ */
+
+/* ---- Component-tier aliases — drift-chip + report geometry [L17] ---- */
+
+body {
+  --tugx-drift-gap:            var(--tug-space-2xs);
+  --tugx-drift-padding:        var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-drift-radius:         var(--tug-radius-xs);
+  --tugx-drift-size:           var(--tug-font-size-2xs);
+  --tugx-drift-weight:         600;
+  --tugx-drift-report-gap:     var(--tug-space-xs);
+  --tugx-drift-report-padding: var(--tug-space-sm);
+  --tugx-drift-report-size:    var(--tug-font-size-xs);
+}
+
+/* ---- Trigger chip ---- */
+
+/* A `<button>` — the chip is an interactive popover trigger. The
+ * native button chrome is reset (`appearance`, `border`, inherited
+ * font) so only the caution-tone chip surface shows. */
+.tide-drift-caution {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tugx-drift-gap);
+  padding: var(--tugx-drift-padding);
+  border: 0;
+  border-radius: var(--tugx-drift-radius);
+  background: var(--tugx-block-tone-caution-bg);
+  color: var(--tugx-block-tone-caution-color);
+  font-family: inherit;
+  font-size: var(--tugx-drift-size);
+  font-weight: var(--tugx-drift-weight);
+  white-space: nowrap;
+  appearance: none;
+  /* The chip opens the drift report — the pointer cursor signals it. */
+  cursor: pointer;
+}
+
+/* ---- Click-expand report (inside TugPopoverContent) ---- */
+
+.tide-drift-caution-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-drift-report-gap);
+  padding: var(--tugx-drift-report-padding);
+  font-size: var(--tugx-drift-report-size);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-drift-caution-report-title {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: 600;
+}
+
+.tide-drift-caution-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-drift-report-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tide-drift-caution-report-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tide-drift-caution-report-detail {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-variant-numeric: tabular-nums;
+}

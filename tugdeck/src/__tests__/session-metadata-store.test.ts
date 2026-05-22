@@ -62,6 +62,7 @@ function makeMetadataPayload(overrides: Record<string, unknown> = {}): Record<st
     // Wire emits camelCase per `tugcode/src/session.ts:498,517`.
     permissionMode: "default",
     cwd: "/home/user/project",
+    version: "2.1.105",
     slash_commands: [
       { name: "help", description: "Show help", category: "local" },
       { name: "commit", description: "Commit changes", category: "local" },
@@ -87,6 +88,7 @@ describe("SessionMetadataStore initial state", () => {
     expect(snap.model).toBeNull();
     expect(snap.permissionMode).toBeNull();
     expect(snap.cwd).toBeNull();
+    expect(snap.version).toBeNull();
     expect(snap.slashCommands).toEqual([]);
 
     store.dispose();
@@ -109,6 +111,7 @@ describe("SessionMetadataStore payload parsing", () => {
     expect(snap.model).toBe("claude-3-opus");
     expect(snap.permissionMode).toBe("default");
     expect(snap.cwd).toBe("/home/user/project");
+    expect(snap.version).toBe("2.1.105");
 
     // slash_commands + skills merged
     expect(snap.slashCommands).toHaveLength(3);
@@ -116,6 +119,19 @@ describe("SessionMetadataStore payload parsing", () => {
     expect(snap.slashCommands[0].category).toBe("local");
     expect(snap.slashCommands[2].name).toBe("summarize");
     expect(snap.slashCommands[2].category).toBe("skill");
+
+    store.dispose();
+  });
+
+  test("version is null when the payload carries no string version", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, makeMetadataPayload({ version: 42 }));
+    expect(store.getSnapshot().version).toBeNull();
+
+    feedStore.emit(FEED_ID, makeMetadataPayload({ version: undefined }));
+    expect(store.getSnapshot().version).toBeNull();
 
     store.dispose();
   });

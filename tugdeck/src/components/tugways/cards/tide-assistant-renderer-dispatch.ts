@@ -33,11 +33,27 @@
  *
  * # Drift detection (caution flags)
  *
- * Three drift signals are surfaced as `caution`:
- *  - `unknown_tool` — `tool_call` with a name not in the registry.
- *  - `unknown_shape` — placeholder; full shape validation lands later.
- *  - `version_drift` — placeholder; full version-gate wiring lands
- *    alongside the drift detection step.
+ * Three drift signals are detected and surfaced as a `caution` —
+ * inline at the offending event (the tool-wrapper chrome paints a
+ * `TideCautionBadge` from the threaded `caution` prop) and, in
+ * aggregate, on the card chrome (`TideDriftCaution` counts
+ * `summarizeDrift`'s events):
+ *
+ *  - `unknown_tool` — a `tool_call` whose name is not in the registry
+ *    and not an audit-confirmed default route.
+ *  - `unknown_shape` — a registered wrapper whose present
+ *    `structured_result` fails its shallow top-level shape schema
+ *    (`STRUCTURED_RESULT_SCHEMAS` / `checkStructuredShape`). The call
+ *    falls back to `DefaultToolWrapper` — `JsonTreeBlock` over the raw
+ *    payload — per [D04].
+ *  - `version_drift` — a `system_metadata` event whose `version`
+ *    diverges from `PINNED_CATALOG_VERSION`, the stream-json catalog
+ *    version the renderers are validated against.
+ *
+ * `detectToolCallDrift` and `detectVersionDrift` are the per-event
+ * detectors; `summarizeDrift` walks a whole transcript with them to
+ * produce the card-chrome aggregate. Every distinct drift event is
+ * logged once via `logDriftEvent` for triage.
  *
  * The unknown-tool flag is suppressed when the name resolves through
  * an alias OR when the name is in the audit-confirmed default-routed
@@ -296,6 +312,294 @@ export function registeredTools(): ReadonlyArray<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Drift detection — pinned catalog version, structured-result schemas,
+// per-event detectors, the transcript-wide aggregate, and triage logging.
+// ---------------------------------------------------------------------------
+
+/**
+ * The stream-json catalog version the Tide renderers are validated
+ * against — the version the fixture-replay test (#step-14) drives the
+ * dispatch through. A live `system_metadata.version` that differs is
+ * `version_drift`: the running Claude Code is a version the renderers
+ * were not exercised against, so event shapes may have diverged. This
+ * is the render-time complement to `tide.md#p15-stream-json-version-gate`'s
+ * server-side divergence telemetry.
+ *
+ * Build-time constant: bump it in lockstep with the fixture-replay
+ * catalog scope — when the replay test is extended to a newer `v<x>/`
+ * catalog (#step-30), this constant moves with it. `system_metadata`
+ * emits the bare version (`"2.1.105"`), so the constant carries no
+ * `v` prefix.
+ */
+export const PINNED_CATALOG_VERSION = "2.1.105";
+
+/**
+ * Expected runtime type for a required top-level field in a tool's
+ * `structured_result`. `"array"` is checked via `Array.isArray`; the
+ * rest map onto `typeof`. `"object"` excludes arrays and `null`.
+ */
+export type StructuredFieldType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "object"
+  | "array";
+
+/**
+ * A tool's structured-result shape contract — the load-bearing
+ * top-level fields a bespoke wrapper needs present and correctly
+ * typed to render its rich body. Shallow by decision ([D04]): only
+ * top-level field presence + type, never deep validation. A tool
+ * whose every structured field is optional (Bash / Edit / Glob /
+ * Grep / Agent all narrow defensively and degrade gracefully) has no
+ * entry — there is no shape it can meaningfully *fail*.
+ */
+export type StructuredResultSchema = Readonly<
+  Record<string, StructuredFieldType>
+>;
+
+/**
+ * Per-tool structured-result schemas, keyed by canonical (lowercased)
+ * tool name. Only `read` has a load-bearing required field: its
+ * `FileBlock` body needs `structured_result.file` to be an object
+ * (the file payload). `file.content` is deliberately NOT required —
+ * an image Read legitimately omits it (`type` distinguishes), so
+ * requiring it would false-positive once image reads ship. The check
+ * stays at the top level per [D04]'s "field presence and types at
+ * top level, not deep validation."
+ */
+const STRUCTURED_RESULT_SCHEMAS: ReadonlyMap<string, StructuredResultSchema> =
+  new Map([["read", { file: "object" }]]);
+
+/**
+ * Shallow shape check ([D04]). Returns a human-readable mismatch
+ * detail when `value` (a present `structured_result`) fails `schema`
+ * — a missing required field, or one of the wrong type — and `null`
+ * when every required field is present and correctly typed.
+ *
+ * Only the top-level fields named in `schema` are inspected; extra
+ * fields and nested shapes are not validated. Callers gate on the
+ * `structured_result` being a present object before calling — an
+ * absent / `null` result is the streaming or no-structured-event
+ * case the wrapper handles with its placeholder, not drift.
+ */
+export function checkStructuredShape(
+  value: Record<string, unknown>,
+  schema: StructuredResultSchema,
+): string | null {
+  for (const [field, expected] of Object.entries(schema)) {
+    const actual = value[field];
+    if (actual === undefined) {
+      return `${field}: missing`;
+    }
+    const ok =
+      expected === "array"
+        ? Array.isArray(actual)
+        : expected === "object"
+          ? actual !== null &&
+            typeof actual === "object" &&
+            !Array.isArray(actual)
+          : typeof actual === expected;
+    if (!ok) {
+      const got = Array.isArray(actual)
+        ? "array"
+        : actual === null
+          ? "null"
+          : typeof actual;
+      return `${field}: expected ${expected}, got ${got}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Pull `system_metadata.version` from a metadata payload. Returns the
+ * version string, or `null` when the payload is not an object or
+ * carries no string `version`.
+ */
+export function extractMetadataVersion(metadata: unknown): string | null {
+  if (metadata === null || typeof metadata !== "object") return null;
+  const version = (metadata as Record<string, unknown>).version;
+  return typeof version === "string" ? version : null;
+}
+
+/**
+ * `version_drift` detector over a bare version string — compares it
+ * against `PINNED_CATALOG_VERSION`. Returns a `CautionFlag` when they
+ * differ, `null` when they match or `version` is `null` (a session
+ * with no captured version yet cannot be judged drifted).
+ */
+export function versionDriftCaution(version: string | null): CautionFlag | null {
+  if (version === null || version === PINNED_CATALOG_VERSION) return null;
+  return {
+    reason: "version_drift",
+    detail: `${version} ≠ ${PINNED_CATALOG_VERSION}`,
+  };
+}
+
+/**
+ * `version_drift` detector over a raw `system_metadata` payload —
+ * extracts `version` and defers to `versionDriftCaution`. Consumed by
+ * the `dispatch` `system_metadata` branch.
+ */
+export function detectVersionDrift(metadata: unknown): CautionFlag | null {
+  return versionDriftCaution(extractMetadataVersion(metadata));
+}
+
+/**
+ * Per-tool-call drift detector — the single source of truth for
+ * tool-call drift. Returns a `CautionFlag` when the call is drifted,
+ * `null` otherwise. Pure over the static registry.
+ *
+ *  - `unknown_tool` — the name resolves to no registered wrapper and
+ *    is not an audit-confirmed default route.
+ *  - `unknown_shape` — a registered (or audit-confirmed) tool with a
+ *    shape schema whose present `structured_result` fails the shallow
+ *    top-level check. Skipped for errored calls (an error result
+ *    legitimately carries no / a divergent structured payload) and
+ *    for absent results (streaming — the wrapper's placeholder owns
+ *    that window, not drift).
+ *
+ * Consumed both by `dispatchToolCallState` (which routes a drifted
+ * call to `DefaultToolWrapper`) and by `summarizeDrift` (the
+ * card-chrome aggregate counter).
+ */
+export function detectToolCallDrift(
+  toolCall: ToolCallState,
+): CautionFlag | null {
+  const lower = toolCall.toolName.toLowerCase();
+  const canonical = TOOL_ALIASES.get(lower) ?? lower;
+
+  if (
+    !TOOL_WRAPPER_REGISTRY.has(canonical) &&
+    !AUDIT_CONFIRMED_DEFAULT_TOOLS.has(canonical)
+  ) {
+    return { reason: "unknown_tool", detail: toolCall.toolName };
+  }
+
+  if (toolCall.status !== "error") {
+    const schema = STRUCTURED_RESULT_SCHEMAS.get(canonical);
+    const result = toolCall.structuredResult;
+    if (schema !== undefined && result !== null && typeof result === "object") {
+      const mismatch = checkStructuredShape(
+        result as Record<string, unknown>,
+        schema,
+      );
+      if (mismatch !== null) {
+        return {
+          reason: "unknown_shape",
+          detail: `${toolCall.toolName}: ${mismatch}`,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * A single drift occurrence — the unit `logDriftEvent` logs for
+ * triage and `TideDriftCaution` lists in its click-expand popover.
+ */
+export interface DriftEvent {
+  /** The drift caution — reason + human-readable detail. */
+  caution: CautionFlag;
+  /** Offending tool name, when the drift is a tool call. */
+  toolName?: string;
+  /** Offending `tool_use` id — stable per occurrence — for tool drift. */
+  toolUseId?: string;
+  /** Drifted runtime version, when the drift is `version_drift`. */
+  version?: string;
+}
+
+/**
+ * The transcript-wide drift aggregate — `count` is the card-chrome
+ * "drift detected: N events" figure; `events` backs the click-expand
+ * list.
+ */
+export interface DriftSummary {
+  count: number;
+  events: ReadonlyArray<DriftEvent>;
+}
+
+/**
+ * Walk a session's tool calls plus its runtime version and collect
+ * every drift event — the aggregate the card-chrome caution chip
+ * (`TideDriftCaution`) surfaces. Pure over the static registry.
+ *
+ * `toolCalls` is the flat per-session tool-call list (every committed
+ * turn's `toolCalls` concatenated, in transcript order); `version` is
+ * the live `system_metadata.version` (`null` before the metadata
+ * event lands). Version drift, when present, is appended last.
+ */
+export function summarizeDrift(args: {
+  toolCalls: ReadonlyArray<ToolCallState>;
+  version: string | null;
+}): DriftSummary {
+  const events: DriftEvent[] = [];
+  for (const toolCall of args.toolCalls) {
+    const caution = detectToolCallDrift(toolCall);
+    if (caution !== null) {
+      events.push({
+        caution,
+        toolName: toolCall.toolName,
+        toolUseId: toolCall.toolUseId,
+      });
+    }
+  }
+  const versionCaution = versionDriftCaution(args.version);
+  if (versionCaution !== null) {
+    events.push({
+      caution: versionCaution,
+      version: args.version ?? undefined,
+    });
+  }
+  return { count: events.length, events };
+}
+
+/**
+ * Drift keys already logged this session. Dedupes the console-log so
+ * a drift event is reported once for triage rather than on every
+ * re-render that re-detects it (drift detection is pure and re-runs
+ * freely). Drift is rare, so this set stays small.
+ */
+const loggedDriftKeys = new Set<string>();
+
+/**
+ * Test-only: clear the drift-log dedup set so each test starts from a
+ * known state. Production code never calls this.
+ */
+export function _resetDriftLogForTests(): void {
+  loggedDriftKeys.clear();
+}
+
+/** Stable per-occurrence dedup key for a drift event. */
+function driftLogKey(event: DriftEvent): string {
+  if (event.caution.reason === "version_drift") {
+    return `version:${event.version ?? event.caution.detail ?? ""}`;
+  }
+  return `${event.toolUseId ?? ""}:${event.caution.reason}`;
+}
+
+/**
+ * Log a drift event to the console for triage — once per distinct
+ * occurrence. Emits `console.warn` with the reason, tool name,
+ * version, and the caution-detail summary: the breadcrumb a user
+ * needs to report a stream-json shape divergence. Re-calling with an
+ * already-logged event is a no-op.
+ */
+export function logDriftEvent(event: DriftEvent): void {
+  const key = driftLogKey(event);
+  if (loggedDriftKeys.has(key)) return;
+  loggedDriftKeys.add(key);
+  console.warn("[tide drift] stream-json drift detected", {
+    reason: event.caution.reason,
+    toolName: event.toolName,
+    version: event.version,
+    summary: event.caution.detail,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Kind-renderer scaffolds.
 //
 // Each entry in `KIND_RENDERERS` is the renderer for one `RenderInput`
@@ -382,6 +686,20 @@ export function dispatch(
   if (input.kind === "tool_call") {
     return dispatchToolCallState(input.toolCall, input.msgId);
   }
+  if (input.kind === "system_metadata") {
+    // Version-drift check ([D04]): a `system_metadata.version` that
+    // diverges from the pinned catalog raises a `version_drift`
+    // caution, threaded onto the props so a real `system_metadata`
+    // renderer (the #step-29 SessionInitBanner) can paint the inline
+    // marker, and returned on the result so the card-chrome aggregate
+    // counts it.
+    const caution = detectVersionDrift(input.metadata) ?? undefined;
+    return {
+      Component: KIND_RENDERERS.system_metadata,
+      props: { input, context, caution },
+      caution,
+    };
+  }
   // Everything else routes through KIND_RENDERERS. The exhaustive
   // check below makes this branch type-safe — every kind in
   // RenderInput must have a corresponding entry.
@@ -413,8 +731,10 @@ function extractTextOutput(result: unknown): string | undefined {
 
 /**
  * Tool-call dispatch — looks up the tool name in the registry, with
- * alias resolution, and surfaces a caution flag for unknown names
- * that aren't in the audit-confirmed default-routed list.
+ * alias resolution. A call that `detectToolCallDrift` flags (unknown
+ * tool name, or a registered wrapper whose `structured_result` fails
+ * its shallow shape schema) routes to `DefaultToolWrapper` with the
+ * caution threaded onto the props and returned on the result.
  *
  * Exported so the transcript view can route a `ToolCallState` (from
  * `TurnEntry.toolCalls` or the parsed `inflight.tools` snapshot) to a
@@ -465,26 +785,29 @@ export function dispatchToolCallState(
     childToolCallsByParent,
   };
 
+  const caution = detectToolCallDrift(toolCall);
+  if (caution !== null) {
+    // Drift — an unknown tool name, or a registered wrapper whose
+    // `structured_result` failed its shallow shape schema. Either way
+    // the [D04] fallback is `DefaultToolWrapper` (`JsonTreeBlock` over
+    // the raw payload); the caution is threaded onto the props so the
+    // wrapper chrome paints the inline `TideCautionBadge`, and
+    // returned on the result so the card-chrome aggregate counts it.
+    return {
+      Component: DefaultToolWrapper,
+      props: { ...baseProps, caution },
+      caution,
+    };
+  }
+
   if (factory !== undefined) {
-    // Registered wrapper — no caution.
+    // Registered wrapper, shape intact — route to the bespoke wrapper.
     return { Component: factory, props: baseProps };
   }
 
-  if (AUDIT_CONFIRMED_DEFAULT_TOOLS.has(canonical)) {
-    // Known to route through Default by design — no caution.
-    return { Component: DefaultToolWrapper, props: baseProps };
-  }
-
-  // Truly unknown — DefaultToolWrapper plus caution.
-  const caution: CautionFlag = {
-    reason: "unknown_tool",
-    detail: toolCall.toolName,
-  };
-  return {
-    Component: DefaultToolWrapper,
-    props: { ...baseProps, caution },
-    caution,
-  };
+  // Audit-confirmed long-tail tool — known to route through
+  // `DefaultToolWrapper` by design, so no caution.
+  return { Component: DefaultToolWrapper, props: baseProps };
 }
 
 // ---------------------------------------------------------------------------

@@ -457,6 +457,16 @@ export interface TugPromptEntryProps {
    */
   statusContent?: React.ReactNode;
   /**
+   * Optional caution content rendered on the trailing edge of the
+   * status row, between the leading `statusContent` and the tools /
+   * maximize toggles. Intended for a small caution affordance (e.g.
+   * the Tide card's aggregate drift-caution chip). The wrapper slot
+   * collapses to nothing when the content renders empty, so a
+   * conditionally-visible chip leaves no gap when it has nothing to
+   * show.
+   */
+  cautionContent?: React.ReactNode;
+  /**
    * Optional content rendered in the toolbar between the route choice
    * group and the submit button. Sits on its own flex line, content-
    * sized, and stretches to fill the available middle space; the
@@ -584,6 +594,7 @@ export const TugPromptEntry = React.forwardRef<
     onBeforeSubmit,
     onAfterSubmit,
     statusContent,
+    cautionContent,
     footerContent,
     toolsContent,
     maximized,
@@ -1298,6 +1309,7 @@ export const TugPromptEntry = React.forwardRef<
   // Render the status row only when there is something to put in it.
   const hasStatusRow =
     statusContent !== undefined ||
+    cautionContent !== undefined ||
     toolsContent !== undefined ||
     maximized !== undefined;
 
@@ -1346,6 +1358,14 @@ export const TugPromptEntry = React.forwardRef<
             <div className="tug-prompt-entry-status-content">
               {statusContent}
             </div>
+            {cautionContent !== undefined && (
+              <div
+                className="tug-prompt-entry-status-caution"
+                data-slot="tug-prompt-entry-status-caution"
+              >
+                {cautionContent}
+              </div>
+            )}
             {toolsContent !== undefined && (
               <TugPopover
                 open={toolsOpen}
