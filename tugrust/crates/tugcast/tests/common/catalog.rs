@@ -809,8 +809,7 @@ pub const INTERSTITIAL_EVENT_TYPES: &[&str] = &["streaming_usage"];
 /// interleave is agent non-determinism, not protocol shape —
 /// `CodeSessionStore` pairs those events by `tool_use_id`, never by
 /// sequence position.
-pub const TOOL_ACTIVITY_EVENT_TYPES: &[&str] =
-    &["tool_use", "tool_result", "tool_use_structured"];
+pub const TOOL_ACTIVITY_EVENT_TYPES: &[&str] = &["tool_use", "tool_result", "tool_use_structured"];
 
 /// The single token a contiguous tool-activity run reduces to in
 /// [`shape_sequence`].

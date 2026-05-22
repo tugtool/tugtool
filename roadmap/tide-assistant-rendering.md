@@ -5579,6 +5579,7 @@ Entry points into the archived turns plan:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> draw a mermaid flowchart of the HTTP request lifecycle` → expect rendered diagram
 
 ---
 
@@ -5608,6 +5609,7 @@ Entry points into the archived turns plan:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> plan a multi-step refactor of the auth module and track the work in a todo list` → expect a TodoWrite tool block with checklist + counts + progress bar
 
 ---
 
@@ -5635,6 +5637,8 @@ Entry points into the archived turns plan:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> fetch https://anthropic.com and summarize the homepage` → expect a WebFetchToolBlock with favicon + URL header and an embedded markdown summary
+- [ ] Manual: prompt `> search the web for recent React 19 release notes` → expect a WebSearchToolBlock with query header + result count and per-result title/URL/snippet rows
 
 ---
 
@@ -5663,6 +5667,8 @@ Entry points into the archived turns plan:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> create a file at /tmp/hello.txt containing "hello world"` → expect a WriteToolBlock with `Write · /tmp/hello.txt` header and an embedded FileBlock body
+- [ ] Manual: prompt `> in /tmp/sample.ipynb, replace cell 2 with a cell that prints "hi"` → expect a NotebookEditToolBlock with `NotebookEdit · …/sample.ipynb · cell 2` header and an embedded DiffBlock body
 
 ---
 
@@ -5693,6 +5699,7 @@ Entry points into the archived turns plan:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> render this markdown verbatim: ![Mona Lisa](https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Mona_Lisa.jpg/300px-Mona_Lisa.jpg)` → expect ImageBlock with placeholder → loaded image, clickable to fullscreen
 
 ---
 
@@ -5724,6 +5731,7 @@ Entry points into the archived turns plan:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> generate a markdown table comparing the 12 most popular JS bundlers with columns name, type, bundle size, notes` → expect a promoted TableBlock with sortable columns and sticky `<thead>`
 
 ---
 
@@ -5754,6 +5762,8 @@ Entry points into the archived turns plan:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: start a fresh Tide session (`/clear`) then prompt `> hi` → expect SessionInitBanner showing project path, model, permissionMode on the first system_metadata
+- [ ] Manual: prompt `> read the file /this/path/does/not/exist` → expect ErrorBlock (recoverable: retry button; non-recoverable: copy-error button)
 
 ---
 

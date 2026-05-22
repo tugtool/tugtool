@@ -125,9 +125,15 @@ mod tests {
         // The three Spec S01 fields, all JSON strings; `shellPath` is
         // serialized camelCase to match the cross-stack convention.
         assert_eq!(obj.len(), 3);
-        assert_eq!(obj.get("hostname").and_then(|v| v.as_str()), Some("studio.local"));
+        assert_eq!(
+            obj.get("hostname").and_then(|v| v.as_str()),
+            Some("studio.local")
+        );
         assert_eq!(obj.get("shell").and_then(|v| v.as_str()), Some("zsh"));
-        assert_eq!(obj.get("shellPath").and_then(|v| v.as_str()), Some("/bin/zsh"));
+        assert_eq!(
+            obj.get("shellPath").and_then(|v| v.as_str()),
+            Some("/bin/zsh")
+        );
     }
 
     #[test]
