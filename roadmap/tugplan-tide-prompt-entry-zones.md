@@ -471,18 +471,18 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 - `tug-prompt-entry.tsx` — owns one `RouteLifecycle`, provides `RouteLifecycleContext`, reads the route via `useSyncExternalStore`.
 
 **Tasks:**
-- [ ] Construct one `RouteLifecycle` per `TugPromptEntry`; seed with the restored/default route.
-- [ ] Replace the `useState` route: read via `useRoute`; `setRouteState` → `routeLifecycle.setRoute`.
-- [ ] Funnel the choice-group, route-prefix extension, and `SELECT_ROUTE` keybinding through `setRoute`; action handlers read current route via the lifecycle, not a stale closure ([L07]).
-- [ ] Route persistence (save / restore) reads and writes through the lifecycle.
-- [ ] Wrap the entry subtree in `RouteLifecycleContext.Provider`.
+- [x] Construct one `RouteLifecycle` per `TugPromptEntry`; seed with the restored/default route. — `useRef` lazy-init seeded with `DEFAULT_ROUTE`; `onRestore` applies the persisted route via `setRoute`.
+- [x] Replace the `useState` route: read via `useRoute`; `setRouteState` → `routeLifecycle.setRoute`. — the route is read via `useSyncExternalStore(routeLifecycle.subscribe, routeLifecycle.getRoute)` directly off the owned instance ([D02]); `useRoute` (context) is for descendants. The `routeRef` mirror is removed — the stable instance + live `getRoute()` replace it.
+- [x] Funnel the choice-group, route-prefix extension, and `SELECT_ROUTE` keybinding through `setRoute`; action handlers read current route via the lifecycle, not a stale closure ([L07]). — all three call `routeLifecycle.setRoute`; handlers read `routeLifecycle.getRoute()` off the stable instance.
+- [x] Route persistence (save / restore) reads and writes through the lifecycle. — `onSave` reads `getRoute()`; `onRestore` calls `setRoute(restored.route)`.
+- [x] Wrap the entry subtree in `RouteLifecycleContext.Provider`. — `value={routeLifecycle}` (stable, no spurious context re-renders).
 
 **Tests:**
-- [ ] `just app-test` — close → reopen a Tide card preserves the route (Risk R02); each of the three route triggers flips the route.
+- [x] `just app-test` — close → reopen a Tide card preserves the route (Risk R02); each of the three route triggers flips the route. — `tests/app-test/at0085-prompt-entry-route.test.ts` (4 tests, `gallery-prompt-entry` — the same persistence pipeline as Tide): non-default route survives `appReload`; choice-group click, ⇧⌘C keybinding, and route-prefix typing each flip the route.
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `just app-test <prompt-entry route test>`
+- [x] `bun run check` — clean.
+- [x] `just app-test <prompt-entry route test>` — `at0085-prompt-entry-route.test.ts` 4/4 pass.
 
 ---
 

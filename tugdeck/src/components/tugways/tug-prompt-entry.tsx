@@ -9,12 +9,12 @@
  * [D11].
  *
  * Route model — simplified per [D08]:
- *   - One active route at a time, owned by `tug-prompt-entry`'s React
- *     state. Default is `❯` (Prompt).
+ *   - One active route at a time, owned by a per-prompt-entry
+ *     `RouteLifecycle` ([D02]). Default is `❯` (Prompt).
  *   - The segment control is the canonical control: clicks dispatch
- *     SELECT_VALUE → `setRouteState`.
+ *     SELECT_VALUE → `routeLifecycle.setRoute`.
  *   - One-shot prefix detection: typing / pasting `>` `$` `:` (or the
- *     chevron alias) at offset 0 fires `setRouteState(matched)` once.
+ *     chevron alias) at offset 0 fires `routeLifecycle.setRoute(matched)` once.
  *     The character stays in the doc as plain text per [Q05]=a.
  *     Deletion of the leading prefix is NOT a route flip per [Q06]=b.
  *   - Submit-time strip: when `doc[0]` matches the active route's
@@ -90,6 +90,7 @@ import { deckTrace } from "@/deck-trace";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
+import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -679,18 +680,26 @@ export const TugPromptEntry = React.forwardRef<
   // parent cards can predict it for integration tests.
   const routeIndicatorSenderId = `${id}-route-indicator`;
 
-  // [D04] route is React state — TugChoiceGroup is a controlled
-  // component that derives its pill position from `value`. L06
-  // explicitly allows React state for "selected item in a list" — the
-  // route is data (user-readable semantics), not appearance.
-  const [route, setRouteState] = React.useState<string>(DEFAULT_ROUTE);
+  // [D02] The route is owned by a per-prompt-entry RouteLifecycle, not
+  // React state. The instance is constructed once and stays stable for
+  // the component's lifetime ([D01]) — a `useRef` lazy-init is the
+  // canonical stable-instance pattern. Every route trigger (the choice
+  // group, the route-prefix extension, the SELECT_ROUTE keybinding,
+  // and restore) funnels through `routeLifecycle.setRoute`.
+  const routeLifecycleRef = useRef<RouteLifecycle | null>(null);
+  if (routeLifecycleRef.current === null) {
+    routeLifecycleRef.current = new RouteLifecycle(DEFAULT_ROUTE);
+  }
+  const routeLifecycle = routeLifecycleRef.current;
 
-  // Live route ref so submit / extension closures read the current
-  // value without a stale closure capture [L07].
-  const routeRef = useRef(route);
-  useLayoutEffect(() => {
-    routeRef.current = route;
-  }, [route]);
+  // [L02] The route is external state once the Z4B indicator reads it,
+  // so it enters React through `useSyncExternalStore` only. Submit and
+  // extension closures read the live value via `routeLifecycle.getRoute()`
+  // off the stable instance — no mirror ref, no stale capture ([L07]).
+  const route = useSyncExternalStore(
+    routeLifecycle.subscribe,
+    routeLifecycle.getRoute,
+  );
 
   // Per-route history providers. One provider per route — each holds
   // its own cursor + in-memory "return to draft" cache, so the user's
@@ -770,8 +779,8 @@ export const TugPromptEntry = React.forwardRef<
   }, []);
 
   // Substrate-level extensions installed at mount time. The
-  // route-prefix detector reads `routeRef.current` at fire time per
-  // [L07], so the same extension instance stays correct as the
+  // route-prefix detector reads `routeLifecycle.getRoute()` at fire
+  // time per [L07], so the same extension instance stays correct as the
   // route changes. The data-empty sync writes through a ref-tracked
   // root element — also stable across renders. Extension array is
   // captured by the substrate at mount; subsequent identity changes
@@ -781,12 +790,10 @@ export const TugPromptEntry = React.forwardRef<
     () => [
       createRoutePrefixExtension({
         aliasMap: ROUTE_PREFIX_ALIAS,
-        getCurrentRoute: () => routeRef.current,
-        setRoute: (next: string) => {
-          if (next !== routeRef.current) {
-            setRouteState(next);
-          }
-        },
+        getCurrentRoute: () => routeLifecycle.getRoute(),
+        // `setRoute` is idempotent on a same-route value, and the
+        // extension already guards that case — no wrapper guard needed.
+        setRoute: (next: string) => routeLifecycle.setRoute(next),
       }),
       // data-empty bridge: keep the entry root's `data-empty`
       // attribute in sync with `view.state.doc.length === 0`.
@@ -865,7 +872,7 @@ export const TugPromptEntry = React.forwardRef<
     if (isEffectivelyEmpty(view)) return;
     const captured = editor.captureState();
     const positionedAtoms: PositionedAtom[] = getAtomsInState(view.state);
-    const currentRoute = routeRef.current || null;
+    const currentRoute = routeLifecycle.getRoute() || null;
     // Strip the leading prefix character iff it maps to the active
     // route per [Q09]=a. Atoms ride along verbatim — they sit in the
     // doc as `￼` placeholders and the strip never touches one
@@ -942,9 +949,9 @@ export const TugPromptEntry = React.forwardRef<
   }, [snap.canSubmit, performSubmit]);
 
   // [L07] Register the responder node. SELECT_VALUE narrows on
-  // sender + value shape and updates the route state directly —
+  // sender + value shape and updates the route directly —
   // there's no per-route draft to swap into the editor anymore
-  // ([Q07]=a), so the handler is a single setRouteState +
+  // ([Q07]=a), so the handler is a single routeLifecycle.setRoute +
   // refocus-the-editor.
   //
   // CANCEL_DIALOG is conditionally registered — only when a turn is in
@@ -993,10 +1000,10 @@ export const TugPromptEntry = React.forwardRef<
       [TUG_ACTIONS.SELECT_VALUE]: (event: ActionEvent) => {
         if (event.sender !== routeIndicatorSenderId) return;
         if (typeof event.value !== "string") return;
-        const prevRoute = routeRef.current;
+        const prevRoute = routeLifecycle.getRoute();
         const nextRoute = event.value;
         if (prevRoute === nextRoute) return;
-        setRouteState(nextRoute);
+        routeLifecycle.setRoute(nextRoute);
         // Move keyboard focus back to the editor so the user can
         // start typing immediately — the segment button had focus
         // from the click; this hands it back.
@@ -1012,8 +1019,8 @@ export const TugPromptEntry = React.forwardRef<
         if (typeof event.value !== "string") return;
         const nextRoute = event.value;
         if (!Object.prototype.hasOwnProperty.call(RETURN_ACTION_BY_ROUTE, nextRoute)) return;
-        if (routeRef.current === nextRoute) return;
-        setRouteState(nextRoute);
+        // `setRoute` is a no-op when `nextRoute` equals the current route.
+        routeLifecycle.setRoute(nextRoute);
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         // The primary Z5 button dispatches SUBMIT in every mode. When
@@ -1203,14 +1210,14 @@ export const TugPromptEntry = React.forwardRef<
         };
       }
       return {
-        route: routeRef.current,
+        route: routeLifecycle.getRoute(),
         draft,
         maximized: maximizedRef.current ?? false,
       };
     },
     onRestore: (raw, { isActive }) => {
       const restored = coerceRestorePayload(raw);
-      setRouteState(restored.route);
+      routeLifecycle.setRoute(restored.route);
       const editor = textEditorRef.current;
       if (editor !== null) {
         if (restored.draft !== null) {
@@ -1340,177 +1347,179 @@ export const TugPromptEntry = React.forwardRef<
   });
 
   return (
-    <ResponderScope>
-      <div
-        ref={composedRootRef}
-        data-slot="tug-prompt-entry"
-        data-phase={snap.phase}
-        data-can-interrupt={String(snap.canInterrupt)}
-        data-can-submit={String(snap.canSubmit)}
-        data-errored={snap.lastError ? "" : undefined}
-        data-pending-approval={snap.pendingApproval ? "" : undefined}
-        data-pending-question={snap.pendingQuestion ? "" : undefined}
-        data-empty="true"
-        className={cn("tug-prompt-entry", className)}
-      >
-        {hasStatusRow && (
-          <div className="tug-prompt-entry-status">
-            <div className="tug-prompt-entry-status-content">
-              {statusContent}
-            </div>
-            {cautionContent !== undefined && (
+    <RouteLifecycleContext.Provider value={routeLifecycle}>
+      <ResponderScope>
+        <div
+          ref={composedRootRef}
+          data-slot="tug-prompt-entry"
+          data-phase={snap.phase}
+          data-can-interrupt={String(snap.canInterrupt)}
+          data-can-submit={String(snap.canSubmit)}
+          data-errored={snap.lastError ? "" : undefined}
+          data-pending-approval={snap.pendingApproval ? "" : undefined}
+          data-pending-question={snap.pendingQuestion ? "" : undefined}
+          data-empty="true"
+          className={cn("tug-prompt-entry", className)}
+        >
+          {hasStatusRow && (
+            <div className="tug-prompt-entry-status">
+              <div className="tug-prompt-entry-status-content">
+                {statusContent}
+              </div>
+              {cautionContent !== undefined && (
+                <div
+                  className="tug-prompt-entry-status-caution"
+                  data-slot="tug-prompt-entry-status-caution"
+                >
+                  {cautionContent}
+                </div>
+              )}
+              {/*
+                Growing spacer — the single flex-grow element of the
+                status row. It splits the row into a leading group
+                (`statusContent` + `cautionContent`, content-sized, in
+                normal inline flow) and a trailing group (the tools /
+                maximize toggles, pinned to the trailing edge),
+                independent of which optional slots are populated.
+              */}
               <div
-                className="tug-prompt-entry-status-caution"
-                data-slot="tug-prompt-entry-status-caution"
+                className="tug-prompt-entry-status-spacer"
+                aria-hidden="true"
+              />
+              {toolsContent !== undefined && (
+                <TugPopover
+                  open={toolsOpen}
+                  onOpenChange={setToolsOpen}
+                  dismissOnChainActivity={false}
+                >
+                  <TugPopoverTrigger>
+                    <TugPushButton
+                      className="tug-prompt-entry-tools-toggle"
+                      subtype="icon"
+                      size="xs"
+                      emphasis={toolsOpen ? "filled" : "ghost"}
+                      role={toolsOpen ? "accent" : "action"}
+                      aria-label="Toggle tools"
+                      icon={<Settings size={12} strokeWidth={2} aria-hidden="true" />}
+                    />
+                  </TugPopoverTrigger>
+                  <TugPopoverContent
+                    side="bottom"
+                    align="end"
+                    className="tug-prompt-entry-tools-popover"
+                  >
+                    {toolsContent}
+                  </TugPopoverContent>
+                </TugPopover>
+              )}
+              {maximized !== undefined && (
+                <TugPushButton
+                  className="tug-prompt-entry-maximize-toggle"
+                  subtype="icon"
+                  size="xs"
+                  emphasis={maximized ? "filled" : "ghost"}
+                  role={maximized ? "accent" : "action"}
+                  aria-label={maximized ? "Restore size" : "Maximize"}
+                  aria-pressed={maximized}
+                  icon={
+                    maximized
+                      ? <Minimize2 strokeWidth={2} aria-hidden="true" />
+                      : <Maximize2 strokeWidth={2} aria-hidden="true" />
+                  }
+                  action={TUG_ACTIONS.TOGGLE_MAXIMIZE}
+                />
+              )}
+            </div>
+          )}
+          <div className="tug-prompt-entry-input-area">
+            <TugTextEditor
+              ref={textEditorRef}
+              borderless
+              maximized
+              placeholder={placeholderByRoute?.[route] ?? ""}
+              completionProviders={completionProviders}
+              dropHandler={dropHandler}
+              historyProvider={currentHistoryProvider}
+              returnAction={
+                returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"
+              }
+              lineWrap={lineWrap}
+              lineNumbers={lineNumbers}
+              highlightActiveLineGutter={highlightActiveLineGutter}
+              onSubmit={performSubmit}
+              extensions={editorExtensions}
+              /* State preservation is owned by TugPromptEntry. Disable
+                 the substrate's registration so only one component
+                 claims the single CardStatePreservationContext slot. */
+              preserveState={false}
+            />
+          </div>
+          <div className="tug-prompt-entry-toolbar">
+            <TugChoiceGroup
+              items={[...ROUTE_ITEMS]}
+              value={route}
+              senderId={routeIndicatorSenderId}
+              size="xs"
+              aria-label="Command route"
+            />
+            {footerContent !== undefined && (
+              <div
+                className="tug-prompt-entry-footer-content"
+                data-slot="tug-prompt-entry-footer-content"
               >
-                {cautionContent}
+                {footerContent}
               </div>
             )}
             {/*
-              Growing spacer — the single flex-grow element of the
-              status row. It splits the row into a leading group
-              (`statusContent` + `cautionContent`, content-sized, in
-              normal inline flow) and a trailing group (the tools /
-              maximize toggles, pinned to the trailing edge),
-              independent of which optional slots are populated.
+              Z5 `+` queue button — mounted alongside the primary Stop
+              button while a turn runs (mode `stop`). CSS-gated on the
+              entry root's `data-empty` attribute: hidden until the
+              editor holds a draft, so a plain submit → wait → submit
+              flow never surfaces it ([L06] / [L22] — no per-keystroke
+              React state). Click queues the draft — the pointer twin of
+              editor Return — via a direct `onClick` on `performSubmit`,
+              never the SUBMIT action, so it does not route through the
+              Stop branch of the SUBMIT handler.
             */}
-            <div
-              className="tug-prompt-entry-status-spacer"
-              aria-hidden="true"
-            />
-            {toolsContent !== undefined && (
-              <TugPopover
-                open={toolsOpen}
-                onOpenChange={setToolsOpen}
-                dismissOnChainActivity={false}
-              >
-                <TugPopoverTrigger>
-                  <TugPushButton
-                    className="tug-prompt-entry-tools-toggle"
-                    subtype="icon"
-                    size="xs"
-                    emphasis={toolsOpen ? "filled" : "ghost"}
-                    role={toolsOpen ? "accent" : "action"}
-                    aria-label="Toggle tools"
-                    icon={<Settings size={12} strokeWidth={2} aria-hidden="true" />}
-                  />
-                </TugPopoverTrigger>
-                <TugPopoverContent
-                  side="bottom"
-                  align="end"
-                  className="tug-prompt-entry-tools-popover"
-                >
-                  {toolsContent}
-                </TugPopoverContent>
-              </TugPopover>
-            )}
-            {maximized !== undefined && (
+            {submitView.dataMode === "stop" && (
               <TugPushButton
-                className="tug-prompt-entry-maximize-toggle"
+                className="tug-prompt-entry-queue-button"
                 subtype="icon"
-                size="xs"
-                emphasis={maximized ? "filled" : "ghost"}
-                role={maximized ? "accent" : "action"}
-                aria-label={maximized ? "Restore size" : "Maximize"}
-                aria-pressed={maximized}
-                icon={
-                  maximized
-                    ? <Minimize2 strokeWidth={2} aria-hidden="true" />
-                    : <Maximize2 strokeWidth={2} aria-hidden="true" />
-                }
-                action={TUG_ACTIONS.TOGGLE_MAXIMIZE}
+                size="lg"
+                emphasis="filled"
+                role="action"
+                onClick={performSubmit}
+                aria-label="Queue prompt"
+                icon={<Plus size={16} strokeWidth={2.5} />}
               />
             )}
-          </div>
-        )}
-        <div className="tug-prompt-entry-input-area">
-          <TugTextEditor
-            ref={textEditorRef}
-            borderless
-            maximized
-            placeholder={placeholderByRoute?.[route] ?? ""}
-            completionProviders={completionProviders}
-            dropHandler={dropHandler}
-            historyProvider={currentHistoryProvider}
-            returnAction={
-              returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"
-            }
-            lineWrap={lineWrap}
-            lineNumbers={lineNumbers}
-            highlightActiveLineGutter={highlightActiveLineGutter}
-            onSubmit={performSubmit}
-            extensions={editorExtensions}
-            /* State preservation is owned by TugPromptEntry. Disable
-               the substrate's registration so only one component
-               claims the single CardStatePreservationContext slot. */
-            preserveState={false}
-          />
-        </div>
-        <div className="tug-prompt-entry-toolbar">
-          <TugChoiceGroup
-            items={[...ROUTE_ITEMS]}
-            value={route}
-            senderId={routeIndicatorSenderId}
-            size="xs"
-            aria-label="Command route"
-          />
-          {footerContent !== undefined && (
-            <div
-              className="tug-prompt-entry-footer-content"
-              data-slot="tug-prompt-entry-footer-content"
-            >
-              {footerContent}
-            </div>
-          )}
-          {/*
-            Z5 `+` queue button — mounted alongside the primary Stop
-            button while a turn runs (mode `stop`). CSS-gated on the
-            entry root's `data-empty` attribute: hidden until the
-            editor holds a draft, so a plain submit → wait → submit
-            flow never surfaces it ([L06] / [L22] — no per-keystroke
-            React state). Click queues the draft — the pointer twin of
-            editor Return — via a direct `onClick` on `performSubmit`,
-            never the SUBMIT action, so it does not route through the
-            Stop branch of the SUBMIT handler.
-          */}
-          {submitView.dataMode === "stop" && (
+            {/*
+              ONE button node across every mode ([L26]) — only
+              `data-mode` / `disabled` / `aria-label` / the icon glyph
+              change. `data-mode` drives the per-mode visual via CSS
+              ([L06]); `submitView` is the pure projection of the
+              lifecycle `submitButtonMode`.
+            */}
             <TugPushButton
-              className="tug-prompt-entry-queue-button"
+              className="tug-prompt-entry-submit-button"
+              data-mode={submitView.dataMode}
+              action={TUG_ACTIONS.SUBMIT}
               subtype="icon"
               size="lg"
               emphasis="filled"
-              role="action"
-              onClick={performSubmit}
-              aria-label="Queue prompt"
-              icon={<Plus size={16} strokeWidth={2.5} />}
+              role={submitView.danger ? "danger" : "action"}
+              disabled={submitView.disabled}
+              aria-label={submitView.ariaLabel}
+              icon={
+                submitView.icon === "stop"
+                  ? <Square size={14} strokeWidth={3} />
+                  : <ArrowUp size={16} strokeWidth={2.5} />
+              }
             />
-          )}
-          {/*
-            ONE button node across every mode ([L26]) — only
-            `data-mode` / `disabled` / `aria-label` / the icon glyph
-            change. `data-mode` drives the per-mode visual via CSS
-            ([L06]); `submitView` is the pure projection of the
-            lifecycle `submitButtonMode`.
-          */}
-          <TugPushButton
-            className="tug-prompt-entry-submit-button"
-            data-mode={submitView.dataMode}
-            action={TUG_ACTIONS.SUBMIT}
-            subtype="icon"
-            size="lg"
-            emphasis="filled"
-            role={submitView.danger ? "danger" : "action"}
-            disabled={submitView.disabled}
-            aria-label={submitView.ariaLabel}
-            icon={
-              submitView.icon === "stop"
-                ? <Square size={14} strokeWidth={3} />
-                : <ArrowUp size={16} strokeWidth={2.5} />
-            }
-          />
+          </div>
         </div>
-      </div>
-    </ResponderScope>
+      </ResponderScope>
+    </RouteLifecycleContext.Provider>
   );
 });
 
