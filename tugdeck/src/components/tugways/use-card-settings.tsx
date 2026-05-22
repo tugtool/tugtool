@@ -1,12 +1,12 @@
 /**
- * useCardMenu — declare a per-card title-bar menu.
+ * useCardSettings — declare a card's settings sheet.
  *
- * Cards call this hook to expose a menu (typically a settings sheet)
- * to the pane chrome's `…` button. The hook:
+ * Cards call this hook to expose a settings sheet to the pane
+ * chrome's `…` button. The hook:
  *
  *   - Owns the underlying TugSheet via {@link useTugSheet}.
- *   - Registers a stable {@link CardMenuController} in the
- *     {@link cardMenuStore} so the pane's title bar can call
+ *   - Registers a stable {@link CardSettingsController} in the
+ *     {@link cardSettingsStore} so the pane's title bar can call
  *     `controller.toggle()` directly on click.
  *   - Writes the open / closed state back to the store as the sheet's
  *     lifecycle progresses, so the pane's button can paint the
@@ -16,7 +16,7 @@
  * has a portal target.
  *
  * Laws compliance:
- *  - [L02] state is exposed via the subscribable `cardMenuStore`,
+ *  - [L02] state is exposed via the subscribable `cardSettingsStore`,
  *    consumed by the pane via `useSyncExternalStore`.
  *  - [L03] register in `useLayoutEffect` so the controller is
  *    available before any user gesture can fire.
@@ -26,20 +26,20 @@
  *    card content via the store, never via prop drills or DOM
  *    queries.
  *
- * @module components/tugways/use-card-menu
+ * @module components/tugways/use-card-settings
  */
 
 import React, { useLayoutEffect, useMemo, useRef } from "react";
 
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import {
-  cardMenuStore,
-  type CardMenuController,
-} from "@/lib/card-menu-store";
+  cardSettingsStore,
+  type CardSettingsController,
+} from "@/lib/card-settings-store";
 
-export interface UseCardMenuOptions {
-  /** Identifies the card in {@link cardMenuStore}. The pane uses the
-   *  active card id to look up this controller. */
+export interface UseCardSettingsOptions {
+  /** Identifies the card in {@link cardSettingsStore}. The pane uses
+   *  the active card id to look up this controller. */
   cardId: string;
   /** Sheet title (passed straight through to {@link useTugSheet}). */
   title: string;
@@ -49,23 +49,26 @@ export interface UseCardMenuOptions {
   onOpenAutoFocus?: (event: Event) => void;
 }
 
-export interface UseCardMenuReturn {
+export interface UseCardSettingsReturn {
   /** Render this once in the card's JSX so the sheet has a portal target. */
   renderSheet: () => React.ReactNode;
   /** The same controller registered in the store. Exposed for the
    *  consumer's own keyboard / chain-action handlers. */
-  controller: CardMenuController;
+  controller: CardSettingsController;
 }
 
-export function useCardMenu(options: UseCardMenuOptions): UseCardMenuReturn {
+export function useCardSettings(
+  options: UseCardSettingsOptions,
+): UseCardSettingsReturn {
   const { showSheet, renderSheet } = useTugSheet();
 
-  // The store ([cardMenuStore](../../lib/card-menu-store.ts)) is the
-  // single source of truth for "is the menu open?" — a structure-zone
-  // value per [L24], shared between this hook (writer) and the pane's
-  // title bar button (reader, via `useSyncExternalStore`). The hook
-  // never tracks open state locally; reads come straight from the
-  // store, writes happen synchronously at each transition.
+  // The store ([cardSettingsStore](../../lib/card-settings-store.ts))
+  // is the single source of truth for "is the settings sheet open?" —
+  // a structure-zone value per [L24], shared between this hook
+  // (writer) and the pane's title bar button (reader, via
+  // `useSyncExternalStore`). The hook never tracks open state
+  // locally; reads come straight from the store, writes happen
+  // synchronously at each transition.
   //
   // The refs below hold *function pointers and live-option captures*,
   // not state — `sheetCloseFnRef` caches the most recent close
@@ -84,14 +87,14 @@ export function useCardMenu(options: UseCardMenuOptions): UseCardMenuReturn {
   // invocation operates on current state. The store registers the
   // controller by reference — the pane button invokes these methods
   // regardless of when the consumer last re-rendered.
-  const controller = useMemo<CardMenuController>(() => {
+  const controller = useMemo<CardSettingsController>(() => {
     const open = (): void => {
       const cardId = optionsRef.current.cardId;
       // Single source of truth: the store. If it says "open", we
       // either ARE open or are in the (synchronous) act of opening.
       // Either way, don't double-mount a second sheet.
-      if (cardMenuStore.isOpen(cardId)) return;
-      cardMenuStore.setOpen(cardId, true);
+      if (cardSettingsStore.isOpen(cardId)) return;
+      cardSettingsStore.setOpen(cardId, true);
       void showSheetRef
         .current({
           title: optionsRef.current.title,
@@ -110,7 +113,7 @@ export function useCardMenu(options: UseCardMenuOptions): UseCardMenuReturn {
           // an idempotent re-clear for the Escape path. [L23] —
           // store state must always reflect the user-visible state.
           sheetCloseFnRef.current = null;
-          cardMenuStore.setOpen(optionsRef.current.cardId, false);
+          cardSettingsStore.setOpen(optionsRef.current.cardId, false);
         });
     };
     const close = (): void => {
@@ -120,8 +123,8 @@ export function useCardMenu(options: UseCardMenuOptions): UseCardMenuReturn {
       // first means any follow-up `toggle()` in the same tick reads
       // "closed" and opens a fresh sheet — not "closed twice" via
       // the cached (now-noop) close callback. [L24]
-      if (!cardMenuStore.isOpen(cardId)) return;
-      cardMenuStore.setOpen(cardId, false);
+      if (!cardSettingsStore.isOpen(cardId)) return;
+      cardSettingsStore.setOpen(cardId, false);
       const fn = sheetCloseFnRef.current;
       sheetCloseFnRef.current = null;
       fn?.();
@@ -129,7 +132,7 @@ export function useCardMenu(options: UseCardMenuOptions): UseCardMenuReturn {
     const toggle = (): void => {
       // Read state from the store, never from `sheetCloseFnRef`.
       // The ref is a function pointer; the store is the truth. [L24]
-      if (cardMenuStore.isOpen(optionsRef.current.cardId)) close();
+      if (cardSettingsStore.isOpen(optionsRef.current.cardId)) close();
       else open();
     };
     return { open, close, toggle };
@@ -142,7 +145,7 @@ export function useCardMenu(options: UseCardMenuOptions): UseCardMenuReturn {
   // the pane button finds the controller before any user gesture can
   // fire on the post-mount frame.
   useLayoutEffect(() => {
-    return cardMenuStore.register(options.cardId, controller);
+    return cardSettingsStore.register(options.cardId, controller);
   }, [options.cardId, controller]);
 
   return { renderSheet, controller };

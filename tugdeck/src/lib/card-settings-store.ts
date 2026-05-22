@@ -1,24 +1,26 @@
 /**
- * CardMenuStore — per-card menu state shared between pane chrome and
- * card content.
+ * CardSettingsStore — per-card settings state shared between pane
+ * chrome and card content.
  *
- * The pane's title bar offers a `…` button that opens a card-specific
- * menu (typically a TugSheet). The button needs:
+ * The pane's title bar offers a `…` button that opens a card's
+ * settings sheet. The button needs:
  *
- *   1. A way to invoke the menu's toggle behavior. The card owns the
- *      menu's lifecycle (showSheet, the close callback); the pane
- *      doesn't.
- *   2. A reactive read of "is the menu currently open?" so the button
- *      can paint as highlighted while the menu is up — the user's
- *      mental model is "this button shows the menu; pressing again
- *      hides it; the button reflects that state."
+ *   1. A way to invoke the settings sheet's toggle behavior. The
+ *      card owns the sheet's lifecycle (showSheet, the close
+ *      callback); the pane doesn't.
+ *   2. A reactive read of "is the settings sheet currently open?" so
+ *      the button can paint as highlighted while the sheet is up —
+ *      the user's mental model is "this button shows the card's
+ *      settings; pressing again hides them; the button reflects
+ *      that state."
  *
  * This module is the channel between those two concerns. Cards
- * register a {@link CardMenuController} via the {@link useCardMenu}
- * hook on mount; the controller exposes `toggle()` / `open()` /
- * `close()`. The pane calls `getController(activeCardId)?.toggle()`
- * for click handling and subscribes via `useSyncExternalStore(
- * subscribe, () => isOpen(cardId))` for the highlight state.
+ * register a {@link CardSettingsController} via the
+ * {@link useCardSettings} hook on mount; the controller exposes
+ * `toggle()` / `open()` / `close()`. The pane calls
+ * `getController(activeCardId)?.toggle()` for click handling and
+ * subscribes via `useSyncExternalStore(subscribe, () =>
+ * isOpen(cardId))` for the highlight state.
  *
  * The hook also writes the open state into this store, so the
  * highlight tracks the actual sheet lifecycle: opens turn the
@@ -30,20 +32,20 @@
  * sanctioned channel between them, not a prop drill or DOM query.
  * [L24] structure-zone state shared across the pane / card boundary.
  *
- * @module lib/card-menu-store
+ * @module lib/card-settings-store
  */
 
-export interface CardMenuController {
+export interface CardSettingsController {
   /** Toggle: close if open, open if closed. */
   toggle(): void;
-  /** Open the menu. No-op when already open. */
+  /** Open the settings sheet. No-op when already open. */
   open(): void;
-  /** Close the menu. No-op when already closed. */
+  /** Close the settings sheet. No-op when already closed. */
   close(): void;
 }
 
-class CardMenuStore {
-  private readonly _controllers = new Map<string, CardMenuController>();
+class CardSettingsStore {
+  private readonly _controllers = new Map<string, CardSettingsController>();
   private readonly _openIds = new Set<string>();
   private readonly _listeners = new Set<() => void>();
 
@@ -51,9 +53,9 @@ class CardMenuStore {
    * Register a controller for `cardId`. Returns an unregister function
    * that the consumer's `useLayoutEffect` cleanup must call. Card
    * teardown also clears any lingering open-state for the same id —
-   * the menu can't be open if the controller is gone.
+   * the settings sheet can't be open if the controller is gone.
    */
-  register = (cardId: string, controller: CardMenuController): (() => void) => {
+  register = (cardId: string, controller: CardSettingsController): (() => void) => {
     this._controllers.set(cardId, controller);
     this._notify();
     return () => {
@@ -78,19 +80,32 @@ class CardMenuStore {
   }
 
   /**
-   * Look up the controller for `cardId`. Returns null when no card
-   * has registered a menu (the pane button stays a no-op for cards
-   * without a menu).
+   * Look up the controller for `cardId`. Returns null when the card
+   * has registered no settings (the pane button is disabled for
+   * cards without settings).
    */
-  getController(cardId: string | null): CardMenuController | null {
+  getController(cardId: string | null): CardSettingsController | null {
     if (cardId === null) return null;
     return this._controllers.get(cardId) ?? null;
   }
 
   /**
+   * Reactive snapshot for `useSyncExternalStore`: whether `cardId`
+   * has a settings controller registered. The pane's title bar reads
+   * this to decide whether the `…` button is enabled — a card with
+   * no settings gets a disabled button rather than a live no-op.
+   * Pairs with `subscribe`, which notifies on every register /
+   * unregister.
+   */
+  hasController = (cardId: string | null): boolean => {
+    if (cardId === null) return false;
+    return this._controllers.has(cardId);
+  };
+
+  /**
    * Reactive snapshot for `useSyncExternalStore`. Returns false for
    * unknown cardIds so the pane button rests un-highlighted when no
-   * card is active or the active card has no menu registered.
+   * card is active or the active card has no settings registered.
    */
   isOpen = (cardId: string | null): boolean => {
     if (cardId === null) return false;
@@ -112,4 +127,4 @@ class CardMenuStore {
 }
 
 /** Module-scope singleton. */
-export const cardMenuStore = new CardMenuStore();
+export const cardSettingsStore = new CardSettingsStore();

@@ -60,7 +60,7 @@ Every action name belongs to exactly one of three categories. The category deter
 - **All lowercase letters.** No uppercase, ever.
 - **Words separated by single dashes.** No underscores. No double-dashes.
 - **Verb first.** `close`, `cut`, `select`, `jump`, `toggle`, `show`, `add`, `remove`, `reset`, `set`, `dismiss`, `confirm`, `cancel`, `open`, `focus`, `cycle`, `increment`, `decrement`, `preview`, `find`.
-- **Object second** (when the verb needs a direct object). `close-tab`, `select-all`, `jump-to-tab`, `set-value`, `set-property`, `toggle-section`, `show-settings`, `add-tab`, `reset-layout`, `open-menu`, `focus-next`, `cycle-card`, `preview-color`.
+- **Object second** (when the verb needs a direct object). `close-tab`, `select-all`, `jump-to-tab`, `set-value`, `set-property`, `toggle-section`, `show-settings`, `add-tab`, `reset-layout`, `focus-next`, `cycle-card`, `preview-color`.
 - **Modifier third** (when the object needs disambiguation). `add-card-to-active-pane` — the object is the card, but the modifier pins down *which* pane receives it. `show-component-gallery` — the object is the gallery, the modifier narrows *which* gallery.
 - **Single-word names are valid** when the verb alone is unambiguous in the chain's context. `close`, `cut`, `copy`, `paste`, `undo`, `redo`, `delete`, `duplicate`, `toggle`, `find`, `minimize`, `maximize`, `reload`. These are dispatched without an object because the first responder supplies it — `close` closes whatever responds to `close`; `undo` undoes whatever owns the history at the focus point.
 
@@ -76,7 +76,6 @@ Different concepts must get visually distinct names. A few guardrails:
 
 The current vocabulary prefers:
 - `show-*` for UI that becomes visible (menus, galleries, settings panels)
-- `open-*` for state transitions that aren't primarily visual (`open-menu` is the sole exception and should be reconsidered; prefer `show-menu` in new names)
 - `dismiss-*` for closing a popover
 - `cancel-*` / `confirm-*` for dialogs
 - `close-*` for cards and tabs
@@ -206,7 +205,6 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 | `confirmDialog`         | `confirm-dialog`              | `TUG_ACTIONS.CONFIRM_DIALOG`          |
 | `cancelDialog`          | `cancel-dialog`               | `TUG_ACTIONS.CANCEL_DIALOG`           |
 | `dismissPopover`        | `dismiss-popover`             | `TUG_ACTIONS.DISMISS_POPOVER`         |
-| `openMenu`              | `open-menu`                   | `TUG_ACTIONS.OPEN_MENU`               |
 | `setValue`              | `set-value`                   | `TUG_ACTIONS.SET_VALUE`               |
 | `toggle`                | `toggle`                      | `TUG_ACTIONS.TOGGLE`                  |
 | `selectValue`           | `select-value`                | `TUG_ACTIONS.SELECT_VALUE`            |
@@ -225,7 +223,6 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 | `resetLayout`           | `reset-layout`                | `TUG_ACTIONS.RESET_LAYOUT`            |
 | `addCardToActivePane` | `add-card-to-active-pane`   | `TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE` |
 | `find`                  | `find`                        | `TUG_ACTIONS.FIND`                    |
-| `toggleMenu`            | `toggle-menu`                 | `TUG_ACTIONS.TOGGLE_MENU`             |
 | `setProperty`           | `set-property`                | `TUG_ACTIONS.SET_PROPERTY`            |
 
 **Gallery / test-only actions** (opt-in via `TugAction<GalleryAction>`)

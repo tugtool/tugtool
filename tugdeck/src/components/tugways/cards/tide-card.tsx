@@ -60,7 +60,7 @@ import {
   type TugListViewDelegate,
 } from "../tug-list-view";
 import { useTugSheet } from "../tug-sheet";
-import { useCardMenu } from "../use-card-menu";
+import { useCardSettings } from "../use-card-settings";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
 import { useResponder } from "../use-responder";
@@ -2256,15 +2256,15 @@ export function TideCardBody({
   const responseMagnificationSliderId = useId();
   const responseEntryMarginSliderId = useId();
 
-  // --- Settings menu (title-bar `…` button). ---
+  // --- Card settings (title-bar `…` button). ---
   //
-  // `useCardMenu` registers a stable controller in `cardMenuStore`
-  // keyed by `cardId`. The pane's title bar invokes
-  // `controller.toggle()` directly — no chain dispatch, no ref
-  // gymnastics. The hook also writes the open / closed state back
-  // to the store so the title bar's `…` button can paint as
+  // `useCardSettings` registers a stable controller in
+  // `cardSettingsStore` keyed by `cardId`. The pane's title bar
+  // invokes `controller.toggle()` directly — no chain dispatch, no
+  // ref gymnastics. The hook also writes the open / closed state
+  // back to the store so the title bar's `…` button can paint as
   // highlighted while the sheet is up. [L02 / L24]
-  const settingsMenu = useCardMenu({
+  const cardSettings = useCardSettings({
     cardId,
     title: "Settings",
     render: (close) => (
@@ -2295,7 +2295,7 @@ export function TideCardBody({
       okButton?.focus();
     },
   });
-  const { renderSheet } = settingsMenu;
+  const { renderSheet } = cardSettings;
 
   const {
     ResponderScope: CardContentResponderScope,
@@ -2306,12 +2306,6 @@ export function TideCardBody({
     actions: {
       [TUG_ACTIONS.FOCUS_PROMPT]: (_event: ActionEvent) => {
         entryDelegateRef.current?.focus();
-      },
-      // The `…` button now calls `controller.toggle()` directly via
-      // the registry. OPEN_MENU stays wired so future keyboard
-      // shortcuts / chain dispatchers can drive the same toggle.
-      [TUG_ACTIONS.OPEN_MENU]: (_event: ActionEvent) => {
-        settingsMenu.controller.toggle();
       },
     },
   });

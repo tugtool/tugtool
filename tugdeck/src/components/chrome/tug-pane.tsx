@@ -52,7 +52,7 @@ import {
 } from "@/components/tugways/tug-popover";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { cardMenuStore } from "@/lib/card-menu-store";
+import { cardSettingsStore } from "@/lib/card-settings-store";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 import * as paneFrameRegistry from "@/components/chrome/pane-frame-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
@@ -77,23 +77,35 @@ export interface CardTitleBarProps {
   closable?: boolean;
   collapsed: boolean;
   /**
-   * Click handler for the title bar's `…` (Ellipsis) menu button.
-   * Wired by TugPane to invoke the active card's menu controller
-   * (registered in `cardMenuStore` via `useCardMenu`) — `toggle()`
-   * on each click, so a second press dismisses the sheet. When the
-   * active card has no controller, falls back to a chain dispatch
-   * of `TUG_ACTIONS.OPEN_MENU`. When `onMenuClick` is omitted, the
-   * button still renders but is a no-op.
+   * Click handler for the title bar's `…` (Ellipsis) settings button.
+   * Wired by TugPane to invoke the active card's settings controller
+   * (registered in `cardSettingsStore` via `useCardSettings`) —
+   * `toggle()` on each click, so a second press dismisses the sheet.
+   * The button is disabled whenever `settingsEnabled` is false, so
+   * this handler only ever runs for a card that registered settings.
    */
-  onMenuClick?: () => void;
+  onSettingsClick?: () => void;
   /**
-   * Whether the active card's menu is currently presented. When true,
-   * the title bar's `…` button paints as highlighted so the user
-   * sees the button's state mirror the sheet's. Driven by
-   * `cardMenuStore.isOpen(activeCardId)` via `useSyncExternalStore`
+   * Whether the active card has a settings sheet registered for the
+   * `…` button. Driven by `cardSettingsStore.hasController(
+   * activeCardId)` via `useSyncExternalStore` in the surrounding
+   * TugPane. [L02]
+   *
+   * When false the `…` button still renders — pane chrome is
+   * structurally constant regardless of which card is active — but
+   * paints disabled, so a card with no settings shows the affordance
+   * without a dead no-op behind it. Defaults to `true` so a
+   * standalone `CardTitleBar` keeps a working button.
+   */
+  settingsEnabled?: boolean;
+  /**
+   * Whether the active card's settings sheet is currently presented.
+   * When true, the title bar's `…` button paints as highlighted so
+   * the user sees the button's state mirror the sheet's. Driven by
+   * `cardSettingsStore.isOpen(activeCardId)` via `useSyncExternalStore`
    * in the surrounding TugPane. [L02]
    */
-  menuActive?: boolean;
+  settingsActive?: boolean;
   /**
    * Number of cards in this pane. Drives only the *wording* of the
    * close-confirmation popover the title-bar X button opens:
@@ -128,8 +140,9 @@ export function CardTitleBar({
   onCollapse,
   onClose,
   onDragStart,
-  onMenuClick,
-  menuActive = false,
+  onSettingsClick,
+  settingsEnabled = true,
+  settingsActive = false,
 }: CardTitleBarProps) {
   const handleTitleBarPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -258,12 +271,13 @@ export function CardTitleBar({
           role="action"
           size="sm"
           icon={<Ellipsis />}
+          disabled={!settingsEnabled}
           onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
-          onClick={onMenuClick}
-          aria-label="Card menu"
-          aria-expanded={menuActive}
-          data-active={menuActive ? "true" : undefined}
-          data-testid="tug-pane-title-bar-menu-button"
+          onClick={onSettingsClick}
+          aria-label="Card settings"
+          aria-expanded={settingsActive}
+          data-active={settingsActive ? "true" : undefined}
+          data-testid="tug-pane-title-bar-settings-button"
         />
 
         <TugButton
@@ -627,14 +641,31 @@ export function TugPane({
   const activeCardIdRef = useRef(activeCardId);
   activeCardIdRef.current = activeCardId;
 
-  // Reactive read of the active card's menu open state for the title
-  // bar's `…` button highlight. The store notifies on register /
-  // unregister and on every open / close transition; the snapshot
-  // selector keys off the current `activeCardId` so a tab switch
-  // re-evaluates the highlight against the newly-active card. [L02]
-  const menuOpenForActive = useSyncExternalStore(
-    cardMenuStore.subscribe,
-    useCallback(() => cardMenuStore.isOpen(activeCardId ?? null), [activeCardId]),
+  // Reactive read of the active card's settings-sheet open state for
+  // the title bar's `…` button highlight. The store notifies on
+  // register / unregister and on every open / close transition; the
+  // snapshot selector keys off the current `activeCardId` so a tab
+  // switch re-evaluates the highlight against the newly-active card.
+  // [L02]
+  const settingsOpenForActive = useSyncExternalStore(
+    cardSettingsStore.subscribe,
+    useCallback(
+      () => cardSettingsStore.isOpen(activeCardId ?? null),
+      [activeCardId],
+    ),
+  );
+
+  // Reactive read of whether the active card registered settings, so
+  // the title bar's `…` button can paint disabled when it didn't.
+  // Same store, same `subscribe` (register / unregister notifies);
+  // the selector keys off `activeCardId` so a tab switch to a card
+  // without settings disables the button. [L02]
+  const settingsEnabledForActive = useSyncExternalStore(
+    cardSettingsStore.subscribe,
+    useCallback(
+      () => cardSettingsStore.hasController(activeCardId ?? null),
+      [activeCardId],
+    ),
   );
 
   const performSelectCard = useCallback(
@@ -721,37 +752,23 @@ export function TugPane({
     onClose?.();
   }, [onClose]);
 
-  // Title-bar `…` button. The active card declares a menu via
-  // `useCardMenu`, which registers a stable controller in
-  // `cardMenuStore` keyed by card id. The button calls
-  // `controller.toggle()` directly — no chain walk, no
-  // intermediate action handler. Cards that don't register a
-  // controller get a silent no-op (the button remains harmless).
+  // Title-bar `…` button. The active card declares a settings sheet
+  // via `useCardSettings`, which registers a stable controller in
+  // `cardSettingsStore` keyed by card id. The button calls
+  // `controller.toggle()` directly — no chain walk, no intermediate
+  // action handler.
   //
-  // The chain dispatch path is preserved as a fallback so future
-  // keyboard shortcuts that emit `OPEN_MENU` reach the same toggle:
-  // when no controller is registered, fall through to the chain
-  // dispatch so the card-content responder's `OPEN_MENU` handler
-  // (if any) still runs. [L11]
-  const handleTitleBarMenuClick = useCallback(() => {
+  // `CardTitleBar` disables the button whenever the active card has
+  // registered no controller (`settingsEnabled` is derived from
+  // `cardSettingsStore.hasController`), so this handler only runs
+  // when a controller exists. The optional chain on `toggle()` stays
+  // as a belt-and-suspenders guard against a same-tick unregister.
+  // [L11]
+  const handleTitleBarSettingsClick = useCallback(() => {
     const activeId = activeCardIdRef.current;
     if (!activeId) return;
-    const controller = cardMenuStore.getController(activeId);
-    if (controller !== null) {
-      controller.toggle();
-      return;
-    }
-    const targetId = `${activeId}-card-content`;
-    try {
-      manager.sendToTarget(targetId, {
-        action: TUG_ACTIONS.OPEN_MENU,
-        sender: stackId,
-        phase: "discrete",
-      });
-    } catch {
-      // Active card has no card-content responder — nothing to do.
-    }
-  }, [manager, stackId]);
+    cardSettingsStore.getController(activeId)?.toggle();
+  }, []);
 
   const handlePreviousTab = useCallback(() => {
     const currentCards = cardsRef.current;
@@ -823,7 +840,6 @@ export function TugPane({
         store.addCardToPane(stackId, event.value);
       },
       [TUG_ACTIONS.MINIMIZE]: (_event: ActionEvent) => {},
-      [TUG_ACTIONS.TOGGLE_MENU]: (_event: ActionEvent) => {},
       [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
         console.info("find: stub — no find UI implemented yet");
       },
@@ -1501,8 +1517,9 @@ export function TugPane({
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}
-            onMenuClick={handleTitleBarMenuClick}
-            menuActive={menuOpenForActive}
+            onSettingsClick={handleTitleBarSettingsClick}
+            settingsEnabled={settingsEnabledForActive}
+            settingsActive={settingsOpenForActive}
           />
 
           <div className="tug-pane-body" data-testid="tug-pane-body">

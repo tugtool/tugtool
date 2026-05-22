@@ -224,19 +224,16 @@ export const TUG_ACTIONS = {
   FOCUS_PROMPT:   "focus-prompt",
   JUMP_TO_TAB:    "jump-to-tab",
 
-  // ---- Dialog / menu ----
+  // ---- Dialog / popover ----
   //
   // CONFIRM_DIALOG:  payload — none. The first dialog-like responder
   //                  confirms its pending action.
   // CANCEL_DIALOG:   payload — none. The first dialog-like responder
   //                  cancels its pending action.
   // DISMISS_POPOVER: payload — none. Close the nearest popover.
-  // OPEN_MENU:       payload — none. Open the contextually-appropriate
-  //                  menu for the first responder.
   CONFIRM_DIALOG:  "confirm-dialog",
   CANCEL_DIALOG:   "cancel-dialog",
   DISMISS_POPOVER: "dismiss-popover",
-  OPEN_MENU:       "open-menu",
 
   // ---- Control value ----
   //
@@ -324,8 +321,6 @@ export const TUG_ACTIONS = {
   //                         current selection. Dispatched by ⌘G.
   // FIND_PREVIOUS:          payload — none. Symmetric with FIND_NEXT.
   //                         Dispatched by ⇧⌘G.
-  // TOGGLE_MENU:            payload — none. Open the action menu for the
-  //                         first card.
   // TOGGLE_MAXIMIZE:        payload — none. Flip the first responder's
   //                         maximize state. Emitted by an entry's leading
   //                         status-row toggle (Maximize2 ↔ Minimize2).
@@ -343,7 +338,6 @@ export const TUG_ACTIONS = {
   FIND:                   "find",
   FIND_NEXT:              "find-next",
   FIND_PREVIOUS:          "find-previous",
-  TOGGLE_MENU:            "toggle-menu",
   TOGGLE_MAXIMIZE:        "toggle-maximize",
 
   // ---- Tide session management ----
