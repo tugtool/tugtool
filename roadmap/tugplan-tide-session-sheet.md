@@ -274,18 +274,20 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 
 #### Step 1 — `Project path` input renders in the monospace family {#step-1}
 
+**Status:** ✅ Complete — 2026-05-21. The `tide-card-picker-path-input` rule is scoped under `.tide-card-picker-field` (specificity 0,2,0) so it wins over `.tug-input`'s `font-family: inherit` regardless of stylesheet load order — a deliberate robustness choice over a bare single-class selector that would tie on specificity.
+
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (the `Project path` `TugInput`, ~line 1556).
 - `tugdeck/src/components/tugways/cards/tide-card.css` (`.tide-card-picker-field` / a new input class).
 
 **Work:**
-- Give the `Project path` `TugInput` a picker-scoped class (e.g. `tide-card-picker-path-input`) and a CSS rule setting `font-family: var(--tug-font-family-mono)`, so the typed path and the recent paths below it share one family.
-- Match the existing recents treatment: `.tide-card-picker-path-recent` also pins `-webkit-font-smoothing: antialiased` / `-moz-osx-font-smoothing: grayscale`; apply the same to the input so the two never disagree on text rendering.
-- Do not touch `TugInput` itself — this is a cascade-scoped override on one instance ([L20]).
+- [x] Give the `Project path` `TugInput` a picker-scoped class (`tide-card-picker-path-input`) and a CSS rule setting `font-family: var(--tug-font-family-mono)`, so the typed path and the recent paths below it share one family.
+- [x] Match the existing recents treatment: `.tide-card-picker-path-recent` also pins `-webkit-font-smoothing: antialiased` / `-moz-osx-font-smoothing: grayscale`; apply the same to the input so the two never disagree on text rendering.
+- [x] Do not touch `TugInput` itself — this is a cascade-scoped override on one instance ([L20]).
 
 **Verification:**
-- `bun run check` + `bun test` green.
-- Manual: open the session sheet — the `Project path` value and the `Recent Project Paths` rows render in the same mono face.
+- [x] `bun run check` + `bun test` green (2350 pass / 0 fail); `bun run audit:tokens lint` zero violations.
+- [ ] Manual: open the session sheet — the `Project path` value and the `Recent Project Paths` rows render in the same mono face.
 
 #### Step 2 — Recent-path click sets `Project path` unconditionally {#step-2}
 

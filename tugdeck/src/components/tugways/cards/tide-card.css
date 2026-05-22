@@ -548,6 +548,19 @@
   font-family: var(--tug-font-family-sans);
 }
 
+/* Project-path input — mono family so the typed path and the recent
+   paths in the list below read as one family. The smoothing pins
+   mirror `.tide-card-picker-path-recent` exactly so the two surfaces
+   never disagree on macOS subpixel rendering. Scoped under
+   `.tide-card-picker-field` (specificity 0,2,0) so it wins over
+   `.tug-input`'s `font-family: inherit` regardless of stylesheet
+   load order. */
+.tide-card-picker-field .tide-card-picker-path-input {
+  font-family: var(--tug-font-family-mono);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 /* Session-option layout inside each TugRadioItem.
    The radio circle is owned by TugRadioGroup; this block only shapes
    the per-row title + subtitle stack that we pass as the item's

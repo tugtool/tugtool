@@ -1556,6 +1556,7 @@ function TideProjectPickerForm({
         <TugInput
           ref={inputRef}
           type="text"
+          className="tide-card-picker-path-input"
           value={path}
           onChange={(e) => setPath((e.target as HTMLInputElement).value)}
           onKeyDown={(e) => {
