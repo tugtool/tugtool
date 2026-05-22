@@ -73,7 +73,7 @@ Only the two picker lists migrate in this plan. The transcript, search-result, a
 
 - **Glitches first.** Steps 1-3 are scoped so a single commit per step is realistic: a font swap, a delegate addition, a diagnosed input-dispatch fix. Each lands a user-visible win and is cherry-pickable independent of the `TugListRow` work.
 - **Diagnose before fixing.** The Cmd-A glitch (Step 3) is a *diagnose-and-fix* step. The dispatch pipeline is documented in this plan; the step reproduces the failure in the running card (HMR is always live) and fixes at the stage that actually breaks, rather than guessing.
-- **Additive primitive, zero forced migrations.** `TugListRow` (Step 4) is a new tugways primitive; `TugListView`'s `rowLayout` prop (Step 5) defaults to `flush`, which reproduces today's exact behavior. No existing consumer changes. The audit table above is the contract: only the picker migrates.
+- **Additive primitive, zero forced migrations.** `TugListRow` (Step 4) is a new tugways primitive; `TugListView`'s `rowLayout` prop (Step 5) is optional — omitting it writes no `data-row-layout` attribute and reproduces today's exact behavior. No existing consumer changes. The audit table above is the contract: only the picker migrates.
 - **Design the primitive in the gallery first.** `TugListRow` ships with its own gallery card (Step 4) demonstrating both variants, accessory slots, and states *before* it is wired into the live session sheet. The visual design stays tunable in isolation.
 - **One commit per step.** The build stays green at every commit: `bun run check`, `bun test`, `bun run audit:tokens lint`, `cargo nextest run` all pass. `-D warnings` enforced.
 - **Tuglaws apply.** Every step touching `tide-card.tsx`, the picker cells, `tug-list-view.tsx`, or the new primitive re-checks against [tuglaws.md](../tuglaws/tuglaws.md), [component-authoring.md](../tuglaws/component-authoring.md), and [design-decisions.md](../tuglaws/design-decisions.md). Step 9 records the walkthrough. Critical: [L02] external state via `useSyncExternalStore`, [L06] appearance via CSS/DOM not React state, [L20] component-token sovereignty.
@@ -164,13 +164,13 @@ Decided by the user during plan authoring. Row chrome lives in a dedicated `TugL
 
 #### [D4] `TugListView` gains a `rowLayout` prop {#d4-row-layout}
 
-`TugListView` gets `rowLayout?: "flush" | "pill"` (default `flush`). It does three coordinated things so a consumer sets the row treatment in *one* place:
+`TugListView` gets `rowLayout?: "flush" | "pill"` — optional, no default. When set it does three coordinated things so a consumer picks the row treatment in *one* place:
 
 1. Sets `--tugx-list-view-row-gap` (0 for `flush`, a small gap for `pill`).
 2. Writes `data-row-layout` on the scroll container so the `flush` hairline-divider rule (a `.tug-list-view-cell:not(:last-child)` border) is scoped to flush lists only.
 3. Publishes the layout to descendant `TugListRow`s through a React context, so cell renderers compose `<TugListRow leading=… trailing=…>` without repeating `variant` on every cell.
 
-Omitting `rowLayout` ⇒ `flush` ⇒ today's exact DOM and CSS. `TugListRow`'s own `variant` prop overrides the context when a consumer needs a one-off (see [Q2]).
+**Amendment (2026-05-21, from Step 5 implementation):** the prop has *no* default. Omitting it writes no `data-row-layout` attribute at all, so none of the layout CSS applies and the list keeps today's default comfortable row gap with no dividers — byte-identical to the pre-`rowLayout` behavior. The earlier "default `flush`" framing was an error: `flush` means 0-gap + dividers, which is *not* today's default (a comfortable `--tug-space-sm` gap, no dividers). `flush` and `pill` are both explicit opt-ins; the absent state is the third, unchanged behavior. `TugListRow`'s own `variant` prop still overrides the context when a consumer needs a one-off (see [Q2]).
 
 #### [D5] Non-breaking — only the picker migrates {#d5-non-breaking}
 
@@ -239,15 +239,16 @@ export interface TugListRowProps {
 
 ```ts
 // added to TugListViewProps:
-/** Row presentation for descendant TugListRows. Sets the row gap,
- *  scopes the flush divider rule, and publishes the default variant
- *  via context. Omitted ⇒ "flush" ⇒ today's exact behavior. [D4] */
-rowLayout?: "flush" | "pill";
+/** Row presentation for descendant TugListRows. When set, scopes the
+ *  row gap and the flush divider rule (via `data-row-layout`) and
+ *  publishes the variant via context. Omitted ⇒ no attribute, no
+ *  context — today's exact behavior. */
+rowLayout?: TugListRowVariant;
 ```
 
-- The scroll container gains `data-row-layout={rowLayout ?? "flush"}`.
-- `tug-list-view.css` sets `--tugx-list-view-row-gap` per `data-row-layout` and scopes the `flush`-only hairline rule.
-- A `TugListRowLayoutContext` (new, internal) is provided with the resolved value; `TugListRow` consumes it as the `variant` default.
+- The scroll container gains `data-row-layout={rowLayout}` — React omits the attribute entirely when `rowLayout` is `undefined`, so an un-opted-in list is byte-identical to before.
+- `tug-list-view.css` sets `--tugx-list-view-row-gap` per `data-row-layout` and scopes the `flush`-only hairline rule. With no `data-row-layout`, none of the row-layout rules match and the `body{}` default gap stands.
+- `TugListView` wraps its rendered window with `TugListRowLayoutProvider` (value `rowLayout ?? null`) — the context + provider were defined in `tug-list-row.tsx` in Step 4; `TugListRow` consumes the context as its `variant` default.
 
 #### New / modified files {#spec-files}
 
@@ -353,18 +354,20 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 
 #### Step 5 — `TugListView` `rowLayout` prop {#step-5}
 
+**Status:** ✅ Complete — 2026-05-21. **Plan amendment:** [D4] and the [Specification](#spec-row-layout) said the prop "defaults to `flush`". Implementation showed that was an error — `flush` is 0-gap + dividers, which is *not* today's default (a comfortable `--tug-space-sm` gap, no dividers). The prop has no default: omitting it writes no `data-row-layout` attribute, so an un-opted-in list is byte-identical to before. [D4] and the Spec are corrected accordingly.
+
 **Files:**
 - `tugdeck/src/components/tugways/tug-list-view.tsx` + `tug-list-view.css`.
 
 **Work:**
-- Add `rowLayout?: "flush" | "pill"` to `TugListViewProps` per the [Specification](#spec-row-layout). Write `data-row-layout` on the scroll container.
-- In `tug-list-view.css`, drive `--tugx-list-view-row-gap` off `data-row-layout` and scope any divider rule to `flush` only. Omitting the prop must reproduce today's DOM/CSS exactly.
-- Add the internal `TugListRowLayoutContext`, provide the resolved value from `TugListView`, and have `TugListRow` consume it as the `variant` default.
-- Re-check against [tuglaws.md] / [pane-model.md] per the cross-check practice; name the laws touched in the commit message.
+- [x] Add `rowLayout?: TugListRowVariant` to `TugListViewProps`. `data-row-layout={rowLayout}` on the scroll container — React omits the attribute when the prop is `undefined`, so an un-opted-in list is byte-identical.
+- [x] In `tug-list-view.css`, drive `--tugx-list-view-row-gap` off `data-row-layout` (`0` for `flush`, `--tugx-list-view-pill-row-gap` for `pill`) and scope the `:not(:last-child)` hairline divider to `[data-row-layout="flush"]` only. With no attribute, none of the row-layout rules match and the `body{}` default gap stands.
+- [x] Import `TugListRowLayoutProvider` (defined in `tug-list-row.tsx` in Step 4) and wrap the rendered window with it (`value={rowLayout ?? null}`); `TugListRow` consumes the context as its `variant` default.
+- [x] tuglaw cross-check: [L02] `rowLayout` is a prop, not subscribed state; [L06] presentation via the `data-row-layout` attribute + CSS; [L17] new `--tugx-list-view-*` aliases resolve to base in one hop; [L20] tug-list-view.css's `@tug-pairings` updated from `none` to declare the one divider pairing it now paints.
 
 **Verification:**
-- `bun run check` + `bun test` green — existing `TugListView` tests pass **unmodified** (proof of non-breaking).
-- Manual: a `TugListView` with no `rowLayout` (transcript, gallery) is byte-identical; the `TugListRow` gallery card placed in a `rowLayout="pill"` list picks up the variant from context.
+- [x] `bun run check` + `bun test` green — **2358 pass / 0 fail, identical to Step 4**: every existing `TugListView` test passes **unmodified** (proof of non-breaking). `bun run audit:tokens lint` zero violations.
+- [ ] Manual: a `TugListView` with no `rowLayout` (transcript, gallery) is byte-identical; a `TugListRow` with no `variant`, inside a `rowLayout="pill"` list, picks up `pill` from context (exercised for real by the picker migration in Step 6).
 
 #### Step 6 — Migrate the Recents list to `TugListRow` (`pill`) {#step-6}
 

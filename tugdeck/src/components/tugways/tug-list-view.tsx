@@ -95,6 +95,7 @@ import { computeWindow } from "./internal/list-view-window";
 import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
 import { ScrollerProvider, type Scroller } from "./internal/scroller-context";
 import { useSavedRegionScroll } from "./use-component-state-preservation";
+import { TugListRowLayoutProvider, type TugListRowVariant } from "./tug-list-row";
 
 // ---------------------------------------------------------------------------
 // Row roles — structural classification of an item in the list
@@ -484,6 +485,32 @@ export interface TugListViewProps<
   inline?: boolean;
 
   /**
+   * Row presentation for descendant `TugListRow`s. One prop that
+   * picks a coherent row treatment and publishes it two ways:
+   *
+   *  - **CSS** — writes `data-row-layout` on the scroll container so
+   *    `tug-list-view.css` can scope the inter-row gap and the
+   *    divider. `"flush"` collapses the row gap to zero and draws a
+   *    1px hairline below every cell but the last — the edge-to-edge
+   *    iOS-`UITableView.plain` treatment. `"pill"` sets a small
+   *    inter-row gap and draws no dividers, since each `TugListRow`
+   *    paints its own border.
+   *  - **Context** — publishes the variant through
+   *    `TugListRowLayoutContext`, so a `TugListRow` rendered by a
+   *    cell renderer inherits it without every cell repeating
+   *    `variant`.
+   *
+   * Omitted ⇒ no `data-row-layout` attribute and no context: the list
+   * keeps its default comfortable row gap with no dividers, and a
+   * descendant `TugListRow` falls back to its own `variant` prop.
+   * Omitting the prop is therefore byte-identical to the
+   * pre-`rowLayout` behavior — every existing consumer is unaffected.
+   *
+   * @selector [data-row-layout="flush"] | [data-row-layout="pill"]
+   */
+  rowLayout?: TugListRowVariant;
+
+  /**
    * Opt into PageUp / PageDown keyboard navigation by *entry*, where
    * each cell is one entry. When `true`, the list view installs a
    * keyboard handler so PageUp / PageDown — and the macOS
@@ -711,6 +738,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       className,
       followBottom,
       inline,
+      rowLayout,
       pageByEntry,
       selectionRequired = false,
       onSelectionChange,
@@ -2104,6 +2132,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         ref={setScrollContainerRef}
         data-slot="tug-list-view"
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
+        data-row-layout={rowLayout}
         className={
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
@@ -2117,6 +2146,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         />
         <OuterScrollportProvider scrollport={scrollportEl}>
         <ScrollerProvider scroller={scrollerFacadeRef.current}>
+        <TugListRowLayoutProvider value={rowLayout ?? null}>
         <div className="tug-list-view-window">
           {renderedRange.map(({ index, id, kind, role }) => {
             // Role-aware wrapper attributes:
@@ -2201,6 +2231,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             );
           })}
         </div>
+        </TugListRowLayoutProvider>
         </ScrollerProvider>
         </OuterScrollportProvider>
         <div

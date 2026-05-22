@@ -1,11 +1,24 @@
-/* @tug-pairings: none — layout primitive, no foreground-on-background contrast.
-   The list view paints no contrast pairings of its own. Cell renderers paint
-   their own; per-instance customization happens via cascade-scoped overrides
-   on `--tugx-list-view-*` tokens (see [L20] / [D12] in tugplan-tug-list-view).
-*/
+/* @tug-pairings {
+  --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest | control
+} */
 
 /**
  * tug-list-view.css — TugListView windowed list primitive.
+ *
+ * @tug-pairings
+ * | Element                        | Surface                                            | Role    | Context                                                                     |
+ * |--------------------------------|----------------------------------------------------|---------|-----------------------------------------------------------------------------|
+ * | --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view[data-row-layout="flush"] .tug-list-view-cell (border-bottom)  |
+ *
+ * The `rowLayout="flush"` row divider — a 1px hairline below each
+ * cell — is the list view's only self-painted foreground. Everything
+ * else inside the list belongs to a cell renderer: cell renderers
+ * paint their own contrast pairings, and per-instance customization
+ * happens via cascade-scoped overrides on `--tugx-list-view-*`
+ * tokens ([L20]). The divider renders on whatever surface the host
+ * places the list view over;
+ * `--tug7-surface-global-primary-normal-default-rest` is the
+ * representative default surface for the declaration.
  *
  * Layout strategy (mirrors `TugMarkdownView`'s spacer model):
  * - The scroll container (`.tug-list-view`) owns `overflow-y: auto`
@@ -34,6 +47,10 @@ body {
   --tugx-list-view-padding-inline:     var(--tug-space-md);
   --tugx-list-view-row-gap:            var(--tug-space-sm);
   --tugx-list-view-scroll-padding-end: var(--tug-space-lg);
+
+  /* Row-layout slots — consumed only when `rowLayout` is set. */
+  --tugx-list-view-pill-row-gap:       var(--tug-space-sm);
+  --tugx-list-view-divider-color:      var(--tug7-element-global-border-normal-muted-rest);
 }
 
 /* ---- Scroll container ---- */
@@ -131,7 +148,39 @@ body {
 /* ---- Cell wrapper ---- */
 
 .tug-list-view-cell {
-  /* Cells consume natural content height. Step 4's ResizeObserver
-     reads from these wrappers to populate the height index. */
+  /* Cells consume natural content height. The ResizeObserver reads
+     from these wrappers to populate the height index. */
   display: block;
+}
+
+/* ---- Row layout — opt-in via the `rowLayout` prop ----
+
+   `rowLayout` writes `data-row-layout` on the scroll container. When
+   the prop is omitted the attribute is absent and none of these rules
+   apply — the list keeps the default `--tug-space-sm` row gap and
+   draws no dividers, exactly as before `rowLayout` existed. Both
+   layouts pair with `TugListRow`: `flush` rows are edge-to-edge,
+   `pill` rows carry their own border. */
+
+/* `flush` — edge-to-edge iOS-`UITableView.plain` treatment: the
+   inter-row gap collapses to zero so cells abut. */
+.tug-list-view[data-row-layout="flush"] {
+  --tugx-list-view-row-gap: 0;
+}
+
+/* A 1px hairline below every cell but the last. `:not(:last-child)`
+   keys off the rendered window's cell order — adequate for the
+   non-windowed / small-list cases `flush` targets, and the same
+   pattern in-list dividers have always used. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-list-view[data-row-layout="flush"]
+  .tug-list-view-cell:not(:last-child) {
+  border-bottom: 1px solid var(--tugx-list-view-divider-color);
+}
+
+/* `pill` — discrete rounded rows: a small inter-row gap separates
+   them and no divider is drawn, since each `TugListRow` paints its
+   own border. */
+.tug-list-view[data-row-layout="pill"] {
+  --tugx-list-view-row-gap: var(--tugx-list-view-pill-row-gap);
 }
