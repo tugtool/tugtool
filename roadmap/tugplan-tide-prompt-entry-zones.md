@@ -446,16 +446,16 @@ The `Project` badge sits left of the indicator in `Z4B` for all routes and is ro
 - `tugdeck/src/lib/route-lifecycle.ts` — `RouteLifecycle`, `TugRouteDelegate`, `useRouteDelegate`, `useRoute`, `RouteLifecycleContext`.
 
 **Tasks:**
-- [ ] Implement `RouteLifecycle`: holds current route; store surface (`subscribe` / `getSnapshot`); synchronous `observeRouteWillChange` / `observeRouteDidChange`; `setRoute` running the will → commit → did sequence; same-route `setRoute` is a no-op.
-- [ ] Implement `useRouteDelegate` (subscribes both channels in `useLayoutEffect` per [L03]) and `useRoute` (the store hook per [L02]).
-- [ ] Implement `RouteLifecycleContext` + provider.
+- [x] Implement `RouteLifecycle`: holds current route; store surface (`subscribe` / `getRoute`); synchronous `observeRouteWillChange` / `observeRouteDidChange`; `setRoute` running the will → commit → did sequence; same-route `setRoute` is a no-op. — `tugdeck/src/lib/route-lifecycle.ts`; observers fire synchronously, error-isolated; the snapshot getter is `getRoute()` (the name [Risk R02] uses), a `string` is a stable `useSyncExternalStore` snapshot.
+- [x] Implement `useRouteDelegate` (subscribes both channels in `useLayoutEffect` per [L03]) and `useRoute` (the store hook per [L02]). — `useRouteDelegate` holds the delegate in a ref so an inline literal does not re-subscribe; `useRoute` reads via `useSyncExternalStore`.
+- [x] Implement `RouteLifecycleContext` + provider. — `RouteLifecycleContext` (raw context, used as `.Provider` like `CardLifecycleContext`) + `useRouteLifecycle()` reader.
 
 **Tests:**
-- [ ] `bun:test`: `routeWillChange` fires with route still `prev`, `routeDidChange` with route `next`; same-route `setRoute` fires nothing; unsubscribe stops delivery; store-surface `getSnapshot` reflects the committed route.
+- [x] `bun:test`: `routeWillChange` fires with route still `prev`, `routeDidChange` with route `next`; same-route `setRoute` fires nothing; unsubscribe stops delivery; store-surface `getRoute` reflects the committed route. — 11 tests in `src/lib/__tests__/route-lifecycle.test.ts` (fire order will→store→did, observer ordering, consecutive `(prev,next)` pairs, error isolation).
 
 **Checkpoint:**
-- [ ] `bun run check`
-- [ ] `bun test src/lib/__tests__/route-lifecycle.test.ts`
+- [x] `bun run check` — clean.
+- [x] `bun test src/lib/__tests__/route-lifecycle.test.ts` — 11 pass.
 
 ---
 
