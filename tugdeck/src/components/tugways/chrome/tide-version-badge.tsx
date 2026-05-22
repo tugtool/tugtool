@@ -13,9 +13,10 @@
  *
  * Two display states:
  *  - *quiet* — no drift: the badge shows just the running version
- *    (`Claude Code 2.1.148`) in a neutral tone.
- *  - *caution* — drift detected: an amber tone, a warning icon, and
- *    the running + validated versions plus the drift count.
+ *    (`Claude Code 2.1.148`) in the `agent` role tone.
+ *  - *caution* — drift detected: the `caution` (amber) tone, a
+ *    warning icon, and the running + validated versions plus the
+ *    drift count.
  *
  * The badge is always a popover trigger: even with no drift, clicking
  * it reports the running and validated versions — the version we have
@@ -172,7 +173,7 @@ export function TideVersionBadge({
     <TugPopover>
       <TugPopoverTrigger>
         <TugBadge
-          role={hasDrift ? "caution" : "data"}
+          role={hasDrift ? "caution" : "agent"}
           emphasis="tinted"
           size="sm"
           icon={hasDrift ? <TriangleAlert aria-hidden="true" /> : undefined}

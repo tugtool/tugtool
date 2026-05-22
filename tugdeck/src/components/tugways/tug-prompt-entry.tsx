@@ -1366,6 +1366,18 @@ export const TugPromptEntry = React.forwardRef<
                 {cautionContent}
               </div>
             )}
+            {/*
+              Growing spacer — the single flex-grow element of the
+              status row. It splits the row into a leading group
+              (`statusContent` + `cautionContent`, content-sized, in
+              normal inline flow) and a trailing group (the tools /
+              maximize toggles, pinned to the trailing edge),
+              independent of which optional slots are populated.
+            */}
+            <div
+              className="tug-prompt-entry-status-spacer"
+              aria-hidden="true"
+            />
             {toolsContent !== undefined && (
               <TugPopover
                 open={toolsOpen}

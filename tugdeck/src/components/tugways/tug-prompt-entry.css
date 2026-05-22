@@ -238,9 +238,12 @@ body {
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-status — the row above the input
    ----------------------------------------------------------------------------
-   Hosts caller-supplied status content on the leading edge, an optional
-   caution slot, and (optionally) the tools disclosure + maximize toggles on
-   the trailing edge. Keeps its content size; the input below flexes to fill.
+   A leading group — caller-supplied status content plus an optional caution
+   slot, both content-sized and in normal inline flow — then a growing spacer,
+   then a trailing group — the optional tools disclosure + maximize toggles
+   pinned to the trailing edge. The spacer is the row's single flex-grow
+   element, so the leading/trailing split holds whichever optional slots are
+   populated. The row keeps its content height; the input below flexes to fill.
    ----------------------------------------------------------------------------- */
 
 .tug-prompt-entry-status {
@@ -256,8 +259,12 @@ body {
   min-height: 24px;
 }
 
+/* Leading status content — content-sized, shrinkable. `flex: 0 1 auto`
+   (not `1 1`) so it does not grow into the row's free space: that is
+   the spacer's job. Shrink stays enabled so a long status string still
+   ellipsizes when the row is cramped. */
 .tug-prompt-entry-status-content {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -267,15 +274,14 @@ body {
   font-size: var(--tug-font-size-xs);
 }
 
-/* Caution slot — content-sized, on the trailing edge between the
-   flex-growing status content and the tools / maximize toggles. The
-   leading status content (`flex: 1 1 auto`) pushes it rightward.
-   `:empty` collapses the wrapper so a conditionally-visible chip
-   (e.g. the drift-caution badge, which renders nothing when there is
-   no drift) leaves no flex gap behind. The slot owns no chrome — the
+/* Caution slot — content-sized, in normal inline flow immediately
+   after the status content (not pushed to the trailing edge). `:empty`
+   collapses the wrapper so a conditionally-visible chip (e.g. the
+   version badge, which renders nothing before the session version
+   lands) leaves no flex gap behind. The slot owns no chrome — the
    composed chip carries its own. It shares `status-content`'s
-   `font-size` so a badge sits in an identical line box in either
-   slot, keeping the two Z3 badges on a common baseline. */
+   `font-size` so a badge sits in an identical line box in either slot,
+   keeping the two Z3 badges on a common baseline. */
 .tug-prompt-entry-status-caution {
   flex: 0 0 auto;
   font-size: var(--tug-font-size-xs);
@@ -283,6 +289,14 @@ body {
 
 .tug-prompt-entry-status-caution:empty {
   display: none;
+}
+
+/* Growing spacer — the row's single flex-grow element. It absorbs the
+   free space between the leading group (status content + caution) and
+   the trailing toggles, pinning the toggles to the trailing edge while
+   the leading group stays in normal inline flow. */
+.tug-prompt-entry-status-spacer {
+  flex: 1 1 auto;
 }
 
 /* Tools toggle button — a TugPushButton subtype="icon" that acts as the
