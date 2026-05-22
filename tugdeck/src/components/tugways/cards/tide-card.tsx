@@ -1347,18 +1347,36 @@ function TideProjectPickerForm({
     submitWith(selection);
   }, [submitWith, selection]);
 
-  // Recents list runs in `TugListView`'s `selectionRequired` mode —
-  // the list view owns the selected recent (always exactly one) and
-  // mirrors it out here. On sheet open the list seeds selection to
-  // the first recent, so this fires immediately and fills the
-  // project-path input without the user clicking anything; a later
-  // click on another recent re-fires it the same way.
-  const handleRecentSelectionChange = useCallback(
+  // Set the project-path input from the recent at `index`. Shared by
+  // the Recents `TugListView`'s two activation surfaces so the path
+  // the user sees can never drift between them:
+  //
+  //  - `onSelectionChange` — `TugListView`'s de-duplicated selection
+  //    mirror. Fires the mount-time seed (the list runs in
+  //    `selectionRequired` mode and seeds its owned selection to the
+  //    first recent, filling the input before any click) and again
+  //    when the owned selected index moves to a different row. It
+  //    does NOT fire on a re-activation of the already-selected row —
+  //    the index did not change.
+  //  - `delegate.onSelect` — fires on EVERY activation (click /
+  //    Space / Enter), the already-selected row included. This is the
+  //    surface that makes the fill unconditional: once the user has
+  //    hand-edited the input, clicking the highlighted recent still
+  //    restores that recent's path.
+  const applyRecentPath = useCallback(
     (index: number): void => {
       const row = recentsDataSource.rowAt(index);
       if (row.kind === "path-recent") setPath(row.path);
     },
     [recentsDataSource],
+  );
+
+  // Recents list delegate — routes every activation back through
+  // `applyRecentPath`. Memoized for a stable identity across renders,
+  // matching `sessionsDelegate` below.
+  const recentsDelegate = useMemo<TugListViewDelegate>(
+    () => ({ onSelect: applyRecentPath }),
+    [applyRecentPath],
   );
 
   // Sessions list delegate — onSelect updates the session selection
@@ -1581,7 +1599,8 @@ function TideProjectPickerForm({
               <TugListView
                 dataSource={recentsDataSource}
                 selectionRequired
-                onSelectionChange={handleRecentSelectionChange}
+                delegate={recentsDelegate}
+                onSelectionChange={applyRecentPath}
                 cellRenderers={RECENTS_CELL_RENDERERS}
                 scrollKey="tide-card-picker-recents"
                 className="tide-card-picker-recents-list tide-card-picker-list-view"

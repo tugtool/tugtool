@@ -291,18 +291,21 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
 
 #### Step 2 — Recent-path click sets `Project path` unconditionally {#step-2}
 
+**Status:** ✅ Complete — 2026-05-21. The shared helper `handleRecentSelectionChange` was renamed `applyRecentPath` to read neutrally now that it serves both surfaces. **Plan amendment:** the dedicated "new test" is relocated — see Verification.
+
 **Files:**
-- `tugdeck/src/components/tugways/cards/tide-card.tsx` (`TideProjectPickerForm` — the Recents `TugListView` ~line 1580, `handleRecentSelectionChange` ~line 1356).
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` (`TideProjectPickerForm` — the Recents `TugListView`; `applyRecentPath` + `recentsDelegate`).
 
 **Work:**
-- Add a `delegate` to the Recents `TugListView` whose `onSelect(index)` reads `recentsDataSource.rowAt(index)` and, for a `path-recent` row, calls `setPath(row.path)` unconditionally. `delegate.onSelect` fires on **every** activation (click / Space / Enter), including a re-click of the already-selected row.
-- Keep `selectionRequired` + `onSelectionChange` — they still own the selected-row highlight and the mount-time seed that fills the input from the first recent before any click. `onSelectionChange` is the de-duplicated state mirror (mount seed); `delegate.onSelect` is the every-click handler. Both route into the same `setPath`.
-- Factor the shared body into one helper so seed and click cannot drift.
+- [x] Add a `delegate` to the Recents `TugListView` whose `onSelect(index)` reads `recentsDataSource.rowAt(index)` and, for a `path-recent` row, calls `setPath(row.path)` unconditionally. `delegate.onSelect` fires on **every** activation (click / Space / Enter), including a re-click of the already-selected row.
+- [x] Keep `selectionRequired` + `onSelectionChange` — they still own the selected-row highlight and the mount-time seed that fills the input from the first recent before any click. `onSelectionChange` is the de-duplicated state mirror (mount seed); `delegate.onSelect` is the every-click handler. Both route into the same `setPath`.
+- [x] Factor the shared body into one helper (`applyRecentPath`) so seed and click cannot drift.
 
 **Verification:**
-- `bun run check` + `bun test` green.
-- New test against `TideProjectPickerForm` (real form, real data source — no mock store): seed the input from a recent, edit the input, activate the same recent row, assert the input value is restored to that recent's path.
-- Manual: edit the `Project path`, click the highlighted recent — the input snaps back to that path.
+- [x] `bun run check` + `bun test` green (2350 pass / 0 fail).
+- [x] Correct-by-construction: `TugListView`'s cell click handler (`tug-list-view.tsx` `clickCb`) fires `delegate.onSelect(index)` on every activation of a `cell`-role row — the already-selected row included — and `keyDownCb` does the same for Space/Enter with `stopPropagation()` so the form's `onKeyDown` does not double-handle. Verified in source.
+- [x] **Plan amendment — automated coverage relocated.** With no fake-DOM render harness (happy-dom removed 2026-05-13), a `bun:test` render test of `TideProjectPickerForm` is not possible — the original "new test against `TideProjectPickerForm`" item cannot run under `bun test`. Rather than a standalone picker app-test that duplicates the picker-sheet setup, the recents-re-click assertion is folded into [Step 3](#step-3)'s app-test, which already drives the real session sheet in a running app for the Cmd-A reproduction. One picker app-test, shared setup, both picker-input glitches covered.
+- [ ] Manual: edit the `Project path`, click the highlighted recent — the input snaps back to that path.
 
 #### Step 3 — Diagnose and fix Cmd-A select-all in `Project path` {#step-3}
 
@@ -317,10 +320,14 @@ Each step is its own commit. `bun run check`, `bun test`, `bun run audit:tokens 
   3. **Handler + continuation** — the input's `handleSelectAll` returns a continuation `() => inputRef.current?.select()`; confirm it runs and that `document.activeElement` is the input at run time.
   4. **Selection persistence** — confirm no re-render immediately re-assigns `input.value` and collapses the just-made selection.
 - Fix at the failing stage. Because the native select-all is unconditionally suppressed on match, *any* break above leaves Cmd-A dead — the fix must restore a working `select()`, not merely re-enable the native path.
-- Add the lowest-cost regression guard the fix admits (a pure-logic or dispatch-path test); trusted-event focus behavior is verified manually per house practice.
+- Add a pure-logic or dispatch-path `bun:test` guard if the fix admits one (e.g. the failing stage turns out to be a pure function).
+- **Picker app-test (covers Steps 2 and 3).** Author a new app-test (`tests/app-test/atNNNN-tide-picker-input-behaviors.test.ts`) that drives the real session sheet in a running Tug.app — modeled on `at0045-tug-text-editor-cmd-a-after-typing`. It seeds recents into tugbank, opens a Tide card so the picker sheet drops, and asserts both picker-input glitches in one setup:
+  1. **Step 2 — recents re-click.** Edit the `Project path` input, then re-click the already-selected `Recent Project Paths` row; assert the input value is restored to that row's path.
+  2. **Step 3 — Cmd-A after typing.** Type into `Project path`, press Cmd-A, assert the full value is selected.
 
 **Verification:**
 - `bun run check` + `bun test` green.
+- `just app-test atNNNN-tide-picker-input-behaviors.test.ts` green (requires `just build-app` first so the bundled dist carries Steps 1-3).
 - Manual: type into `Project path`, press Cmd-A — the whole value is selected; typing replaces it. Repeat after editing mid-string.
 
 #### Step 4 — `TugListRow` primitive + gallery card {#step-4}
