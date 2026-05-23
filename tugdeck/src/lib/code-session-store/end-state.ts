@@ -65,11 +65,11 @@ export function endStateBadgeFor(reason: TurnEndReason): EndStateBadge {
     case "complete":
       return { text: "OK", role: "inherit" };
     case "interrupted":
-      return { text: "interrupted", role: "caution" };
+      return { text: "Interrupted", role: "caution" };
     case "error":
-      return { text: "error", role: "danger" };
+      return { text: "Error", role: "danger" };
     case "transport_lost":
-      return { text: "lost", role: "caution" };
+      return { text: "Lost", role: "caution" };
   }
 }
 
