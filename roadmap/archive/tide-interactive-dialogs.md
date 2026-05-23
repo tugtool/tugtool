@@ -532,7 +532,7 @@ Per `[D12]`:
 - [x] Module docstring on `TideInteractiveDialog` explaining the boundary with `TugInlineDialog`, the `[D08]` input-form scope, the `[D02]` / `[D03]` defaults, and the family convention. *(Done in Step 1.)*
 - [x] Module docstring on `code-session-store.ts` `popInteractive` method explaining the LIFO semantic and what "interactive" means in this family. *(Done in Step 0.)*
 - [x] Cross-reference from `chrome/tide-permission-dialog.tsx` and `chrome/tide-question-dialog.tsx` to `TideInteractiveDialog`. *(Done in Steps 2 and 3 — both module docstrings name `TideInteractiveDialog` as the direct composition target with `TugInlineDialog` one layer down.)*
-- [ ] Step 4 prose audit: replace "wrapper" with "tool block" in tugdeck docstrings / doc-comments per `[D11]`.
+- [x] Step 4 prose audit: replace "wrapper" with "tool block" in tugdeck docstrings / doc-comments per `[D11]`. *(Done in Step 4 — see line ~844 for the full file list.)*
 
 ---
 
@@ -817,10 +817,10 @@ The live `respondApproval` action still fires its `tool_approval` wire frame —
 - [x] `bun test` — full suite green: **2580 pass / 0 fail / 9654 expects / 158 files** (Step 3 baseline was 2586; the 6-case delta matches the 4 dropped `recordedPermissionPresentation` cases plus the 2 dropped `turn.controlRequests` cases in `control-forward.test.ts`).
 - [x] `bun run audit:tokens lint` — zero violations.
 - [x] Code-search guardrails (per `#step-3-5-tasks`) all empty.
-- [ ] Manual HMR: trigger an Allow flow — dialog disappears, tool runs, tool block renders output. Save an unrelated `.tsx` to trigger Fast Refresh; the post-decision state is unchanged (because there is no fragile recorded chrome left to lose).
-- [ ] Manual HMR: trigger a Deny flow — dialog disappears, tool block renders with error styling + SDK rejection text. Same Fast Refresh test: state is unchanged.
-- [ ] Manual Developer Reload: identical end-state on both allow and deny — only the tool block survives, with its content unchanged.
-- [ ] Manual relaunch: fully quit Tide, re-launch on the same session. Visual continuity is exact: tool blocks (allow→output; deny→error band + rejection text) render from the JSONL-durable `turn.toolCalls`. No "missing chrome" gap, no false records.
+- [x] Manual HMR: trigger an Allow flow — dialog disappears, tool runs, tool block renders output. Save an unrelated `.tsx` to trigger Fast Refresh; the post-decision state is unchanged (because there is no fragile recorded chrome left to lose). *(Verified by user post-Step-3.5 + interrupt-marker fix.)*
+- [x] Manual HMR: trigger a Deny flow — dialog disappears, tool block renders with error styling + SDK rejection text. Same Fast Refresh test: state is unchanged. *(Verified by user.)*
+- [x] Manual Developer Reload: identical end-state on both allow and deny — only the tool block survives, with its content unchanged. *(Verified by user.)*
+- [x] Manual relaunch: fully quit Tide, re-launch on the same session. Visual continuity is exact: tool blocks (allow→output; deny→error band + rejection text) render from the JSONL-durable `turn.toolCalls`. No "missing chrome" gap, no false records. *(Verified by user. Pending-dialog survival across relaunch is descoped per `[D15]` — a different concern.)*
 
 ---
 
@@ -850,7 +850,7 @@ The live `respondApproval` action still fires its `tool_approval` wire frame —
 - [x] `cd tugdeck && bun x tsc --noEmit` — clean.
 - [x] `cd tugdeck && bun test` — full suite green: **2580 pass / 0 fail / 9654 expects / 158 files** (matches Step 3.5 baseline; no regressions).
 - [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual HMR: trigger a normal AskUserQuestion (success path) and a validation-error AskUserQuestion (salvage path); verify both render in the family's visual vocabulary.
+- [x] Manual HMR: trigger a normal AskUserQuestion (success path) and a validation-error AskUserQuestion (salvage path); verify both render in the family's visual vocabulary. *(Verified by user.)*
 
 ---
 
@@ -1114,4 +1114,32 @@ The anchor `#step-8` is retained so existing references resolve. The cross-link 
 - [x] QuestionDialog `selections` / `visited` / `currentIndex` survive both HMR and Developer > Reload (`[L23]` compliance verified by user — Step 6 commit `484fb3ad`).
 - [x] Pending Permission / Question dialog *survival across `Tug.app` relaunch* deliberately descoped per `[D15]` — quit terminates the in-flight dialog; the user re-issues. Anchor `#step-8` retained for cross-references.
 - [x] Post-reload status bar shows non-zero `TOKENS` / accurate `CONTEXT` reflecting the in-flight turn's usage estimate. *(Step 9 commit.)*
-- [ ] All earlier mid-flight survival behavior (Developer > Reload tool block continuity, no dangling spinner post-Allow) remains intact — no regressions on the work shipped in commits `4c294be7` and `c48c8db4`. *(Verified continuously across Steps 6 and 9.)*
+- [x] All earlier mid-flight survival behavior (Developer > Reload tool block continuity, no dangling spinner post-Allow) remains intact — no regressions on the work shipped in commits `4c294be7` and `c48c8db4`. *(Verified continuously across Steps 6 and 9.)*
+
+---
+
+### Plan Closeout {#closeout}
+
+**Status: CLOSED — 2026-05-23.**
+
+The plan started as a refactor (`TideInteractiveDialog` primitive unifying `PermissionDialog` and `QuestionDialog`'s pending input-form chrome) and grew an addendum mid-flight when reload survival gaps surfaced. Both phases are now shipped.
+
+**Original phase (Steps 0–5):** `session.popInteractive` replaced `peelNewest`; `TideInteractiveDialog` shipped as the family primitive; `PermissionDialog` and `QuestionDialog` migrated; Step 3.5 dropped the recorded permission chrome once JSONL's wire reality made the asymmetry honest; Step 4 finished the "wrapper" → "tool block" prose audit; Step 5 was the integration checkpoint. `[D08]` (asymmetry load-bearing) and `[D10]` (no parallel `controlRequests` accumulator) are the load-bearing decisions of this phase.
+
+**Survival addendum (Steps 6–9):** Step 5 + 6 close the **reload survival contract** (HMR + Developer > Reload). Wire-level rehydration in `emitInflightTurnFromActiveTurn` covers the dialog; the QuestionDialog opts into the `[L23]` A9 protocol for in-progress answer state; the in-flight token snapshot (`streaming_usage`) keeps the status bar's TOKENS / CONTEXT cells continuous across the bracket. `[D13]` (three-layer survival contract — wire / reducer / per-component) is the load-bearing decision of this phase.
+
+**Deliberately out of scope:** Step 8 (app-quit / relaunch survival of pending dialogs) is descoped per `[D15]` — quit is a deliberate user action, the JSONL's visibly-unresolved tool_use IS the signal, the user re-issues. `[D14]` was narrowed to make that policy explicit.
+
+**Follow-ons (named, not blocked):**
+- `[Q05]` salvage-path generalisation — revisit at the second concrete callsite.
+- Persistent / updatable todo list facility — separate plan.
+
+**Shipped commits, mid-flight survival arc:**
+- `4c294be7` fix(tide): survive Developer > Reload mid-dialog
+- `c48c8db4` fix(tide): rehydrate pending tool_use on reload, restore phase to tool_work
+- `05955cb2` plan(tide-dialogs): add mid-flight survival addendum
+- `484fb3ad` feat(tugways): QuestionDialog preserves answer state via L23 A9 protocol (Step 6)
+- `c79de775` plan(tide-dialogs): close [Q07] NO; descope Step 8 per [D15] (Step 7)
+- `8cc2c345` fix(tide): in-flight cost / usage snapshot on resume (Step 9)
+
+No further work in this plan. Future regressions on the survival behaviors above should re-read `[D13]` / `[D14]` / `[D15]` before re-litigating the architecture.

@@ -1887,7 +1887,7 @@ function handleRespondApproval(
   // The decision is sent out on the wire below and the SDK's
   // tool_use/tool_result for the gated tool IS the durable transcript
   // artifact — there is no client-side record kept here. See
-  // `#step-3-5` in `roadmap/tide-interactive-dialogs.md` for why
+  // `#step-3-5` in `roadmap/archive/tide-interactive-dialogs.md` for why
   // JSONL cannot durably reconstruct a separate permission record.
   const next: CodeSessionState = {
     ...state,

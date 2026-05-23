@@ -602,7 +602,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   // Permission + question slots — both are *pending-only* live input
   // forms rendered at the body foot. Permissions leave no committed
   // record (Step 3.5 removed the recorded chrome — see
-  // `#step-3-5` in `roadmap/tide-interactive-dialogs.md` — because
+  // `#step-3-5` in `roadmap/archive/tide-interactive-dialogs.md` — because
   // JSONL has no durable artifact to reconstruct one from); questions
   // round-trip through tool_use/tool_result so their recorded state
   // lives in the `AskUserQuestionToolBlock` at the tool_use position,
