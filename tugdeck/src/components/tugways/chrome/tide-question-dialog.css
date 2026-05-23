@@ -37,16 +37,48 @@
 /* ---- Component-tier aliases — question-dialog layout only [L17] ---- */
 
 body {
-  /* Gap between consecutive questions (multi-question payload). */
-  --tugx-question-stack-gap: var(--tug-space-lg);
-  /* Gap between a question's heading and its option group. */
-  --tugx-question-group-gap: var(--tug-space-sm);
+  /* Frame width override — questions carry richer prose than the
+   * permission dialog's allow/deny pickers, so the question dialog
+   * gets a wider fixed presence. Centering stays at the
+   * `TugInlineDialog` primitive's `margin: var(--tug-space-lg) auto`,
+   * so this knob only changes width, not horizontal placement. */
+  --tugx-question-frame-width: 700px;
+
+  /* Gap between consecutive questions (multi-question payload). The
+   * question-asking surface mixes multi-line prose questions with
+   * multi-line option descriptions; the lg → 2xl bump gives each
+   * Q-group enough breathing room that the eye doesn't read two
+   * adjacent option clusters as one. */
+  --tugx-question-stack-gap: var(--tug-space-2xl);
+  /* Gap between a question's heading and its option group — md
+   * lifts the options off the heading so the relationship reads
+   * as "heading … then choices". */
+  --tugx-question-group-gap: var(--tug-space-md);
   /* Gap between option rows. */
   --tugx-question-option-gap: var(--tug-space-2xs);
 
-  /* Question-text heading (multi-question layout). */
-  --tugx-question-heading-size: var(--tug-font-size-sm);
+  /* Question-text heading (multi-question layout). Bumped from `sm`
+   * (13 px) to `lg` (16 px) so the question reads as the focal
+   * point of its group — the chosen option labels render at
+   * `md` / 14 px, so a `lg` heading sits clearly above them in the
+   * visual hierarchy. */
+  --tugx-question-heading-size: var(--tug-font-size-lg);
   --tugx-question-heading-weight: 600;
+  --tugx-question-heading-leading: 1.4;
+
+  /* Marker column ("1.", "2.", …) for multi-question layout. Held at
+   * a fixed width regardless of digit count so the heading flushes
+   * down the column. */
+  --tugx-question-marker-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-question-marker-gap: var(--tug-space-sm);
+}
+
+/* Frame width override — scoped to the question dialog so permission
+ * dialogs keep their CTA-sized 520 px presence. The width applies on
+ * top of the primitive's own `width: 100%; max-width: …` so a narrow
+ * container still wraps. */
+.tide-question-dialog {
+  --tugx-idialog-max-width: var(--tugx-question-frame-width);
 }
 
 /* ---- Question stack ---- */
@@ -55,25 +87,48 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--tugx-question-stack-gap);
+  /* CSS counter on the stack so a multi-question payload numbers
+   * 1, 2, 3, … without needing index-aware React props. */
+  counter-reset: tide-question-stack;
 }
 
 .tide-question-dialog-question {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tugx-question-group-gap);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--tugx-question-marker-gap);
+  row-gap: var(--tugx-question-group-gap);
+  counter-increment: tide-question-stack;
 }
 
-/* Color is inherited from the dialog's children slot — this rule sets
- * weight + size only, no `color`, so it carries no surface pairing. */
+/* Numbered marker — paints only when the heading is shown
+ * (multi-question layout). The single-question path renders no
+ * heading and no marker; the question text is the dialog
+ * `description` there. The marker is heading-aligned via a sibling
+ * pseudo-element so the heading prose flows from the same row.
+ *
+ * @tug-renders-on: var(--tugx-idialog-bg) */
+.tide-question-dialog-question-heading::before {
+  content: counter(tide-question-stack) ".";
+  color: var(--tugx-question-marker-color);
+  font-weight: var(--tugx-question-heading-weight);
+  margin-inline-end: 0.4em;
+}
+
+/* Heading reads as the focal point of its group — see the token
+ * comment above. Color is inherited from the dialog's children slot
+ * so this rule sets weight + size + leading only; no surface
+ * pairing required. */
 .tide-question-dialog-question-heading {
+  grid-column: 1 / -1;
   font-size: var(--tugx-question-heading-size);
   font-weight: var(--tugx-question-heading-weight);
-  line-height: 1.4;
+  line-height: var(--tugx-question-heading-leading);
 }
 
 /* ---- Option list ---- */
 
 .tide-question-dialog-options {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: var(--tugx-question-option-gap);

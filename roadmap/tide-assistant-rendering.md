@@ -5616,6 +5616,8 @@ Entry points into the archived turns plan:
 
 #### Step 24: TodoListBlock + TodoWriteToolBlock {#step-24}
 
+**Status:** implemented — `TodoListBlock` body kind (list-shaped, built on `TugListView` in `inline` mode) + `TodoWriteToolBlock` tool wrapper (counts + progress bar in the args slot, embedded body) + dispatch registration (`registerToolWrapper("todowrite", …)`). tsc clean; full `bun test` 2527/2527; `audit:tokens lint` zero violations.
+
 **Depends on:** #step-1
 
 **Commit:** `feat(tide-rendering): TodoListBlock + TodoWriteToolBlock — task checklist with status indicators`
@@ -5624,23 +5626,33 @@ Entry points into the archived turns plan:
 
 **Conformance:** see [#bk-conformance](#bk-conformance) — `TodoListBlock` is a list-shaped body kind (item 9: build on `TugListView` if the row count warrants windowing); `TodoWriteToolBlock` is a tool wrapper. `--tugx-todo-*` composes `--tugx-block-*`.
 
+**Implementation notes.**
+- **Built on `TugListView` in `inline` mode.** Item 9 says list-shaped body kinds build on `TugListView`. Real Claude Code Todo lists are typically a handful of items (occasionally a few dozen) and never warrant windowing — but anchoring on the same primitive keeps the data-source contract, cell-renderer vocabulary, and row-gap zeroing identical to `PathListBlock` / `SearchResultBlock`. A future windowing opt-in is a single prop flip with no shape change. The same `.tugx-todo .tug-list-view.tugx-todo-list` specificity guard `PathListBlock` uses applies here so the transcript's outer row-gap selector doesn't bleed in.
+- **Status drives appearance via `data-status`, not React state ([L06]).** Each row stamps `data-status="pending|in_progress|completed"` on its root; CSS owns the colour, weight, strikethrough, highlight band, and the `in_progress` spinner rotation. `prefers-reduced-motion: reduce` disables the spinner animation per the project's motion-respect convention.
+- **`in_progress` rendering prefers `activeForm`.** The wire spec carries both the imperative `content` ("Run tests") and the present-continuous `activeForm` ("Running tests"); only the active row swaps to the participle. Pending / completed rows render the imperative form. The `composeTodoCopyText` helper mirrors this for the Copy affordance (`[~] Running tests`).
+- **Progress bar tracks `completed / total`, not "made any progress".** In-progress items intentionally do not count as partial credit. The summary beside the bar (`"3 done, 1 in progress, 2 pending"`) already names them, and "share of finished work" matches the assistant's mental model and the spoken summary. The bar's track + fill use the shared `--tugx-block-tone-active-*` / `--tug7-element-global-text-normal-success-rest` band so the visual vocabulary aligns with the `in_progress` row highlight and with diff-add success cues. At 100% the fill swaps to the success tone so the bar reads "done" at a glance.
+- **Wire shape is the source of truth.** TodoWrite has no `structured_result` — the input itself is the canonical list. The wrapper narrows `input` via `narrowTodoListData` (defensive: drops malformed entries + unknown statuses silently so a partial / drifted call still renders what the wire agreed on) and passes the result straight through to `TodoListBlock`. A successful TodoWrite call's `tool_result.output` is boilerplate ("Todos have been modified successfully") and carries no rendered information; we don't surface it.
+- **Streaming / error paths mirror `BashToolBlock`.** `status === "streaming"` paints the header (empty `todos[]` until the input close-bracket arrives) and a `<StreamingPlaceholder />` body. `status === "error"` paints the chrome's error band from `textOutput` and drops the body.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css`
-- `tugdeck/src/components/tugways/cards/tool-wrappers/todo-write-tool-block.tsx` + `.css`
-- Token slot `--tugx-todo-*` (composes `--tugx-block-*`)
-- Registry entry
+- `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css` — body kind + the pure helpers (`narrowTodoListData`, `countTodos`, `composeTodoSummary`, `todoProgressFraction`, `composeTodoCopyText`).
+- `tugdeck/src/components/tugways/cards/tool-wrappers/todo-write-tool-block.tsx` + `.css` — wrapper + the progress-bar slot in the chrome's args.
+- New token slot families `--tugx-todo-*` (body kind; declared in `todo-list-block.css`'s `body{}`) and `--tugx-todo-progress-*` (wrapper-only; declared in `todo-write-tool-block.css`'s `body{}`). Both compose `--tugx-block-*` per [L20].
+- Registry entry: `registerToolWrapper("todowrite", TodoWriteToolBlock)` in `tide-assistant-renderer-dispatch.ts`. No alias — `TodoWrite` is the only wire-shape name.
+- Test files: `tugdeck/src/components/tugways/body-kinds/__tests__/todo-list-block.test.ts` (18 tests over the five exported helpers) and `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/todo-write-tool-block.test.ts` (1 test pinning the case-insensitive dispatch resolution).
 
 **Tasks:**
-- [ ] TodoListBlock: checklist with status indicators (pending/in_progress/completed); in_progress highlighted
-- [ ] TodoWriteToolBlock: header with counts + progress bar; body `embedded` TodoListBlock
+- [x] TodoListBlock: checklist with status indicators (pending/in_progress/completed); in_progress highlighted — status drives the icon, the text variant (`activeForm` vs. `content`), and a highlighted background band via `data-status`. Completed rows fade to muted prose with strikethrough.
+- [x] TodoWriteToolBlock: header with counts + progress bar; body `embedded` TodoListBlock — counts summary + thin progress bar live in the chrome's `argsSummary` slot (the bar's `aria-*` attributes carry semantics; the visual is decorative). Body is `TodoListBlock` composed `embedded={true}` so the wrapper chrome owns identity and the body's Copy affordance portals into the chrome's actions slot.
 
 **Tests:**
-- [ ] Synthetic TodoWrite fixture → renders checklist correctly
-- [ ] In-progress item visually distinct
+- [x] Synthetic TodoWrite fixture → renders checklist correctly — `narrowTodoListData` covers the wire shape end-to-end (well-formed payload, malformed-entry drops, unknown-status drops); the visible composition is HMR-vetted per project test policy.
+- [x] In-progress item visually distinct — `data-status="in_progress"` row variant paints the highlight band + spinner-rotated icon; `composeTodoSummary` + `todoProgressFraction` pin the counts contract that drives the chrome's progress bar.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> plan a multi-step refactor of the auth module and track the work in a todo list` → expect a TodoWrite tool block with checklist + counts + progress bar
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 2527/2527, 19 new tests across the two new files.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual: prompt `> plan a multi-step refactor of the auth module and track the work in a todo list` → expect a TodoWrite tool block with checklist + counts + progress bar (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
 
 ---
 

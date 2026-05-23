@@ -1,0 +1,179 @@
+/* @tug-pairings:
+   - --tugx-toolblock-bg              (chrome owns the frame; from tool-wrapper-chrome.css)
+   - --tugx-askquestion-question-color | --tugx-toolblock-bg     (per-row question prose)
+   - --tugx-askquestion-answer-color   | --tugx-toolblock-bg     (per-row answer prose)
+   - --tugx-askquestion-arrow-color    | --tugx-toolblock-bg     (Q → A separator glyph)
+   - --tugx-askquestion-muted-color    | --tugx-toolblock-bg     ("(no answer)" + empty state)
+   `AskUserQuestionToolBlock` paints a numbered list of Q→A pairs
+   inside `ToolWrapperChrome`. The chrome owns the frame and all
+   `--tugx-toolblock-*` slots; this stylesheet owns the small layout
+   for the per-question row and its answer cell.
+*/
+
+/**
+ * ask-user-question-tool-block.css — Q&A summary list layout.
+ *
+ * Visual model:
+ *
+ *   <chrome header>
+ *   ┌───────────────────────────────────────────────┐
+ *   │ 1.  Question text reads as the prompt         │
+ *   │     → chosen option                            │
+ *   │                                               │
+ *   │ 2.  Second question                            │
+ *   │     → multi-select line 1                      │
+ *   │     → multi-select line 2                      │
+ *   └───────────────────────────────────────────────┘
+ *
+ * The ordered list owns the numbering (CSS counter on `<ol>`); each
+ * `<li>` carries the question + a separated answer block. Empty-
+ * answer rows render "(no answer)" in muted prose rather than
+ * disappearing — so a follow-up question dialog reads as related
+ * to the same recorded turn.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state — `data-answered` on each
+ *    row gates the muted styling; CSS owns colour and weight.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] every `--tugx-askquestion-*` slot resolves to a `--tug7-*`
+ *    / `--tug-*` base token in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="ask-user-question-tool-block"` (delegated via the
+ *    chrome's `rootSlot`).
+ *  - [L20] component-token sovereignty — only `--tugx-askquestion-*`
+ *    here; the frame is the chrome's `--tugx-toolblock-*`.
+ */
+
+/* ---- Component-tier aliases — wrapper-specific only [L17] ---- */
+
+body {
+  --tugx-askquestion-list-padding:    var(--tug-space-md);
+  --tugx-askquestion-row-gap:         var(--tug-space-md);
+  --tugx-askquestion-pair-gap:        var(--tug-space-2xs);
+  --tugx-askquestion-marker-gap:      var(--tug-space-sm);
+  --tugx-askquestion-question-size:   var(--tug-font-size-md);
+  --tugx-askquestion-question-weight: 600;
+  --tugx-askquestion-answer-size:     var(--tug-font-size-md);
+  --tugx-askquestion-answer-weight:   400;
+  --tugx-askquestion-marker-size:     var(--tug-font-size-md);
+  --tugx-askquestion-marker-weight:   600;
+
+  --tugx-askquestion-question-color:  var(--tug7-element-global-text-normal-default-rest);
+  --tugx-askquestion-answer-color:    var(--tug7-element-global-text-normal-default-rest);
+  --tugx-askquestion-arrow-color:     var(--tug7-element-global-text-normal-link-rest);
+  --tugx-askquestion-muted-color:     var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-askquestion-marker-color:    var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- List ---------------------------------------------------------- */
+
+/* `<ol>` carries the numbering via a CSS counter. `list-style: none`
+ * drops the default `1.` marker so we can render a styled marker via
+ * `::before` instead — that lets us hold the marker column at a
+ * fixed width regardless of digit count (single-digit vs. 10+
+ * questions) so the question prose aligns flush down the column. */
+.ask-user-question-tool-block-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--tugx-askquestion-list-padding);
+  counter-reset: ask-user-question-marker;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-row-gap);
+}
+
+.ask-user-question-tool-block-item {
+  counter-increment: ask-user-question-marker;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--tugx-askquestion-marker-gap);
+  row-gap: var(--tugx-askquestion-pair-gap);
+}
+
+/* @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-item::before {
+  content: counter(ask-user-question-marker) ".";
+  grid-row: 1 / 3;
+  font-size: var(--tugx-askquestion-marker-size);
+  font-weight: var(--tugx-askquestion-marker-weight);
+  color: var(--tugx-askquestion-marker-color);
+  line-height: 1.4;
+}
+
+/* ---- Question + answer rows -------------------------------------- */
+
+/* @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-question {
+  grid-column: 2;
+  font-size: var(--tugx-askquestion-question-size);
+  font-weight: var(--tugx-askquestion-question-weight);
+  color: var(--tugx-askquestion-question-color);
+  line-height: 1.4;
+}
+
+.ask-user-question-tool-block-answer {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-pair-gap);
+  font-size: var(--tugx-askquestion-answer-size);
+  font-weight: var(--tugx-askquestion-answer-weight);
+  line-height: 1.45;
+}
+
+/* Each answer line is prefixed by a Q → A arrow so the reader can
+ * scan the response visually without re-reading the question label.
+ *
+ * @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-answer > span,
+.ask-user-question-tool-block-answer-multi > li {
+  color: var(--tugx-askquestion-answer-color);
+  position: relative;
+  padding-inline-start: 1.25em;
+}
+
+/* @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-answer > span::before,
+.ask-user-question-tool-block-answer-multi > li::before {
+  content: "→";
+  position: absolute;
+  inset-inline-start: 0;
+  color: var(--tugx-askquestion-arrow-color);
+  font-weight: 600;
+}
+
+.ask-user-question-tool-block-answer-multi {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-pair-gap);
+}
+
+/* @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-no-answer {
+  color: var(--tugx-askquestion-muted-color);
+  font-style: italic;
+}
+
+/* Empty-state — surfaced when the wire shape had no recognisable
+ * questions (drift). Keeps the wrapper readable instead of rendering
+ * a zero-row list.
+ *
+ * @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-empty {
+  padding: var(--tugx-askquestion-list-padding);
+  color: var(--tugx-askquestion-muted-color);
+  font-size: var(--tugx-askquestion-answer-size);
+  font-style: italic;
+}
+
+/* ---- Args summary (chrome header) -------------------------------- */
+
+/* @tug-renders-on: var(--tugx-toolblock-header-bg) */
+.ask-user-question-tool-block-args {
+  font-family: var(--tugx-block-strip-font);
+  color: var(--tugx-block-text-color-muted);
+}

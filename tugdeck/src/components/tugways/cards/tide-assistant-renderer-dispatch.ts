@@ -93,6 +93,8 @@ import { EditToolBlock } from "./tool-wrappers/edit-tool-block";
 import { GlobToolBlock } from "./tool-wrappers/glob-tool-block";
 import { GrepToolBlock } from "./tool-wrappers/grep-tool-block";
 import { TaskToolBlock } from "./tool-wrappers/task-tool-block";
+import { TodoWriteToolBlock } from "./tool-wrappers/todo-write-tool-block";
+import { AskUserQuestionToolBlock } from "./tool-wrappers/ask-user-question-tool-block";
 import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
@@ -868,3 +870,8 @@ registerToolWrapper("grep", GrepToolBlock);
 // Canonical `agent`; the historical `task` name resolves here via the
 // `task → agent` alias in `TOOL_ALIASES`. ([D16])
 registerToolWrapper("agent", TaskToolBlock);
+registerToolWrapper("todowrite", TodoWriteToolBlock);
+// AskUserQuestion's *live* surface is the inline `QuestionDialog`
+// ([D13]); this wrapper renders the durable Q&A artifact that
+// remains in the turn after the dialog clears.
+registerToolWrapper("askuserquestion", AskUserQuestionToolBlock);

@@ -1,0 +1,248 @@
+/* @tug-pairings:
+   - --tugx-block-bg / --tugx-block-text-color           (shared block frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color    (shared header strip; from tugx-block.css)
+   - --tugx-block-tone-active-bg / --tugx-block-tone-active-color
+                                                          (in-progress row highlight)
+   - --tugx-block-text-color-muted                       (completed-row dim)
+   `TodoListBlock` paints a framed list of Claude Code Todo items.
+   The shared block-surface scaffold lives in `styles/tugx-block.css`
+   as `--tugx-block-*`; todo-specific slots (row gap, status colours,
+   strikethrough treatment) stay here under `--tugx-todo-*`.
+*/
+
+/**
+ * todo-list-block.css — `TodoListBlock` chrome + rows.
+ *
+ * Layout:
+ *  - `.tugx-todo` — the framed block surface (standalone). Dropped in
+ *    `[data-embedded="true"]` so the body sits flush under a host
+ *    `ToolWrapperChrome`.
+ *  - `.tugx-todo-header` — pinned identity strip (standalone only):
+ *    label + summary + trailing actions cluster.
+ *  - `.tugx-todo-list` — the `TugListView` in `inline` mode. Its
+ *    `height` is overridden to `auto` so the list grows to its natural
+ *    content height and the *outer* transcript scrolls; it is not
+ *    boxed into an inner scroller.
+ *  - `.tugx-todo-row` — one compact single-line `[icon] [text]` cell.
+ *    The row's `data-status` drives the icon colour, text decoration,
+ *    and (for `in_progress`) a highlighted background band.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state — status drives appearance
+ *    via the row's `data-status` attribute; CSS owns colour, weight,
+ *    strikethrough.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-block-*` and `--tugx-todo-*` each resolve to a
+ *    `--tug7-*` / `--tug-*` base token in one hop.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="todo-list-body"` on the root.
+ *  - [L20] component-token sovereignty — only `--tugx-todo-*` here;
+ *    the frame chrome consumes `--tugx-block-*`.
+ */
+
+/* ---- Component-tier aliases — todo-specific only [L17] ---- */
+
+body {
+  --tugx-todo-row-padding: var(--tug-space-xs) var(--tug-space-sm);
+  --tugx-todo-row-gap:     var(--tug-space-sm);
+  --tugx-todo-icon-color:  var(--tug7-element-global-text-normal-muted-rest);
+
+  /* `in_progress` accents — the row highlight reads as "this is the
+   * active task" without screaming. Uses the shared block active-tone
+   * band so the visual vocabulary stays consistent with diff-add
+   * highlights and other "current" surfaces. */
+  --tugx-todo-active-bg:    var(--tugx-block-tone-active-bg);
+  --tugx-todo-active-color: var(--tugx-block-tone-active-color);
+
+  /* `completed` rows fade to muted prose with strikethrough so the
+   * eye glides over what's already finished and lands on what's left. */
+  --tugx-todo-completed-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Animation cadence for the in-progress spinner. */
+  --tugx-todo-spinner-duration: 1.4s;
+}
+
+/* ---------- Frame ---------- */
+
+.tugx-todo {
+  display: block;
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  /* `overflow: clip` clips children to the rounded border-radius
+   * without forming a scroll container — `overflow: hidden` would,
+   * and would capture sticky positioning from `.tugx-todo-header`. */
+  overflow: clip;
+  color: var(--tugx-block-text-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tug-font-size-sm);
+}
+
+/* Embedded variant — composed inside a host that already paints a
+ * container and a header. Drop the standalone frame so the list sits
+ * flush. Reset values, not theme-tunable knobs. */
+.tugx-todo[data-embedded="true"] {
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.tugx-todo[data-empty="true"] {
+  display: none;
+}
+
+/* ---------- Header ---------- */
+
+/* Pinned identity strip — stays visible while the user scrolls the
+ * outer transcript. `top: var(--tugx-pin-stack-top, 0)` lets an outer
+ * pin context push it down so the two telescope. Mirrors
+ * `.tugx-paths-header` / `.tugx-file-header`. */
+.tugx-todo-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-family: var(--tugx-block-strip-font);
+  font-size: var(--tugx-block-strip-size);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-todo-label {
+  font-weight: 600;
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-todo-summary {
+  white-space: nowrap;
+  color: var(--tugx-block-strip-color);
+}
+
+.tugx-todo-header-spacer {
+  flex: 1 1 auto;
+}
+
+/* ---------- List ---------- */
+
+/* `inline`-mode `TugListView`. Same specificity guard as
+ * `path-list-block.css`: a nested `.tug-list-view` inside the
+ * transcript would otherwise inherit the entry-sized row gap from
+ * `.tide-card-transcript .tug-list-view`. The three-class form ties
+ * specificity and source-order is no longer load-bearing. */
+.tugx-todo .tug-list-view.tugx-todo-list {
+  height: auto;
+  --tugx-list-view-row-gap: 0;
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-scroll-padding-end: 0;
+}
+
+/* ---------- Row ---------- */
+
+/* One Todo row — `[status-icon] [text]`, compact and single-line for
+ * `pending` / `completed`; `in_progress` is allowed to wrap to a
+ * second line because its `activeForm` tends to be longer than the
+ * `content` field and breathing room reads more honest than
+ * mid-glyph truncation. */
+.tugx-todo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tugx-todo-row-gap);
+  padding: var(--tugx-todo-row-padding);
+  line-height: 1.45;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-todo-row:hover {
+  background: var(--tugx-block-row-hover-bg);
+}
+
+.tugx-todo-row-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  /* Reserve a fixed width regardless of which icon the status picks
+   * — pending's `Circle` is the widest at 14×14; locking the slot
+   * to that natural size keeps text columns aligned across rows.
+   * Without the lock, a stroke-width change between icons could
+   * shift the text baseline by a sub-pixel on row swaps. */
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-todo-row-icon svg {
+  color: var(--tugx-todo-icon-color);
+}
+
+.tugx-todo-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---------- Status variants ---------- */
+
+/* `in_progress` — highlighted band so the active task is immediately
+ * distinguishable. The accent colour anchors the icon; the row
+ * background is a tonal wash that reads through the surrounding
+ * frame. The wrapping text reflows naturally inside the band. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-todo-row[data-status="in_progress"] {
+  background: var(--tugx-todo-active-bg);
+  color: var(--tugx-todo-active-color);
+  font-weight: 600;
+}
+
+/* @tug-renders-on: --tugx-todo-active-bg */
+.tugx-todo-row[data-status="in_progress"] .tugx-todo-row-icon svg {
+  color: var(--tugx-todo-active-color);
+  /* Spinner-style rotation — pure CSS, no React state. Honors
+   * `prefers-reduced-motion` so users sensitive to motion get a
+   * stationary loader badge. */
+  animation: tugx-todo-spin var(--tugx-todo-spinner-duration) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tugx-todo-row[data-status="in_progress"] .tugx-todo-row-icon svg {
+    animation: none;
+  }
+}
+
+@keyframes tugx-todo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* `completed` — strikethrough + muted prose so finished work fades. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-todo-row[data-status="completed"] .tugx-todo-row-text {
+  text-decoration: line-through;
+  color: var(--tugx-todo-completed-color);
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-todo-row[data-status="completed"] .tugx-todo-row-icon svg {
+  color: var(--tug7-element-global-text-normal-success-rest);
+}
+
+/* `pending` rows are the default — no overrides; they share the
+ * frame's body text colour and the muted icon tone above. */
