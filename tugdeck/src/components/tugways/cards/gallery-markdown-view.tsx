@@ -138,7 +138,7 @@ definitions at the foot of the document[^second].
 |-----------------|-------|------------|
 | BashToolBlock   | 2     | #step-10-7 |
 | JsonTreeBlock   | 1     | #step-12   |
-| DefaultToolWrapper | 2  | #step-13   |
+| DefaultToolBlock | 2  | #step-13   |
 
 ## Task list
 

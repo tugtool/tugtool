@@ -5,7 +5,7 @@
  * A body kind groups its resting affordances (`BlockCopyButton`,
  * `BlockFoldCue`, sort / view toggles) into one inline-flex row that
  * sits at the trailing edge of the block's header — or portals into a
- * host `ToolWrapperChrome`'s actions slot when the block is composed
+ * host `ToolBlockChrome`'s actions slot when the block is composed
  * `embedded`. This component is the single source of truth for that
  * row's markup and styling (`block-actions-cluster.css`), so the
  * cluster can't drift between body kinds.

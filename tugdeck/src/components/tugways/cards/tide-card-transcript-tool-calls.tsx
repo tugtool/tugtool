@@ -59,7 +59,7 @@
  *  - [D05] each tool call is a Layer-2 wrapper resolved from the
  *    dispatch registry — this component is the iteration scaffold,
  *    not a renderer in its own right.
- *  - [D11] unregistered tool names route through `DefaultToolWrapper`
+ *  - [D11] unregistered tool names route through `DefaultToolBlock`
  *    with a caution flag, surfaced inline by the wrapper chrome.
  *  - [D12] streaming-aware wrappers (BashToolBlock today) decide for
  *    themselves how to render their `status === "streaming"` body
@@ -67,7 +67,7 @@
  *    the prop bag flowing.
  *
  * Importing this module from `tide-card-transcript.tsx` is also what
- * causes the dispatch's bottom-of-file `registerToolWrapper(...)`
+ * causes the dispatch's bottom-of-file `registerToolBlock(...)`
  * calls to evaluate at module-load time in production. Today the
  * dispatch is only reachable from tests + the wrapper itself, so the
  * registrations never run in the live bundle.
@@ -91,7 +91,7 @@ import type {
 } from "@/lib/code-session-store";
 
 import { dispatchToolCallState } from "./tide-assistant-renderer-dispatch";
-import type { ChildToolCallsMap } from "./tool-wrappers/types";
+import type { ChildToolCallsMap } from "./tool-blocks/types";
 
 // ---------------------------------------------------------------------------
 // Public types

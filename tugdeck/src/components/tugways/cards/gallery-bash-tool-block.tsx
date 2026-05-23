@@ -30,8 +30,8 @@
 
 import React from "react";
 
-import { BashToolBlock } from "./tool-wrappers/bash-tool-block";
-import type { ToolWrapperProps } from "./tool-wrappers/types";
+import { BashToolBlock } from "./tool-blocks/bash-tool-block";
+import type { ToolBlockProps } from "./tool-blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -62,7 +62,7 @@ const MOUNT_IN_SAVED_STATE_STDOUT = Array.from(
     `line ${String(i + 1).padStart(3, "0")}: contents of a synthetic Bash run that exceeds the fold threshold`,
 ).join("\n");
 
-const MOUNT_IN_SAVED_STATE_PROPS: ToolWrapperProps = {
+const MOUNT_IN_SAVED_STATE_PROPS: ToolBlockProps = {
   // Stable across reload so `componentStatePreservationKey` matches
   // (the BashToolBlock derives its preservation key from `toolUseId`).
   toolUseId: "toolu_mount_in_saved_state_e8",
@@ -100,7 +100,7 @@ export function GalleryBashMountInSavedState(): React.ReactElement {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const ECHO_HELLO: ToolWrapperProps = {
+const ECHO_HELLO: ToolBlockProps = {
   toolUseId: "echo-1",
   toolName: "Bash",
   msgId: "gallery-msg",
@@ -133,7 +133,7 @@ index abc1234..def5678 100644
  export const VERSION = "1.0.0";
 `;
 
-const GIT_SHOW_HEAD: ToolWrapperProps = {
+const GIT_SHOW_HEAD: ToolBlockProps = {
   toolUseId: "git-show-1",
   toolName: "Bash",
   msgId: "gallery-msg",
@@ -155,7 +155,7 @@ index 1111111..2222222 100644
  }
 `;
 
-const GIT_DIFF: ToolWrapperProps = {
+const GIT_DIFF: ToolBlockProps = {
   toolUseId: "git-diff-1",
   toolName: "Bash",
   msgId: "gallery-msg",
@@ -174,7 +174,7 @@ Your branch is ahead of 'origin/main' by 1 commit.
 nothing to commit, working tree clean
 `;
 
-const GIT_STATUS: ToolWrapperProps = {
+const GIT_STATUS: ToolBlockProps = {
   toolUseId: "git-status-1",
   toolName: "Bash",
   msgId: "gallery-msg",
@@ -199,7 +199,7 @@ Found 1 error.
  * than the shell exit code, so `isError: true` synthesizes `exit 1` —
  * the footer paints the strong-red exit badge per [Table T02].
  */
-const BUILD_FAILURE: ToolWrapperProps = {
+const BUILD_FAILURE: ToolBlockProps = {
   toolUseId: "build-failure-1",
   toolName: "Bash",
   msgId: "gallery-msg",
@@ -220,7 +220,7 @@ const BUILD_FAILURE: ToolWrapperProps = {
  * underlying process was killed, not exited — so the wrapper omits the
  * synthesized exit code entirely.
  */
-const INTERRUPTED: ToolWrapperProps = {
+const INTERRUPTED: ToolBlockProps = {
   toolUseId: "interrupted-1",
   toolName: "Bash",
   msgId: "gallery-msg",
@@ -248,7 +248,7 @@ const ANSI_RICH_FIXTURE =
   `${ESC}[32mREADME.md${ESC}[0m  ${ESC}[32mjustfile${ESC}[0m\n` +
   `${ESC}[33mwarning:${ESC}[0m 2 directories, 2 files\n`;
 
-const ANSI_RICH: ToolWrapperProps = {
+const ANSI_RICH: ToolBlockProps = {
   toolUseId: "ansi-rich-1",
   toolName: "Bash",
   msgId: "gallery-msg",
@@ -269,7 +269,7 @@ const ANSI_RICH: ToolWrapperProps = {
  * `cd /tmp`) has no body; the footer surfaces the `(no output)` hint so
  * the row doesn't read as missing data.
  */
-const NO_OUTPUT: ToolWrapperProps = {
+const NO_OUTPUT: ToolBlockProps = {
   toolUseId: "no-output-1",
   toolName: "Bash",
   msgId: "gallery-msg",

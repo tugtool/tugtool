@@ -2,7 +2,7 @@
  * tide-card-transcript-tool-calls.css — `TranscriptToolCalls`.
  *
  * Structural container only. No own visible chrome — wrappers
- * (BashToolBlock, DefaultToolWrapper, …) own their borders, headers,
+ * (BashToolBlock, DefaultToolBlock, …) own their borders, headers,
  * footers, etc. via the `--tugx-toolblock-*` token slot family.
  *
  * The container is a flex column so consecutive wrappers stack

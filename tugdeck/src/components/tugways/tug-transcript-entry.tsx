@@ -27,7 +27,7 @@
  * long entry body scrolls past — multi-hunk DiffBlocks, tall
  * TerminalBlocks, deep FileBlocks. Block-level pinned chrome inside
  * the entry body (FileBlock / DiffBlock / TerminalBlock / fenced-code
- * headers + their actions rows; ToolWrapperChrome's header) consumes
+ * headers + their actions rows; ToolBlockChrome's header) consumes
  * the variable `--tugx-pin-stack-top` to telescope BELOW the entry
  * header rather than overlap it.
  *

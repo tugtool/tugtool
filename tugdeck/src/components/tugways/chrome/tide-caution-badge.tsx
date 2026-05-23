@@ -10,10 +10,10 @@
  * ([#step-21](roadmap/tide-assistant-rendering.md#step-21)); both
  * consume this same component.
  *
- * Extracted from `ToolWrapperChrome`'s private inline badge so the
+ * Extracted from `ToolBlockChrome`'s private inline badge so the
  * later card-chrome aggregate surface and any bespoke wrapper that
  * needs to flag a shape mismatch compose one component rather than
- * re-deriving the chip. `ToolWrapperChrome` now composes it.
+ * re-deriving the chip. `ToolBlockChrome` now composes it.
  *
  * The reason detail rides a native `title` tooltip — the chip stays a
  * single, dependency-light `<span>`. A richer hover surface, if ever
@@ -35,7 +35,7 @@ import "./tide-caution-badge.css";
 
 import React from "react";
 
-import type { CautionFlag } from "@/components/tugways/cards/tool-wrappers/types";
+import type { CautionFlag } from "@/components/tugways/cards/tool-blocks/types";
 
 /** Short human label per caution reason. */
 const CAUTION_LABELS: Readonly<Record<CautionFlag["reason"], string>> = {

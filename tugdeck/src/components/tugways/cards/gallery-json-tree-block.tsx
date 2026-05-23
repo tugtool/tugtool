@@ -3,7 +3,7 @@
  *
  * `JsonTreeBlock` ([body-kinds/json-tree-block.tsx]) is a permanent
  * Layer-1 body kind — the collapsible JSON viewer behind
- * `DefaultToolWrapper` and the drift fallback. This card mounts it
+ * `DefaultToolBlock` and the drift fallback. This card mounts it
  * **standalone** (each instance paints its own frame + header with the
  * Expand-all / Collapse-all / Copy cluster) across the value-shapes it
  * has to handle:
@@ -17,7 +17,7 @@
  *  3. **Array of objects** — the list shape a tool's
  *     `structured_result` usually carries, labelled "results".
  *  4. **Shallow default** — the same nested payload at `defaultDepth={1}`,
- *     i.e. how `DefaultToolWrapper` opens a tool input: root expanded,
+ *     i.e. how `DefaultToolBlock` opens a tool input: root expanded,
  *     top-level keys folded.
  *  5. **Empty** — `data={undefined}`, the layout-consistent empty
  *     marker (distinct from a JSON `null` leaf).
@@ -117,7 +117,7 @@ export function GalleryJsonTreeBlock(): React.ReactElement {
 
       <div className="cg-section gallery-json-tree-section">
         <TugLabel className="cg-section-title">
-          Shallow default (depth 1) — how DefaultToolWrapper opens a tool input
+          Shallow default (depth 1) — how DefaultToolBlock opens a tool input
         </TugLabel>
         <JsonTreeBlock data={NESTED} label="input" defaultDepth={1} />
       </div>

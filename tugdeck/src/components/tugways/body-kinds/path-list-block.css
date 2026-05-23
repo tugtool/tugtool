@@ -13,7 +13,7 @@
  * Layout:
  *  - `.tugx-paths` — the framed block surface (standalone). Dropped in
  *    `[data-embedded="true"]` so the body sits flush under a host
- *    `ToolWrapperChrome`.
+ *    `ToolBlockChrome`.
  *  - `.tugx-paths-header` — pinned identity strip (standalone only):
  *    label + count + truncation indicator + trailing actions cluster.
  *  - `.tugx-paths-list` — the `TugListView` in `inline` mode. Its

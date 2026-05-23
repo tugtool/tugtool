@@ -13,7 +13,7 @@
  *    path count, an optional "truncated at N" indicator, and a
  *    trailing actions cluster (Copy + a sort toggle). In `embedded`
  *    mode the header is suppressed and the cluster portals into the
- *    host `ToolWrapperChrome`'s actions slot.
+ *    host `ToolBlockChrome`'s actions slot.
  *  - Body — a `TugListView` in `inline` mode (every row rendered, no
  *    windowing). The block grows to its natural height and the *outer*
  *    transcript scrolls; it is not boxed into an inner scroller. Rows
@@ -80,8 +80,8 @@ import {
   ListOrdered,
 } from "lucide-react";
 
-import { MiddleEllipsisPath } from "@/components/tugways/cards/tool-wrappers/middle-ellipsis-path";
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { MiddleEllipsisPath } from "@/components/tugways/cards/tool-blocks/middle-ellipsis-path";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
   TugListView,
@@ -129,10 +129,10 @@ export interface PathListBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolWrapperChrome` in
+   * container and a header (e.g. `ToolBlockChrome` in
    * `GlobToolBlock`). When `true` the standalone frame + header are
    * dropped and the actions cluster portals into the host chrome's
-   * actions slot. MUST be used under a `ToolWrapperChrome`.
+   * actions slot. MUST be used under a `ToolBlockChrome`.
    *
    * @default false
    */
@@ -408,7 +408,7 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
   const chromeActionsTarget = useChromeActionsTarget();
 
   // Dev-mode misconfiguration check — `embedded={true}` requires a
-  // parent `ToolWrapperChrome` or the actions cluster has nowhere to
+  // parent `ToolBlockChrome` or the actions cluster has nowhere to
   // portal. Mirrors `FileBlock`'s deferred-warn pattern: the chrome
   // publishes its actions target via a `useState`-tracked ref callback,
   // so the target is `null` on the body kind's first render under a
@@ -421,7 +421,7 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
     const handle = window.setTimeout(() => {
       console.warn(
         "PathListBlock: `embedded={true}` requires a parent " +
-          "`ToolWrapperChrome`. Without one the actions cluster (Copy, " +
+          "`ToolBlockChrome`. Without one the actions cluster (Copy, " +
           "sort toggle) has nowhere to portal and the user loses access " +
           "to it silently. Either compose under a chrome or set " +
           "`embedded={false}`.",

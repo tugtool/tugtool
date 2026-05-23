@@ -1,0 +1,274 @@
+/* @tug-pairings:
+   - --tugx-block-chrome-bg / --tugx-block-text-color           (shared chrome frame; from tugx-block.css)
+   - --tugx-block-strip-bg / --tugx-block-strip-color           (shared header / footer strip)
+   - --tugx-block-tone-caution-bg / --tugx-block-tone-caution-color (shared caution chip)
+   - --tugx-block-tone-remove-bg / --tugx-block-tone-remove-color   (shared error band)
+   The chrome paints a subtle bordered card around tool-call content
+   with a header row (icon + name + args summary) and an optional
+   footer for badges. The `data-status` attribute on the root selects
+   the streaming / ready / error stripe color. Shared block-surface
+   scaffold lives in `styles/tugx-block.css`.
+*/
+
+/**
+ * tool-block-chrome.css — shared frame for Layer-2 tool blocks.
+ *
+ * The chrome is intentionally small: a header row, a body region
+ * (whose contents are the body-kind component the wrapper composes),
+ * and an optional footer.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame as a chrome variant, header
+ *    strip, footer strip, tone bands) comes from `--tugx-block-*` in
+ *    `styles/tugx-block.css`. Consumed directly in the rules below.
+ *    The chrome uses the *chrome-bg* variant (raised surface) since it
+ *    sits above the body kind it wraps.
+ *  - Toolblock-specific slots (status stripe colors, header text size,
+ *    name weight, caution chip geometry, error band geometry, footer
+ *    gap override, streaming placeholder geometry) live in the body{}
+ *    block below as `--tugx-toolblock-*`.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] all visible state lives on data attributes / class
+ *     swaps; React state never drives appearance.
+ *   - [L17] `--tugx-block-*` and `--tugx-toolblock-*` each resolve to
+ *     `--tug7-*` in one hop.
+ *   - [L19] component-authoring guide — file pair, module
+ *     docstring, `data-slot="tool-block-chrome"`.
+ *   - [L20] component-token sovereignty — every visible declaration
+ *     consumes a `--tugx-*` token; the chrome never reaches into a
+ *     body kind's tokens.
+ */
+
+/* ---- Component-tier aliases — toolblock-specific only [L17] ---- */
+
+body {
+  /* Status stripe — left-edge color encodes lifecycle (streaming / ready
+   * / error). These are status-semantic colors, not the generic block
+   * tone family, so they stay toolblock-local. */
+  --tugx-toolblock-stripe-streaming: var(--tug7-element-global-text-normal-link-rest);
+  --tugx-toolblock-stripe-ready:     var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-toolblock-stripe-error:     var(--tug7-element-global-text-normal-danger-rest);
+
+  /* Header text size — larger (sm) than the shared strip-size (2xs)
+   * because the chrome header carries the tool name + args, not just
+   * a tagline. */
+  --tugx-toolblock-header-size:  var(--tug-font-size-sm);
+  --tugx-toolblock-name-weight:  600;
+
+  /* Header args row — the gap between a wrapper's pattern / path
+   * `<code>` and its trailing inline badges (count, line-range,
+   * change-count, truncated), and the badge typography. Consumed by
+   * `read-`, `edit-`, `glob-`, and `grep-tool-block.css`. */
+  --tugx-toolblock-header-gap:   var(--tug-space-sm);
+  --tugx-toolblock-args-font:    var(--tug-font-family-mono);
+
+  /* Caution chip — inline in header; bespoke geometry */
+  --tugx-toolblock-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-toolblock-caution-radius:  var(--tug-radius-xs);
+  --tugx-toolblock-caution-size:    var(--tug-font-size-2xs);
+  --tugx-toolblock-caution-weight:  600;
+  --tugx-toolblock-caution-bg:      var(--tug7-surface-tone-primary-normal-caution-rest);
+  --tugx-toolblock-caution-color:   var(--tug7-element-global-text-normal-caution-rest);
+
+  /* Error band — between body and footer; bespoke geometry */
+  --tugx-toolblock-error-padding: var(--tug-space-sm) var(--tug-space-md);
+  --tugx-toolblock-error-size:    var(--tug-font-size-sm);
+
+  /* Footer gap — wider (md) than the shared strip-gap (sm) because the
+   * footer hosts post-mortem badges with more breathing room. */
+  --tugx-toolblock-footer-gap: var(--tug-space-md);
+
+  /* Streaming placeholder — wrapper padding around the `TugProgress`
+   * ring; the ring itself owns its own size + animation. */
+  --tugx-toolblock-streaming-padding: var(--tug-space-sm) var(--tug-space-md);
+
+  /* Actions slot — hosts body-kind affordance buttons portaled into
+   * the chrome header (Find trigger, Copy, view-mode toggle, fold
+   * cue). The slot is structural: layout-only here, with appearance
+   * driven by the affordance components themselves per [L20]. */
+  --tugx-toolblock-actions-gap: var(--tug-space-2xs);
+}
+
+.tool-block-chrome {
+  display: flex;
+  flex-direction: column;
+  margin: var(--tugx-block-margin);
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  /* `overflow: clip` clips to the rounded border-radius without
+   * forming a scrolling container — `overflow: hidden` would form
+   * one and capture sticky positioning from any composed body kind
+   * with a `position: sticky` header. */
+  overflow: clip;
+}
+
+.tool-block-chrome[data-status="streaming"] {
+  border-left: 3px solid var(--tugx-toolblock-stripe-streaming);
+}
+
+.tool-block-chrome[data-status="error"] {
+  border-left: 3px solid var(--tugx-toolblock-stripe-error);
+}
+
+.tool-block-chrome[data-status="ready"] {
+  border-left: 3px solid var(--tugx-toolblock-stripe-ready);
+}
+
+/* ---- Header row ---- */
+
+/* Pinned header — stays visible while the user scrolls the wrapper's
+ * body. In embedded-mode tool blocks (Read, Edit, Bash), this is the
+ * primary visible header; the composed body-kind's own header is
+ * suppressed by `embedded={true}`. `top: var(--tugx-pin-stack-top, 0)`
+ * lets an outer pin context (e.g. a transcript-entry header that has
+ * written its measured height into the variable) push this header
+ * down so the two telescope. */
+.tool-block-chrome-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  /* No border-radius on the header itself. At rest, the wrapper's
+   * `border-radius` + `overflow: clip` paints the rounded top corners
+   * around the header. Once the header pins, the wrapper scrolls past
+   * and its rounded top moves up behind the entry-header's z-index: 2
+   * layer — the pinned header is left as a flat strip, which is the
+   * intended treatment for the stuck state. */
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  font-size: var(--tugx-toolblock-header-size);
+  font-family: var(--tugx-block-strip-font);
+  color: var(--tugx-block-text-color);
+}
+
+.tool-block-chrome-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--tugx-block-text-color-muted);
+}
+
+.tool-block-chrome-name {
+  flex: 0 0 auto;
+  font-weight: var(--tugx-toolblock-name-weight);
+  color: var(--tugx-block-text-color);
+}
+
+/* The args slot is the single width-constrained truncation host for
+ * the header. It is a flex container so each block's arg content
+ * (a bare `<code>` command, or a path + line-range row) becomes a
+ * flex item that respects `min-width: 0` and shrinks within the
+ * header. The *child* owns its own ellipsis behavior — end-ellipsis
+ * for a shell command, middle-ellipsis for a file path — so the slot
+ * itself sets no `text-overflow`. It never scrolls: long content
+ * ellipsizes, it does not grow a scrollbar or hover-expand. */
+.tool-block-chrome-args {
+  display: flex;
+  align-items: baseline;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tugx-block-text-color-muted);
+  font-family: var(--tugx-block-code-font);
+}
+
+.tool-block-chrome-args code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+/* A bare `<code>` arg summary (e.g. BashToolBlock's shell command)
+ * is a direct flex item of the slot: it shrinks and end-ellipsizes.
+ * End-ellipsis is correct for a command — the head (program + early
+ * flags) is the part worth keeping. Blocks whose arg summary needs
+ * different truncation (ReadToolBlock's middle-ellipsis path) wrap
+ * their content in their own element and own that behavior. */
+.tool-block-chrome-args > code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Actions slot (trailing edge of the header) ---- */
+
+/* Body-kind affordances portal into this slot when composed under
+ * `embedded={true}`. See `tool-block-chrome.tsx`'s module docstring
+ * for the portal contract. The slot is structural only — it hosts
+ * `TugIconButton`s, `TugPushButton`s, and similar component children
+ * whose own appearance tokens drive their rendering. We control the
+ * cluster layout (gap, sizing-out-of-the-flow) here; we never style
+ * the children directly. The slot is always rendered (empty when the
+ * body kind has nothing to surface) so the context-published DOM node
+ * is present from first paint — descendants can portal on their first
+ * render-after-mount without waiting for a chrome re-render. */
+.tool-block-chrome-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--tugx-toolblock-actions-gap);
+}
+
+/* The inline caution chip is its own component — `TideCautionBadge`
+ * (`chrome/tide-caution-badge.css`). The chrome only places it in the
+ * header flow. The `--tugx-toolblock-caution-*` tokens above are
+ * retained: they are the shared small-chip geometry that
+ * `read-tool-block`'s line-range badge and `edit-tool-block`'s
+ * change-count badge ride for visual consistency. */
+
+/* ---- Body region ---- */
+
+.tool-block-chrome-body {
+  display: block;
+  /* Body-kind component owns its own padding / margin. The chrome
+   * just hosts the region. */
+}
+
+/* ---- Error message (between body and footer) ---- */
+
+.tool-block-chrome-error {
+  padding: var(--tugx-toolblock-error-padding);
+  background: var(--tugx-block-tone-remove-bg);
+  border-top: 1px solid var(--tugx-block-border);
+  color: var(--tugx-block-tone-remove-color);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-toolblock-error-size);
+}
+
+/* ---- Footer (badges) ---- */
+
+.tool-block-chrome-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tugx-toolblock-footer-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-top: 1px solid var(--tugx-block-strip-border);
+  color: var(--tugx-block-strip-color);
+  font-size: var(--tugx-block-strip-size);
+  font-family: var(--tugx-block-strip-font);
+}
+
+/* ---- Streaming placeholder ---- */
+
+/* Inline-flex wrapper that pads the `TugProgress` ring so the
+ * in-flight indicator reads as a single body-sized affordance rather
+ * than a tiny glyph at the very edge of the chrome. The ring itself
+ * owns animation, sizing, and motion-respect — there is no bespoke
+ * vocabulary here anymore. */
+.tool-block-streaming-placeholder {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tugx-toolblock-streaming-padding);
+  color: var(--tugx-block-text-color-muted);
+}

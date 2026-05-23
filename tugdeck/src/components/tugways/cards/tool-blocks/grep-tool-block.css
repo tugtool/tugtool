@@ -1,0 +1,66 @@
+/**
+ * grep-tool-block.css — `GrepToolBlock`.
+ *
+ * Structural overlay only. The wrapper composes `ToolBlockChrome`
+ * for its frame (border / header / footer) and either
+ * `SearchResultBlock` (content mode) or `PathListBlock` (files-only
+ * mode) for its body. This file holds only the header args row — the
+ * search pattern `<code>` plus the inline match / file counts and the
+ * `truncated` badge — read-only annotations layered over chrome the
+ * parent components own.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] file pair, `data-slot="grep-tool-block"` (delegated to the
+ *    chrome via `rootSlot`).
+ *  - [L20] all visible declarations consume tokens from one of the
+ *    composed components — no new `--tugx-*` slot is introduced. The
+ *    `truncated` badge rides the chrome's caution-badge metrics for
+ *    visual consistency without new theme knobs (the same pattern as
+ *    `GlobToolBlock`'s `truncated` badge).
+ */
+
+.grep-tool-block-args {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tugx-toolblock-header-gap);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* The search pattern — command-shaped (a regex), so it ellipsizes
+ * from the end (conformance item 8) rather than via the
+ * middle-ellipsis path treatment. The `<code>` is the ellipsizing
+ * element. */
+.grep-tool-block-args code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grep-tool-block-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A subtle middle-dot divider sets the pattern apart from the inline
+ * count badges, and the match count apart from the file count —
+ * mirrors `SearchResultBlock`'s own `{files} · {matches}` header. */
+.grep-tool-block-count::before {
+  content: "·";
+  margin-inline-end: var(--tug-space-xs);
+}
+
+.grep-tool-block-truncation {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: var(--tugx-toolblock-caution-padding);
+  border-radius: var(--tugx-toolblock-caution-radius);
+  background: var(--tugx-toolblock-caution-bg);
+  color: var(--tugx-toolblock-caution-color);
+  font-family: var(--tugx-toolblock-args-font);
+  font-size: var(--tugx-toolblock-caution-size);
+  font-weight: var(--tugx-toolblock-caution-weight);
+}

@@ -1,0 +1,58 @@
+/* @tug-pairings: none — `EditToolBlock` is decoration over
+   composition. The header / error chrome inherits `--tugx-toolblock-*`
+   from `tool-block-chrome.css`; the body inherits `--tugx-diff-*`
+   from `diff-block.css`; the header path inherits its rules from
+   `middle-ellipsis-path.css`. The only bespoke pieces are the args row
+   and the inline change-count badge, which ride the shared
+   `--tugx-block-tone-*` add / remove tones.
+*/
+
+/**
+ * edit-tool-block.css — `EditToolBlock` wrapper styles.
+ *
+ * Structural overlay only. The wrapper composes `ToolBlockChrome`
+ * for its frame, `DiffBlock` (embedded) for its body, and
+ * `MiddleEllipsisPath` for the header path. This file holds just the
+ * header args row — the path slot plus the inline `+N −M` change-count
+ * badge. `DiffBlock`'s own path/stats header is suppressed in embedded
+ * mode, so this badge is the only place the counts surface.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] file pair, `data-slot="edit-tool-block"` (delegated to the
+ *    chrome via `rootSlot`).
+ *  - [L20] consumes the chrome's `--tugx-toolblock-*` and the shared
+ *    `--tugx-block-tone-*` add / remove tones; introduces no new
+ *    `--tugx-*` slot.
+ */
+
+.edit-tool-block-args {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tugx-toolblock-header-gap);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* Inline change-count badge — `+N −M`. Mirrors `DiffBlock`'s own
+ * `.tugx-diff-stats` treatment (mono, tabular numerals) so a Read-tool
+ * row and an Edit-tool row read consistently in the transcript. */
+.edit-tool-block-stats {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4em;
+  font-family: var(--tugx-toolblock-args-font);
+  font-size: var(--tugx-toolblock-caution-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.edit-tool-block-stats-add {
+  color: var(--tugx-block-tone-add-color);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.edit-tool-block-stats-remove {
+  color: var(--tugx-block-tone-remove-color);
+}

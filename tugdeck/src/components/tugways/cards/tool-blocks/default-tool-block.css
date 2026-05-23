@@ -1,0 +1,38 @@
+/* @tug-pairings: none — `DefaultToolBlock` is decoration over
+   composition. The frame chrome is `tool-block-chrome.css`; the
+   input / result sections are standalone `JsonTreeBlock`s
+   (`json-tree-block.css`) and a `TugMarkdownBlock`
+   (`tug-markdown-block.css`), each owning its own surface; the
+   caution chip is `TideCautionBadge` (`tide-caution-badge.css`).
+   This file holds only the section-stack layout.
+*/
+
+/**
+ * default-tool-block.css — `DefaultToolBlock` section layout.
+ *
+ * Structural overlay only. The wrapper composes `ToolBlockChrome`
+ * for its frame and stacks two self-contained body-kind sections
+ * (input `JsonTreeBlock`, smart-picked result) inside the chrome
+ * body. Each section owns its own frame + spacing; this file just
+ * places the stack and gives the markdown result the same vertical
+ * rhythm as the framed JSON sections.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] file pair, `data-slot="default-tool-block"` (delegated
+ *    to the chrome via `rootSlot`).
+ *  - [L20] introduces no `--tugx-*` slot; the section spacing rides
+ *    the shared `--tugx-block-margin`.
+ */
+
+.default-tool-block-sections {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The markdown result rides the same vertical rhythm as the framed
+ * `JsonTreeBlock` sections, which carry `--tugx-block-margin`. The
+ * forwarded class is `TugMarkdownBlock`'s sanctioned cascade-scoped
+ * customization point ([L20]). */
+.default-tool-block-result-md {
+  margin: var(--tugx-block-margin);
+}

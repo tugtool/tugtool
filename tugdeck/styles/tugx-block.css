@@ -2,7 +2,7 @@
  * tugx-block.css — shared "block surface" utility token family.
  *
  * Captures the common visual scaffold used by FileBlock, DiffBlock,
- * TerminalBlock, ToolWrapperChrome, TideThinkingBlock, and
+ * TerminalBlock, ToolBlockChrome, TideThinkingBlock, and
  * TugMarkdownView: an inset card-shaped frame with an optional raised
  * header strip, an optional matching footer strip, code-typography
  * defaults, and tone-tinted feedback bands.
@@ -36,7 +36,7 @@
  *    FileBlock, DiffBlock, TerminalBlock, TideThinkingBlock, the markdown
  *    code-fence panel, etc.
  *  - `--tugx-block-chrome-bg` — chrome wrapper variant. Raised surface.
- *    Used by `ToolWrapperChrome`, which sits *above* a body-kind and so
+ *    Used by `ToolBlockChrome`, which sits *above* a body-kind and so
  *    must read as a slightly elevated surface rather than a recessed one.
  *
  * The two share every *other* slot (border, radius, margin, header strip,
@@ -134,7 +134,7 @@ body {
 
   /* ------------------------------------------------------------------ *
    * Tone-tinted feedback bands. Used for diff line backgrounds,        *
-   * terminal exit badges, tool-wrapper caution / error bands, and any  *
+   * terminal exit badges, tool-block caution / error bands, and any  *
    * future component that wants the same vocabulary.                   *
    *                                                                    *
    * `add` / `remove` / `caution` / `active` mirror the semantic        *

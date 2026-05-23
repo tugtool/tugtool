@@ -9,12 +9,12 @@
  * Coverage:
  *  - assistant_text routes to the kind-level scaffold (today; replaced
  *    in #step-3 by the real assistant-turn renderer).
- *  - tool_call with an unknown name routes to DefaultToolWrapper with
+ *  - tool_call with an unknown name routes to DefaultToolBlock with
  *    a caution flag.
  *  - tool_call with an alias (`MultiEdit` / `multiedit` / `MULTIEDIT`)
  *    resolves to the canonical wrapper.
  *  - tool_call lookup is case-insensitive on the tool name.
- *  - audit-confirmed default-routed tools resolve to DefaultToolWrapper
+ *  - audit-confirmed default-routed tools resolve to DefaultToolBlock
  *    *without* a caution flag (they are known to default-route by
  *    design).
  *  - registeredTools() reports the registry's coverage.
@@ -27,7 +27,7 @@ import {
   KIND_RENDERERS,
   VALIDATED_CC_VERSION,
   _resetDriftLogForTests,
-  _resetToolWrapperRegistryForTests,
+  _resetToolBlockRegistryForTests,
   checkStructuredShape,
   detectToolCallDrift,
   detectVersionDrift,
@@ -35,17 +35,17 @@ import {
   dispatchToolCallState,
   extractMetadataVersion,
   logDriftEvent,
-  registerToolWrapper,
+  registerToolBlock,
   registeredTools,
-  resolveToolWrapper,
+  resolveToolBlock,
   summarizeDrift,
   versionDriftCaution,
   versionLine,
   type DispatchContext,
   type RenderInput,
 } from "./tide-assistant-renderer-dispatch";
-import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
-import type { ToolWrapperProps } from "./tool-wrappers/types";
+import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
+import type { ToolBlockProps } from "./tool-blocks/types";
 import type { ToolCallState } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
@@ -73,12 +73,12 @@ function fakeToolCall(toolName: string, overrides: Partial<ToolCallState> = {}):
 }
 
 /** Stable identity for "the canonical Edit wrapper" used by alias tests. */
-const FakeEditWrapper: React.FC<ToolWrapperProps> = () =>
+const FakeEditWrapper: React.FC<ToolBlockProps> = () =>
   React.createElement("div", { "data-slot": "fake-edit" });
 FakeEditWrapper.displayName = "FakeEditWrapper";
 
 beforeEach(() => {
-  _resetToolWrapperRegistryForTests();
+  _resetToolBlockRegistryForTests();
   _resetDriftLogForTests();
 });
 
@@ -139,7 +139,7 @@ describe("dispatch — kind routing", () => {
 
 describe("dispatch — tool_call routing", () => {
   it("routes a known tool to its registered wrapper, no caution", () => {
-    registerToolWrapper("edit", FakeEditWrapper);
+    registerToolBlock("edit", FakeEditWrapper);
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Edit"),
@@ -150,14 +150,14 @@ describe("dispatch — tool_call routing", () => {
     expect(result.caution).toBeUndefined();
   });
 
-  it("routes an unknown tool to DefaultToolWrapper with caution.reason='unknown_tool'", () => {
+  it("routes an unknown tool to DefaultToolBlock with caution.reason='unknown_tool'", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("ZzzUnknownTool"),
       msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
-    expect(result.Component).toBe(DefaultToolWrapper);
+    expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toEqual({
       reason: "unknown_tool",
       detail: "ZzzUnknownTool",
@@ -170,19 +170,19 @@ describe("dispatch — tool_call routing", () => {
     });
   });
 
-  it("routes audit-confirmed default tools to DefaultToolWrapper without caution", () => {
+  it("routes audit-confirmed default tools to DefaultToolBlock without caution", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("TaskUpdate"),
       msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
-    expect(result.Component).toBe(DefaultToolWrapper);
+    expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toBeUndefined();
   });
 
   it("threads tool fields onto the wrapper props", () => {
-    registerToolWrapper("edit", FakeEditWrapper);
+    registerToolBlock("edit", FakeEditWrapper);
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Edit", {
@@ -207,7 +207,7 @@ describe("dispatch — tool_call routing", () => {
   });
 
   it("maps store status pending → wrapper status streaming", () => {
-    registerToolWrapper("bash", FakeEditWrapper);
+    registerToolBlock("bash", FakeEditWrapper);
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Bash", { status: "pending" }),
@@ -218,7 +218,7 @@ describe("dispatch — tool_call routing", () => {
   });
 
   it("maps store status error → wrapper status error and isError=true", () => {
-    registerToolWrapper("bash", FakeEditWrapper);
+    registerToolBlock("bash", FakeEditWrapper);
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Bash", { status: "error" }),
@@ -234,46 +234,46 @@ describe("dispatch — tool_call routing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveToolWrapper — alias and case-insensitive lookup
+// resolveToolBlock — alias and case-insensitive lookup
 // ---------------------------------------------------------------------------
 
-describe("resolveToolWrapper", () => {
-  it("returns DefaultToolWrapper for an empty registry", () => {
-    expect(resolveToolWrapper("Anything")).toBe(DefaultToolWrapper);
+describe("resolveToolBlock", () => {
+  it("returns DefaultToolBlock for an empty registry", () => {
+    expect(resolveToolBlock("Anything")).toBe(DefaultToolBlock);
   });
 
   it("looks up by exact lowercase name", () => {
-    registerToolWrapper("read", FakeEditWrapper);
-    expect(resolveToolWrapper("read")).toBe(FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
+    expect(resolveToolBlock("read")).toBe(FakeEditWrapper);
   });
 
   it("is case-insensitive on the input name", () => {
-    registerToolWrapper("read", FakeEditWrapper);
-    expect(resolveToolWrapper("Read")).toBe(FakeEditWrapper);
-    expect(resolveToolWrapper("READ")).toBe(FakeEditWrapper);
-    expect(resolveToolWrapper("reAd")).toBe(FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
+    expect(resolveToolBlock("Read")).toBe(FakeEditWrapper);
+    expect(resolveToolBlock("READ")).toBe(FakeEditWrapper);
+    expect(resolveToolBlock("reAd")).toBe(FakeEditWrapper);
   });
 
   it("resolves the multiedit → edit alias", () => {
-    registerToolWrapper("edit", FakeEditWrapper);
-    expect(resolveToolWrapper("MultiEdit")).toBe(FakeEditWrapper);
-    expect(resolveToolWrapper("multiedit")).toBe(FakeEditWrapper);
-    expect(resolveToolWrapper("MULTIEDIT")).toBe(FakeEditWrapper);
+    registerToolBlock("edit", FakeEditWrapper);
+    expect(resolveToolBlock("MultiEdit")).toBe(FakeEditWrapper);
+    expect(resolveToolBlock("multiedit")).toBe(FakeEditWrapper);
+    expect(resolveToolBlock("MULTIEDIT")).toBe(FakeEditWrapper);
   });
 
   it("resolves the task → agent alias (historical rename)", () => {
-    const FakeAgent: React.FC<ToolWrapperProps> = () =>
+    const FakeAgent: React.FC<ToolBlockProps> = () =>
       React.createElement("div");
     FakeAgent.displayName = "FakeAgent";
-    registerToolWrapper("agent", FakeAgent);
-    expect(resolveToolWrapper("Task")).toBe(FakeAgent);
-    expect(resolveToolWrapper("task")).toBe(FakeAgent);
-    expect(resolveToolWrapper("Agent")).toBe(FakeAgent);
+    registerToolBlock("agent", FakeAgent);
+    expect(resolveToolBlock("Task")).toBe(FakeAgent);
+    expect(resolveToolBlock("task")).toBe(FakeAgent);
+    expect(resolveToolBlock("Agent")).toBe(FakeAgent);
   });
 
-  it("falls back to DefaultToolWrapper when an alias's canonical isn't registered", () => {
+  it("falls back to DefaultToolBlock when an alias's canonical isn't registered", () => {
     // multiedit aliases to edit, but edit isn't in the registry yet.
-    expect(resolveToolWrapper("MultiEdit")).toBe(DefaultToolWrapper);
+    expect(resolveToolBlock("MultiEdit")).toBe(DefaultToolBlock);
   });
 });
 
@@ -287,14 +287,14 @@ describe("registeredTools", () => {
   });
 
   it("returns canonical (lowercased) names, sorted, no aliases", () => {
-    registerToolWrapper("Edit", FakeEditWrapper);
-    registerToolWrapper("read", FakeEditWrapper);
-    registerToolWrapper("bash", FakeEditWrapper);
+    registerToolBlock("Edit", FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
+    registerToolBlock("bash", FakeEditWrapper);
     expect(registeredTools()).toEqual(["bash", "edit", "read"]);
   });
 
-  it("does not include DefaultToolWrapper or aliases", () => {
-    registerToolWrapper("agent", FakeEditWrapper);
+  it("does not include DefaultToolBlock or aliases", () => {
+    registerToolBlock("agent", FakeEditWrapper);
     // `task` is an alias for `agent`; should not appear.
     const names = registeredTools();
     expect(names).toEqual(["agent"]);
@@ -443,12 +443,12 @@ describe("detectToolCallDrift", () => {
   });
 
   it("does not flag a registered wrapper with no shape schema", () => {
-    registerToolWrapper("edit", FakeEditWrapper);
+    registerToolBlock("edit", FakeEditWrapper);
     expect(detectToolCallDrift(fakeToolCall("Edit"))).toBeNull();
   });
 
   it("does not flag a registered Read with a well-shaped structured result", () => {
-    registerToolWrapper("read", FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
     expect(
       detectToolCallDrift(
         fakeToolCall("Read", { structuredResult: { file: { content: "x" } } }),
@@ -457,7 +457,7 @@ describe("detectToolCallDrift", () => {
   });
 
   it("flags a registered Read whose structured result fails the shape schema", () => {
-    registerToolWrapper("read", FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
     expect(
       detectToolCallDrift(
         fakeToolCall("Read", { structuredResult: { type: "text" } }),
@@ -466,14 +466,14 @@ describe("detectToolCallDrift", () => {
   });
 
   it("does not shape-check an absent (null) structured result — that is the streaming window", () => {
-    registerToolWrapper("read", FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
     expect(
       detectToolCallDrift(fakeToolCall("Read", { structuredResult: null })),
     ).toBeNull();
   });
 
   it("does not shape-check an errored tool call — an error result is allowed to diverge", () => {
-    registerToolWrapper("read", FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
     expect(
       detectToolCallDrift(
         fakeToolCall("Read", {
@@ -500,15 +500,15 @@ describe("detectToolCallDrift", () => {
 // ---------------------------------------------------------------------------
 
 describe("dispatch — shape drift routing", () => {
-  it("routes a registered Read with a bad structured shape to DefaultToolWrapper + caution", () => {
-    registerToolWrapper("read", FakeEditWrapper);
+  it("routes a registered Read with a bad structured shape to DefaultToolBlock + caution", () => {
+    registerToolBlock("read", FakeEditWrapper);
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Read", { structuredResult: { file: 42 } }),
       msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
-    expect(result.Component).toBe(DefaultToolWrapper);
+    expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toEqual({
       reason: "unknown_shape",
       detail: "Read: file: expected object, got number",
@@ -521,7 +521,7 @@ describe("dispatch — shape drift routing", () => {
   });
 
   it("routes a registered Read with a good structured shape to its bespoke wrapper", () => {
-    registerToolWrapper("read", FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
     const result = dispatchToolCallState(
       fakeToolCall("Read", { structuredResult: { file: { content: "x" } } }),
       "m1",
@@ -570,7 +570,7 @@ describe("dispatch — system_metadata version drift", () => {
 
 describe("summarizeDrift", () => {
   it("returns a zero summary for a clean transcript", () => {
-    registerToolWrapper("edit", FakeEditWrapper);
+    registerToolBlock("edit", FakeEditWrapper);
     expect(
       summarizeDrift({
         toolCalls: [fakeToolCall("Edit")],
@@ -580,8 +580,8 @@ describe("summarizeDrift", () => {
   });
 
   it("counts tool-call drift and version drift across the session", () => {
-    registerToolWrapper("edit", FakeEditWrapper);
-    registerToolWrapper("read", FakeEditWrapper);
+    registerToolBlock("edit", FakeEditWrapper);
+    registerToolBlock("read", FakeEditWrapper);
     const summary = summarizeDrift({
       toolCalls: [
         fakeToolCall("ZzzUnknown", { toolUseId: "tu-a" }),

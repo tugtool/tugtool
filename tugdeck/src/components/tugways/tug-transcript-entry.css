@@ -12,7 +12,7 @@
  * `tug-transcript-entry.tsx` measures the rendered header height and
  * writes it onto the entry root as `--tugx-pin-stack-top`; descendant
  * block-level pinned chrome (FileBlock / DiffBlock / TerminalBlock /
- * ToolWrapperChrome headers) consume that variable to telescope under
+ * ToolBlockChrome headers) consume that variable to telescope under
  * the entry header instead of overlapping it. See the .tsx module
  * docstring for the full pin-stack contract.
  *

@@ -768,7 +768,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Tracking the same node in React state (alongside the ref) lets the
     // context re-publish the moment the scroll container mounts. The
     // composed ref callback below updates both atomically. Same shape as
-    // `ToolWrapperChrome` uses for its actions target — and for the same
+    // `ToolBlockChrome` uses for its actions target — and for the same
     // reason: descendants need a non-null value on their first render-
     // after-mount, not "a ref that fires later." See
     // `internal/outer-scrollport-context.tsx` for the consumer hook.

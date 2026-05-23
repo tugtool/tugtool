@@ -382,7 +382,7 @@ Never chain aliases (`--tugx-pane-bg: var(--tugx-pane-other-alias)`) — that is
 
 #### Shared utility: `--tugx-block-*` for block-surface components
 
-For body-kinds (FileBlock, DiffBlock, TerminalBlock, TideThinkingBlock, the TugMarkdownView code panels) and chrome wrappers (ToolWrapperChrome), the shared "block surface" pattern lives at `tugdeck/styles/tugx-block.css` as `--tugx-block-*`. It captures the canonical scaffold once: inset card frame, optional raised chrome variant, code-typography defaults (mono font + sm size + 1.55 line-height), header / footer strip chrome, body row hover overlay, and tone-tinted feedback bands (add / remove / caution / active).
+For body-kinds (FileBlock, DiffBlock, TerminalBlock, TideThinkingBlock, the TugMarkdownView code panels) and chrome wrappers (ToolBlockChrome), the shared "block surface" pattern lives at `tugdeck/styles/tugx-block.css` as `--tugx-block-*`. It captures the canonical scaffold once: inset card frame, optional raised chrome variant, code-typography defaults (mono font + sm size + 1.55 line-height), header / footer strip chrome, body row hover overlay, and tone-tinted feedback bands (add / remove / caution / active).
 
 When authoring a body-kind or chrome wrapper, **consume `--tugx-block-*` directly in CSS rules** for the parts that match the shared pattern. Keep `--tugx-{component}-*` slots only for parts that are genuinely component-specific (gutter widths, match-highlight overlays, ANSI palettes, heading scales, etc.).
 
@@ -422,7 +422,7 @@ This is a *shared utility* per `tuglaws/token-naming.md` (`--tugx-` covers "Comp
 The chrome wrapper variant uses `--tugx-block-chrome-bg` (raised) instead of `--tugx-block-bg` (inset) since chrome sits *above* the body it wraps:
 
 ```css
-.tool-wrapper-chrome {
+.tool-block-chrome {
   background:    var(--tugx-block-chrome-bg);  /* raised, not inset */
   border:        1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
@@ -761,7 +761,7 @@ The composition rule is a single CSS variable propagated through the cascade.
 .tugx-diff-header,
 .tugx-term-header,
 .tugx-md-fenced-code-header,
-.tool-wrapper-chrome-header {
+.tool-block-chrome-header {
   position: sticky;
   top: var(--tugx-pin-stack-top, 0);
   z-index: 1;
@@ -772,7 +772,7 @@ When no transcript entry is present (gallery cards, ad-hoc consumers, the `Rende
 
 Deeper-tier bars compose the same way through additional component-owned variables:
 
-- **`--tugx-toolblock-header-height`** — written by `ToolWrapperChrome` on its root from a ResizeObserver on `.tool-wrapper-chrome-header`. Sticky descendants inside the chrome (a diff's hunk header) read it so they pin BELOW the chrome header.
+- **`--tugx-toolblock-header-height`** — written by `ToolBlockChrome` on its root from a ResizeObserver on `.tool-block-chrome-header`. Sticky descendants inside the chrome (a diff's hunk header) read it so they pin BELOW the chrome header.
 - **`--tugx-diff-header-height`** — written by `DiffBlock` on its root from a ResizeObserver on the standalone-mode identity header (unset when embedded mode suppresses the header). Sticky descendants inside the body kind (`DiffBlock`'s hunk headers) read all three pin-stack variables in a single calc:
 
 ```css
@@ -809,9 +809,9 @@ Categories 2 and 3 are NOT subject to [L20]'s "A's CSS references only A-scoped 
 
 ### Body-kind affordance hosting
 
-Resting affordances (Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `ToolWrapperChrome`'s actions slot (`.tool-wrapper-chrome-actions[data-slot="tool-wrapper-actions"]`) in embedded composition.
+Resting affordances (Copy, fold cue, view-mode toggle) do **not** get their own sticky strip. They live as a `flex: 0 0 auto` cluster (`.tugx-{kind}-actions-cluster` carrying `data-slot="{kind}-actions"`) at the trailing edge of the identity header (`.tugx-{kind}-header`) in standalone composition, or portal into `ToolBlockChrome`'s actions slot (`.tool-block-chrome-actions[data-slot="tool-block-actions"]`) in embedded composition.
 
-The portal mechanism is React-side, not DOM-side: `ToolWrapperChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
+The portal mechanism is React-side, not DOM-side: `ToolBlockChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
 
 Content blocks render no text-entry UI of their own — no per-block Find row. A card has at most one text-entry surface (see [Focus in content-owning cards](#focus-in-content-owning-cards)); for a tide card that is the engine's `tug-prompt-entry`.
 

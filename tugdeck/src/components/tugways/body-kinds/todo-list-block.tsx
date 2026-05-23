@@ -14,7 +14,7 @@
  *  - Header (standalone only) — an optional identity `label`, the
  *    item-count summary, and a trailing actions cluster (Copy). In
  *    `embedded` mode the header is suppressed and the cluster portals
- *    into the host `ToolWrapperChrome`'s actions slot.
+ *    into the host `ToolBlockChrome`'s actions slot.
  *  - Body — a `TugListView` in `inline` mode. The block grows to its
  *    natural height and the outer transcript scrolls; no inner
  *    scroller. Each row is `[status-icon] [text]` with the status
@@ -63,7 +63,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { Check, Circle, Loader2 } from "lucide-react";
 
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -114,11 +114,11 @@ export interface TodoListBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolWrapperChrome` in
+   * container and a header (e.g. `ToolBlockChrome` in
    * `TodoWriteToolBlock`). When `true` the standalone frame +
    * header are dropped and the actions cluster portals into the
    * host chrome's actions slot. MUST be used under a
-   * `ToolWrapperChrome`.
+   * `ToolBlockChrome`.
    *
    * @default false
    */
@@ -365,7 +365,7 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
   const chromeActionsTarget = useChromeActionsTarget();
 
   // Dev-mode misconfiguration check — `embedded={true}` requires a
-  // parent `ToolWrapperChrome` or the actions cluster has nowhere to
+  // parent `ToolBlockChrome` or the actions cluster has nowhere to
   // portal. Mirrors `PathListBlock`'s deferred-warn pattern.
   React.useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -374,7 +374,7 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
     const handle = window.setTimeout(() => {
       console.warn(
         "TodoListBlock: `embedded={true}` requires a parent " +
-          "`ToolWrapperChrome`. Without one the actions cluster (Copy) " +
+          "`ToolBlockChrome`. Without one the actions cluster (Copy) " +
           "has nowhere to portal and the user loses access to it " +
           "silently. Either compose under a chrome or set " +
           "`embedded={false}`.",

@@ -25,9 +25,9 @@
  *     function).
  *  5. Tool names with a bespoke wrapper ([Table T02], shipped through
  *     [#step-13]) route to that wrapper; every other name — and the
- *     empty-name streaming-open events — route to `DefaultToolWrapper`.
+ *     empty-name streaming-open events — route to `DefaultToolBlock`.
  *  6. A drift caution is raised exactly when a tool routed to
- *     `DefaultToolWrapper` for an *unknown* reason (not registered,
+ *     `DefaultToolBlock` for an *unknown* reason (not registered,
  *     not audit-confirmed); a bespoke-routed tool never carries one.
  *
  * The catalog is walked via `listGoldenProbes` / `loadGoldenProbe`,
@@ -45,19 +45,19 @@ import {
   loadGoldenProbe,
 } from "@/lib/code-session-store/testing/golden-catalog";
 import {
-  _resetToolWrapperRegistryForTests,
+  _resetToolBlockRegistryForTests,
   dispatchToolCallState,
-  registerToolWrapper,
-  resolveToolWrapper,
+  registerToolBlock,
+  resolveToolBlock,
 } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
-import { BashToolBlock } from "@/components/tugways/cards/tool-wrappers/bash-tool-block";
-import { ReadToolBlock } from "@/components/tugways/cards/tool-wrappers/read-tool-block";
-import { EditToolBlock } from "@/components/tugways/cards/tool-wrappers/edit-tool-block";
-import { GlobToolBlock } from "@/components/tugways/cards/tool-wrappers/glob-tool-block";
-import { GrepToolBlock } from "@/components/tugways/cards/tool-wrappers/grep-tool-block";
-import { TaskToolBlock } from "@/components/tugways/cards/tool-wrappers/task-tool-block";
-import { DefaultToolWrapper } from "@/components/tugways/cards/tool-wrappers/default-tool-wrapper";
-import type { ToolWrapperFactory } from "@/components/tugways/cards/tool-wrappers/types";
+import { BashToolBlock } from "@/components/tugways/cards/tool-blocks/bash-tool-block";
+import { ReadToolBlock } from "@/components/tugways/cards/tool-blocks/read-tool-block";
+import { EditToolBlock } from "@/components/tugways/cards/tool-blocks/edit-tool-block";
+import { GlobToolBlock } from "@/components/tugways/cards/tool-blocks/glob-tool-block";
+import { GrepToolBlock } from "@/components/tugways/cards/tool-blocks/grep-tool-block";
+import { TaskToolBlock } from "@/components/tugways/cards/tool-blocks/task-tool-block";
+import { DefaultToolBlock } from "@/components/tugways/cards/tool-blocks/default-tool-block";
+import type { ToolBlockFactory } from "@/components/tugways/cards/tool-blocks/types";
 import type { ToolCallState } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
@@ -71,9 +71,9 @@ const CATALOG_VERSIONS = ["v2.1.105"] as const;
  * The bespoke wrappers shipped through [#step-13], keyed by lowercased
  * canonical tool name (including the `multiedit → edit` alias, [D16]).
  * Every other tool name — and the empty-name streaming-open `tool_use`
- * events — falls through to `DefaultToolWrapper`.
+ * events — falls through to `DefaultToolBlock`.
  */
-const BESPOKE_WRAPPERS: Readonly<Record<string, ToolWrapperFactory>> = {
+const BESPOKE_WRAPPERS: Readonly<Record<string, ToolBlockFactory>> = {
   bash: BashToolBlock,
   read: ReadToolBlock,
   edit: EditToolBlock,
@@ -85,8 +85,8 @@ const BESPOKE_WRAPPERS: Readonly<Record<string, ToolWrapperFactory>> = {
 };
 
 /** The wrapper a given tool name should dispatch to today. */
-function expectedWrapper(toolName: string): ToolWrapperFactory {
-  return BESPOKE_WRAPPERS[toolName.toLowerCase()] ?? DefaultToolWrapper;
+function expectedWrapper(toolName: string): ToolBlockFactory {
+  return BESPOKE_WRAPPERS[toolName.toLowerCase()] ?? DefaultToolBlock;
 }
 
 /**
@@ -115,13 +115,13 @@ function toolCallFromEvent(ev: Record<string, unknown>): ToolCallState {
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  _resetToolWrapperRegistryForTests();
-  registerToolWrapper("bash", BashToolBlock);
-  registerToolWrapper("read", ReadToolBlock);
-  registerToolWrapper("edit", EditToolBlock);
-  registerToolWrapper("glob", GlobToolBlock);
-  registerToolWrapper("grep", GrepToolBlock);
-  registerToolWrapper("agent", TaskToolBlock);
+  _resetToolBlockRegistryForTests();
+  registerToolBlock("bash", BashToolBlock);
+  registerToolBlock("read", ReadToolBlock);
+  registerToolBlock("edit", EditToolBlock);
+  registerToolBlock("glob", GlobToolBlock);
+  registerToolBlock("grep", GrepToolBlock);
+  registerToolBlock("agent", TaskToolBlock);
 });
 
 // ---------------------------------------------------------------------------
@@ -148,18 +148,18 @@ describe("assistant-rendering fixture replay — dispatch routing", () => {
           const result = dispatchToolCallState(toolCall, "msg-replay");
 
           // Item 5 — the dispatched component matches the routing
-          // table: bespoke for Table T02 tools, DefaultToolWrapper
+          // table: bespoke for Table T02 tools, DefaultToolBlock
           // for the rest.
           expect(result.Component).toBe(expectedWrapper(toolCall.toolName));
 
           // Item 6 — caution invariant. A caution is raised only for a
-          // DefaultToolWrapper route, and only with the `unknown_tool`
+          // DefaultToolBlock route, and only with the `unknown_tool`
           // reason; a bespoke-routed tool never carries one. (The
           // dispatch suppresses the flag for audit-confirmed
-          // default-routed tools, so "DefaultToolWrapper" does not
+          // default-routed tools, so "DefaultToolBlock" does not
           // imply a caution — but "has a caution" does imply
-          // DefaultToolWrapper.)
-          if (result.Component === DefaultToolWrapper) {
+          // DefaultToolBlock.)
+          if (result.Component === DefaultToolBlock) {
             if (result.caution !== undefined) {
               expect(result.caution.reason).toBe("unknown_tool");
               expect(result.props.caution).toEqual(result.caution);
@@ -181,20 +181,20 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
   test("Bash / Read / Edit / MultiEdit / Glob / Grep / Agent resolve to their bespoke wrappers", () => {
     // Edit has no v2.1.105 catalog fixture, so its routing is pinned
     // here directly (and via `edit-tool-block.test.ts`'s alias test).
-    expect(resolveToolWrapper("Bash")).toBe(BashToolBlock);
-    expect(resolveToolWrapper("bash")).toBe(BashToolBlock);
-    expect(resolveToolWrapper("Read")).toBe(ReadToolBlock);
-    expect(resolveToolWrapper("Edit")).toBe(EditToolBlock);
-    expect(resolveToolWrapper("MultiEdit")).toBe(EditToolBlock);
-    expect(resolveToolWrapper("Glob")).toBe(GlobToolBlock);
-    expect(resolveToolWrapper("glob")).toBe(GlobToolBlock);
-    expect(resolveToolWrapper("Grep")).toBe(GrepToolBlock);
-    expect(resolveToolWrapper("grep")).toBe(GrepToolBlock);
+    expect(resolveToolBlock("Bash")).toBe(BashToolBlock);
+    expect(resolveToolBlock("bash")).toBe(BashToolBlock);
+    expect(resolveToolBlock("Read")).toBe(ReadToolBlock);
+    expect(resolveToolBlock("Edit")).toBe(EditToolBlock);
+    expect(resolveToolBlock("MultiEdit")).toBe(EditToolBlock);
+    expect(resolveToolBlock("Glob")).toBe(GlobToolBlock);
+    expect(resolveToolBlock("glob")).toBe(GlobToolBlock);
+    expect(resolveToolBlock("Grep")).toBe(GrepToolBlock);
+    expect(resolveToolBlock("grep")).toBe(GrepToolBlock);
     // `Agent` is canonical; the historical `Task` name resolves here
     // via the `task → agent` alias ([D16]).
-    expect(resolveToolWrapper("Agent")).toBe(TaskToolBlock);
-    expect(resolveToolWrapper("agent")).toBe(TaskToolBlock);
-    expect(resolveToolWrapper("Task")).toBe(TaskToolBlock);
+    expect(resolveToolBlock("Agent")).toBe(TaskToolBlock);
+    expect(resolveToolBlock("agent")).toBe(TaskToolBlock);
+    expect(resolveToolBlock("Task")).toBe(TaskToolBlock);
   });
 
   test("a synthetic unknown-tool dispatch raises an unknown_tool caution", () => {
@@ -210,7 +210,7 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
       },
       "msg-replay",
     );
-    expect(result.Component).toBe(DefaultToolWrapper);
+    expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toEqual({
       reason: "unknown_tool",
       detail: "ZzzSyntheticUnknownTool",

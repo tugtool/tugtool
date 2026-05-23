@@ -39,7 +39,7 @@
  *    only structural addition.
  *
  * Embedded mode portals the Copy `<TugIconButton>` into the host
- * `ToolWrapperChrome`'s actions slot (via `ChromeActionsTargetContext`)
+ * `ToolBlockChrome`'s actions slot (via `ChromeActionsTargetContext`)
  * so the affordance surfaces in the chrome header rather than as a
  * separate strip. The body kind's own `.tugx-term-header` is
  * suppressed when embedded (the chrome owns identity).
@@ -101,7 +101,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TUG_ACTIONS, type TugAction } from "@/components/tugways/action-vocabulary";
@@ -171,7 +171,7 @@ export interface TerminalBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolWrapperChrome` in
+   * container and a header (e.g. `ToolBlockChrome` in
    * `BashToolBlock`). When `true`:
    *
    *   - The standalone frame (background / border / radius / outer
@@ -181,7 +181,7 @@ export interface TerminalBlockProps {
    *   - The Copy `<TugIconButton>` portals into the host's chrome
    *     actions slot via `ChromeActionsTargetContext`. This is the
    *     load-bearing contract: `embedded={true}` MUST be used under
-   *     a `ToolWrapperChrome` so Copy has somewhere to surface.
+   *     a `ToolBlockChrome` so Copy has somewhere to surface.
    *
    * @default false
    */
@@ -1002,7 +1002,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   });
 
   // Chrome actions target — non-null when this TerminalBlock is
-  // composed inside a `ToolWrapperChrome` that has rendered its actions
+  // composed inside a `ToolBlockChrome` that has rendered its actions
   // slot. The Copy `<TugIconButton>` portals into the chrome header
   // rather than hosting it in a separate body-kind strip. Standalone
   // composition keeps the header strip and renders Copy at its
@@ -1010,7 +1010,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   const chromeActionsTarget = useChromeActionsTarget();
 
   // Dev-mode misconfiguration check — `embedded={true}` requires a
-  // parent `ToolWrapperChrome` so Copy has a portal target. The
+  // parent `ToolBlockChrome` so Copy has a portal target. The
   // setTimeout defers past the chrome's first-render
   // ref-callback → state-update → re-render cycle so the warn
   // doesn't fire spuriously when the chrome IS present. See
@@ -1021,7 +1021,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     if (chromeActionsTarget !== null) return;
     const handle = window.setTimeout(() => {
       console.warn(
-        "TerminalBlock: `embedded={true}` requires a parent `ToolWrapperChrome`. " +
+        "TerminalBlock: `embedded={true}` requires a parent `ToolBlockChrome`. " +
           "Without one, the body kind's identity header is suppressed AND its " +
           "Copy button has nowhere to portal — the user loses access to it " +
           "silently. Either compose under a chrome or set `embedded={false}`.",

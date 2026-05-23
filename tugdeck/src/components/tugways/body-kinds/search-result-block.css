@@ -14,7 +14,7 @@
  * Layout:
  *  - `.tugx-search` — the framed block surface (standalone). Dropped
  *    in `[data-embedded="true"]` so the body sits flush under a host
- *    `ToolWrapperChrome`.
+ *    `ToolBlockChrome`.
  *  - `.tugx-search-header` — pinned identity strip (standalone only):
  *    label + counts + truncation indicator + trailing actions cluster.
  *  - `.tugx-search-list` — the `TugListView` in `inline` mode. Its

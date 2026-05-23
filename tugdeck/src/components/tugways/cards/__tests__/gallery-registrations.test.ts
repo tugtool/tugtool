@@ -12,7 +12,7 @@
  *
  * The render-half of the step's verification — that each card mounts
  * without throwing under both themes, paints no `[object Object]`, and
- * (for tool-wrapper cards) emits exactly one `[data-slot$="-tool-block"]`
+ * (for tool-block cards) emits exactly one `[data-slot$="-tool-block"]`
  * element per `tool_use` — needs a real render surface and lives in
  * `tests/app-test/at0082-gallery-shipped-renderers.test.ts`, which
  * drives the cards through the running app.
@@ -35,7 +35,7 @@ const BATCH_1_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
   { componentId: "gallery-tide-thinking", title: "TideThinkingBlock" },
   { componentId: "gallery-json-tree-block", title: "JsonTreeBlock" },
   { componentId: "gallery-tool-block-file", title: "File Tool Blocks" },
-  { componentId: "gallery-tool-block-default", title: "DefaultToolWrapper" },
+  { componentId: "gallery-tool-block-default", title: "DefaultToolBlock" },
 ];
 
 /**

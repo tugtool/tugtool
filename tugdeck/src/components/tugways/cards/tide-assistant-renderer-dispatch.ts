@@ -16,16 +16,16 @@
  * - `dispatch(input, context)` returns `{ Component, props, caution? }`
  *   for any `RenderInput`. It NEVER throws; an unrouteable input falls
  *   back to the scaffold for its kind (for future-proofing) or, for
- *   `tool_call`, to `DefaultToolWrapper` with a caution reason.
- * - `resolveToolWrapper(name)` looks up by lowercased tool name with
- *   alias resolution. Returns `DefaultToolWrapper` for misses.
+ *   `tool_call`, to `DefaultToolBlock` with a caution reason.
+ * - `resolveToolBlock(name)` looks up by lowercased tool name with
+ *   alias resolution. Returns `DefaultToolBlock` for misses.
  * - `registeredTools()` enumerates the canonical names of every
  *   wrapper in the registry (excluding aliases and the default
  *   fallback). Test-facing.
  *
  * # Registry & aliases
  *
- * The registry is a module-static `Map<string, ToolWrapperFactory>`
+ * The registry is a module-static `Map<string, ToolBlockFactory>`
  * keyed on lowercased canonical names. The alias map handles
  * historical renames (most importantly `task → agent`, since real
  * Claude Code now emits `Agent` rather than the historical `Task` —
@@ -44,7 +44,7 @@
  *  - `unknown_shape` — a registered wrapper whose present
  *    `structured_result` fails its shallow top-level shape schema
  *    (`STRUCTURED_RESULT_SCHEMAS` / `checkStructuredShape`). The call
- *    falls back to `DefaultToolWrapper` — `JsonTreeBlock` over the raw
+ *    falls back to `DefaultToolBlock` — `JsonTreeBlock` over the raw
  *    payload — per [D04].
  *  - `version_drift` — a `system_metadata` event whose `version`
  *    is on a different `major.minor` line than `VALIDATED_CC_VERSION`
@@ -59,7 +59,7 @@
  * The unknown-tool flag is suppressed when the name resolves through
  * an alias OR when the name is in the audit-confirmed default-routed
  * list (see `AUDIT_CONFIRMED_DEFAULT_TOOLS`) — those tools are *known*
- * to route through `DefaultToolWrapper` by design rather than because
+ * to route through `DefaultToolBlock` by design rather than because
  * they're surprising.
  *
  * # Kind-renderer scaffolds
@@ -87,22 +87,22 @@ import type {
   ToolCallState,
 } from "@/lib/code-session-store";
 
-import { BashToolBlock } from "./tool-wrappers/bash-tool-block";
-import { ReadToolBlock } from "./tool-wrappers/read-tool-block";
-import { EditToolBlock } from "./tool-wrappers/edit-tool-block";
-import { GlobToolBlock } from "./tool-wrappers/glob-tool-block";
-import { GrepToolBlock } from "./tool-wrappers/grep-tool-block";
-import { TaskToolBlock } from "./tool-wrappers/task-tool-block";
-import { TodoWriteToolBlock } from "./tool-wrappers/todo-write-tool-block";
-import { AskUserQuestionToolBlock } from "./tool-wrappers/ask-user-question-tool-block";
-import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
+import { BashToolBlock } from "./tool-blocks/bash-tool-block";
+import { ReadToolBlock } from "./tool-blocks/read-tool-block";
+import { EditToolBlock } from "./tool-blocks/edit-tool-block";
+import { GlobToolBlock } from "./tool-blocks/glob-tool-block";
+import { GrepToolBlock } from "./tool-blocks/grep-tool-block";
+import { TaskToolBlock } from "./tool-blocks/task-tool-block";
+import { TodoWriteToolBlock } from "./tool-blocks/todo-write-tool-block";
+import { AskUserQuestionToolBlock } from "./tool-blocks/ask-user-question-tool-block";
+import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
 import type {
   CautionFlag,
   ChildToolCallsMap,
-  ToolWrapperFactory,
-} from "./tool-wrappers/types";
+  ToolBlockFactory,
+} from "./tool-blocks/types";
 
 // ---------------------------------------------------------------------------
 // RenderInput — discriminated union the dispatch routes.
@@ -217,14 +217,14 @@ export interface DispatchContext {
 
 /**
  * Module-static registry. Keys are lowercased canonical tool names.
- * Real per-tool blocks register themselves via `registerToolWrapper`
+ * Real per-tool blocks register themselves via `registerToolBlock`
  * as they ship (BashToolBlock at #step-6, ReadToolBlock at #step-8,
  * EditToolBlock at #step-11 — `multiedit` aliases to it — etc.). Until
  * they ship, the registry contains only the audit-confirmed routes —
- * every `tool_call` not in the registry lands on `DefaultToolWrapper`
+ * every `tool_call` not in the registry lands on `DefaultToolBlock`
  * with a caution flag.
  */
-const TOOL_WRAPPER_REGISTRY = new Map<string, ToolWrapperFactory>();
+const TOOL_BLOCK_REGISTRY = new Map<string, ToolBlockFactory>();
 
 /**
  * Tool-name aliases — historical renames and synonyms that should
@@ -243,13 +243,13 @@ const TOOL_ALIASES: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * Audit-confirmed tool names that route through `DefaultToolWrapper`
+ * Audit-confirmed tool names that route through `DefaultToolBlock`
  * by design. These suppress the `unknown_tool` caution because they
  * are *known* tools whose JsonTree-based default rendering is
  * sufficient — they appeared in the empirical session audit and were
  * scoped to Default rather than getting bespoke wrappers.
  *
- * Promote an entry from here to `TOOL_WRAPPER_REGISTRY` later if
+ * Promote an entry from here to `TOOL_BLOCK_REGISTRY` later if
  * dogfooding shows the default rendering is suboptimal.
  */
 const AUDIT_CONFIRMED_DEFAULT_TOOLS: ReadonlySet<string> = new Set([
@@ -277,11 +277,11 @@ const AUDIT_CONFIRMED_DEFAULT_TOOLS: ReadonlySet<string> = new Set([
  * entry, which is the right behavior for HMR and for tests that need
  * to swap a wrapper out.
  */
-export function registerToolWrapper(
+export function registerToolBlock(
   name: string,
-  factory: ToolWrapperFactory,
+  factory: ToolBlockFactory,
 ): void {
-  TOOL_WRAPPER_REGISTRY.set(name.toLowerCase(), factory);
+  TOOL_BLOCK_REGISTRY.set(name.toLowerCase(), factory);
 }
 
 /**
@@ -289,29 +289,29 @@ export function registerToolWrapper(
  * each test from a known empty state. Production code never calls
  * this.
  */
-export function _resetToolWrapperRegistryForTests(): void {
-  TOOL_WRAPPER_REGISTRY.clear();
+export function _resetToolBlockRegistryForTests(): void {
+  TOOL_BLOCK_REGISTRY.clear();
 }
 
 /**
  * Resolve a tool block by name. Case-insensitive. Aliases are
- * resolved before lookup. Returns `DefaultToolWrapper` for misses —
+ * resolved before lookup. Returns `DefaultToolBlock` for misses —
  * never returns `undefined`.
  */
-export function resolveToolWrapper(toolName: string): ToolWrapperFactory {
+export function resolveToolBlock(toolName: string): ToolBlockFactory {
   const lower = toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
-  return TOOL_WRAPPER_REGISTRY.get(canonical) ?? DefaultToolWrapper;
+  return TOOL_BLOCK_REGISTRY.get(canonical) ?? DefaultToolBlock;
 }
 
 /**
  * Enumerate the canonical names of every registered wrapper. Aliases
- * and `DefaultToolWrapper` are NOT included — only the wrappers that
+ * and `DefaultToolBlock` are NOT included — only the wrappers that
  * are explicitly registered. The test suite uses this to verify the
  * registry's coverage matches Table T02 at phase exit.
  */
 export function registeredTools(): ReadonlyArray<string> {
-  return Array.from(TOOL_WRAPPER_REGISTRY.keys()).sort();
+  return Array.from(TOOL_BLOCK_REGISTRY.keys()).sort();
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +482,7 @@ export function detectVersionDrift(metadata: unknown): CautionFlag | null {
  *    that window, not drift).
  *
  * Consumed both by `dispatchToolCallState` (which routes a drifted
- * call to `DefaultToolWrapper`) and by `summarizeDrift` (the
+ * call to `DefaultToolBlock`) and by `summarizeDrift` (the
  * card-chrome aggregate counter).
  */
 export function detectToolCallDrift(
@@ -492,7 +492,7 @@ export function detectToolCallDrift(
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
 
   if (
-    !TOOL_WRAPPER_REGISTRY.has(canonical) &&
+    !TOOL_BLOCK_REGISTRY.has(canonical) &&
     !AUDIT_CONFIRMED_DEFAULT_TOOLS.has(canonical)
   ) {
     return { reason: "unknown_tool", detail: toolCall.toolName };
@@ -673,8 +673,8 @@ function makeScaffoldRenderer(kind: RenderInputKind): React.ComponentType<any> {
  * component reference.
  *
  * `tool_call` is intentionally omitted because tool-call dispatch
- * goes through `resolveToolWrapper` — every tool routes through
- * either a registered wrapper or `DefaultToolWrapper`, so there's no
+ * goes through `resolveToolBlock` — every tool routes through
+ * either a registered wrapper or `DefaultToolBlock`, so there's no
  * meaningful kind-level scaffold for it.
  */
 export const KIND_RENDERERS: {
@@ -754,7 +754,7 @@ function extractTextOutput(result: unknown): string | undefined {
  * Tool-call dispatch — looks up the tool name in the registry, with
  * alias resolution. A call that `detectToolCallDrift` flags (unknown
  * tool name, or a registered wrapper whose `structured_result` fails
- * its shallow shape schema) routes to `DefaultToolWrapper` with the
+ * its shallow shape schema) routes to `DefaultToolBlock` with the
  * caution threaded onto the props and returned on the result.
  *
  * Exported so the transcript view can route a `ToolCallState` (from
@@ -781,10 +781,10 @@ export function dispatchToolCallState(
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
-  const factory = TOOL_WRAPPER_REGISTRY.get(canonical);
+  const factory = TOOL_BLOCK_REGISTRY.get(canonical);
 
-  // Compose the props the wrapper expects (see ToolWrapperProps in
-  // ./tool-wrappers/types.ts). Status maps the store's `pending |
+  // Compose the props the wrapper expects (see ToolBlockProps in
+  // ./tool-blocks/types.ts). Status maps the store's `pending |
   // done | error` to the wrapper's `streaming | ready | error`.
   const status =
     toolCall.status === "pending"
@@ -812,12 +812,12 @@ export function dispatchToolCallState(
   if (caution !== null) {
     // Drift — an unknown tool name, or a registered wrapper whose
     // `structured_result` failed its shallow shape schema. Either way
-    // the [D04] fallback is `DefaultToolWrapper` (`JsonTreeBlock` over
+    // the [D04] fallback is `DefaultToolBlock` (`JsonTreeBlock` over
     // the raw payload); the caution is threaded onto the props so the
     // wrapper chrome paints the inline `TideCautionBadge`, and
     // returned on the result so the card-chrome aggregate counts it.
     return {
-      Component: DefaultToolWrapper,
+      Component: DefaultToolBlock,
       props: { ...baseProps, caution },
       caution,
     };
@@ -829,8 +829,8 @@ export function dispatchToolCallState(
   }
 
   // Audit-confirmed long-tail tool — known to route through
-  // `DefaultToolWrapper` by design, so no caution.
-  return { Component: DefaultToolWrapper, props: baseProps };
+  // `DefaultToolBlock` by design, so no caution.
+  return { Component: DefaultToolBlock, props: baseProps };
 }
 
 // ---------------------------------------------------------------------------
@@ -847,13 +847,13 @@ export function dispatchToolCallState(
  */
 export interface AssistantRendererDispatch {
   dispatch(input: RenderInput, context: DispatchContext): DispatchResult;
-  resolveToolWrapper(toolName: string): ToolWrapperFactory;
+  resolveToolBlock(toolName: string): ToolBlockFactory;
   registeredTools(): ReadonlyArray<string>;
 }
 
 export const assistantRendererDispatch: AssistantRendererDispatch = {
   dispatch,
-  resolveToolWrapper,
+  resolveToolBlock,
   registeredTools,
 };
 
@@ -864,16 +864,16 @@ export const assistantRendererDispatch: AssistantRendererDispatch = {
 // line here as they ship.
 // ---------------------------------------------------------------------------
 
-registerToolWrapper("bash", BashToolBlock);
-registerToolWrapper("read", ReadToolBlock);
-registerToolWrapper("edit", EditToolBlock);
-registerToolWrapper("glob", GlobToolBlock);
-registerToolWrapper("grep", GrepToolBlock);
+registerToolBlock("bash", BashToolBlock);
+registerToolBlock("read", ReadToolBlock);
+registerToolBlock("edit", EditToolBlock);
+registerToolBlock("glob", GlobToolBlock);
+registerToolBlock("grep", GrepToolBlock);
 // Canonical `agent`; the historical `task` name resolves here via the
 // `task → agent` alias in `TOOL_ALIASES`. ([D16])
-registerToolWrapper("agent", TaskToolBlock);
-registerToolWrapper("todowrite", TodoWriteToolBlock);
+registerToolBlock("agent", TaskToolBlock);
+registerToolBlock("todowrite", TodoWriteToolBlock);
 // AskUserQuestion's *live* surface is the inline `QuestionDialog`
 // ([D13]); this wrapper renders the durable Q&A artifact that
 // remains in the turn after the dialog clears.
-registerToolWrapper("askuserquestion", AskUserQuestionToolBlock);
+registerToolBlock("askuserquestion", AskUserQuestionToolBlock);

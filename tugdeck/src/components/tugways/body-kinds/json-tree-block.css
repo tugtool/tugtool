@@ -88,8 +88,8 @@ body {
 }
 
 /* Embedded variant — composed inside a host that already paints a
- * container and a header (e.g. `ToolWrapperChrome` in
- * `DefaultToolWrapper`). Drop the standalone frame so the tree sits
+ * container and a header (e.g. `ToolBlockChrome` in
+ * `DefaultToolBlock`). Drop the standalone frame so the tree sits
  * flush. The header is suppressed at the JSX level — the host owns
  * identity in its own header. Reset values, not theme-tunable knobs. */
 .tugx-json[data-embedded="true"] {

@@ -140,15 +140,15 @@ Cite decisions by ID (`[D05]`), specs / lists / tables by label (`Spec S15`, `Li
 
 **Resolution:** DEFERRED. Keep component-local in `AskUserQuestionToolBlock` per the user's direction. Revisit when a second concrete callsite emerges.
 
-#### [Q06] Should `ToolWrapperChrome` / `DefaultToolWrapper` be renamed to `ToolBlockChrome` / `DefaultToolBlock`? (DEFERRED) {#q06-tool-wrapper-rename}
+#### [Q06] Should `ToolWrapperChrome` / `DefaultToolWrapper` be renamed to `ToolBlockChrome` / `DefaultToolBlock`? (RESOLVED) {#q06-tool-wrapper-rename}
 
 **Question:** `[D11]` deprecates "wrapper" in prose, but two component files keep the word in their names: `ToolWrapperChrome` (the shared frame) and `DefaultToolWrapper` (fallback for unrecognised tools). Should they be renamed for consistency?
 
 **Why it matters:** Internal consistency. After the prose cleanup in Step 4, readers will see "tool block" in docs and "ToolWrapper*" in code, which is a small but persistent friction.
 
-**Plan to resolve:** DEFERRED to a follow-on refactor. The rename touches many import sites and is mechanical; this plan focuses on the primitive extraction and prose cleanup. Track as a follow-on item.
+**Plan to resolve:** Done as a mechanical post-phase pass. PascalCase / camelCase / CONST symbols, kebab-case slots and classes, `default-tool-wrapper.*` and `tool-wrapper-chrome.*` file pairs, the `tool-wrappers/` directory, and prose in `tuglaws/component-authoring.md` + `tugdeck/styles/` theme-token comments all renamed in one cascade. App-test fixtures pinned zero references, so no test rewrites required.
 
-**Resolution:** DEFERRED.
+**Resolution:** RESOLVED — renamed everywhere; `grep -r 'ToolWrapper\|tool-wrapper\|TOOL_WRAPPER' tugdeck/ tuglaws/` is empty.
 
 ---
 
@@ -910,7 +910,7 @@ The live `respondApproval` action still fires its `tool_approval` wire frame —
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] `[Q06]` — rename `ToolWrapperChrome` / `DefaultToolWrapper` files / components for full consistency with `[D11]`.
+- [x] `[Q06]` — `ToolWrapperChrome` → `ToolBlockChrome`, `DefaultToolWrapper` → `DefaultToolBlock`, plus the full mechanical cascade (`ToolWrapperProps/Factory/Status`, `registerToolWrapper`, `resolveToolWrapper`, `TOOL_WRAPPER_REGISTRY`, `_resetToolWrapperRegistryForTests`, every `tool-wrapper-*` kebab slot/class, the `default-tool-wrapper.*` file pair, the `tool-wrapper-chrome.*` file pair, and the `tool-wrappers/` directory → `tool-blocks/`). Tuglaws prose + theme-token comments also updated.
 - [ ] `[Q05]` — revisit salvage-path generalisation when a second concrete callsite emerges.
 - [ ] Persistent/updatable todo list facility (the work pulled out of the original "Interactive Surfaces" framing). Separate plan.
 

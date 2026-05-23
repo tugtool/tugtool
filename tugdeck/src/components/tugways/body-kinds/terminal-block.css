@@ -37,7 +37,7 @@
  *    when the variable isn't set, the header sticks to `top: 0`.
  *  - Affordances live in the header itself. Copy lives at the
  *    trailing edge of `.tugx-term-header` (standalone), or portals
- *    into `ToolWrapperChrome`'s actions slot (embedded).
+ *    into `ToolBlockChrome`'s actions slot (embedded).
  *  - The Copy overlay (`.tugx-term-copy` absolute div, `--tugx-term-copy-*`
  *    slot family) was retired earlier — it sat on top of the scrollbar
  *    gutter for any output tall enough to trigger scrolling. The
@@ -136,7 +136,7 @@ body {
 }
 
 /* Embedded variant — composed inside a host that already paints a
- * container (e.g. `ToolWrapperChrome` body). Drop the standalone
+ * container (e.g. `ToolBlockChrome` body). Drop the standalone
  * frame so the terminal text integrates flush with the host's
  * surface; lines, copy button, ANSI palette, footer badges all
  * stay unchanged. Reset values, not theme-tunable knobs.

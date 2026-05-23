@@ -6,7 +6,7 @@
  * optional line-range badge over an embedded `FileBlock`) and the Edit
  * wrapper (file-pen icon + path + `+N −M` badge over an embedded
  * `DiffBlock`). Each column stacks its canonical states with
- * module-scope mock `ToolWrapperProps` — no live tugcode bridge:
+ * module-scope mock `ToolBlockProps` — no live tugcode bridge:
  *
  *   Read
  *    1. **Full file** — `structured_result.file` carries the whole
@@ -39,9 +39,9 @@ import "./gallery-tool-block-file.css";
 
 import React from "react";
 
-import { ReadToolBlock } from "./tool-wrappers/read-tool-block";
-import { EditToolBlock } from "./tool-wrappers/edit-tool-block";
-import type { ToolWrapperProps } from "./tool-wrappers/types";
+import { ReadToolBlock } from "./tool-blocks/read-tool-block";
+import { EditToolBlock } from "./tool-blocks/edit-tool-block";
+import type { ToolBlockProps } from "./tool-blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ const LONG_SOURCE = Array.from(
 // Read fixtures
 // ---------------------------------------------------------------------------
 
-const READ_FULL: ToolWrapperProps = {
+const READ_FULL: ToolBlockProps = {
   toolUseId: "gallery-read-full",
   toolName: "Read",
   msgId: "gallery-file-msg",
@@ -93,7 +93,7 @@ const READ_FULL: ToolWrapperProps = {
   status: "ready",
 };
 
-const READ_WINDOWED: ToolWrapperProps = {
+const READ_WINDOWED: ToolBlockProps = {
   toolUseId: "gallery-read-windowed",
   toolName: "Read",
   msgId: "gallery-file-msg",
@@ -112,7 +112,7 @@ const READ_WINDOWED: ToolWrapperProps = {
   status: "ready",
 };
 
-const READ_ERROR: ToolWrapperProps = {
+const READ_ERROR: ToolBlockProps = {
   toolUseId: "gallery-read-error",
   toolName: "Read",
   msgId: "gallery-file-msg",
@@ -127,7 +127,7 @@ const READ_ERROR: ToolWrapperProps = {
 // Edit fixtures
 // ---------------------------------------------------------------------------
 
-const EDIT_STRUCTURED: ToolWrapperProps = {
+const EDIT_STRUCTURED: ToolBlockProps = {
   toolUseId: "gallery-edit-structured",
   toolName: "Edit",
   msgId: "gallery-file-msg",
@@ -160,7 +160,7 @@ const EDIT_STRUCTURED: ToolWrapperProps = {
   status: "ready",
 };
 
-const EDIT_TWO_TEXT: ToolWrapperProps = {
+const EDIT_TWO_TEXT: ToolBlockProps = {
   toolUseId: "gallery-edit-two-text",
   toolName: "Edit",
   msgId: "gallery-file-msg",
@@ -173,7 +173,7 @@ const EDIT_TWO_TEXT: ToolWrapperProps = {
   status: "ready",
 };
 
-const EDIT_ERROR: ToolWrapperProps = {
+const EDIT_ERROR: ToolBlockProps = {
   toolUseId: "gallery-edit-error",
   toolName: "Edit",
   msgId: "gallery-file-msg",

@@ -919,12 +919,12 @@ body {
   --tugx-term-ansi-bright-cyan:     --tug-color(teal, t: 85);
   --tugx-term-ansi-bright-white:    --tug-color(white);
 
-  /* ---- Tool wrapper chrome (ToolWrapperChrome per Table T07) ----
-   * Frame painted around every Layer-2 tool wrapper. Brio uses a
+  /* ---- Tool block chrome (ToolBlockChrome per Table T07) ----
+   * Frame painted around every Layer-2 tool block. Brio uses a
    * lightly-elevated dark surface with a left-edge stripe whose
    * color encodes lifecycle status (streaming / ready / error).
    */
-  /* `--tugx-toolblock-*` slots live in tool-wrapper-chrome.css's body{}
+  /* `--tugx-toolblock-*` slots live in tool-block-chrome.css's body{}
    * block per tuglaws/token-naming.md. */
 
   /* `--tugx-file-*` slots live in file-block.css's body{} block per

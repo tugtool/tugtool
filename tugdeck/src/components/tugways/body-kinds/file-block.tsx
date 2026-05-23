@@ -17,7 +17,7 @@
  *    + "N lines" / "Showing N of M lines" counts + a trailing
  *    affordances area (fold cue + `Search` `<TugIconButton>`). Hidden
  *    when `embedded=true` because the host wrapper (e.g.
- *    `ToolWrapperChrome`) owns identity in those cases; the affordances
+ *    `ToolBlockChrome`) owns identity in those cases; the affordances
  *    portal into the host's actions slot instead so they survive into
  *    the embedded composition.
  *  - Fold cue — a chevron `<button>` rendered whenever the file is
@@ -111,7 +111,7 @@ import {
   TugCodeView,
   type TugCodeViewDelegate,
 } from "@/components/tugways/tug-code-view";
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { useSavedRegionScroll } from "@/components/tugways/use-component-state-preservation";
@@ -222,7 +222,7 @@ export interface FileBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolWrapperChrome` in
+   * container and a header (e.g. `ToolBlockChrome` in
    * `ReadToolBlock`). When `true`:
    *
    *   - The standalone frame (background / border / radius / outer
@@ -234,7 +234,7 @@ export interface FileBlockProps {
    *     into the host's chrome actions slot via
    *     `ChromeActionsTargetContext`. This is the load-bearing
    *     contract: `embedded={true}` MUST be used under a
-   *     `ToolWrapperChrome` so the affordances have somewhere to
+   *     `ToolBlockChrome` so the affordances have somewhere to
    *     surface. Using `embedded={true}` outside a chrome is
    *     unsupported — the affordances have no host and the user
    *     loses access to Search and the fold toggle.
@@ -458,7 +458,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const rootRef = React.useRef<HTMLDivElement | null>(null);
 
   // Chrome actions target — non-null when this FileBlock is composed
-  // inside a `ToolWrapperChrome` that has rendered its actions slot.
+  // inside a `ToolBlockChrome` that has rendered its actions slot.
   // The resting affordance row lives INSIDE the chrome / identity
   // header rather than rendering as a separate sticky strip beneath.
   // When the target is present (embedded composition),
@@ -469,7 +469,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const chromeActionsTarget = useChromeActionsTarget();
 
   // Dev-mode misconfiguration check — `embedded={true}` is a contract
-  // that the body kind sits inside a `ToolWrapperChrome` so resting
+  // that the body kind sits inside a `ToolBlockChrome` so resting
   // affordances have a portal target. If `embedded` is set but no
   // chrome is above us, the affordances vanish silently: the
   // identity header is suppressed AND the portal target is `null`,
@@ -479,7 +479,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // production (the early-return tree-shakes when `NODE_ENV` is
   // statically `"production"`).
   //
-  // The check is deferred one tick because `ToolWrapperChrome`
+  // The check is deferred one tick because `ToolBlockChrome`
   // publishes its `actionsTarget` via a `useState`-tracked ref
   // callback. On the body kind's FIRST render under a chrome, the
   // chrome's ref hasn't fired yet, so the context value is still
@@ -493,7 +493,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     if (chromeActionsTarget !== null) return;
     const handle = window.setTimeout(() => {
       console.warn(
-        "FileBlock: `embedded={true}` requires a parent `ToolWrapperChrome`. " +
+        "FileBlock: `embedded={true}` requires a parent `ToolBlockChrome`. " +
           "Without one, the body kind's identity header is suppressed AND its " +
           "affordances (the fold cue) have nowhere to portal — the " +
           "user loses access to them silently. Either compose under a chrome " +

@@ -490,13 +490,13 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.blockRenderers,
   });
 
-  // DefaultToolWrapper — the [D11] fallback for tool calls with no
+  // DefaultToolBlock — the [D11] fallback for tool calls with no
   // bespoke wrapper: unknown tools (with a caution badge) and
   // audit-confirmed long-tail tools.
   registerCard({
     componentId: "gallery-tool-block-default",
     contentFactory: (_cardId) => <GalleryToolBlockDefault />,
-    defaultMeta: { title: "DefaultToolWrapper", icon: "Wrench", closable: true },
+    defaultMeta: { title: "DefaultToolBlock", icon: "Wrench", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

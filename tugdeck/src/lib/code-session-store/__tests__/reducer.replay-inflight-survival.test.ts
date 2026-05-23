@@ -453,7 +453,7 @@ describe("replay emits write-inflight effects for per-turn paths ([L26])", () =>
 
     // The last write — emitted from handleToolUseStructured — must
     // carry the `structuredResult` field. This is the previously-
-    // missed fourth site; if it regresses, structured-tool wrappers
+    // missed fourth site; if it regresses, structured-tool blocks
     // render empty bodies after cold-boot rehydration.
     const finalToolPayload = JSON.parse(
       toolWrites[toolWrites.length - 1].value,

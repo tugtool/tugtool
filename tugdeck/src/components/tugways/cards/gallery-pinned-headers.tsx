@@ -19,7 +19,7 @@
  *          section #4 forces `collapsed={false}` so the expanded path
  *          with virtualizer + footer is visible side-by-side.
  *
- *   5–7. The same body kinds composed inside `ToolWrapperChrome`
+ *   5–7. The same body kinds composed inside `ToolBlockChrome`
  *        (simulating `ReadToolBlock` / `EditToolBlock` /
  *        `BashToolBlock`). The body kind's own identity header is
  *        suppressed; affordances portal into the chrome's actions
@@ -42,7 +42,7 @@ import { TerminalBlock, type TerminalData } from "@/components/tugways/body-kind
 import type { DiffData } from "@/lib/diff/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
-import { ToolWrapperChrome } from "./tool-wrappers/tool-wrapper-chrome";
+import { ToolBlockChrome } from "./tool-blocks/tool-block-chrome";
 
 // ---------------------------------------------------------------------------
 // Synthesized fixtures
@@ -215,41 +215,41 @@ export function GalleryPinnedHeaders() {
 
       <TugSeparator />
 
-      <PinSection title="FileBlock inside ToolWrapperChrome — Find/Copy/fold cue portal into chrome header">
-        <ToolWrapperChrome
+      <PinSection title="FileBlock inside ToolBlockChrome — Find/Copy/fold cue portal into chrome header">
+        <ToolBlockChrome
           toolName="Read"
           toolIcon={<FileText size={14} aria-hidden="true" />}
           argsSummary={<code>{LONG_FILE.filePath}</code>}
           status="ready"
         >
           <FileBlock data={LONG_FILE} embedded collapsed={false} />
-        </ToolWrapperChrome>
+        </ToolBlockChrome>
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="DiffBlock inside ToolWrapperChrome — affordances portal into chrome header">
-        <ToolWrapperChrome
+      <PinSection title="DiffBlock inside ToolBlockChrome — affordances portal into chrome header">
+        <ToolBlockChrome
           toolName="Edit"
           toolIcon={<Edit size={14} aria-hidden="true" />}
           argsSummary={<code>{LONG_DIFF.filePath}</code>}
           status="ready"
         >
           <DiffBlock data={LONG_DIFF} embedded />
-        </ToolWrapperChrome>
+        </ToolBlockChrome>
       </PinSection>
 
       <TugSeparator />
 
-      <PinSection title="TerminalBlock inside ToolWrapperChrome — Copy + fold cue portal into chrome header">
-        <ToolWrapperChrome
+      <PinSection title="TerminalBlock inside ToolBlockChrome — Copy + fold cue portal into chrome header">
+        <ToolBlockChrome
           toolName="Bash"
           toolIcon={<Terminal size={14} aria-hidden="true" />}
           argsSummary={<code>find . -type f | head -400</code>}
           status="ready"
         >
           <TerminalBlock data={LONG_TERMINAL} embedded />
-        </ToolWrapperChrome>
+        </ToolBlockChrome>
       </PinSection>
     </div>
   );

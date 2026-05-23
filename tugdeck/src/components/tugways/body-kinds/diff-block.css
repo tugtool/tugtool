@@ -95,7 +95,7 @@ body {
 }
 
 /* Embedded variant — composed inside a host that already paints a
- * container and a header (e.g. `ToolWrapperChrome` body region in a
+ * container and a header (e.g. `ToolBlockChrome` body region in a
  * future `EditToolBlock`). Drop the standalone frame so the content
  * sits flush.
  */

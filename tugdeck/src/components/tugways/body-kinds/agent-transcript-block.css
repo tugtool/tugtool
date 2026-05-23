@@ -14,7 +14,7 @@
  * Layout:
  *  - `.tugx-agent` — the framed block surface (standalone). Dropped in
  *    `[data-embedded="true"]` so the body sits flush under a host
- *    `ToolWrapperChrome`.
+ *    `ToolBlockChrome`.
  *  - `.tugx-agent-header` — pinned identity strip (standalone only):
  *    agent type + status + duration + tool count + actions cluster.
  *  - `.tugx-agent-entries` — the content column. Each entry is a

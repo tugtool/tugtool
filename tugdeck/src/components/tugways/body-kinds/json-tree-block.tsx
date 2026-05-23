@@ -5,7 +5,7 @@
  * boolean / null) as a collapsible, type-coloured tree. It is a
  * *permanent* body kind, not just a fallback: per [D04] / [D11] it is
  * also the default body for unknown tool inputs in
- * `DefaultToolWrapper` (#step-13) and the drift-fallback body for
+ * `DefaultToolBlock` (#step-13) and the drift-fallback body for
  * unrecognized `structured_result` shapes.
  *
  * Composition (mirrors `FileBlock` / `DiffBlock` / `TerminalBlock`):
@@ -15,7 +15,7 @@
  *    Unlike `FileBlock`, the header is rendered even without a label
  *    because it is the only host for the expand controls a tree
  *    needs; in `embedded` mode it is suppressed and the cluster
- *    portals into the host `ToolWrapperChrome`'s actions slot.
+ *    portals into the host `ToolBlockChrome`'s actions slot.
  *  - Tree — one row per node. Container rows (object / array) carry a
  *    twist chevron and toggle expand/collapse on click; leaf rows are
  *    inert. Every non-root row reveals a hover `TugIconButton` that
@@ -65,7 +65,7 @@
  *  - [D04] / [D11] JsonTreeBlock is the permanent drift / default
  *    body kind.
  *  - [D05] two-layer split: this body kind owns tree rendering; the
- *    tool wrapper (`DefaultToolWrapper`) owns chrome.
+ *    tool block (`DefaultToolBlock`) owns chrome.
  *
  * @module components/tugways/body-kinds/json-tree-block
  */
@@ -76,7 +76,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, Copy, FoldVertical, UnfoldVertical } from "lucide-react";
 
-import { useChromeActionsTarget } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
   useComponentStatePreservation,
@@ -114,8 +114,8 @@ export interface JsonTreeBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolWrapperChrome` in
-   * `DefaultToolWrapper`). When `true`:
+   * container and a header (e.g. `ToolBlockChrome` in
+   * `DefaultToolBlock`). When `true`:
    *
    *   - The standalone frame (background / border / radius / margin)
    *     is dropped so the tree sits flush with the host.
@@ -124,7 +124,7 @@ export interface JsonTreeBlockProps {
    *   - The actions cluster (Expand-all / Collapse-all / Copy) portals
    *     into the host's chrome actions slot via
    *     `ChromeActionsTargetContext`. As with the other body kinds,
-   *     `embedded={true}` MUST be used under a `ToolWrapperChrome`.
+   *     `embedded={true}` MUST be used under a `ToolBlockChrome`.
    *
    * @default false
    */

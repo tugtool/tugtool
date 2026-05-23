@@ -16,7 +16,7 @@
  * Layout:
  *  - `.tugx-todo` — the framed block surface (standalone). Dropped in
  *    `[data-embedded="true"]` so the body sits flush under a host
- *    `ToolWrapperChrome`.
+ *    `ToolBlockChrome`.
  *  - `.tugx-todo-header` — pinned identity strip (standalone only):
  *    label + summary + trailing actions cluster.
  *  - `.tugx-todo-list` — the `TugListView` in `inline` mode. Its

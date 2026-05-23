@@ -1,15 +1,15 @@
 /**
  * gallery-tool-block-default.tsx — visual fixture for
- * `DefaultToolWrapper`.
+ * `DefaultToolBlock`.
  *
- * `DefaultToolWrapper` ([tool-wrappers/default-tool-wrapper.tsx]) is
+ * `DefaultToolBlock` ([tool-blocks/default-tool-block.tsx]) is
  * the [D04] / [D11] day-one guarantee: any `tool_use` with no bespoke
  * wrapper — a genuinely unknown tool, or an audit-confirmed long-tail
  * tool — renders through it rather than blank or raw JSON. The chrome
  * is a wrench icon + tool name; the body is a `JsonTreeBlock` over the
  * input plus a smart-picked result section.
  *
- * This card mounts the wrapper with module-scope mock `ToolWrapperProps`
+ * This card mounts the wrapper with module-scope mock `ToolBlockProps`
  * across the states the dispatch can hand it:
  *
  *  1. **Unknown + JSON result** — a truly unknown tool: the dispatch
@@ -43,8 +43,8 @@ import "./gallery-tool-block-default.css";
 
 import React from "react";
 
-import { DefaultToolWrapper } from "./tool-wrappers/default-tool-wrapper";
-import type { ToolWrapperProps } from "./tool-wrappers/types";
+import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
+import type { ToolBlockProps } from "./tool-blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -52,7 +52,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const UNKNOWN_JSON: ToolWrapperProps = {
+const UNKNOWN_JSON: ToolBlockProps = {
   toolUseId: "gallery-default-unknown-json",
   toolName: "WeatherLookup",
   msgId: "gallery-default-msg",
@@ -70,7 +70,7 @@ const UNKNOWN_JSON: ToolWrapperProps = {
   caution: { reason: "unknown_tool", detail: "WeatherLookup" },
 };
 
-const UNKNOWN_TEXT: ToolWrapperProps = {
+const UNKNOWN_TEXT: ToolBlockProps = {
   toolUseId: "gallery-default-unknown-text",
   toolName: "FormatProse",
   msgId: "gallery-default-msg",
@@ -82,7 +82,7 @@ const UNKNOWN_TEXT: ToolWrapperProps = {
   caution: { reason: "unknown_tool", detail: "FormatProse" },
 };
 
-const AUDIT_CONFIRMED: ToolWrapperProps = {
+const AUDIT_CONFIRMED: ToolBlockProps = {
   toolUseId: "gallery-default-audit-confirmed",
   toolName: "TaskUpdate",
   msgId: "gallery-default-msg",
@@ -92,7 +92,7 @@ const AUDIT_CONFIRMED: ToolWrapperProps = {
   status: "ready",
 };
 
-const STREAMING: ToolWrapperProps = {
+const STREAMING: ToolBlockProps = {
   toolUseId: "gallery-default-streaming",
   toolName: "SlowImport",
   msgId: "gallery-default-msg",
@@ -102,7 +102,7 @@ const STREAMING: ToolWrapperProps = {
   caution: { reason: "unknown_tool", detail: "SlowImport" },
 };
 
-const ERRORED: ToolWrapperProps = {
+const ERRORED: ToolBlockProps = {
   toolUseId: "gallery-default-error",
   toolName: "DeployService",
   msgId: "gallery-default-msg",
@@ -114,7 +114,7 @@ const ERRORED: ToolWrapperProps = {
   caution: { reason: "unknown_tool", detail: "DeployService" },
 };
 
-const NO_OUTPUT: ToolWrapperProps = {
+const NO_OUTPUT: ToolBlockProps = {
   toolUseId: "gallery-default-no-output",
   toolName: "TouchFile",
   msgId: "gallery-default-msg",
@@ -130,7 +130,7 @@ const NO_OUTPUT: ToolWrapperProps = {
 
 interface VariantProps {
   title: string;
-  props: ToolWrapperProps;
+  props: ToolBlockProps;
   last?: boolean;
 }
 
@@ -139,7 +139,7 @@ function Variant({ title, props, last }: VariantProps): React.ReactElement {
     <>
       <div className="cg-section gallery-tool-block-default-variant">
         <TugLabel className="cg-section-title">{title}</TugLabel>
-        <DefaultToolWrapper {...props} />
+        <DefaultToolBlock {...props} />
       </div>
       {last ? null : <TugSeparator />}
     </>
