@@ -921,3 +921,188 @@ The live `respondApproval` action still fires its `tool_approval` wire frame —
 | PermissionDialog migrated | `tide-permission-dialog.tsx` imports `TideInteractiveDialog` and does NOT import `TugInlineDialog` directly |
 | QuestionDialog migrated | Same shape for `tide-question-dialog.tsx` |
 | "Wrapper" prose cleaned | `grep -ri 'tool wrapper\|tool-wrapper' tugdeck/src --include='*.tsx' --include='*.ts' --include='*.md'` — only component-name references remain |
+
+---
+
+### Addendum: Mid-Flight Survival {#addendum-mid-flight-survival}
+
+Steps 0–5 nailed the input-form primitive and the JSONL-grounded asymmetry. Live HMR worked. But the Developer > Reload boundary surfaced a deeper class of bug after the phase landed: a dialog open at the moment of reload disappeared (and in the worst case the entire session binding too), violating the "content the user has already seen never gets pulled away" invariant the Step 3.5 continuity checkpoint already pinned.
+
+Three fixes shipped post-phase to close that gap (commits `4c294be7` and `c48c8db4`):
+
+- **Binding survives reload of an in-flight first turn.** `tugcast::do_list_card_bindings` emits `is_alive` per binding from its in-memory supervisor `SpawnState`; the client gate widens to `turn_count > 0 || is_alive` so `mode=resume` fires even when the in-flight turn hasn't committed yet. Without this, the gate took the `mode=new` branch and orphaned the live session.
+- **Pending dialog rehydrates on reload.** `tugcode::emitInflightTurnFromActiveTurn` synthesizes a `tool_use` + `control_request_forward` pair from each pending `can_use_tool` entry on resume. The reducer accepts `control_request_forward` during `replaying` (stash only, no phase transition); `handleReplayComplete` lands in `awaiting_approval` with `prevPhase: "tool_work"` when a dialog was rehydrated, so the subsequent live `tool_result` post-Allow has a populated `toolCallMap` entry to land in (no dangling spinner).
+- **Dev-mode session-id badge in Z4B** for diagnostic continuity across reload — label `Session: <first 8 chars>`, full id in `title`, ghost-styled to match the existing Z4B vocabulary.
+
+That work closed the live-dialog hole — but uncovered three new ones surfaced during continued user testing:
+
+1. **Answered question state does not survive HMR / Developer > Reload.** A user mid-way through a multi-question wizard loses every selection and the cursor position on any boundary. Per `[L23]`, selection / form-control values / content payloads are user data — they MUST be preserved.
+2. **No survival across `Tug.app` relaunch.** A request submitted with a pending Permission or Question dialog at the moment of `Tug.app` quit is gone on relaunch. The user sees an empty card and has to retype the prompt. Same class as Developer > Reload but the persistence horizon widens — `tugcode` dies with the app and its in-memory `pendingControlRequests` map dies with it.
+3. **Turn telemetry resets on reload.** The status bar's `TIME`, `TOKENS`, and `CONTEXT` drop to `0m 00s / 0 / 12.6K / 1.00M` post-reload even when the in-flight snapshot delivered the assistant text and dialog correctly. The user loses sight of where the turn was costing-wise mid-stream.
+
+**Strategy.** Tighten the survival contract one boundary at a time. Reload (HMR + Developer > Reload) is already mostly there — Step 6 closes the `[L23]` gap on question-dialog answers. Relaunch (cold boot through `Tug.app` quit) is the next horizon — Step 7 is a short investigation to resolve `[Q07]`; Step 8 implements whichever architecture `[Q07]` selects. Step 9 is the telemetry sibling: extend the in-flight snapshot to carry the current cost / usage tuple.
+
+#### New Open Questions {#addendum-open-questions}
+
+#### [Q07] Does `claude --resume` re-issue `can_use_tool` for an unresolved tool_use in the loaded JSONL? (OPEN) {#q07-sdk-resume-can-use-tool}
+
+**Question:** When `Tug.app` quits with a Permission / Question dialog open and re-launches, the session is restored via `claude --resume <session_id>`. JSONL on disk should contain the user message + the assistant message ending with `stop_reason: "tool_use"` (the assistant message finalizes before the tool runs — claude does not wait for the tool_result to flush). Does the SDK, on resume, recognize the un-resolved tool_use and re-issue the `can_use_tool` control_request so tugcode can re-forward the dialog?
+
+**Why it matters:** The answer determines the architecture of Step 8.
+- **YES**: the resume mechanism is sufficient; the only client-side change is widening the binding gate to fire `mode=resume` for "JSONL ends with an unresolved tool_use" — similar in shape to `is_alive` but derived from the JSONL parse rather than the in-memory supervisor.
+- **NO**: tugcode must persist `pendingControlRequests` to sqlite on each `set` / `delete` and rehydrate the map on startup; the existing `emitInflightTurnFromActiveTurn` then runs unchanged once the spawn lands.
+
+**Plan to resolve:** Capture a fresh JSONL at the exact mid-permission moment (live session, dialog open, no Allow / Deny yet — copy `~/.claude/projects/<encoded-dir>/<session>.jsonl` while the dialog is up). Confirm the assistant `tool_use` content block is present. Then quit, relaunch, observe whether the SDK re-emits `can_use_tool` to tugcode (instrumented log line or stdin tail). Document the observation, then proceed to Step 8 along the YES or NO branch.
+
+**Resolution:** OPEN — investigated in `#step-7`.
+
+#### New Design Decisions {#addendum-design-decisions}
+
+#### [D13] In-flight survival is a three-layer contract; each scope owns its own mechanism (DECIDED) {#d13-survival-layering}
+
+**Decision:** Three distinct survival mechanisms operate at three different scopes, and they MUST stay separate:
+
+- **Wire-level continuity (tugcode)** — `emitInflightTurnFromActiveTurn` is the single source of truth for "what does a freshly-connected tugdeck see when it resumes a session." The snapshot synthesizes the in-flight turn's frames (`user_message_replay`, `assistant_text`, `tool_use`, `control_request_forward`, `cost_update`) so the reducer rebuilds an equivalent runtime state.
+- **Reducer-level reconciliation (tugdeck `code-session-store`)** — replay-phase handlers (`handleControlRequestForward`'s `replaying` branch, `handleReplayComplete`'s `awaiting_approval` post-bracket landing) interpret the snapshot into the final post-resume state.
+- **Per-component user data (the component itself)** — local component state (mid-flight question selections, salvage-form text, etc.) survives via `[L23]`'s A9 protocol (`useComponentStatePreservation` / `useSavedComponentState` / `CardStateBag`).
+
+**Rationale:**
+- Mixing these collapses concerns. The reducer should not know about per-question answers; the QuestionDialog should not know about replay brackets; tugcode should not know about `CardStateBag`.
+- `[L23]` already pins this for non-Tide components (`tug-radio-group`, `tug-accordion`). Applying the same protocol to QuestionDialog's `selections` / `visited` / `currentIndex` aligns the dialog family with the rest of tugdeck.
+- The seam is sharp: tugcode emits the wire-level snapshot, the reducer commits the post-resume state, and the component restores its own UI from the bag — three layers, three responsibilities.
+
+**Implications:**
+- Step 6 (the `[L23]` fix) is local to `tide-question-dialog.tsx`. No reducer change. No tugcode change.
+- Steps 7–8 (relaunch survival) and Step 9 (telemetry) live at the wire / reducer layer. They do NOT touch `[L23]`.
+- A future "save the dialog scroll position" requirement also lives in the A9 protocol, not in the snapshot.
+
+#### [D14] `Tug.app` relaunch is the same class of resume as Developer > Reload — the persistence horizon just widens (DECIDED) {#d14-relaunch-as-resume}
+
+**Decision:** App relaunch is conceptually a Developer > Reload where `tugcode` also gets killed. The architecture stays the same: the user reloads, the binding restoration runs, `mode=resume` fires, the live snapshot delivers in-flight state. The only difference is which layer holds the in-flight state at the moment of teardown — in-memory (reload) vs on-disk (relaunch).
+
+**Rationale:**
+- Inventing a separate "cold-relaunch recovery" pipeline would duplicate the existing replay machinery for marginal gain. The wire shapes are already right.
+- The user's mental model is "I submitted a request; the system should still know that." That model is symmetric across reload and relaunch — both are just "the UI process restarted." Honoring that symmetry in the codebase makes both flows easier to reason about.
+- The investigation in `[Q07]` settles whether the SDK re-issues the control_request naturally on `--resume` (zero new persistence needed) or whether tugcode needs a small sqlite-backed mirror of `pendingControlRequests` (small bookkeeping change, no new wire shape).
+
+**Implications:**
+- The client-side binding gate (`turn_count > 0 || is_alive`) gains a third arm if `[Q07]` resolves NO: `|| has_pending_tool_use_in_jsonl` (cheap to compute server-side from the existing JSONL parse), and a sqlite mirror of `pendingControlRequests` lands in tugcode.
+- The wire-level snapshot is the rehydration channel either way — `emitInflightTurnFromActiveTurn` is the place new logic lands, regardless of where the pending state was read from (memory map vs sqlite mirror).
+
+#### Addendum Execution Steps {#addendum-execution-steps}
+
+#### Step 6: QuestionDialog answer-state survival via `[L23]` A9 protocol {#step-6}
+
+**Depends on:** `#step-3` (QuestionDialog migration), `#addendum-mid-flight-survival`
+
+**Commit:** `feat(tugways): QuestionDialog preserves answer state via L23 A9 protocol`
+
+**References:** `[L23]` user data must be preserved across boundaries, `[D13]` survival layering, `tug-radio-group.tsx:211` reference pattern, `tug-accordion.tsx:246` reference pattern, [card-state-model.md](../tuglaws/card-state-model.md), [state-preservation.md](../tuglaws/state-preservation.md)
+
+**Tasks:**
+- [ ] Define a `QuestionDialogPreservedState` interface capturing the three local-state fields: `selections: string[][]`, `visited: boolean[]`, `currentIndex: number`. (Shapes already pinned in the component; the interface just gives them a name on the wire.)
+- [ ] Derive a preservation key from `request.request_id`. A NEW request mounts fresh; the SAME request rehydrates its in-progress state. The key namespace must be Question-dialog-scoped (e.g. `question-dialog/<request_id>`) so it does not collide with other components.
+- [ ] Pull saved state via `useSavedComponentState<QuestionDialogPreservedState>(key)` inside the dialog component.
+- [ ] Seed `selections`, `visited`, and `currentIndex` from the saved state when present, else use the existing initializers. Keep the initializers pure; the rehydration arm is a single conditional branch.
+- [ ] Register a capture callback via `useComponentStatePreservation` that returns the current `{ selections, visited, currentIndex }` tuple.
+- [ ] Update the module docstring to cite `[L23]`, `[D13]`, and the new preservation contract.
+
+**Tests:**
+- [ ] Pure-logic test: passing a saved-state snapshot through the component's seed path produces the expected initial `selections` / `visited` / `currentIndex` tuple.
+- [ ] Pure-logic test: capture callback's output round-trips through the seed path (encode-then-decode is the identity).
+- [ ] HMR vetted by user: mid-wizard, edit an unrelated CSS file. Selections persist; the current row stays focused; scroll position holds.
+- [ ] Developer > Reload vetted by user: mid-wizard (some questions answered, not yet submitted), reload. Same row is current, same options are selected, wizard count reflects the prior progress.
+
+**Checkpoint:**
+- [ ] `bun test` green.
+- [ ] `bun x tsc --noEmit` clean.
+- [ ] `bun run audit:tokens lint` zero violations.
+- [ ] User-verified HMR + Developer > Reload across the multi-question wizard.
+
+---
+
+#### Step 7: Investigate SDK resume behavior for unresolved `tool_use` (`[Q07]`) {#step-7}
+
+**Depends on:** `#step-3-5` (asymmetry investigation methodology)
+
+**Commit:** `N/A (investigation only — outputs annotate [Q07] resolution)`
+
+**References:** `[Q07]` SDK resume behavior, `[D14]` relaunch-as-resume, `tugcode/src/replay.ts` (existing JSONL parse path)
+
+**Tasks:**
+- [ ] Capture a JSONL fixture at the exact mid-permission moment: start a session, submit a request that triggers a Bash permission, leave the dialog open without Allow/Deny, copy `~/.claude/projects/<encoded-dir>/<session_id>.jsonl` to a fixture path under the repo.
+- [ ] Verify the fixture contains:
+  - The user message
+  - The assistant message ending with `stop_reason: "tool_use"` and a `tool_use` content block
+  - NO `user` message with `tool_result` content (because the user never approved)
+- [ ] Spawn `claude --resume <session_id>` against the captured project dir manually (no tugcode in the loop). Observe whether claude re-issues the `can_use_tool` control_request on stdout. Document the observation in `[Q07]`.
+- [ ] Resolve `[Q07]` to YES or NO with concrete evidence (JSONL excerpt + observed re-issue or absence thereof) in the resolution block.
+- [ ] Based on the resolution, sketch the Step 8 plan:
+  - **YES branch**: the client binding gate gains a `has_pending_tool_use` arm (cheap JSONL inspection by tugcast) and the existing snapshot delivers the dialog naturally.
+  - **NO branch**: tugcode adds a `pending_control_requests` sqlite table written on map set/delete and read on startup. `emitInflightTurnFromActiveTurn` reads from the persisted source on a fresh spawn.
+
+**Tests:**
+- [ ] N/A — investigation step.
+
+**Checkpoint:**
+- [ ] `[Q07]` resolved with concrete evidence.
+- [ ] Step 8 plan committed inline with the right architecture branch.
+
+---
+
+#### Step 8: Permission / Question dialog survives `Tug.app` relaunch {#step-8}
+
+**Depends on:** `#step-7` (`[Q07]` resolution), `#addendum-mid-flight-survival`
+
+**Commit:** `fix(tide): pending dialog survives Tug.app relaunch` (final shape depends on `[Q07]`)
+
+**References:** `[D14]` relaunch as resume, `[Q07]` outcome, `tugcast::do_list_card_bindings`, `tugcode::emitInflightTurnFromActiveTurn`
+
+**Tasks:**
+- [ ] Implement the architecture branch chosen in Step 7:
+  - **YES branch**: extend `tugcast::do_list_card_bindings` to inspect the session's JSONL for an unresolved tool_use (last assistant message ends with `stop_reason: "tool_use"` and no matching `tool_result` follows). Add `has_pending_tool_use: bool` to the binding row. Widen the client gate to `turn_count > 0 || is_alive || has_pending_tool_use`. The SDK re-emits `can_use_tool` naturally on resume; `emitInflightTurnFromActiveTurn` is unchanged.
+  - **NO branch**: add a `pending_control_requests` sqlite table keyed by `(session_id, request_id)`. tugcode writes on every `pendingControlRequests.set()` / `pendingControlRequests.delete()`; on startup, the table is read into the in-memory map before the first `runReplay`. `emitInflightTurnFromActiveTurn` is unchanged — the map is already populated by the time it runs.
+- [ ] Cross-check that the rehydrated dialog after relaunch carries the same `request_id` as the one open pre-relaunch — same correlation guarantee as Developer > Reload.
+
+**Tests:**
+- [ ] Branch-appropriate unit tests: YES branch — tugcast unit asserting `has_pending_tool_use` for a JSONL ending in `stop_reason: tool_use`; client-side restore test asserting the gate fires resume for `(turn_count=0, is_alive=false, has_pending_tool_use=true)`. NO branch — tugcode unit asserting the sqlite mirror round-trips `set` / `delete` and that startup rehydration restores the in-memory map.
+- [ ] Aggregate suite green (`bun test` + `cargo nextest run`).
+- [ ] `audit:tokens lint` zero violations.
+
+**Checkpoint:**
+- [ ] User-verified: submit prompt → Permission dialog appears → quit `Tug.app` → relaunch. Dialog reappears with the original `request_id`; clicking Allow runs the tool and the result lands inside the same tool block (no orphan).
+- [ ] User-verified: same flow with AskUserQuestion / multi-question wizard. Step 6 answer-state survival kicks in on top: in-progress selections survive the relaunch.
+
+---
+
+#### Step 9: In-flight turn telemetry survives reload {#step-9}
+
+**Depends on:** `#step-6` (the `[L23]` fix establishes the survival pattern), `#addendum-mid-flight-survival`
+
+**Commit:** `fix(tide): in-flight cost / usage snapshot on resume`
+
+**References:** `[D13]` survival layering — telemetry lives at the wire layer, `[L23]` no user-visible state lost on a boundary, `tugcode/src/session.ts:1107` (`lastMessageStartUsage`), `tugcode/src/session.ts:1111` (`lastMessageDeltaUsage`), `tugdeck/src/lib/code-session-store/reducer.ts` cost_update handler.
+
+**Tasks:**
+- [ ] Extend `emitInflightTurnFromActiveTurn` to synthesize a `cost_update` IPC frame using the best-available in-flight usage from `lastMessageStartUsage ?? lastMessageDeltaUsage ?? {}`. `total_cost_usd` / `num_turns` / `duration_ms` / `duration_api_ms` are turn-end metadata; pass `0` and let the eventual live `result` event replace these with precise values when the turn ends.
+- [ ] Order: the frame lands AFTER `assistant_text` and BEFORE `tool_use` / `control_request_forward` so the reducer's `tokens` and `context.usedTokens` derivations have data to consume before the dialog renders. (Order is descriptive of the live wire's invariant; the snapshot is preserving that order across the bracket.)
+- [ ] Pin the wire order in `replay-hmr-mid-stream.test.ts`.
+- [ ] Reducer-side: confirm the existing cost-update handler accepts `phase: "replaying"`. If it does not, widen the guard (mirror the `handleControlRequestForward` / `handleToolUse` pattern from the prior rounds).
+
+**Tests:**
+- [ ] tugcode test: pending tool_use + `lastMessageStartUsage` populated → snapshot emits a `cost_update` with the usage tuple in the documented position.
+- [ ] Reducer test: in-flight `cost_update` during `replaying` updates `tokens` and `context.usedTokens` (or whichever derived field surfaces in the status bar).
+
+**Checkpoint:**
+- [ ] User-verified: pre-reload status bar shows X tokens / Y context; Developer > Reload; post-reload status bar shows approximately the same X / Y (within rounding — the live `result` event will land with the precise number when the turn completes).
+- [ ] `bun test` green; `audit:tokens lint` zero violations.
+
+---
+
+#### Addendum Acceptance Criteria {#addendum-acceptance}
+
+- [ ] `[Q07]` resolved with documented SDK behavior evidence.
+- [ ] QuestionDialog `selections` / `visited` / `currentIndex` survive both HMR and Developer > Reload (`[L23]` compliance verified by user).
+- [ ] Pending Permission / Question dialog survives `Tug.app` relaunch with the same `request_id` and (for Question) preserved answer state.
+- [ ] Post-reload status bar shows non-zero `TOKENS` / accurate `CONTEXT` reflecting the in-flight turn's usage estimate.
+- [ ] All earlier mid-flight survival behavior (Developer > Reload tool block continuity, no dangling spinner post-Allow) remains intact — no regressions on the work shipped in commits `4c294be7` and `c48c8db4`.
