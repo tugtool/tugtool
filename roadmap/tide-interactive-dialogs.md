@@ -124,15 +124,13 @@ Cite decisions by ID (`[D05]`), specs / lists / tables by label (`Spec S15`, `Li
 
 **Resolution:** RESOLVED (no). The investigation confirmed AskUserQuestion's answers round-trip via tool_use/tool_result — the conversation context already contains the record. The tool block IS the rendered representation of that record. Adding a parallel `turn.controlRequests[]` entry would duplicate state that the conversation already holds. The asymmetry between the two surfaces is architectural per `[D10]`, not a problem to solve. See `#investigation-asymmetry` for the JSONL evidence.
 
-#### [Q03] Cancel button vocabulary on PermissionDialog — is `Deny` the cancel, or a separate Cancel button? (OPEN) {#q03-cancel-vocab}
+#### [Q03] Cancel button vocabulary on PermissionDialog — is `Deny` the cancel, or a separate Cancel button? (RESOLVED) {#q03-cancel-vocab}
 
 **Question:** Today PermissionDialog uses `Deny` as a *positive decision* (`respondApproval({decision: "deny"})`), distinct from `popInteractive`. QuestionDialog uses `Cancel` (outlined-danger, `popInteractive`). Should PermissionDialog gain a separate `Cancel` button alongside `Deny`, or stay with `Deny` only and surface `popInteractive` via Esc?
 
 **Why it matters:** `Cancel ≡ Esc ≡ popInteractive` is the family rule. If `Deny` is semantically the cancel, it should call `popInteractive`. If they're different, the dialog needs both buttons.
 
-**Plan to resolve:** Step 2 (PermissionDialog migration). Default: keep `Deny` as a positive decision (sends `respondApproval({decision: "deny"})`) and surface Esc-only as the `popInteractive` walk-away — no separate `Cancel` button on PermissionDialog. That matches current behaviour and avoids a permission-flow refactor.
-
-**Resolution:** OPEN — pending Step 2 implementation decision.
+**Resolution:** RESOLVED — keep `Deny` as a positive decision (sends `respondApproval({decision: "deny"})`); surface `popInteractive` via Esc only. No separate `Cancel` button on PermissionDialog. The pending dialog passes `cancelRole="action"` to opt out of the family danger-tone default. Verified by HMR in Step 2: Allow / Deny paths and the recorded state render correctly; the family `space-between` actions-row layout reads as Mac HIG opposed-choices. Documented as a carve-out in `[D02]` and the `code-session-store.ts` `popInteractive` docstring.
 
 #### [Q05] Should the salvage path live inside `TideInteractiveDialog`? (DEFERRED) {#q05-salvage-primitive}
 
@@ -494,7 +492,8 @@ Per `[D12]`:
 | `tugdeck/src/components/tugways/chrome/tide-question-dialog.css` | Remove the `.tide-question-dialog .tug-inline-dialog-actions { justify-content: space-between }` block |
 | `tugdeck/src/components/tugways/cards/tool-wrappers/ask-user-question-tool-block.tsx` | Vocabulary alignment + prose cleanup (Step 4). **Salvage UI Cancel handler is NOT updated** — it stays on local `setSalvageCancelled` per the `[D02]` carve-out. |
 | `tugdeck/src/components/tugways/tug-prompt-entry.tsx` | Update Esc / Stop wiring to call `popInteractive` (Step 0). |
-| `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` | One prose reference to the "Stop / Esc peel-newest gesture" updated to "Stop / Esc pop-interactive gesture" (Step 0). |
+| `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` | (Step 0) One prose reference: "peel-newest gesture" → "pop-interactive gesture". (Step 3) **Two-stage layout fix.** First-pass JSX reorder moved both slots to the end of the cell. Second-pass refactored permission rendering into a `ReadonlyMap<tool_use_id, ReactNode>` so permission entries thread inline into `TranscriptToolCalls` and render immediately after their tool block; an orphan-permissions array stays at the body foot as a defensive fallback; `questionSlot` remains at the foot (questions belong at the end of the cell). Stable empty sentinels added (`EMPTY_PERMISSION_MAP`, `EMPTY_PERMISSION_ARRAY`). |
+| `tugdeck/src/components/tugways/cards/tide-card-transcript-tool-calls.tsx` | (Step 3) Accept `permissionByToolUseId?: ReadonlyMap<string, ReactNode>` on both Static and Streaming variants; thread to `ToolCallsList`; render the matching permission node inside a `React.Fragment` keyed by `toolUseId` as the immediate sibling of each tool block. |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.queue.test.ts` | Rename `peelNewest` references — 4 occurrences (Step 0). |
 
 #### Symbols to add / modify {#symbols}
@@ -512,7 +511,7 @@ Per `[D12]`:
 
 - [x] Module docstring on `TideInteractiveDialog` explaining the boundary with `TugInlineDialog`, the `[D08]` input-form scope, the `[D02]` / `[D03]` defaults, and the family convention. *(Done in Step 1.)*
 - [x] Module docstring on `code-session-store.ts` `popInteractive` method explaining the LIFO semantic and what "interactive" means in this family. *(Done in Step 0.)*
-- [ ] Cross-reference from `chrome/tide-permission-dialog.tsx` and `chrome/tide-question-dialog.tsx` to `TideInteractiveDialog`.
+- [x] Cross-reference from `chrome/tide-permission-dialog.tsx` and `chrome/tide-question-dialog.tsx` to `TideInteractiveDialog`. *(Done in Steps 2 and 3 — both module docstrings name `TideInteractiveDialog` as the direct composition target with `TugInlineDialog` one layer down.)*
 - [ ] Step 4 prose audit: replace "wrapper" with "tool block" in tugdeck docstrings / doc-comments per `[D11]`.
 
 ---
@@ -612,20 +611,22 @@ Pure-logic tests stay attached to the consumer modules. The primitive adds a tin
 - Edits to `chrome/tide-permission-dialog.tsx`.
 
 **Tasks:**
-- [ ] Swap `import { TugInlineDialog }` for `import { TideInteractiveDialog }`.
-- [ ] Pass `cancelRole="action"` explicitly so `Deny` keeps its outlined-action treatment (per `[Q03]` default resolution).
-- [ ] Verify the resolved-record state still in-place-transitions correctly (no remount under the same `request_id`) — `[L26]` mount-identity stability. The chrome swap must keep React-reconciliation identity byte-identical: same `key`, same component type, same renderer reference at the pending → resolved → recorded transitions. If any of the three drifts, the user-visible state (scroll, focus, in-flight CSS transitions) is torn down.
-- [ ] Verify history-recording behaviour unchanged (the reducer doesn't depend on the visible chrome).
+- [x] Swap `import { TugInlineDialog }` for `import { TideInteractiveDialog }`. (Kept the type-only `import type { TugInlineDialogOption }` — `buildPermissionOptions` still returns that type; the prop contract lives on `TugInlineDialog`.)
+- [x] Pass `cancelRole="action"` explicitly so `Deny` keeps its outlined-action treatment (per `[Q03]` default resolution). Inline comment added at the JSX cite-point explaining the `[D02]` / `[Q03]` carve-out.
+- [x] Verify the resolved-record state still in-place-transitions correctly (no remount under the same `request_id`) — `[L26]` mount-identity stability. **Verified:** `PermissionDialog` itself is the long-lived component; its `useState` for `decision` and `recordExpanded` survives the pending → resolved transition because the parent stays mounted. The pending → resolved transition swaps the *child* tree (`TideInteractiveDialog` → resolved-record `<div>`), which is expected — the dialog is replaced by the compact record once Allow/Deny is clicked. The migration changes only the pending-branch JSX (`TugInlineDialog` → `TideInteractiveDialog`); React-reconciliation identity at the consumer level is byte-identical because `PermissionDialog`'s own position, key, type, and renderer reference are unchanged.
+- [x] Verify history-recording behaviour unchanged (the reducer doesn't depend on the visible chrome). **Verified:** `respondApproval` is called identically; the reducer writes `turn.controlRequests[]` unchanged.
+- [x] Update module docstring: now names `TideInteractiveDialog` as the direct composition target, with the underlying `TugInlineDialog` named one layer down. `[L20]` line updated to reflect the two-layer composition.
 
 **Tests:**
-- [ ] Existing `tide-permission-dialog.test.ts` cases still pass without modification.
-- [ ] No new tests required unless behaviour change found during HMR.
+- [x] Existing `tide-permission-dialog.test.ts` cases still pass without modification (34 pass / 0 fail / 67 expects).
+- [x] No new tests added — the migration is semantics-preserving and the existing pure-helper tests cover the public surface.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` — clean.
-- [ ] `cd tugdeck && bun test chrome/tide-permission-dialog.test.ts` — pass.
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] Manual HMR: trigger a permission prompt (`Bash` requiring approval); verify Allow / Deny paths and the recorded state render identically to pre-migration. Resolve `[Q03]` based on observed behaviour.
+- [x] `bun x tsc --noEmit` — clean (exit 0).
+- [x] `bun test src/components/tugways/chrome/tide-permission-dialog.test.ts` — 34 pass / 0 fail.
+- [x] `bun test` — full suite green: 2586 pass / 0 fail / 9674 expects / 158 files (no regression from Step 1's baseline).
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] Manual HMR: trigger a permission prompt (`Bash` requiring approval); verify Allow / Deny *paths* and the *recorded state* render identically to pre-migration. *(Verified by user in live session. The `space-between` actions-row layout reads correctly as Mac HIG opposed-choices; functional paths and recorded-state visual unchanged.)*
 
 ---
 
@@ -641,20 +642,33 @@ Pure-logic tests stay attached to the consumer modules. The primitive adds a tin
 - Edits to `chrome/tide-question-dialog.tsx`, `chrome/tide-question-dialog.css`.
 
 **Tasks:**
-- [ ] Swap `TugInlineDialog` for `TideInteractiveDialog`.
-- [ ] Drop the local `.tide-question-dialog .tug-inline-dialog-actions { justify-content: space-between }` block (the primitive owns it now). Keep the frame-width override.
-- [ ] Verify the measurement helper for layout stability still works (it's component-local and untouched).
-- [ ] Verify Cancel still resolves to `session.popInteractive()` (Step 0 already updated this; sanity-check after the chrome swap).
+- [x] Swap `TugInlineDialog` for `TideInteractiveDialog` (import + JSX open + JSX close).
+- [x] Drop the local `.tide-question-dialog .tug-inline-dialog-actions { justify-content: space-between }` block from `tide-question-dialog.css` — the primitive owns it now. Frame-width override (`--tugx-question-frame-width: 700px`) kept. A short comment in the CSS records *why* the local override is gone (cross-reference to `[D03]` + the primitive's CSS rule).
+- [x] *(Bonus)* Dropped the explicit `cancelRole="danger"` prop from the JSX — that is now the family default that `TideInteractiveDialog` supplies. Omitting it is the cleaner expression: the dialog gets the family vocabulary without restating it.
+- [x] Verify the measurement helper for layout stability still works — component-local, untouched. The hidden measurement wrapper (`tide-question-dialog-measure`) lives in the `children` slot the primitive passes through verbatim.
+- [x] Verify Cancel still resolves to `session.popInteractive()` (Step 0 already updated this) — `handleCancel` body is unchanged; the chrome swap does not perturb the callback.
+- [x] Update module docstring: cross-references `TideInteractiveDialog` as the direct composition target ([D01] / [D08]); the stale **"Skip"** paragraph (which described the old `respondQuestion({})` cancel behaviour) is replaced with the current **"Cancel ≡ Esc ≡ `popInteractive`"** paragraph naming `[D02]` and the wire round-trip. `[L20]` line acknowledges the two-layer composition.
 
 **Tests:**
-- [ ] Existing `tide-question-dialog.test.ts` cases still pass without modification.
-- [ ] No new tests required unless behaviour changes.
+- [x] Existing `tide-question-dialog.test.ts` cases still pass without modification (38 pass / 0 fail / 50 expects).
+- [x] No new tests added — the migration is semantics-preserving and the existing pure-helper tests cover the public surface.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` — clean.
-- [ ] `cd tugdeck && bun test chrome/tide-question-dialog.test.ts` — pass.
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] Manual HMR: a real AskUserQuestion flow with multi-question payload; verify wizard rail, auto-advance, Cancel button (`popInteractive`), Esc (`popInteractive`) all behave identically to pre-migration.
+- [x] `bun x tsc --noEmit` — clean (exit 0).
+- [x] `bun test src/components/tugways/chrome/tide-question-dialog.test.ts` — 38 pass / 0 fail.
+- [x] `bun test` — full suite green: 2586 pass / 0 fail / 9674 expects / 158 files (no regression).
+- [x] `bun run audit:tokens lint` — zero violations.
+- [x] Manual HMR: a real AskUserQuestion flow with multi-question payload; verify wizard rail, auto-advance, Cancel button (`popInteractive`), Esc (`popInteractive`) all behave identically to pre-migration. *(Verified by user in live session: the migration itself works; wizard rail, auto-advance, and the family cancel gesture all behave correctly.)*
+
+**Discovered-and-fixed during HMR review — body-slot ordering bug.** The user surfaced a layout problem present *before* this plan started: in `cards/tide-card-transcript.tsx`, the assistant-cell body mounted `permissionSlot` and `questionSlot` at fixed positions *near the top* of the body, above `TranscriptToolCalls` and `TugMarkdownBlock`. So when the AI emitted Bash + text + `AskUserQuestion`, the dialog appeared at the *top* of the cell with the tool output and text streaming in *below* it — inverted from conversational order.
+
+- [x] *(First pass.)* Reordered the body JSX so the slots sit at the *end* of the cell. Sufficient for QuestionDialog (questions naturally belong at the end of an assistant turn — after the text that introduces them), but **insufficient for PermissionDialog** — the user's follow-up HMR showed the `Bash — Allowed` record sitting at the bottom of the cell with the assistant's prose commentary between it and the Bash tool block. The user's rule: *"This tool approval should appear immediately below the tool call. Nothing else should be able to weasel its way in there."*
+- [x] *(Second pass — the architecturally correct fix.)* Threaded permission entries into the tool stream by `tool_use_id`. The wire ships `control_request_forward` frames with a `tool_use_id` field (verified against the v2.1.x stream-json catalog and the `ControlRequestForward` index signature — the SDK has carried it since 2.1.104), so a permission record always knows which tool block it gates.
+  - In `tide-card-transcript.tsx`: split the old `permissionSlot` `ReactNode` output into two: a `ReadonlyMap<tool_use_id, ReactNode>` keyed by `tool_use_id`, and a defensive `orphanPermissions` array for entries that arrive without the field. Stable `EMPTY_PERMISSION_MAP` / `EMPTY_PERMISSION_ARRAY` sentinels are reused on every empty render so `useSyncExternalStore`'s `Object.is` check skips no-op re-renders.
+  - In `tide-card-transcript-tool-calls.tsx`: accept `permissionByToolUseId?: ReadonlyMap<...>` on both Static and Streaming props; in `ToolCallsList`, after each rendered tool block, look up the matching node and render it as the immediate sibling within the same flex column. A tool block with no matching permission stays as a bare `Component`; a tool block with a permission renders inside a `React.Fragment` keyed by `toolUseId` so the pair reconciles as one unit.
+  - In the body JSX: `permissionSlot` removed; `orphanPermissions` rendered at the body foot as a defensive fallback (typically empty); `questionSlot` stays at the foot (questions naturally belong at the end of the cell).
+- [x] Slot keys (`request.request_id` on the permission node; `toolUseId` on the wrapping Fragment) preserve React-reconciliation mount identity (`[L26]`) across pending → resolved → recorded transitions of the permission UI.
+- [x] Added a multi-paragraph comment above the body documenting the conversational-order rule + the inline-permission-threading rule, so future readers see both baked into the layout.
 
 ---
 

@@ -12,19 +12,28 @@
  * Two states, mutually exclusive, driven by whether this request is
  * still the session's `pendingApproval`:
  *
- *   1. **Pending** — composes the `TugInlineDialog` primitive
- *      ([#step-18-5]) with `iconRole="caution"` and a per-tool rich
- *      description. The body picker (DiffBlock for Edit, JsonTreeBlock
- *      for the unknown-tool fallback) renders inside the dialog's
- *      `children` slot. When the request carries actionable
- *      `permission_suggestions`, those (plus an implicit "Allow once"
- *      first option) are passed to the primitive's `options` prop as
- *      a mandatory-single-select radio group of `TugDialogButton`s
- *      ([#step-18-6]); the user picks the *scope*, then commits with
- *      Allow. Deny is the off-ramp — clicking it ignores the chosen
- *      scope and denies the request outright. The primitive focuses
- *      Allow on mount per [D13] so a Return key commits the default
- *      scope without a second keystroke.
+ *   1. **Pending** — composes the `TideInteractiveDialog` input-form
+ *      primitive of the Tide interactive-dialog family (which itself
+ *      wraps `TugInlineDialog` — see [D08]) with `iconRole="caution"`
+ *      and a per-tool rich description. The body picker (DiffBlock
+ *      for Edit, JsonTreeBlock for the unknown-tool fallback) renders
+ *      inside the dialog's `children` slot. When the request carries
+ *      actionable `permission_suggestions`, those (plus an implicit
+ *      "Allow once" first option) are passed to the primitive's
+ *      `options` prop as a mandatory-single-select radio group of
+ *      `TugDialogButton`s ([#step-18-6]); the user picks the *scope*,
+ *      then commits with Allow. Deny is the off-ramp — clicking it
+ *      ignores the chosen scope and denies the request outright. The
+ *      primitive focuses Allow on mount per [D13] so a Return key
+ *      commits the default scope without a second keystroke.
+ *
+ *      `Deny` is a *positive decision* (`respondApproval({decision:
+ *      "deny"})`), not a walk-away — the dialog passes
+ *      `cancelRole="action"` to opt out of the interactive-dialog
+ *      family's danger-tone default ([D02] / [Q03] carve-out). Esc
+ *      keeps reaching `popInteractive` via the responder chain; that
+ *      walk-away cancels the running turn rather than denying the
+ *      permission.
  *   2. **Resolved** — a one-line record (`{tool} — Allowed/Denied`)
  *      with a chevron that expands to re-show the request body +
  *      reason, read-only. This branch is intentionally *not* on the
@@ -67,9 +76,11 @@
  *    `data-slot="tide-permission-dialog"` on the resolved-record
  *    root, this docstring.
  *  - [L20] component-token sovereignty — the pending visual is
- *    delegated to `TugInlineDialog` (which owns `--tugx-idialog-*`);
- *    the resolved record owns the residual `--tugx-perm-*` slot
- *    family.
+ *    delegated to `TideInteractiveDialog` (the family-default
+ *    cancel-role + actions-row layer) which in turn delegates to
+ *    `TugInlineDialog` (which owns `--tugx-idialog-*`); this dialog
+ *    contributes only the resolved-record chrome and owns the
+ *    residual `--tugx-perm-*` slot family.
  *
  * Decisions:
  *  - [D13] inline (not modal) permission dialogs; collapse-to-record
@@ -86,7 +97,7 @@ import { Ban, ChevronRight, Shell, ShieldAlert, ShieldCheck } from "lucide-react
 import { cn } from "@/lib/utils";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
-import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
+import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import type {
   CodeSessionStore,
@@ -709,17 +720,26 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     );
   }
 
-  // ---- Pending: composed on TugInlineDialog -------------------------------
-  // The body picker (DiffBlock for Edit, JsonTreeBlock for the JSON
-  // fallback) goes in the primitive's `children` slot. Allow-scoped
-  // suggestions (plus the implicit "Allow once" head) go on the
-  // primitive's `options` prop — a mandatory single-select radio
-  // group of `TugDialogButton`s. Allow commits with the chosen
-  // scope's message; Deny ignores the scope and denies outright. Both
-  // handlers are stable callbacks declared above the resolved-record
-  // early return — see [L02] / [L24] note alongside `handleAllow`.
+  // ---- Pending: composed on TideInteractiveDialog -------------------------
+  // Composes the Tide interactive-dialog family's input-form
+  // primitive ([D01] / [D08]); the primitive delegates the visible
+  // chrome to `TugInlineDialog` one layer down. The body picker
+  // (DiffBlock for Edit, JsonTreeBlock for the JSON fallback) goes in
+  // the primitive's `children` slot. Allow-scoped suggestions (plus
+  // the implicit "Allow once" head) go on the `options` prop — a
+  // mandatory single-select radio group of `TugDialogButton`s. Allow
+  // commits with the chosen scope's message; Deny ignores the scope
+  // and denies outright. Both handlers are stable callbacks declared
+  // above the resolved-record early return — see [L02] / [L24] note
+  // alongside `handleAllow`.
+  //
+  // `cancelRole="action"` opts out of the family's outlined-danger
+  // default ([D03]) — see the [D02] / [Q03] carve-out: `Deny` is a
+  // positive decision (`respondApproval({decision: "deny"})`), not a
+  // walk-away. Keeping the cancel button outlined-action preserves
+  // the existing permission-flow visual vocabulary.
   return (
-    <TugInlineDialog
+    <TideInteractiveDialog
       icon={<ShieldAlert />}
       iconRole="caution"
       title="Permission requested"
@@ -733,6 +753,7 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       confirmLabel="Allow"
       confirmRole="action"
       cancelLabel="Deny"
+      cancelRole="action"
       onConfirm={handleAllow}
       onCancel={handleDeny}
       options={allowOptions}
@@ -742,6 +763,6 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       className={className}
     >
       <PendingBody toolName={toolName} input={request.input} />
-    </TugInlineDialog>
+    </TideInteractiveDialog>
   );
 };

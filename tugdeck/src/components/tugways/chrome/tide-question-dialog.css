@@ -113,18 +113,14 @@ body {
   --tugx-idialog-max-width: var(--tugx-question-frame-width);
 }
 
-/* Actions-row separation — Mac HIG vocabulary. The destructive-
- * secondary `Cancel` sits at the leading edge of the row, the
- * primary `Submit all` at the trailing edge, with a generous gap
- * between them so the two read as opposed choices rather than a
- * pair. Scoped to the question dialog so the permission dialog
- * keeps its tightly-grouped Cancel+Confirm layout. The override is
- * a no-op when only the confirm button exists (the question dialog
- * always renders both when there are questions to ask, so this
- * only fires in the multi-button case). */
-.tide-question-dialog .tug-inline-dialog-actions {
-  justify-content: space-between;
-}
+/* Actions-row separation (Mac HIG opposed-choices layout) is now
+ * owned by `TideInteractiveDialog` ([D03]) — it applies to the
+ * whole interactive-dialog family via the `.tide-interactive-dialog
+ * [data-slot="tug-inline-dialog-actions"]` rule in
+ * `tide-interactive-dialog.css`. The previous local override here
+ * was removed when QuestionDialog migrated onto the primitive
+ * (Step 3). PermissionDialog inherited the same layout via the
+ * same migration. */
 
 /* ---- Wizard rail ---- */
 

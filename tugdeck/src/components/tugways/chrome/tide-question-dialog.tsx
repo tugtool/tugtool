@@ -17,11 +17,13 @@
  * request is the session's `pendingQuestion`. Once answered (or
  * skipped) it renders `null`.
  *
- * Layout (composed on `TugInlineDialog`) — paged wizard. A
- * single-question payload renders inline (the question text goes in
- * the dialog `description` and the options fill the children slot).
- * A multi-question payload renders a vertical stack of *rows*, one
- * per question, in three states:
+ * Layout (composed on `TideInteractiveDialog` — the Tide interactive-
+ * dialog family's input-form primitive, which itself wraps
+ * `TugInlineDialog`; see [D01] / [D08]). Paged wizard. A single-
+ * question payload renders inline (the question text goes in the
+ * dialog `description` and the options fill the children slot). A
+ * multi-question payload renders a vertical stack of *rows*, one per
+ * question, in three states:
  *
  *  - **done** — the user has picked at least one option. Row shows
  *    `✓ N. Question text · → chosen answer`. Clickable to jump back.
@@ -32,11 +34,13 @@
  *  - **pending** — not yet visited. Shows `○ N. Question text` only.
  *    Clickable to skip ahead.
  *
- * The global `TugInlineDialog` actions row carries the dialog-wide
- * controls: `Skip` (cancel) on the left, `Submit all` (confirm) on
- * the right. `Submit all` is `confirmDisabled` until every question
- * carries a selection (matching the "no required answers but submit
- * gates on completeness" rule the user signed off on).
+ * The family's actions row (inherited from `TideInteractiveDialog`)
+ * carries the dialog-wide controls: `Cancel` (outlined-danger, leading
+ * edge) and `Submit all` (filled-action, trailing edge), separated by
+ * the family `space-between` Mac HIG layout ([D03]). `Submit all` is
+ * `confirmDisabled` until every question carries a selection (matching
+ * the "no required answers but submit gates on completeness" rule the
+ * user signed off on).
  *
  * **Auto-advance** on single-select is the headline GUI improvement
  * over the TUI's keyboard-only flow: picking an option commits the
@@ -48,11 +52,15 @@
  * or the labels joined by a bare `,` with no spaces (multi). This
  * matches tugcode's `formatQuestionAnswer` (`tugcode/src/control.ts`).
  *
- * **Skip.** Esc / the cancel button dismiss the dialog ([DT07]). A
- * question dialog still has to unblock Claude — the reducer holds
- * `pendingQuestion` and the `awaiting_approval` phase until a
- * `question_answer` lands — so dismiss sends an empty answer set
- * rather than dropping the frame.
+ * **Cancel ≡ Esc ≡ `popInteractive`** ([D02]). The Cancel button, the
+ * Esc keypress (via the responder chain's `CANCEL_DIALOG` action), and
+ * the prompt entry's Stop button all resolve to `session.popInteractive()`.
+ * For a pending `AskUserQuestion` the queued-sends stack is empty, so
+ * the pop falls through to `interrupt()` on the running turn; Claude
+ * Code then emits the standard tool-rejected result ("The user doesn't
+ * want to proceed…"). One gesture, one wire signal, one model reading
+ * — no ambiguous empty-answers branch the assistant could misread as
+ * "user chose defaults."
  *
  * Laws:
  *  - [L02] external state (is this request still pending?) enters
@@ -63,15 +71,17 @@
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot` on the question-stack containers, this docstring.
  *  - [L20] component-token sovereignty — the dialog frame is
- *    delegated to `TugInlineDialog` (`--tugx-idialog-*`) and each
- *    option row to `TugDialogButton` (`--tugx-dialog-button-*`); this
- *    component owns only the small `--tugx-question-*` layout family.
+ *    delegated to `TideInteractiveDialog` (the family-default
+ *    cancel-role + actions-row layer) which in turn delegates to
+ *    `TugInlineDialog` (`--tugx-idialog-*`); each option row is a
+ *    `TugDialogButton` (`--tugx-dialog-button-*`). This component
+ *    owns only the small `--tugx-question-*` wizard-rail family.
  *  - [L24] state zoning — the per-question selection set is component
  *    data in `useState`; the rendered radio/check mark is CSS-driven.
  *
  * Decisions:
  *  - [D13] inline (not modal) prompts; primary action focused on
- *    mount by `TugInlineDialog` so Return submits.
+ *    mount by the underlying `TugInlineDialog` so Return submits.
  *
  * @module components/tugways/chrome/tide-question-dialog
  */
@@ -88,8 +98,8 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
-import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type {
   CodeSessionStore,
@@ -872,8 +882,18 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       ? single.question
       : `${questions.length} questions · ${confirmedCount} answered`;
 
+  // Composes the Tide interactive-dialog family's input-form primitive
+  // ([D01] / [D08]); the primitive delegates the visible chrome to
+  // `TugInlineDialog` one layer down. `cancelRole="danger"` is the
+  // family default (set by `TideInteractiveDialog`), so the prop is
+  // omitted here — the family default applies. The actions-row
+  // `space-between` Mac HIG layout ([D03]) is now owned by the
+  // primitive's CSS scoped via `.tide-interactive-dialog
+  // [data-slot="tug-inline-dialog-actions"]` ([L20]); the local
+  // `.tide-question-dialog .tug-inline-dialog-actions { … }` override
+  // is removed in this step.
   return (
-    <TugInlineDialog
+    <TideInteractiveDialog
       icon={<MessageCircleQuestion />}
       iconRole="info"
       title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
@@ -882,7 +902,6 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       confirmRole="action"
       confirmDisabled={hasQuestions && !allAnswered}
       cancelLabel={hasQuestions ? "Cancel" : null}
-      cancelRole="danger"
       onConfirm={handleSubmit}
       onCancel={handleCancel}
       className={cn("tide-question-dialog", className)}
@@ -967,7 +986,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           )}
         </div>
       ) : null}
-    </TugInlineDialog>
+    </TideInteractiveDialog>
   );
 };
 

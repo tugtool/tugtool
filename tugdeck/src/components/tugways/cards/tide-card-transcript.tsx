@@ -369,6 +369,16 @@ const USER_IDENTIFIER = "You";
  */
 const EMPTY_CONTROL_LOG: ReadonlyArray<ControlRequestRecord> = [];
 
+/**
+ * Stable sentinels for the empty permission outputs of the
+ * `permissionByToolUseId` / `orphanPermissions` useMemo. Same
+ * `Object.is`-stability rationale as `EMPTY_CONTROL_LOG`: callers that
+ * memoize on these by reference (`TranscriptToolCalls`) skip the
+ * re-render entirely when there are no permission entries.
+ */
+const EMPTY_PERMISSION_MAP: ReadonlyMap<string, React.ReactNode> = new Map();
+const EMPTY_PERMISSION_ARRAY: ReadonlyArray<React.ReactNode> = [];
+
 interface UserRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   renderTurnTrailing?: TurnTrailingRenderer;
 }
@@ -660,7 +670,22 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
       [codeSessionStore, isCommitted],
     ),
   );
-  const permissionSlot = useMemo<React.ReactNode>(() => {
+  // Permission rendering is split into two outputs:
+  //
+  //   - `permissionByToolUseId` — a `Map<tool_use_id, ReactNode>` of
+  //     permission entries that name their tool. These are threaded
+  //     into `TranscriptToolCalls` and rendered *immediately after*
+  //     their tool block, so a permission request reads as belonging
+  //     to its tool call and nothing else can interpose between them.
+  //   - `orphanPermissions` — an array of entries without a usable
+  //     `tool_use_id`. Defensive fallback (the wire carries
+  //     `tool_use_id` on `control_request_forward` per
+  //     v2.1.x catalog); rendered at the foot of the cell body so
+  //     they remain visible even when the linkage is missing.
+  const { permissionByToolUseId, orphanPermissions } = useMemo<{
+    permissionByToolUseId: ReadonlyMap<string, React.ReactNode>;
+    orphanPermissions: ReadonlyArray<React.ReactNode>;
+  }>(() => {
     type SlotEntry = {
       request: ControlRequestForward;
       resolvedDecision?: "allow" | "deny";
@@ -684,8 +709,15 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
         if (!dup) entries.push({ request: pendingApproval });
       }
     }
-    if (entries.length === 0) return null;
-    return entries.map((entry, idx) => {
+    if (entries.length === 0) {
+      return {
+        permissionByToolUseId: EMPTY_PERMISSION_MAP,
+        orphanPermissions: EMPTY_PERMISSION_ARRAY,
+      };
+    }
+    const keyed = new Map<string, React.ReactNode>();
+    const orphans: React.ReactNode[] = [];
+    entries.forEach((entry, idx) => {
       const { Component, props } = dispatchRenderInput(
         {
           kind: "permission",
@@ -694,13 +726,25 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
         },
         { store: streamingStore, session: codeSessionStore },
       );
-      return (
+      const node = (
         <Component
           key={entry.request.request_id || `permission-${idx}`}
           {...props}
         />
       );
+      const rawToolUseId = (entry.request as { tool_use_id?: unknown })
+        .tool_use_id;
+      const toolUseId =
+        typeof rawToolUseId === "string" && rawToolUseId.length > 0
+          ? rawToolUseId
+          : undefined;
+      if (toolUseId !== undefined) {
+        keyed.set(toolUseId, node);
+      } else {
+        orphans.push(node);
+      }
     });
+    return { permissionByToolUseId: keyed, orphanPermissions: orphans };
   }, [
     isCommitted,
     turn,
@@ -751,24 +795,49 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
           }
           sequenceNumber={index + 1}
           body={
+            // Body order inside an assistant turn cell — matches the
+            // conversational order the AI emits:
+            //
+            //   1. Thinking — pre-action reasoning at the start of
+            //      the turn.
+            //   2. Tool calls — the in-flight tool blocks in stream
+            //      order. Each block is followed immediately by its
+            //      *associated* permission entry (pending dialog or
+            //      committed record), threaded through
+            //      `TranscriptToolCalls` via `permissionByToolUseId`.
+            //      Nothing weaves between a tool block and its
+            //      permission UI.
+            //   3. Assistant text — the final markdown reply.
+            //   4. Orphan permissions (defensive — entries with no
+            //      `tool_use_id`), then the live question dialog.
+            //      The question naturally sits at the *end* of the
+            //      cell because it asks the user to act once the
+            //      assistant has finished setting up.
+            //
+            // Slot keys (`request.request_id`, `tool_use_id`) are
+            // stable, so React-reconciliation mount identity ([L26])
+            // is preserved across pending → resolved → recorded
+            // transitions whether the entry is inline (keyed) or in
+            // the orphan list.
             <div ref={(el) => { bodyRef.current = el; }}>
               <TideThinkingBlock
                 streamingStore={streamingStore}
                 streamingPath={thinkingPath}
               />
-              {permissionSlot}
-              {questionSlot}
               <TranscriptToolCalls
                 streamingStore={streamingStore}
                 streamingPath={toolsPath}
                 msgId={toolMsgId}
                 session={codeSessionStore}
+                permissionByToolUseId={permissionByToolUseId}
               />
               <TugMarkdownBlock
                 streamingStore={streamingStore}
                 streamingPath={assistantPath}
                 className="tide-card-transcript-code-body"
               />
+              {orphanPermissions.length > 0 ? orphanPermissions : null}
+              {questionSlot}
             </div>
           }
           controls={
