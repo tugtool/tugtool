@@ -782,17 +782,23 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // rehydrates its in-progress tuple. Read synchronously in render so
   // the three `useState` initializers below see the saved value on
   // first paint (no post-mount apply path).
+  //
+  // The [A9] protocol relies on the bag being populated before the
+  // dialog mounts: `CardHost` restores `bag.components` synchronously
+  // during card mount, and the dialog is keyed by `request_id` so a
+  // re-mount on the same request fires fresh initializers against the
+  // already-restored bag. A truly late-arriving `savedState` (an
+  // async bag fault after first paint — not a path we exercise today)
+  // would NOT retroactively land in the initializers: `useState`
+  // reads its initializer exactly once on mount, and re-deriving
+  // `seed` here only affects subsequent renders that don't consult
+  // the initializer anyway.
   const preservationKey = questionDialogPreservationKey(requestId);
   const savedState = useSavedComponentState<QuestionDialogPreservedState>(
     preservationKey,
   );
   const seed = React.useMemo(
     () => seedQuestionDialogState(savedState, questions),
-    // `savedState` and `questions` are both stable across renders
-    // unless the framework re-notifies; we intentionally re-derive on
-    // every change so a late-arriving bag (cross-pane move) still
-    // lands in the initializers — `useState` ignores the seed after
-    // the first render, so this is a one-shot read.
     [savedState, questions],
   );
 

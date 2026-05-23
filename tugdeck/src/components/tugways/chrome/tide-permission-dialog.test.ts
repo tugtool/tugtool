@@ -40,13 +40,17 @@ import {
   ALLOW_ONCE_OPTION_DESCRIPTION,
   ALLOW_ONCE_OPTION_LABEL,
   ALLOW_ONCE_OPTION_VALUE,
+  PERMISSION_DIALOG_PRESERVATION_KEY_PREFIX,
   PermissionDialog,
   buildPermissionOptions,
   composePermissionLineRange,
   composePermissionSuggestionLabel,
   isBoilerplateApprovalReason,
   narrowPermissionSuggestion,
+  permissionDialogPreservationKey,
+  seedPermissionDialogSelectedOption,
   selectPermissionBodyKind,
+  type PermissionDialogPreservedState,
   type PermissionSuggestionAction,
 } from "./tide-permission-dialog";
 import {
@@ -390,5 +394,126 @@ describe("dispatch — permission routing", () => {
     expect(result.caution).toBeUndefined();
     // The dispatch threads the input + context through as the prop bag.
     expect((result.props as { input: RenderInput }).input).toBe(input);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [L23] A9 preservation — key derivation + seed/capture round-trip
+// ---------------------------------------------------------------------------
+
+describe("permissionDialogPreservationKey", () => {
+  it("namespaces the request id under the permission-dialog prefix", () => {
+    expect(permissionDialogPreservationKey("req-42")).toBe(
+      "permission-dialog/req-42",
+    );
+  });
+
+  it("uses the exported prefix constant", () => {
+    expect(PERMISSION_DIALOG_PRESERVATION_KEY_PREFIX).toBe(
+      "permission-dialog/",
+    );
+    expect(permissionDialogPreservationKey("x")).toBe(
+      `${PERMISSION_DIALOG_PRESERVATION_KEY_PREFIX}x`,
+    );
+  });
+
+  it("uses a distinct prefix from the question dialog's", () => {
+    // Defensive: the two dialogs must not collide in `bag.components`
+    // even if a future change reuses request_ids across types.
+    expect(PERMISSION_DIALOG_PRESERVATION_KEY_PREFIX).not.toBe(
+      "question-dialog/",
+    );
+  });
+});
+
+describe("seedPermissionDialogSelectedOption", () => {
+  // Mirrors the options shape `buildPermissionOptions` produces when at
+  // least one allow-scoped suggestion is present: the implicit
+  // "Allow once" head plus the persistent scope rows.
+  const allowOptionsWithScopes = [
+    {
+      value: ALLOW_ONCE_OPTION_VALUE,
+      label: ALLOW_ONCE_OPTION_LABEL,
+      description: ALLOW_ONCE_OPTION_DESCRIPTION,
+    },
+    { value: "allow:Allow for this session", label: "Allow for this session" },
+    { value: "allow:Allow for this project", label: "Allow for this project" },
+  ];
+
+  it("returns the default (first option) when no saved state is present", () => {
+    expect(seedPermissionDialogSelectedOption(undefined, allowOptionsWithScopes)).toBe(
+      ALLOW_ONCE_OPTION_VALUE,
+    );
+  });
+
+  it("returns the saved value when it matches a current option", () => {
+    const saved: PermissionDialogPreservedState = {
+      selectedOption: "allow:Allow for this project",
+    };
+    expect(seedPermissionDialogSelectedOption(saved, allowOptionsWithScopes)).toBe(
+      "allow:Allow for this project",
+    );
+  });
+
+  it("falls back to the default when the saved option is no longer present", () => {
+    // A wire shape change (or a new request with a different
+    // suggestion set under the same request_id — shouldn't happen in
+    // practice, but defensive) leaves a stale saved value. Don't
+    // silently select nothing; revert to the default.
+    const saved: PermissionDialogPreservedState = {
+      selectedOption: "allow:gone-away",
+    };
+    expect(seedPermissionDialogSelectedOption(saved, allowOptionsWithScopes)).toBe(
+      ALLOW_ONCE_OPTION_VALUE,
+    );
+  });
+
+  it("accepts the implicit Allow-once value even when no options are offered", () => {
+    // No allow-scoped suggestions → empty options list. The dialog
+    // falls back to ALLOW_ONCE_OPTION_VALUE; a saved value of
+    // ALLOW_ONCE_OPTION_VALUE is consistent with that fallback and
+    // should round-trip.
+    expect(
+      seedPermissionDialogSelectedOption(
+        { selectedOption: ALLOW_ONCE_OPTION_VALUE },
+        [],
+      ),
+    ).toBe(ALLOW_ONCE_OPTION_VALUE);
+  });
+
+  it("falls back to ALLOW_ONCE_OPTION_VALUE when no options offered and no saved state", () => {
+    expect(seedPermissionDialogSelectedOption(undefined, [])).toBe(
+      ALLOW_ONCE_OPTION_VALUE,
+    );
+  });
+
+  it("rejects a malformed envelope and returns the default", () => {
+    // `selectedOption` non-string: the envelope is rejected.
+    expect(
+      seedPermissionDialogSelectedOption(
+        { selectedOption: 42 },
+        allowOptionsWithScopes,
+      ),
+    ).toBe(ALLOW_ONCE_OPTION_VALUE);
+    expect(
+      seedPermissionDialogSelectedOption(null, allowOptionsWithScopes),
+    ).toBe(ALLOW_ONCE_OPTION_VALUE);
+    expect(
+      seedPermissionDialogSelectedOption("not-an-object", allowOptionsWithScopes),
+    ).toBe(ALLOW_ONCE_OPTION_VALUE);
+  });
+
+  it("round-trips a captured value through the seed path (encode-then-decode identity)", () => {
+    // Simulate the framework's save/restore boundary: the capture
+    // closure serializes the live `selectedOption`;
+    // `useSavedComponentState` hands the same envelope back to
+    // `seedPermissionDialogSelectedOption`. The result is the input.
+    const captured: PermissionDialogPreservedState = {
+      selectedOption: "allow:Allow for this session",
+    };
+    const roundTripped = JSON.parse(JSON.stringify(captured)) as unknown;
+    expect(
+      seedPermissionDialogSelectedOption(roundTripped, allowOptionsWithScopes),
+    ).toBe(captured.selectedOption);
   });
 });

@@ -65,6 +65,23 @@
  *    `TugInlineDialog` (`--tugx-idialog-*`). This dialog itself
  *    contributes only the small inline-icon + reason fragments used
  *    inside the pending description.
+ *  - [L23] the user's chosen scope is user data and must survive
+ *    reload / cross-pane move / cold boot. The dialog opts into the
+ *    [A9] Component State Preservation Protocol via
+ *    {@link useSavedComponentState} + {@link useComponentStatePreservation},
+ *    keyed by `permission-dialog/<request_id>` so the SAME request
+ *    rehydrates the in-progress pick but a NEW request mounts fresh.
+ *    {@link seedPermissionDialogSelectedOption} is the pure
+ *    seed-merger consumed inside the `useState` initializer; the
+ *    capture closure round-trips through it.
+ *
+ * Decisions:
+ *  - [D13] three-layer survival contract: wire (tugcode in-flight
+ *    snapshot re-emits the `control_request_forward`), reducer
+ *    (`handleControlRequestForward` rehydrate branch restores it to
+ *    `pendingApproval`), and this component's per-instance [A9]
+ *    opt-in restores the chosen scope the user had selected before
+ *    the boundary fired.
  *
  * @module components/tugways/chrome/tide-permission-dialog
  */
@@ -78,6 +95,10 @@ import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
 import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "@/components/tugways/use-component-state-preservation";
 import type {
   CodeSessionStore,
   ControlRequestForward,
@@ -344,6 +365,76 @@ export function composePermissionLineRange(
 }
 
 // ---------------------------------------------------------------------------
+// Preserved state — the [A9] capture payload
+// ---------------------------------------------------------------------------
+
+/**
+ * The serialized payload the dialog captures into `bag.components`.
+ * Mirrors the one piece of local state — the chosen scope option —
+ * so a user mid-pick survives HMR / Developer > Reload / cross-pane
+ * move. Mirrors {@link QuestionDialogPreservedState}'s shape so both
+ * dialogs in the family use the same protocol the same way.
+ */
+export interface PermissionDialogPreservedState {
+  selectedOption: string;
+}
+
+/** Stable preservation-key prefix for the dialog's per-request slot.
+ *  Joined with the request id to form the scoped key
+ *  `permission-dialog/<request_id>` — namespace-distinct from
+ *  `question-dialog/<request_id>` and from any other component
+ *  opting into [A9] inside the same card. */
+export const PERMISSION_DIALOG_PRESERVATION_KEY_PREFIX = "permission-dialog/";
+
+/**
+ * Compose the scoped preservation key for one permission-dialog
+ * instance. Pure; exported for the test suite.
+ */
+export function permissionDialogPreservationKey(requestId: string): string {
+  return `${PERMISSION_DIALOG_PRESERVATION_KEY_PREFIX}${requestId}`;
+}
+
+/** Type guard for the saved-state envelope read from the bag. JSON
+ *  storage means we can't trust the shape blindly; a mismatch falls
+ *  through to the default seed. */
+function isPreservedPermissionState(
+  value: unknown,
+): value is PermissionDialogPreservedState {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.selectedOption === "string";
+}
+
+/**
+ * Merge a possibly-saved state envelope with the default seed to
+ * produce the initial `selectedOption`. Defensive against a malformed
+ * payload (returns the default) and against a saved option no longer
+ * present in the current `allowOptions` list (also returns the
+ * default — the saved key is meaningless without a matching option).
+ *
+ * `allowOptions` may be empty (no scoped suggestions); in that case
+ * the default is `ALLOW_ONCE_OPTION_VALUE` which the dialog falls
+ * back to when no options block renders.
+ *
+ * Pure; exported for the test suite.
+ */
+export function seedPermissionDialogSelectedOption(
+  saved: unknown,
+  allowOptions: ReadonlyArray<TugInlineDialogOption>,
+): string {
+  const defaultValue = allowOptions[0]?.value ?? ALLOW_ONCE_OPTION_VALUE;
+  if (!isPreservedPermissionState(saved)) return defaultValue;
+  // Only accept the saved value when the current options list still
+  // contains it. A stale value (option list shape changed) falls
+  // through to the default rather than silently selecting nothing.
+  const present = allowOptions.some((o) => o.value === saved.selectedOption);
+  if (!present && saved.selectedOption !== ALLOW_ONCE_OPTION_VALUE) {
+    return defaultValue;
+  }
+  return saved.selectedOption;
+}
+
+// ---------------------------------------------------------------------------
 // Internal narrowings
 // ---------------------------------------------------------------------------
 
@@ -555,14 +646,36 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     [suggestions],
   );
 
+  // [L23] / [D13] — the chosen scope is user data and must survive
+  // reload / cross-pane / cold boot. The scoped key is per-request so
+  // a genuinely new request mounts fresh while the SAME request
+  // rehydrates its in-progress pick. Read synchronously in render so
+  // the `useState` initializer below sees the saved value on first
+  // paint (no post-mount apply path — bag is populated before the
+  // dialog mounts on the boundaries we care about; the [A9] protocol
+  // doesn't reconcile late-arriving saved state into a `useState`
+  // initializer because the initializer runs exactly once).
+  const preservationKey = permissionDialogPreservationKey(requestId);
+  const savedState =
+    useSavedComponentState<PermissionDialogPreservedState>(preservationKey);
+
   // Mandatory single-select: the first option (the implicit "Allow
   // once" when scopes are offered) is the default. Initialised once
   // per request from the *initial* options list — switching pending
   // requests would remount this component anyway, so the seed never
-  // drifts under us.
+  // drifts under us. A saved value from a prior mount supersedes the
+  // default when present and still valid against `allowOptions`.
   const [selectedOption, setSelectedOption] = React.useState<string>(
-    () => allowOptions[0]?.value ?? ALLOW_ONCE_OPTION_VALUE,
+    () => seedPermissionDialogSelectedOption(savedState, allowOptions),
   );
+
+  // Register the capture closure. The framework re-syncs the closure
+  // on every render so the latest `selectedOption` is always
+  // available at capture time.
+  useComponentStatePreservation<PermissionDialogPreservedState>({
+    componentStatePreservationKey: preservationKey,
+    captureState: () => ({ selectedOption }),
+  });
 
   const decisionReason = React.useMemo<string | undefined>(() => {
     const raw = request.decision_reason;
