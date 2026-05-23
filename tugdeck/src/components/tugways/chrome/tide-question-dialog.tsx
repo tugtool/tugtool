@@ -792,21 +792,34 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     respond(buildQuestionAnswers(questions, selections));
   }, [respond, questions, selections]);
 
-  // Skip / dismiss — sends an empty answer set so Claude's
-  // `AskUserQuestion` unblocks and the turn lifecycle resumes ([DT07]:
-  // a dialog dismiss is a cancel response, not a turn cancellation).
-  // Dropping the frame entirely would strand `pendingQuestion` and
-  // hold the phase at `awaiting_approval`.
-  const handleSkip = React.useCallback(() => {
-    respond({});
-  }, [respond]);
+  // Cancel — the unified Stop / Esc gesture. `session.peelNewest()`
+  // is the same path Escape walks through the responder chain
+  // (`CANCEL_DIALOG` → `peelNewest`), and the same path the prompt
+  // entry's Stop button uses: peels the newest queued send first,
+  // and once the queue is empty calls `interrupt()` on the running
+  // turn. For a pending `AskUserQuestion` the queue is empty so the
+  // interrupt fires immediately, and Claude Code emits the standard
+  // tool-rejected result ("The user doesn't want to proceed…"). One
+  // gesture, one wire signal, one reading — no ambiguous empty-
+  // answers branch the assistant can misread as "user chose
+  // defaults."
+  const handleCancel = React.useCallback(() => {
+    session.peelNewest();
+  }, [session]);
 
-  // Keyboard fast-pick — `1`..`9` selects option N (1-indexed) in the
-  // current question. Single-select pick auto-advances via the same
-  // `handleSelect` path used by clicks. Skip when focus is inside a
-  // text input so the wizard can still hold a comments field someday
-  // without intercepting typing. Mounted on the dialog root via
-  // `onKeyDown` so we don't reach for `window`.
+  // Keyboard handler — `1`..`9` selects option N (1-indexed) in the
+  // current question. Escape is NOT intercepted here: it bubbles up
+  // to the prompt entry's `CANCEL_DIALOG` action which calls
+  // `peelNewest()` — same gesture our `handleCancel` invokes — so
+  // letting it bubble keeps Cancel ≡ Esc through one code path. (An
+  // earlier draft caught Esc locally; that doubled the logic and
+  // diverged the two surfaces on subtle edge cases.)
+  //
+  // Single-select pick auto-advances via the same `handleSelect`
+  // path used by clicks. Skip when focus is inside a text input so
+  // the wizard can still hold a comments field someday without
+  // intercepting typing. Mounted on the dialog root via `onKeyDown`
+  // so we don't reach for `window`.
   const handleKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (questions.length === 0) return;
@@ -868,9 +881,10 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       confirmLabel={hasQuestions ? "Submit all" : "Dismiss"}
       confirmRole="action"
       confirmDisabled={hasQuestions && !allAnswered}
-      cancelLabel={hasQuestions ? "Skip" : null}
+      cancelLabel={hasQuestions ? "Cancel" : null}
+      cancelRole="danger"
       onConfirm={handleSubmit}
-      onCancel={handleSkip}
+      onCancel={handleCancel}
       className={cn("tide-question-dialog", className)}
     >
       {hasQuestions ? (

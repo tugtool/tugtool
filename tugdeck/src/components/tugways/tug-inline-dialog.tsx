@@ -97,6 +97,13 @@ export type TugInlineDialogIconRole =
 export type TugInlineDialogConfirmRole = "action" | "danger";
 
 /**
+ * Cancel-button color domain. Same union as confirm, but applies to
+ * the leading-edge outlined button — `danger` reads as a "walk-away"
+ * destructive-secondary in the Mac HIG vocabulary.
+ */
+export type TugInlineDialogCancelRole = "action" | "danger";
+
+/**
  * Descriptor for a single option in the dialog's radio group. Options
  * are mandatory-single-select per the [#step-18-6] design preview:
  * one is always chosen, and the only path out of the choice is the
@@ -225,6 +232,18 @@ export interface TugInlineDialogProps {
    * @default "Cancel"
    */
   cancelLabel?: string | null;
+  /**
+   * Cancel-button colour domain. `"action"` (the default) renders the
+   * cancel as an outlined-action — same neutral tone as the existing
+   * permission and alert flows. `"danger"` renders it as an
+   * outlined-danger so it reads as a "walk away from this" choice
+   * (Mac HIG `Don't Save` vocabulary) — the question dialog uses
+   * this so the leading-edge button visibly differs from the
+   * trailing-edge primary.
+   *
+   * @default "action"
+   */
+  cancelRole?: TugInlineDialogCancelRole;
   /** Fired when the user clicks the cancel button. Ignored when `cancelLabel` is `null`. */
   onCancel?: () => void;
   /** Forwarded class name for cascade-scoped customization. */
@@ -297,6 +316,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
   confirmDisabled = false,
   onConfirm,
   cancelLabel,
+  cancelRole = "action",
   onCancel,
   className,
 }) => {
@@ -365,7 +385,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
         {resolvedCancelLabel !== null ? (
           <TugPushButton
             emphasis="outlined"
-            role="action"
+            role={cancelRole}
             onClick={onCancel}
           >
             {resolvedCancelLabel}

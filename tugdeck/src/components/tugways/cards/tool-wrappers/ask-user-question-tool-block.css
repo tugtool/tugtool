@@ -197,7 +197,7 @@ body {
   --tugx-askquestion-salvage-banner-radius:  var(--tug-radius-sm);
   --tugx-askquestion-salvage-options-gap:    var(--tug-space-2xs);
   --tugx-askquestion-salvage-question-gap:   var(--tug-space-xs);
-  --tugx-askquestion-salvage-actions-justify: flex-end;
+  --tugx-askquestion-salvage-actions-justify: space-between;
 }
 
 .ask-user-question-tool-block-salvage {

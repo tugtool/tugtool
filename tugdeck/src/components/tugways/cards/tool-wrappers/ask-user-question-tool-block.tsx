@@ -380,6 +380,11 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
   const [salvagedAnswers, setSalvagedAnswers] = React.useState<
     Map<string, string[]> | null
   >(null);
+  // Cancel-out: the user clicked the salvage "Cancel" button. We
+  // collapse the salvage UI and fall back to the chrome's error
+  // band so the failed call is honestly visible — same as if the
+  // wrapper had never offered salvage.
+  const [salvageCancelled, setSalvageCancelled] = React.useState(false);
 
   // Try to detect the InputValidationError that fires when Claude
   // Code's schema rejects an `AskUserQuestion` call (most often the
@@ -395,7 +400,8 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
     status === "error" &&
     validationError !== null &&
     questions.length > 0 &&
-    session !== undefined;
+    session !== undefined &&
+    !salvageCancelled;
 
   // While the tool is in flight the inline `QuestionDialog` is the
   // user-facing surface — see the module docstring for the lifecycle
@@ -446,6 +452,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
           session.send(text, []);
           setSalvagedAnswers(new Map(picksByQuestion));
         }}
+        onCancel={() => setSalvageCancelled(true)}
       />
     );
   } else if (status === "error") {
@@ -561,10 +568,12 @@ function SalvageWizard({
   questions,
   bannerText,
   onSubmit,
+  onCancel,
 }: {
   questions: ReadonlyArray<ParsedQuestion>;
   bannerText: string;
   onSubmit: (picksByQuestion: Map<string, string[]>) => void;
+  onCancel: () => void;
 }): React.ReactElement {
   const [selections, setSelections] = React.useState<string[][]>(() =>
     initialQuestionSelections(questions),
@@ -647,6 +656,14 @@ function SalvageWizard({
         className="ask-user-question-tool-block-salvage-actions"
         data-slot="ask-user-question-tool-block-salvage-actions"
       >
+        {/* Mac-HIG 3-button vocabulary: the destructive-secondary
+         * "Cancel" sits at the leading edge separated from the
+         * primary "Send answers" on the trailing edge. Outlined +
+         * danger so the visual weight reads "I'm walking away from
+         * this" without competing with the primary CTA. */}
+        <TugPushButton emphasis="outlined" role="danger" onClick={onCancel}>
+          Cancel
+        </TugPushButton>
         <TugPushButton emphasis="filled" role="action" onClick={handleSubmit}>
           Send answers
         </TugPushButton>
