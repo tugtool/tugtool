@@ -92,12 +92,26 @@
  *    `TugInlineDialog` (`--tugx-idialog-*`); each option row is a
  *    `TugDialogButton` (`--tugx-dialog-button-*`). This component
  *    owns only the small `--tugx-question-*` wizard-rail family.
+ *  - [L23] in-progress answer state (selection set, visit set,
+ *    wizard focus) is user data and must survive reload / cross-pane
+ *    move / cold boot. The dialog opts into the [A9] Component State
+ *    Preservation Protocol via {@link useSavedComponentState} +
+ *    {@link useComponentStatePreservation}, keyed by
+ *    `question-dialog/<request_id>` so the SAME request rehydrates
+ *    its tuple but a NEW request mounts fresh. {@link seedQuestionDialogState}
+ *    is the pure seed-merger consumed inside the `useState`
+ *    initializers; the capture closure round-trips through it.
  *  - [L24] state zoning — the per-question selection set is component
  *    data in `useState`; the rendered radio/check mark is CSS-driven.
  *
  * Decisions:
  *  - [D13] inline (not modal) prompts; primary action focused on
  *    mount by the underlying `TugInlineDialog` so Return submits.
+ *    Three-layer survival contract: wire (tugcode in-flight snapshot)
+ *    delivers the open request, reducer (`handleControlRequestForward`
+ *    rehydrate branch) restores it to `pendingQuestion`, and this
+ *    component's per-instance A9 opt-in restores the answers the user
+ *    had filled in before the boundary fired.
  *
  * @module components/tugways/chrome/tide-question-dialog
  */
@@ -123,6 +137,10 @@ import {
 } from "@/components/tugways/tug-confirm-popover";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import {
+  useComponentStatePreservation,
+  useSavedComponentState,
+} from "@/components/tugways/use-component-state-preservation";
 import type {
   CodeSessionStore,
   ControlRequestForward,
@@ -405,6 +423,101 @@ export function composeRowAnswerLabel(
 }
 
 // ---------------------------------------------------------------------------
+// Preserved state — the [A9] capture payload
+// ---------------------------------------------------------------------------
+
+/**
+ * The serialized payload the dialog captures into `bag.components`.
+ * Mirrors the three `useState` fields that hold mid-flight wizard
+ * progress; named so the wire shape has its own identity. The
+ * framework treats this as opaque JSON.
+ */
+export interface QuestionDialogPreservedState {
+  selections: string[][];
+  visited: boolean[];
+  currentIndex: number;
+}
+
+/** Stable preservation-key prefix for the dialog's per-request slot.
+ *  Joined with the request id to form the scoped key
+ *  `question-dialog/<request_id>` — namespace-distinct from any other
+ *  component that might opt into [A9] inside the same card. */
+export const QUESTION_DIALOG_PRESERVATION_KEY_PREFIX = "question-dialog/";
+
+/**
+ * Compose the scoped preservation key for one question-dialog
+ * instance. Pure; exported for the test suite.
+ */
+export function questionDialogPreservationKey(requestId: string): string {
+  return `${QUESTION_DIALOG_PRESERVATION_KEY_PREFIX}${requestId}`;
+}
+
+/** Type guard for the saved-state envelope read from the bag. JSON
+ *  storage means we can't trust the shape blindly; a mismatch falls
+ *  through to the default seed. */
+function isPreservedQuestionState(
+  value: unknown,
+): value is QuestionDialogPreservedState {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (!Array.isArray(v.selections)) return false;
+  for (const row of v.selections) {
+    if (!Array.isArray(row)) return false;
+    for (const label of row) {
+      if (typeof label !== "string") return false;
+    }
+  }
+  if (!Array.isArray(v.visited)) return false;
+  for (const flag of v.visited) {
+    if (typeof flag !== "boolean") return false;
+  }
+  if (typeof v.currentIndex !== "number" || !Number.isFinite(v.currentIndex)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Merge a possibly-saved state envelope with the default seeds to
+ * produce the canonical `{ selections, visited, currentIndex }` tuple
+ * the dialog should mount in. Defensive against a malformed payload
+ * (returns the default seed) and against a length drift between the
+ * saved state and the current `questions` array — the parallel arrays
+ * are realigned to the question count so the indices the renderer
+ * touches are always in range.
+ *
+ * Pure; exported for the test suite.
+ */
+export function seedQuestionDialogState(
+  saved: unknown,
+  questions: ReadonlyArray<ParsedQuestion>,
+): QuestionDialogPreservedState {
+  const defaults: QuestionDialogPreservedState = {
+    selections: initialQuestionSelections(questions),
+    visited: new Array(questions.length).fill(false) as boolean[],
+    currentIndex: 0,
+  };
+  if (!isPreservedQuestionState(saved)) return defaults;
+
+  // Realign to the current question count. Same `request_id` should
+  // imply same payload, so this is defensive — a length mismatch falls
+  // through to defaults for the slots that drifted.
+  const selections: string[][] = defaults.selections.map((seed, index) => {
+    const row = saved.selections[index];
+    return Array.isArray(row) ? [...row] : seed;
+  });
+  const visited: boolean[] = defaults.visited.map((seed, index) => {
+    const flag = saved.visited[index];
+    return typeof flag === "boolean" ? flag : seed;
+  });
+  const clampedIndex = Math.max(
+    0,
+    Math.min(saved.currentIndex, questions.length),
+  );
+  return { selections, visited, currentIndex: clampedIndex };
+}
+
+// ---------------------------------------------------------------------------
 // Per-question option group
 // ---------------------------------------------------------------------------
 
@@ -663,13 +776,33 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     ),
   );
 
+  // [L23] / [D13] — answer state is user data and must survive reload
+  // / cross-pane / cold boot. The scoped key is per-request so a
+  // genuinely new request mounts fresh while the SAME request
+  // rehydrates its in-progress tuple. Read synchronously in render so
+  // the three `useState` initializers below see the saved value on
+  // first paint (no post-mount apply path).
+  const preservationKey = questionDialogPreservationKey(requestId);
+  const savedState = useSavedComponentState<QuestionDialogPreservedState>(
+    preservationKey,
+  );
+  const seed = React.useMemo(
+    () => seedQuestionDialogState(savedState, questions),
+    // `savedState` and `questions` are both stable across renders
+    // unless the framework re-notifies; we intentionally re-derive on
+    // every change so a late-arriving bag (cross-pane move) still
+    // lands in the initializers — `useState` ignores the seed after
+    // the first render, so this is a one-shot read.
+    [savedState, questions],
+  );
+
   // [L24] — the per-question selection set is component data. One
   // `string[]` per question (single-select holds 0–1 labels,
   // multi-select 0+). Seeded once; a genuinely new question remounts
   // this component (keyed by `request_id` at the call site), so the
   // seed never drifts under us.
-  const [selections, setSelections] = React.useState<string[][]>(() =>
-    initialQuestionSelections(questions),
+  const [selections, setSelections] = React.useState<string[][]>(
+    () => seed.selections,
   );
 
   // Visit set, parallel to `selections`. `true` at index `i` means
@@ -678,14 +811,22 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // user-confirmed `done` row from a preseeded `recommended` row in
   // `rowStatus`, and gates `countConfirmedAnswers` so the dialog
   // headline reports engagement, not the seed.
-  const [visited, setVisited] = React.useState<boolean[]>(() =>
-    new Array(questions.length).fill(false),
-  );
+  const [visited, setVisited] = React.useState<boolean[]>(() => seed.visited);
 
   // Wizard focus — which row is currently expanded. Starts at the
   // first question. Click-jump and the per-row Back/Next mutate this.
   // Single-select picks also auto-advance to the next row.
-  const [currentIndex, setCurrentIndex] = React.useState<number>(0);
+  const [currentIndex, setCurrentIndex] = React.useState<number>(
+    () => seed.currentIndex,
+  );
+
+  // Register the capture closure. The framework re-syncs the closure
+  // on every render so the latest `selections` / `visited` /
+  // `currentIndex` are always available at capture time.
+  useComponentStatePreservation<QuestionDialogPreservedState>({
+    componentStatePreservationKey: preservationKey,
+    captureState: () => ({ selections, visited, currentIndex }),
+  });
 
   // Layout-stability floor for the current row's options area. We
   // pre-render every question's option group inside a hidden

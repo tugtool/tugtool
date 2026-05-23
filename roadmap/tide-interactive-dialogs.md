@@ -1000,24 +1000,24 @@ That work closed the live-dialog hole — but uncovered three new ones surfaced 
 **References:** `[L23]` user data must be preserved across boundaries, `[D13]` survival layering, `tug-radio-group.tsx:211` reference pattern, `tug-accordion.tsx:246` reference pattern, [card-state-model.md](../tuglaws/card-state-model.md), [state-preservation.md](../tuglaws/state-preservation.md)
 
 **Tasks:**
-- [ ] Define a `QuestionDialogPreservedState` interface capturing the three local-state fields: `selections: string[][]`, `visited: boolean[]`, `currentIndex: number`. (Shapes already pinned in the component; the interface just gives them a name on the wire.)
-- [ ] Derive a preservation key from `request.request_id`. A NEW request mounts fresh; the SAME request rehydrates its in-progress state. The key namespace must be Question-dialog-scoped (e.g. `question-dialog/<request_id>`) so it does not collide with other components.
-- [ ] Pull saved state via `useSavedComponentState<QuestionDialogPreservedState>(key)` inside the dialog component.
-- [ ] Seed `selections`, `visited`, and `currentIndex` from the saved state when present, else use the existing initializers. Keep the initializers pure; the rehydration arm is a single conditional branch.
-- [ ] Register a capture callback via `useComponentStatePreservation` that returns the current `{ selections, visited, currentIndex }` tuple.
-- [ ] Update the module docstring to cite `[L23]`, `[D13]`, and the new preservation contract.
+- [x] Define a `QuestionDialogPreservedState` interface capturing the three local-state fields: `selections: string[][]`, `visited: boolean[]`, `currentIndex: number`. (Shapes already pinned in the component; the interface just gives them a name on the wire.)
+- [x] Derive a preservation key from `request.request_id`. A NEW request mounts fresh; the SAME request rehydrates its in-progress state. The key namespace must be Question-dialog-scoped (e.g. `question-dialog/<request_id>`) so it does not collide with other components.
+- [x] Pull saved state via `useSavedComponentState<QuestionDialogPreservedState>(key)` inside the dialog component.
+- [x] Seed `selections`, `visited`, and `currentIndex` from the saved state when present, else use the existing initializers. Keep the initializers pure; the rehydration arm is a single conditional branch.
+- [x] Register a capture callback via `useComponentStatePreservation` that returns the current `{ selections, visited, currentIndex }` tuple.
+- [x] Update the module docstring to cite `[L23]`, `[D13]`, and the new preservation contract.
 
 **Tests:**
-- [ ] Pure-logic test: passing a saved-state snapshot through the component's seed path produces the expected initial `selections` / `visited` / `currentIndex` tuple.
-- [ ] Pure-logic test: capture callback's output round-trips through the seed path (encode-then-decode is the identity).
-- [ ] HMR vetted by user: mid-wizard, edit an unrelated CSS file. Selections persist; the current row stays focused; scroll position holds.
-- [ ] Developer > Reload vetted by user: mid-wizard (some questions answered, not yet submitted), reload. Same row is current, same options are selected, wizard count reflects the prior progress.
+- [x] Pure-logic test: passing a saved-state snapshot through the component's seed path produces the expected initial `selections` / `visited` / `currentIndex` tuple.
+- [x] Pure-logic test: capture callback's output round-trips through the seed path (encode-then-decode is the identity).
+- [x] HMR vetted by user: mid-wizard, edit an unrelated CSS file. Selections persist; the current row stays focused; scroll position holds.
+- [x] Developer > Reload vetted by user: mid-wizard (some questions answered, not yet submitted), reload. Same row is current, same options are selected, wizard count reflects the prior progress.
 
 **Checkpoint:**
-- [ ] `bun test` green.
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun run audit:tokens lint` zero violations.
-- [ ] User-verified HMR + Developer > Reload across the multi-question wizard.
+- [x] `bun test` green.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun run audit:tokens lint` zero violations.
+- [x] User-verified HMR + Developer > Reload across the multi-question wizard.
 
 ---
 

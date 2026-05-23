@@ -30,6 +30,7 @@
 import { describe, it, expect } from "bun:test";
 
 import {
+  QUESTION_DIALOG_PRESERVATION_KEY_PREFIX,
   QuestionDialog,
   applyQuestionSelection,
   buildQuestionAnswers,
@@ -39,8 +40,11 @@ import {
   initialQuestionSelections,
   nextAdvanceIndex,
   parseQuestions,
+  questionDialogPreservationKey,
   rowStatus,
+  seedQuestionDialogState,
   type ParsedQuestion,
+  type QuestionDialogPreservedState,
 } from "./tide-question-dialog";
 import {
   KIND_RENDERERS,
@@ -409,5 +413,121 @@ describe("rowStatus", () => {
     // back-clicked without picking anything. Still pending — the
     // selection is the source of truth for the answer summary.
     expect(rowStatus(false, true, false)).toBe("pending");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [L23] A9 preservation — key derivation + seed/capture round-trip
+// ---------------------------------------------------------------------------
+
+describe("questionDialogPreservationKey", () => {
+  it("namespaces the request id under the question-dialog prefix", () => {
+    expect(questionDialogPreservationKey("req-42")).toBe(
+      "question-dialog/req-42",
+    );
+  });
+
+  it("uses the exported prefix constant", () => {
+    expect(QUESTION_DIALOG_PRESERVATION_KEY_PREFIX).toBe("question-dialog/");
+    expect(questionDialogPreservationKey("x")).toBe(
+      `${QUESTION_DIALOG_PRESERVATION_KEY_PREFIX}x`,
+    );
+  });
+});
+
+describe("seedQuestionDialogState", () => {
+  const twoQuestions: ParsedQuestion[] = [
+    parsed("First?", false, ["A", "B"]),
+    parsed("Second?", true, ["X", "Y", "Z"]),
+  ];
+
+  it("returns the default seed when no saved state is present", () => {
+    const seeded = seedQuestionDialogState(undefined, twoQuestions);
+    expect(seeded.selections).toEqual([["A"], []]);
+    expect(seeded.visited).toEqual([false, false]);
+    expect(seeded.currentIndex).toBe(0);
+  });
+
+  it("rehydrates a well-formed saved tuple verbatim", () => {
+    const saved: QuestionDialogPreservedState = {
+      selections: [["B"], ["X", "Z"]],
+      visited: [true, false],
+      currentIndex: 1,
+    };
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    expect(seeded).toEqual(saved);
+  });
+
+  it("falls back to defaults for a malformed payload", () => {
+    // `selections` is wrong type — must reject the whole envelope, not
+    // partially trust it.
+    const bad = { selections: "nope", visited: [], currentIndex: 0 };
+    const seeded = seedQuestionDialogState(bad, twoQuestions);
+    expect(seeded.selections).toEqual([["A"], []]);
+    expect(seeded.visited).toEqual([false, false]);
+    expect(seeded.currentIndex).toBe(0);
+  });
+
+  it("rejects a saved envelope whose selections contain non-string entries", () => {
+    const bad = {
+      selections: [["A"], [42]],
+      visited: [true, false],
+      currentIndex: 1,
+    };
+    const seeded = seedQuestionDialogState(bad, twoQuestions);
+    expect(seeded.selections).toEqual([["A"], []]);
+    expect(seeded.visited).toEqual([false, false]);
+    expect(seeded.currentIndex).toBe(0);
+  });
+
+  it("clamps an out-of-bounds currentIndex into the [0, total] review range", () => {
+    const saved: QuestionDialogPreservedState = {
+      selections: [["A"], []],
+      visited: [false, false],
+      currentIndex: 99,
+    };
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    // `total` = 2 questions → review state is index 2.
+    expect(seeded.currentIndex).toBe(2);
+  });
+
+  it("clamps a negative currentIndex to 0", () => {
+    const saved: QuestionDialogPreservedState = {
+      selections: [["A"], []],
+      visited: [false, false],
+      currentIndex: -3,
+    };
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    expect(seeded.currentIndex).toBe(0);
+  });
+
+  it("realigns parallel arrays when the saved length is shorter than the question count", () => {
+    const saved = {
+      selections: [["B"]],
+      visited: [true],
+      currentIndex: 0,
+    } as QuestionDialogPreservedState;
+    const seeded = seedQuestionDialogState(saved, twoQuestions);
+    expect(seeded.selections).toEqual([["B"], []]);
+    expect(seeded.visited).toEqual([true, false]);
+  });
+
+  it("round-trips a captured tuple through the seed path (encode-then-decode identity)", () => {
+    // Simulate the framework's save/restore: the capture closure
+    // serializes the live state; `useSavedComponentState` hands the
+    // same envelope back to `seedQuestionDialogState`. The result is
+    // the input.
+    const captured: QuestionDialogPreservedState = {
+      selections: [["A"], ["X", "Z"]],
+      visited: [true, true],
+      currentIndex: 2,
+    };
+    // JSON.stringify/parse models the bag's serialization boundary —
+    // the payload must survive structural-clone-equivalent storage.
+    const roundTripped = JSON.parse(
+      JSON.stringify(captured),
+    ) as unknown;
+    const seeded = seedQuestionDialogState(roundTripped, twoQuestions);
+    expect(seeded).toEqual(captured);
   });
 });
