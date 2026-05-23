@@ -67,6 +67,20 @@ function zeroTurnBinding(cardId: string, projectDir: string): CardBinding {
   };
 }
 
+function zeroTurnLiveBinding(
+  cardId: string,
+  projectDir: string,
+): CardBinding {
+  return {
+    card_id: cardId,
+    session_id: `sess-${cardId}`,
+    project_dir: projectDir,
+    state: "live",
+    turn_count: 0,
+    is_alive: true,
+  };
+}
+
 const TOUCHED_CARD_IDS = new Set<string>();
 
 function runRestore(cardId: string, projectDir: string): void {
@@ -114,5 +128,34 @@ describe("tide-session-restore — zero-turn fresh-spawn hold", () => {
 
   it("notifySpawnRejected is a no-op for a card with no hold", () => {
     expect(() => notifySpawnRejected("tide-card-never-restored")).not.toThrow();
+  });
+
+  it("zero-turn binding with is_alive=true takes the resume path (in-flight first turn)", () => {
+    // This is the in-flight-first-turn case: the user submitted, claude
+    // is mid-response or blocked on a permission/question
+    // control_request, the live tugcode subprocess holds runtime state,
+    // but no turn has committed to JSONL yet. `turn_count` is zero but
+    // `is_alive` is true; the gate must resume (not fresh-spawn) so the
+    // card rejoins the live session.
+    const cardId = "tide-inflight-card";
+    const projectDir = "/work/inflight";
+    TOUCHED_CARD_IDS.add(cardId);
+
+    const deck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
+    restoreTideSessions(
+      deck as unknown as Parameters<typeof restoreTideSessions>[0],
+      fakeConnection,
+    );
+    publishListCardBindingsOk({
+      bindings: [zeroTurnLiveBinding(cardId, projectDir)],
+    });
+
+    // Resume path arms the same hold as turn_count > 0; without the
+    // hold the card would fall through to the picker before the bind
+    // ack lands.
+    expect(tideRestoreRegistry.has(cardId)).toBe(true);
+    expect(tideRestoreRegistry.get(cardId)?.tugSessionId).toBe(
+      `sess-${cardId}`,
+    );
   });
 });

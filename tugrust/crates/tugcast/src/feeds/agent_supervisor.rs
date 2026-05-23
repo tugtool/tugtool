@@ -2235,16 +2235,43 @@ impl AgentSupervisor {
                 return;
             }
         };
+        // Snapshot the live-session map so we can answer `is_alive` for
+        // each row without N round-trip lock acquisitions. A session is
+        // "alive" when its in-memory ledger entry is `Spawning` or
+        // `Live` — i.e. there is (or imminently will be) a tugcode
+        // subprocess holding the session's runtime state, including any
+        // in-flight turn or pending control_request. `Idle`, `Errored`,
+        // and `Closed` are all "not alive" — there's no subprocess to
+        // resume into, so the client should fall through to the
+        // `turn_count > 0` JSONL-replay path or to a fresh spawn.
+        //
+        // This flag is the missing signal that lets the client tell
+        // "in-flight first turn" (resume-able, no JSONL yet) apart from
+        // "Start Fresh + quit" (fresh-spawn-and-bind-project). Both have
+        // `turn_count == 0`; only the live one has `is_alive == true`.
+        let live_session_ids: std::collections::HashSet<String> = {
+            let live = self.ledger.lock().await;
+            let mut alive = std::collections::HashSet::with_capacity(live.len());
+            for (sid, entry_arc) in live.iter() {
+                let entry = entry_arc.lock().await;
+                if matches!(entry.spawn_state, SpawnState::Spawning | SpawnState::Live) {
+                    alive.insert(sid.0.clone());
+                }
+            }
+            alive
+        };
         let bindings: Vec<serde_json::Value> = rows
             .into_iter()
             .filter_map(|row| {
                 let card_id = row.card_id?;
+                let is_alive = live_session_ids.contains(&row.session_id);
                 Some(serde_json::json!({
                     "card_id": card_id,
                     "session_id": row.session_id,
                     "project_dir": row.project_dir,
                     "state": row.state,
                     "turn_count": row.turn_count,
+                    "is_alive": is_alive,
                 }))
             })
             .collect();
@@ -6328,6 +6355,79 @@ mod tests {
         assert_eq!(real["session_id"], "real");
         assert_eq!(real["project_dir"], "/proj/beta");
         assert_eq!(real["turn_count"], 1);
+
+        // Both rows are mark_closed and never live-registered in the
+        // in-memory supervisor map, so neither is "alive". The flag
+        // must still appear on the wire (consumers gate on it).
+        assert_eq!(empty["is_alive"], false);
+        assert_eq!(real["is_alive"], false);
+    }
+
+    /// `list_card_bindings` reports `is_alive: true` for a session
+    /// whose subprocess entry in the in-memory ledger is in the
+    /// `Spawning` or `Live` state. This is the third signal the client
+    /// uses to decide `mode=resume` for an **in-flight first turn** —
+    /// a session that has zero committed turns (`turn_count == 0`) but
+    /// holds an active claude subprocess with mid-turn state (e.g. a
+    /// pending `AskUserQuestion`). Without `is_alive`, the client's
+    /// `turn_count`-only gate would mistake the in-flight case for
+    /// "Start Fresh + quit" and spawn a fresh session, orphaning the
+    /// live one.
+    #[tokio::test]
+    async fn list_card_bindings_reports_is_alive_for_live_sessions() {
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
+
+        // Two rows in sqlite, both with `turn_count == 0`. The
+        // difference between them is whether the in-memory ledger
+        // entry exists in a Live state.
+        ledger
+            .record_spawn("live", "ws-1", "/proj/alive", "card-Live", 1_000)
+            .unwrap();
+        ledger
+            .record_spawn("dead", "ws-1", "/proj/dead", "card-Dead", 2_000)
+            .unwrap();
+
+        // Promote "live" into the supervisor's in-memory ledger as
+        // `Live`. "dead" stays out of the map — its sqlite row is the
+        // only trace.
+        {
+            let mut map = sup.ledger.lock().await;
+            let entry = LedgerEntry {
+                spawn_state: SpawnState::Live,
+                ..LedgerEntry::new(
+                    TugSessionId("live".to_string()),
+                    WorkspaceKey::from_test_str("ws-1"),
+                    std::path::PathBuf::from("/proj/alive"),
+                    SessionMode::New,
+                    CrashBudget::new(3, std::time::Duration::from_secs(60)),
+                )
+            };
+            map.insert(
+                TugSessionId("live".to_string()),
+                std::sync::Arc::new(tokio::sync::Mutex::new(entry)),
+            );
+        }
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_card_bindings",
+        }))
+        .unwrap();
+        sup.handle_control("list_card_bindings", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_card_bindings_ok");
+        let bindings = response["bindings"].as_array().expect("bindings array");
+        let by_card: std::collections::HashMap<&str, &serde_json::Value> = bindings
+            .iter()
+            .map(|b| (b["card_id"].as_str().unwrap(), b))
+            .collect();
+        let live = by_card["card-Live"];
+        let dead = by_card["card-Dead"];
+        assert_eq!(live["turn_count"], 0);
+        assert_eq!(live["is_alive"], true);
+        assert_eq!(dead["turn_count"], 0);
+        assert_eq!(dead["is_alive"], false);
     }
 
     #[tokio::test]

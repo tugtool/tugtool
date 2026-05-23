@@ -33,6 +33,7 @@ import {
 } from "../session.ts";
 import type {
   AssistantText,
+  ControlRequestForward,
   OutboundMessage,
   ReplayComplete,
   ReplayStarted,
@@ -441,5 +442,110 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     expect(idxCommittedTc).toBeGreaterThanOrEqual(0);
     expect(idxInflightUmr).toBeGreaterThan(idxCommittedTc);
     expect(idxComplete).toBeGreaterThan(idxInflightUmr);
+  });
+
+  test("inflight ActiveTurn with a pending AskUserQuestion: snapshot re-emits the control_request_forward", async () => {
+    // Scenario: claude is mid-stream and has issued an `AskUserQuestion`
+    // tool call; the SDK has forwarded a `can_use_tool` control_request
+    // to tugcode, which stored it in `pendingControlRequests` and
+    // forwarded a `control_request_forward` to tugdeck. The dialog is
+    // open; the user hasn't answered. tugdeck reloads (Developer >
+    // Reload). The control channel is out-of-band — there's no JSONL
+    // record of the gating event. Without re-emit, the dialog has
+    // nothing to render against and the pending state is lost.
+    const manager = makeManager({ jsonl: "" });
+    installInflightTurn(manager, {
+      currentMessageId: "msg_with_pending_question",
+      userText: "ask me some questions",
+      partialText: "I will need to ask you a few questions.",
+      rev: 3,
+    });
+
+    // Populate the pending map exactly as the live `can_use_tool`
+    // dispatch would have (line 2819 in session.ts).
+    const pendingControlRequest = {
+      type: "control_request",
+      request_id: "req-question-survive-reload",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "AskUserQuestion",
+        input: {
+          questions: [
+            {
+              question: "Which approach?",
+              options: [{ label: "A" }, { label: "B" }],
+            },
+          ],
+        },
+        tool_use_id: "tu_pending_1",
+      },
+    };
+    (
+      manager as unknown as {
+        pendingControlRequests: Map<string, Record<string, unknown>>;
+      }
+    ).pendingControlRequests.set(
+      "req-question-survive-reload",
+      pendingControlRequest,
+    );
+
+    const { emitted } = await captureStdout(() => manager.runReplay());
+
+    // The control_request_forward must appear in the replay bracket,
+    // carrying the same request_id so the round-trip from the
+    // rehydrated dialog correlates back to the same claude-side
+    // control request.
+    const forward = emitted.find(
+      (m): m is ControlRequestForward => m.type === "control_request_forward",
+    );
+    expect(forward).toBeDefined();
+    expect(forward?.request_id).toBe("req-question-survive-reload");
+    expect(forward?.tool_name).toBe("AskUserQuestion");
+    expect(forward?.is_question).toBe(true);
+    expect(forward?.tool_use_id).toBe("tu_pending_1");
+
+    // It lands AFTER the inflight assistant_text snapshot (so the
+    // reducer has the assistant text scratch first), and BEFORE
+    // replay_complete (so it's inside the bracket).
+    const idxAt = emitted.findIndex(
+      (m) =>
+        m.type === "assistant_text" &&
+        (m as AssistantText).msg_id === "msg_with_pending_question",
+    );
+    const idxForward = emitted.findIndex(
+      (m) => m.type === "control_request_forward",
+    );
+    const idxComplete = emitted.findIndex(
+      (m) => m.type === "replay_complete",
+    );
+    expect(idxAt).toBeGreaterThanOrEqual(0);
+    expect(idxForward).toBeGreaterThan(idxAt);
+    expect(idxComplete).toBeGreaterThan(idxForward);
+  });
+
+  test("pending non-can_use_tool control_request is NOT re-emitted on inflight snapshot", async () => {
+    // Defensive: other control_request subtypes (set_permission_mode,
+    // set_model, interrupt, stop_task) aren't can_use_tool dialogs;
+    // they should not be replayed as control_request_forward.
+    const manager = makeManager({ jsonl: "" });
+    installInflightTurn(manager, {
+      currentMessageId: "msg_misc",
+      userText: "ask",
+      partialText: "ok",
+    });
+
+    (
+      manager as unknown as {
+        pendingControlRequests: Map<string, Record<string, unknown>>;
+      }
+    ).pendingControlRequests.set("req-misc", {
+      type: "control_request",
+      request_id: "req-misc",
+      request: { subtype: "set_model", model: "claude-opus" },
+    });
+
+    const { emitted } = await captureStdout(() => manager.runReplay());
+
+    expect(emitted.find((m) => m.type === "control_request_forward")).toBeUndefined();
   });
 });

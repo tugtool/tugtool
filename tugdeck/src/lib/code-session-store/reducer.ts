@@ -1707,10 +1707,26 @@ function handleControlRequestForward(
   state: CodeSessionState,
   event: ControlRequestForwardEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Only meaningful during an active turn. Outside an active phase,
-  // silently drop — the reducer stays total and the mid-turn gate
-  // tolerates stray forwards from a stale feed replay.
+  // Meaningful in two windows:
+  //   1. **Live turn** — the normal path. claude has called a tool
+  //      requiring permission, the SDK forwards `can_use_tool`, and
+  //      the reducer flips the phase to `awaiting_approval`.
+  //   2. **Replay bracket** — the in-flight snapshot path. tugcode's
+  //      `emitInflightTurnFromActiveTurn` re-emits any pending
+  //      `control_request_forward` from `pendingControlRequests` so a
+  //      Developer > Reload mid-dialog can rehydrate the dialog
+  //      against the same `request_id`. During replay we stash the
+  //      forward into `pendingApproval` / `pendingQuestion` but do
+  //      NOT transition the phase — `replay_complete` owns the post-
+  //      bracket phase decision and reads these fields to land in
+  //      `awaiting_approval` instead of the normal `streaming`
+  //      tail-preservation branch.
+  // Outside both windows, silently drop — the reducer stays total and
+  // the mid-turn gate tolerates stray forwards from a stale feed
+  // replay.
+  const isReplay = state.phase === "replaying";
   if (
+    !isReplay &&
     state.phase !== "streaming" &&
     state.phase !== "tool_work" &&
     state.phase !== "awaiting_first_token" &&
@@ -1720,6 +1736,21 @@ function handleControlRequestForward(
   }
 
   const forward = extractForward(event);
+  if (isReplay) {
+    // Stash only; do not move off `replaying`. `replay_complete`
+    // checks for a populated pending dialog and lands in
+    // `awaiting_approval` accordingly. The awaiting-approval clock
+    // starts when the post-bracket phase resolves, not here — the
+    // user wasn't actually awaiting during the replay window.
+    return {
+      state: {
+        ...state,
+        pendingApproval: event.is_question ? state.pendingApproval : forward,
+        pendingQuestion: event.is_question ? forward : state.pendingQuestion,
+      },
+      effects: [],
+    };
+  }
   const next: CodeSessionState = {
     ...state,
     phase: "awaiting_approval",
@@ -2556,7 +2587,38 @@ function handleReplayComplete(
   // deltas land in `idle` (which `handleTextDelta`'s phase guard
   // rejects), the user sees no inflight indicator after HMR-mid-
   // stream, and the response never auto-syncs.
+  //
+  // Dialog-survival sibling: if the snapshot also re-emitted a
+  // `control_request_forward` (tugcode replays any pending
+  // `can_use_tool` from `pendingControlRequests` on resume), the
+  // forward stashed `pendingApproval` / `pendingQuestion` while the
+  // phase guard kept us in `replaying`. The right post-bracket
+  // landing is `awaiting_approval` — not `streaming` — so the
+  // permission / question dialog reappears and the awaiting-approval
+  // clock starts now (the user wasn't actually waiting during the
+  // replay window). Without this branch, the rehydrated dialog
+  // fields would be wiped below and the user sees only the empty
+  // streaming indicator.
   if (state.pendingUserMessage !== null) {
+    const hasPendingDialog =
+      state.pendingApproval !== null || state.pendingQuestion !== null;
+    if (hasPendingDialog) {
+      return {
+        state: {
+          ...state,
+          phase: "awaiting_approval",
+          prevPhase: "streaming",
+          pendingApproval: state.pendingApproval,
+          pendingQuestion: state.pendingQuestion,
+          awaitingApprovalSince: state.awaitingApprovalSince ?? Date.now(),
+          lastReplayResult,
+          replayPreflightActive: false,
+          replaySoftBudgetElapsed: false,
+          replayTimeoutDwellActive: isTimeout,
+        },
+        effects,
+      };
+    }
     return {
       state: {
         ...state,

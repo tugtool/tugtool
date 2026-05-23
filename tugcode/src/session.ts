@@ -2977,7 +2977,47 @@ export class SessionManager {
       });
     }
 
-    // 3. Terminal event — only fires if the turn already finished
+    // 3. Re-emit any pending `control_request_forward` for this turn.
+    //    Control requests are an out-of-band SDK channel — they never
+    //    land in JSONL. tugcode's `pendingControlRequests` map is the
+    //    only place they live between issue and response. When tugdeck
+    //    reloads while a permission / question is pending, the JSONL
+    //    pass replays committed turns and the inflight bracket re-
+    //    emits the assistant text, but without this step the dialog
+    //    that drove the pending state is gone with no way to recover
+    //    it — the SDK still expects a response, claude is blocked
+    //    waiting, but the UI has nothing to render against.
+    //
+    //    Walk the map and re-emit each `can_use_tool` entry as a fresh
+    //    `control_request_forward`. The request_id is preserved so a
+    //    response round-trip from the rehydrated dialog correlates
+    //    back to the same SDK-side control request — no new id, no
+    //    leaked entry. Only `can_use_tool` subtypes carry the
+    //    tool-name/input shape the forward needs; other subtypes
+    //    (which are not surfaced to tugdeck today) are skipped.
+    for (const [requestId, cr] of this.pendingControlRequests) {
+      const request = cr.request as Record<string, unknown> | undefined;
+      const subtype = request?.subtype as string | undefined;
+      if (subtype !== "can_use_tool" || !request) continue;
+      const toolName = (request.tool_name as string) || "";
+      const isQuestion = toolName === "AskUserQuestion";
+      writeLine({
+        type: "control_request_forward",
+        request_id: requestId,
+        tool_name: toolName,
+        input: (request.input as Record<string, unknown>) || {},
+        decision_reason: request.decision_reason as string | undefined,
+        permission_suggestions: request.permission_suggestions as
+          | unknown[]
+          | undefined,
+        blocked_path: request.blocked_path as string | undefined,
+        tool_use_id: request.tool_use_id as string | undefined,
+        is_question: isQuestion,
+        ipc_version: 2,
+      });
+    }
+
+    // 4. Terminal event — only fires if the turn already finished
     //    while suppressed. Live turns (gotResult=false, interrupted=false)
     //    skip this; the drain's post-suppression dispatch will emit
     //    the real `turn_complete` when claude's `result` lands.

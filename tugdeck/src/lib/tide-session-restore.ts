@@ -26,12 +26,18 @@
  *   1. `restoreTideSessions` sends a `list_card_bindings` CONTROL
  *      request and waits for the `list_card_bindings_ok` response.
  *      Each binding is matched against the deck's tide cards by
- *      `card_id`. The match's `turn_count` decides the mode:
- *      - `> 0` → `spawn_session(mode=resume)` with the persisted
- *        `session_id`. claude reopens the JSONL and replays history.
- *      - `=== 0` → `spawn_session(mode=new)` with a fresh
- *        `session_id` but the same `project_dir`. The card opens to
- *        its bound project with a fresh claude session.
+ *      `card_id`. The match's `turn_count` and `is_alive` decide the
+ *      mode:
+ *      - `turn_count > 0` OR `is_alive` → `spawn_session(mode=resume)`
+ *        with the persisted `session_id`. Two routes into resume:
+ *        committed turns on disk (claude reopens the JSONL and
+ *        replays history), or a live tugcode subprocess holding
+ *        mid-turn state — the in-flight-first-turn case where a
+ *        permission / question is pending and no JSONL has been
+ *        written yet.
+ *      - `turn_count === 0` AND not `is_alive` → `spawn_session(mode=new)`
+ *        with a fresh `session_id` but the same `project_dir`. The
+ *        card opens to its bound project with a fresh claude session.
  *   2. The expectation is recorded in `tideRestoreRegistry` with a
  *      10-second timeout. `TideCardContent` subscribes to the
  *      registry and renders `TideRestoring` whenever a card has a
@@ -54,11 +60,11 @@
  *      fires), so next reload will retry the restore.
  *
  * Resumability: every non-failed binding surfaces in
- * `list_card_bindings_ok` regardless of `turn_count`. Sessions that
- * had at least one turn (`turn_count > 0`) take the `mode=resume`
- * path; sessions that never had a turn take the `mode=new`-with-same-
- * project_dir path so the card still opens to its bound project
- * without dropping the user back to the picker.
+ * `list_card_bindings_ok` regardless of `turn_count`. Sessions with
+ * a JSONL (`turn_count > 0`) or a live subprocess (`is_alive`) take
+ * the `mode=resume` path; everything else falls back to
+ * `mode=new`-with-same-project_dir so the card still opens to its
+ * bound project without dropping the user back to the picker.
  *
  * @module lib/tide-session-restore
  */
@@ -425,8 +431,21 @@ export function restoreTideSessions(
       if (!tideCardIds.has(binding.card_id)) continue;
       if (fired.has(binding.card_id)) continue;
       fired.add(binding.card_id);
-      if (binding.turn_count > 0) {
-        // Real session on disk → resume into history.
+      // Resume when EITHER (a) there is a JSONL on disk (`turn_count > 0`,
+      // committed turns to replay) OR (b) the live supervisor still
+      // holds a subprocess entry for this session (`is_alive`). Case
+      // (b) covers the **in-flight first turn**: the user submitted,
+      // claude is mid-response or blocked on a permission/question
+      // control_request, but no turn has committed to JSONL yet —
+      // resuming hands the card back to the same tugcode subprocess
+      // so the in-flight snapshot path delivers the partial assistant
+      // text and any pending `control_request_forward`. Without
+      // `is_alive` we'd take the fresh-spawn branch below and orphan
+      // the live session. The fallback `=== true` keeps the gate
+      // conservative when running against a server that doesn't emit
+      // the field yet.
+      const isAlive = binding.is_alive === true;
+      if (binding.turn_count > 0 || isAlive) {
         fireRestore(
           binding.card_id,
           binding.session_id,
@@ -435,11 +454,12 @@ export function restoreTideSessions(
         );
         resumedCount += 1;
       } else {
-        // Card was bound to a project but no turn ever happened
-        // (Start Fresh + quit). claude has no JSONL, so resume
-        // would fail — but the project binding is still meaningful.
-        // Fire a fresh spawn with the same project so the card
-        // opens straight to its bound state.
+        // Card was bound to a project but no turn ever happened and
+        // no live subprocess is holding mid-turn state (Start Fresh
+        // + quit). claude has no JSONL, so resume would fail — but
+        // the project binding is still meaningful. Fire a fresh
+        // spawn with the same project so the card opens straight to
+        // its bound state.
         fireFreshSpawn(binding.card_id, binding.project_dir, connection);
         freshCount += 1;
       }

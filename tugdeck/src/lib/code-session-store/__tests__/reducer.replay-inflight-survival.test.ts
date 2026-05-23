@@ -220,6 +220,122 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
     expect(after.state.phase).toBe("idle");
   });
 
+  it("snapshot with pending control_request_forward (AskUserQuestion) → replay_complete lands in awaiting_approval and preserves pendingQuestion", () => {
+    // Dialog-survival path: the in-flight bracket carries a pending
+    // `control_request_forward` (re-emitted by tugcode from
+    // `pendingControlRequests` on resume) so a permission/question
+    // dialog open at reload reappears post-bracket. The handler
+    // accepts the forward during `replaying`, stashes it in
+    // pendingQuestion (or pendingApproval), and `replay_complete`
+    // transitions to `awaiting_approval` instead of the normal
+    // streaming-tail branch.
+    const events: CodeSessionEvent[] = [
+      { type: "replay_started", ipc_version: 2 },
+      {
+        type: "user_message_replay",
+        msg_id: "msg_with_dialog",
+        text: "ask me some questions",
+        attachments: [],
+        ipc_version: 2,
+        turnKey: "test-replay-turn-key",
+      },
+      {
+        type: "assistant_text",
+        msg_id: "msg_with_dialog",
+        seq: 0,
+        rev: 4,
+        text: "I'll ask a few.",
+        is_partial: false,
+        status: "streaming",
+        ipc_version: 2,
+      },
+      {
+        type: "control_request_forward",
+        request_id: "req-q-survive-reload",
+        tool_name: "AskUserQuestion",
+        input: {
+          questions: [
+            {
+              question: "Which approach?",
+              options: [{ label: "A" }, { label: "B" }],
+            },
+          ],
+        },
+        is_question: true,
+        ipc_version: 2,
+      },
+      { type: "replay_complete", count: 0, ipc_version: 2 },
+    ];
+
+    const after = applyAll(fresh(), events);
+
+    // pendingQuestion survived the bracket and the post-bracket
+    // transition.
+    expect(after.state.pendingQuestion).not.toBeNull();
+    expect(after.state.pendingQuestion?.request_id).toBe(
+      "req-q-survive-reload",
+    );
+    expect(after.state.pendingQuestion?.tool_name).toBe("AskUserQuestion");
+    expect(after.state.pendingApproval).toBeNull();
+
+    // Phase lands in awaiting_approval (not streaming) so the dialog
+    // can render and the awaiting-approval clock can run.
+    expect(after.state.phase).toBe("awaiting_approval");
+    expect(after.state.awaitingApprovalSince).not.toBeNull();
+
+    // pendingUserMessage + scratch still preserved — the in-flight
+    // turn's text remains for the eventual commit.
+    expect(after.state.pendingUserMessage).not.toBeNull();
+    const scratchEntry = after.state.scratch.get("msg_with_dialog");
+    expect(scratchEntry).toBeDefined();
+  });
+
+  it("snapshot with pending control_request_forward (can_use_tool / permission) → replay_complete lands in awaiting_approval with pendingApproval set", () => {
+    // Mirror of the question case, but for a permission dialog
+    // (`is_question: false`). The forward populates pendingApproval
+    // and replay_complete still lands in awaiting_approval.
+    const events: CodeSessionEvent[] = [
+      { type: "replay_started", ipc_version: 2 },
+      {
+        type: "user_message_replay",
+        msg_id: "msg_with_perm",
+        text: "count lines with tokei",
+        attachments: [],
+        ipc_version: 2,
+        turnKey: "test-replay-turn-key",
+      },
+      {
+        type: "assistant_text",
+        msg_id: "msg_with_perm",
+        seq: 0,
+        rev: 1,
+        text: "",
+        is_partial: false,
+        status: "streaming",
+        ipc_version: 2,
+      },
+      {
+        type: "control_request_forward",
+        request_id: "req-p-survive-reload",
+        tool_name: "Bash",
+        input: { command: "tokei" },
+        is_question: false,
+        ipc_version: 2,
+      },
+      { type: "replay_complete", count: 0, ipc_version: 2 },
+    ];
+
+    const after = applyAll(fresh(), events);
+
+    expect(after.state.pendingApproval).not.toBeNull();
+    expect(after.state.pendingApproval?.request_id).toBe(
+      "req-p-survive-reload",
+    );
+    expect(after.state.pendingApproval?.tool_name).toBe("Bash");
+    expect(after.state.pendingQuestion).toBeNull();
+    expect(after.state.phase).toBe("awaiting_approval");
+  });
+
   it("replay with NO in-flight snapshot (only committed turns): replay_complete drops to idle, no scratch leaked", () => {
     // The original semantics: replay_complete with no surviving
     // pendingUserMessage (committed turns all completed within the

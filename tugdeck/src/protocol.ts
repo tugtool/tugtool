@@ -99,14 +99,22 @@ export interface SessionRow {
  * startup/reconnect to put a tide card back into a usable state
  * without showing the picker.
  *
- * `turn_count` distinguishes two paths:
+ * The mode-selection gate is `turn_count > 0 || is_alive`:
  *
  * - `turn_count > 0` — claude has a JSONL on disk. Restore fires
- *   `spawn_session(mode=resume, session_id, project_dir, card_id)`.
- * - `turn_count === 0` — the card was bound to a project but no real
- *   conversation happened (user picked Start Fresh and quit). Restore
- *   fires `spawn_session(mode=new, FRESH_UUID, project_dir, card_id)`
- *   so the card opens to its bound project with a fresh claude session.
+ *   `spawn_session(mode=resume, session_id, project_dir, card_id)`
+ *   and the JSONL replay rehydrates the transcript.
+ * - `turn_count === 0 && is_alive === true` — **in-flight first
+ *   turn**. The user submitted, claude is mid-response (possibly
+ *   blocked on a permission/question control_request), no turn has
+ *   committed to JSONL yet, but the live subprocess holds the runtime
+ *   state. Restore fires `mode=resume` so the client rejoins the same
+ *   session and the in-flight snapshot path delivers the partial
+ *   assistant text + pending control_request_forward.
+ * - `turn_count === 0 && is_alive === false` — Start Fresh + quit.
+ *   No JSONL on disk and no live subprocess; resume would fail. Fire
+ *   `mode=new` with a fresh `session_id` but the same `project_dir`
+ *   so the card opens to its bound project on relaunch.
  */
 export interface CardBinding {
   card_id: string;
@@ -114,6 +122,17 @@ export interface CardBinding {
   project_dir: string;
   state: "live" | "closed";
   turn_count: number;
+  /**
+   * True iff the server's in-memory supervisor holds a `Spawning` or
+   * `Live` subprocess entry for this `session_id` at response time.
+   * Combined with `turn_count` to gate `mode=resume` vs `mode=new` —
+   * see the docstring above for the truth table.
+   *
+   * Older server builds (before this signal was added) won't emit the
+   * field; treat the absence as `false` so the resume gate stays
+   * conservative when running against a stale server.
+   */
+  is_alive?: boolean;
 }
 
 /** Frame flags */

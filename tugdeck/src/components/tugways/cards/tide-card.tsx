@@ -38,6 +38,7 @@ import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-trans
 import { TideCardSashGrip } from "./tide-card-sash-grip";
 import { useTidePlacementSlots } from "./tide-card-placement-experiment";
 import { TideRouteIndicatorBadge } from "../chrome/tide-route-indicator-badge";
+import { TideSessionIdBadge } from "../chrome/tide-session-id-badge";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -2535,6 +2536,7 @@ export function TideCardBody({
                       codeSessionStore={codeSessionStore}
                       sessionMetadataStore={sessionMetadataStore}
                     />
+                    <TideSessionIdBadge cardId={cardId} />
                     {effectiveFooterContent}
                   </>
                 }
