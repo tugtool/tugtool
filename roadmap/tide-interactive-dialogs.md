@@ -562,7 +562,7 @@ Pure-logic tests stay attached to the consumer modules. The primitive adds a tin
 - [x] `cd tugdeck && bun test` — full suite green: 2576 pass / 0 fail / 9654 expect calls / 157 files.
 - [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
 - [x] `grep -r peelNewest tugdeck/src` → empty.
-- [ ] Manual HMR: Cancel button on question dialog, Esc keypress, Stop button — all three still cancel correctly. *(For the user to verify in a live session — HMR-vetted live flows are user-driven per project policy.)*
+- [x] Manual HMR: Cancel button on question dialog, Esc keypress, Stop button — all three still cancel correctly. *(Verified by user in live session.)*
 
 ---
 
