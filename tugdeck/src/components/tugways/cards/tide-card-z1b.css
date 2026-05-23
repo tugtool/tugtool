@@ -79,16 +79,16 @@
 
 /* Thinking-indicator (live) row. `--tugx-tide-z1b-indent-live` is
    this mode's own left-indent knob — tune it independently of the
-   terminal row's. */
+   terminal row's. Shares the terminal row's 2px top margin so the
+   indicator sits at the same vertical offset its end-state
+   successor will occupy. */
 .tide-z1b[data-mode="live"] {
+  margin-top: 2px;
   padding-left: var(--tugx-tide-z1b-indent-live);
 }
 
-/* End-state (terminal) row. Sits 2px tighter under the body — the
-   live variant keeps its natural rhythm; the indicator's pulse
-   looks better with a hair more space above it.
-   `--tugx-tide-z1b-indent-terminal` is this mode's left-indent
-   knob. */
+/* End-state (terminal) row. `--tugx-tide-z1b-indent-terminal` is
+   this mode's left-indent knob. */
 .tide-z1b[data-mode="terminal"] {
   margin-top: 2px;
   padding-left: var(--tugx-tide-z1b-indent-terminal);
