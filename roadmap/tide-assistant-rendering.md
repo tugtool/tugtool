@@ -5614,45 +5614,117 @@ Entry points into the archived turns plan:
 
 ---
 
-#### Step 24: TodoListBlock + TodoWriteToolBlock {#step-24}
+#### Step 24: TodoList → pinned `Z2A` renderer (rework umbrella) {#step-24}
 
-**Status:** implemented — `TodoListBlock` body kind (list-shaped, built on `TugListView` in `inline` mode) + `TodoWriteToolBlock` tool wrapper (counts + progress bar in the args slot, embedded body) + dispatch registration (`registerToolWrapper("todowrite", …)`). tsc clean; full `bun test` 2527/2527; `audit:tokens lint` zero violations.
+**Status:** rework in progress — supersedes the inline-per-turn `TodoWriteToolBlock` that shipped in the original Step 24. Body-kind `TodoListBlock` is kept (the rework reuses it standalone); the wrapper and its inline registration are retired by Step 24.2.
 
-**Depends on:** #step-1
+**Rework motivation.** The original Step 24 rendered TodoWrite inline in the assistant turn that issued each call, like every other tool wrapper. In practice TodoWrite is updated many times per session — once at planning, then on every status flip — and each call replaces the prior list whole-cloth. Inline-per-turn therefore reprinted the same list once per call, forced the user to scroll past `N-1` stale copies to find the current state, and never made "the active TODOs" one fixed glance away. The reworked direction pins the *latest* TodoWrite list in a new leading sub-slot of the [D97] `Z2` status bar (`Z2A`) and removes the inline render entirely. The slot collapses to zero height when no active list exists (definition of *active* per [D100]: latest call returns a non-empty list with at least one non-completed item).
 
-**Commit:** `feat(tide-rendering): TodoListBlock + TodoWriteToolBlock — task checklist with status indicators`
+**Sub-steps.** Tracked as separate roadmap entries so each ships under its own commit:
+- **[Step 24.1](#step-24-1)** — TodoWrite spike + carve `Z2A` slot + pinned renderer.
+- **[Step 24.2](#step-24-2)** — Remove inline-per-turn `TodoWriteToolBlock` + its registration.
 
-**References:** [D05], Spec S02, Spec S03
+**Original artifacts (still in the tree; disposition listed):**
+- `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css` — **kept**. The pinned `Z2A` renderer composes this standalone.
+- `tugdeck/src/components/tugways/cards/tool-blocks/todo-write-tool-block.tsx` + `.css` + `__tests__/todo-write-tool-block.test.ts` — **retired by Step 24.2**.
+- Registry entry `registerToolBlock("todowrite", TodoWriteToolBlock)` in `tide-assistant-renderer-dispatch.ts` — **unregistered or null-registered by Step 24.2** (the dispatch's fallback behaviour is the deciding factor; see Step 24.2 tasks).
 
-**Conformance:** see [#bk-conformance](#bk-conformance) — `TodoListBlock` is a list-shaped body kind (item 9: build on `TugListView` if the row count warrants windowing); `TodoWriteToolBlock` is a tool wrapper. `--tugx-todo-*` composes `--tugx-block-*`.
+**References:** [D05] (two-layer split), [D97] (zone architecture), [D100] (pinned `Z2A` TodoWrite — new), [L02], [L06], Spec S02, Spec S03
 
-**Implementation notes.**
-- **Built on `TugListView` in `inline` mode.** Item 9 says list-shaped body kinds build on `TugListView`. Real Claude Code Todo lists are typically a handful of items (occasionally a few dozen) and never warrant windowing — but anchoring on the same primitive keeps the data-source contract, cell-renderer vocabulary, and row-gap zeroing identical to `PathListBlock` / `SearchResultBlock`. A future windowing opt-in is a single prop flip with no shape change. The same `.tugx-todo .tug-list-view.tugx-todo-list` specificity guard `PathListBlock` uses applies here so the transcript's outer row-gap selector doesn't bleed in.
-- **Status drives appearance via `data-status`, not React state ([L06]).** Each row stamps `data-status="pending|in_progress|completed"` on its root; CSS owns the colour, weight, strikethrough, highlight band, and the `in_progress` spinner rotation. `prefers-reduced-motion: reduce` disables the spinner animation per the project's motion-respect convention.
-- **`in_progress` rendering prefers `activeForm`.** The wire spec carries both the imperative `content` ("Run tests") and the present-continuous `activeForm` ("Running tests"); only the active row swaps to the participle. Pending / completed rows render the imperative form. The `composeTodoCopyText` helper mirrors this for the Copy affordance (`[~] Running tests`).
-- **Progress bar tracks `completed / total`, not "made any progress".** In-progress items intentionally do not count as partial credit. The summary beside the bar (`"3 done, 1 in progress, 2 pending"`) already names them, and "share of finished work" matches the assistant's mental model and the spoken summary. The bar's track + fill use the shared `--tugx-block-tone-active-*` / `--tug7-element-global-text-normal-success-rest` band so the visual vocabulary aligns with the `in_progress` row highlight and with diff-add success cues. At 100% the fill swaps to the success tone so the bar reads "done" at a glance.
-- **Wire shape is the source of truth.** TodoWrite has no `structured_result` — the input itself is the canonical list. The wrapper narrows `input` via `narrowTodoListData` (defensive: drops malformed entries + unknown statuses silently so a partial / drifted call still renders what the wire agreed on) and passes the result straight through to `TodoListBlock`. A successful TodoWrite call's `tool_result.output` is boilerplate ("Todos have been modified successfully") and carries no rendered information; we don't surface it.
-- **Streaming / error paths mirror `BashToolBlock`.** `status === "streaming"` paints the header (empty `todos[]` until the input close-bracket arrives) and a `<StreamingPlaceholder />` body. `status === "error"` paints the chrome's error band from `textOutput` and drops the body.
+**Reference prompt for both sub-steps.** Run against a fresh `/tmp/todo-test` Code session:
 
-**Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css` — body kind + the pure helpers (`narrowTodoListData`, `countTodos`, `composeTodoSummary`, `todoProgressFraction`, `composeTodoCopyText`).
-- `tugdeck/src/components/tugways/cards/tool-wrappers/todo-write-tool-block.tsx` + `.css` — wrapper + the progress-bar slot in the chrome's args.
-- New token slot families `--tugx-todo-*` (body kind; declared in `todo-list-block.css`'s `body{}`) and `--tugx-todo-progress-*` (wrapper-only; declared in `todo-write-tool-block.css`'s `body{}`). Both compose `--tugx-block-*` per [L20].
-- Registry entry: `registerToolWrapper("todowrite", TodoWriteToolBlock)` in `tide-assistant-renderer-dispatch.ts`. No alias — `TodoWrite` is the only wire-shape name.
-- Test files: `tugdeck/src/components/tugways/body-kinds/__tests__/todo-list-block.test.ts` (18 tests over the five exported helpers) and `tugdeck/src/components/tugways/cards/tool-wrappers/__tests__/todo-write-tool-block.test.ts` (1 test pinning the case-insensitive dispatch resolution).
+```
+let's write a c program to make a command-line calculator. set it up with a makefile and a README. make a todo list for the work.
+```
 
-**Tasks:**
-- [x] TodoListBlock: checklist with status indicators (pending/in_progress/completed); in_progress highlighted — status drives the icon, the text variant (`activeForm` vs. `content`), and a highlighted background band via `data-status`. Completed rows fade to muted prose with strikethrough.
-- [x] TodoWriteToolBlock: header with counts + progress bar; body `embedded` TodoListBlock — counts summary + thin progress bar live in the chrome's `argsSummary` slot (the bar's `aria-*` attributes carry semantics; the visual is decorative). Body is `TodoListBlock` composed `embedded={true}` so the wrapper chrome owns identity and the body's Copy affordance portals into the chrome's actions slot.
+This exercises both the create path (initial TodoWrite call) and the incremental-update path (status flips as the assistant works through file creation), and is the source for the catalog fixture captured in Step 24.1.
 
-**Tests:**
-- [x] Synthetic TodoWrite fixture → renders checklist correctly — `narrowTodoListData` covers the wire shape end-to-end (well-formed payload, malformed-entry drops, unknown-status drops); the visible composition is HMR-vetted per project test policy.
-- [x] In-progress item visually distinct — `data-status="in_progress"` row variant paints the highlight band + spinner-rotated icon; `composeTodoSummary` + `todoProgressFraction` pin the counts contract that drives the chrome's progress bar.
+---
 
-**Checkpoint:**
-- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; `bun test` 2527/2527, 19 new tests across the two new files.
-- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual: prompt `> plan a multi-step refactor of the auth module and track the work in a todo list` → expect a TodoWrite tool block with checklist + counts + progress bar (deferred to user — HMR is always running; real-engine render is exercised through the live assistant pipeline).
+#### Step 24.1: TodoWrite spike + carve `Z2A` + pinned renderer {#step-24-1}
+
+**Goal.** Land the [D100] pinned `Z2A` TodoWrite slot end-to-end: spike the wire shape against a real session, carve a new leading sub-slot on the `Z2` status bar, and render the latest TodoWrite list there via a code-session-store selector.
+
+**Depends on:** #step-1 (renderer dispatch), #step-24 (rework umbrella). Builds on the shipped `TodoListBlock` body kind from the original Step 24.
+
+**Commit (umbrella; sub-commits fine):** `feat(tide): pinned-TodoWrite Z2A slot + spike findings`
+
+**References:** [D97] (`Z2` zone), [D100] (pinned `Z2A` slot), [L02] (`useSyncExternalStore`), [L06] (visibility via CSS).
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — `Z2A` is a status-bar sub-slot, not a body kind or tool wrapper. The renderer composes the existing `TodoListBlock` body kind (standalone mode) so no new body-kind conformance is needed; `--tugx-todo-*` continues to compose `--tugx-block-*`.
+
+**Spike — do this first.** No JSONL fixture exists today for a real TodoWrite call. The stream-json catalog only references TodoWrite in `system-metadata.jsonl` (tool-name registry). Run the reference prompt against a fresh `/tmp/todo-test` Code session, capture the live JSONL, and answer:
+
+1. **Call cadence.** Does Claude call TodoWrite once at planning and then incrementally as items complete, or does it batch flips? How many TodoWrite calls does the reference prompt produce?
+2. **List-replacement semantics.** Is every successive call a full replacement (the current `narrowTodoListData` assumes yes), or can a call mutate by id / partially update? (TodoWrite items have no wire id today, which is itself evidence — but worth confirming on the wire.)
+3. **`activeForm` reliability.** Always present, sometimes omitted, or only on `in_progress` items?
+4. **Clear mechanism.** Is there any wire-level signal that clears the todo list — a TodoWrite with empty `todos: []`, a separate tool, a system event tied to `/clear` / compaction / end-of-task? If yes, document the trigger; the selector in this step must handle it (most likely "fall through to the next-latest call", but possibly "blank the slot").
+5. **Concurrency.** Can two TodoWrite calls be in-flight simultaneously, or always serial? (Drives whether the selector needs tie-breaking when the in-flight `toolCallMap` carries an unfinished TodoWrite alongside committed ones.)
+
+**Spike outputs.**
+- A short findings note appended inline to this step (replaces this `Spike outputs` placeholder).
+- The captured JSONL saved as a catalog fixture at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v{ver}/test-{N}-todowrite-c-calculator.jsonl` so future regression tests have a canonical sample.
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — add a `statusBarLeadingContent?: React.ReactNode` prop (`Z2A`). Mount it in the status-bar row to the leading side of the existing `statusBarContent` (now `Z2B`), inside the existing flex row between the sash grip and `Z2B`. Empty slot collapses via `:empty`, matching every other reserved zone in [D97].
+- `tugdeck/src/components/tugways/cards/tide-card-pinned-todo.tsx` + `.css` (new) — the `Z2A` renderer. Subscribes to the code-session store via `useSyncExternalStore` ([L02]); the selector walks `transcript[].toolCalls[]` + the in-flight `toolCallMap`, returns the most recent tool call with `toolName === "TodoWrite"`, and narrows its `input` via the existing `narrowTodoListData`. Renders `<TodoListBlock data={…} />` in standalone mode. When the selector returns undefined, OR `todos.length === 0`, OR every item is `completed`, the renderer returns `null` and `Z2A` collapses ([D100] active-list rule).
+- `tugdeck/src/lib/code-session-store/selectors.ts` (or co-located) — `selectLatestTodoWriteInput(state): TodoListData | undefined` pure selector with its own test file. Keeps the lookup logic out of the renderer.
+- Placement-experiment wiring — `tide-card-placement-experiment.tsx` either gains a new `Z2A` datum or hard-wires `tide-card-pinned-todo` into `statusBarLeadingContent` (the latter if `Z2A`'s occupant is not experiment-tunable).
+- D97 zone-table update in `tuglaws/design-decisions.md` — split the existing `Z2` row into `Z2A` (pinned TodoWrite) and `Z2B` (`TideTelemetryStatusRow`) so the diagram and table reflect [D100].
+
+**Tasks.**
+- [ ] Spike: capture JSONL from the reference prompt against `/tmp/todo-test`; save as catalog fixture; document findings inline in this step (replace `Spike outputs` placeholder).
+- [ ] Carve `Z2A`: add `statusBarLeadingContent` prop to `TideCard`, mount in status bar row leading-side of `statusBarContent`.
+- [ ] Pure selector: `selectLatestTodoWriteInput(state)` + test file pinning (a) returns undefined when no TodoWrite call exists, (b) returns the most recent call's input across `transcript` + in-flight, (c) returns undefined when latest list is empty or all-completed (encodes [D100] active rule).
+- [ ] Pinned renderer: subscribes via `useSyncExternalStore`, composes `TodoListBlock` standalone, returns `null` on inactive selector result.
+- [ ] CSS: max-height + inner scroll if list overflows the strip; divider against `Z2B`; collapse-when-empty via `:empty`; no React state for visibility ([L06]).
+- [ ] D97 zone-table update: split `Z2` row into `Z2A` / `Z2B` sub-rows.
+
+**Tests.**
+- [ ] `selectLatestTodoWriteInput`: undefined when no TodoWrite calls.
+- [ ] `selectLatestTodoWriteInput`: returns last input across three synthetic TodoWrite calls in one transcript.
+- [ ] `selectLatestTodoWriteInput`: returns undefined for an all-completed latest list (active rule).
+- [ ] `selectLatestTodoWriteInput`: returns undefined for an empty `todos: []` latest list (clear mechanism, if the spike confirms this is the wire signal).
+- [ ] `selectLatestTodoWriteInput`: in-flight `toolCallMap` overrides a committed `TurnEntry.toolCalls` entry from an earlier turn.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual (HMR): run the reference prompt against `/tmp/todo-test`; confirm `Z2A` appears as soon as the first TodoWrite lands, updates in place as items flip `in_progress` / `completed`, and collapses when the final list is all-completed.
+
+---
+
+#### Step 24.2: Remove inline-per-turn TodoWriteToolBlock {#step-24-2}
+
+**Goal.** Retire the original Step 24's inline-per-turn `TodoWriteToolBlock` now that `Z2A` carries the active list authoritatively ([D100]).
+
+**Depends on:** #step-24-1
+
+**Commit:** `chore(tide-rendering): remove inline TodoWriteToolBlock — pinned Z2A is the canonical home`
+
+**References:** [D100]
+
+**Artifacts.**
+- Delete `tugdeck/src/components/tugways/cards/tool-blocks/todo-write-tool-block.tsx` + `.css` + `__tests__/todo-write-tool-block.test.ts`.
+- Remove the `TodoWriteToolBlock` import and the `registerToolBlock("todowrite", TodoWriteToolBlock)` line from `tide-assistant-renderer-dispatch.ts`.
+- Decide the dispatch fallback: if `registerToolBlock` falls through to `DefaultToolWrapper` on unregistered tool names, then unregistering would put a `DefaultToolWrapper` "TodoWrite" row in the transcript (defeating the rework's goal). In that case, register a null renderer that returns `null` for `todowrite`. Implementation note: confirm the dispatch's default-fallback behaviour from Step 24.1 spike review before choosing unregister vs. null-register.
+- Inventory tables in the roadmap (lines naming `TodoWriteToolBlock`: §Symbol Inventory, §Test Plan Concepts, §Streaming-paths table) — strike the wrapper rows or annotate them as "removed in Step 24.2 — see [D100]".
+- Gallery: `gallery-tool-block-meta.tsx` (planned in [#step-29-5](#step-29-5)) had TodoWrite on the demo list — update that step's plan to demo the `Z2A` pinned slot instead, or drop the TodoWrite entry from that gallery card.
+
+**Tasks.**
+- [ ] Delete `todo-write-tool-block.{tsx,css}` and its test file.
+- [ ] Unregister or null-register `todowrite` in `tide-assistant-renderer-dispatch.ts` (per artifact-list decision rule above).
+- [ ] Update inventory tables and Step 24 umbrella "Original artifacts" status (mark the wrapper as retired).
+- [ ] Update [#step-29-5](#step-29-5) plan: swap the TodoWrite gallery demo for a `Z2A`-pinned-slot demo or drop it.
+
+**Tests.**
+- [ ] No new tests; existing transcript tests must still pass.
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` clean — the deleted test file disappears from the suite.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual (HMR): re-run the reference prompt against `/tmp/todo-test`; the transcript shows NO TodoWrite tool blocks; `Z2A` carries the active list.
 
 ---
 
