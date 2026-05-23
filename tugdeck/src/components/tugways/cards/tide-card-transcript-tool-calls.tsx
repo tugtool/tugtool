@@ -97,17 +97,6 @@ import type { ChildToolCallsMap } from "./tool-wrappers/types";
 // Public types
 // ---------------------------------------------------------------------------
 
-/**
- * Permission entries keyed by `tool_use_id`, threaded from
- * `tide-card-transcript.tsx`. When a rendered tool block's
- * `toolUseId` matches a key in this map, the matching `ReactNode` is
- * rendered immediately after the tool block — so a permission
- * dialog/record reads as belonging to its tool call and nothing else
- * can interpose between them. Optional; omitted in gallery / static
- * mounts that never carry permission state.
- */
-type PermissionByToolUseId = ReadonlyMap<string, React.ReactNode>;
-
 interface StaticProps {
   toolCalls: ReadonlyArray<ToolCallState>;
   msgId: string;
@@ -118,8 +107,6 @@ interface StaticProps {
    * Standalone gallery mounts omit it.
    */
   session?: CodeSessionStore;
-  /** Per-`tool_use_id` permission entries to render inline after each tool block. */
-  permissionByToolUseId?: PermissionByToolUseId;
   className?: string;
 }
 
@@ -142,8 +129,6 @@ interface StreamingProps {
   msgId: string;
   /** Same role as the static-mode `session`. */
   session?: CodeSessionStore;
-  /** Per-`tool_use_id` permission entries to render inline after each tool block. */
-  permissionByToolUseId?: PermissionByToolUseId;
   className?: string;
 }
 
@@ -276,7 +261,6 @@ interface ToolCallsListProps {
   toolCalls: ReadonlyArray<ToolCallState>;
   msgId: string;
   session?: CodeSessionStore;
-  permissionByToolUseId?: PermissionByToolUseId;
   className?: string;
 }
 
@@ -284,7 +268,6 @@ const ToolCallsList: React.FC<ToolCallsListProps> = ({
   toolCalls,
   msgId,
   session,
-  permissionByToolUseId,
   className,
 }) => {
   // Partition into top-level calls + the subagent-children map once
@@ -307,15 +290,6 @@ const ToolCallsList: React.FC<ToolCallsListProps> = ({
       ? "tide-transcript-tool-calls"
       : `tide-transcript-tool-calls ${className}`;
 
-  // Each top-level tool call may have an associated permission entry
-  // (a pending dialog or a committed record), keyed by `toolUseId`.
-  // When present, the permission node renders as the immediate
-  // sibling of the tool block — within the same flex column — so
-  // nothing can interpose. The permission node carries its own
-  // stable `request_id` key (set by the caller); the React Fragment
-  // wrapping `[tool, permission]` carries the `toolUseId` so React
-  // reconciles the pair as a unit even when the permission appears
-  // or disappears across renders.
   return (
     <div className={cls} data-slot={DATA_SLOT_ROOT}>
       {topLevel.map((toolCall) => {
@@ -326,16 +300,7 @@ const ToolCallsList: React.FC<ToolCallsListProps> = ({
           childrenByParent,
           session,
         );
-        const permissionNode = permissionByToolUseId?.get(toolCall.toolUseId);
-        if (permissionNode === undefined) {
-          return <Component key={toolCall.toolUseId} {...props} />;
-        }
-        return (
-          <React.Fragment key={toolCall.toolUseId}>
-            <Component {...props} />
-            {permissionNode}
-          </React.Fragment>
-        );
+        return <Component key={toolCall.toolUseId} {...props} />;
       })}
     </div>
   );
@@ -349,14 +314,12 @@ const StaticTranscriptToolCalls: React.FC<StaticProps> = ({
   toolCalls,
   msgId,
   session,
-  permissionByToolUseId,
   className,
 }) => (
   <ToolCallsList
     toolCalls={toolCalls}
     msgId={msgId}
     session={session}
-    permissionByToolUseId={permissionByToolUseId}
     className={className}
   />
 );
@@ -366,7 +329,6 @@ const StreamingTranscriptToolCalls: React.FC<StreamingProps> = ({
   streamingPath,
   msgId,
   session,
-  permissionByToolUseId,
   className,
 }) => {
   const toolCalls = useStreamingToolCalls(streamingStore, streamingPath);
@@ -375,7 +337,6 @@ const StreamingTranscriptToolCalls: React.FC<StreamingProps> = ({
       toolCalls={toolCalls}
       msgId={msgId}
       session={session}
-      permissionByToolUseId={permissionByToolUseId}
       className={className}
     />
   );

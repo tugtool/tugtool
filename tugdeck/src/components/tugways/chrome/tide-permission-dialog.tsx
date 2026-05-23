@@ -3,51 +3,36 @@
  *
  * Renders a `control_request_forward` event with `is_question: false`
  * (Claude is asking the user to allow or deny a tool call) as an
- * *inline* block in the transcript flow per [D13] — never a modal
- * overlay. The request appeared at a point in time; the block preserves
- * that spatial logic, and after the user responds it collapses to a
- * one-line static record so the transcript keeps a permanent artifact
- * of what was asked and how it was answered.
+ * *inline* block in the transcript flow — never a modal overlay. The
+ * dialog is *pending-only*: once the user clicks Allow / Deny the
+ * reducer clears `pendingApproval`, `isPending` flips to `false`, and
+ * this component returns `null`. There is no post-decision recorded
+ * chrome — JSONL has no durable record to reconstruct one from on
+ * cold boot, so the tool block that follows is the only post-decision
+ * artifact (output on allow; `is_error` band + SDK rejection text on
+ * deny). See `#step-3-5` in `roadmap/tide-interactive-dialogs.md`.
  *
- * Two states, mutually exclusive, driven by whether this request is
- * still the session's `pendingApproval`:
+ * The single rendered state composes the `TideInteractiveDialog`
+ * input-form primitive of the Tide interactive-dialog family (which
+ * itself wraps `TugInlineDialog` — see [D08]) with
+ * `iconRole="caution"` and a per-tool rich description. The body
+ * picker (DiffBlock for Edit, JsonTreeBlock for the unknown-tool
+ * fallback) renders inside the dialog's `children` slot. When the
+ * request carries actionable `permission_suggestions`, those (plus
+ * an implicit "Allow once" first option) are passed to the
+ * primitive's `options` prop as a mandatory-single-select radio
+ * group; the user picks the *scope*, then commits with Allow. Deny is
+ * the off-ramp — clicking it ignores the chosen scope and denies the
+ * request outright.
  *
- *   1. **Pending** — composes the `TideInteractiveDialog` input-form
- *      primitive of the Tide interactive-dialog family (which itself
- *      wraps `TugInlineDialog` — see [D08]) with `iconRole="caution"`
- *      and a per-tool rich description. The body picker (DiffBlock
- *      for Edit, JsonTreeBlock for the unknown-tool fallback) renders
- *      inside the dialog's `children` slot. When the request carries
- *      actionable `permission_suggestions`, those (plus an implicit
- *      "Allow once" first option) are passed to the primitive's
- *      `options` prop as a mandatory-single-select radio group of
- *      `TugDialogButton`s ([#step-18-6]); the user picks the *scope*,
- *      then commits with Allow. Deny is the off-ramp — clicking it
- *      ignores the chosen scope and denies the request outright. The
- *      primitive focuses Allow on mount per [D13] so a Return key
- *      commits the default scope without a second keystroke.
+ * `Deny` is a *positive decision* (`respondApproval({decision:
+ * "deny"})`), not a walk-away — the dialog passes
+ * `cancelRole="action"` to opt out of the interactive-dialog
+ * family's danger-tone default ([D02] / [Q03] carve-out). Esc keeps
+ * reaching `popInteractive` via the responder chain; that walk-away
+ * cancels the running turn rather than denying the permission.
  *
- *      `Deny` is a *positive decision* (`respondApproval({decision:
- *      "deny"})`), not a walk-away — the dialog passes
- *      `cancelRole="action"` to opt out of the interactive-dialog
- *      family's danger-tone default ([D02] / [Q03] carve-out). Esc
- *      keeps reaching `popInteractive` via the responder chain; that
- *      walk-away cancels the running turn rather than denying the
- *      permission.
- *   2. **Recorded** — a compact `ToolWrapperChrome` row pairing the
- *      gated tool name with the user's decision (`Allowed` / `Denied` /
- *      the `Resolved` out-of-band fallback). Composed on the same
- *      chrome the `AskUserQuestionToolBlock` recorded view uses, so
- *      the two post-interaction records read as siblings of the same
- *      family. No body — the gated tool block that renders
- *      immediately above this record (threaded into the tool stream
- *      by `tool_use_id`, see `cards/tide-card-transcript.tsx`)
- *      already carries the input context (the Bash command, the file
- *      diff, the file path). A dialog that mounts for an
- *      already-recorded request (replay, re-render after response,
- *      committed transcript artifact) lands in this branch directly.
- *
- * Per-tool description (`composePermissionDescription`):
+ * Per-tool description (`PermissionDescription`):
  *
  *   - `Bash` →  `"This command requires approval · {Shell-icon} Bash · `{command}`"`
  *   - `Edit` / `MultiEdit` →  `"This will edit `{file_path}`."`
@@ -72,26 +57,14 @@
  * Laws:
  *  - [L02] external state (is this request still pending?) enters
  *    React via `useSyncExternalStore` over the `CodeSessionStore`.
- *    The remembered decision and record-expanded flag are component
- *    data per [L24] and live in `useState`.
- *  - [L06] appearance (pending vs. resolved, record expanded) flows
- *    through `data-*` attributes + CSS; React state holds only
- *    logical UI state.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
- *    `data-slot="tide-permission-dialog"` on the resolved-record
- *    root, this docstring.
- *  - [L20] component-token sovereignty — the pending visual is
- *    delegated to `TideInteractiveDialog` (which owns the family
- *    cancel-role + actions-row defaults) which in turn delegates to
- *    `TugInlineDialog` (`--tugx-idialog-*`); the recorded visual is
- *    delegated to `ToolWrapperChrome` (`--tugx-block-*` /
- *    `--tugx-toolblock-*` shared family). This dialog itself
+ *    this docstring.
+ *  - [L20] component-token sovereignty — the visual is delegated to
+ *    `TideInteractiveDialog` (which owns the family cancel-role +
+ *    actions-row defaults) which in turn delegates to
+ *    `TugInlineDialog` (`--tugx-idialog-*`). This dialog itself
  *    contributes only the small inline-icon + reason fragments used
  *    inside the pending description.
- *
- * Decisions:
- *  - [D13] inline (not modal) permission dialogs; collapse-to-record
- *    after response.
  *
  * @module components/tugways/chrome/tide-permission-dialog
  */
@@ -99,15 +72,11 @@
 import "./tide-permission-dialog.css";
 
 import React from "react";
-import { Ban, Shell, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Shell, ShieldAlert } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
-import { ToolWrapperChrome } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
-import { TugBadge } from "@/components/tugways/tug-badge";
-import type { TugBadgeRole } from "@/components/tugways/tug-badge";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import type {
   CodeSessionStore,
@@ -128,15 +97,6 @@ import type {
 export interface PermissionRenderInput {
   kind: "permission";
   request: ControlRequestForward;
-  /**
-   * Set when this dialog is a *committed* transcript artifact ([D13]) —
-   * the decision the user already made on a past turn. The dialog
-   * mounts straight into its resolved record showing that decision.
-   * Omitted for a live pending request, where the dialog drives the
-   * `respondApproval` round-trip and reads the decision from the user's
-   * click.
-   */
-  resolvedDecision?: "allow" | "deny";
 }
 
 /**
@@ -326,52 +286,6 @@ export function buildPermissionOptions(
     });
   }
   return out;
-}
-
-/**
- * Per-decision presentation triple for the recorded permission's
- * `ToolWrapperChrome` header. The toolName goes on the chrome's
- * `toolName` slot; this helper picks the decision-side vocabulary —
- * `Allowed` / `Denied` / the `Resolved` out-of-band fallback when a
- * dialog mounts for a request that already cleared without a locally
- * remembered decision. Pure; exported for tests.
- *
- * The `badgeRole` keys the `TugBadge` colour domain that wraps the
- * status word: `success` for allow, `danger` for deny, `action`
- * (neutral) for the out-of-band fallback. The badge owns the visible
- * chip; this contract pins the role each decision maps to.
- */
-export interface RecordedPermissionPresentation {
-  /** Status word shown next to the tool name in the chrome header. */
-  label: "Allowed" | "Denied" | "Resolved";
-  /** Lucide icon node — passed to the chrome's `toolIcon` slot. */
-  icon: React.ReactNode;
-  /** `TugBadge` role for the status chip. */
-  badgeRole: TugBadgeRole;
-}
-
-export function recordedPermissionPresentation(
-  decision: "allow" | "deny" | null,
-): RecordedPermissionPresentation {
-  if (decision === "deny") {
-    return {
-      label: "Denied",
-      icon: <Ban size={14} aria-hidden="true" />,
-      badgeRole: "danger",
-    };
-  }
-  if (decision === "allow") {
-    return {
-      label: "Allowed",
-      icon: <ShieldCheck size={14} aria-hidden="true" />,
-      badgeRole: "success",
-    };
-  }
-  return {
-    label: "Resolved",
-    icon: <ShieldAlert size={14} aria-hidden="true" />,
-    badgeRole: "action",
-  };
 }
 
 /**
@@ -597,22 +511,15 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // is external state; it enters through `useSyncExternalStore`. The
   // moment `respondApproval` dispatches, the reducer clears
   // `pendingApproval` and notifies synchronously, so this flips to
-  // `false` and the resolved record renders without an async gap.
+  // `false` and the component returns `null` — leaving no post-decision
+  // chrome behind. The tool block that follows is the only visible
+  // artifact (see `#step-3-5`).
   const isPending = React.useSyncExternalStore(
     session.subscribe,
     React.useCallback(
       () => session.getSnapshot().pendingApproval?.request_id === requestId,
       [session, requestId],
     ),
-  );
-
-  // Remembered decision — local UI data ([L24]). Drives the recorded
-  // chrome's header status word. Seeded from `resolvedDecision` for a
-  // committed transcript artifact; stays `null` for a live request
-  // until the user clicks (or for a dialog that mounted resolved
-  // out-of-band with no recorded decision).
-  const [decision, setDecision] = React.useState<"allow" | "deny" | null>(
-    input.resolvedDecision ?? null,
   );
 
   const respond = React.useCallback(
@@ -623,7 +530,6 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       const stillPending =
         session.getSnapshot().pendingApproval?.request_id === requestId;
       if (!stillPending) return;
-      setDecision(next);
       session.respondApproval(
         requestId,
         message !== undefined
@@ -670,17 +576,14 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     return raw;
   }, [request.decision_reason]);
 
-  // Allow handler — declared HERE, before any conditional return, so
-  // every render of this component calls the same set of hooks in the
-  // same order ([L02] / [L24] structure zone). The component is a
-  // shape-shifter (live dialog ↔ resolved record), and when the user
-  // clicks Allow `isPending` flips below, switching us from the
-  // pending branch to the resolved branch in-place under the same
-  // `request_id` key in the streaming-row slot. If `useCallback` were
-  // declared inside the pending branch, the post-flip render would
-  // hit the early return before reaching the hook and React would
-  // crash with "Rendered fewer hooks than expected" — exactly the
-  // failure mode the in-place transition exposed.
+  // Allow handler — declared HERE, before the `!isPending` early
+  // return, so every render of this component calls the same set of
+  // hooks in the same order ([L02] / [L24] structure zone). When the
+  // user clicks Allow `isPending` flips and this render returns
+  // `null`; if `useCallback` were declared inside the pending render
+  // body, the post-flip render would hit the early return before
+  // reaching the hook and React would crash with "Rendered fewer
+  // hooks than expected."
   const handleAllow = React.useCallback(() => {
     // The implicit "Allow once" maps to allow-without-scope; any
     // other selected option's label is the scope message Claude
@@ -697,41 +600,13 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     respond("deny");
   }, [respond]);
 
-  // ---- Recorded permission ------------------------------------------------
-  // Composed on `ToolWrapperChrome` — the same chrome the
-  // `AskUserQuestionToolBlock` recorded view uses — so the two
-  // post-interaction records read as siblings of the same family.
-  // [D11] tool-block vocabulary in action.
-  //
-  // Body intentionally empty. The permission record is threaded into
-  // the tool stream *immediately after* its gated tool block (via
-  // `tool_use_id`, per the Step 3 layout fix). That tool block above
-  // already carries the input context — the Bash command, the file
-  // path, the diff. Repeating any of it here is noise; the record
-  // exists to confirm the *decision*, full stop. The header carries
-  // tool + decision; that's the whole signal.
+  // The dialog has no post-decision chrome — see the module docstring
+  // and `#step-3-5`. Once the user clicks (or the request resolves
+  // out-of-band), `isPending` flips to `false` and the component
+  // returns `null`, leaving no UI trace. The gated tool block that
+  // follows is the only post-decision artifact.
   if (!isPending) {
-    const {
-      label: decisionLabel,
-      icon: decisionIcon,
-      badgeRole,
-    } = recordedPermissionPresentation(decision);
-    return (
-      <ToolWrapperChrome
-        rootSlot="tide-permission-dialog"
-        toolName={toolName}
-        toolIcon={decisionIcon}
-        argsSummary={
-          <TugBadge emphasis="tinted" role={badgeRole} size="sm">
-            {decisionLabel}
-          </TugBadge>
-        }
-        status="ready"
-        className={cn("tide-permission-dialog", className)}
-      >
-        {null}
-      </ToolWrapperChrome>
-    );
+    return null;
   }
 
   // ---- Pending: composed on TideInteractiveDialog -------------------------
@@ -744,8 +619,8 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // mandatory single-select radio group of `TugDialogButton`s. Allow
   // commits with the chosen scope's message; Deny ignores the scope
   // and denies outright. Both handlers are stable callbacks declared
-  // above the resolved-record early return — see [L02] / [L24] note
-  // alongside `handleAllow`.
+  // above the `!isPending` early return — see the comment alongside
+  // `handleAllow`.
   //
   // `cancelRole="action"` opts out of the family's outlined-danger
   // default ([D03]) — see the [D02] / [Q03] carve-out: `Deny` is a

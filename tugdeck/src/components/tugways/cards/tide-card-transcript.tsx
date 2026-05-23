@@ -48,7 +48,7 @@
  * primitive's token surface stays untouched.
  *
  * Tuglaws:
- *  - [L02] `CodeRowCell` reads `pendingApproval` / `controlRequestLog`
+ *  - [L02] `CodeRowCell` reads `pendingApproval` / `pendingQuestion`
  *    via `useSyncExternalStore`; the host reads its lifecycle `state`
  *    via `useLifecycleState`.
  *  - [L06] the [DT10] transcript-replay paint gate suppresses the
@@ -99,10 +99,6 @@ import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-import type {
-  ControlRequestForward,
-  ControlRequestRecord,
-} from "@/lib/code-session-store";
 import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
@@ -360,33 +356,6 @@ const CODE_DEFAULT_IDENTIFIER = "Code";
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
 
-/**
- * Stable-reference empty control-request log handed to committed
- * cells' `useSyncExternalStore` so React's Object.is comparison
- * skips re-renders on every snapshot tick. Allocated once at module
- * load; every committed cell shares the same reference. The
- * `ReadonlyArray` type discourages accidental mutation.
- */
-const EMPTY_CONTROL_LOG: ReadonlyArray<ControlRequestRecord> = [];
-
-/**
- * Stable sentinels for the empty permission outputs. Same
- * `Object.is`-stability rationale as `EMPTY_CONTROL_LOG`: returning the
- * same reference on every empty pass keeps callers' memoizations from
- * busting unnecessarily.
- *
- * The `EMPTY_PERMISSION_ENTRIES` array is the empty-case return of the
- * data-only `permissionEntries` `useMemo` — keeping that stable means
- * the inline `forEach` below it stays in its empty-branch fast path
- * without allocating a new map/array per render.
- */
-const EMPTY_PERMISSION_ENTRIES: ReadonlyArray<{
-  request: ControlRequestForward;
-  resolvedDecision?: "allow" | "deny";
-}> = [];
-const EMPTY_PERMISSION_MAP: ReadonlyMap<string, React.ReactNode> = new Map();
-const EMPTY_PERMISSION_ARRAY: ReadonlyArray<React.ReactNode> = [];
-
 interface UserRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   renderTurnTrailing?: TurnTrailingRenderer;
 }
@@ -540,7 +509,7 @@ const GhostRowCell: React.FC<GhostRowCellProps> = ({
 // `CodeRowCell` — single renderer for the assistant row.
 //
 // Handles both the in-flight phase (data flowing from the live
-// `streamingDocument` / `controlRequestLog` / `pendingApproval`) AND
+// `streamingDocument` / `pendingApproval` / `pendingQuestion`) AND
 // the committed phase (data on `row.turn`) inside one component
 // instance. The cell wrapper React keys by `turnKey`, which is
 // byte-identical inflight + committed, so the wrapper survives
@@ -630,46 +599,25 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   const timestamp =
     turn !== undefined ? formatTranscriptTimestamp(turn.endedAt) : undefined;
 
-  // Permission slot — built from committed `turn.controlRequests` when
-  // the cell is past `turn_complete`, otherwise from the live
-  // `controlRequestLog` + `pendingApproval` pair the streaming row
-  // observes. Both code paths emit the SAME `<Component key=request_id />`
-  // shape, so React reconciles per-record in place across the
-  // transition: each dialog instance survives the inflight → committed
-  // boundary even as the source of truth swaps.
-  //
-  // The two `useSyncExternalStore` subscriptions below GATE on
-  // `isCommitted`: once a cell is committed, its `permissionSlot`
-  // depends on `turn.controlRequests` only, so re-rendering on every
-  // pending/log change in a *later* turn would be wasted work. The
-  // getSnapshot closures return stable values (`null` /
-  // `EMPTY_CONTROL_LOG`) for committed cells, so `useSyncExternalStore`'s
-  // Object.is comparison skips the re-render entirely after commit.
+  // Permission + question slots — both are *pending-only* live input
+  // forms rendered at the body foot. Permissions leave no committed
+  // record (Step 3.5 removed the recorded chrome — see
+  // `#step-3-5` in `roadmap/tide-interactive-dialogs.md` — because
+  // JSONL has no durable artifact to reconstruct one from); questions
+  // round-trip through tool_use/tool_result so their recorded state
+  // lives in the `AskUserQuestionToolBlock` at the tool_use position,
+  // not here. Both subscriptions GATE on `isCommitted`: a committed
+  // cell never hosts a live dialog of either kind, so the closure
+  // returns stable `null` and `useSyncExternalStore`'s Object.is
+  // comparison skips the re-render entirely after commit.
   const pendingApproval = useSyncExternalStore(
     codeSessionStore.subscribe,
     useCallback(
       () =>
-        isCommitted
-          ? null
-          : codeSessionStore.getSnapshot().pendingApproval,
+        isCommitted ? null : codeSessionStore.getSnapshot().pendingApproval,
       [codeSessionStore, isCommitted],
     ),
   );
-  const controlRequestLog = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () =>
-        isCommitted
-          ? EMPTY_CONTROL_LOG
-          : codeSessionStore.getSnapshot().controlRequestLog,
-      [codeSessionStore, isCommitted],
-    ),
-  );
-  // Live `pendingQuestion` for the in-flight cell — gated on
-  // `isCommitted` the same way as `pendingApproval`: a committed cell
-  // never hosts a live question (and a question leaves no committed
-  // record), so the closure returns the stable `null` and
-  // `useSyncExternalStore`'s Object.is check skips the re-render.
   const pendingQuestion = useSyncExternalStore(
     codeSessionStore.subscribe,
     useCallback(
@@ -678,108 +626,35 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
       [codeSessionStore, isCommitted],
     ),
   );
-  // Permission rendering — two outputs:
-  //
-  //   - `permissionByToolUseId` — `Map<tool_use_id, ReactNode>` of
-  //     permission entries that name their tool. Threaded into
-  //     `TranscriptToolCalls` and rendered *immediately after* their
-  //     tool block, so a permission request reads as belonging to its
-  //     tool call and nothing else can interpose between them.
-  //   - `orphanPermissions` — entries without a usable `tool_use_id`.
-  //     Defensive fallback (the wire carries `tool_use_id` on
-  //     `control_request_forward` per v2.1.x catalog); rendered at the
-  //     foot of the cell body so they remain visible even when the
-  //     linkage is missing.
-  //
-  // **HMR contract.** The lightweight `SlotEntry[]` derivation is
-  // memoized (`useMemo` keyed on the data sources), but the React
-  // elements themselves are built *every render* via the inline
-  // mapping below. Caching React elements inside `useMemo` would
-  // freeze the `Component` reference returned by `dispatchRenderInput`
-  // — so when Vite's Fast Refresh swaps `PermissionDialog` for a new
-  // function, the cached element's `type` would still point at the
-  // *old* component, leaving the recorded chrome stuck in the pre-HMR
-  // shape. Building elements every render (the same pattern
-  // `TranscriptToolCalls` uses for tool blocks) keeps the family
-  // surviving HMR.
-  type SlotEntry = {
-    request: ControlRequestForward;
-    resolvedDecision?: "allow" | "deny";
-  };
-  const permissionEntries = useMemo<ReadonlyArray<SlotEntry>>(() => {
-    let entries: SlotEntry[];
-    if (isCommitted) {
-      const records = turn?.controlRequests ?? [];
-      entries = records.map((record) => ({
-        request: record.request,
-        resolvedDecision: record.decision,
-      }));
-    } else {
-      entries = controlRequestLog.map((record) => ({
-        request: record.request,
-        resolvedDecision: record.decision ?? undefined,
-      }));
-      if (pendingApproval !== null && !pendingApproval.is_question) {
-        const dup = entries.some(
-          (e) => e.request.request_id === pendingApproval.request_id,
-        );
-        if (!dup) entries.push({ request: pendingApproval });
-      }
-    }
-    if (entries.length === 0) return EMPTY_PERMISSION_ENTRIES;
-    return entries;
-  }, [isCommitted, turn, controlRequestLog, pendingApproval]);
 
-  let permissionByToolUseId: ReadonlyMap<string, React.ReactNode>;
-  let orphanPermissions: ReadonlyArray<React.ReactNode>;
-  if (permissionEntries.length === 0) {
-    permissionByToolUseId = EMPTY_PERMISSION_MAP;
-    orphanPermissions = EMPTY_PERMISSION_ARRAY;
-  } else {
-    const keyed = new Map<string, React.ReactNode>();
-    const orphans: React.ReactNode[] = [];
-    permissionEntries.forEach((entry, idx) => {
-      const { Component, props } = dispatchRenderInput(
-        {
-          kind: "permission",
-          request: entry.request,
-          resolvedDecision: entry.resolvedDecision,
-        },
-        { store: streamingStore, session: codeSessionStore },
-      );
-      const node = (
-        <Component
-          key={entry.request.request_id || `permission-${idx}`}
-          {...props}
-        />
-      );
-      const rawToolUseId = (entry.request as { tool_use_id?: unknown })
-        .tool_use_id;
-      const toolUseId =
-        typeof rawToolUseId === "string" && rawToolUseId.length > 0
-          ? rawToolUseId
-          : undefined;
-      if (toolUseId !== undefined) {
-        keyed.set(toolUseId, node);
-      } else {
-        orphans.push(node);
-      }
-    });
-    permissionByToolUseId = keyed;
-    orphanPermissions = orphans;
+  // Build the dialog elements *every render* (no `useMemo` over the
+  // React element). Caching React elements inside `useMemo` freezes
+  // the `Component` reference returned by `dispatchRenderInput` — so
+  // when Vite's Fast Refresh swaps `PermissionDialog` /
+  // `QuestionDialog` for a new function, the cached element's `type`
+  // would still point at the *old* component and the chrome would
+  // stop surviving HMR. The inline build pattern mirrors what
+  // `TranscriptToolCalls` does for tool blocks.
+  //
+  // The SDK only opens one `control_request_forward` at a time, so at
+  // most one of the two slots is ever non-null on the same render.
+  let permissionSlot: React.ReactNode = null;
+  if (
+    !isCommitted &&
+    pendingApproval !== null &&
+    !pendingApproval.is_question
+  ) {
+    const { Component, props } = dispatchRenderInput(
+      { kind: "permission", request: pendingApproval },
+      { store: streamingStore, session: codeSessionStore },
+    );
+    permissionSlot = (
+      <Component
+        key={pendingApproval.request_id || "permission"}
+        {...props}
+      />
+    );
   }
-
-  // Question slot — the live `pendingQuestion` rendered as an inline
-  // `QuestionDialog` on the in-flight assistant row. Unlike the
-  // permission slot there is no committed-record half: a question
-  // leaves no `turn.controlRequests` entry (`handleRespondQuestion`
-  // records nothing), so this slot is in-flight-only and empties the
-  // moment the user answers or skips.
-  //
-  // Built every render (no `useMemo`) for the same HMR reason as
-  // `permissionByToolUseId` above: caching the React element would
-  // freeze the `Component` reference returned by `dispatchRenderInput`
-  // and the recorded chrome would stop surviving Fast Refresh.
   let questionSlot: React.ReactNode = null;
   if (!isCommitted && pendingQuestion !== null) {
     const { Component, props } = dispatchRenderInput(
@@ -821,24 +696,20 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
             //   1. Thinking — pre-action reasoning at the start of
             //      the turn.
             //   2. Tool calls — the in-flight tool blocks in stream
-            //      order. Each block is followed immediately by its
-            //      *associated* permission entry (pending dialog or
-            //      committed record), threaded through
-            //      `TranscriptToolCalls` via `permissionByToolUseId`.
-            //      Nothing weaves between a tool block and its
-            //      permission UI.
+            //      order.
             //   3. Assistant text — the final markdown reply.
-            //   4. Orphan permissions (defensive — entries with no
-            //      `tool_use_id`), then the live question dialog.
-            //      The question naturally sits at the *end* of the
-            //      cell because it asks the user to act once the
-            //      assistant has finished setting up.
+            //   4. Permission slot, then question slot. Both are
+            //      pending-only live input forms; at most one is
+            //      ever non-null on the same render (the SDK only
+            //      opens one `control_request_forward` at a time).
+            //      Sitting at the body foot puts the interactive
+            //      prompt where the user has just finished reading
+            //      the AI's setup.
             //
-            // Slot keys (`request.request_id`, `tool_use_id`) are
-            // stable, so React-reconciliation mount identity ([L26])
-            // is preserved across pending → resolved → recorded
-            // transitions whether the entry is inline (keyed) or in
-            // the orphan list.
+            // Slot keys (`request.request_id`) are stable, so
+            // React-reconciliation mount identity ([L26]) is
+            // preserved across the dialog's pending → null
+            // transition without remount.
             <div ref={(el) => { bodyRef.current = el; }}>
               <TideThinkingBlock
                 streamingStore={streamingStore}
@@ -849,14 +720,13 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                 streamingPath={toolsPath}
                 msgId={toolMsgId}
                 session={codeSessionStore}
-                permissionByToolUseId={permissionByToolUseId}
               />
               <TugMarkdownBlock
                 streamingStore={streamingStore}
                 streamingPath={assistantPath}
                 className="tide-card-transcript-code-body"
               />
-              {orphanPermissions.length > 0 ? orphanPermissions : null}
+              {permissionSlot}
               {questionSlot}
             </div>
           }

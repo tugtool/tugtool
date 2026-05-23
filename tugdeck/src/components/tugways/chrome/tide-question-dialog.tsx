@@ -8,14 +8,15 @@
  * more questions, each with a list of options, and round-trips the
  * chosen labels back to Claude as a `question_answer` frame.
  *
- * **One state.** Unlike `PermissionDialog` (which collapses to a
- * resolved record), a question leaves no durable transcript artifact —
- * `handleRespondQuestion` clears `pendingQuestion` and sends the
- * answer, but records nothing into `TurnEntry.controlRequests`, and
- * the `question` `RenderInput` carries no `resolvedDecision`. So this
- * component has exactly one rendered state: the live dialog while the
- * request is the session's `pendingQuestion`. Once answered (or
- * skipped) it renders `null`.
+ * **One state.** Like `PermissionDialog` post-Step-3.5, a question
+ * leaves no client-side recorded chrome — the durable record lives in
+ * the conversation context via the matching tool_use / tool_result
+ * pair (the `AskUserQuestionToolBlock` at the tool_use position IS
+ * that recorded state). `handleRespondQuestion` clears
+ * `pendingQuestion` and emits the outbound `question_answer` frame.
+ * So this component has exactly one rendered state: the live dialog
+ * while the request is the session's `pendingQuestion`. Once answered
+ * (or skipped) it renders `null`.
  *
  * Layout (composed on `TideInteractiveDialog` — the Tide interactive-
  * dialog family's input-form primitive, which itself wraps

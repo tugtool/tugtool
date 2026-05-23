@@ -174,19 +174,6 @@ export interface TurnEntry {
   assistant: string;
   toolCalls: ReadonlyArray<ToolCallState>;
   /**
-   * Control requests (`control_request_forward`) the user answered
-   * during this turn — the permanent transcript artifact of a
-   * permission prompt per [D13]. Empty for the common case of a turn
-   * with no permission prompts. A request that was never answered (the
-   * turn was interrupted while `awaiting_approval`) does not land here:
-   * only the resolved decision is durable.
-   *
-   * Step 18 commits permission records (`is_question: false`);
-   * `AskUserQuestion` records (`is_question: true`) join this array at
-   * #step-19.
-   */
-  controlRequests: ReadonlyArray<ControlRequestRecord>;
-  /**
    * @deprecated Use {@link turnEndReason}. Derived from `turnEndReason`
    * so the two never diverge (`"complete"` → `"success"`; everything
    * else → `"interrupted"`). Kept in place for incremental consumer
@@ -273,24 +260,6 @@ export interface ControlRequestForward {
   decision_reason?: string;
   permission_suggestions?: ReadonlyArray<unknown>;
   [key: string]: unknown;
-}
-
-/**
- * A resolved `control_request_forward` — the durable record committed
- * into `TurnEntry.controlRequests` once the user answers. `request` is
- * the original forward (so the rendering layer can re-show the tool,
- * input, reason, and suggestions exactly as they were asked);
- * `decision` is how the user answered; `respondedAt` is the wall-clock
- * millisecond timestamp of the answer.
- *
- * Step 18 records permission decisions (`allow` / `deny`). When
- * `AskUserQuestion` history joins this record at #step-19, `decision`
- * gains the answer-bearing variant.
- */
-export interface ControlRequestRecord {
-  request: ControlRequestForward;
-  decision: "allow" | "deny";
-  respondedAt: number;
 }
 
 /**
@@ -435,26 +404,6 @@ export interface CodeSessionSnapshot {
   canInterrupt: boolean;
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
-  /**
-   * Permission prompts the user has answered during the in-flight turn,
-   * in the order they resolved. The reducer accumulates each
-   * `respondApproval` resolution into `controlRequestLog` and freezes
-   * the array into `TurnEntry.controlRequests` at `turn_complete`,
-   * resetting on every turn boundary.
-   *
-   * Mirrored onto the snapshot so the in-flight transcript row can
-   * render the resolved record(s) in the same slot the live dialog
-   * occupied — the dialog→record transition stays *in place* instead
-   * of leaving the slot empty until the streaming row is replaced by
-   * the committed row at turn-complete.
-   *
-   * The reference is preserved across snapshot rebuilds while the
-   * underlying array doesn't change; the reducer rebuilds it
-   * (`[...prev, record]`) only when a new resolution is recorded, so
-   * `useSyncExternalStore` consumers ([L02]) get `Object.is` stability
-   * during quiescent renders.
-   */
-  controlRequestLog: ReadonlyArray<ControlRequestRecord>;
   /**
    * User messages submitted while a turn was running, in submit order
    * — the reducer's FIFO of held sends, drained head-first on each

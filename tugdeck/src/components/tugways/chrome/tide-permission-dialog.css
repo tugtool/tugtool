@@ -1,49 +1,38 @@
 /* @tug-pairings:
    - --tugx-perm-reason-color    | --tugx-idialog-bg    (muted-italic reason span inside the pending dialog's description)
-   `PermissionDialog` delegates the pending-state visual to
-   `TideInteractiveDialog` → `TugInlineDialog`, and the recorded-state
-   visual to `ToolWrapperChrome` (the same chrome the
-   `AskUserQuestionToolBlock` recorded view uses) with the decision
-   word rendered as a `TugBadge` (`success`/`danger`/`action`). What
-   stays in this stylesheet is the tiny set of inline-fragment styles
-   the pending dialog drops into the primitive's `description` slot
-   (an inline Shell glyph nudge, a muted-italic reason-line span).
+   `PermissionDialog` is pending-only post-Step-3.5 (`#step-3-5`).
+   The visible chrome is delegated entirely to `TideInteractiveDialog`
+   → `TugInlineDialog`. This stylesheet keeps only the small set of
+   inline-fragment styles the pending dialog drops into the
+   primitive's `description` slot (an inline Shell glyph nudge, a
+   muted-italic reason-line span).
 */
 
 /**
  * tide-permission-dialog.css — `PermissionDialog` chrome fragments.
  *
- * After the `tide-interactive-dialogs` family migration the visual
- * chrome lives entirely on shared family primitives:
- *
- *   - **Pending** — `TideInteractiveDialog` (owns the cancel-role +
- *     actions-row family defaults) composing on `TugInlineDialog`
- *     (owns `--tugx-idialog-*` and the dialog frame).
- *   - **Recorded** — `ToolWrapperChrome` (the shared tool-block frame
- *     used by every `*ToolBlock`, including `AskUserQuestionToolBlock`'s
- *     recorded view). The chrome owns `--tugx-block-*` /
- *     `--tugx-toolblock-*`.
- *
- * What stays here:
+ * `PermissionDialog` has a single visible state — *pending* — after
+ * Step 3.5 removed the recorded chrome (JSONL has no durable record
+ * to reconstruct one from; see `roadmap/tide-interactive-dialogs.md`
+ * `#step-3-5`). The pending dialog composes `TideInteractiveDialog`
+ * (owns the cancel-role + actions-row family defaults) which in turn
+ * composes on `TugInlineDialog` (owns `--tugx-idialog-*` and the
+ * dialog frame). The only things this file owns are two small inline
+ * fragments dropped into the dialog's `description` slot:
  *
  *   - `.tide-permission-dialog-inline-icon` — the vertical-align
  *     nudge for the inline Shell glyph embedded in the rich Bash
- *     description (passed into the pending dialog's `description`
- *     slot).
+ *     description.
  *   - `.tide-permission-dialog-reason` — muted-italic span used to
  *     append the wire `decision_reason` after the synthesized
  *     description prose.
- *
- * The recorded chrome's `argsSummary` is a `TugBadge` (the badge
- * owns its own padding / colour / typography); no rule for it lives
- * here.
  *
  * Tuglaw cross-check:
  *  - [L17] every `--tugx-perm-*` slot resolves to a `--tug7-*` base
  *    token in one hop.
  *  - [L19] component-authoring guide — file pair, module docstring.
  *  - [L20] component-token sovereignty — owns `--tugx-perm-*` (just
- *    the reason colour token); the chrome family tokens are composed,
+ *    the reason colour token); the dialog family tokens are composed,
  *    never overridden.
  */
 
@@ -70,4 +59,3 @@ body {
 .tide-permission-dialog-reason {
   color: var(--tugx-perm-reason-color);
 }
-

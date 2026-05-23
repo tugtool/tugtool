@@ -52,6 +52,24 @@ const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "im
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // ~5MB decoded
 
 // ---------------------------------------------------------------------------
+// Permission deny — canonical SDK rejection text
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical permission-deny message the SDK's own built-in interactive
+ * prompts send when the user denies a tool call. We mirror it verbatim
+ * so the AI receives the same STOP directive it's trained to honor —
+ * passing a shorter string (e.g. "User denied") into the SDK leaves the
+ * AI without any "STOP and wait" instruction and it proceeds with
+ * follow-up tool calls (verified bug, 2026-05-23 session
+ * `f39f74c6-80cb-4378-b1a3-fa7a8af7862f`). The SDK forwards the
+ * `message` field of our `tool_approval` response verbatim into the
+ * `tool_result.content` the AI sees, so the literal text matters.
+ */
+const CANONICAL_PERMISSION_DENY_MESSAGE =
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
+// ---------------------------------------------------------------------------
 // Replay constants and helpers
 // ---------------------------------------------------------------------------
 
@@ -3148,6 +3166,16 @@ export class SessionManager {
   /**
    * Handle tool_approval: send control_response to claude stdin per D05/D06.
    * Uses "behavior" not "decision" per PN-1.
+   *
+   * Deny message: the SDK passes our `message` string verbatim into the
+   * `tool_result.content` the AI sees. A short string like "User denied"
+   * leaves the AI without the canonical STOP directive — verified in a
+   * 2026-05-23 session where the AI saw "User denied" and proceeded to
+   * fire AskUserQuestion instead of halting. The SDK's canonical
+   * rejection text (which its own built-in interactive prompts send)
+   * is what the AI is trained to honor: "STOP what you are doing and
+   * wait for the user to tell you how to proceed." So this is the
+   * default when the caller doesn't supply a custom message.
    */
   handleToolApproval(msg: ToolApproval): void {
     if (!this.claudeProcess) {
@@ -3169,7 +3197,10 @@ export class SessionManager {
       const response = formatPermissionAllow(msg.request_id, msg.updatedInput || originalInput);
       sendControlResponse(stdin, response);
     } else {
-      const response = formatPermissionDeny(msg.request_id, msg.message || "User denied");
+      const response = formatPermissionDeny(
+        msg.request_id,
+        msg.message || CANONICAL_PERMISSION_DENY_MESSAGE,
+      );
       sendControlResponse(stdin, response);
     }
 

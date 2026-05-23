@@ -52,7 +52,6 @@ import type {
   CodeSessionPhase,
   ContextBreakdownSnapshot,
   ControlRequestForward,
-  ControlRequestRecord,
   CostSnapshot,
   LastReplayResult,
   LiveMessageUsage,
@@ -91,14 +90,6 @@ export interface CodeSessionState {
   toolCallMap: Map<string, ToolCallState>;
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
-  /**
-   * Control requests answered during the current turn. Accumulated by
-   * `handleRespondApproval` as the user answers each prompt, committed
-   * into `TurnEntry.controlRequests` by `handleTurnComplete`, and reset
-   * to `[]` at every turn boundary. Not exposed on the public snapshot
-   * — it surfaces only through the committed `TurnEntry`.
-   */
-  controlRequestLog: ControlRequestRecord[];
   prevPhase: CodeSessionPhase | null;
   pendingUserMessage: {
     text: string;
@@ -440,7 +431,6 @@ export function createInitialState(
     toolCallMap: new Map(),
     pendingApproval: null,
     pendingQuestion: null,
-    controlRequestLog: [],
     prevPhase: null,
     pendingUserMessage: null,
     pendingDraftRestore: null,
@@ -641,7 +631,6 @@ function handleInterrupt(
         pendingCaseAEchoes: state.pendingCaseAEchoes + 1,
         pendingApproval: null,
         pendingQuestion: null,
-        controlRequestLog: [],
         prevPhase: null,
         queuedSends: [],
         // CASE A is locally terminal — phase goes straight to idle and
@@ -1402,7 +1391,6 @@ function buildTurnEntry(
     thinking: scratchEntry.thinking,
     assistant: scratchEntry.assistant,
     toolCalls: Array.from(state.toolCallMap.values()),
-    controlRequests: state.controlRequestLog,
     result: effectiveReason === "complete" ? "success" : "interrupted",
     endedAt,
     wallClockMs: telemetry.wallClockMs,
@@ -1584,7 +1572,6 @@ function handleTurnComplete(
         toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
-        controlRequestLog: [],
         prevPhase: null,
         pendingUserMessage: null,
         committedMsgIds,
@@ -1611,7 +1598,6 @@ function handleTurnComplete(
         toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
-        controlRequestLog: [],
         prevPhase: null,
         pendingUserMessage: {
           text: next.text,
@@ -1676,7 +1662,6 @@ function handleTurnComplete(
       toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
-      controlRequestLog: [],
       prevPhase: null,
       pendingUserMessage: null,
       // Error-path queue clear: if a turn errored out without a
@@ -1868,21 +1853,16 @@ function handleRespondApproval(
   }
 
   const restored: CodeSessionPhase = state.prevPhase ?? "streaming";
-  // Record the resolved request so it survives into the committed
-  // `TurnEntry` as a permanent transcript artifact per [D13]. The
-  // record carries the original forward (tool, input, reason,
-  // suggestions) plus how the user answered.
-  const record: ControlRequestRecord = {
-    request: state.pendingApproval,
-    decision: event.decision,
-    respondedAt: Date.now(),
-  };
+  // The decision is sent out on the wire below and the SDK's
+  // tool_use/tool_result for the gated tool IS the durable transcript
+  // artifact — there is no client-side record kept here. See
+  // `#step-3-5` in `roadmap/tide-interactive-dialogs.md` for why
+  // JSONL cannot durably reconstruct a separate permission record.
   const next: CodeSessionState = {
     ...state,
     phase: restored,
     prevPhase: null,
     pendingApproval: null,
-    controlRequestLog: [...state.controlRequestLog, record],
     // Close and fold the awaiting-approval interval into the
     // accumulator. Same fold for permission and question dialogs;
     // see `closeAwaitingApprovalInterval`.
@@ -2280,7 +2260,6 @@ function handleTransportClose(
         toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
-        controlRequestLog: [],
         prevPhase: null,
         pendingUserMessage: null,
         queuedSends: [],
@@ -2494,7 +2473,6 @@ function handleReplayStarted(
       toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
-      controlRequestLog: [],
       prevPhase: null,
       // Clear lastReplayResult — the new window is the new outcome.
       lastReplayResult: null,
@@ -2610,7 +2588,6 @@ function handleReplayComplete(
       toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
-      controlRequestLog: [],
       prevPhase: null,
       pendingUserMessage: null,
       lastReplayResult,

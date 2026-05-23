@@ -58,7 +58,6 @@ export type {
   ToolCallState,
   QueuedSend,
   ControlRequestForward,
-  ControlRequestRecord,
   CostSnapshot,
   LastReplayResult,
 } from "./code-session-store/types";
@@ -393,11 +392,6 @@ export class CodeSessionStore {
         this.state.phase === "awaiting_approval",
       pendingApproval: this.state.pendingApproval,
       pendingQuestion: this.state.pendingQuestion,
-      // Reference is preserved across snapshot rebuilds while the
-      // reducer doesn't append a new record — `useSyncExternalStore`
-      // consumers get the `Object.is` stability they need to avoid
-      // spurious re-renders during quiescent ticks.
-      controlRequestLog: this.state.controlRequestLog,
       // The reducer rebuilds `queuedSends` only on enqueue / flush /
       // clear; passing the reference through unchanged preserves
       // `Object.is` stability across quiescent snapshot rebuilds so

@@ -3,14 +3,14 @@
  *
  * `PermissionDialog`'s behaviour is its exported pure helpers —
  * the body-kind picker, the suggestion narrowing + label composer,
- * the options builder for the radio-group scope picker, the
- * resolved-record summary, and the Read line-range badge — plus the
- * dispatch wiring (`KIND_RENDERERS.permission` resolves to the real
- * component). Per project policy (pure-logic `bun:test` + real-app
- * tests only, no fake-DOM render tests), the suite pins those
- * exhaustively; the Allow/Deny round-trip, the radio-group radio-mark
- * paint, and primary-button focus are HMR / live-smoke vetted because
- * the app-test harness can't inject `control_request_forward` events
+ * the options builder for the radio-group scope picker, and the Read
+ * line-range badge — plus the dispatch wiring
+ * (`KIND_RENDERERS.permission` resolves to the real component). Per
+ * project policy (pure-logic `bun:test` + real-app tests only, no
+ * fake-DOM render tests), the suite pins those exhaustively; the
+ * Allow/Deny round-trip, the radio-group radio-mark paint, and
+ * primary-button focus are HMR / live-smoke vetted because the
+ * app-test harness can't inject `control_request_forward` events
  * (same gap that gates #step-15–#step-17).
  *
  * Coverage:
@@ -24,13 +24,14 @@
  *    intentionally dropped" contract.
  *  - `buildPermissionOptions` — empty list passthrough, allow-only
  *    filtering, implicit "Allow once" head, deny-suggestion drop.
- *  - `recordedPermissionPresentation` — allow / deny / resolved-null
- *    each yield the matching status word; the icon node is returned
- *    (caller passes it through to `ToolWrapperChrome`'s `toolIcon`).
  *  - `composePermissionLineRange` — offset+limit / offset / limit /
  *    neither / non-object.
  *  - dispatch routing — a `permission` RenderInput resolves to
  *    `PermissionDialog`.
+ *
+ * The dialog is *pending-only* post-Step-3.5 (see `#step-3-5`); the
+ * former `recordedPermissionPresentation` helper and its describe
+ * block are gone along with the recorded chrome.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -45,7 +46,6 @@ import {
   composePermissionSuggestionLabel,
   isBoilerplateApprovalReason,
   narrowPermissionSuggestion,
-  recordedPermissionPresentation,
   selectPermissionBodyKind,
   type PermissionSuggestionAction,
 } from "./tide-permission-dialog";
@@ -272,44 +272,6 @@ describe("buildPermissionOptions", () => {
     // and we want "Allow once" (the no-rule scope) to be that
     // default — never a persistent rule.
     expect(options[0].value).toBe(ALLOW_ONCE_OPTION_VALUE);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// recordedPermissionPresentation — header status + icon per decision
-// ---------------------------------------------------------------------------
-
-describe("recordedPermissionPresentation", () => {
-  it("maps allow → 'Allowed' + success badge", () => {
-    const presentation = recordedPermissionPresentation("allow");
-    expect(presentation.label).toBe("Allowed");
-    expect(presentation.icon).not.toBeNull();
-    expect(presentation.badgeRole).toBe("success");
-  });
-
-  it("maps deny → 'Denied' + danger badge", () => {
-    const presentation = recordedPermissionPresentation("deny");
-    expect(presentation.label).toBe("Denied");
-    expect(presentation.icon).not.toBeNull();
-    expect(presentation.badgeRole).toBe("danger");
-  });
-
-  it("maps null (out-of-band resolved) → 'Resolved' + action badge", () => {
-    const presentation = recordedPermissionPresentation(null);
-    expect(presentation.label).toBe("Resolved");
-    expect(presentation.icon).not.toBeNull();
-    expect(presentation.badgeRole).toBe("action");
-  });
-
-  it("returns a different icon node for each decision", () => {
-    // Inequality check pins the contract that the three branches each
-    // pick their own icon — i.e., the visual differentiation is real.
-    const allow = recordedPermissionPresentation("allow").icon;
-    const deny = recordedPermissionPresentation("deny").icon;
-    const resolved = recordedPermissionPresentation(null).icon;
-    expect(allow).not.toBe(deny);
-    expect(allow).not.toBe(resolved);
-    expect(deny).not.toBe(resolved);
   });
 });
 

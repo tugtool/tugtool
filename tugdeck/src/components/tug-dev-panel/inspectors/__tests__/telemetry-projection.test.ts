@@ -31,7 +31,6 @@ function turn(overrides: Partial<TurnEntry>): TurnEntry {
     thinking: "",
     assistant: "",
     toolCalls: [],
-    controlRequests: [],
     result: "success",
     endedAt: 0,
     ...TURN_ENTRY_TELEMETRY_DEFAULTS,
