@@ -720,16 +720,29 @@ The reducer currently only writes to `controlRequestLog` from `handleRespondAppr
 
 **The decision is sometimes derivable from the `tool_result` content that lands after a `control_request_forward`.** Verified against 140 denied tool_results across 444 real Claude Code transcripts: every denied tool_result so far has carried the SDK's signature rejection text (the opener `"The user doesn't want to proceed with this tool use"` and the secondary phrase `"The tool use was rejected"`). Two stylistic suffixes exist (`"STOP what you are doing…"` for plain Deny; `"To tell you how to proceed, the user said: …"` when the user added a follow-up message), but both share the same signature phrases. A forgiving substring scan over multiple signal phrases (case-insensitive) catches both, and stays resilient if the SDK shifts wording later — as long as the new wording carries at least one of the recognised signals.
 
-**Conservative posture.** SDK assistant text is not a stable contract — Anthropic can (and historically does) rephrase it across versions. The reducer's derivation rule therefore takes a **best-effort deny-only** posture:
+**Assertive posture.** The derivation rule is allowed to *assert* both `allow` and `deny` because the calling gate constrains the call site so tightly that "lack of denial in a gated call IS approval" is a logical inference, not speculation.
 
-- If `inferPermissionDecisionFromToolResult` recognises the text as a deny → write a `ControlRequestRecord` with `decision: "deny"`.
-- Otherwise → **skip writing any record**. The reducer still clears `pendingApproval` (the SDK has resolved the request, whatever the user chose), but no decision is asserted.
+The gate (`pendingApproval !== null` + matching `tool_use_id` + `is_question === false`) guarantees:
 
-Concrete consequence: **allow decisions are not reconstructed on replay**. The live path (`respond_approval`) continues to write both allow and deny records during a running session, so the recorded chrome appears live for allows just as it does today. After cold boot / app relaunch / any in-memory reset, the recorded chrome reconstructs for **denies only**. Allowed permissions show as a bare tool block with the tool's actual output — which is already self-evidently the proof that the tool ran (i.e., was approved). Losing the "Allowed" badge across cold boot is the price of never falsely asserting "Allowed" when a future SDK shape just stopped matching our deny heuristic.
+1. A `control_request_forward` arrived for this exact `tool_use_id` — the SDK forwarded a permission request to the client.
+2. A `tool_result` is now resolving that same `tool_use_id` — the SDK has reached a terminal decision.
 
-The reverse failure mode (a future SDK denial text that *no longer* matches our heuristic) is also graceful: the deny record is missed, the recorded chrome stays absent, the user sees the SDK's rejection text inside the tool block above and can read it directly. No false data; just a gap in our local artifact.
+The SDK only resolves a *gated* `tool_result` along two paths: the user approved (the tool ran, the result is the tool's actual output) or the user denied (the result is the SDK's rejection text). There is no third path through the wire model. So within the gated call site, **absence of the deny signal *is* the allow signal**.
 
-So extending the reducer's `handleToolResult` to derive a `ControlRequestRecord` **only when deny is confidently detected**, while still clearing `pendingApproval` either way, closes the loop for the high-value case (deny is the unusual decision worth surfacing as a badge) without ever asserting information we can't verify.
+`inferPermissionDecisionFromToolResult` therefore returns `"allow" | "deny"` (never `null`):
+
+- `"deny"` when the text matches a forgiving heuristic over the SDK's signature rejection phrases.
+- `"allow"` for everything else — empty result, the tool's normal output, an unrecognised future SDK denial format.
+
+**Why we prefer assertive over conservative.** Visual consistency: the recorded chrome's badge state matches the original decision after HMR, Developer Reload, *and* full app relaunch. Content the user has already seen doesn't get pulled away on cold boot. That continuity is the user-visible reason for Step 3.5 to exist; an asymmetry where allows vanish on relaunch but denies persist re-creates the very inconsistency Step 3.5 was meant to close.
+
+**Known risk and its bound.** If a future SDK rephrases deny text such that none of our signal phrases match, our helper would label that denial as `"allow"` — a *false allow* across replay. The risk is real but bounded:
+
+- The user-visible badge would be a green pill instead of a red one. The *tool_result content itself* (still visible inside the tool block above the record) would still carry the SDK's rejection text in plain English. So the user has the full evidence to read what actually happened; the badge is the only thing that could mislead briefly.
+- Such a regression would surface on the first relaunch of any session with a known denial. We'd catch it in dogfooding, not in production silence.
+- Mitigation: keep `inferPermissionDecisionFromToolResult` 's signal list short, multi-word, SDK-specific, and easy to extend with one line when the SDK shape shifts. The helper is a small intentional `currentSDK->decision` adapter, not a stable contract.
+
+The live `respond_approval` path is the source of truth during a running session. The derived path's purpose is solely to reconstruct that same `controlRequestLog` from a JSONL replay so HMR / Reload / cold boot stop dropping content the user has already seen.
 
 ##### Why this is permission-only (and not also question) {#step-3-5-permission-only}
 
@@ -737,6 +750,31 @@ So extending the reducer's `handleToolResult` to derive a `ControlRequestRecord`
 - **PermissionDialog** is the lone gap because permission requests have no native AI-side artifact (`[D10]`) — the recorded chrome is the only durable surface, and its data lives in `controlRequestLog` and only there.
 
 Step 3.5 is therefore scoped narrowly: extend `handleToolResult` for the permission case only.
+
+##### Gating rationale — how we know a tool was gated {#step-3-5-gating-rationale}
+
+The derived path runs only when *all three* of these predicates hold at the moment a `tool_result` lands:
+
+1. `state.pendingApproval !== null` — a `control_request_forward` arrived earlier in the stream and has not been resolved yet.
+2. `state.pendingApproval.tool_use_id === event.tool_use_id` — this `tool_result` is resolving the same tool the gate was opened for (so we don't false-write for sibling tool calls that happen to land in the same window).
+3. `state.pendingApproval.is_question === false` — questions go through `respond_question` and never write to `controlRequestLog` per `[D10]`.
+
+These predicates are derived from wire-level facts that are durable in the JSONL — `control_request_forward` is a first-class frame, and the reducer's replay logic re-derives `pendingApproval` from it deterministically.
+
+The wire-level signal `control_request_forward` is exactly the "this tool was gated" predicate. Tools that don't need permission (auto-approved, internal, allowlist-matched, rule-bound from a prior decision) get their `tool_use → tool_result` round-trip with no `control_request_forward` between them. Our gate's `pendingApproval !== null` predicate therefore distinguishes the gated and ungated cases at the wire level — no heuristic involved.
+
+**Four-quadrant behaviour table.** What happens at each `tool_result` arrival:
+
+| Scenario | `pendingApproval` when `tool_result` lands | Derived path |
+|---|---|---|
+| Gated, denied (replay) | set, matching `tool_use_id` | runs → helper returns `"deny"` → writes `decision: "deny"` record |
+| Gated, allowed (replay) | set, matching `tool_use_id` | runs → helper returns `"allow"` → writes `decision: "allow"` record (lack of denial in a gated call IS approval) |
+| Gated, decided live | already `null` (cleared by live `respond_approval`) | gate fails on predicate 1 — no-op (live path already wrote the record) |
+| **Ungated tool** (no permission ever asked) | `null` | gate fails on predicate 1 — no-op (no false record written; the structural signal "this tool didn't need permission" is preserved) |
+| Different gated tool in flight (parallel) | set but mismatched `tool_use_id` | gate fails on predicate 2 — no-op (sibling tool_result doesn't trigger derivation for the gated one) |
+| Pending AskUserQuestion (live or replay) | set but `is_question === true` | gate fails on predicate 3 — no-op (question answers are durable elsewhere via the tool_use/tool_result mechanism per `[D10]`) |
+
+**The model assumes** the SDK only emits its signature rejection text inside `tool_result.content` for a tool that was actually gated. I.e., no ungated tool ever produces a `tool_result` whose text matches the deny signals. This holds today (the deny text is the SDK's literal response to a `tool_approval(decision: "deny")` action, which only exists in response to a `control_request_forward`), and the gate catches any false positive either way (no `pendingApproval` → no record, regardless of the text content).
 
 ##### Artifacts {#step-3-5-artifacts}
 
@@ -746,24 +784,22 @@ Step 3.5 is therefore scoped narrowly: extend `handleToolResult` for the permiss
 
 ##### Tasks {#step-3-5-tasks}
 
-- [ ] Add a pure helper `inferPermissionDecisionFromToolResult(text: string | undefined | null): "deny" | null` to `reducer.ts` (or a sibling pure module). Contract:
+- [ ] Add a pure helper `inferPermissionDecisionFromToolResult(text: string | undefined | null): "allow" | "deny"` to `reducer.ts` (or a sibling pure module). Contract:
   - Returns `"deny"` when the text contains any of a small set of SDK rejection signals (case-insensitive substring match):
     - `"doesn't want to proceed with this tool use"` (the primary opener)
     - `"the tool use was rejected"` (the secondary phrase the SDK pairs with the opener)
-  - Returns `null` for everything else: a normal Bash output, a Read result, an empty / undefined / non-string input, or any future SDK denial format we don't recognise yet.
-  - Never returns `"allow"`. Allow is never *asserted* via inference — the live `respond_approval` path is the only writer of allow records (see the rationale subsection above).
-  - Match phrases are kept SDK-specific enough that a normal Read/Grep/Bash output is extremely unlikely to false-positive. Each signal is a multi-word fragment of the SDK's signature rejection prose, not a single common word.
+  - Returns `"allow"` for everything else: empty / undefined / non-string input, a normal Bash / Read / Grep output, or any text that doesn't carry a recognised deny signal. Per the assertive-posture rationale above (lack of denial in a gated call IS approval), the helper is only ever invoked from a gated call site where this inference is sound.
+  - Match phrases are kept SDK-specific enough that a normal Read/Grep/Bash output is extremely unlikely to false-positive. Each signal is a multi-word fragment of the SDK's signature rejection prose, not a single common word. Keep the list short (currently two phrases); extend with one line when an SDK rephrase is observed.
 - [ ] In `handleToolResult`, after the existing tool-call-state update, gate on:
   - `state.pendingApproval !== null`,
   - `state.pendingApproval.is_question === false` (questions go through `respond_question`, which writes nothing to `controlRequestLog` per `[D10]`),
   - `state.pendingApproval.tool_use_id === event.tool_use_id`.
 
   If all three hold:
-  - Always clear `pendingApproval` and restore `prevPhase` (the SDK has resolved the request, regardless of whether we recognise the decision).
-  - Always close the awaiting-approval interval.
-  - Call `inferPermissionDecisionFromToolResult` on the tool_result content. If it returns `"deny"`, append a `ControlRequestRecord` with `decision: "deny"` via the shared `commitApprovalToLog(state, "deny")` helper. If it returns `null`, do not write a record.
-  - Refactor the shared write into a tiny `commitApprovalToLog(state, decision)` helper so the live and derived paths can't drift apart on the state-update shape.
-- [ ] Dedup contract: the live path writes via `handleRespondApproval`. The derived path writes via `handleToolResult`. On live sessions, `respond_approval` fires first and clears `pendingApproval`; when the subsequent `tool_result` arrives, `pendingApproval` is already null and the derived path's gate fails — no-op. On replay, `respond_approval` never fires; the derived path runs and writes only confirmed denies. The two paths therefore produce **at most one** entry per request, by mutual exclusion on `pendingApproval` state. No request-id dedup scan needed.
+  - Call `inferPermissionDecisionFromToolResult` on the tool_result content.
+  - Append a `ControlRequestRecord` with the inferred `decision` via the shared `commitApprovalToLog(state, decision)` helper.
+  - The helper clears `pendingApproval`, restores `prevPhase`, closes the awaiting-approval interval, and appends to `controlRequestLog` — the same state-update shape `handleRespondApproval` produces, so the live and derived paths can't drift apart.
+- [ ] Dedup contract: the live path writes via `handleRespondApproval`. The derived path writes via `handleToolResult`. On live sessions, `respond_approval` fires first and clears `pendingApproval`; when the subsequent `tool_result` arrives, the gate's `pendingApproval !== null` predicate fails and the derived path is a no-op. On replay, `respond_approval` never fires; the derived path runs and writes the inferred record. The two paths therefore produce **exactly one** entry per gated request, by mutual exclusion on `pendingApproval` state. No request-id dedup scan needed.
 - [ ] Update the existing `reducer.ts` doc-comments on `handleToolResult` and `handleRespondApproval` to cross-reference each other and name the dedup invariant explicitly.
 - [ ] Add `#investigation-asymmetry` subsection: *"SDK denial-text pattern."* Cites the verified opener, the two suffix variants, the 140-sample count, and the JSONL file where samples came from.
 
@@ -774,18 +810,18 @@ Step 3.5 is therefore scoped narrowly: extend `handleToolResult` for the permiss
   - The exact clarify-form rejection text from a real JSONL sample → `"deny"`.
   - Case variation (`"THE USER DOESN'T WANT TO PROCEED…"`, `"the user Doesn't…"`) → `"deny"` (case-insensitive match).
   - Text containing only one of the two signal phrases (e.g., a hypothetical future SDK that drops the opener but keeps `"the tool use was rejected"`) → `"deny"` (either signal triggers).
-  - A normal Bash output (e.g., `"hello\n"`, a tokei table) → `null`.
-  - A normal Read output (a TypeScript file body, a JSON tree) → `null`.
-  - Empty string / null / undefined → `null`.
-  - **Hostile-coincidence guard.** A long source-file Read output that happens to *contain* the phrase `"the tool use was rejected"` deep inside (because some user file has that prose) — this is out of scope: the helper is only invoked on `tool_result.content` for a tool_use whose `tool_use_id` matches `pendingApproval`, which means a permission *was* asked. The risk of collision is non-zero but contained. Document as a known accepted limitation.
+  - A normal Bash output (e.g., `"hello\n"`, a tokei table) → `"allow"`.
+  - A normal Read output (a TypeScript file body, a JSON tree) → `"allow"`.
+  - Empty string / null / undefined → `"allow"`.
+  - **Hostile-coincidence guard.** A long source-file Read output that happens to *contain* the phrase `"the tool use was rejected"` deep inside (because some user file has that prose) — would yield a false `"deny"`. Out of scope: the helper is only invoked on `tool_result.content` for a `tool_use_id` matching `pendingApproval`, which means a permission *was* asked. Risk is non-zero but contained. Document as a known accepted limitation.
 - [ ] New `reducer.permission-replay.test.ts`:
-  - **Allow-replay.** Apply `[session_init, tool_use(Bash, tool_use_id=X), control_request_forward(Bash, tool_use_id=X, request_id=R), tool_result(tool_use_id=X, content="hello\n"), turn_complete]`. Assert `state.controlRequestLog` is **empty** (allow is never asserted via inference per the `#step-3-5-context` posture). Assert `state.pendingApproval === null` after the tool_result (the SDK has resolved the request, so we clear it). Assert `turn.controlRequests` is empty after `turn_complete`.
-  - **Deny-replay (STOP form).** Same frame shape, tool_result content matches the SDK STOP-form rejection. Assert `controlRequestLog` has one entry with `decision: "deny"`, `request.request_id === R`, `request.tool_use_id === X`. Assert `pendingApproval === null`. Assert `turn.controlRequests` carries the deny record after `turn_complete`.
+  - **Allow-replay.** Apply `[session_init, tool_use(Bash, tool_use_id=X), control_request_forward(Bash, tool_use_id=X, request_id=R), tool_result(tool_use_id=X, content="hello\n"), turn_complete]`. Assert `state.controlRequestLog` has **one entry** with `decision: "allow"`, `request.request_id === R`, `request.tool_use_id === X`. Assert `state.pendingApproval === null` after the tool_result. Assert `turn.controlRequests` (frozen at turn_complete) carries the same record.
+  - **Deny-replay (STOP form).** Same frame shape, tool_result content matches the SDK STOP-form rejection. Assert `controlRequestLog` has one entry with `decision: "deny"`. Same downstream assertions.
   - **Deny-replay (clarify form).** Same frame shape, tool_result content matches the clarify-form rejection. Assert `decision: "deny"`.
-  - **Future-SDK-deny-format gracefully missed.** Synthesise a hypothetical denial text that doesn't match any signal (e.g., `"User rejected this tool call."`). Assert `controlRequestLog` stays **empty** — the deny is missed, no record is written. `pendingApproval` is still cleared (the SDK has resolved it).
-  - **Live-then-tool_result dedup.** Apply `[…, control_request_forward, respond_approval(allow), tool_result, …]`. Assert `controlRequestLog` has exactly **one** entry with `decision: "allow"` (the live path wrote it; the derived path saw `pendingApproval === null` and did nothing). Same shape with `respond_approval(deny)` and a matching rejection-text tool_result → one entry with `decision: "deny"`.
+  - **Future-SDK-deny-format false-allow tripwire.** Synthesise a hypothetical denial text that doesn't match any signal (e.g., `"User rejected this tool call."`). Assert `controlRequestLog` has one entry with `decision: "allow"` — this is the **known limitation**: a future SDK rephrase that no longer matches any signal phrase would produce a false allow record. The test pins the current behaviour explicitly so the bound is visible and the assertion flips when the helper is updated to recognise the new phrase.
+  - **Live-then-tool_result dedup.** Apply `[…, control_request_forward, respond_approval(allow), tool_result(normal output), …]`. Assert `controlRequestLog` has exactly **one** entry with `decision: "allow"` (the live path wrote it; the derived path saw `pendingApproval === null` and did nothing). Same shape with `respond_approval(deny)` and a matching rejection-text tool_result → one entry with `decision: "deny"`.
   - **Question is not touched.** Apply `[…, control_request_forward(AskUserQuestion, is_question=true), tool_result, …]`. Assert `controlRequestLog` is empty (questions never write here per `[D10]`; the `is_question === false` gate skips them).
-  - **Tool_use without a prior control_request_forward.** Apply `[tool_use, tool_result]` only. Assert `controlRequestLog` is empty (the derived path's gate `pendingApproval !== null` is the safety net).
+  - **Tool_use without a prior control_request_forward.** Apply `[tool_use, tool_result]` only. Assert `controlRequestLog` is empty (the derived path's gate `pendingApproval !== null` is the safety net). This is the structural test that *ungated* tool calls never produce a permission record.
 
 ##### Checkpoint {#step-3-5-checkpoint}
 
@@ -841,7 +877,7 @@ Step 3.5 is therefore scoped narrowly: extend `handleToolResult` for the permiss
 - [ ] Verify Cancel == Esc == `popInteractive` across the family per `[D02]` (with PermissionDialog `Deny` exemption per `[Q03]`).
 - [ ] Cross-check pure-logic tests across all four files (`tide-permission-dialog`, `tide-question-dialog`, `tide-interactive-dialog`, `ask-user-question-tool-block`) plus the new `reducer.permission-replay.test.ts` — every case green.
 - [ ] Cross-check the visual chrome on each surface via HMR.
-- [ ] **Durability checkpoint** (`#step-3-5`): with a permission *denied* live, then fully quit and re-launch Tide on the same session, the recorded chrome reconstructs from JSONL replay with the danger badge. *(Allowed permissions intentionally do not reconstruct a record across cold boot — see `#step-3-5-context`. The live path still writes allow records during a session; only the cross-boot reconstruction is deny-only.)*
+- [ ] **Durability checkpoint** (`#step-3-5`): with a permission decided live (both Allow and Deny variants tested), then fully quit and re-launch Tide on the same session, the recorded chrome reconstructs from JSONL replay with the correct badge (`success` for allow, `danger` for deny). HMR / Developer Reload behave identically. Content the user has already seen does not get pulled away on any boundary.
 - [ ] `grep -r peelNewest tugdeck/src` — empty (rename complete).
 - [ ] `grep -ri 'tool wrapper\|tool-wrapper' tugdeck/src --include='*.tsx' --include='*.ts'` — only `ToolWrapperChrome` / `DefaultToolWrapper` component-name references remain (out of scope per `[Q06]`).
 - [ ] Quick SDK-shape sanity check: confirm `permission_request` / `permission_decision` frames still don't appear in JSONL; AskUserQuestion tool_result still carries answers (asymmetry still load-bearing per `[D10]`); denied tool_results still match the verified `"The user doesn't want to proceed with this tool use."` opener (the `#step-3-5` derivation rule's invariant).
@@ -870,7 +906,7 @@ Step 3.5 is therefore scoped narrowly: extend `handleToolResult` for the permiss
 - [ ] `QuestionDialog` uses `TideInteractiveDialog` for its pending input-form chrome; existing tests pass unchanged; the local actions-row CSS override is gone.
 - [ ] Cancel ≡ Esc ≡ `popInteractive` on QuestionDialog and the salvage UI (PermissionDialog's `Deny` exempt per `[Q03]`).
 - [ ] Prose audit: no instance of "wrapper" / "wrapping" used to describe `*ToolBlock` components in tugdeck docstrings / doc-comments.
-- [ ] **Durable recorded chrome — best-effort deny-only** (`#step-3-5`): denied permissions are reconstructed from `tool_result` content on JSONL replay, so the recorded chrome's danger badge survives both HMR (in-memory store reset) and full app relaunch (cold-boot replay). Allowed permissions don't reconstruct across cold boot by design — the helper's conservative posture is *recognise deny when we can, skip silently when we can't*, never assert allow via inference.
+- [ ] **Durable recorded chrome** (`#step-3-5`): both allow and deny decisions reconstruct from `tool_result` content on JSONL replay, so the recorded chrome's badge state survives HMR (in-memory store reset), Developer Reload, and full app relaunch (cold-boot replay). The derivation rule's gate is the wire-level "this tool was gated" predicate (`pendingApproval !== null` matching `tool_use_id`); within that gate, lack-of-denial is treated as allow per `#step-3-5-gating-rationale`. Ungated tool calls are structurally skipped — no false records.
 - [ ] Open questions `[Q01]`, `[Q02]` resolved; `[Q03]` resolved during Step 2; `[Q05]`, `[Q06]` recorded as deferred follow-ons.
 - [ ] Tests + audit-tokens lint + tsc all green.
 
