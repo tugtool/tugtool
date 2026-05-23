@@ -45,26 +45,26 @@ describe("endStateBadgeFor", () => {
     });
   });
 
-  it("maps interrupted → caution (interrupted)", () => {
+  it("maps interrupted → caution (Interrupted)", () => {
     // Caution, not danger: the user initiated the stop.
     expect(endStateBadgeFor("interrupted")).toEqual({
-      text: "interrupted",
+      text: "Interrupted",
       role: "caution",
     });
   });
 
-  it("maps error → danger (error)", () => {
+  it("maps error → danger (Error)", () => {
     expect(endStateBadgeFor("error")).toEqual({
-      text: "error",
+      text: "Error",
       role: "danger",
     });
   });
 
-  it("maps transport_lost → caution (lost)", () => {
+  it("maps transport_lost → caution (Lost)", () => {
     // Caution, not danger: the wire-loss path is recoverable —
     // reconnect can deliver the outstanding output.
     expect(endStateBadgeFor("transport_lost")).toEqual({
-      text: "lost",
+      text: "Lost",
       role: "caution",
     });
   });

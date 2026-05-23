@@ -421,14 +421,21 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
       ? Array.from(salvagedAnswers.values()).filter((v) => v.length > 0).length
       : summary.filter((s) => s.answers.length > 0).length;
   const args = composeQuestionCountLabel(questions.length, headlineCount);
-  // Render the question-count chip as a `TugBadge` so the args slot
-  // shares the family status-chip vocabulary (`emphasis="tinted"` +
-  // semantic role) instead of dropping in mono-styled prose.
-  // `role="action"` for the count — the badge is a neutral progress
-  // indicator, not a success / danger / caution signal.
+  // Render the question-count chip as a `TugBadge` in the family
+  // status-chip vocabulary. `emphasis="ghost"` keeps the chip
+  // visually quiet — the count is informational, not a primary
+  // signal — and the leading `MessageCircleQuestion` icon mirrors
+  // the tool-block chrome's own glyph so the chip reads as "this
+  // many questions" at a glance. `role="action"` is the neutral
+  // tone (no success / danger / caution semantics).
   const argsSummary =
     args === "" ? undefined : (
-      <TugBadge emphasis="tinted" role="action" size="sm">
+      <TugBadge
+        emphasis="ghost"
+        role="action"
+        size="sm"
+        icon={<MessageCircleQuestion size={14} aria-hidden="true" />}
+      >
         {args}
       </TugBadge>
     );

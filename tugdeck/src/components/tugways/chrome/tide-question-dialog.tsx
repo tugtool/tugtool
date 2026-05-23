@@ -28,20 +28,35 @@
  *
  *  - **done** — the user has picked at least one option. Row shows
  *    `✓ N. Question text · → chosen answer`. Clickable to jump back.
- *  - **current** — the row in focus. Shows `▸ N. Question text`,
- *    expands the options, and exposes per-row `Back` / `Next`
- *    affordances. Single-select picks auto-advance to the next row;
- *    multi-select waits for an explicit `Next`.
+ *  - **current** — the row in focus. Shows `▸ N. Question text` and
+ *    expands the options. Single-select picks auto-advance to the
+ *    next row; multi-select waits for an explicit `Next`.
  *  - **pending** — not yet visited. Shows `○ N. Question text` only.
  *    Clickable to skip ahead.
  *
- * The family's actions row (inherited from `TideInteractiveDialog`)
- * carries the dialog-wide controls: `Cancel` (outlined-danger, leading
- * edge) and `Submit all` (filled-action, trailing edge), separated by
- * the family `space-between` Mac HIG layout ([D03]). `Submit all` is
- * `confirmDisabled` until every question carries a selection (matching
- * the "no required answers but submit gates on completeness" rule the
- * user signed off on).
+ * **All controls live above the questions.** A single actions row
+ * — `[← Back][Next →]` cluster on the leading edge, `[Cancel][Submit]`
+ * cluster on the trailing edge — sits between the title/description
+ * and the question stack. The four buttons hold a stable on-screen
+ * position across question advances so the question stack below can
+ * grow / shrink without the click targets ever moving out from
+ * under the mouse. The primitive's bottom actions row is suppressed
+ * via `hideActions`.
+ *
+ * The wizard exposes a **review state** at the end of the flow:
+ * `currentIndex === questions.length` paints every row as its
+ * post-interaction summary (no `current`), giving the user a final
+ * pass over the answers before clicking `Submit`. `nextAdvanceIndex`
+ * advances into review on the last question; the `Next` button
+ * is disabled once in review.
+ *
+ * `Cancel` carries a confirmation popover (`TugConfirmPopover`,
+ * imperative API). A stray click can't tear the AI's question down
+ * without a second beat; the popover's confirm walks the family
+ * `Cancel ≡ popInteractive` path. `Submit` is disabled until every
+ * question carries a selection (matching the "no required answers
+ * but submit gates on completeness" rule the user signed off on)
+ * and is focused on mount so a Return key submits.
  *
  * **Auto-advance** on single-select is the headline GUI improvement
  * over the TUI's keyboard-only flow: picking an option commits the
@@ -91,6 +106,8 @@ import "./tide-question-dialog.css";
 
 import React from "react";
 import {
+  ArrowLeft,
+  ArrowRight,
   Check,
   ChevronRight,
   Circle,
@@ -100,6 +117,10 @@ import {
 
 import { cn } from "@/lib/utils";
 import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
+import {
+  TugConfirmPopover,
+  type TugConfirmPopoverHandle,
+} from "@/components/tugways/tug-confirm-popover";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type {
@@ -278,7 +299,7 @@ export function buildQuestionAnswers(
 
 /**
  * Count how many questions have at least one selection (whether
- * preseeded or user-picked). Drives the `Submit all` gate: the
+ * preseeded or user-picked). Drives the `Submit` gate: the
  * confirm button lights up once every row carries *some* answer,
  * which is the literal precondition for round-tripping a non-empty
  * `answers` payload. Pure; exported for the test suite.
@@ -349,10 +370,12 @@ export function rowStatus(
 
 /**
  * Pick the wizard's next focus after a single-select pick or a `Next`
- * click on the current row. Returns `from + 1` when an adjacent row
- * exists, otherwise `from` itself — the last row "absorbs" the
- * advance gesture so a user who picks an option on the final question
- * stays put while the global `Submit all` button lights up.
+ * click on the current row. Advances by one through the question
+ * indices and then to `total` — the **review state**, in which no row
+ * is current, every row paints its post-interaction summary, and the
+ * user can scan the full set of answers before clicking `Submit`. The
+ * review index "absorbs" further advance gestures so a user already
+ * in review stays put.
  *
  * Pure; exported for the test suite. The function intentionally does
  * NOT skip ahead to the next *unanswered* row: jumping over a
@@ -361,7 +384,7 @@ export function rowStatus(
  */
 export function nextAdvanceIndex(from: number, total: number): number {
   if (total <= 0) return 0;
-  if (from + 1 < total) return from + 1;
+  if (from + 1 <= total) return from + 1;
   return from;
 }
 
@@ -394,11 +417,7 @@ interface QuestionRowProps {
   question: ParsedQuestion;
   status: QuestionRowStatus;
   selection: ReadonlyArray<string>;
-  isFirst: boolean;
-  isLast: boolean;
   onSelect: (optionLabel: string) => void;
-  onBack: () => void;
-  onAdvance: () => void;
   onJump: () => void;
 }
 
@@ -550,27 +569,29 @@ function QuestionOptionGroup({
 }
 
 /**
- * The `current` row — title + options + per-row Back/Next. The
- * options group is the only place a `TugDialogButton` lives in the
- * wizard, so the role / aria semantics stay scoped to one row at a
- * time (avoids cross-row radio-group leaks).
+ * The `current` row — title + options. Back/Next live in the dialog's
+ * actions row (via the `extraActions` slot on `TideInteractiveDialog`),
+ * not inside the row itself, so they keep a stable on-screen position
+ * across question advances (the button never jumps out from under the
+ * mouse). The options group is the only place a `TugDialogButton`
+ * lives in the wizard, so the role / aria semantics stay scoped to
+ * one row at a time (avoids cross-row radio-group leaks).
  */
 function CurrentRow({
   index,
   question,
   selection,
-  isFirst,
-  isLast,
   optionsMinHeight,
   onSelect,
-  onBack,
-  onAdvance,
-}: Omit<QuestionRowProps, "status" | "onJump"> & {
+}: Pick<
+  QuestionRowProps,
+  "index" | "question" | "selection" | "onSelect"
+> & {
   optionsMinHeight?: number;
 }): React.ReactElement {
   // Apply the measured options floor to the options area only — the
-  // heading and nav stays at their natural height, and shorter
-  // questions just see trailing whitespace below their options.
+  // heading stays at its natural height, and shorter questions just
+  // see trailing whitespace below their options.
   // `undefined` while the measurement effect hasn't run yet (first
   // paint only); on every subsequent render the value is locked.
   const optionsStyle: React.CSSProperties | undefined =
@@ -601,27 +622,6 @@ function CurrentRow({
           selection={selection}
           onSelect={onSelect}
         />
-      </div>
-      <div
-        className="tide-question-dialog-row-nav"
-        data-slot="tide-question-dialog-row-nav"
-      >
-        <TugPushButton
-          emphasis="outlined"
-          role="action"
-          disabled={isFirst}
-          onClick={onBack}
-        >
-          ← Back
-        </TugPushButton>
-        <TugPushButton
-          emphasis="outlined"
-          role="action"
-          disabled={isLast}
-          onClick={onAdvance}
-        >
-          Next →
-        </TugPushButton>
       </div>
     </div>
   );
@@ -867,7 +867,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   const single = questions.length === 1 ? questions[0] : null;
   const seededCount = countAnswered(selections);
   const confirmedCount = countConfirmedAnswers(selections, visited);
-  // `Submit all` lights up when every row carries a selection
+  // `Submit` lights up when every row carries a selection
   // (preseeded recommendations or user-picked). "No required
   // answers" means the user can sign off on every default in a
   // single click — that's the literal expression of that.
@@ -883,30 +883,125 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       ? single.question
       : `${questions.length} questions · ${confirmedCount} answered`;
 
+  // Wizard navigation state. `currentIndex === questions.length` is
+  // the review state added at the end of the flow — no row is
+  // current, every row paints its post-interaction summary, and the
+  // user scans the full set of answers before submitting.
+  const isFirstQuestion = currentIndex === 0;
+  const isAtReview = currentIndex >= questions.length;
+
+  // Mount-time focus on the primary action so a Return key submits.
+  // `TugInlineDialog`'s built-in focus-on-mount targets its own
+  // confirm button which we suppress with `hideActions`; this ref
+  // points at our own `Submit` instead. The effect runs once; a
+  // genuinely new request remounts the whole component (keyed by
+  // `request_id` upstream).
+  const submitRef = React.useRef<HTMLButtonElement | null>(null);
+  React.useLayoutEffect(() => {
+    submitRef.current?.focus();
+  }, []);
+
+  // Cancel guards itself with a confirmation popover: a stray click
+  // shouldn't tear the AI's question down without a second beat. The
+  // popover is anchored to the Cancel trigger via `TugConfirmPopover`'s
+  // imperative API (`ref.confirm() → Promise<boolean>`); a `true`
+  // resolution walks the family `Cancel ≡ popInteractive` path.
+  const cancelPopoverRef = React.useRef<TugConfirmPopoverHandle | null>(null);
+  const handleCancelClick = React.useCallback(() => {
+    const popover = cancelPopoverRef.current;
+    if (popover === null) {
+      // No popover mounted (defensive — should never happen in the
+      // hasQuestions branch). Fall through to the bare cancel.
+      handleCancel();
+      return;
+    }
+    void popover.confirm().then((confirmed) => {
+      if (confirmed) handleCancel();
+    });
+  }, [handleCancel]);
+
+  // The full actions row above the question stack. Two clusters:
+  // wizard nav (Back / Next) leading edge, dialog controls (Cancel /
+  // Submit) trailing edge, separated by `space-between`. All four
+  // buttons hold a stable on-screen position across question
+  // advances — the question stack below can grow or shrink as
+  // options change, but the click targets never move out from
+  // under the mouse. Single-question payloads omit the wizard nav
+  // (nothing to navigate) but still render Cancel / Submit.
+  const actionsRow: React.ReactNode = hasQuestions ? (
+    <div
+      className="tide-question-dialog-actions"
+      data-slot="tide-question-dialog-actions"
+    >
+      {single === null ? (
+        <div className="tide-question-dialog-actions-nav">
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            disabled={isFirstQuestion}
+            onClick={handleBack}
+          >
+            <ArrowLeft size={14} aria-hidden="true" /> Back
+          </TugPushButton>
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            disabled={isAtReview}
+            onClick={handleAdvance}
+          >
+            Next <ArrowRight size={14} aria-hidden="true" />
+          </TugPushButton>
+        </div>
+      ) : (
+        <span />
+      )}
+      <div className="tide-question-dialog-actions-dialog">
+        <TugConfirmPopover
+          ref={cancelPopoverRef}
+          message="Cancel this question?"
+          confirmLabel="Yes, cancel"
+          cancelLabel="Keep going"
+          confirmRole="danger"
+          side="bottom"
+        >
+          <TugPushButton emphasis="outlined" role="danger" onClick={handleCancelClick}>
+            Cancel
+          </TugPushButton>
+        </TugConfirmPopover>
+        <TugPushButton
+          ref={submitRef}
+          emphasis="filled"
+          role="action"
+          disabled={!allAnswered}
+          onClick={handleSubmit}
+        >
+          Submit
+        </TugPushButton>
+      </div>
+    </div>
+  ) : null;
+
   // Composes the Tide interactive-dialog family's input-form primitive
   // ([D01] / [D08]); the primitive delegates the visible chrome to
-  // `TugInlineDialog` one layer down. `cancelRole="danger"` is the
-  // family default (set by `TideInteractiveDialog`), so the prop is
-  // omitted here — the family default applies. The actions-row
-  // `space-between` Mac HIG layout ([D03]) is now owned by the
-  // primitive's CSS scoped via `.tide-interactive-dialog
-  // [data-slot="tug-inline-dialog-actions"]` ([L20]); the local
-  // `.tide-question-dialog .tug-inline-dialog-actions { … }` override
-  // is removed in this step.
+  // `TugInlineDialog` one layer down. The question dialog hoists its
+  // own action surface into `children` above the questions (so the
+  // four buttons hold a stable position across advances) and
+  // suppresses the primitive's bottom actions row via `hideActions`.
   return (
     <TideInteractiveDialog
       icon={<MessageCircleQuestion />}
       iconRole="info"
       title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
       description={description}
-      confirmLabel={hasQuestions ? "Submit all" : "Dismiss"}
+      confirmLabel={hasQuestions ? "Submit" : "Dismiss"}
       confirmRole="action"
-      confirmDisabled={hasQuestions && !allAnswered}
-      cancelLabel={hasQuestions ? "Cancel" : null}
       onConfirm={handleSubmit}
       onCancel={handleCancel}
+      cancelLabel={null}
+      hideActions={hasQuestions}
       className={cn("tide-question-dialog", className)}
     >
+      {actionsRow}
       {hasQuestions ? (
         <div
           className="tide-question-dialog-questions"
@@ -924,11 +1019,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               index={0}
               question={single}
               selection={selections[0] ?? []}
-              isFirst
-              isLast
               onSelect={(optionLabel) => handleSelect(0, optionLabel)}
-              onBack={handleBack}
-              onAdvance={handleAdvance}
             />
           ) : (
             <>
@@ -946,12 +1037,8 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
                     question={question}
                     status={status}
                     selection={selection}
-                    isFirst={index === 0}
-                    isLast={index === questions.length - 1}
                     optionsMinHeight={optionsMinHeight}
                     onSelect={(optionLabel) => handleSelect(index, optionLabel)}
-                    onBack={handleBack}
-                    onAdvance={handleAdvance}
                     onJump={() => handleJump(index)}
                   />
                 );

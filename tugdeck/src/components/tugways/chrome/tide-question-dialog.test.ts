@@ -314,16 +314,20 @@ describe("nextAdvanceIndex", () => {
     expect(nextAdvanceIndex(1, 3)).toBe(2);
   });
 
-  it("stays put on the last row (no wrap)", () => {
-    expect(nextAdvanceIndex(2, 3)).toBe(2);
+  it("advances past the last row into the review state (index === total)", () => {
+    expect(nextAdvanceIndex(2, 3)).toBe(3);
+  });
+
+  it("stays at the review index (no wrap)", () => {
+    expect(nextAdvanceIndex(3, 3)).toBe(3);
   });
 
   it("stays at 0 for an empty list", () => {
     expect(nextAdvanceIndex(0, 0)).toBe(0);
   });
 
-  it("stays at 0 for a single-question wizard", () => {
-    expect(nextAdvanceIndex(0, 1)).toBe(0);
+  it("advances a single-question wizard from 0 to the review index", () => {
+    expect(nextAdvanceIndex(0, 1)).toBe(1);
   });
 });
 

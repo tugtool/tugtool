@@ -185,6 +185,16 @@ body {
   color: inherit;
 }
 
+/* Ghost-emphasis badges set `padding-inline: 0` to sit flush with
+ * adjacent inline content (see `tug-badge.css`). In the chrome
+ * header that reads too tight against the tool name — tinted /
+ * filled badges contribute their own breathing room via padding,
+ * but a ghost badge has none. Add an explicit leading margin so
+ * the name-vs-badge gap mirrors what the other emphases produce. */
+.tool-block-chrome-args > .tug-badge[data-emphasis="ghost"] {
+  margin-inline-start: var(--tug-space-sm);
+}
+
 /* A bare `<code>` arg summary (e.g. BashToolBlock's shell command)
  * is a direct flex item of the slot: it shrinks and end-ellipsizes.
  * End-ellipsis is correct for a command — the head (program + early

@@ -246,6 +246,19 @@ export interface TugInlineDialogProps {
   cancelRole?: TugInlineDialogCancelRole;
   /** Fired when the user clicks the cancel button. Ignored when `cancelLabel` is `null`. */
   onCancel?: () => void;
+  /**
+   * Suppress the cancel + confirm actions row entirely. Use when the
+   * consumer renders its own action surface inside `children` — e.g.
+   * the question-dialog wizard hoists Back / Next / Cancel / Submit
+   * into one row above the question stack so the buttons hold a
+   * stable position across question advances. When `true`, the
+   * mount-time focus on the confirm button is also skipped (the ref
+   * is null); the consumer is responsible for focusing whatever
+   * primary action it renders.
+   *
+   * @default false
+   */
+  hideActions?: boolean;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
 }
@@ -318,6 +331,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
   cancelLabel,
   cancelRole = "action",
   onCancel,
+  hideActions = false,
   className,
 }) => {
   const confirmRef = React.useRef<HTMLButtonElement | null>(null);
@@ -325,7 +339,9 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
   // [D13] — focus the primary action button on mount so a Return key
   // answers the prompt without an explicit click. Mount-once: the
   // primitive itself doesn't track open/close (stateless); a re-mount
-  // is the consumer's signal to refocus.
+  // is the consumer's signal to refocus. When `hideActions` is set the
+  // confirm button is not rendered, so the ref is null and this is a
+  // no-op — the consumer focuses its own primary action.
   React.useLayoutEffect(() => {
     confirmRef.current?.focus();
   }, []);
@@ -378,29 +394,31 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
           ))}
         </div>
       ) : null}
-      <div
-        className="tug-inline-dialog-actions"
-        data-slot="tug-inline-dialog-actions"
-      >
-        {resolvedCancelLabel !== null ? (
-          <TugPushButton
-            emphasis="outlined"
-            role={cancelRole}
-            onClick={onCancel}
-          >
-            {resolvedCancelLabel}
-          </TugPushButton>
-        ) : null}
-        <TugPushButton
-          ref={confirmRef}
-          emphasis="filled"
-          role={confirmRole}
-          disabled={confirmDisabled}
-          onClick={onConfirm}
+      {hideActions ? null : (
+        <div
+          className="tug-inline-dialog-actions"
+          data-slot="tug-inline-dialog-actions"
         >
-          {confirmLabel}
-        </TugPushButton>
-      </div>
+          {resolvedCancelLabel !== null ? (
+            <TugPushButton
+              emphasis="outlined"
+              role={cancelRole}
+              onClick={onCancel}
+            >
+              {resolvedCancelLabel}
+            </TugPushButton>
+          ) : null}
+          <TugPushButton
+            ref={confirmRef}
+            emphasis="filled"
+            role={confirmRole}
+            disabled={confirmDisabled}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </TugPushButton>
+        </div>
+      )}
     </div>
   );
 };

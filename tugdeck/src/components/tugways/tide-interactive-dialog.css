@@ -45,8 +45,17 @@
  * the confirm button is rendered (`cancelLabel: null`), since
  * `space-between` against a single child collapses to the start.
  *
+ * The leading-edge inset matches the body row's icon-column width
+ * + gap so the actions row's leading button (Cancel) aligns with
+ * the text-column content above (title, description, children,
+ * options) rather than hanging out beneath the icon. Only the
+ * icon hangs out over the dialog's left margin.
+ *
  * Targets the published `data-slot="tug-inline-dialog-actions"`
  * surface on `TugInlineDialog`. */
 .tide-interactive-dialog [data-slot="tug-inline-dialog-actions"] {
   justify-content: space-between;
+  padding-left: calc(
+    var(--tugx-idialog-icon-size) + var(--tugx-idialog-space-b)
+  );
 }
