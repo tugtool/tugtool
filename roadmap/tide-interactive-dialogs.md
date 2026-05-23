@@ -937,14 +937,14 @@ Three fixes shipped post-phase to close that gap (commits `4c294be7` and `c48c8d
 That work closed the live-dialog hole — but uncovered three new ones surfaced during continued user testing:
 
 1. **Answered question state does not survive HMR / Developer > Reload.** A user mid-way through a multi-question wizard loses every selection and the cursor position on any boundary. Per `[L23]`, selection / form-control values / content payloads are user data — they MUST be preserved.
-2. **No survival across `Tug.app` relaunch.** A request submitted with a pending Permission or Question dialog at the moment of `Tug.app` quit is gone on relaunch. The user sees an empty card and has to retype the prompt. Same class as Developer > Reload but the persistence horizon widens — `tugcode` dies with the app and its in-memory `pendingControlRequests` map dies with it.
+2. **No survival across `Tug.app` relaunch — by design, per `[D15]`.** A request submitted with a pending Permission or Question dialog at the moment of `Tug.app` quit is gone on relaunch; the JSONL shows an unresolved tool_use the user can re-issue. App quit is a deliberate user gesture and not part of the survival contract (`[D14]` narrowed, `[D15]` policy). `[Q07]` documents the underlying SDK reality (no `can_use_tool` re-emit on `--resume`) but doesn't drive an implementation step.
 3. **Turn telemetry resets on reload.** The status bar's `TIME`, `TOKENS`, and `CONTEXT` drop to `0m 00s / 0 / 12.6K / 1.00M` post-reload even when the in-flight snapshot delivered the assistant text and dialog correctly. The user loses sight of where the turn was costing-wise mid-stream.
 
-**Strategy.** Tighten the survival contract one boundary at a time. Reload (HMR + Developer > Reload) is already mostly there — Step 6 closes the `[L23]` gap on question-dialog answers. Relaunch (cold boot through `Tug.app` quit) is the next horizon — Step 7 is a short investigation to resolve `[Q07]`; Step 8 implements whichever architecture `[Q07]` selects. Step 9 is the telemetry sibling: extend the in-flight snapshot to carry the current cost / usage tuple.
+**Strategy.** Tighten the survival contract for the two boundaries the user did not deliberately cross. Reload (HMR + Developer > Reload) — Step 6 closes the `[L23]` gap on question-dialog answers. Step 7 is the investigation that resolved `[Q07]` (NO — claude does not re-emit `can_use_tool` on `--resume`) and the policy crystallized into `[D15]`: app quit terminates in-flight dialogs, so Step 8 is descoped. Step 9 is the telemetry sibling: extend the in-flight snapshot to carry the current cost / usage tuple, still entirely within the reload survival horizon.
 
 #### New Open Questions {#addendum-open-questions}
 
-#### [Q07] Does `claude --resume` re-issue `can_use_tool` for an unresolved tool_use in the loaded JSONL? (OPEN) {#q07-sdk-resume-can-use-tool}
+#### [Q07] Does `claude --resume` re-issue `can_use_tool` for an unresolved tool_use in the loaded JSONL? (RESOLVED — NO) {#q07-sdk-resume-can-use-tool}
 
 **Question:** When `Tug.app` quits with a Permission / Question dialog open and re-launches, the session is restored via `claude --resume <session_id>`. JSONL on disk should contain the user message + the assistant message ending with `stop_reason: "tool_use"` (the assistant message finalizes before the tool runs — claude does not wait for the tool_result to flush). Does the SDK, on resume, recognize the un-resolved tool_use and re-issue the `can_use_tool` control_request so tugcode can re-forward the dialog?
 
@@ -952,9 +952,18 @@ That work closed the live-dialog hole — but uncovered three new ones surfaced 
 - **YES**: the resume mechanism is sufficient; the only client-side change is widening the binding gate to fire `mode=resume` for "JSONL ends with an unresolved tool_use" — similar in shape to `is_alive` but derived from the JSONL parse rather than the in-memory supervisor.
 - **NO**: tugcode must persist `pendingControlRequests` to sqlite on each `set` / `delete` and rehydrate the map on startup; the existing `emitInflightTurnFromActiveTurn` then runs unchanged once the spawn lands.
 
-**Plan to resolve:** Capture a fresh JSONL at the exact mid-permission moment (live session, dialog open, no Allow / Deny yet — copy `~/.claude/projects/<encoded-dir>/<session>.jsonl` while the dialog is up). Confirm the assistant `tool_use` content block is present. Then quit, relaunch, observe whether the SDK re-emits `can_use_tool` to tugcode (instrumented log line or stdin tail). Document the observation, then proceed to Step 8 along the YES or NO branch.
+**Resolution: NO.** The SDK does not re-emit `can_use_tool` on `--resume`.
 
-**Resolution:** OPEN — investigated in `#step-7`.
+The investigation used a minimal 3-line JSONL matching the Claude Code 2.1.150 wire shape — `summary`, `user` ("Run `echo hello` …"), and `assistant` with `stop_reason: "tool_use"` carrying a `Bash` `tool_use` content block, no subsequent `user` / `tool_result` line. That's the on-disk state you would see if `Tug.app` quit while a permission dialog was open.
+
+Running the same `claude --resume <id> --print --output-format stream-json --input-format stream-json --include-partial-messages --replay-user-messages --permission-prompt-tool stdio` incantation tugcode uses, two stdin scenarios were observed:
+
+- *Idle stdin*: zero bytes on stdout. claude reads the conversation history, then exits cleanly without emitting any frame on its own initiative — no `system init`, no `control_request`, nothing. The SDK does not auto-act on resume.
+- *One `{"type":"user","message":{...,"text":"ping"}}` frame on stdin*: claude emits the standard `system init` → `stream_event message_start` → `text_delta` `"p" / "ong"` → `result subtype: success` flow. The pending `tool_use` from JSONL is *not* surfaced. Neither a `can_use_tool` control_request nor any other reference to the unresolved Bash appears in the transcript. claude treats the unresolved `tool_use` as historical context only, then runs a fresh turn against the new user message.
+
+This matches the in-tree understanding: `session.ts:2980` notes "Control requests are an out-of-band SDK channel — they never land in JSONL." The current `emitInflightTurnFromActiveTurn` re-synthesizes the dialog from tugcode's in-memory `pendingControlRequests` map. On Developer > Reload tugcode survives and the map is intact — that's why Step 5's fix worked. On app relaunch tugcode is killed and the map is gone.
+
+**Why this doesn't drive a Step 8 implementation.** The NO answer originally implied a sqlite mirror of `pendingControlRequests` to survive the quit / relaunch boundary. We deliberately declined to build it — see `[D15]`. App quit is a user-initiated terminal action; the in-flight dialog is dropped, the assistant's tool_use sits in JSONL as a visibly-unresolved turn the user can re-issue. Step 8 is descoped to a one-line policy note.
 
 #### New Design Decisions {#addendum-design-decisions}
 
@@ -976,18 +985,35 @@ That work closed the live-dialog hole — but uncovered three new ones surfaced 
 - Steps 7–8 (relaunch survival) and Step 9 (telemetry) live at the wire / reducer layer. They do NOT touch `[L23]`.
 - A future "save the dialog scroll position" requirement also lives in the A9 protocol, not in the snapshot.
 
-#### [D14] `Tug.app` relaunch is the same class of resume as Developer > Reload — the persistence horizon just widens (DECIDED) {#d14-relaunch-as-resume}
+#### [D14] HMR + Developer > Reload are the survival horizon for in-flight dialogs; app relaunch is not (DECIDED — narrowed) {#d14-relaunch-as-resume}
 
-**Decision:** App relaunch is conceptually a Developer > Reload where `tugcode` also gets killed. The architecture stays the same: the user reloads, the binding restoration runs, `mode=resume` fires, the live snapshot delivers in-flight state. The only difference is which layer holds the in-flight state at the moment of teardown — in-memory (reload) vs on-disk (relaunch).
+**Decision:** The system guarantees that an open Permission / Question dialog survives HMR and Developer > Reload (Steps 5 + 6). App quit / relaunch is *not* part of that contract — see `[D15]`. The user quit; the in-flight dialog terminates with the process. On the next launch the JSONL shows the unresolved tool_use as a visibly-incomplete turn, and the user re-issues if they still want the action.
 
 **Rationale:**
-- Inventing a separate "cold-relaunch recovery" pipeline would duplicate the existing replay machinery for marginal gain. The wire shapes are already right.
-- The user's mental model is "I submitted a request; the system should still know that." That model is symmetric across reload and relaunch — both are just "the UI process restarted." Honoring that symmetry in the codebase makes both flows easier to reason about.
-- The investigation in `[Q07]` settles whether the SDK re-issues the control_request naturally on `--resume` (zero new persistence needed) or whether tugcode needs a small sqlite-backed mirror of `pendingControlRequests` (small bookkeeping change, no new wire shape).
+- Reload (HMR or Developer > Reload) is a process-internal boundary the user did not ask for — the system owes them continuity across it. tugcode survives those boundaries with the `pendingControlRequests` map intact; that's why Step 5's wire-level rehydration was sufficient.
+- App quit is a user-initiated terminal action. The honest cost / benefit reading is in `[D15]`: persisting a tugbank mirror of `pendingControlRequests` to recover from a deliberate quit is real bookkeeping cost (domain naming, deletion semantics, rehydrate ordering, leak guards) against a marginal UX gain the user can recover from with one re-issue.
+- The investigation in `[Q07]` confirmed that recovering across relaunch would require that mirror (the SDK does not re-emit `can_use_tool` on `--resume`). We chose not to.
 
 **Implications:**
-- The client-side binding gate (`turn_count > 0 || is_alive`) gains a third arm if `[Q07]` resolves NO: `|| has_pending_tool_use_in_jsonl` (cheap to compute server-side from the existing JSONL parse), and a sqlite mirror of `pendingControlRequests` lands in tugcode.
-- The wire-level snapshot is the rehydration channel either way — `emitInflightTurnFromActiveTurn` is the place new logic lands, regardless of where the pending state was read from (memory map vs sqlite mirror).
+- Steps 5 + 6 close the reload survival contract; the wire-level rehydration in `emitInflightTurnFromActiveTurn` handles tool dialogs and the QuestionDialog's `[L23]` A9 opt-in handles answer state.
+- Step 8 is descoped (anchor retained). Step 9 (in-flight telemetry on resume) still belongs at the wire layer because it lives entirely within the reload horizon.
+- An earlier draft of this decision framed relaunch as "just a wider-horizon reload" with symmetric architecture. That framing was wrong: relaunch is a *different class* of boundary because it crosses a deliberate user gesture, not just a process restart.
+
+#### [D15] App quit terminates in-flight dialogs; the user re-issues (DECIDED) {#d15-quit-terminates}
+
+**Decision:** When `Tug.app` quits with a Permission or Question dialog open, the dialog is dropped. On relaunch the user sees the assistant turn as it landed in JSONL — an `assistant` message ending in `stop_reason: "tool_use"` with no following `tool_result`. The user re-issues the prompt if they still want the action.
+
+**Rationale:**
+- The user initiated the quit. The system does not owe them recovery across a gesture they performed deliberately.
+- The JSONL state is itself the signal: a visible tool_use with no result reads as "this didn't finish" without any additional UI affordance.
+- The persistence layer needed to do better (`[Q07]` NO → tugbank-mirror of `pendingControlRequests` with set / delete / rehydrate-before-replay) is a meaningful chunk of code that has to stay correct forever. The same code budget spent elsewhere (telemetry, prompt UX, the actual conversation experience) returns more.
+- HMR / Developer > Reload are different — those boundaries are *not* user-initiated, and tugcode's in-memory state survives them. That's why Step 5 (wire rehydration) and Step 6 (`[L23]` A9 on the dialog) are worth their cost.
+
+**Non-implications:**
+- This is not a license to drop user data on lesser boundaries. Reload still preserves the dialog; the answer state still preserves the wizard tuple; the conversation transcript still survives. Only the *deliberate quit* boundary is the terminating one.
+- This does not preclude a future "graceful pre-quit hook that synthesizes an interrupt" (would tidy the JSONL by adding a deny-equivalent tool_result), but that is a polish item, not a survival requirement.
+
+**Cross-link:** `[Q07]` resolution paragraph "Why this doesn't drive a Step 8 implementation" points here.
 
 #### Addendum Execution Steps {#addendum-execution-steps}
 
@@ -1030,48 +1056,29 @@ That work closed the live-dialog hole — but uncovered three new ones surfaced 
 **References:** `[Q07]` SDK resume behavior, `[D14]` relaunch-as-resume, `tugcode/src/replay.ts` (existing JSONL parse path)
 
 **Tasks:**
-- [ ] Capture a JSONL fixture at the exact mid-permission moment: start a session, submit a request that triggers a Bash permission, leave the dialog open without Allow/Deny, copy `~/.claude/projects/<encoded-dir>/<session_id>.jsonl` to a fixture path under the repo.
-- [ ] Verify the fixture contains:
+- [x] Capture a JSONL fixture at the exact mid-permission moment: start a session, submit a request that triggers a Bash permission, leave the dialog open without Allow/Deny, copy `~/.claude/projects/<encoded-dir>/<session_id>.jsonl` to a fixture path under the repo. *(Synthesized — see [`q07-evidence/synthesize-fixture.py`](q07-evidence/synthesize-fixture.py); a synthesized fixture matching the Claude Code 2.1.150 wire shape is functionally equivalent because the SDK's resume behavior is shape-driven.)*
+- [x] Verify the fixture contains:
   - The user message
   - The assistant message ending with `stop_reason: "tool_use"` and a `tool_use` content block
   - NO `user` message with `tool_result` content (because the user never approved)
-- [ ] Spawn `claude --resume <session_id>` against the captured project dir manually (no tugcode in the loop). Observe whether claude re-issues the `can_use_tool` control_request on stdout. Document the observation in `[Q07]`.
-- [ ] Resolve `[Q07]` to YES or NO with concrete evidence (JSONL excerpt + observed re-issue or absence thereof) in the resolution block.
-- [ ] Based on the resolution, sketch the Step 8 plan:
-  - **YES branch**: the client binding gate gains a `has_pending_tool_use` arm (cheap JSONL inspection by tugcast) and the existing snapshot delivers the dialog naturally.
-  - **NO branch**: tugcode adds a `pending_control_requests` sqlite table written on map set/delete and read on startup. `emitInflightTurnFromActiveTurn` reads from the persisted source on a fresh spawn.
+- [x] Spawn `claude --resume <session_id>` against the captured project dir manually (no tugcode in the loop). Observe whether claude re-issues the `can_use_tool` control_request on stdout. Document the observation in `[Q07]`. *(Both idle-stdin and ping-stdin runs captured under `q07-evidence/`; no `can_use_tool` emission in either.)*
+- [x] Resolve `[Q07]` to YES or NO with concrete evidence (JSONL excerpt + observed re-issue or absence thereof) in the resolution block. *(Resolved NO.)*
+- [x] Based on the resolution, sketch the Step 8 plan: **NO branch chosen.** Step 8 prose updated inline.
 
 **Tests:**
-- [ ] N/A — investigation step.
+- [x] N/A — investigation step.
 
 **Checkpoint:**
-- [ ] `[Q07]` resolved with concrete evidence.
-- [ ] Step 8 plan committed inline with the right architecture branch.
+- [x] `[Q07]` resolved with concrete evidence.
+- [x] Step 8 plan committed inline with the right architecture branch.
 
 ---
 
-#### Step 8: Permission / Question dialog survives `Tug.app` relaunch {#step-8}
+#### Step 8: Permission / Question dialog survives `Tug.app` relaunch — DESCOPED {#step-8}
 
-**Depends on:** `#step-7` (`[Q07]` resolution), `#addendum-mid-flight-survival`
+**Status:** DESCOPED per `[D15]`. App quit is a deliberate user action; the in-flight dialog terminates with the process. On relaunch the user sees the assistant turn in JSONL ending with an unresolved `tool_use` (no following `tool_result`) and re-issues if they still want the action. The reload survival contract — Steps 5 + 6 — remains in force.
 
-**Commit:** `fix(tide): pending dialog survives Tug.app relaunch` (final shape depends on `[Q07]`)
-
-**References:** `[D14]` relaunch as resume, `[Q07]` outcome, `tugcast::do_list_card_bindings`, `tugcode::emitInflightTurnFromActiveTurn`
-
-**Tasks:**
-- [ ] Implement the architecture branch chosen in Step 7:
-  - **YES branch**: extend `tugcast::do_list_card_bindings` to inspect the session's JSONL for an unresolved tool_use (last assistant message ends with `stop_reason: "tool_use"` and no matching `tool_result` follows). Add `has_pending_tool_use: bool` to the binding row. Widen the client gate to `turn_count > 0 || is_alive || has_pending_tool_use`. The SDK re-emits `can_use_tool` naturally on resume; `emitInflightTurnFromActiveTurn` is unchanged.
-  - **NO branch**: add a `pending_control_requests` sqlite table keyed by `(session_id, request_id)`. tugcode writes on every `pendingControlRequests.set()` / `pendingControlRequests.delete()`; on startup, the table is read into the in-memory map before the first `runReplay`. `emitInflightTurnFromActiveTurn` is unchanged — the map is already populated by the time it runs.
-- [ ] Cross-check that the rehydrated dialog after relaunch carries the same `request_id` as the one open pre-relaunch — same correlation guarantee as Developer > Reload.
-
-**Tests:**
-- [ ] Branch-appropriate unit tests: YES branch — tugcast unit asserting `has_pending_tool_use` for a JSONL ending in `stop_reason: tool_use`; client-side restore test asserting the gate fires resume for `(turn_count=0, is_alive=false, has_pending_tool_use=true)`. NO branch — tugcode unit asserting the sqlite mirror round-trips `set` / `delete` and that startup rehydration restores the in-memory map.
-- [ ] Aggregate suite green (`bun test` + `cargo nextest run`).
-- [ ] `audit:tokens lint` zero violations.
-
-**Checkpoint:**
-- [ ] User-verified: submit prompt → Permission dialog appears → quit `Tug.app` → relaunch. Dialog reappears with the original `request_id`; clicking Allow runs the tool and the result lands inside the same tool block (no orphan).
-- [ ] User-verified: same flow with AskUserQuestion / multi-question wizard. Step 6 answer-state survival kicks in on top: in-progress selections survive the relaunch.
+The anchor `#step-8` is retained so existing references resolve. The cross-link reading is `[D14]` (narrowed) + `[D15]` (the policy). `[Q07]` documents the SDK behavior that would have driven the sqlite-mirror approach we declined to build.
 
 ---
 
@@ -1101,8 +1108,8 @@ That work closed the live-dialog hole — but uncovered three new ones surfaced 
 
 #### Addendum Acceptance Criteria {#addendum-acceptance}
 
-- [ ] `[Q07]` resolved with documented SDK behavior evidence.
-- [ ] QuestionDialog `selections` / `visited` / `currentIndex` survive both HMR and Developer > Reload (`[L23]` compliance verified by user).
-- [ ] Pending Permission / Question dialog survives `Tug.app` relaunch with the same `request_id` and (for Question) preserved answer state.
-- [ ] Post-reload status bar shows non-zero `TOKENS` / accurate `CONTEXT` reflecting the in-flight turn's usage estimate.
-- [ ] All earlier mid-flight survival behavior (Developer > Reload tool block continuity, no dangling spinner post-Allow) remains intact — no regressions on the work shipped in commits `4c294be7` and `c48c8db4`.
+- [x] `[Q07]` resolved with documented SDK behavior evidence (Step 7, resolution paragraph inline).
+- [x] QuestionDialog `selections` / `visited` / `currentIndex` survive both HMR and Developer > Reload (`[L23]` compliance verified by user — Step 6 commit `484fb3ad`).
+- [x] Pending Permission / Question dialog *survival across `Tug.app` relaunch* deliberately descoped per `[D15]` — quit terminates the in-flight dialog; the user re-issues. Anchor `#step-8` retained for cross-references.
+- [ ] Post-reload status bar shows non-zero `TOKENS` / accurate `CONTEXT` reflecting the in-flight turn's usage estimate. *(Step 9)*
+- [ ] All earlier mid-flight survival behavior (Developer > Reload tool block continuity, no dangling spinner post-Allow) remains intact — no regressions on the work shipped in commits `4c294be7` and `c48c8db4`. *(Verified continuously across Steps 6 and 9.)*
