@@ -1,14 +1,20 @@
 /**
- * `TodoListBlock` — Layer-1 body kind for a Claude Code TodoWrite list.
+ * `TodoListBlock` — Layer-1 body kind for a Claude Code task list.
+ *
+ * The user-facing concept is "todo list", which is why the component
+ * keeps that name; the data it consumes follows the wire vocabulary
+ * Anthropic's `claude` ≥ `v2.1.148` ships — {@link TaskListState} /
+ * {@link TaskItem}, assembled by the
+ * `code-session-store/select-task-list` reducer over the
+ * `TaskCreate` / `TaskUpdate` event stream ([D100]).
  *
  * A list-shaped body kind ([#bk-conformance] item 9): rows are
- * rendered via `TugListView` (in `inline` mode for now — Claude Code
- * Todo lists are typically a handful of items, occasionally a few
- * dozen; the row count never warrants windowing in practice). Building
- * on `TugListView` anyway keeps the data-source contract and cell
- * vocabulary in step with the other list-shaped body kinds
- * (`PathListBlock`, `SearchResultBlock`), so a future windowing
- * opt-in is a flip of one prop.
+ * rendered via `TugListView` (in `inline` mode for now — task lists
+ * are typically a handful of items; the row count never warrants
+ * windowing in practice). Building on `TugListView` anyway keeps the
+ * data-source contract and cell vocabulary in step with the other
+ * list-shaped body kinds (`PathListBlock`, `SearchResultBlock`), so
+ * a future windowing opt-in is a flip of one prop.
  *
  * Composition (mirrors `PathListBlock`):
  *  - Header (standalone only) — an optional identity `label`, the
@@ -19,24 +25,27 @@
  *    natural height and the outer transcript scrolls; no inner
  *    scroller. Each row is `[status-icon] [text]` with the status
  *    driving the icon, text decoration, and (for `in_progress`) the
- *    activeForm rendering.
+ *    activeForm rendering. When a task carries a `description`, the
+ *    row trigger is wrapped in a `TugTooltip` so the longer prose
+ *    surfaces on hover without growing the row's vertical footprint
+ *    ([D100]).
  *
  * Status states:
  *  - `pending` — circle icon; default colour.
  *  - `in_progress` — spinner-style icon; **highlighted** background
  *    band so the active task is immediately distinguishable. The row
  *    renders `activeForm` (present-continuous, e.g. "Running tests")
- *    when present; otherwise falls back to `content`.
+ *    when present; otherwise falls back to `subject`.
  *  - `completed` — check icon; strikethrough text + muted colour so
  *    finished work fades into the row history.
  *
  * What this body kind does NOT do:
  *  - Render a text-entry / edit surface. A card has at most one
- *    text-entry surface ([#bk-conformance] item 2); editing a Todo is
+ *    text-entry surface ([#bk-conformance] item 2); editing a task is
  *    the assistant's job, not the renderer's. TodoListBlock renders
  *    zero `<input>` / `<textarea>` elements.
- *  - Persist the list itself — the wire shape is the source of truth.
- *    Layout state (none today) would persist through `[A9]` if added.
+ *  - Persist the list itself — the reducer over the wire event
+ *    stream is the source of truth.
  *  - Animate transitions between status changes — the next reducer
  *    snapshot remounts the row with its new status; that's enough.
  *
@@ -52,7 +61,10 @@
  *
  * Decisions:
  *  - [D05] two-layer split: this body kind owns the list rendering;
- *    `TodoWriteToolBlock` owns chrome (counts + progress bar).
+ *    the pinned `Z2A` renderer (`TideCardPinnedTodo`) is its sole
+ *    consumer post-[D100].
+ *  - [D100] pinned `Z2A` slot; standalone composition; per-row
+ *    description in a tooltip.
  *
  * @module components/tugways/body-kinds/todo-list-block
  */
@@ -64,46 +76,36 @@ import { createPortal } from "react-dom";
 import { Check, Circle, Loader2 } from "lucide-react";
 
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import {
   TugListView,
   type TugListViewCellProps,
   type TugListViewCellRenderer,
   type TugListViewDataSource,
 } from "@/components/tugways/tug-list-view";
+import type {
+  TaskItem,
+  TaskListState,
+  TaskStatus,
+} from "@/lib/code-session-store/select-task-list";
 
 import { BlockActionsCluster, BlockCopyButton } from "./affordances";
 
+// Re-export so consumers needing the shape don't reach across layers.
+export type { TaskItem, TaskListState, TaskStatus };
+
 // ---------------------------------------------------------------------------
-// Public types
+// Public props
 // ---------------------------------------------------------------------------
-
-/**
- * One Todo item — the wire shape Claude Code emits inside
- * `tool_use.input.todos[]`. `content` is the imperative form
- * ("Run tests"); `activeForm` is the present-continuous variant
- * ("Running tests") surfaced while the item is `in_progress`.
- */
-export interface TodoItem {
-  content: string;
-  status: TodoStatus;
-  activeForm?: string;
-}
-
-/** Lifecycle of one Todo per Claude Code's vocabulary. */
-export type TodoStatus = "pending" | "in_progress" | "completed";
-
-/** Structured Todo list — the body's render input. */
-export interface TodoListData {
-  todos: readonly TodoItem[];
-}
 
 export interface TodoListBlockProps {
   /**
-   * The Todo list data. When undefined (or `todos` is empty) the block
-   * renders an empty `data-slot="todo-list-body"` marker for layout
-   * consistency.
+   * The task list — assembled by `reduceTaskListState` and passed
+   * down by the pinned `Z2A` renderer (or any standalone caller).
+   * When undefined or `tasks` is empty, the block renders an empty
+   * `data-slot="todo-list-body"` marker for layout consistency.
    */
-  data?: TodoListData;
+  data?: TaskListState;
 
   /**
    * Optional identity label shown at the leading edge of the
@@ -114,11 +116,15 @@ export interface TodoListBlockProps {
 
   /**
    * "Embedded" mode — composed inside a host that already paints a
-   * container and a header (e.g. `ToolBlockChrome` in
-   * `TodoWriteToolBlock`). When `true` the standalone frame +
-   * header are dropped and the actions cluster portals into the
-   * host chrome's actions slot. MUST be used under a
+   * container and a header (e.g. `ToolBlockChrome`). When `true` the
+   * standalone frame + header are dropped and the actions cluster
+   * portals into the host chrome's actions slot. MUST be used under a
    * `ToolBlockChrome`.
+   *
+   * Today the only intended caller is the standalone pinned
+   * (`embedded={false}`) renderer for `Z2A`; the embedded path is
+   * preserved for future wrappers that might compose the list inside
+   * their own chrome.
    *
    * @default false
    */
@@ -132,8 +138,8 @@ export interface TodoListBlockProps {
 // Pure helpers — exported because tests pin them
 // ---------------------------------------------------------------------------
 
-/** Per-status counts derived from a Todo array. */
-export interface TodoCounts {
+/** Per-status counts derived from a task array. */
+export interface TaskCounts {
   total: number;
   pending: number;
   inProgress: number;
@@ -141,30 +147,30 @@ export interface TodoCounts {
 }
 
 /**
- * Tally Todos by status. Items whose `status` falls outside the
+ * Tally tasks by status. Items whose `status` falls outside the
  * known vocabulary count toward `total` but not toward any bucket,
  * so the counts always sum to ≤ `total` — drift surfaces visibly
  * (the progress bar doesn't lie about progress).
  */
-export function countTodos(todos: readonly TodoItem[]): TodoCounts {
+export function countTasks(tasks: readonly TaskItem[]): TaskCounts {
   let pending = 0;
   let inProgress = 0;
   let completed = 0;
-  for (const t of todos) {
+  for (const t of tasks) {
     if (t.status === "pending") pending += 1;
     else if (t.status === "in_progress") inProgress += 1;
     else if (t.status === "completed") completed += 1;
   }
-  return { total: todos.length, pending, inProgress, completed };
+  return { total: tasks.length, pending, inProgress, completed };
 }
 
 /**
- * Compose a one-liner summary of the counts for the wrapper header.
- * Format: `"3 done, 1 in progress, 2 pending"` — drops zero buckets so
- * the summary stays short. Returns the empty string when the list is
- * empty (caller decides whether to render a placeholder).
+ * Compose a one-liner summary of the counts for the standalone
+ * header. Format: `"3 done, 1 in progress, 2 pending"` — drops zero
+ * buckets so the summary stays short. Returns the empty string when
+ * the list is empty.
  */
-export function composeTodoSummary(counts: TodoCounts): string {
+export function composeTaskSummary(counts: TaskCounts): string {
   if (counts.total === 0) return "";
   const parts: string[] = [];
   if (counts.completed > 0) parts.push(`${counts.completed} done`);
@@ -174,62 +180,32 @@ export function composeTodoSummary(counts: TodoCounts): string {
 }
 
 /**
- * Progress fraction in `[0, 1]` — `completed / total`. Returns `0` for
- * an empty list. In-progress items intentionally do NOT count as
- * partial credit; the bar reads as the share of *finished* work, which
- * matches the assistant's mental model and the spoken summary.
+ * Progress fraction in `[0, 1]` — `completed / total`. Returns `0`
+ * for an empty list. In-progress items intentionally do NOT count
+ * as partial credit; the bar reads as the share of *finished* work,
+ * which matches the assistant's mental model and the spoken summary.
  */
-export function todoProgressFraction(counts: TodoCounts): number {
+export function taskProgressFraction(counts: TaskCounts): number {
   if (counts.total === 0) return 0;
   return counts.completed / counts.total;
 }
 
 /**
- * Narrow an arbitrary wire `todos` value into a {@link TodoListData}
- * payload. Defensive: drops malformed entries and unknown statuses
- * silently so a partial / drifted result still renders the items the
- * wire shape did agree on.
- */
-export function narrowTodoListData(value: unknown): TodoListData | undefined {
-  if (value === null || typeof value !== "object") return undefined;
-  const v = value as { todos?: unknown };
-  if (!Array.isArray(v.todos)) return undefined;
-  const todos: TodoItem[] = [];
-  for (const raw of v.todos) {
-    if (raw === null || typeof raw !== "object") continue;
-    const r = raw as Record<string, unknown>;
-    const content = typeof r.content === "string" ? r.content : undefined;
-    const status = narrowTodoStatus(r.status);
-    if (content === undefined || status === undefined) continue;
-    const activeForm = typeof r.activeForm === "string" ? r.activeForm : undefined;
-    todos.push({ content, status, activeForm });
-  }
-  return { todos };
-}
-
-function narrowTodoStatus(value: unknown): TodoStatus | undefined {
-  if (value === "pending" || value === "in_progress" || value === "completed") {
-    return value;
-  }
-  return undefined;
-}
-
-/**
- * Build the plain-text representation of a Todo list — used by the
- * Copy affordance. Each line: `[ ] content` / `[~] activeForm` /
- * `[x] content`. The pending / in-progress / completed glyphs mirror
+ * Build the plain-text representation of a task list — used by the
+ * Copy affordance. Each line: `[ ] subject` / `[~] activeForm` /
+ * `[x] subject`. The pending / in-progress / completed glyphs mirror
  * GitHub-flavored markdown task list conventions with a `~` for
  * in-progress (no markdown equivalent, but readable).
  */
-export function composeTodoCopyText(todos: readonly TodoItem[]): string {
-  return todos
+export function composeTaskCopyText(tasks: readonly TaskItem[]): string {
+  return tasks
     .map((t) => {
       const glyph =
         t.status === "completed" ? "[x]" : t.status === "in_progress" ? "[~]" : "[ ]";
       const text =
         t.status === "in_progress" && t.activeForm !== undefined
           ? t.activeForm
-          : t.content;
+          : t.subject;
       return `${glyph} ${text}`;
     })
     .join("\n");
@@ -239,7 +215,7 @@ export function composeTodoCopyText(todos: readonly TodoItem[]): string {
 // Constants
 // ---------------------------------------------------------------------------
 
-const TODO_CELL_KIND = "todo";
+const TASK_CELL_KIND = "task";
 const DATA_SLOT_ROOT = "todo-list-body";
 const DATA_SLOT_HEADER = "todo-list-header";
 const DATA_SLOT_ACTIONS = "todo-list-actions";
@@ -251,28 +227,27 @@ const DATA_SLOT_ACTIONS = "todo-list-actions";
 const NOOP_UNSUBSCRIBE = (): void => {};
 
 /**
- * A `TugListView` data source over an immutable Todo array. A fresh
- * instance is built every time `data.todos` identity changes — the
+ * A `TugListView` data source over an immutable task array. A fresh
+ * instance is built every time `data.tasks` identity changes — the
  * source never mutates in place, so `subscribe` is a no-op and
  * `getVersion` returns the array reference (stable per instance,
  * distinct across instances).
  */
-class TodoListDataSource implements TugListViewDataSource {
-  constructor(private readonly todos: readonly TodoItem[]) {}
+class TaskListDataSource implements TugListViewDataSource {
+  constructor(private readonly tasks: readonly TaskItem[]) {}
 
   numberOfItems(): number {
-    return this.todos.length;
+    return this.tasks.length;
   }
 
   idForIndex(index: number): string {
-    // Todos have no wire id today; the content + index pair is the
-    // stable handle. If two items happen to share content, the index
-    // tail disambiguates without altering row order on a reorder.
-    return `${index}:${this.todos[index].content}`;
+    // The server-assigned `taskId` is the stable React key; tasks
+    // are never re-keyed once created.
+    return this.tasks[index].taskId;
   }
 
   kindForIndex(): string {
-    return TODO_CELL_KIND;
+    return TASK_CELL_KIND;
   }
 
   subscribe(): () => void {
@@ -280,11 +255,11 @@ class TodoListDataSource implements TugListViewDataSource {
   }
 
   getVersion(): unknown {
-    return this.todos;
+    return this.tasks;
   }
 
-  todoAt(index: number): TodoItem {
-    return this.todos[index];
+  taskAt(index: number): TaskItem {
+    return this.tasks[index];
   }
 }
 
@@ -293,34 +268,36 @@ class TodoListDataSource implements TugListViewDataSource {
 // ---------------------------------------------------------------------------
 
 /** Map a status to the lucide icon component. */
-const ICON_BY_STATUS: Readonly<Record<TodoStatus, React.ComponentType<{ size?: number }>>> = {
+const ICON_BY_STATUS: Readonly<Record<TaskStatus, React.ComponentType<{ size?: number }>>> = {
   pending: Circle,
   in_progress: Loader2,
   completed: Check,
 };
 
 /**
- * One Todo row — `[status-icon] [text]`. The status drives the icon,
- * the text variant (content vs. activeForm), and the visual treatment
- * via the row's `data-status` attribute (CSS owns colour, weight, and
- * strikethrough — pure [L06]).
+ * One task row — `[status-icon] [text]`. The status drives the icon,
+ * the text variant (subject vs. activeForm), and the visual
+ * treatment via the row's `data-status` attribute (CSS owns colour,
+ * weight, and strikethrough — pure [L06]). When `description` is
+ * present, the row is wrapped in a `TugTooltip` so the longer prose
+ * surfaces on hover; the row body stays single-line.
  */
-const TodoCell: TugListViewCellRenderer<TodoListDataSource> = ({
+const TaskCell: TugListViewCellRenderer<TaskListDataSource> = ({
   index,
   dataSource,
-}: TugListViewCellProps<TodoListDataSource>) => {
-  const todo = dataSource.todoAt(index);
-  const Icon = ICON_BY_STATUS[todo.status];
+}: TugListViewCellProps<TaskListDataSource>) => {
+  const task = dataSource.taskAt(index);
+  const Icon = ICON_BY_STATUS[task.status];
   const text =
-    todo.status === "in_progress" && todo.activeForm !== undefined
-      ? todo.activeForm
-      : todo.content;
+    task.status === "in_progress" && task.activeForm !== undefined
+      ? task.activeForm
+      : task.subject;
 
-  return (
+  const row = (
     <div
       className="tugx-todo-row"
       data-slot="todo-list-row"
-      data-status={todo.status}
+      data-status={task.status}
     >
       <span className="tugx-todo-row-icon" aria-hidden="true">
         <Icon size={14} />
@@ -328,11 +305,18 @@ const TodoCell: TugListViewCellRenderer<TodoListDataSource> = ({
       <span className="tugx-todo-row-text">{text}</span>
     </div>
   );
+
+  if (task.description === undefined) return row;
+  return (
+    <TugTooltip content={task.description} side="top" align="start">
+      {row}
+    </TugTooltip>
+  );
 };
 
 /** Cell-renderer dispatch map — module-scope, one entry. */
-const CELL_RENDERERS: Record<string, TugListViewCellRenderer<TodoListDataSource>> = {
-  [TODO_CELL_KIND]: TodoCell,
+const CELL_RENDERERS: Record<string, TugListViewCellRenderer<TaskListDataSource>> = {
+  [TASK_CELL_KIND]: TaskCell,
 };
 
 // ---------------------------------------------------------------------------
@@ -345,19 +329,19 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
   embedded = false,
   className,
 }) => {
-  const todos = data?.todos ?? EMPTY_TODOS;
-  const dataSource = React.useMemo(() => new TodoListDataSource(todos), [todos]);
+  const tasks = data?.tasks ?? EMPTY_TASKS;
+  const dataSource = React.useMemo(() => new TaskListDataSource(tasks), [tasks]);
 
   // ---- Copy source ---------------------------------------------------
   //
-  // `todosRef` carries the live list so the `BlockCopyButton` `getText`
-  // closure reads the freshest items at fire time ([L07]).
-  const todosRef = React.useRef<readonly TodoItem[]>(todos);
+  // `tasksRef` carries the live list so the `BlockCopyButton`
+  // `getText` closure reads the freshest items at fire time ([L07]).
+  const tasksRef = React.useRef<readonly TaskItem[]>(tasks);
   React.useLayoutEffect(() => {
-    todosRef.current = todos;
-  }, [todos]);
+    tasksRef.current = tasks;
+  }, [tasks]);
   const getCopyText = React.useCallback(
-    () => composeTodoCopyText(todosRef.current),
+    () => composeTaskCopyText(tasksRef.current),
     [],
   );
 
@@ -386,7 +370,7 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
   }, [embedded, chromeActionsTarget]);
 
   // ---- Empty data: layout-consistent marker --------------------------
-  if (todos.length === 0) {
+  if (tasks.length === 0) {
     return (
       <div
         data-slot={DATA_SLOT_ROOT}
@@ -402,9 +386,9 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
   const rootClass =
     "tugx-todo" + (className === undefined ? "" : ` ${className}`);
 
-  // The actions cluster — Copy only (no sort: Todo order is producer-
-  // assigned and meaningful, not user-tunable like PathList's "found"
-  // vs. "name").
+  // The actions cluster — Copy only (no sort: task order is
+  // producer-assigned and meaningful, not user-tunable like
+  // PathList's "found" vs. "name").
   const actions = (
     <BlockCopyButton
       data-slot="todo-list-copy"
@@ -423,8 +407,8 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
         )
       : null;
 
-  const counts = countTodos(todos);
-  const summary = composeTodoSummary(counts);
+  const counts = countTasks(tasks);
+  const summary = composeTaskSummary(counts);
 
   return (
     <div
@@ -454,7 +438,7 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
       {/* `inline` — every row in document order, no windowing. The
        * block grows to its natural height; the outer transcript owns
        * the scroll. */}
-      <TugListView<TodoListDataSource>
+      <TugListView<TaskListDataSource>
         dataSource={dataSource}
         cellRenderers={CELL_RENDERERS}
         className="tugx-todo-list"
@@ -466,4 +450,4 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
 
 /** Stable empty-array sentinel so the empty-data path doesn't create
  *  a fresh `[]` per render. */
-const EMPTY_TODOS: readonly TodoItem[] = Object.freeze([]);
+const EMPTY_TASKS: readonly TaskItem[] = Object.freeze([]);

@@ -119,9 +119,12 @@ describe("dispatch → DefaultToolBlock", () => {
   });
 
   test("an audit-confirmed long-tail tool routes to DefaultToolBlock with no caution", () => {
-    // `taskupdate` is in `AUDIT_CONFIRMED_DEFAULT_TOOLS` — known to
+    // `monitor` is in `AUDIT_CONFIRMED_DEFAULT_TOOLS` — known to
     // route through Default by design, so no drift caution.
-    const result = dispatchToolCallState(fakeToolCall("TaskUpdate"), "m1");
+    // `TaskUpdate` used to be the example here but is now registered
+    // to `NullToolBlock` per [D100] (silenced from the transcript;
+    // the assembled list lives in the pinned `Z2A` slot).
+    const result = dispatchToolCallState(fakeToolCall("Monitor"), "m1");
     expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toBeUndefined();
     expect(result.props.caution).toBeUndefined();

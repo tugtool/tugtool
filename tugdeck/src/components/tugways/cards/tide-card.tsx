@@ -36,6 +36,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
 import { TideTranscriptHost, type TideTranscriptHandle } from "./tide-card-transcript";
 import { TideCardSashGrip } from "./tide-card-sash-grip";
+import { TideCardPinnedTodo } from "./tide-card-pinned-todo";
 import { useTidePlacementSlots } from "./tide-card-placement-experiment";
 import { TideRouteIndicatorBadge } from "../chrome/tide-route-indicator-badge";
 import { TideSessionIdBadge } from "../chrome/tide-session-id-badge";
@@ -256,11 +257,20 @@ export interface TideCardContentProps {
    */
   headerContent?: React.ReactNode;
   /**
-   * Z2 — status-bar content slot. A content-sized row at the BOTTOM of
-   * the top split-panel, OUTSIDE the scrolling transcript list view.
-   * Collapses to zero height when `undefined`. Layout shift on
-   * telemetry update is contained (the row grows into space the
-   * transcript ceded; no scroll repositioning).
+   * Z2A — leading-side status-bar slot ([D100]). Defaults to the
+   * `TideCardPinnedTodo` pinned-task-list renderer; an explicit
+   * `null` suppresses the default, an explicit node overrides it.
+   * Sits between the leading sash grip and `statusBarContent`
+   * (Z2B); collapses to zero height when its renderer returns
+   * `null` (no active task list).
+   */
+  statusBarLeadingContent?: React.ReactNode;
+  /**
+   * Z2 — status-bar content slot (Z2B post-[D100]). A content-sized
+   * row at the BOTTOM of the top split-panel, OUTSIDE the scrolling
+   * transcript list view. Collapses to zero height when `undefined`.
+   * Layout shift on telemetry update is contained (the row grows
+   * into space the transcript ceded; no scroll repositioning).
    */
   statusBarContent?: React.ReactNode;
   /**
@@ -418,6 +428,7 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
 export function TideCardContent({
   cardId,
   headerContent,
+  statusBarLeadingContent,
   statusBarContent,
   renderTurnTrailing,
   footerContent,
@@ -447,6 +458,7 @@ export function TideCardContent({
         cardId={cardId}
         services={services}
         headerContent={headerContent}
+        statusBarLeadingContent={statusBarLeadingContent}
         statusBarContent={statusBarContent}
         renderTurnTrailing={renderTurnTrailing}
         footerContent={footerContent}
@@ -523,6 +535,7 @@ function TideCardServicesGate({
   cardId,
   services,
   headerContent,
+  statusBarLeadingContent,
   statusBarContent,
   renderTurnTrailing,
   footerContent,
@@ -580,6 +593,7 @@ function TideCardServicesGate({
       cardId={cardId}
       services={services}
       headerContent={headerContent}
+      statusBarLeadingContent={statusBarLeadingContent}
       statusBarContent={statusBarContent}
       renderTurnTrailing={renderTurnTrailing}
       footerContent={footerContent}
@@ -1721,7 +1735,13 @@ interface TideCardBodyProps {
   services: TideCardServices;
   /** Z0 — top-of-card content; null collapses the row. */
   headerContent?: React.ReactNode;
-  /** Z2 — status-bar content; null collapses the row. */
+  /**
+   * Z2A — leading-side status-bar slot ([D100]). When `undefined`
+   * the body defaults to `<TideCardPinnedTodo>`; pass `null`
+   * explicitly to suppress the default for tests / gallery cards.
+   */
+  statusBarLeadingContent?: React.ReactNode;
+  /** Z2 — status-bar content (Z2B post-[D100]); null collapses the row. */
   statusBarContent?: React.ReactNode;
   /** Z1 — per-turn trailing renderer; invoked once per row half. */
   renderTurnTrailing?: TideTurnTrailingRenderer;
@@ -1827,6 +1847,7 @@ export function TideCardBody({
   cardId,
   services,
   headerContent,
+  statusBarLeadingContent,
   statusBarContent,
   renderTurnTrailing,
   footerContent,
@@ -2368,6 +2389,18 @@ export function TideCardBody({
   const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
   const effectiveStatusBarContent =
     statusBarContent ?? experimentSlots.statusBarContent;
+  // Z2A default — the pinned task-list renderer ([D100]). Z2A is
+  // canonical, not placement-experiment-tunable, so the resolution
+  // chain is just: explicit prop > default. An explicit `null`
+  // suppresses the default (used by gallery / tests that want a
+  // bare status bar). The component self-collapses when no active
+  // task list exists, so always-mounting is cheap.
+  const effectiveStatusBarLeadingContent =
+    statusBarLeadingContent === undefined ? (
+      <TideCardPinnedTodo codeSessionStore={codeSessionStore} />
+    ) : (
+      statusBarLeadingContent
+    );
   const effectiveRenderTurnTrailing =
     renderTurnTrailing ?? experimentSlots.renderTurnTrailing;
   // Z4B — prompt-entry indicator slot. Step 6 fills it with the badge
@@ -2458,24 +2491,42 @@ export function TideCardBody({
               data-slot="tide-card-status-bar"
             >
               {/*
-                Z2 status content with a sash grip on the leading end
-                and the maximize toggle on the trailing end. The grip
-                resizes the split-pane sash directly below — the status
-                bar would otherwise mask the sash's thin hit line.
-                Rendered only when Z2 has content: an empty slot leaves
-                the wrapper `:empty`, which collapses the whole strip
-                (CSS) and restores the bare-sash layout.
+                Status-bar row with a sash grip on the leading end,
+                Z2A (pinned task list, [D100]) inline, optional Z2B
+                wrapper (`statusBarContent`), and the maximize toggle
+                on the trailing end. The grip resizes the split-pane
+                sash directly below — the status bar would otherwise
+                mask the sash's thin hit line.
+
+                Mount semantics:
+                  - `effectiveStatusBarLeadingContent` may be a node
+                    that self-collapses (the pinned-todo returns
+                    `null` when no active tasks), or an explicit
+                    `null` from the caller. Either way the bar is
+                    rendered as long as one content slot is present.
+                  - When both Z2A and Z2B resolve to `null` we
+                    suppress the chrome (grip + maximize) entirely
+                    so the wrapper goes `:empty` and the strip
+                    collapses via the existing CSS rule. When Z2A is
+                    mounted but inactive (returns null DOM) and Z2B
+                    is absent, a CSS `:has()` rule in `tide-card.css`
+                    collapses the strip without unmounting the
+                    pinned-todo's subscriptions.
               */}
-              {effectiveStatusBarContent != null && (
+              {(effectiveStatusBarLeadingContent != null ||
+                effectiveStatusBarContent != null) && (
                 <>
                   <TideCardSashGrip
                     entryPanelRef={entryPanelRef}
                     side="start"
                     disabled={maximized}
                   />
-                  <div className="tide-card-status-bar-main">
-                    {effectiveStatusBarContent}
-                  </div>
+                  {effectiveStatusBarLeadingContent}
+                  {effectiveStatusBarContent != null && (
+                    <div className="tide-card-status-bar-main">
+                      {effectiveStatusBarContent}
+                    </div>
+                  )}
                   {/*
                     Maximize toggle — Z2's trailing control, in the
                     place the trailing sash grip used to hold. The sash

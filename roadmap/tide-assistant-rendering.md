@@ -876,7 +876,7 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | PathListBlock | string[] | no | 100 paths | none |
 | SearchResultBlock | { groups } | no | 50 results | none |
 | JsonTreeBlock | unknown | no | depth 3 | none |
-| TodoListBlock | { todos } | tool input | none | none |
+| TodoListBlock | { tasks } | reducer over Task* event stream ([D100]) | none | none |
 | AgentTranscriptBlock | { content[] } | yes recursively | depth 2 | none |
 | ImageBlock | { url, alt } | no | none | none |
 | MermaidBlock | text | no (wait for complete) | none | mermaid |
@@ -897,7 +897,7 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | TaskToolBlock | Task | AgentTranscriptBlock | agentType + status + tokens |
 | WebFetchToolBlock | WebFetch | MarkdownBlock or FileBlock | url + favicon |
 | WebSearchToolBlock | WebSearch | SearchResultBlock | query + count |
-| TodoWriteToolBlock | TodoWrite | TodoListBlock | counts + progress |
+| TideCardPinnedTodo (Z2A pinned slot, [D100]) | TaskCreate / TaskUpdate | TodoListBlock | none (status-bar strip) |
 | NotebookEditToolBlock | NotebookEdit | DiffBlock | notebook + cell |
 | DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
 
@@ -905,11 +905,12 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 
 | Tool name | Audit volume | Notes |
 |-----------|-------------:|-------|
-| TaskCreate | 1,789 (2.78%) | Background-task creation; short structured input |
-| TaskUpdate | 3,426 (5.33%) | Background-task status update; ~1-line responses |
-| TaskList | 34 (0.05%) | List background tasks |
-| TaskOutput | 37 (0.06%) | Read background-task output |
-| TaskStop | 7 (0.01%) | Stop a background task |
+| ~~TaskCreate~~ | 1,789 (2.78%) | **Per [D100]**: silenced from the transcript via a `NullToolBlock` registration. The Step 24.1 spike confirmed the original "background-task management" reading was wrong — `TaskCreate` is the per-item create call in the post-`TodoWrite` task system (≥ `claude v2.1.148`). Assembled state lives in the pinned `Z2A` slot. |
+| ~~TaskUpdate~~ | 3,426 (5.33%) | **Per [D100]**: same — silenced. Per-item status flip for the new task system. |
+| TaskList | 34 (0.05%) | Read-the-current-list query for the new task system; rare; default render is adequate. |
+| TaskGet | (not in original audit) | Read-one query for the new task system; default-routed defensively to avoid an `unknown_tool` caution. |
+| TaskOutput | 37 (0.06%) | Read background-task output (the original subagent `Task` family, distinct from the new task system). |
+| TaskStop | 7 (0.01%) | Stop a background task (subagent family). |
 | Monitor | 38 (0.06%) | Process/log monitoring |
 | Skill | 10 (0.02%) | Skill invocation |
 | ScheduleWakeup | 17 (0.03%) | Self-pacing wakeup |
@@ -5624,10 +5625,10 @@ Entry points into the archived turns plan:
 - **[Step 24.1](#step-24-1)** — TodoWrite spike + carve `Z2A` slot + pinned renderer.
 - **[Step 24.2](#step-24-2)** — Remove inline-per-turn `TodoWriteToolBlock` + its registration.
 
-**Original artifacts (still in the tree; disposition listed):**
-- `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css` — **kept**. The pinned `Z2A` renderer composes this standalone.
-- `tugdeck/src/components/tugways/cards/tool-blocks/todo-write-tool-block.tsx` + `.css` + `__tests__/todo-write-tool-block.test.ts` — **retired by Step 24.2**.
-- Registry entry `registerToolBlock("todowrite", TodoWriteToolBlock)` in `tide-assistant-renderer-dispatch.ts` — **unregistered or null-registered by Step 24.2** (the dispatch's fallback behaviour is the deciding factor; see Step 24.2 tasks).
+**Original artifacts (current disposition):**
+- `tugdeck/src/components/tugways/body-kinds/todo-list-block.tsx` + `.css` — **kept** and reworked against the Task* data model; the pinned `Z2A` renderer composes it standalone.
+- `tugdeck/src/components/tugways/cards/tool-blocks/todo-write-tool-block.tsx` + `.css` + `__tests__/todo-write-tool-block.test.ts` — **retired in Step 24.1** (pulled forward from the originally-planned Step 24.2 once the type rename made the wrapper uncompilable).
+- Registry entry `registerToolBlock("todowrite", …)` in `tide-assistant-renderer-dispatch.ts` — **removed in Step 24.1**. `taskcreate` / `taskupdate` are now registered to a `NullToolBlock` so per-call events render nothing in the transcript ([D100]); the Z2A pinned slot is the sole surface.
 
 **References:** [D05] (two-layer split), [D97] (zone architecture), [D100] (pinned `Z2A` TodoWrite — new), [L02], [L06], Spec S02, Spec S03
 
@@ -5662,8 +5663,61 @@ This exercises both the create path (initial TodoWrite call) and the incremental
 5. **Concurrency.** Can two TodoWrite calls be in-flight simultaneously, or always serial? (Drives whether the selector needs tie-breaking when the in-flight `toolCallMap` carries an unfinished TodoWrite alongside committed ones.)
 
 **Spike outputs.**
-- A short findings note appended inline to this step (replaces this `Spike outputs` placeholder).
-- The captured JSONL saved as a catalog fixture at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v{ver}/test-{N}-todowrite-c-calculator.jsonl` so future regression tests have a canonical sample.
+
+Captured `claude 2.1.150 -p --output-format=stream-json --permission-mode=acceptEdits` running the reference prompt against an empty `/tmp/todo-test`. Raw stream saved (un-normalized — see README explanation) at:
+
+- `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/test-task-tools-c-calculator-raw.jsonl`
+- `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/README.md` — explains why this is a sibling-to-not-inside the normalized catalog dirs and what would be needed to promote it.
+
+**Spike findings (load-bearing — they pivot the rework).**
+
+**Anthropic renamed the tool.** `TodoWrite` is **gone** in `claude 2.1.150` (and was already gone in capabilities `v2.1.148`). The audit baseline that motivated the original Step 24 (the team's `2.1.112` snapshot still listed `TodoWrite`) is stale. The replacement is the `TaskCreate` / `TaskUpdate` / `TaskList` / `TaskGet` / `TaskOutput` / `TaskStop` family, and these are *already* present in the codebase's dispatch as `AUDIT_CONFIRMED_DEFAULT_TOOLS` — but labelled "Background-task management family", a misread that the spike disproves. The reference prompt produces **zero `TodoWrite` events** and twelve Task* events; the existing `TodoWriteToolBlock` registration is dead code for any current-version session.
+
+**The new wire-shape model is per-item CRUD, not whole-list replacement.** `TaskCreate` creates one task per call; `TaskUpdate` flips one task's status by id. The reference prompt produced 4 × `TaskCreate` + 8 × `TaskUpdate` = 12 Task* events for a 4-item list. Observed shapes:
+
+```jsonc
+// tool_use.input — TaskCreate (one per task)
+{
+  "subject":     "Write calc.c source",                           // imperative
+  "description": "Implement command-line calculator in C…",       // longer prose
+  "activeForm":  "Writing calc.c source"                           // present-continuous
+}
+// tool_result.content — TaskCreate (string, not block array)
+"Task #1 created successfully: Write calc.c source"
+
+// tool_use.input — TaskUpdate
+{ "taskId": "1", "status": "in_progress" }
+// tool_result.content — TaskUpdate
+"Updated task #1 status"
+```
+
+Notes:
+- `taskId` is a **string-encoded integer** assigned server-side, monotonic per session. Clients can also discover it by parsing the `tool_result.content` (`"Task #N created…"`) if they prefer not to count.
+- `status` values observed: `"in_progress"`, `"completed"` (presumably `"pending"` as the implicit on-create default).
+- `description` was present on every `TaskCreate` in this session; whether it's required vs. optional is not confirmed from one session, but the renderer should tolerate it being absent.
+- No `tool_use_structured` event is emitted for Task* tools — the `tool_use.input` IS the canonical wire payload.
+
+**Spike answers:**
+
+1. **Call cadence (Q1):** **Front-loaded creation, then incremental updates.** All 4 `TaskCreate`s arrived in a contiguous block before any non-Task tool call; `TaskUpdate`s interleave with `Write` / `Bash` calls as each item's work completes. 12 events total for 4 items is the rough multiplier.
+2. **List-replacement semantics (Q2):** **Not whole-list replacement** — per-item CRUD. The reducer must accumulate state across the event stream rather than reading the latest call's `input` as the canonical list. **This invalidates the original D100 selector design.**
+3. **`activeForm` reliability (Q3):** Present on every `TaskCreate` in this session. Treat as effectively-always-present but render-tolerant of absence (fall through to `subject`).
+4. **Clear mechanism (Q4):** **No wire-level clear event observed.** No `TaskDelete`. The tool family includes `TaskStop` (`taskstop` in the audit list) but the reference prompt never emits it. The list lives for the session; the renderer's "no active todos" rule fires when every created task has `status === "completed"` (or no Task* call has happened yet).
+5. **Concurrency (Q5):** Fully serial — every `tool_use` was followed by its matching `tool_result` before the next `tool_use` arrived. No concurrency hazard for the reducer.
+
+**Architectural implications (must be resolved before the rest of this step proceeds):**
+
+- **The selector becomes a reducer.** "Walk `toolCalls[]` and return the latest `TodoWrite` input" no longer fits. Replace with: `reduceTaskListState(toolCalls): TaskListState` — fold every `TaskCreate` (append with id assignment) and every `TaskUpdate` (mutate by id) into a current list. Order-preserving by `taskId`, since Claude assigns ids monotonically.
+- **The data model needs the new fields.** `TodoItem { content, status, activeForm? }` becomes `TaskItem { taskId, subject, description?, status, activeForm? }`. `TodoListData { todos }` becomes `TaskListState { tasks }`. `TodoListBlock`'s row renderer needs to handle the longer `description` text — likely as a hover tooltip or expandable detail rather than a primary row line, since the row is "icon + text" today.
+- **Dispatch registry needs three coordinated changes:** (a) remove `registerToolBlock("todowrite", …)` (dead — no v2.1.148+ session emits it); (b) decide whether `taskcreate` / `taskupdate` continue to fall through `AUDIT_CONFIRMED_DEFAULT_TOOLS` to `DefaultToolBlock` (producing 12 per-call default-tool-block rows per typical session, a lot of noise once `Z2A` is authoritative) OR register them as **null renderers** so the transcript carries zero Task* per-call entries and `Z2A` is the sole surface; (c) update the audit-table comment in `tide-assistant-renderer-dispatch.ts:256` ("Background-task management family") to reflect the actual semantics.
+- **D100 needs rewriting** to reflect the new tool names and reducer model.
+- **Step 24.2's deletion scope shifts** — `TodoWriteToolBlock` removal is bookkeeping (no live session uses it); the substantive transcript change is the dispatch-registry treatment of `taskcreate` / `taskupdate` decided above.
+
+**Open questions for the user (paused pending direction):**
+
+1. Confirm pivot of D100 + this step to the `TaskCreate` / `TaskUpdate` family (the spike makes this all but mandatory, but the framing change is yours to OK).
+2. Should `TaskCreate` / `TaskUpdate` per-call events render as default tool blocks in the transcript (the current silent-default behavior — produces a 12-row history of Task* calls per typical session), or be silenced (null renderer — the transcript carries no Task* per-call entries; `Z2A` is the sole surface)?
+3. In `Z2A`'s row layout, how should `description` be presented — hidden in a tooltip, expanded inline as a secondary line, or omitted entirely?
 
 **Artifacts.**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` — add a `statusBarLeadingContent?: React.ReactNode` prop (`Z2A`). Mount it in the status-bar row to the leading side of the existing `statusBarContent` (now `Z2B`), inside the existing flex row between the sash grip and `Z2B`. Empty slot collapses via `:empty`, matching every other reserved zone in [D97].
@@ -5673,53 +5727,62 @@ This exercises both the create path (initial TodoWrite call) and the incremental
 - D97 zone-table update in `tuglaws/design-decisions.md` — split the existing `Z2` row into `Z2A` (pinned TodoWrite) and `Z2B` (`TideTelemetryStatusRow`) so the diagram and table reflect [D100].
 
 **Tasks.**
-- [ ] Spike: capture JSONL from the reference prompt against `/tmp/todo-test`; save as catalog fixture; document findings inline in this step (replace `Spike outputs` placeholder).
-- [ ] Carve `Z2A`: add `statusBarLeadingContent` prop to `TideCard`, mount in status bar row leading-side of `statusBarContent`.
-- [ ] Pure selector: `selectLatestTodoWriteInput(state)` + test file pinning (a) returns undefined when no TodoWrite call exists, (b) returns the most recent call's input across `transcript` + in-flight, (c) returns undefined when latest list is empty or all-completed (encodes [D100] active rule).
-- [ ] Pinned renderer: subscribes via `useSyncExternalStore`, composes `TodoListBlock` standalone, returns `null` on inactive selector result.
-- [ ] CSS: max-height + inner scroll if list overflows the strip; divider against `Z2B`; collapse-when-empty via `:empty`; no React state for visibility ([L06]).
-- [ ] D97 zone-table update: split `Z2` row into `Z2A` / `Z2B` sub-rows.
+- [x] Spike: captured JSONL from the reference prompt against `/tmp/todo-test`; saved at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/test-task-tools-c-calculator-raw.jsonl`; findings documented inline above (see *Spike findings* and *Architectural implications*).
+- [x] User direction received (`/loop` chat 2026-05-23): pivot to Task* model; silence `TaskCreate`/`TaskUpdate` in the transcript via null renderers; show `description` in a hover tooltip per row.
+- [x] Carve `Z2A`: added `statusBarLeadingContent` prop to `TideCard` ([D100]), threaded through `TideCardContent` → `TideCardServicesGate` → `TideCardBody`, mounted in the status bar row leading-side of `statusBarContent` (`tide-card.tsx`). Default is `<TideCardPinnedTodo>`; an explicit `null` suppresses for gallery / tests.
+- [x] Reducer `reduceTaskListState(toolCalls): TaskListState` in `lib/code-session-store/select-task-list.ts` folds the `TaskCreate` / `TaskUpdate` event stream into a current list. Tests in `__tests__/select-task-list.test.ts` (26 cases) pin: empty / non-Task / errored / non-terminal Task* are skipped; create then update flips by id; unknown taskId silently dropped; off-pattern result falls back to monotonic count; order preserved; tool-name match case-insensitive; the [D100] active rule (`taskListIsActive`) returns false for all-completed or empty lists.
+- [x] Data model: `TaskItem { taskId, subject, description?, activeForm?, status }`, `TaskListState { tasks }`, `TaskStatus = "pending" | "in_progress" | "completed"`, all in `select-task-list.ts`. `narrowTaskCreateInput` + `narrowTaskUpdateInput` + `parseTaskCreateResultId` cover the wire-narrowing surface. The body kind `TodoListBlock` re-exports them so the user-facing component name remains stable.
+- [x] Pinned renderer `TideCardPinnedTodo` (`tide-card-pinned-todo.tsx` + `.css`) subscribes through `useSyncExternalStore` ([L02]) by combining the code-session snapshot (committed `transcript[].toolCalls[]`) with the in-flight turn's `streamingDocument.turn.${turnKey}.tools` path (`useInflightTaskCalls` hook, JSON-cached for `Object.is` stability). Composes `TodoListBlock` standalone; returns `null` when `taskListIsActive` is false (slot collapses via CSS).
+- [x] `TodoListBlock` row rework — primary text is `subject` (or `activeForm` when in_progress); when `description` is present the row is wrapped in `TugTooltip`. Helpers renamed `countTasks` / `composeTaskSummary` / `taskProgressFraction` / `composeTaskCopyText`; body-kind test updated to match.
+- [x] CSS: `tide-card-pinned-todo.css` adds `--tugx-pinned-todo-*` slots ([L20]); max-width 40%, max-height ≈ five rows with internal scroll, trailing hairline divider against `Z2B`, `:empty` collapse, and frame-suppression styles when composed inside the strip. `tide-card.css` gains a `:has()` rule that collapses the whole `.tide-card-status-bar` when neither `.tide-card-pinned-todo` nor `.tide-card-status-bar-main` is present in the DOM. All visibility CSS-driven ([L06]).
+- [x] D97 zone-table update: split `Z2` row into `Z2A` (`statusBarLeadingContent` → `TideCardPinnedTodo`) and `Z2B` (existing `statusBarContent` → `TideTelemetryStatusRow`); ASCII diagram amended.
+- [x] D100 rewrite: substitutes `TaskCreate` / `TaskUpdate` for `TodoWrite`; selector → reducer; documents the spike findings; states the silencing decision and the `taskId`-parse-with-monotonic-fallback rule.
+- [x] `AUDIT_CONFIRMED_DEFAULT_TOOLS` updated in `tide-assistant-renderer-dispatch.ts`: removed `taskcreate` / `taskupdate` from the audit set; added `taskget` defensively; corrected the "Background-task management" misread in the docstring; registered both load-bearing Task* tools to a new `NullToolBlock` factory so per-call events render nothing in the transcript. Three existing tests that used `TaskUpdate` as their audit-set example switched to `Monitor`.
+- [x] Dead `TodoWriteToolBlock` removed early (`fix preexisting`): `cards/tool-blocks/todo-write-tool-block.tsx` + `.css` + `__tests__/todo-write-tool-block.test.ts` deleted; import + `registerToolBlock("todowrite", …)` line removed from the dispatch. (Originally scoped to Step 24.2; pulled forward because the type rename would have left the wrapper as broken dead code otherwise.)
+- [x] Roadmap inventory tables (T01, T02, audit-confirmed) updated to reflect the [D100] reading and the silencing decision.
 
 **Tests.**
-- [ ] `selectLatestTodoWriteInput`: undefined when no TodoWrite calls.
-- [ ] `selectLatestTodoWriteInput`: returns last input across three synthetic TodoWrite calls in one transcript.
-- [ ] `selectLatestTodoWriteInput`: returns undefined for an all-completed latest list (active rule).
-- [ ] `selectLatestTodoWriteInput`: returns undefined for an empty `todos: []` latest list (clear mechanism, if the spike confirms this is the wire signal).
-- [ ] `selectLatestTodoWriteInput`: in-flight `toolCallMap` overrides a committed `TurnEntry.toolCalls` entry from an earlier turn.
+- [x] `reduceTaskListState`: 13 cases pinning every fold path — empty / non-Task / errored / non-terminal skips; one Create + one Update flips status; unknown taskId silent drop; off-pattern result → monotonic count fallback; order preservation; case-insensitive tool-name match.
+- [x] `taskListIsActive`: 4 cases — empty / all-completed → inactive; at-least-one non-completed → active.
+- [x] `narrowTaskCreateInput`: 5 cases — well-formed; optional fields; missing subject; non-object; bad scalar types.
+- [x] `narrowTaskUpdateInput`: 3 cases — every status; bad fields; non-object.
+- [x] `parseTaskCreateResultId`: 2 cases — extracts id; off-pattern / missing → undefined.
+- [x] `TodoListBlock` helper rename — `countTasks`, `composeTaskSummary`, `taskProgressFraction`, `composeTaskCopyText` all green (13 cases) against the new `TaskItem` shape.
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual (HMR): run the reference prompt against `/tmp/todo-test`; confirm `Z2A` appears as soon as the first TodoWrite lands, updates in place as items flip `in_progress` / `completed`, and collapses when the final list is all-completed.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — clean; 2626 / 2626 pass (up from 2527 prior to this step; net +99 across new `select-task-list.test.ts` and renamed helper tests, less the deleted `todo-write-tool-block.test.ts`).
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual (HMR): run the reference prompt against `/tmp/todo-test` through Tug.app or the dev server; confirm `Z2A` appears as soon as the first `TaskCreate` lands, updates in place as `TaskUpdate` flips status, collapses when the final list is all-completed, and the transcript carries zero per-call Task* rows. Verify the per-row `description` tooltip on hover (deferred to user — HMR is always running; the live engine pipeline is the source of visual truth per the project's testing policy).
 
 ---
 
-#### Step 24.2: Remove inline-per-turn TodoWriteToolBlock {#step-24-2}
+#### Step 24.2: Gallery + symbol-inventory cleanup post-[D100] {#step-24-2}
 
-**Goal.** Retire the original Step 24's inline-per-turn `TodoWriteToolBlock` now that `Z2A` carries the active list authoritatively ([D100]).
+**Status (post-Step 24.1):** the file deletion and dispatch unregistration originally scoped here were pulled forward into Step 24.1 — once `TodoListBlock`'s types were renamed against the Task* model, the dead `TodoWriteToolBlock` no longer compiled and "fix preexisting" applied. The remaining work is doc / gallery cleanup that's better landed under its own commit so the gallery + inventory edits stay isolated.
+
+**Goal.** Finish post-[D100] housekeeping: update the symbol inventory and the planned-but-not-shipped gallery card so they describe the as-shipped reality.
 
 **Depends on:** #step-24-1
 
-**Commit:** `chore(tide-rendering): remove inline TodoWriteToolBlock — pinned Z2A is the canonical home`
+**Commit:** `chore(tide-rendering): gallery + symbol-inventory cleanup post-[D100]`
 
 **References:** [D100]
 
 **Artifacts.**
-- Delete `tugdeck/src/components/tugways/cards/tool-blocks/todo-write-tool-block.tsx` + `.css` + `__tests__/todo-write-tool-block.test.ts`.
-- Remove the `TodoWriteToolBlock` import and the `registerToolBlock("todowrite", TodoWriteToolBlock)` line from `tide-assistant-renderer-dispatch.ts`.
-- Decide the dispatch fallback: if `registerToolBlock` falls through to `DefaultToolWrapper` on unregistered tool names, then unregistering would put a `DefaultToolWrapper` "TodoWrite" row in the transcript (defeating the rework's goal). In that case, register a null renderer that returns `null` for `todowrite`. Implementation note: confirm the dispatch's default-fallback behaviour from Step 24.1 spike review before choosing unregister vs. null-register.
-- Inventory tables in the roadmap (lines naming `TodoWriteToolBlock`: §Symbol Inventory, §Test Plan Concepts, §Streaming-paths table) — strike the wrapper rows or annotate them as "removed in Step 24.2 — see [D100]".
-- Gallery: `gallery-tool-block-meta.tsx` (planned in [#step-29-5](#step-29-5)) had TodoWrite on the demo list — update that step's plan to demo the `Z2A` pinned slot instead, or drop the TodoWrite entry from that gallery card.
+- Symbol inventory in this roadmap (§Definitive Symbol Inventory, around line 1031–1035) — strike `TodoWriteToolBlock` from the Layer-2 wrapper list; add `TideCardPinnedTodo` + `reduceTaskListState` + `TaskItem` / `TaskListState` types under the appropriate section.
+- Gallery: [#step-29-5](#step-29-5) `gallery-tool-block-meta.tsx` had `TodoWrite` on its demo list — swap it for a `Z2A`-pinned-slot demo (a synthetic `TaskItem[]` driving `TodoListBlock` standalone), or drop the entry if a dedicated `gallery-tide-pinned-todo.tsx` is preferred (decide at gallery-build time).
+
+**Done by Step 24.1 (no work left here):**
+- ~~Delete `todo-write-tool-block.{tsx,css}` and its test file.~~ Done.
+- ~~Unregister or null-register `todowrite` in the dispatch.~~ The dispatch decision (null-register) is recorded in [D100]; the obsolete `todowrite` registration is removed; `taskcreate` / `taskupdate` are null-registered. `taskget` was added to the audit set defensively.
+- ~~Inventory tables in the roadmap (T01, T02, audit-confirmed list).~~ Done by Step 24.1's docs pass; Table T02's wrapper row now points at `TideCardPinnedTodo (Z2A pinned slot)`, and the audit-confirmed table strikes through `TaskCreate` / `TaskUpdate` with [D100] cross-refs.
 
 **Tasks.**
-- [ ] Delete `todo-write-tool-block.{tsx,css}` and its test file.
-- [ ] Unregister or null-register `todowrite` in `tide-assistant-renderer-dispatch.ts` (per artifact-list decision rule above).
-- [ ] Update inventory tables and Step 24 umbrella "Original artifacts" status (mark the wrapper as retired).
-- [ ] Update [#step-29-5](#step-29-5) plan: swap the TodoWrite gallery demo for a `Z2A`-pinned-slot demo or drop it.
+- [ ] Symbol inventory edits per Artifacts above.
+- [ ] Step 29.5 plan amendment — swap or drop the `TodoWrite` gallery demo entry.
 
 **Tests.**
-- [ ] No new tests; existing transcript tests must still pass.
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` clean — the deleted test file disappears from the suite.
+- [ ] No new tests; existing suite continues to pass (`bun test`).
 
 **Checkpoint.**
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.

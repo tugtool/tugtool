@@ -1,0 +1,90 @@
+/**
+ * `tide-card-pinned-todo.css` — visual chrome for the pinned `Z2A`
+ * task-list slot ([D100]).
+ *
+ * The component renders inside `.tide-card-status-bar`'s flex row,
+ * leading-side of `.tide-card-status-bar-main` (which carries `Z2B`).
+ * The strip:
+ *   - takes its natural width up to a fraction-of-card cap so it
+ *     never starves `Z2B`;
+ *   - vertical-aligns to top so consecutive task rows stack from
+ *     the top of the status bar rather than centering against
+ *     `Z2B`'s single-line telemetry;
+ *   - caps its rendered height so a very long task list scrolls
+ *     internally rather than ballooning the status bar's height
+ *     into the transcript;
+ *   - draws a hairline divider on its trailing edge to separate it
+ *     from `Z2B`;
+ *   - collapses entirely when the renderer returns `null`
+ *     (`:empty`) — no React state for visibility, pure [L06].
+ *
+ * Tokens follow [L20] component-token sovereignty: the file owns
+ * `--tugx-pinned-todo-*` and composes shared theme tokens through
+ * those slots.
+ */
+
+.tide-card-pinned-todo {
+  /* Sized to content, capped so the list never crowds Z2B's
+     telemetry below ~40% of the card width. min-width: 0 lets the
+     ellipsis-clipped row text shrink below intrinsic size when the
+     card is narrow. */
+  --tugx-pinned-todo-max-width: 40%;
+  --tugx-pinned-todo-max-height: calc(var(--tug-space-xl) * 5);
+  --tugx-pinned-todo-divider-color: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pinned-todo-divider-gap: var(--tug-space-md);
+
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: var(--tugx-pinned-todo-max-width);
+  max-height: var(--tugx-pinned-todo-max-height);
+
+  /* Top-align so consecutive task rows stack from the leading edge
+     of the strip; `align-items: center` on the parent would center
+     each row against Z2B and read as drift. The flex item's own
+     align is independent of the parent's row centering. */
+  align-self: flex-start;
+
+  /* Internal scroll for over-long lists — keeps the status bar's
+     height bounded at `--tugx-pinned-todo-max-height` and lets the
+     remainder scroll under the user's wheel/track gesture without
+     forcing the transcript to repaint. */
+  overflow-y: auto;
+
+  /* Hairline trailing divider against Z2B. Matched to the status-
+     bar's own border color so the lines read as one set; the gap
+     after it absorbs the flex `gap` distance the row would otherwise
+     leave invisible against the divider. */
+  padding-inline-end: var(--tugx-pinned-todo-divider-gap);
+  border-inline-end: 1px solid var(--tugx-pinned-todo-divider-color);
+}
+
+/* `:empty` collapse — the renderer returns `null` when no active
+   tasks exist, leaving the slot's `<div>` (which TideCard always
+   mounts) child-less. The CSS box then collapses entirely, restoring
+   the pre-D100 status-bar layout one-rule cleanly. */
+.tide-card-pinned-todo:empty {
+  display: none;
+}
+
+/* The embedded `TodoListBlock` paints its own frame (`.tugx-todo`)
+   which carries `--tugx-block-*` padding and a background. Inside
+   the pinned slot we suppress that frame's outer padding since the
+   status bar already owns the surface padding via its own `padding:
+   var(--tug-space-md)`. The body kind's row gap stays — that's the
+   between-task vertical rhythm. */
+.tide-card-pinned-todo .tugx-todo {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+/* The standalone header (label · summary · Copy) is not useful in
+   the pinned strip — Z2A is identity by location, not by label, and
+   the summary duplicates what the user can read from the rows
+   themselves. Hide it cleanly; the actions cluster (Copy) goes with
+   it. This is a presentation choice scoped to the pinned host
+   ([L20]) and does not alter the standalone body kind's layout
+   anywhere else. */
+.tide-card-pinned-todo .tugx-todo-header {
+  display: none;
+}

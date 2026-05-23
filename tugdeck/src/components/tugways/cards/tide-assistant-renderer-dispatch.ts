@@ -93,7 +93,6 @@ import { EditToolBlock } from "./tool-blocks/edit-tool-block";
 import { GlobToolBlock } from "./tool-blocks/glob-tool-block";
 import { GrepToolBlock } from "./tool-blocks/grep-tool-block";
 import { TaskToolBlock } from "./tool-blocks/task-tool-block";
-import { TodoWriteToolBlock } from "./tool-blocks/todo-write-tool-block";
 import { AskUserQuestionToolBlock } from "./tool-blocks/ask-user-question-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
@@ -251,12 +250,26 @@ const TOOL_ALIASES: ReadonlyMap<string, string> = new Map([
  *
  * Promote an entry from here to `TOOL_BLOCK_REGISTRY` later if
  * dogfooding shows the default rendering is suboptimal.
+ *
+ * **Per [D100]: `TaskCreate` and `TaskUpdate` are NOT in this set.**
+ * The Step 24.1 spike confirmed they are the new todo system (the
+ * replacement for the retired `TodoWrite` tool, ≥ `claude v2.1.148`),
+ * not background-task management. Both render as a `NullToolBlock`
+ * in `TOOL_BLOCK_REGISTRY` so the transcript carries zero per-call
+ * entries; the assembled list lives in the pinned `Z2A` slot, which
+ * is the sole surface. `TaskList` / `TaskGet` / `TaskOutput` /
+ * `TaskStop` remain default-routed: they are very rare in practice
+ * (the audit volumes are 0.05% / unknown / 0.06% / 0.01%) and a
+ * generic structured-result row is sufficient. `TaskGet` was
+ * missing from the original audit set; included defensively now to
+ * avoid an `unknown_tool` caution if the assistant ever calls it.
  */
 const AUDIT_CONFIRMED_DEFAULT_TOOLS: ReadonlySet<string> = new Set([
-  // Background-task management family (TaskUpdate alone is 5.33% of all tool calls)
-  "taskcreate",
-  "taskupdate",
+  // Task* tools that stay default-routed — the rare ones, not the
+  // load-bearing TaskCreate / TaskUpdate pair (silenced via the
+  // registry; see below).
   "tasklist",
+  "taskget",
   "taskoutput",
   "taskstop",
   // Long tail
@@ -267,6 +280,24 @@ const AUDIT_CONFIRMED_DEFAULT_TOOLS: ReadonlySet<string> = new Set([
   "enterworktree",
   "exitworktree",
 ]);
+
+/**
+ * Silent renderer used by `TaskCreate` / `TaskUpdate` per [D100]: the
+ * pinned `Z2A` slot is the sole surface for the task list, so the
+ * per-call events do not paint into the transcript. Returning `null`
+ * leaves no DOM child for the row — `tide-card-transcript-tool-calls`
+ * iterates and renders each tool block, and a null return adds zero
+ * markup. The container itself (`.tide-transcript-tool-calls`) stays
+ * present in the assistant turn, so a turn whose only tool calls
+ * are Task* events shows the prose / thinking content with no
+ * tool-call rows underneath.
+ *
+ * Registering here (rather than adding the names to
+ * `AUDIT_CONFIRMED_DEFAULT_TOOLS`) is what produces the silence: the
+ * audit set falls through to `DefaultToolBlock`, which paints a row;
+ * the registry's null factory paints nothing.
+ */
+const NullToolBlock: ToolBlockFactory = () => null;
 
 /**
  * Register a tool block. Called by tool-block modules at import
@@ -872,7 +903,12 @@ registerToolBlock("grep", GrepToolBlock);
 // Canonical `agent`; the historical `task` name resolves here via the
 // `task → agent` alias in `TOOL_ALIASES`. ([D16])
 registerToolBlock("agent", TaskToolBlock);
-registerToolBlock("todowrite", TodoWriteToolBlock);
+// Per [D100]: TaskCreate / TaskUpdate are the v2.1.148+ replacement
+// for the retired TodoWrite tool, and the pinned `Z2A` slot is the
+// sole surface for the assembled task list. Register a null factory
+// so per-call events do not paint into the transcript.
+registerToolBlock("taskcreate", NullToolBlock);
+registerToolBlock("taskupdate", NullToolBlock);
 // AskUserQuestion's *live* surface is the inline `QuestionDialog`
 // ([D13]); this wrapper renders the durable Q&A artifact that
 // remains in the turn after the dialog clears.

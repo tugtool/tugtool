@@ -153,6 +153,21 @@
   display: none;
 }
 
+/* Post-[D100]: Z2A's `TideCardPinnedTodo` stays mounted across the
+   session (it owns subscriptions to the code-session store), but
+   self-collapses to `null` DOM when no active task list exists. In
+   that state the strip's wrapper has grip + maximize children but
+   no *content* — `:empty` no longer fires. The `:has()` rule below
+   covers it: hide the strip when there is neither a
+   `.tide-card-pinned-todo` (Z2A active) nor a
+   `.tide-card-status-bar-main` (Z2B mounted) child. Visibility stays
+   appearance-driven, no React state ([L06]). Modern browsers only;
+   tugdeck already ships `:has()` (see `tide-card-z1b.css` /
+   `tug-menu.css`). */
+.tide-card-status-bar:not(:has(.tide-card-pinned-todo)):not(:has(.tide-card-status-bar-main)) {
+  display: none;
+}
+
 /* Z2 status content, flanked by the two sash grips. `flex: 1 1 auto`
    lets it absorb the row width the grips leave; `min-width: 0` lets
    it shrink below content so the grips stay pinned to the card's

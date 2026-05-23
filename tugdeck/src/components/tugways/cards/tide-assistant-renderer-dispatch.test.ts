@@ -171,9 +171,13 @@ describe("dispatch — tool_call routing", () => {
   });
 
   it("routes audit-confirmed default tools to DefaultToolBlock without caution", () => {
+    // `monitor` is in `AUDIT_CONFIRMED_DEFAULT_TOOLS` — known to
+    // route through Default by design, so no drift caution. `TaskUpdate`
+    // used to sit here but is now registered to a `NullToolBlock` per
+    // [D100]; see `AUDIT_CONFIRMED_DEFAULT_TOOLS` docstring.
     const input: RenderInput = {
       kind: "tool_call",
-      toolCall: fakeToolCall("TaskUpdate"),
+      toolCall: fakeToolCall("Monitor"),
       msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
@@ -439,7 +443,9 @@ describe("detectToolCallDrift", () => {
   });
 
   it("does not flag an audit-confirmed default-routed tool", () => {
-    expect(detectToolCallDrift(fakeToolCall("TaskUpdate"))).toBeNull();
+    // `Monitor` is in `AUDIT_CONFIRMED_DEFAULT_TOOLS`; `TaskUpdate`
+    // used to be but moved to a registered `NullToolBlock` per [D100].
+    expect(detectToolCallDrift(fakeToolCall("Monitor"))).toBeNull();
   });
 
   it("does not flag a registered wrapper with no shape schema", () => {
