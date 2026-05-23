@@ -34,13 +34,18 @@
  *      keeps reaching `popInteractive` via the responder chain; that
  *      walk-away cancels the running turn rather than denying the
  *      permission.
- *   2. **Resolved** — a one-line record (`{tool} — Allowed/Denied`)
- *      with a chevron that expands to re-show the request body +
- *      reason, read-only. This branch is intentionally *not* on the
- *      inline-dialog primitive — it's a record-toggle shape, not a
- *      CTA. A dialog that mounts for an already-resolved request
- *      (replay, re-render after response, committed transcript
- *      artifact) lands here directly.
+ *   2. **Recorded** — a compact `ToolWrapperChrome` row pairing the
+ *      gated tool name with the user's decision (`Allowed` / `Denied` /
+ *      the `Resolved` out-of-band fallback). Composed on the same
+ *      chrome the `AskUserQuestionToolBlock` recorded view uses, so
+ *      the two post-interaction records read as siblings of the same
+ *      family. No body — the gated tool block that renders
+ *      immediately above this record (threaded into the tool stream
+ *      by `tool_use_id`, see `cards/tide-card-transcript.tsx`)
+ *      already carries the input context (the Bash command, the file
+ *      diff, the file path). A dialog that mounts for an
+ *      already-recorded request (replay, re-render after response,
+ *      committed transcript artifact) lands in this branch directly.
  *
  * Per-tool description (`composePermissionDescription`):
  *
@@ -76,11 +81,13 @@
  *    `data-slot="tide-permission-dialog"` on the resolved-record
  *    root, this docstring.
  *  - [L20] component-token sovereignty — the pending visual is
- *    delegated to `TideInteractiveDialog` (the family-default
- *    cancel-role + actions-row layer) which in turn delegates to
- *    `TugInlineDialog` (which owns `--tugx-idialog-*`); this dialog
- *    contributes only the resolved-record chrome and owns the
- *    residual `--tugx-perm-*` slot family.
+ *    delegated to `TideInteractiveDialog` (which owns the family
+ *    cancel-role + actions-row defaults) which in turn delegates to
+ *    `TugInlineDialog` (`--tugx-idialog-*`); the recorded visual is
+ *    delegated to `ToolWrapperChrome` (`--tugx-block-*` /
+ *    `--tugx-toolblock-*` shared family). This dialog itself
+ *    contributes only the small inline-icon + reason fragments used
+ *    inside the pending description.
  *
  * Decisions:
  *  - [D13] inline (not modal) permission dialogs; collapse-to-record
@@ -92,12 +99,15 @@
 import "./tide-permission-dialog.css";
 
 import React from "react";
-import { Ban, ChevronRight, Shell, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Ban, Shell, ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
+import { ToolWrapperChrome } from "@/components/tugways/cards/tool-wrappers/tool-wrapper-chrome";
 import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
+import { TugBadge } from "@/components/tugways/tug-badge";
+import type { TugBadgeRole } from "@/components/tugways/tug-badge";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import type {
   CodeSessionStore,
@@ -319,19 +329,49 @@ export function buildPermissionOptions(
 }
 
 /**
- * The one-line summary shown in the collapsed resolved record. A
- * `null` decision is the "resolved out-of-band" case — the dialog
- * mounted for a request that was no longer pending and has no locally
- * remembered decision.
+ * Per-decision presentation triple for the recorded permission's
+ * `ToolWrapperChrome` header. The toolName goes on the chrome's
+ * `toolName` slot; this helper picks the decision-side vocabulary —
+ * `Allowed` / `Denied` / the `Resolved` out-of-band fallback when a
+ * dialog mounts for a request that already cleared without a locally
+ * remembered decision. Pure; exported for tests.
+ *
+ * The `badgeRole` keys the `TugBadge` colour domain that wraps the
+ * status word: `success` for allow, `danger` for deny, `action`
+ * (neutral) for the out-of-band fallback. The badge owns the visible
+ * chip; this contract pins the role each decision maps to.
  */
-export function composePermissionRecordSummary(
-  toolName: string,
+export interface RecordedPermissionPresentation {
+  /** Status word shown next to the tool name in the chrome header. */
+  label: "Allowed" | "Denied" | "Resolved";
+  /** Lucide icon node — passed to the chrome's `toolIcon` slot. */
+  icon: React.ReactNode;
+  /** `TugBadge` role for the status chip. */
+  badgeRole: TugBadgeRole;
+}
+
+export function recordedPermissionPresentation(
   decision: "allow" | "deny" | null,
-): string {
-  const name = toolName.trim() === "" ? "Tool" : toolName;
-  if (decision === "allow") return `${name} — Allowed`;
-  if (decision === "deny") return `${name} — Denied`;
-  return `${name} — Resolved`;
+): RecordedPermissionPresentation {
+  if (decision === "deny") {
+    return {
+      label: "Denied",
+      icon: <Ban size={14} aria-hidden="true" />,
+      badgeRole: "danger",
+    };
+  }
+  if (decision === "allow") {
+    return {
+      label: "Allowed",
+      icon: <ShieldCheck size={14} aria-hidden="true" />,
+      badgeRole: "success",
+    };
+  }
+  return {
+    label: "Resolved",
+    icon: <ShieldAlert size={14} aria-hidden="true" />,
+    badgeRole: "action",
+  };
 }
 
 /**
@@ -566,18 +606,14 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     ),
   );
 
-  // Remembered decision — local UI data ([L24]). Drives the resolved
-  // record's summary. Seeded from `resolvedDecision` for a committed
-  // transcript artifact; stays `null` for a live request until the
-  // user clicks (or for a dialog that mounted resolved out-of-band
-  // with no recorded decision).
+  // Remembered decision — local UI data ([L24]). Drives the recorded
+  // chrome's header status word. Seeded from `resolvedDecision` for a
+  // committed transcript artifact; stays `null` for a live request
+  // until the user clicks (or for a dialog that mounted resolved
+  // out-of-band with no recorded decision).
   const [decision, setDecision] = React.useState<"allow" | "deny" | null>(
     input.resolvedDecision ?? null,
   );
-  // Resolved-record expand affordance. Plain React state — persists
-  // for the cell's lifetime, resets on remount (mirrors
-  // `TideThinkingBlock`'s collapse model).
-  const [recordExpanded, setRecordExpanded] = React.useState(false);
 
   const respond = React.useCallback(
     (next: "allow" | "deny", message?: string) => {
@@ -661,62 +697,40 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
     respond("deny");
   }, [respond]);
 
-  // ---- Resolved record ----------------------------------------------------
+  // ---- Recorded permission ------------------------------------------------
+  // Composed on `ToolWrapperChrome` — the same chrome the
+  // `AskUserQuestionToolBlock` recorded view uses — so the two
+  // post-interaction records read as siblings of the same family.
+  // [D11] tool-block vocabulary in action.
+  //
+  // Body intentionally empty. The permission record is threaded into
+  // the tool stream *immediately after* its gated tool block (via
+  // `tool_use_id`, per the Step 3 layout fix). That tool block above
+  // already carries the input context — the Bash command, the file
+  // path, the diff. Repeating any of it here is noise; the record
+  // exists to confirm the *decision*, full stop. The header carries
+  // tool + decision; that's the whole signal.
   if (!isPending) {
+    const {
+      label: decisionLabel,
+      icon: decisionIcon,
+      badgeRole,
+    } = recordedPermissionPresentation(decision);
     return (
-      <div
-        data-slot="tide-permission-dialog"
-        data-state="resolved"
-        data-decision={decision ?? undefined}
-        data-collapsed={recordExpanded ? "false" : "true"}
+      <ToolWrapperChrome
+        rootSlot="tide-permission-dialog"
+        toolName={toolName}
+        toolIcon={decisionIcon}
+        argsSummary={
+          <TugBadge emphasis="tinted" role={badgeRole} size="sm">
+            {decisionLabel}
+          </TugBadge>
+        }
+        status="ready"
         className={cn("tide-permission-dialog", className)}
       >
-        <button
-          type="button"
-          className="tide-permission-dialog-record"
-          aria-expanded={recordExpanded ? "true" : "false"}
-          onClick={() => setRecordExpanded((prev) => !prev)}
-        >
-          <ChevronRight
-            size={14}
-            aria-hidden="true"
-            className="tide-permission-dialog-record-chevron"
-          />
-          {decision === "deny" ? (
-            <Ban
-              size={14}
-              aria-hidden="true"
-              className="tide-permission-dialog-record-icon"
-            />
-          ) : (
-            <ShieldCheck
-              size={14}
-              aria-hidden="true"
-              className="tide-permission-dialog-record-icon"
-            />
-          )}
-          <span className="tide-permission-dialog-record-summary">
-            {composePermissionRecordSummary(toolName, decision)}
-          </span>
-        </button>
-        {recordExpanded ? (
-          <div className="tide-permission-dialog-record-detail">
-            {/* PermissionDescription returns a Fragment with mixed
-             * inline content (text, inline icon, <code>, reason span).
-             * The wrapper here keeps that content as a single flex
-             * row in the parent's flex-column layout — without it,
-             * each inline child would line-break onto its own row. */}
-            <div className="tide-permission-dialog-record-description">
-              <PermissionDescription
-                toolName={toolName}
-                input={request.input}
-                decisionReason={decisionReason}
-              />
-            </div>
-            <PendingBody toolName={toolName} input={request.input} />
-          </div>
-        ) : null}
-      </div>
+        {null}
+      </ToolWrapperChrome>
     );
   }
 

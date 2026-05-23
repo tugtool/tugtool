@@ -370,12 +370,20 @@ const USER_IDENTIFIER = "You";
 const EMPTY_CONTROL_LOG: ReadonlyArray<ControlRequestRecord> = [];
 
 /**
- * Stable sentinels for the empty permission outputs of the
- * `permissionByToolUseId` / `orphanPermissions` useMemo. Same
- * `Object.is`-stability rationale as `EMPTY_CONTROL_LOG`: callers that
- * memoize on these by reference (`TranscriptToolCalls`) skip the
- * re-render entirely when there are no permission entries.
+ * Stable sentinels for the empty permission outputs. Same
+ * `Object.is`-stability rationale as `EMPTY_CONTROL_LOG`: returning the
+ * same reference on every empty pass keeps callers' memoizations from
+ * busting unnecessarily.
+ *
+ * The `EMPTY_PERMISSION_ENTRIES` array is the empty-case return of the
+ * data-only `permissionEntries` `useMemo` — keeping that stable means
+ * the inline `forEach` below it stays in its empty-branch fast path
+ * without allocating a new map/array per render.
  */
+const EMPTY_PERMISSION_ENTRIES: ReadonlyArray<{
+  request: ControlRequestForward;
+  resolvedDecision?: "allow" | "deny";
+}> = [];
 const EMPTY_PERMISSION_MAP: ReadonlyMap<string, React.ReactNode> = new Map();
 const EMPTY_PERMISSION_ARRAY: ReadonlyArray<React.ReactNode> = [];
 
@@ -670,26 +678,35 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
       [codeSessionStore, isCommitted],
     ),
   );
-  // Permission rendering is split into two outputs:
+  // Permission rendering — two outputs:
   //
-  //   - `permissionByToolUseId` — a `Map<tool_use_id, ReactNode>` of
-  //     permission entries that name their tool. These are threaded
-  //     into `TranscriptToolCalls` and rendered *immediately after*
-  //     their tool block, so a permission request reads as belonging
-  //     to its tool call and nothing else can interpose between them.
-  //   - `orphanPermissions` — an array of entries without a usable
-  //     `tool_use_id`. Defensive fallback (the wire carries
-  //     `tool_use_id` on `control_request_forward` per
-  //     v2.1.x catalog); rendered at the foot of the cell body so
-  //     they remain visible even when the linkage is missing.
-  const { permissionByToolUseId, orphanPermissions } = useMemo<{
-    permissionByToolUseId: ReadonlyMap<string, React.ReactNode>;
-    orphanPermissions: ReadonlyArray<React.ReactNode>;
-  }>(() => {
-    type SlotEntry = {
-      request: ControlRequestForward;
-      resolvedDecision?: "allow" | "deny";
-    };
+  //   - `permissionByToolUseId` — `Map<tool_use_id, ReactNode>` of
+  //     permission entries that name their tool. Threaded into
+  //     `TranscriptToolCalls` and rendered *immediately after* their
+  //     tool block, so a permission request reads as belonging to its
+  //     tool call and nothing else can interpose between them.
+  //   - `orphanPermissions` — entries without a usable `tool_use_id`.
+  //     Defensive fallback (the wire carries `tool_use_id` on
+  //     `control_request_forward` per v2.1.x catalog); rendered at the
+  //     foot of the cell body so they remain visible even when the
+  //     linkage is missing.
+  //
+  // **HMR contract.** The lightweight `SlotEntry[]` derivation is
+  // memoized (`useMemo` keyed on the data sources), but the React
+  // elements themselves are built *every render* via the inline
+  // mapping below. Caching React elements inside `useMemo` would
+  // freeze the `Component` reference returned by `dispatchRenderInput`
+  // — so when Vite's Fast Refresh swaps `PermissionDialog` for a new
+  // function, the cached element's `type` would still point at the
+  // *old* component, leaving the recorded chrome stuck in the pre-HMR
+  // shape. Building elements every render (the same pattern
+  // `TranscriptToolCalls` uses for tool blocks) keeps the family
+  // surviving HMR.
+  type SlotEntry = {
+    request: ControlRequestForward;
+    resolvedDecision?: "allow" | "deny";
+  };
+  const permissionEntries = useMemo<ReadonlyArray<SlotEntry>>(() => {
     let entries: SlotEntry[];
     if (isCommitted) {
       const records = turn?.controlRequests ?? [];
@@ -709,15 +726,19 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
         if (!dup) entries.push({ request: pendingApproval });
       }
     }
-    if (entries.length === 0) {
-      return {
-        permissionByToolUseId: EMPTY_PERMISSION_MAP,
-        orphanPermissions: EMPTY_PERMISSION_ARRAY,
-      };
-    }
+    if (entries.length === 0) return EMPTY_PERMISSION_ENTRIES;
+    return entries;
+  }, [isCommitted, turn, controlRequestLog, pendingApproval]);
+
+  let permissionByToolUseId: ReadonlyMap<string, React.ReactNode>;
+  let orphanPermissions: ReadonlyArray<React.ReactNode>;
+  if (permissionEntries.length === 0) {
+    permissionByToolUseId = EMPTY_PERMISSION_MAP;
+    orphanPermissions = EMPTY_PERMISSION_ARRAY;
+  } else {
     const keyed = new Map<string, React.ReactNode>();
     const orphans: React.ReactNode[] = [];
-    entries.forEach((entry, idx) => {
+    permissionEntries.forEach((entry, idx) => {
       const { Component, props } = dispatchRenderInput(
         {
           kind: "permission",
@@ -744,15 +765,9 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
         orphans.push(node);
       }
     });
-    return { permissionByToolUseId: keyed, orphanPermissions: orphans };
-  }, [
-    isCommitted,
-    turn,
-    controlRequestLog,
-    pendingApproval,
-    codeSessionStore,
-    streamingStore,
-  ]);
+    permissionByToolUseId = keyed;
+    orphanPermissions = orphans;
+  }
 
   // Question slot — the live `pendingQuestion` rendered as an inline
   // `QuestionDialog` on the in-flight assistant row. Unlike the
@@ -760,16 +775,21 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   // leaves no `turn.controlRequests` entry (`handleRespondQuestion`
   // records nothing), so this slot is in-flight-only and empties the
   // moment the user answers or skips.
-  const questionSlot = useMemo<React.ReactNode>(() => {
-    if (isCommitted || pendingQuestion === null) return null;
+  //
+  // Built every render (no `useMemo`) for the same HMR reason as
+  // `permissionByToolUseId` above: caching the React element would
+  // freeze the `Component` reference returned by `dispatchRenderInput`
+  // and the recorded chrome would stop surviving Fast Refresh.
+  let questionSlot: React.ReactNode = null;
+  if (!isCommitted && pendingQuestion !== null) {
     const { Component, props } = dispatchRenderInput(
       { kind: "question", request: pendingQuestion },
       { store: streamingStore, session: codeSessionStore },
     );
-    return (
+    questionSlot = (
       <Component key={pendingQuestion.request_id || "question"} {...props} />
     );
-  }, [isCommitted, pendingQuestion, streamingStore, codeSessionStore]);
+  }
 
   // In-flight `msg_id` threaded onto streaming tool wrappers. For
   // committed rows we already have the canonical `turn.msgId`.

@@ -24,8 +24,9 @@
  *    intentionally dropped" contract.
  *  - `buildPermissionOptions` — empty list passthrough, allow-only
  *    filtering, implicit "Allow once" head, deny-suggestion drop.
- *  - `composePermissionRecordSummary` — allow / deny / resolved-null,
- *    empty tool name.
+ *  - `recordedPermissionPresentation` — allow / deny / resolved-null
+ *    each yield the matching status word; the icon node is returned
+ *    (caller passes it through to `ToolWrapperChrome`'s `toolIcon`).
  *  - `composePermissionLineRange` — offset+limit / offset / limit /
  *    neither / non-object.
  *  - dispatch routing — a `permission` RenderInput resolves to
@@ -41,10 +42,10 @@ import {
   PermissionDialog,
   buildPermissionOptions,
   composePermissionLineRange,
-  composePermissionRecordSummary,
   composePermissionSuggestionLabel,
   isBoilerplateApprovalReason,
   narrowPermissionSuggestion,
+  recordedPermissionPresentation,
   selectPermissionBodyKind,
   type PermissionSuggestionAction,
 } from "./tide-permission-dialog";
@@ -275,31 +276,40 @@ describe("buildPermissionOptions", () => {
 });
 
 // ---------------------------------------------------------------------------
-// composePermissionRecordSummary
+// recordedPermissionPresentation — header status + icon per decision
 // ---------------------------------------------------------------------------
 
-describe("composePermissionRecordSummary", () => {
-  it("summarizes an allowed decision", () => {
-    expect(composePermissionRecordSummary("Read", "allow")).toBe(
-      "Read — Allowed",
-    );
+describe("recordedPermissionPresentation", () => {
+  it("maps allow → 'Allowed' + success badge", () => {
+    const presentation = recordedPermissionPresentation("allow");
+    expect(presentation.label).toBe("Allowed");
+    expect(presentation.icon).not.toBeNull();
+    expect(presentation.badgeRole).toBe("success");
   });
 
-  it("summarizes a denied decision", () => {
-    expect(composePermissionRecordSummary("Bash", "deny")).toBe(
-      "Bash — Denied",
-    );
+  it("maps deny → 'Denied' + danger badge", () => {
+    const presentation = recordedPermissionPresentation("deny");
+    expect(presentation.label).toBe("Denied");
+    expect(presentation.icon).not.toBeNull();
+    expect(presentation.badgeRole).toBe("danger");
   });
 
-  it("summarizes a null (out-of-band resolved) decision", () => {
-    expect(composePermissionRecordSummary("Edit", null)).toBe(
-      "Edit — Resolved",
-    );
+  it("maps null (out-of-band resolved) → 'Resolved' + action badge", () => {
+    const presentation = recordedPermissionPresentation(null);
+    expect(presentation.label).toBe("Resolved");
+    expect(presentation.icon).not.toBeNull();
+    expect(presentation.badgeRole).toBe("action");
   });
 
-  it("falls back to 'Tool' for an empty tool name", () => {
-    expect(composePermissionRecordSummary("", "allow")).toBe("Tool — Allowed");
-    expect(composePermissionRecordSummary("   ", "deny")).toBe("Tool — Denied");
+  it("returns a different icon node for each decision", () => {
+    // Inequality check pins the contract that the three branches each
+    // pick their own icon — i.e., the visual differentiation is real.
+    const allow = recordedPermissionPresentation("allow").icon;
+    const deny = recordedPermissionPresentation("deny").icon;
+    const resolved = recordedPermissionPresentation(null).icon;
+    expect(allow).not.toBe(deny);
+    expect(allow).not.toBe(resolved);
+    expect(deny).not.toBe(resolved);
   });
 });
 

@@ -85,6 +85,7 @@ import "./ask-user-question-tool-block.css";
 import React from "react";
 import { MessageCircleQuestion } from "lucide-react";
 
+import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
@@ -420,14 +421,16 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
       ? Array.from(salvagedAnswers.values()).filter((v) => v.length > 0).length
       : summary.filter((s) => s.answers.length > 0).length;
   const args = composeQuestionCountLabel(questions.length, headlineCount);
+  // Render the question-count chip as a `TugBadge` so the args slot
+  // shares the family status-chip vocabulary (`emphasis="tinted"` +
+  // semantic role) instead of dropping in mono-styled prose.
+  // `role="action"` for the count — the badge is a neutral progress
+  // indicator, not a success / danger / caution signal.
   const argsSummary =
     args === "" ? undefined : (
-      <span
-        className="ask-user-question-tool-block-args"
-        data-slot="ask-user-question-tool-block-args"
-      >
+      <TugBadge emphasis="tinted" role="action" size="sm">
         {args}
-      </span>
+      </TugBadge>
     );
 
   let body: React.ReactNode;

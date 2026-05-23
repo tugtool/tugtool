@@ -170,15 +170,12 @@ body {
   font-style: italic;
 }
 
-/* ---- Args summary (chrome header) -------------------------------- */
-
-/* @tug-renders-on: var(--tugx-toolblock-header-bg) */
-.ask-user-question-tool-block-args {
-  font-family: var(--tugx-block-strip-font);
-  color: var(--tugx-block-text-color-muted);
-}
-
 /* ---- Salvage path ------------------------------------------------- */
+/*
+ * (The chrome header's `argsSummary` slot is now filled by a
+ * `TugBadge` — the badge owns its own font, padding, and colour, so
+ * no `.ask-user-question-tool-block-args` rule lives here anymore.)
+ */
 
 /* Inline recovery UI when Claude Code's `AskUserQuestion` validator
  * rejected the tool call (options cap, etc.). The wrapper paints
