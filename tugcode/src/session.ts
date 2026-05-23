@@ -2977,7 +2977,30 @@ export class SessionManager {
       });
     }
 
-    // 3. Re-emit any pending `can_use_tool` control_request as a
+    // 3. streaming_usage — re-emit the turn's most recent in-flight
+    //    `usage` tuple (delta-iteration preferred, message_start
+    //    fallback) so the status bar's TOKENS / CONTEXT cells climb
+    //    back to where they were before the reload. Drives
+    //    `state.liveTurnUsage` via the reducer's phase-tolerant
+    //    `handleStreamingUsage` — same channel the live wire uses
+    //    mid-turn, no fake-zero shim required. The reducer's logic
+    //    is monotonic-by-iteration (later frame replaces earlier),
+    //    so the live `streaming_usage` that lands after the bracket
+    //    transparently supersedes this re-emitted one.
+    //
+    //    Gated by `streamingUsageFrame` on a non-empty msg_id and a
+    //    `usage` carrying at least one of the four token fields —
+    //    a turn the bracket fired against before `message_start`
+    //    revealed any id stays quiet rather than emitting an
+    //    all-zero frame.
+    const usageForSnapshot =
+      turn.lastMessageDeltaUsage ?? turn.lastMessageStartUsage;
+    if (usageForSnapshot !== null) {
+      const usageFrame = streamingUsageFrame(msgId, usageForSnapshot);
+      if (usageFrame !== null) writeLine(usageFrame);
+    }
+
+    // 4. Re-emit any pending `can_use_tool` control_request as a
     //    `tool_use` + `control_request_forward` pair for this turn.
     //
     //    Control requests are an out-of-band SDK channel — they never
@@ -3046,7 +3069,7 @@ export class SessionManager {
       });
     }
 
-    // 4. Terminal event — only fires if the turn already finished
+    // 5. Terminal event — only fires if the turn already finished
     //    while suppressed. Live turns (gotResult=false, interrupted=false)
     //    skip this; the drain's post-suppression dispatch will emit
     //    the real `turn_complete` when claude's `result` lands.

@@ -37,6 +37,7 @@ import type {
   OutboundMessage,
   ReplayComplete,
   ReplayStarted,
+  StreamingUsage,
   ToolUse,
   TurnCancelled,
   TurnComplete,
@@ -113,6 +114,8 @@ function installInflightTurn(
     rev?: number;
     gotResult?: boolean;
     interrupted?: boolean;
+    lastMessageDeltaUsage?: Record<string, unknown> | null;
+    lastMessageStartUsage?: Record<string, unknown> | null;
   },
 ): { turn: { suppressEmit: boolean; currentMessageId: string | null } } {
   // Construct an ActiveTurn-shaped object directly. The constructor
@@ -132,6 +135,8 @@ function installInflightTurn(
     suppressEmit: false,
     completion: Promise.resolve(),
     finish: () => {},
+    lastMessageDeltaUsage: opts.lastMessageDeltaUsage ?? null,
+    lastMessageStartUsage: opts.lastMessageStartUsage ?? null,
   };
   (manager as unknown as { activeTurn: typeof turn }).activeTurn = turn;
   return { turn };
@@ -566,5 +571,145 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     expect(emitted.find((m) => m.type === "control_request_forward")).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // streaming_usage on the in-flight snapshot — token telemetry survives
+  // reload. The reducer's `liveTurnUsage` is what the status bar's TOKENS
+  // / CONTEXT cells read mid-turn; the snapshot re-emits the latest
+  // observed usage so those cells climb back to where they were before
+  // the reload bracket fired.
+  // -------------------------------------------------------------------------
+
+  test("inflight ActiveTurn with lastMessageDeltaUsage: snapshot emits streaming_usage", async () => {
+    const manager = makeManager({ jsonl: "" });
+    installInflightTurn(manager, {
+      currentMessageId: "msg_with_delta_usage",
+      userText: "ask",
+      partialText: "thinking",
+      lastMessageDeltaUsage: {
+        input_tokens: 1,
+        output_tokens: 200,
+        cache_read_input_tokens: 18029,
+        cache_creation_input_tokens: 7081,
+      },
+    });
+
+    const { emitted } = await captureStdout(() => manager.runReplay());
+
+    const usage = emitted.find(
+      (m): m is StreamingUsage => m.type === "streaming_usage",
+    );
+    expect(usage).toBeDefined();
+    expect(usage?.msg_id).toBe("msg_with_delta_usage");
+    expect(usage?.usage).toEqual({
+      input_tokens: 1,
+      output_tokens: 200,
+      cache_read_input_tokens: 18029,
+      cache_creation_input_tokens: 7081,
+    });
+  });
+
+  test("inflight ActiveTurn with only lastMessageStartUsage: snapshot uses it as fallback", async () => {
+    // A degenerate turn that crossed `message_start` but not a
+    // `message_delta` — the start usage is the only signal we have.
+    const manager = makeManager({ jsonl: "" });
+    installInflightTurn(manager, {
+      currentMessageId: "msg_start_only",
+      userText: "ask",
+      partialText: "",
+      lastMessageStartUsage: {
+        input_tokens: 4,
+        output_tokens: 1,
+        cache_read_input_tokens: 100,
+        cache_creation_input_tokens: 50,
+      },
+    });
+
+    const { emitted } = await captureStdout(() => manager.runReplay());
+
+    const usage = emitted.find(
+      (m): m is StreamingUsage => m.type === "streaming_usage",
+    );
+    expect(usage).toBeDefined();
+    expect(usage?.msg_id).toBe("msg_start_only");
+    expect(usage?.usage).toEqual({
+      input_tokens: 4,
+      output_tokens: 1,
+      cache_read_input_tokens: 100,
+      cache_creation_input_tokens: 50,
+    });
+  });
+
+  test("inflight ActiveTurn with no usage observed yet: snapshot omits streaming_usage", async () => {
+    // The bracket fired before any `message_start` revealed a usage
+    // tuple. `streamingUsageFrame` returns null; the snapshot must
+    // not emit an all-zero frame.
+    const manager = makeManager({ jsonl: "" });
+    installInflightTurn(manager, {
+      currentMessageId: "msg_no_usage",
+      userText: "ask",
+      partialText: "early",
+      // both usage fields default to null
+    });
+
+    const { emitted } = await captureStdout(() => manager.runReplay());
+
+    expect(emitted.find((m) => m.type === "streaming_usage")).toBeUndefined();
+  });
+
+  test("snapshot wire order: streaming_usage lands after assistant_text and before control_request_forward", async () => {
+    const manager = makeManager({ jsonl: "" });
+    installInflightTurn(manager, {
+      currentMessageId: "msg_order_check",
+      userText: "do the thing",
+      partialText: "OK, working...",
+      lastMessageDeltaUsage: {
+        input_tokens: 1,
+        output_tokens: 50,
+        cache_read_input_tokens: 1000,
+        cache_creation_input_tokens: 500,
+      },
+    });
+
+    (
+      manager as unknown as {
+        pendingControlRequests: Map<string, Record<string, unknown>>;
+      }
+    ).pendingControlRequests.set("req-order", {
+      type: "control_request",
+      request_id: "req-order",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        tool_use_id: "tu_order",
+        input: { command: "echo hi" },
+      },
+    });
+
+    const { emitted } = await captureStdout(() => manager.runReplay());
+
+    const idxAssistant = emitted.findIndex(
+      (m): m is AssistantText =>
+        m.type === "assistant_text" &&
+        (m as AssistantText).msg_id === "msg_order_check",
+    );
+    const idxUsage = emitted.findIndex(
+      (m): m is StreamingUsage =>
+        m.type === "streaming_usage" &&
+        (m as StreamingUsage).msg_id === "msg_order_check",
+    );
+    const idxToolUse = emitted.findIndex(
+      (m): m is ToolUse =>
+        m.type === "tool_use" &&
+        (m as ToolUse).tool_use_id === "tu_order",
+    );
+    const idxForward = emitted.findIndex(
+      (m) => m.type === "control_request_forward",
+    );
+    expect(idxAssistant).toBeGreaterThanOrEqual(0);
+    expect(idxUsage).toBeGreaterThan(idxAssistant);
+    expect(idxToolUse).toBeGreaterThan(idxUsage);
+    expect(idxForward).toBeGreaterThan(idxToolUse);
   });
 });

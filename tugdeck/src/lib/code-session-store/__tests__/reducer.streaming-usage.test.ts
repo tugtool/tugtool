@@ -186,4 +186,39 @@ describe("reducer — handleStreamingUsage", () => {
     expect(state.liveTurnUsage).toBeNull();
     expect(state.sessionInitTokens).toBeNull();
   });
+
+  it("phase-tolerant during replay bracket — the inflight snapshot's streaming_usage lands in liveTurnUsage", () => {
+    // Mirrors the wire shape tugcode's `emitInflightTurnFromActiveTurn`
+    // produces: a `streaming_usage` frame inside the replay bracket,
+    // re-emitting the latest observed in-flight `usage` so the status
+    // bar's TOKENS / CONTEXT cells climb back to where they were
+    // before the reload. The handler's phase contract is "tolerant" —
+    // it must update `liveTurnUsage` whatever the prevailing phase is
+    // (submitting / replaying / streaming / tool_work / …). Pinning
+    // the contract here so a future regression that adds a phase
+    // guard would surface.
+    const state = applyAll(fresh(), [
+      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "replay_started" } as CodeSessionEvent,
+      streamingUsage("msg_inflight", {
+        input_tokens: 1,
+        output_tokens: 200,
+        cache_read_input_tokens: 18029,
+        cache_creation_input_tokens: 7081,
+      }),
+    ]);
+    // Phase is "submitting" or "replaying" depending on the reducer's
+    // post-send handling of `replay_started`; the streaming_usage
+    // contract holds regardless.
+    expect(state.phase).not.toBe("idle");
+    expect(state.liveTurnUsage).toEqual({
+      inputTokens: 1,
+      outputTokens: 200,
+      cacheCreationInputTokens: 7081,
+      cacheReadInputTokens: 18029,
+    });
+    // sessionInitTokens is captured from the first token-bearing
+    // frame's observedInput regardless of phase.
+    expect(state.sessionInitTokens).toBe(1 + 18029 + 7081);
+  });
 });

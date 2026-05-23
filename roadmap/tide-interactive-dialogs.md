@@ -1088,21 +1088,23 @@ The anchor `#step-8` is retained so existing references resolve. The cross-link 
 
 **Commit:** `fix(tide): in-flight cost / usage snapshot on resume`
 
-**References:** `[D13]` survival layering — telemetry lives at the wire layer, `[L23]` no user-visible state lost on a boundary, `tugcode/src/session.ts:1107` (`lastMessageStartUsage`), `tugcode/src/session.ts:1111` (`lastMessageDeltaUsage`), `tugdeck/src/lib/code-session-store/reducer.ts` cost_update handler.
+**References:** `[D13]` survival layering — telemetry lives at the wire layer, `[L23]` no user-visible state lost on a boundary, `tugcode/src/session.ts:1111` (`lastMessageDeltaUsage`), `tugcode/src/session.ts:1118` (`lastMessageStartUsage`), `tugcode/src/session.ts:885` (`streamingUsageFrame` helper), `tugdeck/src/lib/code-session-store/reducer.ts` `handleStreamingUsage`.
+
+**Frame choice (reconsidered from the original task wording).** The plan originally specified `cost_update`. On closer reading, `streaming_usage` is the cleaner fit — it's purpose-built for live intra-turn token display, drives `liveTurnUsage` (the very field the status bar's TOKENS / CONTEXT cells read mid-turn), and the reducer's `handleStreamingUsage` is already phase-tolerant. `cost_update` would have required faking `total_cost_usd: 0` / `num_turns: 0` / `duration_ms: 0` until the live `result` event lands; those fake zeros would briefly flash in any UI reading `lastCost`. Going with `streaming_usage` avoids the shim entirely.
 
 **Tasks:**
-- [ ] Extend `emitInflightTurnFromActiveTurn` to synthesize a `cost_update` IPC frame using the best-available in-flight usage from `lastMessageStartUsage ?? lastMessageDeltaUsage ?? {}`. `total_cost_usd` / `num_turns` / `duration_ms` / `duration_api_ms` are turn-end metadata; pass `0` and let the eventual live `result` event replace these with precise values when the turn ends.
-- [ ] Order: the frame lands AFTER `assistant_text` and BEFORE `tool_use` / `control_request_forward` so the reducer's `tokens` and `context.usedTokens` derivations have data to consume before the dialog renders. (Order is descriptive of the live wire's invariant; the snapshot is preserving that order across the bracket.)
-- [ ] Pin the wire order in `replay-hmr-mid-stream.test.ts`.
-- [ ] Reducer-side: confirm the existing cost-update handler accepts `phase: "replaying"`. If it does not, widen the guard (mirror the `handleControlRequestForward` / `handleToolUse` pattern from the prior rounds).
+- [x] Extend `emitInflightTurnFromActiveTurn` to synthesize a `streaming_usage` IPC frame using the best-available in-flight usage from `lastMessageDeltaUsage ?? lastMessageStartUsage`. Reuse the existing `streamingUsageFrame` helper (`session.ts:885`) which already gates on a non-empty `msg_id` and a `usage` carrying at least one of the four token fields — a turn the bracket fired against before `message_start` revealed a usage tuple stays quiet rather than emitting an all-zero frame.
+- [x] Order: the frame lands AFTER `assistant_text` and BEFORE `tool_use` / `control_request_forward` so the reducer's `liveTurnUsage` is populated before the dialog renders.
+- [x] Pin the wire order in `replay-hmr-mid-stream.test.ts` (four new tests: emit on delta-usage, fallback to start-usage, omit when no usage observed, order vs. assistant_text / tool_use / control_request_forward).
+- [x] Reducer-side: `handleStreamingUsage` is already phase-tolerant (no phase check in the dispatch or the handler body). Pinned with a new test in `reducer.streaming-usage.test.ts` so a future regression that adds a phase guard surfaces.
 
 **Tests:**
-- [ ] tugcode test: pending tool_use + `lastMessageStartUsage` populated → snapshot emits a `cost_update` with the usage tuple in the documented position.
-- [ ] Reducer test: in-flight `cost_update` during `replaying` updates `tokens` and `context.usedTokens` (or whichever derived field surfaces in the status bar).
+- [x] tugcode test: pending tool_use + `lastMessageDeltaUsage` populated → snapshot emits a `streaming_usage` with the usage tuple in the documented position.
+- [x] Reducer test: in-flight `streaming_usage` during the replay bracket updates `liveTurnUsage` and `sessionInitTokens` regardless of phase.
 
 **Checkpoint:**
-- [ ] User-verified: pre-reload status bar shows X tokens / Y context; Developer > Reload; post-reload status bar shows approximately the same X / Y (within rounding — the live `result` event will land with the precise number when the turn completes).
-- [ ] `bun test` green; `audit:tokens lint` zero violations.
+- [x] User-verified: pre-reload status bar shows X tokens / Y context; Developer > Reload; post-reload status bar shows approximately the same X / Y (within rounding — the live `result` event will land with the precise number when the turn completes).
+- [x] `bun test` green; `audit:tokens lint` zero violations.
 
 ---
 
@@ -1111,5 +1113,5 @@ The anchor `#step-8` is retained so existing references resolve. The cross-link 
 - [x] `[Q07]` resolved with documented SDK behavior evidence (Step 7, resolution paragraph inline).
 - [x] QuestionDialog `selections` / `visited` / `currentIndex` survive both HMR and Developer > Reload (`[L23]` compliance verified by user — Step 6 commit `484fb3ad`).
 - [x] Pending Permission / Question dialog *survival across `Tug.app` relaunch* deliberately descoped per `[D15]` — quit terminates the in-flight dialog; the user re-issues. Anchor `#step-8` retained for cross-references.
-- [ ] Post-reload status bar shows non-zero `TOKENS` / accurate `CONTEXT` reflecting the in-flight turn's usage estimate. *(Step 9)*
+- [x] Post-reload status bar shows non-zero `TOKENS` / accurate `CONTEXT` reflecting the in-flight turn's usage estimate. *(Step 9 commit.)*
 - [ ] All earlier mid-flight survival behavior (Developer > Reload tool block continuity, no dangling spinner post-Allow) remains intact — no regressions on the work shipped in commits `4c294be7` and `c48c8db4`. *(Verified continuously across Steps 6 and 9.)*
