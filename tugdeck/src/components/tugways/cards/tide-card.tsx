@@ -2491,62 +2491,65 @@ export function TideCardBody({
               data-slot="tide-card-status-bar"
             >
               {/*
-                Status-bar row with a sash grip on the leading end,
-                Z2A (pinned task list, [D100]) inline, optional Z2B
-                wrapper (`statusBarContent`), and the maximize toggle
-                on the trailing end. The grip resizes the split-pane
-                sash directly below — the status bar would otherwise
-                mask the sash's thin hit line.
+                Two-row column layout post-[D100]:
+                  - First row (Z2A): the pinned task-list strip.
+                    Rendered as a direct child of the column so it
+                    spans the full status-bar width. Self-collapses
+                    when the pinned-todo's renderer returns `null`.
+                  - Second row (Z2B chrome): grip on the leading end,
+                    optional `.tide-card-status-bar-main` content
+                    wrapper in the middle, maximize toggle on the
+                    trailing end. The grip resizes the split-pane
+                    sash directly below — the status bar would
+                    otherwise mask the sash's thin hit line.
 
                 Mount semantics:
-                  - `effectiveStatusBarLeadingContent` may be a node
-                    that self-collapses (the pinned-todo returns
-                    `null` when no active tasks), or an explicit
-                    `null` from the caller. Either way the bar is
-                    rendered as long as one content slot is present.
-                  - When both Z2A and Z2B resolve to `null` we
-                    suppress the chrome (grip + maximize) entirely
-                    so the wrapper goes `:empty` and the strip
-                    collapses via the existing CSS rule. When Z2A is
-                    mounted but inactive (returns null DOM) and Z2B
-                    is absent, a CSS `:has()` rule in `tide-card.css`
-                    collapses the strip without unmounting the
-                    pinned-todo's subscriptions.
+                  - When both Z2A and Z2B resolve to `null` the
+                    fragment is not rendered, the wrapper goes
+                    `:empty`, and the strip collapses via the
+                    existing CSS rule.
+                  - When Z2A is mounted but inactive (renders `null`
+                    DOM) and Z2B is absent, the `:has()` rule in
+                    `tide-card.css` collapses the strip without
+                    unmounting the pinned-todo's subscriptions.
               */}
               {(effectiveStatusBarLeadingContent != null ||
                 effectiveStatusBarContent != null) && (
                 <>
-                  <TideCardSashGrip
-                    entryPanelRef={entryPanelRef}
-                    side="start"
-                    disabled={maximized}
-                  />
                   {effectiveStatusBarLeadingContent}
-                  {effectiveStatusBarContent != null && (
-                    <div className="tide-card-status-bar-main">
-                      {effectiveStatusBarContent}
-                    </div>
-                  )}
-                  {/*
-                    Maximize toggle — Z2's trailing control, in the
-                    place the trailing sash grip used to hold. The sash
-                    stays draggable from the leading grip.
-                  */}
-                  <TugPushButton
-                    className="tide-card-maximize-toggle"
-                    subtype="icon"
-                    size="xs"
-                    emphasis={maximized ? "filled" : "ghost"}
-                    role={maximized ? "accent" : "action"}
-                    aria-label={maximized ? "Restore size" : "Maximize"}
-                    aria-pressed={maximized}
-                    icon={
-                      maximized
-                        ? <Minimize2 strokeWidth={2} aria-hidden="true" />
-                        : <Maximize2 strokeWidth={2} aria-hidden="true" />
-                    }
-                    onClick={() => setMaximized(!maximized)}
-                  />
+                  <div className="tide-card-status-bar-chrome-row">
+                    <TideCardSashGrip
+                      entryPanelRef={entryPanelRef}
+                      side="start"
+                      disabled={maximized}
+                    />
+                    {effectiveStatusBarContent != null && (
+                      <div className="tide-card-status-bar-main">
+                        {effectiveStatusBarContent}
+                      </div>
+                    )}
+                    {/*
+                      Maximize toggle — the chrome row's trailing
+                      control, in the place the trailing sash grip
+                      used to hold. The sash stays draggable from
+                      the leading grip.
+                    */}
+                    <TugPushButton
+                      className="tide-card-maximize-toggle"
+                      subtype="icon"
+                      size="xs"
+                      emphasis={maximized ? "filled" : "ghost"}
+                      role={maximized ? "accent" : "action"}
+                      aria-label={maximized ? "Restore size" : "Maximize"}
+                      aria-pressed={maximized}
+                      icon={
+                        maximized
+                          ? <Minimize2 strokeWidth={2} aria-hidden="true" />
+                          : <Maximize2 strokeWidth={2} aria-hidden="true" />
+                      }
+                      onClick={() => setMaximized(!maximized)}
+                    />
+                  </div>
                 </>
               )}
             </div>

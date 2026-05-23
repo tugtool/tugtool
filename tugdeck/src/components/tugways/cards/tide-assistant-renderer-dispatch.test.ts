@@ -185,6 +185,29 @@ describe("dispatch — tool_call routing", () => {
     expect(result.caution).toBeUndefined();
   });
 
+  it("routes TaskCreate / TaskUpdate to a null factory per [D100] — no DOM, no caution", () => {
+    // Re-apply the production registrations (cleared by beforeEach).
+    // Anchored on the test for the canonical behavior, not the
+    // implementation: a null-rendered tool produces no DOM child in
+    // the transcript and is not flagged as drift. If Step 24.1's
+    // silencing decision ever reverses, this test fails loudly
+    // rather than letting `TaskCreate` rows quietly reappear.
+    const NullToolBlock = () => null;
+    registerToolBlock("taskcreate", NullToolBlock);
+    registerToolBlock("taskupdate", NullToolBlock);
+
+    for (const toolName of ["TaskCreate", "TaskUpdate"]) {
+      const result = dispatch(
+        { kind: "tool_call", toolCall: fakeToolCall(toolName), msgId: "m1" },
+        fakeContext,
+      );
+      expect(result.Component).toBe(NullToolBlock);
+      expect(result.caution).toBeUndefined();
+      const props = result.props as Record<string, unknown>;
+      expect(props.caution).toBeUndefined();
+    }
+  });
+
   it("threads tool fields onto the wrapper props", () => {
     registerToolBlock("edit", FakeEditWrapper);
     const input: RenderInput = {
