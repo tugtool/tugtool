@@ -1,0 +1,52 @@
+/* @tug-pairings:
+   - --tugx-idialog-*   (TugInlineDialog owns the dialog frame and every
+                         foreground/background pairing — see
+                         `tug-inline-dialog.css`)
+   `TideInteractiveDialog` is the input-form primitive for the Tide
+   interactive-dialog family. It composes on `TugInlineDialog` and
+   contributes layout-only rules; it owns no colour tokens of its
+   own. Every visible mark inside the rendered tree is painted by
+   `TugInlineDialog`'s tokens.
+*/
+
+/**
+ * tide-interactive-dialog.css — `TideInteractiveDialog` primitive.
+ *
+ * Layout-only. The primitive scopes one override against
+ * `TugInlineDialog`'s actions row: `justify-content: space-between`
+ * separates the cancel button (leading edge) from the primary action
+ * (trailing edge), reading as opposed Mac HIG choices rather than a
+ * tightly-grouped pair.
+ *
+ * The override targets the published `[data-slot="tug-inline-dialog-actions"]`
+ * surface on `TugInlineDialog`, never the internal
+ * `.tug-inline-dialog-actions` class. Per [L20] composition
+ * sovereignty: an outer composition reaches the inner primitive only
+ * through its documented surface. A future refactor of
+ * `TugInlineDialog`'s class naming will not break this rule.
+ *
+ * Tuglaw cross-check:
+ *  - [L17] no `--tugx-*` aliases introduced — the primitive owns no
+ *    colour tokens; the actions-row override is a layout-only
+ *    `justify-content` declaration.
+ *  - [L19] file pair, module docstring, no `data-slot` of its own
+ *    (the rendered root is `TugInlineDialog`'s — see the `.tsx`
+ *    docstring for the rationale).
+ *  - [L20] composition reaches `TugInlineDialog` only through its
+ *    published `[data-slot]` surfaces, never internal classes.
+ */
+
+/* ---- Actions row separation [D03] ---- */
+
+/* Mac HIG `Don't Save` vocabulary — the destructive-secondary
+ * cancel sits at the leading edge, the primary action at the
+ * trailing edge, with a generous gap between them so the two
+ * read as opposed choices rather than a pair. No-op when only
+ * the confirm button is rendered (`cancelLabel: null`), since
+ * `space-between` against a single child collapses to the start.
+ *
+ * Targets the published `data-slot="tug-inline-dialog-actions"`
+ * surface on `TugInlineDialog`. */
+.tide-interactive-dialog [data-slot="tug-inline-dialog-actions"] {
+  justify-content: space-between;
+}

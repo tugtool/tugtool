@@ -510,7 +510,7 @@ Per `[D12]`:
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Module docstring on `TideInteractiveDialog` explaining the boundary with `TugInlineDialog`, the `[D08]` input-form scope, the `[D02]` / `[D03]` defaults, and the family convention.
+- [x] Module docstring on `TideInteractiveDialog` explaining the boundary with `TugInlineDialog`, the `[D08]` input-form scope, the `[D02]` / `[D03]` defaults, and the family convention. *(Done in Step 1.)*
 - [x] Module docstring on `code-session-store.ts` `popInteractive` method explaining the LIFO semantic and what "interactive" means in this family. *(Done in Step 0.)*
 - [ ] Cross-reference from `chrome/tide-permission-dialog.tsx` and `chrome/tide-question-dialog.tsx` to `TideInteractiveDialog`.
 - [ ] Step 4 prose audit: replace "wrapper" with "tool block" in tugdeck docstrings / doc-comments per `[D11]`.
@@ -580,22 +580,23 @@ Pure-logic tests stay attached to the consumer modules. The primitive adds a tin
 - `tugdeck/src/components/tugways/tide-interactive-dialog.test.ts`
 
 **Tasks:**
-- [ ] Implement `TideInteractiveDialog` per Spec S01. Default `cancelRole: "danger"`.
-- [ ] Move the actions-row `space-between` CSS override from `tide-question-dialog.css` to `tide-interactive-dialog.css`. **Use the published `data-slot` surface** — selector `.tide-interactive-dialog [data-slot="tug-inline-dialog-actions"]` — not the internal `.tug-inline-dialog-actions` class. Per `[L20]` composition sovereignty.
-- [ ] Apply `[L19]` conformance: `data-slot="tide-interactive-dialog"` on the rendered root (in addition to / overriding `TugInlineDialog`'s `data-slot`); `@tug-pairings` annotation at the top of `tide-interactive-dialog.css` (likely empty — the primitive owns no colour tokens, only layout); `@tug-renders-on` annotation on any colour-only rule (likely none, since the primitive only owns layout).
-- [ ] Module docstring per `[D01]` and `[D08]`. Cite `[D02]` for the cancel convention, `[L19]`/`[L20]`/`[L26]` for the contract.
-- [ ] Pure-logic test: passing `cancelRole="action"` overrides the default; passing nothing yields `"danger"`; `confirmDisabled` passes through.
+- [x] Implement `TideInteractiveDialog` per Spec S01. Default `cancelRole: "danger"`.
+- [x] Created the actions-row `space-between` override in `tide-interactive-dialog.css`. Selector targets the published `[data-slot="tug-inline-dialog-actions"]` surface, not the internal `.tug-inline-dialog-actions` class — per `[L20]`. *(The matching block in `tide-question-dialog.css` will be removed in Step 3 when QuestionDialog migrates onto the primitive; until then the two coexist with no conflict because the primitive's CSS is not yet loaded — nothing imports `tide-interactive-dialog.tsx` yet.)*
+- [x] Applied `[L19]` conformance with a deliberate scope. **No separate `data-slot="tide-interactive-dialog"` was added**: the primitive owns no DOM of its own — it returns a `TugInlineDialog` React element directly, and adding a wrapper div purely to carry an extra `data-slot` would change DOM topology (cascading specificity, layout, event-bubbling) for no real benefit. The family identifier is the `tide-interactive-dialog` className composed onto `TugInlineDialog`'s root — same precedent that `QuestionDialog` already uses (it composes on `TugInlineDialog` via className, with no separate data-slot). The module docstring on `.tsx` documents this choice. `@tug-pairings` annotation present at the top of the `.css` (acknowledging composition with `TugInlineDialog`'s tokens — the primitive owns no colour tokens of its own); no `@tug-renders-on` needed because the only rule in the file is layout-only (`justify-content`).
+- [x] Module docstring per `[D01]` and `[D08]`. Cites `[D02]` for the cancel convention; `[L19]`, `[L20]`, `[L26]` for the contract; `[D03]` and `[D08]` for the visual/scope defaults.
+- [x] Pure-logic test: `cancelRole="action"` override, default substitution, `confirmDisabled` pass-through (plus extras: className composition + ordering).
 
 **Tests:**
-- [ ] `TideInteractiveDialog` defaults `cancelRole` to `"danger"` when omitted.
-- [ ] `cancelRole="action"` from the caller overrides the default.
-- [ ] `confirmDisabled` propagates to `TugInlineDialog` unchanged.
+- [x] `TideInteractiveDialog` defaults `cancelRole` to `"danger"` when omitted.
+- [x] `cancelRole="action"` from the caller overrides the default.
+- [x] `confirmDisabled` propagates to `TugInlineDialog` unchanged (true / false / undefined cases).
+- [x] *(Bonus)* `tide-interactive-dialog` className composed onto consumer-supplied classes, family class first.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` — clean.
-- [ ] `cd tugdeck && bun test tugways/tide-interactive-dialog.test.ts` — pass.
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] `bun x tsc --noEmit` — clean (exit 0).
+- [x] `bun test src/components/tugways/tide-interactive-dialog.test.ts` — 10 pass / 0 fail / 20 expects.
+- [x] `bun test` — full suite green: 2586 pass / 0 fail / 9674 expects / 158 files (+10 over Step 0's baseline).
+- [x] `bun run audit:tokens lint` — zero violations.
 
 ---
 
