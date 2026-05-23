@@ -33,8 +33,13 @@ import {
   QuestionDialog,
   applyQuestionSelection,
   buildQuestionAnswers,
+  composeRowAnswerLabel,
+  countAnswered,
+  countConfirmedAnswers,
   initialQuestionSelections,
+  nextAdvanceIndex,
   parseQuestions,
+  rowStatus,
   type ParsedQuestion,
 } from "./tide-question-dialog";
 import {
@@ -278,5 +283,127 @@ describe("dispatch — question routing", () => {
     expect(result.Component).toBe(KIND_RENDERERS.question);
     expect(result.caution).toBeUndefined();
     expect((result.props as { input: RenderInput }).input).toBe(input);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wizard navigation helpers — countAnswered + nextAdvanceIndex
+// ---------------------------------------------------------------------------
+
+describe("countAnswered", () => {
+  it("counts entries with at least one selection", () => {
+    expect(countAnswered([["a"], [], ["b", "c"], []])).toBe(2);
+  });
+
+  it("returns 0 for the all-empty case", () => {
+    expect(countAnswered([[], [], []])).toBe(0);
+  });
+
+  it("returns 0 for an empty array (no questions)", () => {
+    expect(countAnswered([])).toBe(0);
+  });
+
+  it("matches the question count when every row carries a selection", () => {
+    expect(countAnswered([["a"], ["b"], ["c"]])).toBe(3);
+  });
+});
+
+describe("nextAdvanceIndex", () => {
+  it("advances by 1 when the next row exists", () => {
+    expect(nextAdvanceIndex(0, 3)).toBe(1);
+    expect(nextAdvanceIndex(1, 3)).toBe(2);
+  });
+
+  it("stays put on the last row (no wrap)", () => {
+    expect(nextAdvanceIndex(2, 3)).toBe(2);
+  });
+
+  it("stays at 0 for an empty list", () => {
+    expect(nextAdvanceIndex(0, 0)).toBe(0);
+  });
+
+  it("stays at 0 for a single-question wizard", () => {
+    expect(nextAdvanceIndex(0, 1)).toBe(0);
+  });
+});
+
+describe("composeRowAnswerLabel", () => {
+  it("renders a single-select pick as the bare label", () => {
+    expect(composeRowAnswerLabel(["Refactor"])).toBe("Refactor");
+  });
+
+  it("renders a multi-select picks list with comma+space joins", () => {
+    // The wire round-trip uses a bare-comma join (PN-5); the visual
+    // representation uses comma+space because it's human-readable
+    // prose, not a serialised value.
+    expect(composeRowAnswerLabel(["A", "B", "C"])).toBe("A, B, C");
+  });
+
+  it("returns the empty string for no selection (renderer short-circuits)", () => {
+    expect(composeRowAnswerLabel([])).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// countConfirmedAnswers — user-engagement headline count
+// ---------------------------------------------------------------------------
+
+describe("countConfirmedAnswers", () => {
+  it("counts only rows that are visited AND have a selection", () => {
+    const selections = [["a"], ["b"], [], ["c"]];
+    const visited =  [true,  false, true, true];
+    // 0: visited+answer → +1; 1: !visited (preseed) → no; 2: visited+empty → no; 3: visited+answer → +1.
+    expect(countConfirmedAnswers(selections, visited)).toBe(2);
+  });
+
+  it("returns 0 when nothing has been visited yet", () => {
+    // The preseeded recommendations all carry a selection, but the
+    // user hasn't engaged — the headline must read 0.
+    expect(countConfirmedAnswers([["a"], ["b"], ["c"]], [false, false, false])).toBe(0);
+  });
+
+  it("returns 0 for empty inputs", () => {
+    expect(countConfirmedAnswers([], [])).toBe(0);
+  });
+
+  it("ignores rows past the end of the visited array", () => {
+    // Defensive — if the parallel arrays drift in length, the
+    // shorter one wins.
+    expect(countConfirmedAnswers([["a"], ["b"]], [true])).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rowStatus — the four wizard states
+// ---------------------------------------------------------------------------
+
+describe("rowStatus", () => {
+  it("returns `current` when the row is in focus, regardless of other axes", () => {
+    expect(rowStatus(true, false, false)).toBe("current");
+    expect(rowStatus(true, true, true)).toBe("current");
+    expect(rowStatus(true, false, true)).toBe("current");
+  });
+
+  it("returns `done` when the user has visited and there is a selection", () => {
+    expect(rowStatus(false, true, true)).toBe("done");
+  });
+
+  it("returns `recommended` for a preseeded but unvisited row", () => {
+    // The single-select arrival state — first option already
+    // selected, but the user hasn't acknowledged it.
+    expect(rowStatus(false, false, true)).toBe("recommended");
+  });
+
+  it("returns `pending` for an empty unvisited row", () => {
+    // The multi-select arrival state — empty selection, no
+    // engagement.
+    expect(rowStatus(false, false, false)).toBe("pending");
+  });
+
+  it("returns `pending` when visited but empty", () => {
+    // Edge case: the user clicked into a multi-select row and
+    // back-clicked without picking anything. Still pending — the
+    // selection is the source of truth for the answer summary.
+    expect(rowStatus(false, true, false)).toBe("pending");
   });
 });

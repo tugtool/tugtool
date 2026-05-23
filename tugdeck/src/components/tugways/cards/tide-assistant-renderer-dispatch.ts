@@ -777,6 +777,7 @@ export function dispatchToolCallState(
   msgId: string,
   depth = 0,
   childToolCallsByParent?: ChildToolCallsMap,
+  session?: CodeSessionStore,
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
@@ -804,6 +805,7 @@ export function dispatchToolCallState(
     status,
     depth,
     childToolCallsByParent,
+    session,
   };
 
   const caution = detectToolCallDrift(toolCall);

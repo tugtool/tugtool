@@ -177,3 +177,79 @@ body {
   font-family: var(--tugx-block-strip-font);
   color: var(--tugx-block-text-color-muted);
 }
+
+/* ---- Salvage path ------------------------------------------------- */
+
+/* Inline recovery UI when Claude Code's `AskUserQuestion` validator
+ * rejected the tool call (options cap, etc.). The wrapper paints
+ * a banner + the questions + a Send button; on submit the answers
+ * post as a fresh user turn via `session.send`. Styled to read as
+ * a related-but-secondary surface — same vocabulary as the regular
+ * Q&A list but with a caution-toned banner up top.
+ */
+
+body {
+  --tugx-askquestion-salvage-padding: var(--tug-space-md);
+  --tugx-askquestion-salvage-gap:     var(--tug-space-lg);
+  --tugx-askquestion-salvage-banner-padding: var(--tug-space-sm) var(--tug-space-md);
+  --tugx-askquestion-salvage-banner-bg:      var(--tugx-block-tone-caution-bg);
+  --tugx-askquestion-salvage-banner-color:   var(--tugx-block-tone-caution-color);
+  --tugx-askquestion-salvage-banner-radius:  var(--tug-radius-sm);
+  --tugx-askquestion-salvage-options-gap:    var(--tug-space-2xs);
+  --tugx-askquestion-salvage-question-gap:   var(--tug-space-xs);
+  --tugx-askquestion-salvage-actions-justify: flex-end;
+}
+
+.ask-user-question-tool-block-salvage {
+  padding: var(--tugx-askquestion-salvage-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-salvage-gap);
+}
+
+/* @tug-renders-on: --tugx-askquestion-salvage-banner-bg */
+.ask-user-question-tool-block-salvage-banner {
+  padding: var(--tugx-askquestion-salvage-banner-padding);
+  background: var(--tugx-askquestion-salvage-banner-bg);
+  color: var(--tugx-askquestion-salvage-banner-color);
+  border-radius: var(--tugx-askquestion-salvage-banner-radius);
+  font-size: var(--tug-font-size-md);
+  line-height: 1.4;
+}
+
+/* Question stack — flat in document order, no wizard rail. The
+ * recovery path is rare enough that the lightweight layout reads
+ * cleanly without the rail's progress vocabulary. */
+.ask-user-question-tool-block-salvage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-salvage-gap);
+}
+
+.ask-user-question-tool-block-salvage-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-salvage-question-gap);
+}
+
+/* @tug-renders-on: --tugx-toolblock-bg */
+.ask-user-question-tool-block-salvage-question {
+  font-size: var(--tug-font-size-lg);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--tugx-askquestion-question-color);
+}
+
+.ask-user-question-tool-block-salvage-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-askquestion-salvage-options-gap);
+}
+
+.ask-user-question-tool-block-salvage-actions {
+  display: flex;
+  justify-content: var(--tugx-askquestion-salvage-actions-justify);
+}

@@ -36,12 +36,24 @@ export type TugProgressSize = "sm" | "md" | "lg";
  * TugProgress is not a group-family component and should not import
  * from tug-group-utils.
  *
+ * The extra `"inherit"` role is the deliberate exception: the fill
+ * resolves to `currentColor` instead of a theme palette, so the
+ * indicator picks up whatever text colour the surrounding context
+ * paints. Use it when the progress indicator should *blend* into
+ * a row that already carries a tone (muted prose, caution bands,
+ * etc.) — its motivating callsite is the streaming-placeholder
+ * surface on tool blocks, where the ring should read as part of
+ * the muted "work in flight" copy rather than as a separate accent.
+ *
+ * Mirrors `TugBadgeRole`'s `inherit` design.
+ *
  * NOTE: If this role union continues to duplicate across components,
  * consider extracting to a shared location (e.g., internal/tug-roles.ts).
  */
 export type TugProgressRole =
   | "option" | "action" | "agent" | "data"
-  | "success" | "caution" | "danger";
+  | "success" | "caution" | "danger"
+  | "inherit";
 
 // ---- Role injection ----
 
@@ -64,6 +76,13 @@ const ROLE_TOKEN_MAP: Record<string, string> = {
 };
 
 function buildProgressRoleStyle(role?: TugProgressRole): React.CSSProperties {
+  // The `inherit` role short-circuits the theme-palette lookup and
+  // resolves the fill to `currentColor` — the indicator paints in
+  // whatever text tone the host has set on its container. Mirrors
+  // `TugBadge`'s `inherit` role design.
+  if (role === "inherit") {
+    return { "--tugx-progress-fill": "currentColor" } as React.CSSProperties;
+  }
   const suffix = role ? (ROLE_TOKEN_MAP[role] ?? role) : "accent";
   return {
     "--tugx-progress-fill": `var(--tug7-surface-toggle-primary-normal-${suffix}-rest)`,

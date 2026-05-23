@@ -76,6 +76,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { TideCautionBadge } from "@/components/tugways/chrome/tide-caution-badge";
+import { TugProgress } from "@/components/tugways/tug-progress";
 
 import type { CautionFlag, ToolWrapperStatus } from "./types";
 
@@ -164,15 +165,28 @@ export interface ToolWrapperChromeProps {
  * it inside the body region of a partial-input render (e.g.
  * `BashToolBlock` shows it while the command field is still
  * arriving).
+ *
+ * Renders a single `TugProgress` ring in indeterminate mode (no
+ * `value` prop) — the project-standard "work in flight" indicator.
+ * The earlier bespoke three-dot pulse was retired here so every
+ * in-flight tool block speaks the same visual vocabulary as
+ * `TugProgress` everywhere else in the app.
  */
 export const StreamingPlaceholder: React.FC = () => (
   <div
     data-slot="tool-wrapper-streaming-placeholder"
     className="tool-wrapper-streaming-placeholder"
   >
-    <span className="tool-wrapper-streaming-dot" />
-    <span className="tool-wrapper-streaming-dot" />
-    <span className="tool-wrapper-streaming-dot" />
+    {/* `role="inherit"` so the ring picks up the wrapper's muted
+     * text color instead of the theme's accent (orange in brio).
+     * The placeholder is a "we're waiting" cue, not a foreground
+     * accent — same vocabulary as the surrounding prose tone. */}
+    <TugProgress
+      variant="ring"
+      size="sm"
+      role="inherit"
+      aria-label="In progress"
+    />
   </div>
 );
 

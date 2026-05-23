@@ -20,7 +20,7 @@
 import type React from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { CodeSessionStore, ToolCallState } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // Caution flag — drift detection per drift-fallback decision.
@@ -165,6 +165,19 @@ export interface ToolWrapperProps<TInput = unknown, TStructured = unknown> {
    * deeper subagents resolve theirs. Non-recursing wrappers ignore it.
    */
   childToolCallsByParent?: ChildToolCallsMap;
+  /**
+   * Optional `CodeSessionStore` handle. Threaded by the transcript
+   * view through `dispatchToolCallState` for wrappers that need to
+   * round-trip something *outside* the normal tool channel — today
+   * the only consumer is `AskUserQuestionToolBlock`'s salvage path,
+   * which posts the user's answers as a fresh user turn via
+   * `session.send` when Claude Code rejected the tool call.
+   *
+   * Optional because most wrappers don't need it; the few that do
+   * defensively guard a missing reference (the standalone gallery
+   * mount, for instance, supplies no session).
+   */
+  session?: CodeSessionStore;
 }
 
 /**

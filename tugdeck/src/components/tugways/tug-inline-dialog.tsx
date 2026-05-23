@@ -204,6 +204,18 @@ export interface TugInlineDialogProps {
    * @default "action"
    */
   confirmRole?: TugInlineDialogConfirmRole;
+  /**
+   * Visually + behaviorally disable the confirm button. Use this when
+   * the dialog gates submission on local state (e.g. the question
+   * wizard waits until all questions are answered before lighting up
+   * "Submit all"). The button stays in the tab order and announces
+   * `aria-disabled="true"`, mirroring TugButton's chain-action gate
+   * — never the HTML `disabled` so screen readers still read the
+   * label and the focus stack doesn't shift on each toggle.
+   *
+   * @default false
+   */
+  confirmDisabled?: boolean;
   /** Fired when the user clicks the confirm button. */
   onConfirm: () => void;
   /**
@@ -282,6 +294,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
   optionsAriaLabel,
   confirmLabel,
   confirmRole = "action",
+  confirmDisabled = false,
   onConfirm,
   cancelLabel,
   onCancel,
@@ -362,6 +375,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
           ref={confirmRef}
           emphasis="filled"
           role={confirmRole}
+          disabled={confirmDisabled}
           onClick={onConfirm}
         >
           {confirmLabel}

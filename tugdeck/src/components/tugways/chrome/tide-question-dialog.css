@@ -1,33 +1,48 @@
 /* @tug-pairings:
-   - --tugx-idialog-*       (TugInlineDialog owns the dialog frame)
-   - --tugx-dialog-button-* (TugDialogButton owns each option row)
-   `QuestionDialog` delegates the dialog frame to `TugInlineDialog` and
-   every option row to `TugDialogButton`; this stylesheet owns only the
-   layout of the question stack placed inside the primitive's children
-   slot — no colors, no borders, no surfaces of its own.
+   - --tugx-idialog-*           (TugInlineDialog owns the dialog frame)
+   - --tugx-dialog-button-*     (TugDialogButton owns each option row)
+   - --tugx-question-current-bg | --tugx-idialog-bg      (highlight tone behind the focused row)
+   - --tugx-question-row-hover-bg | --tugx-idialog-bg    (hover bg on a done/pending row)
+   - --tugx-question-marker-done-color | --tugx-idialog-bg     (done-row checkmark)
+   - --tugx-question-marker-current-color | --tugx-idialog-bg  (current-row arrow)
+   - --tugx-question-marker-pending-color | --tugx-idialog-bg  (pending-row ring)
+   - --tugx-question-answer-color | --tugx-idialog-bg          (done-row → answer summary)
+   `QuestionDialog` delegates the dialog frame to `TugInlineDialog`
+   and every option row to `TugDialogButton`. The wizard rail itself
+   — done / current / pending rows and the per-row Back/Next strip —
+   owns only `--tugx-question-*` here.
 */
 
 /**
- * tide-question-dialog.css — `QuestionDialog` chrome.
+ * tide-question-dialog.css — paged-wizard chrome for `QuestionDialog`.
  *
- * The dialog frame (icon column, title, description, actions row) is
- * the `TugInlineDialog` primitive (`--tugx-idialog-*`); each option
- * row is a `TugDialogButton` (`--tugx-dialog-button-*`). What stays
- * here is the small flex layout for the question stack the component
- * renders into the primitive's `children` slot:
+ * Layout shifted in #step-24-followup: the dialog renders one *row*
+ * per question. Each row is one of three states:
  *
- *   - `.tide-question-dialog-questions` — the stack; gaps consecutive
- *     questions in the multi-question layout.
- *   - `.tide-question-dialog-question` — one question: its heading
- *     (multi-question layout only) above its option group.
- *   - `.tide-question-dialog-question-heading` — the question text
- *     shown above its options when more than one question is asked.
- *   - `.tide-question-dialog-options` — the option list (a flex
- *     column of `TugDialogButton`s).
+ *  - `[data-status="done"]` — answered. `✓` marker, the question
+ *    heading, and an inline `→ chosen answer` summary. The whole
+ *    row is a `<button>` that jumps back to that question.
+ *  - `[data-status="current"]` — focused. `▸` marker, heading, then
+ *    the option group expanded inline, then a Back/Next nav strip.
+ *    Painted on a subtle highlight tone so the row reads as the
+ *    active surface.
+ *  - `[data-status="pending"]` — not yet visited. `○` marker plus
+ *    heading only; clickable to skip ahead.
+ *
+ * The single-question payload renders no rail and no markers — the
+ * dialog's `description` carries the question text and the children
+ * slot just holds the option group (the `CurrentRow` component still
+ * renders, but its markers + header surface zero out via the
+ * `[data-questions-single="true"]` ancestor scope).
  *
  * Tuglaw cross-check:
- *  - [L17] every `--tugx-question-*` slot resolves to a `--tug-*` base
- *    token in one hop.
+ *  - [L06] no React state for visual state — `data-status` on each
+ *    row gates the marker glyph, the highlight band, and the answer
+ *    summary; CSS owns appearance.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] every `--tugx-question-*` slot resolves to a `--tug-*` /
+ *    `--tug7-*` base token in one hop.
  *  - [L19] component-authoring guide — file pair, module docstring,
  *    `data-slot` on each container.
  *  - [L20] component-token sovereignty — owns `--tugx-question-*`;
@@ -44,92 +59,332 @@ body {
    * so this knob only changes width, not horizontal placement. */
   --tugx-question-frame-width: 700px;
 
-  /* Gap between consecutive questions (multi-question payload). The
-   * question-asking surface mixes multi-line prose questions with
-   * multi-line option descriptions; the lg → 2xl bump gives each
-   * Q-group enough breathing room that the eye doesn't read two
-   * adjacent option clusters as one. */
-  --tugx-question-stack-gap: var(--tug-space-2xl);
-  /* Gap between a question's heading and its option group — md
-   * lifts the options off the heading so the relationship reads
-   * as "heading … then choices". */
-  --tugx-question-group-gap: var(--tug-space-md);
-  /* Gap between option rows. */
-  --tugx-question-option-gap: var(--tug-space-2xs);
+  /* Wizard rail */
+  --tugx-question-stack-gap:   var(--tug-space-xs);
+  --tugx-question-row-radius:  var(--tug-radius-md);
+  --tugx-question-row-padding: var(--tug-space-md);
+  --tugx-question-marker-gap:  var(--tug-space-sm);
 
-  /* Question-text heading (multi-question layout). Bumped from `sm`
-   * (13 px) to `lg` (16 px) so the question reads as the focal
-   * point of its group — the chosen option labels render at
-   * `md` / 14 px, so a `lg` heading sits clearly above them in the
-   * visual hierarchy. */
-  --tugx-question-heading-size: var(--tug-font-size-lg);
-  --tugx-question-heading-weight: 600;
+  /* Heading typography — applies to every row state. */
+  --tugx-question-heading-size:    var(--tug-font-size-lg);
+  --tugx-question-heading-weight:  600;
   --tugx-question-heading-leading: 1.4;
 
-  /* Marker column ("1.", "2.", …) for multi-question layout. Held at
-   * a fixed width regardless of digit count so the heading flushes
-   * down the column. */
-  --tugx-question-marker-color: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-question-marker-gap: var(--tug-space-sm);
+  /* Answer summary on done rows — sits below the heading at body
+   * size, muted enough to read as a derived value not a heading. */
+  --tugx-question-answer-size:   var(--tug-font-size-md);
+  --tugx-question-answer-color:  var(--tug7-element-global-text-normal-default-rest);
+  --tugx-question-answer-leading: 1.4;
+
+  /* Markers — one slot per state so themes can tune independently.
+   * Markers render as inline lucide icons that paint via `currentColor`,
+   * so the row's `data-status` rule sets `color` on the marker span. */
+  --tugx-question-marker-size:             var(--tug-font-size-lg);
+  --tugx-question-marker-done-color:       var(--tug7-element-global-text-normal-success-rest);
+  --tugx-question-marker-recommended-color: var(--tug7-element-global-text-normal-link-rest);
+  --tugx-question-marker-current-color:    var(--tug7-element-global-text-normal-link-rest);
+  --tugx-question-marker-pending-color:    var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-question-marker-arrow-color:      var(--tug7-element-global-text-normal-link-rest);
+
+  /* Row state backgrounds — current is highlighted so the eye lands
+   * on the focused row; done/pending share a hover-only band. */
+  --tugx-question-current-bg:    var(--tug7-surface-highlight-primary-normal-active-rest);
+  --tugx-question-row-hover-bg:  var(--tug7-surface-highlight-primary-normal-hover-rest);
+
+  /* Expand/collapse transition timing for the current row's options. */
+  --tugx-question-expand-duration: 180ms;
+  --tugx-question-expand-easing:   cubic-bezier(0.2, 0, 0, 1);
+
+  /* Per-row Back/Next nav strip. */
+  --tugx-question-nav-gap:    var(--tug-space-sm);
+  --tugx-question-nav-margin: var(--tug-space-md);
+
+  /* Options block — slightly tighter inter-button gap so the option
+   * column reads as a single answer group rather than a list. */
+  --tugx-question-option-gap: var(--tug-space-2xs);
+
+  /* Single-question payload preserves the legacy compact layout. */
+  --tugx-question-single-options-padding: 0;
 }
 
 /* Frame width override — scoped to the question dialog so permission
- * dialogs keep their CTA-sized 520 px presence. The width applies on
- * top of the primitive's own `width: 100%; max-width: …` so a narrow
- * container still wraps. */
+ * dialogs keep their CTA-sized 520 px presence. */
 .tide-question-dialog {
   --tugx-idialog-max-width: var(--tugx-question-frame-width);
 }
 
-/* ---- Question stack ---- */
+/* ---- Wizard rail ---- */
 
 .tide-question-dialog-questions {
   display: flex;
   flex-direction: column;
   gap: var(--tugx-question-stack-gap);
-  /* CSS counter on the stack so a multi-question payload numbers
-   * 1, 2, 3, … without needing index-aware React props. */
-  counter-reset: tide-question-stack;
 }
 
-.tide-question-dialog-question {
+/* ---- Row: shared chrome ---- */
+
+/* The `<button>` reset is broader than the rest of the rail — the
+ * done/pending rows are wrapping <button> elements, and inheriting
+ * the host font / appearance avoids cross-browser default styling
+ * leaking in. */
+.tide-question-dialog-row {
+  /* button-element reset */
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  /* layout */
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: var(--tugx-question-marker-gap);
-  row-gap: var(--tugx-question-group-gap);
-  counter-increment: tide-question-stack;
+  padding: var(--tugx-question-row-padding);
+  border-radius: var(--tugx-question-row-radius);
+  cursor: pointer;
+  /* Subtle bg transition so the highlight on current arrives without
+   * a hard swap when the user clicks to advance. */
+  transition: background-color var(--tugx-question-expand-duration)
+    var(--tugx-question-expand-easing);
 }
 
-/* Numbered marker — paints only when the heading is shown
- * (multi-question layout). The single-question path renders no
- * heading and no marker; the question text is the dialog
- * `description` there. The marker is heading-aligned via a sibling
- * pseudo-element so the heading prose flows from the same row.
- *
- * @tug-renders-on: var(--tugx-idialog-bg) */
-.tide-question-dialog-question-heading::before {
-  content: counter(tide-question-stack) ".";
-  color: var(--tugx-question-marker-color);
-  font-weight: var(--tugx-question-heading-weight);
-  margin-inline-end: 0.4em;
+.tide-question-dialog-row-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: start;
+  /* Hold a fixed column so heading prose flushes down the wizard
+   * regardless of which marker icon the state is painting. The icon
+   * height matches the heading's optical baseline; the small vertical
+   * inset nudges the icon to read level with the cap-height of the
+   * heading text rather than the descender. */
+  min-width: var(--tugx-question-marker-size);
+  height: calc(var(--tugx-question-heading-size) * var(--tugx-question-heading-leading));
 }
 
-/* Heading reads as the focal point of its group — see the token
- * comment above. Color is inherited from the dialog's children slot
- * so this rule sets weight + size + leading only; no surface
- * pairing required. */
-.tide-question-dialog-question-heading {
-  grid-column: 1 / -1;
+/* Lucide icons render as `<svg>` and pick up `currentColor`. Sizing
+ * is via the `size` prop on the React component, so this rule sets
+ * only the inherited color slot — appearance for each row state is
+ * tuned by the per-state `data-status` rule below. */
+.tide-question-dialog-row-marker > svg {
+  color: inherit;
+}
+
+.tide-question-dialog-row-heading {
   font-size: var(--tugx-question-heading-size);
   font-weight: var(--tugx-question-heading-weight);
   line-height: var(--tugx-question-heading-leading);
 }
 
-/* ---- Option list ---- */
+.tide-question-dialog-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+/* ---- Row: done ---- */
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row[data-status="done"] .tide-question-dialog-row-marker {
+  color: var(--tugx-question-marker-done-color);
+}
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row[data-status="done"]:hover,
+.tide-question-dialog-row[data-status="done"]:focus-visible {
+  background: var(--tugx-question-row-hover-bg);
+}
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row-answer {
+  font-size: var(--tugx-question-answer-size);
+  line-height: var(--tugx-question-answer-leading);
+  color: var(--tugx-question-answer-color);
+}
+
+/* ---- Row: recommended ---- */
+
+/* A row whose preseeded selection the user hasn't engaged with.
+ * Different glyph (`CircleDot`) and softer tone than `done` so a
+ * fresh dialog doesn't read as already-answered. */
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row[data-status="recommended"] .tide-question-dialog-row-marker {
+  color: var(--tugx-question-marker-recommended-color);
+}
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row[data-status="recommended"]:hover,
+.tide-question-dialog-row[data-status="recommended"]:focus-visible {
+  background: var(--tugx-question-row-hover-bg);
+}
+
+/* ---- Row: pending ---- */
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row[data-status="pending"] .tide-question-dialog-row-marker {
+  color: var(--tugx-question-marker-pending-color);
+}
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row[data-status="pending"]:hover,
+.tide-question-dialog-row[data-status="pending"]:focus-visible {
+  background: var(--tugx-question-row-hover-bg);
+}
+
+/* ---- Row: current ---- */
+
+/* The current row is NOT a `<button>` (it carries interactive
+ * children — option buttons + Back/Next), so it needs its own
+ * cursor reset to read as a static container. */
+.tide-question-dialog-row[data-status="current"] {
+  cursor: default;
+}
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.tide-question-dialog-row[data-status="current"] {
+  background: var(--tugx-question-current-bg);
+}
+
+/* @tug-renders-on: --tugx-question-current-bg */
+.tide-question-dialog-row[data-status="current"] .tide-question-dialog-row-marker {
+  color: var(--tugx-question-marker-current-color);
+  /* Center the chevron vertically with the heading even though the
+   * current row is taller than an answered row — the header grid is
+   * a baseline-aligned subgrid above. */
+  align-self: center;
+}
+
+/* The current row stacks header → options → nav, all in the second
+ * grid column. Keep the marker in column 1 row 1 only — options and
+ * nav span the full row width so the option cards run wider than
+ * the heading prose. */
+.tide-question-dialog-row-header {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--tugx-question-marker-gap);
+  align-items: baseline;
+}
+
+/* ---- Options ---- */
+
+/* The options wrapper holds the JS-applied `min-height` (the
+ * measured max over all questions), so shorter questions get
+ * trailing whitespace and longer questions fit naturally. The
+ * inner `.tide-question-dialog-options` stack carries the option
+ * cards themselves. Splitting the floor from the stack means the
+ * cards still flow top-to-bottom without being asked to absorb the
+ * reserved space themselves. */
+.tide-question-dialog-options-wrap {
+  grid-column: 1 / -1;
+  display: block;
+  margin-top: var(--tug-space-sm);
+}
 
 .tide-question-dialog-options {
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: var(--tugx-question-option-gap);
+}
+
+/* ---- Per-row nav ---- */
+
+.tide-question-dialog-row-nav {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--tugx-question-nav-gap);
+  margin-top: var(--tugx-question-nav-margin);
+}
+
+/* ---- Single-question payload — collapse the wizard chrome ---- */
+
+/* When only one question is presented, the dialog's `description`
+ * carries the question text and the wizard rail vocabulary is
+ * overkill. Drop the marker column, the heading, the nav strip,
+ * and the highlight tone so the options sit flush like the legacy
+ * single-question dialog. The wrapper still mounts `CurrentRow`
+ * for code-path uniformity; CSS just hides the chrome. */
+.tide-question-dialog-questions:has(> .tide-question-dialog-row:only-child)
+  > .tide-question-dialog-row[data-status="current"] {
+  background: transparent;
+  padding: 0;
+  display: block;
+}
+
+.tide-question-dialog-questions:has(> .tide-question-dialog-row:only-child)
+  > .tide-question-dialog-row[data-status="current"]
+  > .tide-question-dialog-row-header,
+.tide-question-dialog-questions:has(> .tide-question-dialog-row:only-child)
+  > .tide-question-dialog-row[data-status="current"]
+  > .tide-question-dialog-row-nav {
+  display: none;
+}
+
+.tide-question-dialog-questions:has(> .tide-question-dialog-row:only-child)
+  > .tide-question-dialog-row[data-status="current"]
+  > .tide-question-dialog-options {
+  padding: var(--tugx-question-single-options-padding);
+  margin-top: 0;
+}
+
+/* ---- Hidden measurement helper ---- */
+
+/* Renders each question's option group inside the dialog so we can
+ * measure the natural height every question would produce when it
+ * is the current row, then lock the visible current row to the max
+ * across all questions. The helper is offscreen (`position: absolute`
+ * + offscreen `left`), hidden from screen readers (`aria-hidden`),
+ * and uninteractive (`pointer-events: none`). Width inherits from
+ * the surrounding stack so wrap behavior matches the visible
+ * rendering, which is essential for the measurement to be accurate.
+ *
+ * @tug-renders-on: var(--tugx-idialog-bg) */
+.tide-question-dialog-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  /* Held flush at the parent's inline edges so the wrap math
+   * mirrors the visible row. `top: 0; bottom: auto;` keeps it from
+   * pushing the stack's intrinsic size; `z-index: -1` keeps it
+   * underneath. */
+  inset-inline: 0;
+  top: 0;
+  z-index: -1;
+  display: flex;
+  flex-direction: column;
+  /* Match the visible options gap so multi-option questions measure
+   * to the same height as they will paint. */
+  gap: var(--tug-space-sm);
+}
+
+.tide-question-dialog-measure > [data-tide-question-measure] {
+  /* Each measurement row holds one full option group, sized just
+   * like the visible one. No headers, no nav — only the options
+   * stack drives the row-by-row variability. */
+  display: block;
+}
+
+/* ---- Single-question collapse override ---- */
+
+/* The `:has(> .row:only-child)` scope at the bottom of the file
+ * collapses the wizard chrome down to a flush option group; the
+ * `options-wrap` carries the same zero-padding override so the
+ * single-question dialog still reads as the legacy compact form. */
+.tide-question-dialog-questions:has(> .tide-question-dialog-row:only-child)
+  > .tide-question-dialog-row[data-status="current"]
+  > .tide-question-dialog-options-wrap {
+  margin-top: 0;
+  /* Don't apply the measured floor in single-question mode — there
+   * is no other state to absorb. */
+  min-height: 0 !important;
+}
+
+/* ---- Reduced motion ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  .tide-question-dialog-row {
+    transition: none;
+  }
 }

@@ -24,6 +24,9 @@ import {
   AskUserQuestionToolBlock,
   composeAnswerSummary,
   composeQuestionCountLabel,
+  composeSalvagedAnswerMessage,
+  composeValidationErrorBanner,
+  parseAskUserQuestionInputValidationError,
   readAnswers,
 } from "../ask-user-question-tool-block";
 import {
@@ -159,5 +162,158 @@ describe("AskUserQuestion dispatch resolution", () => {
     expect(resolveToolWrapper("askuserquestion")).toBe(AskUserQuestionToolBlock);
     expect(resolveToolWrapper("AskUserQuestion")).toBe(AskUserQuestionToolBlock);
     expect(resolveToolWrapper("ASKUSERQUESTION")).toBe(AskUserQuestionToolBlock);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Validation-error parser (salvage trigger)
+// ---------------------------------------------------------------------------
+
+describe("parseAskUserQuestionInputValidationError", () => {
+  /** A real-world InputValidationError as Claude Code emits it. */
+  const REAL_ERROR =
+    'InputValidationError: [ { "origin": "array", "code": "too_big", "maximum": 4, "inclusive": true, "path": [ "questions", 1, "options" ], "message": "Too big: expected array to have <=4 items" } ]';
+
+  test("parses the canonical too-big-options error", () => {
+    const out = parseAskUserQuestionInputValidationError(REAL_ERROR);
+    expect(out).not.toBeNull();
+    expect(out?.issues.length).toBe(1);
+    expect(out?.issues[0].code).toBe("too_big");
+    expect(out?.issues[0].maximum).toBe(4);
+    expect(out?.issues[0].path).toEqual(["questions", 1, "options"]);
+    expect(out?.issues[0].message).toContain("expected array to have <=4 items");
+  });
+
+  test("returns null for non-validation error text", () => {
+    expect(parseAskUserQuestionInputValidationError("Some other error")).toBeNull();
+    expect(parseAskUserQuestionInputValidationError("Tool call timed out")).toBeNull();
+  });
+
+  test("returns null for undefined / empty", () => {
+    expect(parseAskUserQuestionInputValidationError(undefined)).toBeNull();
+    expect(parseAskUserQuestionInputValidationError("")).toBeNull();
+  });
+
+  test("returns null when the bracketed payload is malformed JSON", () => {
+    expect(
+      parseAskUserQuestionInputValidationError(
+        "InputValidationError: [ this is not json ]",
+      ),
+    ).toBeNull();
+  });
+
+  test("survives trailing prose after the issue array", () => {
+    const text = `${REAL_ERROR} please retry with fewer options`;
+    const out = parseAskUserQuestionInputValidationError(text);
+    expect(out).not.toBeNull();
+    expect(out?.issues.length).toBe(1);
+  });
+
+  test("parses multiple issues", () => {
+    const text =
+      'InputValidationError: [ { "code": "too_big", "path": [ "questions", 0, "options" ], "maximum": 4 }, { "code": "too_big", "path": [ "questions", 2, "options" ], "maximum": 4 } ]';
+    const out = parseAskUserQuestionInputValidationError(text);
+    expect(out?.issues.length).toBe(2);
+    expect(out?.issues[1].path).toEqual(["questions", 2, "options"]);
+  });
+
+  test("drops non-string non-number path entries silently", () => {
+    const text =
+      'InputValidationError: [ { "code": "too_big", "path": [ "questions", 1, null, "options" ] } ]';
+    const out = parseAskUserQuestionInputValidationError(text);
+    expect(out?.issues[0].path).toEqual(["questions", 1, "options"]);
+  });
+});
+
+describe("composeValidationErrorBanner", () => {
+  test("calls out the options cap explicitly when the issue is too_big-options", () => {
+    const banner = composeValidationErrorBanner({
+      issues: [
+        {
+          code: "too_big",
+          path: ["questions", 0, "options"],
+          maximum: 4,
+        },
+      ],
+    });
+    expect(banner).toContain("at most 4 options");
+    expect(banner).toContain("Answer it here anyway");
+  });
+
+  test("falls back to a generic line for unknown shapes", () => {
+    const banner = composeValidationErrorBanner({
+      issues: [{ code: "weird", message: "something" }],
+    });
+    expect(banner).toContain("Claude Code rejected");
+    expect(banner).toContain("Answer it here anyway");
+  });
+
+  test("uses the issue's maximum when present", () => {
+    const banner = composeValidationErrorBanner({
+      issues: [
+        {
+          code: "too_big",
+          path: ["questions", 0, "options"],
+          maximum: 6,
+        },
+      ],
+    });
+    expect(banner).toContain("at most 6 options");
+  });
+});
+
+describe("composeSalvagedAnswerMessage", () => {
+  function q(question: string, multiSelect: boolean, labels: string[]): ParsedQuestion {
+    return {
+      question,
+      multiSelect,
+      options: labels.map((label) => ({ label })),
+    };
+  }
+
+  test("composes a numbered Q→A message for posting back as a user turn", () => {
+    const questions = [
+      q("Which scope?", false, ["A", "B"]),
+      q("Which kinds?", true, ["X", "Y", "Z"]),
+    ];
+    const answers = new Map<string, string[]>([
+      ["Which scope?", ["A"]],
+      ["Which kinds?", ["X", "Z"]],
+    ]);
+    const text = composeSalvagedAnswerMessage(questions, answers);
+    expect(text).toContain("My answers to your AskUserQuestion");
+    expect(text).toContain("1. Which scope? → A");
+    expect(text).toContain("2. Which kinds? → X, Z");
+  });
+
+  test("renders empty selections as `(no answer)`", () => {
+    const questions = [q("Pick one", false, ["A"])];
+    const answers = new Map<string, string[]>([["Pick one", []]]);
+    const text = composeSalvagedAnswerMessage(questions, answers);
+    expect(text).toContain("(no answer)");
+  });
+
+  test("handles a missing entry the same as an empty selection", () => {
+    const questions = [q("Pick one", false, ["A"])];
+    const text = composeSalvagedAnswerMessage(questions, new Map());
+    expect(text).toContain("(no answer)");
+  });
+
+  test("preserves question order from the questions array", () => {
+    const questions = [
+      q("First", false, ["a"]),
+      q("Second", false, ["b"]),
+      q("Third", false, ["c"]),
+    ];
+    const answers = new Map([
+      ["Third", ["c"]],
+      ["First", ["a"]],
+      ["Second", ["b"]],
+    ]);
+    const lines = composeSalvagedAnswerMessage(questions, answers).split("\n");
+    // Skip the lead-in line; the next three are 1./2./3.
+    expect(lines[1]).toContain("1. First");
+    expect(lines[2]).toContain("2. Second");
+    expect(lines[3]).toContain("3. Third");
   });
 });

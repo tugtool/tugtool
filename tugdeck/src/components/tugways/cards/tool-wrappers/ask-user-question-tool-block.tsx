@@ -2,16 +2,24 @@
  * `AskUserQuestionToolBlock` — Layer-2 wrapper for Claude Code's
  * `AskUserQuestion` tool.
  *
- * The tool itself has two surfaces in the transcript:
+ * The tool itself has two surfaces in the transcript, and they hand
+ * off across the call's lifecycle so the user only ever sees ONE of
+ * them at a time:
  *
- *   1. The inline `QuestionDialog` ([D13]) — `tide-question-dialog.tsx`
- *      — renders the live prompt with radio / check buttons and
- *      submits the user's choices back to Claude. It exists only
- *      while the request is the session's `pendingQuestion`; once
- *      answered it renders `null`.
+ *   1. **Asking state (`status === "streaming"`).** The inline
+ *      `QuestionDialog` ([D13]) — `tide-question-dialog.tsx` —
+ *      renders the live prompt with radio / check buttons and
+ *      submits the user's choices back to Claude. While the call is
+ *      streaming, this wrapper renders `null` and stays out of the
+ *      way: showing both a dialog and an "AskUserQuestion …"
+ *      streaming row would leak implementation detail (two visible
+ *      blocks for one conversational event). The dialog *is* the
+ *      asking UI; nothing else is needed.
  *
- *   2. This wrapper — the durable `tool_use` artifact left in the
- *      turn after the dialog clears. Before this step it rendered
+ *   2. **Answered / ready state (`status === "ready"`).** The
+ *      dialog has cleared its `pendingQuestion` and this wrapper
+ *      takes over as the durable transcript artifact: a clean,
+ *      numbered Q&A list. Before this step the wrapper rendered
  *      through `DefaultToolWrapper`, which painted two stacked
  *      `JsonTreeBlock`s ("input" + "result") of the raw wire shape.
  *      That works for genuine drift but is wrong for a known tool
@@ -28,10 +36,6 @@
  *    No `JsonTreeBlock`, no raw schema. When no answer is recorded
  *    yet, the row reads "(no answer)" in muted prose — the same
  *    fallback the spoken summary uses.
- *  - **Body — streaming state:** the dialog is the live surface; the
- *    wrapper paints a short "Waiting for your answer…" placeholder
- *    so the row reserves space and reads honestly about what's in
- *    flight.
  *  - **Body — error state:** the chrome's error band carries the
  *    failure text; the body drops.
  *
@@ -81,16 +85,17 @@ import "./ask-user-question-tool-block.css";
 import React from "react";
 import { MessageCircleQuestion } from "lucide-react";
 
+import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
+  applyQuestionSelection,
+  initialQuestionSelections,
   parseQuestions,
   type ParsedQuestion,
 } from "@/components/tugways/chrome/tide-question-dialog";
 import type { ControlRequestForward } from "@/lib/code-session-store";
 
-import {
-  StreamingPlaceholder,
-  ToolWrapperChrome,
-} from "./tool-wrapper-chrome";
+import { ToolWrapperChrome } from "./tool-wrapper-chrome";
 import type { ToolWrapperProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -211,6 +216,137 @@ export function composeQuestionCountLabel(
 }
 
 // ---------------------------------------------------------------------------
+// Validation-error parsing — the salvage trigger
+// ---------------------------------------------------------------------------
+
+/**
+ * One Zod issue from Claude Code's `AskUserQuestion` validator. The
+ * `path` shape is always `["questions", N, "options"]` (or similar)
+ * when the cap is violated. We narrow defensively because the wire
+ * shape is whatever Claude Code's JSON serializer produced — fields
+ * may be missing in older versions.
+ */
+export interface AskUserQuestionValidationIssue {
+  code?: string;
+  message?: string;
+  path?: ReadonlyArray<string | number>;
+  maximum?: number;
+}
+
+export interface AskUserQuestionValidationError {
+  issues: AskUserQuestionValidationIssue[];
+}
+
+/**
+ * Detect Claude Code's `InputValidationError` for `AskUserQuestion`.
+ *
+ * The error format the binary emits is:
+ *
+ *   InputValidationError: [ { "origin": "array", "code": "too_big",
+ *     "maximum": 4, "inclusive": true,
+ *     "path": [ "questions", 1, "options" ],
+ *     "message": "Too big: expected array to have <=4 items" } ]
+ *
+ * The leading prefix is plain text and the bracketed payload is a
+ * Zod-issue array. We parse the JSON tail and surface its issues so
+ * the wrapper can branch into the salvage path. Returns `null` for
+ * any unrecognised shape — the wrapper falls back to the generic
+ * error band in that case.
+ *
+ * Pure; exported for unit tests.
+ */
+export function parseAskUserQuestionInputValidationError(
+  textOutput: string | undefined,
+): AskUserQuestionValidationError | null {
+  if (textOutput === undefined || textOutput === "") return null;
+  // The marker is loose because Claude Code occasionally tweaks the
+  // wording; the JSON tail is the load-bearing piece.
+  if (!textOutput.includes("InputValidationError")) return null;
+  const start = textOutput.indexOf("[");
+  if (start === -1) return null;
+  // The payload ends at the last `]` to survive any trailing prose.
+  const end = textOutput.lastIndexOf("]");
+  if (end <= start) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(textOutput.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const issues: AskUserQuestionValidationIssue[] = [];
+  for (const raw of parsed) {
+    if (raw === null || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const issue: AskUserQuestionValidationIssue = {};
+    if (typeof r.code === "string") issue.code = r.code;
+    if (typeof r.message === "string") issue.message = r.message;
+    if (Array.isArray(r.path)) {
+      issue.path = r.path.filter(
+        (p): p is string | number => typeof p === "string" || typeof p === "number",
+      );
+    }
+    if (typeof r.maximum === "number") issue.maximum = r.maximum;
+    issues.push(issue);
+  }
+  if (issues.length === 0) return null;
+  return { issues };
+}
+
+/**
+ * Build a short human-readable banner explaining what went wrong.
+ * The wrapper paints this above the salvage wizard so the user
+ * understands the bridge they're crossing. Pure; exported for tests.
+ */
+export function composeValidationErrorBanner(
+  err: AskUserQuestionValidationError,
+): string {
+  // We surface the most common issue (`too_big` on an options array)
+  // explicitly; everything else falls through to a generic line.
+  for (const issue of err.issues) {
+    if (
+      issue.code === "too_big" &&
+      issue.path !== undefined &&
+      issue.path.includes("options")
+    ) {
+      const limit = issue.maximum ?? 4;
+      return `Claude Code rejected this question — it allows at most ${limit} options per question. Answer it here anyway:`;
+    }
+  }
+  return "Claude Code rejected this question. Answer it here anyway:";
+}
+
+/**
+ * Compose the salvaged-answer message body the wrapper posts back
+ * as a fresh user turn. Format mirrors the live dialog's terse
+ * summary so the assistant reads "user answered the questions" in
+ * a shape it would have seen had the tool succeeded.
+ *
+ * Example output for two questions:
+ *
+ *   My answers to your AskUserQuestion (the tool call hit Claude Code's
+ *   options cap, so I'm answering directly):
+ *   1. Which slice of the component system? → tugways body-kinds
+ *   2. Which kind of inconsistency matters? → Prop API shape, File/CSS/test structure
+ *
+ * Pure; exported for tests.
+ */
+export function composeSalvagedAnswerMessage(
+  questions: ReadonlyArray<ParsedQuestion>,
+  answersByQuestion: ReadonlyMap<string, ReadonlyArray<string>>,
+): string {
+  const lines: string[] = [
+    "My answers to your AskUserQuestion (the tool call hit Claude Code's options cap, so I'm answering directly):",
+  ];
+  questions.forEach((q, index) => {
+    const picks = answersByQuestion.get(q.question) ?? [];
+    const answerText = picks.length === 0 ? "(no answer)" : picks.join(", ");
+    lines.push(`${index + 1}. ${q.question} → ${answerText}`);
+  });
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -221,7 +357,11 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
   textOutput,
   status,
   caution,
+  session,
 }) => {
+  // Hooks must run unconditionally on every render — keep them above
+  // any early returns so the hook order doesn't shift across status
+  // transitions.
   const questions = React.useMemo(() => parseInputQuestions(input), [input]);
   const answers = React.useMemo(
     () => readAnswers(input, structuredResult),
@@ -231,8 +371,49 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
     () => composeAnswerSummary(questions, answers),
     [questions, answers],
   );
-  const answeredCount = summary.filter((s) => s.answers.length > 0).length;
-  const args = composeQuestionCountLabel(questions.length, answeredCount);
+
+  // Salvage state — populated when the user finishes the salvage
+  // wizard (we keep the locally-collected answers around so the
+  // wrapper can flip from "asking out-of-band" to "answered out-of-
+  // band" without losing context). Map keyed by question text,
+  // value is the chosen labels.
+  const [salvagedAnswers, setSalvagedAnswers] = React.useState<
+    Map<string, string[]> | null
+  >(null);
+
+  // Try to detect the InputValidationError that fires when Claude
+  // Code's schema rejects an `AskUserQuestion` call (most often the
+  // ≤4-options cap). When detected, we mount the salvage UI inline:
+  // the questions render with our renderer's no-cap option list,
+  // and the user's answers post back as a follow-on user turn (see
+  // `composeSalvagedAnswerMessage`).
+  const validationError = React.useMemo(
+    () => parseAskUserQuestionInputValidationError(textOutput),
+    [textOutput],
+  );
+  const isSalvageable =
+    status === "error" &&
+    validationError !== null &&
+    questions.length > 0 &&
+    session !== undefined;
+
+  // While the tool is in flight the inline `QuestionDialog` is the
+  // user-facing surface — see the module docstring for the lifecycle
+  // handoff. Rendering nothing here keeps the transcript reading as
+  // a single conversational event (the dialog) rather than two
+  // visible blocks for the same moment in the conversation. Once
+  // the user answers the dialog clears, the tool transitions to
+  // `ready`, and this wrapper mounts with the durable Q&A summary
+  // in roughly the same vertical slot.
+  if (status === "streaming") return null;
+  // The headline count surfaces user-confirmed answers — either the
+  // wire-side `answers` (a successful tool round-trip) or the
+  // locally-collected `salvagedAnswers` (the recovery path).
+  const headlineCount =
+    salvagedAnswers !== null
+      ? Array.from(salvagedAnswers.values()).filter((v) => v.length > 0).length
+      : summary.filter((s) => s.answers.length > 0).length;
+  const args = composeQuestionCountLabel(questions.length, headlineCount);
   const argsSummary =
     args === "" ? undefined : (
       <span
@@ -244,8 +425,29 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
     );
 
   let body: React.ReactNode;
-  if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+  if (salvagedAnswers !== null) {
+    // After the user finishes salvage, render the Q&A summary built
+    // from the locally-collected answers. Same shape as the normal
+    // post-answer view so the wrapper reads identically regardless
+    // of which channel produced the result.
+    body = (
+      <SalvageAnsweredSummary
+        questions={questions}
+        answersByQuestion={salvagedAnswers}
+      />
+    );
+  } else if (isSalvageable && session !== undefined && validationError !== null) {
+    body = (
+      <SalvageWizard
+        questions={questions}
+        bannerText={composeValidationErrorBanner(validationError)}
+        onSubmit={(picksByQuestion) => {
+          const text = composeSalvagedAnswerMessage(questions, picksByQuestion);
+          session.send(text, []);
+          setSalvagedAnswers(new Map(picksByQuestion));
+        }}
+      />
+    );
   } else if (status === "error") {
     body = null;
   } else if (summary.length === 0) {
@@ -298,13 +500,27 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
   }
 
   // Errored calls carry the failure message in `textOutput` — route to
-  // the chrome's error band rather than the body.
-  const errorMessage =
-    status === "error" && textOutput !== undefined && textOutput.length > 0 ? (
-      <span data-slot="ask-user-question-tool-block-error-output">
-        {textOutput}
-      </span>
-    ) : undefined;
+  // the chrome's error band rather than the body. Suppressed when
+  // we've taken the salvage path (the inline banner says everything
+  // the raw Zod blob would, more clearly), and also when the user has
+  // already answered out-of-band (the Q&A summary is the surface).
+  const showErrorBand =
+    status === "error" &&
+    salvagedAnswers === null &&
+    !isSalvageable &&
+    textOutput !== undefined &&
+    textOutput.length > 0;
+  const errorMessage = showErrorBand ? (
+    <span data-slot="ask-user-question-tool-block-error-output">
+      {textOutput}
+    </span>
+  ) : undefined;
+
+  // When the salvage path is live (asking or answered) we don't want
+  // the chrome's red error stripe over the top — the wrapper isn't
+  // really "errored" from the user's POV anymore.
+  const chromeStatus =
+    salvagedAnswers !== null || isSalvageable ? "ready" : status;
 
   return (
     <ToolWrapperChrome
@@ -312,7 +528,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
       toolName={toolName}
       toolIcon={<MessageCircleQuestion size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
-      status={status}
+      status={chromeStatus}
       caution={caution}
       errorMessage={errorMessage}
     >
@@ -320,3 +536,175 @@ export const AskUserQuestionToolBlock: React.FC<ToolWrapperProps> = ({
     </ToolWrapperChrome>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Salvage wizard — flat-stack alternative to the live `QuestionDialog`
+// ---------------------------------------------------------------------------
+
+/**
+ * Inline salvage UI for when Claude Code rejected an `AskUserQuestion`
+ * call via its options-cap validator. Renders each question with its
+ * full options list (no cap on our side), collects the picks, and
+ * hands them to `onSubmit` so the host can format them and post as a
+ * fresh user turn.
+ *
+ * Layout is deliberately flatter than the live `QuestionDialog`'s
+ * wizard rail: salvage is a recovery path, not the primary surface,
+ * and stacking the questions in document order is cheaper and avoids
+ * mounting the dialog primitive (which is wired to the session's
+ * `pendingQuestion` lifecycle the salvage path doesn't have).
+ *
+ * Pure presentational: holds its own selection state, calls
+ * `onSubmit(picksByQuestion)` once when the user clicks Submit.
+ */
+function SalvageWizard({
+  questions,
+  bannerText,
+  onSubmit,
+}: {
+  questions: ReadonlyArray<ParsedQuestion>;
+  bannerText: string;
+  onSubmit: (picksByQuestion: Map<string, string[]>) => void;
+}): React.ReactElement {
+  const [selections, setSelections] = React.useState<string[][]>(() =>
+    initialQuestionSelections(questions),
+  );
+
+  const handleSelect = React.useCallback(
+    (questionIndex: number, optionLabel: string) => {
+      setSelections((prev) => {
+        const question = questions[questionIndex];
+        if (question === undefined) return prev;
+        const next = prev.slice();
+        next[questionIndex] = applyQuestionSelection(
+          question,
+          prev[questionIndex] ?? [],
+          optionLabel,
+        );
+        return next;
+      });
+    },
+    [questions],
+  );
+
+  const handleSubmit = React.useCallback(() => {
+    const map = new Map<string, string[]>();
+    questions.forEach((q, i) => {
+      map.set(q.question, [...(selections[i] ?? [])]);
+    });
+    onSubmit(map);
+  }, [questions, selections, onSubmit]);
+
+  return (
+    <div
+      className="ask-user-question-tool-block-salvage"
+      data-slot="ask-user-question-tool-block-salvage"
+    >
+      <div
+        className="ask-user-question-tool-block-salvage-banner"
+        data-slot="ask-user-question-tool-block-salvage-banner"
+        role="status"
+      >
+        {bannerText}
+      </div>
+      <ol
+        className="ask-user-question-tool-block-salvage-list"
+        data-slot="ask-user-question-tool-block-salvage-list"
+      >
+        {questions.map((question, index) => {
+          const selection = selections[index] ?? [];
+          const selectionStyle = question.multiSelect ? "check" : "radio";
+          return (
+            <li
+              key={`${index}:${question.question}`}
+              className="ask-user-question-tool-block-salvage-item"
+              data-slot="ask-user-question-tool-block-salvage-item"
+            >
+              <div className="ask-user-question-tool-block-salvage-question">
+                {index + 1}. {question.question}
+              </div>
+              <div
+                className="ask-user-question-tool-block-salvage-options"
+                role={question.multiSelect ? "group" : "radiogroup"}
+                aria-label={question.question}
+              >
+                {question.options.map((option) => (
+                  <TugDialogButton
+                    key={option.label}
+                    label={option.label}
+                    description={option.description}
+                    selected={selection.includes(option.label)}
+                    selectionStyle={selectionStyle}
+                    onClick={() => handleSelect(index, option.label)}
+                  />
+                ))}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <div
+        className="ask-user-question-tool-block-salvage-actions"
+        data-slot="ask-user-question-tool-block-salvage-actions"
+      >
+        <TugPushButton emphasis="filled" role="action" onClick={handleSubmit}>
+          Send answers
+        </TugPushButton>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Post-salvage Q&A summary. Same visible shape as the regular
+ * post-tool answered view (numbered Q→A pairs) so the wrapper reads
+ * identically regardless of which channel produced the result.
+ */
+function SalvageAnsweredSummary({
+  questions,
+  answersByQuestion,
+}: {
+  questions: ReadonlyArray<ParsedQuestion>;
+  answersByQuestion: ReadonlyMap<string, ReadonlyArray<string>>;
+}): React.ReactElement {
+  return (
+    <ol
+      className="ask-user-question-tool-block-list"
+      data-slot="ask-user-question-tool-block-list"
+    >
+      {questions.map((question, index) => {
+        const picks = answersByQuestion.get(question.question) ?? [];
+        return (
+          <li
+            key={`${index}:${question.question}`}
+            className="ask-user-question-tool-block-item"
+            data-slot="ask-user-question-tool-block-item"
+            data-answered={picks.length > 0 ? "true" : "false"}
+          >
+            <div className="ask-user-question-tool-block-question">
+              {question.question}
+            </div>
+            <div
+              className="ask-user-question-tool-block-answer"
+              data-slot="ask-user-question-tool-block-answer"
+            >
+              {picks.length === 0 ? (
+                <span className="ask-user-question-tool-block-no-answer">
+                  (no answer)
+                </span>
+              ) : picks.length === 1 ? (
+                <span>{picks[0]}</span>
+              ) : (
+                <ul className="ask-user-question-tool-block-answer-multi">
+                  {picks.map((a, j) => (
+                    <li key={j}>{a}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}

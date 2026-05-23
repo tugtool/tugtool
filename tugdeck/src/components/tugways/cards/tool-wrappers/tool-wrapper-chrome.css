@@ -79,10 +79,9 @@ body {
    * footer hosts post-mortem badges with more breathing room. */
   --tugx-toolblock-footer-gap: var(--tug-space-md);
 
-  /* Streaming placeholder — bespoke layout for the animated dots */
-  --tugx-toolblock-streaming-padding:  var(--tug-space-sm) var(--tug-space-md);
-  --tugx-toolblock-streaming-gap:      4px;
-  --tugx-toolblock-streaming-dot-size: 6px;
+  /* Streaming placeholder — wrapper padding around the `TugProgress`
+   * ring; the ring itself owns its own size + animation. */
+  --tugx-toolblock-streaming-padding: var(--tug-space-sm) var(--tug-space-md);
 
   /* Actions slot — hosts body-kind affordance buttons portaled into
    * the chrome header (Find trigger, Copy, view-mode toggle, fold
@@ -262,39 +261,14 @@ body {
 
 /* ---- Streaming placeholder ---- */
 
+/* Inline-flex wrapper that pads the `TugProgress` ring so the
+ * in-flight indicator reads as a single body-sized affordance rather
+ * than a tiny glyph at the very edge of the chrome. The ring itself
+ * owns animation, sizing, and motion-respect — there is no bespoke
+ * vocabulary here anymore. */
 .tool-wrapper-streaming-placeholder {
   display: inline-flex;
   align-items: center;
-  gap: var(--tugx-toolblock-streaming-gap);
   padding: var(--tugx-toolblock-streaming-padding);
   color: var(--tugx-block-text-color-muted);
-}
-
-.tool-wrapper-streaming-dot {
-  display: inline-block;
-  width: var(--tugx-toolblock-streaming-dot-size);
-  height: var(--tugx-toolblock-streaming-dot-size);
-  border-radius: 50%;
-  background: currentColor;
-  animation: tool-wrapper-streaming-pulse 1.4s ease-in-out infinite;
-}
-
-.tool-wrapper-streaming-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.tool-wrapper-streaming-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes tool-wrapper-streaming-pulse {
-  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
-  40%           { opacity: 1;    transform: scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tool-wrapper-streaming-dot {
-    animation: none;
-    opacity: 0.6;
-  }
 }

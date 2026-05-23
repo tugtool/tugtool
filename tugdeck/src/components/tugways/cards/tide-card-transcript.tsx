@@ -762,6 +762,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                 streamingStore={streamingStore}
                 streamingPath={toolsPath}
                 msgId={toolMsgId}
+                session={codeSessionStore}
               />
               <TugMarkdownBlock
                 streamingStore={streamingStore}

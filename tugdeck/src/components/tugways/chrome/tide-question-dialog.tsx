@@ -17,24 +17,31 @@
  * request is the session's `pendingQuestion`. Once answered (or
  * skipped) it renders `null`.
  *
- * Layout (composed on `TugInlineDialog`):
+ * Layout (composed on `TugInlineDialog`) — paged wizard. A
+ * single-question payload renders inline (the question text goes in
+ * the dialog `description` and the options fill the children slot).
+ * A multi-question payload renders a vertical stack of *rows*, one
+ * per question, in three states:
  *
- *   +------------------------------------------+
- *   | [?]  Claude has a question               |
- *   |      {the question text}                 |
- *   |      ( ) Option A                        |
- *   |      ( ) Option B                        |
- *   |                     [Skip]  [Submit]     |
- *   +------------------------------------------+
+ *  - **done** — the user has picked at least one option. Row shows
+ *    `✓ N. Question text · → chosen answer`. Clickable to jump back.
+ *  - **current** — the row in focus. Shows `▸ N. Question text`,
+ *    expands the options, and exposes per-row `Back` / `Next`
+ *    affordances. Single-select picks auto-advance to the next row;
+ *    multi-select waits for an explicit `Next`.
+ *  - **pending** — not yet visited. Shows `○ N. Question text` only.
+ *    Clickable to skip ahead.
  *
- * A single question puts its text in the dialog's `description`; a
- * multi-question `AskUserQuestion` payload puts a count lead-in there
- * and renders each question's text as a heading above its own option
- * group. Single-select questions render `radio` `TugDialogButton`s
- * (the first option pre-selected, mirroring `PermissionDialog`'s
- * scope-picker default so a bare Return commits a sane answer);
- * multi-select questions render `check` `TugDialogButton`s starting
- * empty.
+ * The global `TugInlineDialog` actions row carries the dialog-wide
+ * controls: `Skip` (cancel) on the left, `Submit all` (confirm) on
+ * the right. `Submit all` is `confirmDisabled` until every question
+ * carries a selection (matching the "no required answers but submit
+ * gates on completeness" rule the user signed off on).
+ *
+ * **Auto-advance** on single-select is the headline GUI improvement
+ * over the TUI's keyboard-only flow: picking an option commits the
+ * selection and advances to the next row in one click. Multi-select
+ * has no auto-advance — every pick is a deliberate toggle.
  *
  * **Answer shape.** `respondQuestion` sends `answers` keyed by the
  * question *text*; the value is the selected option `label` (single)
@@ -72,11 +79,18 @@
 import "./tide-question-dialog.css";
 
 import React from "react";
-import { MessageCircleQuestion } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Circle,
+  CircleDot,
+  MessageCircleQuestion,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type {
   CodeSessionStore,
   ControlRequestForward,
@@ -251,59 +265,363 @@ export function buildQuestionAnswers(
   return answers;
 }
 
+/**
+ * Count how many questions have at least one selection (whether
+ * preseeded or user-picked). Drives the `Submit all` gate: the
+ * confirm button lights up once every row carries *some* answer,
+ * which is the literal precondition for round-tripping a non-empty
+ * `answers` payload. Pure; exported for the test suite.
+ */
+export function countAnswered(
+  selections: ReadonlyArray<ReadonlyArray<string>>,
+): number {
+  let count = 0;
+  for (const s of selections) if (s.length > 0) count += 1;
+  return count;
+}
+
+/**
+ * Count how many questions the user has actively *confirmed* — i.e.
+ * a row the user has clicked into and that carries a selection. This
+ * is the count surfaced in the dialog description (`"3 questions ·
+ * 1 answered"`) so the headline reflects engagement, not the seed.
+ * `visited[i]` is `true` iff the user has interacted with row `i`
+ * (picked an option there, or used `Next` to step off it).
+ *
+ * Pure; exported for the test suite.
+ */
+export function countConfirmedAnswers(
+  selections: ReadonlyArray<ReadonlyArray<string>>,
+  visited: ReadonlyArray<boolean>,
+): number {
+  let count = 0;
+  for (let i = 0; i < selections.length; i += 1) {
+    if (visited[i] && selections[i].length > 0) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Compute one row's wizard state from the three axes that drive it:
+ * whether the row is the current focus, whether the user has
+ * confirmed it, and whether it carries a selection. Encodes the
+ * "preseeded but not yet confirmed" surface as `"recommended"` so
+ * the renderer can paint a softer indicator than the success-toned
+ * check used for genuine `"done"` rows.
+ *
+ *  - `current` — `isCurrent === true`.
+ *  - `done` — user-confirmed and has a selection.
+ *  - `recommended` — has a selection, but the user hasn't visited
+ *    yet (single-select rows arrive preseeded with the first option,
+ *    which is the recommendation; that state shouldn't read as
+ *    "answered" until the user has actually engaged).
+ *  - `pending` — empty selection and unvisited.
+ *
+ * Pure; exported for the test suite.
+ */
+export type QuestionRowStatus =
+  | "current"
+  | "done"
+  | "recommended"
+  | "pending";
+
+export function rowStatus(
+  isCurrent: boolean,
+  visited: boolean,
+  hasSelection: boolean,
+): QuestionRowStatus {
+  if (isCurrent) return "current";
+  if (visited && hasSelection) return "done";
+  if (hasSelection) return "recommended";
+  return "pending";
+}
+
+/**
+ * Pick the wizard's next focus after a single-select pick or a `Next`
+ * click on the current row. Returns `from + 1` when an adjacent row
+ * exists, otherwise `from` itself — the last row "absorbs" the
+ * advance gesture so a user who picks an option on the final question
+ * stays put while the global `Submit all` button lights up.
+ *
+ * Pure; exported for the test suite. The function intentionally does
+ * NOT skip ahead to the next *unanswered* row: jumping over a
+ * deliberately-skipped middle question would surprise the user. A
+ * targeted skip is one click on the desired row.
+ */
+export function nextAdvanceIndex(from: number, total: number): number {
+  if (total <= 0) return 0;
+  if (from + 1 < total) return from + 1;
+  return from;
+}
+
+/**
+ * Compose the chosen-answer summary the `done` row paints inline.
+ * Mirrors `composeAnswerSummary` in `ask-user-question-tool-block`
+ * but reads `selections` (mid-flight wizard state) rather than the
+ * post-turn merged answers. Returns the empty string for the empty
+ * selection so the renderer can short-circuit the row decoration.
+ *
+ * Pure; exported for the test suite.
+ */
+export function composeRowAnswerLabel(
+  selection: ReadonlyArray<string>,
+): string {
+  if (selection.length === 0) return "";
+  return selection.join(", ");
+}
+
 // ---------------------------------------------------------------------------
 // Per-question option group
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Row components — one per wizard state
+// ---------------------------------------------------------------------------
+
+interface QuestionRowProps {
+  index: number;
+  question: ParsedQuestion;
+  status: QuestionRowStatus;
+  selection: ReadonlyArray<string>;
+  isFirst: boolean;
+  isLast: boolean;
+  onSelect: (optionLabel: string) => void;
+  onBack: () => void;
+  onAdvance: () => void;
+  onJump: () => void;
+}
+
+/** Pixel size for the lucide row-marker icons. Matches the heading
+ *  `--tug-font-size-lg` glyph height so the icon and prose sit on the
+ *  same optical baseline. */
+const ROW_MARKER_ICON_SIZE = 18;
+
 /**
- * One question's option list. A single-select question is a
- * `role="radiogroup"` of `radio`-style `TugDialogButton`s; a
- * multi-select question is a `role="group"` of `check`-style ones.
- * `showHeading` renders the question text above the options — used
- * only in the multi-question layout (a single question's text is the
- * dialog's `description`).
+ * Render the lucide marker for a row status. Centralized so the
+ * status → icon mapping has one source of truth (the row CSS keys
+ * tone colours off the same `data-status` attribute the parent row
+ * stamps).
+ *
+ *  - `done`         → Check     (success-toned in CSS)
+ *  - `recommended`  → CircleDot (info-toned; reads as "soft default")
+ *  - `current`      → ChevronRight (link-toned; this row is "next")
+ *  - `pending`      → Circle    (muted ring)
  */
-function QuestionChoiceGroup({
+function RowMarker({ status }: { status: QuestionRowStatus }): React.ReactElement {
+  if (status === "done") {
+    return <Check size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
+  }
+  if (status === "recommended") {
+    return <CircleDot size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
+  }
+  if (status === "current") {
+    return <ChevronRight size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
+  }
+  return <Circle size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
+}
+
+/**
+ * A `done` or `recommended` row — the row carries a selection but is
+ * not currently focused. Renders the heading and an inline `→ answer`
+ * summary; clickable to jump back and edit. The status icon
+ * distinguishes "you confirmed this" (`Check`) from "this is the
+ * recommendation, you haven't engaged yet" (`CircleDot`). The whole
+ * row is the click target so the user has a wide click region
+ * without juggling nested anchors.
+ */
+function AnsweredRow({
+  index,
   question,
-  selected,
-  showHeading,
+  status,
+  selection,
+  onJump,
+}: Pick<
+  QuestionRowProps,
+  "index" | "question" | "status" | "selection" | "onJump"
+>): React.ReactElement {
+  const labelPrefix =
+    status === "done" ? "Edit answer to" : "Open recommendation for";
+  return (
+    <button
+      type="button"
+      className="tide-question-dialog-row"
+      data-slot="tide-question-dialog-row"
+      data-status={status}
+      aria-label={`${labelPrefix} question ${index + 1}: ${question.question}`}
+      onClick={onJump}
+    >
+      <span className="tide-question-dialog-row-marker" aria-hidden="true">
+        <RowMarker status={status} />
+      </span>
+      <span className="tide-question-dialog-row-body">
+        <span className="tide-question-dialog-row-heading">
+          {index + 1}. {question.question}
+        </span>
+        <span
+          className="tide-question-dialog-row-answer"
+          data-slot="tide-question-dialog-row-answer"
+        >
+          → {composeRowAnswerLabel(selection)}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * A `pending` row — not yet visited and no selection (only possible
+ * for multi-select questions, which seed empty). Renders the heading
+ * only, with the empty `Circle` marker. Clickable to skip ahead.
+ */
+function PendingRow({
+  index,
+  question,
+  onJump,
+}: Pick<QuestionRowProps, "index" | "question" | "onJump">): React.ReactElement {
+  return (
+    <button
+      type="button"
+      className="tide-question-dialog-row"
+      data-slot="tide-question-dialog-row"
+      data-status="pending"
+      aria-label={`Skip to question ${index + 1}: ${question.question}`}
+      onClick={onJump}
+    >
+      <span className="tide-question-dialog-row-marker" aria-hidden="true">
+        <RowMarker status="pending" />
+      </span>
+      <span className="tide-question-dialog-row-body">
+        <span className="tide-question-dialog-row-heading">
+          {index + 1}. {question.question}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The option group a `current` row shows. Lifted out of `CurrentRow`
+ * so the hidden measurement helper can mount the same DOM shape and
+ * measure it — the answer to layout-stability across question swaps
+ * is to know, up front, the largest options block any question
+ * produces, and apply that as a `min-height` floor to the visible
+ * current row's options area.
+ */
+function QuestionOptionGroup({
+  question,
+  selection,
   onSelect,
 }: {
   question: ParsedQuestion;
-  selected: ReadonlyArray<string>;
-  showHeading: boolean;
+  selection: ReadonlyArray<string>;
   onSelect: (optionLabel: string) => void;
 }): React.ReactElement {
   const selectionStyle = question.multiSelect ? "check" : "radio";
   return (
     <div
-      className="tide-question-dialog-question"
-      data-slot="tide-question-dialog-question"
+      className="tide-question-dialog-options"
+      data-slot="tide-question-dialog-options"
+      role={question.multiSelect ? "group" : "radiogroup"}
+      aria-label={question.question}
     >
-      {showHeading ? (
-        <div className="tide-question-dialog-question-heading">
-          {question.question}
-        </div>
-      ) : null}
+      {question.options.map((option) => (
+        <TugDialogButton
+          key={option.label}
+          label={option.label}
+          description={option.description}
+          selected={selection.includes(option.label)}
+          selectionStyle={selectionStyle}
+          onClick={() => onSelect(option.label)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The `current` row — title + options + per-row Back/Next. The
+ * options group is the only place a `TugDialogButton` lives in the
+ * wizard, so the role / aria semantics stay scoped to one row at a
+ * time (avoids cross-row radio-group leaks).
+ */
+function CurrentRow({
+  index,
+  question,
+  selection,
+  isFirst,
+  isLast,
+  optionsMinHeight,
+  onSelect,
+  onBack,
+  onAdvance,
+}: Omit<QuestionRowProps, "status" | "onJump"> & {
+  optionsMinHeight?: number;
+}): React.ReactElement {
+  // Apply the measured options floor to the options area only — the
+  // heading and nav stays at their natural height, and shorter
+  // questions just see trailing whitespace below their options.
+  // `undefined` while the measurement effect hasn't run yet (first
+  // paint only); on every subsequent render the value is locked.
+  const optionsStyle: React.CSSProperties | undefined =
+    optionsMinHeight !== undefined
+      ? { minHeight: `${optionsMinHeight}px` }
+      : undefined;
+  return (
+    <div
+      className="tide-question-dialog-row"
+      data-slot="tide-question-dialog-row"
+      data-status="current"
+    >
+      <div className="tide-question-dialog-row-header">
+        <span className="tide-question-dialog-row-marker" aria-hidden="true">
+          <RowMarker status="current" />
+        </span>
+        <span className="tide-question-dialog-row-heading">
+          {index + 1}. {question.question}
+        </span>
+      </div>
       <div
-        className="tide-question-dialog-options"
-        data-slot="tide-question-dialog-options"
-        role={question.multiSelect ? "group" : "radiogroup"}
-        aria-label={question.question}
+        className="tide-question-dialog-options-wrap"
+        data-slot="tide-question-dialog-options-wrap"
+        style={optionsStyle}
       >
-        {question.options.map((option) => (
-          <TugDialogButton
-            key={option.label}
-            label={option.label}
-            description={option.description}
-            selected={selected.includes(option.label)}
-            selectionStyle={selectionStyle}
-            onClick={() => onSelect(option.label)}
-          />
-        ))}
+        <QuestionOptionGroup
+          question={question}
+          selection={selection}
+          onSelect={onSelect}
+        />
+      </div>
+      <div
+        className="tide-question-dialog-row-nav"
+        data-slot="tide-question-dialog-row-nav"
+      >
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          disabled={isFirst}
+          onClick={onBack}
+        >
+          ← Back
+        </TugPushButton>
+        <TugPushButton
+          emphasis="outlined"
+          role="action"
+          disabled={isLast}
+          onClick={onAdvance}
+        >
+          Next →
+        </TugPushButton>
       </div>
     </div>
   );
+}
+
+function QuestionRow(
+  props: QuestionRowProps & { optionsMinHeight?: number },
+): React.ReactElement {
+  if (props.status === "current") return <CurrentRow {...props} />;
+  if (props.status === "pending") return <PendingRow {...props} />;
+  return <AnsweredRow {...props} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,8 +661,68 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     initialQuestionSelections(questions),
   );
 
-  // All callbacks are declared before the conditional return so the
-  // hook order is invariant across the pending → `null` transition.
+  // Visit set, parallel to `selections`. `true` at index `i` means
+  // the user has engaged with row `i` — picked an option there or
+  // explicitly stepped off it via `Next`. Distinguishes a
+  // user-confirmed `done` row from a preseeded `recommended` row in
+  // `rowStatus`, and gates `countConfirmedAnswers` so the dialog
+  // headline reports engagement, not the seed.
+  const [visited, setVisited] = React.useState<boolean[]>(() =>
+    new Array(questions.length).fill(false),
+  );
+
+  // Wizard focus — which row is currently expanded. Starts at the
+  // first question. Click-jump and the per-row Back/Next mutate this.
+  // Single-select picks also auto-advance to the next row.
+  const [currentIndex, setCurrentIndex] = React.useState<number>(0);
+
+  // Layout-stability floor for the current row's options area. We
+  // pre-render every question's option group inside a hidden
+  // measurement helper, then lock the visible row's options area to
+  // the tallest measurement. The dialog's overall height stops
+  // depending on which row is current — clicking through Back/Next
+  // never reflows the page below.
+  //
+  // `null` until the effect below runs; the first paint shows the
+  // natural Q1 height without a floor, and the next render (a
+  // synchronous re-render from `setState` inside `useLayoutEffect`)
+  // applies the lock before any user interaction.
+  const measureRef = React.useRef<HTMLDivElement | null>(null);
+  const [optionsMinHeight, setOptionsMinHeight] = React.useState<
+    number | undefined
+  >(undefined);
+  React.useLayoutEffect(() => {
+    const el = measureRef.current;
+    if (el === null) return;
+    const rows = el.querySelectorAll<HTMLElement>(
+      "[data-tide-question-measure]",
+    );
+    let max = 0;
+    rows.forEach((row) => {
+      const h = row.getBoundingClientRect().height;
+      if (h > max) max = h;
+    });
+    // Round up so a sub-pixel fractional measurement never reads as
+    // a one-pixel shrink on the next render.
+    const ceil = Math.ceil(max);
+    setOptionsMinHeight((prev) =>
+      prev === undefined || ceil > prev ? ceil : prev,
+    );
+  }, [questions]);
+
+  /** Mark `index` as user-engaged. Idempotent: the cheap reference
+   *  equality check below means a no-op set doesn't trigger a render. */
+  const markVisited = React.useCallback((index: number) => {
+    setVisited((prev) => {
+      if (prev[index] === true) return prev;
+      const next = prev.slice();
+      next[index] = true;
+      return next;
+    });
+  }, []);
+
+  // Callback hooks must precede the early return so the hook order is
+  // invariant across the pending → `null` transition.
   const handleSelect = React.useCallback(
     (questionIndex: number, optionLabel: string) => {
       setSelections((prev) => {
@@ -358,9 +736,45 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         );
         return next;
       });
+      // Any pick == engagement; promote `recommended` → `done`.
+      markVisited(questionIndex);
+      // Auto-advance is a single-select-only affordance — the user
+      // confirmed picking == committing. Multi-select picks are
+      // toggles; advancing on the first one would strand subsequent
+      // checks.
+      const question = questions[questionIndex];
+      if (question !== undefined && !question.multiSelect) {
+        setCurrentIndex((prev) =>
+          prev === questionIndex ? nextAdvanceIndex(prev, questions.length) : prev,
+        );
+      }
     },
-    [questions],
+    [questions, markVisited],
   );
+
+  /** Jump-via-rail-click is exploratory — the user hasn't committed
+   *  anything yet by browsing, so we don't mark visited. They have
+   *  to actually pick or use `Next` to lock in a row. */
+  const handleJump = React.useCallback((target: number) => {
+    setCurrentIndex(target);
+  }, []);
+
+  /** `Back` from the current row: don't mark the row we're leaving
+   *  as visited. A user who back-tracked without engaging hasn't
+   *  taken a stance. */
+  const handleBack = React.useCallback(() => {
+    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : prev));
+  }, []);
+
+  /** `Next` from the current row IS a commit — even on multi-select,
+   *  the click says "I'm done with this question". Mark visited and
+   *  advance. */
+  const handleAdvance = React.useCallback(() => {
+    setCurrentIndex((prev) => {
+      markVisited(prev);
+      return nextAdvanceIndex(prev, questions.length);
+    });
+  }, [questions.length, markVisited]);
 
   const respond = React.useCallback(
     (answers: Record<string, string>) => {
@@ -387,15 +801,63 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     respond({});
   }, [respond]);
 
+  // Keyboard fast-pick — `1`..`9` selects option N (1-indexed) in the
+  // current question. Single-select pick auto-advances via the same
+  // `handleSelect` path used by clicks. Skip when focus is inside a
+  // text input so the wizard can still hold a comments field someday
+  // without intercepting typing. Mounted on the dialog root via
+  // `onKeyDown` so we don't reach for `window`.
+  const handleKeyDown = React.useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (questions.length === 0) return;
+      // Treat `1`–`9` (and their numpad twins) as the option-pick
+      // gesture. Skip modifier keys so `⌘1` etc. stay free for the
+      // host shell.
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      // Refuse interception when focus is inside an editable surface.
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key.length !== 1) return;
+      const digit = e.key.charCodeAt(0) - 48; // "0".charCodeAt(0) === 48
+      if (digit < 1 || digit > 9) return;
+      const current = questions[currentIndex];
+      if (current === undefined) return;
+      const option = current.options[digit - 1];
+      if (option === undefined) return;
+      e.preventDefault();
+      handleSelect(currentIndex, option.label);
+    },
+    [questions, currentIndex, handleSelect],
+  );
+
   if (!isPending) return null;
 
   const hasQuestions = questions.length > 0;
   const single = questions.length === 1 ? questions[0] : null;
+  const seededCount = countAnswered(selections);
+  const confirmedCount = countConfirmedAnswers(selections, visited);
+  // `Submit all` lights up when every row carries a selection
+  // (preseeded recommendations or user-picked). "No required
+  // answers" means the user can sign off on every default in a
+  // single click — that's the literal expression of that.
+  const allAnswered = hasQuestions && seededCount === questions.length;
+
+  // Dialog description — single question repeats its text here
+  // verbatim (unchanged from the legacy layout); multi-question
+  // reports user-confirmed progress (not the preseeded count, so
+  // the headline reads "engagement" rather than "seed").
   const description: React.ReactNode = !hasQuestions
     ? "Claude sent a question that could not be displayed."
     : single !== null
       ? single.question
-      : `Claude is asking ${questions.length} questions.`;
+      : `${questions.length} questions · ${confirmedCount} answered`;
 
   return (
     <TugInlineDialog
@@ -403,8 +865,9 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       iconRole="info"
       title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
       description={description}
-      confirmLabel={hasQuestions ? "Submit" : "Dismiss"}
+      confirmLabel={hasQuestions ? "Submit all" : "Dismiss"}
       confirmRole="action"
+      confirmDisabled={hasQuestions && !allAnswered}
       cancelLabel={hasQuestions ? "Skip" : null}
       onConfirm={handleSubmit}
       onCancel={handleSkip}
@@ -414,18 +877,88 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         <div
           className="tide-question-dialog-questions"
           data-slot="tide-question-dialog-questions"
+          onKeyDown={handleKeyDown}
         >
-          {questions.map((question, index) => (
-            <QuestionChoiceGroup
-              key={`${index}:${question.question}`}
-              question={question}
-              selected={selections[index] ?? []}
-              showHeading={single === null}
-              onSelect={(optionLabel) => handleSelect(index, optionLabel)}
+          {single !== null ? (
+            // Single-question payload — no rail, no wizard chrome.
+            // The question text is the dialog `description` (above)
+            // and the options fill the children slot at full width.
+            // No measurement / `optionsMinHeight` floor: a single
+            // question's options always reflect themselves; there is
+            // no second state to absorb.
+            <CurrentRow
+              index={0}
+              question={single}
+              selection={selections[0] ?? []}
+              isFirst
+              isLast
+              onSelect={(optionLabel) => handleSelect(0, optionLabel)}
+              onBack={handleBack}
+              onAdvance={handleAdvance}
             />
-          ))}
+          ) : (
+            <>
+              {questions.map((question, index) => {
+                const selection = selections[index] ?? [];
+                const status = rowStatus(
+                  index === currentIndex,
+                  visited[index] === true,
+                  selection.length > 0,
+                );
+                return (
+                  <QuestionRow
+                    key={`${index}:${question.question}`}
+                    index={index}
+                    question={question}
+                    status={status}
+                    selection={selection}
+                    isFirst={index === 0}
+                    isLast={index === questions.length - 1}
+                    optionsMinHeight={optionsMinHeight}
+                    onSelect={(optionLabel) => handleSelect(index, optionLabel)}
+                    onBack={handleBack}
+                    onAdvance={handleAdvance}
+                    onJump={() => handleJump(index)}
+                  />
+                );
+              })}
+
+              {/* Hidden measurement helper. Renders every question's
+                * option group in the same width context as the
+                * visible row, but positioned out of the visual flow
+                * via `tide-question-dialog-measure`. The effect
+                * above measures each block's natural height and
+                * locks the visible current row's options area to
+                * the max. Mounted once and re-runs only when the
+                * `questions` array reference changes. */}
+              <div
+                ref={measureRef}
+                className="tide-question-dialog-measure"
+                aria-hidden="true"
+              >
+                {questions.map((question, index) => (
+                  <div
+                    key={`measure:${index}:${question.question}`}
+                    data-tide-question-measure
+                  >
+                    <QuestionOptionGroup
+                      question={question}
+                      selection={[]}
+                      onSelect={NOOP_SELECT}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       ) : null}
     </TugInlineDialog>
   );
 };
+
+/** Stable no-op so the measurement helper's `onSelect` closure
+ *  identity never changes — it never fires because the helper's
+ *  CSS sets `pointer-events: none`, but a stable reference still
+ *  lets React skip re-rendering the inner buttons. */
+const NOOP_SELECT = (): void => {};

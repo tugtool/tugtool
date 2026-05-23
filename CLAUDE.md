@@ -44,6 +44,19 @@ cd tugrust && cargo nextest run
 
 Theme tokens live in `tugdeck/styles/themes/brio.css` and `tugdeck/styles/themes/harmony.css`. These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens.
 
+## AskUserQuestion — Claude Code Cap
+
+Claude Code's built-in `AskUserQuestion` tool enforces **≤4 options per question** via its own Zod schema. Exceeding the cap fails the tool call with an `InputValidationError` before Tide's renderer ever sees it.
+
+When generating an `AskUserQuestion` call:
+- Give each question **at most 4 options**.
+- If you have more candidate choices for one question, either:
+  - Split into multiple questions (each ≤4 options), or
+  - Pick the top 3 and use the 4th as `"Other / Not listed"`.
+- The cap is per-question, not per-payload — total question count is unlimited.
+
+Tide renders a salvage path when the cap is exceeded (the user can still answer outside the tool channel), but every call that hits the cap is a small UX hiccup. Generate within the cap from the start.
+
 ## Tugdeck — Tuglaws
 
 Before implementing any tugways/tugdeck code, verify against the [Tuglaws](tuglaws/tuglaws.md) and [Design Decisions](tuglaws/design-decisions.md). Critical laws:

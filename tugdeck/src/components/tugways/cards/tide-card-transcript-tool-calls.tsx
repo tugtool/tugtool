@@ -85,7 +85,10 @@ import React, {
 } from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type {
+  CodeSessionStore,
+  ToolCallState,
+} from "@/lib/code-session-store";
 
 import { dispatchToolCallState } from "./tide-assistant-renderer-dispatch";
 import type { ChildToolCallsMap } from "./tool-wrappers/types";
@@ -97,6 +100,13 @@ import type { ChildToolCallsMap } from "./tool-wrappers/types";
 interface StaticProps {
   toolCalls: ReadonlyArray<ToolCallState>;
   msgId: string;
+  /**
+   * Optional `CodeSessionStore` handle, threaded to wrappers that
+   * need to post outside the normal tool channel (the
+   * `AskUserQuestion` salvage path is the only consumer today).
+   * Standalone gallery mounts omit it.
+   */
+  session?: CodeSessionStore;
   className?: string;
 }
 
@@ -117,6 +127,8 @@ interface StreamingProps {
    * output doesn't depend on it.
    */
   msgId: string;
+  /** Same role as the static-mode `session`. */
+  session?: CodeSessionStore;
   className?: string;
 }
 
@@ -248,12 +260,14 @@ function useStreamingToolCalls(
 interface ToolCallsListProps {
   toolCalls: ReadonlyArray<ToolCallState>;
   msgId: string;
+  session?: CodeSessionStore;
   className?: string;
 }
 
 const ToolCallsList: React.FC<ToolCallsListProps> = ({
   toolCalls,
   msgId,
+  session,
   className,
 }) => {
   // Partition into top-level calls + the subagent-children map once
@@ -284,6 +298,7 @@ const ToolCallsList: React.FC<ToolCallsListProps> = ({
           msgId,
           0,
           childrenByParent,
+          session,
         );
         return <Component key={toolCall.toolUseId} {...props} />;
       })}
@@ -298,20 +313,32 @@ const ToolCallsList: React.FC<ToolCallsListProps> = ({
 const StaticTranscriptToolCalls: React.FC<StaticProps> = ({
   toolCalls,
   msgId,
+  session,
   className,
 }) => (
-  <ToolCallsList toolCalls={toolCalls} msgId={msgId} className={className} />
+  <ToolCallsList
+    toolCalls={toolCalls}
+    msgId={msgId}
+    session={session}
+    className={className}
+  />
 );
 
 const StreamingTranscriptToolCalls: React.FC<StreamingProps> = ({
   streamingStore,
   streamingPath,
   msgId,
+  session,
   className,
 }) => {
   const toolCalls = useStreamingToolCalls(streamingStore, streamingPath);
   return (
-    <ToolCallsList toolCalls={toolCalls} msgId={msgId} className={className} />
+    <ToolCallsList
+      toolCalls={toolCalls}
+      msgId={msgId}
+      session={session}
+      className={className}
+    />
   );
 };
 
