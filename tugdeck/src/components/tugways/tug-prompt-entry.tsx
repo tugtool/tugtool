@@ -907,11 +907,11 @@ export const TugPromptEntry = React.forwardRef<
   // any visible popover / sheet / alert dismisses first via its own
   // CANCEL_DIALOG handler ([DT07]). When nothing dialog-like is in the
   // chain and a turn is in flight, the walk reaches us and we
-  // `peelNewest()` — the unified Stop ≡ Esc gesture: peel the newest
-  // cancellable thing, a queued send first (LIFO), then the running
-  // turn once the queue is empty. Identical to clicking the red Stop
-  // button (the SUBMIT handler's stop branch calls the same
-  // `peelNewest()`).
+  // `popInteractive()` — the unified Stop ≡ Esc gesture: pop the
+  // newest cancellable thing, a queued send first (LIFO), then the
+  // running turn once the queue is empty. Identical to clicking the
+  // red Stop button (the SUBMIT handler's stop branch calls the same
+  // `popInteractive()`).
   //
   // Conditional registration matters: the chain marks an action as
   // handled iff its key exists in the responder's actions map
@@ -927,7 +927,7 @@ export const TugPromptEntry = React.forwardRef<
   // The `!interruptInFlight` clause closes the Esc-during-INTERRUPTING
   // gap: once a CASE B interrupt is in flight the turn is already
   // being torn down and `handleInterrupt` cleared its queue, so there
-  // is nothing left to peel — and the Stop button is itself already
+  // is nothing left to pop — and the Stop button is itself already
   // disabled (`submitButtonMode` is `stopping`), so dropping the Esc
   // handler too keeps Esc ≡ the Stop button. Without it, a second Esc
   // would re-fire `interrupt()` on a turn already interrupting (a
@@ -969,15 +969,15 @@ export const TugPromptEntry = React.forwardRef<
       },
       [TUG_ACTIONS.SUBMIT]: (_event: ActionEvent) => {
         // The primary Z5 button dispatches SUBMIT in every mode. When
-        // a turn is running the button is Stop — it peels the newest
+        // a turn is running the button is Stop — it pops the newest
         // cancellable thing (a queued send first, LIFO; the running
-        // turn once the queue is empty), the same `peelNewest()`
+        // turn once the queue is empty), the same `popInteractive()`
         // gesture Esc invokes. In any submit-family mode it runs the
         // submit. Editor Return reaches `performSubmit` directly
         // (never via this action), so an in-flight Return queues
-        // rather than peeling.
+        // rather than popping.
         if (submitButtonModeRef.current.kind === "stop") {
-          codeSessionStore.peelNewest();
+          codeSessionStore.popInteractive();
         } else {
           performSubmit();
         }
@@ -985,7 +985,7 @@ export const TugPromptEntry = React.forwardRef<
       ...(snap.canInterrupt && !snap.interruptInFlight
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
-              codeSessionStore.peelNewest();
+              codeSessionStore.popInteractive();
             },
           }
         : {}),

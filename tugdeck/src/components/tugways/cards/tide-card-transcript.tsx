@@ -466,7 +466,7 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
 // One ghost row per `queuedSends` entry, painted de-emphasized at the
 // transcript foot so a mid-turn submit reads as "queued, not yet
 // sent." It carries a ✕ that un-sends that one queued message — a
-// targeted cancel, distinct from the Stop / Esc peel-newest gesture.
+// targeted cancel, distinct from the Stop / Esc pop-interactive gesture.
 // When the queued send flushes, the reducer promotes it to the
 // in-flight pair and this ghost row unmounts — see
 // {@link TideTranscriptCellKind} for the key/kind transition.

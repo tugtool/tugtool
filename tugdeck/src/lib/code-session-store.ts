@@ -593,14 +593,47 @@ export class CodeSessionStore {
   }
 
   /**
-   * Peel the newest cancellable thing — the unified Stop / Esc
-   * gesture. The most-recently-queued send is peeled first (LIFO);
-   * only once the queue is empty does the gesture reach the running
-   * turn (`interrupt()` — CASE A pull-down or CASE B interrupt per the
-   * threshold). A turn with N queued sends therefore takes N + 1 peels
-   * to fully unwind. A no-op when the store is disposed.
+   * Pop the newest pending interactive — the unified Stop / Esc /
+   * Cancel gesture across the Tide interactive-dialog family.
+   *
+   * Stack semantic. The "interactive stack" is the implicit LIFO
+   * order of cancellable things attached to the current turn:
+   *
+   *   1. Queued sends — user messages already submitted but not yet
+   *      on the wire (the turn ahead is still running). Popping one
+   *      of these is a true un-send: no wire frame; the reducer
+   *      offers the prompt back via `pendingDraftRestore`.
+   *   2. The running turn itself — the assistant's in-flight work.
+   *      Once the queue is empty, this method reaches the turn and
+   *      emits an `interrupt` frame (CASE A pull-down or CASE B
+   *      interrupt per the threshold).
+   *
+   * A turn with N queued sends takes N + 1 pops to fully unwind.
+   *
+   * What "interactive" means here. Every Tide UI surface that asks
+   * the user for input — the prompt entry, `QuestionDialog`, the
+   * Stop button — funnels its walk-away gesture through this
+   * method. Esc reaches it via the responder chain's
+   * `CANCEL_DIALOG` action; the prompt entry's Stop button calls it
+   * directly; `QuestionDialog`'s Cancel button calls it directly.
+   * One gesture, one wire signal, one model reading — no
+   * `respondX({})` paths that the assistant could read as "user
+   * picked the defaults."
+   *
+   * Carve-outs (gestures that look like "cancel" but are not pops):
+   *
+   *   - `PermissionDialog`'s `Deny` is a positive decision via
+   *     `respondApproval`, not a walk-away. Routed through the
+   *     dialog's own handler.
+   *   - `AskUserQuestionToolBlock`'s salvage UI `Cancel` is a local
+   *     dismissal of the recovery surface — the failed tool call
+   *     has already resolved with an error before the salvage UI
+   *     mounts, so there is no pending interactive to pop. Uses
+   *     local component state, not this method.
+   *
+   * No-op when the store is disposed.
    */
-  peelNewest(): void {
+  popInteractive(): void {
     if (this._disposed) return;
     const queued = this.getSnapshot().queuedSends;
     if (queued.length > 0) {

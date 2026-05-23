@@ -256,7 +256,7 @@ describe("CodeSessionStore — cancelling and peeling queued sends", () => {
     expect(store.getSnapshot().pendingDraftRestore).toBeNull();
   });
 
-  it("peelNewest drains the queue newest-first (LIFO), then interrupts the turn", () => {
+  it("popInteractive drains the queue newest-first (LIFO), then interrupts the turn", () => {
     const conn = new TestFrameChannel();
     const store = constructStore(conn);
 
@@ -269,34 +269,34 @@ describe("CodeSessionStore — cancelling and peeling queued sends", () => {
       "bravo",
     ]);
 
-    const framesBeforePeel = conn.recordedFramesExcludingStateChange.length;
+    const framesBeforePop = conn.recordedFramesExcludingStateChange.length;
 
-    // First peel — the newest queued send ("bravo") goes; a true
+    // First pop — the newest queued send ("bravo") goes; a true
     // un-send, so no wire frame.
-    store.peelNewest();
+    store.popInteractive();
     expect(store.getSnapshot().queuedSends.map((q) => q.text)).toEqual([
       "alpha",
     ]);
     expect(conn.recordedFramesExcludingStateChange.length).toBe(
-      framesBeforePeel,
+      framesBeforePop,
     );
 
-    // Second peel — "alpha" goes; the queue is now empty; still no
+    // Second pop — "alpha" goes; the queue is now empty; still no
     // wire frame.
-    store.peelNewest();
+    store.popInteractive();
     expect(store.getSnapshot().queuedSends.length).toBe(0);
     expect(conn.recordedFramesExcludingStateChange.length).toBe(
-      framesBeforePeel,
+      framesBeforePop,
     );
 
-    // Third peel — the queue is empty, so the gesture reaches the
+    // Third pop — the queue is empty, so the gesture reaches the
     // running turn: one `interrupt` frame on the wire.
-    store.peelNewest();
+    store.popInteractive();
     expect(conn.recordedFramesExcludingStateChange.length).toBe(
-      framesBeforePeel + 1,
+      framesBeforePop + 1,
     );
     expect(
-      conn.recordedFramesExcludingStateChange[framesBeforePeel].decoded,
+      conn.recordedFramesExcludingStateChange[framesBeforePop].decoded,
     ).toEqual({
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
       type: "interrupt",

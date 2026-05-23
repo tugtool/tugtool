@@ -792,28 +792,28 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     respond(buildQuestionAnswers(questions, selections));
   }, [respond, questions, selections]);
 
-  // Cancel — the unified Stop / Esc gesture. `session.peelNewest()`
+  // Cancel — the unified Stop / Esc gesture. `session.popInteractive()`
   // is the same path Escape walks through the responder chain
-  // (`CANCEL_DIALOG` → `peelNewest`), and the same path the prompt
-  // entry's Stop button uses: peels the newest queued send first,
-  // and once the queue is empty calls `interrupt()` on the running
-  // turn. For a pending `AskUserQuestion` the queue is empty so the
+  // (`CANCEL_DIALOG` → `popInteractive`), and the same path the prompt
+  // entry's Stop button uses: pops the newest queued send first, and
+  // once the queue is empty calls `interrupt()` on the running turn.
+  // For a pending `AskUserQuestion` the queue is empty so the
   // interrupt fires immediately, and Claude Code emits the standard
   // tool-rejected result ("The user doesn't want to proceed…"). One
   // gesture, one wire signal, one reading — no ambiguous empty-
   // answers branch the assistant can misread as "user chose
   // defaults."
   const handleCancel = React.useCallback(() => {
-    session.peelNewest();
+    session.popInteractive();
   }, [session]);
 
   // Keyboard handler — `1`..`9` selects option N (1-indexed) in the
   // current question. Escape is NOT intercepted here: it bubbles up
   // to the prompt entry's `CANCEL_DIALOG` action which calls
-  // `peelNewest()` — same gesture our `handleCancel` invokes — so
-  // letting it bubble keeps Cancel ≡ Esc through one code path. (An
-  // earlier draft caught Esc locally; that doubled the logic and
-  // diverged the two surfaces on subtle edge cases.)
+  // `popInteractive()` — same gesture our `handleCancel` invokes —
+  // so letting it bubble keeps Cancel ≡ Esc through one code path.
+  // (An earlier draft caught Esc locally; that doubled the logic
+  // and diverged the two surfaces on subtle edge cases.)
   //
   // Single-select pick auto-advances via the same `handleSelect`
   // path used by clicks. Skip when focus is inside a text input so

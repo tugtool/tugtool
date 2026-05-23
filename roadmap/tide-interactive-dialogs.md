@@ -494,6 +494,7 @@ Per `[D12]`:
 | `tugdeck/src/components/tugways/chrome/tide-question-dialog.css` | Remove the `.tide-question-dialog .tug-inline-dialog-actions { justify-content: space-between }` block |
 | `tugdeck/src/components/tugways/cards/tool-wrappers/ask-user-question-tool-block.tsx` | Vocabulary alignment + prose cleanup (Step 4). **Salvage UI Cancel handler is NOT updated** — it stays on local `setSalvageCancelled` per the `[D02]` carve-out. |
 | `tugdeck/src/components/tugways/tug-prompt-entry.tsx` | Update Esc / Stop wiring to call `popInteractive` (Step 0). |
+| `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` | One prose reference to the "Stop / Esc peel-newest gesture" updated to "Stop / Esc pop-interactive gesture" (Step 0). |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.queue.test.ts` | Rename `peelNewest` references — 4 occurrences (Step 0). |
 
 #### Symbols to add / modify {#symbols}
@@ -510,7 +511,7 @@ Per `[D12]`:
 ### Documentation Plan {#documentation-plan}
 
 - [ ] Module docstring on `TideInteractiveDialog` explaining the boundary with `TugInlineDialog`, the `[D08]` input-form scope, the `[D02]` / `[D03]` defaults, and the family convention.
-- [ ] Module docstring on `code-session-store.ts` `popInteractive` method explaining the LIFO semantic and what "interactive" means in this family.
+- [x] Module docstring on `code-session-store.ts` `popInteractive` method explaining the LIFO semantic and what "interactive" means in this family. *(Done in Step 0.)*
 - [ ] Cross-reference from `chrome/tide-permission-dialog.tsx` and `chrome/tide-question-dialog.tsx` to `TideInteractiveDialog`.
 - [ ] Step 4 prose audit: replace "wrapper" with "tool block" in tugdeck docstrings / doc-comments per `[D11]`.
 
@@ -545,22 +546,23 @@ Pure-logic tests stay attached to the consumer modules. The primitive adds a tin
 - Edits to `code-session-store.ts`, every callsite, tests, doc-comments.
 
 **Tasks:**
-- [ ] Rename method in `code-session-store.ts:603`. Update the dispatch case in `tide-prompt-entry.tsx` (lines 910, 914, 974, 980, 988 — both call sites + the surrounding doc-prose).
-- [ ] Update `chrome/tide-question-dialog.tsx` `handleCancel` (line 807) and the surrounding doc-prose (lines 795, 797, 813).
-- [ ] Update the existing test cases in `src/lib/code-session-store/__tests__/code-session-store.queue.test.ts` (4 references, line 259 onward — rename the `it("peelNewest …")` block label and the 3 `store.peelNewest()` calls).
-- [ ] Update any other doc-comments referencing the method.
-- [ ] `grep -r peelNewest tugdeck/src` returns zero results.
-- [ ] **Salvage UI is NOT touched** in this step — its Cancel handler uses local state (`setSalvageCancelled`) per the `[D02]` carve-out; that is correct behaviour and unchanged.
+- [x] Rename method in `code-session-store.ts:603`. Update the dispatch case in `tide-prompt-entry.tsx` (lines 910, 914, 974, 980, 988 — both call sites + the surrounding doc-prose).
+- [x] Update `chrome/tide-question-dialog.tsx` `handleCancel` (line 807) and the surrounding doc-prose (lines 795, 797, 813).
+- [x] Update the existing test cases in `src/lib/code-session-store/__tests__/code-session-store.queue.test.ts` (4 references, line 259 onward — rename the `it("peelNewest …")` block label and the 3 `store.peelNewest()` calls).
+- [x] Update any other doc-comments referencing the method. (One more found and updated: `cards/tide-card-transcript.tsx:469` — "Stop / Esc peel-newest gesture" → "Stop / Esc pop-interactive gesture".)
+- [x] `grep -r peelNewest tugdeck/src` returns zero results.
+- [x] **Salvage UI is NOT touched** in this step — its Cancel handler uses local state (`setSalvageCancelled`) per the `[D02]` carve-out; that is correct behaviour and unchanged.
+- [x] Rewrote the `popInteractive` doc-string to explain the LIFO semantic, what "interactive" means in this family, and the `[D02]` carve-outs (Documentation Plan item).
 
 **Tests:**
-- [ ] Existing `code-session-store.queue.test.ts` cases (`peelNewest drains the queue newest-first (LIFO), then interrupts the turn`, etc.) renamed to `popInteractive …` and still passing — semantics unchanged.
+- [x] Existing `code-session-store.queue.test.ts` cases (`peelNewest drains the queue newest-first (LIFO), then interrupts the turn`, etc.) renamed to `popInteractive …` and still passing — semantics unchanged. (6 pass / 0 fail in the file; 49 expect calls.)
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` — clean.
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] `grep -r peelNewest tugdeck/src` → empty.
-- [ ] Manual HMR: Cancel button on question dialog, Esc keypress, Stop button — all three still cancel correctly.
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean (exit 0).
+- [x] `cd tugdeck && bun test` — full suite green: 2576 pass / 0 fail / 9654 expect calls / 157 files.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] `grep -r peelNewest tugdeck/src` → empty.
+- [ ] Manual HMR: Cancel button on question dialog, Esc keypress, Stop button — all three still cancel correctly. *(For the user to verify in a live session — HMR-vetted live flows are user-driven per project policy.)*
 
 ---
 
