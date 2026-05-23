@@ -23,7 +23,7 @@
 
 Tide today has two interactive transcript surfaces, and JSONL-transcript investigation (see `#investigation-asymmetry`) confirmed they are **structurally different artifacts** sharing only visual vocabulary:
 
-1. **`PermissionDialog`** (`chrome/tide-permission-dialog.tsx`) — *out-of-band SDK control request*. The AI never sees the user's Allow/Deny decision in its conversation context. The dialog is the **entire record** — pending → resolved → recorded all live in one component because nothing else holds them. Composes on `TugInlineDialog`. `Deny` is a *positive decision* (sends `respondApproval({decision: "deny"})`), not a cancel.
+1. **`PermissionDialog`** (`chrome/tide-permission-dialog.tsx`) — *out-of-band SDK control request*. The AI never sees the user's Allow/Deny decision in its conversation context, and JSONL never carries a durable record of the gating event (see updated `#investigation-asymmetry`). The dialog is therefore *pending-only* — once the user clicks Allow / Deny the dialog vanishes and leaves no record (Step 3.5 removes the former recorded chrome because it couldn't survive cold boot — `#step-3-5`). Composes on `TugInlineDialog`. `Deny` is a *positive decision* (sends `respondApproval({decision: "deny"})`), not a cancel.
 
 2. **`QuestionDialog`** + **`AskUserQuestionToolBlock`** (`chrome/tide-question-dialog.tsx`, `cards/tool-wrappers/ask-user-question-tool-block.tsx`) — *in-band tool_use/tool_result*. The AI sees the user's answers naturally via the tool_result text content (e.g., `"User has answered your questions: 'Q?'='A'. You can now continue..."`). The dialog is the **input form** (pending state, sticky/floating, scroll-agnostic); the tool block is the **rendered representation** of the tool_use/tool_result pair at its natural conversation position. The split exists because the input form needs to be visible regardless of scroll, while the record lives where the tool_use lives.
 
@@ -31,10 +31,10 @@ Beyond those two surfaces, the recent AskUserQuestion deep-dive (paged wizard ra
 
 #### Strategy {#strategy}
 
-- **Stop fighting the asymmetry.** `TideInteractiveDialog` is the **input-form primitive** — it covers PermissionDialog's pending state and QuestionDialog's pending state. PermissionDialog continues to render its own resolved/recorded states because nothing else can; AskUserQuestion's tool block continues to render its tool_use/tool_result pair because that's where it naturally lives. See `[D08]`.
+- **Stop fighting the asymmetry.** `TideInteractiveDialog` is the **input-form primitive** — it covers PermissionDialog's pending state and QuestionDialog's pending state. PermissionDialog has no post-decision chrome — Step 3.5 (`#step-3-5`) drops it once the wire reality showed JSONL can't durably reconstruct it; AskUserQuestion's tool block continues to render its tool_use/tool_result pair because that's where it naturally lives and its data IS in JSONL. See `[D08]`.
 - **Rename `peelNewest` → `popInteractive`.** The function name should reflect the family it serves (interactive dialogs) and the LIFO stack mechanics (`pop` from a stack of pending interactives). See `[D09]`. Step 0 lands the rename first so every subsequent step writes the new name from the start.
 - **Replace "wrapper" with "tool block" in prose.** The `*ToolBlock` components already use the right noun; the conceptual fuzziness is in calling them "wrappers" when they're really *renderers* of tool_use/tool_result pairs at their conversation positions. See `[D11]`.
-- **Lock the lifecycle vocabulary.** `pending` / `resolved` / `recorded` — used consistently across docs, doc-comments, and tests. See `[D12]`. PermissionDialog uses all three; AskUserQuestion's dialog has only `pending` (the resolved/recorded state is the tool block at the tool_use position).
+- **Lock the lifecycle vocabulary.** `pending` (live input form) and `recorded` (durable transcript artifact) — used consistently across docs, doc-comments, and tests. See `[D12]`. Both PermissionDialog and QuestionDialog have only `pending` after Step 3.5; AskUserQuestion's *tool block* IS the recorded artifact (its data is in JSONL via tool_use/tool_result); PermissionDialog has *no* recorded artifact because the SDK never writes one to JSONL.
 - **Esc / Cancel / Stop is one gesture.** Every cancel-class action resolves to `session.popInteractive()`. No `respondX({})` paths from a Cancel — those read to the model as "user picked the defaults" and are wrong. See `[D02]`.
 - **Tests pin pure helpers; HMR vets the visual chrome.** Per project policy. No fake-DOM render tests.
 
@@ -43,25 +43,27 @@ Beyond those two surfaces, the recent AskUserQuestion deep-dive (paged wizard ra
 - `session.popInteractive()` exists; `session.peelNewest()` does not. Verified by `grep -r peelNewest tugdeck/src` returning zero results.
 - Both interactive dialog surfaces compose on `TideInteractiveDialog` — verified by `grep` over `chrome/tide-permission-dialog.tsx` / `chrome/tide-question-dialog.tsx` for `TideInteractiveDialog` imports (no direct `TugInlineDialog` import in either).
 - `Cancel` button on QuestionDialog calls `session.popInteractive()` — verified by `grep` + tests pinning the handler. (Salvage UI's `Cancel` is exempt per the `[D02]` carve-out; it stays on local-dismiss.)
-- `tide-question-dialog.test.ts` and `tide-permission-dialog.test.ts` both pass post-migration without structural changes to existing assertions (semantics-preserving refactor).
-- `bun test` clean across the full suite (≥ 2576 cases, no regressions).
+- `tide-question-dialog.test.ts` passes post-migration without structural changes to existing assertions (semantics-preserving refactor). `tide-permission-dialog.test.ts` keeps its pending-side assertions intact; its `recordedPermissionPresentation` describe block is removed by Step 3.5 — that delta is expected, not a regression.
+- `bun test` clean across the full suite (Step 2 baseline: 2586 pass; Step 3.5 nets out lower by the count of dropped recorded-chrome cases, with no green case turning red).
 - `bun run audit:tokens lint` → zero violations.
 - `bun x tsc --noEmit` → clean.
 - Salvage path (AskUserQuestion only) continues to detect validation errors and post answers via `session.send` — pure helper tests still green.
 - Prose audit: no instance of "wrapper" used to describe `*ToolBlock` components in tugdeck docstrings / doc-comments after Step 4.
+- Recorded permission chrome removed: `grep -r controlRequestLog tugdeck/src` and `grep -r ControlRequestRecord tugdeck/src` both empty after Step 3.5; `tide-permission-dialog.tsx` returns `null` when `isPending === false`.
 
 #### Scope {#scope}
 
 0. Rename `session.peelNewest()` → `session.popInteractive()` and update every callsite.
 1. Extract `TideInteractiveDialog` input-form primitive at `tugways/tide-interactive-dialog.tsx` (+ `.css`).
-2. Migrate `PermissionDialog` onto `TideInteractiveDialog`. Preserve all current behaviour (live ↔ resolved-record state machine, scope picker, history record).
+2. Migrate `PermissionDialog` onto `TideInteractiveDialog`. Preserve all current pending-form behaviour (scope picker, Allow/Deny, Deny carve-out).
 3. Migrate `QuestionDialog` onto `TideInteractiveDialog`. Preserve wizard rail, auto-advance, layout stability, Cancel == `popInteractive`.
+3.5. Drop the recorded permission chrome — JSONL has no durable record to reconstruct it. PermissionDialog becomes pending-only; `controlRequestLog` / `ControlRequestRecord` / `turn.controlRequests` are removed. Tool block alone tells the post-decision story. See `#step-3-5`.
 4. Review `AskUserQuestionToolBlock` against the family vocabulary; align icons / progress indicators / banner tokens. Replace "wrapper" with "tool block" in tugdeck prose (docstrings, doc-comments).
 5. Final integration checkpoint: pure-logic suite green, tsc green, audit-tokens lint clean, HMR-vetted live flows on both surfaces.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- Recording AskUserQuestion answers into `turn.controlRequests[]`. Questions stay in-band per `[DT07]` — the tool_use/tool_result pair already IS the recorded state. The tool block is the user-visible representation of that pair.
+- Adding any side-channel record for AskUserQuestion answers or permission decisions. Questions stay in-band via tool_use/tool_result (the tool block IS the rendered representation of that pair); permission decisions stay live-only post-Step-3.5 — the wire-side `tool_approval` frame is the SDK's commitment, and the tool_use / tool_result that follows IS the durable transcript artifact. Inventing a parallel `turn.controlRequests[]`-style accumulator on either side is no longer in scope; see `#step-3-5` for why the existing permission accumulator is being removed.
 - Generalising the salvage path (post-validation-error answer recovery) to other tools. Salvage is `AskUserQuestion`-only — Bash / Edit / etc. validation errors continue to fall back to `DefaultToolWrapper`'s generic error band.
 - Renaming `ToolWrapperChrome` / `DefaultToolWrapper` files or component names — see `[Q06]`. Prose cleanup happens here; component-file renames are a follow-on.
 - Inlining the QuestionDialog at its tool_use conversation position (Path 2 from the design discussion). The sticky/floating placement is preserved — the dialog needs to be visible regardless of scroll. See `[D08]` for the rationale.
@@ -78,7 +80,7 @@ Beyond those two surfaces, the recent AskUserQuestion deep-dive (paged wizard ra
 #### Constraints {#constraints}
 
 - The rename (Step 0) must be exhaustive — zero `peelNewest` references after the step. Mechanical search-and-replace plus test updates; no semantics change.
-- The migration must be **behaviour-preserving** for `PermissionDialog`'s existing pending ↔ resolved ↔ recorded state transitions. No regressions to scope picker, history recording, or the resolved-record expand affordance.
+- The Step 2 migration must be **behaviour-preserving** for `PermissionDialog`'s pending input form (scope picker, Allow / Deny buttons, the Deny carve-out via `cancelRole="action"`). The post-decision lifecycle is then *removed* by Step 3.5 — the recorded chrome's behaviour does not need to be preserved because the chrome itself goes away (see `#step-3-5` for the durability argument).
 - The migration must be **behaviour-preserving** for `QuestionDialog`'s wizard rail — including layout-stability measurement, auto-advance on single-select, `confirmDisabled` gating on the Submit-all button.
 - All existing `tide-permission-dialog.test.ts` and `tide-question-dialog.test.ts` assertions must continue to pass after migration. New tests may be added; existing ones must not be silently modified.
 - No new tokens introduced unless they replace a duplicated definition across the two surfaces.
@@ -116,13 +118,13 @@ Cite decisions by ID (`[D05]`), specs / lists / tables by label (`Spec S15`, `Li
 
 **Question:** Where does the boundary sit? Thin wrapper / lifecycle owner / lifecycle + session integration?
 
-**Resolution:** RESOLVED — `TideInteractiveDialog` is the **input-form primitive** (thin wrapper variant). It owns the *pending input form* defaults (`cancelRole: "danger"`, `actions row: space-between`, `Esc / Cancel → popInteractive`) and nothing more. It does NOT own lifecycle transitions (pending → resolved → recorded). PermissionDialog owns its own lifecycle because the SDK has no native record to delegate to. AskUserQuestion's lifecycle is split across the dialog (pending) and the tool block (the rendered tool_use/tool_result pair) — the dialog primitive only ever sees the pending state. See `[D08]`.
+**Resolution:** RESOLVED — `TideInteractiveDialog` is the **input-form primitive** (thin wrapper variant). It owns the *pending input form* defaults (`cancelRole: "danger"`, `actions row: space-between`, `Esc / Cancel → popInteractive`) and nothing more. It does NOT own post-decision rendering. PermissionDialog has only a pending state (post-Step-3.5; the prior recorded chrome was removed because JSONL has no durable record to reconstruct from — see `#step-3-5`). AskUserQuestion's pending state is the dialog; its recorded state is the tool block at the tool_use position. The dialog primitive only ever sees the pending state. See `[D08]`.
 
-#### [Q02] Should QuestionDialog gain a `turn.controlRequests` record like PermissionDialog has? (RESOLVED) {#q02-question-history}
+#### [Q02] Should QuestionDialog gain a `turn.controlRequests` record like PermissionDialog has? (RESOLVED — now moot) {#q02-question-history}
 
 **Question:** Today PermissionDialog persists decisions in `turn.controlRequests[]`. AskUserQuestion doesn't. Should we add one?
 
-**Resolution:** RESOLVED (no). The investigation confirmed AskUserQuestion's answers round-trip via tool_use/tool_result — the conversation context already contains the record. The tool block IS the rendered representation of that record. Adding a parallel `turn.controlRequests[]` entry would duplicate state that the conversation already holds. The asymmetry between the two surfaces is architectural per `[D10]`, not a problem to solve. See `#investigation-asymmetry` for the JSONL evidence.
+**Resolution:** RESOLVED (no — and the field itself is being removed). When this question was first answered, the rationale was: AskUserQuestion's answers round-trip via tool_use/tool_result — the conversation context already contains the record, so a parallel `turn.controlRequests[]` entry would duplicate state. That reasoning still holds. After Step 3.5 (`#step-3-5`), `turn.controlRequests` is removed entirely on the permission side too, because JSONL has no durable footprint for permission decisions (see updated `#investigation-asymmetry`). Both surfaces end up with the same shape: no `turn.controlRequests`. The asymmetry between them is purely on the pending input-form side now. See `[D10]`.
 
 #### [Q03] Cancel button vocabulary on PermissionDialog — is `Deny` the cancel, or a separate Cancel button? (RESOLVED) {#q03-cancel-vocab}
 
@@ -257,17 +259,17 @@ Cite decisions by ID (`[D05]`), specs / lists / tables by label (`Spec S15`, `Li
 
 #### [D08] `TideInteractiveDialog` is the input-form primitive, not a lifecycle owner (DECIDED) {#d08-input-form-primitive}
 
-**Decision:** `TideInteractiveDialog` owns the **pending input form** chrome and defaults only. It does NOT own lifecycle transitions (pending → resolved → recorded). PermissionDialog owns its own three-state lifecycle in its own component because the SDK has no native record to delegate to. AskUserQuestion's lifecycle is naturally split across the dialog (pending) and the tool block (the rendered tool_use/tool_result pair) — the dialog primitive only ever sees the pending state.
+**Decision:** `TideInteractiveDialog` owns the **pending input form** chrome and defaults only. It does NOT own post-decision rendering. Both PermissionDialog and QuestionDialog use it for their pending dialog and nothing else. AskUserQuestion's recorded state is its tool block at the tool_use position (`AskUserQuestionToolBlock`) — that's where the SDK's durable record naturally lives. PermissionDialog has no recorded state at all (Step 3.5 removed it once JSONL's lack of a durable permission record became clear — `#step-3-5`).
 
 **Rationale:**
-- JSONL investigation (`#investigation-asymmetry`) confirmed the two surfaces are structurally different artifacts. PermissionDialog operates out-of-band (SDK control frames invisible to the AI); AskUserQuestion operates in-band (tool_use/tool_result visible to the AI). They share visual vocabulary but not lifecycle shape.
-- Forcing a unified lifecycle would either (a) bloat the primitive with PermissionDialog-specific state, (b) require inlining the QuestionDialog at its tool_use position (Path 2 — out of scope), or (c) split PermissionDialog into dialog + record components (Path 3 — invents transcript positions that don't exist).
-- An input-form-only primitive is the smallest cut that captures the shared concerns (cancel gesture, button styling, confirmDisabled, actions row) without misrepresenting the architecture.
+- JSONL investigation (`#investigation-asymmetry`) confirmed the two surfaces are structurally different artifacts. PermissionDialog operates out-of-band (SDK control frames invisible to the AI AND absent from JSONL); AskUserQuestion operates in-band (tool_use/tool_result visible to the AI and durable in JSONL). They share visual vocabulary but not transport channels.
+- A primitive that owned post-decision lifecycle would either need to (a) require inlining the QuestionDialog at its tool_use position (Path 2 — out of scope, see `#non-goals`), (b) invent transcript positions that don't exist (Path 3 — the road Step 3.5 walked back from), or (c) bloat itself with shape both surfaces would override.
+- An input-form-only primitive is the smallest cut that captures the shared concerns (cancel gesture, button styling, confirmDisabled, actions row) without misrepresenting what each surface can durably retain.
 
 **Implications:**
 - `TideInteractiveDialogProps` is `Omit<TugInlineDialogProps, "cancelRole"> & { cancelRole?: TugInlineDialogCancelRole }` — thin wrapper, no lifecycle props.
 - The primitive does NOT subscribe to `session.pendingX` — callers do that and conditionally render the primitive.
-- PermissionDialog's pending → resolved → recorded state machine stays in PermissionDialog. Same for the tool block's render of the tool_use/tool_result pair.
+- PermissionDialog renders the primitive while `isPending === true`, and renders nothing once the decision is made. The tool block's render of the tool_use/tool_result pair stays in `AskUserQuestionToolBlock`.
 - Resolves `[Q01]`.
 
 #### [D09] Rename `session.peelNewest()` to `session.popInteractive()` (DECIDED) {#d09-popinteractive-rename}
@@ -289,17 +291,17 @@ Cite decisions by ID (`[D05]`), specs / lists / tables by label (`Spec S15`, `Li
 
 #### [D10] The PermissionDialog ↔ AskUserQuestion asymmetry is load-bearing (DECIDED) {#d10-asymmetry-load-bearing}
 
-**Decision:** PermissionDialog and AskUserQuestion are not variants of the same shape. They are structurally different artifacts that share visual vocabulary. This plan names the asymmetry honestly and does not attempt to force unification.
+**Decision:** PermissionDialog and AskUserQuestion are not variants of the same shape. They are structurally different artifacts that share visual vocabulary. This plan names the asymmetry honestly and does not attempt to force unification — including the asymmetry's hardest consequence: PermissionDialog has no durable transcript artifact, so it has no recorded chrome (Step 3.5 — `#step-3-5`).
 
 **Rationale:**
-- JSONL investigation (`#investigation-asymmetry`) confirmed: permission decisions are out-of-band SDK control frames (invisible to the AI); AskUserQuestion answers are in-band tool_use/tool_result (visible to the AI via tool_result text content).
+- JSONL investigation (`#investigation-asymmetry`) confirmed: permission decisions are out-of-band SDK control frames (invisible to the AI AND absent from JSONL — the `control_request_forward` frame itself, the gating decision, and the request id all live only on the live control wire); AskUserQuestion answers are in-band tool_use/tool_result (visible to the AI AND durable in JSONL).
 - The dialog/tool-block split for AskUserQuestion isn't accidental — it falls out of the SDK's transport model. The dialog is the input form (sticky/floating, scroll-agnostic); the tool block is the rendered representation of the tool_use/tool_result pair at its conversation position.
-- PermissionDialog's three-state-in-one-component shape isn't accidental either — there's no AI-side record to attach a separate component to.
+- PermissionDialog's *pending-only* shape isn't accidental either — there's no AI-side record to attach a separate component to, AND no JSONL record to reconstruct one from on cold boot. The earlier "recorded chrome" was a feature the wire couldn't durably support; Step 3.5 removes it.
 
 **Implications:**
-- Resolves `[Q02]` (no, don't add a `turn.controlRequests` record for questions).
+- Resolves `[Q02]` (no, don't add a `turn.controlRequests` record for questions — and the field itself is gone post-Step-3.5 because the permission side can't durably populate it either).
 - The primitive is input-form only per `[D08]`.
-- Future PRs that try to "unify" the two surfaces should re-read `[D08]` and `[D10]` first.
+- Future PRs that try to "unify" the two surfaces — or to restore the recorded permission chrome — should re-read `[D08]`, `[D10]`, and `#step-3-5-context` first.
 
 #### [D11] "Wrapper" is deprecated in prose; "tool block" is the canonical term (DECIDED) {#d11-tool-block-vs-wrapper}
 
@@ -314,22 +316,23 @@ Cite decisions by ID (`[D05]`), specs / lists / tables by label (`Spec S15`, `Li
 - Step 4 includes a prose audit: replace "wrapper" with "tool block" in tugdeck docstrings, doc-comments, and any plan-referenced prose.
 - Component-file renames are out of scope (follow-on).
 
-#### [D12] Lifecycle vocabulary: pending / resolved / recorded (DECIDED) {#d12-lifecycle-vocab}
+#### [D12] Lifecycle vocabulary: pending / recorded (DECIDED) {#d12-lifecycle-vocab}
 
 **Decision:** The canonical lifecycle states across the family are:
 
 - **`pending`** — awaiting user input. The dialog is up; no decision yet.
-- **`resolved`** — user made a decision (Allow / Deny / submitted answers). May be a transient state before recorded.
-- **`recorded`** — committed to transcript history.
+- **`recorded`** — the SDK has committed a durable artifact to the conversation transcript (i.e. a `tool_use` / `tool_result` pair in JSONL). The tool block at the tool_use position IS the recorded state.
 
-PermissionDialog uses all three states in one component. AskUserQuestion's dialog has only `pending`; the resolved/recorded state lives in the tool block at the tool_use position (no transient `resolved` — once the tool_result lands, the tool block IS the recorded state).
+Both PermissionDialog and QuestionDialog have only `pending`. Only `AskUserQuestionToolBlock` is `recorded`, because only it has a JSONL-durable backing pair (the AskUserQuestion tool_use + its answer-carrying tool_result). PermissionDialog has no recorded state — the SDK never writes one (Step 3.5, `#step-3-5`).
 
-**Rationale:** Eliminates drift between "live", "settled", "resolved-record", "live↔resolved" wording variations. One vocabulary across docs, doc-comments, and tests.
+**Rationale:**
+- Eliminates drift between "live", "settled", "resolved", "resolved-record", "recorded" wording variations. One vocabulary across docs, doc-comments, and tests.
+- The earlier draft of this decision included a transient `resolved` state for PermissionDialog (an in-place pending → resolved → recorded transition). Step 3.5 (`#step-3-5`) collapsed that lifecycle to pending-only when the JSONL-shape investigation showed `recorded` couldn't be durably reconstructed for permissions. The two-state vocabulary above is what remains.
 
 **Implications:**
-- Plan prose uses these three terms consistently.
+- Plan prose uses these two terms consistently.
 - Tests can pin state values using these names.
-- Drop "live" and "settled" from the family vocabulary.
+- Drop "live", "settled", and "resolved" from the family vocabulary.
 
 ---
 
@@ -348,7 +351,20 @@ JSONL transcript investigation (`~/.claude/projects/.../*.jsonl`) confirmed the 
 
 The AI sees the full Q→A pairs in its conversation context, attached to the `tool_use_id` of the original `AskUserQuestion` call. AskUserQuestion is a first-class round-trip through the standard tool_use/tool_result mechanism.
 
-**Finding 2 — Permission decisions are invisible to the AI.** A grep across a heavy-use transcript (3300+ lines, 11 AskUserQuestion calls, dozens of permissioned Bash calls) returned **zero** `permission_request` / `permission_decision` / `tool_approval` frames in the JSONL. Permission decisions are out-of-band SDK control frames — they never enter the conversation context the AI sees.
+**Finding 2 — Permission frames are entirely out-of-band.** A grep across the full project JSONL corpus (`~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/*.jsonl`) returned **zero** `permission_request` / `permission_decision` / `tool_approval` / `control_request_forward` frames. The exhaustive enumeration of every JSONL `"type"` value yielded only `assistant` / `user` / `system` / `tool_use` / `tool_result` / `text` / `thinking` / `image` / `attachment` / a handful of UI bookkeeping types — never a control-channel frame. The SDK synthesises `control_request_forward` on the live wire from a `can_use_tool` control request (`tugcode/src/session.ts:2807`), and that is the *only* place that frame exists. Nothing in the JSONL transcript on disk carries the gating event, the gating decision, or the request id. The replay translator (`tugcode/src/replay.ts`) has no `can_use_tool` code path; it translates `assistant` / `user` content blocks into `tool_use` / `tool_result` / `tool_use_structured` / `assistant_text` frames and nothing else.
+
+**Implication for the reducer.** `pendingApproval` is set only by `handleControlRequestForward`, which only accepts live phases. During JSONL replay `pendingApproval` is **always `null`** — there is no signal in JSONL that ever sets it. Any "derive on replay" strategy gated on `pendingApproval` is a permanent no-op. This is why Step 3.5 drops the recorded permission chrome rather than trying to reconstruct it (see `#step-3-5`).
+
+**Finding 2.a — SDK denial-text pattern (deny-side signal that DOES survive into JSONL).** Although the gating frame itself is out-of-band, the *consequence* of a denial does land in JSONL — the SDK writes the rejection text into the matching `tool_result.content` and sets the entry-level `toolUseResult: "User rejected tool use"` marker. Verified across the full corpus:
+
+- **Opener:** `"The user doesn't want to proceed with this tool use"` (the primary signature phrase).
+- **Secondary phrase:** `"The tool use was rejected"` (the SDK's standard suffix to the opener).
+- **Two stylistic suffix variants:**
+  - *STOP form* — `"STOP what you are doing and wait for the user to tell you how to proceed."` (plain Deny click, no user follow-up).
+  - *Clarify form* — `"To tell you how to proceed, the user said: <user message>"` (Deny + a user-supplied follow-up message).
+- **Sample count:** 120 deny markers in this project's JSONL corpus; 124 across all projects. Both suffix variants share the opener + the secondary phrase.
+
+The denial signal is therefore robust on the wire. What's missing is the *allow* side: a gated tool that was allowed produces a `tool_result` that is byte-identical to an ungated tool's `tool_result`, so JSONL cannot distinguish them. This is the architectural constraint Step 3.5 navigates.
 
 **Finding 3 — The asymmetry is architectural.** The two surfaces' structural shapes fall out of their delivery channels:
 
@@ -356,18 +372,18 @@ The AI sees the full Q→A pairs in its conversation context, attached to the `t
 |---|---|---|
 | Channel | Out-of-band SDK control frame | In-band tool_use / tool_result |
 | AI visibility | Invisible | Visible in tool_result text |
-| Where the record lives | **Invented by us** (`turn.controlRequests[]`) | **Already in conversation context** |
+| Durable record on disk | **None** (deny-text leaks via `tool_result.content` but the gating event itself has no JSONL footprint, and the allow side has no signal at all) | **Already in conversation context** |
 | Natural transcript position | None | At the tool_use position |
-| UI shape | One component, three states (we own the whole story) | Input dialog (sticky) + tool block (at tool_use position) |
+| UI shape | Pending dialog only — no recorded chrome (Step 3.5 removed it once the durability story was understood) | Input dialog (sticky) + tool block (at tool_use position) |
 
 **Finding 4 — The "wrapper" misnomer hides a clean concept.** What we call "tool wrapper" is the *rendered representation* of a tool_use/tool_result pair at its transcript position. Calling it a wrapper suggests it's wrapping something — it isn't. It IS the tool's rendering. `[D11]` replaces "wrapper" with "tool block" in prose.
 
 #### Surface audit — current state {#audit-current-state}
 
 **`PermissionDialog`** (`chrome/tide-permission-dialog.tsx`):
-- One component, three lifecycle states (pending → resolved → recorded), in-place transition via local `decision` state + store-driven `isPending`.
-- Composes `TugInlineDialog` with: icon `ShieldAlert`, iconRole `caution`, title `"Permission requested"`, body via `PendingBody` (smart-picks a body kind by tool), `options` for scope picker, `confirmLabel: "Allow"`, `cancelLabel: "Deny"`.
-- History: writes to `turn.controlRequests[]` via the reducer (the UI is the only place this record exists).
+- One component, *pending state only* after Step 3.5 (`#step-3-5`). The component renders the pending dialog while `isPending === true` and returns `null` once the decision is made. No recorded chrome (the SDK never writes a durable record to JSONL — see `#investigation-asymmetry`).
+- Composes `TideInteractiveDialog` (post-Step-2) with: icon `ShieldAlert`, iconRole `caution`, title `"Permission requested"`, body via `PendingBody` (smart-picks a body kind by tool), `options` for scope picker, `confirmLabel: "Allow"`, `cancelLabel: "Deny"`, `cancelRole="action"` (positive-decision carve-out).
+- History: none in `turn.controlRequests` (the field is removed in Step 3.5). The wire-side `tool_approval` frame is still sent live; the tool_use / tool_result pair that follows IS the durable record.
 - Cancel = `Deny`, a positive decision (sends `respondApproval({decision: "deny"})`, not `popInteractive`).
 - Esc currently → responder chain → `popInteractive` (post-rename).
 
@@ -466,9 +482,8 @@ Per `[D12]`:
 
 | State | Meaning | PermissionDialog | QuestionDialog | AskUserQuestionToolBlock |
 |-------|---------|------------------|----------------|--------------------------|
-| `pending` | Awaiting user input | ✓ | ✓ | — (returns null while streaming) |
-| `resolved` | User made a decision; not yet committed to record | ✓ (transient) | — | — |
-| `recorded` | Committed to transcript history | ✓ | — | ✓ (the tool block IS the recorded state) |
+| `pending` | Awaiting user input | ✓ | ✓ | — (returns null while streaming; the dialog is the pending surface) |
+| `recorded` | Committed to transcript history (JSONL-durable tool_use / tool_result pair) | — (no JSONL artifact — see `#step-3-5`) | — | ✓ (the tool block IS the recorded state) |
 
 ---
 
@@ -487,16 +502,19 @@ Per `[D12]`:
 | File | Change |
 |------|--------|
 | `tugdeck/src/lib/code-session-store.ts` | Rename `peelNewest` → `popInteractive` (Step 0) |
-| `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` | (Step 2) Pending state swaps `TugInlineDialog` → `TideInteractiveDialog`; explicit `cancelRole="action"` for `Deny`. (Step 3 follow-up) Recorded state swaps custom button+chevron chrome → `ToolWrapperChrome`; dropped `recordExpanded` state + the `composePermissionRecordSummary` helper; added `recordedPermissionPresentation` helper for the chrome's label/icon. |
-| `tugdeck/src/components/tugways/chrome/tide-permission-dialog.css` | (Step 3 follow-up) Removed all `--tugx-perm-record-*` / `--tugx-perm-collapse-*` tokens + every `.tide-permission-dialog-record-*` rule (the disclosure-pattern scaffolding). Two pending-state fragments remain (`-inline-icon`, `-reason`); one new rule tints `[data-decision]` on the recorded chrome's status span. |
-| `tugdeck/src/components/tugways/chrome/tide-permission-dialog.test.ts` | (Step 3 follow-up) Replaced the `composePermissionRecordSummary` describe block with a `recordedPermissionPresentation` block (4 cases instead of 4). |
+| `tugdeck/src/lib/code-session-store/reducer.ts` | (Step 3.5) Remove `controlRequestLog` from state, the write in `handleRespondApproval`, the `controlRequests` projection in `buildTurnEntry`, and every `controlRequestLog: []` reset. Update doc-comments. |
+| `tugdeck/src/lib/code-session-store/types.ts` | (Step 3.5) Remove `ControlRequestRecord`; remove `controlRequests` field from `TurnEntry`. |
+| `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` | (Step 2) Pending state swaps `TugInlineDialog` → `TideInteractiveDialog`; explicit `cancelRole="action"` for `Deny`. (Step 3 follow-up) Recorded state was swapped to `ToolWrapperChrome` with the `recordedPermissionPresentation` helper. **(Step 3.5)** That recorded branch is now removed entirely — the component is pending-only and returns `null` once the decision is made. `decision` `useState`, `recordedPermissionPresentation`, the `ToolWrapperChrome` import + composition for the recorded path, and the recorded-state `TugBadge` chip all go. |
+| `tugdeck/src/components/tugways/chrome/tide-permission-dialog.css` | (Step 3 follow-up) Removed all `--tugx-perm-record-*` / `--tugx-perm-collapse-*` tokens + the disclosure-pattern rules. **(Step 3.5)** The `.tide-permission-dialog-record-status[data-decision]` rule is removed too (the recorded chrome that owned it is gone). Two pending-state fragments remain (`-inline-icon`, `-reason`). |
+| `tugdeck/src/components/tugways/chrome/tide-permission-dialog.test.ts` | (Step 3 follow-up) Replaced the `composePermissionRecordSummary` describe block with a `recordedPermissionPresentation` block. **(Step 3.5)** The `recordedPermissionPresentation` block is removed entirely (the helper no longer exists); pending-side describe blocks remain. |
 | `tugdeck/src/components/tugways/chrome/tide-question-dialog.tsx` | Update `handleCancel` to call `popInteractive` (Step 0); swap `TugInlineDialog` → `TideInteractiveDialog` (Step 3); drop the local CSS override for actions-row `space-between` (moved into primitive) |
 | `tugdeck/src/components/tugways/chrome/tide-question-dialog.css` | Remove the `.tide-question-dialog .tug-inline-dialog-actions { justify-content: space-between }` block |
 | `tugdeck/src/components/tugways/cards/tool-wrappers/ask-user-question-tool-block.tsx` | Vocabulary alignment + prose cleanup (Step 4). **Salvage UI Cancel handler is NOT updated** — it stays on local `setSalvageCancelled` per the `[D02]` carve-out. |
 | `tugdeck/src/components/tugways/tug-prompt-entry.tsx` | Update Esc / Stop wiring to call `popInteractive` (Step 0). |
-| `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` | (Step 0) One prose reference: "peel-newest gesture" → "pop-interactive gesture". (Step 3) **Two-stage layout fix.** First-pass JSX reorder moved both slots to the end of the cell. Second-pass refactored permission rendering into a `ReadonlyMap<tool_use_id, ReactNode>` so permission entries thread inline into `TranscriptToolCalls` and render immediately after their tool block; an orphan-permissions array stays at the body foot as a defensive fallback; `questionSlot` remains at the foot (questions belong at the end of the cell). Stable empty sentinels added (`EMPTY_PERMISSION_MAP`, `EMPTY_PERMISSION_ARRAY`). |
-| `tugdeck/src/components/tugways/cards/tide-card-transcript-tool-calls.tsx` | (Step 3) Accept `permissionByToolUseId?: ReadonlyMap<string, ReactNode>` on both Static and Streaming variants; thread to `ToolCallsList`; render the matching permission node inside a `React.Fragment` keyed by `toolUseId` as the immediate sibling of each tool block. |
+| `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` | (Step 0) One prose reference: "peel-newest gesture" → "pop-interactive gesture". (Step 3) **Two-stage layout fix.** First-pass JSX reorder moved both slots to the end of the cell. Second-pass refactored permission rendering into a `ReadonlyMap<tool_use_id, ReactNode>` so permission entries threaded inline into `TranscriptToolCalls`; an orphan-permissions array stayed at the body foot; `EMPTY_PERMISSION_MAP` / `EMPTY_PERMISSION_ARRAY` sentinels were added. **(Step 3.5)** All of that goes — `permissionByToolUseId`, `orphanPermissions`, the sentinels, the body-foot orphan render, the inline-threading doc-comment block, and the `controlRequestLog` / `pendingApproval` reads that fed the slot computation. `questionSlot` and its body-foot render stay (questions still belong at the end of the cell). |
+| `tugdeck/src/components/tugways/cards/tide-card-transcript-tool-calls.tsx` | (Step 3) Accept `permissionByToolUseId?: ReadonlyMap<string, ReactNode>` on both Static and Streaming variants; thread to `ToolCallsList`; render the matching permission node inside a `React.Fragment` keyed by `toolUseId`. **(Step 3.5)** That prop and the per-tool-block matching-permission render are removed; the `React.Fragment` collapses back to the bare `<Component key={toolUseId} … />`. |
 | `tugdeck/src/lib/code-session-store/__tests__/code-session-store.queue.test.ts` | Rename `peelNewest` references — 4 occurrences (Step 0). |
+| `tugdeck/src/lib/code-session-store/__tests__/code-session-store.control-forward.test.ts` | (Step 3.5) Drop the two synthetic-allow cases pinning `turn.controlRequests` writes; trim the `test-11` deny-replay case to keep only its outbound `tool_approval` and `prevPhase` assertions. |
 
 #### Symbols to add / modify {#symbols}
 
@@ -698,139 +716,111 @@ Root cause: the slot computations in `tide-card-transcript.tsx` (`permissionByTo
 
 ---
 
-#### Step 3.5: Persist permission decisions via JSONL replay derivation {#step-3-5}
+#### Step 3.5: Drop the recorded permission chrome (JSONL has no durable record to reconstruct) {#step-3-5}
 
 **Depends on:** #step-3
 
-**Commit:** `feat(code-session-store): derive permission decisions from tool_result on replay`
+**Commit:** `refactor(tugways): drop recorded permission chrome — JSONL lacks a durable record`
 
-**References:** `[D10]` asymmetry is load-bearing, `[D13]` inline-not-modal recorded chrome, (#investigation-asymmetry, #step-3)
+**References:** `[D10]` asymmetry is load-bearing, (#investigation-asymmetry, #step-3)
 
 ##### Why this step exists {#step-3-5-context}
 
-After the Step 3 visual-unification work, the user surfaced the real architectural defect underneath the polish: **the recorded permission chrome was not actually durable**. It survived neither HMR (when the in-memory store reset) nor app relaunch (when the in-memory store rebuilt from JSONL on cold boot). The HMR-survival fix in the Step 3 fifth pass addressed *React-element caching* but did nothing for the underlying data-loss case — because the data itself was only ever populated by the live `respondApproval` action, never by replay.
+After the Step 3 visual-unification work, the user surfaced the real architectural defect underneath the polish: **the recorded permission chrome was not actually durable**. It survived neither full app relaunch nor a Developer Reload — once the in-memory store was rebuilt from JSONL on cold boot, `turn.controlRequests` came back empty and the chrome had nothing to render. The HMR-survival fix in the Step 3 fifth pass addressed *React-element caching* but did nothing for the underlying data-loss case, because the data itself was only ever populated by the live `respondApproval` action, never by replay.
 
-The data model the user was asking us to honour:
+An earlier draft of this step (titled "Persist permission decisions via JSONL replay derivation") proposed a `tool_result`-text inference under a `pendingApproval !== null` gate. That draft was based on a load-bearing wire-shape claim that turned out to be wrong: **`control_request_forward` is not in the JSONL transcript.** A re-verification of the JSONL corpus (see updated `#investigation-asymmetry`) confirmed:
 
-- The SDK's `session.jsonl` on disk is Tide's durable transcript of "what happened in this session." Every cold boot and session re-bind replays the JSONL through `code-session-store`'s reducer to rebuild in-memory state.
-- `control_request_forward` frames **are** in the JSONL. `tool_use` / `tool_result` pairs **are** in the JSONL.
-- The user's Allow/Deny click — a `respond_approval` action dispatched client-side — is **not** in the JSONL. It is a client-side gesture the reducer hears once, live, and never again.
+- The `control_request_forward` frame is synthesised on the live wire by `tugcode/src/session.ts:2807` from the SDK's `can_use_tool` control request. No JSONL writer touches it. Across every JSONL in `~/.claude/projects/*/`, the `"type"` field's value is always one of `assistant` / `user` / `system` / `tool_use` / `tool_result` / etc. — never `control_request_forward`.
+- The reducer's `pendingApproval` state is set only by `handleControlRequestForward`, which itself only accepts the live phases (`streaming` / `tool_work` / `awaiting_first_token` / `submitting`) — `replaying` is excluded.
+- The replay translator (`tugcode/src/replay.ts`) has no `control_request_forward` / `can_use_tool` code path. It translates `assistant` / `user` JSONL entries into `tool_use` / `tool_result` / `assistant_text` / `tool_use_structured` frames and nothing else.
 
-The reducer currently only writes to `controlRequestLog` from `handleRespondApproval` (`reducer.ts:1885`). On replay there is no `respond_approval` event to process, so `controlRequestLog` stays empty and `turn.controlRequests` freezes empty at `turn_complete`. The recorded chrome — whose data source is exactly that log — has nothing to render.
+Together those three facts mean `pendingApproval` is **always `null` during replay**. The gated-only inference the earlier draft proposed could never fire on cold boot, so the recorded chrome would never come back. The draft was a no-op feature with a passing test suite.
 
-**The decision is sometimes derivable from the `tool_result` content that lands after a `control_request_forward`.** Verified against 140 denied tool_results across 444 real Claude Code transcripts: every denied tool_result so far has carried the SDK's signature rejection text (the opener `"The user doesn't want to proceed with this tool use"` and the secondary phrase `"The tool use was rejected"`). Two stylistic suffixes exist (`"STOP what you are doing…"` for plain Deny; `"To tell you how to proceed, the user said: …"` when the user added a follow-up message), but both share the same signature phrases. A forgiving substring scan over multiple signal phrases (case-insensitive) catches both, and stays resilient if the SDK shifts wording later — as long as the new wording carries at least one of the recognised signals.
+##### What signals JSONL actually has — and why "allow" can't be reconstructed {#step-3-5-signal-landscape}
 
-**Assertive posture.** The derivation rule is allowed to *assert* both `allow` and `deny` because the calling gate constrains the call site so tightly that "lack of denial in a gated call IS approval" is a logical inference, not speculation.
+The wire signals that survive into JSONL for a permission flow:
 
-The gate (`pendingApproval !== null` + matching `tool_use_id` + `is_question === false`) guarantees:
+- **Deny.** The tool_result lands with `is_error: true` and `content` carrying the SDK's literal rejection text (the verified opener `"The user doesn't want to proceed with this tool use"` plus the suffix `"The tool use was rejected"` — see `#investigation-asymmetry`'s SDK denial-text pattern subsection; 124 samples across all surveyed JSONLs). The entry-level `toolUseResult: "User rejected tool use"` field also lands.
+- **Allow.** The tool runs and the tool_result carries the tool's actual output. **There is no wire signal that distinguishes a gated-and-allowed tool from an ungated tool.** Their post-decision shapes are byte-identical: a normal `tool_result` for that `tool_use_id` with `is_error: false` and the tool's real output. The allow click never enters JSONL; the gating decision never enters JSONL; nothing distinguishes "the user explicitly approved this Bash" from "this Bash was auto-approved by an allowlist rule."
 
-1. A `control_request_forward` arrived for this exact `tool_use_id` — the SDK forwarded a permission request to the client.
-2. A `tool_result` is now resolving that same `tool_use_id` — the SDK has reached a terminal decision.
+The recorded permission chrome's job was to show which gated tool was allowed vs. denied. For denials we *can* recover that information by reading the tool_result text. For allows we *cannot*. The recorded chrome is therefore a feature that **cannot be delivered durably** for both decisions.
 
-The SDK only resolves a *gated* `tool_result` along two paths: the user approved (the tool ran, the result is the tool's actual output) or the user denied (the result is the SDK's rejection text). There is no third path through the wire model. So within the gated call site, **absence of the deny signal *is* the allow signal**.
+##### The user-visible decision {#step-3-5-decision}
 
-`inferPermissionDecisionFromToolResult` therefore returns `"allow" | "deny"` (never `null`):
+The user-visible rule the team committed to in Step 3 was: *content the user has already seen does not get pulled away on a boundary*. The only way to satisfy that rule for the recorded permission chrome — given the wire reality above — is to **not render it in the first place**. Once a decision is made, the dialog vanishes. No badge. No record. No trace. The tool block alone carries the user-visible story.
 
-- `"deny"` when the text matches a forgiving heuristic over the SDK's signature rejection phrases.
-- `"allow"` for everything else — empty result, the tool's normal output, an unrecognised future SDK denial format.
+This is symmetric and honest:
 
-**Why we prefer assertive over conservative.** Visual consistency: the recorded chrome's badge state matches the original decision after HMR, Developer Reload, *and* full app relaunch. Content the user has already seen doesn't get pulled away on cold boot. That continuity is the user-visible reason for Step 3.5 to exist; an asymmetry where allows vanish on relaunch but denies persist re-creates the very inconsistency Step 3.5 was meant to close.
+- **Allow click.** `respondApproval({decision: "allow"})` fires; reducer clears `pendingApproval`; `PermissionDialog` sees `isPending === false` and returns `null`; the tool runs normally; the tool block renders its output. No badge, no recorded chrome, no entry in transcript history.
+- **Deny click.** `respondApproval({decision: "deny"})` fires; reducer clears `pendingApproval`; `PermissionDialog` returns `null`; the SDK lands a `tool_result` with `is_error: true` carrying the rejection text; the existing tool block renders the failed call with error styling and the SDK's literal text. No separate "Denied" chrome — that would be redundant signal and would re-introduce the same asymmetry Step 3.5 set out to close (since the chrome can't survive cold boot for allows, an asymmetric "deny-only" chrome would have the same durability problem in mirror form).
+- **HMR / Developer Reload / cold-boot relaunch.** Identical end-state regardless of boundary: only the tool block survives, with its `is_error` styling and content. Visual continuity is exact, because the data backing it (`turn.toolCalls`) is durable in JSONL.
 
-**Known risk and its bound.** If a future SDK rephrases deny text such that none of our signal phrases match, our helper would label that denial as `"allow"` — a *false allow* across replay. The risk is real but bounded:
+The live PermissionDialog (the *pending* interactive surface — where the user clicks Allow or Deny) **stays**. It's the input form. Only the post-decision recorded chrome is removed.
 
-- The user-visible badge would be a green pill instead of a red one. The *tool_result content itself* (still visible inside the tool block above the record) would still carry the SDK's rejection text in plain English. So the user has the full evidence to read what actually happened; the badge is the only thing that could mislead briefly.
-- Such a regression would surface on the first relaunch of any session with a known denial. We'd catch it in dogfooding, not in production silence.
-- Mitigation: keep `inferPermissionDecisionFromToolResult` 's signal list short, multi-word, SDK-specific, and easy to extend with one line when the SDK shape shifts. The helper is a small intentional `currentSDK->decision` adapter, not a stable contract.
+##### Why we don't try harder to keep "Denied" badges {#step-3-5-symmetric}
 
-The live `respond_approval` path is the source of truth during a running session. The derived path's purpose is solely to reconstruct that same `controlRequestLog` from a JSONL replay so HMR / Reload / cold boot stop dropping content the user has already seen.
+A "Denied" record would (a) live in the same `controlRequestLog → turn.controlRequests` path we're removing because it can't durably restore allows, (b) require the same persistence machinery we're tearing out, and (c) be redundant signal — the tool block already carries `is_error: true` plus the SDK's literal rejection text in its prose. An allow-less / deny-only chrome would mean: a user who denied a Bash would see a record on relaunch; a user who allowed the *same* Bash would see nothing. That asymmetry was the problem Step 3.5 was created to close in the first place. Symmetric absence is the honest answer.
 
-##### Why this is permission-only (and not also question) {#step-3-5-permission-only}
+##### What gets removed {#step-3-5-removals}
 
-- **AskUserQuestion** is already durable. The questions are in the `tool_use.input` (replayed) and the answers are in the `tool_result.content` text (replayed). The `AskUserQuestionToolBlock` reads both straight from `turn.toolCalls` — no `controlRequestLog` involvement.
-- **PermissionDialog** is the lone gap because permission requests have no native AI-side artifact (`[D10]`) — the recorded chrome is the only durable surface, and its data lives in `controlRequestLog` and only there.
+| Layer | What goes |
+|---|---|
+| Reducer state | `state.controlRequestLog: ControlRequestRecord[]` |
+| `TurnEntry` | `controlRequests` field |
+| Types | `ControlRequestRecord` (no remaining consumer) |
+| Reducer writes | The `controlRequestLog: [...state.controlRequestLog, record]` write in `handleRespondApproval`; the `record: ControlRequestRecord` it built |
+| Reducer projection | The `controlRequests: state.controlRequestLog` projection in `buildTurnEntry` |
+| Reducer resets | Every `controlRequestLog: []` initializer / reset (initial state, `handleReplayStarted`, every per-turn reset site in `handleTurnComplete`, mid-turn transport-lost commit, etc. — found at the lines that appear in the existing `grep` of `controlRequestLog` over `reducer.ts`) |
+| `PermissionDialog` component | The recorded-state branch (the entire `isPending === false` render path); the `recordedPermissionPresentation` helper; the `decision` `useState`; the `ToolWrapperChrome` composition for the recorded path; the `TugBadge` chip for the decision word |
+| `PermissionDialog` CSS | The `.tide-permission-dialog-record-*` rules; the `[data-decision]` rule on the recorded chrome's status span. The two pending-state fragments (`.tide-permission-dialog-inline-icon`, `.tide-permission-dialog-reason`) stay |
+| `PermissionDialog` tests | The `recordedPermissionPresentation` describe block; the recorded-chrome assertions; any case that pinned the `decision` `useState` transition |
+| `tide-card-transcript.tsx` | `permissionByToolUseId`, `orphanPermissions`, `EMPTY_PERMISSION_MAP`, `EMPTY_PERMISSION_ARRAY`, the body-foot orphan-permission render, the inline-permission-threading doc-comment block, the `controlRequestLog` / `pendingApproval` reads that fed the slot computation |
+| `tide-card-transcript-tool-calls.tsx` | The `permissionByToolUseId?: ReadonlyMap<...>` prop on Static and Streaming variants; the per-tool-block matching-permission render inside `ToolCallsList` (the `React.Fragment` keyed by `toolUseId` collapses back to the bare `<Component>`) |
+| `code-session-store.control-forward.test.ts` | The two cases that pinned `turn.controlRequests` writes (the synthetic-allow "commits the answered permission into TurnEntry.controlRequests" and the empty-permissions companion) are removed; the `test-11` deny replay's `turn.controlRequests[0]` assertions are removed (the test keeps its outbound-frame and phase-restoration assertions — those exercise the wire-side commitment, which is what survives) |
 
-Step 3.5 is therefore scoped narrowly: extend `handleToolResult` for the permission case only.
-
-##### Gating rationale — how we know a tool was gated {#step-3-5-gating-rationale}
-
-The derived path runs only when *all three* of these predicates hold at the moment a `tool_result` lands:
-
-1. `state.pendingApproval !== null` — a `control_request_forward` arrived earlier in the stream and has not been resolved yet.
-2. `state.pendingApproval.tool_use_id === event.tool_use_id` — this `tool_result` is resolving the same tool the gate was opened for (so we don't false-write for sibling tool calls that happen to land in the same window).
-3. `state.pendingApproval.is_question === false` — questions go through `respond_question` and never write to `controlRequestLog` per `[D10]`.
-
-These predicates are derived from wire-level facts that are durable in the JSONL — `control_request_forward` is a first-class frame, and the reducer's replay logic re-derives `pendingApproval` from it deterministically.
-
-The wire-level signal `control_request_forward` is exactly the "this tool was gated" predicate. Tools that don't need permission (auto-approved, internal, allowlist-matched, rule-bound from a prior decision) get their `tool_use → tool_result` round-trip with no `control_request_forward` between them. Our gate's `pendingApproval !== null` predicate therefore distinguishes the gated and ungated cases at the wire level — no heuristic involved.
-
-**Four-quadrant behaviour table.** What happens at each `tool_result` arrival:
-
-| Scenario | `pendingApproval` when `tool_result` lands | Derived path |
-|---|---|---|
-| Gated, denied (replay) | set, matching `tool_use_id` | runs → helper returns `"deny"` → writes `decision: "deny"` record |
-| Gated, allowed (replay) | set, matching `tool_use_id` | runs → helper returns `"allow"` → writes `decision: "allow"` record (lack of denial in a gated call IS approval) |
-| Gated, decided live | already `null` (cleared by live `respond_approval`) | gate fails on predicate 1 — no-op (live path already wrote the record) |
-| **Ungated tool** (no permission ever asked) | `null` | gate fails on predicate 1 — no-op (no false record written; the structural signal "this tool didn't need permission" is preserved) |
-| Different gated tool in flight (parallel) | set but mismatched `tool_use_id` | gate fails on predicate 2 — no-op (sibling tool_result doesn't trigger derivation for the gated one) |
-| Pending AskUserQuestion (live or replay) | set but `is_question === true` | gate fails on predicate 3 — no-op (question answers are durable elsewhere via the tool_use/tool_result mechanism per `[D10]`) |
-
-**The model assumes** the SDK only emits its signature rejection text inside `tool_result.content` for a tool that was actually gated. I.e., no ungated tool ever produces a `tool_result` whose text matches the deny signals. This holds today (the deny text is the SDK's literal response to a `tool_approval(decision: "deny")` action, which only exists in response to a `control_request_forward`), and the gate catches any false positive either way (no `pendingApproval` → no record, regardless of the text content).
+The live `respondApproval` action still fires its `tool_approval` wire frame — that's how the SDK is told what to do with the gated tool. Only the *client-side* `controlRequestLog` accumulator is being removed.
 
 ##### Artifacts {#step-3-5-artifacts}
 
-- `tugdeck/src/lib/code-session-store/reducer.ts` — extend `handleToolResult`; extract a pure helper for the deny-text detection.
-- `tugdeck/src/lib/code-session-store/__tests__/reducer.permission-replay.test.ts` *(new)* — replay-shaped fixtures asserting `controlRequestLog` is populated by the tool_result path.
-- A small addition under `#investigation-asymmetry` documenting the verified SDK denial-text pattern (so future readers see the evidence for the derivation rule).
+- `tugdeck/src/lib/code-session-store/reducer.ts`
+- `tugdeck/src/lib/code-session-store/types.ts`
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx`
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.css`
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.test.ts`
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`
+- `tugdeck/src/components/tugways/cards/tide-card-transcript-tool-calls.tsx`
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.control-forward.test.ts`
+- Reducer doc-comments around `handleRespondApproval`, `handleTurnComplete`, and the `CodeSessionState` field block formerly describing `controlRequestLog`.
 
 ##### Tasks {#step-3-5-tasks}
 
-- [ ] Add a pure helper `inferPermissionDecisionFromToolResult(text: string | undefined | null): "allow" | "deny"` to `reducer.ts` (or a sibling pure module). Contract:
-  - Returns `"deny"` when the text contains any of a small set of SDK rejection signals (case-insensitive substring match):
-    - `"doesn't want to proceed with this tool use"` (the primary opener)
-    - `"the tool use was rejected"` (the secondary phrase the SDK pairs with the opener)
-  - Returns `"allow"` for everything else: empty / undefined / non-string input, a normal Bash / Read / Grep output, or any text that doesn't carry a recognised deny signal. Per the assertive-posture rationale above (lack of denial in a gated call IS approval), the helper is only ever invoked from a gated call site where this inference is sound.
-  - Match phrases are kept SDK-specific enough that a normal Read/Grep/Bash output is extremely unlikely to false-positive. Each signal is a multi-word fragment of the SDK's signature rejection prose, not a single common word. Keep the list short (currently two phrases); extend with one line when an SDK rephrase is observed.
-- [ ] In `handleToolResult`, after the existing tool-call-state update, gate on:
-  - `state.pendingApproval !== null`,
-  - `state.pendingApproval.is_question === false` (questions go through `respond_question`, which writes nothing to `controlRequestLog` per `[D10]`),
-  - `state.pendingApproval.tool_use_id === event.tool_use_id`.
-
-  If all three hold:
-  - Call `inferPermissionDecisionFromToolResult` on the tool_result content.
-  - Append a `ControlRequestRecord` with the inferred `decision` via the shared `commitApprovalToLog(state, decision)` helper.
-  - The helper clears `pendingApproval`, restores `prevPhase`, closes the awaiting-approval interval, and appends to `controlRequestLog` — the same state-update shape `handleRespondApproval` produces, so the live and derived paths can't drift apart.
-- [ ] Dedup contract: the live path writes via `handleRespondApproval`. The derived path writes via `handleToolResult`. On live sessions, `respond_approval` fires first and clears `pendingApproval`; when the subsequent `tool_result` arrives, the gate's `pendingApproval !== null` predicate fails and the derived path is a no-op. On replay, `respond_approval` never fires; the derived path runs and writes the inferred record. The two paths therefore produce **exactly one** entry per gated request, by mutual exclusion on `pendingApproval` state. No request-id dedup scan needed.
-- [ ] Update the existing `reducer.ts` doc-comments on `handleToolResult` and `handleRespondApproval` to cross-reference each other and name the dedup invariant explicitly.
-- [ ] Add `#investigation-asymmetry` subsection: *"SDK denial-text pattern."* Cites the verified opener, the two suffix variants, the 140-sample count, and the JSONL file where samples came from.
+- [ ] **Reducer state surgery.** Remove `controlRequestLog` from `CodeSessionState`; remove the write in `handleRespondApproval`; remove the `controlRequests: state.controlRequestLog` projection in `buildTurnEntry`; remove every `controlRequestLog: []` initializer / reset (initial state, `handleReplayStarted`, `handleTurnComplete` branches, transport-lost commit, etc.). Update doc-comments accordingly.
+- [ ] **Types surgery.** Remove `ControlRequestRecord` from `code-session-store/types.ts`; remove `controlRequests` from `TurnEntry`. Verify no remaining consumer via `grep`.
+- [ ] **PermissionDialog component surgery.** Drop the recorded-state branch entirely — the component now returns `null` whenever `isPending === false`. Remove the `decision` `useState`, the `recordedPermissionPresentation` helper, the `ToolWrapperChrome` import + composition for the recorded path, the `TugBadge` chip for the decision word. Update the module docstring to say the component is pending-only.
+- [ ] **PermissionDialog CSS surgery.** Drop the `.tide-permission-dialog-record-status[data-decision]` rule. Keep `.tide-permission-dialog-inline-icon` and `.tide-permission-dialog-reason` (still used by the pending dialog's description). Update the file docstring's `@tug-pairings` block to reflect that the recorded-chrome composition pair is gone.
+- [ ] **PermissionDialog tests surgery.** Drop the `recordedPermissionPresentation` describe block; drop any assertion about the recorded chrome's render output, the decision `useState`, or the recorded chrome's data-attributes.
+- [ ] **`tide-card-transcript.tsx` surgery.** Drop the `permissionByToolUseId` `ReadonlyMap` derivation, the `orphanPermissions` array, the `EMPTY_PERMISSION_MAP` / `EMPTY_PERMISSION_ARRAY` sentinels, the body-foot orphan-permission render, the doc-comment block about inline permission threading, and the data-source reads (`controlRequestLog`, `pendingApproval`) that fed the slot computation. The `questionSlot` stays untouched at the body foot — questions still belong there.
+- [ ] **`tide-card-transcript-tool-calls.tsx` surgery.** Drop the `permissionByToolUseId?` prop from both Static and Streaming variants; drop the per-tool-block matching-permission render inside `ToolCallsList`. The `React.Fragment` keyed by `toolUseId` collapses back to the bare `<Component key={toolUseId} … />` it was pre-Step-3.
+- [ ] **`code-session-store.control-forward.test.ts` surgery.** Remove the two synthetic-allow cases that pinned `turn.controlRequests` writes (the "commits the answered permission" and "commits an empty controlRequests" cases). Trim the `test-11` deny-replay case to drop the `turn.controlRequests[0]` block — keep its outbound `tool_approval` frame assertion and the `prevPhase`-restoration assertion (those exercise the wire and reducer-phase commitments, which survive).
+- [ ] **Investigation-asymmetry update.** Already landed in this revision: Finding 2 expanded to cover the full out-of-band scope, Finding 2.a added for the SDK denial-text pattern, Finding 3's "Where the record lives" row updated. Confirm the prose still tracks the implementation after the Step 3.5 surgery.
+- [ ] **Code-search guardrails.** `grep -r controlRequestLog tugdeck/src` → empty. `grep -r ControlRequestRecord tugdeck/src` → empty. `grep -r recordedPermissionPresentation tugdeck/src` → empty. `grep -r controlRequests tugdeck/src` → only inert occurrences (e.g. archived plan prose); no live type / property references.
 
 ##### Tests {#step-3-5-tests}
 
-- [ ] `inferPermissionDecisionFromToolResult` — pure-helper unit tests:
-  - The exact STOP-form rejection text from a real JSONL sample → `"deny"`.
-  - The exact clarify-form rejection text from a real JSONL sample → `"deny"`.
-  - Case variation (`"THE USER DOESN'T WANT TO PROCEED…"`, `"the user Doesn't…"`) → `"deny"` (case-insensitive match).
-  - Text containing only one of the two signal phrases (e.g., a hypothetical future SDK that drops the opener but keeps `"the tool use was rejected"`) → `"deny"` (either signal triggers).
-  - A normal Bash output (e.g., `"hello\n"`, a tokei table) → `"allow"`.
-  - A normal Read output (a TypeScript file body, a JSON tree) → `"allow"`.
-  - Empty string / null / undefined → `"allow"`.
-  - **Hostile-coincidence guard.** A long source-file Read output that happens to *contain* the phrase `"the tool use was rejected"` deep inside (because some user file has that prose) — would yield a false `"deny"`. Out of scope: the helper is only invoked on `tool_result.content` for a `tool_use_id` matching `pendingApproval`, which means a permission *was* asked. Risk is non-zero but contained. Document as a known accepted limitation.
-- [ ] New `reducer.permission-replay.test.ts`:
-  - **Allow-replay.** Apply `[session_init, tool_use(Bash, tool_use_id=X), control_request_forward(Bash, tool_use_id=X, request_id=R), tool_result(tool_use_id=X, content="hello\n"), turn_complete]`. Assert `state.controlRequestLog` has **one entry** with `decision: "allow"`, `request.request_id === R`, `request.tool_use_id === X`. Assert `state.pendingApproval === null` after the tool_result. Assert `turn.controlRequests` (frozen at turn_complete) carries the same record.
-  - **Deny-replay (STOP form).** Same frame shape, tool_result content matches the SDK STOP-form rejection. Assert `controlRequestLog` has one entry with `decision: "deny"`. Same downstream assertions.
-  - **Deny-replay (clarify form).** Same frame shape, tool_result content matches the clarify-form rejection. Assert `decision: "deny"`.
-  - **Future-SDK-deny-format false-allow tripwire.** Synthesise a hypothetical denial text that doesn't match any signal (e.g., `"User rejected this tool call."`). Assert `controlRequestLog` has one entry with `decision: "allow"` — this is the **known limitation**: a future SDK rephrase that no longer matches any signal phrase would produce a false allow record. The test pins the current behaviour explicitly so the bound is visible and the assertion flips when the helper is updated to recognise the new phrase.
-  - **Live-then-tool_result dedup.** Apply `[…, control_request_forward, respond_approval(allow), tool_result(normal output), …]`. Assert `controlRequestLog` has exactly **one** entry with `decision: "allow"` (the live path wrote it; the derived path saw `pendingApproval === null` and did nothing). Same shape with `respond_approval(deny)` and a matching rejection-text tool_result → one entry with `decision: "deny"`.
-  - **Question is not touched.** Apply `[…, control_request_forward(AskUserQuestion, is_question=true), tool_result, …]`. Assert `controlRequestLog` is empty (questions never write here per `[D10]`; the `is_question === false` gate skips them).
-  - **Tool_use without a prior control_request_forward.** Apply `[tool_use, tool_result]` only. Assert `controlRequestLog` is empty (the derived path's gate `pendingApproval !== null` is the safety net). This is the structural test that *ungated* tool calls never produce a permission record.
+- [ ] `tide-permission-dialog.test.ts` continues to pass on the pending-dialog assertions (the `recordedPermissionPresentation` cases are removed, not migrated). Net test-count delta: lower (by the dropped recorded-chrome cases); no green case turns red.
+- [ ] `code-session-store.control-forward.test.ts` continues to pass on its outbound-frame and phase-restoration assertions (the `turn.controlRequests` assertions are removed, not migrated). Net delta: lower.
+- [ ] No new tests added in this step — Step 3.5 is a feature *removal*, and the existing pure-helper coverage on the pending dialog is the right shape for what remains.
 
 ##### Checkpoint {#step-3-5-checkpoint}
 
 - [ ] `bun x tsc --noEmit` — clean.
-- [ ] `bun test src/lib/code-session-store/__tests__/reducer.permission-replay.test.ts` — every case green.
-- [ ] `bun test` — full suite green; no existing test regresses.
+- [ ] `bun test` — full suite green; net test count is lower than Step 3's baseline by the count of dropped cases.
 - [ ] `bun run audit:tokens lint` — zero violations.
-- [ ] Manual HMR: cause a permission decision live, then save an unrelated `.tsx` file to trigger Fast Refresh; the recorded chrome stays put with the correct badge.
-- [ ] Manual relaunch: cause a permission decision live, then fully quit and re-launch Tide on the same session; the recorded chrome is reconstructed by JSONL replay with the correct badge.
+- [ ] Code-search guardrails (per `#step-3-5-tasks`) all empty.
+- [ ] Manual HMR: trigger an Allow flow — dialog disappears, tool runs, tool block renders output. Save an unrelated `.tsx` to trigger Fast Refresh; the post-decision state is unchanged (because there is no fragile recorded chrome left to lose).
+- [ ] Manual HMR: trigger a Deny flow — dialog disappears, tool block renders with error styling + SDK rejection text. Same Fast Refresh test: state is unchanged.
+- [ ] Manual Developer Reload: identical end-state on both allow and deny — only the tool block survives, with its content unchanged.
+- [ ] Manual relaunch: fully quit Tide, re-launch on the same session. Visual continuity is exact: tool blocks (allow→output; deny→error band + rejection text) render from the JSONL-durable `turn.toolCalls`. No "missing chrome" gap, no false records.
 
 ---
 
@@ -870,17 +860,19 @@ The wire-level signal `control_request_forward` is exactly the "this tool was ga
 
 **Commit:** `N/A (verification only)`
 
-**References:** `[D01]` new primitive, `[D02]` cancel semantics, `[D09]` rename, `[D10]` asymmetry load-bearing, `[D13]` durable recorded chrome, (#success-criteria, #step-3-5)
+**References:** `[D01]` new primitive, `[D02]` cancel semantics, `[D09]` rename, `[D10]` asymmetry load-bearing, (#success-criteria, #step-3-5)
 
 **Tasks:**
 - [ ] Verify both dialog surfaces (Permission, Question) compose on `TideInteractiveDialog`.
 - [ ] Verify Cancel == Esc == `popInteractive` across the family per `[D02]` (with PermissionDialog `Deny` exemption per `[Q03]`).
-- [ ] Cross-check pure-logic tests across all four files (`tide-permission-dialog`, `tide-question-dialog`, `tide-interactive-dialog`, `ask-user-question-tool-block`) plus the new `reducer.permission-replay.test.ts` — every case green.
+- [ ] Cross-check pure-logic tests across all four files (`tide-permission-dialog`, `tide-question-dialog`, `tide-interactive-dialog`, `ask-user-question-tool-block`) — every case green; net test count reflects the Step 3.5 removals.
 - [ ] Cross-check the visual chrome on each surface via HMR.
-- [ ] **Durability checkpoint** (`#step-3-5`): with a permission decided live (both Allow and Deny variants tested), then fully quit and re-launch Tide on the same session, the recorded chrome reconstructs from JSONL replay with the correct badge (`success` for allow, `danger` for deny). HMR / Developer Reload behave identically. Content the user has already seen does not get pulled away on any boundary.
+- [ ] **Continuity checkpoint** (`#step-3-5`): with a permission decided live (both Allow and Deny variants), fully quit and re-launch Tide on the same session. The post-decision state on cold boot is identical to the post-decision live state: Allow → only the tool block, rendering the tool's output; Deny → only the tool block, with `is_error` styling and the SDK's rejection text. No "missing chrome" gap. HMR / Developer Reload behave identically. Content the user has already seen does not get pulled away on any boundary.
 - [ ] `grep -r peelNewest tugdeck/src` — empty (rename complete).
+- [ ] `grep -r controlRequestLog tugdeck/src` — empty (Step 3.5 removal complete).
+- [ ] `grep -r ControlRequestRecord tugdeck/src` — empty (Step 3.5 removal complete).
 - [ ] `grep -ri 'tool wrapper\|tool-wrapper' tugdeck/src --include='*.tsx' --include='*.ts'` — only `ToolWrapperChrome` / `DefaultToolWrapper` component-name references remain (out of scope per `[Q06]`).
-- [ ] Quick SDK-shape sanity check: confirm `permission_request` / `permission_decision` frames still don't appear in JSONL; AskUserQuestion tool_result still carries answers (asymmetry still load-bearing per `[D10]`); denied tool_results still match the verified `"The user doesn't want to proceed with this tool use."` opener (the `#step-3-5` derivation rule's invariant).
+- [ ] Quick SDK-shape sanity check: confirm `permission_request` / `permission_decision` / `control_request_forward` frames still don't appear in JSONL (the wire-reality premise of `#step-3-5` still holds); AskUserQuestion tool_result still carries answers (asymmetry still load-bearing per `[D10]`); denied tool_results still match the verified `"The user doesn't want to proceed with this tool use."` opener (still useful for log-level inspection, even though Step 3.5 is no longer inferring decisions from it).
 
 **Tests:**
 - [ ] Aggregate: full `bun test` suite green (no regressions).
@@ -902,11 +894,12 @@ The wire-level signal `control_request_forward` is exactly the "this tool was ga
 
 - [ ] `session.popInteractive()` exists; `session.peelNewest()` does not.
 - [ ] `TideInteractiveDialog` ships at `tugways/tide-interactive-dialog.tsx` with module docstring, pure-logic test, CSS file.
-- [ ] `PermissionDialog` uses `TideInteractiveDialog` for its pending input-form chrome; existing tests pass unchanged. (The resolved / recorded chrome stays inside `PermissionDialog` per `[D08]` — the primitive is input-form only.)
+- [ ] `PermissionDialog` uses `TideInteractiveDialog` for its pending input-form chrome and returns `null` once the decision is made; existing pending-side tests pass; the recorded-chrome tests are removed per Step 3.5.
 - [ ] `QuestionDialog` uses `TideInteractiveDialog` for its pending input-form chrome; existing tests pass unchanged; the local actions-row CSS override is gone.
 - [ ] Cancel ≡ Esc ≡ `popInteractive` on QuestionDialog and the salvage UI (PermissionDialog's `Deny` exempt per `[Q03]`).
 - [ ] Prose audit: no instance of "wrapper" / "wrapping" used to describe `*ToolBlock` components in tugdeck docstrings / doc-comments.
-- [ ] **Durable recorded chrome** (`#step-3-5`): both allow and deny decisions reconstruct from `tool_result` content on JSONL replay, so the recorded chrome's badge state survives HMR (in-memory store reset), Developer Reload, and full app relaunch (cold-boot replay). The derivation rule's gate is the wire-level "this tool was gated" predicate (`pendingApproval !== null` matching `tool_use_id`); within that gate, lack-of-denial is treated as allow per `#step-3-5-gating-rationale`. Ungated tool calls are structurally skipped — no false records.
+- [ ] **Symmetric continuity across boundaries** (`#step-3-5`): Allow and Deny decisions both leave a single, JSONL-durable artifact behind — the tool block (with output on allow; with `is_error` + SDK rejection text on deny). HMR, Developer Reload, and full app relaunch all reproduce that artifact from `turn.toolCalls` data with no false records, no missing-chrome gaps, and no asymmetric drift between decisions.
+- [ ] `controlRequestLog` / `ControlRequestRecord` / `turn.controlRequests` removed from `code-session-store` per Step 3.5 (`grep -r` confirms empty).
 - [ ] Open questions `[Q01]`, `[Q02]` resolved; `[Q03]` resolved during Step 2; `[Q05]`, `[Q06]` recorded as deferred follow-ons.
 - [ ] Tests + audit-tokens lint + tsc all green.
 
