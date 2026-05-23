@@ -837,19 +837,19 @@ The live `respondApproval` action still fires its `tool_approval` wire frame —
 - Prose updates in tugdeck docstrings / doc-comments where "wrapper" was used to describe `*ToolBlock` components.
 
 **Tasks:**
-- [ ] Review the tool block's icons against `[D04]`. The streaming state returns `null`; the answered state uses arrow-style "→" prefixes. Consider whether the latter should be a lucide `ArrowRight` for vocabulary consistency.
-- [ ] Review the salvage path's `Cancel` and `Send answers` buttons against `[D03]`. Already aligned (filled action + outlined danger, Mac HIG separation).
-- [ ] Confirm the salvage banner uses the shared `--tugx-block-tone-caution-*` band.
-- [ ] Verify the tool block's `null`-while-streaming behaviour remains correct after Step 3.
-- [ ] Prose audit. **Pattern:** case-insensitive `tool[- ]wrapper` (i.e., "tool wrapper" and "tool-wrapper" only — **do not match bare "wrapping" / "wrapper"**, which appears in many legitimate technical contexts: "thin wrapper on Radix", "wrapping chrome region", "stable wrapper", etc.). **Scope:** `tugdeck/src/components/tugways/cards/tool-wrappers/**/*.{tsx,css}` (the tool-block files themselves) plus any explicit cross-references in chrome / wrapping / body-kinds prose. **Action:** replace with "tool block" / "tool-block" where the prose describes a `*ToolBlock` component or the tool_use/tool_result rendering concept. Component-file names (`ToolWrapperChrome`, `DefaultToolWrapper`) stay as-is (out of scope per `[Q06]`).
+- [x] Review the tool block's icons against `[D04]`. Streaming returns `null`; the answered state uses CSS `::before` `"→"` glyph prefixes on answer lines. `[D04]` governs *status* indicators (Check / Circle / CircleDot / ChevronRight / Loader2 — "state-of-item" icons). An answer-line bullet is closer to a list marker than a status icon, and the same `→` also appears in the salvaged-answer **text payload** posted back to the assistant via `composeSalvagedAnswerMessage` (line 345) — splitting the rendering into "icon here, text there" would create inconsistency without a real win. Leaving as text glyph.
+- [x] Review the salvage path's `Cancel` and `Send answers` buttons against `[D03]`. Already aligned: Cancel is `outlined` / `danger` at the leading edge; Send answers is `filled` / `action` at the trailing edge; Mac-HIG separation.
+- [x] Confirm the salvage banner uses the shared `--tugx-block-tone-caution-*` band. Confirmed — `--tugx-askquestion-salvage-banner-bg` aliases `var(--tugx-block-tone-caution-bg)` and `-color` aliases `var(--tugx-block-tone-caution-color)`.
+- [x] Verify the tool block's `null`-while-streaming behaviour remains correct after Step 3. Verified — `if (status === "streaming") return null;` at line 415 is intact, and after Step 3.5 the live `QuestionDialog` still renders via the body-foot `questionSlot`, so the lifecycle handoff (dialog while pending → tool block once `ready`/`error`) is preserved.
+- [x] Prose audit. Replaced "tool wrapper" / "tool-wrapper" with "tool block" / "tool-block" where the prose described a `*ToolBlock` component or the tool_use/tool_result rendering concept. Touched 16 files across `tool-wrappers/` (read-tool-block, middle-ellipsis-path, tool-wrapper-chrome `.tsx` + `.css`, types.ts), `body-kinds/` (path-list-block, diff-block, agent-transcript-block `.tsx` + `.css`, file-block, terminal-block, search-result-block), and the dispatch / transcript / gallery cross-references (`tide-assistant-renderer-dispatch.ts`, `tide-card-transcript-tool-calls.tsx`, `tide-card-transcript.tsx`, `gallery-tool-block-file.tsx` + `.css`, `gallery-registrations.tsx`, `tug-list-view.css`). Bare "wrapper" / "wrapping" left alone per the explicit rule (preserves legit uses like "thin wrapper on Radix", "wrapping chrome region"). Component / symbol / class-name / data-slot / directory-path references all left alone per `[Q06]` (`ToolWrapperChrome`, `DefaultToolWrapper`, `registerToolWrapper`, `resolveToolWrapper`, `TOOL_WRAPPER_REGISTRY`, `tool-wrapper-path`, `./tool-wrappers/`, etc.).
 
 **Tests:**
-- [ ] Existing `ask-user-question-tool-block.test.ts` cases still pass without modification.
+- [x] Existing `ask-user-question-tool-block.test.ts` cases still pass without modification.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` — clean.
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean.
+- [x] `cd tugdeck && bun test` — full suite green: **2580 pass / 0 fail / 9654 expects / 158 files** (matches Step 3.5 baseline; no regressions).
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
 - [ ] Manual HMR: trigger a normal AskUserQuestion (success path) and a validation-error AskUserQuestion (salvage path); verify both render in the family's visual vocabulary.
 
 ---

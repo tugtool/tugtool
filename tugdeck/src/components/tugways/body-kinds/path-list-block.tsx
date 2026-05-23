@@ -61,7 +61,7 @@
  *
  * Decisions:
  *  - [D05] two-layer split: this body kind owns the list rendering;
- *    the tool wrapper (`GlobToolBlock`) owns chrome.
+ *    the tool block (`GlobToolBlock`) owns chrome.
  *
  * @module components/tugways/body-kinds/path-list-block
  */

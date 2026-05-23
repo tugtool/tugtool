@@ -1,6 +1,6 @@
 /**
  * gallery-tool-block-file.tsx — visual fixture for the file-oriented
- * tool wrappers: `ReadToolBlock` and `EditToolBlock`.
+ * tool blocks: `ReadToolBlock` and `EditToolBlock`.
  *
  * Two columns, side by side: the Read wrapper (file icon + path +
  * optional line-range badge over an embedded `FileBlock`) and the Edit

@@ -666,7 +666,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
     );
   }
 
-  // In-flight `msg_id` threaded onto streaming tool wrappers. For
+  // In-flight `msg_id` threaded onto streaming tool blocks. For
   // committed rows we already have the canonical `turn.msgId`.
   const inflightMsgId = useSyncExternalStore(
     codeSessionStore.subscribe,

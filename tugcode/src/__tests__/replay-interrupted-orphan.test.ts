@@ -185,4 +185,95 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     expect(userReplays[0].text).toBe("what time is it?");
     expect(turnCompletes).toHaveLength(1);
   });
+
+  // -------------------------------------------------------------------
+  // Marker disambiguation — the 2026-05-23 doubled-message bug guard.
+  //
+  // The SDK's auto-injected sentinel comes in two suffix forms, and a
+  // hypothetical real user submission might type the same text. The
+  // matcher requires BOTH the wire-text prefix AND the absence of
+  // `permissionMode` (which real submissions always carry); see
+  // `replay.ts`'s `isInterruptMarkerEntry` for the corpus evidence.
+  // -------------------------------------------------------------------
+
+  const userTextEntryWithPermissionMode = (
+    text: string,
+    permissionMode: string,
+  ): string =>
+    JSON.stringify({
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text }] },
+      permissionMode,
+    });
+
+  test("suffix-form marker ('[Request interrupted by user for tool use]') is also dropped", async () => {
+    // 2026-05-23 incident: SDK writes the longer form when the
+    // interrupt fires while a permission/question is pending. The
+    // original matcher only knew about the base form, so the marker
+    // leaked into the transcript as a phantom user turn after
+    // Developer Reload.
+    const jsonl = [
+      userTextEntry("plan an investigation"),
+      userTextEntry("[Request interrupted by user for tool use]"),
+      userTextEntry("ok now do something else"),
+      assistantEndTurnEntry("msg_Z", "done"),
+    ].join("\n");
+
+    const out = await collectSession(jsonl);
+
+    const userReplays = out.filter(
+      (m): m is UserMessageReplay => m.type === "user_message_replay",
+    );
+    expect(userReplays).toHaveLength(2);
+    expect(userReplays[0].text).toBe("plan an investigation");
+    expect(userReplays[1].text).toBe("ok now do something else");
+    // The marker text itself does not appear in any submission.
+    for (const r of userReplays) {
+      expect(r.text.includes("[Request interrupted by user")).toBe(false);
+    }
+  });
+
+  test("a real user typing the marker text verbatim is NOT dropped (permissionMode disambiguator)", async () => {
+    // If a user literally types `"[Request interrupted by user]"` as
+    // a chat message, their submission carries `permissionMode` (the
+    // CLI's input layer stamps it on every real submission). The
+    // compound matcher rejects this as a marker on the structural
+    // signal and we round-trip the user's text intact.
+    const jsonl = [
+      userTextEntryWithPermissionMode(
+        "[Request interrupted by user]",
+        "default",
+      ),
+      assistantEndTurnEntry("msg_quoted", "ok"),
+    ].join("\n");
+
+    const out = await collectSession(jsonl);
+
+    const userReplays = out.filter(
+      (m): m is UserMessageReplay => m.type === "user_message_replay",
+    );
+    expect(userReplays).toHaveLength(1);
+    expect(userReplays[0].text).toBe("[Request interrupted by user]");
+  });
+
+  test("coincidental prefix in the middle of a longer message is NOT dropped", async () => {
+    // Defends against a too-eager substring match. Only an entry
+    // whose text BEGINS with the marker prefix and ENDS with `"]"`
+    // is a candidate; everything else falls through to the normal
+    // submission path.
+    const jsonl = [
+      userTextEntry(
+        "Why does the SDK write [Request interrupted by user] in the JSONL?",
+      ),
+      assistantEndTurnEntry("msg_q", "because…"),
+    ].join("\n");
+
+    const out = await collectSession(jsonl);
+
+    const userReplays = out.filter(
+      (m): m is UserMessageReplay => m.type === "user_message_replay",
+    );
+    expect(userReplays).toHaveLength(1);
+    expect(userReplays[0].text).toContain("[Request interrupted by user]");
+  });
 });

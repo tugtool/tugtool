@@ -9,7 +9,7 @@
  * directly from `RenderInput`-routed body kinds whose data shape is
  * "a diff the user wants to inspect."
  *
- * Why a body kind, not a tool wrapper:
+ * Why a body kind, not a tool block:
  *   `DiffBlock` holds the rendering for a single rectangle of diff
  *   content — header, hunks, lines, intra-line highlights. The
  *   tool-specific framing (status pill, undo link, "X lines edited"
@@ -61,7 +61,7 @@
  *    `useSyncExternalStore` (the persisted view-mode hook).
  *
  * Decisions:
- *  - [D05] two-layer split: body kind (this file) vs. tool wrapper
+ *  - [D05] two-layer split: body kind (this file) vs. tool block
  *    (edit-tool-block.tsx in #step-11).
  *  - [D09] `imara-diff` via `tugdiff-wasm` for line-level diff.
  *  - [D10] `tugdiff-wasm` and `diff-match-patch` are lazy — they don't

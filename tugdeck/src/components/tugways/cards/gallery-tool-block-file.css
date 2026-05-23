@@ -2,7 +2,7 @@
    gallery-tool-block-file.css — layout-only scaffold for the
    ReadToolBlock / EditToolBlock gallery card.
 
-   No colour rules: every painted surface comes from the tool wrappers
+   No colour rules: every painted surface comes from the tool blocks
    and their embedded body kinds. This file only lays the two wrappers
    out side by side, collapsing to one column when the card is narrow.
    ========================================================================= */

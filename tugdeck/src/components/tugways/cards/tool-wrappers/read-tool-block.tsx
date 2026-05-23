@@ -103,7 +103,7 @@ export interface ReadToolInput {
  * Read tool structured result — the wire shape under
  * `tool_use_structured.structured_result`. The `file` payload maps
  * 1:1 to `FileBlock.FileData`; `type` distinguishes text from image
- * results (image rendering is a future tool wrapper, not in scope
+ * results (image rendering is a future tool block, not in scope
  * here).
  */
 export interface ReadStructuredResult {

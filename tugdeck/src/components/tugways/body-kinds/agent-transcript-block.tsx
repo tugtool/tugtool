@@ -10,7 +10,7 @@
  *  - The body iterates the subagent's `entries[]`. A `text` entry
  *    renders as prose; a `tool_use` entry routes back through the
  *    *same* dispatch (`dispatchToolCallState`) at `depth + 1`, so a
- *    nested tool call gets its real per-tool wrapper — and a nested
+ *    nested tool call gets its real per-tool block — and a nested
  *    `Agent` call resolves to `TaskToolBlock` → `AgentTranscriptBlock`
  *    again, one level deeper.
  *  - Recursion is bounded by `maxDepth` (default {@link AGENT_MAX_DEPTH}
@@ -312,7 +312,7 @@ interface AgentEntryViewProps {
 /**
  * Render one transcript entry. A `text` entry renders as pre-wrapped
  * prose; a `tool_use` entry routes back through the same dispatch at
- * `depth + 1` so it gets its real per-tool wrapper ([D17]) — and the
+ * `depth + 1` so it gets its real per-tool block ([D17]) — and the
  * subagent-nesting map rides along so a nested `Agent` resolves its
  * own children ([#step-17-5]).
  */

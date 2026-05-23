@@ -189,7 +189,7 @@ export interface TerminalBlockProps {
 
   /**
    * Optional label rendered at the left of the standalone header. The
-   * Bash tool wrapper (`BashToolBlock`) passes the command here for
+   * Bash tool block (`BashToolBlock`) passes the command here for
    * standalone gallery use; embedded callers don't need to set this
    * — the chrome owns identity in that mode. Strings are wrapped in
    * a `<span>` so the consumer doesn't have to pre-wrap; arbitrary

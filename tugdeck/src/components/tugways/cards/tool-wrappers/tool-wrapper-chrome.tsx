@@ -1,9 +1,9 @@
 /**
  * `ToolWrapperChrome` — shared header/footer frame around Layer-2
- * tool wrappers.
+ * tool blocks.
  *
  * Per [D05]'s two-layer hybrid architecture and [Spec S03]'s
- * tool-wrapper contract, every per-tool wrapper composes:
+ * tool-block contract, every per-tool block composes:
  *
  *   1. A chrome frame (this component) — header (icon + tool name +
  *      args summary), optional footer (badges), optional inline
@@ -14,7 +14,7 @@
  *
  * The chrome's job is to give every tool a consistent frame so the
  * user can scan the transcript and spot tool calls at a glance.
- * Per-tool wrappers handle the body composition and the
+ * Per-tool blocks handle the body composition and the
  * tool-specific bits (e.g., the shell-syntax-highlighted command on
  * `BashToolBlock`).
  *

@@ -451,7 +451,7 @@ export function registerGalleryCards(): void {
   // ===========================================================================
   // Block Renderers
   //
-  // Tide assistant-rendering surfaces: the body kinds, tool wrappers,
+  // Tide assistant-rendering surfaces: the body kinds, tool blocks,
   // and chrome that render a transcript's tool calls and reasoning.
   // ===========================================================================
 
@@ -503,7 +503,7 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.blockRenderers,
   });
 
-  // File tool wrappers — ReadToolBlock + EditToolBlock side by side.
+  // File tool blocks — ReadToolBlock + EditToolBlock side by side.
   registerCard({
     componentId: "gallery-tool-block-file",
     contentFactory: (_cardId) => <GalleryToolBlockFile />,

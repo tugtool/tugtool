@@ -92,7 +92,7 @@
  *    `tuglaws/component-authoring.md`.
  *
  * Decisions:
- *  - [D05] two-layer split: body kind (this file) vs. tool wrapper
+ *  - [D05] two-layer split: body kind (this file) vs. tool block
  *    (`read-tool-block.tsx`).
  *  - CM6 is the canonical engine for file-based text content
  *    (`tuglaws/component-authoring.md` §Text content).

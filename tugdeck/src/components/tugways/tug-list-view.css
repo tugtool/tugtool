@@ -82,7 +82,7 @@ body {
      this scroll container's content-box edge (CSS Position 3 §6.5.1),
      so any non-zero `padding-block` would offset every `top: 0` sticky
      header by that amount — manifesting as content visible above the
-     pinned bar. The transcript's pinned tool-wrapper header surfaced
+     pinned bar. The transcript's pinned tool-block header surfaced
      this. Block-axis breathing room is restored by the `::before` /
      `::after` pseudo-elements below, which scroll
      with the content and don't shift the sticky reference. */

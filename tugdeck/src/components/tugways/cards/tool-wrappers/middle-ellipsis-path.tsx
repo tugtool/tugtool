@@ -1,5 +1,5 @@
 /**
- * `MiddleEllipsisPath` — shared header path renderer for tool wrappers.
+ * `MiddleEllipsisPath` — shared header path renderer for tool blocks.
  *
  * A file path rendered with a *middle* ellipsis: the head segment
  * shrinks and ellipsizes from its trailing edge while a fixed-length
@@ -14,8 +14,8 @@
  * `clientWidth`.
  *
  * Per [#bk-conformance] item 8 this is THE path-truncation pattern for
- * tool-wrapper headers. `ReadToolBlock` and `EditToolBlock` both
- * compose it; a new wrapper with a `Tool · {path}` header should too,
+ * tool-block headers. `ReadToolBlock` and `EditToolBlock` both
+ * compose it; a new tool block with a `Tool · {path}` header should too,
  * rather than re-deriving the head/tail split.
  *
  * Laws:

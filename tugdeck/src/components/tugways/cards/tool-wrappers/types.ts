@@ -1,9 +1,9 @@
 /**
- * Shared types for the Tide assistant-rendering tool-wrapper layer.
+ * Shared types for the Tide assistant-rendering tool-block layer.
  *
  * These contracts are consumed by:
  *   - `tide-assistant-renderer-dispatch.ts` — the registry + dispatch logic
- *   - every per-tool wrapper in `./tool-wrappers/*.tsx`
+ *   - every per-tool block in `./tool-wrappers/*.tsx`
  *   - every body-kind primitive under `../body-kinds/*.tsx`
  *
  * Laws: [L19] component authoring guide — every wrapper that consumes
@@ -104,7 +104,7 @@ export type ChildToolCallsMap = ReadonlyMap<
 >;
 
 // ---------------------------------------------------------------------------
-// Tool-wrapper contract — every Layer-2 per-tool wrapper conforms to this.
+// Tool-block contract — every Layer-2 per-tool block conforms to this.
 // ---------------------------------------------------------------------------
 
 /**
@@ -115,7 +115,7 @@ export type ChildToolCallsMap = ReadonlyMap<
 export type ToolWrapperStatus = "streaming" | "ready" | "error";
 
 /**
- * Props passed to every per-tool wrapper. The wrapper composes a body kind
+ * Props passed to every per-tool block. The wrapper composes a body kind
  * via `data` selection (each wrapper picks its own body) and adds chrome:
  * header (icon + tool name + args summary), footer (badges), and any
  * tool-specific interactions.
@@ -181,7 +181,7 @@ export interface ToolWrapperProps<TInput = unknown, TStructured = unknown> {
 }
 
 /**
- * A tool-wrapper React component. Each entry in the dispatch registry maps
+ * A tool-block React component. Each entry in the dispatch registry maps
  * a lowercased tool name to one of these. Wrappers are React components,
  * not classes — `React.ComponentType` lets the dispatch hand the same
  * reference back to consumers that mount with JSX.

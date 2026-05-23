@@ -157,6 +157,17 @@ export interface JsonlEntry {
    */
   isCompactSummary?: boolean;
   /**
+   * The active permission mode at submit time (`"acceptEdits"`,
+   * `"default"`, etc.). Claude Code stamps this on every *real* user
+   * submission as it leaves the CLI's input layer. Crucially, it is
+   * NOT stamped on the SDK's auto-injected `"[Request interrupted by
+   * user …]"` marker (the marker comes out of the SDK's own internal
+   * flow, not the user-input path), so the field's absence is a
+   * structural disambiguator between real follow-on user submissions
+   * and the SDK marker. See {@link isInterruptMarkerEntry}.
+   */
+  permissionMode?: string;
+  /**
    * Structured tool result, sibling to `message.content`. Claude Code
    * persists this as the camelCase `toolUseResult` field on `user`
    * entries that carry a `tool_result` block (the wire-side analog is
@@ -517,21 +528,73 @@ export function translateJsonlEntry(
 }
 
 /**
- * Sentinel string claude writes as a synthetic `user` JSONL entry when
- * the prior turn was interrupted. Surveyed in `roadmap/archive/
- * tugtalk-protocol.txt` §2b: "control_request interrupt sends on
- * stdin, CLI acknowledges, injects '[Request interrupted by user]',
- * emits a proper `result` event." Also lands in JSONL after a Cmd-Q
- * mid-stream when claude is resumed and detects an unfinished turn.
+ * SDK auto-injected "interrupt-marker" sentinel.
  *
- * The translator treats this string as a SENTINEL: its presence
- * triggers a flush of any pending orphan submission, but the marker
- * itself is NOT emitted as a user-visible frame on the wire. Without
- * this special-case, the marker text concatenates onto the prior or
- * following user submission's text on replay (the 2026-05-06
- * "hello[Request interrupted by user]what time is it?" symptom).
+ * When a turn is interrupted (Stop button, Cmd-Q resume, or — the
+ * symptom this guard addresses — the user denying a pending
+ * `control_request_forward`), the SDK writes a synthetic `user` JSONL
+ * entry whose `content[0].text` carries one of these phrases:
+ *
+ *   - `"[Request interrupted by user]"` — plain interrupt.
+ *   - `"[Request interrupted by user for tool use]"` — interrupt fired
+ *     while a permission/question was pending; the SDK appends
+ *     `" for tool use"` so the AI can distinguish the two cases.
+ *
+ * Surveyed in `roadmap/archive/tugtalk-protocol.txt` §2b ("control_request
+ * interrupt sends on stdin, CLI acknowledges, injects
+ * `[Request interrupted by user]`, emits a proper `result` event") and
+ * verified across the SDK v2.1.x JSONL corpus (31 markers, both forms
+ * present; 2026-05-06 + 2026-05-23 incident reports).
+ *
+ * The marker text *is* the SDK's wire contract here — there is no
+ * separate `{ "interrupt_marker": true }` field. We disambiguate against
+ * a hypothetical real user submission that happens to type the same
+ * string by pairing the text prefix with a structural signal: every
+ * real user submission carries a `permissionMode` field (stamped by
+ * Claude Code's input layer); the SDK-injected marker does not. Both
+ * signals must agree for the entry to be treated as a sentinel — a
+ * defense-in-depth check that fails closed (the worst-case is a
+ * phantom turn re-appearing, not silent data loss).
  */
-const INTERRUPT_MARKER_TEXT = "[Request interrupted by user]";
+const INTERRUPT_MARKER_PREFIX = "[Request interrupted by user";
+
+/**
+ * Test whether a `user` JSONL entry is the SDK's interrupt-marker
+ * sentinel. Both signals must agree:
+ *
+ *   1. **Text prefix** — the entry's single text block starts with
+ *      `"[Request interrupted by user"` and ends with `"]"`, in one of
+ *      the documented forms (exact, or with a space-prefixed
+ *      `<suffix>` before the closing bracket).
+ *   2. **Structural** — the entry has no `permissionMode` field,
+ *      because the SDK does not stamp `permissionMode` on its own
+ *      auto-injected markers (only the user-input path does).
+ *
+ * Both-signals-must-agree means a hypothetical user typing the exact
+ * marker text as a chat message still rounds-trip correctly (the
+ * `permissionMode` field on their submission flunks the structural
+ * check, so the text matches but the entry is NOT swallowed). If the
+ * SDK ever drops `permissionMode` from real submissions, this matcher
+ * fails *closed* in the safe direction — we miss the marker and the
+ * phantom-turn symptom returns, but no real user message gets lost.
+ */
+function isInterruptMarkerEntry(entry: JsonlEntry, text: string): boolean {
+  if (!text.startsWith(INTERRUPT_MARKER_PREFIX)) return false;
+  if (!text.endsWith("]")) return false;
+  // Exact match for the base form is OK; the suffix form requires a
+  // space between the prefix and the content before `"]"`. This
+  // distinguishes the marker from a defensive coincidental match like
+  // `"[Request interrupted by userX]"`.
+  if (text !== `${INTERRUPT_MARKER_PREFIX}]`) {
+    const after = text.slice(INTERRUPT_MARKER_PREFIX.length, -1);
+    if (!after.startsWith(" ") || after.length <= 1) return false;
+  }
+  // Structural disambiguator: real user submissions carry
+  // `permissionMode`; the SDK-injected marker does not. See the
+  // module comment on `INTERRUPT_MARKER_PREFIX` for the wire-corpus
+  // evidence.
+  return entry.permissionMode === undefined;
+}
 
 /**
  * Flush any pending orphan user submission as a committed-interrupted
@@ -695,11 +758,14 @@ function handleUserEntry(
   // one user entry is the same submission and concatenates.
   const entryText = textParts.join("");
 
-  // Sentinel: claude's "[Request interrupted by user]" marker. Flush
-  // any pending orphan as its own committed-interrupted turn, then
-  // drop the marker (don't accumulate, don't emit). The marker has no
-  // attachments by design.
-  if (entryText === INTERRUPT_MARKER_TEXT && attachments.length === 0) {
+  // Sentinel: claude's "[Request interrupted by user ...]" marker in
+  // any of its known forms (see `isInterruptMarkerEntry`). Flush any
+  // pending orphan as its own committed-interrupted turn, then drop
+  // the marker (don't accumulate, don't emit). The marker has no
+  // attachments by design. The compound check requires both the SDK's
+  // documented marker text AND the absence of `permissionMode` —
+  // see the matcher's docstring for the wire-corpus evidence.
+  if (isInterruptMarkerEntry(entry, entryText) && attachments.length === 0) {
     out.push(...flushPendingOrphan(ctx));
     return out;
   }

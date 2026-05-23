@@ -34,7 +34,7 @@
  * # Drift detection (caution flags)
  *
  * Three drift signals are detected and surfaced as a `caution` —
- * inline at the offending event (the tool-wrapper chrome paints a
+ * inline at the offending event (the tool-block chrome paints a
  * `TideCautionBadge` from the threaded `caution` prop) and, in
  * aggregate, on the card chrome (`TideRouteIndicatorBadge` counts
  * `summarizeDrift`'s events):
@@ -217,7 +217,7 @@ export interface DispatchContext {
 
 /**
  * Module-static registry. Keys are lowercased canonical tool names.
- * Real per-tool wrappers register themselves via `registerToolWrapper`
+ * Real per-tool blocks register themselves via `registerToolWrapper`
  * as they ship (BashToolBlock at #step-6, ReadToolBlock at #step-8,
  * EditToolBlock at #step-11 — `multiedit` aliases to it — etc.). Until
  * they ship, the registry contains only the audit-confirmed routes —
@@ -269,7 +269,7 @@ const AUDIT_CONFIRMED_DEFAULT_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Register a tool wrapper. Called by tool-wrapper modules at import
+ * Register a tool block. Called by tool-block modules at import
  * time as they ship. The name is lowercased before insertion so the
  * registry key vocabulary is uniform.
  *
@@ -294,7 +294,7 @@ export function _resetToolWrapperRegistryForTests(): void {
 }
 
 /**
- * Resolve a tool wrapper by name. Case-insensitive. Aliases are
+ * Resolve a tool block by name. Case-insensitive. Aliases are
  * resolved before lookup. Returns `DefaultToolWrapper` for misses —
  * never returns `undefined`.
  */

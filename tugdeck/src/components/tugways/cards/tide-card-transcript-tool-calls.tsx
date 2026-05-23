@@ -3,7 +3,7 @@
  * `code` row body.
  *
  * Built in [#step-6-5] to close the wire-through gap that left every
- * Layer-2 tool wrapper invisible in the live UI: Steps 1-6 produced
+ * Layer-2 tool block invisible in the live UI: Steps 1-6 produced
  * the dispatch + the BashToolBlock wrapper, but
  * `tide-card-transcript.tsx` never iterated `turn.toolCalls`. This
  * component is the single iteration point for both the committed and

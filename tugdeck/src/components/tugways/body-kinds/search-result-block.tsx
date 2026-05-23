@@ -64,7 +64,7 @@
  *
  * Decisions:
  *  - [D05] two-layer split: this body kind owns result rendering; the
- *    tool wrapper (`GrepToolBlock`) owns chrome.
+ *    tool block (`GrepToolBlock`) owns chrome.
  *
  * @module components/tugways/body-kinds/search-result-block
  */
