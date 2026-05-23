@@ -292,8 +292,14 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
 
   it("snapshot with pending control_request_forward (can_use_tool / permission) → replay_complete lands in awaiting_approval with pendingApproval set", () => {
     // Mirror of the question case, but for a permission dialog
-    // (`is_question: false`). The forward populates pendingApproval
-    // and replay_complete still lands in awaiting_approval.
+    // (`is_question: false`). The snapshot ALSO carries a synthetic
+    // `tool_use` (because the original tool_use was emitted live
+    // pre-reload and never reached the new tugdeck subscriber).
+    // Both must survive replay_complete: the forward populates
+    // pendingApproval and lands the phase in awaiting_approval; the
+    // tool_use populates `toolCallMap` so the dialog has a tool
+    // block to attach to and the eventual tool_result has somewhere
+    // to land — not an orphan/duplicate rendering.
     const events: CodeSessionEvent[] = [
       { type: "replay_started", ipc_version: 2 },
       {
@@ -315,10 +321,20 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
         ipc_version: 2,
       },
       {
+        type: "tool_use",
+        msg_id: "msg_with_perm",
+        seq: 1,
+        tool_name: "Bash",
+        tool_use_id: "tu_bash_pending",
+        input: { command: "tokei" },
+        ipc_version: 2,
+      },
+      {
         type: "control_request_forward",
         request_id: "req-p-survive-reload",
         tool_name: "Bash",
         input: { command: "tokei" },
+        tool_use_id: "tu_bash_pending",
         is_question: false,
         ipc_version: 2,
       },
@@ -334,6 +350,94 @@ describe("replay_complete preserves in-flight cycle state for the live tail", ()
     expect(after.state.pendingApproval?.tool_name).toBe("Bash");
     expect(after.state.pendingQuestion).toBeNull();
     expect(after.state.phase).toBe("awaiting_approval");
+
+    // `prevPhase` MUST be `tool_work` (not `streaming`) so the
+    // post-Allow transition lands somewhere that accepts the live
+    // `tool_result` for the gated tool. `handleToolResult` drops
+    // anything outside `tool_work` / `replaying` — a `streaming`
+    // restore would orphan the result and dangle the spinner.
+    expect(after.state.prevPhase).toBe("tool_work");
+
+    // The synthetic tool_use lands in toolCallMap as a pending call.
+    // Without it, the post-Allow tool_result would orphan and the
+    // spinner-state tool block would dangle forever.
+    const toolCall = after.state.toolCallMap.get("tu_bash_pending");
+    expect(toolCall).toBeDefined();
+    expect(toolCall?.toolName).toBe("Bash");
+    expect(toolCall?.status).toBe("pending");
+  });
+
+  it("rehydrated permission dialog → Allow → tool_result lands in the synthesized toolCallMap entry (no dangling spinner)", () => {
+    // End-to-end coverage of the dangling-spinner repro:
+    //   1. snapshot delivers tool_use + control_request_forward
+    //   2. replay_complete lands in awaiting_approval with prevPhase: tool_work
+    //   3. user clicks Allow → respond_approval → phase restores to tool_work
+    //   4. live tool_result arrives → toolCallMap entry transitions
+    //      from `pending` to `done` (status mapped from is_error)
+    const events: CodeSessionEvent[] = [
+      { type: "replay_started", ipc_version: 2 },
+      {
+        type: "user_message_replay",
+        msg_id: "msg_e2e",
+        text: "count lines with tokei",
+        attachments: [],
+        ipc_version: 2,
+        turnKey: "test-replay-turn-key",
+      },
+      {
+        type: "assistant_text",
+        msg_id: "msg_e2e",
+        seq: 0,
+        rev: 1,
+        text: "",
+        is_partial: false,
+        status: "streaming",
+        ipc_version: 2,
+      },
+      {
+        type: "tool_use",
+        msg_id: "msg_e2e",
+        seq: 1,
+        tool_name: "Bash",
+        tool_use_id: "tu_e2e_bash",
+        input: { command: "tokei" },
+        ipc_version: 2,
+      },
+      {
+        type: "control_request_forward",
+        request_id: "req-e2e",
+        tool_name: "Bash",
+        input: { command: "tokei" },
+        tool_use_id: "tu_e2e_bash",
+        is_question: false,
+        ipc_version: 2,
+      },
+      { type: "replay_complete", count: 0, ipc_version: 2 },
+      // User clicks Allow.
+      {
+        type: "respond_approval",
+        request_id: "req-e2e",
+        decision: "allow",
+      },
+      // SDK ran the tool; the live `tool_result` arrives.
+      {
+        type: "tool_result",
+        tool_use_id: "tu_e2e_bash",
+        output: "246,742 lines of code",
+        is_error: false,
+        ipc_version: 2,
+      },
+    ];
+
+    const after = applyAll(fresh(), events);
+
+    // pendingApproval cleared.
+    expect(after.state.pendingApproval).toBeNull();
+    // toolCallMap entry transitioned from pending to done with output.
+    const toolCall = after.state.toolCallMap.get("tu_e2e_bash");
+    expect(toolCall).toBeDefined();
+    expect(toolCall?.status).toBe("done");
+    expect(toolCall?.result).toBe("246,742 lines of code");
   });
 
   it("replay with NO in-flight snapshot (only committed turns): replay_complete drops to idle, no scratch leaked", () => {

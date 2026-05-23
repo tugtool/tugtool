@@ -2977,35 +2977,64 @@ export class SessionManager {
       });
     }
 
-    // 3. Re-emit any pending `control_request_forward` for this turn.
-    //    Control requests are an out-of-band SDK channel — they never
-    //    land in JSONL. tugcode's `pendingControlRequests` map is the
-    //    only place they live between issue and response. When tugdeck
-    //    reloads while a permission / question is pending, the JSONL
-    //    pass replays committed turns and the inflight bracket re-
-    //    emits the assistant text, but without this step the dialog
-    //    that drove the pending state is gone with no way to recover
-    //    it — the SDK still expects a response, claude is blocked
-    //    waiting, but the UI has nothing to render against.
+    // 3. Re-emit any pending `can_use_tool` control_request as a
+    //    `tool_use` + `control_request_forward` pair for this turn.
     //
-    //    Walk the map and re-emit each `can_use_tool` entry as a fresh
-    //    `control_request_forward`. The request_id is preserved so a
-    //    response round-trip from the rehydrated dialog correlates
-    //    back to the same SDK-side control request — no new id, no
-    //    leaked entry. Only `can_use_tool` subtypes carry the
-    //    tool-name/input shape the forward needs; other subtypes
-    //    (which are not surfaced to tugdeck today) are skipped.
+    //    Control requests are an out-of-band SDK channel — they never
+    //    land in JSONL. The `tool_use` they gate WAS emitted on the
+    //    live wire when the assistant first transitioned to the tool
+    //    block, but tugcode does not buffer per-turn tool state for
+    //    the resume path (see comment above), and JSONL won't carry
+    //    the tool_use until the assistant message commits — which
+    //    can't happen while the SDK is blocked on the user's
+    //    decision. tugcode's `pendingControlRequests` map is the only
+    //    place this state lives between issue and response, and it
+    //    carries everything we need to synthesize both frames:
+    //    `tool_name` + `tool_use_id` + `input` reconstruct the tool
+    //    block; the `request_id` preserves the round-trip identity
+    //    so the response from the rehydrated dialog still correlates
+    //    back to the same SDK-side control request.
+    //
+    //    Order matches the live wire: `tool_use` first (so the
+    //    reducer's `toolCallMap` populates and the dialog renders
+    //    above an existing tool block), then `control_request_forward`
+    //    (which references the tool by `tool_use_id`).
+    //
+    //    Only `can_use_tool` subtypes carry the tool-shape we need;
+    //    other subtypes (set_model, set_permission_mode, interrupt,
+    //    stop_task) are not dialog-driving and skipped.
+    const inflightMsgId = turn.currentMessageId ?? "";
     for (const [requestId, cr] of this.pendingControlRequests) {
       const request = cr.request as Record<string, unknown> | undefined;
       const subtype = request?.subtype as string | undefined;
       if (subtype !== "can_use_tool" || !request) continue;
       const toolName = (request.tool_name as string) || "";
+      const toolUseId = (request.tool_use_id as string) || "";
+      const toolInput =
+        (request.input as Record<string, unknown>) || {};
       const isQuestion = toolName === "AskUserQuestion";
+      // Synthesize the `tool_use` only when we have both ids — the
+      // reducer keys its `toolCallMap` on `tool_use_id` and a missing
+      // one would leak an unreachable entry. AskUserQuestion is
+      // rendered by the live dialog only — the tool_use_id pair is
+      // still emitted for parity, but the dispatch treats it as
+      // dialog-bound and doesn't paint a separate block.
+      if (toolUseId !== "" && inflightMsgId !== "") {
+        writeLine({
+          type: "tool_use",
+          msg_id: inflightMsgId,
+          seq: this.nextSeq(),
+          tool_name: toolName,
+          tool_use_id: toolUseId,
+          input: toolInput,
+          ipc_version: 2,
+        });
+      }
       writeLine({
         type: "control_request_forward",
         request_id: requestId,
         tool_name: toolName,
-        input: (request.input as Record<string, unknown>) || {},
+        input: toolInput,
         decision_reason: request.decision_reason as string | undefined,
         permission_suggestions: request.permission_suggestions as
           | unknown[]

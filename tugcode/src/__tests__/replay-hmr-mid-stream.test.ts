@@ -37,6 +37,7 @@ import type {
   OutboundMessage,
   ReplayComplete,
   ReplayStarted,
+  ToolUse,
   TurnCancelled,
   TurnComplete,
   UserMessageReplay,
@@ -491,10 +492,21 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
 
     const { emitted } = await captureStdout(() => manager.runReplay());
 
-    // The control_request_forward must appear in the replay bracket,
-    // carrying the same request_id so the round-trip from the
-    // rehydrated dialog correlates back to the same claude-side
-    // control request.
+    // The snapshot re-emits both a synthetic `tool_use` (so the
+    // reducer's `toolCallMap` has the pending tool block to attach
+    // the dialog to and the eventual tool_result to) and the
+    // `control_request_forward` carrying the same request_id so the
+    // round-trip from the rehydrated dialog correlates back to the
+    // same claude-side control request.
+    const toolUse = emitted.find(
+      (m): m is ToolUse =>
+        m.type === "tool_use" &&
+        (m as ToolUse).tool_use_id === "tu_pending_1",
+    );
+    expect(toolUse).toBeDefined();
+    expect(toolUse?.tool_name).toBe("AskUserQuestion");
+    expect(toolUse?.msg_id).toBe("msg_with_pending_question");
+
     const forward = emitted.find(
       (m): m is ControlRequestForward => m.type === "control_request_forward",
     );
@@ -504,13 +516,19 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     expect(forward?.is_question).toBe(true);
     expect(forward?.tool_use_id).toBe("tu_pending_1");
 
-    // It lands AFTER the inflight assistant_text snapshot (so the
-    // reducer has the assistant text scratch first), and BEFORE
-    // replay_complete (so it's inside the bracket).
+    // Order: assistant_text snapshot first (so the reducer has the
+    // text scratch), then `tool_use` (so `toolCallMap` populates),
+    // then `control_request_forward` (which references the tool by
+    // id), then `replay_complete`.
     const idxAt = emitted.findIndex(
       (m) =>
         m.type === "assistant_text" &&
         (m as AssistantText).msg_id === "msg_with_pending_question",
+    );
+    const idxToolUse = emitted.findIndex(
+      (m) =>
+        m.type === "tool_use" &&
+        (m as ToolUse).tool_use_id === "tu_pending_1",
     );
     const idxForward = emitted.findIndex(
       (m) => m.type === "control_request_forward",
@@ -519,7 +537,8 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
       (m) => m.type === "replay_complete",
     );
     expect(idxAt).toBeGreaterThanOrEqual(0);
-    expect(idxForward).toBeGreaterThan(idxAt);
+    expect(idxToolUse).toBeGreaterThan(idxAt);
+    expect(idxForward).toBeGreaterThan(idxToolUse);
     expect(idxComplete).toBeGreaterThan(idxForward);
   });
 

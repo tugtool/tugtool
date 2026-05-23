@@ -2603,11 +2603,23 @@ function handleReplayComplete(
     const hasPendingDialog =
       state.pendingApproval !== null || state.pendingQuestion !== null;
     if (hasPendingDialog) {
+      // `prevPhase` is what `handleRespondApproval` / `handleRespondQuestion`
+      // restore to once the user resolves the dialog. The live flow's
+      // forward landed at `tool_work` (the `tool_use` for the gated
+      // tool flipped phase there before the SDK control_request
+      // arrived), so the post-resolve phase MUST be `tool_work` —
+      // it is the only phase that accepts the subsequent `tool_result`
+      // (`handleToolResult` drops the event outside `tool_work` /
+      // `replaying`). The snapshot path synthesised a `tool_use` for
+      // the same toolUseId during the bracket, so `toolCallMap` has
+      // the pending entry waiting for the result. Restoring to
+      // `streaming` here would drop the live `tool_result` and the
+      // tool block would dangle in its pending state forever.
       return {
         state: {
           ...state,
           phase: "awaiting_approval",
-          prevPhase: "streaming",
+          prevPhase: "tool_work",
           pendingApproval: state.pendingApproval,
           pendingQuestion: state.pendingQuestion,
           awaitingApprovalSince: state.awaitingApprovalSince ?? Date.now(),
