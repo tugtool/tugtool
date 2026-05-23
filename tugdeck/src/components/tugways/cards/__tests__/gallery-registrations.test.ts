@@ -34,7 +34,7 @@ import { registerGalleryCards } from "../gallery-registrations";
 const BATCH_1_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
   { componentId: "gallery-tide-thinking", title: "TideThinkingBlock" },
   { componentId: "gallery-json-tree-block", title: "JsonTreeBlock" },
-  { componentId: "gallery-tool-block-file", title: "File Tool Wrappers" },
+  { componentId: "gallery-tool-block-file", title: "File Tool Blocks" },
   { componentId: "gallery-tool-block-default", title: "DefaultToolWrapper" },
 ];
 

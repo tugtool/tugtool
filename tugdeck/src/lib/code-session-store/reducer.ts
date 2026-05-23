@@ -1175,7 +1175,7 @@ function handleToolUseStructured(
   // Write the updated toolCallMap (now carrying `structuredResult`
   // on the matching entry) to the per-turn `.tools` path for both
   // live and replay ([L26] — per-turn paths are the sole render
-  // surface for committed cells, and the structured-tool wrappers
+  // surface for committed cells, and the structured-tool blocks
   // read `structuredResult` to render their bodies; gating this
   // write on `state.phase` strips the structured payload from every
   // cold-boot-rehydrated tool call). The `pendingUserMessage` guard

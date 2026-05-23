@@ -117,7 +117,7 @@ export interface FormControlSnapshot {
  * Motivating use case: variable-height virtualized lists (e.g.
  * `TugListView` driving the tide-card transcript) cannot rely on raw
  * `{x, y}` alone because cell heights drift between save and restore
- * — markdown content arrives, tool wrappers settle, file viewers
+ * — markdown content arrives, tool blocks settle, file viewers
  * measure their substrates — and the saved pixel `y` no longer maps
  * to the saved *content* by the time the bag is replayed. Such
  * regions write a `(anchorIndex, anchorOffset)` payload into `meta`

@@ -212,7 +212,7 @@ export interface DispatchContext {
 }
 
 // ---------------------------------------------------------------------------
-// Tool-wrapper registry and aliases.
+// Tool-block registry and aliases.
 // ---------------------------------------------------------------------------
 
 /**

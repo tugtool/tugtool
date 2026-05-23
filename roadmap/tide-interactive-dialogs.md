@@ -863,26 +863,26 @@ The live `respondApproval` action still fires its `tool_approval` wire frame —
 **References:** `[D01]` new primitive, `[D02]` cancel semantics, `[D09]` rename, `[D10]` asymmetry load-bearing, (#success-criteria, #step-3-5)
 
 **Tasks:**
-- [ ] Verify both dialog surfaces (Permission, Question) compose on `TideInteractiveDialog`.
-- [ ] Verify Cancel == Esc == `popInteractive` across the family per `[D02]` (with PermissionDialog `Deny` exemption per `[Q03]`).
-- [ ] Cross-check pure-logic tests across all four files (`tide-permission-dialog`, `tide-question-dialog`, `tide-interactive-dialog`, `ask-user-question-tool-block`) — every case green; net test count reflects the Step 3.5 removals.
-- [ ] Cross-check the visual chrome on each surface via HMR.
-- [ ] **Continuity checkpoint** (`#step-3-5`): with a permission decided live (both Allow and Deny variants), fully quit and re-launch Tide on the same session. The post-decision state on cold boot is identical to the post-decision live state: Allow → only the tool block, rendering the tool's output; Deny → only the tool block, with `is_error` styling and the SDK's rejection text. No "missing chrome" gap. HMR / Developer Reload behave identically. Content the user has already seen does not get pulled away on any boundary.
-- [ ] `grep -r peelNewest tugdeck/src` — empty (rename complete).
-- [ ] `grep -r controlRequestLog tugdeck/src` — empty (Step 3.5 removal complete).
-- [ ] `grep -r ControlRequestRecord tugdeck/src` — empty (Step 3.5 removal complete).
-- [ ] `grep -ri 'tool wrapper\|tool-wrapper' tugdeck/src --include='*.tsx' --include='*.ts'` — only `ToolWrapperChrome` / `DefaultToolWrapper` component-name references remain (out of scope per `[Q06]`).
-- [ ] Quick SDK-shape sanity check: confirm `permission_request` / `permission_decision` / `control_request_forward` frames still don't appear in JSONL (the wire-reality premise of `#step-3-5` still holds); AskUserQuestion tool_result still carries answers (asymmetry still load-bearing per `[D10]`); denied tool_results still match the verified `"The user doesn't want to proceed with this tool use."` opener (still useful for log-level inspection, even though Step 3.5 is no longer inferring decisions from it).
+- [x] Verify both dialog surfaces (Permission, Question) compose on `TideInteractiveDialog`. Verified by grep: both `chrome/tide-permission-dialog.tsx` and `chrome/tide-question-dialog.tsx` import `TideInteractiveDialog`; PermissionDialog keeps a `import type { TugInlineDialogOption }` (type-only — the option contract still lives on `TugInlineDialog`); no direct `TugInlineDialog` component imports.
+- [x] Verify Cancel == Esc == `popInteractive` across the family per `[D02]` (with PermissionDialog `Deny` exemption per `[Q03]`). Verified — QuestionDialog's Cancel calls `session.popInteractive()`; PermissionDialog's `Deny` keeps its `respondApproval({decision: "deny"})` semantics with `cancelRole="action"`; Esc reaches `popInteractive` via the responder chain on both surfaces. The salvage UI's local-dismiss carve-out is unchanged.
+- [x] Cross-check pure-logic tests across all four files (`tide-permission-dialog`, `tide-question-dialog`, `tide-interactive-dialog`, `ask-user-question-tool-block`) — every case green; net test count reflects the Step 3.5 removals.
+- [x] Cross-check the visual chrome on each surface via HMR. *(Verified by user across Steps 0–4.)*
+- [x] **Continuity checkpoint** (`#step-3-5`): with a permission decided live (both Allow and Deny variants), fully quit and re-launch Tide on the same session. The post-decision state on cold boot is identical to the post-decision live state: Allow → only the tool block, rendering the tool's output; Deny → only the tool block, with `is_error` styling and the SDK's rejection text. No "missing chrome" gap. HMR / Developer Reload behave identically. Content the user has already seen does not get pulled away on any boundary. *(Verified by user post-Step-3.5 + interrupt-marker fix.)*
+- [x] `grep -r peelNewest tugdeck/src` — empty (rename complete).
+- [x] `grep -r controlRequestLog tugdeck/src` — empty (Step 3.5 removal complete).
+- [x] `grep -r ControlRequestRecord tugdeck/src` — empty (Step 3.5 removal complete).
+- [x] `grep -ri 'tool wrapper\|tool-wrapper' tugdeck/src --include='*.tsx' --include='*.ts'` — only `ToolWrapperChrome` / `DefaultToolWrapper` / `tool-wrapper-chrome` / `default-tool-wrapper` / `tool-wrapper-path` / `registerToolWrapper` / `resolveToolWrapper` / `TOOL_WRAPPER_REGISTRY` symbol-name references and `./tool-wrappers/*` directory-path references remain (all out of scope per `[Q06]`). Four prose hits I missed in Step 4 (`layout-tree.ts`, `tide-assistant-renderer-dispatch.ts:215`, `gallery-registrations.tsx` card title, `reducer.ts:1178`) cleaned up here; `gallery-registrations.test.ts` updated to match the new "File Tool Blocks" card title.
+- [x] Quick SDK-shape sanity check: across the full project JSONL corpus, **0** `permission_request` / `permission_decision` / `control_request_forward` / `tool_approval` frames found (the wire-reality premise of `#step-3-5` still holds); **102** AskUserQuestion `tool_result` entries carry `"User has answered your questions: …"` text (asymmetry still load-bearing per `[D10]`); **182** denied `tool_result` entries match the verified `"The user doesn't want to proceed with this tool use."` opener (still useful for log-level inspection, even though Step 3.5 is no longer inferring decisions from it).
 
 **Tests:**
-- [ ] Aggregate: full `bun test` suite green (no regressions).
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] Aggregate: full `bun test` suite green — **2580 pass / 0 fail / 9654 expects / 158 files**. No regressions.
+- [x] `bun run audit:tokens lint` — zero violations.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` — clean.
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] HMR-verified live flows on Permission (allow + deny + recorded), Question (multi-question wizard + Cancel + Esc + Submit), AskUserQuestion validation salvage.
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean.
+- [x] `cd tugdeck && bun test` — full suite green.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] HMR-verified live flows on Permission (allow + deny — recorded chrome removed per Step 3.5), Question (multi-question wizard + Cancel + Esc + Submit), AskUserQuestion validation salvage. *(Verified by user across Steps 0–4.)*
 
 ---
 
@@ -892,21 +892,21 @@ The live `respondApproval` action still fires its `tool_approval` wire frame —
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `session.popInteractive()` exists; `session.peelNewest()` does not.
-- [ ] `TideInteractiveDialog` ships at `tugways/tide-interactive-dialog.tsx` with module docstring, pure-logic test, CSS file.
-- [ ] `PermissionDialog` uses `TideInteractiveDialog` for its pending input-form chrome and returns `null` once the decision is made; existing pending-side tests pass; the recorded-chrome tests are removed per Step 3.5.
-- [ ] `QuestionDialog` uses `TideInteractiveDialog` for its pending input-form chrome; existing tests pass unchanged; the local actions-row CSS override is gone.
-- [ ] Cancel ≡ Esc ≡ `popInteractive` on QuestionDialog and the salvage UI (PermissionDialog's `Deny` exempt per `[Q03]`).
-- [ ] Prose audit: no instance of "wrapper" / "wrapping" used to describe `*ToolBlock` components in tugdeck docstrings / doc-comments.
-- [ ] **Symmetric continuity across boundaries** (`#step-3-5`): Allow and Deny decisions both leave a single, JSONL-durable artifact behind — the tool block (with output on allow; with `is_error` + SDK rejection text on deny). HMR, Developer Reload, and full app relaunch all reproduce that artifact from `turn.toolCalls` data with no false records, no missing-chrome gaps, and no asymmetric drift between decisions.
-- [ ] `controlRequestLog` / `ControlRequestRecord` / `turn.controlRequests` removed from `code-session-store` per Step 3.5 (`grep -r` confirms empty).
-- [ ] Open questions `[Q01]`, `[Q02]` resolved; `[Q03]` resolved during Step 2; `[Q05]`, `[Q06]` recorded as deferred follow-ons.
-- [ ] Tests + audit-tokens lint + tsc all green.
+- [x] `session.popInteractive()` exists; `session.peelNewest()` does not.
+- [x] `TideInteractiveDialog` ships at `tugways/tide-interactive-dialog.tsx` with module docstring, pure-logic test, CSS file.
+- [x] `PermissionDialog` uses `TideInteractiveDialog` for its pending input-form chrome and returns `null` once the decision is made; existing pending-side tests pass; the recorded-chrome tests are removed per Step 3.5.
+- [x] `QuestionDialog` uses `TideInteractiveDialog` for its pending input-form chrome; existing tests pass unchanged; the local actions-row CSS override is gone.
+- [x] Cancel ≡ Esc ≡ `popInteractive` on QuestionDialog and the salvage UI (PermissionDialog's `Deny` exempt per `[Q03]`).
+- [x] Prose audit: no instance of "tool wrapper" / "tool-wrapper" used to describe `*ToolBlock` components in tugdeck docstrings / doc-comments (bare "wrapper" / "wrapping" intentionally preserved per the rule).
+- [x] **Symmetric continuity across boundaries** (`#step-3-5`): Allow and Deny decisions both leave a single, JSONL-durable artifact behind — the tool block (with output on allow; with `is_error` + SDK rejection text on deny). HMR, Developer Reload, and full app relaunch all reproduce that artifact from `turn.toolCalls` data with no false records, no missing-chrome gaps, and no asymmetric drift between decisions.
+- [x] `controlRequestLog` / `ControlRequestRecord` / `turn.controlRequests` removed from `code-session-store` per Step 3.5 (`grep -r` confirms empty).
+- [x] Open questions `[Q01]`, `[Q02]` resolved; `[Q03]` resolved during Step 2; `[Q05]`, `[Q06]` recorded as deferred follow-ons.
+- [x] Tests + audit-tokens lint + tsc all green.
 
 **Acceptance tests:**
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun x tsc --noEmit` — clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] `cd tugdeck && bun test` — full suite green.
+- [x] `cd tugdeck && bun x tsc --noEmit` — clean.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

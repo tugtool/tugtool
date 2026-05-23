@@ -507,7 +507,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-tool-block-file",
     contentFactory: (_cardId) => <GalleryToolBlockFile />,
-    defaultMeta: { title: "File Tool Wrappers", icon: "Files", closable: true },
+    defaultMeta: { title: "File Tool Blocks", icon: "Files", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
