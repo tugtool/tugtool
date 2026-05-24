@@ -90,8 +90,8 @@ body {
   /* Element — Text */
   --tug7-element-global-text-normal-default-rest: --tug-color(indigo, i: 4, t: 8);
   --tug7-element-global-text-normal-inverse-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
-  --tug7-element-global-text-normal-link-hover: --tug-color(blue, i: 20, t: 19);
-  --tug7-element-global-text-normal-link-rest: --tug-color(blue, t: 19);
+  --tug7-element-global-text-normal-link-hover: --tug-color(blue, t: 22);
+  --tug7-element-global-text-normal-link-rest: --tug-color(blue, t: 35);
   --tug7-element-global-text-normal-muted-rest: --tug-color(indigo, i: 6, t: 29);
   --tug7-element-global-text-normal-onAccent-rest: --tug-color(sapphire-cobalt, i: 4, t: 94);
   --tug7-element-global-text-normal-onCaution-rest: --tug-color(indigo, i: 5, t: 7);

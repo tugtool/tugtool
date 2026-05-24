@@ -207,45 +207,10 @@ export const TOOL_VISIBILITY_POLICY: ReadonlyArray<ToolVisibilityEntry> = [
   // bespoke wrapper planned (every entry must cite a follow-on step)
   // ==============================
   {
-    name: "croncreate",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `CronToolBlock` — see [#step-24-3-4]. User-initiated scheduling; the schedule expression is the load-bearing payload.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "crondelete",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `CronToolBlock` (alias) — see [#step-24-3-4].",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "cronlist",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `CronToolBlock` (alias) — see [#step-24-3-4].",
-    reviewedAt: "2026-05-24",
-  },
-  {
     name: "notebookedit",
     visibility: "default-intent",
     rationale:
       "Awaiting `NotebookEditToolBlock` — see [#step-26]. Notebook cell edit; composes `DiffBlock` per Table T02. Classified default-intent so per-call events render through `DefaultToolBlock` without a drift caution until the bespoke wrapper ships.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "remotetrigger",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `RemoteTriggerToolBlock` — see [#step-24-3-4]. Semantics to confirm during build (no captured JSONL exercises this tool yet).",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "shareonboardingguide",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `ShareOnboardingGuideToolBlock` — see [#step-24-3-4]. The share URL in the result is the load-bearing payload.",
     reviewedAt: "2026-05-24",
   },
   {

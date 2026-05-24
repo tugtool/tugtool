@@ -98,6 +98,9 @@ import { SkillToolBlock } from "./tool-blocks/skill-tool-block";
 import { MonitorToolBlock } from "./tool-blocks/monitor-tool-block";
 import { WorktreeToolBlock } from "./tool-blocks/worktree-tool-block";
 import { TaskMgmtToolBlock } from "./tool-blocks/task-mgmt-tool-block";
+import { CronToolBlock } from "./tool-blocks/cron-tool-block";
+import { ShareOnboardingGuideToolBlock } from "./tool-blocks/share-onboarding-guide-tool-block";
+import { RemoteTriggerToolBlock } from "./tool-blocks/remote-trigger-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
@@ -253,6 +256,11 @@ const TOOL_BLOCK_REGISTRY = new Map<string, ToolBlockFactory>();
  *    — there is no Anthropic wire tool named `TaskMgmt`; the
  *    canonical name exists solely as the registry key for the
  *    shared wrapper.
+ *  - `croncreate` / `crondelete` / `cronlist` → `cron`: a single
+ *    `CronToolBlock` handles all three cron-family verbs and
+ *    branches internally on `toolName` ([#step-24-3-4]). Canonical
+ *    `cron` is wrapper-internal; there is no Anthropic wire tool
+ *    named bare `Cron`.
  */
 const TOOL_ALIASES: ReadonlyMap<string, string> = new Map([
   ["task", "agent"],
@@ -263,6 +271,9 @@ const TOOL_ALIASES: ReadonlyMap<string, string> = new Map([
   ["taskget", "taskmgmt"],
   ["taskoutput", "taskmgmt"],
   ["taskstop", "taskmgmt"],
+  ["croncreate", "cron"],
+  ["crondelete", "cron"],
+  ["cronlist", "cron"],
 ]);
 
 /**
@@ -981,6 +992,16 @@ const BESPOKE_REGISTRATIONS: ReadonlyArray<
   // wrapper-internal — there is no Anthropic wire tool named
   // `TaskMgmt`. ([#step-24-3-3])
   ["taskmgmt", TaskMgmtToolBlock],
+  // Canonical `cron`; `croncreate` / `crondelete` / `cronlist`
+  // resolve here via `TOOL_ALIASES`. The wrapper branches on the
+  // original `toolName` to pick the `create` / `delete` / `list`
+  // verb. The canonical name is wrapper-internal. ([#step-24-3-4])
+  ["cron", CronToolBlock],
+  // Singletons from the management trio ([#step-24-3-4]) — one
+  // wire tool, one wrapper, no aliases. Registered by their
+  // lowercased wire names.
+  ["shareonboardingguide", ShareOnboardingGuideToolBlock],
+  ["remotetrigger", RemoteTriggerToolBlock],
 ];
 
 /**

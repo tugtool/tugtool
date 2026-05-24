@@ -86,6 +86,9 @@ import { GallerySkillToolBlock } from "./gallery-skill-tool-block";
 import { GalleryMonitorToolBlock } from "./gallery-monitor-tool-block";
 import { GalleryWorktreeToolBlock } from "./gallery-worktree-tool-block";
 import { GalleryTaskMgmtToolBlock } from "./gallery-task-mgmt-tool-block";
+import { GalleryCronToolBlock } from "./gallery-cron-tool-block";
+import { GalleryShareOnboardingGuideToolBlock } from "./gallery-share-onboarding-guide-tool-block";
+import { GalleryRemoteTriggerToolBlock } from "./gallery-remote-trigger-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GalleryTideThinking } from "./gallery-tide-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
@@ -543,6 +546,35 @@ export function registerGalleryCards(): void {
     componentId: "gallery-task-mgmt-tool-block",
     contentFactory: (_cardId) => <GalleryTaskMgmtToolBlock />,
     defaultMeta: { title: "TaskMgmtToolBlock", icon: "ListTodo", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  // Management trio ([#step-24-3-4]) — CronToolBlock (3 aliases) +
+  // ShareOnboardingGuideToolBlock + RemoteTriggerToolBlock.
+  registerCard({
+    componentId: "gallery-cron-tool-block",
+    contentFactory: (_cardId) => <GalleryCronToolBlock />,
+    defaultMeta: { title: "CronToolBlock", icon: "Clock", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  registerCard({
+    componentId: "gallery-share-onboarding-guide-tool-block",
+    contentFactory: (_cardId) => <GalleryShareOnboardingGuideToolBlock />,
+    defaultMeta: { title: "ShareOnboardingGuideToolBlock", icon: "BookOpen", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  registerCard({
+    componentId: "gallery-remote-trigger-tool-block",
+    contentFactory: (_cardId) => <GalleryRemoteTriggerToolBlock />,
+    defaultMeta: { title: "RemoteTriggerToolBlock", icon: "Zap", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

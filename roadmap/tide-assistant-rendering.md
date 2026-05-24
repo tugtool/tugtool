@@ -902,6 +902,9 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | MonitorToolBlock ([#step-24-3-2]) | Monitor | — (inline `<pre>` tail + native `<details>` expand) | `Monitor · <command|path|pid>` header + `until` row + tailed output |
 | WorktreeToolBlock ([#step-24-3-2]) | EnterWorktree, ExitWorktree | — (single labeled row) | `Worktree · <verb> <branch|path>` header + optional `path:` row |
 | TaskMgmtToolBlock ([#step-24-3-3]) | TaskList, TaskGet, TaskOutput, TaskStop | — (per-verb body composing `body-bits/`: `ToolBlockBody` + `ToolBlockFieldRow` + `ToolBlockPre` + `ToolBlockDisclosure`) | `Background Task · <verb>` header + optional `#<taskId>` args + per-verb body |
+| CronToolBlock ([#step-24-3-4]) | CronCreate, CronDelete, CronList | — (per-verb body composing `body-bits/`) | `Cron · <verb>` header + per-verb args (`<cron>` / `#<id>`) + per-verb body |
+| ShareOnboardingGuideToolBlock ([#step-24-3-4]) | ShareOnboardingGuide | — (mode + short_code field rows + clickable URL `<a>`) | `Share Onboarding Guide · <mode>` header + optional `#<short_code>` args |
+| RemoteTriggerToolBlock ([#step-24-3-4]) | RemoteTrigger | — (action + body JSON + result via `body-bits/`) | `Remote Trigger · <action>` header + optional `#<trigger_id>` args |
 | DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
 
 **Tool visibility policy — `TOOL_VISIBILITY_POLICY`** (per [D101]; source of truth at `tugdeck/src/components/tugways/cards/tide-tool-visibility-policy.ts`). Two explicit buckets — `hidden` (paint zero ink, short-circuit to `NullToolBlock`) and `default-intent` (route through `DefaultToolBlock` with no caution; bespoke wrapper planned). Bespoke is implicit (registry presence). Volumes from [session audit §4.2](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline. The two tables below mirror the policy file's structure; editing the policy is the way to move a tool between them — never edit a runtime set in `tide-assistant-renderer-dispatch.ts` directly.
@@ -922,11 +925,6 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 
 | Tool name | Audit volume | Awaiting (follow-on step) |
 |-----------|-------------:|---------------------------|
-| CronCreate | — | `CronToolBlock` — [#step-24-3-4](#step-24-3-4) |
-| CronDelete | — | `CronToolBlock` (alias) — [#step-24-3-4](#step-24-3-4) |
-| CronList | — | `CronToolBlock` (alias) — [#step-24-3-4](#step-24-3-4) |
-| ShareOnboardingGuide | — | `ShareOnboardingGuideToolBlock` — [#step-24-3-4](#step-24-3-4) |
-| RemoteTrigger | — | `RemoteTriggerToolBlock` — [#step-24-3-4](#step-24-3-4) (semantics to confirm at build time) |
 | Write | high | `WriteToolBlock` — [#step-26](#step-26) |
 | NotebookEdit | low | `NotebookEditToolBlock` — [#step-26](#step-26) |
 | WebFetch | low | `WebFetchToolBlock` — [#step-25](#step-25) |
@@ -6004,7 +6002,7 @@ Notes:
 **Checkpoint.**
 - [x] `cd tugdeck && bun x tsc --noEmit && bun test`.
 - [x] `cd tugdeck && bun run audit:tokens lint`.
-- [ ] Manual (HMR): trigger each of the four tools from a session; confirm the `Background Task` prefix makes the disambiguation legible.
+- [x] Manual (HMR): trigger each of the four tools from a session; confirm the `Background Task` prefix makes the disambiguation legible.
 
 ---
 
@@ -6028,19 +6026,19 @@ Notes:
 - Remove five corresponding `default-intent` entries from `TOOL_VISIBILITY_POLICY` (`croncreate`, `crondelete`, `cronlist`, `shareonboardingguide`, `remotetrigger`).
 
 **Tasks.**
-- [ ] Build `CronToolBlock` first (three names; most code reuse).
-- [ ] Build `ShareOnboardingGuideToolBlock`; the share link rendering is the primary affordance.
-- [ ] **Spike `RemoteTrigger` semantics** before building — capture a real session that exercises it. If the spike reveals a fundamentally different shape than expected, escalate to a sub-step decision under this umbrella.
-- [ ] Three gallery cards.
-- [ ] Table T02 update.
+- [x] Build `CronToolBlock` first (three names; most code reuse). Canonical `cron` registry name; `croncreate` / `crondelete` / `cronlist` resolve via `TOOL_ALIASES`. Verb branch composes `body-bits/` primitives (conformance item 10); no paired `.css`. JSDoc landmine note: a cron expression containing `*/N` inside `/** */` will terminate the comment block — examples in the docstring use the `0 9 * * *` form for that reason.
+- [x] Build `ShareOnboardingGuideToolBlock`; the share link rendering is the primary affordance. `extractShareLink` pulls the first http(s) URL from the result text via regex; the body surfaces it as a clickable `<a target="_blank">` with a lucide `ExternalLink` glyph (TugLink-like — no new primitive introduced since none exists yet). Falls back to a `ToolBlockPre` of the raw result when no URL is recognisable.
+- [x] **Spike `RemoteTrigger` semantics** before building — capture a real session that exercises it. **Resolved at build time without a JSONL capture:** the deferred-tool schema (`ToolSearch select:RemoteTrigger`) fully specified the wire shape — `{ action: "list"|"get"|"create"|"update"|"run", trigger_id?: string, body?: object }`, returning raw API JSON plus a summary tail for write actions. No fundamentally different shape than expected; built defensively over this contract with graceful degradation on unrecognised actions.
+- [x] Three gallery cards — `gallery-{cron,share-onboarding-guide,remote-trigger}-tool-block.tsx` registered under `CATEGORIES.blockRenderers` with `Clock` / `BookOpen` / `Zap` icons.
+- [x] Table T02 update — three new rows folded into the wrapper inventory; five `default-intent` rows removed from the inventory below.
 
 **Tests.**
-- [ ] Per-wrapper synthetic-fixture tests for the three Cron names + the two singletons.
+- [x] Per-wrapper synthetic-fixture tests for the three Cron names + the two singletons. `cron-tool-block.test.ts` (narrow + verb + names + args + alias pin), `share-onboarding-guide-tool-block.test.ts` (narrow + name + URL extraction + dispatch pin), `remote-trigger-tool-block.test.ts` (narrow + name + args + body formatter + dispatch pin).
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
-- [ ] `cd tugdeck && bun run audit:tokens lint`.
-- [ ] Manual (HMR): trigger each tool; confirm the bespoke rendering.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [x] `cd tugdeck && bun run audit:tokens lint`.
+- [x] Manual (HMR): trigger each tool; confirm the bespoke rendering.
 
 ---
 

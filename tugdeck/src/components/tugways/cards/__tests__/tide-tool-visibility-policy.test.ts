@@ -120,6 +120,9 @@ const ALIASES: ReadonlyMap<string, string> = new Map([
   ["taskget", "taskmgmt"],
   ["taskoutput", "taskmgmt"],
   ["taskstop", "taskmgmt"],
+  ["croncreate", "cron"],
+  ["crondelete", "cron"],
+  ["cronlist", "cron"],
 ]);
 
 function canonicalize(name: string): string {

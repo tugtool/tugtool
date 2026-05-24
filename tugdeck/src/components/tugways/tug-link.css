@@ -1,0 +1,103 @@
+/* @tug-pairings:
+   - --tugx-link-color / surrounding surface
+   - --tugx-link-color-hover / surrounding surface
+   These pairings are validated by `audit-tokens pairings` against the
+   underlying --tug7-element-global-text-normal-link-{rest,hover} pair
+   in `theme-pairings.ts` — TugLink composes those tokens via one-hop
+   aliases per [L17], so the audit's existing entry covers this surface.
+*/
+
+/**
+ * tug-link.css — themed hyperlink primitive.
+ *
+ * `--tugx-link-*` aliases compose `--tug7-element-global-text-normal-
+ * link-{rest,hover}` in one hop per [L17]. The component-local
+ * extension family stays sovereign per [L20] — no other component
+ * reaches into it. Theme files own the underlying `--tug7-*` values
+ * (`brio.css`, `harmony.css`); changing the link color in a theme
+ * flows automatically here.
+ *
+ * Visual treatment matches `TugMarkdownView`'s existing link
+ * rendering (which also composes the same `--tug7-*` tokens) so a
+ * URL rendered inline through `TugLink` reads the same as the same
+ * URL inside an assistant prose paragraph.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance — `data-external`
+ *    attribute drives the trailing-icon visibility via JSX, the
+ *    color treatment is pure CSS.
+ *  - [L17] one-hop alias.
+ *  - [L19] file pair, module docstring, `data-slot="tug-link"`.
+ *  - [L20] component-token sovereignty.
+ */
+
+body {
+  /* Link color — composes the theme link tokens in one hop. */
+  --tugx-link-color:       var(--tug7-element-global-text-normal-link-rest);
+  --tugx-link-color-hover: var(--tug7-element-global-text-normal-link-hover);
+
+  /* Link typography — underline is the conventional cue. The offset
+   * (`0.15em`) lifts the rule clear of descenders so the underline
+   * doesn't cut through letters like `j`, `g`, `p`. */
+  --tugx-link-decoration:           underline;
+  --tugx-link-decoration-thickness: 1px;
+  --tugx-link-underline-offset:     0.15em;
+
+  /* Gap between the link text and the optional trailing
+   * `ExternalLink` glyph. Tight (2xs) so the glyph reads as part of
+   * the link, not as a separate adjacent element. */
+  --tugx-link-icon-gap: var(--tug-space-2xs);
+
+  /* External-link glyph size — slightly smaller than the body font
+   * so the glyph reads as an accent on the text rather than as a
+   * peer-sized element competing with it. `0.85em` keeps the glyph
+   * scaling with the surrounding font size automatically. */
+  --tugx-link-icon-size: 0.85em;
+}
+
+.tug-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--tugx-link-icon-gap);
+  color: var(--tugx-link-color);
+  /* Default: no underline — the link reads as link via color +
+   * cursor + (for external) trailing glyph. Underline appears on
+   * hover only. The text-decoration-thickness / underline-offset
+   * tokens below are kept declared at the body{} level so the
+   * `:hover` rule has its geometry inline. */
+  text-decoration: none;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: var(--tugx-link-decoration-thickness);
+  text-underline-offset: var(--tugx-link-underline-offset);
+  /* Inherit the surrounding font so a TugLink slipped inside a
+   * `<code>` reads as mono, inside body text reads as sans. The
+   * component carries no opinion about font family. */
+  font: inherit;
+}
+
+.tug-link:hover {
+  color: var(--tugx-link-color-hover);
+  text-decoration: var(--tugx-link-decoration);
+}
+
+/* `:focus-visible` rather than `:focus` so the ring shows only for
+ * keyboard navigation — not for mouse clicks (which would paint a
+ * ring on every clicked link). Matches the rest of the design
+ * system's focus convention. */
+.tug-link:focus-visible {
+  outline: 2px solid var(--tugx-link-color-hover);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The external-link glyph is `align-items: baseline` on the parent;
+ * lucide icons render with `display: inline-block` at the baseline,
+ * which leaves them a hair below the cap-line. Nudge with
+ * `vertical-align: middle` so the glyph reads visually centered on
+ * the text row. */
+.tug-link-external-icon {
+  width: var(--tugx-link-icon-size);
+  height: var(--tugx-link-icon-size);
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
