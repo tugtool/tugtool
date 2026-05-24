@@ -106,9 +106,7 @@ export { mermaidTransformer } from "./mermaid";
 export { mathTransformer } from "./math";
 export { diffTransformer } from "./diff";
 export { largeJsonTransformer } from "./large-json";
-export { largeTableTransformer } from "./large-table";
 
-import { largeTableTransformer } from "./large-table";
 import { mathTransformer } from "./math";
 import { mermaidTransformer } from "./mermaid";
 
@@ -128,5 +126,4 @@ import { mermaidTransformer } from "./mermaid";
 export const DEFAULT_BLOCK_TRANSFORMERS: ReadonlyArray<BlockTransformer> = [
   mathTransformer,
   mermaidTransformer,
-  largeTableTransformer,
 ];

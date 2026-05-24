@@ -6253,6 +6253,8 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 
 #### Step 28: TableBlock (rich) {#step-28}
 
+**Status: REVERTED.** Shipped, then ripped out wholesale (along with [#step-28-5](#step-28-5)). The React `TableBlock` primitive + `largeTableTransformer` + DOM-imperative `enhanceTable` bridge are gone; markdown tables render through the plain GFM pipeline. The implementation surfaced architectural problems that compounded — fresh React roots from a DOM walker (later refactored to portals in 28.5), debounced mounts that couldn't keep up with LLM streaming cadence, repeated unmount/remount flashing as deltas arrived, and CSS-cascade fights with the surrounding markdown rules. Each fix added complexity without addressing the underlying mismatch: piping a streaming-shaped data source through a React component designed for one-shot static input is the wrong shape. **Rich-table rendering for markdown is an open design question**; a future step would start from first principles (likely: a body kind that natively handles incremental row arrival, OR a markdown-pipeline change that suspends promotion until a stream-complete signal). Until then, plain GFM is the default and the table primitive doesn't exist in the codebase. The plan below is preserved as historical record of what was attempted.
+
 **Depends on:** #step-3
 
 **Commit:** `feat(tide-rendering): TableBlock — rich table with sorting and sticky header for large tables`
@@ -6288,7 +6290,7 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 
 #### Step 28.5: TableBlock markdown-mount refactor — portal architecture for tuglaws compliance {#step-28-5}
 
-**Status:** planned. The Step 28 `enhanceTable` bridge ships as a working v1 but violates the spirit of [L01] / [L02] — it creates fresh React roots via `ReactDOM.createRoot()` from an imperative DOM walker. The downstream symptoms (missing providers, memory-leak bookkeeping, streaming flash, markdown-CSS bleed-through) are all consequences of the same architectural choice. This step replaces the `createRoot()` path with a portal-based mount that lives in the existing React tree.
+**Status: REVERTED** along with [#step-28](#step-28). The portal architecture was correct on the React-rendering axis ([L01] / [L02] compliance, providers inherited naturally, no manual root bookkeeping) but didn't address the deeper problem: a streaming-shaped data source flowing into a React component designed for one-shot static input. The 250ms mount-debounce that "fixed" Step 28's flash kept losing the race against LLM delta cadence — when inter-delta gaps exceeded the debounce window, the rich table mounted, the next delta wiped its host, the sweep unmounted the portal, and the user saw the plain GFM table return until the next debounce fired. Oscillation, not stability. The refactor's React-side correctness can't fix a problem that lives upstream in how markdown promotion interacts with streaming. The plan below is preserved as historical record. Rich-table rendering for markdown is open for re-design from first principles.
 
 **Depends on:** #step-28
 
@@ -6353,21 +6355,20 @@ The store sweep removes entries whose host is no longer connected
 - `tugdeck/src/components/tugways/tug-markdown-view.css` — the `:not(.tugx-tabrich-table)` scoping from Step 28 stays. Architecturally orthogonal.
 
 **Tasks:**
-- [ ] Implement `mounted-tables-store.ts` with the subscribe / snapshot / upsert / remove / sweep surface. Pin behaviour with the pure-logic test suite.
-- [ ] Implement `MarkdownTableMountsHost` that consumes the store via `useSyncExternalStore` and renders portals. The component itself owns no state — it's a thin store-to-portals adapter.
-- [ ] Mount `MarkdownTableMountsHost` inside `deck-manager.ts`'s root composition, beside `DeckCanvas`. Ordering: any provider that `TableBlock`'s subtree might consume must wrap `MarkdownTableMountsHost`.
-- [ ] Rewrite `enhance-table.ts` — strip `createRoot`, `TugTooltipProvider` import, `ACTIVE_ROOTS`, `sweepStaleRoots`, `_resetActiveRootsForTests`. Replace with `mountedTablesStore.upsert` and a store-side sweep. The exported `enhanceTable(container)` keeps its signature so `render-incremental.ts` is unchanged.
-- [ ] Stable id derivation: walk up from the `<table>` marker to `.tugx-md-block`, read `dataset.blockType` + parse `contentHash` if exposed (else fall back to a position-within-block index). Document the id-stability contract in the file's docstring.
-- [ ] Hermetic test plumbing — store exposes `_resetForTests()` and the existing dispatch tests guard against cross-file leakage.
+- [x] Implement `mounted-tables-store.ts` with the subscribe / snapshot / upsert / remove / sweep surface. Pin behaviour with the pure-logic test suite.
+- [x] Implement `MarkdownTableMountsHost` that consumes the store via `useSyncExternalStore` and renders portals. The component itself owns no state — it's a thin store-to-portals adapter.
+- [x] Mount `MarkdownTableMountsHost` inside `deck-manager.ts`'s root composition, beside `DeckCanvas`. Ordering: any provider that `TableBlock`'s subtree might consume wraps it.
+- [x] Rewrite `enhance-table.ts` — stripped `createRoot`, `TugTooltipProvider` import, `ACTIVE_ROOTS`, `sweepStaleRoots`, `_resetActiveRootsForTests`. Replaced with `mountedTablesStore.upsert` and the store's own sweep. The exported `enhanceTable(container)` signature is unchanged so `render-incremental.ts` keeps its call site as-is.
+- [x] Stable id derivation: `render-incremental` stamps `dataset.contentHash` on each `.tugx-md-block` wrapper from the lex pass's per-block 64-bit FNV-1a hash; `enhance-table.deriveMountId` reads it and combines with `host` index within the block. Counter fallback for the gallery / standalone path. Documented in the file's docstring.
+- [x] Hermetic test plumbing — store exposes `_resetForTests()`; `enhance-table` exposes `_resetEnhanceTableForTests()` for the debounce-timer + id-counter side. Both are no-ops in production.
 
 **Tests:**
-- [ ] `mounted-tables-store.test.ts` — subscribe fires on upsert/remove; getSnapshot returns referentially-stable maps; sweep prunes disconnected hosts; double-upsert with the same id replaces the entry; remove of an unknown id is a no-op.
-- [ ] `enhance-table.test.ts` updated — the test focus moves from "did `createRoot` get called" (n/a) to "did the right entries land in the store" (`store.getSnapshot()` reads).
-- [ ] Existing TableBlock tests (sort cycle, TSV serialization, etc.) stay green — the React component is unchanged.
+- [x] `mounted-tables-store.test.ts` — 18 pure-logic tests pinning snapshot stability (same-reference between mutations, no-op upsert short-circuits, no-op remove short-circuits), subscribe/notify symmetry, upsert replacement semantics, sweep behavior (notify only when entries actually removed), insertion-order preservation. Uses plain objects cast to `HTMLElement` for opaque host identity per the project's "no fake-DOM unit tests" policy.
+- [x] Existing TableBlock tests (sort cycle, TSV serialization, etc.) stay green — the React component is unchanged.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — must stay green.
-- [ ] `bun run audit:tokens lint` — zero violations (no token changes expected; verify regardless).
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; 2921 / 2921 pass.
+- [x] `bun run audit:tokens lint` — zero violations.
 - [ ] Manual: prompt `> output a markdown table with the 50 US states and their capitals, columns: state, capital. just the table, no surrounding prose.` → expect the rich TableBlock to appear once after streaming settles (no per-delta flash); right-aligned Copy + Fold cluster; cells with overflow tooltips on hover.
 - [ ] Manual: sort a column, then issue another prompt that produces a new table in the same conversation → the FIRST table's sort state survives (the React tree is part of the app root, so it's not torn down by surrounding card activity); the SECOND table mounts cleanly with its own initial state.
 - [ ] Manual: `TugTooltip` works without manual provider wrapping (visible by hovering a truncated cell). This is the canary for the "providers inherit naturally" claim.

@@ -98,7 +98,6 @@ import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryToolBlockNetwork } from "./gallery-tool-block-network";
 import { GalleryToolBlockSearch } from "./gallery-tool-block-search";
 import { GalleryImageBlock } from "./gallery-image-block";
-import { GalleryTableBlock } from "./gallery-table-block";
 import { GalleryTideChrome } from "./gallery-tide-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
@@ -641,18 +640,6 @@ export function registerGalleryCards(): void {
     componentId: "gallery-image-block",
     contentFactory: (_cardId) => <GalleryImageBlock />,
     defaultMeta: { title: "ImageBlock", icon: "Image", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
-  });
-
-  // TableBlock body kind (rich) — sortable columns, sticky <thead>,
-  // cell overflow, optional striping. Shipped in [#step-28].
-  registerCard({
-    componentId: "gallery-table-block",
-    contentFactory: (_cardId) => <GalleryTableBlock />,
-    defaultMeta: { title: "TableBlock (rich)", icon: "Table", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

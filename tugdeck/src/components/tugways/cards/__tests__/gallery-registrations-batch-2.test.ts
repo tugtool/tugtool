@@ -16,7 +16,7 @@
  *    NotebookEdit) — not a separate registration, verified at the
  *    component-content level
  *  - Step 27 — `ImageBlock` → `gallery-image-block`
- *  - Step 28 — `TableBlock` (rich) → `gallery-table-block`
+ *  - Step 28 — TableBlock attempt reverted; no gallery card today
  *  - Step 29 — `SessionInitBanner`, `ErrorBlock`, `CautionBadge`
  *    → `gallery-tide-chrome`
  */
@@ -34,7 +34,6 @@ const BATCH_2_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
   { componentId: "gallery-tool-block-network", title: "Network Tool Blocks" },
   { componentId: "gallery-tool-block-search", title: "Search Tool Blocks" },
   { componentId: "gallery-image-block", title: "ImageBlock" },
-  { componentId: "gallery-table-block", title: "TableBlock (rich)" },
   {
     componentId: "gallery-tide-chrome",
     title: "Tide Chrome (banner / error / caution)",
