@@ -8,7 +8,7 @@
 import React from "react";
 import { Tag, Info, AlertTriangle, Star, Folder } from "lucide-react";
 import { TugLabel } from "@/components/tugways/tug-label";
-import type { TugLabelSize } from "@/components/tugways/tug-label";
+import type { TugLabelEmphasis, TugLabelSize } from "@/components/tugways/tug-label";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -17,6 +17,8 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 // ---------------------------------------------------------------------------
 
 const ALL_SIZES: TugLabelSize[] = ["sm", "md", "lg"];
+
+const ALL_EMPHASES: TugLabelEmphasis[] = ["calm", "normal", "strong", "shout"];
 
 const LONG_TEXT =
   "This is a long label that demonstrates multiline text wrapping behavior when the content exceeds the available width of the container element";
@@ -39,6 +41,20 @@ export function GalleryLabel() {
           {ALL_SIZES.map((size) => (
             <TugLabel key={size} size={size}>
               {`Label size: ${size}`}
+            </TugLabel>
+          ))}
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Emphasis Variants ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">TugLabel — Emphasis Variants</TugLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "360px" }}>
+          {ALL_EMPHASES.map((emphasis) => (
+            <TugLabel key={emphasis} emphasis={emphasis}>
+              {`Emphasis: ${emphasis}`}
             </TugLabel>
           ))}
         </div>

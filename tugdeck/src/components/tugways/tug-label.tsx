@@ -50,6 +50,20 @@ export type TugLabelRole =
 /** TugLabel text alignment. */
 export type TugLabelAlign = "start" | "center" | "end";
 
+/**
+ * TugLabel emphasis — adjusts weight/style/case of the label text.
+ *
+ * - `normal` (default): inherits the base weight/style.
+ * - `calm`: muted gray + italic — reads quieter than normal, like a whisper.
+ * - `strong`: bold.
+ * - `shout`: bold + ALL CAPS.
+ *
+ * Emphasis composes with `color` and `role` — `calm` lays italics over
+ * whichever color the label is already painted, then tints toward the
+ * muted token so it actually feels quieter than the base.
+ */
+export type TugLabelEmphasis = "calm" | "normal" | "strong" | "shout";
+
 /** TugLabel props. */
 export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
   /** Text content of the label (string only — required for truncation). */
@@ -74,6 +88,12 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
    * @selector .tug-label-role-action | .tug-label-role-success | …
    */
   role?: TugLabelRole;
+  /**
+   * Emphasis variant — adjusts weight/style/case of the label text.
+   * @selector .tug-label-emphasis-calm | .tug-label-emphasis-strong | .tug-label-emphasis-shout
+   * @default "normal"
+   */
+  emphasis?: TugLabelEmphasis;
   /**
    * Use monospace font.
    * @selector .tug-label-mono
@@ -146,6 +166,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       size = "md",
       color = "default",
       role,
+      emphasis = "normal",
       mono = false,
       align = "start",
       maxLines,
@@ -268,6 +289,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       // the cascade against `.tug-label-color-muted` etc.
       role !== undefined && `tug-label-role-${role}`,
       role === undefined && color !== "default" && `tug-label-color-${color}`,
+      emphasis !== "normal" && `tug-label-emphasis-${emphasis}`,
       mono && "tug-label-mono",
       align !== "start" && `tug-label-align-${align}`,
       disabled && "tug-label-disabled",
