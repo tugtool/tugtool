@@ -72,6 +72,7 @@ import React from "react";
 import {
   Code,
   FileText,
+  Hash,
   Notebook,
   Plus,
   Replace,
@@ -225,12 +226,15 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
       <span className="notebook-edit-tool-block-args">
         <MiddleEllipsisPath path={notebookPath} />
         {cellId !== undefined ? (
-          <span
+          <TugBadge
             data-slot="notebook-edit-tool-block-cell"
-            className="notebook-edit-tool-block-cell"
+            emphasis="ghost"
+            role="action"
+            size="md"
+            icon={<Hash size={12} aria-hidden="true" />}
           >
-            cell <code>{cellId}</code>
-          </span>
+            {cellId}
+          </TugBadge>
         ) : null}
         <TugBadge
           data-slot="notebook-edit-tool-block-edit-mode"

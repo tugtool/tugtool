@@ -4,9 +4,8 @@
  * Structural overlay only. The wrapper composes `ToolBlockChrome`
  * for its frame, `DiffBlock` / `FileBlock` for the body,
  * `MiddleEllipsisPath` for the notebook path, and `TugBadge` for
- * the inline edit-mode + cell-type metadata badges. This file holds
- * only the args-row flex layout and the cell-id `cell <id>` segment;
- * every chip rule lives in `TugBadge`'s own CSS.
+ * every inline metadata badge (cell-id, edit-mode, cell-type).
+ * This file holds only the args-row flex layout.
  *
  * Tuglaw cross-check:
  *  - [L19] file pair, `data-slot="notebook-edit-tool-block"`
@@ -22,10 +21,4 @@
   flex: 1 1 auto;
   min-width: 0;
   white-space: nowrap;
-}
-
-.notebook-edit-tool-block-cell {
-  flex: 0 0 auto;
-  font-family: var(--tugx-toolblock-args-font);
-  font-size: var(--tug-font-size-2xs);
 }
