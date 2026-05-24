@@ -219,6 +219,21 @@ describe("buildClaudeArgs", () => {
     expect(args).toContain("--replay-user-messages");
   });
 
+  test("includes --append-system-prompt with Tide rendering nudge", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    const idx = args.indexOf("--append-system-prompt");
+    expect(idx).toBeGreaterThan(-1);
+    const nudge = args[idx + 1];
+    expect(nudge).toBeDefined();
+    // The nudge is the contract between Tide's structured tool-call
+    // rendering and the model's "should I restate this?" judgment —
+    // pin both the surface description and the carve-out for analysis
+    // so a future edit can't quietly drop one or the other.
+    expect(nudge).toContain("Tide");
+    expect(nudge).toContain("tool call");
+    expect(nudge).toContain("analysis");
+  });
+
   test("config values are correctly mapped to CLI flags", () => {
     const config = {
       pluginDir: "/my/plugin/dir",

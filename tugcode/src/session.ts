@@ -356,6 +356,35 @@ export interface ClaudeSpawnConfig {
 }
 
 /**
+ * Tide-side system-prompt nudge appended to every spawn.
+ *
+ * Tide renders each tool call as a structured visual block (icon +
+ * verb-qualified header + per-tool body), so the user sees the input
+ * and result without the model needing to restate it in prose. Without
+ * a nudge, Claude defaults to "tool result + prose summary" — which
+ * reads as redundant duplication once the bespoke rendering lands.
+ * The nudge is intentionally short: one sentence stating the surface
+ * contract, one sentence carving out the legitimate restate case
+ * (synthesis across multiple results, analysis the user can't derive
+ * from the raw output, framing for what to do next).
+ *
+ * Companion to the tool-block chrome's `fold` opt-in
+ * (`tugdeck/src/components/tugways/cards/tool-blocks/tool-block-chrome.tsx`)
+ * — the chrome lets users hide the block once they've read it; this
+ * nudge reduces the volume of restatement that makes hiding feel
+ * necessary in the first place. Tackling redundancy from both ends.
+ */
+const TIDE_SYSTEM_PROMPT_NUDGE =
+  "The user is reading this conversation in Tide, which renders each " +
+  "tool call as a structured visual block — icon, verb-qualified header, " +
+  "and per-tool body showing inputs and results. The block is the user's " +
+  "primary surface for what the tool did and what it returned. Do not " +
+  "restate or summarize a tool's input or result in prose unless you are " +
+  "adding analysis, synthesis across multiple calls, or framing for what " +
+  "comes next — repeating what the block already shows is duplication, " +
+  "not communication.";
+
+/**
  * Build the CLI argument array for spawning the claude process.
  * Exported for unit tests.
  */
@@ -383,6 +412,7 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
     "--replay-user-messages",
     "--plugin-dir", config.pluginDir,
     "--permission-mode", config.permissionMode,
+    "--append-system-prompt", TIDE_SYSTEM_PROMPT_NUDGE,
   ];
 
   if (config.model) {

@@ -225,6 +225,14 @@ body {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  /* Right-align the cluster regardless of what precedes it. The args
+   * slot (`.tool-block-chrome-args`) is `flex: 1 1 auto` and absorbs
+   * spare space when present — but a wrapper whose input has no
+   * recognised identifier (TaskList, an early-streaming call) omits
+   * the args slot entirely, and without `margin-left: auto` the
+   * actions would sit immediately after the name. The auto-margin
+   * guarantees the same trailing-edge placement in both cases. */
+  margin-left: auto;
   gap: var(--tugx-toolblock-actions-gap);
 }
 

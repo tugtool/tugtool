@@ -282,6 +282,7 @@ export function composeTaskOutputTail(
 // ---------------------------------------------------------------------------
 
 export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
+  toolUseId,
   toolName,
   input,
   textOutput,
@@ -319,6 +320,26 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
     body = renderTaskMgmtBody({ verb, input: mgmtInput, textOutput, tail });
   }
 
+  // Default-folded body: the assistant's prose summary that follows
+  // typically restates the tool result, so the chrome-level fold lets
+  // the prose read as primary with the raw block one click away. Skip
+  // the affordance for streaming (the placeholder is the body) and
+  // when there's no body to fold in the first place.
+  const hasBody = body !== null;
+  const fold = hasBody && status !== "streaming"
+    ? {
+        defaultFolded: true,
+        preservationKey: `task-mgmt-tool-block/${toolUseId}/fold`,
+        collapsedLabel: composeTaskMgmtCollapsedLabel(verb),
+      }
+    : undefined;
+  // Copy collects the result text the user sees in the body. Empty
+  // when the tool didn't return anything readable.
+  const copyText =
+    textOutput !== undefined && textOutput.length > 0
+      ? textOutput
+      : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="task-mgmt-tool-block"
@@ -328,11 +349,36 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       caution={caution}
       errorMessage={errorMessage}
+      fold={fold}
+      copyText={copyText}
     >
       {body}
     </ToolBlockChrome>
   );
 };
+
+/**
+ * Compose the chrome's fold-cue collapsed-state label. Per-verb so a
+ * scanner sees what they're expanding before they click; the verb-
+ * specific noun (`result` for list, `details` for get, `output` for
+ * output, `status` for stop) reads as the body's content, not just
+ * a generic "expand."
+ */
+export function composeTaskMgmtCollapsedLabel(
+  verb: TaskMgmtVerb | null,
+): string {
+  if (verb === null) return "details";
+  switch (verb) {
+    case "list":
+      return "result";
+    case "get":
+      return "details";
+    case "output":
+      return "output";
+    case "stop":
+      return "status";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Per-verb body rendering — kept inline (a single switch) so a reader

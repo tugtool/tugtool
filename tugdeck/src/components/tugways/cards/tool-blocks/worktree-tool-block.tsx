@@ -176,6 +176,7 @@ export function composeWorktreeToolName(verb: WorktreeVerb | null): string {
 // ---------------------------------------------------------------------------
 
 export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
+  toolUseId,
   toolName,
   input,
   textOutput,
@@ -236,6 +237,21 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
     }
   }
 
+  // Fold + copy affordances. Default OPEN; worktree bodies are tiny
+  // (often a single path row or nothing) but the consistency win
+  // across the body-bits wrappers is worth the affordance even on a
+  // small body. Fold is suppressed when there is no body.
+  const hasBody = body !== null;
+  const fold = hasBody && status !== "streaming"
+    ? {
+        defaultFolded: false,
+        preservationKey: `worktree-tool-block/${toolUseId}/fold`,
+        collapsedLabel: "details",
+      }
+    : undefined;
+  const copyText =
+    textOutput !== undefined && textOutput.length > 0 ? textOutput : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="worktree-tool-block"
@@ -245,6 +261,8 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       caution={caution}
       errorMessage={errorMessage}
+      fold={fold}
+      copyText={copyText}
     >
       {body}
     </ToolBlockChrome>

@@ -187,6 +187,7 @@ export function pickSkillResultPresentation(
 // ---------------------------------------------------------------------------
 
 export const SkillToolBlock: React.FC<ToolBlockProps> = ({
+  toolUseId,
   toolName,
   input,
   textOutput,
@@ -256,6 +257,22 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
     }
   }
 
+  // Fold + copy affordances. Default OPEN (the args + result body is
+  // the user's direct evidence of "what skill ran with what input")
+  // — fold here is an opt-out for a user who wants a quieter
+  // transcript, not a hide-by-default. Copy collects the result
+  // acknowledgement.
+  const hasBody = body !== null;
+  const fold = hasBody && status !== "streaming"
+    ? {
+        defaultFolded: false,
+        preservationKey: `skill-tool-block/${toolUseId}/fold`,
+        collapsedLabel: "details",
+      }
+    : undefined;
+  const copyText =
+    textOutput !== undefined && textOutput.length > 0 ? textOutput : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="skill-tool-block"
@@ -265,6 +282,8 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       caution={caution}
       errorMessage={errorMessage}
+      fold={fold}
+      copyText={copyText}
     >
       {body}
     </ToolBlockChrome>

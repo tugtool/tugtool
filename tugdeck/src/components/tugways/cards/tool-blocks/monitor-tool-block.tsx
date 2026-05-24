@@ -214,6 +214,7 @@ export function composeMonitorTail(
 // ---------------------------------------------------------------------------
 
 export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
+  toolUseId,
   toolName,
   input,
   textOutput,
@@ -281,6 +282,21 @@ export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
     }
   }
 
+  // Fold + copy affordances. Default OPEN — Monitor's body (until +
+  // tail) IS the user's answer to "what's happening?". Folded by
+  // default would hide the answer. Affordance gives the user the
+  // option to quiet the block once they've read it.
+  const hasBody = body !== null;
+  const fold = hasBody && status !== "streaming"
+    ? {
+        defaultFolded: false,
+        preservationKey: `monitor-tool-block/${toolUseId}/fold`,
+        collapsedLabel: "output",
+      }
+    : undefined;
+  const copyText =
+    textOutput !== undefined && textOutput.length > 0 ? textOutput : undefined;
+
   return (
     <ToolBlockChrome
       rootSlot="monitor-tool-block"
@@ -290,6 +306,8 @@ export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
       status={status}
       caution={caution}
       errorMessage={errorMessage}
+      fold={fold}
+      copyText={copyText}
     >
       {body}
     </ToolBlockChrome>

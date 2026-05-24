@@ -17,6 +17,7 @@ import {
   TASK_OUTPUT_TAIL_LINE_COUNT,
   TaskMgmtToolBlock,
   composeTaskMgmtArgsLabel,
+  composeTaskMgmtCollapsedLabel,
   composeTaskMgmtToolName,
   composeTaskOutputTail,
   deriveTaskMgmtVerb,
@@ -196,6 +197,23 @@ describe("composeTaskMgmtArgsLabel", () => {
 
   test("returns undefined for null verb (defensive)", () => {
     expect(composeTaskMgmtArgsLabel(null, { taskId: "abc" })).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// composeTaskMgmtCollapsedLabel
+// ---------------------------------------------------------------------------
+
+describe("composeTaskMgmtCollapsedLabel", () => {
+  test("per-verb nouns hint at what's behind the fold cue", () => {
+    expect(composeTaskMgmtCollapsedLabel("list")).toBe("result");
+    expect(composeTaskMgmtCollapsedLabel("get")).toBe("details");
+    expect(composeTaskMgmtCollapsedLabel("output")).toBe("output");
+    expect(composeTaskMgmtCollapsedLabel("stop")).toBe("status");
+  });
+
+  test("null verb → generic `details`", () => {
+    expect(composeTaskMgmtCollapsedLabel(null)).toBe("details");
   });
 });
 
