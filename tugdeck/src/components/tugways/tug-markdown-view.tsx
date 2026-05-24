@@ -57,6 +57,7 @@ import {
 } from "@/lib/markdown/dompurify-instance";
 import { DEFAULT_BLOCK_TRANSFORMERS } from "@/lib/markdown/block-transformers";
 import { enhanceFencedCode } from "@/lib/markdown/enhance-fenced-code";
+import { enhanceTable } from "@/lib/markdown/enhance-table";
 import { enhanceMath } from "@/lib/markdown/enhance-math";
 import { enhanceMermaid } from "@/lib/markdown/enhance-mermaid";
 import {
@@ -369,6 +370,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
     el.dataset.blockIndex = String(index);
     el.innerHTML = cachedHtml;
     enhanceFencedCode(el);
+    enhanceTable(el);
     void enhanceMath(el);
     void enhanceMermaid(el);
 
@@ -756,6 +758,7 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
         if (existingEl) {
           existingEl.innerHTML = sanitized;
           enhanceFencedCode(existingEl);
+          enhanceTable(existingEl);
           void enhanceMath(existingEl);
           void enhanceMermaid(existingEl);
           // Store estimate here; real measurement happens in doSetRegion's

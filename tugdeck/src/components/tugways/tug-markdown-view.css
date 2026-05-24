@@ -118,10 +118,17 @@ body {
   --tugx-md-list-margin:      0.6em;
   --tugx-md-list-item-margin: 0.25em;
 
-  /* Tables — bespoke header weight, cell padding, outer margin */
+  /* Tables — bespoke header weight, cell padding, outer margin,
+   * scroll-region max height, and zebra-stripe tone. Sticky `<thead>`
+   * needs `border-collapse: separate` so the header's bottom border
+   * isn't merged away by the first body row; the stripe tone is the
+   * raised surface so the alternation reads against the inset block
+   * background, not the same inset that base rows show through. */
   --tugx-md-table-header-weight: 600;
   --tugx-md-table-cell-padding:  var(--tug-space-sm) var(--tug-space-md);
   --tugx-md-table-margin:        var(--tug-space-md);
+  --tugx-md-table-scroll-max-h:  60vh;
+  --tugx-md-table-stripe-bg:     var(--tug7-surface-global-primary-normal-raised-rest);
 
   /* Images */
   --tugx-md-image-radius: var(--tug-radius-sm);
@@ -549,30 +556,78 @@ body {
   margin: var(--tugx-md-hr-margin) 0;
 }
 
-/* Tables */
+/* Tables — Tier 0 polish ([#step-28]).
+ *
+ * Layout: every `<table>` is wrapped at parse time in
+ * `<div class="tugx-md-table-scroll">` by `enhanceTable` so the
+ * sticky `<thead>` has a scroll origin to stick against. The wrapper
+ * caps height at `--tugx-md-table-scroll-max-h` (default 60vh); short
+ * tables take their natural height because the rules use `max-height`,
+ * not `height`.
+ *
+ * Border discipline: `border-collapse: separate` keeps the `<thead>`
+ * bottom border intact under sticky positioning — `collapse` merges
+ * borders between rows, and the merged border travels with the body
+ * as the user scrolls, leaving the header without a divider.
+ *
+ * Zebra: stripes paint the *even* rows with the raised surface so the
+ * alternation reads against the inset markdown-block bg that odd rows
+ * show through. The earlier rule used `--tugx-block-bg` (also inset),
+ * which made the stripes invisible whenever the markdown surface
+ * matched the block surface.
+ */
+.tugx-md-table-scroll {
+  max-height: var(--tugx-md-table-scroll-max-h);
+  overflow-y: auto;
+  overflow-x: auto;
+  margin: var(--tugx-md-table-margin) 0;
+}
+
 .tugx-md-block table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
+}
+
+/* Tables not wrapped by `enhanceTable` (e.g. test fixtures that bypass
+ * the enhancer) keep the prior margin so they don't lose their outer
+ * spacing. The wrapper sets the margin itself when present. */
+.tugx-md-block > table {
   margin: var(--tugx-md-table-margin) 0;
 }
 
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block th,
 .tugx-md-block td {
-  border: 1px solid var(--tugx-block-border);
+  border-bottom: 1px solid var(--tugx-block-border);
+  border-right: 1px solid var(--tugx-block-border);
   padding: var(--tugx-md-table-cell-padding);
   text-align: left;
 }
 
-/* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-md-block th {
-  font-weight: var(--tugx-md-table-header-weight);
-  background: var(--tugx-block-strip-bg);
+.tugx-md-block th:first-child,
+.tugx-md-block td:first-child {
+  border-left: 1px solid var(--tugx-block-border);
 }
 
-/* @tug-renders-on: --tugx-block-bg */
+.tugx-md-block thead th {
+  border-top: 1px solid var(--tugx-block-border);
+}
+
+/* @tug-renders-on: --tugx-block-strip-bg */
+.tugx-md-block thead th {
+  font-weight: var(--tugx-md-table-header-weight);
+  background: var(--tugx-block-strip-bg);
+  position: sticky;
+  top: 0;
+  /* Sit above scrolled body rows so striped cells don't bleed through
+   * the header's translucent edge while sticking. */
+  z-index: 1;
+}
+
+/* @tug-renders-on: --tugx-md-table-stripe-bg */
 .tugx-md-block tbody tr:nth-child(even) {
-  background: var(--tugx-block-bg);
+  background: var(--tugx-md-table-stripe-bg);
 }
 
 /* Images */

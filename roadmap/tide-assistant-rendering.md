@@ -6280,23 +6280,23 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 - (Optional, defer to a v2) Token slot `--tugx-md-table-*` extensions in the same file's `body{}` block for max-height + stripe tone. Tier 0 can ship with literal values; tokens land alongside Tier 1 if we don't already have what we need.
 
 **Tasks:**
-- [ ] Wrap rendered markdown tables in a scroll region. Two paths:
+- [x] Wrap rendered markdown tables in a scroll region. Two paths:
   - **(a) Markdown-pipeline path** — emit `<div class="tugx-md-table-scroll"><table>…</table></div>` from the post-parse step. Cleanest separation; the wrapper exists in the DOM as a real layout container.
   - **(b) CSS-only path** — leave the bare `<table>` in flow and apply `max-height` + `overflow-y: auto` to the table itself.
   - Recommend (a). The wrapper makes sticky positioning straightforward (`<thead>` sticks to the wrapper's scroll origin), keeps the `<table>` semantically clean, and is the pattern Stanford and CSS-Tricks both document for table sticky headers. Implement via a tiny DOM walker (`enhanceTable` Tier 0 pass — wraps each `.tugx-md-block > table` in the scroll div) rather than a transformer, since it's a structural rewrite the markdown pipeline doesn't need to know about.
-- [ ] Sticky `<thead>` — apply `position: sticky; top: 0` to the `<thead>` element. Modern browsers (Chrome 91+) support sticky on `<thead>` directly; older fallback applies sticky to each `<th>` cell. Use the `<thead>` form; we're not supporting browsers older than this.
-- [ ] Header background — opaque background on `<thead>` (currently `var(--tugx-block-strip-bg)`) so scrolled rows don't bleed through.
-- [ ] Zebra striping — `:nth-child(even)` on `<tbody> <tr>` with a subtle tone. The existing rule uses `var(--tugx-block-bg)`; verify the contrast is visible against the table's base background. If both resolve to the same token (the Step 28 bug), bump the stripe tone to `var(--tug7-surface-global-primary-normal-raised-rest)` so the alternation is actually visible.
-- [ ] Scroll region max-height — pick a sensible default (`60vh` matches the prior attempt's pick). Tables shorter than the max-height take their natural height; longer ones scroll inside the wrapper with the sticky header pinned.
-- [ ] Border discipline — `border-collapse: separate; border-spacing: 0;` so `<thead>` borders aren't eaten by collapsing-border merge with the first `<tbody>` row. Bottom border on `<thead>` paints the divider.
-- [ ] Token cleanup — if literal values were used in step 1, alias them to `--tugx-md-table-*` slots in the markdown-view CSS so future theme tuning is one-hop ([L17]).
+- [x] Sticky `<thead>` — apply `position: sticky; top: 0` to the `<thead>` element. Modern browsers (Chrome 91+) support sticky on `<thead>` directly; older fallback applies sticky to each `<th>` cell. Use the `<thead>` form; we're not supporting browsers older than this.
+- [x] Header background — opaque background on `<thead>` (currently `var(--tugx-block-strip-bg)`) so scrolled rows don't bleed through.
+- [x] Zebra striping — `:nth-child(even)` on `<tbody> <tr>` with a subtle tone. The existing rule uses `var(--tugx-block-bg)`; verify the contrast is visible against the table's base background. If both resolve to the same token (the Step 28 bug), bump the stripe tone to `var(--tug7-surface-global-primary-normal-raised-rest)` so the alternation is actually visible.
+- [x] Scroll region max-height — pick a sensible default (`60vh` matches the prior attempt's pick). Tables shorter than the max-height take their natural height; longer ones scroll inside the wrapper with the sticky header pinned.
+- [x] Border discipline — `border-collapse: separate; border-spacing: 0;` so `<thead>` borders aren't eaten by collapsing-border merge with the first `<tbody>` row. Bottom border on `<thead>` paints the divider.
+- [x] Token cleanup — if literal values were used in step 1, alias them to `--tugx-md-table-*` slots in the markdown-view CSS so future theme tuning is one-hop ([L17]).
 
 **Tests:**
-- [ ] No new pure-logic tests required — Tier 0 is CSS-only structural changes. Visual verification under both themes is the gate.
-- [ ] `bun run audit:tokens lint` — zero violations.
+- [x] No new pure-logic tests required — Tier 0 is CSS-only structural changes. Visual verification under both themes is the gate.
+- [x] `bun run audit:tokens lint` — zero violations.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — must stay green (no source changes outside CSS + a small enhancer for the wrapper).
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — must stay green (no source changes outside CSS + a small enhancer for the wrapper).
 - [ ] Manual: prompt `> output a markdown table with the 50 US states and their capitals, columns: state, capital. just the table, no surrounding prose.` → rich-feeling table: sticky `State | Capital` header, alternating row tones, scrollable body, no flash during streaming.
 - [ ] Manual: under both themes (brio + harmony), header background reads as opaque against scrolled rows.
 
