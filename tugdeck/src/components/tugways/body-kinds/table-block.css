@@ -97,7 +97,7 @@ body {
 }
 
 .tugx-tabrich-label {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   font-weight: 600;
 }
@@ -109,6 +109,14 @@ body {
   color: var(--tugx-block-text-color-muted);
 }
 
+/* Actions cluster (Copy + Fold) pushes to the trailing edge — the
+ * established convention across every tool-block / body-kind
+ * header. The empty space before it absorbs the label + count's
+ * leading-edge position. */
+.tugx-tabrich-header [data-slot="table-actions"] {
+  margin-left: auto;
+}
+
 .tugx-tabrich-scroll {
   overflow-x: auto;
   overflow-y: auto;
@@ -116,6 +124,10 @@ body {
 }
 
 .tugx-tabrich-table {
+  /* `margin: 0` defends against any inherited table margin (notably
+   * the markdown pipeline's `.tugx-md-block table` rule would
+   * otherwise paint a visible gap under the chrome header). */
+  margin: 0;
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;

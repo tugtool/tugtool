@@ -6286,6 +6286,99 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 
 ---
 
+#### Step 28.5: TableBlock markdown-mount refactor — portal architecture for tuglaws compliance {#step-28-5}
+
+**Status:** planned. The Step 28 `enhanceTable` bridge ships as a working v1 but violates the spirit of [L01] / [L02] — it creates fresh React roots via `ReactDOM.createRoot()` from an imperative DOM walker. The downstream symptoms (missing providers, memory-leak bookkeeping, streaming flash, markdown-CSS bleed-through) are all consequences of the same architectural choice. This step replaces the `createRoot()` path with a portal-based mount that lives in the existing React tree.
+
+**Depends on:** #step-28
+
+**Commit:** `refactor(tide-rendering): TableBlock markdown-mount via portal (replaces createRoot bridge)`
+
+**References:** [L01], [L02], [L06], [L17], [L19], [L20], [L23], [L26], [D05], [D07]
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — no new body kind or wrapper; the existing `TableBlock` (Step 28) is the renderer in both architectures. Token sovereignty per [L20] is unchanged. The compliance gain is the React-rendering discipline of [L01] / [L02].
+
+**The problem (motivation).** Step 28's `enhanceTable` calls `createRoot(mountPoint).render(<TableBlock data={...}/>)` from a DOM walker. The mounted tree is **independent** of the app root, so:
+
+1. **No inherited context.** `TugTooltip` (per-cell overflow tooltips) throws *"Tooltip must be used within TooltipProvider"* on first render — the new root has no `TooltipProvider` above it. Step 28's fix was to manually wrap the mount with `TugTooltipProvider`. The pattern doesn't scale: every future provider (theme, responder, A9 preservation, etc.) needs the same manual wrap, and drift between the app root's provider stack and the table-mount's wrapper stack is impossible to enforce.
+2. **Manual lifecycle bookkeeping.** `createRoot()` holds an internal reference to its container, so when the markdown reconciler wipes the parent block's `innerHTML`, the mount-point disconnects but React keeps the root alive — a memory leak and a React 19 dev warning. Step 28's fix is a module-level `ACTIVE_ROOTS` `Set` that gets swept on every pass and `root.unmount()`s disconnected entries. Pure overhead a portal-based mount wouldn't need.
+3. **Streaming flash.** Each delta wipes the parent's `innerHTML` → mount-point destroyed → next enhance pass creates a new mount-point + fresh root → React 0→full render. The user sees a per-delta flash for the entire stream. Step 28's fix is a 250ms debounce on the mount itself; the rich table only appears after the stream settles. The plain GFM table is visible during streaming, the rich table appears once. Debouncing isn't wrong, but framing it as a workaround for the flash hides that the underlying architecture *should* allow continuous in-place updates.
+4. **Markdown-CSS bleed-through.** The React `<table>` lives inside `.tugx-md-block`, so the markdown pipeline's `.tugx-md-block table { margin... }` and `.tugx-md-block th, td { border... }` rules cascade into our component, overriding `--tugx-tabrich-*`. Step 28's fix is `:not(.tugx-tabrich-table)` scoping in the markdown CSS. The fix itself is correct and stays in Step 28.5 — but the underlying issue (a React component rendered into a foreign style scope) is structural, not architectural; both portal and root-mount paths share the concern. This row stays in the bug column, not the architecture column.
+
+**The architecture (target state).**
+
+```
+┌── App root (deck-manager.ts reactRoot.render — one root, per [L01]) ──┐
+│  TugThemeProvider → TugTooltipProvider → ResponderChainProvider → …   │
+│    ┌── DeckCanvas ──────────────────────────────────────────────────┐ │
+│    │  …existing card tree…                                          │ │
+│    └────────────────────────────────────────────────────────────────┘ │
+│    ┌── MarkdownTableMountsHost (new — sits beside DeckCanvas) ──────┐ │
+│    │  useSyncExternalStore(mountedTablesStore)                      │ │
+│    │  → for each entry, createPortal(<TableBlock>, entry.host)      │ │
+│    └────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────┘
+
+Imperative DOM walker (enhance-table.ts):
+  Find <table data-tugx-large-table>
+    → Create mount-point <div data-tugx-table-host>
+    → Replace the <table> with the mount-point
+    → mountedTablesStore.upsert({ id, host: mountPoint, data })
+
+The store sweep removes entries whose host is no longer connected
+(parent block wiped); React unmounts the portal automatically.
+```
+
+**Key design points:**
+
+- **One `root.render()` at mount, ever ([L01]).** The walker creates no roots. The app's existing root, mounted once in `deck-manager.ts`, owns every React tree on the page — including the table portals.
+- **External state via `useSyncExternalStore` ([L02]).** `mountedTablesStore` is the external store; `MarkdownTableMountsHost` consumes it through the standard hook. No `useState` + manual sync, no `useEffect` copy.
+- **Stable mount ids for identity preservation ([L26]).** The entry id derives from `(block contentHash, table index within block)` — stable across streaming deltas for the same logical table at the same position, so the React `<TableBlock>` reconciles in place (props update; sort state, fold state, scroll position preserved) instead of unmount/remount.
+- **The 250ms debounce stays, with a clearer story.** Even with stable ids, the *host element* changes each delta (markdown reconciler wipes `innerHTML`). React portals reconcile on `(child key, host element)`; a host change is a remount. The debounce defers entry creation until the stream settles, so each logical table gets exactly one host across its lifetime. Framed as deliberate UX policy ("don't show rich rendering for in-flight content"), not a flash workaround.
+- **No manual provider wrapping.** Portals render into the existing tree; every provider above `MarkdownTableMountsHost` flows naturally into the `<TableBlock>` subtree.
+- **No manual root lifecycle.** React handles portal teardown when an entry is removed from the store and `MarkdownTableMountsHost` re-renders without it. No `ACTIVE_ROOTS` set, no `sweepStaleRoots()`, no `root.unmount()` calls — those Step 28 helpers all disappear.
+- **CSS scope fix from Step 28 is preserved.** The `:not(.tugx-tabrich-table)` scoping in `tug-markdown-view.css` is architecturally orthogonal — it solves the cascade-bleed regardless of mount path. No change.
+
+**Artifacts — new (create):**
+- `tugdeck/src/lib/markdown/mounted-tables-store.ts` — module-level external store. Shape: `{ subscribe(listener), getSnapshot(): ReadonlyMap<string, MountedTableEntry>, upsert(id, entry), remove(id), sweep() }`. `MountedTableEntry` carries `{ host: HTMLElement, data: TableData }`. Snapshots are referentially stable until a mutator runs ([L02] + `useSyncExternalStore` contract).
+- `tugdeck/src/components/tugways/markdown-table-mounts-host.tsx` — the host component. `useSyncExternalStore(store.subscribe, store.getSnapshot)`; renders one `createPortal(<TableBlock data={entry.data} />, entry.host)` per entry, keyed by the entry id. Sits in `deck-manager.ts`'s `composeProviders` chain at the same level as `DeckCanvas`.
+- `tugdeck/src/lib/markdown/__tests__/mounted-tables-store.test.ts` — pure-logic suite for store mechanics: subscribe / unsubscribe, snapshot stability across no-op upserts, key-by-id dedup, sweep removal of disconnected hosts.
+
+**Artifacts — replace (rewrite the internals; keep the export):**
+- `tugdeck/src/lib/markdown/enhance-table.ts` — strip the React root path entirely. The walker now: finds markers, creates host elements, parses `TableData`, computes stable ids, calls `mountedTablesStore.upsert`. The debounce stays (per-block-ancestor `setTimeout` map). All imports of `react` / `react-dom/client` removed; the file becomes pure DOM + store calls. The `sweepStaleRoots` export is replaced by `store.sweep()` called from the same site.
+
+**Artifacts — preserve:**
+- `tugdeck/src/components/tugways/body-kinds/table-block.{tsx,css}` — unchanged. The same component renders in both architectures; only how it's mounted changes.
+- `tugdeck/src/lib/markdown/block-transformers/large-table.ts` — unchanged. The transformer's contract (mark large tables with `data-tugx-large-table`) is upstream of the mount path.
+- `tugdeck/src/components/tugways/tug-markdown-view.css` — the `:not(.tugx-tabrich-table)` scoping from Step 28 stays. Architecturally orthogonal.
+
+**Tasks:**
+- [ ] Implement `mounted-tables-store.ts` with the subscribe / snapshot / upsert / remove / sweep surface. Pin behaviour with the pure-logic test suite.
+- [ ] Implement `MarkdownTableMountsHost` that consumes the store via `useSyncExternalStore` and renders portals. The component itself owns no state — it's a thin store-to-portals adapter.
+- [ ] Mount `MarkdownTableMountsHost` inside `deck-manager.ts`'s root composition, beside `DeckCanvas`. Ordering: any provider that `TableBlock`'s subtree might consume must wrap `MarkdownTableMountsHost`.
+- [ ] Rewrite `enhance-table.ts` — strip `createRoot`, `TugTooltipProvider` import, `ACTIVE_ROOTS`, `sweepStaleRoots`, `_resetActiveRootsForTests`. Replace with `mountedTablesStore.upsert` and a store-side sweep. The exported `enhanceTable(container)` keeps its signature so `render-incremental.ts` is unchanged.
+- [ ] Stable id derivation: walk up from the `<table>` marker to `.tugx-md-block`, read `dataset.blockType` + parse `contentHash` if exposed (else fall back to a position-within-block index). Document the id-stability contract in the file's docstring.
+- [ ] Hermetic test plumbing — store exposes `_resetForTests()` and the existing dispatch tests guard against cross-file leakage.
+
+**Tests:**
+- [ ] `mounted-tables-store.test.ts` — subscribe fires on upsert/remove; getSnapshot returns referentially-stable maps; sweep prunes disconnected hosts; double-upsert with the same id replaces the entry; remove of an unknown id is a no-op.
+- [ ] `enhance-table.test.ts` updated — the test focus moves from "did `createRoot` get called" (n/a) to "did the right entries land in the store" (`store.getSnapshot()` reads).
+- [ ] Existing TableBlock tests (sort cycle, TSV serialization, etc.) stay green — the React component is unchanged.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — must stay green.
+- [ ] `bun run audit:tokens lint` — zero violations (no token changes expected; verify regardless).
+- [ ] Manual: prompt `> output a markdown table with the 50 US states and their capitals, columns: state, capital. just the table, no surrounding prose.` → expect the rich TableBlock to appear once after streaming settles (no per-delta flash); right-aligned Copy + Fold cluster; cells with overflow tooltips on hover.
+- [ ] Manual: sort a column, then issue another prompt that produces a new table in the same conversation → the FIRST table's sort state survives (the React tree is part of the app root, so it's not torn down by surrounding card activity); the SECOND table mounts cleanly with its own initial state.
+- [ ] Manual: `TugTooltip` works without manual provider wrapping (visible by hovering a truncated cell). This is the canary for the "providers inherit naturally" claim.
+- [ ] Manual: open Web Inspector → Memory profiler → snapshot before/after running ten table prompts → no leaked React roots (each conversation turn frees its TableBlock when the message scrolls out of the rendered window).
+
+**Out of scope (follow-ons, deliberately):**
+- The streaming-mode "live update" — where a partially-streamed table reconciles in place as rows arrive — is theoretically possible with portals (stable id, stable host) but requires moving the host element OUT of the markdown-reconciled block subtree so it survives `innerHTML` wipes. Not in this step. The 250ms post-settle debounce is the right UX for v2.
+- Component-state preservation across cold boot ([A9]) for the table's sort + fold state. The portal mounts in the React tree; A9 hooks work the same as for any other body kind composed inside a card. Adding a `componentStatePreservationKey` to the `<TableBlock>` instance is a one-line follow-on once a stable mount id is in hand.
+
+---
+
 #### Step 29: SessionInitBanner + ErrorBlock {#step-29}
 
 **Depends on:** #step-1, #step-21

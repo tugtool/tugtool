@@ -549,8 +549,11 @@ body {
   margin: var(--tugx-md-hr-margin) 0;
 }
 
-/* Tables */
-.tugx-md-block table {
+/* Tables — plain GFM rendering. Scoped with `:not(.tugx-tabrich-table)`
+ * so the rich React `TableBlock` mounted by `enhanceTable` doesn't
+ * inherit these defaults; that component owns its own borders,
+ * spacing, and th treatment via `--tugx-tabrich-*`. */
+.tugx-md-block table:not(.tugx-tabrich-table) {
   border-collapse: collapse;
   width: 100%;
   margin: var(--tugx-md-table-margin) 0;
@@ -565,15 +568,15 @@ body {
 }
 
 /* @tug-renders-on: --tugx-block-bg */
-.tugx-md-block th,
-.tugx-md-block td {
+.tugx-md-block th:not(.tugx-tabrich-th),
+.tugx-md-block td:not(.tugx-tabrich-td) {
   border: 1px solid var(--tugx-block-border);
   padding: var(--tugx-md-table-cell-padding);
   text-align: left;
 }
 
 /* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-md-block th {
+.tugx-md-block th:not(.tugx-tabrich-th) {
   font-weight: var(--tugx-md-table-header-weight);
   background: var(--tugx-block-strip-bg);
 }

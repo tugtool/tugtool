@@ -71,6 +71,23 @@ const ENHANCED_ATTR = "data-tugx-table-enhanced";
 const ACTIVE_ROOTS: Set<{ root: Root; mountPoint: HTMLElement }> = new Set();
 
 /**
+ * Deferred-mount registry — per-block-container `setTimeout` ids
+ * keyed on the `.tugx-md-block` ancestor so streaming deltas keep
+ * resetting the timer. The mount fires once after MOUNT_DEBOUNCE_MS
+ * of quiet (i.e. once the stream settles), so the user sees the
+ * plain GFM table while data is still arriving and the rich React
+ * `TableBlock` appears once, after the last delta.
+ *
+ * The block-container key is stable across `updateBlockElement`'s
+ * innerHTML wipes (the reconciler reuses the same `.tugx-md-block`
+ * wrapper element across deltas for stable-position blocks), so
+ * subsequent enhance passes find the existing timer and reset it
+ * rather than racing each other.
+ */
+const PENDING_MOUNTS: Map<HTMLElement, number> = new Map();
+const MOUNT_DEBOUNCE_MS = 250;
+
+/**
  * Walk every `<th>` cell in the first row of the table's `<thead>`
  * and return its text content. Returns an empty array when the table
  * has no `<thead>` or the head row carries no cells.
@@ -144,63 +161,110 @@ export function sweepStaleRoots(): void {
 }
 
 /**
- * Test-only: unmount every active root and clear the registry. Used
- * by unit tests that need a hermetic start. Production code never
- * calls this.
+ * Test-only: unmount every active root and clear the registry,
+ * plus cancel every pending-mount timer. Used by unit tests that
+ * need a hermetic start. Production code never calls this.
  */
 export function _resetActiveRootsForTests(): void {
   for (const entry of ACTIVE_ROOTS) {
     entry.root.unmount();
   }
   ACTIVE_ROOTS.clear();
+  for (const timer of PENDING_MOUNTS.values()) {
+    window.clearTimeout(timer);
+  }
+  PENDING_MOUNTS.clear();
 }
 
 /**
  * Walk every unmarked `<table data-tugx-large-table="true">` in
- * `container`, replace it with a React-mounted `<TableBlock>`, and
- * record the new root for later cleanup.
+ * `container` and schedule a debounced React mount for each. The
+ * mount fires once after `MOUNT_DEBOUNCE_MS` of quiet — during
+ * streaming the user keeps seeing the plain GFM table while data
+ * arrives; once the stream settles, the rich React `TableBlock`
+ * appears once. This trades a 250ms post-stream pause for the
+ * elimination of mount/unmount flashing on every delta.
  *
- * Idempotent: tables already carrying `data-tugx-table-enhanced`
- * are skipped, so a re-walk during an incremental update doesn't
- * double-mount.
+ * Idempotency is layered:
+ *  - Tables already carrying `data-tugx-table-enhanced` are skipped
+ *    (an in-flight enhance won't re-process the same DOM).
+ *  - The pending-mount map is keyed by the `.tugx-md-block` ancestor;
+ *    a re-enhance during streaming cancels and resets the timer
+ *    rather than queueing a second mount.
+ *  - On timer fire, the mount re-resolves the live marker (the
+ *    queued reference may be stale after innerHTML wipes).
  */
 export function enhanceTable(container: HTMLElement): void {
   sweepStaleRoots();
 
   const tables = container.querySelectorAll<HTMLTableElement>(TABLE_SELECTOR);
   for (const table of tables) {
-    const data = parseTableData(table);
-    if (data.headers.length === 0 && data.rows.length === 0) {
-      // No usable table content — leave the original `<table>` in
-      // place rather than blowing it away with an empty mount.
-      table.setAttribute(ENHANCED_ATTR, "true");
-      continue;
+    const blockEl = table.closest<HTMLElement>(".tugx-md-block");
+    const ownerKey = blockEl ?? table;
+
+    // Cancel any pending mount for this block — subsequent enhance
+    // passes during streaming reset the timer so the mount only
+    // fires after the stream stops.
+    const existing = PENDING_MOUNTS.get(ownerKey);
+    if (existing !== undefined) {
+      window.clearTimeout(existing);
     }
 
-    const mountPoint = document.createElement("div");
-    mountPoint.setAttribute(ENHANCED_ATTR, "true");
-    mountPoint.setAttribute("data-slot", "tugx-md-table-mount");
-    mountPoint.className = "tugx-md-table-mount";
-
-    const parent = table.parentNode;
-    if (parent === null) continue;
-    parent.replaceChild(mountPoint, table);
-
-    // The mounted React tree is independent of the app's main root,
-    // so any provider the rendered subtree expects must be wrapped
-    // here. `TugTooltip` (used per-cell for overflow tooltips) calls
-    // into Radix's `Tooltip.Provider`; without the wrapper it throws
-    // `Tooltip must be used within TooltipProvider`. Theme tokens
-    // flow through CSS variables on the DOM ancestor chain, so
-    // TugThemeProvider isn't needed in this isolated root.
-    const root = createRoot(mountPoint);
-    root.render(
-      createElement(
-        TugTooltipProvider,
-        null,
-        createElement(TableBlock, { data }),
-      ),
-    );
-    ACTIVE_ROOTS.add({ root, mountPoint });
+    const timer = window.setTimeout(() => {
+      PENDING_MOUNTS.delete(ownerKey);
+      // Re-query: the marker reference captured at schedule time may
+      // be stale (innerHTML wipes between schedule and fire), and
+      // streaming may have settled with a different marker at the
+      // same position. The live query finds whatever's there now.
+      const liveTable =
+        blockEl !== null
+          ? blockEl.querySelector<HTMLTableElement>(TABLE_SELECTOR)
+          : (table.isConnected ? table : null);
+      if (liveTable === null) return;
+      mountTable(liveTable);
+    }, MOUNT_DEBOUNCE_MS);
+    PENDING_MOUNTS.set(ownerKey, timer);
   }
+}
+
+/**
+ * Replace `table` with a React-mounted `<TableBlock>` and record
+ * the new root for later cleanup. Called from the deferred-mount
+ * timer; not exported because the debounced `enhanceTable` is the
+ * only correct entry point.
+ */
+function mountTable(table: HTMLTableElement): void {
+  const data = parseTableData(table);
+  if (data.headers.length === 0 && data.rows.length === 0) {
+    // No usable table content — leave the original `<table>` in
+    // place rather than blowing it away with an empty mount.
+    table.setAttribute(ENHANCED_ATTR, "true");
+    return;
+  }
+
+  const mountPoint = document.createElement("div");
+  mountPoint.setAttribute(ENHANCED_ATTR, "true");
+  mountPoint.setAttribute("data-slot", "tugx-md-table-mount");
+  mountPoint.className = "tugx-md-table-mount";
+
+  const parent = table.parentNode;
+  if (parent === null) return;
+  parent.replaceChild(mountPoint, table);
+
+  // The mounted React tree is independent of the app's main root,
+  // so any provider the rendered subtree expects must be wrapped
+  // here. `TugTooltip` (used per-cell for overflow tooltips) calls
+  // into Radix's `Tooltip.Provider`; without the wrapper it throws
+  // `Tooltip must be used within TooltipProvider`. Theme tokens
+  // flow through CSS variables on the DOM ancestor chain, so
+  // TugThemeProvider isn't needed in this isolated root.
+  const root = createRoot(mountPoint);
+  root.render(
+    createElement(
+      TugTooltipProvider,
+      null,
+      createElement(TableBlock, { data }),
+    ),
+  );
+  ACTIVE_ROOTS.add({ root, mountPoint });
 }
