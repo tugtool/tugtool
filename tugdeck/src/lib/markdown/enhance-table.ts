@@ -56,6 +56,7 @@ import {
   TableBlock,
   type TableData,
 } from "@/components/tugways/body-kinds/table-block";
+import { TugTooltipProvider } from "@/components/tugways/tug-tooltip";
 
 const TABLE_SELECTOR =
   'table[data-tugx-large-table="true"]:not([data-tugx-table-enhanced])';
@@ -185,8 +186,21 @@ export function enhanceTable(container: HTMLElement): void {
     if (parent === null) continue;
     parent.replaceChild(mountPoint, table);
 
+    // The mounted React tree is independent of the app's main root,
+    // so any provider the rendered subtree expects must be wrapped
+    // here. `TugTooltip` (used per-cell for overflow tooltips) calls
+    // into Radix's `Tooltip.Provider`; without the wrapper it throws
+    // `Tooltip must be used within TooltipProvider`. Theme tokens
+    // flow through CSS variables on the DOM ancestor chain, so
+    // TugThemeProvider isn't needed in this isolated root.
     const root = createRoot(mountPoint);
-    root.render(createElement(TableBlock, { data }));
+    root.render(
+      createElement(
+        TugTooltipProvider,
+        null,
+        createElement(TableBlock, { data }),
+      ),
+    );
     ACTIVE_ROOTS.add({ root, mountPoint });
   }
 }
