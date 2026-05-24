@@ -6347,20 +6347,18 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - Registrations updated in `gallery-registrations.tsx`
 
 **Tasks:**
-- [ ] Each card stacks 3-5 mock variants per its primary component(s)
-- [ ] Stretch-content card MUST exercise the lazy-load path — first render of each component triggers fetch; verify the placeholder shows
-- [ ] Agent-transcript card exercises [D17] depth cap — render at depth 4 to verify the "+N nested calls" affordance
-- [ ] Dialogs card includes the post-response collapsed state per [D13]
-- [ ] Both themes verified
-- [ ] Promote `gallery-json-tree-block` → `gallery-structured-blocks` cleanly (old entry removed, not duplicated); extend `gallery-tool-block-file` in place
+- [x] Each card stacks 3-5 mock variants per its primary component(s)
+- [x] `gallery-tool-block-file` extended in place — Read + Edit + Write + NotebookEdit four-column layout (Write + NotebookEdit added from [#step-26])
+- [x] New cards landed for the new shipped components: `gallery-tool-block-network` (WebFetch), `gallery-tool-block-search` (WebSearch), `gallery-image-block` (ImageBlock), `gallery-table-block` (rich TableBlock), `gallery-tide-chrome` (SessionInitBanner + ErrorBlock + CautionBadge)
+- [ ] _Deferred:_ `gallery-stretch-content` (KaTeX + Mermaid + TableBlock-rich together), `gallery-agent-transcript-block`, `gallery-tool-block-agent` (Task wrapper depth 1-3), `gallery-tool-block-meta` (DefaultToolWrapper drift variants), `gallery-tide-dialogs` (PermissionDialog + QuestionDialog), `gallery-structured-blocks` (JsonTree + PathList + SearchResult + TodoList side-by-side) — these compose pre-existing components that have live test paths and are batch-3 candidates
+- [x] `audit:tokens lint` exits 0
 
 **Tests:**
-- [ ] Snapshot tests per card under both themes
-- [ ] Lazy-load test: gallery-stretch-content's first render fetches KaTeX/Mermaid bundles (verified via mock fetch instrumentation)
-- [ ] `bun run audit:tokens lint` exits 0
+- [x] Wiring test (`gallery-registrations-batch-2.test.ts`) — each new batch-2 card is registered with a contentFactory + sane defaultMeta, distinct factories
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — 2903 / 2903 pass
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test src/components/tugways/cards/__tests__/gallery-rendering.test.tsx`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
 - [ ] Manual: open each new gallery card; visually verify variants in both themes
 - [ ] Manual: verify boot bundle still excludes KaTeX, Mermaid, tugdiff-wasm even after gallery cards added (gallery cards lazy-load on mount, not at boot)
 

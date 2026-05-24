@@ -95,6 +95,11 @@ import { GalleryTideThinking } from "./gallery-tide-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
 import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
+import { GalleryToolBlockNetwork } from "./gallery-tool-block-network";
+import { GalleryToolBlockSearch } from "./gallery-tool-block-search";
+import { GalleryImageBlock } from "./gallery-image-block";
+import { GalleryTableBlock } from "./gallery-table-block";
+import { GalleryTideChrome } from "./gallery-tide-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugStateIndicator } from "./gallery-tug-state-indicator";
@@ -593,11 +598,74 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.blockRenderers,
   });
 
-  // File tool blocks — ReadToolBlock + EditToolBlock side by side.
+  // File tool blocks — Read + Edit + Write + NotebookEdit side by
+  // side. Extended in [#step-29-5] with Write + NotebookEdit
+  // (from [#step-26]).
   registerCard({
     componentId: "gallery-tool-block-file",
     contentFactory: (_cardId) => <GalleryToolBlockFile />,
     defaultMeta: { title: "File Tool Blocks", icon: "Files", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Network tool block — WebFetch (cache hit / miss / streaming /
+  // error). Shipped in [#step-25].
+  registerCard({
+    componentId: "gallery-tool-block-network",
+    contentFactory: (_cardId) => <GalleryToolBlockNetwork />,
+    defaultMeta: { title: "Network Tool Blocks", icon: "Globe", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Search tool block — WebSearch (parsed / fallback / domain-filtered
+  // / empty). Shipped in [#step-25].
+  registerCard({
+    componentId: "gallery-tool-block-search",
+    contentFactory: (_cardId) => <GalleryToolBlockSearch />,
+    defaultMeta: { title: "Search Tool Blocks", icon: "Search", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // ImageBlock body kind — lazy-load placeholder, EXIF orientation,
+  // click-to-fullscreen. Shipped in [#step-27].
+  registerCard({
+    componentId: "gallery-image-block",
+    contentFactory: (_cardId) => <GalleryImageBlock />,
+    defaultMeta: { title: "ImageBlock", icon: "Image", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // TableBlock body kind (rich) — sortable columns, sticky <thead>,
+  // cell overflow, optional striping. Shipped in [#step-28].
+  registerCard({
+    componentId: "gallery-table-block",
+    contentFactory: (_cardId) => <GalleryTableBlock />,
+    defaultMeta: { title: "TableBlock (rich)", icon: "Table", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Tide chrome — SessionInitBanner ([#step-29]) + ErrorBlock
+  // ([#step-29]) + CautionBadge (pre-existing). One card hosts all
+  // three so the per-card chrome surfaces co-locate visually.
+  registerCard({
+    componentId: "gallery-tide-chrome",
+    contentFactory: (_cardId) => <GalleryTideChrome />,
+    defaultMeta: { title: "Tide Chrome (banner / error / caution)", icon: "Layers", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

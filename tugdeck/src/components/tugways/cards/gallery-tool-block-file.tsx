@@ -1,12 +1,16 @@
 /**
  * gallery-tool-block-file.tsx — visual fixture for the file-oriented
- * tool blocks: `ReadToolBlock` and `EditToolBlock`.
+ * tool blocks: `ReadToolBlock`, `EditToolBlock`, `WriteToolBlock`,
+ * and `NotebookEditToolBlock`.
  *
- * Two columns, side by side: the Read wrapper (file icon + path +
- * optional line-range badge over an embedded `FileBlock`) and the Edit
- * wrapper (file-pen icon + path + `+N −M` badge over an embedded
- * `DiffBlock`). Each column stacks its canonical states with
- * module-scope mock `ToolBlockProps` — no live tugcode bridge:
+ * Four columns, side by side: Read (file icon + path + optional
+ * line-range badge over an embedded `FileBlock`), Edit (file-pen
+ * icon + path + `+N −M` badge over an embedded `DiffBlock`), Write
+ * (file-plus icon + path + size + new/overwrite chip over an
+ * embedded `FileBlock`), NotebookEdit (notebook icon + path + cell
+ * id + edit-mode chip + cell-type chip, with the body branching on
+ * edit_mode: replace = embedded `DiffBlock`, insert = embedded
+ * `FileBlock`, delete = confirmation row).
  *
  *   Read
  *    1. **Full file** — `structured_result.file` carries the whole
@@ -26,8 +30,19 @@
  *       new_string)`. No badge — the counts aren't known wrapper-side.
  *    6. **Error** — `status: "error"`; chrome error band, no body.
  *
- * Read + Edit are extended with Write + NotebookEdit in [#step-29-5]'s
- * batch-2 pass; this card is the surface that grows.
+ *   Write ([#step-26])
+ *    7. **New file** — `structured_result.created === true`; the
+ *       header chip reads "new"; body renders the written content.
+ *    8. **Overwrite** — `created === false`; chip reads "overwrite".
+ *    9. **Error** — `status: "error"`; chrome error band, no body.
+ *
+ *   NotebookEdit ([#step-26])
+ *   10. **Replace** — `oldSource` + `newSource` present; body is an
+ *       embedded `DiffBlock` (`two-text` source).
+ *   11. **Insert** — `editMode === "insert"`; body is an embedded
+ *       `FileBlock` over the new cell source.
+ *   12. **Delete** — `editMode === "delete"`; body is a confirmation
+ *       row, no source.
  *
  * Laws: [L19] gallery-card authoring (module docstring, exported
  *       component, registered). The wrappers own all painted surfaces.
@@ -41,6 +56,8 @@ import React from "react";
 
 import { ReadToolBlock } from "./tool-blocks/read-tool-block";
 import { EditToolBlock } from "./tool-blocks/edit-tool-block";
+import { WriteToolBlock } from "./tool-blocks/write-tool-block";
+import { NotebookEditToolBlock } from "./tool-blocks/notebook-edit-tool-block";
 import type { ToolBlockProps } from "./tool-blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 
@@ -189,6 +206,123 @@ const EDIT_ERROR: ToolBlockProps = {
 };
 
 // ---------------------------------------------------------------------------
+// Write fixtures ([#step-26])
+// ---------------------------------------------------------------------------
+
+const WRITE_NEW: ToolBlockProps = {
+  toolUseId: "gallery-write-new",
+  toolName: "Write",
+  msgId: "gallery-file-msg",
+  seq: 6,
+  input: {
+    file_path: "/tmp/hello.txt",
+    content: "hello world\n",
+  },
+  structuredResult: {
+    filePath: "/tmp/hello.txt",
+    content: "hello world\n",
+    created: true,
+  },
+  status: "ready",
+};
+
+const WRITE_OVERWRITE: ToolBlockProps = {
+  toolUseId: "gallery-write-overwrite",
+  toolName: "Write",
+  msgId: "gallery-file-msg",
+  seq: 7,
+  input: {
+    file_path: "src/version.ts",
+    content: 'export const VERSION = "1.1.0";\n',
+  },
+  structuredResult: {
+    filePath: "src/version.ts",
+    content: 'export const VERSION = "1.1.0";\n',
+    created: false,
+  },
+  status: "ready",
+};
+
+const WRITE_ERROR: ToolBlockProps = {
+  toolUseId: "gallery-write-error",
+  toolName: "Write",
+  msgId: "gallery-file-msg",
+  seq: 8,
+  input: { file_path: "/root/protected.txt", content: "denied" },
+  textOutput: "EACCES: permission denied, open '/root/protected.txt'",
+  isError: true,
+  status: "error",
+};
+
+// ---------------------------------------------------------------------------
+// NotebookEdit fixtures ([#step-26])
+// ---------------------------------------------------------------------------
+
+const NOTEBOOK_REPLACE: ToolBlockProps = {
+  toolUseId: "gallery-notebook-replace",
+  toolName: "NotebookEdit",
+  msgId: "gallery-file-msg",
+  seq: 9,
+  input: {
+    notebook_path: "/tmp/sample.ipynb",
+    new_source: "print('hi')",
+    cell_id: "cell-2",
+    cell_type: "code",
+    edit_mode: "replace",
+  },
+  structuredResult: {
+    notebookPath: "/tmp/sample.ipynb",
+    cellId: "cell-2",
+    cellType: "code",
+    editMode: "replace",
+    oldSource: "print('hello world')",
+    newSource: "print('hi')",
+  },
+  status: "ready",
+};
+
+const NOTEBOOK_INSERT: ToolBlockProps = {
+  toolUseId: "gallery-notebook-insert",
+  toolName: "NotebookEdit",
+  msgId: "gallery-file-msg",
+  seq: 10,
+  input: {
+    notebook_path: "/tmp/sample.ipynb",
+    new_source: "# Section 2\n\nIntroduction text.",
+    cell_id: "cell-3",
+    cell_type: "markdown",
+    edit_mode: "insert",
+  },
+  structuredResult: {
+    notebookPath: "/tmp/sample.ipynb",
+    cellId: "cell-3",
+    cellType: "markdown",
+    editMode: "insert",
+    newSource: "# Section 2\n\nIntroduction text.",
+  },
+  status: "ready",
+};
+
+const NOTEBOOK_DELETE: ToolBlockProps = {
+  toolUseId: "gallery-notebook-delete",
+  toolName: "NotebookEdit",
+  msgId: "gallery-file-msg",
+  seq: 11,
+  input: {
+    notebook_path: "/tmp/sample.ipynb",
+    new_source: "",
+    cell_id: "cell-4",
+    edit_mode: "delete",
+  },
+  structuredResult: {
+    notebookPath: "/tmp/sample.ipynb",
+    cellId: "cell-4",
+    editMode: "delete",
+  },
+  status: "ready",
+};
+
+// ---------------------------------------------------------------------------
 // GalleryToolBlockFile
 // ---------------------------------------------------------------------------
 
@@ -231,6 +365,30 @@ export function GalleryToolBlockFile(): React.ReactElement {
           </Variant>
           <Variant title="Edit — error (chrome error band, no body)">
             <EditToolBlock {...EDIT_ERROR} />
+          </Variant>
+        </div>
+
+        <div className="gallery-tool-block-file-column">
+          <Variant title="Write — new file (size + 'new' chip)">
+            <WriteToolBlock {...WRITE_NEW} />
+          </Variant>
+          <Variant title="Write — overwrite ('overwrite' chip)">
+            <WriteToolBlock {...WRITE_OVERWRITE} />
+          </Variant>
+          <Variant title="Write — error (chrome error band, no body)">
+            <WriteToolBlock {...WRITE_ERROR} />
+          </Variant>
+        </div>
+
+        <div className="gallery-tool-block-file-column">
+          <Variant title="NotebookEdit — replace (embedded DiffBlock)">
+            <NotebookEditToolBlock {...NOTEBOOK_REPLACE} />
+          </Variant>
+          <Variant title="NotebookEdit — insert (embedded FileBlock)">
+            <NotebookEditToolBlock {...NOTEBOOK_INSERT} />
+          </Variant>
+          <Variant title="NotebookEdit — delete (confirmation row)">
+            <NotebookEditToolBlock {...NOTEBOOK_DELETE} />
           </Variant>
         </div>
       </div>
