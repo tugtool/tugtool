@@ -172,17 +172,18 @@ describe("dispatch — tool_call routing", () => {
   });
 
   it("routes audit-confirmed default tools to DefaultToolBlock without caution", () => {
-    // `webfetch` is in the `default-intent` bucket of
+    // `notebookedit` is in the `default-intent` bucket of
     // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy to route
     // through `DefaultToolBlock`, so no drift caution. `Monitor` was
     // the original example here; promoted to bespoke at
     // [#step-24-3-2]. `ShareOnboardingGuide` succeeded it; promoted
-    // to bespoke at [#step-24-3-4]. Repointed to `WebFetch` — awaits
-    // Step 25. Any future promotion of `webfetch` means re-pointing
-    // again at whatever's still default-intent.
+    // to bespoke at [#step-24-3-4]. `WebFetch` succeeded it; promoted
+    // at [#step-25]. Repointed to `NotebookEdit` — awaits Step 26.
+    // Any future promotion of `notebookedit` means re-pointing again
+    // at whatever's still default-intent.
     const input: RenderInput = {
       kind: "tool_call",
-      toolCall: fakeToolCall("WebFetch"),
+      toolCall: fakeToolCall("NotebookEdit"),
       msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
@@ -480,13 +481,13 @@ describe("detectToolCallDrift", () => {
   });
 
   it("does not flag a policy default-intent tool", () => {
-    // `webfetch` is in the `default-intent` bucket of
+    // `notebookedit` is in the `default-intent` bucket of
     // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy, so no
     // drift caution. Previous examples (`Monitor` → [#step-24-3-2],
-    // `ShareOnboardingGuide` → [#step-24-3-4]) were promoted to
-    // bespoke; this assertion repoints at whatever's still
-    // default-intent at the time.
-    expect(detectToolCallDrift(fakeToolCall("WebFetch"))).toBeNull();
+    // `ShareOnboardingGuide` → [#step-24-3-4], `WebFetch` →
+    // [#step-25]) were promoted to bespoke; this assertion repoints
+    // at whatever's still default-intent at the time.
+    expect(detectToolCallDrift(fakeToolCall("NotebookEdit"))).toBeNull();
   });
 
   it("does not flag a registered wrapper with no shape schema", () => {

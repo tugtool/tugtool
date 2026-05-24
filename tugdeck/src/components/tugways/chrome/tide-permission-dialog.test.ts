@@ -114,7 +114,15 @@ describe("selectPermissionBodyKind", () => {
     // `BESPOKE_FACTORY_BY_NAME`). This guarantees the dialog
     // preview and the transcript row render the same wrapper —
     // the whole point of [#step-24-3-7].
-    for (const wireName of ["Monitor", "Skill", "EnterWorktree", "Grep", "Glob"]) {
+    for (const wireName of [
+      "Monitor",
+      "Skill",
+      "EnterWorktree",
+      "Grep",
+      "Glob",
+      "WebFetch",
+      "WebSearch",
+    ]) {
       // `selectPermissionBodyKind` should pick "dispatch" for each.
       expect(selectPermissionBodyKind(wireName)).toBe("dispatch");
       // And `hasBespokeWrapper` agrees (the helper the picker
@@ -125,11 +133,11 @@ describe("selectPermissionBodyKind", () => {
   });
 
   it("falls back to json for tools without a bespoke wrapper", () => {
-    // WebFetch / WebSearch / NotebookEdit are still in the
-    // `default-intent` bucket of `TOOL_VISIBILITY_POLICY` (awaiting
-    // Steps 25 / 26) — JsonTreeBlock fallback until those land.
-    expect(selectPermissionBodyKind("WebFetch")).toBe("json");
-    expect(selectPermissionBodyKind("WebSearch")).toBe("json");
+    // `NotebookEdit` is still in the `default-intent` bucket of
+    // `TOOL_VISIBILITY_POLICY` (awaiting Step 26) — JsonTreeBlock
+    // fallback until that lands. (`WebFetch` / `WebSearch` were
+    // promoted at [#step-25]; `Write` has an explicit `"path"` case
+    // because the preview is a single filepath.)
     expect(selectPermissionBodyKind("NotebookEdit")).toBe("json");
     // Genuinely unknown tools (e.g., a future Claude Code addition
     // before the policy table is updated) also fall through to

@@ -119,14 +119,15 @@ describe("dispatch → DefaultToolBlock", () => {
   });
 
   test("a policy default-intent tool routes to DefaultToolBlock with no caution", () => {
-    // `webfetch` is in the `default-intent` bucket of
+    // `notebookedit` is in the `default-intent` bucket of
     // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy to route
     // through `DefaultToolBlock`, so no drift caution. Previous
     // examples (`Monitor` → [#step-24-3-2], `ShareOnboardingGuide`
-    // → [#step-24-3-4]) were promoted to bespoke; the assertion is
-    // re-pointed each time at a still-default tool.
+    // → [#step-24-3-4], `WebFetch` → [#step-25]) were promoted to
+    // bespoke; the assertion is re-pointed each time at a
+    // still-default tool.
     const result = dispatchToolCallState(
-      fakeToolCall("WebFetch"),
+      fakeToolCall("NotebookEdit"),
       "m1",
     );
     expect(result.Component).toBe(DefaultToolBlock);

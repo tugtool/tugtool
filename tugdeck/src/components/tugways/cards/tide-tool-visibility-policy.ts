@@ -204,20 +204,6 @@ export const TOOL_VISIBILITY_POLICY: ReadonlyArray<ToolVisibilityEntry> = [
     reviewedAt: "2026-05-24",
   },
   {
-    name: "webfetch",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `WebFetchToolBlock` — see [#step-25]. URL + favicon header is the load-bearing UX; body is markdown or raw file.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "websearch",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `WebSearchToolBlock` — see [#step-25]. Query + result-count header; body is per-result list.",
-    reviewedAt: "2026-05-24",
-  },
-  {
     name: "write",
     visibility: "default-intent",
     rationale:

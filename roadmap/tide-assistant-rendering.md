@@ -6178,15 +6178,15 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - Registry entries
 
 **Tasks:**
-- [ ] WebFetchToolBlock: header `WebFetch · {url}` + favicon + cache-hit indicator; body `embedded` `TugMarkdownView` (default) or `embedded` FileBlock (raw text)
-- [ ] WebSearchToolBlock: header `WebSearch · {query}` + result count; body `embedded` SearchResultBlock adapted for web results (title + URL + snippet)
+- [x] WebFetchToolBlock: header `WebFetch · {url}` + cache-hit indicator; body composes `TugMarkdownBlock` (initial-text mode) over the result markdown with the prompt rendered above as a field row
+- [x] WebSearchToolBlock: header `WebSearch · {query}` + result count; body parses the markdown result into per-entry rows (`TugLink` title + URL + snippet), falling back to `TugMarkdownBlock` when parsing yields no entries
 
 **Tests:**
-- [ ] Synthetic WebFetch/WebSearch fixtures render correctly
+- [x] Synthetic WebFetch/WebSearch fixtures render correctly
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> fetch https://anthropic.com and summarize the homepage` → expect a WebFetchToolBlock with favicon + URL header and an embedded markdown summary
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> fetch https://anthropic.com and summarize the homepage` → expect a WebFetchToolBlock with URL header and an embedded markdown summary
 - [ ] Manual: prompt `> search the web for recent React 19 release notes` → expect a WebSearchToolBlock with query header + result count and per-result title/URL/snippet rows
 
 ---

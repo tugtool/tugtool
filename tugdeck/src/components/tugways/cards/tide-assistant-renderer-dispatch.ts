@@ -102,6 +102,8 @@ import { CronToolBlock } from "./tool-blocks/cron-tool-block";
 import { ShareOnboardingGuideToolBlock } from "./tool-blocks/share-onboarding-guide-tool-block";
 import { RemoteTriggerToolBlock } from "./tool-blocks/remote-trigger-tool-block";
 import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
+import { WebFetchToolBlock } from "./tool-blocks/web-fetch-tool-block";
+import { WebSearchToolBlock } from "./tool-blocks/web-search-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
@@ -1071,6 +1073,12 @@ const BESPOKE_REGISTRATIONS: ReadonlyArray<
   // change that lands the wrapper.
   ["taskcreate", TaskInlineToolBlock],
   ["taskupdate", TaskInlineToolBlock],
+  // Web tools — `WebFetch` and `WebSearch` were previously
+  // `default-intent` per the visibility policy; the policy entries
+  // are removed in the same change that lands these wrappers
+  // ([#step-25]).
+  ["webfetch", WebFetchToolBlock],
+  ["websearch", WebSearchToolBlock],
 ];
 
 /**
