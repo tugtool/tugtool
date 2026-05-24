@@ -32,6 +32,17 @@ export interface TugProgressRingProps {
   size?: TugProgressRingSize;
   /** When true, animation freezes and opacity dims. */
   disabled?: boolean;
+  /**
+   * When true, the ring renders as a closed outlined circle with no
+   * animation — distinct from both indeterminate (rotating partial
+   * arc) and disabled (dimmed). Use to communicate a quiescent state
+   * where there is genuinely no work to indicate (e.g. a Tasks
+   * indicator with no active tasks). Overrides `value` rendering;
+   * the arc draws full circumference (no break) and the indeterminate
+   * animation is suppressed.
+   * @default false
+   */
+  stopped?: boolean;
   /** Additional CSS class names. */
   className?: string;
 }
@@ -41,14 +52,22 @@ const RADIUS = 16 - STROKE_WIDTH / 2; // 14.5
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS; // ~91.1
 
 export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRingProps>(
-  function TugProgressRing({ value, max = 1, size = "md", disabled = false, className }, ref) {
+  function TugProgressRing({ value, max = 1, size = "md", disabled = false, stopped = false, className }, ref) {
+    // `stopped` overrides both indeterminate and determinate
+    // rendering: the arc draws the full circumference (offset 0) and
+    // the `tug-progress-ring-indeterminate` class is suppressed so
+    // the rotating-spin keyframe does not apply. Determinate mode is
+    // independent of `stopped` — when `stopped` is false the `value`
+    // / `max` semantics behave as before.
     const isDeterminate = value !== undefined;
     const fraction = isDeterminate
       ? Math.min(Math.max(value / max, 0), 1)
       : 0;
-    const dashOffset = isDeterminate
-      ? CIRCUMFERENCE * (1 - fraction)
-      : undefined;
+    const dashOffset = stopped
+      ? 0
+      : isDeterminate
+        ? CIRCUMFERENCE * (1 - fraction)
+        : undefined;
 
     // Track mode changes to suppress transition on indeterminate → determinate switch [L06]
     const prevDeterminateRef = useRef(isDeterminate);
@@ -76,7 +95,8 @@ export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRing
         className={cn(
           "tug-progress-ring",
           `tug-progress-ring-${size}`,
-          !isDeterminate && "tug-progress-ring-indeterminate",
+          !stopped && !isDeterminate && "tug-progress-ring-indeterminate",
+          stopped && "tug-progress-ring-stopped",
           disabled && "tug-progress-ring-disabled",
           className,
         )}
@@ -104,7 +124,7 @@ export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRing
             fill="none"
             strokeWidth={STROKE_WIDTH}
             strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={isDeterminate ? dashOffset : undefined}
+            strokeDashoffset={stopped || isDeterminate ? dashOffset : undefined}
             strokeLinecap="round"
           />
         </svg>

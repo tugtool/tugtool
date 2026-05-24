@@ -75,6 +75,8 @@ import {
 } from "@/lib/tide-transcript-data-source";
 import { formatSequenceNumber } from "@/components/tugways/tug-transcript-entry";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TodoListBlock } from "@/components/tugways/body-kinds/todo-list-block";
+import type { TaskListState } from "@/lib/code-session-store/select-task-list";
 
 import { formatTimeAlwaysHours, formatTokensCaps } from "./tide-card-telemetry-renderers";
 
@@ -734,6 +736,42 @@ export function StateChangeLogPopoverContent({
             );
           })}
         </div>
+      </div>
+    </PerAreaPopoverFrame>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tasks popover
+// ---------------------------------------------------------------------------
+
+/**
+ * Tasks popover — opened from the `TASKS` cell in the status row.
+ * Renders the full assembled task list ([D100]) via standalone
+ * `TodoListBlock`. The assembled state is computed once at the
+ * status-row level (`useTaskListState`) and threaded through as
+ * `state`; an empty `tasks` array renders a "no tasks" empty
+ * message rather than the body kind's bare layout marker.
+ */
+export function TasksPopoverContent({
+  state,
+}: {
+  state: TaskListState;
+}): React.ReactElement {
+  if (state.tasks.length === 0) {
+    return (
+      <PerAreaPopoverFrame title="Tasks">
+        <div className="tide-popover-empty">No tasks for this session.</div>
+      </PerAreaPopoverFrame>
+    );
+  }
+  return (
+    <PerAreaPopoverFrame title="Tasks">
+      <div
+        className="tide-tasks-popover-body"
+        data-slot="tide-tasks-popover-body"
+      >
+        <TodoListBlock data={state} />
       </div>
     </PerAreaPopoverFrame>
   );

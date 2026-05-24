@@ -144,6 +144,21 @@ export interface TugProgressProps
    */
   disabled?: boolean;
 
+  /**
+   * Quiescent state — the indicator renders without animation and
+   * with no progress arc gap. Visually distinct from `disabled`
+   * (which dims the indicator) and from indeterminate (which shows
+   * a rotating partial arc): a `stopped` ring is a complete
+   * outlined circle. Today only the `ring` variant honors this
+   * prop; other variants ignore it.
+   *
+   * Intended for indicators paired with a textual state ("None",
+   * "Idle", "Empty") where the indicator should communicate
+   * "available, not currently active" without implying progress.
+   * @default false
+   */
+  stopped?: boolean;
+
   /** Accessible label when no visible label. */
   "aria-label"?: string;
 }
@@ -159,6 +174,7 @@ export const TugProgress = React.forwardRef<HTMLDivElement, TugProgressProps>(
     label,
     role,
     disabled = false,
+    stopped = false,
     className,
     style,
     "aria-label": ariaLabel,
@@ -183,7 +199,15 @@ export const TugProgress = React.forwardRef<HTMLDivElement, TugProgressProps>(
         case "bar":
           return <TugProgressBar value={value} max={max} size={size} disabled={effectiveDisabled} />;
         case "ring":
-          return <TugProgressRing value={value} max={max} size={size} disabled={effectiveDisabled} />;
+          return (
+            <TugProgressRing
+              value={value}
+              max={max}
+              size={size}
+              disabled={effectiveDisabled}
+              stopped={stopped}
+            />
+          );
         case "pie":
           return <TugProgressPie value={value} max={max} size={size} disabled={effectiveDisabled} />;
         case "spinner":

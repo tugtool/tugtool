@@ -84,19 +84,18 @@
 .tide-card-status-bar {
   flex: 0 0 auto;
   display: flex;
-  /* Two-row column post-[D100]: the optional Z2A pinned-todo strip
-     sits *above* the Z2B chrome row (grip + content + maximize).
-     `flex-direction: column` lays them top-to-bottom; each child
-     row owns its own horizontal layout. When Z2A is absent or its
-     renderer self-collapses, the column has just the chrome row;
-     the strip stays the height of one telemetry line. When both
-     are absent the wrapper has no visible children — `:has()`
-     rules below collapse the strip entirely. */
-  flex-direction: column;
-  /* The `align-items: center` of the old row layout is no longer
-     applicable — each row owns its own cross-axis alignment via
-     `.tide-card-status-bar-chrome-row`. */
-  gap: var(--tug-space-sm);
+  flex-direction: row;
+  align-items: center;
+  /* Three-part row: a sash grip on the leading end and the maximize
+     toggle on the trailing end (both fixed width), with the status
+     content between them in `.tide-card-status-bar-main`. That
+     wrapper is `flex: 1 1 auto`, so it absorbs the row width the end
+     controls leave and the status-row renderer inside centers its
+     own cells. `justify-content: center` is inert while `main`
+     flexes, but is kept so a future content-sized Z2 occupant (one
+     not `width: 100%`) still centers in the row. */
+  justify-content: center;
+  gap: var(--tug-space-md);
   padding: var(--tug-space-md);
   background-color: var(--tug7-surface-card-primary-normal-status-rest);
   /* Top-only border separates the status bar from the transcript
@@ -154,41 +153,11 @@
   display: none;
 }
 
-/* Post-[D100]: Z2A's `TideCardPinnedTodo` stays mounted across the
-   session (it owns subscriptions to the code-session store), but
-   self-collapses to `null` DOM when no active task list exists. In
-   that state the strip's wrapper has grip + maximize children but
-   no *content* — `:empty` no longer fires. The `:has()` rule below
-   covers it: hide the strip when there is neither a
-   `.tide-card-pinned-todo` (Z2A active) nor a
-   `.tide-card-status-bar-main` (Z2B mounted) child. Visibility stays
-   appearance-driven, no React state ([L06]). Modern browsers only;
-   tugdeck already ships `:has()` (see `tide-card-z1b.css` /
-   `tug-menu.css`). */
-.tide-card-status-bar:not(:has(.tide-card-pinned-todo)):not(:has(.tide-card-status-bar-main)) {
-  display: none;
-}
-
-/* Z2B chrome row — grip on the leading end, status-bar-main in the
-   middle, maximize toggle on the trailing end. Lives as a sibling
-   under the column-laid `.tide-card-status-bar`. Centers its
-   cross-axis like the old single-row layout did via `align-items`,
-   and preserves `justify-content: center` so a future content-sized
-   Z2B occupant still centers in the row. */
-.tide-card-status-bar-chrome-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: var(--tug-space-md);
-}
-
-/* Z2B inner wrapper — content-band of the chrome row. `flex: 1 1
-   auto` lets it absorb the width the grip + maximize leave;
-   `min-width: 0` lets it shrink below content so the grip / toggle
-   stay pinned to the card's edges. The status-row renderer inside
-   is `width: 100%` and centers its own cells — this wrapper just
-   reserves the middle band. */
+/* Z2 status content, flanked by the two sash grips. `flex: 1 1 auto`
+   lets it absorb the row width the grips leave; `min-width: 0` lets
+   it shrink below content so the grips stay pinned to the card's
+   edges. The status-row renderer inside is `width: 100%` and centers
+   its own cells — this wrapper just reserves the middle band. */
 .tide-card-status-bar-main {
   flex: 1 1 auto;
   min-width: 0;
@@ -196,9 +165,8 @@
   justify-content: center;
 }
 
-/* Maximize toggle — Z2B's trailing control. `flex: 0 0 auto` keeps
-   it at its content size so it never shrinks against the status
-   row. */
+/* Maximize toggle — Z2's trailing control. `flex: 0 0 auto` keeps it
+   at its content size so it never shrinks against the status row. */
 .tide-card-maximize-toggle {
   flex: 0 0 auto;
 }
@@ -206,11 +174,9 @@
 /* Optical nudge: the sash grip and the maximize toggle read a pixel
    high against the status-row text — drop both down 1px. Purely
    visual; `position: relative` shifts the paint without moving the
-   layout box, so the row's flex metrics are unchanged. Scoped to
-   the chrome row so it doesn't apply to grip/toggle instances that
-   might appear elsewhere. */
-.tide-card-status-bar-chrome-row > .tide-card-sash-grip,
-.tide-card-status-bar-chrome-row > .tide-card-maximize-toggle {
+   layout box, so the row's flex metrics are unchanged. */
+.tide-card-status-bar > .tide-card-sash-grip,
+.tide-card-status-bar > .tide-card-maximize-toggle {
   position: relative;
   top: 1px;
 }

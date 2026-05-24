@@ -65,10 +65,14 @@ import { useSessionStateChanges } from "@/lib/session-state-changes-store";
 import {
   ContextPopoverContent,
   StateChangeLogPopoverContent,
+  TasksPopoverContent,
   TimePopoverContent,
   TokensPopoverContent,
   type ScrollToRowHandler,
 } from "./tide-card-telemetry-popovers";
+import { TugProgress } from "@/components/tugways/tug-progress";
+import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
+import { countTasks } from "@/components/tugways/body-kinds/todo-list-block";
 
 // ---------------------------------------------------------------------------
 // Pure-logic formatters (exported for tests)
@@ -584,6 +588,20 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   // their own tone + pulse.
   const stateLabelText = labelTextFor(indicatorState);
 
+  // TASKS cell — assembled from the Task* event stream ([D100]).
+  // The ring animates when at least one task is pending or
+  // in_progress (work happening); stops otherwise. The label text
+  // reads `N/M` (`completed/total`) when tasks exist, else `None`.
+  const taskListState = useTaskListState(codeSessionStore);
+  const taskCounts = countTasks(taskListState.tasks);
+  const hasTasks = taskCounts.total > 0;
+  const tasksActive =
+    hasTasks &&
+    taskCounts.completed < taskCounts.total;
+  const tasksLabelText = hasTasks
+    ? `${taskCounts.completed}/${taskCounts.total}`
+    : "None";
+
   // Per-anchor popover content. Each popover receives only the
   // inputs it needs — no shared context object — so future popover
   // changes touch one factory call instead of a coupling layer.
@@ -619,6 +637,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   const statePopover = (
     <StateChangeLogPopoverContent rows={stateChangeSnap.rows} />
   );
+  const tasksPopover = <TasksPopoverContent state={taskListState} />;
 
   // Flat 4-cell flex row — STATE + TIME + TOKENS + CONTEXT as direct
   // siblings. The row's `justify-content: center` (declared in CSS)
@@ -722,6 +741,34 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
         </TugPopoverTrigger>
         <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
           {contextPopover}
+        </TugPopoverContent>
+      </TugPopover>
+      <TugPopover>
+        <TugPopoverTrigger>
+          <span
+            className="tide-telemetry-status-cell tide-telemetry-status-anchor"
+            data-priority="tasks"
+          >
+            <TideTelemetryEndcapRuleLabel label="TASKS" ticksDirection="down" />
+            <span className="tide-telemetry-status-value-wrap">
+              <TugProgress
+                variant="ring"
+                size="sm"
+                stopped={!tasksActive}
+                aria-label={
+                  hasTasks
+                    ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
+                    : "No tasks"
+                }
+              />
+              <span className="tide-telemetry-status-value">
+                {tasksLabelText}
+              </span>
+            </span>
+          </span>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="center" sideOffset={8} arrow>
+          {tasksPopover}
         </TugPopoverContent>
       </TugPopover>
     </div>

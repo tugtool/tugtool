@@ -98,6 +98,19 @@
 }
 
 /* ============================================================================
+   Stopped State
+   ========================================================================= */
+
+/* `stopped` renders the arc as a closed circle (`stroke-dashoffset:
+   0` set inline in the component) with no rotation. The arc draws
+   at full circumference, matching the track's diameter so the two
+   read as one outlined ring. No animation, no transition jitter
+   when the prop flips. */
+.tug-progress-ring-stopped .tug-progress-ring-arc {
+  transition: none;
+}
+
+/* ============================================================================
    Disabled State
    ========================================================================= */
 
