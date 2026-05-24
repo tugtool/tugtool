@@ -77,7 +77,7 @@
 import "./web-fetch-tool-block.css";
 
 import React from "react";
-import { Globe } from "lucide-react";
+import { Globe, Zap } from "lucide-react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
@@ -173,9 +173,10 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
         {cached ? (
           <TugBadge
             data-slot="web-fetch-tool-block-cached"
-            emphasis="tinted"
+            emphasis="ghost"
             role="action"
-            size="2xs"
+            size="md"
+            icon={<Zap size={12} aria-hidden="true" />}
           >
             cached
           </TugBadge>

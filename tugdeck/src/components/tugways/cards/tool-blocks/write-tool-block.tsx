@@ -68,7 +68,7 @@
 import "./write-tool-block.css";
 
 import React from "react";
-import { FilePlus } from "lucide-react";
+import { AlignLeft, FilePlus, Replace, Sparkles } from "lucide-react";
 
 import {
   FileBlock,
@@ -211,9 +211,10 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
         {sizeLabel !== undefined ? (
           <TugBadge
             data-slot="write-tool-block-size"
-            emphasis="tinted"
+            emphasis="ghost"
             role="action"
-            size="2xs"
+            size="md"
+            icon={<AlignLeft size={12} aria-hidden="true" />}
           >
             {sizeLabel}
           </TugBadge>
@@ -221,9 +222,16 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
         {createdLabel !== undefined ? (
           <TugBadge
             data-slot="write-tool-block-created"
-            emphasis="tinted"
+            emphasis="ghost"
             role="action"
-            size="2xs"
+            size="md"
+            icon={
+              structured.created === true ? (
+                <Sparkles size={12} aria-hidden="true" />
+              ) : (
+                <Replace size={12} aria-hidden="true" />
+              )
+            }
           >
             {createdLabel}
           </TugBadge>

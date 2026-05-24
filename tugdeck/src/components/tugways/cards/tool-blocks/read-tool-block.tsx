@@ -68,7 +68,7 @@
 import "./read-tool-block.css";
 
 import React from "react";
-import { FileText } from "lucide-react";
+import { AlignLeft, FileText } from "lucide-react";
 
 import {
   FileBlock,
@@ -271,9 +271,10 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
         {lineRange !== undefined ? (
           <TugBadge
             data-slot="read-tool-block-line-range"
-            emphasis="tinted"
+            emphasis="ghost"
             role="action"
-            size="2xs"
+            size="md"
+            icon={<AlignLeft size={12} aria-hidden="true" />}
           >
             {lineRange}
           </TugBadge>

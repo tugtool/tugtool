@@ -69,7 +69,14 @@
 import "./notebook-edit-tool-block.css";
 
 import React from "react";
-import { Notebook } from "lucide-react";
+import {
+  Code,
+  FileText,
+  Notebook,
+  Plus,
+  Replace,
+  Trash2,
+} from "lucide-react";
 
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
@@ -227,18 +234,34 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
         ) : null}
         <TugBadge
           data-slot="notebook-edit-tool-block-edit-mode"
-          emphasis="tinted"
+          emphasis="ghost"
           role="action"
-          size="2xs"
+          size="md"
+          icon={
+            editMode === "insert" ? (
+              <Plus size={12} aria-hidden="true" />
+            ) : editMode === "delete" ? (
+              <Trash2 size={12} aria-hidden="true" />
+            ) : (
+              <Replace size={12} aria-hidden="true" />
+            )
+          }
         >
           {editMode}
         </TugBadge>
         {cellType !== undefined ? (
           <TugBadge
             data-slot="notebook-edit-tool-block-cell-type"
-            emphasis="tinted"
+            emphasis="ghost"
             role="action"
-            size="2xs"
+            size="md"
+            icon={
+              cellType === "code" ? (
+                <Code size={12} aria-hidden="true" />
+              ) : (
+                <FileText size={12} aria-hidden="true" />
+              )
+            }
           >
             {cellType}
           </TugBadge>
