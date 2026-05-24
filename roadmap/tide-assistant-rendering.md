@@ -6251,132 +6251,93 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 
 ---
 
-#### Step 28: TableBlock (rich) {#step-28}
+#### Step 28: Markdown table polish — pure CSS sticky thead + zebra (Tier 0), tiny vanilla sort (Tier 1) {#step-28}
 
-**Status: REVERTED.** Shipped, then ripped out wholesale (along with [#step-28-5](#step-28-5)). The React `TableBlock` primitive + `largeTableTransformer` + DOM-imperative `enhanceTable` bridge are gone; markdown tables render through the plain GFM pipeline. The implementation surfaced architectural problems that compounded — fresh React roots from a DOM walker (later refactored to portals in 28.5), debounced mounts that couldn't keep up with LLM streaming cadence, repeated unmount/remount flashing as deltas arrived, and CSS-cascade fights with the surrounding markdown rules. Each fix added complexity without addressing the underlying mismatch: piping a streaming-shaped data source through a React component designed for one-shot static input is the wrong shape. **Rich-table rendering for markdown is an open design question**; a future step would start from first principles (likely: a body kind that natively handles incremental row arrival, OR a markdown-pipeline change that suspends promotion until a stream-complete signal). Until then, plain GFM is the default and the table primitive doesn't exist in the codebase. The plan below is preserved as historical record of what was attempted.
+**Depends on:** none (uses only the existing markdown render pipeline)
 
-**Depends on:** #step-3
+**Commit (Tier 0):** `feat(tide-rendering): markdown tables — sticky thead, zebra striping, scroll region`
+**Commit (Tier 1):** `feat(tide-rendering): markdown tables — vanilla-JS sort via enhance-table`
 
-**Commit:** `feat(tide-rendering): TableBlock — rich table with sorting and sticky header for large tables`
+**References:** [D05], [D07], Spec S02, [L01], [L06], [L19]; [Position Sticky and Table Headers — CSS-Tricks](https://css-tricks.com/position-sticky-and-table-headers/), [HTML table sticky header with borders — DEV Community](https://dev.to/krzysztofzuraw/html-table-sticky-header-with-borders-51n4), [tofsjonas/sortable — Vanilla JavaScript table sort](https://github.com/tofsjonas/sortable).
 
-**References:** [D05], [D07], Spec S02
+**Background — why a fresh design.** A prior attempt (the pre-revert "TableBlock (rich)") composed a stateful React component and mounted it into markdown-rendered DOM via a `createRoot()` bridge (later refactored to a portal-based mount in a follow-on "Step 28.5"). The React side was eventually [L01] / [L02] compliant but the underlying mismatch never went away: a streaming-shaped data source flowing into a component designed for one-shot static input produces mount/unmount thrashing as each delta wipes `innerHTML`. A debounce can only delay the problem; it can't make a React component the right primitive for incremental DOM that someone else owns. **The lesson the revert paid for**: anything that holds React state across a markdown-pipeline wipe is the wrong shape. The right shape is whatever doesn't care about being wiped.
 
-**Conformance:** see [#bk-conformance](#bk-conformance) — TableBlock is a body kind with header / scrolling chrome (items 3–7); a large table builds on `TugListView` (item 9). `--tugx-tabrich-*` composes `--tugx-block-*`. _Note: the table's internal sticky `<thead>` (task below) is distinct from the body-kind identity-header pin — the `<thead>` sticks within the table's own scroll region; the identity header pins via the telescoping stack. Both can coexist; keep them separate._
+This step replaces the entire React-table pursuit with a two-tier upgrade that explicitly avoids holding any state across deltas:
 
-**Artifacts:**
-- `tugdeck/src/components/tugways/body-kinds/table-block.tsx` + `.css`
-- Token slot `--tugx-tabrich-*` (composes `--tugx-block-*`)
-- A new transformer `largeTableTransformer` in block-transformers (promotes to TableBlock when rows > 10 or columns > 5)
+- **Tier 0** is pure CSS. The `<table>` already in the DOM, painted by pulldown-cmark via the markdown pipeline, is the rendered surface — no JS, no React, no mount. A wrapping `.tugx-md-table-scroll` div provides a scroll region; `position: sticky` on `<thead>` pins the header inside it; `:nth-child(even)` provides zebra striping. The flash problem is structurally impossible because nothing mounts or unmounts.
+- **Tier 1** is ~50 lines of vanilla JS added as `enhance-table` (sibling of `enhance-fenced-code`, `enhance-img`, `enhance-math`, `enhance-mermaid`). It attaches click handlers to `<th>` cells for sortable columns. Re-runs on every markdown delta — the cost of doing so is "add an event listener" not "mount a React tree," so no flash.
 
-**Tasks:**
-- [x] Sortable columns — header cells cycle `null → asc → desc → null`; locale-aware numeric collation so `"10"` sorts after `"2"`; stable sort preserves source order on tie
-- [x] Sticky `<thead>` within the table's scroll region (distinct from the body-kind identity-header pin — see Conformance note)
-- [x] Cell overflow handling — `text-overflow: ellipsis` + `TugTooltip` gated on `truncated`
-- [x] Optional row striping (default on; `striped={false}` disables)
-- [x] `largeTableTransformer` promotes large GFM tables — rows > 10 OR cols > 5 promotes to `tug-table` with a `data-tugx-large-table="true"` marker on the `<table>` root
-- [x] `enhanceTable` bridge — DOM-imperative walker that finds marked tables, parses headers + rows out of the DOM into `TableData`, replaces the `<table>` with a sibling mount-point, and mounts a React `<TableBlock>` root into it. Active roots tracked in a module-level Set; swept and unmounted on each pass when their mount-point disconnects (avoids React 19's "forgot to unmount" warning + the underlying container-retention leak).
+Conformance is satisfied trivially: no new body kind, no new token slot family, no `bk-conformance` rows touched. The markdown table is and stays a `<table>` element styled via existing markdown tokens.
 
-**Tests:**
-- [x] Small table stays as plain GFM table (pass-through)
-- [x] Large table promotes to `tug-table` with the marker attribute
-- [x] Sort cycles correctly; numeric collation works; stable on tie
-- [x] TSV serialization round-trips headers + rows
-
-**Checkpoint:**
-- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> generate a markdown table comparing the 12 most popular JS bundlers with columns name, type, bundle size, notes` → expect the markdown table marked with `data-tugx-large-table` (the table renders as a regular HTML table today; the React mount bridge is the follow-on)
+**Conformance:** see [#bk-conformance](#bk-conformance) — no new body kind. The markdown table is the rendered surface; both tiers extend the existing `.tugx-md-block table` styling and the existing markdown-enhancer pattern.
 
 ---
 
-#### Step 28.5: TableBlock markdown-mount refactor — portal architecture for tuglaws compliance {#step-28-5}
+### Tier 0 — Pure CSS (ship first; covers 80% of the value at 0% of the risk)
 
-**Status: REVERTED** along with [#step-28](#step-28). The portal architecture was correct on the React-rendering axis ([L01] / [L02] compliance, providers inherited naturally, no manual root bookkeeping) but didn't address the deeper problem: a streaming-shaped data source flowing into a React component designed for one-shot static input. The 250ms mount-debounce that "fixed" Step 28's flash kept losing the race against LLM delta cadence — when inter-delta gaps exceeded the debounce window, the rich table mounted, the next delta wiped its host, the sweep unmounted the portal, and the user saw the plain GFM table return until the next debounce fired. Oscillation, not stability. The refactor's React-side correctness can't fix a problem that lives upstream in how markdown promotion interacts with streaming. The plan below is preserved as historical record. Rich-table rendering for markdown is open for re-design from first principles.
-
-**Depends on:** #step-28
-
-**Commit:** `refactor(tide-rendering): TableBlock markdown-mount via portal (replaces createRoot bridge)`
-
-**References:** [L01], [L02], [L06], [L17], [L19], [L20], [L23], [L26], [D05], [D07]
-
-**Conformance:** see [#bk-conformance](#bk-conformance) — no new body kind or wrapper; the existing `TableBlock` (Step 28) is the renderer in both architectures. Token sovereignty per [L20] is unchanged. The compliance gain is the React-rendering discipline of [L01] / [L02].
-
-**The problem (motivation).** Step 28's `enhanceTable` calls `createRoot(mountPoint).render(<TableBlock data={...}/>)` from a DOM walker. The mounted tree is **independent** of the app root, so:
-
-1. **No inherited context.** `TugTooltip` (per-cell overflow tooltips) throws *"Tooltip must be used within TooltipProvider"* on first render — the new root has no `TooltipProvider` above it. Step 28's fix was to manually wrap the mount with `TugTooltipProvider`. The pattern doesn't scale: every future provider (theme, responder, A9 preservation, etc.) needs the same manual wrap, and drift between the app root's provider stack and the table-mount's wrapper stack is impossible to enforce.
-2. **Manual lifecycle bookkeeping.** `createRoot()` holds an internal reference to its container, so when the markdown reconciler wipes the parent block's `innerHTML`, the mount-point disconnects but React keeps the root alive — a memory leak and a React 19 dev warning. Step 28's fix is a module-level `ACTIVE_ROOTS` `Set` that gets swept on every pass and `root.unmount()`s disconnected entries. Pure overhead a portal-based mount wouldn't need.
-3. **Streaming flash.** Each delta wipes the parent's `innerHTML` → mount-point destroyed → next enhance pass creates a new mount-point + fresh root → React 0→full render. The user sees a per-delta flash for the entire stream. Step 28's fix is a 250ms debounce on the mount itself; the rich table only appears after the stream settles. The plain GFM table is visible during streaming, the rich table appears once. Debouncing isn't wrong, but framing it as a workaround for the flash hides that the underlying architecture *should* allow continuous in-place updates.
-4. **Markdown-CSS bleed-through.** The React `<table>` lives inside `.tugx-md-block`, so the markdown pipeline's `.tugx-md-block table { margin... }` and `.tugx-md-block th, td { border... }` rules cascade into our component, overriding `--tugx-tabrich-*`. Step 28's fix is `:not(.tugx-tabrich-table)` scoping in the markdown CSS. The fix itself is correct and stays in Step 28.5 — but the underlying issue (a React component rendered into a foreign style scope) is structural, not architectural; both portal and root-mount paths share the concern. This row stays in the bug column, not the architecture column.
-
-**The architecture (target state).**
-
-```
-┌── App root (deck-manager.ts reactRoot.render — one root, per [L01]) ──┐
-│  TugThemeProvider → TugTooltipProvider → ResponderChainProvider → …   │
-│    ┌── DeckCanvas ──────────────────────────────────────────────────┐ │
-│    │  …existing card tree…                                          │ │
-│    └────────────────────────────────────────────────────────────────┘ │
-│    ┌── MarkdownTableMountsHost (new — sits beside DeckCanvas) ──────┐ │
-│    │  useSyncExternalStore(mountedTablesStore)                      │ │
-│    │  → for each entry, createPortal(<TableBlock>, entry.host)      │ │
-│    └────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────┘
-
-Imperative DOM walker (enhance-table.ts):
-  Find <table data-tugx-large-table>
-    → Create mount-point <div data-tugx-table-host>
-    → Replace the <table> with the mount-point
-    → mountedTablesStore.upsert({ id, host: mountPoint, data })
-
-The store sweep removes entries whose host is no longer connected
-(parent block wiped); React unmounts the portal automatically.
-```
-
-**Key design points:**
-
-- **One `root.render()` at mount, ever ([L01]).** The walker creates no roots. The app's existing root, mounted once in `deck-manager.ts`, owns every React tree on the page — including the table portals.
-- **External state via `useSyncExternalStore` ([L02]).** `mountedTablesStore` is the external store; `MarkdownTableMountsHost` consumes it through the standard hook. No `useState` + manual sync, no `useEffect` copy.
-- **Stable mount ids for identity preservation ([L26]).** The entry id derives from `(block contentHash, table index within block)` — stable across streaming deltas for the same logical table at the same position, so the React `<TableBlock>` reconciles in place (props update; sort state, fold state, scroll position preserved) instead of unmount/remount.
-- **The 250ms debounce stays, with a clearer story.** Even with stable ids, the *host element* changes each delta (markdown reconciler wipes `innerHTML`). React portals reconcile on `(child key, host element)`; a host change is a remount. The debounce defers entry creation until the stream settles, so each logical table gets exactly one host across its lifetime. Framed as deliberate UX policy ("don't show rich rendering for in-flight content"), not a flash workaround.
-- **No manual provider wrapping.** Portals render into the existing tree; every provider above `MarkdownTableMountsHost` flows naturally into the `<TableBlock>` subtree.
-- **No manual root lifecycle.** React handles portal teardown when an entry is removed from the store and `MarkdownTableMountsHost` re-renders without it. No `ACTIVE_ROOTS` set, no `sweepStaleRoots()`, no `root.unmount()` calls — those Step 28 helpers all disappear.
-- **CSS scope fix from Step 28 is preserved.** The `:not(.tugx-tabrich-table)` scoping in `tug-markdown-view.css` is architecturally orthogonal — it solves the cascade-bleed regardless of mount path. No change.
-
-**Artifacts — new (create):**
-- `tugdeck/src/lib/markdown/mounted-tables-store.ts` — module-level external store. Shape: `{ subscribe(listener), getSnapshot(): ReadonlyMap<string, MountedTableEntry>, upsert(id, entry), remove(id), sweep() }`. `MountedTableEntry` carries `{ host: HTMLElement, data: TableData }`. Snapshots are referentially stable until a mutator runs ([L02] + `useSyncExternalStore` contract).
-- `tugdeck/src/components/tugways/markdown-table-mounts-host.tsx` — the host component. `useSyncExternalStore(store.subscribe, store.getSnapshot)`; renders one `createPortal(<TableBlock data={entry.data} />, entry.host)` per entry, keyed by the entry id. Sits in `deck-manager.ts`'s `composeProviders` chain at the same level as `DeckCanvas`.
-- `tugdeck/src/lib/markdown/__tests__/mounted-tables-store.test.ts` — pure-logic suite for store mechanics: subscribe / unsubscribe, snapshot stability across no-op upserts, key-by-id dedup, sweep removal of disconnected hosts.
-
-**Artifacts — replace (rewrite the internals; keep the export):**
-- `tugdeck/src/lib/markdown/enhance-table.ts` — strip the React root path entirely. The walker now: finds markers, creates host elements, parses `TableData`, computes stable ids, calls `mountedTablesStore.upsert`. The debounce stays (per-block-ancestor `setTimeout` map). All imports of `react` / `react-dom/client` removed; the file becomes pure DOM + store calls. The `sweepStaleRoots` export is replaced by `store.sweep()` called from the same site.
-
-**Artifacts — preserve:**
-- `tugdeck/src/components/tugways/body-kinds/table-block.{tsx,css}` — unchanged. The same component renders in both architectures; only how it's mounted changes.
-- `tugdeck/src/lib/markdown/block-transformers/large-table.ts` — unchanged. The transformer's contract (mark large tables with `data-tugx-large-table`) is upstream of the mount path.
-- `tugdeck/src/components/tugways/tug-markdown-view.css` — the `:not(.tugx-tabrich-table)` scoping from Step 28 stays. Architecturally orthogonal.
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-markdown-view.css` — extend the existing table rules with sticky `<thead>`, scroll-region wrapper, opt-in striping.
+- (Optional, defer to a v2) Token slot `--tugx-md-table-*` extensions in the same file's `body{}` block for max-height + stripe tone. Tier 0 can ship with literal values; tokens land alongside Tier 1 if we don't already have what we need.
 
 **Tasks:**
-- [x] Implement `mounted-tables-store.ts` with the subscribe / snapshot / upsert / remove / sweep surface. Pin behaviour with the pure-logic test suite.
-- [x] Implement `MarkdownTableMountsHost` that consumes the store via `useSyncExternalStore` and renders portals. The component itself owns no state — it's a thin store-to-portals adapter.
-- [x] Mount `MarkdownTableMountsHost` inside `deck-manager.ts`'s root composition, beside `DeckCanvas`. Ordering: any provider that `TableBlock`'s subtree might consume wraps it.
-- [x] Rewrite `enhance-table.ts` — stripped `createRoot`, `TugTooltipProvider` import, `ACTIVE_ROOTS`, `sweepStaleRoots`, `_resetActiveRootsForTests`. Replaced with `mountedTablesStore.upsert` and the store's own sweep. The exported `enhanceTable(container)` signature is unchanged so `render-incremental.ts` keeps its call site as-is.
-- [x] Stable id derivation: `render-incremental` stamps `dataset.contentHash` on each `.tugx-md-block` wrapper from the lex pass's per-block 64-bit FNV-1a hash; `enhance-table.deriveMountId` reads it and combines with `host` index within the block. Counter fallback for the gallery / standalone path. Documented in the file's docstring.
-- [x] Hermetic test plumbing — store exposes `_resetForTests()`; `enhance-table` exposes `_resetEnhanceTableForTests()` for the debounce-timer + id-counter side. Both are no-ops in production.
+- [ ] Wrap rendered markdown tables in a scroll region. Two paths:
+  - **(a) Markdown-pipeline path** — emit `<div class="tugx-md-table-scroll"><table>…</table></div>` from the post-parse step. Cleanest separation; the wrapper exists in the DOM as a real layout container.
+  - **(b) CSS-only path** — leave the bare `<table>` in flow and apply `max-height` + `overflow-y: auto` to the table itself.
+  - Recommend (a). The wrapper makes sticky positioning straightforward (`<thead>` sticks to the wrapper's scroll origin), keeps the `<table>` semantically clean, and is the pattern Stanford and CSS-Tricks both document for table sticky headers. Implement via a tiny DOM walker (`enhanceTable` Tier 0 pass — wraps each `.tugx-md-block > table` in the scroll div) rather than a transformer, since it's a structural rewrite the markdown pipeline doesn't need to know about.
+- [ ] Sticky `<thead>` — apply `position: sticky; top: 0` to the `<thead>` element. Modern browsers (Chrome 91+) support sticky on `<thead>` directly; older fallback applies sticky to each `<th>` cell. Use the `<thead>` form; we're not supporting browsers older than this.
+- [ ] Header background — opaque background on `<thead>` (currently `var(--tugx-block-strip-bg)`) so scrolled rows don't bleed through.
+- [ ] Zebra striping — `:nth-child(even)` on `<tbody> <tr>` with a subtle tone. The existing rule uses `var(--tugx-block-bg)`; verify the contrast is visible against the table's base background. If both resolve to the same token (the Step 28 bug), bump the stripe tone to `var(--tug7-surface-global-primary-normal-raised-rest)` so the alternation is actually visible.
+- [ ] Scroll region max-height — pick a sensible default (`60vh` matches the prior attempt's pick). Tables shorter than the max-height take their natural height; longer ones scroll inside the wrapper with the sticky header pinned.
+- [ ] Border discipline — `border-collapse: separate; border-spacing: 0;` so `<thead>` borders aren't eaten by collapsing-border merge with the first `<tbody>` row. Bottom border on `<thead>` paints the divider.
+- [ ] Token cleanup — if literal values were used in step 1, alias them to `--tugx-md-table-*` slots in the markdown-view CSS so future theme tuning is one-hop ([L17]).
 
 **Tests:**
-- [x] `mounted-tables-store.test.ts` — 18 pure-logic tests pinning snapshot stability (same-reference between mutations, no-op upsert short-circuits, no-op remove short-circuits), subscribe/notify symmetry, upsert replacement semantics, sweep behavior (notify only when entries actually removed), insertion-order preservation. Uses plain objects cast to `HTMLElement` for opaque host identity per the project's "no fake-DOM unit tests" policy.
-- [x] Existing TableBlock tests (sort cycle, TSV serialization, etc.) stay green — the React component is unchanged.
+- [ ] No new pure-logic tests required — Tier 0 is CSS-only structural changes. Visual verification under both themes is the gate.
+- [ ] `bun run audit:tokens lint` — zero violations.
 
 **Checkpoint:**
-- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — tsc clean; 2921 / 2921 pass.
-- [x] `bun run audit:tokens lint` — zero violations.
-- [ ] Manual: prompt `> output a markdown table with the 50 US states and their capitals, columns: state, capital. just the table, no surrounding prose.` → expect the rich TableBlock to appear once after streaming settles (no per-delta flash); right-aligned Copy + Fold cluster; cells with overflow tooltips on hover.
-- [ ] Manual: sort a column, then issue another prompt that produces a new table in the same conversation → the FIRST table's sort state survives (the React tree is part of the app root, so it's not torn down by surrounding card activity); the SECOND table mounts cleanly with its own initial state.
-- [ ] Manual: `TugTooltip` works without manual provider wrapping (visible by hovering a truncated cell). This is the canary for the "providers inherit naturally" claim.
-- [ ] Manual: open Web Inspector → Memory profiler → snapshot before/after running ten table prompts → no leaked React roots (each conversation turn frees its TableBlock when the message scrolls out of the rendered window).
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — must stay green (no source changes outside CSS + a small enhancer for the wrapper).
+- [ ] Manual: prompt `> output a markdown table with the 50 US states and their capitals, columns: state, capital. just the table, no surrounding prose.` → rich-feeling table: sticky `State | Capital` header, alternating row tones, scrollable body, no flash during streaming.
+- [ ] Manual: under both themes (brio + harmony), header background reads as opaque against scrolled rows.
 
-**Out of scope (follow-ons, deliberately):**
-- The streaming-mode "live update" — where a partially-streamed table reconciles in place as rows arrive — is theoretically possible with portals (stable id, stable host) but requires moving the host element OUT of the markdown-reconciled block subtree so it survives `innerHTML` wipes. Not in this step. The 250ms post-settle debounce is the right UX for v2.
-- Component-state preservation across cold boot ([A9]) for the table's sort + fold state. The portal mounts in the React tree; A9 hooks work the same as for any other body kind composed inside a card. Adding a `componentStatePreservationKey` to the `<TableBlock>` instance is a one-line follow-on once a stable mount id is in hand.
+---
+
+### Tier 1 — Vanilla-JS sortable columns (add when actually needed, not speculatively)
+
+**Trigger to do this work**: a real-world prompt where the user wanted to re-sort a model-generated table and the lack of sort was the friction point. Not before.
+
+**Artifacts:**
+- `tugdeck/src/lib/markdown/enhance-table.ts` (the new one, ~50 lines) — sibling of `enhance-fenced-code`, `enhance-img`, etc. Pattern: find every `<table>` in the container that doesn't carry `data-tugx-table-sortable-enhanced`; for each, attach a `click` listener on the `<thead>` that finds the clicked `<th>` cell, computes the column index, cycles the sort state through `null → asc → desc → null`, sorts the `<tbody>` rows in-place via standard DOM manipulation. Stamp `data-tugx-table-sortable-enhanced="true"` so re-walks are no-ops.
+- Sort state lives in DOM attributes (`data-tugx-table-sort-column`, `data-tugx-table-sort-direction`) on the `<table>` element — no React state, no module-level Map, no preservation hooks needed. The DOM IS the state ([L06]).
+- Locale-aware numeric collation via `Intl.Collator(undefined, { numeric: true, sensitivity: "base" })` — `"10"` sorts after `"2"`, stable on ties.
+- Re-attachment per delta is cheap (one event listener per table); the markdown reconciler's `innerHTML` wipe destroys listeners along with the table, and the next enhance pass re-attaches on the fresh table. No flash, no portal, no lifecycle to manage.
+
+**Tasks:**
+- [ ] Implement `enhanceTable(container: HTMLElement): void` as the sibling enhancer.
+- [ ] Wire into `render-incremental.ts`'s `buildBlockElement` and `updateBlockElement` alongside the other enhancers.
+- [ ] Sort cycle: `null → asc → desc → null` on the same column; clicking a different column resets to `asc` on the new column. Match the convention every spreadsheet UI uses.
+- [ ] Stable sort — when two cells compare equal, preserve original row order. JS's `Array.prototype.sort` is stable as of ES2019, so a single `collator.compare(a, b)` suffices.
+- [ ] Visual sort indicator — chevron (lucide `ChevronUp` / `ChevronDown`) appended to the active `<th>`. CSS-only via `[data-tugx-table-sort-direction="asc"]::after` on the column-index-matching cell.
+- [ ] `aria-sort` attribute on the active `<th>` (`ascending` / `descending` / `none`) for screen readers.
+- [ ] Optional: opt-out class `class="no-sort"` on `<th>` to disable sorting for a column (mirrors the [tofsjonas/sortable](https://github.com/tofsjonas/sortable) convention).
+
+**Tests:**
+- [ ] Pure-logic test for the sort-cycle state machine — `nextSort(current, columnIndex)` returns the right next state.
+- [ ] Pure-logic test for the locale-aware comparator — verify `"10" > "2"`, stable on ties, handles empty / missing cells.
+- [ ] Real-app test (if the harness supports clicking a `<th>` in rendered markdown): click sequence on a small table reorders rows correctly; second click reverses; third click restores original order.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [ ] Manual: prompt `> output a markdown table with the 15 most populous countries, columns: rank, country, population (millions), continent. just the table.` → click `population (millions)` → rows reorder ascending; click again → descending; click again → restored to insertion order.
+- [ ] Manual: stream a 50-row table → no flash; sort works the moment the table finishes rendering.
+
+---
+
+### What deliberately stays out of scope
+
+- **A React `TableBlock` component for direct use in tool blocks.** If a future tool block needs to render structured tabular data (a database-query result, a structured-log dump), the simplest path is a small standalone component composed inside the tool block's chrome — not the markdown-promotion bridge. That's a tool-block concern, not a markdown-rendering concern, and it lives in its own future step.
+- **Cell-overflow tooltips, fold cue, Copy-as-TSV.** The previous attempt bundled these into the rich component because the component existed. Without the component, none of them are forced. Tooltips for overflow can be a CSS-only `text-overflow: ellipsis` + native `title` attribute (no JS). Copy can live as a per-block affordance in a future Tier 2 if asked for. Fold doesn't map onto a sticky-header sticky-thead table — the value of fold is "hide a long body" and the scroll region already solves that.
+- **Filtering, pagination, virtualization.** Tier 2 territory; only revisit if a real data-shape demands it. The tools used by `Babe Ruth career stats`, `50 US states`, `12 JS bundlers` etc. fit comfortably in a scroll region.
 
 ---
 
