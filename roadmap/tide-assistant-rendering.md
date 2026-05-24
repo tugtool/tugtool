@@ -58,7 +58,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 > Each criterion is verifiable by replaying a stream-json catalog fixture, by automated tests, or by manual inspection in a Tide card against `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.105/`.
 
 - Replaying every fixture in `v2.1.105/` produces a fully rendered Tide transcript with no `[object Object]`, no raw JSON in tool bodies, and no blank components. (Replay test: see [Spec S06](#s06-fixture-replay).)
-- Every Claude tool currently emitted by the catalog (`Read`, `Bash`, `Edit`, `Glob`, `Grep`, `Task`/`Agent`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Write`) renders through its bespoke Layer-2 wrapper, not `DefaultToolWrapper`. Verify by enumerating dispatch-registry entries.
+- Every Claude tool currently emitted by the catalog (`Read`, `Bash`, `Edit`, `Glob`, `Grep`, `Task`/`Agent`, `WebFetch`, `WebSearch`, `NotebookEdit`, `Write`) renders through its bespoke Layer-2 wrapper, not `DefaultToolWrapper`. (Per [D100]: the post-`TodoWrite` `TaskCreate` / `TaskUpdate` family is intentionally null-routed — its surface is the `TASKS` status-bar cell, not a transcript wrapper.) Verify by enumerating dispatch-registry entries.
 - A tool name absent from the registry (verify by injecting a synthetic `tool_use` with `tool_name: "ZzzUnknownToolZzz"`) renders through `DefaultToolWrapper` with a caution badge ([D04]) and never throws.
 - `bun x tsc --noEmit`, `bun test`, `bun run audit:tokens lint` all green.
 - Both `brio` and `harmony` themes render every component without missing tokens, verified by visual snapshot tests.
@@ -70,7 +70,7 @@ The assistant-side rendering bar for Tug is *not* "comparable to a terminal." Th
 #### Scope {#scope}
 
 1. Layer-1 body kinds: MarkdownBlock extensions, TerminalBlock, DiffBlock, FileBlock, PathListBlock, SearchResultBlock, JsonTreeBlock, TodoListBlock, AgentTranscriptBlock, ImageBlock, MermaidBlock, KaTeXBlock, TableBlock (rich), PlainTextBlock.
-2. Layer-2 tool wrappers: ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock, WebSearchToolBlock, TodoWriteToolBlock, NotebookEditToolBlock, DefaultToolWrapper.
+2. Layer-2 tool wrappers: ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock, WebSearchToolBlock, NotebookEditToolBlock, DefaultToolWrapper. (Per [D100]: the post-`TodoWrite` task system — `TaskCreate` / `TaskUpdate` — has no Layer-2 wrapper; the assembled state lives in a status-bar `TASKS` cell, not the transcript.)
 3. Stream-event chrome: ThinkingBlock, PermissionDialog (`is_question:false`), QuestionDialog (`is_question:true`), TideMeterChrome (card-level status strip — window-utilization gauge + last-turn time + cumulative session tokens + cumulative session time), SessionInitBanner, ErrorBlock.
 4. Renderer dispatch infrastructure (`assistant-renderer-dispatch.ts`) and the block-transformer pass over markdown blocks.
 5. New `tugdeck/crates/tugdiff-wasm/` Rust crate with `imara-diff` bindings.
@@ -549,8 +549,8 @@ A `toolRendererRegistry` keyed on `tool_name` makes lever 1 trivial; lever 2 is 
 ┌─────────────────────────── Layer 2 — Tool wrappers ──────────────────────┐
 │  ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock,            │
 │  GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock,         │
-│  WebSearchToolBlock, TodoWriteToolBlock, NotebookEditToolBlock,          │
-│  DefaultToolWrapper                                                      │
+│  WebSearchToolBlock, NotebookEditToolBlock, DefaultToolWrapper           │
+│  (TaskCreate/TaskUpdate: no wrapper — TASKS status-bar cell, [D100])     │
 │                                                                          │
 │  Each wrapper: chrome (header/footer/badges) + body ← Layer 1            │
 └────────┬─────────────────────────────────────────────────────────────────┘
@@ -801,7 +801,6 @@ tugdeck/
             task-tool-block.tsx + .css
             web-fetch-tool-block.tsx + .css
             web-search-tool-block.tsx + .css
-            todo-write-tool-block.tsx + .css
             notebook-edit-tool-block.tsx + .css
             default-tool-wrapper.tsx + .css
             tool-wrapper-chrome.tsx + .css   ← shared header/footer
@@ -897,7 +896,7 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | TaskToolBlock | Task | AgentTranscriptBlock | agentType + status + tokens |
 | WebFetchToolBlock | WebFetch | MarkdownBlock or FileBlock | url + favicon |
 | WebSearchToolBlock | WebSearch | SearchResultBlock | query + count |
-| TideCardPinnedTodo (Z2A pinned slot, [D100]) | TaskCreate / TaskUpdate | TodoListBlock | none (status-bar strip) |
+| (TASKS status-bar cell, [D100]) | TaskCreate / TaskUpdate | — (no body kind; popover composes `TugTaskItem`) | TASKS cell on the `Z2` status bar via `TideTelemetryStatusRow` (`useTaskListState` reducer + `TugProgress` ring + popover); per-call events route to `NullToolBlock` in the dispatch |
 | NotebookEditToolBlock | NotebookEdit | DiffBlock | notebook + cell |
 | DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
 
@@ -905,7 +904,7 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 
 | Tool name | Audit volume | Notes |
 |-----------|-------------:|-------|
-| ~~TaskCreate~~ | 1,789 (2.78%) | **Per [D100]**: silenced from the transcript via a `NullToolBlock` registration. The Step 24.1 spike confirmed the original "background-task management" reading was wrong — `TaskCreate` is the per-item create call in the post-`TodoWrite` task system (≥ `claude v2.1.148`). Assembled state lives in the pinned `Z2A` slot. |
+| ~~TaskCreate~~ | 1,789 (2.78%) | **Per [D100]**: silenced from the transcript via a `NullToolBlock` registration. The Step 24.1 spike confirmed the original "background-task management" reading was wrong — `TaskCreate` is the per-item create call in the post-`TodoWrite` task system (≥ `claude v2.1.148`). Assembled state lives in the `TASKS` cell on the `Z2` status bar (ring + popover) — not in a separate sub-zone. |
 | ~~TaskUpdate~~ | 3,426 (5.33%) | **Per [D100]**: same — silenced. Per-item status flip for the new task system. |
 | TaskList | 34 (0.05%) | Read-the-current-list query for the new task system; rare; default render is adequate. |
 | TaskGet | (not in original audit) | Read-one query for the new task system; default-routed defensively to avoid an `unknown_tool` caution. |
@@ -1033,7 +1032,7 @@ MarkdownBlock, TerminalBlock, DiffBlock, FileBlock, PathListBlock, SearchResultB
 
 **List L04: Layer-2 tool wrappers (one-line names)** {#l04-tool-wrappers}
 
-ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock, WebSearchToolBlock, TodoWriteToolBlock, NotebookEditToolBlock, DefaultToolWrapper.
+ReadToolBlock, WriteToolBlock, EditToolBlock, BashToolBlock, GlobToolBlock, GrepToolBlock, TaskToolBlock, WebFetchToolBlock, WebSearchToolBlock, NotebookEditToolBlock, DefaultToolWrapper. (Per [D100]: `TaskCreate` / `TaskUpdate` route to `NullToolBlock` — no Layer-2 wrapper; the TASKS status-bar cell is the sole surface.)
 
 **List L05: Stream-event chrome renderers (one-line names)** {#l05-chrome}
 
@@ -1055,7 +1054,11 @@ ThinkingBlock, PermissionDialog, QuestionDialog, TideMeterChrome ([#step-20-3](.
 |------|---------|
 | `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` | [D01] dispatch module |
 | `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.test.ts` | dispatch unit tests |
-| `tugdeck/src/components/tugways/cards/tool-wrappers/{read,write,edit,bash,glob,grep,task,web-fetch,web-search,todo-write,notebook-edit,default}-tool-block.{tsx,css}` | tool wrappers (12 × 2 = 24 files) |
+| `tugdeck/src/components/tugways/cards/tool-blocks/{read,write,edit,bash,glob,grep,task,web-fetch,web-search,notebook-edit,default}-tool-block.{tsx,css}` | tool wrappers (11 × 2 = 22 files). Per [D100], no `todo-write-tool-block` ships — `TodoWrite` was retired upstream and the post-`TodoWrite` `TaskCreate` / `TaskUpdate` family routes to `NullToolBlock`; the assembled state lives in the `TASKS` status-bar cell. |
+| `tugdeck/src/lib/code-session-store/select-task-list.ts` + `__tests__/select-task-list.test.ts` | [D100] task-list reducer + narrow helpers + tests |
+| `tugdeck/src/lib/code-session-store/hooks/use-task-list-state.ts` | [D100] `useSyncExternalStore` hook combining committed transcript + in-flight streaming tools |
+| `tugdeck/src/components/tugways/tug-task-item.{tsx,css}` | [D100] / [L20] indicator + label primitive for task / checklist surfaces |
+| `tugdeck/src/components/tugways/cards/gallery-tug-task-item.tsx` | gallery card for `TugTaskItem` |
 | `tugdeck/src/components/tugways/cards/tool-wrappers/tool-wrapper-chrome.{tsx,css}` | shared chrome |
 | `tugdeck/src/components/tugways/body-kinds/{terminal,diff,file,path-list,search-result,json-tree,todo-list,agent-transcript,image,mermaid,katex,table,plain-text}-block.{tsx,css}` | body kinds (13 × 2 = 26 files) |
 | `tugdeck/src/components/tugways/chrome/tide-thinking-block.{tsx,css}` | [D14] |
@@ -1088,6 +1091,13 @@ ThinkingBlock, PermissionDialog, QuestionDialog, TideMeterChrome ([#step-20-3](.
 | `toolWrapperRegistry` | const Map | dispatch.ts | [D16] |
 | `parse_unified_diff` | wasm fn | tugdiff-wasm/src/lib.rs | [D09] |
 | `two_text_diff` | wasm fn | tugdiff-wasm/src/lib.rs | [D09] |
+| `reduceTaskListState` | fn | `code-session-store/select-task-list.ts` | [D100] reducer over `TaskCreate` / `TaskUpdate` event stream |
+| `taskListIsActive` | fn | `code-session-store/select-task-list.ts` | [D100] visibility predicate (non-empty + at least one non-completed) |
+| `TaskItem` / `TaskListState` / `TaskStatus` | types | `code-session-store/select-task-list.ts` | [D100] data model |
+| `narrowTaskCreateInput` / `narrowTaskUpdateInput` / `parseTaskCreateResultId` | fns | `code-session-store/select-task-list.ts` | [D100] wire-shape narrows |
+| `useTaskListState` | hook | `code-session-store/hooks/use-task-list-state.ts` | [D100] / [L02] composes committed + in-flight subscriptions |
+| `TugTaskItem` / `TugTaskItemStatus` / `TugTaskItemProps` | component + types | `tugways/tug-task-item.tsx` | [D100] / [L20] indicator + label primitive |
+| `TugLabelRole` + `role` prop on `TugLabel` | type + prop addition | `tugways/tug-label.tsx` | [L20] role-driven text-tone colors for label composition |
 
 ---
 
@@ -5754,40 +5764,56 @@ Notes:
 - [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
 - [ ] Manual (HMR): run the reference prompt against `/tmp/todo-test` through Tug.app or the dev server; confirm `Z2A` appears as soon as the first `TaskCreate` lands, updates in place as `TaskUpdate` flips status, collapses when the final list is all-completed, and the transcript carries zero per-call Task* rows. Verify the per-row `description` tooltip on hover (deferred to user — HMR is always running; the live engine pipeline is the source of visual truth per the project's testing policy).
 
+**Post-commit pivot.** Between this step's first commit and Step 24.2, the pinned `Z2A` strip design was reverted: it produced too much vertical-layout shift and broke `Z2`'s cell-row rhythm. The surface migrated to a `TASKS` cell *inside* `TideTelemetryStatusRow` on the single (un-split) `Z2`. As part of the revert, `TideCardPinnedTodo` + `tide-card-pinned-todo.{tsx,css}` were deleted; the `statusBarLeadingContent` prop on `TideCard` was removed; the `--tugx-pinned-todo-*` token family was retired; and the `:has()`-based status-bar collapse rule on `tide-card.css` was reverted. The follow-on build-out (the `TASKS` cell, the popover, the `TugTaskItem` + `TugLabelRole` primitives) shipped in subsequent commits before [#step-24-2](#step-24-2). The checkbox accounts above describe what was *first* shipped here; D100 carries the canonical current surface plus a History paragraph documenting the iteration.
+
 ---
 
-#### Step 24.2: Gallery + symbol-inventory cleanup post-[D100] {#step-24-2}
+#### Step 24.2: Post-[D100] reconciliation — revert Z2A/Z2B split, refresh inventories {#step-24-2}
 
-**Status (post-Step 24.1):** the file deletion and dispatch unregistration originally scoped here were pulled forward into Step 24.1 — once `TodoListBlock`'s types were renamed against the Task* model, the dead `TodoWriteToolBlock` no longer compiled and "fix preexisting" applied. The remaining work is doc / gallery cleanup that's better landed under its own commit so the gallery + inventory edits stay isolated.
+**Status (post-Step 24.1):** the scope here grew well past the originally-narrow "gallery + symbol-inventory cleanup" framing. Between Step 24.1's first commit and this step the design pivoted twice — first the pinned `Z2A` strip shipped, then it was reverted in favor of a single `Z2` carrying a new `TASKS` cell within `TideTelemetryStatusRow`, then the cell + popover surface was built out (`TugTaskItem` + `TugLabelRole`). The code is correct as-shipped; this step is the pure-docs pass that aligns every roadmap / `tuglaws/` mention with the actually-shipped surface so a reader landing on D97 / D100 / Table T02 / the symbol inventory sees what is there, not what we tried.
 
-**Goal.** Finish post-[D100] housekeeping: update the symbol inventory and the planned-but-not-shipped gallery card so they describe the as-shipped reality.
+**Goal.** Reconcile docs with shipped reality across `tuglaws/design-decisions.md` (D97 + D100), `roadmap/tide-assistant-rendering.md` (Table T02 + audit-confirmed table + phase-overview lists + ASCII diagram + symbol inventory + Step 29.5 entry), and the Step 24.1 task accounts (note the post-commit pivot).
 
 **Depends on:** #step-24-1
 
-**Commit:** `chore(tide-rendering): gallery + symbol-inventory cleanup post-[D100]`
+**Commit:** `plan(tide): reconcile [D100] docs with shipped TASKS cell + revert Z2A/Z2B`
 
-**References:** [D100]
+**References:** [D97], [D100], [L20].
 
-**Artifacts.**
-- Symbol inventory in this roadmap (§Definitive Symbol Inventory, around line 1031–1035) — strike `TodoWriteToolBlock` from the Layer-2 wrapper list; add `TideCardPinnedTodo` + `reduceTaskListState` + `TaskItem` / `TaskListState` types under the appropriate section.
-- Gallery: [#step-29-5](#step-29-5) `gallery-tool-block-meta.tsx` had `TodoWrite` on its demo list — swap it for a `Z2A`-pinned-slot demo (a synthetic `TaskItem[]` driving `TodoListBlock` standalone), or drop the entry if a dedicated `gallery-tide-pinned-todo.tsx` is preferred (decide at gallery-build time).
+**Code state (no changes needed).** The shipped surface uses:
+- `TideTelemetryStatusRow` for `Z2` (`statusBarContent`), with a `TASKS` cell rendering `TugProgress` ring + `N/M` label + popover.
+- Popover composes `TugTaskItem` primitives directly; no `TodoListBlock` mount in the status bar surface.
+- `useTaskListState` hook (`lib/code-session-store/hooks/use-task-list-state.ts`) combines committed transcript + in-flight streaming-tools path.
+- `select-task-list.ts` exports `reduceTaskListState`, `taskListIsActive`, `TaskItem`, `TaskListState`, `TaskStatus`, `narrowTaskCreateInput`, `narrowTaskUpdateInput`, `parseTaskCreateResultId`.
+- `TugTaskItem` primitive (`components/tugways/tug-task-item.tsx` + `.css`).
+- `TugLabel` extended with `TugLabelRole` and the `role` prop.
+- Gallery card `gallery-tug-task-item.tsx`.
+- `TideCardPinnedTodo` + `tide-card-pinned-todo.{tsx,css}` + `statusBarLeadingContent` prop + `--tugx-pinned-todo-*` token family + the `:has()`-based collapse rule are **not present** — all removed during the pivot.
 
-**Done by Step 24.1 (no work left here):**
-- ~~Delete `todo-write-tool-block.{tsx,css}` and its test file.~~ Done.
-- ~~Unregister or null-register `todowrite` in the dispatch.~~ The dispatch decision (null-register) is recorded in [D100]; the obsolete `todowrite` registration is removed; `taskcreate` / `taskupdate` are null-registered. `taskget` was added to the audit set defensively.
-- ~~Inventory tables in the roadmap (T01, T02, audit-confirmed list).~~ Done by Step 24.1's docs pass; Table T02's wrapper row now points at `TideCardPinnedTodo (Z2A pinned slot)`, and the audit-confirmed table strikes through `TaskCreate` / `TaskUpdate` with [D100] cross-refs.
+**Done by this step (✓ when committed):**
+- [x] D97 ASCII diagram (`tuglaws/design-decisions.md` ~line 265) — revert from `Z2 [grip] Z2A pinned-todo · Z2B STATE · …` to single `Z2 [grip] STATE · TIME · TOKENS · TASKS · CONTEXT`.
+- [x] D97 zone table (~line 284) — collapse `Z2A` + `Z2B` rows back into a single `Z2` row; describe the `TASKS` cell within it.
+- [x] D97 prose paragraph (~line 291) — drop "`Z2A` leading + `Z2B` trailing in one flex row" references; single-`Z2` flow.
+- [x] D100 prose (~line 297) — rewrite end-to-end to describe the `TASKS` cell + popover surface; add a **History** paragraph documenting the brief `Z2A`/`Z2B` shipping iteration and the revert.
+- [x] Roadmap phase overview (line 73, L04 list) — strike `TodoWriteToolBlock`; add [D100] cross-ref.
+- [x] Roadmap ASCII Layer-2 diagram (line 552) — strike `TodoWriteToolBlock`; note `TaskCreate`/`TaskUpdate` route through `NullToolBlock`.
+- [x] Roadmap directory map (line 804) — remove `todo-write-tool-block.tsx + .css` (file is already deleted on disk).
+- [x] Roadmap Table T02 wrapper row (line 900) — rewrite from `TideCardPinnedTodo (Z2A pinned slot, [D100])` to the `TASKS` status-bar cell description.
+- [x] Roadmap audit-confirmed table (line 908) — refresh `TaskCreate` row's [D100] cross-ref to drop "pinned `Z2A` slot" language.
+- [x] Roadmap List L04 in Lists block (line 1036) — strike `TodoWriteToolBlock`; add [D100] cross-ref.
 
-**Tasks.**
-- [ ] Symbol inventory edits per Artifacts above.
-- [ ] Step 29.5 plan amendment — swap or drop the `TodoWrite` gallery demo entry.
+**Open by this step:**
+- [x] Step 24.1 task-list amendment — "**Post-commit pivot.**" paragraph added below Step 24.1's Tasks list noting that the `Z2A`/`Z2B` split was reverted, the `TideCardPinnedTodo` + `tide-card-pinned-todo.{tsx,css}` artifacts were deleted, and the surface migrated to the `TASKS` cell in `TideTelemetryStatusRow`. The historical checkboxes stay as-shipped-at-the-time; the amendment paragraph is the seam.
+- [x] §Definitive Symbol Inventory (lines 1057 + 1090+) — struck `todo-write-tool-block` from the file-glob; added the shipped pieces to "Symbols to add / modify" (`useTaskListState`, `reduceTaskListState`, `taskListIsActive`, `TaskItem` / `TaskListState` / `TaskStatus`, `narrow*` helpers, `TugTaskItem`, `TugLabelRole`) and to "New files" (`select-task-list.ts`, `use-task-list-state.ts`, `tug-task-item.{tsx,css}`, `gallery-tug-task-item.tsx`).
+- [x] Step 29.5 entry — `gallery-tool-block-meta.tsx`'s `TodoWrite` demo dropped; pointer added to the standalone `gallery-tug-task-item.tsx` card.
+- [x] Phase-overview line 61 — `TodoWrite` struck from the per-tool catalog list with a [D100] explanatory parenthetical.
 
 **Tests.**
-- [ ] No new tests; existing suite continues to pass (`bun test`).
+- [ ] No new tests; existing suite continues to pass (`bun test`). Pure docs change.
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual (HMR): re-run the reference prompt against `/tmp/todo-test`; the transcript shows NO TodoWrite tool blocks; `Z2A` carries the active list.
+- [ ] Manual: read D97 + D100 + Table T02 + symbol inventory + Step 29.5; confirm no stale `Z2A`, `TideCardPinnedTodo`, `statusBarLeadingContent`, or `TodoWriteToolBlock` references remain anywhere except in the Step 24.1 historical task account (which carries the amendment paragraph).
+- [ ] `grep -rn "TideCardPinnedTodo\|statusBarLeadingContent\|--tugx-pinned-todo" roadmap/ tuglaws/` returns either zero hits or only history-paragraph hits in Step 24.1.
 
 ---
 
@@ -6180,7 +6206,7 @@ Notes:
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-search.tsx` + `.css` — Glob + Grep + WebSearch wrappers
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-network.tsx` + `.css` — WebFetch (cache hit, cache miss, fetch error)
 - `tugdeck/src/components/tugways/cards/gallery-tool-block-agent.tsx` + `.css` — Task wrapper with depth 1, 2, 3
-- `tugdeck/src/components/tugways/cards/gallery-tool-block-meta.tsx` + `.css` — TodoWrite + finalized DefaultToolWrapper drift variants
+- `tugdeck/src/components/tugways/cards/gallery-tool-block-meta.tsx` + `.css` — finalized DefaultToolWrapper drift variants. **Per [D100]**: no TodoWrite demo — `TodoWrite` was retired upstream and the [D100] `TaskCreate` / `TaskUpdate` family routes to `NullToolBlock` (no wrapper to demo). The status-bar `TASKS` cell + `TugTaskItem` primitive are already covered by the standalone `gallery-tug-task-item.tsx` card.
 - `tugdeck/src/components/tugways/cards/gallery-tide-dialogs.tsx` + `.css` — PermissionDialog + QuestionDialog (pending, approved, denied; single + multi-select with "Other")
 - `tugdeck/src/components/tugways/cards/gallery-tide-chrome.tsx` + `.css` — TideMeterChrome (card status strip), SessionInitBanner, ErrorBlock, CautionBadge
 
