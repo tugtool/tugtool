@@ -228,27 +228,6 @@ export const TOOL_VISIBILITY_POLICY: ReadonlyArray<ToolVisibilityEntry> = [
     reviewedAt: "2026-05-24",
   },
   {
-    name: "enterworktree",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `WorktreeToolBlock` — see [#step-24-3-2]. User-meaningful operational action; deserves a compact header.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "exitworktree",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `WorktreeToolBlock` (alias) — see [#step-24-3-2].",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "monitor",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `MonitorToolBlock` — see [#step-24-3-2]. Process / log monitoring; the command + tail of output is the load-bearing payload.",
-    reviewedAt: "2026-05-24",
-  },
-  {
     name: "notebookedit",
     visibility: "default-intent",
     rationale:
@@ -267,13 +246,6 @@ export const TOOL_VISIBILITY_POLICY: ReadonlyArray<ToolVisibilityEntry> = [
     visibility: "default-intent",
     rationale:
       "Awaiting `ShareOnboardingGuideToolBlock` — see [#step-24-3-4]. The share URL in the result is the load-bearing payload.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "skill",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `SkillToolBlock` — see [#step-24-3-2]. The skill name + args are the load-bearing payload.",
     reviewedAt: "2026-05-24",
   },
   {

@@ -1,0 +1,25 @@
+/* @tug-pairings: none — `ToolBlockBody` is layout-only; no color
+ * tokens. Inherits its surface from the surrounding tool-block chrome.
+ */
+
+/**
+ * tool-block-body.css — the standard tool-block body container.
+ *
+ * One declaration, one place to keep in sync. Every wrapper that uses
+ * this primitive picks up the same vertical-flex stack with the same
+ * gap and the same padding — so an unrelated wrapper-CSS edit can't
+ * silently drift the body shape.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance.
+ *  - [L19] file pair, module docstring, `data-slot="tool-block-body"`.
+ *  - [L20] no `--tugx-toolblock-body-*` tokens — layout values use
+ *    the shared `--tug-space-*` family.
+ */
+
+.tool-block-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-sm);
+}

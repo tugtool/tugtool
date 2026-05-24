@@ -898,6 +898,9 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | WebSearchToolBlock | WebSearch | SearchResultBlock | query + count |
 | (TASKS status-bar cell, [D100]) | TaskCreate / TaskUpdate | — (no body kind; popover composes `TugTaskItem`) | TASKS cell on the `Z2` status bar via `TideTelemetryStatusRow` (`useTaskListState` reducer + `TugProgress` ring + popover); per-call events route to `NullToolBlock` in the dispatch |
 | NotebookEditToolBlock | NotebookEdit | DiffBlock | notebook + cell |
+| SkillToolBlock ([#step-24-3-2]) | Skill | — (inline `<code>` for short args, embedded `TugMarkdownBlock` for long) | `Skill · /<skill-name>` header + optional one-line result label |
+| MonitorToolBlock ([#step-24-3-2]) | Monitor | — (inline `<pre>` tail + native `<details>` expand) | `Monitor · <command|path|pid>` header + `until` row + tailed output |
+| WorktreeToolBlock ([#step-24-3-2]) | EnterWorktree, ExitWorktree | — (single labeled row) | `Worktree · <verb> <branch|path>` header + optional `path:` row |
 | DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
 
 **Tool visibility policy — `TOOL_VISIBILITY_POLICY`** (per [D101]; source of truth at `tugdeck/src/components/tugways/cards/tide-tool-visibility-policy.ts`). Two explicit buckets — `hidden` (paint zero ink, short-circuit to `NullToolBlock`) and `default-intent` (route through `DefaultToolBlock` with no caution; bespoke wrapper planned). Bespoke is implicit (registry presence). Volumes from [session audit §4.2](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline. The two tables below mirror the policy file's structure; editing the policy is the way to move a tool between them — never edit a runtime set in `tide-assistant-renderer-dispatch.ts` directly.
@@ -918,10 +921,6 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 
 | Tool name | Audit volume | Awaiting (follow-on step) |
 |-----------|-------------:|---------------------------|
-| Skill | 10 (0.02%) | `SkillToolBlock` — [#step-24-3-2](#step-24-3-2) |
-| Monitor | 38 (0.06%) | `MonitorToolBlock` — [#step-24-3-2](#step-24-3-2) |
-| EnterWorktree | 1 (0.00%) | `WorktreeToolBlock` — [#step-24-3-2](#step-24-3-2) |
-| ExitWorktree | 1 (0.00%) | `WorktreeToolBlock` (alias) — [#step-24-3-2](#step-24-3-2) |
 | TaskList | 34 (0.05%) | `TaskMgmtToolBlock` — [#step-24-3-3](#step-24-3-3) (background-task family — distinct from the [D100] user-task list) |
 | TaskGet | — | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
 | TaskOutput | 37 (0.06%) | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
@@ -4326,8 +4325,9 @@ Debt surfaced during E.12. All three items below were root-caused and fixed in a
 7. **State preservation.** Collapse state, inner scroll position, and any user-visible state survive reload / cross-pane / cold-boot via `useComponentStatePreservation` / `useSavedRegionScroll` ([A9]). [L23, Phases E.6–E.9]
 8. **Header truncation (tool wrappers).** Wrapper headers of the form `Tool · {arg}` use the established truncation primitives: end-ellipsis `<code>` for commands, the middle-ellipsis path pattern (`MiddleEllipsisPath` in `tool-wrappers/middle-ellipsis-path.tsx`, shared by `ReadToolBlock` / `EditToolBlock`) for file paths, and `TugTooltip` with `truncated` / `suppressOpen` gating. The args slot truncates, never scrolls or hover-expands. [Step 10.9 follow-on, #step-11]
 9. **List-shaped body kinds.** Body kinds backed by a row list (`PathListBlock`, `SearchResultBlock`, `TodoListBlock`, large `TableBlock`) build on `TugListView`; its opt-in `selectionRequired` mode is available when the list owns a mandatory single selection.
+10. **Tool-block bodies compose from `body-bits/`.** Every tool-wrapper body inside `ToolBlockChrome` composes the shared primitives in `tool-blocks/body-bits/` — `ToolBlockBody` (padded vertical-flex container), `ToolBlockFieldRow` (`<label>: <value>` row, `inline` / `stacked` layouts), `ToolBlockDisclosure` (native `<details>` + rotating chevron + active-tone label), `ToolBlockPre` (mono `<pre>` for raw output). The pre-extraction state had three wrappers (Skill / Monitor / Worktree) each hand-rolling its own slightly-different body container, label-over-value row, and `<pre>` block in its own CSS file — landed in this codebase, that pattern fan-outs to every subsequent wrapper. Reach for a wrapper-local class only when the primitive set genuinely does not cover the shape; when in doubt, extend a primitive (or add a new one to `body-bits/`) rather than re-deriving the layout in a wrapper-CSS file. A wrapper that composes purely from `body-bits/` may legitimately ship without a paired `.css` file (Worktree is the reference); the `.tsx` + `.css` pair convention is "pair when you own styles", not "always pair".
 
-**Scope note.** Items 3–5 apply to body kinds with header / scrolling chrome (file, diff, terminal, json-tree, path-list, search-result, agent-transcript, todo-list, large table). Display-only inline blocks (`KaTeXBlock`, `MermaidBlock`, `ImageBlock`) apply only items 1–2 and 6–7 as relevant — they have no identity header, actions row, or fold affordance.
+**Scope note.** Items 3–5 apply to body kinds with header / scrolling chrome (file, diff, terminal, json-tree, path-list, search-result, agent-transcript, todo-list, large table). Display-only inline blocks (`KaTeXBlock`, `MermaidBlock`, `ImageBlock`) apply only items 1–2 and 6–7 as relevant — they have no identity header, actions row, or fold affordance. Item 10 applies to tool-block *wrappers* (Layer 2), not to body kinds (Layer 1).
 
 ---
 
@@ -5848,6 +5848,7 @@ Notes:
 - **[Step 24.3.3](#step-24-3-3)** — `TaskMgmtToolBlock` (covers `TaskList` / `TaskGet` / `TaskOutput` / `TaskStop`).
 - **[Step 24.3.4](#step-24-3-4)** — Management trio: `CronToolBlock` + `ShareOnboardingGuideToolBlock` + `RemoteTriggerToolBlock`.
 - **[Step 24.3.5](#step-24-3-5)** — `TaskInlineToolBlock` (per-call inline markers for `TaskCreate` / `TaskUpdate`; updates [D100] to acknowledge the second surface).
+- **[Step 24.3.7](#step-24-3-7)** — `PermissionDialog` routes tool preview through dispatch (every bespoke wrapper automatically renders in its approval prompt, replacing the raw `JsonTreeBlock` dump).
 
 **References:** [D04] (drift fallback), [D05] (two-layer split), [D11] (`DefaultToolBlock` covers day-one unknowns), [D100] (pinned `Z2A` precedent for the hidden bucket).
 
@@ -5957,18 +5958,23 @@ Notes:
 - Remove the three corresponding `default-intent` entries from `TOOL_VISIBILITY_POLICY`; the governance test enforces they move out of the policy file once registered.
 
 **Tasks.**
-- [ ] Build each wrapper per the artifact list. Each one's header is the load-bearing UX — the body is intentionally minimal.
-- [ ] Gallery cards: one each, registered under category `"tool-blocks"` (matching existing tool-block gallery convention).
-- [ ] Update Table T02 with the three new wrappers.
+- [x] Build each wrapper per the artifact list. **Done** — `SkillToolBlock` (Sparkles icon + `/<skill>` header + args body + result label), `MonitorToolBlock` (Radar icon + command/path/pid header + `until` row + tailed output with native `<details>` expand), `WorktreeToolBlock` (GitBranch icon + verb-qualified header + optional `path:` row). Each wrapper exports its pure narrowing + composition helpers for pure-logic tests; no fake-DOM render tests.
+- [x] Gallery cards: one each, registered under `CATEGORIES.blockRenderers` in `gallery-registrations.tsx`. Each card has 5–6 sections covering the dominant + fallback + streaming + error variants.
+- [x] Update Table T02 with the three new wrappers — added rows for `SkillToolBlock`, `MonitorToolBlock`, `WorktreeToolBlock`. Removed the four corresponding rows from the default-intent table (`skill`, `monitor`, `enterworktree`, `exitworktree`).
+- [x] Added `enterworktree → worktree` and `exitworktree → worktree` entries to `TOOL_ALIASES`; one `WorktreeToolBlock` handles both via branch-on-`toolName` (`deriveWorktreeVerb`). Added 3 entries to `BESPOKE_REGISTRATIONS`.
+- [x] Exported `BESPOKE_FACTORY_BY_NAME` (frozen name → factory map) from the dispatch so per-wrapper tests can pin registration without racing the dispatch test's `beforeEach` registry reset.
+- [x] Repointed two existing tests (`tide-assistant-renderer-dispatch.test.ts` + `default-tool-block.test.ts`) that used `Monitor` as the audit-confirmed-default example to use `ShareOnboardingGuide` (still default-intent at this step's exit); same with the policy test's mirror `ALIASES` map updated for the worktree aliases.
 
 **Tests.**
-- [ ] Synthetic per-wrapper fixtures (`__tests__/skill-tool-block.test.ts`, etc.): header renders the right substring; long inputs middle-ellipsis correctly; errored tool surfaces the error band.
-- [ ] `tide-tool-visibility-policy.test.ts` continues to pass after the three removals.
+- [x] `__tests__/skill-tool-block.test.ts` — 14 assertions: narrowing (4), header composition (2), result presentation (4), `INLINE_ARGS_MAX_CHARS` pin (1), dispatch registration via `BESPOKE_FACTORY_BY_NAME` (1), plus a coverage spread.
+- [x] `__tests__/monitor-tool-block.test.ts` — 17 assertions: narrowing (3), header preference order (5), tail composition including trailing-newline handling (5), `TAIL_LINE_COUNT` pin (1), dispatch registration (1).
+- [x] `__tests__/worktree-tool-block.test.ts` — 18 assertions: narrowing (3), verb derivation (4), header preference (5), tool-name composition (3), dispatch registration including the "aliases stay in `TOOL_ALIASES`, not in `BESPOKE_FACTORY_BY_NAME`" sanity check (2).
+- [x] `tide-tool-visibility-policy.test.ts` continues to pass — the `default-intent` count drops by 4 (the 17 → 13 entries reflect skill/monitor/enterworktree/exitworktree removal); v2.1.148 coverage check (d) still holds because the 4 names now resolve through `BESPOKE_TOOL_NAMES` (via the alias map for the worktree pair).
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint`.
-- [ ] Manual (HMR): trigger each tool from a session; confirm the bespoke header reads cleanly and the body is one or two lines, not a JSON tree.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — clean. `2715 / 2715` pass (was `2675` prior to this step; net `+40` across the three new wrapper test files less the 4 default-intent governance entries that turned into bespoke).
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual (HMR): trigger each tool from a session; confirm the bespoke header reads cleanly and the body is one or two lines, not a JSON tree. (Deferred to user — HMR is always running; the live engine pipeline is the source of visual truth per the project's testing policy.)
 
 ---
 
@@ -6092,6 +6098,70 @@ Notes:
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
 - [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
 - [ ] Manual (HMR): run the reference prompt against `/tmp/todo-test`; confirm each task event lands an inline calm-italic marker in the transcript with the ListChecks icon and the right label, and that the TASKS status-bar cell continues to track the same events as the canonical surface.
+
+---
+
+#### Step 24.3.7: PermissionDialog routes tool preview through dispatch {#step-24-3-7}
+
+**Goal.** Make the permission-approval dialog show the bespoke compact preview for any tool that has a registered wrapper — Monitor, Skill, Worktree (this step's predecessors at [#step-24-3-2]), and every wrapper that ships in 24.3.3 / 24.3.4 / 24.3.5 — instead of dumping the raw `input` through `JsonTreeBlock`. The dialog gets the same rendering the transcript does, for free, every time a new bespoke wrapper lands.
+
+**Motivation (from real HMR usage).** A user approving a `Monitor` invocation today sees:
+
+```
+input
+  description: "tailing /var/log/system.log for \"kernel\""
+  timeout_ms: 60000
+  persistent: false
+  command: "tail -f /var/log/system.log | awk '/kernel/ {print; fflush(); exit}'"
+```
+
+— a `JsonTreeBlock` over the raw `tool_use.input` payload. The actually-meaningful bit (the command being run, the predicate being watched) is buried in a wall of key-value rows. Compare to what the *transcript* would show via the new `MonitorToolBlock`: `Monitor · tail -f /var/log/system.log` header + `until: kernel` row + nothing else. The compact shape was the entire point of [#step-24-3-2]; the user's approval prompt deserves the same.
+
+**Architecture (narrow scope).** Today `selectPermissionBodyKind(toolName)` returns one of `"bash" | "edit" | "path" | "json"` and the dialog hardcodes a body for each case. `"json"` is the catch-all (`JsonTreeBlock` over input) for every tool not in the small bespoke set.
+
+This step adds one new bucket: **`"dispatch"`**.
+- Add `case "dispatch"` returning the wrapper component picked by `dispatchToolCallState({ toolName, input, status: "ready" })`.
+- Update `selectPermissionBodyKind`'s default branch from `"json"` to:
+  - Call `resolveToolBlock(toolName)`. If the returned factory is *not* `DefaultToolBlock` (i.e., a bespoke wrapper exists), pick `"dispatch"`.
+  - Otherwise pick `"json"` (the existing fallback — unchanged behavior for tools genuinely without bespoke wrappers).
+- The existing `"bash"` / `"edit"` / `"path"` bespoke dialog previews stay as-is. They already render a more dialog-appropriate shape than the transcript wrapper would (e.g. the path case shows just the path, no chrome). Don't reroute those — only the previously-`"json"` cases.
+
+This keeps the change incremental: zero behavior change for tools whose dialog preview already works well, and an automatic upgrade for every bespoke wrapper that ships now or later.
+
+**Preview-mode invariant.** The dispatch call passes `status: "ready"` with `textOutput: undefined` and `structuredResult: undefined`. Every bespoke wrapper authored under [#bk-conformance] item 10 already degrades gracefully in this state — the result-section helpers return `{ kind: "none" }` when there's no output, the chrome's `errorMessage` is undefined when there's no error, the footer collapses when there are no badges. The wrapper's header + input rows render normally; the result-side surface stays empty (which is correct — there is no result yet, the user is approving the call).
+
+The one tool that doesn't currently degrade gracefully in this state is `BashToolBlock` (its `(no output)` hint would render misleadingly in a preview context — looks like the command already ran and produced nothing). But Bash is in the existing bespoke dialog set (`case "bash"`) and stays there; the dispatch routing only affects tools that today fall through to `"json"`.
+
+**Depends on:** [#step-24-3-1](#step-24-3-1) (the `BESPOKE_FACTORY_BY_NAME` map exists), [#step-24-3-2](#step-24-3-2) (the operational trio gives this step three immediate beneficiaries to verify against). The benefit grows as 24.3.3 / 24.3.4 / 24.3.5 ship.
+
+**Commit:** `feat(tide-rendering): permission dialog routes through dispatch for tool preview`
+
+**References:** [D04], [D11], [D13] (`PermissionDialog` is the live surface for `control_request_forward` `is_question:false`), [D101] (bespoke = registry presence; the dialog's routing is now consistent with the transcript's).
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — no body kind or new wrapper introduced. The dialog composes existing wrappers; the wrappers' `status: "ready"` rendering with no result data IS their preview surface (per the "degrades gracefully" invariant above).
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.tsx` — extend `PermissionBodyKind` with `"dispatch"`; add the bespoke-vs-default check in `selectPermissionBodyKind`'s default branch; add the `case "dispatch"` body branch that calls `dispatchToolCallState` and mounts the returned component.
+- `tugdeck/src/components/tugways/chrome/tide-permission-dialog.test.ts` — pin the new routing: a tool with a bespoke wrapper (e.g. `"Monitor"`) routes to `"dispatch"`; a tool without (e.g. an unknown name or a `default-intent`-bucket name like `"ShareOnboardingGuide"`) still routes to `"json"`.
+- `__tests__/tide-permission-dialog-dispatch.test.ts` (new, if the existing test file grows too large) — focused tests for the dispatch routing path; assert the returned Component matches `BESPOKE_FACTORY_BY_NAME.get(name)` for each bespoke tool.
+- Optional gallery card update — if `gallery-tide-permission-dialog.tsx` already exists, add a Monitor / Skill / Worktree variant so the new rendering is visible alongside the existing Bash / Edit / Read / Write fixtures. (If no gallery card exists today, this is a future addition — not blocking.)
+
+**Tasks.**
+- [ ] Extend `PermissionBodyKind` to `"bash" | "edit" | "path" | "dispatch" | "json"`.
+- [ ] Update `selectPermissionBodyKind`'s default branch to consult `resolveToolBlock` and return `"dispatch"` when a bespoke wrapper exists, `"json"` otherwise.
+- [ ] Add the `case "dispatch"` body branch in the dialog: call `dispatchToolCallState({ toolName, input, status: "ready", ... })`, mount `<Component {...props} />`.
+- [ ] Verify the three operational-trio wrappers (`SkillToolBlock`, `MonitorToolBlock`, `WorktreeToolBlock`) render cleanly in preview mode — `status: "ready"` with no result data. If any wrapper paints something misleading (e.g. an `(no output)` hint), patch it to gate on the presence of result fields rather than just on `status`.
+- [ ] Update `selectPermissionBodyKind` docstring + the dialog module header to describe the new routing.
+
+**Tests.**
+- [ ] `selectPermissionBodyKind` — `"Monitor"` returns `"dispatch"`; `"Skill"` returns `"dispatch"`; `"EnterWorktree"` returns `"dispatch"` (via the alias); `"ShareOnboardingGuide"` returns `"json"` (default-intent fallback); `"ZzzUnknownTool"` returns `"json"` (genuinely unknown); the existing `"bash"` / `"edit"` / `"path"` returns are unchanged.
+- [ ] Body composition for `"dispatch"` — the picked Component equals `BESPOKE_FACTORY_BY_NAME.get(canonical)`.
+- [ ] Existing `tide-permission-dialog.test.ts` continues to pass — no behavior change for tools in the bespoke dialog set.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual (HMR): trigger a permission prompt for `Monitor`, `Skill`, and `EnterWorktree`; confirm each dialog shows the bespoke compact rendering (`MonitorToolBlock` etc.) in place of the previous JsonTreeBlock dump. The approval text + decision buttons stay unchanged; only the input preview is upgraded.
 
 ---
 
@@ -6401,6 +6471,38 @@ Notes:
 | SessionInitBanner + ErrorBlock | system_metadata change fixture; error fixture |
 | Gallery batch 2 (Step 29.5) | Every remaining component reachable from a registered gallery card; lazy-load fetch verified |
 | Phase exit | Step 30 full integration |
+
+---
+
+### Post-plan follow-ups {#post-plan-follow-ups}
+
+*Bugs and improvements surfaced during this plan's execution that are out of scope for any of its steps. Each entry is a known issue, not an active risk — by definition the plan can close out without resolving them. Carry them forward to their own plan / investigation once this plan exits.*
+
+#### [PPF-01] Tide UI does not re-paint when a session resumes after going idle
+
+**Surfaced during:** [#step-24-3-2](#step-24-3-2) HMR testing — a `Monitor` invocation that timed out 60s later produced the expected `task-notification` → assistant resume in the underlying `claude` JSONL, but the Tide UI stayed on the pre-idle frame and never showed the post-idle turn. Reopening the session in Tide should reveal the missing turns (unverified; user confirmed the symptom).
+
+**Out of scope for this plan because:** the bug is in Tide's session-subscription lifecycle (when the assistant goes idle, Tide stops observing post-idle events from the same session), not in any of this plan's rendering / dispatch / policy concerns. Fixing it requires tugcast / tugdeck session-binding work that does not touch the assistant-rendering surface.
+
+**Reproduction recipe (for the follow-up plan):**
+1. Open a fresh Tide session against any project.
+2. Prompt: `Use the Monitor tool to tail /var/log/system.log until you see the word "kernel". Stop as soon as you see it.`
+3. Approve the permission prompt.
+4. Wait 60+ seconds (until the Monitor times out).
+5. Expected: the assistant resumes with `"The monitor timed out…"` + a follow-up `Bash` investigation. The transcript should paint these turns in the Tide UI.
+6. Observed: the UI stays on `State: Idle` indefinitely; reopening the session shows the missing turns. The session JSONL confirms the assistant DID resume server-side.
+
+**Reference session:** `~/.claude/projects/-private-tmp-todo-test/5c0aa961-019e-47a7-a39e-1c9327d5e9fc.jsonl`. Timeline:
+```
+14:47:32  Monitor armed (60s timeout)
+14:47:54  Claude: "Monitor armed; I'll report back..."
+          [55-second idle wait]
+14:48:51  task-notification arrives: "Monitor timed out — re-arm if needed."
+14:48:54  Claude resumes: "The monitor timed out after 60 seconds..."
+14:48:56  Claude fires Bash to investigate
+```
+
+**Workaround until fixed:** reopen the session in Tide if the assistant has been idle long enough to potentially have resumed from a background event.
 
 ---
 

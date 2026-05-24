@@ -1,0 +1,98 @@
+/* @tug-pairings {
+ *   ".tool-block-disclosure-summary":
+ *     element=tone-text-normal-active-rest
+ *     surface=surface-global-primary-normal-default-rest
+ * }
+ *
+ * The summary text carries the interactive "active" tone — readers
+ * should be able to spot the affordance as something they can click
+ * without it shouting for attention. The chevron `currentColor`s the
+ * same tone via the SVG cascade.
+ */
+
+/**
+ * tool-block-disclosure.css — the native `<details>` expand affordance
+ * shared by tool-block wrappers.
+ *
+ * Three load-bearing pieces:
+ *  1. Suppress the browser's default disclosure triangle —
+ *     `list-style: none` (standards) + `::-webkit-details-marker`
+ *     (Safari). Without both, a stray native marker leaks alongside
+ *     our chevron.
+ *  2. Lay the summary out as an inline-flex row carrying the lucide
+ *     `ChevronRight` + the label text.
+ *  3. Rotate the chevron 90° on `[open]` via a CSS attribute selector
+ *     + transform transition — no React state needed.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance — `[open]` is a native
+ *    DOM attribute; CSS keys off it for the rotation.
+ *  - [L19] file pair, module docstring, `data-slot=
+ *    "tool-block-disclosure"` + nested slot annotations.
+ *  - [L20] no `--tugx-toolblock-disclosure-*` tokens; the summary
+ *    label uses `--tug7-element-tone-text-normal-active-rest`
+ *    directly so the affordance reads as standard "interactive"
+ *    surface tone.
+ */
+
+/* ============================================================================
+   The `<details>` root — block element, no chrome of its own.
+   ========================================================================= */
+
+.tool-block-disclosure {
+  display: block;
+}
+
+/* ============================================================================
+   `<summary>` — the chevron + label row. Suppress the default native
+   marker; lay out as inline-flex; carry the standard active-tone
+   color so the affordance reads as interactive.
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tool-block-disclosure-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  cursor: pointer;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-tone-text-normal-active-rest);
+  user-select: none;
+  list-style: none;
+}
+
+.tool-block-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ============================================================================
+   Chevron — fixed-size at the start of the summary row; rotates 90°
+   on open via the parent `[open]` attribute selector.
+   ========================================================================= */
+
+.tool-block-disclosure-chevron {
+  flex: 0 0 auto;
+  transition: transform 150ms ease;
+}
+
+.tool-block-disclosure[open] .tool-block-disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+/* ============================================================================
+   Summary label text — fills remaining row width; honors `min-width: 0`
+   so a long label can wrap if a future caller needs it.
+   ========================================================================= */
+
+.tool-block-disclosure-summary-text {
+  min-width: 0;
+}
+
+/* ============================================================================
+   Body — appears when `<details>` is open. Small gap from the summary
+   so the revealed content doesn't sit flush against the chevron row.
+   ========================================================================= */
+
+.tool-block-disclosure[open] .tool-block-disclosure-body {
+  margin-top: var(--tug-space-2xs);
+}

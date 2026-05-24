@@ -1,0 +1,43 @@
+/* @tug-pairings: none — `MonitorToolBlock` is pure composition over
+ * `ToolBlockChrome`, the `body-bits/` primitives (`ToolBlockBody`,
+ * `ToolBlockFieldRow`, `ToolBlockDisclosure`, `ToolBlockPre`). The
+ * only wrapper-local rule is the tighter vertical gap on the output
+ * stack so the disclosure summary sits closer to the visible tail.
+ */
+
+/**
+ * monitor-tool-block.css — `MonitorToolBlock` wrapper styles.
+ *
+ * After the body-bits refactor, almost every visual rule that used
+ * to live here moved to a shared primitive:
+ *
+ *   - body container → `ToolBlockBody`
+ *   - `until` row    → `ToolBlockFieldRow`
+ *   - `<pre>` blocks → `ToolBlockPre`
+ *   - chevron + native `<details>` expand → `ToolBlockDisclosure`
+ *
+ * The only remaining wrapper-local concern is the small inter-row
+ * gap inside the output stack (disclosure above + tail below). The
+ * default `ToolBlockBody` gap is `--tug-space-xs`; the output stack
+ * lives one level deeper and uses the tighter `--tug-space-2xs` so
+ * the disclosure reads as visually part of the same output block,
+ * not as a separate section.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance.
+ *  - [L19] file pair, module docstring; `data-slot="monitor-tool-block"`
+ *    is owned by the chrome's `rootSlot`.
+ *  - [L20] no new tokens; layout values use the shared `--tug-space-*`
+ *    family.
+ */
+
+/* ============================================================================
+   Output stack — the disclosure (when present) sits above the visible
+   tail; the tighter inner gap keeps them visually tied together.
+   ========================================================================= */
+
+.monitor-tool-block-output {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+}

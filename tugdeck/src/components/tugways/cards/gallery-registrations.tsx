@@ -82,6 +82,9 @@ import {
   GalleryBashToolBlock,
   GalleryBashMountInSavedState,
 } from "./gallery-bash-tool-block";
+import { GallerySkillToolBlock } from "./gallery-skill-tool-block";
+import { GalleryMonitorToolBlock } from "./gallery-monitor-tool-block";
+import { GalleryWorktreeToolBlock } from "./gallery-worktree-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GalleryTideThinking } from "./gallery-tide-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
@@ -493,11 +496,41 @@ export function registerGalleryCards(): void {
 
   // DefaultToolBlock — the [D11] fallback for tool calls with no
   // bespoke wrapper: unknown tools (with a caution badge) and
-  // audit-confirmed long-tail tools.
+  // policy default-intent tools awaiting their bespoke wrapper.
   registerCard({
     componentId: "gallery-tool-block-default",
     contentFactory: (_cardId) => <GalleryToolBlockDefault />,
     defaultMeta: { title: "DefaultToolBlock", icon: "Wrench", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Operational trio ([#step-24-3-2]) — bespoke wrappers for low-volume
+  // user-meaningful tools that were previously default-routed.
+  registerCard({
+    componentId: "gallery-skill-tool-block",
+    contentFactory: (_cardId) => <GallerySkillToolBlock />,
+    defaultMeta: { title: "SkillToolBlock", icon: "Sparkles", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  registerCard({
+    componentId: "gallery-monitor-tool-block",
+    contentFactory: (_cardId) => <GalleryMonitorToolBlock />,
+    defaultMeta: { title: "MonitorToolBlock", icon: "Radar", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  registerCard({
+    componentId: "gallery-worktree-tool-block",
+    contentFactory: (_cardId) => <GalleryWorktreeToolBlock />,
+    defaultMeta: { title: "WorktreeToolBlock", icon: "GitBranch", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

@@ -114,6 +114,8 @@ const V2_1_148_CANONICAL_TOOL_NAMES: ReadonlyArray<string> = [
 const ALIASES: ReadonlyMap<string, string> = new Map([
   ["task", "agent"],
   ["multiedit", "edit"],
+  ["enterworktree", "worktree"],
+  ["exitworktree", "worktree"],
 ]);
 
 function canonicalize(name: string): string {

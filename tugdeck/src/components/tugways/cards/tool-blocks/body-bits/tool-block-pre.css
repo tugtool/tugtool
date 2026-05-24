@@ -1,0 +1,26 @@
+/* @tug-pairings: none — `ToolBlockPre` is layout + font only;
+ * color inherits from the surrounding tool-block body's surface.
+ */
+
+/**
+ * tool-block-pre.css — the standard tool-block `<pre>` block.
+ *
+ * One declaration shared by every wrapper that surfaces raw output.
+ * `pre-wrap` so long lines wrap rather than overflow the body
+ * horizontally; `word-break: break-word` so a single un-spaced
+ * token (e.g. a long file path or hash) wraps inside the row.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance.
+ *  - [L19] file pair, module docstring, `data-slot="tool-block-pre"`.
+ *  - [L20] no `--tugx-toolblock-pre-*` tokens; font + size use the
+ *    shared `--tug-font-family-mono` / `--tug-font-size-sm`.
+ */
+
+.tool-block-pre {
+  margin: 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

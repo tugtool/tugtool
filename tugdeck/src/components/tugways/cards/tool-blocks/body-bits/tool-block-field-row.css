@@ -1,0 +1,81 @@
+/* @tug-pairings: none — `ToolBlockFieldRow` is layout-only; the
+ * label's color comes from `TugLabel color="muted"`'s own tokens.
+ * Value children inherit their own typography (mono via `<code>`,
+ * sans via `TugLabel`, etc.).
+ */
+
+/**
+ * tool-block-field-row.css — the `<label>: <value>` row layout shared
+ * by every tool-block wrapper that surfaces fielded data.
+ *
+ * Two layouts switched via `data-layout`:
+ *  - `inline` (default) — flex row, baseline alignment.
+ *  - `stacked` — flex column, stretch alignment, tighter gap.
+ *
+ * The value slot honors `min-width: 0` so a long single-line value
+ * wraps inside the row instead of overflowing the body horizontally.
+ * Mono `<code>` values pick up the standard wrapper-mono treatment
+ * via the descendant selector.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance — the `inline` vs `stacked`
+ *    branch is set via `data-layout`, a pure DOM attribute driven
+ *    from props.
+ *  - [L19] file pair, module docstring,
+ *    `data-slot="tool-block-field-row"` + `data-slot=
+ *    "tool-block-field-row-value"` for debug targeting.
+ *  - [L20] no `--tugx-toolblock-field-row-*` tokens; layout values
+ *    use the shared `--tug-space-*` family.
+ */
+
+/* ============================================================================
+   Base row — shared structure.
+   ========================================================================= */
+
+.tool-block-field-row {
+  display: flex;
+  gap: var(--tug-space-xs);
+}
+
+/* ============================================================================
+   Layout variants.
+   ========================================================================= */
+
+.tool-block-field-row[data-layout="inline"] {
+  flex-direction: row;
+  align-items: baseline;
+}
+
+.tool-block-field-row[data-layout="stacked"] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--tug-space-2xs);
+}
+
+/* ============================================================================
+   Key — short label like `args:` / `until:` / `path:`. Natural width
+   so it doesn't steal horizontal space from the value.
+   ========================================================================= */
+
+.tool-block-field-row-key {
+  flex: 0 0 auto;
+}
+
+/* ============================================================================
+   Value — fills remaining horizontal space; `min-width: 0` lets a
+   long single-line value wrap rather than overflow the row.
+   ========================================================================= */
+
+.tool-block-field-row-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Mono treatment for `<code>` values inside the row — the dominant
+ * shape for shell commands, paths, and other tokenized data. */
+.tool-block-field-row-value > code {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-sm);
+  word-break: break-word;
+  white-space: pre-wrap;
+}

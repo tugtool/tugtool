@@ -172,13 +172,16 @@ describe("dispatch — tool_call routing", () => {
   });
 
   it("routes audit-confirmed default tools to DefaultToolBlock without caution", () => {
-    // `monitor` is in `AUDIT_CONFIRMED_DEFAULT_TOOLS` — known to
-    // route through Default by design, so no drift caution. `TaskUpdate`
-    // used to sit here but is now registered to a `NullToolBlock` per
-    // [D100]; see `AUDIT_CONFIRMED_DEFAULT_TOOLS` docstring.
+    // `shareonboardingguide` is in the `default-intent` bucket of
+    // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy to route
+    // through `DefaultToolBlock`, so no drift caution. `Monitor` used
+    // to be the example here but was promoted to bespoke at
+    // [#step-24-3-2]; any future promotion of `shareonboardingguide`
+    // means re-pointing this assertion at whatever's still
+    // default-intent at the time.
     const input: RenderInput = {
       kind: "tool_call",
-      toolCall: fakeToolCall("Monitor"),
+      toolCall: fakeToolCall("ShareOnboardingGuide"),
       msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
@@ -465,10 +468,12 @@ describe("detectToolCallDrift", () => {
     });
   });
 
-  it("does not flag an audit-confirmed default-routed tool", () => {
-    // `Monitor` is in `AUDIT_CONFIRMED_DEFAULT_TOOLS`; `TaskUpdate`
-    // used to be but moved to a registered `NullToolBlock` per [D100].
-    expect(detectToolCallDrift(fakeToolCall("Monitor"))).toBeNull();
+  it("does not flag a policy default-intent tool", () => {
+    // `shareonboardingguide` is in the `default-intent` bucket of
+    // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy, so no
+    // drift caution. `Monitor` used to be the example here but was
+    // promoted to bespoke at [#step-24-3-2].
+    expect(detectToolCallDrift(fakeToolCall("ShareOnboardingGuide"))).toBeNull();
   });
 
   it("does not flag a registered wrapper with no shape schema", () => {

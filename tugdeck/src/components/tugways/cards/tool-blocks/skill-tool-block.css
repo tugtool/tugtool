@@ -1,0 +1,38 @@
+/* @tug-pairings: none — `SkillToolBlock` is pure composition over
+ * `ToolBlockChrome`, the `body-bits/` primitives (`ToolBlockBody`,
+ * `ToolBlockFieldRow`), and `TugMarkdownBlock` for the long-args
+ * variant. The only wrapper-local rule is the margin reset on the
+ * embedded markdown body so it sits flush within the stacked row.
+ */
+
+/**
+ * skill-tool-block.css — `SkillToolBlock` wrapper styles.
+ *
+ * After the body-bits refactor, almost every visual rule that used
+ * to live here moved to a shared primitive:
+ *
+ *   - body container → `ToolBlockBody`
+ *   - row layout (inline / stacked) → `ToolBlockFieldRow`
+ *   - mono `<code>` values → the row's descendant selector
+ *
+ * The only remaining wrapper-local concern is the embedded
+ * `TugMarkdownBlock` for long args: its default outer margin would
+ * leave a visible gap inside the stacked row, so we reset it here.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance.
+ *  - [L19] file pair, module docstring; `data-slot="skill-tool-block"`
+ *    is owned by the chrome's `rootSlot`.
+ *  - [L20] no new tokens; this file owns one descendant rule that
+ *    nudges a composed primitive's margin only — not its color or
+ *    typography slots.
+ */
+
+/* ============================================================================
+   Long-args markdown body — strip its outer margin so the fenced code
+   block sits flush within the stacked `ToolBlockFieldRow` it lives in.
+   ========================================================================= */
+
+.skill-tool-block-args-markdown {
+  margin: 0;
+}

@@ -118,13 +118,17 @@ describe("dispatch → DefaultToolBlock", () => {
     });
   });
 
-  test("an audit-confirmed long-tail tool routes to DefaultToolBlock with no caution", () => {
-    // `monitor` is in `AUDIT_CONFIRMED_DEFAULT_TOOLS` — known to
-    // route through Default by design, so no drift caution.
-    // `TaskUpdate` used to be the example here but is now registered
-    // to `NullToolBlock` per [D100] (silenced from the transcript;
-    // the assembled list lives in the pinned `Z2A` slot).
-    const result = dispatchToolCallState(fakeToolCall("Monitor"), "m1");
+  test("a policy default-intent tool routes to DefaultToolBlock with no caution", () => {
+    // `shareonboardingguide` is in the `default-intent` bucket of
+    // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy to route
+    // through `DefaultToolBlock`, so no drift caution. `Monitor` was
+    // the previous example here but was promoted to bespoke at
+    // [#step-24-3-2]; the assertion was re-pointed at a still-default
+    // tool.
+    const result = dispatchToolCallState(
+      fakeToolCall("ShareOnboardingGuide"),
+      "m1",
+    );
     expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toBeUndefined();
     expect(result.props.caution).toBeUndefined();

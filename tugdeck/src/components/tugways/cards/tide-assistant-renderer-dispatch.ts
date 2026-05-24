@@ -94,6 +94,9 @@ import { GlobToolBlock } from "./tool-blocks/glob-tool-block";
 import { GrepToolBlock } from "./tool-blocks/grep-tool-block";
 import { TaskToolBlock } from "./tool-blocks/task-tool-block";
 import { AskUserQuestionToolBlock } from "./tool-blocks/ask-user-question-tool-block";
+import { SkillToolBlock } from "./tool-blocks/skill-tool-block";
+import { MonitorToolBlock } from "./tool-blocks/monitor-tool-block";
+import { WorktreeToolBlock } from "./tool-blocks/worktree-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
@@ -239,10 +242,15 @@ const TOOL_BLOCK_REGISTRY = new Map<string, ToolBlockFactory>();
  *    `Agent`, so `task` is a backward-compat alias.
  *  - `multiedit` → `edit`: a single Edit wrapper renders both the
  *    Edit and MultiEdit tools (per Table T02).
+ *  - `enterworktree` / `exitworktree` → `worktree`: a single
+ *    `WorktreeToolBlock` handles both verbs and branches internally
+ *    on `toolName` ([#step-24-3-2]).
  */
 const TOOL_ALIASES: ReadonlyMap<string, string> = new Map([
   ["task", "agent"],
   ["multiedit", "edit"],
+  ["enterworktree", "worktree"],
+  ["exitworktree", "worktree"],
 ]);
 
 /**
@@ -948,6 +956,12 @@ const BESPOKE_REGISTRATIONS: ReadonlyArray<
   ["grep", GrepToolBlock],
   ["agent", TaskToolBlock],
   ["askuserquestion", AskUserQuestionToolBlock],
+  ["skill", SkillToolBlock],
+  ["monitor", MonitorToolBlock],
+  // Canonical `worktree`; `enterworktree` and `exitworktree` resolve
+  // here via `TOOL_ALIASES`. The wrapper branches on the original
+  // `toolName` to pick the `enter` / `exit` verb. ([#step-24-3-2])
+  ["worktree", WorktreeToolBlock],
 ];
 
 /**
@@ -957,17 +971,34 @@ const BESPOKE_REGISTRATIONS: ReadonlyArray<
  * clears `TOOL_BLOCK_REGISTRY` but does not touch this constant).
  *
  * Consumed by the policy-file governance test ([D101]) — the test
- * verifies that (a) no bespoke name is in `TOOL_VISIBILITY_POLICY`
- * (no double-classification) and (b) the union of bespoke + policy
- * covers the v2.1.148 canonical tool set. Exporting a frozen
- * constant lets the test stay deterministic across test files; a
- * runtime `registeredTools()` snapshot is fragile because the
- * dispatch test's `beforeEach` clears the registry, and bun runs
- * each test file's tests before loading the next.
+ * verifies that the union of bespoke + policy covers the v2.1.148
+ * canonical tool set. Exporting a frozen constant lets the test stay
+ * deterministic across test files; a runtime `registeredTools()`
+ * snapshot is fragile because the dispatch test's `beforeEach` clears
+ * the registry, and bun runs each test file's tests before loading
+ * the next.
  */
 export const BESPOKE_TOOL_NAMES: ReadonlySet<string> = new Set(
   BESPOKE_REGISTRATIONS.map(([name]) => name),
 );
+
+/**
+ * Frozen name → factory map derived from `BESPOKE_REGISTRATIONS` at
+ * module load. Same rationale as `BESPOKE_TOOL_NAMES`: the runtime
+ * `TOOL_BLOCK_REGISTRY` is mutable (the dispatch test resets it per
+ * `beforeEach`), so per-wrapper tests can't safely assert "Skill
+ * resolves to SkillToolBlock" via `resolveToolBlock(...)` — by the
+ * time they run, the registry may be empty. `BESPOKE_FACTORY_BY_NAME`
+ * is the immutable source of truth that mirrors the bottom-of-file
+ * registrations and stays correct across test files.
+ *
+ * Keys are lowercased canonical names (aliases are NOT included —
+ * use `resolveToolBlock` for alias resolution in tests that need
+ * it). Tests that want to verify "`X` is registered to factory `Y`"
+ * import this map and assert directly.
+ */
+export const BESPOKE_FACTORY_BY_NAME: ReadonlyMap<string, ToolBlockFactory> =
+  new Map(BESPOKE_REGISTRATIONS);
 
 for (const [name, factory] of BESPOKE_REGISTRATIONS) {
   registerToolBlock(name, factory);
