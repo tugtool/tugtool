@@ -5791,6 +5791,249 @@ Notes:
 
 ---
 
+#### Step 24.3: Tool visibility policy + bespoke wrappers for control tools (umbrella) {#step-24-3}
+
+**Status:** new — motivated by dogfooding [#step-24-1](#step-24-1). Once `TaskCreate` / `TaskUpdate` were silenced into `Z2A`, the noise floor of the transcript dropped enough that the *other* default-routed tools (`ToolSearch`, `ScheduleWakeup`, `EnterPlanMode`, …) became conspicuous — the dispatch routes them through `DefaultToolBlock`, which spews their input + result as `JsonTreeBlock`s. That is the *correct* day-one fallback per [D11], but for known tools it is now visual clutter the user has to scroll past on every session.
+
+**Rework motivation.** `AUDIT_CONFIRMED_DEFAULT_TOOLS` in the dispatch is a flat set with two unrelated meanings overloaded onto it: "low volume, JSON-tree is fine" (e.g. `Skill` at 0.02%) AND "internal plumbing the user does not need to see" (e.g. `ToolSearch` at 0.23%, `ScheduleWakeup` at 0.03%). The two policies need separation: low-volume-but-user-meaningful tools deserve a compact bespoke wrapper; internal plumbing deserves zero ink in the transcript. This step formalises the split into a single editable policy table with a per-entry rationale, registers the new "hidden" bucket via the existing `NullToolBlock` mechanism, and ships bespoke wrappers for the tools that remain visible.
+
+**Sub-steps.** Tracked as separate roadmap entries so each ships under its own commit:
+- **[Step 24.3.1](#step-24-3-1)** — Policy file + governance test + immediate hides.
+- **[Step 24.3.2](#step-24-3-2)** — Operational trio: `SkillToolBlock` + `MonitorToolBlock` + `WorktreeToolBlock`.
+- **[Step 24.3.3](#step-24-3-3)** — `TaskMgmtToolBlock` (covers `TaskList` / `TaskGet` / `TaskOutput` / `TaskStop`).
+- **[Step 24.3.4](#step-24-3-4)** — Management trio: `CronToolBlock` + `ShareOnboardingGuideToolBlock` + `RemoteTriggerToolBlock`.
+- **[Step 24.3.5](#step-24-3-5)** — `McpToolBlock` + pattern-dispatch hook (architecture change — wildcard names).
+
+**References:** [D04] (drift fallback), [D05] (two-layer split), [D11] (`DefaultToolBlock` covers day-one unknowns), [D100] (pinned `Z2A` precedent for the hidden bucket).
+
+**Inventory source.** The canonical tool registry is `capabilities/2.1.148/system-metadata.jsonl` — Claude Code at `v2.1.148` exposes **31 built-in tools** plus a variable MCP namespace (`mcp__*`). The table below is the complete v2.1.148 inventory cross-referenced against this step's planned outcome. Volumes are from the original [§4.2 audit](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline.
+
+| Tool | Volume | Today | Target | Owning step |
+|------|-------:|-------|--------|-------------|
+| `Bash` | high | bespoke (`BashToolBlock`) | bespoke | [#step-6](#step-6) ✓ |
+| `Read` | high | bespoke (`ReadToolBlock`) | bespoke | [#step-8](#step-8) ✓ |
+| `Edit` (+ `MultiEdit` alias) | high | bespoke (`EditToolBlock`) | bespoke | [#step-11](#step-11) ✓ |
+| `Glob` | medium | bespoke (`GlobToolBlock`) | bespoke | [#step-15](#step-15) ✓ |
+| `Grep` | medium | bespoke (`GrepToolBlock`) | bespoke | [#step-16](#step-16) ✓ |
+| `Task` → `Agent` (alias) | medium | bespoke (`TaskToolBlock`) | bespoke | [#step-17](#step-17) ✓ |
+| `AskUserQuestion` | low | bespoke (`AskUserQuestionToolBlock`) | bespoke | [#step-20-5](#step-20-5) ✓ |
+| `Write` | high | default | bespoke (`WriteToolBlock`) | [#step-26](#step-26) — planned |
+| `NotebookEdit` | low | default | bespoke (`NotebookEditToolBlock`) | [#step-26](#step-26) — planned |
+| `WebFetch` | low | default | bespoke (`WebFetchToolBlock`) | [#step-25](#step-25) — planned |
+| `WebSearch` | low | default | bespoke (`WebSearchToolBlock`) | [#step-25](#step-25) — planned |
+| `TaskCreate` | 2.78% | hidden (`NullToolBlock`) | hidden | [#step-24-1](#step-24-1) ✓ (per [D100]) |
+| `TaskUpdate` | 5.33% | hidden (`NullToolBlock`) | hidden | [#step-24-1](#step-24-1) ✓ (per [D100]) |
+| `ToolSearch` | 0.23% | default | **hidden** | [#step-24-3-1](#step-24-3-1) — this step |
+| `ScheduleWakeup` | 0.03% | default | **hidden** | [#step-24-3-1](#step-24-3-1) — this step |
+| `EnterPlanMode` | — | unknown_tool drift | **hidden** | [#step-24-3-1](#step-24-3-1) — this step (chrome banner follow-up tracked separately) |
+| `ExitPlanMode` | — | unknown_tool drift | **hidden** | [#step-24-3-1](#step-24-3-1) — this step |
+| `PushNotification` | — | unknown_tool drift | **hidden** | [#step-24-3-1](#step-24-3-1) — this step (notification itself is the user surface) |
+| `Skill` | 0.02% | default | bespoke (`SkillToolBlock`) | [#step-24-3-2](#step-24-3-2) — this step |
+| `Monitor` | 0.06% | default | bespoke (`MonitorToolBlock`) | [#step-24-3-2](#step-24-3-2) — this step |
+| `EnterWorktree` | 0.00% | default | bespoke (`WorktreeToolBlock`) | [#step-24-3-2](#step-24-3-2) — this step |
+| `ExitWorktree` | 0.00% | default | bespoke (`WorktreeToolBlock` — alias) | [#step-24-3-2](#step-24-3-2) — this step |
+| `TaskList` | 0.05% | default | bespoke (`TaskMgmtToolBlock`) | [#step-24-3-3](#step-24-3-3) — this step |
+| `TaskGet` | — | default | bespoke (`TaskMgmtToolBlock` — alias) | [#step-24-3-3](#step-24-3-3) — this step |
+| `TaskOutput` | 0.06% | default | bespoke (`TaskMgmtToolBlock` — alias) | [#step-24-3-3](#step-24-3-3) — this step |
+| `TaskStop` | 0.01% | default | bespoke (`TaskMgmtToolBlock` — alias) | [#step-24-3-3](#step-24-3-3) — this step |
+| `CronCreate` | — | unknown_tool drift | bespoke (`CronToolBlock`) | [#step-24-3-4](#step-24-3-4) — this step |
+| `CronDelete` | — | unknown_tool drift | bespoke (`CronToolBlock` — alias) | [#step-24-3-4](#step-24-3-4) — this step |
+| `CronList` | — | unknown_tool drift | bespoke (`CronToolBlock` — alias) | [#step-24-3-4](#step-24-3-4) — this step |
+| `ShareOnboardingGuide` | — | unknown_tool drift | bespoke (`ShareOnboardingGuideToolBlock`) | [#step-24-3-4](#step-24-3-4) — this step |
+| `RemoteTrigger` | — | unknown_tool drift | bespoke (`RemoteTriggerToolBlock`) | [#step-24-3-4](#step-24-3-4) — this step (semantics to confirm during build) |
+| `mcp__*` (variable; e.g. `mcp__claude_ai_Gmail__authenticate`) | session-dependent | unknown_tool drift | bespoke (`McpToolBlock` via pattern dispatch) | [#step-24-3-5](#step-24-3-5) — this step |
+
+**Coverage check.** Of the 31 v2.1.148 built-in tools: **7 already bespoke**, **4 bespoke-planned by Steps 25–26**, **2 hidden by [D100]**, **5 newly hidden by this step**, **4 newly bespoke via `TaskMgmtToolBlock`**, **3 newly bespoke (operational trio)**, **5 newly bespoke (management trio)** = 30 + 1 MCP namespace = full coverage. After this step exits, the dispatch has zero `unknown_tool` cautions for any tool in the canonical v2.1.148 registry; the only paths that fire `unknown_tool` are genuinely novel tools introduced in a future Claude Code release.
+
+**Why not a new top-level step.** Numbered `24.3` (not `25A` or `30A`) because it grew out of the [D100] surface decisions in Step 24.1 — silencing the Task* per-call rows revealed the broader visibility-classification problem. Sitting next to Steps 24.1 / 24.2 keeps the policy-vs-pinned-surface relationship discoverable when someone returns to the [D100] rationale.
+
+---
+
+#### Step 24.3.1: Policy file + governance test + immediate hides {#step-24-3-1}
+
+**Goal.** Land `TOOL_VISIBILITY_POLICY` as the single editable source of truth, refactor `tide-assistant-renderer-dispatch.ts` to consume it, and migrate the obvious control-machinery tools (`ToolSearch`, `ScheduleWakeup`, `EnterPlanMode`, `ExitPlanMode`, `PushNotification`) to the `hidden` bucket so they paint zero ink in the transcript.
+
+**Depends on:** [#step-24-1](#step-24-1).
+
+**Commit:** `feat(tide-rendering): tool visibility policy + governance test + hide control tools`
+
+**References:** [D04], [D11], [D100].
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — no body kind or tool wrapper introduced here. The policy file is a pure-data module; the dispatch refactor preserves the existing `ToolBlockFactory` contract.
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/cards/tide-tool-visibility-policy.ts` (new) — the single editable table. Type `ToolVisibility = "hidden" | "default-intent"`; one row per tool with `{ name, visibility, rationale, reviewedAt }`. The `bespoke` bucket is *implicit* — a tool's presence in `TOOL_BLOCK_REGISTRY` is the signal. Exports `TOOL_VISIBILITY_POLICY`, `hiddenToolNames()`, `defaultIntentToolNames()`.
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — replace the inline `AUDIT_CONFIRMED_DEFAULT_TOOLS` set and the two `registerToolBlock("taskcreate"/"taskupdate", NullToolBlock)` lines with a single module-load loop that derives both sets from `TOOL_VISIBILITY_POLICY`. The `NullToolBlock` factory itself stays where it is. Update the docstring around line 254 to point at the policy file as the source of truth.
+- `tugdeck/src/components/tugways/cards/__tests__/tide-tool-visibility-policy.test.ts` (new) — the governance test described below.
+- Audit-confirmed table in this roadmap (around line 905) — replace with two tables, "hidden tools" and "default-intent tools", mirroring the policy file's split.
+
+**Initial classifications.** Every entry's `rationale` is one sentence + a `#step-` anchor for the follow-on:
+- **hidden** — `toolsearch` (schema-loading machinery; user-irrelevant); `taskcreate` (Z2A pinned surface — [D100]); `taskupdate` (Z2A pinned surface — [D100]); `schedulewakeup` (internal pacing; the wakeup itself is the user surface); `enterplanmode` (mode transition; a chrome banner is the right surface — follow-up); `exitplanmode` (same); `pushnotification` (notification itself is the user surface).
+- **default-intent** — `monitor` (Awaiting `MonitorToolBlock` — [#step-24-3-2](#step-24-3-2)); `skill` (Awaiting `SkillToolBlock` — [#step-24-3-2](#step-24-3-2)); `enterworktree` / `exitworktree` (Awaiting `WorktreeToolBlock` — [#step-24-3-2](#step-24-3-2)); `tasklist` / `taskget` / `taskoutput` / `taskstop` (Awaiting `TaskMgmtToolBlock` — [#step-24-3-3](#step-24-3-3)); `croncreate` / `crondelete` / `cronlist` (Awaiting `CronToolBlock` — [#step-24-3-4](#step-24-3-4)); `shareonboardingguide` (Awaiting `ShareOnboardingGuideToolBlock` — [#step-24-3-4](#step-24-3-4)); `remotetrigger` (Awaiting `RemoteTriggerToolBlock` — [#step-24-3-4](#step-24-3-4); semantics to confirm during build).
+
+**Tasks.**
+- [ ] Author `tide-tool-visibility-policy.ts` with the complete v2.1.148 inventory above. Date each `reviewedAt` to commit day.
+- [ ] Refactor dispatch to derive its two sets from `TOOL_VISIBILITY_POLICY`. Verify the existing `assistant-rendering-fixture-replay.test.ts` continues to pass — no behavioral change for tools that do not move buckets.
+- [ ] Add the five newly hidden tools (`toolsearch`, `schedulewakeup`, `enterplanmode`, `exitplanmode`, `pushnotification`) to the `hidden` bucket. These were previously either in `AUDIT_CONFIRMED_DEFAULT_TOOLS` (default-routed) or producing `unknown_tool` cautions; both behaviors stop.
+- [ ] Update the audit-confirmed inventory table in this roadmap (around line 905) to mirror the new structure (hidden vs default-intent), with each entry's owning step linked.
+- [ ] Add a new D101 (or extend D100) covering the policy: one editable source of truth; bespoke = registry presence; hidden = `NullToolBlock` via policy iteration; default-intent = explicit TODO with follow-on step. Cross-link from D100.
+
+**Tests.**
+- [ ] `tide-tool-visibility-policy.test.ts`:
+  - (a) Every entry parses (`name` lowercase, `visibility` in the enum, `rationale` non-empty, `reviewedAt` ISO date).
+  - (b) No double-classification — no name in `TOOL_BLOCK_REGISTRY` after module load also appears in `TOOL_VISIBILITY_POLICY`.
+  - (c) Every `default-intent` entry's `rationale` contains the literal `"Awaiting"` and a `#step-` substring (forces explicit ownership).
+  - (d) The union of registered names + policy names covers the v2.1.148 canonical set hardcoded in the test (so adding a new tool to Claude Code without classifying it fails CI).
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual (HMR): run a session that exercises a deferred tool (forces a `ToolSearch` call); confirm the transcript carries zero `ToolSearch` rows. Run with `/schedule` to confirm `ScheduleWakeup` is also silent.
+
+---
+
+#### Step 24.3.2: Operational trio — SkillToolBlock + MonitorToolBlock + WorktreeToolBlock {#step-24-3-2}
+
+**Goal.** Ship bespoke wrappers for the three user-meaningful operational tools currently rendering as JSON-tree default blocks. They share a wrapper shape (header summary line + at-most-one body row), so they batch under one commit.
+
+**Depends on:** [#step-24-3-1](#step-24-3-1).
+
+**Commit:** `feat(tide-rendering): SkillToolBlock + MonitorToolBlock + WorktreeToolBlock`
+
+**References:** [D05], Spec S03.
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — three tool wrappers (item 8: compact header). All three use `ToolBlockChrome` and route status / error through the shared frame. No new body kinds.
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/cards/tool-blocks/skill-tool-block.tsx` + `.css` — header `Skill · /<skill-name>`; body shows `args` inline when ≤ 80 chars, otherwise an embedded `TugMarkdownBlock` with the args as a fenced block. Result is typically an inert acknowledgement; if non-empty, surfaced as a one-line label.
+- `tugdeck/src/components/tugways/cards/tool-blocks/monitor-tool-block.tsx` + `.css` — header `Monitor · <command-excerpt>` (middle-ellipsis if long); body shows the `until` condition (if present) and a 3-line tail of the most recent output. The full output collapses into an expand affordance.
+- `tugdeck/src/components/tugways/cards/tool-blocks/worktree-tool-block.tsx` + `.css` — handles both `EnterWorktree` and `ExitWorktree` via the existing `TOOL_ALIASES` mechanism (a new `exitworktree → worktree` and `enterworktree → worktree` pair). Header `Worktree · enter <branch>` / `Worktree · exit <branch>`; body shows worktree path. Action-rather-than-data tool, so no result body unless errored.
+- Three registry entries + gallery cards under `cards/gallery-*-tool-block.tsx`.
+- Remove the three corresponding `default-intent` entries from `TOOL_VISIBILITY_POLICY`; the governance test enforces they move out of the policy file once registered.
+
+**Tasks.**
+- [ ] Build each wrapper per the artifact list. Each one's header is the load-bearing UX — the body is intentionally minimal.
+- [ ] Gallery cards: one each, registered under category `"tool-blocks"` (matching existing tool-block gallery convention).
+- [ ] Update Table T02 with the three new wrappers.
+
+**Tests.**
+- [ ] Synthetic per-wrapper fixtures (`__tests__/skill-tool-block.test.ts`, etc.): header renders the right substring; long inputs middle-ellipsis correctly; errored tool surfaces the error band.
+- [ ] `tide-tool-visibility-policy.test.ts` continues to pass after the three removals.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
+- [ ] `cd tugdeck && bun run audit:tokens lint`.
+- [ ] Manual (HMR): trigger each tool from a session; confirm the bespoke header reads cleanly and the body is one or two lines, not a JSON tree.
+
+---
+
+#### Step 24.3.3: TaskMgmtToolBlock — TaskList / TaskGet / TaskOutput / TaskStop {#step-24-3-3}
+
+**Goal.** Ship one bespoke wrapper covering the four background-task management tools. These are the original-Anthropic-`Task`-family read/control tools (distinct from the [D100] `TaskCreate` / `TaskUpdate` user-task-list family) and are rare in practice; one wrapper handling all four behaviors is the right granularity.
+
+**Depends on:** [#step-24-3-1](#step-24-3-1).
+
+**Commit:** `feat(tide-rendering): TaskMgmtToolBlock — TaskList / TaskGet / TaskOutput / TaskStop`
+
+**References:** [D05], Spec S03, [D100] (the *user-facing* task list is `Z2A`; this wrapper is the *background-task* family — make the distinction visible in the header).
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — one tool wrapper, four aliased names. Header per-name: `Background Task · list` / `Background Task · get #<id>` / `Background Task · output #<id>` / `Background Task · stop #<id>` — the `Background Task` prefix disambiguates from the [D100] user-task list (which never paints inline). Body per-name: list → row count + 3-row preview; get → status + 1-line summary; output → `TerminalBlock` of stdout tail; stop → status badge.
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/cards/tool-blocks/task-mgmt-tool-block.tsx` + `.css` — single wrapper, internally branched on `toolName`.
+- Aliases in `TOOL_ALIASES`: `tasklist → taskmgmt`, `taskget → taskmgmt`, `taskoutput → taskmgmt`, `taskstop → taskmgmt`. Canonical registry name `taskmgmt`.
+- Gallery card.
+- Remove four corresponding `default-intent` entries from `TOOL_VISIBILITY_POLICY`.
+
+**Tasks.**
+- [ ] Build the wrapper; per-name body selectors are small (≤ 30 lines each).
+- [ ] Gallery card showcasing all four behaviors as separate sections.
+- [ ] Table T02 update.
+
+**Tests.**
+- [ ] `__tests__/task-mgmt-tool-block.test.ts`: one case per name; header text correctness; per-name body presence.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [ ] `cd tugdeck && bun run audit:tokens lint`.
+- [ ] Manual (HMR): trigger each of the four tools from a session; confirm the `Background Task` prefix makes the disambiguation legible.
+
+---
+
+#### Step 24.3.4: Management trio — CronToolBlock + ShareOnboardingGuideToolBlock + RemoteTriggerToolBlock {#step-24-3-4}
+
+**Goal.** Ship bespoke wrappers for the three remaining low-volume management tools. The Cron* family batches under one wrapper (three aliases); the other two are one-shot wrappers each.
+
+**Depends on:** [#step-24-3-1](#step-24-3-1).
+
+**Commit:** `feat(tide-rendering): CronToolBlock + ShareOnboardingGuideToolBlock + RemoteTriggerToolBlock`
+
+**References:** [D05], Spec S03.
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — three tool wrappers (`CronToolBlock` handles three aliases internally). All compact header + minimal body.
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/cards/tool-blocks/cron-tool-block.tsx` + `.css` — header per-name: `Cron · create <schedule>` / `Cron · delete <id>` / `Cron · list (<N>)`. Body: list → row count + 3-row preview; create → schedule expression + next-fire-at; delete → confirmation status. Aliases `crondelete → cron`, `cronlist → cron`, canonical `cron` (named `croncreate` collapses too — TBD during implementation).
+- `tugdeck/src/components/tugways/cards/tool-blocks/share-onboarding-guide-tool-block.tsx` + `.css` — header `Share Onboarding Guide · <mode>`. Body: surfaces the share link from the result as a copyable `TugLink`-like primitive. The link is the load-bearing UX (the whole reason the tool exists).
+- `tugdeck/src/components/tugways/cards/tool-blocks/remote-trigger-tool-block.tsx` + `.css` — header `Remote Trigger · <target>`. Body: trigger payload as a compact field list. **Semantics to confirm at implementation time** — neither the v2.1.148 system-metadata nor any captured JSONL transcript exercises this tool; the wrapper may need spike work analogous to [#step-24-1](#step-24-1) before it lands.
+- Three gallery cards.
+- Remove five corresponding `default-intent` entries from `TOOL_VISIBILITY_POLICY` (`croncreate`, `crondelete`, `cronlist`, `shareonboardingguide`, `remotetrigger`).
+
+**Tasks.**
+- [ ] Build `CronToolBlock` first (three names; most code reuse).
+- [ ] Build `ShareOnboardingGuideToolBlock`; the share link rendering is the primary affordance.
+- [ ] **Spike `RemoteTrigger` semantics** before building — capture a real session that exercises it. If the spike reveals a fundamentally different shape than expected, escalate to a sub-step decision under this umbrella.
+- [ ] Three gallery cards.
+- [ ] Table T02 update.
+
+**Tests.**
+- [ ] Per-wrapper synthetic-fixture tests for the three Cron names + the two singletons.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [ ] `cd tugdeck && bun run audit:tokens lint`.
+- [ ] Manual (HMR): trigger each tool; confirm the bespoke rendering.
+
+---
+
+#### Step 24.3.5: McpToolBlock + pattern-dispatch hook {#step-24-3-5}
+
+**Goal.** Add pattern-based dispatch to the renderer (wildcard tool names) and ship a single `McpToolBlock` wrapper for the `mcp__*` namespace. MCP tools are user-installed, so the *names* are unbounded — exact-name dispatch as practiced today cannot cover them. This is the smallest architecture change that solves the unbounded-name problem without leaking MCP specifics into the core dispatch.
+
+**Depends on:** [#step-24-3-1](#step-24-3-1).
+
+**Commit:** `feat(tide-rendering): McpToolBlock + pattern-dispatch hook`
+
+**References:** [D05], [D11], Spec S03.
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — one tool wrapper, registered via the new pattern hook rather than the exact-name registry. The pattern hook itself is dispatch infrastructure, not a wrapper.
+
+**Architecture note.** Today `resolveToolBlock(toolName)` does `TOOL_BLOCK_REGISTRY.get(canonical) ?? DefaultToolBlock`. The new shape is a thin two-stage lookup: exact-name first (unchanged); on miss, walk `TOOL_BLOCK_PATTERNS` (ordered array of `{ test: (name: string) => boolean, factory: ToolBlockFactory }`) and return the first match; on miss-miss, `DefaultToolBlock`. The pattern array is short (1–3 entries expected) and walked once per dispatch, so the perf delta is negligible.
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — add `TOOL_BLOCK_PATTERNS: Array<{ pattern: RegExp; factory: ToolBlockFactory; canonicalLabel: string }>` and the corresponding `registerToolBlockPattern` API. `resolveToolBlock` walks it on registry miss before the `DefaultToolBlock` fallback. `detectToolCallDrift` also consults patterns (an `mcp__*` name resolved by pattern is *not* `unknown_tool`).
+- `tugdeck/src/components/tugways/cards/tool-blocks/mcp-tool-block.tsx` + `.css` — header `MCP · <server> / <tool>` (split on the `__` delimiter so `mcp__claude_ai_Gmail__authenticate` reads as `MCP · claude_ai_Gmail / authenticate`). Body: input as a small field list (NOT raw JSON tree — extract top-level keys with values rendered as `TugLabel`s); result as embedded `TugMarkdownBlock` when the tool result is text, embedded `JsonTreeBlock` when it is structured. The header's two-part split is what makes a wall of MCP calls scannable.
+- Pattern registration: `registerToolBlockPattern(/^mcp__/i, McpToolBlock, "MCP tool")`.
+- Gallery card with three realistic MCP synthetic fixtures (Gmail authenticate, Drive list-files, Calendar create-event) showing the per-server reading.
+- `tide-tool-visibility-policy.test.ts` updated to treat pattern-matched names as bespoke (no `unknown_tool` drift for `mcp__*`).
+
+**Tasks.**
+- [ ] Refactor `resolveToolBlock` + `detectToolCallDrift` for the two-stage lookup. Add `registerToolBlockPattern` API.
+- [ ] Build `McpToolBlock` with the two-part header split.
+- [ ] Gallery card with three synthetic fixtures.
+- [ ] Update Table T02 to list pattern entries separately from exact-name entries (footnote on the table header).
+
+**Tests.**
+- [ ] `dispatch.test.ts` (or extend): pattern lookup fires on exact-name miss; pattern hit does *not* raise `unknown_tool`; `DefaultToolBlock` fallback still fires on full miss.
+- [ ] `mcp-tool-block.test.ts`: header split correctness on three real MCP names; structured-result vs text-result body picker.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [ ] `cd tugdeck && bun run audit:tokens lint`.
+- [ ] Manual (HMR): run a session with a configured MCP server (Gmail/Calendar/Drive); confirm the per-call rendering is compact and scannable.
+
+---
+
 #### Step 25: WebFetchToolBlock + WebSearchToolBlock {#step-25}
 
 **Depends on:** #step-1, #step-7, #step-16
