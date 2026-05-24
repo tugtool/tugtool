@@ -900,22 +900,41 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | NotebookEditToolBlock | NotebookEdit | DiffBlock | notebook + cell |
 | DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
 
-**Audit-confirmed routes through `DefaultToolWrapper`** (per [session audit §4.2](./tide-assistant-rendering-session-audit.md)) — the dispatch registry includes explicit entries for these so they're documented coverage rather than silent unknowns. They're all low-volume harness/management tools whose JsonTree-based default rendering is sufficient, but the registry entry suppresses the `caution: { reason: "unknown_tool" }` flag (these are *known* tools, just generically rendered). Promote any of them to a bespoke wrapper later if dogfooding warrants:
+**Tool visibility policy — `TOOL_VISIBILITY_POLICY`** (per [D101]; source of truth at `tugdeck/src/components/tugways/cards/tide-tool-visibility-policy.ts`). Two explicit buckets — `hidden` (paint zero ink, short-circuit to `NullToolBlock`) and `default-intent` (route through `DefaultToolBlock` with no caution; bespoke wrapper planned). Bespoke is implicit (registry presence). Volumes from [session audit §4.2](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline. The two tables below mirror the policy file's structure; editing the policy is the way to move a tool between them — never edit a runtime set in `tide-assistant-renderer-dispatch.ts` directly.
 
-| Tool name | Audit volume | Notes |
-|-----------|-------------:|-------|
-| ~~TaskCreate~~ | 1,789 (2.78%) | **Per [D100]**: silenced from the transcript via a `NullToolBlock` registration. The Step 24.1 spike confirmed the original "background-task management" reading was wrong — `TaskCreate` is the per-item create call in the post-`TodoWrite` task system (≥ `claude v2.1.148`). Assembled state lives in the `TASKS` cell on the `Z2` status bar (ring + popover) — not in a separate sub-zone. |
-| ~~TaskUpdate~~ | 3,426 (5.33%) | **Per [D100]**: same — silenced. Per-item status flip for the new task system. |
-| TaskList | 34 (0.05%) | Read-the-current-list query for the new task system; rare; default render is adequate. |
-| TaskGet | (not in original audit) | Read-one query for the new task system; default-routed defensively to avoid an `unknown_tool` caution. |
-| TaskOutput | 37 (0.06%) | Read background-task output (the original subagent `Task` family, distinct from the new task system). |
-| TaskStop | 7 (0.01%) | Stop a background task (subagent family). |
-| Monitor | 38 (0.06%) | Process/log monitoring |
-| Skill | 10 (0.02%) | Skill invocation |
-| ScheduleWakeup | 17 (0.03%) | Self-pacing wakeup |
-| ToolSearch | 145 (0.23%) | Tool schema lookup |
-| EnterWorktree | 1 (0.00%) | Worktree management |
-| ExitWorktree | 1 (0.00%) | Worktree management |
+***Hidden* — `NullToolBlock`, no transcript row, no caution.**
+
+| Tool name | Audit volume | Why hidden |
+|-----------|-------------:|------------|
+| ~~TaskCreate~~ | 1,789 (2.78%) | **Per [D100]**: TASKS status-bar cell (`Z2`) is the sole surface for the post-`TodoWrite` task system; per-call events would clutter the transcript with status flips. |
+| ~~TaskUpdate~~ | 3,426 (5.33%) | **Per [D100]**: same — sibling of `TaskCreate`. |
+| ToolSearch | 145 (0.23%) | Schema-loading machinery — internal lookup of deferred tool contracts; user-irrelevant. |
+| ScheduleWakeup | 17 (0.03%) | Internal `/loop`-style pacing; the wakeup itself is the user-visible event, not the scheduling call. |
+| EnterPlanMode | — | Plan-mode transition is a session-state change; a chrome banner is the right surface (future follow-up). |
+| ExitPlanMode | — | Symmetric counterpart of `EnterPlanMode`. |
+| PushNotification | — | The notification (system bell / banner) is the user-visible surface; the tool call is plumbing. |
+
+***Default-intent* — `DefaultToolBlock` for now, bespoke wrapper named and scheduled.**
+
+| Tool name | Audit volume | Awaiting (follow-on step) |
+|-----------|-------------:|---------------------------|
+| Skill | 10 (0.02%) | `SkillToolBlock` — [#step-24-3-2](#step-24-3-2) |
+| Monitor | 38 (0.06%) | `MonitorToolBlock` — [#step-24-3-2](#step-24-3-2) |
+| EnterWorktree | 1 (0.00%) | `WorktreeToolBlock` — [#step-24-3-2](#step-24-3-2) |
+| ExitWorktree | 1 (0.00%) | `WorktreeToolBlock` (alias) — [#step-24-3-2](#step-24-3-2) |
+| TaskList | 34 (0.05%) | `TaskMgmtToolBlock` — [#step-24-3-3](#step-24-3-3) (background-task family — distinct from the [D100] user-task list) |
+| TaskGet | — | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
+| TaskOutput | 37 (0.06%) | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
+| TaskStop | 7 (0.01%) | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
+| CronCreate | — | `CronToolBlock` — [#step-24-3-4](#step-24-3-4) |
+| CronDelete | — | `CronToolBlock` (alias) — [#step-24-3-4](#step-24-3-4) |
+| CronList | — | `CronToolBlock` (alias) — [#step-24-3-4](#step-24-3-4) |
+| ShareOnboardingGuide | — | `ShareOnboardingGuideToolBlock` — [#step-24-3-4](#step-24-3-4) |
+| RemoteTrigger | — | `RemoteTriggerToolBlock` — [#step-24-3-4](#step-24-3-4) (semantics to confirm at build time) |
+| Write | high | `WriteToolBlock` — [#step-26](#step-26) |
+| NotebookEdit | low | `NotebookEditToolBlock` — [#step-26](#step-26) |
+| WebFetch | low | `WebFetchToolBlock` — [#step-25](#step-25) |
+| WebSearch | low | `WebSearchToolBlock` — [#step-25](#step-25) |
 
 **Table T03: Stream-event chrome catalog** {#t03-chrome}
 
@@ -5828,12 +5847,11 @@ Notes:
 - **[Step 24.3.2](#step-24-3-2)** — Operational trio: `SkillToolBlock` + `MonitorToolBlock` + `WorktreeToolBlock`.
 - **[Step 24.3.3](#step-24-3-3)** — `TaskMgmtToolBlock` (covers `TaskList` / `TaskGet` / `TaskOutput` / `TaskStop`).
 - **[Step 24.3.4](#step-24-3-4)** — Management trio: `CronToolBlock` + `ShareOnboardingGuideToolBlock` + `RemoteTriggerToolBlock`.
-
-**MCP — explicitly deferred.** Per the existing project policy in [Open Questions](#open-questions) (line 85) and the [Symbol Inventory deferral note](#symbol-inventory) (line 484), MCP tool support is a non-goal for this phase. No bespoke `McpToolBlock` ships here; no pattern-dispatch hook is added. `mcp__*` tool names continue to route through `DefaultToolBlock` with the `unknown_tool` caution as they do today — explicitly *not* classified in `TOOL_VISIBILITY_POLICY` so the governance test's "v2.1.148 registry coverage" assertion is scoped to the **31 built-in** tools, not the unbounded MCP namespace. Revisit only if MCP becomes load-bearing for our users.
+- **[Step 24.3.5](#step-24-3-5)** — `TaskInlineToolBlock` (per-call inline markers for `TaskCreate` / `TaskUpdate`; updates [D100] to acknowledge the second surface).
 
 **References:** [D04] (drift fallback), [D05] (two-layer split), [D11] (`DefaultToolBlock` covers day-one unknowns), [D100] (pinned `Z2A` precedent for the hidden bucket).
 
-**Inventory source.** The canonical tool registry is `capabilities/2.1.148/system-metadata.jsonl` — Claude Code at `v2.1.148` exposes **31 built-in tools**. The table below is the complete v2.1.148 built-in inventory cross-referenced against this step's planned outcome. The variable `mcp__*` namespace is out of scope per the MCP deferral above. Volumes are from the original [§4.2 audit](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline.
+**Inventory source.** The canonical tool registry is `capabilities/2.1.148/system-metadata.jsonl` — Claude Code at `v2.1.148` exposes **31 built-in tools**. The table below is the complete v2.1.148 built-in inventory cross-referenced against this step's planned outcome. Volumes are from the original [§4.2 audit](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline.
 
 | Tool | Volume | Today | Target | Owning step |
 |------|-------:|-------|--------|-------------|
@@ -5848,8 +5866,8 @@ Notes:
 | `NotebookEdit` | low | default | bespoke (`NotebookEditToolBlock`) | [#step-26](#step-26) — planned |
 | `WebFetch` | low | default | bespoke (`WebFetchToolBlock`) | [#step-25](#step-25) — planned |
 | `WebSearch` | low | default | bespoke (`WebSearchToolBlock`) | [#step-25](#step-25) — planned |
-| `TaskCreate` | 2.78% | hidden (`NullToolBlock`) | hidden | [#step-24-1](#step-24-1) ✓ (per [D100]) |
-| `TaskUpdate` | 5.33% | hidden (`NullToolBlock`) | hidden | [#step-24-1](#step-24-1) ✓ (per [D100]) |
+| `TaskCreate` | 2.78% | hidden (`NullToolBlock`) | bespoke (`TaskInlineToolBlock`) | [#step-24-3-5](#step-24-3-5) — this step (replaces the [D100] "sole surface" rule) |
+| `TaskUpdate` | 5.33% | hidden (`NullToolBlock`) | bespoke (`TaskInlineToolBlock`) | [#step-24-3-5](#step-24-3-5) — this step |
 | `ToolSearch` | 0.23% | default | **hidden** | [#step-24-3-1](#step-24-3-1) — this step |
 | `ScheduleWakeup` | 0.03% | default | **hidden** | [#step-24-3-1](#step-24-3-1) — this step |
 | `EnterPlanMode` | — | unknown_tool drift | **hidden** | [#step-24-3-1](#step-24-3-1) — this step (chrome banner follow-up tracked separately) |
@@ -5868,9 +5886,7 @@ Notes:
 | `CronList` | — | unknown_tool drift | bespoke (`CronToolBlock` — alias) | [#step-24-3-4](#step-24-3-4) — this step |
 | `ShareOnboardingGuide` | — | unknown_tool drift | bespoke (`ShareOnboardingGuideToolBlock`) | [#step-24-3-4](#step-24-3-4) — this step |
 | `RemoteTrigger` | — | unknown_tool drift | bespoke (`RemoteTriggerToolBlock`) | [#step-24-3-4](#step-24-3-4) — this step (semantics to confirm during build) |
-| `mcp__*` (variable namespace) | session-dependent | unknown_tool drift | **deferred** — no support planned | per project policy (line 85); revisit only if MCP becomes load-bearing |
-
-**Coverage check.** Of the 31 v2.1.148 **built-in** tools: **7 already bespoke**, **4 bespoke-planned by Steps 25–26**, **2 hidden by [D100]**, **5 newly hidden by this step**, **4 newly bespoke via `TaskMgmtToolBlock`**, **3 newly bespoke (operational trio)**, **5 newly bespoke (management trio)** = 30 + 1 (`AskUserQuestion`) = 31, full built-in coverage. After this step exits, the dispatch has zero `unknown_tool` cautions for any tool in the canonical v2.1.148 **built-in** registry. The unbounded MCP namespace continues to produce `unknown_tool` cautions by design — that signal *is* the deferral: when MCP names show up in a real user's transcript with enough frequency to matter, the caution count will surface it, and we can revisit the deferral with data.
+**Coverage check.** Of the 31 v2.1.148 built-in tools: **7 already bespoke**, **4 bespoke-planned by Steps 25–26**, **2 newly bespoke (`TaskInlineToolBlock` for `TaskCreate` + `TaskUpdate`, per [#step-24-3-5])**, **5 newly hidden by this step**, **4 newly bespoke via `TaskMgmtToolBlock`**, **3 newly bespoke (operational trio)**, **5 newly bespoke (management trio)** = 30 + 1 (`AskUserQuestion`) = 31, full built-in coverage. After this step exits, the dispatch has zero `unknown_tool` cautions for any tool in the canonical v2.1.148 built-in registry.
 
 **Why not a new top-level step.** Numbered `24.3` (not `25A` or `30A`) because it grew out of the [D100] surface decisions in Step 24.1 — silencing the Task* per-call rows revealed the broader visibility-classification problem. Sitting next to Steps 24.1 / 24.2 keeps the policy-vs-pinned-surface relationship discoverable when someone returns to the [D100] rationale.
 
@@ -5899,23 +5915,25 @@ Notes:
 - **default-intent** — `monitor` (Awaiting `MonitorToolBlock` — [#step-24-3-2](#step-24-3-2)); `skill` (Awaiting `SkillToolBlock` — [#step-24-3-2](#step-24-3-2)); `enterworktree` / `exitworktree` (Awaiting `WorktreeToolBlock` — [#step-24-3-2](#step-24-3-2)); `tasklist` / `taskget` / `taskoutput` / `taskstop` (Awaiting `TaskMgmtToolBlock` — [#step-24-3-3](#step-24-3-3)); `croncreate` / `crondelete` / `cronlist` (Awaiting `CronToolBlock` — [#step-24-3-4](#step-24-3-4)); `shareonboardingguide` (Awaiting `ShareOnboardingGuideToolBlock` — [#step-24-3-4](#step-24-3-4)); `remotetrigger` (Awaiting `RemoteTriggerToolBlock` — [#step-24-3-4](#step-24-3-4); semantics to confirm during build).
 
 **Tasks.**
-- [ ] Author `tide-tool-visibility-policy.ts` with the complete v2.1.148 inventory above. Date each `reviewedAt` to commit day.
-- [ ] Refactor dispatch to derive its two sets from `TOOL_VISIBILITY_POLICY`. Verify the existing `assistant-rendering-fixture-replay.test.ts` continues to pass — no behavioral change for tools that do not move buckets.
-- [ ] Add the five newly hidden tools (`toolsearch`, `schedulewakeup`, `enterplanmode`, `exitplanmode`, `pushnotification`) to the `hidden` bucket. These were previously either in `AUDIT_CONFIRMED_DEFAULT_TOOLS` (default-routed) or producing `unknown_tool` cautions; both behaviors stop.
-- [ ] Update the audit-confirmed inventory table in this roadmap (around line 905) to mirror the new structure (hidden vs default-intent), with each entry's owning step linked.
-- [ ] Add a new D101 (or extend D100) covering the policy: one editable source of truth; bespoke = registry presence; hidden = `NullToolBlock` via policy iteration; default-intent = explicit TODO with follow-on step. Cross-link from D100.
+- [x] Author `tide-tool-visibility-policy.ts` with the complete v2.1.148 inventory above. Date each `reviewedAt` to commit day. **Done** — 22 entries (7 hidden + 15 default-intent), `reviewedAt: 2026-05-24`. `WebFetch`, `WebSearch`, `Write`, `NotebookEdit` added to default-intent (planned bespoke at Steps 25/26) so they classify cleanly rather than producing `unknown_tool` drift until those steps ship.
+- [x] Refactor dispatch to derive its two sets from `TOOL_VISIBILITY_POLICY`. **Done** — `AUDIT_CONFIRMED_DEFAULT_TOOLS = defaultIntentToolNames()` and a new `HIDDEN_TOOL_NAMES = hiddenToolNames()` constant. `resolveToolBlock` and `dispatchToolCallState` short-circuit hidden names to the now-exported `NullToolBlock` ahead of the registry lookup; `detectToolCallDrift` short-circuits them ahead of the `unknown_tool` check. Existing `assistant-rendering-fixture-replay.test.ts` continues to pass (verified — no behavioral change for tools that do not move buckets).
+- [x] Add the five newly hidden tools (`toolsearch`, `schedulewakeup`, `enterplanmode`, `exitplanmode`, `pushnotification`) to the `hidden` bucket. **Done** — each is now `NullToolBlock`-routed with no `unknown_tool` caution. `toolsearch` and `schedulewakeup` moved out of the old `AUDIT_CONFIRMED_DEFAULT_TOOLS`; `enterplanmode` / `exitplanmode` / `pushnotification` were previously unknown-tool drift sources and are now explicitly hidden.
+- [x] Update the audit-confirmed inventory table in this roadmap (around line 905) to mirror the new structure (hidden vs default-intent), with each entry's owning step linked. **Done** — table split into two ("Hidden" + "Default-intent"), each entry's bucket rationale visible at a glance, each default-intent row cites its follow-on step.
+- [x] Add a new D101 (or extend D100) covering the policy: one editable source of truth; bespoke = registry presence; hidden = `NullToolBlock` via policy iteration; default-intent = explicit TODO with follow-on step. Cross-link from D100. **Done** — D101 added in `tuglaws/design-decisions.md` immediately after D100's History paragraph; cross-refs [D04], [D11], [D100].
 
 **Tests.**
-- [ ] `tide-tool-visibility-policy.test.ts`:
-  - (a) Every entry parses (`name` lowercase, `visibility` in the enum, `rationale` non-empty, `reviewedAt` ISO date).
-  - (b) No double-classification — no name in `TOOL_BLOCK_REGISTRY` after module load also appears in `TOOL_VISIBILITY_POLICY`.
-  - (c) Every `default-intent` entry's `rationale` contains the literal `"Awaiting"` and a `#step-` substring (forces explicit ownership).
-  - (d) The union of registered names + policy names covers the v2.1.148 canonical set hardcoded in the test (so adding a new tool to Claude Code without classifying it fails CI).
+- [x] `tide-tool-visibility-policy.test.ts` — pins **only** the two invariants that catch real mistakes code review would miss; cut (a) and (b) on purpose to keep test-suite signal-to-noise high (the test file's docstring records the cut rationale).
+  - (c) Every `default-intent` entry's `rationale` contains the literal `"Awaiting"` and a `#step-` substring — 17 per-entry assertions. This is the *only* mechanism preventing `default-intent` from becoming a forever-bucket; without it a vague rationale lets a tool sit there with no planned bespoke wrapper.
+  - (d) The union of `BESPOKE_TOOL_NAMES` (the dispatch's module-load-frozen export of bespoke names) + `POLICY_NAMES` covers the v2.1.148 canonical set hardcoded in the test — 31 per-tool assertions. A new built-in tool in a future Claude Code release fails CI here until it is explicitly classified.
+  - **Cut: (a) "every entry parses"** — the entry shape is enforced by the `ToolVisibilityEntry` interface; lowercase / ISO-date checks are weak; duplicate-name guard is marginal for an array of ~20 entries.
+  - **Cut: (b) "no double-classification"** — realistic in principle, but obvious in code review and very rare in practice. The `hidden` / `default-intent` split is mutually exclusive by the enum.
+  - Refactored `tide-assistant-renderer-dispatch.ts` so its bottom-of-file derives both the `BESPOKE_TOOL_NAMES` export AND the `registerToolBlock(...)` loop from a single `BESPOKE_REGISTRATIONS` array — adding a new wrapper is still one line. `BESPOKE_TOOL_NAMES` is module-load-frozen so the test stays deterministic across test files (the dispatch test's `beforeEach` clears the runtime registry, and bun runs each test file's tests before loading the next).
+- [x] Existing `tide-assistant-renderer-dispatch.test.ts` — updated the one test referencing the locally-defined `NullToolBlock` to import the now-exported one from the dispatch module (the TaskCreate/TaskUpdate silencing test). Removed its no-longer-needed `registerToolBlock("taskcreate", ...)` setup — the policy now drives that path automatically.
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual (HMR): run a session that exercises a deferred tool (forces a `ToolSearch` call); confirm the transcript carries zero `ToolSearch` rows. Run with `/schedule` to confirm `ScheduleWakeup` is also silent.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — clean. `2675 / 2675` pass (was `2627` prior to this step; net `+48` across the new `tide-tool-visibility-policy.test.ts` — 17 default-intent rationale + 31 v2.1.148 coverage).
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] Manual (HMR): user-confirmed — `ToolSearch` and `ScheduleWakeup` carry zero transcript rows in a live session.
 
 ---
 
@@ -6023,13 +6041,57 @@ Notes:
 
 ---
 
-#### Step 24.3.5: ~~McpToolBlock + pattern-dispatch hook~~ — DEFERRED {#step-24-3-5}
+#### Step 24.3.5: TaskInlineToolBlock — per-call inline markers for TaskCreate / TaskUpdate {#step-24-3-5}
 
-**Status.** Removed from scope. MCP tool support is a non-goal for this phase per the long-standing project policy in [Open Questions](#open-questions) (line 85) and the [Symbol Inventory deferral note](#symbol-inventory) (line 484). This stub is kept so the `#step-24-3-5` anchor remains stable for any external references, and so the decision is discoverable next to the other 24.3 sub-steps rather than tucked away in the umbrella.
+**Goal.** Add a tiny one-row inline marker to the transcript for each `TaskCreate` and `TaskUpdate` event, so a reader scrolling back can see *when in the conversation flow* each task action happened. The TASKS status-bar cell (per [D100]) remains the canonical surface for *current state*; this inline marker is the second, complementary surface for *event-in-context*. Two surfaces, two different jobs.
 
-**What this would have built (do not implement).** A two-stage `resolveToolBlock` lookup (exact-name → pattern walk → `DefaultToolBlock`) plus an `McpToolBlock` wrapper for the `mcp__*` namespace. Approach captured here only so a future revisit does not re-derive it from scratch.
+**Depends on:** [#step-24-3-1](#step-24-3-1), [#step-24-1](#step-24-1) (the `useTaskListState` reducer this wrapper consults for `subject` lookup on `TaskUpdate`).
 
-**Revisit trigger.** Reopen this step only if MCP becomes load-bearing for actual users — measured by sustained `unknown_tool` caution volume on `mcp__*` names in real session telemetry, not by spec or adoption-watching. Until then, `mcp__*` calls continue to route through `DefaultToolBlock` with the `unknown_tool` caution; the caution count *is* the signal.
+**Commit:** `feat(tide-rendering): TaskInlineToolBlock + [D100] second-surface amendment`
+
+**References:** [D05] (two-layer split), [D100] (TASKS cell — amended by this step to acknowledge the inline-marker surface), [D101] (visibility policy — `taskcreate` / `taskupdate` move from `hidden` to bespoke).
+
+**Conformance:** see [#bk-conformance](#bk-conformance) — one tool wrapper, two registered names (no aliases — both `taskcreate` and `taskupdate` register the same factory and the wrapper internally branches on `toolName`). Intentionally *no* `ToolBlockChrome` frame, no status stripe, no error band — the marker is a single inline row, not a tool-call card. This is the first wrapper to opt out of `ToolBlockChrome`; the deviation is the point (markers need to read as ambient annotation, not as another tool-call to digest).
+
+**Design.**
+- **Row shape:** `<ListChecks size={14} />` + `<TugLabel size="sm" emphasis="calm">` in a horizontal flex row; tight inline padding; no border, no background. `emphasis="calm"` paints italic + muted-gray, which is exactly the ambient-annotation register we want — the row reads as quiet conversation-flow metadata, not as a primary tool-call result.
+- **Per-event reading** (label text + icon carry the meaning; color does NOT — every row uses the same calm muted tone):
+  - `TaskCreate` → `"Created: <subject>"`.
+  - `TaskUpdate → in_progress` → `"Started: <subject>"` (subject looked up by `taskId` via the reducer state at render time).
+  - `TaskUpdate → completed` → `"Completed: <subject>"`.
+- **Why calm-uniform, not role-colored.** An earlier draft of this step proposed `role="action"` for Created / Started and `role="success"` for Completed, which would have given each event a colored accent. After seeing the in-transcript volume of these events in a real session, the role-coloring is too loud — it pulls weight away from the TASKS cell (the canonical surface). `emphasis="calm"` keeps every row visually subordinate to the cell, which is the right hierarchy: cell = primary, marker = ambient. Color is reserved for the error case (below), where it earns the visual interrupt.
+- **Error case.** An errored event surfaces the error text in the same row, with `role="danger"` and `emphasis="normal"` (drop calm so the danger color reads cleanly — calm's `color:` rule would otherwise override the role tint). Errors are rare and worth pulling the eye.
+- **`subject` lookup for `TaskUpdate`.** The wire only carries `taskId`. The wrapper resolves `subject` by calling `useTaskListState(session)` at render time and indexing by `taskId`. When `subject` is unavailable (e.g. the `TaskUpdate` arrives before the matching `TaskCreate` is committed — unlikely but possible in replay), fall back to `"Task #<taskId>"`.
+- **Streaming.** A streaming `TaskCreate` (input still arriving) renders the row with no subject yet — fall back to a faint placeholder (`"Creating…"`); the calm treatment is the same.
+- **Visual restraint.** No counts, no badges, no timing. The wrapper's value is exactly "small icon + one calm line of text" — anything else fights the TASKS cell for the user's attention.
+
+**[D100] amendment (must land with this step).** Replace D100's "the per-call `TaskCreate` / `TaskUpdate` events render as a null `ToolBlockFactory` in the transcript so the `TASKS` cell is the sole surface" with a two-surface statement:
+> The TASKS cell is the canonical surface for *current state* — the assembled list, one fixed glance away. The transcript carries per-call inline markers via `TaskInlineToolBlock` ([#step-24-3-5]) — a tiny `<ListChecks size=14>` + `<TugLabel size="sm" emphasis="calm">` row for each `TaskCreate` and `TaskUpdate` event, so a reader scrolling the transcript can see *when in the conversation flow* each task action happened. The two surfaces never duplicate work: the cell answers "what's on the list now?"; the marker answers "when did this happen?". The marker uses the `calm` emphasis (italic + muted gray) so every row reads as ambient annotation subordinate to the TASKS cell — color is reserved for the rare error case (`role="danger"`, `emphasis="normal"`). The marker intentionally carries no `ToolBlockChrome` — no frame, no status stripe, no error band — so it stays inline-flow, not another tool-call card competing with the cell for attention.
+
+**Artifacts.**
+- `tugdeck/src/components/tugways/cards/tool-blocks/task-inline-tool-block.tsx` + `.css` (new) — the wrapper. CSS owns only `--tugx-task-inline-*` slots ([L20]).
+- `tugdeck/src/components/tugways/cards/tide-tool-visibility-policy.ts` — **move** `taskcreate` and `taskupdate` entries OUT of the `hidden` bucket. They become bespoke (no policy entry — registry presence is the signal).
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — add two entries to `BESPOKE_REGISTRATIONS` for `taskcreate` and `taskupdate`, both pointing at `TaskInlineToolBlock`.
+- `tuglaws/design-decisions.md` — rewrite D100's "per-call events" sentence per the amendment above; cross-link [#step-24-3-5].
+- `tugdeck/src/components/tugways/cards/gallery-task-inline-tool-block.tsx` (new) — gallery card showing the three event variants (Created / Started / Completed) plus the streaming placeholder + error state.
+
+**Tasks.**
+- [ ] Move `taskcreate` / `taskupdate` out of the `hidden` bucket in `TOOL_VISIBILITY_POLICY` (delete those two entries).
+- [ ] Add `["taskcreate", TaskInlineToolBlock]` and `["taskupdate", TaskInlineToolBlock]` to `BESPOKE_REGISTRATIONS`.
+- [ ] Build `TaskInlineToolBlock`. Internally branches on `toolName`. Consumes `useTaskListState(session)` for the `subject` lookup on `TaskUpdate`. Uses `<TugLabel size="sm" emphasis="calm">` for normal events; `emphasis="normal"` + `role="danger"` for errored events.
+- [ ] Update D100's prose per the amendment above. Keep D100's History paragraph intact.
+- [ ] Update the existing dispatch test that asserts TaskCreate/TaskUpdate route to `NullToolBlock` — the assertion flips to "routes to `TaskInlineToolBlock`" (the test is the canary for the policy decision; it should flip with the decision).
+- [ ] Update Table T02 + the audit-confirmed-table's hidden-tool entries for `TaskCreate` / `TaskUpdate` (they're no longer hidden).
+- [ ] Gallery card with the three event variants + the streaming + error state.
+
+**Tests.**
+- [ ] `task-inline-tool-block.test.ts`: one case per event variant — `TaskCreate` renders `"Created: …"`; `TaskUpdate → in_progress` renders `"Started: …"`; `TaskUpdate → completed` renders `"Completed: …"`; `TaskUpdate` with unknown `taskId` falls back to `"Task #<id>"`; errored event renders the error text with `role="danger"` + `emphasis="normal"` (not calm). All non-error cases assert `emphasis="calm"`.
+- [ ] Governance test continues to pass — `taskcreate` / `taskupdate` are now covered via `BESPOKE_TOOL_NAMES` rather than via the policy, but the v2.1.148 coverage check (d) still satisfies for both.
+
+**Checkpoint.**
+- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [ ] Manual (HMR): run the reference prompt against `/tmp/todo-test`; confirm each task event lands an inline calm-italic marker in the transcript with the ListChecks icon and the right label, and that the TASKS status-bar cell continues to track the same events as the canonical surface.
 
 ---
 

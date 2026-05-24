@@ -97,6 +97,10 @@ import { AskUserQuestionToolBlock } from "./tool-blocks/ask-user-question-tool-b
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
+import {
+  defaultIntentToolNames,
+  hiddenToolNames,
+} from "./tide-tool-visibility-policy";
 import type {
   CautionFlag,
   ChildToolCallsMap,
@@ -245,59 +249,51 @@ const TOOL_ALIASES: ReadonlyMap<string, string> = new Map([
  * Audit-confirmed tool names that route through `DefaultToolBlock`
  * by design. These suppress the `unknown_tool` caution because they
  * are *known* tools whose JsonTree-based default rendering is
- * sufficient — they appeared in the empirical session audit and were
- * scoped to Default rather than getting bespoke wrappers.
+ * sufficient.
  *
- * Promote an entry from here to `TOOL_BLOCK_REGISTRY` later if
- * dogfooding shows the default rendering is suboptimal.
- *
- * **Per [D100]: `TaskCreate` and `TaskUpdate` are NOT in this set.**
- * The Step 24.1 spike confirmed they are the new todo system (the
- * replacement for the retired `TodoWrite` tool, ≥ `claude v2.1.148`),
- * not background-task management. Both render as a `NullToolBlock`
- * in `TOOL_BLOCK_REGISTRY` so the transcript carries zero per-call
- * entries; the assembled list lives in the pinned `Z2A` slot, which
- * is the sole surface. `TaskList` / `TaskGet` / `TaskOutput` /
- * `TaskStop` remain default-routed: they are very rare in practice
- * (the audit volumes are 0.05% / unknown / 0.06% / 0.01%) and a
- * generic structured-result row is sufficient. `TaskGet` was
- * missing from the original audit set; included defensively now to
- * avoid an `unknown_tool` caution if the assistant ever calls it.
+ * Derived from the `default-intent` bucket of `TOOL_VISIBILITY_POLICY`
+ * — see `tide-tool-visibility-policy.ts` for the full table and the
+ * editing protocol. Per [D101]: every entry's classification (and
+ * the follow-on step that promises a bespoke wrapper) is defended in
+ * the policy file's per-row `rationale`.
  */
-const AUDIT_CONFIRMED_DEFAULT_TOOLS: ReadonlySet<string> = new Set([
-  // Task* tools that stay default-routed — the rare ones, not the
-  // load-bearing TaskCreate / TaskUpdate pair (silenced via the
-  // registry; see below).
-  "tasklist",
-  "taskget",
-  "taskoutput",
-  "taskstop",
-  // Long tail
-  "monitor",
-  "skill",
-  "schedulewakeup",
-  "toolsearch",
-  "enterworktree",
-  "exitworktree",
-]);
+const AUDIT_CONFIRMED_DEFAULT_TOOLS: ReadonlySet<string> =
+  defaultIntentToolNames();
 
 /**
- * Silent renderer used by `TaskCreate` / `TaskUpdate` per [D100]: the
- * pinned `Z2A` slot is the sole surface for the task list, so the
- * per-call events do not paint into the transcript. Returning `null`
- * leaves no DOM child for the row — `tide-card-transcript-tool-calls`
+ * Lowercased canonical names of tools whose per-call events paint
+ * zero ink in the transcript. Derived from the `hidden` bucket of
+ * `TOOL_VISIBILITY_POLICY` ([D101]). `resolveToolBlock` checks this
+ * set *before* the registry so a hidden name always returns
+ * `NullToolBlock` — never the registry's bespoke factory and never
+ * `DefaultToolBlock`. `detectToolCallDrift` checks this set so a
+ * hidden tool also never raises an `unknown_tool` caution.
+ *
+ * Per [D100], `taskcreate` and `taskupdate` are hidden — the TASKS
+ * status-bar cell is the sole surface for the post-`TodoWrite` task
+ * system. Per [D101], control-channel tools like `toolsearch` /
+ * `schedulewakeup` / `enterplanmode` / `exitplanmode` /
+ * `pushnotification` are hidden — they are user-irrelevant plumbing
+ * whose user-visible event lives elsewhere (a chrome banner, a
+ * notification, etc.).
+ */
+const HIDDEN_TOOL_NAMES: ReadonlySet<string> = hiddenToolNames();
+
+/**
+ * Shared silent factory for the `hidden` policy bucket. Returning
+ * `null` leaves no DOM child for the row — `tide-card-transcript-tool-calls`
  * iterates and renders each tool block, and a null return adds zero
  * markup. The container itself (`.tide-transcript-tool-calls`) stays
  * present in the assistant turn, so a turn whose only tool calls
- * are Task* events shows the prose / thinking content with no
+ * are hidden events shows the prose / thinking content with no
  * tool-call rows underneath.
  *
- * Registering here (rather than adding the names to
- * `AUDIT_CONFIRMED_DEFAULT_TOOLS`) is what produces the silence: the
- * audit set falls through to `DefaultToolBlock`, which paints a row;
- * the registry's null factory paints nothing.
+ * Exported so tests can reference the same factory the dispatch
+ * returns (rather than constructing their own `() => null` and
+ * comparing by reference, which would fail since the dispatch now
+ * returns this module-static).
  */
-const NullToolBlock: ToolBlockFactory = () => null;
+export const NullToolBlock: ToolBlockFactory = () => null;
 
 /**
  * Register a tool block. Called by tool-block modules at import
@@ -328,10 +324,22 @@ export function _resetToolBlockRegistryForTests(): void {
  * Resolve a tool block by name. Case-insensitive. Aliases are
  * resolved before lookup. Returns `DefaultToolBlock` for misses —
  * never returns `undefined`.
+ *
+ * Resolution order (first match wins):
+ *  1. `HIDDEN_TOOL_NAMES` ([D101]) — return `NullToolBlock` so the
+ *     transcript paints no row for this call.
+ *  2. `TOOL_BLOCK_REGISTRY` — bespoke wrapper for this tool.
+ *  3. `DefaultToolBlock` — JsonTree fallback.
+ *
+ * The hidden check is *first* by design: it must override any
+ * accidental registry entry for a hidden name (defensive — keeps the
+ * policy file authoritative even if a future registration mistakes
+ * the bucket).
  */
 export function resolveToolBlock(toolName: string): ToolBlockFactory {
   const lower = toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
+  if (HIDDEN_TOOL_NAMES.has(canonical)) return NullToolBlock;
   return TOOL_BLOCK_REGISTRY.get(canonical) ?? DefaultToolBlock;
 }
 
@@ -522,9 +530,14 @@ export function detectToolCallDrift(
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
 
+  // Hidden tools ([D101]) are *known* — by policy, not by audit — so
+  // they never raise `unknown_tool`. They also resolve to
+  // `NullToolBlock`, which has no `structured_result` schema, so the
+  // shape check below is a no-op for them.
   if (
     !TOOL_BLOCK_REGISTRY.has(canonical) &&
-    !AUDIT_CONFIRMED_DEFAULT_TOOLS.has(canonical)
+    !AUDIT_CONFIRMED_DEFAULT_TOOLS.has(canonical) &&
+    !HIDDEN_TOOL_NAMES.has(canonical)
   ) {
     return { reason: "unknown_tool", detail: toolCall.toolName };
   }
@@ -812,7 +825,6 @@ export function dispatchToolCallState(
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
-  const factory = TOOL_BLOCK_REGISTRY.get(canonical);
 
   // Compose the props the wrapper expects (see ToolBlockProps in
   // ./tool-blocks/types.ts). Status maps the store's `pending |
@@ -839,6 +851,14 @@ export function dispatchToolCallState(
     session,
   };
 
+  // Hidden tools ([D101]) short-circuit ahead of drift detection and
+  // registry lookup — they render no DOM and carry no caution. The
+  // check mirrors `resolveToolBlock`'s ordering so both entry points
+  // converge on the same factory.
+  if (HIDDEN_TOOL_NAMES.has(canonical)) {
+    return { Component: NullToolBlock, props: baseProps };
+  }
+
   const caution = detectToolCallDrift(toolCall);
   if (caution !== null) {
     // Drift — an unknown tool name, or a registered wrapper whose
@@ -854,6 +874,7 @@ export function dispatchToolCallState(
     };
   }
 
+  const factory = TOOL_BLOCK_REGISTRY.get(canonical);
   if (factory !== undefined) {
     // Registered wrapper, shape intact — route to the bespoke wrapper.
     return { Component: factory, props: baseProps };
@@ -895,21 +916,59 @@ export const assistantRendererDispatch: AssistantRendererDispatch = {
 // line here as they ship.
 // ---------------------------------------------------------------------------
 
-registerToolBlock("bash", BashToolBlock);
-registerToolBlock("read", ReadToolBlock);
-registerToolBlock("edit", EditToolBlock);
-registerToolBlock("glob", GlobToolBlock);
-registerToolBlock("grep", GrepToolBlock);
-// Canonical `agent`; the historical `task` name resolves here via the
-// `task → agent` alias in `TOOL_ALIASES`. ([D16])
-registerToolBlock("agent", TaskToolBlock);
-// Per [D100]: TaskCreate / TaskUpdate are the v2.1.148+ replacement
-// for the retired TodoWrite tool, and the pinned `Z2A` slot is the
-// sole surface for the assembled task list. Register a null factory
-// so per-call events do not paint into the transcript.
-registerToolBlock("taskcreate", NullToolBlock);
-registerToolBlock("taskupdate", NullToolBlock);
-// AskUserQuestion's *live* surface is the inline `QuestionDialog`
-// ([D13]); this wrapper renders the durable Q&A artifact that
-// remains in the turn after the dialog clears.
-registerToolBlock("askuserquestion", AskUserQuestionToolBlock);
+/**
+ * Single source of truth for the bespoke wrappers — the (name,
+ * factory) pairs the dispatch registers at module load. Driving the
+ * bottom-of-file registration loop AND `BESPOKE_TOOL_NAMES` from the
+ * same array means adding a new wrapper is one line (here) instead of
+ * two (here + an inventory const).
+ *
+ * Notes on entries:
+ *  - `agent` is the canonical name; the historical `task` name
+ *    resolves here via the `task → agent` alias in `TOOL_ALIASES`
+ *    ([D16]).
+ *  - `askuserquestion`'s *live* surface is the inline `QuestionDialog`
+ *    ([D13]); the registered wrapper renders the durable Q&A artifact
+ *    that remains in the turn after the dialog clears.
+ *  - `taskcreate` / `taskupdate` do NOT appear here. Per [D100] they
+ *    paint zero ink in the transcript; per [D101] that behavior is
+ *    data-driven via the `hidden` bucket of `TOOL_VISIBILITY_POLICY`.
+ *    `resolveToolBlock` and `dispatchToolCallState` short-circuit
+ *    hidden names to `NullToolBlock` ahead of the registry lookup. An
+ *    explicit registration here would be redundant — and would
+ *    obscure the policy file as the source of truth.
+ */
+const BESPOKE_REGISTRATIONS: ReadonlyArray<
+  readonly [string, ToolBlockFactory]
+> = [
+  ["bash", BashToolBlock],
+  ["read", ReadToolBlock],
+  ["edit", EditToolBlock],
+  ["glob", GlobToolBlock],
+  ["grep", GrepToolBlock],
+  ["agent", TaskToolBlock],
+  ["askuserquestion", AskUserQuestionToolBlock],
+];
+
+/**
+ * Lowercased canonical names of every bespoke wrapper the dispatch
+ * registers at module load. Frozen at module load and unaffected by
+ * test-time mutations of the registry (`_resetToolBlockRegistryForTests`
+ * clears `TOOL_BLOCK_REGISTRY` but does not touch this constant).
+ *
+ * Consumed by the policy-file governance test ([D101]) — the test
+ * verifies that (a) no bespoke name is in `TOOL_VISIBILITY_POLICY`
+ * (no double-classification) and (b) the union of bespoke + policy
+ * covers the v2.1.148 canonical tool set. Exporting a frozen
+ * constant lets the test stay deterministic across test files; a
+ * runtime `registeredTools()` snapshot is fragile because the
+ * dispatch test's `beforeEach` clears the registry, and bun runs
+ * each test file's tests before loading the next.
+ */
+export const BESPOKE_TOOL_NAMES: ReadonlySet<string> = new Set(
+  BESPOKE_REGISTRATIONS.map(([name]) => name),
+);
+
+for (const [name, factory] of BESPOKE_REGISTRATIONS) {
+  registerToolBlock(name, factory);
+}

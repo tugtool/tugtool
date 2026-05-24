@@ -25,6 +25,7 @@ import React from "react";
 
 import {
   KIND_RENDERERS,
+  NullToolBlock,
   VALIDATED_CC_VERSION,
   _resetDriftLogForTests,
   _resetToolBlockRegistryForTests,
@@ -185,17 +186,16 @@ describe("dispatch — tool_call routing", () => {
     expect(result.caution).toBeUndefined();
   });
 
-  it("routes TaskCreate / TaskUpdate to a null factory per [D100] — no DOM, no caution", () => {
-    // Re-apply the production registrations (cleared by beforeEach).
-    // Anchored on the test for the canonical behavior, not the
-    // implementation: a null-rendered tool produces no DOM child in
-    // the transcript and is not flagged as drift. If Step 24.1's
-    // silencing decision ever reverses, this test fails loudly
-    // rather than letting `TaskCreate` rows quietly reappear.
-    const NullToolBlock = () => null;
-    registerToolBlock("taskcreate", NullToolBlock);
-    registerToolBlock("taskupdate", NullToolBlock);
-
+  it("routes TaskCreate / TaskUpdate to NullToolBlock per [D100] — no DOM, no caution", () => {
+    // Anchored on the canonical behavior, not the implementation. Per
+    // [D101] this is now data-driven via `TOOL_VISIBILITY_POLICY`'s
+    // `hidden` bucket; `resolveToolBlock` and `dispatchToolCallState`
+    // short-circuit hidden names to the shared exported
+    // `NullToolBlock` ahead of the registry lookup, so no `beforeEach`
+    // re-registration is needed. If Step 24.1's silencing decision ever
+    // reverses (or the policy file is misedited to drop these entries),
+    // this test fails loudly rather than letting `TaskCreate` rows
+    // quietly reappear.
     for (const toolName of ["TaskCreate", "TaskUpdate"]) {
       const result = dispatch(
         { kind: "tool_call", toolCall: fakeToolCall(toolName), msgId: "m1" },
