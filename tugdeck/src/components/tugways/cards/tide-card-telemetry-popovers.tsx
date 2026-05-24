@@ -75,7 +75,13 @@ import {
 } from "@/lib/tide-transcript-data-source";
 import { formatSequenceNumber } from "@/components/tugways/tug-transcript-entry";
 import { TugLabel } from "@/components/tugways/tug-label";
-import { TodoListBlock } from "@/components/tugways/body-kinds/todo-list-block";
+import { TugTaskItem } from "@/components/tugways/tug-task-item";
+import {
+  composeTaskCopyText,
+  composeTaskSummary,
+  countTasks,
+} from "@/components/tugways/body-kinds/todo-list-block";
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import type { TaskListState } from "@/lib/code-session-store/select-task-list";
 
 import { formatTimeAlwaysHours, formatTokensCaps } from "./tide-card-telemetry-renderers";
@@ -747,16 +753,31 @@ export function StateChangeLogPopoverContent({
 
 /**
  * Tasks popover — opened from the `TASKS` cell in the status row.
- * Renders the full assembled task list ([D100]) via standalone
- * `TodoListBlock`. The assembled state is computed once at the
- * status-row level (`useTaskListState`) and threaded through as
- * `state`; an empty `tasks` array renders a "no tasks" empty
- * message rather than the body kind's bare layout marker.
+ * Renders the full assembled task list ([D100]) as a flex column
+ * of `TugTaskItem` rows. `TugTaskItem` is the standard "indicator
+ * + label" primitive built for this surface: it provides the
+ * role-driven colors (TugProgress `role="action"` for the
+ * `in_progress` ring, matching `surface-tone-*` / `element-tone-*`
+ * active tokens for the highlight band and label color) and
+ * handles its own idle gate. The popover frame supplies the
+ * title; a footer below carries the count summary and Copy
+ * action.
+ *
+ * `idle` mirrors the session's `phase === "idle"` and is threaded
+ * straight through to each `TugTaskItem` — the `in_progress`
+ * row's ring switches into its `stopped` state when the assistant
+ * isn't doing anything, same gate that stops the status-bar TASKS
+ * ring.
+ *
+ * An empty `tasks` array renders the standard popover empty
+ * message.
  */
 export function TasksPopoverContent({
   state,
+  idle,
 }: {
   state: TaskListState;
+  idle: boolean;
 }): React.ReactElement {
   if (state.tasks.length === 0) {
     return (
@@ -765,13 +786,39 @@ export function TasksPopoverContent({
       </PerAreaPopoverFrame>
     );
   }
+  // `composeTaskSummary` produces "3 done, 1 in progress, 2 pending"
+  // with zero-bucket drop, so the footer reads cleanly whether the
+  // list is all-done, mid-flight, or untouched.
+  const summary = composeTaskSummary(countTasks(state.tasks));
   return (
     <PerAreaPopoverFrame title="Tasks">
       <div
         className="tide-tasks-popover-body"
         data-slot="tide-tasks-popover-body"
       >
-        <TodoListBlock data={state} />
+        {state.tasks.map((task) => (
+          <TugTaskItem
+            key={task.taskId}
+            status={task.status}
+            label={
+              task.status === "in_progress" && task.activeForm !== undefined
+                ? task.activeForm
+                : task.subject
+            }
+            description={task.description}
+            idle={idle}
+          />
+        ))}
+      </div>
+      <div
+        className="tide-tasks-popover-footer"
+        data-slot="tide-tasks-popover-footer"
+      >
+        <span className="tide-tasks-popover-pending">{summary}</span>
+        <BlockCopyButton
+          aria-label="Copy task list"
+          getText={() => composeTaskCopyText(state.tasks)}
+        />
       </div>
     </PerAreaPopoverFrame>
   );

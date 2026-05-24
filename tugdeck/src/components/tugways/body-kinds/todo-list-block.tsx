@@ -73,10 +73,11 @@ import "./todo-list-block.css";
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { Check, Circle, Loader2 } from "lucide-react";
+import { Check, Circle } from "lucide-react";
 
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { TugProgress } from "@/components/tugways/tug-progress";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -129,6 +130,18 @@ export interface TodoListBlockProps {
    * @default false
    */
   embedded?: boolean;
+
+  /**
+   * Quiescent gate — when `true`, the in_progress row's progress
+   * ring renders in the {@link TugProgress} `stopped` state (closed
+   * outlined circle, no animation) instead of the default
+   * indeterminate spinning arc. Use to keep the row visually quiet
+   * when the surrounding session is idle (matching the status-bar
+   * TASKS ring's stopped gate). Pending and completed rows are
+   * unaffected.
+   * @default false
+   */
+  idle?: boolean;
 
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
@@ -234,7 +247,17 @@ const NOOP_UNSUBSCRIBE = (): void => {};
  * distinct across instances).
  */
 class TaskListDataSource implements TugListViewDataSource {
-  constructor(private readonly tasks: readonly TaskItem[]) {}
+  constructor(
+    private readonly tasks: readonly TaskItem[],
+    /**
+     * Mirrors the session's idle gate so the in_progress row can
+     * pass `stopped={idle}` into its `TugProgress` ring. The
+     * `useMemo` keying TodoListBlock's data source includes `idle`,
+     * so an idle flip produces a fresh instance and re-renders the
+     * cells with the new ring state.
+     */
+    readonly idle: boolean,
+  ) {}
 
   numberOfItems(): number {
     return this.tasks.length;
@@ -267,27 +290,54 @@ class TaskListDataSource implements TugListViewDataSource {
 // Cell renderer
 // ---------------------------------------------------------------------------
 
-/** Map a status to the lucide icon component. */
-const ICON_BY_STATUS: Readonly<Record<TaskStatus, React.ComponentType<{ size?: number }>>> = {
-  pending: Circle,
-  in_progress: Loader2,
-  completed: Check,
-};
+/**
+ * Icon rendered for a given status:
+ *  - `pending`   — static lucide `Circle` (always closed outline).
+ *  - `completed` — static lucide `Check`.
+ *  - `in_progress` — {@link TugProgress} ring. Default state is the
+ *    indeterminate rotating arc; when the surrounding data source
+ *    is `idle`, the ring switches to its `stopped` rendering
+ *    (closed outlined circle, no animation) — a proper primitive
+ *    state, not a CSS pause of the rotating arc.
+ */
+function TaskRowIcon({
+  status,
+  idle,
+}: {
+  status: TaskStatus;
+  idle: boolean;
+}): React.ReactElement {
+  if (status === "in_progress") {
+    return (
+      <TugProgress
+        variant="ring"
+        size="sm"
+        role="inherit"
+        stopped={idle}
+        aria-hidden="true"
+      />
+    );
+  }
+  const Icon = status === "completed" ? Check : Circle;
+  return <Icon size={14} />;
+}
 
 /**
  * One task row — `[status-icon] [text]`. The status drives the icon,
  * the text variant (subject vs. activeForm), and the visual
  * treatment via the row's `data-status` attribute (CSS owns colour,
- * weight, and strikethrough — pure [L06]). When `description` is
- * present, the row is wrapped in a `TugTooltip` so the longer prose
- * surfaces on hover; the row body stays single-line.
+ * weight, and strikethrough — pure [L06]). The in_progress row's
+ * icon is a `TugProgress` ring driven by `dataSource.idle` so it
+ * stops cleanly when the surrounding session is idle. When
+ * `description` is present, the row is wrapped in a `TugTooltip` so
+ * the longer prose surfaces on hover; the row body stays
+ * single-line.
  */
 const TaskCell: TugListViewCellRenderer<TaskListDataSource> = ({
   index,
   dataSource,
 }: TugListViewCellProps<TaskListDataSource>) => {
   const task = dataSource.taskAt(index);
-  const Icon = ICON_BY_STATUS[task.status];
   const text =
     task.status === "in_progress" && task.activeForm !== undefined
       ? task.activeForm
@@ -300,7 +350,7 @@ const TaskCell: TugListViewCellRenderer<TaskListDataSource> = ({
       data-status={task.status}
     >
       <span className="tugx-todo-row-icon" aria-hidden="true">
-        <Icon size={14} />
+        <TaskRowIcon status={task.status} idle={dataSource.idle} />
       </span>
       <span className="tugx-todo-row-text">{text}</span>
     </div>
@@ -327,10 +377,14 @@ export const TodoListBlock: React.FC<TodoListBlockProps> = ({
   data,
   label,
   embedded = false,
+  idle = false,
   className,
 }) => {
   const tasks = data?.tasks ?? EMPTY_TASKS;
-  const dataSource = React.useMemo(() => new TaskListDataSource(tasks), [tasks]);
+  const dataSource = React.useMemo(
+    () => new TaskListDataSource(tasks, idle),
+    [tasks, idle],
+  );
 
   // ---- Copy source ---------------------------------------------------
   //

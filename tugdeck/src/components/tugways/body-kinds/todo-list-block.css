@@ -58,9 +58,6 @@ body {
   /* `completed` rows fade to muted prose with strikethrough so the
    * eye glides over what's already finished and lands on what's left. */
   --tugx-todo-completed-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Animation cadence for the in-progress spinner. */
-  --tugx-todo-spinner-duration: 1.4s;
 }
 
 /* ---------- Frame ---------- */
@@ -208,28 +205,18 @@ body {
   font-weight: 600;
 }
 
-/* @tug-renders-on: --tugx-todo-active-bg */
-.tugx-todo-row[data-status="in_progress"] .tugx-todo-row-icon svg {
-  color: var(--tugx-todo-active-color);
-  /* Spinner-style rotation — pure CSS, no React state. Honors
-   * `prefers-reduced-motion` so users sensitive to motion get a
-   * stationary loader badge. */
-  animation: tugx-todo-spin var(--tugx-todo-spinner-duration) linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tugx-todo-row[data-status="in_progress"] .tugx-todo-row-icon svg {
-    animation: none;
-  }
-}
-
-@keyframes tugx-todo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* The in_progress row's icon is a `TugProgress` ring (not a lucide
+   SVG); the ring carries its own indeterminate rotation animation
+   and its own `prefers-reduced-motion` handling, so this file no
+   longer owns a spinner keyframe. Size the ring to fit the 14×14
+   icon slot — color is delivered by the `TugProgress` `role="inherit"`
+   prop ([L20] — this file does not override the ring's
+   `--tugx-progress-fill` slot; the row's `color` cascade
+   (`--tugx-todo-active-color` set on `[data-status="in_progress"]`)
+   reaches the ring via `currentColor`). */
+.tugx-todo-row[data-status="in_progress"] .tugx-todo-row-icon .tug-progress-ring {
+  width: 14px;
+  height: 14px;
 }
 
 /* `completed` — strikethrough + muted prose so finished work fades. */

@@ -4,9 +4,16 @@
    ========================================================================= */
 
 /* @tug-pairings {
- *   ".tug-label":          element=field-text-normal-label-rest    surface=surface-global-primary-normal-default-rest
- *   ".tug-label-required": element=field-text-normal-required-rest surface=surface-global-primary-normal-default-rest
- *   ".tug-label-disabled": element=field-text-normal-plain-disabled surface=surface-global-primary-normal-default-rest
+ *   ".tug-label":              element=field-text-normal-label-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-required":     element=field-text-normal-required-rest   surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-disabled":     element=field-text-normal-plain-disabled  surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-accent":  element=tone-text-normal-accent-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-action":  element=tone-text-normal-active-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-agent":   element=tone-text-normal-agent-rest       surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-caution": element=tone-text-normal-caution-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-danger":  element=tone-text-normal-danger-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-data":    element=tone-text-normal-data-rest        surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-success": element=tone-text-normal-success-rest     surface=surface-global-primary-normal-default-rest
  * } */
 
 /**
@@ -17,6 +24,13 @@
  * | --tug7-element-field-text-normal-required-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-required (color)          |
  * | --tug7-element-field-text-normal-plain-disabled | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-disabled (color)          |
  * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-color-muted (color)       |
+ * | --tug7-element-tone-text-normal-accent-rest  | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-accent (color)       |
+ * | --tug7-element-tone-text-normal-active-rest  | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-action (color)       |
+ * | --tug7-element-tone-text-normal-agent-rest   | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-agent (color)        |
+ * | --tug7-element-tone-text-normal-caution-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-caution (color)      |
+ * | --tug7-element-tone-text-normal-danger-rest  | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-danger (color)       |
+ * | --tug7-element-tone-text-normal-data-rest    | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-data (color)         |
+ * | --tug7-element-tone-text-normal-success-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-success (color)      |
  */
 
 
@@ -70,6 +84,28 @@
 .tug-label-color-muted {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
+
+/* ============================================================================
+   Role tones — `--tug7-element-tone-text-normal-<suffix>-rest`. The
+   `action` role aliases to the `active` token suffix to match
+   `TugProgress`'s role naming, so the same role name lights up the
+   same color family across both primitives.
+   ========================================================================= */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-role-accent  { color: var(--tug7-element-tone-text-normal-accent-rest); }
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-role-action  { color: var(--tug7-element-tone-text-normal-active-rest); }
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-role-agent   { color: var(--tug7-element-tone-text-normal-agent-rest); }
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-role-caution { color: var(--tug7-element-tone-text-normal-caution-rest); }
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-role-danger  { color: var(--tug7-element-tone-text-normal-danger-rest); }
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-role-data    { color: var(--tug7-element-tone-text-normal-data-rest); }
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-role-success { color: var(--tug7-element-tone-text-normal-success-rest); }
 
 /* ============================================================================
    Monospace

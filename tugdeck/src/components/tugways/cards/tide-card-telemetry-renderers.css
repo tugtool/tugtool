@@ -245,10 +245,23 @@
   gap: var(--tug-space-xs);
 }
 
+/* Size the ring to 10px in the TASKS cell — the role/fill is set on
+   the component via `role="inherit"` ([L20] — this file does not
+   override `TugProgress`'s `--tugx-progress-fill` slot; it controls
+   color only via the cell's own `color` cascade, which the
+   `inherit`-role ring picks up via `currentColor`). */
 .tide-telemetry-status-cell[data-priority="tasks"] .tug-progress-ring {
-  --tugx-progress-fill: currentColor;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
+}
+
+/* Dim the value when there are no tasks (`–/–`) so the cell reads
+   as a quiet placeholder rather than an active datum. Matches the
+   muted treatment of the ring's `disabled` opacity above. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tide-telemetry-status-cell[data-priority="tasks"]
+  .tide-telemetry-status-value[data-empty="true"] {
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* Value treatment — the row's focal data: a step up in size from the

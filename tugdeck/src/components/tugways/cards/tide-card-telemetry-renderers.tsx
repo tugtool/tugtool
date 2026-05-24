@@ -589,15 +589,24 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   const stateLabelText = labelTextFor(indicatorState);
 
   // TASKS cell — assembled from the Task* event stream ([D100]).
-  // The ring animates when at least one task is pending or
-  // in_progress (work happening); stops otherwise. The label text
-  // reads `N/M` (`completed/total`) when tasks exist, else `None`.
+  // Three ring states keep layout identical across "no tasks" /
+  // "quiescent" / "working":
+  //   - `disabled` (grayed, paused) — no Task* call has happened
+  //     yet; the label reads `-/-` so the cell occupies the same
+  //     width as the populated states.
+  //   - `stopped` (closed outlined circle, no animation) — tasks
+  //     exist but no work is happening: all tasks completed OR the
+  //     session phase is `idle` (regardless of task statuses;
+  //     idle = the assistant isn't doing anything, so the ring
+  //     should not imply otherwise even if tasks remain "pending").
+  //   - animating (default indeterminate spin) — tasks exist and
+  //     work is in flight.
   const taskListState = useTaskListState(codeSessionStore);
   const taskCounts = countTasks(taskListState.tasks);
   const hasTasks = taskCounts.total > 0;
-  const tasksActive =
-    hasTasks &&
-    taskCounts.completed < taskCounts.total;
+  const isIdle = snap.phase === "idle";
+  const tasksWorking =
+    hasTasks && taskCounts.completed < taskCounts.total && !isIdle;
   const tasksLabelText = hasTasks
     ? `${taskCounts.completed}/${taskCounts.total}`
     : "None";
@@ -637,7 +646,9 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   const statePopover = (
     <StateChangeLogPopoverContent rows={stateChangeSnap.rows} />
   );
-  const tasksPopover = <TasksPopoverContent state={taskListState} />;
+  const tasksPopover = (
+    <TasksPopoverContent state={taskListState} idle={isIdle} />
+  );
 
   // Flat 4-cell flex row — STATE + TIME + TOKENS + CONTEXT as direct
   // siblings. The row's `justify-content: center` (declared in CSS)
@@ -751,17 +762,19 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
           >
             <TideTelemetryEndcapRuleLabel label="TASKS" ticksDirection="down" />
             <span className="tide-telemetry-status-value-wrap">
-              <TugProgress
-                variant="ring"
-                size="sm"
-                stopped={!tasksActive}
-                aria-label={
-                  hasTasks
-                    ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
-                    : "No tasks"
-                }
-              />
-              <span className="tide-telemetry-status-value">
+              {hasTasks ? (
+                <TugProgress
+                  variant="ring"
+                  size="sm"
+                  role="inherit"
+                  stopped={!tasksWorking}
+                  aria-label={`${taskCounts.completed} of ${taskCounts.total} tasks complete`}
+                />
+              ) : null}
+              <span
+                className="tide-telemetry-status-value"
+                data-empty={hasTasks ? undefined : "true"}
+              >
                 {tasksLabelText}
               </span>
             </span>

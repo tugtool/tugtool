@@ -1,0 +1,133 @@
+/**
+ * TugTaskItem — one-row "indicator + label" composition for task /
+ * checklist surfaces.
+ *
+ * Layout:
+ *   [indicator slot]  [TugLabel]
+ *
+ * Visual state is driven entirely by `[data-status]` on the root,
+ * so a status change at the React layer never touches a CSS
+ * variable from this file — it just flips the attribute and the
+ * cascade resolves.
+ *
+ * Conformance:
+ *  - [L06] All visual treatments (highlight band, strikethrough,
+ *    icon color) live in CSS, keyed off `data-status`.
+ *  - [L16] Each color-setting rule declares its rendering surface
+ *    via `@tug-renders-on`; rules that set both `color` and
+ *    `background-color` are self-documenting.
+ *  - [L17] Component alias tokens (`--tugx-task-item-*`) resolve
+ *    to `--tug7-*` in one hop (declared in `body{}` below).
+ *  - [L18] Tokens use element / surface vocabulary.
+ *  - [L20] This file owns only `--tugx-task-item-*`; composed
+ *    children (`TugProgress`, `TugLabel`, `TugTooltip`) carry
+ *    their own tokens and are never overridden from here. The
+ *    role-driven color of the in_progress ring comes from
+ *    `<TugProgress role="action">` in the .tsx, not from a slot
+ *    override.
+ *
+ * @module components/tugways/tug-task-item
+ */
+
+/* ============================================================================
+   Component-tier aliases — task-item-specific only [L17]
+   ========================================================================= */
+
+body {
+  --tugx-task-item-row-padding:    var(--tug-space-xs) var(--tug-space-sm);
+  --tugx-task-item-row-gap:        var(--tug-space-sm);
+
+  /* `pending` indicator + label: muted. */
+  --tugx-task-item-pending-color:   var(--tug7-element-global-text-normal-muted-rest);
+
+  /* `in_progress` accents — the standard "active" tone family
+     (blue), matching the surface `TugProgress role="action"`
+     paints into. Aliasing the global `--tug7-*-active-rest`
+     tokens means a theme change retunes the whole row in step
+     with every other "active" surface in the system. */
+  --tugx-task-item-active-bg:       var(--tug7-surface-tone-primary-normal-active-rest);
+
+  /* `completed` icon — the standard "success" tone family (green)
+     so the checkmark reads as "done" rather than just "muted". The
+     label stays muted via `TugLabel color="muted"`; only the
+     indicator picks up the success tone. */
+  --tugx-task-item-success-color:   var(--tug7-element-tone-text-normal-success-rest);
+}
+
+/* ============================================================================
+   Root row
+   ========================================================================= */
+
+.tug-task-item {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--tugx-task-item-row-gap);
+  padding: var(--tugx-task-item-row-padding);
+}
+
+/* ============================================================================
+   Indicator slot — sized to the smallest TugProgress ring (16px)
+   so the slot accommodates both the lucide icon (rendered at 14px,
+   centered) and the in_progress TugProgress ring without layout
+   reflow on a status change.
+   ========================================================================= */
+
+.tug-task-item-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  /* Optical nudge — the icon's vertical center reads a hair high
+     against the label's typographic baseline; drop it 1px so the
+     two share an optical line. */
+  margin-top: 1px;
+  /* Default indicator color — muted for `pending`. The
+     `in_progress` row's TugProgress ring carries its own
+     role-driven fill via `role="action"`, so this `color` value
+     is moot inside it; the `completed` row overrides this below
+     to the success tone. */
+  color: var(--tugx-task-item-pending-color);
+}
+
+/* ============================================================================
+   Label slot
+   ========================================================================= */
+
+.tug-task-item-label {
+  flex: 1 1 auto;
+}
+
+/* ============================================================================
+   Status: in_progress
+   ========================================================================= */
+
+/* The active row reads as a highlighted band — same vocabulary the
+   rest of the system uses for "current selection / active item".
+   The label's text color comes from `TugLabel role="action"` (set
+   in the .tsx); this rule paints only the row's background. */
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tug-task-item[data-status="in_progress"] {
+  background-color: var(--tugx-task-item-active-bg);
+}
+
+/* ============================================================================
+   Status: completed
+   ========================================================================= */
+
+/* The checkmark glyph picks up the success tone so finished rows
+   read as "done", not "muted". The label stays muted via
+   `TugLabel color="muted"` (set in the .tsx). */
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.tug-task-item[data-status="completed"] .tug-task-item-indicator {
+  color: var(--tugx-task-item-success-color);
+}
+
+/* Strikethrough on the label — a presentation enhancement scoped
+   to TugTaskItem (not a TugLabel token override; no `--tug7-*` /
+   `--tugx-*` slot is rewritten here). */
+.tug-task-item[data-status="completed"] .tug-task-item-label {
+  text-decoration: line-through;
+}

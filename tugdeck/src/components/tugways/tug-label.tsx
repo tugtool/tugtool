@@ -27,6 +27,26 @@ export type TugLabelSize =
 /** TugLabel color variants. */
 export type TugLabelColor = "default" | "muted";
 
+/**
+ * TugLabel role — paints the label text in a standard role tone
+ * (`--tug7-element-tone-text-normal-<role>-rest`). Use for labels
+ * that need to mirror a role-driven accent in a surrounding
+ * surface (e.g. a `TugTaskItem`'s in-progress row whose ring is
+ * `TugProgress role="action"`). The role suffix follows the same
+ * "action → active" alias TugProgress uses, so the same role name
+ * lights up the same color family across both primitives.
+ *
+ * When set, `role` overrides `color`.
+ */
+export type TugLabelRole =
+  | "accent"
+  | "action"
+  | "agent"
+  | "caution"
+  | "danger"
+  | "data"
+  | "success";
+
 /** TugLabel text alignment. */
 export type TugLabelAlign = "start" | "center" | "end";
 
@@ -46,6 +66,14 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
    * @default "default"
    */
   color?: TugLabelColor;
+  /**
+   * Role tone — when set, overrides `color` with the standard
+   * `--tug7-element-tone-text-normal-<role>-rest` token. Use for
+   * labels paired with role-driven accents (e.g. an in-progress
+   * task row whose ring is `TugProgress role="action"`).
+   * @selector .tug-label-role-action | .tug-label-role-success | …
+   */
+  role?: TugLabelRole;
   /**
    * Use monospace font.
    * @selector .tug-label-mono
@@ -117,6 +145,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       htmlFor,
       size = "md",
       color = "default",
+      role,
       mono = false,
       align = "start",
       maxLines,
@@ -234,7 +263,11 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     const labelClassName = cn(
       "tug-label",
       `tug-label-size-${size}`,
-      color !== "default" && `tug-label-color-${color}`,
+      // `role` overrides `color` per the prop's spec — the role
+      // class adds a higher-specificity `color:` rule that wins
+      // the cascade against `.tug-label-color-muted` etc.
+      role !== undefined && `tug-label-role-${role}`,
+      role === undefined && color !== "default" && `tug-label-color-${color}`,
       mono && "tug-label-mono",
       align !== "start" && `tug-label-align-${align}`,
       disabled && "tug-label-disabled",

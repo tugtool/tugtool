@@ -390,3 +390,52 @@
 .tide-state-log-interrupt {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
+
+/* ============================================================================
+   Tasks popover
+   ============================================================================
+   The popover renders the task list as a flex column of standard
+   `TugTaskItem` primitives, then frames it with a footer carrying
+   the count summary + Copy. The rows sit on the popover surface
+   directly — no extra inner frame, no body-kind chrome to suppress
+   — matching the visual rhythm of Time / Tokens / Context.
+   ========================================================================= */
+
+.tide-popover-frame:has(.tide-tasks-popover-body) {
+  min-width: 340px;
+  max-width: 520px;
+}
+
+.tide-tasks-popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-block: var(--tug-space-xs);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-tasks-popover-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  padding-block-start: var(--tug-space-sm);
+  /* Side margins inset the pending label + Copy button from the
+     popover frame's edges. The leading inset is larger because the
+     trailing item (Copy) is a ghost button — its hover/active
+     background extends outward into its own padding, so a flush-
+     right placement reads visually balanced even with a smaller
+     trailing inset. The leading pending label has no such padding
+     and needs the extra room to avoid hugging the popover edge. */
+  padding-inline-start: var(--tug-space-md);
+  padding-inline-end: var(--tug-space-xs);
+  margin-block-start: var(--tug-space-xs);
+  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tide-tasks-popover-pending {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.6875rem;
+}
