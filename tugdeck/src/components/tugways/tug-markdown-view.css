@@ -635,41 +635,65 @@ body {
  * `enhanceTable` stamps `aria-sort="none"` on every sortable header
  * the first time it runs, then updates `aria-sort` + the table-level
  * `data-tugx-table-sort-{column,direction}` attributes on each click.
- * Headers opted out via `class="no-sort"` keep no `aria-sort` attr;
- * the cursor stays default and the indicator never paints.
+ * Headers opted out via `class="no-sort"` carry no `aria-sort` attr,
+ * the cursor stays default, and no indicator paints.
  *
- * The indicator is a CSS pseudo-element on the active header. The
- * arrow Unicode glyph is intentional — Lucide chevrons would require
- * inline-SVG + Tier 1 hydration to live in user-owned DOM, while a
- * one-character glyph is paint-free, theme-tone honest, and matches
- * the surface vocabulary every spreadsheet UI shares. */
+ * Indicator: every sortable header paints a Lucide chevron, *in all
+ * three states* (none / ascending / descending). Painting the
+ * none-state icon at the same width as the active-state icons keeps
+ * column widths byte-stable across clicks — if "none" rendered
+ * nothing and "ascending" rendered a chevron, the column would
+ * widen on first click and the table would reflow. Reserving the
+ * slot for an indicator that's *always present* is the layout-
+ * stability contract.
+ *
+ * Lucide SVG paths are inlined as `mask-image` data-URIs and the
+ * fill is `currentColor`, so the chevron picks up the header's text
+ * color (theme-tone honest, no per-theme overrides needed). Same
+ * trick used by `tug-input.css` for the search-clear button. */
 .tugx-md-block th[aria-sort] {
   cursor: pointer;
-  position: sticky; /* re-assert; sortable headers stay pinned. */
+  position: sticky;
   top: 0;
-  /* Reserve trailing space for the indicator so the column width
-   * doesn't shift when sort flips on. */
-  padding-right: calc(var(--tug-space-md) + 1em);
+  /* Reserve trailing space for the always-painted indicator. */
+  padding-right: calc(var(--tug-space-md) + 1.25em);
 }
 
-.tugx-md-block th[aria-sort="ascending"]::after,
-.tugx-md-block th[aria-sort="descending"]::after {
+.tugx-md-block th[aria-sort]::after {
   content: "";
   display: inline-block;
-  width: 0;
-  height: 0;
+  width: 1em;
+  height: 1em;
   margin-left: var(--tug-space-xs);
-  vertical-align: middle;
-  border-left: 0.3em solid transparent;
-  border-right: 0.3em solid transparent;
+  vertical-align: -0.15em;
+  background-color: currentColor;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
 }
 
+/* Unsorted state — Lucide `chevrons-up-down`. Dimmed so the active
+ * state reads as the foreground signal; the unsorted glyph is a
+ * quiet "this is sortable" affordance, not a status read. */
+.tugx-md-block th[aria-sort="none"]::after {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E");
+  opacity: 0.45;
+}
+
+/* Ascending — Lucide `chevron-up`. */
 .tugx-md-block th[aria-sort="ascending"]::after {
-  border-bottom: 0.4em solid currentColor;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m18 15-6-6-6 6'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m18 15-6-6-6 6'/%3E%3C/svg%3E");
 }
 
+/* Descending — Lucide `chevron-down`. */
 .tugx-md-block th[aria-sort="descending"]::after {
-  border-top: 0.4em solid currentColor;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* Images */

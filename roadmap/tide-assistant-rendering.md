@@ -6317,7 +6317,7 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 - [x] Wire into `render-incremental.ts`'s `buildBlockElement` and `updateBlockElement` alongside the other enhancers.
 - [x] Sort cycle: `null → asc → desc → null` on the same column; clicking a different column resets to `asc` on the new column. Match the convention every spreadsheet UI uses.
 - [x] Stable sort — when two cells compare equal, preserve original row order. JS's `Array.prototype.sort` is stable as of ES2019, so a single `collator.compare(a, b)` suffices.
-- [x] Visual sort indicator — chevron (lucide `ChevronUp` / `ChevronDown`) appended to the active `<th>`. CSS-only via `[data-tugx-table-sort-direction="asc"]::after` on the column-index-matching cell. *(Shipped as a CSS-only triangle pseudo-element keyed off `aria-sort`; no inline-SVG needed, paint-free, theme-tone honest.)*
+- [x] Visual sort indicator — chevron (lucide `ChevronUp` / `ChevronDown`) appended to the active `<th>`. CSS-only via `[data-tugx-table-sort-direction="asc"]::after` on the column-index-matching cell. *(Shipped as `mask-image` data-URI pseudo-elements keyed off `aria-sort`, with the proper Lucide trio: `ChevronsUpDown` (dimmed) for the unsorted state, `ChevronUp` for asc, `ChevronDown` for desc. The unsorted glyph is always painted at the same reserved width so column widths are byte-stable across click cycles.)*
 - [x] `aria-sort` attribute on the active `<th>` (`ascending` / `descending` / `none`) for screen readers.
 - [x] Optional: opt-out class `class="no-sort"` on `<th>` to disable sorting for a column (mirrors the [tofsjonas/sortable](https://github.com/tofsjonas/sortable) convention).
 
