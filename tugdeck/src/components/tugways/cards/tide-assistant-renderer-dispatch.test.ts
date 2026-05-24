@@ -46,6 +46,7 @@ import {
 } from "./tide-assistant-renderer-dispatch";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
+import { defaultIntentToolNames } from "./tide-tool-visibility-policy";
 import type { ToolBlockProps } from "./tool-blocks/types";
 import type { ToolCallState } from "@/lib/code-session-store";
 
@@ -172,18 +173,26 @@ describe("dispatch — tool_call routing", () => {
   });
 
   it("routes audit-confirmed default tools to DefaultToolBlock without caution", () => {
-    // `notebookedit` is in the `default-intent` bucket of
-    // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy to route
-    // through `DefaultToolBlock`, so no drift caution. `Monitor` was
-    // the original example here; promoted to bespoke at
-    // [#step-24-3-2]. `ShareOnboardingGuide` succeeded it; promoted
-    // to bespoke at [#step-24-3-4]. `WebFetch` succeeded it; promoted
-    // at [#step-25]. Repointed to `NotebookEdit` — awaits Step 26.
-    // Any future promotion of `notebookedit` means re-pointing again
-    // at whatever's still default-intent.
+    // Per [D101] policy contract: a tool in the `default-intent`
+    // bucket of `TOOL_VISIBILITY_POLICY` routes through
+    // `DefaultToolBlock` without raising a drift caution. The set of
+    // default-intent tools shrinks as bespoke wrappers ship; this
+    // canary re-points at whatever name is currently classified
+    // default-intent. When the bucket is empty (every tool covered
+    // by a bespoke wrapper), the contract is preserved by the
+    // policy-file invariants and this assertion becomes informational
+    // — there is no real-world target to canary against.
+    const sample = defaultIntentToolNames().values().next().value;
+    if (sample === undefined) {
+      // No default-intent tools today — bucket is currently empty.
+      // The policy-file governance test covers the structural
+      // invariants; this canary has nothing to assert against.
+      expect(defaultIntentToolNames().size).toBe(0);
+      return;
+    }
     const input: RenderInput = {
       kind: "tool_call",
-      toolCall: fakeToolCall("NotebookEdit"),
+      toolCall: fakeToolCall(sample),
       msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
@@ -481,13 +490,18 @@ describe("detectToolCallDrift", () => {
   });
 
   it("does not flag a policy default-intent tool", () => {
-    // `notebookedit` is in the `default-intent` bucket of
-    // `TOOL_VISIBILITY_POLICY` ([D101]) — known by policy, so no
-    // drift caution. Previous examples (`Monitor` → [#step-24-3-2],
-    // `ShareOnboardingGuide` → [#step-24-3-4], `WebFetch` →
-    // [#step-25]) were promoted to bespoke; this assertion repoints
-    // at whatever's still default-intent at the time.
-    expect(detectToolCallDrift(fakeToolCall("NotebookEdit"))).toBeNull();
+    // Per [D101]: a tool in the `default-intent` bucket of
+    // `TOOL_VISIBILITY_POLICY` does not raise a drift caution. The
+    // set shrinks as bespoke wrappers ship; this canary re-points at
+    // whatever name is currently classified default-intent. When the
+    // bucket is empty, the policy invariants in
+    // `tide-tool-visibility-policy.test.ts` carry the contract.
+    const sample = defaultIntentToolNames().values().next().value;
+    if (sample === undefined) {
+      expect(defaultIntentToolNames().size).toBe(0);
+      return;
+    }
+    expect(detectToolCallDrift(fakeToolCall(sample))).toBeNull();
   });
 
   it("does not flag a registered wrapper with no shape schema", () => {

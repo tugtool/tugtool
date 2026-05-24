@@ -104,6 +104,8 @@ import { RemoteTriggerToolBlock } from "./tool-blocks/remote-trigger-tool-block"
 import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
 import { WebFetchToolBlock } from "./tool-blocks/web-fetch-tool-block";
 import { WebSearchToolBlock } from "./tool-blocks/web-search-tool-block";
+import { WriteToolBlock } from "./tool-blocks/write-tool-block";
+import { NotebookEditToolBlock } from "./tool-blocks/notebook-edit-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
@@ -1079,6 +1081,10 @@ const BESPOKE_REGISTRATIONS: ReadonlyArray<
   // ([#step-25]).
   ["webfetch", WebFetchToolBlock],
   ["websearch", WebSearchToolBlock],
+  // File-mutation tools — `Write` and `NotebookEdit` were previously
+  // `default-intent`; promoted to bespoke at [#step-26].
+  ["write", WriteToolBlock],
+  ["notebookedit", NotebookEditToolBlock],
 ];
 
 /**

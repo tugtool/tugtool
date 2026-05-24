@@ -6207,15 +6207,15 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - Registry entries
 
 **Tasks:**
-- [ ] WriteToolBlock: header `Write · {filePath}` + size; body `embedded` FileBlock; new-vs-overwrite indicator
-- [ ] NotebookEditToolBlock: header `NotebookEdit · {notebookPath} · cell {cellId}` + edit-mode badge; body `embedded` DiffBlock (generic v1 per [Q01])
+- [x] WriteToolBlock: header `Write · {filePath}` + size + new/overwrite chip (from `structured_result.created`); body `embedded` FileBlock
+- [x] NotebookEditToolBlock: header `NotebookEdit · {notebookPath}` + `cell {cellId}` + edit-mode + cell-type chips; body branches per edit-mode — `replace` → `embedded` DiffBlock (`two-text` source, per [Q01] generic v1), `insert` → `embedded` FileBlock, `delete` → confirmation row
 
 **Tests:**
-- [ ] Synthetic Write fixture renders FileBlock
-- [ ] Synthetic NotebookEdit replace renders DiffBlock
+- [x] Synthetic Write fixture composes FileData
+- [x] Synthetic NotebookEdit replace resolves to the replace mode
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
 - [ ] Manual: prompt `> create a file at /tmp/hello.txt containing "hello world"` → expect a WriteToolBlock with `Write · /tmp/hello.txt` header and an embedded FileBlock body
 - [ ] Manual: prompt `> in /tmp/sample.ipynb, replace cell 2 with a cell that prints "hi"` → expect a NotebookEditToolBlock with `NotebookEdit · …/sample.ipynb · cell 2` header and an embedded DiffBlock body
 

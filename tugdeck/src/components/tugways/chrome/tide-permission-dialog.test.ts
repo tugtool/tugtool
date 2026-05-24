@@ -122,6 +122,7 @@ describe("selectPermissionBodyKind", () => {
       "Glob",
       "WebFetch",
       "WebSearch",
+      "NotebookEdit",
     ]) {
       // `selectPermissionBodyKind` should pick "dispatch" for each.
       expect(selectPermissionBodyKind(wireName)).toBe("dispatch");
@@ -133,15 +134,13 @@ describe("selectPermissionBodyKind", () => {
   });
 
   it("falls back to json for tools without a bespoke wrapper", () => {
-    // `NotebookEdit` is still in the `default-intent` bucket of
-    // `TOOL_VISIBILITY_POLICY` (awaiting Step 26) — JsonTreeBlock
-    // fallback until that lands. (`WebFetch` / `WebSearch` were
-    // promoted at [#step-25]; `Write` has an explicit `"path"` case
-    // because the preview is a single filepath.)
-    expect(selectPermissionBodyKind("NotebookEdit")).toBe("json");
     // Genuinely unknown tools (e.g., a future Claude Code addition
-    // before the policy table is updated) also fall through to
-    // JsonTreeBlock — there's no shape we could show otherwise.
+    // before the policy table is updated) fall through to
+    // JsonTreeBlock — there's no shape we could show otherwise. As
+    // of [#step-26], every wire tool has a bespoke wrapper or an
+    // explicit per-case branch (`bash` / `edit` / `read` / `write`),
+    // so the unknown-name case is the primary canary for this
+    // branch.
     expect(selectPermissionBodyKind("ZzzUnknownTool")).toBe("json");
     expect(selectPermissionBodyKind("")).toBe("json");
   });

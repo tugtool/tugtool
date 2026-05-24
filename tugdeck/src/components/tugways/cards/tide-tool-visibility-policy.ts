@@ -196,20 +196,10 @@ export const TOOL_VISIBILITY_POLICY: ReadonlyArray<ToolVisibilityEntry> = [
   // default-intent — known tool, JsonTree fallback for now,
   // bespoke wrapper planned (every entry must cite a follow-on step)
   // ==============================
-  {
-    name: "notebookedit",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `NotebookEditToolBlock` — see [#step-26]. Notebook cell edit; composes `DiffBlock` per Table T02. Classified default-intent so per-call events render through `DefaultToolBlock` without a drift caution until the bespoke wrapper ships.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "write",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `WriteToolBlock` — see [#step-26]. filePath + size + new-vs-overwrite header; body is the file contents via `FileBlock`.",
-    reviewedAt: "2026-05-24",
-  },
+  // (none — every previously default-intent tool has been promoted
+  // to bespoke. New default-intent entries follow the same pattern:
+  // a one-line `rationale` citing the planned `#step-...` and a
+  // `reviewedAt` commit date.)
 ];
 
 // ---------------------------------------------------------------------------
