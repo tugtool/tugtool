@@ -6247,7 +6247,7 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 
 **Checkpoint:**
 - [x] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> render this markdown verbatim: ![Mona Lisa](https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Mona_Lisa.jpg/300px-Mona_Lisa.jpg)` → expect a markdown image with `loading="lazy"`, clickable to fullscreen overlay; Escape dismisses
+- [ ] Manual: prompt `> render this markdown verbatim: ![Mona Lisa](https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Mona_Lisa.jpg/330px-Mona_Lisa.jpg)` → expect a markdown image with `loading="lazy"`, clickable to fullscreen overlay; Escape dismisses (Wikimedia restricts thumbnail sizes to a whitelist — `300px` returns HTTP 400; `330px` is in the current whitelist per https://w.wiki/GHai)
 
 ---
 

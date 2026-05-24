@@ -21,11 +21,16 @@ import { ImageBlock } from "@/components/tugways/body-kinds/image-block";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
+// Wikimedia restricts `thumb/.../{N}px-*` to a small whitelist of
+// device-aware sizes (330, 510, 770, 1024, 1280, 1920, 2560, 3840 —
+// see https://w.wiki/GHai). The older "any size you ask for" path
+// was retired; arbitrary sizes return HTTP 400 with a body pointing
+// at that whitelist. Picking 330 keeps the gallery card small.
 const MONA_LISA_URL =
-  "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Mona_Lisa.jpg/300px-Mona_Lisa.jpg";
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Mona_Lisa.jpg/330px-Mona_Lisa.jpg";
 
 const EARTH_URL =
-  "https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/The_Earth_seen_from_Apollo_17.jpg/320px-The_Earth_seen_from_Apollo_17.jpg";
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/9/97/The_Earth_seen_from_Apollo_17.jpg/330px-The_Earth_seen_from_Apollo_17.jpg";
 
 const BROKEN_URL =
   "https://example.invalid/this-file-does-not-exist.png";
