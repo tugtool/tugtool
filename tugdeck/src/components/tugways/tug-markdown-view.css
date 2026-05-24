@@ -556,6 +556,14 @@ body {
   margin: var(--tugx-md-table-margin) 0;
 }
 
+/* Rich-table mount point — the `enhanceTable` walker replaces a
+ * promoted `<table data-tugx-large-table>` with this div, then
+ * mounts the React `TableBlock` inside it. Match the plain table's
+ * outer margin so the document rhythm is preserved across the swap. */
+.tugx-md-block .tugx-md-table-mount {
+  margin: var(--tugx-md-table-margin) 0;
+}
+
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-md-block th,
 .tugx-md-block td {

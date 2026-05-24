@@ -62,6 +62,7 @@ import { enhanceFencedCode } from "./enhance-fenced-code";
 import { enhanceImg } from "./enhance-img";
 import { enhanceMath } from "./enhance-math";
 import { enhanceMermaid } from "./enhance-mermaid";
+import { enhanceTable } from "./enhance-table";
 import {
   parseMarkdownToSanitizedBlocks,
   type ParseMarkdownOptions,
@@ -180,6 +181,7 @@ function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
+  enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
   return el;
@@ -193,6 +195,7 @@ function updateBlockElement(
   el.innerHTML = block.html;
   enhanceFencedCode(el);
   enhanceImg(el);
+  enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
 }

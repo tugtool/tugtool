@@ -6271,7 +6271,8 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - [x] Sticky `<thead>` within the table's scroll region (distinct from the body-kind identity-header pin — see Conformance note)
 - [x] Cell overflow handling — `text-overflow: ellipsis` + `TugTooltip` gated on `truncated`
 - [x] Optional row striping (default on; `striped={false}` disables)
-- [x] `largeTableTransformer` promotes large GFM tables — rows > 10 OR cols > 5 promotes to `tug-table` with a `data-tugx-large-table="true"` marker on the `<table>` root. The React-mount-into-marker bridge is deferred to a follow-on; the `TableBlock` primitive is shipped and directly consumable from tool blocks / gallery cards / future direct mounts in this step.
+- [x] `largeTableTransformer` promotes large GFM tables — rows > 10 OR cols > 5 promotes to `tug-table` with a `data-tugx-large-table="true"` marker on the `<table>` root
+- [x] `enhanceTable` bridge — DOM-imperative walker that finds marked tables, parses headers + rows out of the DOM into `TableData`, replaces the `<table>` with a sibling mount-point, and mounts a React `<TableBlock>` root into it. Active roots tracked in a module-level Set; swept and unmounted on each pass when their mount-point disconnects (avoids React 19's "forgot to unmount" warning + the underlying container-retention leak).
 
 **Tests:**
 - [x] Small table stays as plain GFM table (pass-through)
