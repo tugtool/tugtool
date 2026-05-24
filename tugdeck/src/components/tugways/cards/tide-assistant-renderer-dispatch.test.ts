@@ -25,7 +25,6 @@ import React from "react";
 
 import {
   KIND_RENDERERS,
-  NullToolBlock,
   VALIDATED_CC_VERSION,
   _resetDriftLogForTests,
   _resetToolBlockRegistryForTests,
@@ -46,6 +45,7 @@ import {
   type RenderInput,
 } from "./tide-assistant-renderer-dispatch";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
+import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
 import type { ToolBlockProps } from "./tool-blocks/types";
 import type { ToolCallState } from "@/lib/code-session-store";
 
@@ -190,22 +190,32 @@ describe("dispatch — tool_call routing", () => {
     expect(result.caution).toBeUndefined();
   });
 
-  it("routes TaskCreate / TaskUpdate to NullToolBlock per [D100] — no DOM, no caution", () => {
-    // Anchored on the canonical behavior, not the implementation. Per
-    // [D101] this is now data-driven via `TOOL_VISIBILITY_POLICY`'s
-    // `hidden` bucket; `resolveToolBlock` and `dispatchToolCallState`
-    // short-circuit hidden names to the shared exported
-    // `NullToolBlock` ahead of the registry lookup, so no `beforeEach`
-    // re-registration is needed. If Step 24.1's silencing decision ever
-    // reverses (or the policy file is misedited to drop these entries),
-    // this test fails loudly rather than letting `TaskCreate` rows
-    // quietly reappear.
+  it("routes TaskCreate / TaskUpdate to TaskInlineToolBlock per the amended [D100] — second surface, no caution", () => {
+    // Canary for the [D100] two-surface decision: the TASKS cell is
+    // the canonical surface for *current state*, the inline marker
+    // is the second surface for *event-in-context*. Before
+    // [#step-24-3-5] this assertion pinned routing to `NullToolBlock`
+    // (the original hide-everything-per-D100 reading). After the
+    // step, both names are bespoke — registered via
+    // `BESPOKE_REGISTRATIONS` against `TaskInlineToolBlock`. If a
+    // future change reverses the second-surface decision (back to
+    // hidden, or to two different wrappers), this test fails loudly
+    // rather than letting the routing drift quietly.
+    //
+    // The file-wide `beforeEach` clears `TOOL_BLOCK_REGISTRY` for
+    // isolation; bespoke routing depends on the registry, so we
+    // re-register the two names here before asserting. (Hidden tools
+    // didn't need this because they short-circuit ahead of the
+    // registry via `HIDDEN_TOOL_NAMES`, which is built at module
+    // load and unaffected by the per-test reset.)
+    registerToolBlock("taskcreate", TaskInlineToolBlock);
+    registerToolBlock("taskupdate", TaskInlineToolBlock);
     for (const toolName of ["TaskCreate", "TaskUpdate"]) {
       const result = dispatch(
         { kind: "tool_call", toolCall: fakeToolCall(toolName), msgId: "m1" },
         fakeContext,
       );
-      expect(result.Component).toBe(NullToolBlock);
+      expect(result.Component).toBe(TaskInlineToolBlock);
       expect(result.caution).toBeUndefined();
       const props = result.props as Record<string, unknown>;
       expect(props.caution).toBeUndefined();

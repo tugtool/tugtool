@@ -23,9 +23,13 @@
  *     also short-circuits these names so a hidden tool never raises
  *     an `unknown_tool` caution. Use this bucket for control-channel
  *     machinery the user doesn't need to see (`ToolSearch`,
- *     `ScheduleWakeup`) or for tools whose surface lives elsewhere
- *     (`TaskCreate` / `TaskUpdate` per [D100]: the TASKS status-bar
- *     cell is the sole surface).
+ *     `ScheduleWakeup`, `EnterPlanMode` / `ExitPlanMode`,
+ *     `PushNotification`). `TaskCreate` / `TaskUpdate` were
+ *     historically hidden here under the original [D100] decision,
+ *     but [#step-24-3-5] introduced the `TaskInlineToolBlock`
+ *     second-surface marker — both names are now bespoke (registered
+ *     via the dispatch's `BESPOKE_REGISTRATIONS`), and the policy
+ *     no longer claims them.
  *
  *  3. **default-intent** — *explicit* (this file). The tool currently
  *     renders through `DefaultToolBlock` (the JsonTree fallback) and
@@ -178,20 +182,6 @@ export const TOOL_VISIBILITY_POLICY: ReadonlyArray<ToolVisibilityEntry> = [
     visibility: "hidden",
     rationale:
       "Internal pacing for `/loop`-style autonomous flows; the wakeup itself is the user-visible event, not the scheduling call.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "taskcreate",
-    visibility: "hidden",
-    rationale:
-      "Per [D100]: the TASKS status-bar cell is the sole surface for the post-`TodoWrite` task system. Per-call events would clutter the transcript with status flips.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "taskupdate",
-    visibility: "hidden",
-    rationale:
-      "Per [D100]: same — sibling of taskcreate; TASKS cell is the sole surface.",
     reviewedAt: "2026-05-24",
   },
   {

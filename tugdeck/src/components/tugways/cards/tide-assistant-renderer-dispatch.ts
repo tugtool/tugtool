@@ -101,6 +101,7 @@ import { TaskMgmtToolBlock } from "./tool-blocks/task-mgmt-tool-block";
 import { CronToolBlock } from "./tool-blocks/cron-tool-block";
 import { ShareOnboardingGuideToolBlock } from "./tool-blocks/share-onboarding-guide-tool-block";
 import { RemoteTriggerToolBlock } from "./tool-blocks/remote-trigger-tool-block";
+import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
@@ -961,13 +962,14 @@ export const assistantRendererDispatch: AssistantRendererDispatch = {
  *  - `askuserquestion`'s *live* surface is the inline `QuestionDialog`
  *    ([D13]); the registered wrapper renders the durable Q&A artifact
  *    that remains in the turn after the dialog clears.
- *  - `taskcreate` / `taskupdate` do NOT appear here. Per [D100] they
- *    paint zero ink in the transcript; per [D101] that behavior is
- *    data-driven via the `hidden` bucket of `TOOL_VISIBILITY_POLICY`.
- *    `resolveToolBlock` and `dispatchToolCallState` short-circuit
- *    hidden names to `NullToolBlock` ahead of the registry lookup. An
- *    explicit registration here would be redundant — and would
- *    obscure the policy file as the source of truth.
+ *  - `taskcreate` / `taskupdate` register the SAME `TaskInlineToolBlock`
+ *    factory under both wire names ([#step-24-3-5]). No alias: the
+ *    wrapper branches on the original `toolName` internally to pick
+ *    `"Created: …"` vs the `Started / Completed / Reset` `TaskUpdate`
+ *    verb. Two registrations is cleaner than aliasing because both
+ *    names ARE the canonical names — neither is a synonym for the
+ *    other; they're two distinct wire tools that happen to render
+ *    via the same inline-marker wrapper.
  */
 const BESPOKE_REGISTRATIONS: ReadonlyArray<
   readonly [string, ToolBlockFactory]
@@ -1002,6 +1004,15 @@ const BESPOKE_REGISTRATIONS: ReadonlyArray<
   // lowercased wire names.
   ["shareonboardingguide", ShareOnboardingGuideToolBlock],
   ["remotetrigger", RemoteTriggerToolBlock],
+  // [D100] two-surface task list ([#step-24-3-5]) — TaskInlineToolBlock
+  // is the second surface (the TASKS status-bar cell is the first).
+  // Both `taskcreate` and `taskupdate` point at the same wrapper;
+  // the wrapper branches on the original `toolName` to pick the
+  // event reading. These names were previously hidden via
+  // TOOL_VISIBILITY_POLICY — removed from the policy in the same
+  // change that lands the wrapper.
+  ["taskcreate", TaskInlineToolBlock],
+  ["taskupdate", TaskInlineToolBlock],
 ];
 
 /**

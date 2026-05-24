@@ -89,6 +89,7 @@ import { GalleryTaskMgmtToolBlock } from "./gallery-task-mgmt-tool-block";
 import { GalleryCronToolBlock } from "./gallery-cron-tool-block";
 import { GalleryShareOnboardingGuideToolBlock } from "./gallery-share-onboarding-guide-tool-block";
 import { GalleryRemoteTriggerToolBlock } from "./gallery-remote-trigger-tool-block";
+import { GalleryTaskInlineToolBlock } from "./gallery-task-inline-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GalleryTideThinking } from "./gallery-tide-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
@@ -575,6 +576,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-remote-trigger-tool-block",
     contentFactory: (_cardId) => <GalleryRemoteTriggerToolBlock />,
     defaultMeta: { title: "RemoteTriggerToolBlock", icon: "Zap", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  // TaskInlineToolBlock ([#step-24-3-5]) — the [D100] second surface
+  // (inline marker; the TASKS status-bar cell is the first surface).
+  registerCard({
+    componentId: "gallery-task-inline-tool-block",
+    contentFactory: (_cardId) => <GalleryTaskInlineToolBlock />,
+    defaultMeta: { title: "TaskInlineToolBlock", icon: "ListChecks", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

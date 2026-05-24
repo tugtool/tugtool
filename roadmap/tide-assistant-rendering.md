@@ -896,7 +896,8 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | TaskToolBlock | Task | AgentTranscriptBlock | agentType + status + tokens |
 | WebFetchToolBlock | WebFetch | MarkdownBlock or FileBlock | url + favicon |
 | WebSearchToolBlock | WebSearch | SearchResultBlock | query + count |
-| (TASKS status-bar cell, [D100]) | TaskCreate / TaskUpdate | — (no body kind; popover composes `TugTaskItem`) | TASKS cell on the `Z2` status bar via `TideTelemetryStatusRow` (`useTaskListState` reducer + `TugProgress` ring + popover); per-call events route to `NullToolBlock` in the dispatch |
+| (TASKS status-bar cell, [D100]) | TaskCreate / TaskUpdate | — (no body kind; popover composes `TugTaskItem`) | TASKS cell on the `Z2` status bar via `TideTelemetryStatusRow` (`useTaskListState` reducer + `TugProgress` ring + popover). The cell is the canonical surface for *current state*; per-call events have a second inline surface — see `TaskInlineToolBlock` below. |
+| TaskInlineToolBlock ([#step-24-3-5]) | TaskCreate / TaskUpdate | — (no chrome at all — single inline-flow row: `ListChecks` icon + `TugLabel size="sm" emphasis="calm"`) | [D100] second surface — per-call inline marker (`Created: <subject>` / `Started: …` / `Completed: …` / `Reset: …`); error rows flip to `role="danger"` + `emphasis="normal"` |
 | NotebookEditToolBlock | NotebookEdit | DiffBlock | notebook + cell |
 | SkillToolBlock ([#step-24-3-2]) | Skill | — (inline `<code>` for short args, embedded `TugMarkdownBlock` for long) | `Skill · /<skill-name>` header + optional one-line result label |
 | MonitorToolBlock ([#step-24-3-2]) | Monitor | — (inline `<pre>` tail + native `<details>` expand) | `Monitor · <command|path|pid>` header + `until` row + tailed output |
@@ -913,8 +914,8 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 
 | Tool name | Audit volume | Why hidden |
 |-----------|-------------:|------------|
-| ~~TaskCreate~~ | 1,789 (2.78%) | **Per [D100]**: TASKS status-bar cell (`Z2`) is the sole surface for the post-`TodoWrite` task system; per-call events would clutter the transcript with status flips. |
-| ~~TaskUpdate~~ | 3,426 (5.33%) | **Per [D100]**: same — sibling of `TaskCreate`. |
+| ~~TaskCreate~~ | 1,789 (2.78%) | **Was** hidden under the original [D100] reading (TASKS cell as sole surface). **Now bespoke** via `TaskInlineToolBlock` ([#step-24-3-5]) — the [D100] amendment introduced the second-surface inline marker. |
+| ~~TaskUpdate~~ | 3,426 (5.33%) | **Was** hidden — sibling of `TaskCreate`. **Now bespoke** via `TaskInlineToolBlock` ([#step-24-3-5]). |
 | ToolSearch | 145 (0.23%) | Schema-loading machinery — internal lookup of deferred tool contracts; user-irrelevant. |
 | ScheduleWakeup | 17 (0.03%) | Internal `/loop`-style pacing; the wakeup itself is the user-visible event, not the scheduling call. |
 | EnterPlanMode | — | Plan-mode transition is a session-state change; a chrome banner is the right surface (future follow-up). |
@@ -6077,22 +6078,22 @@ Notes:
 - `tugdeck/src/components/tugways/cards/gallery-task-inline-tool-block.tsx` (new) — gallery card showing the three event variants (Created / Started / Completed) plus the streaming placeholder + error state.
 
 **Tasks.**
-- [ ] Move `taskcreate` / `taskupdate` out of the `hidden` bucket in `TOOL_VISIBILITY_POLICY` (delete those two entries).
-- [ ] Add `["taskcreate", TaskInlineToolBlock]` and `["taskupdate", TaskInlineToolBlock]` to `BESPOKE_REGISTRATIONS`.
-- [ ] Build `TaskInlineToolBlock`. Internally branches on `toolName`. Consumes `useTaskListState(session)` for the `subject` lookup on `TaskUpdate`. Uses `<TugLabel size="sm" emphasis="calm">` for normal events; `emphasis="normal"` + `role="danger"` for errored events.
-- [ ] Update D100's prose per the amendment above. Keep D100's History paragraph intact.
-- [ ] Update the existing dispatch test that asserts TaskCreate/TaskUpdate route to `NullToolBlock` — the assertion flips to "routes to `TaskInlineToolBlock`" (the test is the canary for the policy decision; it should flip with the decision).
-- [ ] Update Table T02 + the audit-confirmed-table's hidden-tool entries for `TaskCreate` / `TaskUpdate` (they're no longer hidden).
-- [ ] Gallery card with the three event variants + the streaming + error state.
+- [x] Move `taskcreate` / `taskupdate` out of the `hidden` bucket in `TOOL_VISIBILITY_POLICY` (delete those two entries). Policy-file docstring updated to record the historical-hidden → bespoke transition.
+- [x] Add `["taskcreate", TaskInlineToolBlock]` and `["taskupdate", TaskInlineToolBlock]` to `BESPOKE_REGISTRATIONS`. Two registrations sharing one factory — no alias entry (both names ARE canonical wire names; an alias would mis-claim one as a synonym for the other).
+- [x] Build `TaskInlineToolBlock`. Outer-component / inner-component split so the optional `session` doesn't drive a conditional hook call: outer routes between `TaskInlineWithSession` (calls `useTaskListState` unconditionally) and `TaskInlineRow` with `EMPTY_TASKS` (gallery / standalone path). Per-event branch derives `subject` via `narrowTaskCreateInput` / `narrowTaskUpdateInput` + `resolveUpdateSubject` (falls back to `Task #<id>` when the matching `TaskCreate` hasn't folded). Streaming → `Creating…` / `Updating…`. Error → `role="danger"` + `emphasis="normal"` (drops calm so the danger color reads cleanly).
+- [x] Update D100's prose per the amendment above. Keep D100's History paragraph intact. (Already in place from a prior pass — confirmed via grep; no edit needed.)
+- [x] Update the existing dispatch test that asserts TaskCreate/TaskUpdate route to `NullToolBlock` — the assertion flips to "routes to `TaskInlineToolBlock`" (the test is the canary for the policy decision; it should flip with the decision). `NullToolBlock` import dropped from the test file (no longer referenced).
+- [x] Update Table T02 + the audit-confirmed-table's hidden-tool entries for `TaskCreate` / `TaskUpdate` (they're no longer hidden).
+- [x] Gallery card with the three event variants + the streaming + error state. 9 sections: Created / Started / Completed / Reset / unknown-id-fallback / streaming-Create / streaming-Update / error-Create / error-Update.
 
 **Tests.**
-- [ ] `task-inline-tool-block.test.ts`: one case per event variant — `TaskCreate` renders `"Created: …"`; `TaskUpdate → in_progress` renders `"Started: …"`; `TaskUpdate → completed` renders `"Completed: …"`; `TaskUpdate` with unknown `taskId` falls back to `"Task #<id>"`; errored event renders the error text with `role="danger"` + `emphasis="normal"` (not calm). All non-error cases assert `emphasis="calm"`.
-- [ ] Governance test continues to pass — `taskcreate` / `taskupdate` are now covered via `BESPOKE_TOOL_NAMES` rather than via the policy, but the v2.1.148 coverage check (d) still satisfies for both.
+- [x] `task-inline-tool-block.test.ts`: per-helper assertions cover every event-text branch (`composeCreatedLabel` / `composeUpdatedLabel` / `resolveUpdateSubject`) plus the unified `composeMarkerText` switch including the streaming + invalid-input fallbacks. Plus the dispatch BESPOKE_FACTORY_BY_NAME pin for both names + the "same factory" identity check. The danger-vs-calm tone treatment is implementation-encoded in JSX (no separately extractable pure helper) and pinned by code review / visual inspection, not by unit test.
+- [x] Governance test continues to pass — `taskcreate` / `taskupdate` are now covered via `BESPOKE_TOOL_NAMES` rather than via the policy, but the v2.1.148 coverage check (d) still satisfies for both. Verified by full suite run.
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual (HMR): run the reference prompt against `/tmp/todo-test`; confirm each task event lands an inline calm-italic marker in the transcript with the ListChecks icon and the right label, and that the TASKS status-bar cell continues to track the same events as the canonical surface.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] Manual (HMR): run the reference prompt against `/tmp/todo-test`; confirm each task event lands an inline calm-italic marker in the transcript with the ListChecks icon and the right label, and that the TASKS status-bar cell continues to track the same events as the canonical surface.
 
 ---
 

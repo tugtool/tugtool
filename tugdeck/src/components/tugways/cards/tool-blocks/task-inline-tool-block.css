@@ -1,0 +1,79 @@
+/* @tug-pairings:
+   - --tugx-task-inline-icon-color / surrounding surface
+   The icon color composes the muted-text token; the existing
+   `--tug7-element-global-text-normal-muted-rest` ↔ surface pairing
+   in `theme-pairings.ts` covers this surface via the [L17] one-hop
+   alias. No new pairing entry needed.
+*/
+
+/**
+ * task-inline-tool-block.css — `TaskInlineToolBlock` inline-row
+ * marker styles.
+ *
+ * The marker reads as ambient conversation-flow annotation, NOT as
+ * a tool-call card — no frame, no border, no background. Just an
+ * inline-flex row carrying a small icon and a calm-styled label.
+ * That visual restraint is the whole point of [D100]'s two-surface
+ * decision: the TASKS status-bar cell is primary, the marker is
+ * subordinate, color is reserved for the error case.
+ *
+ * Token sources:
+ *  - The icon color uses `--tugx-task-inline-icon-color` aliased
+ *    to `--tug7-element-global-text-normal-muted-rest` per [L17]
+ *    one-hop. The icon needs its own slot (rather than inheriting
+ *    `color` from the row) because lucide icons set `color: inherit`
+ *    but a TugLabel inside the same row paints its own text color
+ *    via its emphasis / role props — without a dedicated icon slot
+ *    the icon would either drift with the label tone (wrong for
+ *    error rows — we want the icon to stay muted while the text
+ *    goes danger) or have to be re-tinted by the wrapper's JSX
+ *    (which is appearance-via-React-state, an [L06] violation).
+ *  - The row's spacing values use the shared `--tug-space-*` family
+ *    directly; layout isn't a token-family concern.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance. The error-vs-calm split
+ *    is JSX-data-driven (different children), not a CSS class flip
+ *    on a single element; the data-tone attribute lets a future
+ *    style hook target the error row from CSS without re-rendering.
+ *  - [L17] one-hop alias.
+ *  - [L19] file pair, module docstring, `data-slot="task-inline-tool-block"`.
+ *  - [L20] component-token sovereignty — owns the
+ *    `--tugx-task-inline-*` slot family; no other component reaches
+ *    into it.
+ */
+
+body {
+  /* Icon color — muted by default; stays muted on error rows too
+   * (the label carries the danger tone; the icon stays calm so the
+   * row reads as "annotation + signal text" rather than "all-loud
+   * banner"). */
+  --tugx-task-inline-icon-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* Row spacing — tight inline padding keeps the marker close to
+   * the surrounding transcript flow without abutting it. The gap
+   * between icon and label is `xs` (one notch wider than `2xs`) so
+   * the icon reads as a glyph anchored to the label, not as a
+   * separate floating element. */
+  --tugx-task-inline-row-padding: var(--tug-space-2xs) var(--tug-space-xs);
+  --tugx-task-inline-row-gap:     var(--tug-space-xs);
+}
+
+.task-inline-tool-block {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tugx-task-inline-row-gap);
+  padding: var(--tugx-task-inline-row-padding);
+  /* No border, no background. The marker reads as inline flow;
+   * any chrome here would make it compete with surrounding tool
+   * blocks for the user's attention. */
+}
+
+.task-inline-tool-block-icon {
+  flex: 0 0 auto;
+  color: var(--tugx-task-inline-icon-color);
+  /* Lucide icons render with `display: inline-block` at the
+   * baseline; lift to align with the label's cap-line so the
+   * row reads as a single visual unit. */
+  display: inline-flex;
+}
