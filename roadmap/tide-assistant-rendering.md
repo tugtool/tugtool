@@ -6143,21 +6143,22 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - Optional gallery card update — if `gallery-tide-permission-dialog.tsx` already exists, add a Monitor / Skill / Worktree variant so the new rendering is visible alongside the existing Bash / Edit / Read / Write fixtures. (If no gallery card exists today, this is a future addition — not blocking.)
 
 **Tasks.**
-- [ ] Extend `PermissionBodyKind` to `"bash" | "edit" | "path" | "dispatch" | "json"`.
-- [ ] Update `selectPermissionBodyKind`'s default branch to consult `resolveToolBlock` and return `"dispatch"` when a bespoke wrapper exists, `"json"` otherwise.
-- [ ] Add the `case "dispatch"` body branch in the dialog: call `dispatchToolCallState({ toolName, input, status: "ready", ... })`, mount `<Component {...props} />`.
-- [ ] Verify the three operational-trio wrappers (`SkillToolBlock`, `MonitorToolBlock`, `WorktreeToolBlock`) render cleanly in preview mode — `status: "ready"` with no result data. If any wrapper paints something misleading (e.g. an `(no output)` hint), patch it to gate on the presence of result fields rather than just on `status`.
-- [ ] Update `selectPermissionBodyKind` docstring + the dialog module header to describe the new routing.
+- [x] Extend `PermissionBodyKind` to `"bash" | "edit" | "path" | "dispatch" | "json"`.
+- [x] Update `selectPermissionBodyKind`'s default branch to consult a new exported `hasBespokeWrapper(toolName)` helper from the dispatch (instead of `resolveToolBlock` directly — the helper consults `BESPOKE_FACTORY_BY_NAME`, the frozen module-load snapshot, so it survives the dispatch test's per-`beforeEach` registry reset). Returns `"dispatch"` when a bespoke wrapper exists, `"json"` otherwise.
+- [x] Add the `case "dispatch"` body branch in the dialog: call `dispatchToolCallState` with a synthetic `ToolCallState` (`status: "done"` + `result: null` + `structuredResult: null` + `toolWallMs: null`, `toolUseId: permission-dialog/<request_id>` so the wrapper's [A9] fold-preservation key doesn't collide with the same call's transcript-row state). Mount `<Component {...props} />`.
+- [x] Verify operational-trio + all body-bits wrappers render cleanly in preview mode — `status: "ready"` with no result data. Grepped for "(no output)"-style misleading hints; the only such pattern is in `BashToolBlock` (which stays on the `"bash"` bespoke-dialog branch and never reaches this code path).
+- [x] Module-cycle fix: introduced lazy indirections (`PermissionDialogLazy` / `QuestionDialogLazy`) in `KIND_RENDERERS` so the dispatch can hold a reference at module-load time without triggering a TDZ read when the dialog test loads `PermissionDialog` first. Two `.toBe(PermissionDialog)` / `.toBe(QuestionDialog)` direct-ref assertions in the existing test files were repointed to the stable `KIND_RENDERERS.permission` / `.question` slot equality.
+- [x] Update `selectPermissionBodyKind` docstring + the dialog module header to describe the new routing.
 
 **Tests.**
-- [ ] `selectPermissionBodyKind` — `"Monitor"` returns `"dispatch"`; `"Skill"` returns `"dispatch"`; `"EnterWorktree"` returns `"dispatch"` (via the alias); `"ShareOnboardingGuide"` returns `"json"` (default-intent fallback); `"ZzzUnknownTool"` returns `"json"` (genuinely unknown); the existing `"bash"` / `"edit"` / `"path"` returns are unchanged.
-- [ ] Body composition for `"dispatch"` — the picked Component equals `BESPOKE_FACTORY_BY_NAME.get(canonical)`.
-- [ ] Existing `tide-permission-dialog.test.ts` continues to pass — no behavior change for tools in the bespoke dialog set.
+- [x] `selectPermissionBodyKind` — `"Monitor"` returns `"dispatch"`; `"Skill"` returns `"dispatch"`; `"EnterWorktree"` returns `"dispatch"` (via the alias); `"Glob"` / `"Grep"` / `"CronCreate"` / `"TaskList"` / `"TaskOutput"` all return `"dispatch"`; `"WebFetch"` / `"WebSearch"` / `"NotebookEdit"` / `"ZzzUnknownTool"` / `""` return `"json"`; the existing `"bash"` / `"edit"` / `"path"` returns are unchanged. (The plan named `"ShareOnboardingGuide"` as the default-intent example; that tool shipped bespoke at [#step-24-3-4], so the example was re-pointed at `"WebFetch"`/`"WebSearch"`/`"NotebookEdit"` — the still-default-intent tools awaiting Steps 25/26.)
+- [x] Body composition for `"dispatch"` — `hasBespokeWrapper` confirms each routed wire name (Monitor / Skill / EnterWorktree / Grep / Glob) has a bespoke registration, so the dialog mounts the same factory the transcript uses.
+- [x] Existing `tide-permission-dialog.test.ts` continues to pass — no behavior change for tools in the bespoke dialog set; the direct-ref assertion was repointed but the contract it pinned (dispatch routes to the slot) is intact.
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero violations.
-- [ ] Manual (HMR): trigger a permission prompt for `Monitor`, `Skill`, and `EnterWorktree`; confirm each dialog shows the bespoke compact rendering (`MonitorToolBlock` etc.) in place of the previous JsonTreeBlock dump. The approval text + decision buttons stay unchanged; only the input preview is upgraded.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` — clean.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero violations.
+- [x] Manual (HMR): trigger a permission prompt for `Monitor`, `Skill`, and `EnterWorktree`; confirm each dialog shows the bespoke compact rendering (`MonitorToolBlock` etc.) in place of the previous JsonTreeBlock dump. The approval text + decision buttons stay unchanged; only the input preview is upgraded.
 
 ---
 

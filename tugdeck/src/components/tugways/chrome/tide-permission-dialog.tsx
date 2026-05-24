@@ -16,14 +16,15 @@
  * input-form primitive of the Tide interactive-dialog family (which
  * itself wraps `TugInlineDialog` — see [D08]) with
  * `iconRole="caution"` and a per-tool rich description. The body
- * picker (DiffBlock for Edit, JsonTreeBlock for the unknown-tool
- * fallback) renders inside the dialog's `children` slot. When the
- * request carries actionable `permission_suggestions`, those (plus
- * an implicit "Allow once" first option) are passed to the
- * primitive's `options` prop as a mandatory-single-select radio
- * group; the user picks the *scope*, then commits with Allow. Deny is
- * the off-ramp — clicking it ignores the chosen scope and denies the
- * request outright.
+ * picker (`DiffBlock` for Edit, the transcript wrapper for any tool
+ * with a bespoke registration, `JsonTreeBlock` for the genuine-
+ * unknown fallback) renders inside the dialog's `children` slot.
+ * When the request carries actionable `permission_suggestions`,
+ * those (plus an implicit "Allow once" first option) are passed to
+ * the primitive's `options` prop as a mandatory-single-select radio
+ * group; the user picks the *scope*, then commits with Allow. Deny
+ * is the off-ramp — clicking it ignores the chosen scope and denies
+ * the request outright.
  *
  * `Deny` is a *positive decision* (`respondApproval({decision:
  * "deny"})`), not a walk-away — the dialog passes
@@ -45,12 +46,18 @@
  * belongs in the description; do not fragment the same idea into
  * separate slots.
  *
- * Body picker (`PendingBody`) — only Edit and the JSON fallback need
- * a separate body in the children slot:
+ * Body picker (`PendingBody`) — five branches:
  *
  *   - `edit` → `DiffBlock` (`two-text` source from `(old_string,
  *     new_string)`).
- *   - `json` (unknown tool) → `JsonTreeBlock` over the raw input.
+ *   - `dispatch` ([#step-24-3-7]) → the bespoke transcript wrapper
+ *     for this tool, mounted in preview mode (`status: "ready"`,
+ *     no result data). The wrapper degrades gracefully per
+ *     [#bk-conformance] item 10: input rows render, result-side
+ *     surfaces stay empty. The dialog preview and the transcript
+ *     row share one rendering by construction.
+ *   - `json` (genuinely unknown tool — no bespoke wrapper, not in
+ *     the bespoke-dialog set) → `JsonTreeBlock` over the raw input.
  *   - `bash` / `path` → `null`. The relevant input fragment is
  *     already in the description.
  *
@@ -93,6 +100,10 @@ import { Shell, ShieldAlert } from "lucide-react";
 
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
+import {
+  dispatchToolCallState,
+  hasBespokeWrapper,
+} from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
 import type { TugInlineDialogOption } from "@/components/tugways/tug-inline-dialog";
 import {
@@ -141,7 +152,7 @@ export interface PermissionDialogProps {
 // ---------------------------------------------------------------------------
 
 /** Which read-only body kind best fits a tool's permission `input`. */
-export type PermissionBodyKind = "bash" | "edit" | "path" | "json";
+export type PermissionBodyKind = "bash" | "edit" | "path" | "dispatch" | "json";
 
 /**
  * Pick the body kind for a permission request's `tool_use.input`:
@@ -149,9 +160,26 @@ export type PermissionBodyKind = "bash" | "edit" | "path" | "json";
  *   - `Bash`              → `"bash"`  (command surfaced inline in description)
  *   - `Edit` / `MultiEdit`→ `"edit"`  (`(old,new)` via `DiffBlock` in children)
  *   - `Read` / `Write`    → `"path"`  (path surfaced inline in description)
+ *   - any other tool WITH a bespoke transcript wrapper
+ *                         → `"dispatch"` (the wrapper renders in preview
+ *                            mode — `status: "ready"` with no result data —
+ *                            so the dialog shows the same compact shape the
+ *                            transcript does; see [#step-24-3-7])
  *   - anything else       → `"json"`  (`JsonTreeBlock` over input in children)
  *
- * Case-insensitive; mirrors the dispatch's `multiedit → edit` alias.
+ * Case-insensitive; mirrors the dispatch's alias resolution
+ * (`multiedit → edit`, `enterworktree → worktree`, etc.) via
+ * `hasBespokeWrapper`.
+ *
+ * Note that `Bash` / `Edit` / `MultiEdit` / `Read` / `Write` short-
+ * circuit ahead of the bespoke check by design. Their bespoke
+ * dialog previews are *more dialog-appropriate* than the transcript
+ * wrapper's output — `"path"` shows just the path, no chrome;
+ * `"bash"` keeps the long command inline with the description.
+ * Routing those through the transcript wrapper would regress the
+ * preview shape. The `"dispatch"` branch is only for tools that
+ * previously fell through to `"json"` and now have a wrapper that
+ * does a better job than `JsonTreeBlock` over raw input.
  */
 export function selectPermissionBodyKind(toolName: string): PermissionBodyKind {
   switch (toolName.toLowerCase()) {
@@ -164,7 +192,7 @@ export function selectPermissionBodyKind(toolName: string): PermissionBodyKind {
     case "write":
       return "path";
     default:
-      return "json";
+      return hasBespokeWrapper(toolName) ? "dispatch" : "json";
   }
 }
 
@@ -540,6 +568,16 @@ const PermissionDescription: React.FC<DescriptionProps> = ({
 interface PendingBodyProps {
   toolName: string;
   input: unknown;
+  /**
+   * Unique request id from the wire — used to derive a synthetic
+   * `tool_use_id` for the preview-mode dispatch call so the
+   * transcript wrapper's [A9] preservation key (typically
+   * `<wrapper>/<toolUseId>/fold`) does NOT collide with the same
+   * call's preserved state in the transcript surface. A permission
+   * dialog and its corresponding transcript row are two distinct
+   * UI surfaces and must persist independently.
+   */
+  requestId: string;
 }
 
 /**
@@ -547,7 +585,11 @@ interface PendingBodyProps {
  * slot. Returns `null` when the description already carries the
  * relevant input fragment (Bash command, Read/Write path).
  */
-const PendingBody: React.FC<PendingBodyProps> = ({ toolName, input }) => {
+const PendingBody: React.FC<PendingBodyProps> = ({
+  toolName,
+  input,
+  requestId,
+}) => {
   const kind = selectPermissionBodyKind(toolName);
   if (kind === "edit") {
     const before = readStringField(input, "old_string");
@@ -567,6 +609,15 @@ const PendingBody: React.FC<PendingBodyProps> = ({ toolName, input }) => {
     }
     return null;
   }
+  if (kind === "dispatch") {
+    return (
+      <PendingDispatchBody
+        toolName={toolName}
+        input={input}
+        requestId={requestId}
+      />
+    );
+  }
   if (kind === "json") {
     return (
       <JsonTreeBlock
@@ -579,6 +630,60 @@ const PendingBody: React.FC<PendingBodyProps> = ({ toolName, input }) => {
   // bash / path — description carries the relevant input fragment;
   // no body picker needed.
   return null;
+};
+
+interface PendingDispatchBodyProps {
+  toolName: string;
+  input: unknown;
+  requestId: string;
+}
+
+/**
+ * Render the bespoke transcript wrapper as the permission-dialog
+ * preview. Builds a synthetic `ToolCallState`-shape input for
+ * `dispatchToolCallState` with `status: "ready"` + no result data;
+ * mounts the returned Component with its returned props.
+ *
+ * The preview-mode invariant ([#step-24-3-7]): every bespoke wrapper
+ * authored under [#bk-conformance] item 10 degrades gracefully in
+ * `status: "ready"` with `textOutput: undefined` and
+ * `structuredResult: undefined` — result-section helpers return
+ * `{ kind: "none" }` for no output, the chrome's `errorMessage`
+ * stays undefined, the footer collapses when no badges. The
+ * wrapper's header + input rows render normally; the result-side
+ * surface is empty (correct — there IS no result yet).
+ *
+ * The exception is `BashToolBlock` (its `(no output)` hint would
+ * read misleadingly here), but Bash is in the bespoke-dialog set
+ * (`case "bash"`) and never reaches this branch.
+ */
+const PendingDispatchBody: React.FC<PendingDispatchBodyProps> = ({
+  toolName,
+  input,
+  requestId,
+}) => {
+  // Synthetic ToolCallState shape. The dispatch call needs a few
+  // fields its own type contract requires; the transcript wrapper
+  // only reads `toolUseId` / `toolName` / `input` / `textOutput` /
+  // `structuredResult` / `status` (plus `caution` which is only set
+  // on drift — preview is never drift). Per [D04] / [D11] the
+  // wrapper handles missing optional fields gracefully.
+  const result = dispatchToolCallState(
+    {
+      toolUseId: `permission-dialog/${requestId}`,
+      toolName,
+      input,
+      status: "done",
+      result: null,
+      structuredResult: null,
+      toolWallMs: null,
+    },
+    `permission-dialog/${requestId}`,
+  );
+  const Component = result.Component as React.ComponentType<
+    Record<string, unknown>
+  >;
+  return <Component {...result.props} />;
 };
 
 // ---------------------------------------------------------------------------
@@ -764,7 +869,11 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       optionsAriaLabel="Permission scope"
       className={className}
     >
-      <PendingBody toolName={toolName} input={request.input} />
+      <PendingBody
+        toolName={toolName}
+        input={request.input}
+        requestId={requestId}
+      />
     </TideInteractiveDialog>
   );
 };

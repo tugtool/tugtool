@@ -385,6 +385,30 @@ export function registeredTools(): ReadonlyArray<string> {
   return Array.from(TOOL_BLOCK_REGISTRY.keys()).sort();
 }
 
+/**
+ * Pure: is `toolName` covered by a bespoke wrapper? Case-insensitive
+ * + alias-resolving. Returns `true` if the resolved canonical name
+ * has a registered factory, `false` otherwise.
+ *
+ * Consults the immutable `BESPOKE_FACTORY_BY_NAME` snapshot (frozen
+ * at module load) — NOT the mutable `TOOL_BLOCK_REGISTRY` that the
+ * dispatch test's `beforeEach` clears. Consumers (today:
+ * `PermissionDialog`'s `selectPermissionBodyKind`) get a
+ * deterministic answer that survives test-suite isolation regardless
+ * of which test file runs first under `bun test`.
+ *
+ * The `Default` shim and the `hidden` policy bucket return `false` —
+ * "bespoke" here means "has a dedicated wrapper registered against
+ * its name," not "resolves to a non-null component" (a hidden tool
+ * resolves to `NullToolBlock` but isn't bespoke in the policy
+ * sense). [D101]
+ */
+export function hasBespokeWrapper(toolName: string): boolean {
+  const lower = toolName.toLowerCase();
+  const canonical = TOOL_ALIASES.get(lower) ?? lower;
+  return BESPOKE_FACTORY_BY_NAME.has(canonical);
+}
+
 // ---------------------------------------------------------------------------
 // Drift detection — validated catalog version, structured-result
 // schemas, per-event detectors, the transcript-wide aggregate, and
@@ -753,6 +777,40 @@ function makeScaffoldRenderer(kind: RenderInputKind): React.ComponentType<any> {
  * either a registered wrapper or `DefaultToolBlock`, so there's no
  * meaningful kind-level scaffold for it.
  */
+/**
+ * Lazy indirection for `PermissionDialog` to break a module cycle.
+ *
+ * `PermissionDialog` imports `dispatchToolCallState` + `hasBespokeWrapper`
+ * from this file ([#step-24-3-7], to route bespoke wrappers through
+ * the dialog preview). Combined with the dispatch importing
+ * `PermissionDialog` for `KIND_RENDERERS.permission`, that's a cycle.
+ * Direct `permission: PermissionDialog` here would read the binding at
+ * module-load time; when the dialog test loads `PermissionDialog`
+ * first, the dialog module triggers the dispatch to load mid-evaluation
+ * and the read of `PermissionDialog` hits a TDZ error.
+ *
+ * The indirection: defining the wrapper function captures
+ * `PermissionDialog` as a closure binding — NOT a value read. The read
+ * happens when the wrapper is rendered (called via `React.createElement`),
+ * which is after both modules have finished initializing. Same shape /
+ * same semantics from the consumer's perspective (renders the dialog
+ * with the forwarded props); only the timing of the reference read
+ * shifts to render time.
+ *
+ * `QuestionDialog` doesn't have the cycle (no dispatch import) but
+ * gets the same indirection for symmetry — and to insulate it against
+ * a future change that adds a dispatch import on the question side.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const PermissionDialogLazy: React.ComponentType<any> = (props) =>
+  React.createElement(PermissionDialog, props);
+PermissionDialogLazy.displayName = "PermissionDialog(lazy)";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const QuestionDialogLazy: React.ComponentType<any> = (props) =>
+  React.createElement(QuestionDialog, props);
+QuestionDialogLazy.displayName = "QuestionDialog(lazy)";
+
 export const KIND_RENDERERS: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly [K in Exclude<RenderInputKind, "tool_call">]: React.ComponentType<any>;
@@ -760,8 +818,8 @@ export const KIND_RENDERERS: {
   assistant_text: makeScaffoldRenderer("assistant_text"),
   thinking: makeScaffoldRenderer("thinking"),
   user_text: makeScaffoldRenderer("user_text"),
-  permission: PermissionDialog,
-  question: QuestionDialog,
+  permission: PermissionDialogLazy,
+  question: QuestionDialogLazy,
   cost: makeScaffoldRenderer("cost"),
   system_metadata: makeScaffoldRenderer("system_metadata"),
   error: makeScaffoldRenderer("error"),

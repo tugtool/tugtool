@@ -56,6 +56,7 @@ import {
 import {
   KIND_RENDERERS,
   dispatch,
+  hasBespokeWrapper,
   type DispatchContext,
   type RenderInput,
 } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
@@ -81,9 +82,59 @@ describe("selectPermissionBodyKind", () => {
     expect(selectPermissionBodyKind("Write")).toBe("path");
   });
 
-  it("falls back to json for any other tool", () => {
-    expect(selectPermissionBodyKind("Glob")).toBe("json");
+  it("routes a bespoke transcript wrapper through the dispatch body kind", () => {
+    // After [#step-24-3-7], any tool with a bespoke transcript
+    // wrapper — including the ones shipped at 24.3.2–24.3.5 —
+    // routes through the new `"dispatch"` body kind so the dialog
+    // preview matches the transcript rendering. The bash / edit /
+    // path bespoke-dialog branches keep their dedicated previews
+    // (they read better in dialog context); only the previously-
+    // "json" cases promote.
+    expect(selectPermissionBodyKind("Monitor")).toBe("dispatch");
+    expect(selectPermissionBodyKind("Skill")).toBe("dispatch");
+    expect(selectPermissionBodyKind("Glob")).toBe("dispatch");
+    expect(selectPermissionBodyKind("Grep")).toBe("dispatch");
+  });
+
+  it("resolves dispatch routing through tool-name aliases", () => {
+    // `enterworktree` / `exitworktree` → `worktree` alias.
+    // `multiedit` stays on the `"edit"` bespoke-dialog branch (the
+    // bespoke-dialog short-circuit precedes the dispatch check).
+    expect(selectPermissionBodyKind("EnterWorktree")).toBe("dispatch");
+    expect(selectPermissionBodyKind("ExitWorktree")).toBe("dispatch");
+    // Cron + TaskMgmt + Task* aliases all resolve to bespoke wrappers.
+    expect(selectPermissionBodyKind("CronCreate")).toBe("dispatch");
+    expect(selectPermissionBodyKind("TaskList")).toBe("dispatch");
+    expect(selectPermissionBodyKind("TaskOutput")).toBe("dispatch");
+  });
+
+  it("dispatch-routed tools resolve to the same factory the transcript uses", () => {
+    // Body composition for the `"dispatch"` branch: the picked
+    // Component MUST equal the wrapper the transcript uses (per
+    // `BESPOKE_FACTORY_BY_NAME`). This guarantees the dialog
+    // preview and the transcript row render the same wrapper —
+    // the whole point of [#step-24-3-7].
+    for (const wireName of ["Monitor", "Skill", "EnterWorktree", "Grep", "Glob"]) {
+      // `selectPermissionBodyKind` should pick "dispatch" for each.
+      expect(selectPermissionBodyKind(wireName)).toBe("dispatch");
+      // And `hasBespokeWrapper` agrees (the helper the picker
+      // consults under the hood). Aliases resolve through the
+      // dispatch's TOOL_ALIASES map.
+      expect(hasBespokeWrapper(wireName)).toBe(true);
+    }
+  });
+
+  it("falls back to json for tools without a bespoke wrapper", () => {
+    // WebFetch / WebSearch / NotebookEdit are still in the
+    // `default-intent` bucket of `TOOL_VISIBILITY_POLICY` (awaiting
+    // Steps 25 / 26) — JsonTreeBlock fallback until those land.
     expect(selectPermissionBodyKind("WebFetch")).toBe("json");
+    expect(selectPermissionBodyKind("WebSearch")).toBe("json");
+    expect(selectPermissionBodyKind("NotebookEdit")).toBe("json");
+    // Genuinely unknown tools (e.g., a future Claude Code addition
+    // before the policy table is updated) also fall through to
+    // JsonTreeBlock — there's no shape we could show otherwise.
+    expect(selectPermissionBodyKind("ZzzUnknownTool")).toBe("json");
     expect(selectPermissionBodyKind("")).toBe("json");
   });
 });
@@ -389,7 +440,13 @@ describe("dispatch — permission routing", () => {
       },
     };
     const result = dispatch(input, {} as DispatchContext);
-    expect(result.Component).toBe(PermissionDialog);
+    // The stable contract is "routes via `KIND_RENDERERS.permission`."
+    // The slot now holds a lazy indirection (per
+    // [#step-24-3-7]'s module-cycle fix) — asserting `=== PermissionDialog`
+    // directly would falsely fail; the indirection still renders the
+    // real dialog when invoked. Asserting against the slot is the
+    // right level of coupling: the dispatch promises the slot, not
+    // the slot's internal shape.
     expect(result.Component).toBe(KIND_RENDERERS.permission);
     expect(result.caution).toBeUndefined();
     // The dispatch threads the input + context through as the prop bag.

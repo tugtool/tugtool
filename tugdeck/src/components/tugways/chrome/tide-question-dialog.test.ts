@@ -283,7 +283,10 @@ describe("dispatch — question routing", () => {
       },
     };
     const result = dispatch(input, {} as DispatchContext);
-    expect(result.Component).toBe(QuestionDialog);
+    // The stable contract is "routes via `KIND_RENDERERS.question`."
+    // The slot is a lazy indirection (added for symmetry with the
+    // permission-dialog cycle fix in [#step-24-3-7]); asserting
+    // `=== QuestionDialog` directly would falsely fail.
     expect(result.Component).toBe(KIND_RENDERERS.question);
     expect(result.caution).toBeUndefined();
     expect((result.props as { input: RenderInput }).input).toBe(input);
