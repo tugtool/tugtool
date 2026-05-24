@@ -901,6 +901,7 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 | SkillToolBlock ([#step-24-3-2]) | Skill | — (inline `<code>` for short args, embedded `TugMarkdownBlock` for long) | `Skill · /<skill-name>` header + optional one-line result label |
 | MonitorToolBlock ([#step-24-3-2]) | Monitor | — (inline `<pre>` tail + native `<details>` expand) | `Monitor · <command|path|pid>` header + `until` row + tailed output |
 | WorktreeToolBlock ([#step-24-3-2]) | EnterWorktree, ExitWorktree | — (single labeled row) | `Worktree · <verb> <branch|path>` header + optional `path:` row |
+| TaskMgmtToolBlock ([#step-24-3-3]) | TaskList, TaskGet, TaskOutput, TaskStop | — (per-verb body composing `body-bits/`: `ToolBlockBody` + `ToolBlockFieldRow` + `ToolBlockPre` + `ToolBlockDisclosure`) | `Background Task · <verb>` header + optional `#<taskId>` args + per-verb body |
 | DefaultToolWrapper | * (registry miss) | JsonTreeBlock + dynamic body | tool_name + summary + caution badge |
 
 **Tool visibility policy — `TOOL_VISIBILITY_POLICY`** (per [D101]; source of truth at `tugdeck/src/components/tugways/cards/tide-tool-visibility-policy.ts`). Two explicit buckets — `hidden` (paint zero ink, short-circuit to `NullToolBlock`) and `default-intent` (route through `DefaultToolBlock` with no caution; bespoke wrapper planned). Bespoke is implicit (registry presence). Volumes from [session audit §4.2](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline. The two tables below mirror the policy file's structure; editing the policy is the way to move a tool between them — never edit a runtime set in `tide-assistant-renderer-dispatch.ts` directly.
@@ -921,10 +922,6 @@ Each new file follows L19 (component-authoring) and L20 (token sovereignty).
 
 | Tool name | Audit volume | Awaiting (follow-on step) |
 |-----------|-------------:|---------------------------|
-| TaskList | 34 (0.05%) | `TaskMgmtToolBlock` — [#step-24-3-3](#step-24-3-3) (background-task family — distinct from the [D100] user-task list) |
-| TaskGet | — | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
-| TaskOutput | 37 (0.06%) | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
-| TaskStop | 7 (0.01%) | `TaskMgmtToolBlock` (alias) — [#step-24-3-3](#step-24-3-3) |
 | CronCreate | — | `CronToolBlock` — [#step-24-3-4](#step-24-3-4) |
 | CronDelete | — | `CronToolBlock` (alias) — [#step-24-3-4](#step-24-3-4) |
 | CronList | — | `CronToolBlock` (alias) — [#step-24-3-4](#step-24-3-4) |
@@ -5997,16 +5994,16 @@ Notes:
 - Remove four corresponding `default-intent` entries from `TOOL_VISIBILITY_POLICY`.
 
 **Tasks.**
-- [ ] Build the wrapper; per-name body selectors are small (≤ 30 lines each).
-- [ ] Gallery card showcasing all four behaviors as separate sections.
-- [ ] Table T02 update.
+- [x] Build the wrapper; per-name body selectors are small (≤ 30 lines each). Single wrapper at `task-mgmt-tool-block.tsx`; `renderTaskMgmtBody` switches on `deriveTaskMgmtVerb(toolName)` into four small per-verb helpers, each composing `body-bits/` primitives (conformance item 10). No paired `.css` — Worktree-style "compose-only, no wrapper-local styles."
+- [x] Gallery card showcasing all four behaviors as separate sections. `gallery-task-mgmt-tool-block.tsx` covers list / get / output (short + long with `<details>` expand) / stop / streaming / error, registered under `CATEGORIES.blockRenderers` with the `ListTodo` icon.
+- [x] Table T02 update — three rows folded into one `TaskMgmtToolBlock` entry; four `default-intent` rows removed from the inventory below.
 
 **Tests.**
-- [ ] `__tests__/task-mgmt-tool-block.test.ts`: one case per name; header text correctness; per-name body presence.
+- [x] `__tests__/task-mgmt-tool-block.test.ts`: per-helper pure-logic suite + dispatch alias-resolution pin (`taskmgmt` maps to `TaskMgmtToolBlock`; the four wire names are NOT directly registered — they resolve through `TOOL_ALIASES`).
 
 **Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
-- [ ] `cd tugdeck && bun run audit:tokens lint`.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [x] `cd tugdeck && bun run audit:tokens lint`.
 - [ ] Manual (HMR): trigger each of the four tools from a session; confirm the `Background Task` prefix makes the disambiguation legible.
 
 ---

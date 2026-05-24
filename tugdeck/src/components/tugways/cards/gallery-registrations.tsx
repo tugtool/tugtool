@@ -85,6 +85,7 @@ import {
 import { GallerySkillToolBlock } from "./gallery-skill-tool-block";
 import { GalleryMonitorToolBlock } from "./gallery-monitor-tool-block";
 import { GalleryWorktreeToolBlock } from "./gallery-worktree-tool-block";
+import { GalleryTaskMgmtToolBlock } from "./gallery-task-mgmt-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GalleryTideThinking } from "./gallery-tide-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
@@ -531,6 +532,17 @@ export function registerGalleryCards(): void {
     componentId: "gallery-worktree-tool-block",
     contentFactory: (_cardId) => <GalleryWorktreeToolBlock />,
     defaultMeta: { title: "WorktreeToolBlock", icon: "GitBranch", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+  // TaskMgmtToolBlock ([#step-24-3-3]) — single wrapper covering the
+  // background-task family (TaskList / TaskGet / TaskOutput / TaskStop).
+  registerCard({
+    componentId: "gallery-task-mgmt-tool-block",
+    contentFactory: (_cardId) => <GalleryTaskMgmtToolBlock />,
+    defaultMeta: { title: "TaskMgmtToolBlock", icon: "ListTodo", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

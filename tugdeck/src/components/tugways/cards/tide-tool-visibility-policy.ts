@@ -249,34 +249,6 @@ export const TOOL_VISIBILITY_POLICY: ReadonlyArray<ToolVisibilityEntry> = [
     reviewedAt: "2026-05-24",
   },
   {
-    name: "taskget",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `TaskMgmtToolBlock` — see [#step-24-3-3]. Background-task family (distinct from the [D100] user-task list).",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "tasklist",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `TaskMgmtToolBlock` — see [#step-24-3-3]. Background-task family.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "taskoutput",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `TaskMgmtToolBlock` — see [#step-24-3-3]. Background-task family; stdout tail is the load-bearing payload.",
-    reviewedAt: "2026-05-24",
-  },
-  {
-    name: "taskstop",
-    visibility: "default-intent",
-    rationale:
-      "Awaiting `TaskMgmtToolBlock` — see [#step-24-3-3]. Background-task family.",
-    reviewedAt: "2026-05-24",
-  },
-  {
     name: "webfetch",
     visibility: "default-intent",
     rationale:

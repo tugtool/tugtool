@@ -97,6 +97,7 @@ import { AskUserQuestionToolBlock } from "./tool-blocks/ask-user-question-tool-b
 import { SkillToolBlock } from "./tool-blocks/skill-tool-block";
 import { MonitorToolBlock } from "./tool-blocks/monitor-tool-block";
 import { WorktreeToolBlock } from "./tool-blocks/worktree-tool-block";
+import { TaskMgmtToolBlock } from "./tool-blocks/task-mgmt-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
@@ -245,12 +246,23 @@ const TOOL_BLOCK_REGISTRY = new Map<string, ToolBlockFactory>();
  *  - `enterworktree` / `exitworktree` → `worktree`: a single
  *    `WorktreeToolBlock` handles both verbs and branches internally
  *    on `toolName` ([#step-24-3-2]).
+ *  - `tasklist` / `taskget` / `taskoutput` / `taskstop` → `taskmgmt`:
+ *    a single `TaskMgmtToolBlock` handles all four background-task
+ *    management verbs and branches internally on `toolName`
+ *    ([#step-24-3-3]). The canonical `taskmgmt` is wrapper-internal
+ *    — there is no Anthropic wire tool named `TaskMgmt`; the
+ *    canonical name exists solely as the registry key for the
+ *    shared wrapper.
  */
 const TOOL_ALIASES: ReadonlyMap<string, string> = new Map([
   ["task", "agent"],
   ["multiedit", "edit"],
   ["enterworktree", "worktree"],
   ["exitworktree", "worktree"],
+  ["tasklist", "taskmgmt"],
+  ["taskget", "taskmgmt"],
+  ["taskoutput", "taskmgmt"],
+  ["taskstop", "taskmgmt"],
 ]);
 
 /**
@@ -962,6 +974,13 @@ const BESPOKE_REGISTRATIONS: ReadonlyArray<
   // here via `TOOL_ALIASES`. The wrapper branches on the original
   // `toolName` to pick the `enter` / `exit` verb. ([#step-24-3-2])
   ["worktree", WorktreeToolBlock],
+  // Canonical `taskmgmt`; `tasklist` / `taskget` / `taskoutput` /
+  // `taskstop` resolve here via `TOOL_ALIASES`. The wrapper branches
+  // on the original `toolName` to pick the `list` / `get` / `output`
+  // / `stop` verb and the per-verb body shape. The canonical name is
+  // wrapper-internal — there is no Anthropic wire tool named
+  // `TaskMgmt`. ([#step-24-3-3])
+  ["taskmgmt", TaskMgmtToolBlock],
 ];
 
 /**

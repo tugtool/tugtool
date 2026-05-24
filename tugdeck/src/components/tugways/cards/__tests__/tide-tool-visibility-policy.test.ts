@@ -116,6 +116,10 @@ const ALIASES: ReadonlyMap<string, string> = new Map([
   ["multiedit", "edit"],
   ["enterworktree", "worktree"],
   ["exitworktree", "worktree"],
+  ["tasklist", "taskmgmt"],
+  ["taskget", "taskmgmt"],
+  ["taskoutput", "taskmgmt"],
+  ["taskstop", "taskmgmt"],
 ]);
 
 function canonicalize(name: string): string {
