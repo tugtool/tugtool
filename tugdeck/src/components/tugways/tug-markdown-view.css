@@ -581,6 +581,59 @@ body {
   height: auto;
   border-radius: var(--tugx-md-image-radius);
   margin: var(--tugx-md-image-margin) 0;
+  /* Honor EXIF orientation so photo metadata rotates the rendered
+   * image without a re-encode (Safari / Firefox default to this;
+   * Chrome respects it when set explicitly). */
+  image-orientation: from-image;
+}
+
+/* `enhanceImg` adds `.tugx-md-img` to every `<img>` after parse —
+ * the class is the click-to-zoom affordance hook. The image looks
+ * the same; the cursor + click handler are added imperatively. */
+.tugx-md-block .tugx-md-img {
+  cursor: zoom-in;
+}
+
+/* Fullscreen overlay built imperatively by `enhanceImg` —
+ * appended under `document.body` (escapes the surrounding card's
+ * clipping context), dismisses on Escape / backdrop click / close
+ * button. */
+.tugx-md-img-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--tug-space-xl);
+  background: rgba(0, 0, 0, 0.85);
+  cursor: zoom-out;
+}
+
+.tugx-md-img-overlay-img {
+  max-width: 100%;
+  max-height: 100%;
+  image-orientation: from-image;
+  cursor: default;
+}
+
+.tugx-md-img-overlay-close {
+  position: absolute;
+  top: var(--tug-space-md);
+  right: var(--tug-space-md);
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--tug7-element-global-text-normal-inverse-rest);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tugx-md-img-overlay-close:hover {
+  opacity: 0.8;
 }
 
 /* Footnotes — pulldown-cmark renders a definition section as

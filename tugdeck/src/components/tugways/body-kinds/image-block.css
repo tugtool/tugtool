@@ -1,0 +1,176 @@
+/* @tug-pairings:
+   - --tugx-image-bg / surrounding surface  (placeholder + frame)
+   - --tugx-image-error-bg / --tugx-image-error-color  (caution-tone caption)
+   - --tugx-image-overlay-bg / --tugx-image-overlay-text-color  (fullscreen overlay)
+   ImageBlock paints a frame around the inline image, a placeholder
+   surface during load, a caution-toned caption when load fails, and a
+   full-window overlay on click-to-zoom. All four surfaces compose
+   `--tugx-block-*` (shared scaffold) and `--tug7-*` semantic tokens
+   via the one-hop alias pattern.
+*/
+
+/**
+ * image-block.css — `ImageBlock` inline image surface + fullscreen
+ * overlay.
+ *
+ * Layout:
+ *  - `.tugx-image` — a `<figure>` root that frames the image. The
+ *    placeholder element overlays the `<img>` while it's loading so
+ *    the row reserves vertical space without flashing a blank box.
+ *  - `.tugx-image-img` — the embedded image; `image-orientation:
+ *    from-image` opts into EXIF orientation rotation. `cursor:zoom-in`
+ *    surfaces the click-to-fullscreen affordance, gated on
+ *    `data-clickable`.
+ *  - `.tugx-image-overlay` — full-window portal-mounted overlay
+ *    rendered under `document.body` so it escapes the surrounding
+ *    card's clipping context.
+ *
+ * Token sources:
+ *  - `--tugx-image-*` slots live in the `body{}` block below; they
+ *    alias `--tug7-*` and `--tugx-block-*` tokens via [L17] one-hop.
+ *  - Overlay backdrop uses a high-contrast scrim tone that reads as
+ *    "this is now the foreground" regardless of theme.
+ *
+ * Status states (driven by `data-tugx-image-status`):
+ *  - `loading` — placeholder shows; image is transparent until decode.
+ *  - `loaded`  — placeholder hides; image visible.
+ *  - `error`   — caption row paints with caution tone.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visuals beyond the open/closed overlay
+ *    flag; lifecycle status is a `data-*` attribute, not a class swap.
+ *  - [L17] one-hop alias on every `--tugx-image-*` declaration.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="image-body"` on the root.
+ *  - [L20] component-token sovereignty — owns `--tugx-image-*`; the
+ *    scaffold consumes `--tugx-block-*`.
+ */
+
+body {
+  /* Frame metrics — sits in the shared block scaffold colour with a
+   * tight rounded corner so the image reads as its own surface
+   * rather than naked bytes. */
+  --tugx-image-bg:        var(--tugx-block-bg);
+  --tugx-image-border:    var(--tugx-block-border);
+  --tugx-image-radius:    var(--tugx-block-radius);
+  --tugx-image-padding:   var(--tug-space-2xs);
+  --tugx-image-margin:    var(--tug-space-md) 0;
+  --tugx-image-max-width: 100%;
+  --tugx-image-min-height: 40px;
+
+  /* Placeholder — a faint surface tone so the empty rectangle is
+   * visible-but-quiet during the lazy-load window. */
+  --tugx-image-placeholder-bg: var(--tug7-surface-global-primary-normal-inset-rest);
+
+  /* Error caption — caution tone so a broken image reads as broken
+   * at a glance, not as ambient prose. */
+  --tugx-image-error-bg:    var(--tugx-block-tone-caution-bg);
+  --tugx-image-error-color: var(--tugx-block-tone-caution-color);
+  --tugx-image-error-font-size: var(--tug-font-size-sm);
+
+  /* Overlay — high-contrast scrim plus large breathing room around
+   * the image so the foreground reads as foreground. */
+  --tugx-image-overlay-bg:         rgba(0, 0, 0, 0.85);
+  --tugx-image-overlay-text-color: var(--tug7-element-global-text-normal-inverse-rest);
+  --tugx-image-overlay-padding:    var(--tug-space-xl);
+}
+
+.tugx-image {
+  position: relative;
+  display: block;
+  margin: var(--tugx-image-margin);
+  padding: var(--tugx-image-padding);
+  background: var(--tugx-image-bg);
+  border: 1px solid var(--tugx-image-border);
+  border-radius: var(--tugx-image-radius);
+  max-width: var(--tugx-image-max-width);
+  min-height: var(--tugx-image-min-height);
+  overflow: hidden;
+}
+
+.tugx-image-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  /* Honor EXIF orientation tags so photos rotate correctly without
+   * a re-encode (Safari / Firefox default to this; Chrome respects
+   * it when set explicitly). */
+  image-orientation: from-image;
+  border-radius: calc(var(--tugx-image-radius) - var(--tugx-image-padding));
+}
+
+.tugx-image-img[data-clickable="true"] {
+  cursor: zoom-in;
+}
+
+/* Hide the image until it finishes decoding so the placeholder
+ * isn't briefly overlapped by a half-rendered image. */
+.tugx-image[data-tugx-image-status="loading"] .tugx-image-img {
+  visibility: hidden;
+}
+
+.tugx-image[data-tugx-image-status="error"] .tugx-image-img {
+  /* Failed image — don't render the broken-image glyph; the caption
+   * tells the user what's missing. */
+  display: none;
+}
+
+/* @tug-renders-on(var(--tugx-image-placeholder-bg)) */
+.tugx-image-placeholder {
+  position: absolute;
+  inset: var(--tugx-image-padding);
+  background: var(--tugx-image-placeholder-bg);
+  border-radius: calc(var(--tugx-image-radius) - var(--tugx-image-padding));
+}
+
+/* @tug-renders-on(var(--tugx-image-error-bg)) */
+.tugx-image-error {
+  display: block;
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+  background: var(--tugx-image-error-bg);
+  color: var(--tugx-image-error-color);
+  font-size: var(--tugx-image-error-font-size);
+  word-break: break-all;
+}
+
+/* ---- Fullscreen overlay (portal-mounted under document.body) ------ */
+
+/* @tug-renders-on(var(--tugx-image-overlay-bg)) */
+.tugx-image-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--tugx-image-overlay-padding);
+  background: var(--tugx-image-overlay-bg);
+  cursor: zoom-out;
+}
+
+.tugx-image-overlay-img {
+  max-width: 100%;
+  max-height: 100%;
+  image-orientation: from-image;
+  cursor: default;
+}
+
+.tugx-image-overlay-close {
+  position: absolute;
+  top: var(--tug-space-md);
+  right: var(--tug-space-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--tugx-image-overlay-text-color);
+  cursor: pointer;
+}
+
+.tugx-image-overlay-close:hover {
+  opacity: 0.8;
+}

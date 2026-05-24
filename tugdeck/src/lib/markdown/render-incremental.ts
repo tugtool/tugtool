@@ -59,6 +59,7 @@
 
 import { DEFAULT_BLOCK_TRANSFORMERS } from "./block-transformers";
 import { enhanceFencedCode } from "./enhance-fenced-code";
+import { enhanceImg } from "./enhance-img";
 import { enhanceMath } from "./enhance-math";
 import { enhanceMermaid } from "./enhance-mermaid";
 import {
@@ -178,6 +179,7 @@ function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
   el.dataset.blockType = block.type;
   el.innerHTML = block.html;
   enhanceFencedCode(el);
+  enhanceImg(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
   return el;
@@ -190,6 +192,7 @@ function updateBlockElement(
   el.dataset.blockType = block.type;
   el.innerHTML = block.html;
   enhanceFencedCode(el);
+  enhanceImg(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
 }

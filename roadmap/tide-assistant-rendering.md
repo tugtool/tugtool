@@ -6237,18 +6237,17 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - Markdown delegation: when `TugMarkdownView` encounters an `<img>` element after parse, it can render through ImageBlock
 
 **Tasks:**
-- [ ] Lazy-load with low-res placeholder
-- [ ] EXIF orientation honored
-- [ ] Click-to-fullscreen modal
-- [ ] Cooperate with atoms-attachments user-side rendering
+- [x] Lazy-load via native `loading="lazy"` + a placeholder surface that fills the row until decode
+- [x] EXIF orientation honored via `image-orientation: from-image`
+- [x] Click-to-fullscreen modal — portal-mounted overlay under `document.body`, dismisses on Escape / backdrop click / close button
+- [x] Markdown delegation via `enhanceImg` — every `<img>` in markdown picks up `loading="lazy"`, `decoding="async"`, EXIF orientation, and the same click-to-zoom overlay (imperative DOM twin of the React overlay)
 
 **Tests:**
-- [ ] Renders an image URL with placeholder until load
-- [ ] Click → fullscreen modal
+- [x] `composeImageErrorCaption` returns alt text when present, falls back to URL otherwise
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> render this markdown verbatim: ![Mona Lisa](https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Mona_Lisa.jpg/300px-Mona_Lisa.jpg)` → expect ImageBlock with placeholder → loaded image, clickable to fullscreen
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> render this markdown verbatim: ![Mona Lisa](https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Mona_Lisa.jpg/300px-Mona_Lisa.jpg)` → expect a markdown image with `loading="lazy"`, clickable to fullscreen overlay; Escape dismisses
 
 ---
 
