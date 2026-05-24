@@ -65,6 +65,13 @@ export interface UseCopyableTextOptions {
    * internal ref so both land on the same DOM element.
    */
   forwardedRef?: React.Ref<HTMLElement>;
+  /**
+   * When true, the context menu shows a single "Copy" entry instead
+   * of the four-item editor-style menu (Cut/Copy/Paste/Select All
+   * with only Copy enabled). Use for compact display chips like
+   * badges where the editor menu would be visually heavy.
+   */
+  copyMenu?: boolean;
 }
 
 export interface UseCopyableTextResult {
@@ -94,6 +101,7 @@ export function useCopyableText({
   getText,
   disabled,
   forwardedRef,
+  copyMenu,
 }: UseCopyableTextOptions): UseCopyableTextResult {
   const manager = useResponderChain();
 
@@ -117,7 +125,7 @@ export function useCopyableText({
 
   const responderId = useId();
 
-  const { responderRef } = useOptionalResponder({
+  const { responderRef, ResponderScope } = useOptionalResponder({
     id: responderId,
     actions: {
       [TUG_ACTIONS.COPY]: handleCopy,
@@ -151,24 +159,34 @@ export function useCopyableText({
   );
 
   const menuItems = useMemo<TugEditorContextMenuEntry[]>(
-    () => [
-      { action: TUG_ACTIONS.CUT, label: "Cut", shortcut: "\u2318X", disabled: true },
-      { action: TUG_ACTIONS.COPY, label: "Copy", shortcut: "\u2318C" },
-      { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: "\u2318V", disabled: true },
-      { type: "separator" },
-      { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "\u2318A", disabled: true },
-    ],
-    [],
+    () =>
+      copyMenu
+        ? [{ action: TUG_ACTIONS.COPY, label: "Copy", shortcut: "\u2318C" }]
+        : [
+            { action: TUG_ACTIONS.CUT, label: "Cut", shortcut: "\u2318X", disabled: true },
+            { action: TUG_ACTIONS.COPY, label: "Copy", shortcut: "\u2318C" },
+            { action: TUG_ACTIONS.PASTE, label: "Paste", shortcut: "\u2318V", disabled: true },
+            { type: "separator" },
+            { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", shortcut: "\u2318A", disabled: true },
+          ],
+    [copyMenu],
   );
 
+  // Wrap the menu in this hook's ResponderScope so TugEditorContextMenu's
+  // targeted dispatch (via useControlDispatch) reads our responder as its
+  // parent \u2014 that's the responder carrying the COPY handler. Without the
+  // scope, dispatch would target whatever surrounds the consumer (a pane
+  // or card), which has no copy handler, and Copy would silently no-op.
   const contextMenu = manager ? (
-    <TugEditorContextMenu
-      open={menuState !== null}
-      x={menuState?.x ?? 0}
-      y={menuState?.y ?? 0}
-      items={menuItems}
-      onClose={closeMenu}
-    />
+    <ResponderScope>
+      <TugEditorContextMenu
+        open={menuState !== null}
+        x={menuState?.x ?? 0}
+        y={menuState?.y ?? 0}
+        items={menuItems}
+        onClose={closeMenu}
+      />
+    </ResponderScope>
   ) : null;
 
   return { composedRef, handleContextMenu, contextMenu };

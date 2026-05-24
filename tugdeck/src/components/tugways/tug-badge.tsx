@@ -11,8 +11,9 @@
 
 import "./tug-badge.css";
 
-import React from "react";
+import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
+import { useCopyableText } from "./use-copyable-text";
 
 // ---- Types ----
 
@@ -115,24 +116,38 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
         ? { gap: `${iconGap}px`, ...style }
         : style;
 
+    // Badges are copyable — right-click → Copy copies the badge's
+    // text content. Intrinsic, not opt-in. `copyMenu` keeps the menu
+    // to a single Copy entry, matching the compact pill shape.
+    const badgeRef = useRef<HTMLSpanElement | null>(null);
+    const copyable = useCopyableText({
+      ref: badgeRef as React.MutableRefObject<HTMLElement | null>,
+      forwardedRef: ref as React.Ref<HTMLElement>,
+      copyMenu: true,
+    });
+
     return (
-      <span
-        ref={ref}
-        data-slot="tug-badge"
-        // `data-emphasis` lets CSS dispatch on the emphasis
-        // axis without parsing the role half of the class name.
-        // The "ghost" variant uses it to zero out padding +
-        // border (see `tug-badge.css`) so a badge with no
-        // visible chrome doesn't reserve layout space for box
-        // it never paints.
-        data-emphasis={emphasis}
-        className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}
-        style={mergedStyle}
-        {...rest}
-      >
-        {icon && <span className="tug-badge-icon">{icon}</span>}
-        {children}
-      </span>
+      <>
+        <span
+          ref={copyable.composedRef as React.Ref<HTMLSpanElement>}
+          data-slot="tug-badge"
+          // `data-emphasis` lets CSS dispatch on the emphasis
+          // axis without parsing the role half of the class name.
+          // The "ghost" variant uses it to zero out padding +
+          // border (see `tug-badge.css`) so a badge with no
+          // visible chrome doesn't reserve layout space for box
+          // it never paints.
+          data-emphasis={emphasis}
+          className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}
+          style={mergedStyle}
+          onContextMenu={copyable.handleContextMenu}
+          {...rest}
+        >
+          {icon && <span className="tug-badge-icon">{icon}</span>}
+          {children}
+        </span>
+        {copyable.contextMenu}
+      </>
     );
   }
 );
