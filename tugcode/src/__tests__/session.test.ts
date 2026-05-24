@@ -232,6 +232,11 @@ describe("buildClaudeArgs", () => {
     expect(nudge).toContain("Tide");
     expect(nudge).toContain("tool call");
     expect(nudge).toContain("analysis");
+    // Summary-shaped tools (WebFetch / Read) get an extra-force
+    // carve-out because their result IS the model-readable rendering
+    // of the source — restating those bullets is pure duplication.
+    expect(nudge).toContain("WebFetch");
+    expect(nudge).toContain("Read");
   });
 
   test("config values are correctly mapped to CLI flags", () => {

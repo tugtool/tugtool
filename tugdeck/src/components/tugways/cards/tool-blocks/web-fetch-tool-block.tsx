@@ -27,10 +27,14 @@
  *    asked the model to do something specific, and seeing the prompt
  *    alongside the answer is the load-bearing context.
  *
- *  - **Chrome-level fold + copy** — default OPEN. The fetched
- *    summary IS the answer; folded by default would hide it. Copy
- *    collects the raw markdown result so a teammate can paste it
- *    elsewhere with formatting intact.
+ *  - **Chrome-level fold + copy** — default FOLDED. The fetched
+ *    summary is what Claude Code's WebFetch produced *for the model*;
+ *    the assistant's surrounding prose typically restates the same
+ *    bullets. Folding by default lets the prose lead and keeps the
+ *    verbatim summary one click away as evidence. Matches the
+ *    TaskMgmt precedent ([#step-24-3-3]) for blocks the assistant
+ *    fully restates. Copy collects the raw markdown so a teammate
+ *    can paste it elsewhere with formatting intact.
  *
  * Streaming / error ([Spec S03]):
  *
@@ -218,14 +222,18 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
     body = null;
   }
 
-  // Default-open fold — the markdown summary IS the answer; folded
-  // by default would hide it. Copy collects the raw markdown so the
-  // user can paste it elsewhere with formatting intact (the chip
-  // prefix is stripped).
+  // Default-FOLDED — WebFetch is summary-shaped: the result IS the
+  // model-readable rendering of the fetched page, and the assistant's
+  // surrounding prose typically restates the same bullets. Folding by
+  // default lets the prose lead and keeps the verbatim summary one
+  // click away as evidence. Matches the TaskMgmt precedent ([#step-24-3-3])
+  // for tool blocks whose body is fully restated by the model.
+  // Copy collects the raw markdown so the user can paste it elsewhere
+  // with formatting intact (the [Cached] prefix is stripped).
   const hasBody = body !== null && status === "ready";
   const fold = hasBody
     ? {
-        defaultFolded: false,
+        defaultFolded: true,
         preservationKey: `web-fetch-tool-block/${toolUseId}/fold`,
         collapsedLabel: "summary",
       }

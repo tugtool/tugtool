@@ -382,7 +382,14 @@ const TIDE_SYSTEM_PROMPT_NUDGE =
   "restate or summarize a tool's input or result in prose unless you are " +
   "adding analysis, synthesis across multiple calls, or framing for what " +
   "comes next — repeating what the block already shows is duplication, " +
-  "not communication.";
+  "not communication. " +
+  "This applies with extra force to summary-shaped tools like WebFetch " +
+  "and Read whose result IS the model-readable rendering of the source: " +
+  "the block already shows the markdown summary or file contents the " +
+  "user asked for; restating those bullets or paragraphs in prose is " +
+  "pure noise. The block stands on its own — your prose should add what " +
+  "the block can't (cross-source synthesis, a specific judgment call, " +
+  "the next step you're about to take).";
 
 /**
  * Build the CLI argument array for spawning the claude process.
