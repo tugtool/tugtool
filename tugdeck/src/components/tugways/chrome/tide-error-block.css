@@ -1,0 +1,103 @@
+/* @tug-pairings:
+   - --tugx-err-caution-bg / --tugx-err-caution-color  (recoverable banner)
+   - --tugx-err-danger-bg  / --tugx-err-danger-color   (non-recoverable banner)
+   - --tugx-err-button-bg / --tugx-err-button-color    (action button)
+   `TideErrorBlock` paints an inline error banner with a recoverable
+   (caution-toned, with Retry) and non-recoverable (danger-toned,
+   with Copy) variant.
+*/
+
+/**
+ * tide-error-block.css — `TideErrorBlock` inline-error chrome.
+ *
+ * Token sources:
+ *  - `--tugx-err-*` slots in the `body{}` block below alias the
+ *    shared block-tone tokens via [L17] one-hop.
+ *  - The two tones (`caution` / `danger`) are selected via the
+ *    `data-tugx-error-tone` attribute; CSS scopes the surface
+ *    rules accordingly so the React component carries no per-tone
+ *    class logic.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance beyond the Copy-confirmation
+ *    `data-copied` attribute swap.
+ *  - [L17] one-hop alias on every `--tugx-err-*` declaration.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="tide-error-block"` on the root.
+ *  - [L20] component-token sovereignty — owns `--tugx-err-*`.
+ */
+
+body {
+  --tugx-err-caution-bg:    var(--tugx-block-tone-caution-bg);
+  --tugx-err-caution-color: var(--tugx-block-tone-caution-color);
+  --tugx-err-danger-bg:     var(--tug7-surface-tone-primary-normal-danger-rest);
+  --tugx-err-danger-color:  var(--tug7-element-tone-text-normal-danger-rest);
+  --tugx-err-padding:       var(--tug-space-xs) var(--tug-space-sm);
+  --tugx-err-gap:           var(--tug-space-sm);
+  --tugx-err-radius:        var(--tugx-block-radius);
+  --tugx-err-font-size:     var(--tug-font-size-sm);
+
+  /* Action button — shared between Retry and Copy variants. */
+  --tugx-err-button-bg:          transparent;
+  --tugx-err-button-color:       inherit;
+  --tugx-err-button-border:      currentColor;
+  --tugx-err-button-padding:     var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-err-button-radius:      var(--tug-radius-sm);
+}
+
+.tide-error-block {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-err-gap);
+  padding: var(--tugx-err-padding);
+  border-radius: var(--tugx-err-radius);
+  font-size: var(--tugx-err-font-size);
+}
+
+/* @tug-renders-on(var(--tugx-err-caution-bg)) */
+.tide-error-block[data-tugx-error-tone="caution"] {
+  background: var(--tugx-err-caution-bg);
+  color: var(--tugx-err-caution-color);
+}
+
+/* @tug-renders-on(var(--tugx-err-danger-bg)) */
+.tide-error-block[data-tugx-error-tone="danger"] {
+  background: var(--tugx-err-danger-bg);
+  color: var(--tugx-err-danger-color);
+}
+
+.tide-error-block-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tide-error-block-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.tide-error-block-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+.tide-error-block-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  padding: var(--tugx-err-button-padding);
+  background: var(--tugx-err-button-bg);
+  color: var(--tugx-err-button-color);
+  border: 1px solid var(--tugx-err-button-border);
+  border-radius: var(--tugx-err-button-radius);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tide-error-block-button[data-copied="true"] {
+  opacity: 0.85;
+}

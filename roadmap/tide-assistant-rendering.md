@@ -6300,19 +6300,20 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - Wire dispatch to compare `system_metadata` against previous and emit banner only on change
 
 **Tasks:**
-- [ ] SessionInitBanner: project path, model, permissionMode; integrates with drift caution chip from [#step-21](#step-21) when version mismatches
-- [ ] Diff logic per [D03]: shallow on (model, permissionMode, version) + deep on tools/skills/agents
-- [ ] ErrorBlock: amber for `recoverable: true` (with retry); red for `recoverable: false` (with copy-error button)
+- [x] SessionInitBanner: model + permissionMode + cwd field rows; drift caution chip threaded from dispatch
+- [x] Diff logic per [D03]: shallow on (model, permissionMode, version, cwd) + deep on tools/skills/agents — `hasSessionMetadataChanged` encodes the rule; first-observation renders, identical-shape returns null
+- [x] ErrorBlock: caution-toned banner with Retry button for `recoverable: true`; danger-toned banner with Copy-error button for `recoverable: false`
 
 **Tests:**
-- [ ] First system_metadata renders banner
-- [ ] Identical-shape system_metadata does NOT re-render
-- [ ] Changed model produces banner re-render
-- [ ] Recoverable error shows retry; non-recoverable shows copy
+- [x] First system_metadata renders banner (`hasSessionMetadataChanged(current, undefined) === true`)
+- [x] Identical-shape system_metadata returns false from the diff
+- [x] Each scalar change (model / permissionMode / version / cwd) → true
+- [x] Array deep-diff (tools / skills / agents) → true
+- [x] Dispatch wiring: `KIND_RENDERERS.system_metadata` is the real banner; `KIND_RENDERERS.error` is the real block
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: start a fresh Tide session (`/clear`) then prompt `> hi` → expect SessionInitBanner showing project path, model, permissionMode on the first system_metadata
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: start a fresh Tide session (`/clear`) then prompt `> hi` → expect SessionInitBanner showing model / permission / cwd on the first system_metadata
 - [ ] Manual: prompt `> read the file /this/path/does/not/exist` → expect ErrorBlock (recoverable: retry button; non-recoverable: copy-error button)
 
 ---

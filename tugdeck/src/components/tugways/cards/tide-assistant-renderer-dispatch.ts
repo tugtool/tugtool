@@ -109,6 +109,8 @@ import { NotebookEditToolBlock } from "./tool-blocks/notebook-edit-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
+import { TideSessionInitBanner } from "@/components/tugways/chrome/tide-session-init-banner";
+import { TideErrorBlock } from "@/components/tugways/chrome/tide-error-block";
 import {
   defaultIntentToolNames,
   hiddenToolNames,
@@ -825,8 +827,14 @@ export const KIND_RENDERERS: {
   permission: PermissionDialogLazy,
   question: QuestionDialogLazy,
   cost: makeScaffoldRenderer("cost"),
-  system_metadata: makeScaffoldRenderer("system_metadata"),
-  error: makeScaffoldRenderer("error"),
+  // SessionInitBanner ([#step-29], [D03]) — reads metadata +
+  // previousMetadata from the input and renders only when something
+  // user-visible changed. Identical-shape metadata events render to
+  // null without re-mounting.
+  system_metadata: TideSessionInitBanner,
+  // ErrorBlock ([#step-29]) — recoverable / non-recoverable variants
+  // surface with caution / danger tones and a Retry / Copy action.
+  error: TideErrorBlock,
 };
 
 // ---------------------------------------------------------------------------
