@@ -6313,21 +6313,21 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 - Re-attachment per delta is cheap (one event listener per table); the markdown reconciler's `innerHTML` wipe destroys listeners along with the table, and the next enhance pass re-attaches on the fresh table. No flash, no portal, no lifecycle to manage.
 
 **Tasks:**
-- [ ] Implement `enhanceTable(container: HTMLElement): void` as the sibling enhancer.
-- [ ] Wire into `render-incremental.ts`'s `buildBlockElement` and `updateBlockElement` alongside the other enhancers.
-- [ ] Sort cycle: `null → asc → desc → null` on the same column; clicking a different column resets to `asc` on the new column. Match the convention every spreadsheet UI uses.
-- [ ] Stable sort — when two cells compare equal, preserve original row order. JS's `Array.prototype.sort` is stable as of ES2019, so a single `collator.compare(a, b)` suffices.
-- [ ] Visual sort indicator — chevron (lucide `ChevronUp` / `ChevronDown`) appended to the active `<th>`. CSS-only via `[data-tugx-table-sort-direction="asc"]::after` on the column-index-matching cell.
-- [ ] `aria-sort` attribute on the active `<th>` (`ascending` / `descending` / `none`) for screen readers.
-- [ ] Optional: opt-out class `class="no-sort"` on `<th>` to disable sorting for a column (mirrors the [tofsjonas/sortable](https://github.com/tofsjonas/sortable) convention).
+- [x] Implement `enhanceTable(container: HTMLElement): void` as the sibling enhancer.
+- [x] Wire into `render-incremental.ts`'s `buildBlockElement` and `updateBlockElement` alongside the other enhancers.
+- [x] Sort cycle: `null → asc → desc → null` on the same column; clicking a different column resets to `asc` on the new column. Match the convention every spreadsheet UI uses.
+- [x] Stable sort — when two cells compare equal, preserve original row order. JS's `Array.prototype.sort` is stable as of ES2019, so a single `collator.compare(a, b)` suffices.
+- [x] Visual sort indicator — chevron (lucide `ChevronUp` / `ChevronDown`) appended to the active `<th>`. CSS-only via `[data-tugx-table-sort-direction="asc"]::after` on the column-index-matching cell. *(Shipped as a CSS-only triangle pseudo-element keyed off `aria-sort`; no inline-SVG needed, paint-free, theme-tone honest.)*
+- [x] `aria-sort` attribute on the active `<th>` (`ascending` / `descending` / `none`) for screen readers.
+- [x] Optional: opt-out class `class="no-sort"` on `<th>` to disable sorting for a column (mirrors the [tofsjonas/sortable](https://github.com/tofsjonas/sortable) convention).
 
 **Tests:**
-- [ ] Pure-logic test for the sort-cycle state machine — `nextSort(current, columnIndex)` returns the right next state.
-- [ ] Pure-logic test for the locale-aware comparator — verify `"10" > "2"`, stable on ties, handles empty / missing cells.
+- [x] Pure-logic test for the sort-cycle state machine — `nextSort(current, columnIndex)` returns the right next state.
+- [x] Pure-logic test for the locale-aware comparator — verify `"10" > "2"`, stable on ties, handles empty / missing cells.
 - [ ] Real-app test (if the harness supports clicking a `<th>` in rendered markdown): click sequence on a small table reorders rows correctly; second click reverses; third click restores original order.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`.
 - [ ] Manual: prompt `> output a markdown table with the 15 most populous countries, columns: rank, country, population (millions), continent. just the table.` → click `population (millions)` → rows reorder ascending; click again → descending; click again → restored to insertion order.
 - [ ] Manual: stream a 50-row table → no flash; sort works the moment the table finishes rendering.
 

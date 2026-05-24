@@ -630,6 +630,48 @@ body {
   background: var(--tugx-md-table-stripe-bg);
 }
 
+/* Tier 1: vanilla-JS sort affordance.
+ *
+ * `enhanceTable` stamps `aria-sort="none"` on every sortable header
+ * the first time it runs, then updates `aria-sort` + the table-level
+ * `data-tugx-table-sort-{column,direction}` attributes on each click.
+ * Headers opted out via `class="no-sort"` keep no `aria-sort` attr;
+ * the cursor stays default and the indicator never paints.
+ *
+ * The indicator is a CSS pseudo-element on the active header. The
+ * arrow Unicode glyph is intentional — Lucide chevrons would require
+ * inline-SVG + Tier 1 hydration to live in user-owned DOM, while a
+ * one-character glyph is paint-free, theme-tone honest, and matches
+ * the surface vocabulary every spreadsheet UI shares. */
+.tugx-md-block th[aria-sort] {
+  cursor: pointer;
+  position: sticky; /* re-assert; sortable headers stay pinned. */
+  top: 0;
+  /* Reserve trailing space for the indicator so the column width
+   * doesn't shift when sort flips on. */
+  padding-right: calc(var(--tug-space-md) + 1em);
+}
+
+.tugx-md-block th[aria-sort="ascending"]::after,
+.tugx-md-block th[aria-sort="descending"]::after {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: var(--tug-space-xs);
+  vertical-align: middle;
+  border-left: 0.3em solid transparent;
+  border-right: 0.3em solid transparent;
+}
+
+.tugx-md-block th[aria-sort="ascending"]::after {
+  border-bottom: 0.4em solid currentColor;
+}
+
+.tugx-md-block th[aria-sort="descending"]::after {
+  border-top: 0.4em solid currentColor;
+}
+
 /* Images */
 .tugx-md-block img {
   max-width: 100%;
