@@ -6267,19 +6267,21 @@ The one tool that doesn't currently degrade gracefully in this state is `BashToo
 - A new transformer `largeTableTransformer` in block-transformers (promotes to TableBlock when rows > 10 or columns > 5)
 
 **Tasks:**
-- [ ] Sortable columns
-- [ ] Sticky `<thead>` within the table's scroll region (distinct from the body-kind identity-header pin — see Conformance note)
-- [ ] Cell overflow handling (truncate + `TugTooltip`)
-- [ ] Optional row striping
-- [ ] Block transformer promotes large GFM tables
+- [x] Sortable columns — header cells cycle `null → asc → desc → null`; locale-aware numeric collation so `"10"` sorts after `"2"`; stable sort preserves source order on tie
+- [x] Sticky `<thead>` within the table's scroll region (distinct from the body-kind identity-header pin — see Conformance note)
+- [x] Cell overflow handling — `text-overflow: ellipsis` + `TugTooltip` gated on `truncated`
+- [x] Optional row striping (default on; `striped={false}` disables)
+- [x] `largeTableTransformer` promotes large GFM tables — rows > 10 OR cols > 5 promotes to `tug-table` with a `data-tugx-large-table="true"` marker on the `<table>` root. The React-mount-into-marker bridge is deferred to a follow-on; the `TableBlock` primitive is shipped and directly consumable from tool blocks / gallery cards / future direct mounts in this step.
 
 **Tests:**
-- [ ] Small table stays as plain GFM table
-- [ ] Table with > 10 rows promotes to TableBlock; sort/sticky-header work
+- [x] Small table stays as plain GFM table (pass-through)
+- [x] Large table promotes to `tug-table` with the marker attribute
+- [x] Sort cycles correctly; numeric collation works; stable on tie
+- [x] TSV serialization round-trips headers + rows
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`
-- [ ] Manual: prompt `> generate a markdown table comparing the 12 most popular JS bundlers with columns name, type, bundle size, notes` → expect a promoted TableBlock with sortable columns and sticky `<thead>`
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test`
+- [ ] Manual: prompt `> generate a markdown table comparing the 12 most popular JS bundlers with columns name, type, bundle size, notes` → expect the markdown table marked with `data-tugx-large-table` (the table renders as a regular HTML table today; the React mount bridge is the follow-on)
 
 ---
 

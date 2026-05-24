@@ -1,0 +1,191 @@
+/* @tug-pairings:
+   - --tugx-tabrich-bg / --tugx-tabrich-text-color  (table surface)
+   - --tugx-tabrich-thead-bg / --tugx-tabrich-text-color  (sticky header)
+   - --tugx-tabrich-stripe-bg / --tugx-tabrich-text-color  (alternating rows)
+   TableBlock paints a scroll region around the table, a sticky `<thead>`
+   inside that region (distinct from the body-kind identity-header pin),
+   alternating row backgrounds when striped, and per-cell truncation
+   recipes. The shared block scaffold (`--tugx-block-*`) carries the
+   frame; `--tugx-tabrich-*` slots tune the table-specific cells.
+*/
+
+/**
+ * table-block.css — `TableBlock` rich table surface.
+ *
+ * Layout:
+ *  - `.tugx-tabrich` — root (figure-like surface). Frames the table
+ *    with the shared block scaffold colors / border / radius.
+ *  - `.tugx-tabrich-header` — standalone identity header + actions
+ *    cluster (suppressed in embedded mode).
+ *  - `.tugx-tabrich-scroll` — overflow-x scroll region. The table's
+ *    sticky `<thead>` sits inside this region (distinct from the
+ *    body-kind identity-header pin per the conformance note).
+ *  - `.tugx-tabrich-table` — the table itself; `border-collapse:
+ *    separate` so the sticky thead can paint over rows without
+ *    border-color blending.
+ *  - `.tugx-tabrich-th-button` — header buttons own the sort cycle;
+ *    they're focusable so keyboard sort is natural.
+ *  - `.tugx-tabrich-td` — cell with truncation recipe; the inner
+ *    `.tugx-tabrich-td-content` is the ellipsizing element so
+ *    `TugTooltip`'s scrollWidth check measures the right surface.
+ *
+ * Token sources:
+ *  - `--tugx-tabrich-*` slots live in the `body{}` block below; they
+ *    alias `--tug7-*` and `--tugx-block-*` via [L17] one-hop.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance; sort direction is React
+ *    state because it drives row re-ordering (logical state), not
+ *    cell coloring.
+ *  - [L17] one-hop alias on every `--tugx-tabrich-*` declaration.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="table-body"` on the root.
+ *  - [L20] component-token sovereignty — owns `--tugx-tabrich-*`;
+ *    scaffold consumes `--tugx-block-*`.
+ */
+
+body {
+  /* Surface tones */
+  --tugx-tabrich-bg:           var(--tugx-block-bg);
+  --tugx-tabrich-text-color:   var(--tugx-block-text-color);
+  --tugx-tabrich-border:       var(--tugx-block-border);
+  --tugx-tabrich-radius:       var(--tugx-block-radius);
+
+  /* Header strip — slightly raised tone so it reads as the chrome
+   * row rather than another data row. */
+  --tugx-tabrich-thead-bg:     var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-tabrich-thead-border: var(--tugx-block-border);
+
+  /* Alternating row tone — subtle so it helps scanning without
+   * fragmenting the visual into bands. */
+  --tugx-tabrich-stripe-bg:    var(--tug7-surface-global-primary-normal-inset-rest);
+
+  /* Cell metrics — tabular numerics for alignment of numeric
+   * columns; the padding row is just enough to keep rows from
+   * crowding without wasting vertical space in long tables. */
+  --tugx-tabrich-cell-padding-y: var(--tug-space-xs);
+  --tugx-tabrich-cell-padding-x: var(--tug-space-sm);
+  --tugx-tabrich-cell-max-width: 320px;
+  --tugx-tabrich-font-size:      var(--tug-font-size-sm);
+
+  /* Standalone-header metrics */
+  --tugx-tabrich-header-padding: var(--tug-space-xs) var(--tug-space-sm);
+  --tugx-tabrich-header-gap:     var(--tug-space-sm);
+}
+
+.tugx-tabrich {
+  display: block;
+  background: var(--tugx-tabrich-bg);
+  color: var(--tugx-tabrich-text-color);
+  border: 1px solid var(--tugx-tabrich-border);
+  border-radius: var(--tugx-tabrich-radius);
+  overflow: hidden;
+}
+
+.tugx-tabrich--embedded {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.tugx-tabrich-header {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-tabrich-header-gap);
+  padding: var(--tugx-tabrich-header-padding);
+  border-bottom: 1px solid var(--tugx-tabrich-border);
+}
+
+.tugx-tabrich-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.tugx-tabrich-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tugx-block-text-color-muted);
+}
+
+.tugx-tabrich-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.tugx-tabrich-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: var(--tugx-tabrich-font-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* @tug-renders-on(var(--tugx-tabrich-thead-bg)) */
+.tugx-tabrich-thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--tugx-tabrich-thead-bg);
+  border-bottom: 1px solid var(--tugx-tabrich-thead-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tugx-tabrich-th {
+  padding: 0;
+}
+
+.tugx-tabrich-th-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  width: 100%;
+  padding: var(--tugx-tabrich-cell-padding-y) var(--tugx-tabrich-cell-padding-x);
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tugx-tabrich-th-button:hover {
+  background: var(--tugx-block-strip-bg, transparent);
+}
+
+.tugx-tabrich-th-label {
+  flex: 1 1 auto;
+}
+
+.tugx-tabrich-th-sort {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* @tug-renders-on(var(--tugx-tabrich-stripe-bg)) */
+.tugx-tabrich-table--striped tbody tr:nth-child(even) {
+  background: var(--tugx-tabrich-stripe-bg);
+}
+
+.tugx-tabrich-td {
+  padding: var(--tugx-tabrich-cell-padding-y) var(--tugx-tabrich-cell-padding-x);
+  vertical-align: top;
+  max-width: var(--tugx-tabrich-cell-max-width);
+}
+
+.tugx-tabrich-td-content {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
