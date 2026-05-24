@@ -5802,11 +5802,12 @@ Notes:
 - **[Step 24.3.2](#step-24-3-2)** — Operational trio: `SkillToolBlock` + `MonitorToolBlock` + `WorktreeToolBlock`.
 - **[Step 24.3.3](#step-24-3-3)** — `TaskMgmtToolBlock` (covers `TaskList` / `TaskGet` / `TaskOutput` / `TaskStop`).
 - **[Step 24.3.4](#step-24-3-4)** — Management trio: `CronToolBlock` + `ShareOnboardingGuideToolBlock` + `RemoteTriggerToolBlock`.
-- **[Step 24.3.5](#step-24-3-5)** — `McpToolBlock` + pattern-dispatch hook (architecture change — wildcard names).
+
+**MCP — explicitly deferred.** Per the existing project policy in [Open Questions](#open-questions) (line 85) and the [Symbol Inventory deferral note](#symbol-inventory) (line 484), MCP tool support is a non-goal for this phase. No bespoke `McpToolBlock` ships here; no pattern-dispatch hook is added. `mcp__*` tool names continue to route through `DefaultToolBlock` with the `unknown_tool` caution as they do today — explicitly *not* classified in `TOOL_VISIBILITY_POLICY` so the governance test's "v2.1.148 registry coverage" assertion is scoped to the **31 built-in** tools, not the unbounded MCP namespace. Revisit only if MCP becomes load-bearing for our users.
 
 **References:** [D04] (drift fallback), [D05] (two-layer split), [D11] (`DefaultToolBlock` covers day-one unknowns), [D100] (pinned `Z2A` precedent for the hidden bucket).
 
-**Inventory source.** The canonical tool registry is `capabilities/2.1.148/system-metadata.jsonl` — Claude Code at `v2.1.148` exposes **31 built-in tools** plus a variable MCP namespace (`mcp__*`). The table below is the complete v2.1.148 inventory cross-referenced against this step's planned outcome. Volumes are from the original [§4.2 audit](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline.
+**Inventory source.** The canonical tool registry is `capabilities/2.1.148/system-metadata.jsonl` — Claude Code at `v2.1.148` exposes **31 built-in tools**. The table below is the complete v2.1.148 built-in inventory cross-referenced against this step's planned outcome. The variable `mcp__*` namespace is out of scope per the MCP deferral above. Volumes are from the original [§4.2 audit](./tide-assistant-rendering-session-audit.md); blank where the tool post-dates the audit baseline.
 
 | Tool | Volume | Today | Target | Owning step |
 |------|-------:|-------|--------|-------------|
@@ -5841,9 +5842,9 @@ Notes:
 | `CronList` | — | unknown_tool drift | bespoke (`CronToolBlock` — alias) | [#step-24-3-4](#step-24-3-4) — this step |
 | `ShareOnboardingGuide` | — | unknown_tool drift | bespoke (`ShareOnboardingGuideToolBlock`) | [#step-24-3-4](#step-24-3-4) — this step |
 | `RemoteTrigger` | — | unknown_tool drift | bespoke (`RemoteTriggerToolBlock`) | [#step-24-3-4](#step-24-3-4) — this step (semantics to confirm during build) |
-| `mcp__*` (variable; e.g. `mcp__claude_ai_Gmail__authenticate`) | session-dependent | unknown_tool drift | bespoke (`McpToolBlock` via pattern dispatch) | [#step-24-3-5](#step-24-3-5) — this step |
+| `mcp__*` (variable namespace) | session-dependent | unknown_tool drift | **deferred** — no support planned | per project policy (line 85); revisit only if MCP becomes load-bearing |
 
-**Coverage check.** Of the 31 v2.1.148 built-in tools: **7 already bespoke**, **4 bespoke-planned by Steps 25–26**, **2 hidden by [D100]**, **5 newly hidden by this step**, **4 newly bespoke via `TaskMgmtToolBlock`**, **3 newly bespoke (operational trio)**, **5 newly bespoke (management trio)** = 30 + 1 MCP namespace = full coverage. After this step exits, the dispatch has zero `unknown_tool` cautions for any tool in the canonical v2.1.148 registry; the only paths that fire `unknown_tool` are genuinely novel tools introduced in a future Claude Code release.
+**Coverage check.** Of the 31 v2.1.148 **built-in** tools: **7 already bespoke**, **4 bespoke-planned by Steps 25–26**, **2 hidden by [D100]**, **5 newly hidden by this step**, **4 newly bespoke via `TaskMgmtToolBlock`**, **3 newly bespoke (operational trio)**, **5 newly bespoke (management trio)** = 30 + 1 (`AskUserQuestion`) = 31, full built-in coverage. After this step exits, the dispatch has zero `unknown_tool` cautions for any tool in the canonical v2.1.148 **built-in** registry. The unbounded MCP namespace continues to produce `unknown_tool` cautions by design — that signal *is* the deferral: when MCP names show up in a real user's transcript with enough frequency to matter, the caution count will surface it, and we can revisit the deferral with data.
 
 **Why not a new top-level step.** Numbered `24.3` (not `25A` or `30A`) because it grew out of the [D100] surface decisions in Step 24.1 — silencing the Task* per-call rows revealed the broader visibility-classification problem. Sitting next to Steps 24.1 / 24.2 keeps the policy-vs-pinned-surface relationship discoverable when someone returns to the [D100] rationale.
 
@@ -5996,41 +5997,13 @@ Notes:
 
 ---
 
-#### Step 24.3.5: McpToolBlock + pattern-dispatch hook {#step-24-3-5}
+#### Step 24.3.5: ~~McpToolBlock + pattern-dispatch hook~~ — DEFERRED {#step-24-3-5}
 
-**Goal.** Add pattern-based dispatch to the renderer (wildcard tool names) and ship a single `McpToolBlock` wrapper for the `mcp__*` namespace. MCP tools are user-installed, so the *names* are unbounded — exact-name dispatch as practiced today cannot cover them. This is the smallest architecture change that solves the unbounded-name problem without leaking MCP specifics into the core dispatch.
+**Status.** Removed from scope. MCP tool support is a non-goal for this phase per the long-standing project policy in [Open Questions](#open-questions) (line 85) and the [Symbol Inventory deferral note](#symbol-inventory) (line 484). This stub is kept so the `#step-24-3-5` anchor remains stable for any external references, and so the decision is discoverable next to the other 24.3 sub-steps rather than tucked away in the umbrella.
 
-**Depends on:** [#step-24-3-1](#step-24-3-1).
+**What this would have built (do not implement).** A two-stage `resolveToolBlock` lookup (exact-name → pattern walk → `DefaultToolBlock`) plus an `McpToolBlock` wrapper for the `mcp__*` namespace. Approach captured here only so a future revisit does not re-derive it from scratch.
 
-**Commit:** `feat(tide-rendering): McpToolBlock + pattern-dispatch hook`
-
-**References:** [D05], [D11], Spec S03.
-
-**Conformance:** see [#bk-conformance](#bk-conformance) — one tool wrapper, registered via the new pattern hook rather than the exact-name registry. The pattern hook itself is dispatch infrastructure, not a wrapper.
-
-**Architecture note.** Today `resolveToolBlock(toolName)` does `TOOL_BLOCK_REGISTRY.get(canonical) ?? DefaultToolBlock`. The new shape is a thin two-stage lookup: exact-name first (unchanged); on miss, walk `TOOL_BLOCK_PATTERNS` (ordered array of `{ test: (name: string) => boolean, factory: ToolBlockFactory }`) and return the first match; on miss-miss, `DefaultToolBlock`. The pattern array is short (1–3 entries expected) and walked once per dispatch, so the perf delta is negligible.
-
-**Artifacts.**
-- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — add `TOOL_BLOCK_PATTERNS: Array<{ pattern: RegExp; factory: ToolBlockFactory; canonicalLabel: string }>` and the corresponding `registerToolBlockPattern` API. `resolveToolBlock` walks it on registry miss before the `DefaultToolBlock` fallback. `detectToolCallDrift` also consults patterns (an `mcp__*` name resolved by pattern is *not* `unknown_tool`).
-- `tugdeck/src/components/tugways/cards/tool-blocks/mcp-tool-block.tsx` + `.css` — header `MCP · <server> / <tool>` (split on the `__` delimiter so `mcp__claude_ai_Gmail__authenticate` reads as `MCP · claude_ai_Gmail / authenticate`). Body: input as a small field list (NOT raw JSON tree — extract top-level keys with values rendered as `TugLabel`s); result as embedded `TugMarkdownBlock` when the tool result is text, embedded `JsonTreeBlock` when it is structured. The header's two-part split is what makes a wall of MCP calls scannable.
-- Pattern registration: `registerToolBlockPattern(/^mcp__/i, McpToolBlock, "MCP tool")`.
-- Gallery card with three realistic MCP synthetic fixtures (Gmail authenticate, Drive list-files, Calendar create-event) showing the per-server reading.
-- `tide-tool-visibility-policy.test.ts` updated to treat pattern-matched names as bespoke (no `unknown_tool` drift for `mcp__*`).
-
-**Tasks.**
-- [ ] Refactor `resolveToolBlock` + `detectToolCallDrift` for the two-stage lookup. Add `registerToolBlockPattern` API.
-- [ ] Build `McpToolBlock` with the two-part header split.
-- [ ] Gallery card with three synthetic fixtures.
-- [ ] Update Table T02 to list pattern entries separately from exact-name entries (footnote on the table header).
-
-**Tests.**
-- [ ] `dispatch.test.ts` (or extend): pattern lookup fires on exact-name miss; pattern hit does *not* raise `unknown_tool`; `DefaultToolBlock` fallback still fires on full miss.
-- [ ] `mcp-tool-block.test.ts`: header split correctness on three real MCP names; structured-result vs text-result body picker.
-
-**Checkpoint.**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test`.
-- [ ] `cd tugdeck && bun run audit:tokens lint`.
-- [ ] Manual (HMR): run a session with a configured MCP server (Gmail/Calendar/Drive); confirm the per-call rendering is compact and scannable.
+**Revisit trigger.** Reopen this step only if MCP becomes load-bearing for actual users — measured by sustained `unknown_tool` caution volume on `mcp__*` names in real session telemetry, not by spec or adoption-watching. Until then, `mcp__*` calls continue to route through `DefaultToolBlock` with the `unknown_tool` caution; the caution count *is* the signal.
 
 ---
 
