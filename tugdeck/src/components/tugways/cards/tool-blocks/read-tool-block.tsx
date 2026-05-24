@@ -74,6 +74,7 @@ import {
   FileBlock,
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
+import { TugBadge } from "@/components/tugways/tug-badge";
 
 import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import {
@@ -268,12 +269,14 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
       <span className="read-tool-block-args">
         <MiddleEllipsisPath path={readInput.file_path} />
         {lineRange !== undefined ? (
-          <span
+          <TugBadge
             data-slot="read-tool-block-line-range"
-            className="read-tool-block-line-range"
+            emphasis="tinted"
+            role="action"
+            size="2xs"
           >
             {lineRange}
-          </span>
+          </TugBadge>
         ) : null}
       </span>
     ) : undefined;

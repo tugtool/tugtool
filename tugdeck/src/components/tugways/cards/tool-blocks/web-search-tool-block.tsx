@@ -76,6 +76,7 @@ import "./web-search-tool-block.css";
 import React from "react";
 import { Search } from "lucide-react";
 
+import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLink } from "@/components/tugways/tug-link";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
@@ -269,12 +270,14 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
           <code data-slot="web-search-tool-block-query">{query}</code>
         </TugTooltip>
         {countLabel !== undefined ? (
-          <span
+          <TugBadge
             data-slot="web-search-tool-block-count"
-            className="web-search-tool-block-count"
+            emphasis="tinted"
+            role="action"
+            size="2xs"
           >
             {countLabel}
-          </span>
+          </TugBadge>
         ) : null}
       </span>
     ) : undefined;

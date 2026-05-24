@@ -2,17 +2,17 @@
  * notebook-edit-tool-block.css — `NotebookEditToolBlock`.
  *
  * Structural overlay only. The wrapper composes `ToolBlockChrome`
- * for its frame, `DiffBlock` / `FileBlock` for the body, and
- * `MiddleEllipsisPath` for the notebook path. This file holds only
- * the inline cell-id segment and per-mode / cell-type chips.
+ * for its frame, `DiffBlock` / `FileBlock` for the body,
+ * `MiddleEllipsisPath` for the notebook path, and `TugBadge` for
+ * the inline edit-mode + cell-type metadata badges. This file holds
+ * only the args-row flex layout and the cell-id `cell <id>` segment;
+ * every chip rule lives in `TugBadge`'s own CSS.
  *
  * Tuglaw cross-check:
  *  - [L19] file pair, `data-slot="notebook-edit-tool-block"`
  *    (delegated to chrome via `rootSlot`).
- *  - [L20] all visible declarations consume tokens from one of the
- *    composed components — no new `--tugx-*` slot; chips ride the
- *    chrome's caution-badge metrics for visual consistency without
- *    new theme knobs.
+ *  - [L20] no new `--tugx-*` slot; the metadata badges are real
+ *    `TugBadge` instances, not bespoke chip CSS.
  */
 
 .notebook-edit-tool-block-args {
@@ -27,18 +27,5 @@
 .notebook-edit-tool-block-cell {
   flex: 0 0 auto;
   font-family: var(--tugx-toolblock-args-font);
-  font-size: var(--tugx-toolblock-caution-size);
-}
-
-.notebook-edit-tool-block-meta {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  padding: var(--tugx-toolblock-caution-padding);
-  border-radius: var(--tugx-toolblock-caution-radius);
-  background: var(--tugx-toolblock-caution-bg);
-  color: var(--tugx-toolblock-caution-color);
-  font-family: var(--tugx-toolblock-args-font);
-  font-size: var(--tugx-toolblock-caution-size);
-  font-weight: var(--tugx-toolblock-caution-weight);
+  font-size: var(--tug-font-size-2xs);
 }

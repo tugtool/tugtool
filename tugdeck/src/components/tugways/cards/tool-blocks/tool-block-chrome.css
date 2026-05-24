@@ -63,7 +63,12 @@ body {
   --tugx-toolblock-header-gap:   var(--tug-space-sm);
   --tugx-toolblock-args-font:    var(--tug-font-family-mono);
 
-  /* Caution chip — inline in header; bespoke geometry */
+  /* Caution chip — inline in header; bespoke geometry. Used for
+   * surfaces that legitimately convey caution (`truncated` in
+   * GrepToolBlock, drift flags). Informational metadata (counts,
+   * sizes, modes, line ranges) does NOT live here — those use the
+   * shared `TugBadge` primitive at callsite with the appropriate
+   * role / emphasis, not a chip in this slot family. */
   --tugx-toolblock-caution-padding: var(--tug-space-2xs) var(--tug-space-xs);
   --tugx-toolblock-caution-radius:  var(--tug-radius-xs);
   --tugx-toolblock-caution-size:    var(--tug-font-size-2xs);

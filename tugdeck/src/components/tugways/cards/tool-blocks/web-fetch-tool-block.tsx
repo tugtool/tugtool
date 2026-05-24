@@ -79,6 +79,7 @@ import "./web-fetch-tool-block.css";
 import React from "react";
 import { Globe } from "lucide-react";
 
+import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 
 import { MiddleEllipsisPath } from "./middle-ellipsis-path";
@@ -170,12 +171,14 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
       <span className="web-fetch-tool-block-args">
         <MiddleEllipsisPath path={url} />
         {cached ? (
-          <span
+          <TugBadge
             data-slot="web-fetch-tool-block-cached"
-            className="web-fetch-tool-block-cached"
+            emphasis="tinted"
+            role="action"
+            size="2xs"
           >
             cached
-          </span>
+          </TugBadge>
         ) : null}
       </span>
     ) : undefined;

@@ -1,20 +1,17 @@
 /**
  * web-fetch-tool-block.css — `WebFetchToolBlock`.
  *
- * Structural overlay only. The wrapper composes `ToolBlockChrome`
- * for its frame (border / header / footer), `TugMarkdownBlock` for
- * the markdown body, and `MiddleEllipsisPath` for the URL in the
- * header. This file holds only the inline `cached` chip and the
- * args-cluster layout — every other visible rule rides a shared
- * primitive.
+ * Structural overlay only. The wrapper composes `ToolBlockChrome` for
+ * its frame, `TugMarkdownBlock` for the markdown body,
+ * `MiddleEllipsisPath` for the URL, and `TugBadge` for the inline
+ * `cached` metadata badge. This file holds only the args-row flex
+ * layout and the markdown min-width.
  *
  * Tuglaw cross-check:
  *  - [L19] file pair, `data-slot="web-fetch-tool-block"` (delegated
  *    to chrome via `rootSlot`).
- *  - [L20] all visible declarations consume tokens from one of the
- *    composed components — no new `--tugx-*` slot is introduced; the
- *    cached chip rides the chrome's caution-badge metrics for visual
- *    consistency without new theme knobs.
+ *  - [L20] no new `--tugx-*` slot; the `cached` badge is a real
+ *    `TugBadge` instance, not a bespoke chip class.
  */
 
 .web-fetch-tool-block-args {
@@ -24,19 +21,6 @@
   flex: 1 1 auto;
   min-width: 0;
   white-space: nowrap;
-}
-
-.web-fetch-tool-block-cached {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  padding: var(--tugx-toolblock-caution-padding);
-  border-radius: var(--tugx-toolblock-caution-radius);
-  background: var(--tugx-toolblock-caution-bg);
-  color: var(--tugx-toolblock-caution-color);
-  font-family: var(--tugx-toolblock-args-font);
-  font-size: var(--tugx-toolblock-caution-size);
-  font-weight: var(--tugx-toolblock-caution-weight);
 }
 
 .web-fetch-tool-block-markdown {

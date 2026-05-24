@@ -74,6 +74,8 @@ import { Notebook } from "lucide-react";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
+import { TugBadge } from "@/components/tugways/tug-badge";
+
 import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
 import {
@@ -223,19 +225,23 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
             cell <code>{cellId}</code>
           </span>
         ) : null}
-        <span
+        <TugBadge
           data-slot="notebook-edit-tool-block-edit-mode"
-          className="notebook-edit-tool-block-meta"
+          emphasis="tinted"
+          role="action"
+          size="2xs"
         >
           {editMode}
-        </span>
+        </TugBadge>
         {cellType !== undefined ? (
-          <span
+          <TugBadge
             data-slot="notebook-edit-tool-block-cell-type"
-            className="notebook-edit-tool-block-meta"
+            emphasis="tinted"
+            role="action"
+            size="2xs"
           >
             {cellType}
-          </span>
+          </TugBadge>
         ) : null}
       </span>
     ) : undefined;

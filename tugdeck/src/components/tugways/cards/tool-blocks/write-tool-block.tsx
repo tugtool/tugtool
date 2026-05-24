@@ -75,6 +75,8 @@ import {
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 
+import { TugBadge } from "@/components/tugways/tug-badge";
+
 import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import { ToolBlockPre } from "./body-bits";
 import {
@@ -207,20 +209,24 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
       <span className="write-tool-block-args">
         <MiddleEllipsisPath path={filePath} />
         {sizeLabel !== undefined ? (
-          <span
+          <TugBadge
             data-slot="write-tool-block-size"
-            className="write-tool-block-meta"
+            emphasis="tinted"
+            role="action"
+            size="2xs"
           >
             {sizeLabel}
-          </span>
+          </TugBadge>
         ) : null}
         {createdLabel !== undefined ? (
-          <span
+          <TugBadge
             data-slot="write-tool-block-created"
-            className="write-tool-block-meta"
+            emphasis="tinted"
+            role="action"
+            size="2xs"
           >
             {createdLabel}
-          </span>
+          </TugBadge>
         ) : null}
       </span>
     ) : undefined;
