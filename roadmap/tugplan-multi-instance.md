@@ -13,7 +13,7 @@
 | Owner | Ken |
 | Status | draft |
 | Target branch | main (commit on main per repo policy) |
-| Last updated | 2026-05-25 |
+| Last updated | 2026-05-25 (signing/notarization research folded in; prerequisites completed) |
 
 ---
 
@@ -30,6 +30,13 @@ Two concrete workflows are blocked by this:
 
 The current signing story compounds this: `setup-dev-signing.sh` provisions a locally-generated `Tug Dev` identity (`Justfile:307`); the harness carries a `code-sign-fingerprint` drift detection layer (`Justfile:571`, `.tugtool/code-sign-fingerprint`) because the designated requirement of a locally-generated cert is brittle — every rebuild of the cert invalidates TCC (Accessibility) grants. The user has now acquired an Apple Developer ID account, which stabilizes the DR across rebuilds and unlocks proper notarization for distribution. Folding this in with the multi-instance work means the signing infrastructure modernizes once.
 
+Empirical research into Apple's current signing flow (May 2026) surfaced four findings that shape Steps 3 and 4:
+
+1. **No App ID registration is required for Developer ID distribution outside the Mac App Store** unless the app uses services that demand a provisioning profile (CloudKit, push notifications, app groups). Tug uses none of these. A single Developer ID Application certificate signs *any* bundle ID the team owns, so every `(profile, branch)` variant in this plan is unblocked at the Apple-portal layer with no per-variant registration work.
+2. **`codesign --deep` for signing is deprecated** (as of macOS 13). The current `build-app.sh:147-149` uses it. `--deep` applies the same entitlements to every nested binary, which is wrong here because the bun-compiled `tugcode` binary embeds a JavaScript runtime that needs permissive JIT-related entitlements while the Rust binaries (`tugcast`, `tugutil`, `tugexec`, `tugrelaunch`, `tugbank`) and the outer Swift `Tug` binary do not. The replacement is **inside-out signing with per-binary entitlements files** — see [D16].
+3. **WKWebView in the outer Tug.app does not require JIT entitlements.** WebKit runs JavaScript in a separate XPC helper process (`com.apple.WebKit.WebContent`) provided by the OS, not in the host process. The bun-required permissive entitlements scope to the `tugcode` binary only; the outer app can keep its minimal entitlements file.
+4. **The one-time Developer ID + notarytool setup is easy via Xcode** (no manual CSR plumbing). The five prerequisite steps are documented under #dependencies; the user has completed them. Ground-truth values for this plan: Team ID `Z67582R5Y8`; notarytool keychain profile name `tug-notary`; Developer ID Application certificate installed in the user's login keychain.
+
 #### Strategy {#strategy}
 
 - **Bake identity at build time, not runtime.** Each `Tug.app` bundle carries `BUILD_PROFILE` (`production`/`development`), `BUILD_BRANCH` (git branch at build time, or `detached-<short-sha>` if HEAD was detached), and `BUILD_SOURCE_TREE` (development only) in its Info.plist. The running app reads its own bundle — no git lookup, no tugbank bootstrap, no shared lookup of any kind. HEAD can drift mid-session without affecting the running process. See [D01] [D02] [D03].
@@ -37,7 +44,7 @@ The current signing story compounds this: `setup-dev-signing.sh` provisions a lo
 - **Hash-derived ports with walk-on-collision + registry file.** Tugcast and Vite ports are derived from a hash of the instance ID, walked on collision, and recorded in `$TMPDIR/tug-instances.json` so external tools (`tugutil tell`, `just logs`) can find a running instance. Stable across launches of the same identity; collision-tolerant when two different identities hash to the same offset. See [D08].
 - **No explicit single-instance enforcement.** Two instances of the same identity collide at `bind()`. The runtime detects EADDRINUSE-with-live-pid-match-in-registry, logs a clear message, and exits cleanly without a supervisor retry loop. Same-identity coexistence is structurally impossible by the identity scheme. See [D07] [D14].
 - **Per-identity Bundle IDs.** The distributed `(production, main)` keeps the canonical `dev.tugtool.app` so AX grants and codesign expectations survive. Everything else gets `dev.tugtool.app.<profile>-<branch-slug>`, with the common `(development, main)` case shortened to `dev.tugtool.app.dev` for ergonomics. Each branch's debug build is its own LaunchServices identity, its own dock icon, its own AX TCC entry. See [D10].
-- **Apple Developer ID + notarization folded in.** The local `Tug Dev` identity is retired. All builds (debug and release) sign with the Developer ID Application certificate. Release builds notarize via `notarytool`; debug builds skip notarization. The existing DR drift detection becomes belt-and-suspenders. See [D11].
+- **Apple Developer ID + notarization folded in, with inside-out signing.** The local `Tug Dev` identity is retired. All builds (debug and release) sign with the Developer ID Application certificate, hardened runtime on (`--options runtime`), secure-timestamped (`--timestamp`). Per-binary entitlements: minimal for the outer Swift binary and the Rust helpers; permissive (bun-required JIT set) for the bun-compiled `tugcode` only. `codesign --deep` is replaced with explicit inside-out signing via a new `tugrust/scripts/sign-bundle.sh`. Release builds notarize via `notarytool submit --keychain-profile tug-notary --wait`; debug builds skip notarization. The existing DR drift detection becomes belt-and-suspenders. See [D11] [D16].
 - **CLI discovery defaults to the natural instance.** `tugutil tell` resolves `--instance` flag > `TUG_INSTANCE` env var > cwd-derived (development) > sole-running > error. Standing in a worktree directory, commands hit that worktree's instance automatically. See [D09].
 - **One-time migration of legacy `~/.tugbank.db`.** First launch of `(production, main)` under the new scheme copies the legacy DB into `<data-dir>/production-main/tugbank.db` and leaves the legacy file in place as a backup. Other identities start with empty DBs. See [D06].
 
@@ -55,20 +62,22 @@ The current signing story compounds this: `setup-dev-signing.sh` provisions a lo
 
 1. Build-time embedding of `BUILD_PROFILE`, `BUILD_BRANCH`, `BUILD_SOURCE_TREE` into every Tug.app bundle.
 2. Per-identity Bundle ID assignment via xcodebuild build-phase script.
-3. Apple Developer ID Application signing for all builds; notarization for release builds.
-4. Per-profile app icons (production vs development), with branch-name overlay for non-main development builds.
-5. Per-instance data directory layout under `~/Library/Application Support/Tug/instances/<id>/`.
-6. Per-instance tugbank database + notify socket.
-7. Per-instance session ledger.
-8. Per-instance tmux session name.
-9. Per-instance log directory (tuglog routing via env var).
-10. Hash-derived port allocation + walk-on-collision + `$TMPDIR/tug-instances.json` registry.
-11. Clean-exit-on-EADDRINUSE path in tugcast.
-12. One-time legacy `~/.tugbank.db` migration on first `(production, main)` launch.
-13. CLI discovery in tugutil/tugbank: flag > env > cwd > sole > error.
-14. `tugutil instance list` / `tugutil instance stop` subcommands.
-15. Justfile recipe updates (`just app`, `just launch`, `just logs`, `just app-test`) to use per-instance kill + paths.
-16. End-to-end integration verification with two instances running concurrently.
+3. Apple Developer ID Application signing for all builds (debug and release), with inside-out signing via a new helper script.
+4. Per-binary entitlements: `tugapp/Tug.entitlements` (outer Swift) + new `tugapp/tugcode.entitlements` (bun-required permissive set); Rust helpers sign with no custom entitlements (default hardened runtime).
+5. Release notarization via `xcrun notarytool submit --keychain-profile tug-notary --wait` + `xcrun stapler staple`.
+6. Per-profile app icons (production vs development), with branch-name overlay for non-main development builds.
+7. Per-instance data directory layout under `~/Library/Application Support/Tug/instances/<id>/`.
+8. Per-instance tugbank database + notify socket.
+9. Per-instance session ledger.
+10. Per-instance tmux session name.
+11. Per-instance log directory (tuglog routing via env var).
+12. Hash-derived port allocation + walk-on-collision + `$TMPDIR/tug-instances.json` registry.
+13. Clean-exit-on-EADDRINUSE path in tugcast.
+14. One-time legacy `~/.tugbank.db` migration on first `(production, main)` launch.
+15. CLI discovery in tugutil/tugbank: flag > env > cwd > sole > error.
+16. `tugutil instance list` / `tugutil instance stop` subcommands.
+17. Justfile recipe updates (`just app`, `just launch`, `just logs`, `just app-test`) to use per-instance kill + paths.
+18. End-to-end integration verification with two instances running concurrently.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -81,16 +90,39 @@ The current signing story compounds this: `setup-dev-signing.sh` provisions a lo
 - Auto-allocating ports from a contiguous shared pool managed by a daemon. The registry file is the only coordination mechanism.
 - Migrating session ledger or claude project state between instances. The legacy migration covers tugbank only.
 - Same-identity "take-over" semantics on relaunch. `tugrelaunch` already exists for the rebuild-and-relaunch flow; it does the SIGTERM-wait-restart dance deliberately. The default behavior is "refuse if already running" — see [D07].
+- **Per-bundle-ID App ID registration on developer.apple.com.** Not required for Developer ID distribution outside the Mac App Store, given Tug uses no services that demand a provisioning profile (CloudKit, push, app groups). Every `(profile, branch)` variant of the bundle ID signs against the same Developer ID Application cert without per-variant Apple-portal setup. Documenting this explicitly because the conventional wisdom (carried over from App Store distribution) is that *every* bundle ID needs registration, and a future reader following that wisdom would do unnecessary work.
+- Sandboxing. Tug does not enable the App Sandbox (`com.apple.security.app-sandbox`). Sandboxing is required for Mac App Store distribution but optional for Developer ID; given the app's process model (spawning tugcast/tugcode/tmux as children, mounting WKWebView with full filesystem access for the dev source tree), sandboxing would require substantial entitlement plumbing without obvious benefit. Out of scope for Phase 1; may be revisited if/when Mac App Store distribution becomes interesting.
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- An active Apple Developer Program membership with a Developer ID Application certificate provisioned in the user's login keychain. Required for Step 3 (signing) and Step 4 (notarization). The user has acquired this; the setup script is what consumes it.
+##### Apple developer infrastructure (one-time setup — COMPLETED 2026-05-25) {#apple-prereqs}
+
+The following five steps must be completed once before Step 3 and Step 4 are executable. They have been completed by the user; the ground-truth values are recorded here so future maintenance work has them.
+
+1. **Apple Developer Program membership.** Active. Apple ID: the user's `kocienda@mac.com`. $99/year subscription. ✅
+2. **Developer ID Application certificate.** Created via Xcode → Settings → Accounts → (team) → Manage Certificates → "+" → "Developer ID Application". Xcode generates the CSR, uploads, downloads, and installs the cert + private key in the user's login keychain in a single click — no manual CSR plumbing needed. ✅
+3. **Team ID captured.** `Z67582R5Y8`. Visible at developer.apple.com → Membership Details, also in Keychain Access by inspecting the new certificate's Subject Name `OU` field. Used by `notarytool`, by `codesign` when selecting the identity (`Developer ID Application: <Name> (Z67582R5Y8)`), and by future scripts that need to identify the signing team. ✅
+4. **App-specific password generated.** Created at appleid.apple.com → Sign-In and Security → App-Specific Passwords → Generate, labeled `Tug notarization`. Used solely as input to step 5; never referenced after that. ✅ (the password itself is *not* recorded in this plan — it lives in the user's login keychain via step 5).
+5. **notarytool keychain profile stored.** Profile name: `tug-notary`. Created via:
+   ```bash
+   xcrun notarytool store-credentials tug-notary \
+       --apple-id "kocienda@mac.com" \
+       --team-id "Z67582R5Y8" \
+       --password "<app-specific-password>"
+   ```
+   Verified working: `xcrun notarytool history --keychain-profile tug-notary` returns `No submission history.` (success, not auth error). ✅
+
+All Step 3/4 scripts in this plan reference `--keychain-profile tug-notary` rather than passing credentials inline. If the profile is ever deleted or the underlying password rotated, repeat steps 4-5.
+
+##### Runtime/build prerequisites {#runtime-prereqs}
+
 - `notarytool` (built into Xcode Command Line Tools, available as `xcrun notarytool`). Required for release notarization.
-- Existing `tugrust/scripts/build-app.sh` with its `--skip-sign --skip-notarize` flags (already plumbed; Step 3/4 fills in the body).
+- `xcrun stapler` (Xcode Command Line Tools). Required for stapling notarization tickets.
+- Existing `tugrust/scripts/build-app.sh` with its `--skip-sign --skip-notarize` flags (already plumbed; Step 3/4 fills in the body, replacing the current `--deep` signing with inside-out signing).
 - Existing `tugutil-core/src/worktree.rs` worktree machinery (already in place; the multi-instance story benefits from it but does not extend it).
 - `dirs` crate (already a workspace dep) for `data_dir()` resolution.
 - `serde_json` (already a workspace dep) for the registry file format.
-- `fs2` or equivalent for cross-platform `flock` on the registry file. Currently not in the workspace; Step 9 adds it or uses a hand-rolled `fcntl` wrapper.
+- `fs2` or equivalent for cross-platform `flock` on the registry file. Currently not in the workspace; Step 11 adds it or uses a hand-rolled `fcntl` wrapper.
 
 #### Constraints {#constraints}
 
@@ -130,9 +162,9 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
 - Atomic rename: write `tug-instances.json.tmp`, then `rename(2)`. No locking, naturally atomic, but read-modify-write requires re-reading after acquiring an exclusive temp file.
 - Both: `flock` to serialize, atomic rename inside the locked section to survive crashes mid-write.
 
-**Plan to resolve:** Default to `flock + atomic rename` in Step 9 unless empirical testing shows the lock contention is meaningful. The cost of "both" is one extra rename per launch — negligible.
+**Plan to resolve:** Default to `flock + atomic rename` in Step 11 unless empirical testing shows the lock contention is meaningful. The cost of "both" is one extra rename per launch — negligible.
 
-**Resolution:** DEFERRED to Step 9 implementation. Will pick at code-time based on whether `fs2` is acceptable as a new workspace dep.
+**Resolution:** DEFERRED to Step 11 implementation. Will pick at code-time based on whether `fs2` is acceptable as a new workspace dep.
 
 #### [Q02] Icon design specifics (DEFERRED) {#q02-icon-design}
 
@@ -165,9 +197,10 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
 | Port hash collisions in practice | low | low | Walk-on-collision with up to 32 retries; registry file ensures discovered ports survive across launches | Walk depth >4 observed in real use |
 | Registry file corruption | med | low | flock + atomic rename + JSON parse failure recovery (re-init to empty); stale PID pruning on every read | One corruption event |
 | AX permission proliferation user-hostile | med | med | Document the cost in plan and README; investigate `xattr`-based grant migration in follow-on if it becomes painful | User explicitly complains; >10 branches with grants |
-| Developer ID cert expiration | high | low | One-year renewal cycle is a standard ops task; calendared independently | Cert within 60 days of expiration |
+| Developer ID cert expiration | high | low | Five-year renewal cycle (Developer ID Application certs) is a standard ops task; calendared independently | Cert within 60 days of expiration |
 | Legacy ~/.tugbank.db users without production-main bundle | med | low | Migration triggers on first launch of `(production, main)` only; users without that bundle keep using the legacy file until they install one | User reports "my data didn't migrate" |
 | LaunchServices bundle-ID cache stale | low | med | `lsregister -kill -r -domain local -domain system -domain user` documented as a known reset command | Newly-built bundle doesn't show up in `mdfind` |
+| First hardened-runtime build surfaces unforeseen entitlement gaps | med | high | Today's local `Tug Dev` cert does not enforce hardened runtime; flipping `--options runtime` on for the first time is likely to expose missing entitlements (WKWebView XPC, NSXPCConnection, mach lookups, library validation). Step 3 sequences a debug build *before* notarization so issues surface locally and can be iterated without a 30-min notary round-trip. | First debug build with hardened runtime crashes at launch |
 
 **Risk R01: Tugbank migration data loss** {#r01-tugbank-migration}
 
@@ -196,6 +229,15 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
   - Registry file records the actual claimed port. On subsequent launch of the same identity, prefer the previously-claimed port if free.
   - If the entire window is exhausted, fall back to OS-ephemeral (`bind` to port 0) and record in registry.
 - **Residual risk:** External tools that assume a fixed port can't muscle-memory the address. `tugutil tell` reads the registry, so the user-facing CLI is unaffected.
+
+**Risk R09: First hardened-runtime build surfaces unforeseen entitlement gaps** {#r09-hardened-runtime-debug}
+
+- **Risk:** Today's local `Tug Dev` self-signed cert does *not* enable hardened runtime (`codesign --options runtime`). Switching to Developer ID signing + hardened runtime in Step 3 is the first time the running app is constrained by the hardened runtime sandbox. Things that worked under the permissive default may break: dlopen() of helper libraries, NSXPCConnection to unsigned daemons, `mach_lookup` to legacy bootstrap services, JIT in unexpected places. The failure mode is often a silent process exit at launch with a Console message like `<binary> exited due to code signing error`.
+- **Mitigation:**
+  - Step 3 explicitly sequences a **debug build with hardened runtime** *before* Step 4 (notarization). This means entitlement gaps surface locally with no 30-min notary round-trip; the user iterates by inspecting `log show --predicate 'subsystem == "com.apple.codesigning"' --last 5m` and adding entitlements until the app boots clean.
+  - The plan's reference entitlements (`Tug.entitlements` minimal + `tugcode.entitlements` permissive) are starting points based on research, not guarantees. Step 3 budget includes empirical iteration.
+  - Library validation (`disable-library-validation`) is in the bun entitlements set already and would catch the most common "dlopen of unsigned dylib" case for tugcode. The outer app does *not* get this entitlement; if WKWebView surprises us by needing it, that's a discovery for Step 3.
+- **Residual risk:** Some entitlement issue surfaces only under notarized + Gatekeeper conditions (not under local launch). The Step 4 checkpoint includes `spctl --assess` against a freshly-quarantined copy of the bundle to catch this before declaring victory.
 
 ---
 
@@ -346,18 +388,20 @@ Assignment happens via an xcodebuild build-phase script that writes `CFBundleIde
 
 #### [D11] Apple Developer ID Application signing + notarization for release (DECIDED) {#d11-apple-signing}
 
-**Decision:** All builds (debug and release) sign with the user's Apple Developer ID Application certificate. The local `Tug Dev` identity (from `setup-dev-signing.sh`) is retired. Release builds additionally notarize via `xcrun notarytool submit --wait`; debug builds skip notarization. The certificate is stored in the user's login keychain; `notarytool` credentials are stored via `notarytool store-credentials` once and referenced by keychain profile name thereafter.
+**Decision:** All builds (debug and release) sign with the user's Apple Developer ID Application certificate, with hardened runtime enabled (`--options runtime`) and secure timestamps (`--timestamp`). The local `Tug Dev` identity (from `setup-dev-signing.sh`) is retired and its openssl provisioning code deleted. Release builds additionally notarize via `xcrun notarytool submit --keychain-profile tug-notary --wait` and staple via `xcrun stapler staple`. Debug builds skip notarization. The certificate is stored in the user's login keychain; `notarytool` credentials are stored once via `xcrun notarytool store-credentials tug-notary` and referenced by profile name in all scripts. **No App ID registration on developer.apple.com is required** for any bundle ID variant — see #non-goals.
 
 **Rationale:**
 - Developer ID certs have a stable designated requirement across rebuilds (signed by an Apple intermediate). TCC grants survive rebuilds of the same bundle ID — the daily-iteration case.
 - Distribution requires notarization on macOS 10.15+. Folding it in now means no separate signing-modernization plan later.
 - The existing `code-sign-fingerprint` DR drift detection in the harness becomes belt-and-suspenders rather than load-bearing — still useful as a sanity check.
+- The keychain-profile pattern keeps the app-specific password out of command history, env files, and CI logs.
 
 **Implications:**
-- The `setup-dev-signing.sh` script is rewritten to register the user's Developer ID cert (or instruct on doing so manually) rather than generate a local one. The script no longer creates a private key.
-- `build-app.sh` gains `--notarize` flag (defaults to off; CI/release flow opts in).
+- The `setup-dev-signing.sh` script is rewritten to verify the Developer ID cert is present (or instruct on Xcode setup) rather than generate a local one. The script no longer creates private keys or invokes openssl — ~85 lines of code deleted.
+- `build-app.sh` gains a `--notarize` flag (defaults to off; CI/release flow opts in).
 - The harness's `code-sign-fingerprint` sentinel file regenerates on first build under the new identity; the drift-detection logic continues to work unchanged.
-- Notarization adds 30-120s to release builds. Debug iteration is unaffected.
+- Notarization typically adds 5-15 minutes to release builds (Apple notary service is the rate-limit). Debug iteration is unaffected.
+- The per-binary-entitlements model from [D16] is what makes Developer ID + hardened runtime correct here; the two decisions are paired and must land together.
 
 #### [D12] TUG_INSTANCE_ID env var as runtime identity carrier (DECIDED) {#d12-instance-env-var}
 
@@ -410,6 +454,33 @@ Assignment happens via an xcodebuild build-phase script that writes `CFBundleIde
 **Implications:**
 - Build-phase script needs `iconutil` or equivalent to composite text onto an `.icns`. Reasonable; `sips` and `iconutil` are macOS-standard tools.
 - Artwork is deferred to [Q02]; mechanism lands in Step 5.
+
+#### [D16] Per-binary entitlements; inside-out signing replaces --deep (DECIDED) {#d16-per-binary-entitlements}
+
+**Decision:** Two entitlements files ship with the bundle:
+
+- `tugapp/Tug.entitlements` (existing) — applied to the outer Swift `Tug` binary only. Carries the minimum entitlements needed for the host process (currently `com.apple.security.cs.allow-unsigned-executable-memory`; may be narrowed or expanded after Step 3 empirical iteration).
+- `tugapp/tugcode.entitlements` (new) — applied to the bun-compiled `tugcode` binary only. Carries the bun-required permissive set per Bun's official codesigning guide:
+  - `com.apple.security.cs.allow-jit`
+  - `com.apple.security.cs.allow-unsigned-executable-memory`
+  - `com.apple.security.cs.disable-executable-page-protection`
+  - `com.apple.security.cs.allow-dyld-environment-variables`
+  - `com.apple.security.cs.disable-library-validation`
+
+The Rust binaries (`tugcast`, `tugutil`, `tugexec`, `tugrelaunch`, `tugbank`) sign with `--options runtime --timestamp` but no `--entitlements` flag — they pick up the default hardened-runtime restrictions, which is what we want for plain native code with no JIT.
+
+Signing happens inside-out via a new `tugrust/scripts/sign-bundle.sh`: Rust helpers first, then `tugcode` with its permissive entitlements, then the outer `.app` with `Tug.entitlements`. `codesign --deep` for signing is forbidden in this codebase going forward (still allowed in verification commands).
+
+**Rationale:**
+- `--deep` applies the same options/entitlements to every nested binary. Giving every Rust binary the permissive bun set is a measurable security regression; under-permissive-ing tugcode causes JIT crashes at startup. There is no way to make `--deep` correct for this bundle shape.
+- The outer Tug.app does *not* host JavaScript JIT in its process — WKWebView runs JS in a separate XPC helper (`com.apple.WebKit.WebContent`) provided by the OS. So the outer app does not need the bun permissive set.
+- Apple's official guidance (as of macOS 13) is inside-out signing for any bundle with heterogeneous nested binaries.
+
+**Implications:**
+- The current `build-app.sh` `codesign --deep --force --verify --verbose --sign "..."` invocation is replaced wholesale by a call into `sign-bundle.sh`.
+- The harness's `code-sign-fingerprint` drift detection (`Justfile:571`) keeps working because the outer app's DR is unchanged in shape; only the *identity* used for signing has shifted from `Tug Dev` to `Developer ID Application: <Name> (Z67582R5Y8)`. Step 3 regenerates the sentinel file.
+- Future binaries added to the bundle (Sparkle.framework for auto-updates, etc.) need explicit entries in `sign-bundle.sh`. The script is the single source of truth; adding a binary without updating it produces a notarization failure.
+- The `--entitlements` flag is per-`codesign`-invocation; there's no way to declare entitlements once and have them apply to all subsequent signings. The inside-out script enumerates explicitly.
 
 ---
 
@@ -480,26 +551,60 @@ Read path: `flock` shared, parse JSON, walk entries, for each entry check `kill(
 
 Write path: `flock` exclusive, read current, prune dead entries, modify, write to `tug-instances.json.tmp`, fsync, `rename(2)`, release lock.
 
-#### Code-signing flow under Developer ID {#signing-flow}
+#### Code-signing flow under Developer ID (inside-out) {#signing-flow}
+
+The Developer ID identity is referenced consistently as `Developer ID Application: <Name> (Z67582R5Y8)` (Team ID `Z67582R5Y8`). `notarytool` uses the stored keychain profile `tug-notary` for credentials.
 
 ```
 Step (a): Build produces unsigned Tug.app at $BUILT_PRODUCTS_DIR/Tug.app
-Step (b): Build-phase script writes BUILD_PROFILE/BUILD_BRANCH/BUILD_SOURCE_TREE
-          to Info.plist, then writes CFBundleIdentifier (see #bundle-id-assignment)
-Step (c): codesign --force --options runtime \
-              --sign "Developer ID Application: <Name> (<TeamID>)" \
-              --entitlements tugapp/Tug.entitlements \
-              --timestamp \
-              Tug.app
-Step (d): (release only) zip and submit:
+          with all binaries already copied into Contents/MacOS/.
+Step (b): Build-phase scripts write BUILD_PROFILE / BUILD_BRANCH /
+          BUILD_SOURCE_TREE / BUILD_COMMIT to Info.plist, then assign
+          CFBundleIdentifier (see #bundle-id-assignment).
+
+Step (c): Inside-out signing via tugrust/scripts/sign-bundle.sh:
+
+   IDENTITY="Developer ID Application: <Name> (Z67582R5Y8)"
+   COMMON="--force --options runtime --timestamp --sign \"$IDENTITY\""
+
+   # (c.1) Rust helper binaries — no custom entitlements, just hardened
+   #       runtime. Sign each individually; --deep is forbidden.
+   for bin in tugcast tugutil tugexec tugrelaunch tugbank; do
+       eval codesign $COMMON "\"$APP/Contents/MacOS/$bin\""
+   done
+
+   # (c.2) bun-compiled tugcode — permissive entitlements per [D16].
+   eval codesign $COMMON \
+       --entitlements "\"$REPO/tugapp/tugcode.entitlements\"" \
+       "\"$APP/Contents/MacOS/tugcode\""
+
+   # (c.3) Future frameworks would sign here, before the outer app:
+   # eval codesign $COMMON "\"$APP/Contents/Frameworks/Sparkle.framework\""
+
+   # (c.4) Outer Tug binary + bundle wrapper — minimal entitlements.
+   eval codesign $COMMON \
+       --entitlements "\"$REPO/tugapp/Tug.entitlements\"" \
+       "\"$APP\""
+
+Step (d): Verify signing locally (every build):
+            codesign --verify --deep --strict --verbose=2 Tug.app
+            codesign -d --verbose=4 Tug.app  # human-readable summary
+
+Step (e): (release only) Notarize and staple:
             ditto -c -k --keepParent Tug.app Tug.zip
-            xcrun notarytool submit Tug.zip --keychain-profile "tug-notary" --wait
+            xcrun notarytool submit Tug.zip \
+                --keychain-profile tug-notary \
+                --wait
             xcrun stapler staple Tug.app
-Step (e): codesign --verify --deep --strict Tug.app
-Step (f): spctl --assess --type execute --verbose Tug.app
+
+Step (f): (release only) Final Gatekeeper assessment:
+            spctl --assess --type execute --verbose Tug.app
+            xcrun stapler validate Tug.app
 ```
 
-Steps (a)-(c) happen on every build. Steps (d)-(f) only on release builds invoked via `build-app.sh --notarize`.
+Steps (a)-(d) happen on every build (debug and release). Steps (e)-(f) only on release builds invoked via `build-app.sh --notarize`.
+
+`--deep` is fine in Step (d) (it's verification, not signing) — it walks the entire bundle and verifies every nested binary's signature. It is forbidden in Step (c).
 
 ---
 
@@ -645,7 +750,9 @@ No new configuration files. All configuration is via:
 | `tugrust/scripts/capture-build-info.sh` | xcodebuild build-phase script: writes BuildProfile/BuildBranch/BuildSourceTree/BuildCommit into Info.plist. |
 | `tugrust/scripts/assign-bundle-id.sh` | xcodebuild build-phase script: writes CFBundleIdentifier per [D10]. |
 | `tugrust/scripts/select-app-icon.sh` | xcodebuild build-phase script: selects/composites the icon per [D15]. |
-| `tugrust/scripts/notarize.sh` | Wraps `xcrun notarytool submit --wait` + `xcrun stapler staple`. |
+| `tugrust/scripts/sign-bundle.sh` | Inside-out signing helper per [D16]. Replaces the `--deep` invocation in current build-app.sh. Used by both debug and release paths. |
+| `tugrust/scripts/notarize.sh` | Wraps `ditto`-pack + `xcrun notarytool submit --keychain-profile tug-notary --wait` + `xcrun stapler staple` + `spctl --assess` verification. Release-only. |
+| `tugapp/tugcode.entitlements` | New entitlements file applied only to the bun-compiled `tugcode` binary. Contains the five bun-required permissive entitlements per [D16]. |
 | `tugapp/Resources/AppIcon-dev.icns` | Development base icon (placeholder until [Q02] resolves). |
 
 #### Symbols to add / modify {#symbols}
@@ -757,35 +864,63 @@ No new configuration files. All configuration is via:
 
 ---
 
-#### Step 3: Apple Developer ID Application signing {#step-3}
+#### Step 3: Developer ID signing — inside-out, per-binary entitlements {#step-3}
 
 **Depends on:** #step-2
 
-**Commit:** `feat(signing): use Apple Developer ID Application certificate for all builds`
+**Commit:** `feat(signing): Developer ID + hardened runtime + inside-out signing`
 
-**References:** [D11], (#signing-flow)
+**References:** [D11] [D16], Risk R09, (#signing-flow, #apple-prereqs)
+
+**Prerequisites:** All five Apple-setup steps under #apple-prereqs are COMPLETED. Team ID `Z67582R5Y8`; keychain profile `tug-notary`; Developer ID Application cert in login keychain.
 
 **Artifacts:**
-- `scripts/setup-dev-signing.sh` — rewritten to provision Developer ID cert (or instruct on doing so) rather than generate a local one.
-- `tugrust/scripts/build-app.sh` — updated to use Developer ID identity.
-- `tugapp/Tug.entitlements` — adds `com.apple.security.cs.allow-jit` etc. as required for hardened runtime if not already present.
-- `Justfile` — `setup-dev-signing` recipe updated.
+- `scripts/setup-dev-signing.sh` — rewritten to **verify** the Developer ID Application cert is present and to **retire** the self-signed `Tug Dev` flow (removes the openssl plumbing from `scripts/setup-dev-signing.sh:73-107`).
+- `tugrust/scripts/sign-bundle.sh` — new inside-out signing helper per #signing-flow.
+- `tugrust/scripts/build-app.sh` — replaces its `codesign --deep ...` block (lines 141-152) with a call into `sign-bundle.sh`. Adds `--options runtime` and `--timestamp`. Reads the identity from `$DEVELOPER_ID_NAME` env var or derives via `security find-identity -v -p codesigning | grep "Developer ID Application: " | head -1` if unset.
+- `tugapp/tugcode.entitlements` — new file with the five bun-required permissive entitlements per [D16].
+- `tugapp/Tug.entitlements` — unchanged at first (keep `com.apple.security.cs.allow-unsigned-executable-memory` as-is); iterate empirically per Risk R09 if hardened runtime crashes the app at launch.
+- `Justfile` — `setup-dev-signing` recipe updated; the harness's `.tugtool/code-sign-fingerprint` sentinel refreshes on first run under the new identity.
 
 **Tasks:**
-- [ ] Rewrite `setup-dev-signing.sh` to verify the Developer ID Application cert is in the login keychain (`security find-identity -v -p codesigning | grep "Developer ID Application"`); if not, print instructions for downloading from developer.apple.com.
-- [ ] Update `build-app.sh` `--sign` path to use `Developer ID Application: <Name> (<TeamID>)` instead of `Tug Dev`.
-- [ ] Add `--options runtime` to the codesign invocation (hardened runtime is required for notarization).
-- [ ] Update `tugapp/Tug.entitlements` for hardened runtime compatibility (JIT, etc. — only what the app actually needs).
-- [ ] Refresh the `.tugtool/code-sign-fingerprint` sentinel against the new identity.
+- [ ] Write `tugapp/tugcode.entitlements`:
+      ```xml
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+          <key>com.apple.security.cs.allow-jit</key>
+          <true/>
+          <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+          <true/>
+          <key>com.apple.security.cs.disable-executable-page-protection</key>
+          <true/>
+          <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+          <true/>
+          <key>com.apple.security.cs.disable-library-validation</key>
+          <true/>
+      </dict>
+      </plist>
+      ```
+- [ ] Write `tugrust/scripts/sign-bundle.sh` per #signing-flow Step (c). Takes `APP_PATH` and `IDENTITY` as args (or env vars). Signs Rust binaries first (no entitlements), then `tugcode` (permissive entitlements), then the outer `.app` (`Tug.entitlements`). Always uses `--force --options runtime --timestamp`. Never uses `--deep`.
+- [ ] Update `tugrust/scripts/build-app.sh`: delete lines 141-152 (the `--deep` codesign block) and replace with `bash "$SCRIPT_DIR/sign-bundle.sh" "$STAGING_APP" "$DEVELOPER_ID_NAME"`. Keep the `--skip-sign` flag as a developer escape hatch.
+- [ ] Rewrite `scripts/setup-dev-signing.sh`: replace the 115-line openssl `Tug Dev` self-sign provisioning with a ~30-line check that runs `security find-identity -v -p codesigning`, greps for `Developer ID Application`, and either (a) prints success or (b) prints a clear "open Xcode → Settings → Accounts → Manage Certificates → +Developer ID Application" message with a URL. No openssl, no .p12 plumbing.
+- [ ] Update `Justfile`'s `app`, `launch`, and `build-app` recipes to set `DEVELOPER_ID_NAME` (auto-detect if unset) before calling the signing path.
+- [ ] **Empirical iteration loop for Risk R09**: do a debug build with the new inside-out script + hardened runtime. If the app crashes at launch, inspect `log show --predicate 'subsystem == "com.apple.codesigning"' --last 5m` for entitlement violations. Add missing entitlements to `Tug.entitlements` (NOT `tugcode.entitlements` — the outer app is the one launching). Iterate until clean launch.
+- [ ] Refresh the `.tugtool/code-sign-fingerprint` sentinel: rebuild, regenerate the sentinel via the harness's existing logic, confirm the harness DR drift detection passes against the new identity.
 
 **Tests:**
-- [ ] `codesign --verify --deep --strict Tug.app` returns 0.
-- [ ] `codesign -d --verbose=4 Tug.app` shows `Developer ID Application` as the signing authority.
-- [ ] The existing harness DR drift detection (`Justfile:571`) still passes after rebuild.
+- [ ] `codesign --verify --deep --strict --verbose=2 Tug.app` returns 0 (verification uses `--deep`; signing does not).
+- [ ] `codesign -d --verbose=4 Tug.app/Contents/MacOS/Tug` shows the outer app signed by `Developer ID Application: ... (Z67582R5Y8)` with `Authority=Developer ID Certification Authority` and `TeamIdentifier=Z67582R5Y8`.
+- [ ] `codesign -d --entitlements - --xml Tug.app/Contents/MacOS/tugcode` includes all five bun entitlements.
+- [ ] `codesign -d --entitlements - --xml Tug.app/Contents/MacOS/tugcast` shows NO `allow-jit` (Rust binaries get default hardened runtime, no extras).
+- [ ] The existing harness DR drift detection (`Justfile:571`) passes after rebuild.
 
 **Checkpoint:**
-- [ ] A built Tug.app passes `codesign --verify --deep --strict` with no errors.
-- [ ] `just app-test harness-smoke/smoke.test.ts` passes (AX permission still works under the new identity).
+- [ ] A built debug Tug.app launches without crashing under hardened runtime.
+- [ ] `codesign --verify --deep --strict Tug.app` returns 0.
+- [ ] `just app-test harness-smoke/smoke.test.ts` passes (AX permission still works under the Developer ID identity).
+- [ ] No `tugcode: invalid signature` or `dyld: code signature` messages in Console during launch.
 
 ---
 
@@ -793,27 +928,64 @@ No new configuration files. All configuration is via:
 
 **Depends on:** #step-3
 
-**Commit:** `feat(signing): notarize release builds via notarytool`
+**Commit:** `feat(signing): notarize release builds via notarytool + staple`
 
-**References:** [D11], Risk R02, (#signing-flow)
+**References:** [D11], Risk R02, (#signing-flow, #apple-prereqs)
+
+**Prerequisites:** The keychain profile `tug-notary` exists and validates (see #apple-prereqs step 5). Verify via `xcrun notarytool history --keychain-profile tug-notary` — should return `No submission history.` or a list of prior submissions; not an authentication error.
 
 **Artifacts:**
-- `tugrust/scripts/notarize.sh` — new helper script.
-- `tugrust/scripts/build-app.sh` — `--notarize` flag wires through.
-- `Justfile` — new `notarize` recipe or extension to `build-app`.
+- `tugrust/scripts/notarize.sh` — new helper script (called from `build-app.sh` when `--notarize` is set).
+- `tugrust/scripts/build-app.sh` — `--notarize` flag wires through to `notarize.sh`; current env-var auth path (`APPLE_ID`/`TEAM_ID`/`NOTARY_PASSWORD` at lines 157-170) is removed in favor of the stored keychain profile.
+- `Justfile` — optional new `notarize` recipe; the default `build-app` does NOT notarize (debug iteration speed); explicit `just notarize` or `build-app.sh --notarize` opts in.
 
 **Tasks:**
-- [ ] Write `notarize.sh`: `ditto -c -k --keepParent Tug.app Tug.zip`, `xcrun notarytool submit --keychain-profile "tug-notary" --wait Tug.zip`, capture submission UUID, check status, `xcrun stapler staple Tug.app` on success.
-- [ ] Add `--notarize` flag to `build-app.sh`; when set, runs `notarize.sh` after signing.
-- [ ] Add `setup-notary-credentials.sh` (or inline in setup-dev-signing.sh): walks the user through `xcrun notarytool store-credentials tug-notary --apple-id ... --team-id ... --password ...`.
-- [ ] Document the 30-min ceiling and the recovery path (`xcrun notarytool log <uuid>`) in the script's error output.
+- [ ] Write `tugrust/scripts/notarize.sh`. Shape:
+      ```bash
+      #!/usr/bin/env bash
+      set -euo pipefail
+      APP="$1"
+      ZIP="${APP%.app}.zip"
+      ditto -c -k --keepParent "$APP" "$ZIP"
+      echo "==> Submitting to Apple notary service (this can take 5-30 min)..."
+      SUBMIT_LOG="$(mktemp)"
+      if ! xcrun notarytool submit "$ZIP" \
+              --keychain-profile tug-notary \
+              --wait \
+              --timeout 30m 2>&1 | tee "$SUBMIT_LOG"; then
+          echo "==> Notarization FAILED. Submission log:"
+          UUID="$(grep -oE 'id: [a-f0-9-]+' "$SUBMIT_LOG" | head -1 | cut -d' ' -f2)"
+          if [[ -n "$UUID" ]]; then
+              xcrun notarytool log "$UUID" --keychain-profile tug-notary
+          fi
+          rm -f "$ZIP" "$SUBMIT_LOG"
+          exit 1
+      fi
+      rm -f "$SUBMIT_LOG"
+      echo "==> Stapling ticket to $APP..."
+      xcrun stapler staple "$APP"
+      echo "==> Validating staple..."
+      xcrun stapler validate "$APP"
+      echo "==> Verifying Gatekeeper acceptance..."
+      spctl --assess --type execute --verbose "$APP"
+      # Re-zip with stapled bundle (the original submission zip is not stapled).
+      rm -f "$ZIP"
+      ditto -c -k --keepParent "$APP" "$ZIP"
+      echo "==> Notarized + stapled: $APP (distribution zip at $ZIP)"
+      ```
+- [ ] Update `tugrust/scripts/build-app.sh`: delete the env-var-auth notarization block (lines 154-175) and replace with `[ "$SKIP_NOTARIZE" = false ] && bash "$SCRIPT_DIR/notarize.sh" "$STAGING_APP"`. The `--skip-notarize` flag remains as a debug-iteration escape hatch.
+- [ ] Document the 30-min `--timeout` ceiling and the recovery path (`xcrun notarytool log <uuid> --keychain-profile tug-notary`) in the script's error output. Already in the `notarize.sh` shape above.
+- [ ] Document the Gatekeeper quarantine test: copy the notarized bundle to a fresh location, run `xattr -w com.apple.quarantine '0181;00000000;;' <copy>`, then `open <copy>`. macOS should accept the bundle without "downloaded from internet, can't verify" dialog. This is the canonical "would a real user be able to launch this from a downloaded DMG" test.
 
 **Tests:**
 - [ ] `xcrun stapler validate Tug.app` returns valid after notarization.
-- [ ] `spctl --assess --type execute --verbose Tug.app` shows `accepted` and `Notarized Developer ID`.
+- [ ] `spctl --assess --type execute --verbose Tug.app` shows `accepted` and `source=Notarized Developer ID`.
+- [ ] Quarantine launch test (above) succeeds.
 
 **Checkpoint:**
 - [ ] A release build of `(production, main)` passes notarization end-to-end on a real network.
+- [ ] The notarization round-trip completes within the 30-min `--timeout` ceiling (typically 5-15 min).
+- [ ] A quarantined copy of the notarized bundle launches cleanly on the user's own Mac without security dialogs.
 
 ---
 
@@ -848,20 +1020,24 @@ No new configuration files. All configuration is via:
 
 **Commit:** `N/A (verification only)`
 
-**References:** [D01] [D02] [D03] [D10] [D11] [D15], (#success-criteria)
+**References:** [D01] [D02] [D03] [D10] [D11] [D15] [D16], Risk R09, (#success-criteria)
 
 **Tasks:**
-- [ ] Build `(production, main)` from `main`; verify Info.plist, bundle ID, signing identity, icon.
-- [ ] Build `(development, main)` from `main`; verify same.
+- [ ] Build `(production, main)` from `main`; verify Info.plist, bundle ID, signing identity, icon. Notarize this one (Step 4 path) since it's the distribution candidate.
+- [ ] Build `(development, main)` from `main`; verify same (no notarization).
 - [ ] Switch to a test branch; build `(development, test-branch)`; verify the bundle ID is `dev.tugtool.app.development-test-branch` and the dock icon includes the branch overlay.
 - [ ] Verify all three bundles install/coexist; LaunchServices sees three distinct apps.
+- [ ] Spot-check inside-out signing on each: `codesign -d --entitlements - --xml <bundle>/Contents/MacOS/tugcode` contains the five bun entitlements; `codesign -d --entitlements - --xml <bundle>/Contents/MacOS/tugcast` does not.
 
 **Tests:**
-- [ ] All three bundles pass `codesign --verify --deep --strict`.
+- [ ] All three bundles pass `codesign --verify --deep --strict --verbose=2` (verification, not signing).
 - [ ] `mdfind "kMDItemCFBundleIdentifier == 'dev.tugtool.app.*'"` finds all expected bundles.
+- [ ] The notarized `(production, main)` bundle passes `xcrun stapler validate` and `spctl --assess --type execute`.
+- [ ] All three bundles pass the quarantine launch test from Step 4.
 
 **Checkpoint:**
 - [ ] Manual launch: each of the three bundles opens, dock shows three distinct icons.
+- [ ] No `code signing error` messages in Console for any of the three launches.
 
 ---
 
