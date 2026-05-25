@@ -6540,7 +6540,7 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 | Cohort | Tools | Closing slice | Status |
 |---|---|---|---|
 | **A — in-invocation async** (`task_notification` fires on the wire) | Monitor; Bash `run_in_background:true` (idle); Task `run_in_background:true` (idle) | Slice 1 (Steps 1-7) — wake bracket | **Reducer + tugcode shipped; phantom user bubble fixed by Slice 1c-a** |
-| **B — harness re-invoke** (no signal in tugcode spawn mode) | ScheduleWakeup; CronCreate | Slice 1b (Steps 8-11) — tugcode shadow scheduler via croner | **Code shipped; pending user-driven manual verification** |
+| **B — harness fires in stream-json mode** (signal: a fresh `system/init` event — see [wake-investigation-findings.md](./wake-investigation-findings.md)) | ScheduleWakeup; CronCreate | Slice 1b-redo (Step 16) — tugcode re-init detector | **In progress (shadow scheduler retracted 2026-05-25)** |
 | **C — not wake sources** | PushNotification (sync outbound); TaskOutput (blocking wait); Task/Bash `run_in_background:true` with active poll | n/a | No fix needed |
 | **Phantom user bubble** (committed wake's empty-text marker renders as a "You" row) | Affects every Cohort A and Cohort B wake | Slice 1c-a (Steps 12-13) — `TideTranscriptDataSource` single-row | **Shipped** (commit `19c8cb58`) |
 
@@ -6557,18 +6557,18 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 
 Expected after wake fires: the wake turn paints in the transcript, NO user bubble appears for the wake.
 
-*Cohort B (closed by Slice 1b — tugcode shadow scheduler):*
+*Cohort B (closed by Slice 1b-redo — tugcode re-init detector):*
 1. `Use ScheduleWakeup to wake yourself in 60 seconds with reason 'X'. When the wake fires, report back.`
 2. `Use CronCreate to schedule a one-shot job firing in 1 minute that prompts you to report 'X'.`
 3. (Recurring) `Use CronCreate with cron "* * * * *" and recurring:true so it fires every minute. After it fires twice, use CronDelete to stop it.`
 
-Expected after Slice 1b: wake turn paints just like Cohort A; CronDelete cancels the shadow job. Implementation: `tugcode/src/scheduler.ts` (`WakeScheduler`) + `tugcode/src/session.ts` (`handleSchedulingToolUse`, `handleCronCreateResult`, double-fire safety hook in `handleTaskNotification`).
+Expected after Slice 1b-redo: claude's harness fires its own timer (between turns, with documented jitter); when the wake fires, claude emits `system/init` on its stdout and then streams the assistant turn. tugcode detects the second-and-later `system/init` and opens the same `wake_started` bracket Cohort A uses. CronDelete cancels the harness's own scheduled job — tugcode has no shadow to keep in sync. Implementation: `tugcode/src/session.ts` re-init branch in `handleClaudeLine` (~30 LOC + ~3 tests). See [wake-investigation-findings.md](./wake-investigation-findings.md).
 
 **Reference captures:** `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/` holds raw stream-json captures for all three cohorts. See that directory's README for the per-file taxonomy.
 
 **Reference session (Cohort A symptom):** `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/56cce4fe-d01d-470b-ae0a-7c3695a14061.jsonl` shows ScheduleWakeup's harness-reinvoke shape in `sdk-cli` mode (lines 26-28: `queue-operation` enqueue → synthetic user-message with `isMeta:true`). The same shape does NOT surface in tugcode's `--input-format=stream-json` spawn — confirmed empirically by `probes/probe-sw-streamio.mjs` (90 s held subprocess; zero output after `result/success`).
 
-**Status (post-Slice 1b code-ship):** the wake bracket, the transcript single-row fix, and the shadow scheduler are all on `main`. The remaining work is end-to-end manual verification of the Cohort B recipes in a live Tide session — the code path itself is exercised by `tugcode/src/__tests__/scheduler*.test.ts` (476+ pure-logic cases pinning each leg of the pipeline).
+**Status (2026-05-25):** wake bracket (Slice 1) and transcript single-row fix (Slice 1c-a) are on `main`. The Slice 1b shadow-scheduler approach (Steps 8-11) shipped but was retracted the same day after [wake-investigation-findings.md](./wake-investigation-findings.md) proved the harness fires its own timers in stream-json mode — running two schedulers in parallel was double-firing wakes (Session 86ae1b78). Slice 1b-redo (Step 16) is the replacement: delete the shadow + add a re-init detector. Manual verification per the recipes above is the gate after Step 16 lands.
 
 ---
 

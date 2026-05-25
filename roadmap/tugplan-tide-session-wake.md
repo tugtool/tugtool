@@ -38,7 +38,7 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 - **Single open-bracket frame on the wire — `turn_complete` is the close.** Spec [#spec-wire-frames] defines only `wake_started`; there is no `wake_complete` frame. claude's normal end-of-turn `result → turn_complete` is the close signal. The reducer extends `handleTurnComplete`'s commit path with one branch: when `phase === "waking"`, the commit also clears `wakeTrigger` and `pendingUserMessage` and transitions to `idle` (parallel to the `streaming → idle` commit). Half the wire frames removed, all the ordering ambiguity gone.
 - **TurnKey minted by the tugdeck store wrapper (`frameToEvent`), not tugcode.** This mirrors the existing replay-event pattern (`reducer.ts:1606-1609` — turnKeys are a per-turn React-key seed that has no meaning outside tugdeck). The `wake_started` wire frame does NOT carry a turnKey; the store wrapper mints one on frame receipt and adds it to the dispatched event.
 - **Reset per-turn telemetry on wake-start via the shared helper.** A wake turn is a real turn for live telemetry — but the per-turn fields (`firstAssistantDeltaAt`, `lastStreamEventAt`, `awaitingApprovalSince`, the interval arrays, etc.) all need resetting at wake-start, exactly the way `handleSend` resets them on user submit. The existing `resetPerTurnTelemetry()` helper at `reducer.ts:1619` is already factored out for this purpose — `handleWakeStarted` calls it. Future fields added to the helper automatically apply to wakes too (no silent regression from manual enumeration drift).
-- **Three slices in this plan, plus Slice 2 deferred.** **Slice 1** — wire + reducer + tests + cohort verification (Cohort A: Monitor / Bash run_in_background idle / Task run_in_background idle). **Slice 1b** — tugcode-owned shadow scheduler via croner closes Cohort B (ScheduleWakeup / CronCreate), wakes flow through the same `wake_started` bracket. **Slice 1c-a** — transcript data source treats wake turns as single-row entries (fixes the phantom user-bubble bug discovered in manual repro). Slices 1 + 1b + 1c-a together close PPF-01 end-to-end. Slice 2 (deferred to a follow-up plan): trigger-aware chrome for wake turns + replay-translator metadata + transcript sequence-model rework (Slice 1c-b plan handoff produced by Step 14).
+- **Three slices in this plan, plus Slice 2 deferred.** **Slice 1** — wire + reducer + tests + cohort verification (Cohort A: Monitor / Bash run_in_background idle / Task run_in_background idle). **Slice 1b** (redo — see Step 16; the original shadow-scheduler approach in Steps 8-11 was SUPERSEDED on 2026-05-25 after [`wake-investigation-findings.md`](./wake-investigation-findings.md) proved claude's harness fires its own timers in stream-json mode) — tugcode detects the harness's re-init signal (a fresh `system/init` after the first one) and opens the same `wake_started` bracket Cohort A uses. **Slice 1c-a** — transcript data source treats wake turns as single-row entries (fixes the phantom user-bubble bug discovered in manual repro). Slices 1 + 1b + 1c-a together close PPF-01 end-to-end. Slice 2 (deferred to a follow-up plan): trigger-aware chrome for wake turns + replay-translator metadata + transcript sequence-model rework (Slice 1c-b plan handoff produced by Step 14).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -93,7 +93,7 @@ PPF-01 entry in [tide-assistant-rendering.md](./tide-assistant-rendering.md) is 
 - Existing replay-bracket machinery (`reducer.ts` `handleReplayStarted`/`handleReplayComplete`, transcript `replaying` phase, JSONL replay translator). This plan re-uses the pattern.
 - `@anthropic-ai/claude-agent-sdk` `SDKTaskNotificationMessage` shape (`sdk.d.ts:1659-1668`). Pinned to the version tugcode currently consumes. (Note: the wire emits at least `tool_use_id` and `usage` beyond what the SDK type declares — see [Q01].)
 - Store-wrapper turnKey-minting machinery (the wrapper that mints `turnKey` for replay events per `reducer.ts:2703-2705`). The new `wake_started` frame consumes the same minting pattern.
-- **Slice 1b only:** `croner` npm package, version `^10.0.1`. MIT, zero deps, Bun >=1.0 supported. Single API for both cron-expression and one-shot-Date scheduling. See [Q04] for the selection rationale.
+- **Slice 1b** (per Step 16) has NO new dependencies. The original Slice 1b plan called for `croner@^10.0.1` to back a shadow scheduler — that approach was superseded ([D07]) and the dep was removed.
 
 #### Constraints {#constraints}
 
@@ -115,11 +115,13 @@ PPF-01 entry in [tide-assistant-rendering.md](./tide-assistant-rendering.md) is 
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Empirical event-shape characterization for spontaneous wake (RESOLVED — three-cohort taxonomy from Step 6 sweep) {#q01-event-shapes}
+#### [Q01] Empirical event-shape characterization for spontaneous wake (RESOLVED — three-cohort taxonomy from Step 6 sweep — partially CORRECTED; see callout) {#q01-event-shapes}
+
+> **⚠️ Step-6 conclusion was wrong for Cohort B.** See [`wake-investigation-findings.md`](./wake-investigation-findings.md) (committed 2026-05-25, hash `c14af8b0`) for definitive longer-hold captures proving the harness DOES fire `ScheduleWakeup` / `CronCreate` timers in stream-json mode. The fire signal on claude's stdout is a fresh `system/init` event, NOT `task_notification`. Step-6's 90-second probe hold was too short to catch the harness's `delaySeconds:N → next-minute-boundary` fire timing. Slice 1b's resolution ([Q04]/[D05] below) was built on the wrong taxonomy and has been **SUPERSEDED** by [D07]. The Cohort A findings remain correct.
 
 **Question:** What wire shape does each async-completion tool produce in tugcode's spawn mode (`claude --output-format=stream-json --input-format=stream-json --verbose --include-partial-messages --permission-mode=bypassPermissions`), and which ones can the wake bracket close?
 
-**Resolution:** RESOLVED via seven empirical captures committed at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/` (Monitor) and `/tmp/tide-cohort-sweep/` (the rest — committed as the Step 6 sweep artifacts). Earlier "strong-evidence by tool semantics" claims were guesses; this resolution corrects them with raw evidence.
+**Resolution:** RESOLVED via seven empirical captures committed at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/` (Monitor) and `/tmp/tide-cohort-sweep/` (the rest — committed as the Step 6 sweep artifacts). Earlier "strong-evidence by tool semantics" claims were guesses; this resolution corrects them with raw evidence. **Cohort B fire signal corrected in `wake-investigation-findings.md` — see callout above.**
 
 **Three cohorts, by what the wire actually emits:**
 
@@ -206,7 +208,9 @@ The Step 5 drift test pins both compile-time (the 4 SDK-declared fields) and run
 
 Step 5 will pin this with a test (`interrupt during wake should commit a partial turn and clear the bracket`).
 
-#### [Q04] How should tugcode close the Cohort B gap (ScheduleWakeup / CronCreate)? (RESOLVED — tugcode-owned shadow scheduler via croner) {#q04-cohort-b-scheduler}
+#### [Q04] How should tugcode close the Cohort B gap (ScheduleWakeup / CronCreate)? (SUPERSEDED by [D07] — see `wake-investigation-findings.md`) {#q04-cohort-b-scheduler}
+
+> **⚠️ SUPERSEDED.** The premise of this question — "the harness re-invoke never fires in tugcode's spawn mode" — was wrong. Longer-hold captures (`tugcode/probes/wake-investigation/capture-*.stdout`, 2026-05-25) prove the harness DOES fire timers in stream-json mode. The fire signal is a fresh `system/init` event on claude's stdout. The shadow-scheduler resolution below was built on the wrong premise and has been retracted; see [D07] for the correct approach (re-init detector). The Slice 1b code (`tugcode/src/scheduler.ts` `WakeScheduler` class, `handleSchedulingToolUse` intercept, croner dep, ~700 LOC + 43 tests) was deleted in commit `<TBD>`. This section is preserved as a historical record of the failed approach.
 
 **Question:** Cohort B (ScheduleWakeup, CronCreate) cannot use the Slice 1 `wake_started` bracket because there is no `task_notification` on the wire — the harness re-invoke never fires in tugcode's spawn mode (proven by `probe-sw-streamio.mjs`). What architecture closes the gap?
 
@@ -361,7 +365,9 @@ The reducer-only approach would have `handleTextDelta` inline the detection: whe
 - Step 3's tugcode detector is the implementation focal point of Slice 1.
 - The reducer is a pure state machine with clean handlers, not a pile of business logic.
 
-#### [D05] tugcode owns a shadow scheduler using croner (DECIDED — Slice 1b) {#d05-tugcode-scheduler}
+#### [D05] tugcode owns a shadow scheduler using croner (SUPERSEDED by [D07]) {#d05-tugcode-scheduler}
+
+> **⚠️ SUPERSEDED.** The shadow scheduler approach was based on the wrong premise (see [Q01] callout). Claude's harness fires its own timers in stream-json mode; tugcode does not need its own scheduler. See [D07] for the correct approach. The text below is preserved as a historical record.
 
 **Decision:** tugcode (Bun/TypeScript) hosts its own scheduler using the croner library. The scheduler intercepts `ScheduleWakeup` and `CronCreate` tool-use events in the stream-json wire, registers a job, and at fire time emits a `wake_started` IPC frame + writes a synthetic `user_message` to claude's stdin.
 
@@ -393,6 +399,26 @@ The reducer-only approach would have `handleTextDelta` inline the detection: whe
 - `numberOfItems()` returns `Σ rowsPerTurn + (inflight ? rowsForInflight : 0) + queuedSends.length` where `rowsPerTurn` is 1 for wake turns, 2 otherwise. Same shape for the inflight half (1 row for an in-flight wake, 2 for a normal turn).
 - The `idForIndex` keys for wake turns stay `${turnKey}-code` (no `-user` key minted), so React reconciliation through inflight → committed transition keeps working.
 - The renderer code is unchanged. The wake-detection predicate is `turn.userMessage.text === "" && turn.userMessage.atoms.length === 0` — matches the empty-text sentinel exactly. (For in-flight wakes, the inflight `inflightUserMessage.text === "" && atoms.length === 0` test applies the same way.)
+
+#### [D07] Cohort B uses claude's harness scheduler — tugcode detects the re-init fire signal (DECIDED — supersedes [D05]) {#d07-reinit-detector}
+
+**Decision:** tugcode does NOT own a scheduler. Claude Code's harness has its own scheduler (documented at [code.claude.com/docs/en/scheduled-tasks](https://code.claude.com/docs/en/scheduled-tasks)) that fires `ScheduleWakeup` / `CronCreate` timers between turns, **including in stream-json spawn mode**. The fire signal on claude's stdout is a fresh `system/init` event — the same event type emitted at session spawn. tugcode detects the second-and-later `system/init` and treats it as a wake bracket open, mirroring what `handleTaskNotification` already does for Cohort A.
+
+**Rationale:**
+- Empirical: longer-hold probes (`tugcode/probes/wake-investigation/capture-sw-60-*.stdout` and `capture-cron-1m-*.stdout`, 2026-05-25) show the harness emits `system/init → system/status → stream_event(s) → assistant → result` whenever a scheduled task fires. Identical shape for `ScheduleWakeup` and `CronCreate`. The wake's `user_message` (the prompt claude registered) is injected into claude's internal queue and NEVER echoed on stdout — tugcode never sees it.
+- Step-6's "no fire in stream-json mode" conclusion was an artifact of holding the subprocess for only 90 seconds. `ScheduleWakeup` `delaySeconds:N` fires at the next minute boundary after `now + N` seconds — empirically observed at `T = now + 60 + jitter_to_next_minute`. A 90-second hold can miss the fire by 0-30 seconds. See [`wake-investigation-findings.md`](./wake-investigation-findings.md) for the full capture analysis.
+- The shadow scheduler ([D05]) actively harmed correctness: Session 86ae1b78 (recurring cron) saw shadow fires AND harness fires interleaved; the harness's `CronDelete` cancelled the harness's job but not the shadow, producing 9+ stale wake fires before the user manually stopped the session.
+- The harness's behavior includes jitter (≤30 min for recurring, ≤90s early for one-shot at :00/:30). Re-implementing that — and DST handling, leap year handling, and the 1-second tick — is exactly what claude already does well. Don't reinvent.
+
+**Implications:**
+- `SessionManager` gains a single `sessionInitSeen: boolean` field.
+- `handleClaudeLine` (or `handleInterTurnEvent`) gains a branch: when `event.type === "system" && event.subtype === "init"` AND `sessionInitSeen` is true, treat the event as a wake bracket. Emit `wake_started` IPC, set `isInWake`, open `ActiveTurn` so subsequent stream events route through `dispatchEventToTurn`.
+- The wake's `wake_trigger.task_id` / `tool_use_id` are empty strings — the harness re-init does not carry a tool id. `wake_trigger.summary` defaults to `"scheduled wake"`. Slice 2 chrome ([Q02]) may later carry the originating prompt by snapshotting `ScheduleWakeup` / `CronCreate` tool_use events and matching them to the upcoming wake; that's not in this slice.
+- The Slice 1b shadow scheduler is removed: `tugcode/src/scheduler.ts`, `croner` dep, `handleSchedulingToolUse` intercept, `handleCronCreateResult`, `pendingCronCreateToolUseIds`, `cronIdToToolUseId`, and 4 test files (~700 LOC + 43 tests). Test count drops from 489 → 446 with the deletion alone, then ticks back up by ~3 with the re-init detector tests.
+
+**Out-of-scope follow-ons (not blockers):**
+- Wake-trigger metadata: showing "Resumed by ScheduleWakeup (reason: X)" requires snapshotting tool_use payloads (per [Q02]). Cleanly tracked once chrome work begins.
+- Wake-prompt visibility: if Slice 2 wants to show the wake's user-message prompt in the transcript, tugcode would need to read claude's JSONL `isMeta:true` row after the fact (it's not on the stdout wire). Defer.
 
 ---
 
@@ -847,7 +873,10 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 ---
 
-#### Step 8: Slice 1b — croner integration + WakeScheduler class {#step-8}
+#### Step 8: Slice 1b — croner integration + WakeScheduler class (SUPERSEDED by Step 16; code DELETED 2026-05-25) {#step-8}
+
+> **⚠️ SUPERSEDED.** This step shipped a shadow scheduler based on the wrong premise (see [Q01] callout and [D07]). The code was removed in commit `<TBD>`. The text below is preserved as a historical record. See **Step 16** for the replacement work.
+
 
 **Depends on:** #step-7
 
@@ -884,7 +913,10 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 ---
 
-#### Step 9: Slice 1b — tugcode tool-use interception {#step-9}
+#### Step 9: Slice 1b — tugcode tool-use interception (SUPERSEDED by Step 16; code DELETED 2026-05-25) {#step-9}
+
+> **⚠️ SUPERSEDED.** This step's intercept (for `ScheduleWakeup` / `CronCreate` / `CronDelete` tool_use events) only existed to feed the shadow scheduler — and was based on the wrong premise that claude's harness doesn't fire in stream-json mode. Code removed; see **Step 16**.
+
 
 **Depends on:** #step-8
 
@@ -917,7 +949,10 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 ---
 
-#### Step 10: Slice 1b — wake fire path + double-fire safety {#step-10}
+#### Step 10: Slice 1b — wake fire path + double-fire safety (SUPERSEDED by Step 16; code DELETED 2026-05-25) {#step-10}
+
+> **⚠️ SUPERSEDED.** The fire path lived inside the shadow scheduler; removed with it. See **Step 16** for the correct fire path (claude's harness emits `system/init`; tugcode opens the bracket on detection).
+
 
 **Depends on:** #step-9
 
@@ -950,7 +985,10 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 ---
 
-#### Step 11: Slice 1b — manual cohort B repro + drift {#step-11}
+#### Step 11: Slice 1b — manual cohort B repro + drift (SUPERSEDED by Step 16; drift test DELETED 2026-05-25) {#step-11}
+
+> **⚠️ SUPERSEDED.** The drift test pinned tool-input shapes only the shadow's intercept read. With the shadow gone, no consumer reads those shapes inside tugcode. If Slice 2 chrome work needs to read `ScheduleWakeup` / `CronCreate` input fields for trigger metadata, the drift test can be reintroduced there.
+
 
 **Depends on:** #step-10
 
@@ -1097,9 +1135,54 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 ---
 
+#### Step 16: Slice 1b-redo — delete shadow scheduler + add re-init detector {#step-16}
+
+**Depends on:** #step-7 (Slice 1 Cohort A bracket), `wake-investigation-findings.md`.
+
+**Commit(s):**
+1. `chore(tide-wake-1b): retract shadow scheduler — claude harness fires its own timers` (deletion-only)
+2. `feat(tide-wake-1b): re-init detector — open wake bracket on harness fire signal` (additive)
+
+**References:** [D07], [Q01] callout, [`wake-investigation-findings.md`](./wake-investigation-findings.md).
+
+**Artifacts deleted (Commit 1):**
+- `tugcode/src/scheduler.ts` (WakeScheduler class)
+- `tugcode/src/__tests__/scheduler.test.ts`, `scheduler-intercept.test.ts`, `scheduler-fire.test.ts`, `wake-scheduler-tool-input-drift.test.ts`
+- `croner` dep removed from `tugcode/package.json` + `bun.lock`
+- `SessionManager.scheduler` field, `pendingCronCreateToolUseIds`, `cronIdToToolUseId`
+- `handleSchedulingToolUse`, `handleCronCreateResult` methods
+- Scheduler dispatch hook inside `dispatchEventToTurn` (the two `if (ipcMsg.type === "tool_use") …` / `else if (ipcMsg.type === "tool_use_structured") …` branches)
+- Scheduler construction + `dispose()` wiring in `SessionManager` constructor / `shutdown()`
+- `cancelOnHarnessNotification` call in `handleTaskNotification` (no scheduler left to cancel)
+- `ToolUse` / `ToolUseStructured` type imports if no other code references them
+
+**Artifacts added (Commit 2):**
+- `SessionManager.sessionInitSeen: boolean = false` field.
+- New branch in `handleClaudeLine` (or `handleInterTurnEvent`): when `event.type === "system" && event.subtype === "init"` AND `sessionInitSeen === true`, treat as wake bracket open. Emit `wake_started` IPC, set `isInWake`, open `ActiveTurn`. The first-time `system/init` continues to emit `session_init` IPC as before, and flips `sessionInitSeen = true`.
+- ~3 pure-logic tests in `tugcode/src/__tests__/session.test.ts` (or a new `reinit-wake.test.ts`):
+  - First `system/init` is forwarded as `session_init` IPC (regression — must not regress).
+  - Second `system/init` after a turn completes opens a wake bracket: `isInWake` flips true, `activeTurn` is non-null, `wake_started` is emitted.
+  - Subsequent stream events route through `dispatchEventToTurn` (assistant text reaches the wake turn instead of being dropped by `handleInterTurnEvent`).
+
+**Tasks:**
+- [ ] Commit 1: delete files, edits, run `bun x tsc --noEmit && bun test` to confirm green-with-fewer-tests baseline.
+- [ ] Commit 2: implement re-init detector, add tests, run `bun x tsc --noEmit && bun test` to confirm green.
+- [ ] Rebuild `tugcode` binary (`bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode`) so a new Tide session picks up the change.
+- [ ] Update [Q04] / [D05] / Step 8-11 callouts with the actual hash of Commit 1 (replace `<TBD>`).
+
+**Tests:**
+- [ ] Full tugcode suite green after Commit 1 (446 tests = 489 − 43 from Step-8-11).
+- [ ] Full tugcode suite green after Commit 2 (~449 tests, +3 re-init detector cases).
+
+**Checkpoint:**
+- [ ] User-driven manual repros: ScheduleWakeup 60s, CronCreate one-shot, CronCreate recurring + CronDelete all paint exactly ONE wake turn per fire (no duplicates) and stop firing after the user / claude cancels.
+- [ ] No `[tide::wake-scheduler]` log lines remain anywhere in tugcode runtime output.
+
+---
+
 #### Step 15: Final integration checkpoint (all slices) {#step-15}
 
-**Depends on:** #step-7 (Slice 1), #step-11 (Slice 1b), #step-13 (Slice 1c-a). Step 14 (the sequence-model follow-on plan) is independent and need not gate this checkpoint.
+**Depends on:** #step-7 (Slice 1), #step-16 (Slice 1b-redo), #step-13 (Slice 1c-a). Step 14 (the sequence-model follow-on plan) is independent and need not gate this checkpoint.
 
 **Commit:** `N/A (verification only) — final integration`
 
