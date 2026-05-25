@@ -3260,14 +3260,25 @@ function handleWakeStarted(
     }
     return { state, effects: [] };
   }
-  if (state.phase !== "idle") {
+  // Accept wake_started from `replaying` too — the cold-boot replay
+  // path emits a synthesized `wake_started` when it recognizes the
+  // JSONL's `<task-notification>` envelope (see
+  // `tugcode/src/replay.ts`'s `extractTaskNotificationWake`). During
+  // replay, the bracket pair (replay_started / replay_complete) owns
+  // phase entry/exit, so the wake opens its scratch + pendingTurn
+  // here but the phase stays `replaying`. The wake's content frames
+  // accumulate under the same handlers that admit `replaying`, and
+  // the matching `turn_complete` commits the entry via the
+  // replaying-stays-in-replaying branch.
+  if (state.phase !== "idle" && state.phase !== "replaying") {
     return { state, effects: [] };
   }
   const submitAt = Date.now();
+  const nextPhase: CodeSessionPhase = state.phase === "replaying" ? "replaying" : "waking";
   return {
     state: {
       ...state,
-      phase: "waking",
+      phase: nextPhase,
       wakeTrigger: trigger,
       activeMsgId: null,
       scratch: withScratchEntry(

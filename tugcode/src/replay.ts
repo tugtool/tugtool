@@ -58,6 +58,7 @@ import type {
   ToolUseStructured,
   TurnComplete,
   UserMessageReplay,
+  WakeStarted,
 } from "./types.ts";
 
 /**
@@ -305,8 +306,40 @@ export interface TranslateContext {
    * it cannot collide with claude's `msg_<base62>` ids.
    */
   orphanCounter: number;
+  /**
+   * Wake-bracket trigger metadata captured from a `<task-notification>`
+   * envelope on a `user` JSONL entry. Set in {@link handleUserEntry}
+   * when the envelope is detected; consumed and cleared by the
+   * cycle's FIRST `assistant` entry, which emits a `wake_started`
+   * IPC frame instead of a `user_message_replay`. `null` between
+   * cycles or for non-wake cycles.
+   *
+   * Live tugcode brackets wake turns by observing
+   * `system/task_notification` on the wire and emitting `wake_started`
+   * via {@link buildWakeStartedMessage}. The JSONL persists the same
+   * event as a synthetic `user` entry containing the XML envelope —
+   * so the replay translator recognizes the envelope and synthesizes
+   * the same IPC frame. Without this, the envelope would land in
+   * `pendingUserText` and surface as a phantom "You" row on
+   * rehydration ([D07] substrate distinguishes wake turns by the
+   * absence of a `user_message` Message at the head of `messages`).
+   */
+  pendingWakeFromReplay: ReplayWakeTrigger | null;
   /** Telemetry sink. */
   telemetry: ReplayTelemetry;
+}
+
+/**
+ * Subset of {@link WakeStarted.wake_trigger} the replay translator
+ * extracts from the JSONL envelope. `tool_use_id` / `output_file` /
+ * `status` aren't persisted on the user-entry envelope, so they
+ * default to the live "Cohort A" Monitor shape ([Q01]) — empty
+ * strings + `"completed"` (the cohort the envelope represents on
+ * Claude's JSONL).
+ */
+export interface ReplayWakeTrigger {
+  taskId: string;
+  summary: string;
 }
 
 export function makeTranslateContext(
@@ -320,7 +353,52 @@ export function makeTranslateContext(
     cycleOpen: false,
     cycleMsgId: null,
     orphanCounter: 0,
+    pendingWakeFromReplay: null,
     telemetry,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// `<task-notification>` envelope recognizer
+// ---------------------------------------------------------------------------
+
+/**
+ * Match Claude Code's `<task-notification>` envelope — the synthetic
+ * `user` JSONL entry the runtime injects when a between-turn Monitor /
+ * Bash-runbg / Task-runbg notification (Cohort A wake source per
+ * `roadmap/tugplan-tide-session-wake.md` [Q01]) closes a wait. The
+ * envelope shape, from a captured Monitor wake:
+ *
+ *     <task-notification>
+ *     <task-id>b08a41726</task-id>
+ *     <summary>Monitor event: "tail system.log for 'kernel'"</summary>
+ *     <event>[Monitor timed out — re-arm if needed.]</event>
+ *     </task-notification>
+ *
+ * Live tugcode never sees this envelope on the wire — the SDK lifts
+ * the same event as `system/task_notification` and tugcode brackets
+ * the wake via `buildWakeStartedMessage`. The JSONL persists the
+ * envelope text instead, so the replay translator recognizes it and
+ * synthesizes the equivalent IPC `wake_started` frame.
+ *
+ * Match is anchored at start (after leading whitespace) — defensive
+ * against a runaway prose user entry that just happens to contain
+ * the literal `<task-notification>` somewhere in its body. Returns
+ * `null` for any non-envelope content.
+ */
+const TASK_NOTIFICATION_OPEN_RE = /^\s*<task-notification>/;
+const TASK_ID_RE = /<task-id>([^<]*)<\/task-id>/;
+const TASK_SUMMARY_RE = /<summary>([^<]*)<\/summary>/;
+
+export function extractTaskNotificationWake(
+  text: string,
+): ReplayWakeTrigger | null {
+  if (!TASK_NOTIFICATION_OPEN_RE.test(text)) return null;
+  const taskIdMatch = TASK_ID_RE.exec(text);
+  const summaryMatch = TASK_SUMMARY_RE.exec(text);
+  return {
+    taskId: taskIdMatch?.[1] ?? "",
+    summary: summaryMatch?.[1] ?? "",
   };
 }
 
@@ -433,9 +511,18 @@ function isNonSubmissionUserString(entry: JsonlEntry, text: string): boolean {
     return true;
   }
   const trimmed = text.trimStart();
-  return COMMAND_SCAFFOLDING_PREFIXES.some((prefix) =>
-    trimmed.startsWith(prefix),
-  );
+  if (
+    COMMAND_SCAFFOLDING_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
+  ) {
+    return true;
+  }
+  // The `<task-notification>` envelope is also non-submission — the
+  // runtime injected it to wake claude with the prior tool's result.
+  // The replay translator recognizes it separately so it can
+  // synthesize a `wake_started` IPC frame ([D07] wake
+  // discriminator); both the envelope text AND the user_message_replay
+  // are suppressed in that path.
+  return extractTaskNotificationWake(text) !== null;
 }
 
 /**
@@ -661,6 +748,15 @@ function handleUserEntry(
     typeof rawContent === "string" &&
     isNonSubmissionUserString(entry, rawContent)
   ) {
+    // A `<task-notification>` envelope ALSO captures the wake's
+    // trigger metadata onto the context so the cycle's first
+    // assistant entry can emit `wake_started` instead of
+    // `user_message_replay`. Plain command scaffolding doesn't
+    // populate this slot.
+    const wake = extractTaskNotificationWake(rawContent);
+    if (wake !== null) {
+      ctx.pendingWakeFromReplay = wake;
+    }
     return [];
   }
   const content = contentBlocks(rawContent);
@@ -851,23 +947,53 @@ function handleAssistantEntry(
 
   const out: OutboundMessage[] = [];
 
-  // user_message_replay fires once per cycle, on the FIRST assistant
-  // entry. Use claude's first `message.id` of the cycle as the key so
-  // the wire's user side and assistant side agree on an id (per the
-  // "one id, claude's id" rule). Subsequent assistant entries in the
-  // same cycle skip this — multi-message claude turns produce one
-  // user_message_replay, multiple assistant streams.
+  // Cycle opener fires once per cycle, on the FIRST assistant entry.
+  // Two shapes:
+  //
+  //   - **Wake cycle** (`pendingWakeFromReplay` set by a prior
+  //     `<task-notification>` envelope user entry): emit a
+  //     `wake_started` IPC frame. The reducer's `handleWakeStarted`
+  //     opens `pendingTurn` with `isWake: true` and NO `user_message`
+  //     Message — matching the live wake bracket's substrate shape
+  //     ([D07] wake discriminator).
+  //   - **Normal cycle**: emit a `user_message_replay` carrying the
+  //     captured `pendingUserText` / attachments. Use claude's first
+  //     `message.id` of the cycle as the key so the wire's user side
+  //     and assistant side agree on an id (per the "one id, claude's
+  //     id" rule).
+  //
+  // Subsequent assistant entries in the same cycle skip this —
+  // multi-message claude turns produce one opener, multiple
+  // assistant streams.
   if (!ctx.cycleOpen) {
-    const userText = ctx.pendingUserText ?? "";
-    const userAttachments = ctx.pendingUserAttachments;
-    const userMessage: UserMessageReplay = {
-      type: "user_message_replay",
-      msg_id: entryMsgId,
-      text: userText,
-      attachments: userAttachments,
-      ipc_version: IPC_VERSION,
-    };
-    out.push(userMessage);
+    if (ctx.pendingWakeFromReplay !== null) {
+      const wake = ctx.pendingWakeFromReplay;
+      const wakeStarted: WakeStarted = {
+        type: "wake_started",
+        session_id: "",
+        wake_trigger: {
+          task_id: wake.taskId,
+          tool_use_id: "",
+          status: "completed",
+          summary: wake.summary,
+          output_file: "",
+        },
+        ipc_version: IPC_VERSION,
+      };
+      out.push(wakeStarted);
+      ctx.pendingWakeFromReplay = null;
+    } else {
+      const userText = ctx.pendingUserText ?? "";
+      const userAttachments = ctx.pendingUserAttachments;
+      const userMessage: UserMessageReplay = {
+        type: "user_message_replay",
+        msg_id: entryMsgId,
+        text: userText,
+        attachments: userAttachments,
+        ipc_version: IPC_VERSION,
+      };
+      out.push(userMessage);
+    }
     ctx.pendingUserText = null;
     ctx.pendingUserAttachments = [];
     ctx.cycleOpen = true;
