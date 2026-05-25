@@ -1157,12 +1157,17 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - `ToolUse` / `ToolUseStructured` type imports if no other code references them
 
 **Artifacts added (Commit 2):**
-- `SessionManager.sessionInitSeen: boolean = false` field.
-- New branch in `handleClaudeLine` (or `handleInterTurnEvent`): when `event.type === "system" && event.subtype === "init"` AND `sessionInitSeen === true`, treat as wake bracket open. Emit `wake_started` IPC, set `isInWake`, open `ActiveTurn`. The first-time `system/init` continues to emit `session_init` IPC as before, and flips `sessionInitSeen = true`.
-- ~3 pure-logic tests in `tugcode/src/__tests__/session.test.ts` (or a new `reinit-wake.test.ts`):
-  - First `system/init` is forwarded as `session_init` IPC (regression — must not regress).
-  - Second `system/init` after a turn completes opens a wake bracket: `isInWake` flips true, `activeTurn` is non-null, `wake_started` is emitted.
-  - Subsequent stream events route through `dispatchEventToTurn` (assistant text reaches the wake turn instead of being dropped by `handleInterTurnEvent`).
+- `SessionManager.sessionInitSeen: boolean = false` field; reset to `false` in `killAndCleanup` so a respawn's first init is correctly classified.
+- New branch in **`handleClaudeLine`** (NOT `handleInterTurnEvent`): when `event.type === "system" && event.subtype === "init"` AND `sessionInitSeen === true` AND `activeTurn === null`, treat as wake bracket open via new `handleWakeReInit()`. Mid-turn re-inits (e.g., post-`compact_boundary`) fall through to `dispatchEventToTurn` so the existing `system_metadata` IPC forwarding behavior is preserved. The detector must live in `handleClaudeLine` (not `handleInterTurnEvent`) because in new-mode sessions claude's first real `system/init` arrives during the first user turn — when `activeTurn !== null` — routed through `dispatchEventToTurn` and never reaching `handleInterTurnEvent`. The flag must flip regardless of routing.
+- New `handleWakeReInit()` method mirrors `handleTaskNotification`'s bracket-open semantics: emit `wake_started` IPC with empty `task_id` / `tool_use_id` (the harness's re-init carries no tool id on the wire) + `summary: "scheduled wake"`, set `isInWake = true`, open fresh `ActiveTurn`.
+- 6 pure-logic tests in `tugcode/src/__tests__/wake-reinit.test.ts`:
+  - First `system/init` flips `sessionInitSeen` and does NOT open a wake bracket.
+  - Second `system/init` between turns (`activeTurn === null`) opens a wake bracket.
+  - First `system/init` arriving while `activeTurn` is set still flips `sessionInitSeen` (new-mode mid-first-turn case).
+  - Re-init MID-TURN does NOT open a wake bracket (compact-boundary case).
+  - Nested re-init during an open wake bracket is silently ignored.
+  - Post-respawn `killAndCleanup` resets `sessionInitSeen`.
+  - Non-init events bypass the detector entirely.
 
 **Tasks:**
 - [ ] Commit 1: delete files, edits, run `bun x tsc --noEmit && bun test` to confirm green-with-fewer-tests baseline.

@@ -2706,6 +2706,37 @@ export class SessionManager {
       console.log(`Skipping non-JSON line: ${line}`);
       return;
     }
+    // Wake bracket detector ([D07]). The harness's built-in scheduler
+    // fires ScheduleWakeup / CronCreate timers between turns and emits
+    // a fresh `system/init` to bracket the resulting assistant turn.
+    // But `system/init` ALSO re-emits mid-turn after `compact_boundary`
+    // events — the SDK reissues init metadata once the compact
+    // completes. Distinguish by turn state: a wake re-init arrives
+    // between turns (`activeTurn === null`), a compact re-init arrives
+    // inside an open turn.
+    //
+    // First init: flip the flag, fall through to normal dispatch.
+    // Re-init between turns: handle as wake (emit `wake_started`,
+    //   open a fresh ActiveTurn so subsequent stream events route).
+    // Re-init mid-turn: fall through to `dispatchEventToTurn` so the
+    //   refreshed `system_metadata` IPC is forwarded normally.
+    //
+    // Lives in `handleClaudeLine` (not `handleInterTurnEvent`) because
+    // claude's first real `system/init` in new-mode sessions arrives
+    // DURING the first user turn — it must flip the flag even when
+    // routed through `dispatchEventToTurn`.
+    if (event.type === "system" && event.subtype === "init") {
+      if (this.sessionInitSeen) {
+        if (this.activeTurn === null) {
+          this.handleWakeReInit();
+          this.maybeEmitContextBreakdown(event);
+          return;
+        }
+        // Mid-turn re-init (compact boundary). Fall through.
+      } else {
+        this.sessionInitSeen = true;
+      }
+    }
     // Open a turn for a buffered follow-on. `handleUserMessage` opens
     // the turn for the idle case; when it instead queued the message
     // (a turn was already running), claude runs it as a separate turn
@@ -2925,26 +2956,15 @@ export class SessionManager {
    * the drain forwards them as soon as they arrive — improving
    * tugcast/tugdeck observability without changing the wire shape.
    *
-   * Two distinct `system/init` semantics:
-   *   1. The **first** `system/init` for a claude subprocess marks
-   *      session readiness; forwarded as a `session_init` IPC frame
-   *      (the existing behavior).
-   *   2. **Subsequent** `system/init` events from the same subprocess
-   *      are wake bracket signals — claude's built-in scheduler fires
-   *      a `ScheduleWakeup` / `CronCreate` timer between turns and
-   *      emits a fresh `system/init` to bracket the resulting turn.
-   *      See `roadmap/wake-investigation-findings.md` and design
-   *      decision [D07]. The detector opens an `ActiveTurn` so the
-   *      subsequent stream events route through `dispatchEventToTurn`
-   *      instead of being dropped here.
+   * Wake-bracket detection (`system/init` re-init = wake fire) lives
+   * in `handleClaudeLine`, which sees every event regardless of turn
+   * state. By the time an event reaches this method, a re-init has
+   * already been handled and returned. So a `system/init` here is
+   * guaranteed to be the FIRST init for this subprocess — forward
+   * normally as `session_init` IPC.
    */
   private handleInterTurnEvent(event: Record<string, unknown>): void {
     if (event.type === "system" && event.subtype === "init") {
-      if (this.sessionInitSeen) {
-        this.handleWakeReInit();
-        return;
-      }
-      this.sessionInitSeen = true;
       const sessionId = (event.session_id as string) || "unknown";
       writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
     }
