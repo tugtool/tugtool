@@ -57,6 +57,7 @@ function baseSnap(
     transportDowntimeSegmentStartedAt: null,
     interruptInFlightIntervals: [],
     interruptInFlightSegmentStartedAt: null,
+    wakeTrigger: null,
     ...overrides,
   };
 }

@@ -139,6 +139,13 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // `turn_complete` commits a `TurnEntry` with the historical user
   // submission text.
   "user_message_replay",
+  // Wake-bracket opener emitted by tugcode when claude resumes from
+  // idle in response to an async deferred-completion trigger
+  // (Monitor / CronCreate / ScheduleWakeup / …). The reducer
+  // transitions `idle → waking` and accepts the wake's content
+  // events; the bracket closes implicitly on the next `turn_complete`.
+  // See `roadmap/tugplan-tide-session-wake.md` [D01].
+  "wake_started",
 ]);
 
 export interface CodeSessionStoreOptions {
@@ -384,12 +391,18 @@ export class CodeSessionStore {
       canSubmit:
         (this.state.phase === "idle" || this.state.phase === "errored") &&
         this.state.transportState === "online",
+      // `waking` is included per [Q03] resolution in
+      // `roadmap/tugplan-tide-session-wake.md`: the user can stop a
+      // runaway wake turn just like a user-initiated one. The
+      // interrupt frame uses the same wire shape regardless — the
+      // server doesn't need to distinguish.
       canInterrupt:
         this.state.phase === "submitting" ||
         this.state.phase === "awaiting_first_token" ||
         this.state.phase === "streaming" ||
         this.state.phase === "tool_work" ||
-        this.state.phase === "awaiting_approval",
+        this.state.phase === "awaiting_approval" ||
+        this.state.phase === "waking",
       pendingApproval: this.state.pendingApproval,
       pendingQuestion: this.state.pendingQuestion,
       // The reducer rebuilds `queuedSends` only on enqueue / flush /
@@ -455,6 +468,13 @@ export class CodeSessionStore {
       interruptInFlightIntervals: this.state.interruptInFlightIntervals,
       interruptInFlightSegmentStartedAt:
         this.state.interruptInFlightSegmentStartedAt,
+      // Wake-bracket trigger metadata, set during `phase === "waking"`
+      // and cleared at the wake's terminal `turn_complete`. Reference
+      // passed through unchanged so identity is stable across snapshot
+      // rebuilds while the reducer's underlying field doesn't change
+      // ([L02]). Slice 1 has no consumers; the field is plumbed so
+      // Slice 2 chrome can read it without further reducer changes.
+      wakeTrigger: this.state.wakeTrigger,
     };
     this._cachedSnapshot = snap;
     return snap;
@@ -795,6 +815,15 @@ export class CodeSessionStore {
         // of historical user submissions, and the cell wrapper
         // identity is purely React's concern. Minting here keeps the
         // reducer pure: it never calls `crypto.randomUUID()`.
+        return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "wake_started") {
+        // Same mint contract as `user_message_replay`: the wake's
+        // turnKey is a React-key seed with no meaning on the wire.
+        // tugcode does not mint it (tugcode is a Node subprocess; it
+        // has no React); the store wrapper mints it on receipt and
+        // threads it onto the dispatched event so the reducer stays
+        // pure. See `roadmap/tugplan-tide-session-wake.md` [D02].
         return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
       }
       return ev as unknown as CodeSessionEvent;

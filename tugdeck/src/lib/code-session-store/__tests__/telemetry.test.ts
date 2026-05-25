@@ -428,6 +428,7 @@ describe("deriveInflightActiveMs", () => {
       transportDowntimeSegmentStartedAt: null,
       interruptInFlightIntervals: [],
       interruptInFlightSegmentStartedAt: null,
+      wakeTrigger: null,
       ...overrides,
     };
   }
@@ -555,6 +556,7 @@ describe("deriveTimeCellMs", () => {
       transportDowntimeSegmentStartedAt: null,
       interruptInFlightIntervals: [],
       interruptInFlightSegmentStartedAt: null,
+      wakeTrigger: null,
       ...overrides,
     };
   }

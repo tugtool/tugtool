@@ -117,6 +117,7 @@ export function indicatorVisualFor(
     case "streaming":
     case "tool_work":
     case "replaying":
+    case "waking":
       return { tone: "success", animated: true, label: state.phase };
     case "awaiting_approval":
       return { tone: "caution", animated: true, label: "awaiting_approval" };
@@ -139,6 +140,7 @@ export const PHASE_HUMAN_LABEL: Record<CodeSessionPhase, string> = {
   tool_work: "Working",
   awaiting_approval: "Awaiting",
   replaying: "Replaying",
+  waking: "Streaming",
   errored: "Error",
 };
 

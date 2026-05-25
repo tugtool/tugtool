@@ -145,15 +145,20 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 
 **Resolution:** DEFERRED to Slice 2 follow-on plan.
 
-#### [Q03] How should `interrupt()` behave during a wake turn? (OPEN — resolved in Step 4) {#q03-interrupt-during-wake}
+#### [Q03] How should `interrupt()` behave during a wake turn? (RESOLVED in Step 4) {#q03-interrupt-during-wake}
 
 **Question:** If the user clicks Stop while a wake turn is streaming, what happens? The interrupt machinery today is tied to a `pendingUserMessage` and a user-initiated turn-key. A wake turn synthesizes its own turnKey but has no user-initiated `pendingUserMessage`.
 
 **Why it matters:** Step 4 has to decide whether `canInterrupt` reads as `true` during `waking` phase (yes — the user can still stop a runaway wake turn) and how the interrupt frame is shaped on the wire.
 
-**Plan to resolve:** Step 4 designs the interrupt path; Step 5 includes a test (`interrupt during wake should commit a partial turn and clear the bracket`). Default position: `canInterrupt = true` during `waking`; the interrupt frame uses the same wire shape as a normal-turn interrupt (the server doesn't need to distinguish — the running turn is the running turn).
+**Resolution:** ADOPTED the default position: `canInterrupt = true` during `waking`; the interrupt frame uses the same wire shape as a normal-turn interrupt (the server doesn't need to distinguish — the running turn is the running turn). Implementation specifics:
 
-**Resolution:** OPEN.
+- **`canInterrupt` gate** (in `code-session-store.ts:getSnapshot`): added `phase === "waking"` to the existing OR-chain.
+- **CASE A wake pull-down** (interrupt fires before any content has landed): `handleInterrupt` detects the wake context via `state.phase === "waking"` and (1) skips the standard draft-restore pull, because the wake's `pendingUserMessage` is an empty-text marker sentinel, NOT a user submission worth re-editing; (2) clears `wakeTrigger` alongside the standard CASE A state reset; (3) increments `pendingCaseAEchoes` so the wire's eventual `turn_complete(error)` is suppressed exactly as for a normal CASE A.
+- **CASE B wake interrupt** (content already landed): `handleInterrupt` opens the interrupt segment unchanged (sets `interruptInFlight: true`, captures `interruptInFlightSegmentStartedAt`). The wire's eventual `turn_complete(error)` flows through the new `waking → idle` commit branch in `handleTurnComplete`, which commits an interrupted `TurnEntry` and clears `wakeTrigger`.
+- **Defensive clearing of `wakeTrigger`** added to `handleSessionStateErrored`, `handleWireError`, and `handleTransportClose`'s non-idle branch — any terminal-error path that interrupts a wake leaves no dangling bracket marker on the state.
+
+Step 5 will pin this with a test (`interrupt during wake should commit a partial turn and clear the bracket`).
 
 ---
 
@@ -398,17 +403,28 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `"waking"` | enum value | `tugdeck/src/lib/code-session-store/types.ts` | New `CodeSessionPhase` value |
-| `wakeTrigger` | state field | `tugdeck/src/lib/code-session-store/types.ts` | New optional field on `CodeSessionState` |
-| `handleWakeStarted` | function | `tugdeck/src/lib/code-session-store/reducer.ts` | New — calls existing `resetPerTurnTelemetry()` helper per [#spec-wake-started-state-reset] |
-| `handleTurnComplete` extension | function | `tugdeck/src/lib/code-session-store/reducer.ts` | New `waking → idle` commit branch; clears `wakeTrigger` and `pendingUserMessage`; skips writing the empty-text marker into the committed entry |
-| `frameToEvent` extension | function | `tugdeck/src/lib/code-session-store/<store wrapper>` | Recognizes `wake_started` frames; mints turnKey; dispatches `WakeStartedEvent` to the reducer |
-| `WakeStartedEvent` | type | `tugdeck/src/lib/code-session-store/events.ts` (or sibling) | Reducer event shape (with `turnKey` minted by `frameToEvent`) |
-| `case "system"` task-notification arm | function | `tugcode/src/session.ts:565` | New arm alongside the existing `subtype === "init"` arm; emits `wake_started` with the verbatim `SDKTaskNotificationMessage` payload, flips `isInWake` |
-| `isInWake` | session field | tugcode SessionManager | True between `wake_started` emit and the next `result` |
-| `WakeStartedMessage` | TS type | `tugcode/src/protocol-types.ts` | IPC contract (no turnKey field; no wake_complete sibling) |
-| Rust frame pass-through | enum arm or opaque case | tugcast (CODE_OUTPUT frame types) | Implementer picks typed-variant vs opaque-pass-through based on the actual frame-type infrastructure |
-| Updated comment | comment | `reducer.ts:827` | Reflects the wake-bracket reality |
+| `"waking"` | enum value | `tugdeck/src/lib/code-session-store/types.ts` | Added to `CodeSessionPhase` ✓ |
+| `WakeTrigger` | interface | `tugdeck/src/lib/code-session-store/types.ts` | New — camelCase form (the reducer/snapshot read this; `WakeStartedEvent.wake_trigger` on the wire is snake_case and translated in `handleWakeStarted`) ✓ |
+| `wakeTrigger` | state field | `tugdeck/src/lib/code-session-store/reducer.ts` (CodeSessionState) + `types.ts` (CodeSessionSnapshot) | Default `null`; set/cleared by the wake bracket handlers ✓ |
+| `handleWakeStarted` | function | `tugdeck/src/lib/code-session-store/reducer.ts` (next to `handleUserMessageReplay`) | Calls `resetPerTurnTelemetry()`; translates wire snake_case → state camelCase; idempotent on nested wakes ✓ |
+| `handleTurnComplete` waking branch | function | `tugdeck/src/lib/code-session-store/reducer.ts` (after the `replaying` branch) | Clears `wakeTrigger` + `pendingUserMessage`; preserves `lastError` (wake is not a user-action recovery signal); queue-flush deliberately skipped ✓ |
+| `handleInterrupt` wake-aware CASE A | function | `tugdeck/src/lib/code-session-store/reducer.ts` | Detects `state.phase === "waking"` → skips draft-restore (empty-text marker is not a user message) + clears `wakeTrigger`; CASE B path is unchanged ✓ |
+| Additional terminal-path `wakeTrigger: null` | clearing | `handleSessionStateErrored`, `handleWireError`, `handleTransportClose` (non-idle branch) | Defensive — keeps the bracket marker tied to "actively in a wake" ✓ |
+| Tool-event guard extensions | guards | `handleToolUse`, `handleToolResult`, `handleToolUseStructured` | `waking` added to allow-list; phase stays `waking` (mirrors `replaying` bracket-owns-phase pattern). Needed because a real wake (Monitor) fires Bash investigation tools — without these, the tool flow would be silently dropped ✓ |
+| Control-forward guard extension | guard | `handleControlRequestForward` | `waking` admitted to the live-path branch so a permission/question prompt during a wake transitions to `awaiting_approval` with `prevPhase: "waking"`; `state.prevPhase ?? "streaming"` in `handleRespondApproval` / `handleRespondQuestion` restores correctly back to `waking` ✓ |
+| `frameToEvent` wake arm | function | `tugdeck/src/lib/code-session-store.ts:frameToEvent` | Mints turnKey via `mintTurnKey()` and spreads onto the dispatched event, mirroring the `user_message_replay` pattern. `"wake_started"` also added to `KNOWN_CODE_OUTPUT_TYPES` ✓ |
+| `canInterrupt` extension | snapshot field | `tugdeck/src/lib/code-session-store.ts:getSnapshot` | `phase === "waking"` added to the OR-chain per [Q03] ✓ |
+| Snapshot `wakeTrigger` projection | snapshot field | `tugdeck/src/lib/code-session-store.ts:getSnapshot` | Pass-through of `this.state.wakeTrigger` for `Object.is` stability ([L02]) ✓ |
+| `WakeStartedEvent` | type | `tugdeck/src/lib/code-session-store/events.ts` | Added in Step 2 ✓ |
+| Lifecycle matrix arm | switch case | `tugdeck/src/lib/code-session-store/lifecycle-state.ts:deriveLifecycleState` | `waking → "streaming"` for Slice 1; Slice 2 may introduce a dedicated row ✓ |
+| Indicator visual arm | switch case | `tugdeck/src/components/tugways/tug-state-indicator.tsx:indicatorVisualFor` | Joined the `success + animated` group with `streaming` / `replaying` ✓ |
+| `PHASE_HUMAN_LABEL` extension | record entry | `tugdeck/src/components/tugways/tug-state-indicator.tsx` | `waking: "Streaming"` ✓ |
+| `handleInterTurnEvent` task-notification arm | function | `tugcode/src/session.ts:handleInterTurnEvent` (line 2737) | New arm alongside the existing `subtype === "init"` arm; emits `wake_started` with the verbatim `SDKTaskNotificationMessage` payload, opens a fresh ActiveTurn, flips `isInWake` ✓ (Step 3) |
+| `isInWake` | session field | tugcode SessionManager | True between `wake_started` emit and the next `result` ✓ (Step 3) |
+| `WakeStarted` IPC type | TS type | `tugcode/src/types.ts` | IPC contract (no turnKey field; no wake_complete sibling) ✓ (Step 2) |
+| `SystemTaskNotificationMessage` | TS type | `tugcode/src/protocol-types.ts` | Inbound stream-json shape that the detector reads ✓ (Step 2) |
+| Rust frame pass-through | n/a | tugcast | Opaque pass-through verified — `wake_started` is not in tugcast's instrumented-types set, no code change required ✓ (Step 2) |
+| Updated comment | comment | `reducer.ts:handleTextDelta` guard | New text cites [D03] additive-guard rationale and explains the wake-bracket as the legitimate live source of mid-idle content ✓ |
 
 ---
 
@@ -554,22 +570,26 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - Exhaustive-switch type-checks for all phase-keyed code (tsc is the gate).
 
 **Tasks:**
-- [ ] Add the enum value + state field.
-- [ ] Extend `frameToEvent` (store wrapper) to mint a turnKey on `wake_started` receipt and dispatch `WakeStartedEvent` (mirrors `reducer.ts:1606-1609` comment about replay-event minting).
-- [ ] Implement `handleWakeStarted` calling `resetPerTurnTelemetry()` (single source of truth — do NOT inline the field list).
-- [ ] Extend `handleTurnComplete`: add the `waking → idle` commit branch (clears `wakeTrigger`, clears `pendingUserMessage`, skips empty-text marker in the committed transcript entry).
-- [ ] Wire the dispatcher arm for `wake_started` (no `wake_complete` arm).
-- [ ] Loosen the `handleTextDelta` guard.
-- [ ] Update the comment at `reducer.ts:827`.
-- [ ] Update every exhaustive `switch` on `CodeSessionPhase` to include `"waking"` (tsc will flag them).
-- [ ] Decide [Q03] (interrupt during wake): document the decision inline in `handleInterrupt` and add the corresponding behavior. Default: `canInterrupt = true` during `waking`; interrupt frame is the same shape as a normal-turn interrupt.
-- [ ] **[L23 check]** {#step-4-l23-check}: Two `phase === "idle"` reads are pre-flighted to telemetry chrome (`tide-card-telemetry-popovers.tsx:766`, `tide-card-telemetry-renderers.tsx:607`) — both are `isIdle = snap.phase === "idle"` threaded into popover/renderer logic. Verify they treat `"waking"` as not-idle correctly (probably correct — the popovers want to read "the card is active" during a wake, same as during a user turn). Audit any responder-chain or first-responder code for analogous reads (grep `phase === "idle"` and `phase === 'idle'` across tugdeck/src). No prompt-entry focus restoration was found pre-flight; confirm none surfaces.
+- [x] Add the enum value + state field. `"waking"` added to `CodeSessionPhase`; `WakeTrigger` interface (camelCase) added next to it; `wakeTrigger` field added to `CodeSessionState` and `CodeSessionSnapshot`.
+- [x] Extend `frameToEvent` (store wrapper) to mint a turnKey on `wake_started` receipt and dispatch `WakeStartedEvent`. `"wake_started"` added to `KNOWN_CODE_OUTPUT_TYPES`; arm in `frameToEvent` mints via `mintTurnKey()` and spreads onto the dispatched event, mirroring the `user_message_replay` pattern.
+- [x] Implement `handleWakeStarted` calling `resetPerTurnTelemetry()` (single source of truth — do NOT inline the field list). Wire payload's snake_case `wake_trigger` is translated to camelCase `WakeTrigger` at the reducer boundary; nested-wake idempotency refreshes trigger metadata only when prior was `null` and new is non-null; preserves `pendingDraftRestore` per spec note; `costAtSubmit` is set AFTER the `resetPerTurnTelemetry()` spread to override its `null` reset (the wake's cost-delta baseline must be the current `lastCost`).
+- [x] Extend `handleTurnComplete`: add the `waking → idle` commit branch (clears `wakeTrigger`, clears `pendingUserMessage`, skips empty-text marker in the committed transcript entry). The committed `TurnEntry.userMessage.text` naturally carries `""` from the wake marker — that empty string IS the wake sentinel; no special `buildTurnEntry` branch needed. Queue-flush is skipped (a queued send during wake gets its own turn after the wake settles).
+- [x] Wire the dispatcher arm for `wake_started` (no `wake_complete` arm). Single new case in `reduce()`'s switch.
+- [x] Loosen the `handleTextDelta` guard. Also loosened the parallel guards in `handleToolUse`, `handleToolResult`, `handleToolUseStructured`, and `handleControlRequestForward` — without these, a wake's tool flow (Monitor wake fires Bash investigation, per Step 1's PPF-01 context) and any mid-wake permission/question prompt would be silently dropped. The wake stays in `waking` phase across tool events (mirrors replay's bracket-owns-phase pattern).
+- [x] Update the comment at `reducer.ts:827`. New text describes the wake-bracket as the legitimate live source of mid-idle content and cites [D03].
+- [x] Update every exhaustive `switch` on `CodeSessionPhase` to include `"waking"` (tsc was the gate). Updated: `lifecycle-state.ts` `deriveLifecycleState` (`waking → "streaming"` lifecycle row for Slice 1 — same chrome as a user turn), `tug-state-indicator.tsx` `indicatorVisualFor` (success+pulse), `tug-state-indicator.tsx` `PHASE_HUMAN_LABEL` (`waking: "Streaming"`).
+- [x] Decide [Q03] (interrupt during wake): document the decision inline in `handleInterrupt` and add the corresponding behavior. **Default adopted: `canInterrupt = true` during `waking`; interrupt frame is the same shape as a normal-turn interrupt.** `canInterrupt` extended in `code-session-store.ts`. `handleInterrupt`'s CASE A path detects wake context (`state.phase === "waking"`), skips the draft-restore pull (the empty-text marker is NOT a user message), and clears `wakeTrigger` alongside the standard CASE A reset. CASE B path is unchanged — `interruptInFlight` opens, wire echo arrives as `turn_complete(error)`, the new `waking → idle` commit branch above clears `wakeTrigger` and commits an interrupted entry. Defensive clearing of `wakeTrigger` also added to `handleSessionStateErrored`, `handleWireError`, and `handleTransportClose`'s non-idle path so a wake-in-flight cleared by any terminal-error path leaves no dangling bracket marker.
+- [x] **[L23 check]** {#step-4-l23-check}: Two `phase === "idle"` reads pre-flighted (`tide-card-telemetry-popovers.tsx:766` is a JSDoc-only reference, `tide-card-telemetry-renderers.tsx:607` is `isIdle = snap.phase === "idle"`). Both treat `waking` as not-idle correctly via the literal comparison (no special-case needed). Repo-wide `grep` for `phase === "idle"` confirmed: every code-side read is either a state-transition guard (where `waking` is intentionally distinct from `idle`) or an `isIdle`-style derivation (where the literal comparison correctly returns `false` during a wake). No first-responder / focus-restoration code reads phase at all.
 
 **Tests:**
-- [ ] None at this step (tests live in #step-5).
+- [x] None at this step (tests live in #step-5).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit` green (exhaustive-switch errors are the gate that ensures we updated every consumer).
+- [x] `cd tugdeck && bun x tsc --noEmit` green (exhaustive-switch errors served as the gate; tsc surfaced 5 errors during Step 4 — 3 test-fixture omissions of the new `wakeTrigger` field, 2 snake_case/camelCase mismatches in `handleWakeStarted` — all fixed before the step closed).
+- [x] `cd tugdeck && bun test` green (2892 / 2892).
+- [x] `cd tugdeck && bun run audit:tokens lint` zero violations.
+- [x] `cd tugrust && cargo nextest run` green (1324 passed, 9 skipped).
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green (443 / 443).
 
 ---
 

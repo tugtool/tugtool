@@ -111,6 +111,14 @@ export interface LifecycleStoreSignals {
  * replay window dominate; an in-flight interrupt overrides whichever
  * in-flight phase it landed on; the remaining phases map 1:1; `idle`
  * splits into COMPLETE / IDLE on whether any turn has committed.
+ *
+ * `waking` maps to `streaming` for Slice 1: the wake turn renders as
+ * an active streaming turn (status indicator success+pulse, submit
+ * button is Stop). Slice 2 may introduce a `waking` matrix state
+ * with trigger-aware chrome (see [Q02] in
+ * `roadmap/tugplan-tide-session-wake.md`); until then, sharing the
+ * streaming row gives wakes the right visual treatment without a
+ * matrix-wide audit.
  */
 function deriveLifecycleState(s: LifecycleStoreSignals): TideLifecycleState {
   if (s.phase === "errored") return "errored";
@@ -131,6 +139,8 @@ function deriveLifecycleState(s: LifecycleStoreSignals): TideLifecycleState {
       // canonical signal (equivalently `pendingApproval !== null ||
       // pendingQuestion !== null`).
       return "awaiting_user";
+    case "waking":
+      return "streaming";
     case "idle":
       return s.transcript.length > 0 ? "complete" : "idle";
     default: {

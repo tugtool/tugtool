@@ -28,6 +28,16 @@ export type { CardSessionMode } from "../card-session-binding-store";
  * `canSubmit` and `canInterrupt` are both `false` and the live-frame
  * handlers drop their inputs (replay events flow through dedicated
  * handlers; the bracket guarantees ordering).
+ *
+ * `waking` is the phase for a spontaneous mid-session resume bracketed
+ * by `wake_started` and the next `turn_complete`. Closes [PPF-01]:
+ * before this phase existed, content events arriving from idle in
+ * response to an async deferred-completion trigger (Monitor timeout,
+ * CronCreate firing, ScheduleWakeup arriving) were silently dropped
+ * by the `handleTextDelta` / `handleTurnComplete` guards. The bracket
+ * mirrors the replay pattern but uses claude's existing `turn_complete`
+ * as the implicit close (no `wake_complete` frame on the wire).
+ * See `roadmap/tugplan-tide-session-wake.md` [D01].
  */
 export type CodeSessionPhase =
   | "idle"
@@ -37,7 +47,30 @@ export type CodeSessionPhase =
   | "tool_work"
   | "awaiting_approval"
   | "replaying"
+  | "waking"
   | "errored";
+
+/**
+ * Verbatim forward of the SDK's `SDKTaskNotificationMessage` payload
+ * (`@anthropic-ai/claude-agent-sdk/sdk.d.ts:1659-1668`), minus the
+ * `type:"system"` / `subtype:"task_notification"` envelope. Set by
+ * `handleWakeStarted` on the reducer state and cleared by
+ * `handleTurnComplete`'s `waking → idle` commit branch.
+ *
+ * Slice 1 has no consumers — the field is set, surfaced on the
+ * snapshot, and cleared without being read anywhere. Slice 2 will
+ * render a trigger-aware chip / banner from it. The shape is pinned
+ * to the SDK type so a future SDK upgrade surfaces as a type-level
+ * drift (caught by the Step 5 drift test) rather than a silent
+ * field-rename.
+ */
+export interface WakeTrigger {
+  taskId: string;
+  toolUseId: string;
+  status: "completed" | "failed" | "stopped";
+  summary: string;
+  outputFile: string;
+}
 
 /**
  * Health of the WebSocket transport, orthogonal to `phase`. The
@@ -653,6 +686,18 @@ export interface CodeSessionSnapshot {
    * union them generically.
    */
   interruptInFlightIntervals: ReadonlyArray<readonly [number, number]>;
+  /**
+   * Trigger metadata for the in-flight wake turn (`phase === "waking"`),
+   * `null` otherwise. Populated by `handleWakeStarted` from the wire
+   * `wake_started.wake_trigger` payload and cleared by
+   * `handleTurnComplete`'s `waking → idle` commit branch.
+   *
+   * Slice 1 has no React consumers. The reference is preserved across
+   * snapshot rebuilds while the underlying reducer field doesn't change,
+   * so future `useSyncExternalStore` consumers ([L02]) get `Object.is`
+   * stability during quiescent renders.
+   */
+  wakeTrigger: WakeTrigger | null;
   /**
    * Wall-clock ms when the user-initiated interrupt round-trip
    * started (`interrupt()` from a content-bearing phase — CASE B), or

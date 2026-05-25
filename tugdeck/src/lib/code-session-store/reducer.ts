@@ -45,6 +45,7 @@ import type {
   ToolUseStructuredEvent,
   TurnCompleteEvent,
   UserMessageReplayEvent,
+  WakeStartedEvent,
   WireErrorEvent,
 } from "./events";
 import type {
@@ -59,6 +60,7 @@ import type {
   TransportState,
   TurnEndReason,
   TurnEntry,
+  WakeTrigger,
 } from "./types";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import {
@@ -389,6 +391,15 @@ export interface CodeSessionState {
    * boundaries with the rest of the toolCallMap.
    */
   toolUseStartedAt: Map<string, number>;
+  /**
+   * Trigger metadata for the in-flight wake turn (`phase === "waking"`),
+   * `null` otherwise. Set by `handleWakeStarted` from the wire
+   * `wake_started.wake_trigger` payload; cleared by `handleTurnComplete`'s
+   * `waking → idle` commit branch. Mirrored unchanged onto
+   * `CodeSessionSnapshot.wakeTrigger` for stable `Object.is` identity
+   * across quiescent snapshot rebuilds ([L02]).
+   */
+  wakeTrigger: WakeTrigger | null;
 }
 
 /**
@@ -462,6 +473,7 @@ export function createInitialState(
     transportDowntimeIntervals: [],
     interruptInFlightIntervals: [],
     toolUseStartedAt: new Map(),
+    wakeTrigger: null,
   };
 }
 
@@ -610,12 +622,20 @@ function handleInterrupt(
     state.firstToolUseAt === null
   ) {
     const pending = state.pendingUserMessage;
+    // Detect the wake context: an interrupt fired during `waking`
+    // before any content has landed. The wake's `pendingUserMessage`
+    // is an empty-text marker sentinel, NOT a user submission — so
+    // don't push it into the restore slot ([Q03] in
+    // `roadmap/tugplan-tide-session-wake.md`). Preserve any prior
+    // restore so a wake pull-down doesn't clobber a stranded user
+    // draft.
+    const isWakePulldown = state.phase === "waking";
     // Carry the pending submission into the restore slot. If
     // `pendingUserMessage` is somehow null (defensive — handleSend
     // populates it on every successful send), preserve any existing
     // restore so a brand-new CASE A doesn't wipe a previously-stranded
     // one.
-    const restore = pending !== null
+    const restore = !isWakePulldown && pending !== null
       ? { text: pending.text, atoms: pending.atoms }
       : state.pendingDraftRestore;
     return {
@@ -628,6 +648,11 @@ function handleInterrupt(
         toolUseStartedAt: new Map(),
         pendingUserMessage: null,
         pendingDraftRestore: restore,
+        // Wake pull-down clears the wake bracket marker — the wire
+        // echo (`turn_complete(error)`) will arrive later and is
+        // suppressed by `pendingCaseAEchoes` below, same as a normal
+        // CASE A user pull-down.
+        wakeTrigger: isWakePulldown ? null : state.wakeTrigger,
         pendingCaseAEchoes: state.pendingCaseAEchoes + 1,
         pendingApproval: null,
         pendingQuestion: null,
@@ -824,18 +849,24 @@ function handleTextDelta(
   field: "assistant" | "thinking",
   channel: "assistant" | "thinking",
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Incoming text outside of an active turn — drop. Live Claude
-  // should not emit this, but defensive handling keeps the reducer
-  // total. `replaying` is allowed: the JSONL replay translator emits
-  // assistant_text / thinking_text events that need to land in
-  // scratch keyed by msg_id so the subsequent `turn_complete` can
-  // commit them.
+  // Incoming text outside of an active turn or a wake — drop. Live
+  // claude emits content into idle only when a spontaneous wake is in
+  // progress; the `wake_started` frame transitions phase to `waking`
+  // and is what allows the events through here (closed implicitly by
+  // `turn_complete`). `replaying` is also allowed: the JSONL replay
+  // translator emits assistant_text / thinking_text events that need
+  // to land in scratch keyed by msg_id so the subsequent
+  // `turn_complete` can commit them. Stray text outside both an active
+  // turn and a wake is still a defensive drop — see
+  // `roadmap/tugplan-tide-session-wake.md` [D03] for the additive-
+  // guard rationale.
   if (
     state.phase !== "submitting" &&
     state.phase !== "awaiting_first_token" &&
     state.phase !== "streaming" &&
     state.phase !== "tool_work" &&
-    state.phase !== "replaying"
+    state.phase !== "replaying" &&
+    state.phase !== "waking"
   ) {
     return { state, effects: [] };
   }
@@ -939,12 +970,18 @@ function handleToolUse(
   state: CodeSessionState,
   event: ToolUseEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  // `waking` accepted alongside `replaying` — the wake bracket owns
+  // phase entry/exit (closed by `turn_complete`'s `waking → idle`
+  // branch), so a tool_use during a wake stays in `waking` rather
+  // than transitioning to `tool_work`. Mirrors the replay path so
+  // the bracket marker survives the wake's full event sequence.
   if (
     state.phase !== "submitting" &&
     state.phase !== "awaiting_first_token" &&
     state.phase !== "streaming" &&
     state.phase !== "tool_work" &&
-    state.phase !== "replaying"
+    state.phase !== "replaying" &&
+    state.phase !== "waking"
   ) {
     return { state, effects: [] };
   }
@@ -1002,8 +1039,9 @@ function handleToolUse(
   }
 
   // Phase transition is live-only: `tool_use` flips `streaming` /
-  // `submitting` / `awaiting_first_token` to `tool_work`; replay keeps
-  // `replaying` because the bracket pair owns phase entry/exit.
+  // `submitting` / `awaiting_first_token` to `tool_work`; replay and
+  // wake keep their bracket phase (`replaying` / `waking`) because
+  // the bracket pair owns phase entry/exit.
   //
   // The write-inflight effect, by contrast, fires for both live and
   // replay ([L26] — per-turn paths are the sole render surface for
@@ -1012,6 +1050,8 @@ function handleToolUse(
   // `pendingUserMessage` guard covers the genuine "no in-flight
   // turn" case (null between turns).
   const isReplaying = state.phase === "replaying";
+  const isWaking = state.phase === "waking";
+  const isBracketed = isReplaying || isWaking;
   const effects: Effect[] =
     state.pendingUserMessage !== null
       ? [
@@ -1024,10 +1064,11 @@ function handleToolUse(
         ]
       : [];
 
-  // Telemetry: skip for replay; capture firstToolUseAt on first live
-  // tool_use of this turn. Continuations of the same tool_use_id
-  // still count for the stream-gap fold (they're wire events) but do
-  // NOT advance `firstToolUseAt` past the first call.
+  // Telemetry: skip for replay (synthesized from JSONL, no wall-clock
+  // arrival). Wake is live (real wall-clock event arrival from claude),
+  // so fold and capture TTFTC just like a normal turn. Continuations
+  // of the same tool_use_id still count for the stream-gap fold but
+  // do NOT advance `firstToolUseAt` past the first call.
   const now = Date.now();
   const streamFold = isReplaying ? {} : foldStreamEvent(state, now);
   const firstToolUseAt =
@@ -1038,7 +1079,7 @@ function handleToolUse(
   return {
     state: {
       ...state,
-      phase: isReplaying ? state.phase : "tool_work",
+      phase: isBracketed ? state.phase : "tool_work",
       activeMsgId: event.msg_id ?? state.activeMsgId,
       ...streamFold,
       firstToolUseAt,
@@ -1054,10 +1095,15 @@ function handleToolResult(
   event: ToolResultEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
   // The transition table only lists tool_result under the
-  // `tool_work → streaming` row for live turns. While replaying,
-  // tool_result also accepted — it pairs with a prior tool_use that
-  // landed in toolCallMap during this same replayed turn.
-  if (state.phase !== "tool_work" && state.phase !== "replaying") {
+  // `tool_work → streaming` row for live turns. While replaying or
+  // waking, tool_result is also accepted — it pairs with a prior
+  // tool_use that landed in toolCallMap during this same bracketed
+  // turn.
+  if (
+    state.phase !== "tool_work" &&
+    state.phase !== "replaying" &&
+    state.phase !== "waking"
+  ) {
     return { state, effects: [] };
   }
 
@@ -1070,11 +1116,13 @@ function handleToolResult(
     return { state, effects: [] };
   }
 
-  // Compute per-call wall-clock. Live turns have a `toolUseStartedAt`
-  // entry from the matching `handleToolUse`; replay turns do not (the
-  // JSONL replay does not correspond to real-time arrivals, and the
-  // committed entry's `toolWallMs` stays `null` per the field's contract).
+  // Compute per-call wall-clock. Live turns (including wakes) have a
+  // `toolUseStartedAt` entry from the matching `handleToolUse`; replay
+  // turns do not (the JSONL replay does not correspond to real-time
+  // arrivals, and the committed entry's `toolWallMs` stays `null` per
+  // the field's contract).
   const isReplaying = state.phase === "replaying";
+  const isWaking = state.phase === "waking";
   const now = Date.now();
   const startedAt = state.toolUseStartedAt.get(toolUseId);
   const toolWallMs =
@@ -1098,15 +1146,17 @@ function handleToolResult(
     toolUseStartedAt.delete(toolUseId);
   }
 
-  // Phase transition is live-only: `tool_result` drives `tool_work
-  // → streaming` once every entry is terminal. Replay keeps
-  // `replaying`; the bracket's `replay_complete` returns to idle.
+  // Phase transition is live-only and bracket-aware: `tool_result`
+  // drives `tool_work → streaming` once every entry is terminal.
+  // Replay and wake keep their bracket phase (`replaying` / `waking`);
+  // the bracket's terminal frame returns the phase to idle
+  // (`replay_complete` for replay; `turn_complete` for wake).
   //
   // The write-inflight effect, by contrast, fires for both live and
   // replay ([L26] — per-turn paths are the sole render surface for
   // committed cells, so replayed turns must populate them too;
   // cold-boot rehydration depends on this symmetry).
-  const nextPhase: CodeSessionPhase = isReplaying
+  const nextPhase: CodeSessionPhase = isReplaying || isWaking
     ? state.phase
     : allToolsTerminal(toolCallMap)
       ? "streaming"
@@ -1148,11 +1198,14 @@ function handleToolUseStructured(
   // `toolUseResult` (see `tugcode/src/replay.ts`); a guard that
   // excluded `replaying` would silently drop those events, leaving
   // resumed Read tool calls with `structuredResult: null` and the
-  // wrapper rendering an empty body.
+  // wrapper rendering an empty body. `waking` is admitted for the
+  // same reason — a wake's structured tool result must populate the
+  // pending call's `structuredResult`.
   if (
     state.phase !== "tool_work" &&
     state.phase !== "streaming" &&
-    state.phase !== "replaying"
+    state.phase !== "replaying" &&
+    state.phase !== "waking"
   ) {
     return { state, effects: [] };
   }
@@ -1583,6 +1636,52 @@ function handleTurnComplete(
     };
   }
 
+  // The wake bracket closes here — `turn_complete` is the implicit
+  // close (no separate `wake_complete` frame, by design at [D01]).
+  // Mirrors the normal `streaming → idle` commit path with two
+  // additions: clears `wakeTrigger`, and the committed entry carries
+  // the empty-text `pendingUserMessage` marker forward as
+  // `userMessage.text === ""` — that empty string IS the wake
+  // sentinel for consumers (Slice 2 chrome will key off `wakeTrigger`
+  // on the live state and `userMessage.text === ""` on the committed
+  // entry). Queue-flush is skipped (a queued send arriving during a
+  // wake would land in `queuedSends`; the wake's commit does not flush
+  // it — the user's queued message gets its own turn after the wake
+  // settles to idle in the normal way).
+  if (state.phase === "waking") {
+    return {
+      state: {
+        ...state,
+        phase: "idle",
+        activeMsgId: null,
+        scratch,
+        toolCallMap: new Map(),
+        toolUseStartedAt: new Map(),
+        pendingApproval: null,
+        pendingQuestion: null,
+        prevPhase: null,
+        pendingUserMessage: null,
+        wakeTrigger: null,
+        // A wake does not touch `lastError` — the user did not submit
+        // anything, so a wake-success does not "clear" a prior error
+        // cue that still applies to the user's most recent action. The
+        // normal commit branch below clears on success because a
+        // successful user turn is the recovery signal; a wake is not.
+        committedMsgIds,
+        sessionInitTokens,
+        ...resetPerTurnTelemetry(),
+        ...closedPauseSegments,
+      },
+      effects: [
+        { kind: "append-transcript", entry },
+        { kind: "clear-inflight" },
+        // Persist per-turn telemetry via the supervisor's SessionLedger
+        // — wakes are live turns, same as user-initiated ones.
+        ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry, sessionInitTokens)] : []),
+      ],
+    };
+  }
+
   // Single-tick collapse: a queued send on a successful turn flushes
   // in the same dispatch as the commit, so observers see the final
   // phase as `submitting`, not a transient `idle`.
@@ -1725,8 +1824,10 @@ function handleControlRequestForward(
   // the mid-turn gate tolerates stray forwards from a stale feed
   // replay.
   const isReplay = state.phase === "replaying";
+  const isWaking = state.phase === "waking";
   if (
     !isReplay &&
+    !isWaking &&
     state.phase !== "streaming" &&
     state.phase !== "tool_work" &&
     state.phase !== "awaiting_first_token" &&
@@ -2137,6 +2238,9 @@ function handleSessionStateErrored(
     state: {
       ...state,
       phase: "errored",
+      // Clear the wake bracket marker — after a session error, the
+      // bracket-close `turn_complete` will never arrive.
+      wakeTrigger: null,
       lastError: {
         cause: "session_state_errored",
         message,
@@ -2160,6 +2264,8 @@ function handleWireError(
     state: {
       ...state,
       phase: "errored",
+      // Same rationale as `handleSessionStateErrored` above.
+      wakeTrigger: null,
       lastError: {
         cause: "wire_error",
         message,
@@ -2309,12 +2415,16 @@ function handleTransportClose(
   // before, but ALSO record `transportState = "offline"`. The card
   // observer reads phase to surface "errored"; submit gating reads
   // the conjunction of phase ∈ {idle, errored} and transportState.
+  // `wakeTrigger` is cleared unconditionally — after transport-lost
+  // there is no active wake; the bracket-close (`turn_complete`) will
+  // not arrive on the dead wire.
   return {
     state: {
       ...state,
       ...perTurnReset,
       phase: "errored",
       transportState: "offline",
+      wakeTrigger: null,
       lastError: {
         cause: "transport_closed",
         message: "transport closed",
@@ -2710,6 +2820,110 @@ function handleUserMessageReplay(
   };
 }
 
+/**
+ * Wake-bracket opener for a spontaneous resume — fires when claude
+ * resumes from idle in response to an async deferred-completion event
+ * (Monitor timeout, CronCreate firing, ScheduleWakeup arriving, etc.).
+ * Closes [PPF-01]: the wake's subsequent content events would
+ * otherwise be dropped by guards expecting an active turn.
+ *
+ * Pattern mirrors `handleSend`'s state setup so the wake turn behaves
+ * like any user-initiated turn for streaming + telemetry, with three
+ * differences:
+ *   - `phase: "waking"` rather than `"submitting"` so the bracket is
+ *     visible to consumers and `handleTurnComplete` can branch on it.
+ *   - `pendingUserMessage.text === ""` is the wake sentinel — there
+ *     is no user-typed message. The committed `TurnEntry.userMessage.text`
+ *     will be `""`; consumers that render the user-message bubble
+ *     should check for this and skip the render.
+ *   - `pendingDraftRestore` is preserved — the user's in-progress
+ *     draft must not be touched by a wake (a wake mid-compose should
+ *     not clobber what the user was typing).
+ *
+ * Idempotent on nested wakes: a `wake_started` arriving while already
+ * `phase === "waking"` is treated as a metadata refresh (updates
+ * `wakeTrigger` only when the new payload is non-null and the prior
+ * was null). Flattens nested wakes to a single outer bracket per the
+ * design at [D01].
+ *
+ * Closed implicitly by `turn_complete`'s `waking → idle` commit
+ * branch — no separate `wake_complete` frame.
+ *
+ * Phases other than `idle` and `waking` drop defensively. Live
+ * tugcode only emits `wake_started` from idle (the detector flips
+ * `isInWake` and gates re-emission until the next `result`); a stray
+ * frame from a busy phase would be a tugcode bug.
+ *
+ * See `roadmap/tugplan-tide-session-wake.md` [D01] [D02]
+ * [#spec-wake-started-state-reset].
+ */
+function handleWakeStarted(
+  state: CodeSessionState,
+  event: WakeStartedEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Wire payload is snake_case (verbatim SDK shape); reducer state
+  // is camelCase per tugdeck convention. Translate once at the
+  // reducer boundary so downstream consumers read camelCase.
+  const trigger: WakeTrigger = {
+    taskId: event.wake_trigger.task_id,
+    toolUseId: event.wake_trigger.tool_use_id,
+    status: event.wake_trigger.status,
+    summary: event.wake_trigger.summary,
+    outputFile: event.wake_trigger.output_file,
+  };
+  if (state.phase === "waking") {
+    // Nested wake — idempotent refresh of trigger metadata only.
+    if (state.wakeTrigger === null) {
+      return {
+        state: { ...state, wakeTrigger: trigger },
+        effects: [],
+      };
+    }
+    return { state, effects: [] };
+  }
+  if (state.phase !== "idle") {
+    return { state, effects: [] };
+  }
+  return {
+    state: {
+      ...state,
+      phase: "waking",
+      wakeTrigger: trigger,
+      activeMsgId: null,
+      scratch: new Map(),
+      toolCallMap: new Map(),
+      toolUseStartedAt: new Map(),
+      pendingApproval: null,
+      pendingQuestion: null,
+      prevPhase: null,
+      pendingUserMessage: {
+        text: "",
+        atoms: [],
+        submitAt: Date.now(),
+        turnKey: event.turnKey,
+      },
+      // Per-turn telemetry reset — same single-source-of-truth helper
+      // `handleSend` uses on the queue-flush path. Future fields added
+      // to the helper apply to wakes automatically.
+      ...resetPerTurnTelemetry(),
+      // The per-turn interval arrays + the interrupt segment-start
+      // ARE reset here (mirrors handleSend). `transportNonOnlineSince`
+      // is owned by the transport handlers and intentionally left
+      // alone so an in-progress disconnect that pre-dates the wake
+      // still folds into the wake's downtime correctly.
+      awaitingApprovalIntervals: [],
+      transportDowntimeIntervals: [],
+      interruptInFlightIntervals: [],
+      interruptInFlightSegmentStartedAt: null,
+      // Snapshot the cost cursor so the per-turn delta is computed
+      // against this wake-start point at completion. (resetPerTurnTelemetry
+      // clears `costAtSubmit` to null; re-set it here after the spread.)
+      costAtSubmit: state.lastCost,
+    },
+    effects: [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Replay-clock handlers (preflight + soft-budget + timeout-dwell)
 // ---------------------------------------------------------------------------
@@ -2878,6 +3092,8 @@ export function reduce(
       return handleReplayComplete(state, event);
     case "user_message_replay":
       return handleUserMessageReplay(state, event);
+    case "wake_started":
+      return handleWakeStarted(state, event);
     case "bind_resume_acknowledged":
       return handleBindResumeAcknowledged(state);
     case "tick_soft_budget":
