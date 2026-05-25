@@ -1,0 +1,27 @@
+{
+  "kind": "sw-60",
+  "sessionId": "8ba612d0-0c9d-4e04-9a98-2c85b3c12fa9",
+  "heldSec": 130,
+  "prompt": "Use ScheduleWakeup with delaySeconds:60 and reason:'PROBE_SW'. The wake's prompt should ask you to reply with exactly 'PROBE_SW fired' and nothing else.",
+  "args": [
+    "--output-format",
+    "stream-json",
+    "--input-format",
+    "stream-json",
+    "--verbose",
+    "--permission-prompt-tool",
+    "stdio",
+    "--include-partial-messages",
+    "--replay-user-messages",
+    "--plugin-dir",
+    "/Users/kocienda/Mounts/u/src/tugtool/tugplug",
+    "--permission-mode",
+    "bypassPermissions",
+    "--append-system-prompt",
+    "test",
+    "--session-id",
+    "8ba612d0-0c9d-4e04-9a98-2c85b3c12fa9"
+  ],
+  "stdoutLines": 40,
+  "stderrLines": 0
+}
