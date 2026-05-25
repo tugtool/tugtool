@@ -953,7 +953,9 @@ The component renders a `data-participant` attribute on its root for theme overr
 
 #### Step 13 — Wire thinking + tool surfaces {#step-13}
 
-**Status: Pending — refresh required.** Authored 2026-04-19. Re-confirm the `streamingPaths.thinking` / `streamingPaths.tools` snapshot fields still exist on `CodeSessionStore` and the placement decision in the original Work section is still the right default.
+**Status: Absorbed by [tugplan-tide-assistant-rendering.md](./tide-assistant-rendering.md).** The thinking-block surface and the full tool-wrapper family (Bash, Read, Edit, Glob, Grep, WebFetch, WebSearch, Write, NotebookEdit, Task, plus DefaultToolWrapper for drift) all shipped via that plan's body-kind and tool-wrapper steps; dispatch, drift caution, and the permission/question dialogs landed alongside. See the absorbing plan's [Phase Exit Criteria](./tide-assistant-rendering.md#exit-criteria) for the verification record.
+
+*Original (now-superseded) authoring notes follow for archival purposes:*
 
 **Files:**
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` (`streamingPaths.thinking` + `streamingPaths.tools` consumers).

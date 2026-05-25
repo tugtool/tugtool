@@ -2828,6 +2828,8 @@ Compliance:
 
 ### Phase T1: Content Block Types {#content-block-types}
 
+**Status:** Shipped via [tugplan-tide-assistant-rendering.md](./tide-assistant-rendering.md). All body kinds, tool wrappers, dispatch, and assistant chrome listed below were authored, conformance-checked, and integration-tested under that plan; see its [Phase Exit Criteria](./tide-assistant-rendering.md#exit-criteria) for the verification record and the deferred-at-exit list.
+
 **Goal:** Rich rendering for all content types in the unified output stream. This is the block rendering engine that serves both Claude Code conversation content and shell command output. Built on the Phase 3A virtualization engine (BlockHeightIndex, RenderedBlockWindow, WASM pipeline, SmartScroll).
 
 **Covers:** U1 (text accumulation), U5 (streaming indicator), U6 (thinking display), U7 (tool use display) from tug-conversation.md.
