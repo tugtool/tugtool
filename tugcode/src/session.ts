@@ -1569,18 +1569,48 @@ export class SessionManager {
     this.contextBreakdownEmitter = options?.contextBreakdownEmitter ?? null;
     this.openSessionsDb(options?.sessionsDbPath);
 
-    // Shadow scheduler injection. `emitFrame` is the IPC stdout sink
-    // (same `writeLine` the rest of `SessionManager` uses); `writeStdin`
-    // dereferences `this.claudeProcess` at fire time because the scheduler
-    // is constructed eagerly here, before any claude spawn. A fire that
-    // arrives while no claude is alive (window between teardown and the
-    // next spawn) is logged and dropped — the scheduler's try/catch
-    // wraps both side effects so a downstream throw can't unschedule
-    // sibling jobs. See [D05].
+    // Shadow scheduler injection. `emitFrame` mirrors
+    // `handleTaskNotification`'s bracket-open semantics for Cohort A:
+    // write the `wake_started` frame to tugdeck, set `isInWake`, AND
+    // open a fresh `ActiveTurn` so claude's response events route
+    // through `dispatchEventToTurn` instead of being silently dropped
+    // by `handleInterTurnEvent`. `writeStdin` then writes the
+    // user_message to claude's stdin, which causes claude to begin
+    // streaming its response into the just-opened turn. `claudeProcess`
+    // is dereferenced at fire time because the scheduler is constructed
+    // eagerly here, before any claude spawn. See [D05] and
+    // [#step-10-bug-wake-routing] for the routing-bug post-mortem.
     this.scheduler = new WakeScheduler({
       sessionId: this.sessionId,
-      emitFrame: (frame) => writeLine(frame),
+      emitFrame: (frame) => {
+        // Idempotency: if a wake bracket is already open (a prior
+        // Cohort A wake's turn is still running, or another shadow
+        // fired moments ago), the reducer would treat a second
+        // `wake_started` as a nested wake — suppress here to match
+        // `handleTaskNotification`'s policy.
+        if (this.isInWake) {
+          console.log(
+            `[tide::wake-scheduler] shadow fire suppressed; wake bracket ` +
+              `already open task_id=${frame.wake_trigger.task_id}`,
+          );
+          return;
+        }
+        writeLine(frame);
+        this.isInWake = true;
+        this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
+      },
       writeStdin: (line) => {
+        // Suppressed-emit case: emitFrame returned without opening a
+        // turn, so claude wouldn't have anywhere to route its response.
+        // Drop the stdin write — the wake's prompt is lost but better
+        // than leaking it into someone else's turn.
+        if (!this.isInWake || this.activeTurn === null) {
+          console.log(
+            `[tide::wake-scheduler] shadow fire stdin-write skipped; ` +
+              `no fresh wake turn open`,
+          );
+          return;
+        }
         const proc = this.claudeProcess;
         if (proc === null) {
           throw new Error(

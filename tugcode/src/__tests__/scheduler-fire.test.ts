@@ -261,3 +261,92 @@ describe("SessionManager.handleTaskNotification — double-fire safety hook", ()
     expect((manager as any).isInWake).toBe(true);
   });
 });
+
+describe("SessionManager — shadow fire opens an ActiveTurn (Probe 1 regression)", () => {
+  // PROBE_MARKER: Session 3702c898 — wake bracket landed but claude's
+  // response stream stalled at 'streaming' because the shadow fire path
+  // never opened an ActiveTurn. handleClaudeLine routed every event
+  // through handleInterTurnEvent (which is a no-op for non-init events)
+  // and silently dropped the wake's response. This regression test
+  // pins that the shadow-fire emitFrame callback opens a fresh
+  // ActiveTurn alongside flipping isInWake, mirroring
+  // handleTaskNotification's Cohort-A bracket-open semantics.
+
+  let projectDir: string;
+  let manager: SessionManager;
+  let stdinWrites: string[];
+
+  beforeEach(() => {
+    projectDir = mkdtempSync(join(tmpdir(), "wake-shadowfire-"));
+    manager = new SessionManager(projectDir, SESSION_ID, "new", undefined, {
+      sessionsDbPath: null,
+    });
+    // Inject a stub claudeProcess so writeStdin doesn't throw at fire time.
+    stdinWrites = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (line: string) => {
+          stdinWrites.push(line);
+        },
+        flush: () => {},
+        end: () => {},
+      },
+      stdout: new ReadableStream(),
+      stderr: new ReadableStream(),
+      kill: () => {},
+      exited: new Promise(() => {}),
+    };
+  });
+  afterEach(() => {
+    // Don't run full shutdown — it tries to kill the stub process.
+    const scheduler = (manager as any).scheduler as WakeScheduler;
+    scheduler.dispose();
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  test("shadow delay fire: isInWake flips, activeTurn opens, stdin receives user_message", async () => {
+    (manager as any).handleSchedulingToolUse({
+      type: "tool_use",
+      msg_id: "msg-shadow",
+      seq: 0,
+      tool_name: "ScheduleWakeup",
+      tool_use_id: "shadow-fire-1",
+      input: { delaySeconds: 0.1, prompt: "wake up and report" },
+      ipc_version: 2,
+    });
+
+    expect((manager as any).isInWake).toBe(false);
+    expect((manager as any).activeTurn).toBeNull();
+
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect((manager as any).isInWake).toBe(true);
+    expect((manager as any).activeTurn).not.toBeNull();
+    expect(stdinWrites).toHaveLength(1);
+    const written = JSON.parse(stdinWrites[0]);
+    expect(written.type).toBe("user");
+    expect(written.message.content[0].text).toBe("wake up and report");
+  });
+
+  test("shadow fire suppressed when wake bracket is already open (nested guard)", async () => {
+    // Manually force isInWake true to simulate a prior wake's bracket
+    // still being open.
+    (manager as any).isInWake = true;
+
+    (manager as any).handleSchedulingToolUse({
+      type: "tool_use",
+      msg_id: "msg-nested",
+      seq: 0,
+      tool_name: "ScheduleWakeup",
+      tool_use_id: "shadow-fire-nested",
+      input: { delaySeconds: 0.1, prompt: "should not run" },
+      ipc_version: 2,
+    });
+
+    await new Promise((r) => setTimeout(r, 300));
+
+    // Suppressed: activeTurn unchanged, no stdin write.
+    expect((manager as any).activeTurn).toBeNull();
+    expect(stdinWrites).toHaveLength(0);
+  });
+});

@@ -185,6 +185,8 @@ The Step 5 drift test pins both compile-time (the 4 SDK-declared fields) and run
 
 **Why it matters:** Wake turns appearing with no context could be disorienting — the user submitted "look at /var/log" two minutes ago and suddenly a new turn paints with no prompt visible. A small inline cue (a chip / a header row) would orient them.
 
+**Field signal (Session 3702c898, 2026-05-25):** User flagged a second concern under the same chrome umbrella — the **submit affordance flips to Stop mode** the moment a wake bracket opens, even though the user did not initiate the turn. User's framing: *"that button should be under my control, not the system's on a wake up. We might need some notion of a 'detached' message coming through on the assistant 'channel'."* Slice 2 should treat wake-initiated turns as a distinct chrome class (different from user-initiated turns): the Stop affordance might still be available (the user must be able to halt a runaway wake — [Q03] confirms this), but the visual treatment should signal "spontaneous / detached" so the user understands the turn arrived without their submit.
+
 **Plan to resolve:** Ship Slice 1 without the cue; gather feedback from real use; decide whether Slice 2 ships a chrome update.
 
 **Resolution:** DEFERRED to Slice 2 follow-on plan.
