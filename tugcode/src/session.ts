@@ -2879,6 +2879,15 @@ export class SessionManager {
     if (frame === null) {
       return;
     }
+    // Double-fire safety hook (Slice 1b [D05]). If the harness ever
+    // fires a `task_notification` for a task we shadowed via the Step-9
+    // intercept, silently cancel the shadow so only one `wake_started`
+    // reaches tugdeck — the harness's. If our shadow fired first the
+    // matching entry was already removed by `WakeScheduler.handleFire`
+    // and this is a silent no-op; the late-arriving harness frame is
+    // then a "nested wake" which the reducer's existing idempotency at
+    // [D01] absorbs.
+    this.scheduler.cancelOnHarnessNotification(frame.wake_trigger.task_id);
     if (this.isInWake) {
       console.log(
         `[tugcode/wake] nested task_notification ignored ` +

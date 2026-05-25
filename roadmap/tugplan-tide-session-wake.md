@@ -931,20 +931,20 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - **Double-fire safety hook:** `SessionManager.handleTaskNotification` (already routes Cohort A wakes) gains one extra line BEFORE emitting the `wake_started` frame for the cohort-A path: `this.scheduler.cancelOnHarnessNotification(event.task_id)`. If the harness ever does fire for a task we shadowed, the shadow is silently cancelled; the harness's own `task_notification` continues through the Cohort A path and the wake renders once. Symmetric: if our shadow fires first, the harness's later notification (if any) finds no matching scheduler entry — the cancel hook is a no-op and the Cohort A path still emits a `wake_started`; tugdeck's reducer detects the nested wake via `state.phase === "waking"` and the existing idempotency logic at [D01] absorbs the duplicate.
 
 **Tasks:**
-- [ ] Complete `WakeScheduler` fire-callback per the artifacts above.
-- [ ] Hook the cancel-on-notification call in `SessionManager.handleTaskNotification`.
-- [ ] Verify the synthetic user_message frame's shape against the user's Session 56cce4fe line 28 (`isMeta:true` is internal to the persistence layer; the stream-json wire shape is just `{type:"user", message:{role:"user", content:[…]}}`). The session JSONL's `isMeta:true` flag is a persistence-layer annotation; the stream-json wire does not carry it.
-- [ ] Log lifecycle at info: `tide::wake-scheduler::fired kind=… tool_use_id=… delay_or_cron=…`.
+- [x] Complete `WakeScheduler` fire-callback (already implemented in Step 8: emits `wake_started`, writes user_message stream-json line, removes one-shot entries, try/catch isolation).
+- [x] Hook `this.scheduler.cancelOnHarnessNotification(task_id)` at the top of `SessionManager.handleTaskNotification`, before the `isInWake` guard. If the harness ever fires for a task we shadowed, the shadow is silently cancelled; if our shadow fired first, the entry was already removed by `WakeScheduler.handleFire` and this is a silent no-op.
+- [x] Verified synthetic user_message frame shape: `{type:"user", message:{role:"user", content:[{type:"text", text}]}}` — pinned by `scheduler-fire.test.ts` `synthetic user_message shape` case (parses byte-identical to the wire shape `handleUserMessage` writes for a real submission; no `isMeta` on the wire).
+- [x] Lifecycle logging at info: `[tide::wake-scheduler] fired kind=... task_id=... recurring=...`.
 
 **Tests:**
-- [ ] Pure-logic: a fired delay job invokes `emitFrame` exactly once with a `wake_started` frame whose `wake_trigger.task_id` matches the scheduled `tool_use_id`.
-- [ ] Pure-logic: a fired delay job invokes `writeStdin` exactly once with a JSON line that parses to `{type:"user", message:{role:"user", content:[{type:"text", text: <prompt>}]}}`.
-- [ ] Pure-logic: a `kind:"cron"` job with `recurring:true` keeps re-firing (assert `emitFrame` called N times for N croner ticks); a `kind:"cron"` job with `recurring:false` fires exactly once.
-- [ ] Pure-logic: `cancelOnHarnessNotification(taskId)` cancels the matching job and the firer's `emitFrame` is never called for that job after cancel.
-- [ ] Pure-logic: double-fire safety end-to-end — schedule a shadow job, simulate a harness `task_notification` for the same `task_id` arriving before the shadow timer would fire (`handleTaskNotification` flow); assert the shadow's `emitFrame` is NOT called and the harness path's own `wake_started` IS emitted.
+- [x] Pure-logic: a fired delay job invokes `emitFrame` exactly once with a `wake_started` frame whose `wake_trigger.task_id` matches the scheduled `tool_use_id` (Step 8 integration case).
+- [x] Pure-logic: a fired delay job invokes `writeStdin` exactly once with a JSON line parsing to the canonical user_message shape (Step 10 `synthetic user_message shape`).
+- [x] Pure-logic: cron `recurring:true` keeps firing across manual triggers; `recurring:false` fires exactly once (`scheduler-fire.test.ts` cron-recurring cases — exercises the fire path via `cron.trigger()` on a far-future pattern).
+- [x] Pure-logic: `cancelOnHarnessNotification` prevents subsequent fire; sibling jobs survive an isolated cancel.
+- [x] Pure-logic: end-to-end double-fire safety — shadow registered via the Step-9 intercept, then a synthesised harness `task_notification` arrives for the same `task_id`; assert shadow is cancelled and the cohort-A bracket opens (`isInWake` flips true).
 
 **Checkpoint:**
-- [ ] `cd tugcode && bun x tsc --noEmit && bun test` green.
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green (483 pass, 7 new fire-path / double-fire cases).
 
 ---
 
