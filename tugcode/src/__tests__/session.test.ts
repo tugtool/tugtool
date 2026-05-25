@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { SessionManager, buildClaudeArgs, buildContentBlocks, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
+import { SessionManager, buildClaudeArgs, buildContentBlocks, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 import type { StreamingUsage } from "../types.ts";
 
@@ -667,6 +667,144 @@ describe("routeTopLevelEvent", () => {
     const cancelMsg = result.messages.find((m: any) => m.type === "control_request_cancel") as any;
     expect(cancelMsg).toBeDefined();
     expect(cancelMsg.request_id).toBe("req-pure-cancel");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildWakeStartedMessage tests — wake-detector pure helper
+// (`roadmap/tugplan-tide-session-wake.md` Step 3, [D02], [Q01])
+// ---------------------------------------------------------------------------
+
+describe("buildWakeStartedMessage", () => {
+  test("forwards all five SDK payload fields verbatim", () => {
+    const event = {
+      type: "system",
+      subtype: "task_notification",
+      session_id: "wire-session-id",
+      task_id: "b9klbr5tx",
+      tool_use_id: "toolu_01XzLVALeMEvdqb4qiNDbRdp",
+      status: "stopped",
+      output_file: "/tmp/monitor-output.txt",
+      summary: "kernel lines in /var/log/system.log",
+      uuid: "5a3bed72-f287-4060-a093-347efd1ee010",
+    };
+    const frame = buildWakeStartedMessage(event, "tug-session-id");
+    expect(frame).not.toBeNull();
+    expect(frame!.type).toBe("wake_started");
+    // session_id comes from the SessionManager (tug-side), not the
+    // wire event (which carries claude's own session_id).
+    expect(frame!.session_id).toBe("tug-session-id");
+    expect(frame!.wake_trigger).toEqual({
+      task_id: "b9klbr5tx",
+      tool_use_id: "toolu_01XzLVALeMEvdqb4qiNDbRdp",
+      status: "stopped",
+      summary: "kernel lines in /var/log/system.log",
+      output_file: "/tmp/monitor-output.txt",
+    });
+    expect(frame!.ipc_version).toBe(2);
+  });
+
+  test("accepts the three SDK status values", () => {
+    for (const status of ["completed", "failed", "stopped"] as const) {
+      const event = {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "t-1",
+        tool_use_id: "tu-1",
+        status,
+        summary: "",
+        output_file: "",
+      };
+      const frame = buildWakeStartedMessage(event, "s-1");
+      expect(frame).not.toBeNull();
+      expect(frame!.wake_trigger.status).toBe(status);
+    }
+  });
+
+  test("returns null for non-task_notification events", () => {
+    expect(
+      buildWakeStartedMessage({ type: "system", subtype: "init" }, "s"),
+    ).toBeNull();
+    expect(
+      buildWakeStartedMessage(
+        { type: "system", subtype: "task_updated" },
+        "s",
+      ),
+    ).toBeNull();
+    expect(buildWakeStartedMessage({ type: "result" }, "s")).toBeNull();
+    expect(buildWakeStartedMessage({ type: "user" }, "s")).toBeNull();
+  });
+
+  test("returns null for task_notification with missing task_id", () => {
+    expect(
+      buildWakeStartedMessage(
+        { type: "system", subtype: "task_notification" },
+        "s",
+      ),
+    ).toBeNull();
+    expect(
+      buildWakeStartedMessage(
+        { type: "system", subtype: "task_notification", task_id: "" },
+        "s",
+      ),
+    ).toBeNull();
+    expect(
+      buildWakeStartedMessage(
+        { type: "system", subtype: "task_notification", task_id: 42 },
+        "s",
+      ),
+    ).toBeNull();
+  });
+
+  test("defaults missing optional fields to empty strings / 'stopped'", () => {
+    const event = {
+      type: "system",
+      subtype: "task_notification",
+      task_id: "t-only",
+    };
+    const frame = buildWakeStartedMessage(event, "s");
+    expect(frame).not.toBeNull();
+    expect(frame!.wake_trigger).toEqual({
+      task_id: "t-only",
+      tool_use_id: "",
+      status: "stopped",
+      summary: "",
+      output_file: "",
+    });
+  });
+
+  test("locates the wake signal in the Step-1 captured fixture", async () => {
+    // Reads the actual stream-json capture committed alongside the
+    // wake plan and verifies that the single line carrying
+    // `subtype: "task_notification"` produces a well-formed
+    // `wake_started` frame when fed through `buildWakeStartedMessage`.
+    // Pins the empirical wire shape against the implementation.
+    const fixturePath =
+      new URL(
+        "../../../tugrust/crates/tugcast/tests/fixtures/" +
+          "stream-json-catalog/v2.1.150-spike/test-monitor-wake-raw.jsonl",
+        import.meta.url,
+      ).pathname;
+    const raw = await Bun.file(fixturePath).text();
+    const lines = raw.split("\n").filter((l) => l.length > 0);
+    expect(lines.length).toBeGreaterThan(0);
+
+    const wakeFrames: unknown[] = [];
+    for (const line of lines) {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      const frame = buildWakeStartedMessage(event, "test-session");
+      if (frame !== null) wakeFrames.push(frame);
+    }
+
+    // Exactly one task_notification → exactly one wake_started.
+    expect(wakeFrames).toHaveLength(1);
+    const frame = wakeFrames[0] as ReturnType<typeof buildWakeStartedMessage>;
+    expect(frame).not.toBeNull();
+    expect(frame!.type).toBe("wake_started");
+    expect(frame!.wake_trigger.task_id).toBe("b9klbr5tx");
+    expect(frame!.wake_trigger.status).toBe("stopped");
+    // The capture's task was a Monitor watching system.log for "kernel".
+    expect(frame!.wake_trigger.summary).toContain("kernel");
   });
 });
 

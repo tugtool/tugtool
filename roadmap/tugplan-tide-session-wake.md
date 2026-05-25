@@ -501,27 +501,35 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 **References:** [D02] tugcode owns detection, [Q01] event shapes (resolved in #step-1), Spec [#spec-wire-frames], (#strategy)
 
 **Artifacts:**
-- `case "system"` in `tugcode/src/session.ts:565` gains a new arm next to the existing `subtype === "init"` arm: if `event.subtype === "task_notification"`, emit a `wake_started` IPC frame carrying the SDK's `SDKTaskNotificationMessage` payload (verbatim — `{task_id, tool_use_id, status, summary, output_file}`); set the session's `isInWake` flag; return.
-- Bracket close: implicit. tugcode does NOT emit any wake-close frame — claude's normal end-of-turn `result → turn_complete` is the close signal, and the reducer's commit path handles the `waking → idle` transition (Step 4).
-- tugcode clears its `isInWake` flag on the next `result` so a subsequent wake brackets correctly.
-- The SDK's `system/task_notification` event carries the payload pre-parsed into named fields. tugcode forwards them verbatim; no parsing, no transformation.
+- `handleInterTurnEvent` in `tugcode/src/session.ts` gains a `system/task_notification` arm next to the existing `system/init` arm. **Location revised from the original draft (`case "system"` in `routeTopLevelEvent` at line 565):** the empirical capture pins `task_notification` as arriving strictly *between* turns (after the prior `result`, before the next `message_start`), and the inter-turn drain is what `handleInterTurnEvent` services. `routeTopLevelEvent` is the per-turn dispatcher and never sees the event.
+- Pure helper `buildWakeStartedMessage(event, sessionId)` exported next to `routeTopLevelEvent` — builds the IPC frame from a `system/task_notification` event, returns null on malformed input. Testable without SessionManager infrastructure.
+- New SessionManager field `private isInWake: boolean = false`. Flipped true when `wake_started` emits; flipped false when the wake's terminal `result` lands and `handleClaudeLine` clears `activeTurn`.
+- **`handleTaskNotification` opens a fresh ActiveTurn on wake_started** (`new ActiveTurn(this.nextSeq(), "", [])`). Without this, the wake's subsequent content events (`message_start`, `assistant`, `stream_event`, terminal `result`) would all fall back to `handleInterTurnEvent` and be silently dropped — the precise upstream cause of [PPF-01].
+- Bracket close: implicit. tugcode does NOT emit any wake-close frame. The wake's terminal `result` flows through `dispatchEventToTurn` → `routeTopLevelEvent` → produces the normal `turn_complete` IPC frame; `handleClaudeLine`'s cleanup then clears `activeTurn` AND `isInWake` together.
 
 **Tasks:**
-- [ ] Detector state on SessionManager: `isInWake: boolean` only. No correlation window, no auxiliary tracking, no helper functions.
-- [ ] Add the new arm in `case "system"` at `session.ts:565`: check `event.subtype === "task_notification"`, build the `WakeStartedMessage` payload from SDK fields, push to `messages`. **No turnKey on the frame — tugdeck mints it.**
-- [ ] On `result` while `isInWake`: forward the result normally (tugcode already emits `turn_complete` for `result`); clear `isInWake`. **No `wake_complete` emitted.**
-- [ ] Handle nested wakes: a second `system/task_notification` event arriving while already `isInWake` is treated as additive metadata refresh — the new payload's `task_id`/`summary` overwrite `lastTaskNotification` (so the trailing `wake_started` carries the most-recent info if claude updates mid-wake) but no second `wake_started` IPC frame emits (idempotent on the wire).
+- [x] Add `buildWakeStartedMessage` pure helper exported from `session.ts`. Returns null on malformed events (missing/wrong-type `task_id`); defaults optional fields permissively (`status: "stopped"`, empty strings).
+- [x] Add `WakeStarted` to the type-only import from `./types.ts` in `session.ts`.
+- [x] Add `private isInWake: boolean = false` field on SessionManager with JSDoc citing the wake plan.
+- [x] Add `private handleTaskNotification(event)` method on SessionManager. Calls `buildWakeStartedMessage`; emits the frame via `writeLine`; flips `isInWake`; opens a fresh ActiveTurn with empty user-text. Suppresses (logs at debug) when already `isInWake` — nested-wake idempotency.
+- [x] Wire the new arm into `handleInterTurnEvent`: `if (event.type === "system" && event.subtype === "task_notification") this.handleTaskNotification(event)`.
+- [x] Extend `handleClaudeLine`'s ActiveTurn-cleanup site (`if (turn.gotResult) { this.activeTurn = null; }`) to also clear `isInWake` when it's set. Comment cites the plan's bracket-close design.
 
 **Tests:**
-- [ ] tugcode unit test: feed a synthetic `system/task_notification` event; assert one `wake_started` IPC frame emits with all five payload fields forwarded, and `isInWake` flips true.
-- [ ] tugcode unit test: feed a synthetic `result` event while `isInWake === true`; assert `isInWake` flips false and a normal `turn_complete` emits (no `wake_complete`).
-- [ ] tugcode unit test: feed two consecutive `system/task_notification` events without a `result` in between; assert only one `wake_started` emits (nested-wake idempotency).
-- [ ] tugcode unit test: feed a synthetic `system/init` event (the existing path); assert no `wake_started` emits and the init handling runs as today.
-- [ ] tugcode unit test against the Step-1 captured fixture `v2.1.150-spike/test-monitor-wake-raw.jsonl`: parse the 90-line stream-json, feed each event through `routeTopLevelEvent`, assert the emitted IPC sequence contains exactly one `wake_started` (at the position of the `system/task_notification` event), followed by the wake-turn content, followed by `turn_complete` (no `wake_complete`).
+- [x] `buildWakeStartedMessage` forwards all five SDK payload fields verbatim (task_id, tool_use_id, status, summary, output_file).
+- [x] `buildWakeStartedMessage` accepts each of the three SDK `status` values (`completed`, `failed`, `stopped`).
+- [x] `buildWakeStartedMessage` returns null for non-task_notification events (system/init, system/task_updated, result, user).
+- [x] `buildWakeStartedMessage` returns null for task_notification events with missing/empty/wrong-type `task_id` (defensive guard).
+- [x] `buildWakeStartedMessage` defaults missing optional fields permissively (empty strings, `status: "stopped"`).
+- [x] `buildWakeStartedMessage` against the Step-1 captured fixture `v2.1.150-spike/test-monitor-wake-raw.jsonl`: parses the 90-line JSONL, feeds every event through the helper, asserts exactly one wake_started emerges with task_id `b9klbr5tx`, status `stopped`, summary containing `kernel`. Pins the empirical wire shape against the implementation.
+- [-] Full SessionManager-level integration test (state-transition behavior of `handleTaskNotification` + ActiveTurn open + result-clears-isInWake) — deferred to Step 5's fixture-replay test, which exercises the full tugcode → IPC → tugdeck reducer round-trip.
 
 **Checkpoint:**
-- [ ] `cd tugcode && bun test` green.
-- [ ] tugcast still routes the new frames without panicking (cargo nextest stays green).
+- [x] `cd tugcode && bun x tsc --noEmit` clean.
+- [x] `cd tugcode && bun test` green (443 / 443 — 6 new tests added; was 437).
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` green (2892 / 2892).
+- [x] `cd tugdeck && bun run audit:tokens lint` zero violations.
+- [x] `cd tugrust && cargo nextest run` green (1324 passed, 9 skipped) — tugcast routes the new frames as opaque pass-through per Step 2's survey.
 
 ---
 

@@ -25,6 +25,7 @@ import type {
   SystemMetadata,
   CostUpdate,
   StreamingUsage,
+  WakeStarted,
   Attachment,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
@@ -502,6 +503,55 @@ export interface ResultMetadata {
  * Result of routing a single top-level stdout message to IPC outbound messages.
  * Per D03 (#d03-event-routing) two-tier routing architecture.
  */
+/**
+ * Pure factory for the {@link WakeStarted} IPC frame from a
+ * `system/task_notification` event. Returns null for events that
+ * are not task notifications, or for ones missing the expected
+ * `task_id` field.
+ *
+ * The SDK's `SDKTaskNotificationMessage` payload
+ * (`@anthropic-ai/claude-agent-sdk/sdk.d.ts:1659-1668`) is forwarded
+ * verbatim onto `wake_trigger`. Missing optional fields default to
+ * empty strings or "stopped" for status — permissive on the wire so
+ * a malformed event doesn't drop the wake bracket entirely.
+ *
+ * Caller (handleInterTurnEvent) is responsible for:
+ *   - Side effects (writeLine, set isInWake, open ActiveTurn).
+ *   - Idempotency (suppress emit on nested wake).
+ *   - turnKey minting — NOT carried on the wire; the tugdeck store
+ *     wrapper mints it on receipt, mirroring the existing
+ *     user_message_replay pattern.
+ *
+ * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
+ * rationale and [Q01] for the empirical wire shape this contract is
+ * pinned against.
+ */
+export function buildWakeStartedMessage(
+  event: Record<string, unknown>,
+  sessionId: string,
+): WakeStarted | null {
+  if (event.type !== "system" || event.subtype !== "task_notification") {
+    return null;
+  }
+  const taskId = event.task_id;
+  if (typeof taskId !== "string" || taskId.length === 0) {
+    return null;
+  }
+  const status = event.status as "completed" | "failed" | "stopped" | undefined;
+  return {
+    type: "wake_started",
+    session_id: sessionId,
+    wake_trigger: {
+      task_id: taskId,
+      tool_use_id: (event.tool_use_id as string) ?? "",
+      status: status ?? "stopped",
+      summary: (event.summary as string) ?? "",
+      output_file: (event.output_file as string) ?? "",
+    },
+    ipc_version: 2,
+  };
+}
+
 export interface TopLevelRoutingResult {
   messages: OutboundMessage[];
   gotResult: boolean;
@@ -1368,6 +1418,26 @@ export class SessionManager {
    * still in `replaying` phase.
    */
   private replayActive: boolean = false;
+  /**
+   * True while a spontaneous-wake bracket is open on the wire — set
+   * when `handleInterTurnEvent` emits a `wake_started` IPC frame in
+   * response to a `system/task_notification` event, cleared when the
+   * wake's terminal `result` lands and the ActiveTurn closes.
+   *
+   * Gates two behaviors:
+   *   1. Nested `system/task_notification` arriving inside an open
+   *      wake is a no-op (idempotent — one bracket per wake on the
+   *      wire; inner trigger metadata is logged at debug level only).
+   *   2. The ActiveTurn-cleanup site in `handleClaudeLine` also clears
+   *      this flag so the next `system/task_notification` re-opens a
+   *      fresh bracket.
+   *
+   * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
+   * design and [Q01] for the empirical wire shape that justifies
+   * `handleInterTurnEvent` (not `routeTopLevelEvent`) as the detector
+   * site — `task_notification` arrives strictly between turns.
+   */
+  private isInWake: boolean = false;
   /** Configurable JSONL archive root; defaults to ~/.claude/projects. */
   private claudeProjectsRoot: string;
   /** Configurable JSONL reader; default uses `Bun.file`. */
@@ -2634,8 +2704,18 @@ export class SessionManager {
       // the next claude event opens a fresh turn instead of
       // dispatching into a finished one. Turn ownership is
       // `result`-bounded and lives here, not in `handleUserMessage`.
+      //
+      // Also clear `isInWake` if it was set — the terminating
+      // `result` closes the wake bracket (no separate `wake_complete`
+      // frame on the wire; the tugdeck reducer's commit path maps
+      // `waking → idle` on the `turn_complete` that this `result`
+      // produces). See `handleTaskNotification` for the bracket-open
+      // side and `roadmap/tugplan-tide-session-wake.md` [D02].
       if (turn.gotResult) {
         this.activeTurn = null;
+        if (this.isInWake) {
+          this.isInWake = false;
+        }
       }
     } else {
       this.handleInterTurnEvent(event);
@@ -2693,6 +2773,63 @@ export class SessionManager {
     if (emitter) writeLine(emitter.onSpawn());
   }
 
+  /**
+   * Inter-turn `system/task_notification` arm — the wake detector.
+   *
+   * A `system/task_notification` event arrives between turns when an
+   * async deferred-completion tool (Monitor timeout, Cron firing,
+   * ScheduleWakeup arrival, etc.) raises an event after the parent
+   * assistant turn has already completed. Claude resumes in a fresh
+   * turn to respond to the notification, *without* a preceding user
+   * submission.
+   *
+   * Detection and emission:
+   *   1. Build the {@link WakeStarted} IPC frame via
+   *      {@link buildWakeStartedMessage} (pure helper — testable).
+   *      Returns null on malformed events; we silently drop those.
+   *   2. Suppress emission if a wake bracket is already open
+   *      ({@link isInWake} true). Nested wakes flatten to one outer
+   *      bracket on the wire; inner trigger metadata is logged at
+   *      debug level only. See plan [#spec-phase-transitions].
+   *   3. Emit the frame, flip {@link isInWake}, open a fresh
+   *      `ActiveTurn` so the wake's content events (which will
+   *      arrive next — `message_start`, `assistant`, `stream_event`,
+   *      and the terminal `result`) route through the existing
+   *      `dispatchEventToTurn` machinery. Without opening a turn,
+   *      every subsequent wake event would fall back to
+   *      `handleInterTurnEvent` and be silently dropped — the
+   *      precise upstream cause of [PPF-01] before this fix.
+   *
+   * The wake turn carries no user-typed text: the `ActiveTurn` is
+   * opened with empty `userText` + empty `userAttachments`. The
+   * tugdeck reducer recognizes this via the `wake_started` bracket
+   * (not by inspecting the user text), so the empty marker does not
+   * leak as a phantom user bubble in normal rendering. The corner
+   * case where a mid-wake card reload triggers `runReplay` and
+   * surfaces an empty `user_message_replay` is a known Slice 2
+   * follow-up.
+   *
+   * The wake bracket closes implicitly: when the wake's terminal
+   * `result` lands, `handleClaudeLine` clears `activeTurn` AND
+   * {@link isInWake} — no `wake_complete` frame on the wire.
+   */
+  private handleTaskNotification(event: Record<string, unknown>): void {
+    const frame = buildWakeStartedMessage(event, this.sessionId);
+    if (frame === null) {
+      return;
+    }
+    if (this.isInWake) {
+      console.log(
+        `[tugcode/wake] nested task_notification ignored ` +
+          `(task_id=${frame.wake_trigger.task_id})`,
+      );
+      return;
+    }
+    writeLine(frame);
+    this.isInWake = true;
+    this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
+  }
+
   private maybeEmitContextBreakdown(event: Record<string, unknown>): void {
     const emitter = this.contextBreakdownEmitter;
     if (!emitter) return;
@@ -2737,6 +2874,9 @@ export class SessionManager {
     if (event.type === "system" && event.subtype === "init") {
       const sessionId = (event.session_id as string) || "unknown";
       writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
+    }
+    if (event.type === "system" && event.subtype === "task_notification") {
+      this.handleTaskNotification(event);
     }
     // Other inter-turn event types are currently no-ops. The drain
     // is intentionally permissive here — it must not throw, since
