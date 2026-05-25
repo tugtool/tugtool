@@ -86,7 +86,7 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 
 #### Assumptions {#assumptions}
 
-- The task-notification reaches tugcode as a `{type:"system", subtype:"task_notification", ...}` event matching the SDK's `SDKTaskNotificationMessage` type at `sdk.d.ts:1659-1668`. Empirically confirmed by the Step 1 capture at `v2.1.150-spike/test-monitor-wake-raw.jsonl` line 49. The persistence-log surfaces the same wake as a synthetic `type:"user"` event with XML content, but the persistence-log shape is *not* what tugcode parses — see [Q01].
+- The task-notification reaches tugcode as a `{type:"system", subtype:"task_notification", ...}` event matching the SDK's `SDKTaskNotificationMessage` type at `sdk.d.ts:1659-1668`. Empirically confirmed by the Step 1 capture at `v2.1.150-spike/test-monitor-wake-raw.jsonl` line 49.
 - The supervisor side (tugcast `agent_supervisor`) currently passes the SDK system messages through to the wire without filtering. Confirmed for `subtype === "init"`; assumed to hold for `subtype === "task_notification"`. Verified in Step 1.
 - A single wake corresponds to a single bracket. Nested wakes (one task-notification firing during the wake turn of another task-notification) are theoretically possible; the design at [D01] flattens them to a single outer bracket — the inner wake is absorbed silently. Pinned by a test in Step 5.
 - TurnKey minting at the store wrapper is preferable to letting the reducer or tugcode mint. Justified by the existing pattern (replay events follow this convention per `reducer.ts:1606-1609`) and by reducer purity + cross-process clarity (turnKeys are React-key seeds; tugcode has no React).
@@ -99,35 +99,41 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 
 **Question:** Three sub-questions about the wake mechanism's wire shape.
 
-**Resolution:** RESOLVED via two empirical artifacts:
+**Resolution:** RESOLVED via two raw stream-json captures of `claude -p --output-format=stream-json --verbose --include-partial-messages --permission-mode=bypassPermissions`:
 
-1. **The wire ground truth** — a 90-line stream-json capture committed at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/test-monitor-wake-raw.jsonl`, captured via `claude -p --output-format=stream-json --verbose --include-partial-messages --permission-mode=bypassPermissions` against a 5s-timeout Monitor scenario. This is the format tugcode actually parses from `claude`'s stdout.
-2. **The SDK persistence log** — `~/.claude/projects/-private-tmp-todo-test/5c0aa961-019e-47a7-a39e-1c9327d5e9fc.jsonl` (original PPF-01 incident, 41 lines). This is the on-disk session format used for session resumption. **Important — different shape from the stream-json wire** (see sub-question 2).
+1. **Monitor with 5s timeout** — `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/test-monitor-wake-raw.jsonl` (90 lines). The PPF-01 reproduction. Fires `system/task_notification` → wake turn.
+2. **Bash with `run_in_background:true`** (working capture; not committed as a fixture since it's a negative result) — a `sleep 4 && echo DONE` background invocation followed by BashOutput polling. Does NOT fire `system/task_notification`. Confirms run_in_background tools sit in a different cohort (active polling, no wake).
 
-**Sub-question 1 — Ordering: notification-as-system-event-before-content, strictly.** Stream-json capture line-by-line:
+**Sub-question 1 — Wake-signal ordering in stream-json: `system/task_notification` arrives strictly between the prior turn's `result` and the wake turn's first `message_start`.** Monitor capture line-by-line:
 - L47: first `result` (intermediate, end of "Monitor armed…" turn). No `origin` field. `num_turns:3`.
 - L48: `{type:"system", subtype:"task_updated", task_id:"b9klbr5tx", patch:{status:"killed", end_time:...}}` — task state update (Monitor killed at timeout)
-- **L49: `{type:"system", subtype:"task_notification", task_id:"b9klbr5tx", tool_use_id:"toolu_01XzLVALeMEvdqb4qiNDbRdp", status:"stopped", output_file:"", summary:"kernel lines in /var/log/system.log", uuid:"...", session_id:"..."}` — THIS IS THE WAKE SIGNAL.** Matches `SDKTaskNotificationMessage` at `sdk.d.ts:1659-1668` field-for-field.
-- L50: `system/init` — claude re-initializes the session (same session_id, not a fresh session)
-- L51+: assistant turn streams (`stream_event`s, `assistant` messages with text/thinking/tool_use)
+- **L49: `{type:"system", subtype:"task_notification", task_id:"b9klbr5tx", tool_use_id:"toolu_01XzLVALeMEvdqb4qiNDbRdp", status:"stopped", output_file:"", summary:"kernel lines in /var/log/system.log", uuid:"...", session_id:"..."}` — the wake signal.** Matches `SDKTaskNotificationMessage` at `sdk.d.ts:1659-1668` field-for-field.
+- L50: `system/init` — claude re-initializes the session (same `session_id`, not a fresh session)
+- L51+: wake turn streams (`stream_event`s, `assistant` messages with text/thinking/tool_use)
 - L90: wake's final `result` with `origin:{kind:"task-notification"}` as retrospective marker. `num_turns:2` (the wake's own turn counter).
 
-**Sub-question 2 — User-message-replay shape: the SDK does NOT emit a synthetic user-message in stream-json.** In the stream-json wire format, between L47 and L51 (where the wake turn starts), there is NO `type:"user"` event. The wake transitions directly from one assistant turn's result to the next assistant turn's `message_start`, with the `system/task_notification` in between as the only marker.
+**Sub-question 2 — There is NO synthetic user event on the wire.** In stream-json between L47 and L51, no `type:"user"` event appears. The wake transitions directly from the prior turn's `result` to the next turn's `message_start`, with `system/task_notification` as the only leading marker. No string-content parsing required on the tugcode side — the SDK already pre-parses the payload into named fields.
 
-The PPF-01 SDK persistence log has a *different* shape: it includes a synthetic `{type:"user", message:{role:"user", content:"<task-notification>XML"}, origin:{kind:"task-notification"}}` event at line 17, plus `queue-operation` entries (lines 15-16). These are persistence-side-only events — they live in the on-disk session log so claude can resume the conversation cold, but they do not appear in the stream-json stdout that tugcode parses.
+**Sub-question 3 — Cohort splits into two non-overlapping populations.** The `system/task_notification` event is fired by the SDK's task subsystem for tools whose completion is *event-driven* (claude goes idle waiting; an external trigger raises the wake). Tools with *active-polling* semantics use a different path entirely (`system/task_started` + `system/task_updated` + periodic `system/status`, no notification — claude stays active calling the tool's read API).
 
-**This is the source of an earlier plan-version error in the prior commit (`60cf2027`):** that revision based its detector design on the persistence-log shape (`type:"user"` with `origin.kind` discriminator and XML content), which is NOT what tugcode sees. The correction is captured in this resolution: the load-bearing wire is stream-json, and the wake signal is `system/task_notification`.
+**Async-notification cohort (PPF-01-affected; in scope for this plan):**
+- **Empirically verified**: `Monitor` (`status:"stopped"` shown in capture; the SDK type also defines `"completed"` and `"failed"` status values).
+- **Strong-evidence by tool semantics**: `CronCreate` (cron-fired), `ScheduleWakeup` (delayed wakes — the /loop skill flow uses this mechanism), `PushNotification` (external push arrival), `RemoteTrigger` (external trigger arrival), `TaskOutput` (deferred task completion). Step 6 verifies each.
 
-**Sub-question 3 — Cohort: same uniform detection.** The `system/task_notification` event's `task_id` traces back to whichever tool fired it. The capture verifies Monitor. The SDK's `SDKTaskNotificationMessage` is a generic mechanism the SDK exposes to any tool that wants to fire task-notifications (`sdk.d.ts:1119-1120` documents `task_id - The task ID from task_notification events`). Empirical verification per cohort member is still Step 6's job; the detector signal is uniform across all of them (single event shape, no per-tool branching).
+**Active-polling cohort (NOT PPF-01-affected; out of scope, no fix needed):**
+- **Empirically verified non-affected**: `Bash` with `run_in_background:true` (capture exhibited `task_started`/`task_updated`/`status` events, no `task_notification`, no `origin` on the final `result`).
+- **Strong-evidence non-affected**: `Agent` with `run_in_background:true` (same SDK mechanism, claude polls subagent output via the SDK's read API).
 
-**Cohort categorization (per [Q01] sub-question 3):**
-- **Empirically verified via Step 1 capture**: `Monitor`.
-- **Strong-evidence by tool semantics and skill text** (covered by the same `system/task_notification` mechanism): `CronCreate`, `ScheduleWakeup`, `PushNotification`, `RemoteTrigger`, `TaskOutput`. The /loop skill text in tugtool-project session `6b876297-...` explicitly references "Its events arrive as `<task-notification>` messages" — that's the persistence-log XML view of the same SDK mechanism.
-- **Not in cohort (synchronous tools)**: `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `ExitWorktree`, `NotebookEdit`, `WebFetch`, `WebSearch`, `TaskCreate`, `TaskGet`, `TaskList`, `TaskUpdate`, `TaskStop`, `ToolSearch`, `CronDelete`, `CronList`.
+**Synchronous tools (no async behavior at all):**
+- `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `ExitWorktree`, `NotebookEdit`, `WebFetch`, `WebSearch`, `TaskCreate`, `TaskGet`, `TaskList`, `TaskUpdate`, `TaskStop`, `ToolSearch`, `CronDelete`, `CronList`.
 
-**Note on tugcode today (the actual upstream bug):** `tugcode/src/session.ts:565` `case "system"` handles `subtype === "init"` but does NOT handle `subtype === "task_notification"`. The system event falls through with no IPC frame emitted to tugdeck — **tugdeck never hears the wake happened**, the subsequent assistant content arrives at the reducer while `phase === "idle"`, and `handleTextDelta`'s guard drops it. This is PPF-01's precise upstream cause. Step 3's fix is a single new arm in `case "system"` alongside the existing `"init"` arm.
+**Note on tugcode today (the upstream bug):** `tugcode/src/session.ts:565` `case "system"` handles `subtype === "init"` but does NOT handle `subtype === "task_notification"`. The event falls through with no IPC frame emitted to tugdeck — tugdeck never hears the wake happened, the subsequent assistant content arrives at the reducer while `phase === "idle"`, and `handleTextDelta`'s guard drops it. Step 3's fix is a single new arm in `case "system"` alongside the existing `"init"` arm.
 
-**(Prior plan-version note on `case "user"`'s string-content path is obsolete and removed — that was based on the misattribution to persistence-log shape; the actual bug location is `case "system"`.)**
+**Robustness gaps the plan does not yet close (Step 6 cohort sweep work):**
+- The Monitor capture only exercises `status:"stopped"`. The SDK type also defines `"completed"` and `"failed"`; both should bracket identically (status is metadata, not a routing key) but neither is captured.
+- Async-notification cohort beyond Monitor is strong-evidence-only. ScheduleWakeup, CronCreate, PushNotification, RemoteTrigger, TaskOutput each require their own setup to capture (cron schedules, external push events, etc.). The detector's correctness depends on each firing `system/task_notification`; if any uses a different subtype, that tool stays broken until a new arm is added.
+- Nested wakes (a second `system/task_notification` arriving inside the first wake's turn) are designed for in the plan but not empirically observed.
+- The `system/init` event observed at L50 of the Monitor capture is treated as benign by the detector (no behavior change); whether it always follows `task_notification` or is Monitor-specific is unverified — the design doesn't depend on it.
 
 #### [Q02] Should the wake turn's chrome show *what* triggered it? (OPEN — defer to Slice 2) {#q02-trigger-chrome}
 
@@ -203,7 +209,7 @@ The PPF-01 SDK persistence log has a *different* shape: it includes a synthetic 
 
 **Rationale:**
 - tugcode is closest to the source: it sees raw stream-json frames before any IPC packaging.
-- The SDK emits the wake signal as a single explicit system event — no correlation window needed, no inferential state-tracking, no XML parsing.
+- The SDK emits the wake signal as a single explicit system event with pre-parsed named fields — no correlation window, no inferential state-tracking.
 - The payload carries everything Slice 2 chrome could want (`task_id`, `tool_use_id`, `status`, `summary`, `output_file`).
 - tugcast (`agent_supervisor`) only sees IPC frames coming out of tugcode; it doesn't know the SDK message shape and would have to re-derive the detection from packaged events.
 - tugdeck's reducer can't host the detector cleanly — see [D04].
@@ -427,21 +433,20 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 **References:** [Q01] event shapes, [R01] SDK drift, (#context, #q01-event-shapes)
 
 **Artifacts:**
-- **(Done):** A captured raw stream-json fixture committed at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/test-monitor-wake-raw.jsonl` (90 lines). Capture command: `claude -p --output-format=stream-json --verbose --include-partial-messages --permission-mode=bypassPermissions "Use the Monitor tool to tail /var/log/system.log with a 5-second timeout, watching for the word 'kernel'. Report what happens."` run in `/tmp/tide-wake-capture/`. The spike README updated with a row documenting the new file.
-- **(Done — supplementary, do not rely on for tugcode design):** the PPF-01 SDK persistence log at `~/.claude/projects/-private-tmp-todo-test/5c0aa961-019e-47a7-a39e-1c9327d5e9fc.jsonl`. Different format from the stream-json wire (richer; includes synthetic user events and `queue-operation` entries). Used in the first Step 1 attempt (commit `60cf2027`) which misattributed the persistence-log shape as the tugcode contract — the wire capture above is the corrected ground truth. See [Q01] sub-question 2 for the discrepancy details.
-- **(Done):** A resolution block at [Q01] documenting all three sub-question answers (ordering, user-message-replay shape, cohort) — pinned to the *stream-json wire* (corrected understanding), with the persistence-log shape called out as a distinct on-disk format.
-- **(Done):** Cohort claims tightened to empirically-verified (Monitor) + strong-evidence (CronCreate, ScheduleWakeup, PushNotification, RemoteTrigger, TaskOutput) + explicitly-excluded synchronous tools.
+- **(Done):** Captured raw stream-json fixture committed at `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/test-monitor-wake-raw.jsonl` (90 lines). Capture command: `claude -p --output-format=stream-json --verbose --include-partial-messages --permission-mode=bypassPermissions "Use the Monitor tool to tail /var/log/system.log with a 5-second timeout, watching for the word 'kernel'. Report what happens."` run in `/tmp/tide-wake-capture/`. Spike README updated with a row documenting the new file.
+- **(Done — negative-result capture, not committed):** A second capture of `Bash` with `run_in_background:true` (sleep + echo + BashOutput poll) confirmed run_in_background tools do NOT fire `system/task_notification` and are therefore NOT in the PPF-01 cohort. Used to split the cohort into async-notification vs. active-polling populations.
+- **(Done):** Resolution block at [Q01] documenting all three sub-question answers (ordering, user-message-replay shape, cohort), plus a Robustness-gaps subsection naming what remains unverified.
 - **(Done):** Catalog-version answer: `v2.1.150`. Fixture lives in `v2.1.150-spike/` because the capture is raw `claude -p` output (the spike-catalog convention); promoting to a normalized `v2.1.150/` probe is a follow-up if the spike turns out to gate ongoing regression.
 
 **Tasks:**
-- [x] Capture raw stream-json for a Monitor-timeout wake. Done via direct `claude -p` invocation (no Tide UI required — earlier framing that "live UI" was needed was wrong; tugcode just wraps `claude -p --output-format=stream-json` and parses stdout, and I can do the same from a shell).
-- [x] Confirm the captured event sequence: prior `result`, `system/task_updated`, **`system/task_notification` (the wake signal)**, `system/init` (session re-init), then the wake turn's stream events and final `result` with `origin:{kind:"task-notification"}`. Verified inline at [Q01].
-- [x] Resolve [Q01] sub-question 1 (ordering): **system/task_notification arrives before wake content, strictly.** See [Q01].
-- [x] Resolve [Q01] sub-question 2 (user-message-replay): **the stream-json wire has NO synthetic user event for the wake.** The SDK persistence log has one (with XML-encoded content) but the persistence log is not what tugcode parses. The wake signal in stream-json is `system/task_notification`, matching `SDKTaskNotificationMessage` at `sdk.d.ts:1659-1668`.
-- [x] Resolve [Q01] sub-question 3 (cohort): verified-cohort subset written into the plan. See [Q01].
+- [x] Capture raw stream-json for a Monitor-timeout wake.
+- [x] Capture raw stream-json for a Bash `run_in_background` invocation to verify whether SDK-level background tools fire the same wake signal (negative result — they don't, they use active polling).
+- [x] Confirm the wake event sequence in stream-json: prior `result`, `system/task_updated`, **`system/task_notification` (the wake signal)**, `system/init`, the wake turn's stream events, final `result` with `origin:{kind:"task-notification"}`.
+- [x] Resolve [Q01] sub-question 1 (ordering): `system/task_notification` arrives strictly before the wake turn's first `message_start`.
+- [x] Resolve [Q01] sub-question 2 (user-event shape): there is no synthetic user event on the wire; the wake signal is `system/task_notification` matching `SDKTaskNotificationMessage` at `sdk.d.ts:1659-1668`.
+- [x] Resolve [Q01] sub-question 3 (cohort): split into async-notification (in scope) vs. active-polling (out of scope) populations. Monitor verified positive; Bash `run_in_background` verified negative. Other async-notification candidates (CronCreate, ScheduleWakeup, PushNotification, RemoteTrigger, TaskOutput) remain strong-evidence-only until Step 6.
 - [x] Resolve the catalog-version question: `v2.1.150`.
-- [x] **Bonus finding (correct location):** `tugcode/src/session.ts:565` `case "system"` handles `subtype === "init"` only; `subtype === "task_notification"` falls through with no IPC emission. That's PPF-01's precise upstream cause. Step 3 fixes it with one new arm. (Earlier Step 1 attempt at commit `60cf2027` identified `case "user"` as the bug location — wrong, based on the misattributed persistence-log shape. The actual bug is in `case "system"`.)
-- [x] For provisional cohort members beyond Monitor: deferred to Step 6's manual sweep. The detector signal is uniform (`system/task_notification`) so per-tool branching is not needed; Step 6 verifies each tool actually fires the event.
+- [x] **Upstream-bug location pinned:** `tugcode/src/session.ts:565` `case "system"` handles `subtype === "init"` but not `subtype === "task_notification"`. The event falls through with no IPC emission. Step 3 fixes it with one new arm in the existing switch.
 
 **Tests:**
 - [x] None — read-only empirical step.
@@ -495,10 +500,10 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - `case "system"` in `tugcode/src/session.ts:565` gains a new arm next to the existing `subtype === "init"` arm: if `event.subtype === "task_notification"`, emit a `wake_started` IPC frame carrying the SDK's `SDKTaskNotificationMessage` payload (verbatim — `{task_id, tool_use_id, status, summary, output_file}`); set the session's `isInWake` flag; return.
 - Bracket close: implicit. tugcode does NOT emit any wake-close frame — claude's normal end-of-turn `result → turn_complete` is the close signal, and the reducer's commit path handles the `waking → idle` transition (Step 4).
 - tugcode clears its `isInWake` flag on the next `result` so a subsequent wake brackets correctly.
-- No XML parsing, no content-string handling, no `case "user"` changes. The SDK's `system/task_notification` event carries the payload pre-parsed.
+- The SDK's `system/task_notification` event carries the payload pre-parsed into named fields. tugcode forwards them verbatim; no parsing, no transformation.
 
 **Tasks:**
-- [ ] Detector state on SessionManager: `isInWake: boolean` only. No correlation window, no user-event tracking, no XML helper.
+- [ ] Detector state on SessionManager: `isInWake: boolean` only. No correlation window, no auxiliary tracking, no helper functions.
 - [ ] Add the new arm in `case "system"` at `session.ts:565`: check `event.subtype === "task_notification"`, build the `WakeStartedMessage` payload from SDK fields, push to `messages`. **No turnKey on the frame — tugdeck mints it.**
 - [ ] On `result` while `isInWake`: forward the result normally (tugcode already emits `turn_complete` for `result`); clear `isInWake`. **No `wake_complete` emitted.**
 - [ ] Handle nested wakes: a second `system/task_notification` event arriving while already `isInWake` is treated as additive metadata refresh — the new payload's `task_id`/`summary` overwrite `lastTaskNotification` (so the trailing `wake_started` carries the most-recent info if claude updates mid-wake) but no second `wake_started` IPC frame emits (idempotent on the wire).
