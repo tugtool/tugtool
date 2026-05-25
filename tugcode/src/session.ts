@@ -1478,6 +1478,19 @@ export class SessionManager {
    */
   private claudeReadyPromise: Promise<void> | null = null;
   private claudeReadyResolve: (() => void) | null = null;
+  /**
+   * Set true the first time the stdout drain observes a `system/init`
+   * event for the current claude subprocess. Subsequent `system/init`
+   * events from the same subprocess are **wake bracket signals** — the
+   * harness's built-in scheduler fires `ScheduleWakeup` / `CronCreate`
+   * timers between turns and emits a fresh `system/init` to bracket
+   * the resulting assistant turn (verified by long-hold capture probes;
+   * see `roadmap/wake-investigation-findings.md` and design decision
+   * [D07]). Reset to false in {@link killAndCleanup} so a respawn
+   * (fork / continue / new session) treats its own first init as a
+   * first init, not as a wake.
+   */
+  private sessionInitSeen: boolean = false;
 
   constructor(
     projectDir: string,
@@ -1683,6 +1696,13 @@ export class SessionManager {
       // without cross-contamination.
       this.stdoutDrainTask = null;
     }
+    // Reset the re-init tracker so the respawn's first `system/init`
+    // is classified as a first init (not a wake bracket signal). See
+    // [D07] for the wake-bracket detector design. Lives outside the
+    // `if (this.claudeProcess)` guard so the reset still happens for
+    // an already-dead subprocess (manager state can drift if a prior
+    // crash left `sessionInitSeen` true but `claudeProcess` null).
+    this.sessionInitSeen = false;
   }
 
   /**
@@ -2830,6 +2850,48 @@ export class SessionManager {
     this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
   }
 
+  /**
+   * Cohort B wake bracket — the harness's built-in scheduler fired a
+   * `ScheduleWakeup` / `CronCreate` timer and re-bracketed the session
+   * with a fresh `system/init`. Mirrors {@link handleTaskNotification}'s
+   * Cohort A semantics: emit a `wake_started` frame, set
+   * {@link isInWake}, and open a fresh `ActiveTurn` so the subsequent
+   * stream events route through {@link dispatchEventToTurn}.
+   *
+   * The harness's re-init carries no task id / tool_use_id on the wire
+   * (verified in `tugcode/probes/wake-investigation/capture-*.stdout`),
+   * so the frame's `wake_trigger.task_id` / `tool_use_id` are empty
+   * strings. Slice 2 chrome may later snapshot `ScheduleWakeup` /
+   * `CronCreate` tool_use payloads and match them to upcoming wakes;
+   * for this slice we just open the bracket so the wake turn paints.
+   *
+   * See `roadmap/wake-investigation-findings.md` and design decision
+   * [D07].
+   */
+  private handleWakeReInit(): void {
+    if (this.isInWake) {
+      console.log(
+        `[tugcode/wake] re-init during open wake bracket — ignored`,
+      );
+      return;
+    }
+    const frame: WakeStarted = {
+      type: "wake_started",
+      session_id: this.sessionId,
+      wake_trigger: {
+        task_id: "",
+        tool_use_id: "",
+        status: "completed",
+        summary: "scheduled wake",
+        output_file: "",
+      },
+      ipc_version: 2,
+    };
+    writeLine(frame);
+    this.isInWake = true;
+    this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
+  }
+
   private maybeEmitContextBreakdown(event: Record<string, unknown>): void {
     const emitter = this.contextBreakdownEmitter;
     if (!emitter) return;
@@ -2863,15 +2925,26 @@ export class SessionManager {
    * the drain forwards them as soon as they arrive — improving
    * tugcast/tugdeck observability without changing the wire shape.
    *
-   * Currently handles `system:init` (forwarded as `session_init`)
-   * which is the only shape a fresh-mode session-command respawn
-   * relies on. Other inter-turn shapes (a hypothetical
-   * `system_metadata` between turns) drop here and never reach the
-   * wire. As more inter-turn events become real, this is the spot
-   * to handle them.
+   * Two distinct `system/init` semantics:
+   *   1. The **first** `system/init` for a claude subprocess marks
+   *      session readiness; forwarded as a `session_init` IPC frame
+   *      (the existing behavior).
+   *   2. **Subsequent** `system/init` events from the same subprocess
+   *      are wake bracket signals — claude's built-in scheduler fires
+   *      a `ScheduleWakeup` / `CronCreate` timer between turns and
+   *      emits a fresh `system/init` to bracket the resulting turn.
+   *      See `roadmap/wake-investigation-findings.md` and design
+   *      decision [D07]. The detector opens an `ActiveTurn` so the
+   *      subsequent stream events route through `dispatchEventToTurn`
+   *      instead of being dropped here.
    */
   private handleInterTurnEvent(event: Record<string, unknown>): void {
     if (event.type === "system" && event.subtype === "init") {
+      if (this.sessionInitSeen) {
+        this.handleWakeReInit();
+        return;
+      }
+      this.sessionInitSeen = true;
       const sessionId = (event.session_id as string) || "unknown";
       writeLine({ type: "session_init", session_id: sessionId, ipc_version: 2 });
     }
