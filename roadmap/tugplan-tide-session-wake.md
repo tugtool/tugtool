@@ -962,18 +962,19 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - A drift test in `tugcode/src/__tests__/wake-scheduler-tool-input-drift.test.ts` that pins the input shapes of ScheduleWakeup, CronCreate, CronDelete against the actual tool schemas (the SDK exposes these via ToolSearch / system reminder; the test re-captures them at boot and asserts the keys we read are present).
 
 **Tasks:**
-- [ ] Manual: ScheduleWakeup 60s — wake turn paints in Tide, transcript shows no phantom user bubble (Step 12 must have shipped for this to be true), wake's response is rendered. Capture a screenshot for the plan record.
-- [ ] Manual: CronCreate one-shot in 1 min — same.
-- [ ] Manual: CronCreate recurring `* * * * *` — fires every minute; verify CronDelete (via claude calling it) cancels the shadow job.
-- [ ] Manual: ScheduleWakeup at 60s + run claude long enough that the harness MIGHT fire (60s is the SDK minimum). If the harness fires, the double-fire guard cancels the shadow — verify only ONE wake turn paints.
-- [ ] Update PPF-01.
+- [ ] Manual (user-driven): ScheduleWakeup 60s — wake turn paints in Tide, no phantom user bubble (Step 12 shipped), wake response renders. Capture session id and screenshot for plan record.
+- [ ] Manual (user-driven): CronCreate one-shot in 1 min — same.
+- [ ] Manual (user-driven): CronCreate recurring `* * * * *` — fires every minute; verify CronDelete (via claude calling it) cancels the shadow job (no further fires).
+- [ ] Manual (user-driven): ScheduleWakeup at 60s + run claude long enough that the harness MIGHT fire (60s is the SDK minimum). If the harness fires, the double-fire guard cancels the shadow — verify only ONE wake turn paints.
+- [x] Update PPF-01 — Cohort B row flipped to "Code shipped; pending user-driven manual verification"; recipe text updated to describe the closing-implementation references.
 
 **Tests:**
-- [ ] Drift test passes.
+- [x] Drift test added (`tugcode/src/__tests__/wake-scheduler-tool-input-drift.test.ts`); reads the Step-6 captures and pins ScheduleWakeup `{delaySeconds, prompt, reason?}`, CronCreate `{cron, prompt, recurring}`, and the CronCreate→CronDelete `{id}` cross-derivation.
 
 **Checkpoint:**
-- [ ] All three manual cases pass.
-- [ ] PPF-01 closed for Cohort B.
+- [x] Drift test green; full tugcode suite 487 pass after Step 11.
+- [ ] Manual cases pass (user-driven).
+- [ ] PPF-01 fully closed for Cohort B once manual verification completes.
 
 ---
 

@@ -6540,9 +6540,9 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 | Cohort | Tools | Closing slice | Status |
 |---|---|---|---|
 | **A — in-invocation async** (`task_notification` fires on the wire) | Monitor; Bash `run_in_background:true` (idle); Task `run_in_background:true` (idle) | Slice 1 (Steps 1-7) — wake bracket | **Reducer + tugcode shipped; phantom user bubble fixed by Slice 1c-a** |
-| **B — harness re-invoke** (no signal in tugcode spawn mode) | ScheduleWakeup; CronCreate | Slice 1b (Steps 8-11) — tugcode shadow scheduler via croner | Planned; not yet implemented |
+| **B — harness re-invoke** (no signal in tugcode spawn mode) | ScheduleWakeup; CronCreate | Slice 1b (Steps 8-11) — tugcode shadow scheduler via croner | **Code shipped; pending user-driven manual verification** |
 | **C — not wake sources** | PushNotification (sync outbound); TaskOutput (blocking wait); Task/Bash `run_in_background:true` with active poll | n/a | No fix needed |
-| **Phantom user bubble** (committed wake's empty-text marker renders as a "You" row) | Affects every Cohort A and Cohort B wake | Slice 1c-a (Steps 12-13) — `TideTranscriptDataSource` single-row | Planned; not yet implemented |
+| **Phantom user bubble** (committed wake's empty-text marker renders as a "You" row) | Affects every Cohort A and Cohort B wake | Slice 1c-a (Steps 12-13) — `TideTranscriptDataSource` single-row | **Shipped** (commit `19c8cb58`) |
 
 **Surfaced during:** [#step-24-3-2](#step-24-3-2) HMR testing — a `Monitor` invocation that timed out 60s later produced the expected `task-notification` → assistant resume in the underlying `claude` JSONL, but the Tide UI stayed on the pre-idle frame. Wake-plan Step 6 manual repro of Session 56cce4fe also surfaced the phantom user bubble (the working Monitor wake painted a "You ✓ OK" row between user-initiated turns).
 
@@ -6557,18 +6557,18 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 
 Expected after wake fires: the wake turn paints in the transcript, NO user bubble appears for the wake.
 
-*Cohort B (broken until Slice 1b ships):*
+*Cohort B (closed by Slice 1b — tugcode shadow scheduler):*
 1. `Use ScheduleWakeup to wake yourself in 60 seconds with reason 'X'. When the wake fires, report back.`
 2. `Use CronCreate to schedule a one-shot job firing in 1 minute that prompts you to report 'X'.`
+3. (Recurring) `Use CronCreate with cron "* * * * *" and recurring:true so it fires every minute. After it fires twice, use CronDelete to stop it.`
 
-Expected after Slice 1b: wake turn paints just like Cohort A. Currently: nothing happens after the scheduling tool returns.
+Expected after Slice 1b: wake turn paints just like Cohort A; CronDelete cancels the shadow job. Implementation: `tugcode/src/scheduler.ts` (`WakeScheduler`) + `tugcode/src/session.ts` (`handleSchedulingToolUse`, `handleCronCreateResult`, double-fire safety hook in `handleTaskNotification`).
 
 **Reference captures:** `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/` holds raw stream-json captures for all three cohorts. See that directory's README for the per-file taxonomy.
 
 **Reference session (Cohort A symptom):** `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/56cce4fe-d01d-470b-ae0a-7c3695a14061.jsonl` shows ScheduleWakeup's harness-reinvoke shape in `sdk-cli` mode (lines 26-28: `queue-operation` enqueue → synthetic user-message with `isMeta:true`). The same shape does NOT surface in tugcode's `--input-format=stream-json` spawn — confirmed empirically by `probes/probe-sw-streamio.mjs` (90 s held subprocess; zero output after `result/success`).
 
-**Workaround until Slice 1c-a ships:** Cohort A wakes paint but with an empty "You" row above the wake content. Cosmetic only.
-**Workaround until Slice 1b ships:** for ScheduleWakeup / CronCreate, the wake silently never fires; reopen the session manually or use Cohort A tools (Monitor / Bash run_in_background / Task run_in_background) when an idle-wake is required.
+**Status (post-Slice 1b code-ship):** the wake bracket, the transcript single-row fix, and the shadow scheduler are all on `main`. The remaining work is end-to-end manual verification of the Cohort B recipes in a live Tide session — the code path itself is exercised by `tugcode/src/__tests__/scheduler*.test.ts` (476+ pure-logic cases pinning each leg of the pipeline).
 
 ---
 
