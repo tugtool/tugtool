@@ -116,7 +116,14 @@ const REQUEST_PREVIEW_MAX_CHARS = 24;
  * tidy line.
  */
 function requestPreviewText(turn: TurnEntry): string {
-  let text = turn.userMessage.text.trim();
+  // Pull the user submission's text from the `user_message` Message
+  // at the head of `turn.messages` (the [D07] substrate replacement
+  // for `turn.userMessage`). Wake turns have no `user_message` head;
+  // they return an empty preview, which the caller is gated to avoid
+  // by `turn.messages[0]?.kind === "user_message"` upstream.
+  const head = turn.messages[0];
+  const raw = head !== undefined && head.kind === "user_message" ? head.text : "";
+  let text = raw.trim();
   if (text.startsWith("> ")) text = text.slice(2);
   else if (text.startsWith(">")) text = text.slice(1);
   text = text.replace(/\s+/g, " ").trim();
@@ -277,9 +284,10 @@ function TurnEntryPair({
   transcript: ReadonlyArray<TurnEntry>;
   onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
-  const userRow = userRowIndexForTurn(turnIndex, transcript);
+  const turn = transcript[turnIndex];
+  const hasUserMessage = turn?.messages[0]?.kind === "user_message";
   const assistantRow = assistantRowIndexForTurn(turnIndex, transcript);
-  if (userRow < 0) {
+  if (!hasUserMessage) {
     // Wake turn — render only the assistant-half number, no separator.
     return (
       <span className="tide-popover-turn-pair" data-slot="tide-popover-turn-pair">
@@ -290,6 +298,7 @@ function TurnEntryPair({
       </span>
     );
   }
+  const userRow = userRowIndexForTurn(turnIndex, transcript);
   return (
     <span className="tide-popover-turn-pair" data-slot="tide-popover-turn-pair">
       <TurnNumberButton

@@ -20,7 +20,7 @@
 import type React from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import type { CodeSessionStore, ToolCallState } from "@/lib/code-session-store";
+import type { CodeSessionStore, ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // Caution flag — drift detection per drift-fallback decision.
@@ -91,16 +91,17 @@ export interface BodyKindProps<TData = unknown> {
 /**
  * Subagent tool-call nesting map ([#step-17-5]). Keyed by an `Agent`
  * call's `toolUseId`; the value is that subagent's child tool calls
- * (the ones whose `ToolCallState.parentToolUseId` points back at the
- * key), in producer order. The reducer's `toolCallMap` stays flat —
- * this map is a pure derivation built once by the transcript view and
- * threaded down through the dispatch so each `AgentTranscriptBlock`
- * can resolve its own children (and pass the map further down for
- * arbitrarily deep nesting).
+ * (the ones whose `ToolUseMessage.parentToolUseId` points back at the
+ * key), in producer order. The substrate's `turn.messages` /
+ * `activeTurn.messages` stays flat — this map is a pure derivation
+ * built once by the transcript view and threaded down through the
+ * dispatch so each `AgentTranscriptBlock` can resolve its own
+ * children (and pass the map further down for arbitrarily deep
+ * nesting).
  */
 export type ChildToolCallsMap = ReadonlyMap<
   string,
-  ReadonlyArray<ToolCallState>
+  ReadonlyArray<ToolUseMessage>
 >;
 
 // ---------------------------------------------------------------------------
@@ -189,9 +190,8 @@ export interface ToolBlockProps<TInput = unknown, TStructured = unknown> {
 export type ToolBlockFactory = React.ComponentType<ToolBlockProps>;
 
 // ---------------------------------------------------------------------------
-// `tool_call` view — the dispatch's normalized form of a `ToolCallState` for
-// the tool-call kind of `RenderInput`. Re-exported here so the dispatch and
-// any wrapper-side code can read the same shape.
+// Re-export the `ToolUseMessage` shape so the dispatch and wrapper-side
+// code can read the same type via this module.
 // ---------------------------------------------------------------------------
 
-export type { ToolCallState };
+export type { ToolUseMessage };

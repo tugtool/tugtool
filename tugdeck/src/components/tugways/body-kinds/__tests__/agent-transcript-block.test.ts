@@ -31,14 +31,17 @@ import {
   shouldCollapseAgentDepth,
   type AgentTranscriptData,
 } from "../agent-transcript-block";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
 function toolEntry(toolName: string, toolUseId: string) {
-  const toolCall: ToolCallState = {
+  const toolCall: ToolUseMessage = {
+    kind: "tool_use",
+    messageKey: `fixture-${toolUseId}`,
+    createdAt: 0,
     toolUseId,
     toolName,
     input: {},

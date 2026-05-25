@@ -42,10 +42,7 @@ function turn(overrides: Partial<TurnEntry>): TurnEntry {
   return {
     turnKey: "k",
     msgId: "m",
-    userMessage: { text: "", attachments: [], submitAt: 0 },
-    thinking: "",
-    assistant: "",
-    toolCalls: [],
+    messages: [],
     result: "success",
     endedAt: 0,
     ...TURN_ENTRY_TELEMETRY_DEFAULTS,
@@ -245,11 +242,10 @@ describe("telemetry — liveTurn* helpers", () => {
   it("liveTurnWallClockMs returns `now - submitAt` when a turn is in flight", () => {
     const state: CodeSessionState = {
       ...fresh(),
-      pendingUserMessage: {
-        text: "",
-        atoms: [],
-        submitAt: 1_000_000,
+      pendingTurn: {
         turnKey: "k",
+        submitAt: 1_000_000,
+        isWake: false,
       },
     };
     expect(liveTurnWallClockMs(state, 1_001_500)).toBe(1_500);
@@ -276,11 +272,10 @@ describe("telemetry — liveTurn* helpers", () => {
   it("liveTurnActiveMs = wall - awaiting - downtime, clamped ≥ 0", () => {
     const state: CodeSessionState = {
       ...fresh(),
-      pendingUserMessage: {
-        text: "",
-        atoms: [],
-        submitAt: 1_000_000,
+      pendingTurn: {
         turnKey: "k",
+        submitAt: 1_000_000,
+        isWake: false,
       },
       awaitingApprovalAccumulatedMs: 200,
       awaitingApprovalSince: null,
@@ -411,7 +406,7 @@ describe("deriveInflightActiveMs", () => {
       pendingQuestion: null,
       queuedSends: [],
       transcript: [],
-      inflightUserMessage: null,
+      activeTurn: null,
       pendingDraftRestore: null,
       lastCost: null,
       liveTurnUsage: null,
@@ -433,8 +428,8 @@ describe("deriveInflightActiveMs", () => {
     };
   }
 
-  function inflight(submitAt: number): CodeSessionSnapshot["inflightUserMessage"] {
-    return { text: "", atoms: [], submitAt, turnKey: "k" };
+  function inflight(submitAt: number): CodeSessionSnapshot["activeTurn"] {
+    return { turnKey: "k", submitAt, isWake: false, messages: [] };
   }
 
   it("returns null when no turn is in flight", () => {
@@ -442,23 +437,23 @@ describe("deriveInflightActiveMs", () => {
   });
 
   it("returns wall-clock since submit when no pause segments exist", () => {
-    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    const s = snap({ activeTurn: inflight(1_000_000) });
     expect(deriveInflightActiveMs(s, 1_001_500)).toBe(1_500);
   });
 
   it("returns 0 when now == submitAt (degenerate window)", () => {
-    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    const s = snap({ activeTurn: inflight(1_000_000) });
     expect(deriveInflightActiveMs(s, 1_000_000)).toBe(0);
   });
 
   it("returns 0 when now < submitAt (clock skew)", () => {
-    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    const s = snap({ activeTurn: inflight(1_000_000) });
     expect(deriveInflightActiveMs(s, 999_000)).toBe(0);
   });
 
   it("subtracts a single open awaiting-approval segment", () => {
     const s = snap({
-      inflightUserMessage: inflight(1_000_000),
+      activeTurn: inflight(1_000_000),
       awaitingApprovalSegmentStartedAt: 1_000_300,
     });
     // wall = 1_000, open pause = (now - 1_000_300) = 700, active = 300
@@ -467,7 +462,7 @@ describe("deriveInflightActiveMs", () => {
 
   it("subtracts a closed transport-downtime interval", () => {
     const s = snap({
-      inflightUserMessage: inflight(1_000_000),
+      activeTurn: inflight(1_000_000),
       transportDowntimeIntervals: [[1_000_200, 1_000_500]],
     });
     // wall = 1_000, pause = 300, active = 700
@@ -476,7 +471,7 @@ describe("deriveInflightActiveMs", () => {
 
   it("unions two yellow axes overlapping (NOT sum) — the regression this design guards", () => {
     const s = snap({
-      inflightUserMessage: inflight(1_000_000),
+      activeTurn: inflight(1_000_000),
       // Awaiting-approval dialog open [200, 600]
       awaitingApprovalIntervals: [[1_000_200, 1_000_600]],
       // Transport restoring [400, 800] — overlaps awaiting in [400, 600]
@@ -489,7 +484,7 @@ describe("deriveInflightActiveMs", () => {
 
   it("unions all three yellow axes when interrupt-in-flight overlaps both", () => {
     const s = snap({
-      inflightUserMessage: inflight(1_000_000),
+      activeTurn: inflight(1_000_000),
       awaitingApprovalIntervals: [[1_000_100, 1_000_400]],
       transportDowntimeIntervals: [[1_000_300, 1_000_700]],
       interruptInFlightSegmentStartedAt: 1_000_500,
@@ -502,7 +497,7 @@ describe("deriveInflightActiveMs", () => {
 
   it("clamps to 0 when the union of pauses covers the entire wall-clock", () => {
     const s = snap({
-      inflightUserMessage: inflight(1_000_000),
+      activeTurn: inflight(1_000_000),
       // Pause covers more than wall-clock (clipped to window).
       awaitingApprovalIntervals: [[500_000, 2_000_000]],
     });
@@ -511,7 +506,7 @@ describe("deriveInflightActiveMs", () => {
 
   it("clips a pause segment that began before submitAt to the in-flight window", () => {
     const s = snap({
-      inflightUserMessage: inflight(1_000_000),
+      activeTurn: inflight(1_000_000),
       // Transport disconnect that began 200 ms before submit, closed 300 ms after.
       transportDowntimeIntervals: [[999_800, 1_000_300]],
     });
@@ -539,7 +534,7 @@ describe("deriveTimeCellMs", () => {
       pendingQuestion: null,
       queuedSends: [],
       transcript: [],
-      inflightUserMessage: null,
+      activeTurn: null,
       pendingDraftRestore: null,
       lastCost: null,
       liveTurnUsage: null,
@@ -560,8 +555,8 @@ describe("deriveTimeCellMs", () => {
       ...overrides,
     };
   }
-  function inflight(submitAt: number): CodeSessionSnapshot["inflightUserMessage"] {
-    return { text: "", atoms: [], submitAt, turnKey: "k" };
+  function inflight(submitAt: number): CodeSessionSnapshot["activeTurn"] {
+    return { turnKey: "k", submitAt, isWake: false, messages: [] };
   }
 
   it("falls back to the post-commit value when no turn is in flight", () => {
@@ -575,14 +570,14 @@ describe("deriveTimeCellMs", () => {
   });
 
   it("returns the live in-flight active duration when a turn is in flight", () => {
-    const s = snap({ inflightUserMessage: inflight(1_000_000) });
+    const s = snap({ activeTurn: inflight(1_000_000) });
     // No pause segments, wall = 1_500. Live derivation wins over fallback.
     expect(deriveTimeCellMs(s, 1_001_500, 999_999)).toBe(1_500);
   });
 
   it("subtracts overlapping yellow axes (NOT scalar sum) when in flight", () => {
     const s = snap({
-      inflightUserMessage: inflight(1_000_000),
+      activeTurn: inflight(1_000_000),
       awaitingApprovalIntervals: [[1_000_200, 1_000_600]],
       transportDowntimeIntervals: [[1_000_400, 1_000_800]],
     });
@@ -591,7 +586,7 @@ describe("deriveTimeCellMs", () => {
   });
 
   it("uses the fallback the moment the snapshot's in-flight slot clears (turn-complete freeze)", () => {
-    // Simulate a freshly-committed turn: snapshot's inflightUserMessage
+    // Simulate a freshly-committed turn: snapshot's activeTurn
     // is null, and the caller passes the just-committed activeMs as
     // the fallback. The cell should freeze at that committed value
     // rather than ticking back to 0 or any other transient state.

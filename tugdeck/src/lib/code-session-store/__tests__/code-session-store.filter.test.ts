@@ -153,7 +153,7 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
     expect(storeA.getSnapshot().phase).toBe("submitting");
     // No text-delta event landed for storeA's turn, so the per-turn
     // path was never written to; `inflightValue` returns undefined.
-    expect(inflightValue(storeA, "assistant")).toBeUndefined();
+    expect(inflightValue(storeA, "assistant_text")).toBeUndefined();
   });
 
   it("routes SESSION_STATE errored only to the matching store", () => {

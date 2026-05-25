@@ -4,10 +4,12 @@
  *
  * [D03] three-identifier model
  * [D04] transcript + streaming
- * [D10] `inflightUserMessage` mirror — the snapshot exposes the
- *       reducer's `pendingUserMessage` as `inflightUserMessage` so the
- *       transcript's in-flight `user` row enters React via
- *       `useSyncExternalStore` without card-level shadow state ([L02]).
+ * [D07] full sequence substrate — a turn is an ordered sequence of typed
+ *       `Message`s; the snapshot exposes the in-flight turn as
+ *       `activeTurn` (and the committed turns as `transcript[].messages`)
+ *       so consumers iterate the sequence rather than reading paired
+ *       fields. Paired `userMessage` / `assistant` / `thinking` /
+ *       `toolCalls` aggregation retires.
  * [D11] effect-list reducer
  */
 
@@ -89,22 +91,94 @@ export interface WakeTrigger {
  */
 export type TransportState = "online" | "offline" | "restoring";
 
+// ---------------------------------------------------------------------------
+// Message sequence substrate ([D07])
+// ---------------------------------------------------------------------------
+
 /**
- * Per-tool-call state tracked inside the reducer's toolCallMap and committed
- * into `TurnEntry.toolCalls` in insertion order ([Q02]).
- *
- * `parentToolUseId` is set when this call was made by a subagent — it
- * carries the spawning `Agent` call's `toolUseId` (from the wire
- * `tool_use.parent_tool_use_id`). The `toolCallMap` stays flat — every
- * call, parent or child, is one entry — and the rendering layer groups
- * children under their parent at display time ([#step-17-5]).
- *
- * `toolWallMs` records the wall-clock duration between the originating
- * `tool_use` and its matching `tool_result` — populated when the
- * `tool_result` lands; `null` if the turn ended (interrupted, errored,
- * transport-lost) while the call was still pending.
+ * Discriminant of a {@link Message}. The substrate is a flat ordered
+ * sequence of these — interleaving (text → tool → text) is preserved
+ * by `messages` array position, not by paired fields. Adding a new
+ * kind is a union extension plus a reducer handler plus a renderer.
  */
-export interface ToolCallState {
+export type MessageKind =
+  | "user_message"
+  | "assistant_text"
+  | "assistant_thinking"
+  | "system_note"
+  | "tool_use";
+
+/**
+ * Fields every `Message` carries. `messageKey` is the React-row /
+ * subscription identity, stable from mint through every subsequent
+ * mutation (streaming append, `tool_result` landing on a `tool_use`,
+ * etc.). Derivation per [D07]:
+ *
+ *  - `user_message`: `${turnKey}-user` (one per turn at most).
+ *  - wire-derived (`assistant_text` / `assistant_thinking` /
+ *    `tool_use`): `${msg_id}-b${block_index}` — intrinsically unique
+ *    within a session, mirrors the wire's `(msg_id, block_index)`
+ *    coordinate.
+ *  - `system_note`: `${turnKey}-sys${seq}` where `seq` is a monotonic
+ *    per-turn counter ({@link ScratchEntry.systemNoteSeq} in the
+ *    reducer).
+ *
+ * `createdAt` is the wall-clock at mint time; consumers needing a
+ * stable timestamp for display read this instead of re-deriving from
+ * turn boundaries. Replay events synthesize it from the JSONL anchor.
+ */
+export interface MessageBase {
+  messageKey: string;
+  createdAt: number;
+}
+
+export interface UserMessage extends MessageBase {
+  kind: "user_message";
+  text: string;
+  attachments: ReadonlyArray<AtomSegment>;
+  /**
+   * Wall-clock ms when `send()` was dispatched. Distinct from
+   * `TurnEntry.endedAt` — the "submitted at" time the user-row
+   * timestamp display reads. Carried on the Message so the data
+   * source can derive the user row's timestamp without reaching
+   * back into turn-level metadata.
+   */
+  submitAt: number;
+}
+
+export interface AssistantText extends MessageBase {
+  kind: "assistant_text";
+  /** Mutates by append during streaming; replaced wholesale on
+   *  `is_partial: false`. */
+  text: string;
+}
+
+export interface AssistantThinking extends MessageBase {
+  kind: "assistant_thinking";
+  text: string;
+}
+
+/**
+ * Subdued note inside a turn — Step 8's scheduled-prompt rendering is
+ * the first user, with `source: "scheduled"`. Future kinds
+ * (`compact_boundary` / `wake_summary`) extend the `source` union
+ * without changing the substrate shape.
+ */
+export interface SystemNote extends MessageBase {
+  kind: "system_note";
+  text: string;
+  source: "scheduled" | "compact" | "other";
+}
+
+/**
+ * Tool call as a Message in the sequence. Carries the same fields
+ * `ToolCallState` carried in the paired substrate, plus the
+ * `MessageBase` identity. Mutations follow copy-on-write per [D07]'s
+ * mutation discipline — the reducer shallow-clones the Message and
+ * the messages-array slot; other Messages stay reference-identical.
+ */
+export interface ToolUseMessage extends MessageBase {
+  kind: "tool_use";
   toolUseId: string;
   toolName: string;
   input: unknown;
@@ -114,12 +188,25 @@ export interface ToolCallState {
   /** Spawning `Agent` call's `toolUseId`; `undefined` for a top-level call. */
   parentToolUseId?: string;
   /**
-   * Wall-clock milliseconds between the `tool_use` event and the
-   * matching `tool_result`. `null` while pending, and remains `null` if
-   * the turn ends before the result arrives.
+   * Wall-clock ms between the `tool_use` event and the matching
+   * `tool_result`. `null` while pending; remains `null` if the turn
+   * ended before the result arrived.
    */
   toolWallMs: number | null;
 }
+
+/**
+ * Discriminated union of every Message kind. Iteration is the substrate's
+ * primary access pattern — consumers `messages.filter(m => m.kind === ...)`
+ * or `messages[0]?.kind === "user_message"` instead of reaching for
+ * paired fields.
+ */
+export type Message =
+  | UserMessage
+  | AssistantText
+  | AssistantThinking
+  | SystemNote
+  | ToolUseMessage;
 
 /**
  * Per-turn token + cost figures, frozen onto the committed `TurnEntry`
@@ -171,17 +258,22 @@ export type TurnEndReason =
  * Immutable transcript entry appended once per completed turn.
  * `result === "interrupted"` covers both user-initiated stop
  * (`turn_complete(error)`) and any preserved-text interrupt path.
+ *
+ * [D07] sequence-substrate shape: `messages` is the ordered Message
+ * sequence the wire produced (preserving multi-msgId iterations
+ * faithfully). Paired fields (`userMessage` / `thinking` / `assistant`
+ * / `toolCalls`) retired — consumers iterate `messages` and filter by
+ * `kind` instead.
  */
 export interface TurnEntry {
   /**
-   * Stable React-key seed for this turn's cell pair (user + code).
-   * Generated at `handleSend` on the corresponding `pendingUserMessage`
-   * and preserved unchanged across the inflight → committed
-   * transition. The transcript data source uses it to mint
-   * `idForIndex` so the React key for the streaming cell stays
-   * identical when it becomes the committed cell — preventing the
-   * cell wrapper from unmounting at `turn_complete`, which previously
-   * caused `scrollTop` to silently clamp to 0.
+   * Stable React-key seed for this turn's row(s). Generated at
+   * `handleSend` (or `handleWakeStarted`) and preserved unchanged
+   * across the inflight → committed transition. The transcript data
+   * source uses it to mint `idForIndex` so React keys for the
+   * streaming row stay identical when it becomes the committed row —
+   * preventing the cell wrapper from unmounting at `turn_complete`,
+   * which previously caused `scrollTop` to silently clamp to 0.
    *
    * Distinct from `msgId`: `msgId` is the wire-correlation identifier
    * assigned by the backend (used to match streaming frames to their
@@ -190,22 +282,20 @@ export interface TurnEntry {
    */
   turnKey: string;
   msgId: string;
-  userMessage: {
-    text: string;
-    attachments: ReadonlyArray<unknown>;
-    /**
-     * Wall-clock millisecond timestamp captured when `send()` was
-     * dispatched. Distinct from `endedAt` — the user-visible
-     * "submitted at" time. The transcript's user row reads this for
-     * its timestamp display while the turn's code row reads
-     * `endedAt`, so the row identifier line can post the moment the
-     * user hits submit instead of waiting for the assistant's reply.
-     */
-    submitAt: number;
-  };
-  thinking: string;
-  assistant: string;
-  toolCalls: ReadonlyArray<ToolCallState>;
+  /**
+   * Ordered Message sequence — the wire's arrival order, preserving
+   * the interleaving of text / thinking / tool_use across every
+   * `msg_id` iteration of the turn ([D07]). Each Message carries a
+   * stable `messageKey` for per-Message React identity and PropertyStore
+   * subscriptions.
+   *
+   * A normal user turn opens with a `user_message` Message; a wake
+   * turn naturally doesn't (its `messages` opens with `assistant_text`
+   * or `assistant_thinking`). Consumers that need to gate on the
+   * presence of a user message inline-check
+   * `turn.messages[0]?.kind === "user_message"` — no named helper.
+   */
+  messages: ReadonlyArray<Message>;
   /**
    * @deprecated Use {@link turnEndReason}. Derived from `turnEndReason`
    * so the two never diverge (`"complete"` → `"success"`; everything
@@ -216,7 +306,10 @@ export interface TurnEntry {
   endedAt: number;
 
   /**
-   * Pure wall-clock duration of the turn: `endedAt - userMessage.submitAt`.
+   * Pure wall-clock duration of the turn: `endedAt - submitAt`
+   * (`submitAt` carried on the opening `user_message` Message for a
+   * normal turn, or on the wake bracket's `ActiveTurnSnapshot` for a
+   * wake turn that commits with no user message).
    * Indisputable; covers everything.
    */
   wallClockMs: number;
@@ -393,6 +486,31 @@ export interface QueuedSend {
 }
 
 /**
+ * Public projection of the in-flight turn ([D07]). Mirrors
+ * `TurnEntry`'s sequence shape so consumers iterate
+ * `activeTurn.messages` the same way they iterate `turn.messages` for
+ * committed rows — one substrate, two lifecycle slots.
+ *
+ * `isWake` is the substrate's wake discriminator (replaces the [D06]
+ * empty-text sentinel). `messages` may open with a `user_message`
+ * (normal turn) or with `assistant_text` / `assistant_thinking` (wake
+ * turn — no user submission); consumers gating on user-row presence
+ * inline-check `messages[0]?.kind === "user_message"`.
+ */
+export interface ActiveTurnSnapshot {
+  turnKey: string;
+  submitAt: number;
+  isWake: boolean;
+  /**
+   * Live, mutates as wire events land. Per [D07] copy-on-write: a
+   * mutation shallow-clones the affected Message + the messages array
+   * slot; other Messages stay reference-identical so downstream
+   * consumers comparing `messages[i]` by reference can detect changes.
+   */
+  messages: ReadonlyArray<Message>;
+}
+
+/**
  * Public snapshot returned by `CodeSessionStore.getSnapshot()`. Stable
  * reference between dispatches that produce no change — callers can use
  * `useSyncExternalStore` without tearing ([D11]).
@@ -453,44 +571,23 @@ export interface CodeSessionSnapshot {
   transcript: ReadonlyArray<TurnEntry>;
 
   /**
-   * The in-flight user message — set the moment `send()` is dispatched
-   * and cleared exactly when the matching `TurnEntry` is committed to
-   * `transcript` (`turn_complete(success)`) or the turn is interrupted
-   * (`turn_complete(error)` / `interrupted`). Mirrors the reducer's
-   * `pendingUserMessage`; the field name change to `inflightUserMessage`
-   * matches the `inflight.*` streaming-path naming so the in-flight
-   * vocabulary is consistent at the snapshot surface.
+   * The in-flight turn — set the moment `send()` (or
+   * `handleWakeStarted`) opens a turn and cleared exactly when the
+   * matching `TurnEntry` commits to `transcript`
+   * (`turn_complete(success)` / `turn_complete(error)` / interrupt).
    *
-   * Drives the in-flight `user` row in the Tide card transcript: the
-   * `TideTranscriptDataSource` (Step 10) reports `transcript.length * 2
-   * + (inflightUserMessage ? 2 : 0)` items, with the last two indices
-   * representing the in-flight pair when the field is non-null.
+   * Drives every in-flight row in the Tide card transcript: the data
+   * source iterates `activeTurn.messages` the same way it iterates
+   * `turn.messages` for committed turns — one substrate, two lifecycle
+   * slots ([D07]).
    *
-   * The reference is shared with the reducer's `pendingUserMessage`,
-   * so identity is stable across snapshot rebuilds while the same
-   * pending message is in flight — `useSyncExternalStore` consumers
-   * downstream get the `Object.is` stability they need ([D10]).
+   * The reference is rebuilt on every state-changing reducer tick that
+   * touches the in-flight turn (text delta, tool result, new Message
+   * mint) per [D07]'s copy-on-write mutation discipline. Quiescent
+   * dispatches reuse the prior reference so `useSyncExternalStore`
+   * consumers ([L02]) get `Object.is` stability.
    */
-  inflightUserMessage: {
-    text: string;
-    atoms: ReadonlyArray<AtomSegment>;
-    /**
-     * Wall-clock millisecond timestamp captured when `send()` was
-     * dispatched. Drives the in-flight user row's timestamp display so
-     * the row can post the submit time the moment the user submits,
-     * without waiting for the matching `TurnEntry` to commit.
-     */
-    submitAt: number;
-    /**
-     * Stable React-key seed for the in-flight cell pair, preserved
-     * unchanged from `handleSend` through `handleTurnComplete` (the
-     * committed `TurnEntry` carries the same value via
-     * `TurnEntry.turnKey`). The transcript data source uses it to mint
-     * `idForIndex` — same React key inflight + committed → no cell
-     * unmount at turn boundary.
-     */
-    turnKey: string;
-  } | null;
+  activeTurn: ActiveTurnSnapshot | null;
 
   /**
    * One-shot restore slot — carries a prompt (text + atoms) the
@@ -500,9 +597,9 @@ export interface CodeSessionSnapshot {
    *   - **CASE A interrupt** — the user pulls a turn back before any
    *     answer-channel content has begun (`firstAssistantDeltaAt ===
    *     null && firstToolUseAt === null`; thinking does not cross the
-   *     line). `handleInterrupt` captures `pendingUserMessage` here,
-   *     clears the in-flight pair and the queue, and returns `phase`
-   *     to `idle`.
+   *     line). `handleInterrupt` captures the in-flight `user_message`
+   *     here, clears the in-flight turn and the queue, and returns
+   *     `phase` to `idle`.
    *   - **Queued-send cancel** — `cancelQueuedSend` un-sends one
    *     never-dispatched queued submission and routes its prompt here.
    *
@@ -540,8 +637,8 @@ export interface CodeSessionSnapshot {
    * cache_creation`) grows monotonically across a turn's API calls, so
    * the most recent frame is always the current window. The reducer
    * replaces this field on each frame (no per-message map). The cells
-   * read it while `inflightUserMessage !== null` and fall back to the
-   * last committed turn's window otherwise; the committed `cost_update`
+   * read it while `activeTurn !== null` and fall back to the last
+   * committed turn's window otherwise; the committed `cost_update`
    * carries the same last-iteration usage and supersedes it at
    * turn-complete with no discontinuity. The reference is preserved
    * across snapshot rebuilds while the reducer's underlying field
@@ -730,4 +827,3 @@ export interface LastReplayResult {
   /** `Date.now()` at the moment `replay_complete` landed. */
   at: number;
 }
-

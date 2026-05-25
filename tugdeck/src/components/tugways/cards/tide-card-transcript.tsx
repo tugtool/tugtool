@@ -87,9 +87,11 @@ import {
   type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
-import { TranscriptToolCalls } from "@/components/tugways/cards/tide-card-transcript-tool-calls";
 import { TideZ1B } from "@/components/tugways/cards/tide-card-z1b";
-import { dispatch as dispatchRenderInput } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
+import {
+  dispatch as dispatchRenderInput,
+  dispatchToolCallState,
+} from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
 import { TideJumpToBottomButton } from "@/components/tugways/cards/tide-jump-to-bottom-button";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
@@ -104,6 +106,7 @@ import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
   TideTranscriptDataSource,
+  readUserMessage,
   useTideTranscriptDataSource,
 } from "@/lib/tide-transcript-data-source";
 import type { PropertyStore } from "@/components/tugways/property-store";
@@ -366,19 +369,20 @@ const UserRowCell: React.FC<UserRowCellProps> = ({
   renderTurnTrailing,
 }) => {
   const row = dataSource.rowAt(index);
-  // Either committed turn (`turn.userMessage.text`) or in-flight user
-  // message (`inflight.text`). The wrapper renders nothing when both
-  // are missing — defensive against an out-of-range read that
-  // shouldn't happen given the adapter's contract but is cheap to
-  // guard.
-  const rawText = row.turn?.userMessage.text ?? row.inflight?.text ?? "";
+  // Read the user submission from the `user_message` Message at the
+  // head of `turn.messages` (committed) or `activeTurn.messages`
+  // (in-flight). The data source only emits a `user` row when one is
+  // present, so this is always defined for cells that actually paint;
+  // the defensive `?? ""` covers an out-of-range read.
+  const committedUser = row.turn !== undefined ? readUserMessage(row.turn.messages) : undefined;
+  const activeUser = row.activeTurn !== undefined ? readUserMessage(row.activeTurn.messages) : undefined;
+  const rawText = committedUser?.text ?? activeUser?.text ?? "";
   const text = stripUserBodyPrefix(rawText);
   // User-row timestamp is the submit time, not the turn's end time —
   // the user's row "posts" the moment they hit submit, regardless of
-  // whether the assistant has replied yet. For committed rows the
-  // submit time is captured on `userMessage.submitAt`; for in-flight
-  // rows it lives on `inflight.submitAt`.
-  const submitAt = row.turn?.userMessage.submitAt ?? row.inflight?.submitAt;
+  // whether the assistant has replied yet. Both committed and active
+  // surfaces carry `submitAt` on the user_message Message itself.
+  const submitAt = committedUser?.submitAt ?? activeUser?.submitAt;
   const timestamp = submitAt !== undefined
     ? formatTranscriptTimestamp(submitAt)
     : undefined;
@@ -531,6 +535,107 @@ const GhostRowCell: React.FC<GhostRowCellProps> = ({
 // the permission slot) changes.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// `CodeRowBody` — iterate the turn's Message sequence ([D07]).
+//
+// Renders each Message kind to its inline surface in arrival order.
+// Lives outside `CodeRowCell` so the component reference is stable
+// across re-renders ([L26]) and the iteration logic stays close to
+// the dispatch.
+// ---------------------------------------------------------------------------
+
+interface CodeRowBodyProps {
+  messages: ReadonlyArray<import("@/lib/code-session-store").Message>;
+  turnKey: string;
+  streamingStore: PropertyStore;
+  /**
+   * `msg_id` threaded onto tool blocks. For committed rows the
+   * canonical `turn.msgId`; for in-flight rows the snapshot's live
+   * `activeMsgId`. Tool blocks key off it for cross-tool coordination
+   * (today: none; reserved for future use). Empty string is
+   * acceptable while no msg_id has bound yet.
+   */
+  toolMsgId: string;
+  session: CodeSessionStore;
+}
+
+const CodeRowBody: React.FC<CodeRowBodyProps> = ({
+  messages,
+  turnKey,
+  streamingStore,
+  toolMsgId,
+  session,
+}) => {
+  // Partition tool_use Messages into top-level vs nested per
+  // `parentToolUseId` ([#step-17-5]). Subagent children render
+  // inside their parent's `AgentTranscriptBlock` and must NOT also
+  // appear as transcript siblings. The map threads through every
+  // top-level tool dispatch so the parent can resolve its own
+  // children via the same dispatch.
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, import("@/lib/code-session-store").ToolUseMessage[]>();
+    for (const m of messages) {
+      if (m.kind !== "tool_use") continue;
+      const parentId = m.parentToolUseId;
+      if (parentId === undefined) continue;
+      const siblings = map.get(parentId);
+      if (siblings === undefined) map.set(parentId, [m]);
+      else siblings.push(m);
+    }
+    return map;
+  }, [messages]);
+
+  const elements: React.ReactNode[] = [];
+  for (const message of messages) {
+    if (message.kind === "user_message") {
+      // Rendered separately by the user row — skip in the code body.
+      continue;
+    }
+    if (message.kind === "system_note") {
+      // Step 8 will land the renderer. Today: no instances exist; if
+      // one shows up early via a future tugcode emit, skip silently
+      // rather than crashing.
+      continue;
+    }
+    if (message.kind === "assistant_thinking") {
+      const path = `turn.${turnKey}.message.${message.messageKey}.text`;
+      elements.push(
+        <TideThinkingBlock
+          key={message.messageKey}
+          streamingStore={streamingStore}
+          streamingPath={path}
+        />,
+      );
+      continue;
+    }
+    if (message.kind === "assistant_text") {
+      const path = `turn.${turnKey}.message.${message.messageKey}.text`;
+      elements.push(
+        <TugMarkdownBlock
+          key={message.messageKey}
+          streamingStore={streamingStore}
+          streamingPath={path}
+          className="tide-card-transcript-code-body"
+        />,
+      );
+      continue;
+    }
+    // tool_use — render top-level calls only; subagent children are
+    // resolved inside their parent's wrapper.
+    if (message.parentToolUseId !== undefined) continue;
+    const { Component, props } = dispatchToolCallState(
+      message,
+      toolMsgId,
+      0,
+      childrenByParent,
+      session,
+    );
+    elements.push(<Component key={message.messageKey} {...props} />);
+  }
+
+  return <>{elements}</>;
+};
+
 interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   /**
    * Per-card `SessionMetadataStore`. Each `CodeRowCell` subscribes
@@ -578,15 +683,17 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
     );
   }
   const turnKey = row.turnKey ?? `missing-${index}`;
-  const assistantPath = `turn.${turnKey}.assistant`;
-  const thinkingPath = `turn.${turnKey}.thinking`;
-  const toolsPath = `turn.${turnKey}.tools`;
   // Committed-ness is "a TurnEntry exists for this row" — derived
   // from data, not from a separate kind enum. Using `row.turn` keeps
   // the branching tied to the actual payload the cell needs, so
   // there's no opportunity for kind and payload to disagree.
   const turn = row.turn;
   const isCommitted = turn !== undefined;
+  // [D07] sequence substrate — the body iterates this Message
+  // sequence and dispatches each kind to its inline renderer.
+  // Committed turns read `turn.messages`; in-flight reads
+  // `row.activeTurn.messages` (the snapshot's `activeTurn` projection).
+  const messages = turn?.messages ?? row.activeTurn?.messages ?? [];
   // Full-turn markdown for the Z1B COPY affordance — every tool
   // call's input/output followed by the assistant prose. Serialized
   // once per committed turn (the turn is frozen post-commit, so the
@@ -690,41 +797,45 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
           }
           sequenceNumber={index + 1}
           body={
-            // Body order inside an assistant turn cell — matches the
-            // conversational order the AI emits:
+            // Body order — per [D07] sequence substrate, the wire's
+            // arrival order drives the visual order. The renderer
+            // iterates `messages` (committed or in-flight) and
+            // dispatches each kind to its inline surface:
             //
-            //   1. Thinking — pre-action reasoning at the start of
-            //      the turn.
-            //   2. Tool calls — the in-flight tool blocks in stream
-            //      order.
-            //   3. Assistant text — the final markdown reply.
-            //   4. Permission slot, then question slot. Both are
-            //      pending-only live input forms; at most one is
-            //      ever non-null on the same render (the SDK only
-            //      opens one `control_request_forward` at a time).
-            //      Sitting at the body foot puts the interactive
-            //      prompt where the user has just finished reading
-            //      the AI's setup.
+            //   - `assistant_thinking` → `TideThinkingBlock`,
+            //     subscribed to the Message's per-Message streaming
+            //     path (`turn.${turnKey}.message.${messageKey}.text`).
+            //   - `tool_use` (top-level only — subagent children are
+            //     resolved inside their parent's `AgentTranscriptBlock`
+            //     via the `childToolCallsByParent` map) → tool block
+            //     resolved via `dispatchToolCallState`.
+            //   - `assistant_text` → `TugMarkdownBlock`, subscribed to
+            //     the same per-Message path shape.
+            //   - `user_message` is rendered by the separate user row;
+            //     skipped here.
+            //   - `system_note` lands in Step 8 (no instances yet).
             //
-            // Slot keys (`request.request_id`) are stable, so
+            // After the message list, the live-only permission slot
+            // and question slot sit at the body foot — at most one is
+            // ever non-null on the same render (the SDK only opens
+            // one `control_request_forward` at a time). Slot keys
+            // (`request.request_id`) are stable, so
             // React-reconciliation mount identity ([L26]) is
             // preserved across the dialog's pending → null
             // transition without remount.
+            //
+            // Subagent nesting ([#step-17-5]): the iteration skips
+            // tool_use Messages whose `parentToolUseId` is set — they
+            // render inside their parent's `AgentTranscriptBlock`.
+            // `childToolCallsByParent` is the partition map threaded
+            // into every top-level tool dispatch.
             <div ref={(el) => { bodyRef.current = el; }}>
-              <TideThinkingBlock
+              <CodeRowBody
+                messages={messages}
+                turnKey={turnKey}
                 streamingStore={streamingStore}
-                streamingPath={thinkingPath}
-              />
-              <TranscriptToolCalls
-                streamingStore={streamingStore}
-                streamingPath={toolsPath}
-                msgId={toolMsgId}
+                toolMsgId={toolMsgId}
                 session={codeSessionStore}
-              />
-              <TugMarkdownBlock
-                streamingStore={streamingStore}
-                streamingPath={assistantPath}
-                className="tide-card-transcript-code-body"
               />
               {permissionSlot}
               {questionSlot}

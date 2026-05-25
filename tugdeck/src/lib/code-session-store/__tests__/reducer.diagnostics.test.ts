@@ -1,7 +1,7 @@
 /**
  * Reducer tests for the per-turn diagnostics suite: `ttftMs`,
  * `ttftcMs`, `maxStreamGapMs`, `turnEndReason`, and the per-tool
- * `ToolCallState.toolWallMs`.
+ * `ToolUseMessage.toolWallMs`.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -62,13 +62,14 @@ describe("reducer — diagnostics", () => {
     const { state: s1 } = applyAll(fresh(), [
       { type: "send", text: "hi", atoms: [], turnKey: "k1" },
     ]);
-    const submitAt = s1.pendingUserMessage!.submitAt;
+    const submitAt = s1.pendingTurn!.submitAt;
     advance(200);
     const { state: s2 } = applyAll(s1, [
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "thinking",
+      block_index: 0,
+      text: "thinking",
         is_partial: true,
       },
     ]);
@@ -86,7 +87,7 @@ describe("reducer — diagnostics", () => {
     const { state: s1 } = applyAll(fresh(), [
       { type: "send", text: "hi", atoms: [], turnKey: "k1" },
     ]);
-    const submitAt = s1.pendingUserMessage!.submitAt;
+    const submitAt = s1.pendingTurn!.submitAt;
     advance(120);
     const { state: s2 } = applyAll(s1, [
       {
@@ -107,7 +108,11 @@ describe("reducer — diagnostics", () => {
         is_error: false,
       },
     ]);
-    expect(s3.toolCallMap.get("t1")?.toolWallMs).toBe(80);
+    const turn3Scratch = s3.scratch.get("k1")!;
+    const t1Idx3 = turn3Scratch.toolCallIndex.get("t1")!;
+    const t1Msg = turn3Scratch.messages[t1Idx3];
+    if (t1Msg.kind !== "tool_use") throw new Error("expected tool_use");
+    expect(t1Msg.toolWallMs).toBe(80);
     advance(40);
     const { effects } = applyAll(s3, [
       { type: "turn_complete", msg_id: "m1", result: "success" },
@@ -115,7 +120,8 @@ describe("reducer — diagnostics", () => {
     const entry = appended(effects)[0].entry;
     expect(entry.ttftMs).toBeNull(); // no assistant_text in this turn
     expect(entry.ttftcMs).toBe(120);
-    expect(entry.toolCalls[0].toolWallMs).toBe(80);
+    const toolMsg = entry.messages.find((m) => m.kind === "tool_use");
+    expect(toolMsg?.kind === "tool_use" ? toolMsg.toolWallMs : null).toBe(80);
   });
 
   it("maxStreamGapMs captures the largest inter-event gap", () => {
@@ -127,7 +133,8 @@ describe("reducer — diagnostics", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "a",
+      block_index: 0,
+      text: "a",
         is_partial: true,
       },
     ]);
@@ -136,7 +143,8 @@ describe("reducer — diagnostics", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "b",
+      block_index: 0,
+      text: "b",
         is_partial: true,
       },
     ]);
@@ -146,7 +154,8 @@ describe("reducer — diagnostics", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "c",
+      block_index: 0,
+      text: "c",
         is_partial: true,
       },
     ]);
@@ -164,7 +173,8 @@ describe("reducer — diagnostics", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "done",
+      block_index: 0,
+      text: "done",
         is_partial: false,
       },
       { type: "turn_complete", msg_id: "m1", result: "success" },
@@ -178,7 +188,8 @@ describe("reducer — diagnostics", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
       { type: "interrupt_action" },
@@ -198,7 +209,8 @@ describe("reducer — diagnostics", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
     ]);

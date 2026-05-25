@@ -203,9 +203,13 @@ describe("CodeSessionStore — permission deny on test-11 (Step 6)", () => {
     expect(snap.transcript.length).toBe(1);
 
     const turn = snap.transcript[0];
-    expect(turn.toolCalls.length).toBe(1);
-    expect(turn.toolCalls[0].toolName).toBe("Read");
-    expect(turn.toolCalls[0].status).toBe("error");
+    const toolCalls = turn.messages.filter(
+      (m): m is import("@/lib/code-session-store").ToolUseMessage =>
+        m.kind === "tool_use",
+    );
+    expect(toolCalls.length).toBe(1);
+    expect(toolCalls[0].toolName).toBe("Read");
+    expect(toolCalls[0].status).toBe("error");
     expect(turn.result).toBe("success");
     // cost_update rode the fixture; the f64 placeholder resolves to 0.
     expect(snap.lastCost?.totalCostUsd).toBe(0);

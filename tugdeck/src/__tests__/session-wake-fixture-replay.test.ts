@@ -172,11 +172,22 @@ function assistantTextFromCaptured(): Record<string, unknown> {
   return {
     type: "assistant_text",
     msg_id: captured.msgId,
+    block_index: 0,
     seq: 0,
     rev: 0,
     text: captured.assistantText,
     is_partial: false,
     status: "complete",
+    ipc_version: IPC_VERSION,
+  };
+}
+
+function contentBlockStartTextFromCaptured(): Record<string, unknown> {
+  return {
+    type: "content_block_start",
+    msg_id: captured.msgId,
+    block_index: 0,
+    kind: "text",
     ipc_version: IPC_VERSION,
   };
 }
@@ -226,6 +237,7 @@ describe("session-wake fixture replay — live wake bracket [PPF-01]", () => {
       outputFile: captured.trigger.output_file,
     });
 
+    emit(conn, contentBlockStartTextFromCaptured());
     emit(conn, assistantTextFromCaptured());
     emit(conn, turnComplete(captured.msgId));
 
@@ -235,15 +247,20 @@ describe("session-wake fixture replay — live wake bracket [PPF-01]", () => {
     expect(snap.transcript.length).toBe(1);
 
     const entry = snap.transcript[0];
-    // Empty-text marker is the wake sentinel (no phantom user bubble).
-    expect(entry.userMessage.text).toBe("");
-    expect(entry.userMessage.attachments).toEqual([]);
-    expect(entry.assistant).toBe(captured.assistantText);
+    // [D07] wake discriminator: no user_message Message at head — the
+    // substrate's replacement for the [D06] empty-text sentinel.
+    expect(entry.messages[0]?.kind !== "user_message").toBe(true);
+    const assistantTexts = entry.messages
+      .filter((m): m is import("@/lib/code-session-store").AssistantText => m.kind === "assistant_text")
+      .map((m) => m.text)
+      .join("");
+    expect(assistantTexts).toBe(captured.assistantText);
     expect(entry.result).toBe("success");
-    // The per-turn write paths landed under the minted turnKey, so
-    // the cell wrapper that subscribes to `turn.${turnKey}.assistant`
-    // would render the wake's authoritative text.
-    expect(committedTurnValue(store, "assistant")).toBe(
+    // Per-Message streaming write paths land under the minted turnKey
+    // + messageKey; the cell wrapper subscribing to
+    // `turn.${turnKey}.message.${messageKey}.text` would render the
+    // wake's authoritative text.
+    expect(committedTurnValue(store, "assistant_text")).toBe(
       captured.assistantText,
     );
   });
@@ -283,6 +300,7 @@ describe("session-wake fixture replay — cold-boot replay regression", () => {
       turnKey: `replay-key-${captured.msgId}`,
       ipc_version: IPC_VERSION,
     });
+    emit(conn, contentBlockStartTextFromCaptured());
     emit(conn, assistantTextFromCaptured());
     emit(conn, turnComplete(captured.msgId));
     emit(conn, {
@@ -295,7 +313,11 @@ describe("session-wake fixture replay — cold-boot replay regression", () => {
     expect(snap.phase).toBe("idle");
     expect(snap.transcript.length).toBe(1);
     const entry = snap.transcript[0];
-    expect(entry.assistant).toBe(captured.assistantText);
+    const assistantTexts = entry.messages
+      .filter((m): m is import("@/lib/code-session-store").AssistantText => m.kind === "assistant_text")
+      .map((m) => m.text)
+      .join("");
+    expect(assistantTexts).toBe(captured.assistantText);
     // Slice 1: wakeTrigger metadata is NOT preserved across cold-boot
     // replay (the replay translator doesn't synthesize wake_started).
     // Slice 2 will close this gap; this assertion makes the deferred

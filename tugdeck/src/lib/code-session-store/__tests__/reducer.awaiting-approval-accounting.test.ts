@@ -79,7 +79,8 @@ describe("reducer — awaiting-approval accounting", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "hello",
+      block_index: 0,
+      text: "hello",
         is_partial: true,
       },
     ]);
@@ -131,7 +132,8 @@ describe("reducer — awaiting-approval accounting", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "hello",
+      block_index: 0,
+      text: "hello",
         is_partial: true,
       },
     ]).state;
@@ -196,7 +198,8 @@ describe("reducer — awaiting-approval accounting", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "thinking",
+      block_index: 0,
+      text: "thinking",
         is_partial: true,
       },
     ]).state;
@@ -230,7 +233,8 @@ describe("reducer — awaiting-approval accounting", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "thinking",
+      block_index: 0,
+      text: "thinking",
         is_partial: true,
       },
       {
@@ -271,7 +275,8 @@ describe("reducer — awaiting-approval accounting", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "done",
+      block_index: 0,
+      text: "done",
         is_partial: false,
       },
       { type: "turn_complete", msg_id: "m1", result: "success" },

@@ -10,6 +10,15 @@
  * `replayTimeoutDwellActive`) that drive the resume placeholder /
  * banner UX.
  *
+ * Step 5 ([D07]) lifts the substrate to a full Message-sequence
+ * model. `state.scratch` re-keys from `Map<msgId, …>` to
+ * `Map<turnKey, ScratchEntry>` (one scratch entry per turn, spanning
+ * every msgId iteration of the turn's tool-use loop). The committed
+ * `TurnEntry` exposes `messages: ReadonlyArray<Message>` instead of
+ * the old paired `userMessage` / `thinking` / `assistant` /
+ * `toolCalls` fields. `pendingUserMessage` → `pendingTurn`;
+ * `toolCallMap` retires (folded into `ScratchEntry.toolCallIndex`).
+ *
  * `transcript` intentionally does NOT live here — the class wrapper
  * owns it and appends via `AppendTranscript` effects ([D04] / [D11]).
  *
@@ -26,6 +35,7 @@ import type {
   AssistantTextEvent,
   CancelQueuedSendActionEvent,
   CodeSessionEvent,
+  ContentBlockStartEvent,
   ContextBreakdownEvent,
   ControlRequestForwardEvent,
   CostUpdateEvent,
@@ -49,6 +59,9 @@ import type {
   WireErrorEvent,
 } from "./events";
 import type {
+  ActiveTurnSnapshot,
+  AssistantText,
+  AssistantThinking,
   CardSessionMode,
   CodeSessionPhase,
   ContextBreakdownSnapshot,
@@ -56,10 +69,12 @@ import type {
   CostSnapshot,
   LastReplayResult,
   LiveMessageUsage,
-  ToolCallState,
+  Message,
+  ToolUseMessage,
   TransportState,
   TurnEndReason,
   TurnEntry,
+  UserMessage,
   WakeTrigger,
 } from "./types";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
@@ -69,6 +84,137 @@ import {
   readUsage,
   type TurnTelemetry,
 } from "./telemetry";
+
+// ---------------------------------------------------------------------------
+// Per-turn scratch ([D07])
+// ---------------------------------------------------------------------------
+
+/**
+ * One scratch entry per turn — accumulates the wire's Message sequence
+ * across every msgId iteration of the turn ([D07] § Multi-msgId-per-
+ * turn handling). The `messages` array is the substrate's primary
+ * payload; `blockIndex` and `toolCallIndex` are O(1) lookup tables
+ * into it.
+ *
+ * `blockIndex` keys are `${msg_id}:${block_index}` — the wire's
+ * coordinate for one content block. `handleContentBlockStart` mints a
+ * Message and writes its array index here; `handleTextDelta` reads
+ * this index to find the Message to mutate.
+ *
+ * `toolCallIndex` keys are `tool_use_id`. The mint at
+ * `handleContentBlockStart` (for `kind: "tool_use"`) populates both
+ * indices; subsequent `tool_use` (input fill), `tool_result`, and
+ * `tool_use_structured` events look up via `toolCallIndex` and mutate
+ * the indexed `ToolUseMessage`.
+ *
+ * `systemNoteSeq` is the monotonic per-turn counter for
+ * `SystemNote.messageKey` derivation (`${turnKey}-sys${seq}`).
+ */
+export interface ScratchEntry {
+  turnKey: string;
+  messages: Message[];
+  blockIndex: Map<string, number>;
+  toolCallIndex: Map<string, number>;
+  systemNoteSeq: number;
+}
+
+/**
+ * The in-flight turn marker — replaces `pendingUserMessage` under
+ * [D07]. The substrate distinguishes "a turn is open" from "the open
+ * turn carries a user submission" by the presence (or absence) of a
+ * `user_message` Message at the head of `scratch[turnKey].messages` —
+ * `isWake` is the explicit, non-derived bit for handlers that need to
+ * branch on the source.
+ */
+export interface PendingTurn {
+  turnKey: string;
+  submitAt: number;
+  isWake: boolean;
+}
+
+/** Derive a Message's `messageKey` from the wire coordinate it owns. */
+function wireMessageKey(msgId: string, blockIndex: number): string {
+  return `${msgId}-b${blockIndex}`;
+}
+
+/** Derive a user_message's `messageKey` from its turn. */
+function userMessageKey(turnKey: string): string {
+  return `${turnKey}-user`;
+}
+
+/** Derive a system_note's `messageKey` from its turn + monotonic seq. */
+function systemNoteKey(turnKey: string, seq: number): string {
+  return `${turnKey}-sys${seq}`;
+}
+
+/** Composite key into `ScratchEntry.blockIndex`. */
+function blockKey(msgId: string, blockIndex: number): string {
+  return `${msgId}:${blockIndex}`;
+}
+
+/**
+ * Build a fresh `ScratchEntry`. The caller seeds `messages` with the
+ * turn's opening Messages (e.g., the `user_message` for a normal
+ * turn, `[]` for a wake) and the indices are initialized empty —
+ * wire-derived Messages mint into `blockIndex` (and `toolCallIndex`
+ * for tool_use) as `content_block_start` events arrive.
+ */
+function newScratchEntry(
+  turnKey: string,
+  initialMessages: Message[],
+): ScratchEntry {
+  return {
+    turnKey,
+    messages: initialMessages,
+    blockIndex: new Map(),
+    toolCallIndex: new Map(),
+    systemNoteSeq: 0,
+  };
+}
+
+/**
+ * Replace `scratch[turnKey]` via copy-on-write at the smallest
+ * container that changes ([D07] mutation discipline). Returns a fresh
+ * `Map<turnKey, ScratchEntry>` for the next state slot; other turns'
+ * entries stay reference-identical.
+ */
+function withScratchEntry(
+  scratch: ReadonlyMap<string, ScratchEntry>,
+  turnKey: string,
+  entry: ScratchEntry,
+): Map<string, ScratchEntry> {
+  const next = new Map(scratch);
+  next.set(turnKey, entry);
+  return next;
+}
+
+/**
+ * Iterate a turn's `tool_use` Messages — the substrate's replacement
+ * for today's `toolCallMap.values()`. Pure over the entry's messages
+ * array; preserves arrival order.
+ */
+function* toolUseMessages(
+  entry: ScratchEntry | undefined,
+): IterableIterator<ToolUseMessage> {
+  if (entry === undefined) return;
+  for (const m of entry.messages) {
+    if (m.kind === "tool_use") yield m;
+  }
+}
+
+/**
+ * Predicate driving the `tool_work → streaming` transition: every
+ * tool_use Message in the turn's scratch must be terminal
+ * (`done` / `error`). An empty iteration counts as "all done" but
+ * the reducer only calls this after a state-changing tool event, so
+ * the empty case never triggers a spurious return.
+ */
+function allToolsTerminal(entry: ScratchEntry | undefined): boolean {
+  for (const m of toolUseMessages(entry)) {
+    if (m.status !== "done" && m.status !== "error") return false;
+  }
+  return true;
+}
 
 /** Reducer-internal state. Not exposed to consumers. */
 export interface CodeSessionState {
@@ -88,46 +234,50 @@ export interface CodeSessionState {
   sessionMode: CardSessionMode;
 
   activeMsgId: string | null;
-  scratch: Map<string, { assistant: string; thinking: string }>;
-  toolCallMap: Map<string, ToolCallState>;
+  /**
+   * Per-turn scratch ([D07]) — one entry per turn, keyed by `turnKey`,
+   * spanning every msgId iteration of the turn's tool-use loop. The
+   * shift from `Map<msgId, …>` was a correctness fix: today's
+   * substrate dropped intermediate iterations' Messages at commit
+   * because `buildTurnEntry` only read `scratch[activeMsgId]`.
+   *
+   * The entry's `toolCallIndex` field absorbs what `toolCallMap` used
+   * to hold (toolUseId → array index instead of toolUseId → state),
+   * so tool lookup stays O(1) and there's no parallel storage to
+   * drift out of sync with the Message sequence.
+   */
+  scratch: Map<string, ScratchEntry>;
   pendingApproval: ControlRequestForward | null;
   pendingQuestion: ControlRequestForward | null;
   prevPhase: CodeSessionPhase | null;
-  pendingUserMessage: {
-    text: string;
-    atoms: ReadonlyArray<AtomSegment>;
-    submitAt: number;
-    /**
-     * Stable React-key seed for the in-flight cell pair. Generated at
-     * `handleSend` and preserved unchanged through every phase of the
-     * turn. The transcript's `idForIndex` uses it to mint the user +
-     * code cell ids; the same `turnKey` is copied onto `TurnEntry` at
-     * `handleTurnComplete`, so the React key stays identical across
-     * the inflight → committed transition. The single React key for
-     * the lifetime of a turn is the foundation that prevents the
-     * cell wrapper from unmounting mid-turn (which previously caused
-     * `scrollTop` to silently clamp to 0 when streaming content
-     * remounted).
-     */
-    turnKey: string;
-  } | null;
+  /**
+   * The in-flight turn marker — replaces the [D07]-superseded
+   * `pendingUserMessage`. Set the moment `send()` or
+   * `handleWakeStarted` opens a turn; cleared at commit / interrupt /
+   * transport_close. Carries the React-key seed (`turnKey`) that
+   * `TurnEntry` adopts at commit (so the row's React identity is
+   * stable across the inflight → committed transition) plus the
+   * `isWake` discriminator the substrate uses to branch wake handling
+   * without resurrecting the [D06] empty-text sentinel.
+   */
+  pendingTurn: PendingTurn | null;
   /**
    * One-shot draft restore for CASE A interrupt — `interrupt()` fired
    * while `phase === "submitting"`, before claude produced any content
-   * keyed to a `msg_id`. The reducer captures `pendingUserMessage` here
-   * so the prompt entry can seed the editor with the original text +
-   * atoms for re-edit. Cleared by `consume_draft_restore` (the prompt
-   * entry's signal that it has applied the restore) — never overwritten
-   * elsewhere; a brand-new CASE A interrupt while a previous restore
-   * still sits in this slot replaces the contents (the editor
-   * effectively "missed" the prior restore, but losing the older draft
-   * is preferable to stranding the most recent one).
+   * keyed to a `msg_id`. The reducer captures the in-flight user
+   * submission's text + atoms here so the prompt entry can seed the
+   * editor with them for re-edit. Cleared by `consume_draft_restore`
+   * (the prompt entry's signal that it has applied the restore) —
+   * never overwritten elsewhere; a brand-new CASE A interrupt while
+   * a previous restore still sits in this slot replaces the contents
+   * (the editor effectively "missed" the prior restore, but losing
+   * the older draft is preferable to stranding the most recent one).
    *
    * Mirrored onto the public snapshot as
    * `CodeSessionSnapshot.pendingDraftRestore`. The reference is shared
    * with the snapshot so identity is stable across snapshot rebuilds
-   * (per the same [D10]-style stability contract that
-   * `pendingUserMessage` honors).
+   * (per the same [D10]-style stability contract previously honored
+   * by `pendingUserMessage`).
    */
   pendingDraftRestore: {
     text: string;
@@ -385,10 +535,11 @@ export interface CodeSessionState {
   transportDowntimeIntervals: ReadonlyArray<readonly [number, number]>;
   interruptInFlightIntervals: ReadonlyArray<readonly [number, number]>;
   /**
-   * Per-tool-call start timestamps captured at `handleToolUse`, used
-   * by `handleToolResult` to compute the matching `ToolCallState.toolWallMs`.
-   * Reducer-internal — never exposed on the snapshot. Cleared on turn
-   * boundaries with the rest of the toolCallMap.
+   * Per-tool-call start timestamps captured at `handleContentBlockStart`
+   * (`kind: "tool_use"`), used by `handleToolResult` to compute the
+   * matching `ToolUseMessage.toolWallMs`. Reducer-internal — never
+   * exposed on the snapshot. Cleared on turn boundaries with the
+   * rest of the per-turn state.
    */
   toolUseStartedAt: Map<string, number>;
   /**
@@ -439,11 +590,10 @@ export function createInitialState(
     sessionMode,
     activeMsgId: null,
     scratch: new Map(),
-    toolCallMap: new Map(),
     pendingApproval: null,
     pendingQuestion: null,
     prevPhase: null,
-    pendingUserMessage: null,
+    pendingTurn: null,
     pendingDraftRestore: null,
     pendingCaseAEchoes: 0,
     queuedSends: [],
@@ -496,15 +646,33 @@ function handleSend(
   }
 
   if (state.phase === "idle" || state.phase === "errored") {
+    const submitAt = Date.now();
+    const userMessage: UserMessage = {
+      kind: "user_message",
+      messageKey: userMessageKey(event.turnKey),
+      createdAt: submitAt,
+      text: event.text,
+      attachments: event.atoms,
+      submitAt,
+    };
     const next: CodeSessionState = {
       ...state,
       phase: "submitting",
-      pendingUserMessage: {
-        text: event.text,
-        atoms: event.atoms,
-        submitAt: Date.now(),
+      pendingTurn: {
         turnKey: event.turnKey,
+        submitAt,
+        isWake: false,
       },
+      // Seed the scratch with the opening user_message so the
+      // substrate carries the user submission as its first Message
+      // (no separate paired field). Wire-derived assistant content
+      // mints into the same scratch entry as `content_block_start`
+      // events arrive.
+      scratch: withScratchEntry(
+        state.scratch,
+        event.turnKey,
+        newScratchEntry(event.turnKey, [userMessage]),
+      ),
       // The user is moving on to a new turn. The prompt-entry editor
       // consumes `pendingDraftRestore` synchronously via
       // `useLayoutEffect` before user input is possible, so by the
@@ -575,6 +743,37 @@ function handleSend(
   return { state: { ...state, queuedSends }, effects: [] };
 }
 
+/**
+ * Read the in-flight turn's `user_message` text + attachments, if
+ * present. Returns `null` for a wake turn (no user_message Message at
+ * head) or when no turn is in flight. Used by `handleInterrupt`'s
+ * CASE A capture and by anywhere that needs the in-flight user
+ * submission's payload.
+ */
+function readInflightUserMessage(state: CodeSessionState): UserMessage | null {
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) return null;
+  const entry = state.scratch.get(turnKey);
+  if (entry === undefined) return null;
+  const head = entry.messages[0];
+  if (head !== undefined && head.kind === "user_message") return head;
+  return null;
+}
+
+/**
+ * Drop the in-flight turn's scratch entry. Returns a fresh scratch
+ * Map with the entry removed (other turns' entries reference-stable).
+ */
+function withoutPendingTurnScratch(
+  state: CodeSessionState,
+): Map<string, ScratchEntry> {
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) return new Map(state.scratch);
+  const next = new Map(state.scratch);
+  next.delete(turnKey);
+  return next;
+}
+
 function handleInterrupt(
   state: CodeSessionState,
 ): { state: CodeSessionState; effects: Effect[] } {
@@ -597,8 +796,8 @@ function handleInterrupt(
   // `assistant_text` and `thinking_text`, so `phase` advances on
   // thinking alone; `firstAssistantDeltaAt` / `firstToolUseAt` are the
   // real "answer has begun" signals.) The user's intent is "pull it
-  // back and re-edit" — capture the pending message into a one-shot
-  // restore slot, clear the in-flight pair so the transcript stops
+  // back and re-edit" — capture the user submission into a one-shot
+  // restore slot, drop the in-flight scratch so the transcript stops
   // rendering it, and return the phase to `idle` so the user can
   // resubmit immediately without waiting for the wire's
   // `turn_complete(error)` round-trip.
@@ -621,32 +820,26 @@ function handleInterrupt(
     state.firstAssistantDeltaAt === null &&
     state.firstToolUseAt === null
   ) {
-    const pending = state.pendingUserMessage;
     // Detect the wake context: an interrupt fired during `waking`
-    // before any content has landed. The wake's `pendingUserMessage`
-    // is an empty-text marker sentinel, NOT a user submission — so
-    // don't push it into the restore slot ([Q03] in
-    // `roadmap/tugplan-tide-session-wake.md`). Preserve any prior
+    // before any content has landed. A wake has no user submission
+    // ([Q03] in `roadmap/tugplan-tide-session-wake.md`), so there is
+    // nothing to route into the restore slot. Preserve any prior
     // restore so a wake pull-down doesn't clobber a stranded user
     // draft.
-    const isWakePulldown = state.phase === "waking";
-    // Carry the pending submission into the restore slot. If
-    // `pendingUserMessage` is somehow null (defensive — handleSend
-    // populates it on every successful send), preserve any existing
-    // restore so a brand-new CASE A doesn't wipe a previously-stranded
-    // one.
-    const restore = !isWakePulldown && pending !== null
-      ? { text: pending.text, atoms: pending.atoms }
-      : state.pendingDraftRestore;
+    const isWakePulldown = state.pendingTurn?.isWake === true;
+    const inflightUser = isWakePulldown ? null : readInflightUserMessage(state);
+    const restore =
+      inflightUser !== null
+        ? { text: inflightUser.text, atoms: inflightUser.attachments }
+        : state.pendingDraftRestore;
     return {
       state: {
         ...state,
         phase: "idle",
         activeMsgId: null,
-        scratch: new Map(),
-        toolCallMap: new Map(),
+        scratch: withoutPendingTurnScratch(state),
         toolUseStartedAt: new Map(),
-        pendingUserMessage: null,
+        pendingTurn: null,
         pendingDraftRestore: restore,
         // Wake pull-down clears the wake bracket marker — the wire
         // echo (`turn_complete(error)`) will arrive later and is
@@ -697,7 +890,7 @@ function handleInterrupt(
         // `clear-inflight` is a no-op under the per-turn-paths
         // streaming architecture (each turn writes its own
         // `turn.${turnKey}.*` paths). The in-flight pair stops
-        // rendering because `pendingUserMessage` is now `null`; a
+        // rendering because `pendingTurn` is now `null`; a
         // thinking-only pull-down's per-turn streaming paths are simply
         // never read again — the next turn mints a fresh `turnKey`.
         // The effect is still emitted for turn-boundary symmetry with
@@ -708,8 +901,8 @@ function handleInterrupt(
   }
 
   // CASE B — interrupt fired after claude produced at least one
-  // content frame (`activeMsgId` is set, `scratch[activeMsgId]` may
-  // hold partial text/thinking/tool-use content). The wire's eventual
+  // content frame (`activeMsgId` is set, scratch may hold partial
+  // text/thinking/tool-use content). The wire's eventual
   // `turn_complete(result: "error")` commits a `TurnEntry` with
   // `result: "interrupted"` carrying whatever has accumulated.
   //
@@ -814,16 +1007,6 @@ function handleSessionInit(
 }
 
 /**
- * Shared delta-accumulation logic for `assistant_text` and
- * `thinking_text`. Both events share structure: a partial accumulates
- * into the matching scratch field and a terminal frame
- * (`is_partial: false`) replaces the scratch buffer with the
- * authoritative full text. The first partial of either kind drives the
- * `submitting → awaiting_first_token` transition; the next drives
- * `awaiting_first_token → streaming`.
- */
-
-/**
  * Update the stream-gap accumulator from a live stream event landing at
  * `now`. Replay events should NOT call this — replay does not
  * correspond to wall-clock event arrival. Returns the patch to fold
@@ -843,47 +1026,279 @@ function foldStreamEvent(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Message-sequence handlers ([D07])
+// ---------------------------------------------------------------------------
+
+/**
+ * Phases in which wire events that mint or mutate Messages are
+ * accepted. Matches the previous `handleTextDelta` / `handleToolUse`
+ * guard surface. `submitting` / `awaiting_first_token` / `streaming`
+ * are normal live progression; `tool_work` admits text and tool
+ * follow-ups within an active tool-loop iteration; `replaying` /
+ * `waking` are the two bracket phases ([D01]).
+ */
+function isContentBearingPhase(phase: CodeSessionPhase): boolean {
+  return (
+    phase === "submitting" ||
+    phase === "awaiting_first_token" ||
+    phase === "streaming" ||
+    phase === "tool_work" ||
+    phase === "replaying" ||
+    phase === "waking"
+  );
+}
+
+/**
+ * `content_block_start` mint — idempotent per [D07]. The reducer
+ * looks up `${msg_id}:${block_index}` in the active turn's
+ * `blockIndex`; if already present, no-op (the live path minted, and
+ * a snapshot replay is re-emitting the same envelope). Otherwise
+ * mints a Message of the given `kind`, appends to the scratch
+ * `messages` array, and indexes it. For `kind: "tool_use"` also
+ * indexes by `tool_use_id` so subsequent tool events resolve in O(1).
+ *
+ * `handleContentBlockStart` does NOT advance the phase ladder —
+ * `submitting → awaiting_first_token → streaming` advances on the
+ * first text/tool delta, NOT on block-open ([D07] § Phase machine).
+ * Block-open is metadata; the first delta is the first user-visible
+ * event.
+ */
+function handleContentBlockStart(
+  state: CodeSessionState,
+  event: ContentBlockStartEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (!isContentBearingPhase(state.phase)) {
+    return { state, effects: [] };
+  }
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) {
+    return { state, effects: [] };
+  }
+  const entry = state.scratch.get(turnKey);
+  if (entry === undefined) {
+    return { state, effects: [] };
+  }
+
+  const key = blockKey(event.msg_id, event.block_index);
+  if (entry.blockIndex.has(key)) {
+    // Idempotent: already minted (live path beat us, or a snapshot
+    // replay is re-emitting). State stays reference-identical so
+    // `useSyncExternalStore` subscribers see no spurious churn.
+    return { state, effects: [] };
+  }
+
+  const now = Date.now();
+  const messageKey = wireMessageKey(event.msg_id, event.block_index);
+  let message: Message;
+  let toolUseId: string | undefined;
+  switch (event.kind) {
+    case "text":
+      message = {
+        kind: "assistant_text",
+        messageKey,
+        createdAt: now,
+        text: "",
+      } satisfies AssistantText;
+      break;
+    case "thinking":
+      message = {
+        kind: "assistant_thinking",
+        messageKey,
+        createdAt: now,
+        text: "",
+      } satisfies AssistantThinking;
+      break;
+    case "tool_use": {
+      const id = typeof event.tool_use_id === "string" ? event.tool_use_id : "";
+      const name = typeof event.tool_name === "string" ? event.tool_name : "";
+      if (id === "" || name === "") {
+        // Wire-input boundary regression — `content_block_start` for
+        // tool_use missing the required id/name. Log a dev warning
+        // and drop; minting a Message with empty identity would
+        // orphan downstream lookups by `tool_use_id`.
+        tugDevLogStore.warn(
+          "code-session-store",
+          "content_block_start tool_use missing id/name",
+          { msgId: event.msg_id, blockIndex: event.block_index },
+        );
+        return { state, effects: [] };
+      }
+      toolUseId = id;
+      message = {
+        kind: "tool_use",
+        messageKey,
+        createdAt: now,
+        toolUseId: id,
+        toolName: name,
+        input: {},
+        status: "pending",
+        result: null,
+        structuredResult: null,
+        toolWallMs: null,
+      } satisfies ToolUseMessage;
+      break;
+    }
+    default: {
+      const _exhaustive: never = event.kind;
+      void _exhaustive;
+      return { state, effects: [] };
+    }
+  }
+
+  const arrayIdx = entry.messages.length;
+  const nextMessages: Message[] = [...entry.messages, message];
+  const nextBlockIndex = new Map(entry.blockIndex);
+  nextBlockIndex.set(key, arrayIdx);
+  const nextToolCallIndex = new Map(entry.toolCallIndex);
+  if (toolUseId !== undefined) {
+    nextToolCallIndex.set(toolUseId, arrayIdx);
+  }
+  const nextEntry: ScratchEntry = {
+    ...entry,
+    messages: nextMessages,
+    blockIndex: nextBlockIndex,
+    toolCallIndex: nextToolCallIndex,
+  };
+
+  // Capture the tool wall-clock anchor on the mint (the wire's open
+  // event), not the input-fill `tool_use` event — the open is the
+  // moment the user-visible block appears.
+  let toolUseStartedAt = state.toolUseStartedAt;
+  if (toolUseId !== undefined && !state.toolUseStartedAt.has(toolUseId)) {
+    // Live turns (including wakes) — capture wall-clock. Replay turns
+    // don't produce real-time anchors, but the matching
+    // `handleToolResult` only computes `toolWallMs` when not replaying,
+    // so a captured replay anchor is harmless.
+    toolUseStartedAt = new Map(state.toolUseStartedAt);
+    toolUseStartedAt.set(toolUseId, now);
+  }
+
+  return {
+    state: {
+      ...state,
+      scratch: withScratchEntry(state.scratch, turnKey, nextEntry),
+      activeMsgId: event.msg_id,
+      toolUseStartedAt,
+    },
+    effects: [],
+  };
+}
+
+/**
+ * `assistant_text` / `thinking_text` delta — mutate the Message minted
+ * by the matching `content_block_start`. The `(msg_id, block_index)`
+ * coordinate is the wire's correlation key and resolves to the
+ * Message via `scratch[turnKey].blockIndex`. Each delta shallow-clones
+ * the affected Message + the messages-array slot per [D07] mutation
+ * discipline; other Messages stay reference-identical.
+ *
+ * Defensive: if no `content_block_start` ever opened this block (a
+ * tugcode regression, or a wire-shape change), the delta defensively
+ * mints the Message in place — losing the createdAt anchor but
+ * preserving the text. A dev-log warning surfaces the irregularity
+ * without breaking the user's session.
+ */
 function handleTextDelta(
   state: CodeSessionState,
   event: AssistantTextEvent | ThinkingTextEvent,
-  field: "assistant" | "thinking",
-  channel: "assistant" | "thinking",
+  kind: "assistant_text" | "assistant_thinking",
 ): { state: CodeSessionState; effects: Effect[] } {
-  // Incoming text outside of an active turn or a wake — drop. Live
-  // claude emits content into idle only when a spontaneous wake is in
-  // progress; the `wake_started` frame transitions phase to `waking`
-  // and is what allows the events through here (closed implicitly by
-  // `turn_complete`). `replaying` is also allowed: the JSONL replay
-  // translator emits assistant_text / thinking_text events that need
-  // to land in scratch keyed by msg_id so the subsequent
-  // `turn_complete` can commit them. Stray text outside both an active
-  // turn and a wake is still a defensive drop — see
-  // `roadmap/tugplan-tide-session-wake.md` [D03] for the additive-
-  // guard rationale.
-  if (
-    state.phase !== "submitting" &&
-    state.phase !== "awaiting_first_token" &&
-    state.phase !== "streaming" &&
-    state.phase !== "tool_work" &&
-    state.phase !== "replaying" &&
-    state.phase !== "waking"
-  ) {
+  if (!isContentBearingPhase(state.phase)) {
+    return { state, effects: [] };
+  }
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) {
+    return { state, effects: [] };
+  }
+  const entry = state.scratch.get(turnKey);
+  if (entry === undefined) {
     return { state, effects: [] };
   }
 
   const msgId = event.msg_id;
   const text = event.text ?? "";
-  const scratch = new Map(state.scratch);
-  const existing = scratch.get(msgId) ?? { assistant: "", thinking: "" };
-  const buffer = event.is_partial ? existing[field] + text : text;
-  scratch.set(msgId, { ...existing, [field]: buffer });
+  const key = blockKey(msgId, event.block_index);
+
+  // Resolve the Message via blockIndex. If absent (no prior
+  // `content_block_start` for this coordinate), defensively mint —
+  // surfaces a wire-shape regression in dev-log but preserves the
+  // text in the user-visible substrate.
+  let arrayIdx = entry.blockIndex.get(key);
+  let nextMessages: Message[];
+  let nextBlockIndex = entry.blockIndex;
+  let messageKey: string;
+  if (arrayIdx === undefined) {
+    tugDevLogStore.warn(
+      "code-session-store",
+      `${kind} delta without matching content_block_start; defensive mint`,
+      { msgId, blockIndex: event.block_index },
+    );
+    messageKey = wireMessageKey(msgId, event.block_index);
+    const minted: Message =
+      kind === "assistant_text"
+        ? {
+            kind: "assistant_text",
+            messageKey,
+            createdAt: Date.now(),
+            text,
+          }
+        : {
+            kind: "assistant_thinking",
+            messageKey,
+            createdAt: Date.now(),
+            text,
+          };
+    arrayIdx = entry.messages.length;
+    nextMessages = [...entry.messages, minted];
+    nextBlockIndex = new Map(entry.blockIndex);
+    nextBlockIndex.set(key, arrayIdx);
+  } else {
+    const existing = entry.messages[arrayIdx];
+    if (existing.kind !== kind) {
+      // The minted Message's kind disagrees with this delta — a
+      // tugcode bug (the wire shouldn't emit text deltas under a
+      // tool_use block, etc.). Drop with a dev-log warning rather
+      // than mutating across kinds.
+      tugDevLogStore.warn(
+        "code-session-store",
+        `${kind} delta into Message of kind ${existing.kind}; dropping`,
+        { msgId, blockIndex: event.block_index },
+      );
+      return { state, effects: [] };
+    }
+    messageKey = existing.messageKey;
+    const buffer = event.is_partial ? existing.text + text : text;
+    const mutated: Message =
+      kind === "assistant_text"
+        ? {
+            kind: "assistant_text",
+            messageKey: existing.messageKey,
+            createdAt: existing.createdAt,
+            text: buffer,
+          }
+        : {
+            kind: "assistant_thinking",
+            messageKey: existing.messageKey,
+            createdAt: existing.createdAt,
+            text: buffer,
+          };
+    nextMessages = entry.messages.slice();
+    nextMessages[arrayIdx] = mutated;
+  }
+
+  const nextEntry: ScratchEntry = {
+    ...entry,
+    messages: nextMessages,
+    blockIndex: nextBlockIndex,
+  };
 
   // Phase transitions only fire on live turns. While replaying, the
-  // bracket pair owns phase entry/exit — assistant_text accumulates
-  // into scratch but does not flip phase. The replay translator
-  // emits is_partial: false on every text event, so the live
-  // submitting → awaiting_first_token → streaming sequence has no
-  // analogue here anyway.
+  // bracket pair owns phase entry/exit — text accumulates into the
+  // Message but does not flip phase. (Replay always synthesizes
+  // is_partial: false, so the live submitting → awaiting_first_token
+  // → streaming sequence has no analogue.) Wake bracket-phase stays
+  // `waking` for the same reason.
   let nextPhase: CodeSessionPhase;
   if (state.phase === "submitting") {
     nextPhase = "awaiting_first_token";
@@ -892,21 +1307,6 @@ function handleTextDelta(
   } else {
     nextPhase = state.phase;
   }
-
-  // Per-turn paths are the sole render surface for both in-flight
-  // and committed cells ([L26]). Every accepted text event — live or
-  // replayed — writes the current buffer into
-  // `turn.${turnKey}.${channel}`, so the cell's subscription has
-  // data to render across all transitions, including cold-boot
-  // rehydration. The `turnKey === undefined` short-circuit is the
-  // only suppression that remains and it covers a genuine
-  // "no in-flight turn" case (`pendingUserMessage` is null between
-  // turns, e.g., a stray text event that survived a guard upstream).
-  const turnKey = state.pendingUserMessage?.turnKey;
-  const effects: Effect[] =
-    turnKey === undefined
-      ? []
-      : [{ kind: "write-inflight", turnKey, channel, value: buffer }];
 
   // Telemetry: only fold for live turns. Replay events are
   // synthesized from JSONL and do not correspond to wall-clock
@@ -917,16 +1317,34 @@ function handleTextDelta(
   const isReplay = state.phase === "replaying";
   const streamFold = isReplay ? {} : foldStreamEvent(state, now);
   const firstAssistantDeltaAt =
-    !isReplay && channel === "assistant" && state.firstAssistantDeltaAt === null
+    !isReplay && kind === "assistant_text" && state.firstAssistantDeltaAt === null
       ? now
       : state.firstAssistantDeltaAt;
+
+  // Per-Message PropertyStore path ([D07] § Streaming substrate). The
+  // `text` channel carries the rendered buffer for both text and
+  // thinking Messages; `TugMarkdownBlock` subscribes to the resulting
+  // `turn.${turnKey}.message.${messageKey}.text` path and writes the
+  // DOM imperatively per delta ([L22]). Per-Message paths survive
+  // the inflight → committed transition ([L26]) because `messageKey`
+  // is stable from mint through commit.
+  const mutatedText = (nextMessages[arrayIdx] as AssistantText | AssistantThinking).text;
+  const effects: Effect[] = [
+    {
+      kind: "write-inflight",
+      turnKey,
+      messageKey,
+      channel: "text",
+      value: mutatedText,
+    },
+  ];
 
   return {
     state: {
       ...state,
       phase: nextPhase,
       activeMsgId: msgId,
-      scratch,
+      scratch: withScratchEntry(state.scratch, turnKey, nextEntry),
       ...streamFold,
       firstAssistantDeltaAt,
     },
@@ -935,89 +1353,75 @@ function handleTextDelta(
 }
 
 // ---------------------------------------------------------------------------
-// Tool call lifecycle
+// Tool call lifecycle ([D07])
 // ---------------------------------------------------------------------------
 
 /**
- * Serialize the current toolCallMap values into the JSON string the
- * `inflight.tools` PropertyStore path holds. Insertion order is
- * preserved by `Map.values()`.
+ * `tool_use` input-fill / continuation. The minted `ToolUseMessage`
+ * lives in scratch from the prior `content_block_start { kind:
+ * "tool_use" }`; this event mutates `input` once the wire's
+ * `input_json_delta` accumulator finalizes the payload.
+ *
+ * Two continuation paths are tolerated:
+ *  - **Normal**: `content_block_start` (mint, `input: {}`) → `tool_use`
+ *    (input fill, populates `input`).
+ *  - **Re-emit**: a second `tool_use` for the same `tool_use_id` —
+ *    same `tool_name`, possibly empty `input` continuation. The
+ *    handler overwrites `input` only when the incoming payload is
+ *    non-empty so an empty-object continuation doesn't clobber a
+ *    previously-filled payload.
+ *
+ * Defensive: if the mint never landed (`toolCallIndex` miss), the
+ * handler defensively mints a `ToolUseMessage` in place — losing
+ * the createdAt anchor but preserving the call. A dev-log warning
+ * surfaces the irregularity.
  */
-function serializeToolCalls(
-  toolCallMap: ReadonlyMap<string, ToolCallState>,
-): string {
-  return JSON.stringify(Array.from(toolCallMap.values()));
-}
-
-/**
- * Predicate driving the `tool_work → streaming` transition: every
- * entry must be terminal (`done` or `error`). An empty map counts as
- * "all done" but the reducer only calls this after a state-changing
- * tool event, so the empty case never triggers a spurious return.
- */
-function allToolsTerminal(
-  toolCallMap: ReadonlyMap<string, ToolCallState>,
-): boolean {
-  for (const entry of toolCallMap.values()) {
-    if (entry.status !== "done" && entry.status !== "error") {
-      return false;
-    }
-  }
-  return true;
-}
-
 function handleToolUse(
   state: CodeSessionState,
   event: ToolUseEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // `waking` accepted alongside `replaying` — the wake bracket owns
-  // phase entry/exit (closed by `turn_complete`'s `waking → idle`
-  // branch), so a tool_use during a wake stays in `waking` rather
-  // than transitioning to `tool_work`. Mirrors the replay path so
-  // the bracket marker survives the wake's full event sequence.
-  if (
-    state.phase !== "submitting" &&
-    state.phase !== "awaiting_first_token" &&
-    state.phase !== "streaming" &&
-    state.phase !== "tool_work" &&
-    state.phase !== "replaying" &&
-    state.phase !== "waking"
-  ) {
+  if (!isContentBearingPhase(state.phase)) {
+    return { state, effects: [] };
+  }
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) {
+    return { state, effects: [] };
+  }
+  const entry = state.scratch.get(turnKey);
+  if (entry === undefined) {
     return { state, effects: [] };
   }
 
   const toolUseId = event.tool_use_id;
   const toolName = event.tool_name;
   const incomingInput = (event.input ?? {}) as Record<string, unknown>;
-  // A subagent's tool calls carry `parent_tool_use_id`; top-level calls
-  // omit it. Narrowed defensively — the field is new on the wire and an
-  // index-signature reach away from a plain `unknown`.
   const incomingParentId =
     typeof event.parent_tool_use_id === "string"
       ? event.parent_tool_use_id
       : undefined;
 
-  const toolCallMap = new Map(state.toolCallMap);
-  const toolUseStartedAt = new Map(state.toolUseStartedAt);
-  const existing = toolCallMap.get(toolUseId);
-
-  if (existing) {
-    // Continuation — Claude streams `tool_use` twice for a logical
-    // call (first with `input: {}`, then with the filled-in input).
-    // The second event carries the same `tool_name`, so we overwrite
-    // freely; only `input` is gated so an empty-object continuation
-    // doesn't clobber a previously-filled payload. `parentToolUseId`
-    // is sticky once set — a call's parent never changes — so a
-    // continuation that omits it keeps the established link.
-    const nextInput =
-      Object.keys(incomingInput).length > 0 ? incomingInput : existing.input;
-    toolCallMap.set(toolUseId, {
-      ...existing,
-      input: nextInput,
-      parentToolUseId: existing.parentToolUseId ?? incomingParentId,
-    });
-  } else {
-    toolCallMap.set(toolUseId, {
+  let arrayIdx = entry.toolCallIndex.get(toolUseId);
+  let nextMessages: Message[];
+  let nextToolCallIndex = entry.toolCallIndex;
+  let defensiveStartCapture: number | null = null;
+  if (arrayIdx === undefined) {
+    // Defensive mint — no prior `content_block_start`. Logged so a
+    // tugcode wire-shape regression surfaces in the dev-log rather
+    // than silently orphaning the call's lookup.
+    tugDevLogStore.warn(
+      "code-session-store",
+      "tool_use without matching content_block_start; defensive mint",
+      { toolUseId, toolName },
+    );
+    const messageKey =
+      typeof event.msg_id === "string"
+        ? `${event.msg_id}-tu-${toolUseId}`
+        : `defensive-${toolUseId}`;
+    const now = Date.now();
+    const minted: ToolUseMessage = {
+      kind: "tool_use",
+      messageKey,
+      createdAt: now,
       toolUseId,
       toolName,
       input: incomingInput,
@@ -1026,43 +1430,58 @@ function handleToolUse(
       structuredResult: null,
       parentToolUseId: incomingParentId,
       toolWallMs: null,
-    });
-    // First (non-continuation) tool_use carries the timing anchor for
-    // this call's `toolWallMs`. Continuations refine the input only.
-    // Replay events use the JSONL timestamp and never produce a
-    // wall-clock duration; the `isReplaying` branch below skips this
-    // capture by way of not entering this `else` for stored entries —
-    // but the very first replayed tool_use still lands here. The
-    // matching `handleToolResult` only computes a wall when NOT
-    // replaying, so a leftover replay entry in the map is harmless.
-    toolUseStartedAt.set(toolUseId, Date.now());
+    };
+    arrayIdx = entry.messages.length;
+    nextMessages = [...entry.messages, minted];
+    nextToolCallIndex = new Map(entry.toolCallIndex);
+    nextToolCallIndex.set(toolUseId, arrayIdx);
+    // The defensive mint must also capture the wall-clock anchor so
+    // `handleToolResult` can compute `toolWallMs`. The normal mint
+    // path in `handleContentBlockStart` does this; the defensive
+    // path mirrors it.
+    if (!state.toolUseStartedAt.has(toolUseId)) {
+      defensiveStartCapture = now;
+    }
+  } else {
+    const existing = entry.messages[arrayIdx];
+    if (existing.kind !== "tool_use") {
+      tugDevLogStore.warn(
+        "code-session-store",
+        `tool_use into Message of kind ${existing.kind}; dropping`,
+        { toolUseId },
+      );
+      return { state, effects: [] };
+    }
+    // Continuation — Claude streams `tool_use` twice for a logical
+    // call (first with `input: {}`, then with the filled-in input).
+    // Only `input` is gated so an empty-object continuation doesn't
+    // clobber a previously-filled payload. `parentToolUseId` is
+    // sticky once set; the mint's `toolName` is authoritative
+    // (continuations may omit it).
+    const nextInput =
+      Object.keys(incomingInput).length > 0 ? incomingInput : existing.input;
+    const mutated: ToolUseMessage = {
+      ...existing,
+      input: nextInput,
+      parentToolUseId: existing.parentToolUseId ?? incomingParentId,
+    };
+    nextMessages = entry.messages.slice();
+    nextMessages[arrayIdx] = mutated;
   }
 
-  // Phase transition is live-only: `tool_use` flips `streaming` /
+  const nextEntry: ScratchEntry = {
+    ...entry,
+    messages: nextMessages,
+    toolCallIndex: nextToolCallIndex,
+  };
+
+  // Phase transition is live-only: a `tool_use` flips `streaming` /
   // `submitting` / `awaiting_first_token` to `tool_work`; replay and
-  // wake keep their bracket phase (`replaying` / `waking`) because
-  // the bracket pair owns phase entry/exit.
-  //
-  // The write-inflight effect, by contrast, fires for both live and
-  // replay ([L26] — per-turn paths are the sole render surface for
-  // committed cells, so replayed turns must populate them too;
-  // cold-boot rehydration depends on this symmetry). The
-  // `pendingUserMessage` guard covers the genuine "no in-flight
-  // turn" case (null between turns).
+  // wake keep their bracket phase (the bracket pair owns phase
+  // entry/exit).
   const isReplaying = state.phase === "replaying";
   const isWaking = state.phase === "waking";
   const isBracketed = isReplaying || isWaking;
-  const effects: Effect[] =
-    state.pendingUserMessage !== null
-      ? [
-          {
-            kind: "write-inflight" as const,
-            turnKey: state.pendingUserMessage.turnKey,
-            channel: "tools" as const,
-            value: serializeToolCalls(toolCallMap),
-          },
-        ]
-      : [];
 
   // Telemetry: skip for replay (synthesized from JSONL, no wall-clock
   // arrival). Wake is live (real wall-clock event arrival from claude),
@@ -1075,18 +1494,23 @@ function handleToolUse(
     !isReplaying && state.firstToolUseAt === null
       ? now
       : state.firstToolUseAt;
+  let toolUseStartedAt = state.toolUseStartedAt;
+  if (defensiveStartCapture !== null) {
+    toolUseStartedAt = new Map(toolUseStartedAt);
+    toolUseStartedAt.set(toolUseId, defensiveStartCapture);
+  }
 
   return {
     state: {
       ...state,
       phase: isBracketed ? state.phase : "tool_work",
       activeMsgId: event.msg_id ?? state.activeMsgId,
+      scratch: withScratchEntry(state.scratch, turnKey, nextEntry),
+      toolUseStartedAt,
       ...streamFold,
       firstToolUseAt,
-      toolCallMap,
-      toolUseStartedAt,
     },
-    effects,
+    effects: [],
   };
 }
 
@@ -1094,11 +1518,9 @@ function handleToolResult(
   state: CodeSessionState,
   event: ToolResultEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  // The transition table only lists tool_result under the
-  // `tool_work → streaming` row for live turns. While replaying or
-  // waking, tool_result is also accepted — it pairs with a prior
-  // tool_use that landed in toolCallMap during this same bracketed
-  // turn.
+  // tool_result is accepted in `tool_work`, `replaying`, and `waking` —
+  // pairing with a prior `tool_use` that minted the Message during
+  // this same bracketed turn.
   if (
     state.phase !== "tool_work" &&
     state.phase !== "replaying" &&
@@ -1106,21 +1528,31 @@ function handleToolResult(
   ) {
     return { state, effects: [] };
   }
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) {
+    return { state, effects: [] };
+  }
+  const entry = state.scratch.get(turnKey);
+  if (entry === undefined) {
+    return { state, effects: [] };
+  }
 
   const toolUseId = event.tool_use_id;
-  const existing = state.toolCallMap.get(toolUseId);
-  if (!existing) {
+  const arrayIdx = entry.toolCallIndex.get(toolUseId);
+  if (arrayIdx === undefined) {
     console.warn(
       `[code-session-store] tool_result for unknown tool_use_id: ${toolUseId}`,
     );
     return { state, effects: [] };
   }
+  const existing = entry.messages[arrayIdx];
+  if (existing.kind !== "tool_use") {
+    console.warn(
+      `[code-session-store] tool_result indexed Message of kind ${existing.kind}; dropping`,
+    );
+    return { state, effects: [] };
+  }
 
-  // Compute per-call wall-clock. Live turns (including wakes) have a
-  // `toolUseStartedAt` entry from the matching `handleToolUse`; replay
-  // turns do not (the JSONL replay does not correspond to real-time
-  // arrivals, and the committed entry's `toolWallMs` stays `null` per
-  // the field's contract).
   const isReplaying = state.phase === "replaying";
   const isWaking = state.phase === "waking";
   const now = Date.now();
@@ -1130,49 +1562,31 @@ function handleToolResult(
       ? Math.max(0, now - startedAt)
       : existing.toolWallMs;
 
-  const toolCallMap = new Map(state.toolCallMap);
-  toolCallMap.set(toolUseId, {
+  const mutated: ToolUseMessage = {
     ...existing,
     status: event.is_error === true ? "error" : "done",
     result: event.output ?? null,
     toolWallMs,
-  });
+  };
+  const nextMessages = entry.messages.slice();
+  nextMessages[arrayIdx] = mutated;
+  const nextEntry: ScratchEntry = { ...entry, messages: nextMessages };
 
-  // Discard the start timestamp now that the wall-clock is committed
-  // on the entry — keeps the map bounded.
   let toolUseStartedAt = state.toolUseStartedAt;
   if (toolUseStartedAt.has(toolUseId)) {
     toolUseStartedAt = new Map(toolUseStartedAt);
     toolUseStartedAt.delete(toolUseId);
   }
 
-  // Phase transition is live-only and bracket-aware: `tool_result`
-  // drives `tool_work → streaming` once every entry is terminal.
-  // Replay and wake keep their bracket phase (`replaying` / `waking`);
-  // the bracket's terminal frame returns the phase to idle
-  // (`replay_complete` for replay; `turn_complete` for wake).
-  //
-  // The write-inflight effect, by contrast, fires for both live and
-  // replay ([L26] — per-turn paths are the sole render surface for
-  // committed cells, so replayed turns must populate them too;
-  // cold-boot rehydration depends on this symmetry).
+  const nextScratch = withScratchEntry(state.scratch, turnKey, nextEntry);
+  // Phase transition: tool_result drives `tool_work → streaming` once
+  // every tool_use Message in the turn is terminal. Replay and wake
+  // keep their bracket phase.
   const nextPhase: CodeSessionPhase = isReplaying || isWaking
     ? state.phase
-    : allToolsTerminal(toolCallMap)
+    : allToolsTerminal(nextEntry)
       ? "streaming"
       : "tool_work";
-
-  const effects: Effect[] =
-    state.pendingUserMessage !== null
-      ? [
-          {
-            kind: "write-inflight" as const,
-            turnKey: state.pendingUserMessage.turnKey,
-            channel: "tools" as const,
-            value: serializeToolCalls(toolCallMap),
-          },
-        ]
-      : [];
 
   const streamFold = isReplaying ? {} : foldStreamEvent(state, now);
 
@@ -1180,11 +1594,11 @@ function handleToolResult(
     state: {
       ...state,
       phase: nextPhase,
-      toolCallMap,
+      scratch: nextScratch,
       toolUseStartedAt,
       ...streamFold,
     },
-    effects,
+    effects: [],
   };
 }
 
@@ -1209,50 +1623,49 @@ function handleToolUseStructured(
   ) {
     return { state, effects: [] };
   }
+  const turnKey = state.pendingTurn?.turnKey;
+  if (turnKey === undefined) {
+    return { state, effects: [] };
+  }
+  const entry = state.scratch.get(turnKey);
+  if (entry === undefined) {
+    return { state, effects: [] };
+  }
 
   const toolUseId = event.tool_use_id;
-  const existing = state.toolCallMap.get(toolUseId);
-  if (!existing) {
+  const arrayIdx = entry.toolCallIndex.get(toolUseId);
+  if (arrayIdx === undefined) {
     console.warn(
       `[code-session-store] tool_use_structured for unknown tool_use_id: ${toolUseId}`,
     );
     return { state, effects: [] };
   }
+  const existing = entry.messages[arrayIdx];
+  if (existing.kind !== "tool_use") {
+    console.warn(
+      `[code-session-store] tool_use_structured indexed Message of kind ${existing.kind}; dropping`,
+    );
+    return { state, effects: [] };
+  }
 
-  const toolCallMap = new Map(state.toolCallMap);
-  toolCallMap.set(toolUseId, {
+  const mutated: ToolUseMessage = {
     ...existing,
     structuredResult: event.structured_result ?? null,
-  });
+  };
+  const nextMessages = entry.messages.slice();
+  nextMessages[arrayIdx] = mutated;
+  const nextEntry: ScratchEntry = { ...entry, messages: nextMessages };
 
-  // Write the updated toolCallMap (now carrying `structuredResult`
-  // on the matching entry) to the per-turn `.tools` path for both
-  // live and replay ([L26] — per-turn paths are the sole render
-  // surface for committed cells, and the structured-tool blocks
-  // read `structuredResult` to render their bodies; gating this
-  // write on `state.phase` strips the structured payload from every
-  // cold-boot-rehydrated tool call). The `pendingUserMessage` guard
-  // covers the genuine "no in-flight turn" case (null between
-  // turns).
-  const effects: Effect[] =
-    state.pendingUserMessage !== null
-      ? [
-          {
-            kind: "write-inflight" as const,
-            turnKey: state.pendingUserMessage.turnKey,
-            channel: "tools" as const,
-            value: serializeToolCalls(toolCallMap),
-          },
-        ]
-      : [];
-
-  // Telemetry: fold stream-gap on live turns only.
   const isReplaying = state.phase === "replaying";
   const streamFold = isReplaying ? {} : foldStreamEvent(state, Date.now());
 
   return {
-    state: { ...state, toolCallMap, ...streamFold },
-    effects,
+    state: {
+      ...state,
+      scratch: withScratchEntry(state.scratch, turnKey, nextEntry),
+      ...streamFold,
+    },
+    effects: [],
   };
 }
 
@@ -1306,8 +1719,8 @@ function closeTurnPauseSegments(
  * Per-turn reset slice — fields cleared at every turn boundary
  * (`turn_complete` success/error, `turn_complete` interrupted,
  * mid-turn transport-lost). The active-turn axis (phase, scratch,
- * pendingUserMessage, etc.) is reset separately at each call site
- * because the queue-flush path needs to populate the next turn's slots
+ * pendingTurn, etc.) is reset separately at each call site because
+ * the queue-flush path needs to populate the next turn's slots
  * synchronously.
  *
  * The per-turn interval arrays (`awaitingApprovalIntervals` /
@@ -1353,18 +1766,6 @@ function resetPerTurnTelemetry(): Pick<
 }
 
 /**
- * Build a committed `TurnEntry` from the current reducer state and
- * the chosen terminal reason. Folds any in-progress
- * awaiting-approval / transport-downtime intervals into their
- * accumulators so the committed entry reports the full intervals even
- * when the turn ended mid-pause / mid-disconnect (e.g.
- * `transport_lost`).
- *
- * The `result` field is derived from `reason` (`"complete"` →
- * `"success"`; everything else → `"interrupted"`) so legacy consumers
- * stay coherent until they migrate to `turnEndReason`.
- */
-/**
  * Build a `record-telemetry` effect for a freshly-committed live
  * `TurnEntry`. The effect carries the telemetry block in the wire
  * shape the supervisor's `record_turn_telemetry` CONTROL handler
@@ -1407,6 +1808,20 @@ function buildRecordTelemetryEffect(
   };
 }
 
+/**
+ * Read `submitAt` from a turn's opening `user_message` Message (if
+ * any). Wake turns carry no `user_message`, so the fallback path
+ * uses the `pendingTurn.submitAt` recorded at `handleWakeStarted`.
+ */
+function submitAtFor(
+  state: CodeSessionState,
+  endedAt: number,
+): number {
+  const pending = state.pendingTurn;
+  if (pending !== null) return pending.submitAt;
+  return endedAt;
+}
+
 function buildTurnEntry(
   state: CodeSessionState,
   msgId: string,
@@ -1414,11 +1829,11 @@ function buildTurnEntry(
   endedAt: number,
   inlineTelemetry: TurnTelemetry | undefined,
 ): TurnEntry {
-  const scratchEntry = state.scratch.get(msgId) ?? {
-    assistant: "",
-    thinking: "",
-  };
-  const submitAt = state.pendingUserMessage?.submitAt ?? endedAt;
+  const turnKey = state.pendingTurn?.turnKey ?? `msg-${msgId}`;
+  const entry = state.scratch.get(turnKey);
+  const messages: ReadonlyArray<Message> =
+    entry !== undefined ? entry.messages.slice() : [];
+  const submitAt = submitAtFor(state, endedAt);
   // Live path derives the telemetry block from reducer state at this
   // moment; replay path receives it inlined on the wire event. The
   // merge picks the authoritative source — see telemetry.ts /
@@ -1435,15 +1850,8 @@ function buildTurnEntry(
   const effectiveReason: TurnEndReason = telemetry.turnEndReason ?? reason;
   return {
     msgId,
-    turnKey: state.pendingUserMessage?.turnKey ?? `msg-${msgId}`,
-    userMessage: {
-      text: state.pendingUserMessage?.text ?? "",
-      attachments: state.pendingUserMessage?.atoms ?? [],
-      submitAt,
-    },
-    thinking: scratchEntry.thinking,
-    assistant: scratchEntry.assistant,
-    toolCalls: Array.from(state.toolCallMap.values()),
+    turnKey,
+    messages,
     result: effectiveReason === "complete" ? "success" : "interrupted",
     endedAt,
     wallClockMs: telemetry.wallClockMs,
@@ -1530,29 +1938,26 @@ function handleTurnComplete(
   // Belt-and-suspenders: a duplicate `turn_complete` is also a signal
   // that an upstream emitter opened a phantom cycle for an already-
   // committed msg_id — the prior `user_message_replay` (if any) wrote
-  // junk to `pendingUserMessage` and any preceding content frames
-  // wrote to `scratch[msgId]`. If we early-return here without
-  // clearing that pending state, `replay_complete`'s "in-flight cycle
-  // survived the bracket" branch (chain-link 13) sees
-  // `pendingUserMessage !== null` and transitions phase to
-  // `streaming` after replay closes — leaving the card stuck with
-  // `canInterrupt=true` and a Stop button that can't reach the wire.
-  // Clear the stale pending state so duplicate turn_complete events
-  // are inert beyond the no-op transcript commit.
+  // junk to `pendingTurn` and any preceding content frames wrote to
+  // scratch. If we early-return here without clearing that pending
+  // state, `replay_complete`'s "in-flight cycle survived the bracket"
+  // branch (chain-link 13) sees `pendingTurn !== null` and transitions
+  // phase to `streaming` after replay closes — leaving the card stuck
+  // with `canInterrupt=true` and a Stop button that can't reach the
+  // wire. Clear the stale pending state so duplicate turn_complete
+  // events are inert beyond the no-op transcript commit.
   if (state.committedMsgIds.has(msgId)) {
     tugDevLogStore.warn(
       "code-session-store",
       "dropping duplicate turn_complete",
       { msgId },
     );
-    const scratch = new Map(state.scratch);
-    scratch.delete(msgId);
     return {
       state: {
         ...state,
-        pendingUserMessage: null,
+        pendingTurn: null,
         activeMsgId: state.activeMsgId === msgId ? null : state.activeMsgId,
-        scratch,
+        scratch: withoutPendingTurnScratch(state),
       },
       effects: [],
     };
@@ -1604,8 +2009,7 @@ function handleTurnComplete(
   // and deliberately not closed here.
   const closedPauseSegments = closeTurnPauseSegments(state, endedAt);
 
-  const scratch = new Map(state.scratch);
-  scratch.delete(msgId);
+  const scratch = withoutPendingTurnScratch(state);
   const committedMsgIds = new Set(state.committedMsgIds);
   committedMsgIds.add(msgId);
 
@@ -1621,12 +2025,11 @@ function handleTurnComplete(
         // phase stays `replaying`
         activeMsgId: null,
         scratch,
-        toolCallMap: new Map(),
         toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
         prevPhase: null,
-        pendingUserMessage: null,
+        pendingTurn: null,
         committedMsgIds,
         sessionInitTokens,
         ...resetPerTurnTelemetry(),
@@ -1639,15 +2042,15 @@ function handleTurnComplete(
   // The wake bracket closes here — `turn_complete` is the implicit
   // close (no separate `wake_complete` frame, by design at [D01]).
   // Mirrors the normal `streaming → idle` commit path with two
-  // additions: clears `wakeTrigger`, and the committed entry carries
-  // the empty-text `pendingUserMessage` marker forward as
-  // `userMessage.text === ""` — that empty string IS the wake
-  // sentinel for consumers (Slice 2 chrome will key off `wakeTrigger`
-  // on the live state and `userMessage.text === ""` on the committed
-  // entry). Queue-flush is skipped (a queued send arriving during a
-  // wake would land in `queuedSends`; the wake's commit does not flush
-  // it — the user's queued message gets its own turn after the wake
-  // settles to idle in the normal way).
+  // additions: clears `wakeTrigger`, and the committed entry's
+  // `messages` carries no `user_message` Message — that absence IS
+  // the substrate's wake discriminator under [D07] (consumers that
+  // need to gate on user-row presence inline-check
+  // `turn.messages[0]?.kind === "user_message"`). Queue-flush is
+  // skipped (a queued send arriving during a wake would land in
+  // `queuedSends`; the wake's commit does not flush it — the user's
+  // queued message gets its own turn after the wake settles to idle
+  // in the normal way).
   if (state.phase === "waking") {
     return {
       state: {
@@ -1655,12 +2058,11 @@ function handleTurnComplete(
         phase: "idle",
         activeMsgId: null,
         scratch,
-        toolCallMap: new Map(),
         toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
         prevPhase: null,
-        pendingUserMessage: null,
+        pendingTurn: null,
         wakeTrigger: null,
         // A wake does not touch `lastError` — the user did not submit
         // anything, so a wake-success does not "clear" a prior error
@@ -1687,25 +2089,33 @@ function handleTurnComplete(
   // phase as `submitting`, not a transient `idle`.
   if (isSuccess && state.queuedSends.length > 0) {
     const [next, ...rest] = state.queuedSends;
+    const flushedSubmitAt = Date.now();
+    const flushedUserMessage: UserMessage = {
+      kind: "user_message",
+      messageKey: userMessageKey(next.turnKey),
+      createdAt: flushedSubmitAt,
+      text: next.text,
+      attachments: next.atoms,
+      submitAt: flushedSubmitAt,
+    };
     return {
       state: {
         ...state,
         phase: "submitting",
         activeMsgId: null,
-        scratch,
-        toolCallMap: new Map(),
+        scratch: withScratchEntry(
+          scratch,
+          next.turnKey,
+          newScratchEntry(next.turnKey, [flushedUserMessage]),
+        ),
         toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
         prevPhase: null,
-        pendingUserMessage: {
-          text: next.text,
-          atoms: next.atoms,
-          submitAt: Date.now(),
-          // `turnKey` was generated by the store wrapper at the
-          // queueing `send` and carried on the queue entry. Reusing
-          // it here keeps the reducer pure.
+        pendingTurn: {
           turnKey: next.turnKey,
+          submitAt: flushedSubmitAt,
+          isWake: false,
         },
         queuedSends: rest,
         lastError: null,
@@ -1757,12 +2167,11 @@ function handleTurnComplete(
       phase: "idle",
       activeMsgId: null,
       scratch,
-      toolCallMap: new Map(),
       toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
       prevPhase: null,
-      pendingUserMessage: null,
+      pendingTurn: null,
       // Error-path queue clear: if a turn errored out without a
       // preceding `interrupt()`, any enqueued follow-ups are dropped.
       // Interrupt-driven paths already cleared the queue.
@@ -1937,38 +2346,6 @@ function closeTransportDowntimeInterval(
       state.transportDowntimeAccumulatedMs + elapsed,
     transportDowntimeIntervals: [
       ...state.transportDowntimeIntervals,
-      [start, end] as const,
-    ],
-  };
-}
-
-/**
- * Close the in-flight interrupt segment. Appends the closed
- * `[since, end]` pair onto `interruptInFlightIntervals` and clears
- * `interruptInFlightSegmentStartedAt`. Used by `handleTurnComplete`
- * (and the transport-lost commit path) so the just-ended turn's
- * pause history is complete before the new state lands. The latched
- * `interruptInFlight` boolean is cleared separately, by the same
- * call site, via `resetPerTurnTelemetry`.
- */
-function closeInterruptInFlightInterval(
-  state: CodeSessionState,
-  end: number = Date.now(),
-): {
-  interruptInFlightSegmentStartedAt: null;
-  interruptInFlightIntervals: ReadonlyArray<readonly [number, number]>;
-} {
-  if (state.interruptInFlightSegmentStartedAt === null) {
-    return {
-      interruptInFlightSegmentStartedAt: null,
-      interruptInFlightIntervals: state.interruptInFlightIntervals,
-    };
-  }
-  const start = state.interruptInFlightSegmentStartedAt;
-  return {
-    interruptInFlightSegmentStartedAt: null,
-    interruptInFlightIntervals: [
-      ...state.interruptInFlightIntervals,
       [start, end] as const,
     ],
   };
@@ -2374,8 +2751,8 @@ function handleTransportClose(
   const endedAt = Date.now();
   const transportLostCommit: Effect[] = [];
   let perTurnReset: Partial<CodeSessionState> = {};
-  if (state.pendingUserMessage !== null) {
-    const msgId = state.activeMsgId ?? `transport-lost-${state.pendingUserMessage.turnKey}`;
+  if (state.pendingTurn !== null) {
+    const msgId = state.activeMsgId ?? `transport-lost-${state.pendingTurn.turnKey}`;
     if (!state.committedMsgIds.has(msgId)) {
       // Transport-lost commits never come from replay (replay never
       // synthesizes a transport_lost reason); the live derivation is
@@ -2388,17 +2765,12 @@ function handleTransportClose(
       perTurnReset = {
         committedMsgIds,
         activeMsgId: null,
-        scratch: (() => {
-          const s = new Map(state.scratch);
-          s.delete(msgId);
-          return s;
-        })(),
-        toolCallMap: new Map(),
+        scratch: withoutPendingTurnScratch(state),
         toolUseStartedAt: new Map(),
         pendingApproval: null,
         pendingQuestion: null,
         prevPhase: null,
-        pendingUserMessage: null,
+        pendingTurn: null,
         queuedSends: [],
         ...resetPerTurnTelemetry(),
         // Same per-turn-boundary close as `handleTurnComplete`:
@@ -2599,18 +2971,15 @@ function handleReplayStarted(
     state: {
       ...state,
       phase: "replaying",
-      // Clear pendingUserMessage defensively — replay should never
-      // observe one (idle/errored have it null), but a future caller
-      // that drives `send` then `replay_started` synchronously would
-      // otherwise leak the pending message into the first replayed
+      // Clear pendingTurn defensively — replay should never observe
+      // one (idle/errored have it null), but a future caller that
+      // drives `send` then `replay_started` synchronously would
+      // otherwise leak the pending turn into the first replayed
       // turn's commit.
-      pendingUserMessage: null,
-      // Same defensive clear for any in-flight scratch / tool state.
-      // A live turn racing replay would be a supervisor-side bug,
-      // but the reducer leaves no fingerprint of it on the snapshot.
+      pendingTurn: null,
+      // Same defensive clear for any in-flight scratch.
       activeMsgId: null,
       scratch: new Map(),
-      toolCallMap: new Map(),
       toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
@@ -2686,17 +3055,16 @@ function handleReplayComplete(
     });
   }
 
-  // Never-drop chain link 13: if `pendingUserMessage` survived the
-  // bracket, the in-flight snapshot's `user_message_replay` landed
-  // without a matching `turn_complete` (the live tail is still
-  // streaming). Preserve `pendingUserMessage` + `scratch` +
-  // `toolCallMap`, transition to `streaming` so post-bracket live
-  // deltas continue to accumulate, and let the eventual live
-  // `turn_complete` commit the TurnEntry naturally. Without this
-  // preservation, replay_complete wipes the cycle and post-bracket
-  // deltas land in `idle` (which `handleTextDelta`'s phase guard
-  // rejects), the user sees no inflight indicator after HMR-mid-
-  // stream, and the response never auto-syncs.
+  // Never-drop chain link 13: if `pendingTurn` survived the bracket,
+  // the in-flight snapshot's `user_message_replay` landed without a
+  // matching `turn_complete` (the live tail is still streaming).
+  // Preserve `pendingTurn` + scratch, transition to `streaming` so
+  // post-bracket live deltas continue to accumulate, and let the
+  // eventual live `turn_complete` commit the TurnEntry naturally.
+  // Without this preservation, replay_complete wipes the cycle and
+  // post-bracket deltas land in `idle` (which `handleTextDelta`'s
+  // phase guard rejects), the user sees no inflight indicator after
+  // HMR-mid-stream, and the response never auto-syncs.
   //
   // Dialog-survival sibling: if the snapshot also re-emitted a
   // `control_request_forward` (tugcode replays any pending
@@ -2709,7 +3077,7 @@ function handleReplayComplete(
   // replay window). Without this branch, the rehydrated dialog
   // fields would be wiped below and the user sees only the empty
   // streaming indicator.
-  if (state.pendingUserMessage !== null) {
+  if (state.pendingTurn !== null) {
     const hasPendingDialog =
       state.pendingApproval !== null || state.pendingQuestion !== null;
     if (hasPendingDialog) {
@@ -2721,7 +3089,7 @@ function handleReplayComplete(
       // it is the only phase that accepts the subsequent `tool_result`
       // (`handleToolResult` drops the event outside `tool_work` /
       // `replaying`). The snapshot path synthesised a `tool_use` for
-      // the same toolUseId during the bracket, so `toolCallMap` has
+      // the same toolUseId during the bracket, so the scratch has
       // the pending entry waiting for the result. Restoring to
       // `streaming` here would drop the live `tool_result` and the
       // tool block would dangle in its pending state forever.
@@ -2747,8 +3115,8 @@ function handleReplayComplete(
         phase: "streaming",
         // activeMsgId stays as whatever the snapshot's
         // assistant_text set (claude's id for the in-flight
-        // message). scratch + toolCallMap preserved as-is.
-        // pendingUserMessage preserved as-is.
+        // message). scratch preserved as-is. pendingTurn preserved
+        // as-is.
         pendingApproval: null,
         pendingQuestion: null,
         prevPhase: null,
@@ -2768,12 +3136,11 @@ function handleReplayComplete(
       phase: "idle",
       activeMsgId: null,
       scratch: new Map(),
-      toolCallMap: new Map(),
       toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
       prevPhase: null,
-      pendingUserMessage: null,
+      pendingTurn: null,
       lastReplayResult,
       replayPreflightActive: false,
       replaySoftBudgetElapsed: false,
@@ -2785,10 +3152,11 @@ function handleReplayComplete(
 
 /**
  * Replay user-message echo: the synthetic open of each replayed turn.
- * Sets `pendingUserMessage` so the upcoming `turn_complete` for the
- * same `msg_id` commits a `TurnEntry` with this user submission. No
- * `send-frame` effect — the user already submitted this message
- * historically; replaying it must NOT round-trip back to the wire.
+ * Sets `pendingTurn` + seeds the scratch with the opening user_message
+ * so the upcoming `turn_complete` for the same `msg_id` commits a
+ * `TurnEntry` with this user submission. No `send-frame` effect —
+ * the user already submitted this message historically; replaying it
+ * must NOT round-trip back to the wire.
  *
  * Drops in any phase other than `replaying`.
  */
@@ -2803,17 +3171,28 @@ function handleUserMessageReplay(
     const raw = event.attachments;
     return Array.isArray(raw) ? (raw as ReadonlyArray<AtomSegment>) : [];
   })();
+  const now = Date.now();
+  const userMessage: UserMessage = {
+    kind: "user_message",
+    messageKey: userMessageKey(event.turnKey),
+    createdAt: now,
+    text: event.text,
+    attachments,
+    submitAt: now,
+  };
   return {
     state: {
       ...state,
-      pendingUserMessage: {
-        text: event.text,
-        atoms: attachments,
-        submitAt: Date.now(),
-        // Minted by the store wrapper in `frameToEvent` before
-        // dispatching the replay event — keeps the reducer pure.
+      pendingTurn: {
         turnKey: event.turnKey,
+        submitAt: now,
+        isWake: false,
       },
+      scratch: withScratchEntry(
+        state.scratch,
+        event.turnKey,
+        newScratchEntry(event.turnKey, [userMessage]),
+      ),
       activeMsgId: event.msg_id,
     },
     effects: [],
@@ -2832,10 +3211,10 @@ function handleUserMessageReplay(
  * differences:
  *   - `phase: "waking"` rather than `"submitting"` so the bracket is
  *     visible to consumers and `handleTurnComplete` can branch on it.
- *   - `pendingUserMessage.text === ""` is the wake sentinel — there
- *     is no user-typed message. The committed `TurnEntry.userMessage.text`
- *     will be `""`; consumers that render the user-message bubble
- *     should check for this and skip the render.
+ *   - `pendingTurn.isWake === true` is the substrate's wake
+ *     discriminator (replaces the [D06] empty-text sentinel under
+ *     [D07]). The scratch opens with NO `user_message` Message —
+ *     wake turns have no user submission to surface.
  *   - `pendingDraftRestore` is preserved — the user's in-progress
  *     draft must not be touched by a wake (a wake mid-compose should
  *     not clobber what the user was typing).
@@ -2884,23 +3263,29 @@ function handleWakeStarted(
   if (state.phase !== "idle") {
     return { state, effects: [] };
   }
+  const submitAt = Date.now();
   return {
     state: {
       ...state,
       phase: "waking",
       wakeTrigger: trigger,
       activeMsgId: null,
-      scratch: new Map(),
-      toolCallMap: new Map(),
+      scratch: withScratchEntry(
+        state.scratch,
+        event.turnKey,
+        // No initial messages — wake turns have no user_message. The
+        // first wire content event (assistant_text / thinking_text /
+        // tool_use) mints into this scratch via `handleContentBlockStart`.
+        newScratchEntry(event.turnKey, []),
+      ),
       toolUseStartedAt: new Map(),
       pendingApproval: null,
       pendingQuestion: null,
       prevPhase: null,
-      pendingUserMessage: {
-        text: "",
-        atoms: [],
-        submitAt: Date.now(),
+      pendingTurn: {
         turnKey: event.turnKey,
+        submitAt,
+        isWake: true,
       },
       // Per-turn telemetry reset — same single-source-of-truth helper
       // `handleSend` uses on the queue-flush path. Future fields added
@@ -3021,6 +3406,36 @@ function handleTickPreflightDone(
 }
 
 // ---------------------------------------------------------------------------
+// Snapshot derivation helpers ([D07])
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the public {@link ActiveTurnSnapshot} from reducer state.
+ * Returns `null` when no turn is in flight. Used by
+ * `CodeSessionStore.getSnapshot` to project `state.pendingTurn` +
+ * `state.scratch[turnKey]` onto the snapshot surface.
+ *
+ * Pure: returns a fresh object each call. The class wrapper memoizes
+ * the full snapshot, so callers don't pay re-derivation costs across
+ * quiescent reads.
+ */
+export function deriveActiveTurnSnapshot(
+  state: CodeSessionState,
+): ActiveTurnSnapshot | null {
+  const pending = state.pendingTurn;
+  if (pending === null) return null;
+  const entry = state.scratch.get(pending.turnKey);
+  const messages: ReadonlyArray<Message> =
+    entry !== undefined ? entry.messages : [];
+  return {
+    turnKey: pending.turnKey,
+    submitAt: pending.submitAt,
+    isWake: pending.isWake,
+    messages,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -3037,10 +3452,12 @@ export function reduce(
       return handleSend(state, event);
     case "session_init":
       return handleSessionInit(state, event);
+    case "content_block_start":
+      return handleContentBlockStart(state, event);
     case "assistant_text":
-      return handleTextDelta(state, event, "assistant", "assistant");
+      return handleTextDelta(state, event, "assistant_text");
     case "thinking_text":
-      return handleTextDelta(state, event, "thinking", "thinking");
+      return handleTextDelta(state, event, "assistant_thinking");
     case "tool_use":
       return handleToolUse(state, event);
     case "tool_result":

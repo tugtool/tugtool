@@ -57,10 +57,10 @@ describe("CodeSessionStore — dispose teardown (Step 9)", () => {
     const postTurn = store.getSnapshot();
     expect(postTurn.phase).toBe("idle");
     expect(postTurn.transcript.length).toBe(1);
-    // After turn_complete inflightUserMessage is null — there's no
+    // After turn_complete activeTurn is null — there's no
     // in-flight turn for `inflightValue` to read from. The committed
     // turn's content is now addressed via `transcript[0]`.
-    expect(inflightValue(store, "assistant")).toBeUndefined();
+    expect(inflightValue(store, "assistant_text")).toBeUndefined();
 
     const notifyBeforeDispose = notifyCount;
     store.dispose();

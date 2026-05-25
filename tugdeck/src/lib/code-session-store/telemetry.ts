@@ -491,16 +491,16 @@ export function deriveSessionTotals(
 
 /**
  * Live wall-clock duration of the in-flight turn (`now -
- * pendingUserMessage.submitAt`). Returns `0` when no turn is in flight.
+ * pendingTurn.submitAt`). Returns `0` when no turn is in flight.
  */
 export function liveTurnWallClockMs(
   state: CodeSessionState,
   now: number,
 ): number {
-  if (state.pendingUserMessage === null) {
+  if (state.pendingTurn === null) {
     return 0;
   }
-  return Math.max(0, now - state.pendingUserMessage.submitAt);
+  return Math.max(0, now - state.pendingTurn.submitAt);
 }
 
 /**
@@ -694,10 +694,10 @@ export function deriveInflightActiveMs(
   snap: CodeSessionSnapshot,
   nowMs: number,
 ): number | null {
-  if (snap.inflightUserMessage === null) {
+  if (snap.activeTurn === null) {
     return null;
   }
-  const submitAt = snap.inflightUserMessage.submitAt;
+  const submitAt = snap.activeTurn.submitAt;
   if (nowMs <= submitAt) {
     return 0;
   }

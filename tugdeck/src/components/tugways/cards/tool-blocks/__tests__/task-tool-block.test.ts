@@ -40,11 +40,14 @@ import {
   AGENT_MAX_DEPTH,
   shouldCollapseAgentDepth,
 } from "@/components/tugways/body-kinds/agent-transcript-block";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { ToolUseMessage } from "@/lib/code-session-store";
 
-/** Build a minimal `ToolCallState` for the child-tool-call merge tests. */
-function childCall(toolUseId: string, toolName: string): ToolCallState {
+/** Build a minimal `ToolUseMessage` for the child-tool-call merge tests. */
+function childCall(toolUseId: string, toolName: string): ToolUseMessage {
   return {
+    kind: "tool_use",
+    messageKey: `fixture-${toolUseId}`,
+    createdAt: 0,
     toolUseId,
     toolName,
     input: {},

@@ -36,6 +36,7 @@ import { FeedStore } from "@/lib/feed-store";
 import type { AtomSegment } from "./tug-atom-img";
 import {
   createInitialState,
+  deriveActiveTurnSnapshot,
   reduce,
   type CodeSessionState,
 } from "./code-session-store/reducer";
@@ -50,12 +51,19 @@ import type {
 } from "./code-session-store/types";
 
 export type {
+  ActiveTurnSnapshot,
   CardSessionMode,
   CodeSessionSnapshot,
   CodeSessionPhase,
   TransportState,
   TurnEntry,
-  ToolCallState,
+  Message,
+  MessageKind,
+  UserMessage,
+  AssistantText,
+  AssistantThinking,
+  SystemNote,
+  ToolUseMessage,
   QueuedSend,
   ControlRequestForward,
   CostSnapshot,
@@ -111,6 +119,7 @@ function mintTurnKey(): string {
 /** CODE_OUTPUT frame `type` values the reducer currently handles. */
 const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   "session_init",
+  "content_block_start",
   "assistant_text",
   "thinking_text",
   "tool_use",
@@ -412,13 +421,16 @@ export class CodeSessionStore {
       // queue churn.
       queuedSends: this.state.queuedSends,
       transcript: this._transcript,
-      // [D10] Mirror the reducer's `pendingUserMessage` onto the
-      // snapshot as `inflightUserMessage`. Pass the reference through
-      // unchanged so its identity is stable across snapshot rebuilds
-      // while the same pending message is in flight — downstream
-      // `useSyncExternalStore` consumers ([L02]) need `Object.is`
-      // stability to avoid spurious re-renders.
-      inflightUserMessage: this.state.pendingUserMessage,
+      // [D07] Derive the public `activeTurn` projection from
+      // `state.pendingTurn` + `state.scratch[turnKey]`. `null` when no
+      // turn is in flight; otherwise carries the turn-stable
+      // `turnKey` + `submitAt` + `isWake` plus the live Message
+      // sequence the data source iterates. The derivation is pure but
+      // produces a fresh object on each call — the outer snapshot
+      // cache (`_cachedSnapshot`) ensures `Object.is` stability across
+      // quiescent reads, satisfying [L02] for downstream
+      // `useSyncExternalStore` consumers.
+      activeTurn: deriveActiveTurnSnapshot(this.state),
       // [D10]-style identity stability: pass the reducer's
       // pendingDraftRestore reference through unchanged so the
       // prompt-entry's `useLayoutEffect` (keyed on the slot's identity)
@@ -928,14 +940,14 @@ export class CodeSessionStore {
     for (const effect of effects) {
       switch (effect.kind) {
         case "write-inflight":
-          // Per-turn path `turn.${turnKey}.${channel}`. The committed
-          // turn's cell continues to observe this same path after
-          // `turn_complete`; the path retains its final value forever
-          // (no subsequent turn writes to it — each new turn mints a
-          // fresh `turnKey`), and the cell wrapper survives the
-          // inflight → committed transition without a React unmount.
+          // Per-Message path `turn.${turnKey}.message.${messageKey}.${channel}`
+          // ([D07]). Each Message's path is stable from mint through
+          // commit (the cell wrapper subscribing to it survives the
+          // inflight → committed transition without a React unmount);
+          // each new Message of the same turn writes to its own path
+          // so streaming subscriptions don't cross-pollinate.
           this.streamingDocument.set(
-            `turn.${effect.turnKey}.${effect.channel}`,
+            `turn.${effect.turnKey}.message.${effect.messageKey}.${effect.channel}`,
             effect.value,
             STREAM_SOURCE_TAG,
           );

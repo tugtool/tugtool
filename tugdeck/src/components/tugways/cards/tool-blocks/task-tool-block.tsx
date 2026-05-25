@@ -22,7 +22,7 @@
  * `AgentTranscriptEntry` (text answers and nested `tool_use` blocks).
  *
  * Recursion ([D17]): a nested `tool_use` content entry is dispatched
- * by `AgentTranscriptBlock` through the same `dispatchToolCallState`
+ * by `AgentTranscriptBlock` through the same `dispatchToolUseMessage`
  * at `depth + 1`, so a nested tool call gets its real wrapper and a
  * nested `Agent` recurses into `TaskToolBlock` → `AgentTranscriptBlock`
  * one level deeper. `depth` arrives on `ToolBlockProps` and is
@@ -69,7 +69,7 @@ import {
   type AgentTranscriptEntry,
 } from "@/components/tugways/body-kinds/agent-transcript-block";
 
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { ToolUseMessage } from "@/lib/code-session-store";
 
 import {
   StreamingPlaceholder,
@@ -147,7 +147,7 @@ export function narrowAgentStructured(value: unknown): AgentStructuredResult {
  * Narrow one wire `content[]` block to an {@link AgentTranscriptEntry},
  * or `undefined` to drop it. Anthropic content blocks are
  * `{ type: "text", text }` and `{ type: "tool_use", id, name, input }`;
- * a `tool_use` block becomes a `ToolCallState` with no result yet
+ * a `tool_use` block becomes a `ToolUseMessage` with no result yet
  * (status `"done"` — the wrapper renders the call without a body).
  * Any other block type is dropped.
  */
@@ -161,9 +161,18 @@ function narrowContentEntry(value: unknown): AgentTranscriptEntry | undefined {
     const id = typeof v.id === "string" ? v.id : undefined;
     const name = typeof v.name === "string" ? v.name : undefined;
     if (id === undefined || name === undefined) return undefined;
+    // The synthesized `ToolUseMessage` is a display-only projection
+    // of an `Agent` result's inlined tool_use blocks — it never
+    // enters the reducer's substrate, so the `messageKey` is a
+    // synthetic id and `createdAt` defaults to the structured-result's
+    // arrival time (unknown here; `0` is acceptable for a UI-only
+    // fixture that the renderer doesn't read).
     return {
       kind: "tool_use",
       toolCall: {
+        kind: "tool_use",
+        messageKey: `agent-inline-${id}`,
+        createdAt: 0,
         toolUseId: id,
         toolName: name,
         input: v.input ?? {},
@@ -199,7 +208,7 @@ function narrowContentEntry(value: unknown): AgentTranscriptEntry | undefined {
 export function composeAgentTranscriptData(
   input: AgentToolInput,
   structured: AgentStructuredResult,
-  childToolCalls?: ReadonlyArray<ToolCallState>,
+  childToolCalls?: ReadonlyArray<ToolUseMessage>,
 ): AgentTranscriptData | undefined {
   const childEntries: AgentTranscriptEntry[] = (childToolCalls ?? []).map(
     (toolCall) => ({ kind: "tool_use", toolCall }),

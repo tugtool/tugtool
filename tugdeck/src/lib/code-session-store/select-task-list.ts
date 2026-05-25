@@ -22,7 +22,7 @@
  * @module lib/code-session-store/select-task-list
  */
 
-import type { ToolCallState } from "./types";
+import type { ToolUseMessage } from "./types";
 
 // ---------------------------------------------------------------------------
 // Public shape
@@ -132,7 +132,7 @@ const EMPTY_TASKS: readonly TaskItem[] = Object.freeze([]);
 const EMPTY_STATE: TaskListState = Object.freeze({ tasks: EMPTY_TASKS });
 
 /**
- * Fold an in-order iterable of `ToolCallState` into the current
+ * Fold an in-order iterable of `ToolUseMessage` into the current
  * {@link TaskListState}, processing `TaskCreate` (append) and
  * `TaskUpdate` (mutate-by-id) events while ignoring everything else.
  *
@@ -154,7 +154,7 @@ const EMPTY_STATE: TaskListState = Object.freeze({ tasks: EMPTY_TASKS });
  *
  * The expected caller is `selectTaskList` (this file's hook
  * companion) which composes the committed `transcript[].toolCalls[]`
- * with the in-flight turn's streaming `ToolCallState[]` in that
+ * with the in-flight turn's streaming `ToolUseMessage[]` in that
  * order; concatenation is safe because the in-flight turn carries
  * `tool_use_id`s disjoint from every committed turn.
  *
@@ -164,7 +164,7 @@ const EMPTY_STATE: TaskListState = Object.freeze({ tasks: EMPTY_TASKS });
  * empty {@link TaskListState} when no Task* events are present.
  */
 export function reduceTaskListState(
-  toolCalls: Iterable<ToolCallState>,
+  toolCalls: Iterable<ToolUseMessage>,
 ): TaskListState {
   let tasks: TaskItem[] | null = null;
   let createCount = 0;

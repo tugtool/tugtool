@@ -208,7 +208,12 @@ export function TideRouteIndicatorBadge({
   );
 
   const summary = useMemo(() => {
-    const toolCalls = transcript.flatMap((turn) => turn.toolCalls);
+    const toolCalls = transcript.flatMap((turn) =>
+      turn.messages.filter(
+        (m): m is import("@/lib/code-session-store").ToolUseMessage =>
+          m.kind === "tool_use",
+      ),
+    );
     return summarizeDrift({ toolCalls, version });
   }, [transcript, version]);
 

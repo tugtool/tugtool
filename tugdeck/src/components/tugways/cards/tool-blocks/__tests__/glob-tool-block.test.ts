@@ -200,7 +200,7 @@ describe("fixture replay — test-21-glob-tool.jsonl", () => {
     const probe = loadGoldenProbe("v2.1.105", "test-21-glob-tool");
 
     // The Glob result lands on the `tool_use_structured` event — the
-    // same event the live transcript folds into `ToolCallState.structuredResult`.
+    // same event the live transcript folds into `ToolUseMessage.structuredResult`.
     const structuredEvent = probe.events.find(
       (e) => e.type === "tool_use_structured",
     );

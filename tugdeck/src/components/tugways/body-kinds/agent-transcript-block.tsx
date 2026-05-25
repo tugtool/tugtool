@@ -73,7 +73,7 @@ import { createPortal } from "react-dom";
 import { dispatchToolCallState } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import type { ChildToolCallsMap } from "@/components/tugways/cards/tool-blocks/types";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { ToolUseMessage } from "@/lib/code-session-store";
 import {
   BlockActionsCluster,
   BlockCopyButton,
@@ -88,7 +88,7 @@ import {
 /** One entry in a subagent transcript — a text answer or a nested tool call. */
 export type AgentTranscriptEntry =
   | { kind: "text"; text: string }
-  | { kind: "tool_use"; toolCall: ToolCallState };
+  | { kind: "tool_use"; toolCall: ToolUseMessage };
 
 /** Structured subagent-run data — the body's render input. */
 export interface AgentTranscriptData {

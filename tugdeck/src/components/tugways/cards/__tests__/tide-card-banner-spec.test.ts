@@ -40,7 +40,8 @@ function baseSnap(
     pendingQuestion: null,
     queuedSends: [],
     transcript: [],
-    inflightUserMessage: null,
+    activeTurn: null,
+    wakeTrigger: null,
     pendingDraftRestore: null,
     lastCost: null,
     liveTurnUsage: null,
@@ -57,7 +58,6 @@ function baseSnap(
     transportDowntimeSegmentStartedAt: null,
     interruptInFlightIntervals: [],
     interruptInFlightSegmentStartedAt: null,
-    wakeTrigger: null,
     ...overrides,
   };
 }

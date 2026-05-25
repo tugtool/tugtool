@@ -14,22 +14,39 @@ import type { InboundMessage } from "@/protocol";
 import type { CodeSessionEvent } from "./events";
 import type { TurnEntry } from "./types";
 
-/** Logical channel a streaming write targets. The processor combines
- *  this with the turn's React-key (`turnKey`) to form the final
- *  PropertyStore path: `turn.${turnKey}.${channel}`. Per-turn paths
- *  mean a committed cell can keep observing its own path forever
- *  without being polluted by the next turn's writes — the foundation
- *  that lets the unified streaming-cell renderer stay mounted across
- *  the inflight → committed transition without scroll-jump
- *  regressions.
+/** Logical channel a streaming write targets ([D07]). Combined with
+ *  the turn's React-key seed (`turnKey`) and the Message's stable
+ *  identity seed (`messageKey`) to form the final PropertyStore path:
+ *  `turn.${turnKey}.message.${messageKey}.${channel}`.
+ *
+ *  Only one channel today: `"text"` — append-only text for
+ *  `assistant_text` / `assistant_thinking` / `system_note` Messages.
+ *  `TugMarkdownBlock` subscribes to the resulting path and writes the
+ *  rendered DOM imperatively per delta (per [L22]) — bypassing React's
+ *  render cycle, which is what makes per-token streaming smooth.
+ *
+ *  Tool-use state is NOT a streaming channel. `ToolUseMessage` mutates
+ *  a small number of times per call (mint, input fill, result,
+ *  structuredResult) and tool blocks are React components that
+ *  re-render normally on snapshot updates; piping them through
+ *  PropertyStore would duplicate the snapshot's authority without a
+ *  perf win. The state channel from [D07]'s sketch was a placeholder
+ *  for a perf concern the snapshot model already resolves.
+ *
+ *  Per-Message paths mean a committed cell can keep observing its own
+ *  path forever without being polluted by other Messages' writes —
+ *  the [L26] mount-identity foundation that lets each Message's
+ *  streaming subscription survive the inflight → committed transition.
  */
-export type StreamChannel = "assistant" | "thinking" | "tools";
+export type StreamChannel = "text";
 
 export interface WriteInflightEffect {
   kind: "write-inflight";
-  /** Turn-stable React-key seed; combines with `channel` into the
-   *  per-turn PropertyStore path. */
+  /** Turn-stable React-key seed (shared by every Message of the turn). */
   turnKey: string;
+  /** Message-stable identity seed (see {@link MessageBase.messageKey}). */
+  messageKey: string;
+  /** {@link StreamChannel} this write targets. */
   channel: StreamChannel;
   value: string;
 }

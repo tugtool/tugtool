@@ -21,19 +21,22 @@ import {
   taskListIsActive,
   type TaskListState,
 } from "../select-task-list";
-import type { ToolCallState } from "../types";
+import type { ToolUseMessage } from "../types";
 
 // ---------------------------------------------------------------------------
-// Fixture helpers — produce ToolCallState shapes the reducer accepts
+// Fixture helpers — produce ToolUseMessage shapes the reducer accepts
 // ---------------------------------------------------------------------------
 
 function createCall(
   toolUseId: string,
   input: Record<string, unknown>,
   resultId?: number,
-  overrides?: Partial<ToolCallState>,
-): ToolCallState {
+  overrides?: Partial<ToolUseMessage>,
+): ToolUseMessage {
   return {
+    kind: "tool_use",
+    messageKey: `fixture-${toolUseId}`,
+    createdAt: 0,
     toolUseId,
     toolName: "TaskCreate",
     input,
@@ -51,9 +54,12 @@ function createCall(
 function updateCall(
   toolUseId: string,
   input: Record<string, unknown>,
-  overrides?: Partial<ToolCallState>,
-): ToolCallState {
+  overrides?: Partial<ToolUseMessage>,
+): ToolUseMessage {
   return {
+    kind: "tool_use",
+    messageKey: `fixture-${toolUseId}`,
+    createdAt: 0,
     toolUseId,
     toolName: "TaskUpdate",
     input,
@@ -183,6 +189,9 @@ describe("reduceTaskListState", () => {
   test("non-Task* calls are ignored", () => {
     const out = reduceTaskListState([
       {
+        kind: "tool_use",
+        messageKey: "x-msg",
+        createdAt: 0,
         toolUseId: "x",
         toolName: "Bash",
         input: { command: "ls" },
@@ -192,6 +201,9 @@ describe("reduceTaskListState", () => {
         toolWallMs: null,
       },
       {
+        kind: "tool_use",
+        messageKey: "y-msg",
+        createdAt: 0,
         toolUseId: "y",
         toolName: "Write",
         input: { path: "/tmp/x" },
@@ -328,6 +340,9 @@ describe("reduceTaskListState", () => {
   test("tool-name match is case-insensitive (matches dispatch convention)", () => {
     const out = reduceTaskListState([
       {
+        kind: "tool_use",
+        messageKey: "c1-msg",
+        createdAt: 0,
         toolUseId: "c1",
         toolName: "TASKCREATE",
         input: { subject: "Upper" },
@@ -337,6 +352,9 @@ describe("reduceTaskListState", () => {
         toolWallMs: null,
       },
       {
+        kind: "tool_use",
+        messageKey: "u1-msg",
+        createdAt: 0,
         toolUseId: "u1",
         toolName: "taskupdate",
         input: { taskId: "1", status: "completed" },

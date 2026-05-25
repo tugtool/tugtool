@@ -662,14 +662,17 @@ const PendingDispatchBody: React.FC<PendingDispatchBodyProps> = ({
   input,
   requestId,
 }) => {
-  // Synthetic ToolCallState shape. The dispatch call needs a few
-  // fields its own type contract requires; the transcript wrapper
-  // only reads `toolUseId` / `toolName` / `input` / `textOutput` /
-  // `structuredResult` / `status` (plus `caution` which is only set
-  // on drift — preview is never drift). Per [D04] / [D11] the
-  // wrapper handles missing optional fields gracefully.
+  // Synthetic `ToolUseMessage` shape — display-only preview, never
+  // enters the substrate. The dispatch only reads `toolUseId` /
+  // `toolName` / `input` / `textOutput` / `structuredResult` / `status`
+  // (plus `caution` which is only set on drift — preview is never
+  // drift); `messageKey` + `createdAt` are required by the type but
+  // not read by the renderer.
   const result = dispatchToolCallState(
     {
+      kind: "tool_use",
+      messageKey: `permission-dialog/${requestId}`,
+      createdAt: 0,
       toolUseId: `permission-dialog/${requestId}`,
       toolName,
       input,

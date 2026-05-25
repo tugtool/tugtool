@@ -513,7 +513,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   // TIME cell: live in-flight clock when a turn is in flight, or
   // the last committed turn's activeMs as the post-commit fallback.
   // `deriveTimeCellMs` short-circuits to the fallback path when
-  // `inflightUserMessage === null`.
+  // `activeTurn === null`.
   const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
   const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
   // TOKENS / CONTEXT cells — both feed-derived. While a turn is in
@@ -537,7 +537,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   );
   const lastCommittedWindow =
     windows.length > 0 ? windows[windows.length - 1].window : null;
-  const isInflight = snap.inflightUserMessage !== null;
+  const isInflight = snap.activeTurn !== null;
   const live = snap.liveTurnUsage;
   // Resident window: the live in-flight frame, else the last committed
   // turn's window, else `null` (no turns yet — fresh session).

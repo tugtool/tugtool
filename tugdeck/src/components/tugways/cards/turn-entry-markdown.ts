@@ -28,21 +28,20 @@
  *
  * Every tool call is rendered with the same generic shape, so a tool
  * added later needs no new serialization code. Subagent tool calls
- * (`ToolCallState.parentToolUseId` set) nest one heading level deeper
+ * (`ToolUseMessage.parentToolUseId` set) nest one heading level deeper
  * under their spawning `Agent` call.
  *
  * The `## Response` heading is emitted only when the turn also made
  * tool calls — a pure-prose turn copies as just its prose, no heading.
  *
+ * [D07] sequence substrate — the helper iterates `turn.messages`,
+ * filtering by Message kind, instead of reaching for the paired
+ * `turn.toolCalls` / `turn.assistant` fields that retired.
+ *
  * @module components/tugways/cards/turn-entry-markdown
  */
 
-import type { ToolCallState, TurnEntry } from "@/lib/code-session-store/types";
-
-import {
-  groupToolCallsByParent,
-  type GroupedToolCalls,
-} from "./tide-card-transcript-tool-calls";
+import type { ToolUseMessage, TurnEntry } from "@/lib/code-session-store/types";
 
 // ---------------------------------------------------------------------------
 // Fenced-code helpers
@@ -102,7 +101,7 @@ function isEmptyInput(input: unknown): boolean {
  * result, then to a JSON dump of a non-string raw result, so whichever
  * field a given tool populates, its content lands in the copy.
  */
-function toolOutput(call: ToolCallState): string {
+function toolOutput(call: ToolUseMessage): string {
   if (typeof call.result === "string" && call.result.length > 0) {
     return fence(call.result);
   }
@@ -118,15 +117,45 @@ function toolOutput(call: ToolCallState): string {
 }
 
 /**
+ * Partition a flat tool-call list into top-level calls + the
+ * `parentToolUseId → children[]` map. The reducer's substrate keeps
+ * tool calls flat in `turn.messages`; a subagent's intermediate calls
+ * land alongside the spawning `Agent` call, each tagged with
+ * `parentToolUseId` ([#step-17-5]). This helper rebuilds the nesting
+ * for display: a call with a `parentToolUseId` is a child (rendered
+ * inside its parent's section); everything else is top-level.
+ */
+function groupToolCallsByParent(
+  toolCalls: ReadonlyArray<ToolUseMessage>,
+): {
+  topLevel: ReadonlyArray<ToolUseMessage>;
+  childrenByParent: ReadonlyMap<string, ReadonlyArray<ToolUseMessage>>;
+} {
+  const topLevel: ToolUseMessage[] = [];
+  const childrenByParent = new Map<string, ToolUseMessage[]>();
+  for (const call of toolCalls) {
+    const parentId = call.parentToolUseId;
+    if (parentId === undefined) {
+      topLevel.push(call);
+      continue;
+    }
+    const siblings = childrenByParent.get(parentId);
+    if (siblings === undefined) childrenByParent.set(parentId, [call]);
+    else siblings.push(call);
+  }
+  return { topLevel, childrenByParent };
+}
+
+/**
  * Serialize one tool call (and, recursively, any subagent children)
  * to a markdown section. `depth` drives the heading level: a top-level
  * call is `##`, each nesting level adds one `#`, clamped at the
  * markdown maximum of `######`.
  */
 function serializeToolCall(
-  call: ToolCallState,
+  call: ToolUseMessage,
   depth: number,
-  childrenByParent: GroupedToolCalls["childrenByParent"],
+  childrenByParent: ReadonlyMap<string, ReadonlyArray<ToolUseMessage>>,
 ): string {
   const hashes = "#".repeat(Math.min(6, 2 + depth));
   const lines: string[] = [`${hashes} Tool: ${call.toolName}`];
@@ -154,15 +183,26 @@ function serializeToolCall(
  * suppressed for an empty result by its own length check).
  */
 export function turnEntryToMarkdown(turn: TurnEntry): string {
-  const { topLevel, childrenByParent } = groupToolCallsByParent(
-    turn.toolCalls,
-  );
-
+  const toolCalls: ToolUseMessage[] = [];
+  const proseChunks: string[] = [];
+  for (const m of turn.messages) {
+    if (m.kind === "tool_use") {
+      toolCalls.push(m);
+    } else if (m.kind === "assistant_text") {
+      proseChunks.push(m.text);
+    }
+  }
+  const { topLevel, childrenByParent } = groupToolCallsByParent(toolCalls);
   const sections: string[] = topLevel.map((call) =>
     serializeToolCall(call, 0, childrenByParent),
   );
 
-  const prose = turn.assistant.trim();
+  // Concatenate the turn's `assistant_text` Messages in arrival
+  // order. A multi-block turn (text → tool → text) emits two text
+  // Messages; today's COPY surface gives them back as one continuous
+  // prose body. Future work could intersperse tool sections in
+  // arrival position if that reads better.
+  const prose = proseChunks.join("\n\n").trim();
   if (prose.length > 0) {
     // A heading delimits the prose from the tool sections above it;
     // a pure-prose turn copies as just its prose, with no heading.

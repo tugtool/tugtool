@@ -48,7 +48,7 @@ import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { TaskInlineToolBlock } from "./tool-blocks/task-inline-tool-block";
 import { defaultIntentToolNames } from "./tide-tool-visibility-policy";
 import type { ToolBlockProps } from "./tool-blocks/types";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // Test-local fakes
@@ -61,8 +61,11 @@ import type { ToolCallState } from "@/lib/code-session-store";
  */
 const fakeContext = {} as DispatchContext;
 
-function fakeToolCall(toolName: string, overrides: Partial<ToolCallState> = {}): ToolCallState {
+function fakeToolCall(toolName: string, overrides: Partial<ToolUseMessage> = {}): ToolUseMessage {
   return {
+    kind: "tool_use",
+    messageKey: "tu-1-msg",
+    createdAt: 0,
     toolUseId: "tu-1",
     toolName,
     input: {},

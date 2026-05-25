@@ -225,6 +225,7 @@ describe("CodeSessionStore — retry recovery from errored (Step 8)", () => {
     expect(snap.phase).toBe("idle");
     expect(snap.lastError).toBeNull();
     expect(snap.transcript.length).toBe(1);
-    expect(snap.transcript[0].userMessage.text).toBe("retry");
+    const userMsg = snap.transcript[0].messages.find((m) => m.kind === "user_message");
+    expect(userMsg !== undefined && userMsg.kind === "user_message" ? userMsg.text : "").toBe("retry");
   });
 });

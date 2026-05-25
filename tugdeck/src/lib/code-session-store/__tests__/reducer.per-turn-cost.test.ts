@@ -60,7 +60,8 @@ describe("reducer — per-turn cost delta", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "ok",
+      block_index: 0,
+      text: "ok",
         is_partial: false,
       },
       {
@@ -93,7 +94,8 @@ describe("reducer — per-turn cost delta", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "ok",
+      block_index: 0,
+      text: "ok",
         is_partial: false,
       },
       {
@@ -116,7 +118,8 @@ describe("reducer — per-turn cost delta", () => {
       {
         type: "assistant_text",
         msg_id: "m2",
-        text: "done",
+      block_index: 0,
+      text: "done",
         is_partial: false,
       },
       {
@@ -149,7 +152,8 @@ describe("reducer — per-turn cost delta", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "ok",
+      block_index: 0,
+      text: "ok",
         is_partial: false,
       },
       { type: "turn_complete", msg_id: "m1", result: "success" },
@@ -169,7 +173,8 @@ describe("reducer — per-turn cost delta", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "ok",
+      block_index: 0,
+      text: "ok",
         is_partial: false,
       },
       {

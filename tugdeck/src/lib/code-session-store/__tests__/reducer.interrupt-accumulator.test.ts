@@ -73,7 +73,8 @@ describe("reducer — interrupt-in-flight accumulator", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
     ]);
@@ -96,7 +97,8 @@ describe("reducer — interrupt-in-flight accumulator", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
     ]);
@@ -145,7 +147,8 @@ describe("reducer — interrupt-in-flight accumulator", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
       { type: "interrupt_action" },
@@ -167,7 +170,9 @@ describe("reducer — interrupt-in-flight accumulator", () => {
     // interrupt intervals array empty and the segment-start null.
     const { state } = applyAll(fresh(), [
       { type: "send", text: "hi", atoms: [], turnKey: "k1" },
-      { type: "assistant_text", msg_id: "m1", text: "ok", is_partial: false },
+      { type: "assistant_text", msg_id: "m1",
+      block_index: 0,
+      text: "ok", is_partial: false },
       { type: "turn_complete", msg_id: "m1", result: "success" },
     ]);
     expect(state.interruptInFlight).toBe(false);
@@ -183,7 +188,8 @@ describe("reducer — pause-axis interval arrays at turn boundary", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
       {
@@ -215,7 +221,8 @@ describe("reducer — pause-axis interval arrays at turn boundary", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
       { type: "transport_close" },

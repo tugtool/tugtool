@@ -27,10 +27,7 @@ function turn(overrides: Partial<TurnEntry>): TurnEntry {
   return {
     turnKey: "k1",
     msgId: "m1",
-    userMessage: { text: "", attachments: [], submitAt: 0 },
-    thinking: "",
-    assistant: "",
-    toolCalls: [],
+    messages: [],
     result: "success",
     endedAt: 0,
     ...TURN_ENTRY_TELEMETRY_DEFAULTS,
@@ -76,11 +73,10 @@ describe("projectTelemetryInspector — populated state", () => {
       ...fresh(),
       phase: "streaming",
       transportState: "online",
-      pendingUserMessage: {
-        text: "hi",
-        atoms: [],
-        submitAt: 1_000_000,
+      pendingTurn: {
         turnKey: "k-live",
+        submitAt: 1_000_000,
+        isWake: false,
       },
       awaitingApprovalAccumulatedMs: 250,
       awaitingApprovalSince: null,

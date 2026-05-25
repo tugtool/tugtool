@@ -37,10 +37,15 @@ export interface SessionInitEvent {
   [key: string]: unknown;
 }
 
-/** Decoded assistant_text partial or terminal frame. */
+/** Decoded assistant_text partial or terminal frame. `block_index`
+ *  correlates the delta with its opening `content_block_start` via
+ *  the wire's `(msg_id, block_index)` coordinate ([D07]). Required —
+ *  every text frame tugcode emits after Step 5 carries it.
+ */
 export interface AssistantTextEvent {
   type: "assistant_text";
   msg_id: string;
+  block_index: number;
   text: string;
   is_partial: boolean;
   rev?: number;
@@ -49,14 +54,45 @@ export interface AssistantTextEvent {
   [key: string]: unknown;
 }
 
-/** Decoded thinking_text partial or terminal frame. */
+/** Decoded thinking_text partial or terminal frame. See
+ *  {@link AssistantTextEvent} for the `block_index` correlation
+ *  contract. */
 export interface ThinkingTextEvent {
   type: "thinking_text";
   msg_id: string;
+  block_index: number;
   text: string;
   is_partial: boolean;
   rev?: number;
   seq?: number;
+  tug_session_id?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `content_block_start` — wire-derived block-open marker emitted by
+ * tugcode at every Claude `content_block_start` event ([D07]). Mints
+ * a new `Message` of the given `kind` keyed by `(msg_id, block_index)`
+ * in the reducer's `scratch[turnKey].blockIndex` map.
+ *
+ * Idempotent at the reducer: re-emitting the same `(msg_id, block_index)`
+ * is a no-op. This is what makes the mid-turn replay snapshot pattern
+ * (Option 4 in [D07]) safe — the snapshot replays the full event
+ * stream including the `content_block_start` events the live path
+ * already consumed; the reducer mints once and the snapshot's repeat
+ * is inert.
+ *
+ * `tool_use_id` and `tool_name` are required on the `tool_use` kind
+ * (the substrate needs them to construct the `ToolUseMessage`); the
+ * other kinds omit them.
+ */
+export interface ContentBlockStartEvent {
+  type: "content_block_start";
+  msg_id: string;
+  block_index: number;
+  kind: "text" | "thinking" | "tool_use";
+  tool_use_id?: string;
+  tool_name?: string;
   tug_session_id?: string;
   [key: string]: unknown;
 }
@@ -580,6 +616,7 @@ export type CodeSessionEvent =
   | SessionInitEvent
   | AssistantTextEvent
   | ThinkingTextEvent
+  | ContentBlockStartEvent
   | ToolUseEvent
   | ToolResultEvent
   | ToolUseStructuredEvent

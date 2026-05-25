@@ -84,7 +84,7 @@ import type {
   CodeSessionStore,
   ControlRequestForward,
   CostSnapshot,
-  ToolCallState,
+  ToolUseMessage,
 } from "@/lib/code-session-store";
 
 import { BashToolBlock } from "./tool-blocks/bash-tool-block";
@@ -145,7 +145,7 @@ export type RenderInput =
     }
   | {
       kind: "tool_call";
-      toolCall: ToolCallState;
+      toolCall: ToolUseMessage;
       msgId: string;
     }
   | {
@@ -587,7 +587,7 @@ export function detectVersionDrift(metadata: unknown): CautionFlag | null {
  * card-chrome aggregate counter).
  */
 export function detectToolCallDrift(
-  toolCall: ToolCallState,
+  toolCall: ToolUseMessage,
 ): CautionFlag | null {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
@@ -659,7 +659,7 @@ export interface DriftSummary {
  * event lands). Version drift, when present, is appended last.
  */
 export function summarizeDrift(args: {
-  toolCalls: ReadonlyArray<ToolCallState>;
+  toolCalls: ReadonlyArray<ToolUseMessage>;
   version: string | null;
 }): DriftSummary {
   const events: DriftEvent[] = [];
@@ -878,12 +878,12 @@ export function dispatch(
 }
 
 /**
- * Read the plain-text output from a stored `ToolCallState.result`.
+ * Read the plain-text output from a stored `ToolUseMessage.result`.
  * Returns `undefined` when nothing readable is present.
  *
  * The reducer's `handleToolResult` stores `event.output` (the literal
  * stdout string from the wire's `tool_result` event) directly into
- * `ToolCallState.result`, so the live shape is a bare `string`. We
+ * `ToolUseMessage.result`, so the live shape is a bare `string`. We
  * also accept the wrapped `{ output: string }` shape for forward-
  * compat with future reducer changes that might preserve the full
  * `tool_result` payload, and for tests that historically constructed
@@ -903,7 +903,7 @@ function extractTextOutput(result: unknown): string | undefined {
  * its shallow shape schema) routes to `DefaultToolBlock` with the
  * caution threaded onto the props and returned on the result.
  *
- * Exported so the transcript view can route a `ToolCallState` (from
+ * Exported so the transcript view can route a `ToolUseMessage` (from
  * `TurnEntry.toolCalls` or the parsed `inflight.tools` snapshot) to a
  * `(Component, props)` pair without fabricating a full
  * `DispatchContext` — the tool-call branch never consumed it.
@@ -919,7 +919,7 @@ function extractTextOutput(result: unknown): string | undefined {
  * child tool calls. Top-level callers that have no subagents omit it.
  */
 export function dispatchToolCallState(
-  toolCall: ToolCallState,
+  toolCall: ToolUseMessage,
   msgId: string,
   depth = 0,
   childToolCallsByParent?: ChildToolCallsMap,

@@ -93,7 +93,8 @@ describe("handleTurnComplete — live path", () => {
       {
         type: "assistant_text",
         msg_id: "msg-A",
-        text: "hi",
+      block_index: 0,
+      text: "hi",
         is_partial: false,
         rev: 0,
         seq: 0,
@@ -169,7 +170,8 @@ describe("handleTurnComplete — replay path", () => {
       {
         type: "assistant_text",
         msg_id: "msg-replay-A",
-        text: "old response",
+      block_index: 0,
+      text: "old response",
         is_partial: false,
         rev: 0,
         seq: 0,
@@ -332,7 +334,8 @@ describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
       {
         type: "assistant_text",
         msg_id: "msg-A",
-        text: "hi",
+      block_index: 0,
+      text: "hi",
         is_partial: false,
         rev: 0,
         seq: 0,

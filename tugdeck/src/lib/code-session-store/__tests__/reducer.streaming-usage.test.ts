@@ -144,7 +144,9 @@ describe("reducer — handleStreamingUsage", () => {
     const afterTurn = applyAll(fresh(), [
       { type: "send", text: "first", atoms: [], turnKey: "k1" },
       streamingUsage("msg_a", { input_tokens: 3, cache_read_input_tokens: 18572, output_tokens: 80 }),
-      { type: "assistant_text", msg_id: "msg_a", text: "ok", is_partial: false },
+      { type: "assistant_text", msg_id: "msg_a",
+      block_index: 0,
+      text: "ok", is_partial: false },
       { type: "turn_complete", msg_id: "msg_a", result: "success" },
     ]);
     // Superseded at turn-complete.
@@ -167,7 +169,9 @@ describe("reducer — handleStreamingUsage", () => {
         cache_read_input_tokens: 13148,
         output_tokens: 80,
       }),
-      { type: "assistant_text", msg_id: "msg_a", text: "ok", is_partial: false },
+      { type: "assistant_text", msg_id: "msg_a",
+      block_index: 0,
+      text: "ok", is_partial: false },
     ]);
     expect(state.liveTurnUsage).not.toBeNull();
     const completed = reduce(state, {

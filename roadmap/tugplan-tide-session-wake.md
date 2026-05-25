@@ -809,7 +809,7 @@ The implementation shipped across the following work; all steps are complete exc
 
 #### Step 5: Slice 1c-b — full sequence substrate {#step-5}
 
-**Status:** Not started.
+**Status:** Shipped. Commit 1 (tugcode IPC extension) and Commit 2 (tugdeck substrate refactor) both landed on main; `cd tugdeck && bun x tsc --noEmit && bun test` green (2795 tests pass, 0 fail).
 
 **Scope:** Lift the turn model to a sequence substrate end-to-end per [D07]. Reducer state, streaming PropertyStore paths, snapshot, data source, and every consumer model a turn as an ordered sequence of typed Messages. Message is the unit of identity, mutation, streaming subscription, and rendering. Paired-field aggregation and parallel `toolCallMap` storage retire. The [D06] wake sentinel is removed at every site.
 

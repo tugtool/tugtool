@@ -1,66 +1,75 @@
 /**
- * Test-only helpers for reading the in-flight streaming channels.
+ * Test-only helpers for reading per-Message streaming PropertyStore
+ * paths.
  *
- * Background: streaming writes now land on per-turn PropertyStore
- * paths (`turn.${turnKey}.${channel}`) instead of the legacy
- * `inflight.*` constants. The path is unknown to tests at literal
- * time because the `turnKey` is minted by the store wrapper at
- * dispatch. These helpers read the live or last-known `turnKey`
- * from the snapshot and resolve the path, so tests can assert on
- * the in-flight value without spelling out the turnKey.
+ * Under [D07] the substrate writes to per-Message paths
+ * (`turn.${turnKey}.message.${messageKey}.text`) — these helpers walk
+ * the snapshot's `activeTurn.messages` (or a committed turn's
+ * `messages`) to find a Message of a given kind and resolve its path
+ * without the test having to spell out the messageKey.
  *
- * Returns `undefined` when no in-flight turn exists and the
- * caller hasn't passed an explicit `turnKey`. Test-only — never
- * imported from production code.
+ * For most tests, asserting against the snapshot Messages directly
+ * (e.g. `activeTurn.messages.find(m => m.kind === "assistant_text")?.text`)
+ * is cleaner. These helpers exist for tests that want to verify the
+ * PropertyStore wire — i.e., that the reducer's write-inflight effect
+ * actually landed the text on the right path.
+ *
+ * Returns `undefined` when no in-flight turn exists, or when no
+ * Message of the requested kind is present.
+ *
+ * Test-only — never imported from production code.
  */
 
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
-export type InflightChannel = "assistant" | "thinking" | "tools";
+export type StreamingKindFilter =
+  | "assistant_text"
+  | "assistant_thinking";
 
 /**
- * Read the value of the in-flight channel for the currently-active
- * turn. Returns `undefined` if no turn is in flight (or has just
- * committed and `inflightUserMessage` is null).
+ * Read the value of the first in-flight Message of `kind`'s streaming
+ * `text` path. Returns `undefined` if no turn is in flight or no
+ * matching Message exists.
  */
 export function inflightValue(
   store: CodeSessionStore,
-  channel: InflightChannel,
+  kind: StreamingKindFilter,
 ): unknown {
-  const turnKey = store.getSnapshot().inflightUserMessage?.turnKey;
-  if (turnKey === undefined) return undefined;
-  return store.streamingDocument.get(`turn.${turnKey}.${channel}`);
+  const active = store.getSnapshot().activeTurn;
+  if (active === null) return undefined;
+  const match = active.messages.find((m) => m.kind === kind);
+  if (match === undefined) return undefined;
+  return store.streamingDocument.get(
+    `turn.${active.turnKey}.message.${match.messageKey}.text`,
+  );
 }
 
 /**
- * Read the value of a channel for a committed turn. Defaults to the
- * LAST committed turn for the common case (`turn_complete` just
- * landed); pass `index` for assertions against earlier turns in a
- * multi-turn transcript (e.g., a full replay bracket carrying
- * several turns).
+ * Read the value of the first Message of `kind` in a committed turn's
+ * streaming `text` path. Defaults to the LAST committed turn for the
+ * common case; pass `index` for assertions against earlier turns.
  *
- * Resolves the per-turn path via the snapshot turnKey lookup, so it
- * works uniformly for any committed turn regardless of how the turn
- * was committed (live, replay, or any future ingestion path that
- * lands on `state.transcript`).
- *
- * Returns `undefined` when the transcript is empty or `index` is
- * out of bounds.
+ * Returns `undefined` when the transcript is empty, `index` is out of
+ * bounds, or no matching Message is present.
  */
 export function committedTurnValue(
   store: CodeSessionStore,
-  channel: InflightChannel,
+  kind: StreamingKindFilter,
   index?: number,
 ): unknown {
   const transcript = store.getSnapshot().transcript;
   const idx = index ?? transcript.length - 1;
   const turn = transcript[idx];
   if (turn === undefined) return undefined;
-  return store.streamingDocument.get(`turn.${turn.turnKey}.${channel}`);
+  const match = turn.messages.find((m) => m.kind === kind);
+  if (match === undefined) return undefined;
+  return store.streamingDocument.get(
+    `turn.${turn.turnKey}.message.${match.messageKey}.text`,
+  );
 }
 
 /**
- * @deprecated Use `committedTurnValue(store, channel)`. Retained for
+ * @deprecated Use `committedTurnValue(store, kind)`. Retained for
  * source compatibility with tests written before the index parameter
  * was introduced.
  */

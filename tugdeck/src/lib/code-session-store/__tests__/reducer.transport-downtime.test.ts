@@ -69,7 +69,8 @@ describe("reducer — transport downtime", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "thinking",
+      block_index: 0,
+      text: "thinking",
         is_partial: true,
       },
     ]);
@@ -103,7 +104,8 @@ describe("reducer — transport downtime", () => {
       {
         type: "assistant_text",
         msg_id: "m1",
-        text: "partial",
+      block_index: 0,
+      text: "partial",
         is_partial: true,
       },
     ]);
@@ -119,7 +121,7 @@ describe("reducer — transport downtime", () => {
     expect(appended[0].entry.turnEndReason).toBe("transport_lost");
     expect(appended[0].entry.msgId).toBe("m1");
     // The transcript entry no longer has an inflight pair to back it.
-    expect(s2.pendingUserMessage).toBeNull();
+    expect(s2.pendingTurn).toBeNull();
   });
 
   it("two disconnect/reconnect cycles across an idle session accumulate the sum", () => {

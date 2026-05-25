@@ -29,7 +29,7 @@ import {
 } from "../default-tool-block";
 import { dispatchToolCallState } from "../../tide-assistant-renderer-dispatch";
 import { defaultIntentToolNames } from "../../tide-tool-visibility-policy";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // pickOutputBody — the [D11] smart-pick
@@ -89,9 +89,12 @@ describe("pickOutputBody", () => {
 
 function fakeToolCall(
   toolName: string,
-  overrides: Partial<ToolCallState> = {},
-): ToolCallState {
+  overrides: Partial<ToolUseMessage> = {},
+): ToolUseMessage {
   return {
+    kind: "tool_use",
+    messageKey: "tu-1-msg",
+    createdAt: 0,
     toolUseId: "tu-1",
     toolName,
     input: {},

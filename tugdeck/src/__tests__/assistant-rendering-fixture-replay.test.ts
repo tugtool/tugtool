@@ -58,7 +58,7 @@ import { GrepToolBlock } from "@/components/tugways/cards/tool-blocks/grep-tool-
 import { TaskToolBlock } from "@/components/tugways/cards/tool-blocks/task-tool-block";
 import { DefaultToolBlock } from "@/components/tugways/cards/tool-blocks/default-tool-block";
 import type { ToolBlockFactory } from "@/components/tugways/cards/tool-blocks/types";
-import type { ToolCallState } from "@/lib/code-session-store";
+import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // Catalog scope + expected routing
@@ -90,14 +90,18 @@ function expectedWrapper(toolName: string): ToolBlockFactory {
 }
 
 /**
- * Build a minimal `ToolCallState` from a fixture `tool_use` event.
+ * Build a minimal `ToolUseMessage` from a fixture `tool_use` event.
  * Dispatch *routing* consults only `toolName`; the other fields are
  * filled with inert defaults so `dispatchToolCallState` composes its
  * `baseProps` without reaching for anything the catalog event lacks.
  */
-function toolCallFromEvent(ev: Record<string, unknown>): ToolCallState {
+function toolCallFromEvent(ev: Record<string, unknown>): ToolUseMessage {
+  const toolUseId = typeof ev.tool_use_id === "string" ? ev.tool_use_id : "tu";
   return {
-    toolUseId: typeof ev.tool_use_id === "string" ? ev.tool_use_id : "tu",
+    kind: "tool_use",
+    messageKey: `fixture-${toolUseId}`,
+    createdAt: 0,
+    toolUseId,
     toolName: typeof ev.tool_name === "string" ? ev.tool_name : "",
     input: ev.input ?? {},
     status: "done",
@@ -200,6 +204,9 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
   test("a synthetic unknown-tool dispatch raises an unknown_tool caution", () => {
     const result = dispatchToolCallState(
       {
+        kind: "tool_use",
+        messageKey: "tu-synthetic-msg",
+        createdAt: 0,
         toolUseId: "tu-synthetic",
         toolName: "ZzzSyntheticUnknownTool",
         input: {},
