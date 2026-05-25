@@ -2,7 +2,7 @@
 // pending-row replay. The load-bearing implementation of the never-drop
 // guarantee from [DM08]. tugcode's `runReplay` queries the submission
 // journal (via the cross-process bun:sqlite handle) and emits a
-// synthetic `user_message_replay` for every pending row whose
+// synthetic `add_user_message` for every pending row whose
 // `user_text` does not appear as a `user_message` line in JSONL —
 // claude has not yet acknowledged those submissions. The synthetic
 // emit happens BETWEEN the translator's `replay_started` and its first
@@ -25,7 +25,7 @@ import type {
   OutboundMessage,
   ReplayComplete,
   ReplayStarted,
-  UserMessageReplay,
+  AddUserMessage,
 } from "../types.ts";
 
 // ---------------------------------------------------------------------------
@@ -282,17 +282,18 @@ describe("runReplay — pending-row injection", () => {
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     const synthetics = emitted.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(synthetics).toHaveLength(1);
     expect(synthetics[0].text).toBe("submission claude never saw");
-    expect(synthetics[0].msg_id).toBe("j-only");
+    // No `msg_id` on `add_user_message` per [D15] — the journal id is
+    // not exposed on the wire; identification is by text content.
     // The synthetic lands inside the `replay_started` /
     // `replay_complete` bracket — the reducer's
-    // `handleUserMessageReplay` phase guard requires `replaying`.
+    // `handleAddUserMessage` phase guard requires `replaying`.
     const types = emitted.map((m) => m.type);
     const startedIdx = types.indexOf("replay_started");
-    const syntheticIdx = types.indexOf("user_message_replay");
+    const syntheticIdx = types.indexOf("add_user_message");
     const completeIdx = types.indexOf("replay_complete");
     expect(startedIdx).toBeGreaterThanOrEqual(0);
     expect(syntheticIdx).toBeGreaterThan(startedIdx);
@@ -317,16 +318,16 @@ describe("runReplay — pending-row injection", () => {
 
     const { emitted } = await captureStdout(() => manager.runReplay());
 
-    // The JSONL pass emits one user_message_replay (for the JSONL
-    // user_message line, keyed by the assistant's msg_id), and a
-    // turn_complete{success}. The journal-driven synthetic with
-    // msg_id="j-acked" does NOT fire because the row matched.
+    // The JSONL pass emits one add_user_message (for the JSONL
+    // user_message line) and a turn_complete{success}. The
+    // journal-driven synthetic does NOT fire because the row matched —
+    // only one user-side frame in total. Identification is by text;
+    // `add_user_message` carries no `msg_id` per [D15].
     const replays = emitted.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(replays).toHaveLength(1);
-    expect(replays[0].msg_id).toBe("msg_01ACK");
-    expect(replays[0].msg_id).not.toBe("j-acked");
+    expect(replays[0].text).toBe("claude saw this");
   });
 
   test("multiple pending rows, partial JSONL match: synthetic fires only for unmatched", async () => {
@@ -354,14 +355,14 @@ describe("runReplay — pending-row injection", () => {
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     const replays = emitted.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
-    // Two replays total: one for the matched row (from JSONL pass,
-    // keyed by claude's msg id), one synthetic for the unmatched row.
+    // Two replays total: one for the matched row (from the JSONL pass)
+    // and one synthetic for the unmatched row. Identification by text
+    // — `add_user_message` carries no `msg_id` per [D15].
     expect(replays).toHaveLength(2);
-    const synthetic = replays.find((r) => r.msg_id === "j-pending");
+    const synthetic = replays.find((r) => r.text === "claude has not seen");
     expect(synthetic).toBeDefined();
-    expect(synthetic?.text).toBe("claude has not seen");
   });
 
   test("duplicate user_text — multiset count handles partial JSONL match correctly", async () => {
@@ -391,14 +392,16 @@ describe("runReplay — pending-row injection", () => {
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     const replays = emitted.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
-    // 1 from JSONL (msg_01HELLO) + 1 synthetic for j-second.
+    // 1 from JSONL (the matched "hello") + 1 synthetic (the unmatched
+    // "hello" from j-second). Both carry the literal text "hello"; the
+    // multiset count IS the contract — under `add_user_message`'s
+    // no-`msg_id` shape ([D15]) the synthetic and the JSONL-derived
+    // emission are wire-indistinguishable, which is the correct
+    // substrate-truth: each "hello" submission gets one row.
     expect(replays).toHaveLength(2);
-    const syntheticIds = replays
-      .map((r) => r.msg_id)
-      .filter((id) => id.startsWith("j-"));
-    expect(syntheticIds).toEqual(["j-second"]);
+    expect(replays.every((r) => r.text === "hello")).toBe(true);
   });
 
   test("attachments round-trip from journal BLOB to synthetic frame", async () => {
@@ -420,8 +423,8 @@ describe("runReplay — pending-row injection", () => {
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     const synthetic = emitted.find(
-      (m): m is UserMessageReplay =>
-        m.type === "user_message_replay" && m.msg_id === "j-att",
+      (m): m is AddUserMessage =>
+        m.type === "add_user_message" && m.text === "with file",
     );
     expect(synthetic).toBeDefined();
     expect(synthetic?.attachments).toEqual(attachments);
@@ -437,7 +440,7 @@ describe("runReplay — pending-row injection", () => {
     const types = emitted.map((m) => m.type);
     expect(types).toContain("replay_started");
     expect(types).toContain("replay_complete");
-    expect(emitted.find((m) => m.type === "user_message_replay")).toBeUndefined();
+    expect(emitted.find((m) => m.type === "add_user_message")).toBeUndefined();
   });
 
   // ─── never-drop smoke (the gate) ─────────────────────────────────────────
@@ -447,7 +450,7 @@ describe("runReplay — pending-row injection", () => {
     // tugdeck submits "hello" → tugcast inserts journal row + forwards
     // → simulate tugcode crash before claude writes JSONL → restart
     // tugcode → runReplay → assert "hello" is on the wire as a
-    // synthetic user_message_replay. Repeated N=20 to pin determinism.
+    // synthetic add_user_message. Repeated N=20 to pin determinism.
     for (let i = 0; i < 20; i++) {
       const fx = freshFixture();
       seedJournal(fx.sessionsDbPath, [
@@ -462,16 +465,15 @@ describe("runReplay — pending-row injection", () => {
       const { emitted } = await captureStdout(() => manager.runReplay());
 
       const synthetic = emitted.find(
-        (m): m is UserMessageReplay =>
-          m.type === "user_message_replay" && m.msg_id === `j-smoke-${i}`,
+        (m): m is AddUserMessage =>
+          m.type === "add_user_message" && m.text === "hello",
       );
       expect(synthetic).toBeDefined();
-      expect(synthetic?.text).toBe("hello");
 
-      // Bracket order: replay_started → user_message_replay → replay_complete.
+      // Bracket order: replay_started → add_user_message → replay_complete.
       const types = emitted.map((m) => m.type);
       const startedIdx = types.indexOf("replay_started");
-      const syntheticIdx = types.indexOf("user_message_replay");
+      const syntheticIdx = types.indexOf("add_user_message");
       const completeIdx = types.indexOf("replay_complete");
       expect(startedIdx).toBeGreaterThanOrEqual(0);
       expect(syntheticIdx).toBeGreaterThan(startedIdx);
@@ -515,8 +517,8 @@ describe("runReplay — bracket-window invariant for synthetic emit", () => {
       (m): m is ReplayComplete => m.type === "replay_complete",
     );
     const syntheticIdx = emitted.findIndex(
-      (m): m is UserMessageReplay =>
-        m.type === "user_message_replay" && m.msg_id === "j-bracket",
+      (m): m is AddUserMessage =>
+        m.type === "add_user_message" && m.text === "bracket-test",
     );
     expect(startedIdx).toBeGreaterThanOrEqual(0);
     expect(completeIdx).toBeGreaterThan(startedIdx);

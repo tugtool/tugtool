@@ -550,25 +550,42 @@ export interface ResumeFailed {
 // ---------------------------------------------------------------------------
 
 /**
- * Replay user-message echo. Emitted by the JSONL replay translator
- * at the start of each replayed turn, carrying the original user
- * submission text + attachments + the upcoming turn's `msg_id`
- * (claude's id for the *terminal* assistant entry of the turn — the
- * same id `turn_complete` will carry).
+ * Replay user-message frame. Emitted by the JSONL replay translator
+ * at the start of each replayed turn (and by tugcode's mid-turn
+ * `emitInflightTurnFromActiveTurn` snapshot path), carrying the
+ * original user submission text + attachments.
+ *
+ * Named after the substrate operation it performs — adds a
+ * `user_message` Message to the substrate — symmetric with
+ * `content_block_start { kind: "text" | "thinking" | "tool_use" }`'s
+ * message-kind-keyed naming. The `add_<kind>` template established
+ * here applies to all future Message-creating IPC frames (Step 8's
+ * `add_system_note` for scheduled prompts, anything beyond).
  *
  * Distinct from the inbound `user_message` (`tugcast → tugcode`
  * submission shape) because:
  *   - It rides CODE_OUTPUT (`tugcode → tugcast`), not CODE_INPUT.
- *   - It carries `msg_id` (the inbound shape doesn't — msg_id is
- *     minted by claude per turn, not by the submitter).
- *   - The reducer treats it as a synthetic `send` action so the
- *     subsequent `assistant_text` / `turn_complete` for the same
- *     `msg_id` commit a `TurnEntry` into `transcript` exactly as if
- *     the turn had been live.
+ *   - It is a *substrate add*, not a *submission*. The outbound
+ *     submission keeps its operation-centric name (`UserMessage`)
+ *     because it is heading to claude, semantically distinct from
+ *     "add a Message to the substrate."
+ *   - The reducer's `handleAddUserMessage` mints a `pendingTurn`
+ *     whose `initialMessages` is `[user_message]`; the substrate's
+ *     correlation key is `turnKey`, not `msg_id`.
+ *
+ * No `msg_id` field. Under [D14] the reducer's `activeMsgId` is set
+ * only by the first content event (`assistant_text` / `thinking_text`
+ * / `tool_use` / `content_block_start`) — it is never pre-bound from
+ * a user-side opener. The replay translator's `openTurnMsgId` tracker
+ * holds whatever synthesized opener id it minted ([D13]); that id is
+ * translator-internal and never reaches the wire on this frame.
+ *
+ * See `roadmap/tugplan-tide-session-wake.md` [D14] (activeMsgId
+ * tracking), [D15] (add_<kind> naming), and `#spec-wire-frames` for
+ * the canonical wire-shape definition.
  */
-export interface UserMessageReplay {
-  type: "user_message_replay";
-  msg_id: string;
+export interface AddUserMessage {
+  type: "add_user_message";
   text: string;
   attachments: Attachment[];
   ipc_version: number;
@@ -599,8 +616,8 @@ export interface UserMessageReplay {
  * `SDKTaskNotificationMessage` payload (`sdk.d.ts:1659-1668`),
  * minus the `type:"system" / subtype:"task_notification"` envelope.
  * `turnKey` is intentionally absent here — tugdeck's store wrapper
- * (`frameToEvent`) mints it on frame receipt, mirroring the existing
- * `user_message_replay` pattern.
+ * (`frameToEvent`) mints it on frame receipt, mirroring the
+ * `add_user_message` pattern.
  *
  * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
  * rationale and [Q01] for the empirical capture this contract is
@@ -671,7 +688,7 @@ export type OutboundMessage =
   | ToolUseStructured
   | ControlRequestCancel
   | ResumeFailed
-  | UserMessageReplay
+  | AddUserMessage
   | ReplayStarted
   | ReplayComplete
   | WakeStarted;

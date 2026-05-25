@@ -42,7 +42,7 @@ import type {
   ToolUse,
   TurnCancelled,
   TurnComplete,
-  UserMessageReplay,
+  AddUserMessage,
 } from "../types.ts";
 
 // ---------------------------------------------------------------------------
@@ -198,17 +198,18 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     expect(started).toBeDefined();
     expect(complete).toBeDefined();
 
-    // The snapshot's user_message_replay echoes the ACTUAL user
-    // submission (from `turn.userText`), keyed on claude's
-    // `currentMessageId`.
+    // The snapshot's add_user_message echoes the ACTUAL user
+    // submission (from `turn.userText`). No msg_id on the frame per
+    // [D15]; the assistant content frames below carry claude's real
+    // msg_id, which the reducer's `activeMsgId` will adopt at the
+    // first content event per [D14].
     const userReplays = emitted.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     const inflightUserReplay = userReplays.find(
       (m) => m.text === "in-flight user text",
     );
     expect(inflightUserReplay).toBeDefined();
-    expect(inflightUserReplay?.msg_id).toBe("msg_inflight_claude_id");
 
     // The snapshot's assistant_text carries the accumulated
     // partialText with `is_partial: false` so the reducer REPLACES
@@ -227,8 +228,8 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     // Order: snapshot frames must land BEFORE replay_complete.
     const idxSnapshot = emitted.findIndex(
       (m) =>
-        m.type === "user_message_replay" &&
-        (m as UserMessageReplay).text === "in-flight user text",
+        m.type === "add_user_message" &&
+        (m as AddUserMessage).text === "in-flight user text",
     );
     const idxComplete = emitted.findIndex(
       (m) => m.type === "replay_complete",
@@ -247,7 +248,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     expect(inflightTerminal).toBeUndefined();
   });
 
-  test("inflight ActiveTurn with empty partialText: snapshot still emits user_message_replay", async () => {
+  test("inflight ActiveTurn with empty partialText: snapshot still emits add_user_message", async () => {
     // Edge case: HMR fires before claude has streamed any content
     // (just message_start, before content_block_delta). The user
     // submission is still recoverable from `turn.userText`; the
@@ -262,12 +263,13 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     const inflightUserReplay = emitted.find(
-      (m): m is UserMessageReplay =>
-        m.type === "user_message_replay" &&
-        (m as UserMessageReplay).text === "submitted but no claude reply yet",
+      (m): m is AddUserMessage =>
+        m.type === "add_user_message" &&
+        (m as AddUserMessage).text === "submitted but no claude reply yet",
     );
     expect(inflightUserReplay).toBeDefined();
-    expect(inflightUserReplay?.msg_id).toBe("msg_empty_partial");
+    // No `msg_id` on `add_user_message` per [D15] — identification
+    // is by text content above.
 
     // No assistant_text for empty partialText.
     const inflightAssistantText = emitted.find(
@@ -296,12 +298,17 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     const inflightUserReplay = emitted.find(
-      (m): m is UserMessageReplay =>
-        m.type === "user_message_replay" &&
-        (m as UserMessageReplay).text === "claude hasn't even started yet",
+      (m): m is AddUserMessage =>
+        m.type === "add_user_message" &&
+        (m as AddUserMessage).text === "claude hasn't even started yet",
     );
     expect(inflightUserReplay).toBeDefined();
-    expect(inflightUserReplay?.msg_id).toBe("");
+    // No `msg_id` on `add_user_message` per [D15] — even in the
+    // degenerate case (claude's first content event never landed),
+    // the frame carries no opener id. The reducer's `activeMsgId`
+    // stays `null` until first content arrives, and the no-content
+    // fallback in `handleTurnComplete` (#spec-reducer-state rule 2)
+    // commits `pendingTurn` if the turn is interrupted before then.
   });
 
   test("activeTurn already finished pre-bracket (gotResult=true at runReplay entry): NOT adopted as inflight, no snapshot", async () => {
@@ -318,10 +325,10 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
 
     const { emitted } = await captureStdout(() => manager.runReplay());
 
-    // No user_message_replay (no synthetic, no JSONL) and no
+    // No add_user_message (no synthetic, no JSONL) and no
     // assistant_text — the snapshot path was never adopted.
     const types = emitted.map((m) => m.type);
-    expect(types).not.toContain("user_message_replay");
+    expect(types).not.toContain("add_user_message");
     expect(types).not.toContain("assistant_text");
     expect(types).not.toContain("turn_complete");
   });
@@ -338,7 +345,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const { emitted } = await captureStdout(() => manager.runReplay());
 
     const types = emitted.map((m) => m.type);
-    expect(types).not.toContain("user_message_replay");
+    expect(types).not.toContain("add_user_message");
     expect(types).not.toContain("assistant_text");
     expect(types).not.toContain("turn_cancelled");
   });
@@ -353,7 +360,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const types = emitted.map((m) => m.type);
     expect(types).toContain("replay_started");
     expect(types).toContain("replay_complete");
-    expect(types).not.toContain("user_message_replay");
+    expect(types).not.toContain("add_user_message");
     expect(types).not.toContain("assistant_text");
   });
 
@@ -379,14 +386,15 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
 
     const { emitted } = await captureStdout(() => manager.runReplay());
 
-    // Committed turn 1 frames present, keyed on msg_committed_first.
+    // Committed turn 1 frames present — identified by user text;
+    // the matching assistant_text and turn_complete carry claude's
+    // real msg_id ("msg_committed_first").
     const committedUmr = emitted.find(
-      (m): m is UserMessageReplay =>
-        m.type === "user_message_replay" &&
-        (m as UserMessageReplay).text === "hello",
+      (m): m is AddUserMessage =>
+        m.type === "add_user_message" &&
+        (m as AddUserMessage).text === "hello",
     );
     expect(committedUmr).toBeDefined();
-    expect(committedUmr?.msg_id).toBe("msg_committed_first");
 
     const committedAt = emitted.find(
       (m): m is AssistantText =>
@@ -403,15 +411,16 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     );
     expect(committedTc).toBeDefined();
 
-    // In-flight turn 2 snapshot frames present, keyed on
-    // msg_inflight_second.
+    // In-flight turn 2 snapshot — identified by user text. The
+    // assistant_text frames below carry claude's real msg_id
+    // ("msg_inflight_second"); `add_user_message` carries none per
+    // [D15].
     const inflightUmr = emitted.find(
-      (m): m is UserMessageReplay =>
-        m.type === "user_message_replay" &&
-        (m as UserMessageReplay).text === "follow-up question",
+      (m): m is AddUserMessage =>
+        m.type === "add_user_message" &&
+        (m as AddUserMessage).text === "follow-up question",
     );
     expect(inflightUmr).toBeDefined();
-    expect(inflightUmr?.msg_id).toBe("msg_inflight_second");
 
     const inflightAt = emitted.find(
       (m): m is AssistantText =>
@@ -439,8 +448,8 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     );
     const idxInflightUmr = emitted.findIndex(
       (m) =>
-        m.type === "user_message_replay" &&
-        (m as UserMessageReplay).text === "follow-up question",
+        m.type === "add_user_message" &&
+        (m as AddUserMessage).text === "follow-up question",
     );
     const idxComplete = emitted.findIndex(
       (m) => m.type === "replay_complete",

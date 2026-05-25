@@ -456,7 +456,7 @@ export function encodeForgetProjectDirSessions(projectDir: string): Frame {
  * The supervisor's handler looks up the live tugcode subprocess for the
  * given `tugSessionId` and forwards `{"type":"request_replay"}` to its
  * stdin. Tugcode's IPC loop runs `runReplay()` against the on-disk JSONL,
- * which streams `replay_started` / `user_message_replay` / `assistant_text`
+ * which streams `replay_started` / `add_user_message` / `assistant_text`
  * / `turn_complete` / `replay_complete` frames back through CODE_OUTPUT.
  *
  * Idempotent at three layers:

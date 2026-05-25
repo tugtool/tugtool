@@ -195,7 +195,7 @@ interface JournalRow {
  * JSONL bytes. Used by [`runReplay`]'s pending-row injection
  * (mid-turn-replay [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6))
  * to decide which journal rows still need a synthetic
- * `user_message_replay` emit (i.e., the rows whose `user_text` does
+ * `add_user_message` emit (i.e., the rows whose `user_text` does
  * NOT appear as a `user_message` line in JSONL — claude has not yet
  * acknowledged those submissions).
  *
@@ -520,7 +520,7 @@ export interface ResultMetadata {
  *   - Idempotency (suppress emit on nested wake).
  *   - turnKey minting — NOT carried on the wire; the tugdeck store
  *     wrapper mints it on receipt, mirroring the existing
- *     user_message_replay pattern.
+ *     add_user_message pattern.
  *
  * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
  * rationale and [Q01] for the empirical wire shape this contract is
@@ -1375,13 +1375,13 @@ export class ActiveTurn {
   /**
    * The user's prompt text, captured by `handleUserMessage` from the
    * inbound `UserMessage`. Source-of-truth for the in-flight turn's
-   * `user_message_replay` payload during `runReplay`.
+   * `add_user_message` payload during `runReplay`.
    */
   readonly userText: string;
   /**
    * Attachments captured by `handleUserMessage` from the inbound
    * `UserMessage`. Threaded through to the synthesized
-   * `user_message_replay` so attachment-bearing turns reconstruct
+   * `add_user_message` so attachment-bearing turns reconstruct
    * faithfully on mid-turn replay. Empty array when the user submitted
    * plain text.
    */
@@ -1641,7 +1641,7 @@ export class SessionManager {
    * the merged message's entry is left stale here. tugcode cannot
    * distinguish merge from buffer at submit time (claude emits no
    * signal for it), so a stale entry mislabels at most one later
-   * turn's replay-synthetic `user_message_replay` text; the wire
+   * turn's replay-synthetic `add_user_message` text; the wire
    * `turn_complete` bracketing is unaffected. Threading the user's
    * merge-vs-queue intent down from tugdeck is a follow-on concern.
    */
@@ -2676,10 +2676,10 @@ export class SessionManager {
           writeLine(msg);
           // Step 5.6 — pending-row replay. The translator's first
           // emit is `replay_started`; we inject synthetic
-          // `user_message_replay` frames for journal rows whose
+          // `add_user_message` frames for journal rows whose
           // `user_text` is not in JSONL right after the bracket
           // opens. The synthetics land in `phase: replaying` (the
-          // reducer's handleUserMessageReplay phase guard) so the
+          // reducer's handleAddUserMessage phase guard) so the
           // user's pending submissions render before the JSONL pass
           // emits anything else. See `injectPendingRowSynthetics` for
           // the design notes.
@@ -2848,7 +2848,7 @@ export class SessionManager {
 
   /**
    * Decode the BLOB-encoded `user_attachments` JSON array into the
-   * `Attachment[]` shape the wire `user_message_replay` carries. A
+   * `Attachment[]` shape the wire `add_user_message` carries. A
    * malformed BLOB (shouldn't happen under tugcast's writer; pinned
    * defensively) yields an empty array so the synthetic emit's user
    * side still surfaces.
@@ -2873,7 +2873,7 @@ export class SessionManager {
    *
    * For each pending journal row whose `user_text` does not appear as
    * a `user_message` line in the JSONL, emit a synthetic
-   * `user_message_replay` frame. The synthetic carries the journal id
+   * `add_user_message` frame. The synthetic carries the journal id
    * as `msg_id` (a TEMPORARY KEY for the reducer's
    * `pendingUserMessage` slot) and the row's user_text + attachments.
    *
@@ -2895,7 +2895,7 @@ export class SessionManager {
    * `replay_started` emit and the first translator emit)" — the
    * synthetic emits at the start of the bracket so it arrives in
    * `phase: replaying` (the reducer's
-   * [`handleUserMessageReplay`] phase guard) and, when the JSONL is
+   * [`handleAddUserMessage`] phase guard) and, when the JSONL is
    * empty (cold-boot of a fresh session whose only state is the
    * pending journal row), the synthetic's `pendingUserMessage`
    * survives until the live drain consumes it.
@@ -2903,7 +2903,7 @@ export class SessionManager {
    * **Acknowledged residual gap (a):** when JSONL has committed
    * turns OR an in-flight trailing turn AND the journal also has
    * unmatched pending rows, the JSONL pass's
-   * `user_message_replay` frames overwrite the synthetic's
+   * `add_user_message` frames overwrite the synthetic's
    * `pendingUserMessage`. Confirmed-acceptable 2026-05-05; the
    * messages remain durably stored, render fully when claude
    * responds (in the common single-pending case), and the merger's
@@ -2921,7 +2921,7 @@ export class SessionManager {
       if (remaining > 0) {
         // The submission appears in JSONL — claude has acknowledged
         // it; the JSONL pass will emit the corresponding
-        // `user_message_replay`. Decrement so a duplicate-text
+        // `add_user_message`. Decrement so a duplicate-text
         // submission later in the journal correctly accounts for
         // multiple JSONL matches.
         userMessageCounts.set(row.user_text, remaining - 1);
@@ -2929,8 +2929,7 @@ export class SessionManager {
       }
       const attachments = this.decodeUserAttachmentsBlob(row.user_attachments);
       writeLine({
-        type: "user_message_replay",
-        msg_id: row.journal_id,
+        type: "add_user_message",
         text: row.user_text,
         attachments,
         ipc_version: 2,
@@ -3185,7 +3184,7 @@ export class SessionManager {
    * (not by inspecting the user text), so the empty marker does not
    * leak as a phantom user bubble in normal rendering. The corner
    * case where a mid-wake card reload triggers `runReplay` and
-   * surfaces an empty `user_message_replay` is a known Slice 2
+   * surfaces an empty `add_user_message` is a known Slice 2
    * follow-up.
    *
    * The wake bracket closes implicitly: when the wake's terminal
@@ -3594,14 +3593,16 @@ export class SessionManager {
    */
   private emitInflightTurnFromActiveTurn(turn: ActiveTurn): void {
     const msgId = turn.currentMessageId ?? "";
-    // 1. user_message_replay — synthetic, keyed by claude's most recent
-    //    `message.id` for this turn (sliding pointer). When the bracket
-    //    fires before claude has revealed any id (`message_start` not
-    //    yet seen), msgId is empty — the reducer treats that as a
-    //    pre-claude submission marker.
+    // 1. add_user_message — synthetic. Carries the turn's text +
+    //    attachments. No `msg_id` on this frame ([D14]): the
+    //    reducer's `activeMsgId` is set by the first content event
+    //    of the turn (`assistant_text` / `thinking_text` /
+    //    `tool_use` / `content_block_start`), not by the user-side
+    //    opener. `msgId` from `turn.currentMessageId` is still
+    //    locally tracked below so the content frames (which DO carry
+    //    msg_id) can be re-emitted with claude's real id.
     writeLine({
-      type: "user_message_replay",
-      msg_id: msgId,
+      type: "add_user_message",
       text: turn.userText,
       attachments: turn.userAttachments.slice(),
       ipc_version: 2,
@@ -3985,7 +3986,7 @@ export class SessionManager {
     // The turn's `currentMessageId` slot is null until claude reveals
     // its `message.id` on the first stream event. `userText` /
     // `userAttachments` are the source of truth for the in-flight
-    // turn's `user_message_replay` payload during a mid-turn
+    // turn's `add_user_message` payload during a mid-turn
     // `runReplay`.
     if (this.activeTurn === null && this.pendingTurnInputs.length === 0) {
       const turn = new ActiveTurn(

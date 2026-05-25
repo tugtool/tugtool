@@ -161,8 +161,10 @@ describe("handleTurnComplete — replay path", () => {
 
     const { state, effects } = applyAll(afterReplayStarted, [
       {
-        type: "user_message_replay",
-        msg_id: "msg-replay-A",
+        type: "add_user_message",
+        // No `msg_id` per [D15] — the reducer's `activeMsgId` is set
+        // by the first content event below, not pre-bound by this
+        // opener per [D14].
         text: "old turn",
         attachments: [],
         turnKey: "tk-replay",
@@ -231,8 +233,11 @@ describe("handleTurnComplete — replay path", () => {
 
     const { effects } = applyAll(afterReplayStarted, [
       {
-        type: "user_message_replay",
-        msg_id: "msg-old",
+        type: "add_user_message",
+        // No `msg_id` per [D15]. This turn has no content event, so
+        // `activeMsgId` stays `null` — `handleTurnComplete`'s
+        // no-content fallback (#spec-reducer-state rule 2) commits
+        // `pendingTurn` regardless of the turn_complete's msg_id.
         text: "pre-persistence turn",
         attachments: [],
         turnKey: "tk-old",
@@ -273,8 +278,9 @@ describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
 
     const { effects } = applyAll(afterReplayStarted, [
       {
-        type: "user_message_replay",
-        msg_id: "msg-int",
+        type: "add_user_message",
+        // No `msg_id` per [D15] — no-content fallback commits
+        // `pendingTurn` via #spec-reducer-state rule 2.
         text: "interrupted turn",
         attachments: [],
         turnKey: "tk-int",
@@ -306,8 +312,9 @@ describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
 
     const { effects } = applyAll(afterReplayStarted, [
       {
-        type: "user_message_replay",
-        msg_id: "msg-pre",
+        type: "add_user_message",
+        // No `msg_id` per [D15] — no-content fallback commits
+        // `pendingTurn` via #spec-reducer-state rule 2.
         text: "pre-field turn",
         attachments: [],
         turnKey: "tk-pre",

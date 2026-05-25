@@ -1308,7 +1308,7 @@ After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an o
 
 **References:** [D14] activeMsgId tracking, [D15] add_<kind> naming, (#spec-wire-frames, #spec-translate-context)
 
-**Status:** Not started. First step of the message-forward seam-closure cluster (Steps 5.5–5.9).
+**Status:** Shipped. All tasks complete; both TSC + test suites green; tugcode binary rebuilt; zero residual references to the old names in production code.
 
 **Why this step exists.** Step 5 shifted the *substrate* to a Message sequence per [D07] but did not audit the emitters and consumers for residue of the OLD substrate's mental model. The user-side IPC frame still carries the operation-centric name `user_message_replay` and an `msg_id` field the reducer does not read. This step renames the frame per [D15] and drops the field — the smallest coordinated wire-shape change of the cluster, landed first because it unblocks every downstream step's naming.
 
@@ -1324,31 +1324,31 @@ After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an o
 
 **Tasks:**
 
-- [ ] `tugcode/src/types.ts`: rename `UserMessageReplay` → `AddUserMessage`; delete `msg_id` field. The IPC frame `type` becomes `"add_user_message"`.
-- [ ] `tugcode/src/replay.ts`: all emit sites and type references update to `add_user_message` / `AddUserMessage`. Translator internals stay; [D13]'s direct-emission rewrite is Step 5.6.
-- [ ] `tugdeck/src/lib/code-session-store/events.ts`: rename `UserMessageReplayEvent` → `AddUserMessageEvent`; delete `msg_id`; event `type` becomes `"add_user_message"`.
-- [ ] `tugdeck/src/lib/code-session-store/reducer.ts`:
+- [x] `tugcode/src/types.ts`: rename `UserMessageReplay` → `AddUserMessage`; delete `msg_id` field. The IPC frame `type` becomes `"add_user_message"`.
+- [x] `tugcode/src/replay.ts`: all emit sites and type references update to `add_user_message` / `AddUserMessage`. Translator internals stay; [D13]'s direct-emission rewrite is Step 5.6.
+- [x] `tugdeck/src/lib/code-session-store/events.ts`: rename `UserMessageReplayEvent` → `AddUserMessageEvent`; delete `msg_id`; event `type` becomes `"add_user_message"`.
+- [x] `tugdeck/src/lib/code-session-store/reducer.ts`:
   - rename `handleUserMessageReplay` → `handleAddUserMessage`
   - rename `case "user_message_replay":` arm to `case "add_user_message":`
   - remove the `activeMsgId = event.msg_id` pre-bind line per [D14]
   - add the no-content fallback to `handleTurnComplete` per `#spec-reducer-state` rule 2 (commits `pendingTurn` when `activeMsgId === null`)
   - update `committedMsgIds` doc comment per [D14] (assistant-side-only dedupe)
-- [ ] Update test fixtures: any captured-IPC fixture containing the literal `"user_message_replay"` string must be regenerated or hand-updated. (Note: claude's own JSONL format never used this name — `user_message_replay` was always our IPC frame name. There is no "preserve claude's format" exemption.)
-- [ ] Audit test files for any literal `"user_message_replay"` strings or `UserMessageReplayEvent` type references; update in lockstep.
-- [ ] Rebuild tugcode binary (`bun build --compile`).
+- [x] Update test fixtures: any captured-IPC fixture containing the literal `"user_message_replay"` string must be regenerated or hand-updated. (Note: claude's own JSONL format never used this name — `user_message_replay` was always our IPC frame name. There is no "preserve claude's format" exemption.)
+- [x] Audit test files for any literal `"user_message_replay"` strings or `UserMessageReplayEvent` type references; update in lockstep.
+- [x] Rebuild tugcode binary (`bun build --compile`).
 
 **Tests:**
 
-- [ ] Existing reducer tests pass with new event name.
-- [ ] Existing replay tests pass with new wire-frame type string.
-- [ ] New reducer test: `handleTurnComplete` with `activeMsgId === null` and `pendingTurn !== null` commits `pendingTurn` (no-content fallback). One case for `pendingTurn.initialMessages === [user_message]` (user-side interrupt); one for `[]` (wake-side interrupt with no assistant content).
+- [x] Existing reducer tests pass with new event name. (2800 tests green in tugdeck.)
+- [x] Existing replay tests pass with new wire-frame type string. (462 tests green in tugcode.)
+- [x] New reducer test: `handleTurnComplete` with `activeMsgId === null` and `pendingTurn !== null` commits `pendingTurn` (no-content fallback). One case for `pendingTurn.initialMessages === [user_message]` (user-side interrupt); one for `[]` (wake-side interrupt with no assistant content). (Plus a third pinning that the synthesized opener id enters `committedMsgIds` for dedupe, a fourth pinning the stray-event drop, and a fifth as a regression guard for the live happy path.) See `tugdeck/src/lib/code-session-store/__tests__/reducer.no-content-fallback.test.ts`.
 
 **Checkpoint:**
 
-- [ ] `cd tugcode && bun x tsc --noEmit && bun test` green.
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` green.
-- [ ] `grep -rnE "user_message_replay|UserMessageReplay|handleUserMessageReplay" tugcode/src tugdeck/src --include="*.ts"` returns zero matches.
-- [ ] Manual sweep: replay a recorded session; user messages paint as user rows; no regression.
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` green.
+- [x] `grep -rnE "user_message_replay|UserMessageReplay|handleUserMessageReplay" tugcode/src tugdeck/src --include="*.ts"` returns zero matches.
+- [x] Manual sweep: replay a recorded session; user messages paint as user rows; no regression.
 
 ---
 

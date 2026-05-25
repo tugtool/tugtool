@@ -302,7 +302,7 @@ async function translate(
         r.replayCompleteCount += 1;
         const count = (m as { count?: unknown }).count;
         if (typeof count === "number") r.replayCompleteCount_field = count;
-      } else if (m.type === "user_message_replay") r.userReplays += 1;
+      } else if (m.type === "add_user_message") r.userReplays += 1;
       else if (m.type === "turn_complete") {
         r.turnCompletes += 1;
         const msgId = String((m as { msg_id?: unknown }).msg_id ?? "");

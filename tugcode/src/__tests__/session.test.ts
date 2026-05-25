@@ -4272,10 +4272,12 @@ describe("emitInflightTurnFromActiveTurn", () => {
     return { manager, turn };
   }
 
-  test("live turn with a text block: snapshot emits user_message_replay + the text", async () => {
-    // Contract: the user_message_replay carries claude's msg_id and the
-    // user's text; the block's text reaches the wire as a complete
-    // (is_partial: false) assistant_text under the same msg_id.
+  test("live turn with a text block: snapshot emits add_user_message + the text", async () => {
+    // Contract: the add_user_message carries the user's text (no
+    // msg_id field per [D15]); the block's text reaches the wire as a
+    // complete (is_partial: false) assistant_text under claude's
+    // real msg_id, which is what the reducer's `activeMsgId` will
+    // pick up at the first content event per [D14].
     const { manager, turn } = setupTurn({
       msgId: "msg_X",
       userText: "hi",
@@ -4284,9 +4286,9 @@ describe("emitInflightTurnFromActiveTurn", () => {
     const ipc = await captureIpcOutput(async () => {
       (manager as any).emitInflightTurnFromActiveTurn(turn);
     });
-    const userReplay = ipc.find((m: any) => m.type === "user_message_replay") as any;
+    const userReplay = ipc.find((m: any) => m.type === "add_user_message") as any;
     expect(userReplay).toBeDefined();
-    expect(userReplay.msg_id).toBe("msg_X");
+    expect(userReplay.msg_id).toBeUndefined();
     expect(userReplay.text).toBe("hi");
 
     const text = ipc.find((m: any) => m.type === "assistant_text" && !m.is_partial) as any;
@@ -4299,7 +4301,7 @@ describe("emitInflightTurnFromActiveTurn", () => {
     expect(ipc.some((m: any) => m.type === "turn_cancelled")).toBe(false);
   });
 
-  test("attachments pass through user_message_replay verbatim", async () => {
+  test("attachments pass through add_user_message verbatim", async () => {
     const att = { filename: "f.txt", content: "contents", media_type: "text/plain" };
     const { manager, turn } = setupTurn({
       msgId: "msg_att",
@@ -4310,14 +4312,17 @@ describe("emitInflightTurnFromActiveTurn", () => {
     const ipc = await captureIpcOutput(async () => {
       (manager as any).emitInflightTurnFromActiveTurn(turn);
     });
-    const userReplay = ipc.find((m: any) => m.type === "user_message_replay") as any;
+    const userReplay = ipc.find((m: any) => m.type === "add_user_message") as any;
     expect(userReplay.attachments).toEqual([att]);
   });
 
-  test("no content blocks: snapshot emits user_message_replay only (no text frame)", async () => {
+  test("no content blocks: snapshot emits add_user_message only (no text frame)", async () => {
     // Contract: when the wire hasn't produced any blocks yet, the
-    // snapshot still emits user_message_replay (so the reducer's
-    // pendingUserMessage stays correct) but no assistant content.
+    // snapshot still emits add_user_message (so the reducer's
+    // `pendingTurn` is seeded) but no assistant content. The reducer's
+    // `activeMsgId` stays `null` until the first content event arrives
+    // per [D14]; if the turn is interrupted before that, the no-content
+    // fallback in `handleTurnComplete` commits `pendingTurn`.
     const { manager, turn } = setupTurn({
       msgId: "msg_empty",
       userText: "go",
@@ -4326,7 +4331,7 @@ describe("emitInflightTurnFromActiveTurn", () => {
     const ipc = await captureIpcOutput(async () => {
       (manager as any).emitInflightTurnFromActiveTurn(turn);
     });
-    expect(ipc.some((m: any) => m.type === "user_message_replay")).toBe(true);
+    expect(ipc.some((m: any) => m.type === "add_user_message")).toBe(true);
     expect(ipc.some((m: any) => m.type === "assistant_text")).toBe(false);
   });
 

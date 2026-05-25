@@ -20,10 +20,15 @@
 //
 // Per-turn output ordering:
 //
-//   user_message_replay              Synthetic; carries the turn's
-//                                    msg_id + user text + attachments.
-//                                    Reducer mirrors to
-//                                    `pendingUserMessage`.
+//   add_user_message                 Synthetic; carries the turn's
+//                                    user text + attachments. Reducer's
+//                                    `handleAddUserMessage` mints a
+//                                    `pendingTurn` whose
+//                                    `initialMessages` is
+//                                    `[user_message]`. No `msg_id` on
+//                                    the wire — the substrate's
+//                                    correlation key is `turnKey`
+//                                    ([D14]).
 //   tool_use     [, tool_use_n]      In insertion order.
 //   tool_result  [, tool_result_n]   Interleaved by tool_use_id.
 //   thinking_text (optional)         `is_partial: false`.
@@ -45,6 +50,7 @@
 //                                    `result` lands.
 
 import type {
+  AddUserMessage,
   AssistantText,
   Attachment,
   ContentBlockStart,
@@ -57,7 +63,6 @@ import type {
   ToolUse,
   ToolUseStructured,
   TurnComplete,
-  UserMessageReplay,
   WakeStarted,
 } from "./types.ts";
 
@@ -237,13 +242,13 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
  * Each `assistant` JSONL entry emits its content frames immediately,
  * keyed on its own `message.id` — multi-message claude cycles produce
  * multiple separately-keyed assistant streams on the wire. The cycle's
- * `user_message_replay` fires once, on the FIRST assistant entry,
+ * `add_user_message` fires once, on the FIRST assistant entry,
  * keyed on claude's first `message.id`. The terminal `turn_complete`
  * fires only on the `end_turn` entry.
  *
  * `pendingUserText` and `pendingUserAttachments` hold the cycle's
  * user submission until the first assistant entry consumes them.
- * `cycleOpen` tracks whether `user_message_replay` has fired yet so
+ * `cycleOpen` tracks whether `add_user_message` has fired yet so
  * subsequent assistant entries within the same cycle skip re-emitting
  * it. `turnsCommitted` advances once per `end_turn` (the count
  * surfaced via `replay_complete.count`).
@@ -269,7 +274,7 @@ export interface TranslateContext {
   /**
    * Pending user submission's text — captured when a `user` JSONL
    * entry with text content arrives, held until the FIRST `assistant`
-   * entry of the cycle emits the `user_message_replay` (and clears
+   * entry of the cycle emits the `add_user_message` (and clears
    * this slot). `null` between cycles or before the cycle's user
    * entry has been read.
    */
@@ -278,9 +283,9 @@ export interface TranslateContext {
   pendingUserAttachments: Attachment[];
   /**
    * True between the cycle's first `assistant` entry (which emits
-   * `user_message_replay`) and its clean terminal entry (which emits
+   * `add_user_message`) and its clean terminal entry (which emits
    * `turn_complete` and resets the flag). Used to suppress repeated
-   * `user_message_replay` emits across multi-message claude turns:
+   * `add_user_message` emits across multi-message claude turns:
    * the user submission appears once on the wire, even though the
    * claude side can produce multiple assistant entries with distinct
    * `message.id`s within one cycle.
@@ -311,7 +316,7 @@ export interface TranslateContext {
    * envelope on a `user` JSONL entry. Set in {@link handleUserEntry}
    * when the envelope is detected; consumed and cleared by the
    * cycle's FIRST `assistant` entry, which emits a `wake_started`
-   * IPC frame instead of a `user_message_replay`. `null` between
+   * IPC frame instead of a `add_user_message`. `null` between
    * cycles or for non-wake cycles.
    *
    * Live tugcode brackets wake turns by observing
@@ -520,7 +525,7 @@ function isNonSubmissionUserString(entry: JsonlEntry, text: string): boolean {
   // runtime injected it to wake claude with the prior tool's result.
   // The replay translator recognizes it separately so it can
   // synthesize a `wake_started` IPC frame ([D07] wake
-  // discriminator); both the envelope text AND the user_message_replay
+  // discriminator); both the envelope text AND the add_user_message
   // are suppressed in that path.
   return extractTaskNotificationWake(text) !== null;
 }
@@ -548,7 +553,7 @@ export interface TranslateJsonlEntryOptions {
    * `stop_reason: "end_turn"`. Without suppression the leading entry
    * would emit a terminal `turn_complete` and reset `cycleOpen`,
    * causing the trailing entry to open a phantom second cycle whose
-   * `user_message_replay` carries empty text and whose duplicate
+   * `add_user_message` carries empty text and whose duplicate
    * `turn_complete` is dedupe-dropped by the reducer — leaving
    * `pendingUserMessage` populated and the post-replay phase stuck in
    * `streaming` (canInterrupt=true) once `replay_complete` lands.
@@ -586,7 +591,7 @@ export interface TranslateJsonlEntryOptions {
  *     `replay_complete.count`), UNLESS `options.suppressTurnComplete`
  *     is true (set by the session-level loop when peek-ahead detects a
  *     same-msg_id continuation entry; see {@link TranslateJsonlEntryOptions}).
- *   - The cycle's `user_message_replay` fires on the FIRST `assistant`
+ *   - The cycle's `add_user_message` fires on the FIRST `assistant`
  *     entry of the cycle (when `pendingUserText` is consumed). Each
  *     subsequent `assistant` entry within the same cycle skips
  *     re-emitting it.
@@ -686,9 +691,16 @@ function isInterruptMarkerEntry(entry: JsonlEntry, text: string): boolean {
 
 /**
  * Flush any pending orphan user submission as a committed-interrupted
- * turn pair on the wire: `user_message_replay` + `turn_complete{result:
- * "interrupted"}` keyed on a synthetic `orphan-<n>` id. Resets
- * `pendingUserText` / `pendingUserAttachments` and bumps both
+ * turn pair on the wire: `add_user_message` + `turn_complete{result:
+ * "interrupted"}` keyed on a synthetic `orphan-<n>` id. The
+ * synthesized id rides only on the `turn_complete` frame ([D13]'s
+ * "synthesized opener ids never appear on `add_user_message`" rule);
+ * the reducer's `handleTurnComplete` no-content fallback ([D14]'s
+ * `activeMsgId === null && pendingTurn !== null` branch) commits the
+ * pendingTurn without trying to match the synthesized id against
+ * scratch.
+ *
+ * Resets `pendingUserText` / `pendingUserAttachments` and bumps both
  * `turnsCommitted` (the orphan IS committed; it shows in the
  * transcript) and `orphanCounter` (so subsequent orphans get unique
  * ids). Returns the emitted frames; caller appends to its own output.
@@ -705,9 +717,8 @@ function flushPendingOrphan(ctx: TranslateContext): OutboundMessage[] {
   ctx.orphanCounter += 1;
 
   const out: OutboundMessage[] = [];
-  const userMessage: UserMessageReplay = {
-    type: "user_message_replay",
-    msg_id: orphanMsgId,
+  const userMessage: AddUserMessage = {
+    type: "add_user_message",
     text: ctx.pendingUserText ?? "",
     attachments: ctx.pendingUserAttachments,
     ipc_version: IPC_VERSION,
@@ -751,7 +762,7 @@ function handleUserEntry(
     // A `<task-notification>` envelope ALSO captures the wake's
     // trigger metadata onto the context so the cycle's first
     // assistant entry can emit `wake_started` instead of
-    // `user_message_replay`. Plain command scaffolding doesn't
+    // `add_user_message`. Plain command scaffolding doesn't
     // populate this slot.
     const wake = extractTaskNotificationWake(rawContent);
     if (wake !== null) {
@@ -956,11 +967,10 @@ function handleAssistantEntry(
   //     opens `pendingTurn` with `isWake: true` and NO `user_message`
   //     Message — matching the live wake bracket's substrate shape
   //     ([D07] wake discriminator).
-  //   - **Normal cycle**: emit a `user_message_replay` carrying the
-  //     captured `pendingUserText` / attachments. Use claude's first
-  //     `message.id` of the cycle as the key so the wire's user side
-  //     and assistant side agree on an id (per the "one id, claude's
-  //     id" rule).
+  //   - **Normal cycle**: emit an `add_user_message` carrying the
+  //     captured `pendingUserText` / attachments. No `msg_id` on the
+  //     frame ([D14]): the reducer's `activeMsgId` is set by the
+  //     first content event, not by the user-side opener.
   //
   // Subsequent assistant entries in the same cycle skip this —
   // multi-message claude turns produce one opener, multiple
@@ -985,9 +995,8 @@ function handleAssistantEntry(
     } else {
       const userText = ctx.pendingUserText ?? "";
       const userAttachments = ctx.pendingUserAttachments;
-      const userMessage: UserMessageReplay = {
-        type: "user_message_replay",
-        msg_id: entryMsgId,
+      const userMessage: AddUserMessage = {
+        type: "add_user_message",
         text: userText,
         attachments: userAttachments,
         ipc_version: IPC_VERSION,
@@ -1240,7 +1249,7 @@ export interface TranslateSessionOptions {
    *     `turn_complete { result: "interrupted" }` ([replay-1]);
    *   - a trailing user submission with no following assistant entry
    *     (the user submitted and quit before any output) is flushed via
-   *     `flushPendingOrphan` as a `user_message_replay` +
+   *     `flushPendingOrphan` as a `add_user_message` +
    *     `turn_complete { result: "interrupted" }` pair ([W2]).
    *
    * Both cover the cold-resume case: a resumed session whose final

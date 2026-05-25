@@ -32,6 +32,7 @@
 import type { AtomSegment } from "../tug-atom-img";
 import type { Effect } from "./effects";
 import type {
+  AddUserMessageEvent,
   AssistantTextEvent,
   CancelQueuedSendActionEvent,
   CodeSessionEvent,
@@ -54,7 +55,6 @@ import type {
   ToolUseEvent,
   ToolUseStructuredEvent,
   TurnCompleteEvent,
-  UserMessageReplayEvent,
   WakeStartedEvent,
   WireErrorEvent,
 } from "./events";
@@ -381,6 +381,18 @@ export interface CodeSessionState {
    * accidentally re-emits a turn (a misordered replay-vs-live during
    * a fast reconnect, a manual dev-tool replay) so the worst case is
    * a silent no-op, not a duplicate transcript row.
+   *
+   * **Assistant-side-only dedupe** (per [D14]). The ids stored here
+   * are claude's *real* `msg_id` values, set onto `activeMsgId` by
+   * the first content event of each turn (`assistant_text` /
+   * `thinking_text` / `tool_use` / `content_block_start`) and read
+   * back here at `handleTurnComplete`. The replay translator's
+   * synthesized user-side `u-<n>` and wake-side `w-<n>` opener ids
+   * ([D13]) are translator-internal and never reach this set — they
+   * appear on the wire only on orphan-synthesis `turn_complete`
+   * frames for the no-content interrupt case, which route through
+   * `handleTurnComplete`'s no-content fallback (`pendingTurn`-based
+   * commit, no msg_id match) and add nothing to this set.
    *
    * Maintained alongside the class wrapper's `_transcript` array. The
    * reducer adds entries on `turn_complete`; `dispose` and clear
@@ -1916,15 +1928,54 @@ function handleTurnComplete(
     };
   }
 
-  // turn_complete before any turn started — drop. (The `replaying`
-  // phase is excluded from this guard because the replay translator
-  // emits `turn_complete` while `replaying`; activeMsgId is set by
-  // the preceding `assistant_text` / `tool_use` events.)
-  if (
-    state.activeMsgId === null &&
-    state.phase === "idle"
-  ) {
-    return { state, effects: [] };
+  // Guard `activeMsgId === null`. Three sub-cases:
+  //
+  //   1. Phase is `idle` — stray live `turn_complete` arrived between
+  //      turns. No turn to commit. Drop.
+  //
+  //   2. `pendingTurn === null` — no turn open. A `turn_complete`
+  //      here is either a translator regression (orphan synthesis
+  //      without an opener) or a wire-side stray. Drop with a warn so
+  //      a real regression is visible without breaking the session.
+  //
+  //   3. `pendingTurn !== null` — the no-content interrupt fallback
+  //      ([D13] / [D14] / `#spec-reducer-state` rule 2). The
+  //      translator's orphan-synthesis `turn_complete` arrived with a
+  //      synthesized opener id (today: `orphan-<n>` from
+  //      `flushPendingOrphan`; under [D13] / Step 5.6: `u-<n>` /
+  //      `w-<n>` from the `openTurnMsgId` tracker) because transport
+  //      loss hit before any first-content event could set
+  //      `activeMsgId` to claude's real `msg_id`. Commit `pendingTurn`
+  //      as an interrupted-before-response turn. `pendingTurn.turnKey`
+  //      drives the scratch lookup (see `buildTurnEntry`); the
+  //      committed `messages` is `[user_message]` for user-side
+  //      openers, `[]` for wake openers. The synthesized id enters
+  //      `committedMsgIds` only here, not via `add_user_message`
+  //      (which carries no `msg_id` per [D15]).
+  //
+  // The `replaying` phase is the common case for sub-case 3. The
+  // `waking` phase could in principle reach sub-case 3 if a live wake
+  // interrupted before any assistant content arrived; today's wire
+  // does not exercise this path (live `turn_complete` on a wake
+  // always follows at least a `message_start`), but the same commit
+  // path serves it correctly if the wire shape ever changes.
+  if (state.activeMsgId === null) {
+    if (state.phase === "idle") {
+      return { state, effects: [] };
+    }
+    if (state.pendingTurn === null) {
+      tugDevLogStore.warn(
+        "code-session-store",
+        "dropping turn_complete with no pendingTurn or activeMsgId",
+        { eventMsgId: event.msg_id, phase: state.phase },
+      );
+      return { state, effects: [] };
+    }
+    // Sub-case 3 fall-through: pendingTurn-based commit via the
+    // existing path below. `buildTurnEntry` uses
+    // `state.pendingTurn.turnKey` to look up scratch — `msgId` is
+    // recorded onto the TurnEntry for diagnostics but does not gate
+    // the lookup.
   }
 
   const msgId = event.msg_id ?? state.activeMsgId ?? "";
@@ -1937,7 +1988,7 @@ function handleTurnComplete(
   //
   // Belt-and-suspenders: a duplicate `turn_complete` is also a signal
   // that an upstream emitter opened a phantom cycle for an already-
-  // committed msg_id — the prior `user_message_replay` (if any) wrote
+  // committed msg_id — the prior `add_user_message` (if any) wrote
   // junk to `pendingTurn` and any preceding content frames wrote to
   // scratch. If we early-return here without clearing that pending
   // state, `replay_complete`'s "in-flight cycle survived the bracket"
@@ -2945,7 +2996,7 @@ function handleSessionNotOwned(
 
 // ---------------------------------------------------------------------------
 // Replay bracket handlers (replay_started / replay_complete /
-// user_message_replay)
+// add_user_message)
 // ---------------------------------------------------------------------------
 
 /**
@@ -3056,7 +3107,7 @@ function handleReplayComplete(
   }
 
   // Never-drop chain link 13: if `pendingTurn` survived the bracket,
-  // the in-flight snapshot's `user_message_replay` landed without a
+  // the in-flight snapshot's `add_user_message` landed without a
   // matching `turn_complete` (the live tail is still streaming).
   // Preserve `pendingTurn` + scratch, transition to `streaming` so
   // post-bracket live deltas continue to accumulate, and let the
@@ -3153,16 +3204,29 @@ function handleReplayComplete(
 /**
  * Replay user-message echo: the synthetic open of each replayed turn.
  * Sets `pendingTurn` + seeds the scratch with the opening user_message
- * so the upcoming `turn_complete` for the same `msg_id` commits a
- * `TurnEntry` with this user submission. No `send-frame` effect —
- * the user already submitted this message historically; replaying it
- * must NOT round-trip back to the wire.
+ * so the upcoming `turn_complete` commits a `TurnEntry` with this user
+ * submission. No `send-frame` effect — the user already submitted this
+ * message historically; replaying it must NOT round-trip back to the
+ * wire.
+ *
+ * Does NOT pre-bind `activeMsgId` (per [D14]). The first content event
+ * of the turn (`assistant_text` / `thinking_text` / `tool_use` /
+ * `content_block_start`) sets `activeMsgId` to claude's real `msg_id`;
+ * `handleTurnComplete` matches on that. For the no-content interrupt
+ * case (translator emits orphan `turn_complete` with no content
+ * arrived), `handleTurnComplete` falls back to committing `pendingTurn`
+ * when `activeMsgId === null` (per `#spec-reducer-state` rule 2 and
+ * [D13]'s orphan-synthesis path).
+ *
+ * `committedMsgIds` dedupe is therefore assistant-side-only — the
+ * translator's synthesized `u-<n>` opener id ([D13]) never reaches
+ * `committedMsgIds`. Documented on `committedMsgIds` itself.
  *
  * Drops in any phase other than `replaying`.
  */
-function handleUserMessageReplay(
+function handleAddUserMessage(
   state: CodeSessionState,
-  event: UserMessageReplayEvent,
+  event: AddUserMessageEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
   if (state.phase !== "replaying") {
     return { state, effects: [] };
@@ -3193,7 +3257,11 @@ function handleUserMessageReplay(
         event.turnKey,
         newScratchEntry(event.turnKey, [userMessage]),
       ),
-      activeMsgId: event.msg_id,
+      // No `activeMsgId` pre-bind per [D14]. The first content event
+      // of the turn (assistant_text / thinking_text / tool_use /
+      // content_block_start) sets it to claude's real `msg_id`. The
+      // LIVE `handleSend` path also doesn't pre-bind; replay and live
+      // converge on the same handler behavior.
     },
     effects: [],
   };
@@ -3518,8 +3586,8 @@ export function reduce(
       return handleReplayStarted(state, event);
     case "replay_complete":
       return handleReplayComplete(state, event);
-    case "user_message_replay":
-      return handleUserMessageReplay(state, event);
+    case "add_user_message":
+      return handleAddUserMessage(state, event);
     case "wake_started":
       return handleWakeStarted(state, event);
     case "bind_resume_acknowledged":

@@ -142,12 +142,14 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // these and populates `lastReplayResult` on completion.
   "replay_started",
   "replay_complete",
-  // Per-turn synthetic user-message echo emitted by the replay
-  // translator at the start of each replayed turn. The reducer
-  // mirrors it to `pendingUserMessage` so the subsequent
-  // `turn_complete` commits a `TurnEntry` with the historical user
-  // submission text.
-  "user_message_replay",
+  // Per-turn synthetic user-message frame emitted by the replay
+  // translator at the start of each replayed turn (and by tugcode's
+  // mid-turn snapshot path). The reducer's `handleAddUserMessage`
+  // mints a `pendingTurn` whose `initialMessages` is `[user_message]`
+  // so the subsequent `turn_complete` commits a `TurnEntry` with the
+  // historical user submission text. Named per [D15]'s `add_<kind>`
+  // template.
+  "add_user_message",
   // Wake-bracket opener emitted by tugcode when claude resumes from
   // idle in response to an async deferred-completion trigger
   // (Monitor / CronCreate / ScheduleWakeup / …). The reducer
@@ -820,7 +822,7 @@ export class CodeSessionStore {
           reason: typeof ev.reason === "string" ? ev.reason : null,
         });
       }
-      if (ev.type === "user_message_replay") {
+      if (ev.type === "add_user_message") {
         // `turnKey` is a client-side React-key seed minted by the
         // store wrapper for every dispatched replay event. The wire
         // doesn't (and shouldn't) carry it — replay is a synthesis
@@ -830,7 +832,7 @@ export class CodeSessionStore {
         return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
       }
       if (ev.type === "wake_started") {
-        // Same mint contract as `user_message_replay`: the wake's
+        // Same mint contract as `add_user_message`: the wake's
         // turnKey is a React-key seed with no meaning on the wire.
         // tugcode does not mint it (tugcode is a Node subprocess; it
         // has no React); the store wrapper mints it on receipt and

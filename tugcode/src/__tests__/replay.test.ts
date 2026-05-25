@@ -31,7 +31,7 @@ import type {
   ToolResult,
   ToolUse,
   TurnComplete,
-  UserMessageReplay,
+  AddUserMessage,
 } from "../types.ts";
 
 // ---------------------------------------------------------------------------
@@ -129,8 +129,8 @@ function userEntry(
 }
 
 // Type guards for assertion ergonomics
-function isUserMessageReplay(m: OutboundMessage): m is UserMessageReplay {
-  return m.type === "user_message_replay";
+function isAddUserMessage(m: OutboundMessage): m is AddUserMessage {
+  return m.type === "add_user_message";
 }
 function isAssistantText(m: OutboundMessage): m is AssistantText {
   return m.type === "assistant_text";
@@ -493,7 +493,7 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
       }),
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
-    const um = out.find(isUserMessageReplay)!;
+    const um = out.find(isAddUserMessage)!;
     expect(um.text).toBe("what is in this image?");
     expect(um.attachments.length).toBe(1);
     expect(um.attachments[0]).toEqual({
@@ -503,7 +503,7 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
     });
   });
 
-  test("turn with no preceding user entry emits user_message_replay with empty text", async () => {
+  test("turn with no preceding user entry emits add_user_message with empty text", async () => {
     // Edge case: a JSONL that opens with an assistant entry — this
     // happens after `--continue` flows where the user's prompt was
     // recorded in a prior session file.
@@ -515,7 +515,7 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
       }),
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
-    const um = out.find(isUserMessageReplay)!;
+    const um = out.find(isAddUserMessage)!;
     expect(um.text).toBe("");
     expect(um.attachments).toEqual([]);
   });
@@ -536,7 +536,7 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
 // thinking block was complete, another when the text block was complete),
 // each carrying the same `message.id` and `stop_reason: "end_turn"`. The
 // session-level peek-ahead should fold these into one cycle: one
-// `user_message_replay`, the union of content frames keyed on the shared
+// `add_user_message`, the union of content frames keyed on the shared
 // msg_id, and exactly one terminal `turn_complete`.
 // ---------------------------------------------------------------------------
 
@@ -565,13 +565,13 @@ describe("translateJsonlSession — same-msg_id continuation", () => {
 
     // Contract: the run collapses to ONE cycle even though the JSONL
     // has two entries sharing a msg_id. Specifically:
-    //  - exactly one user_message_replay (no phantom second)
+    //  - exactly one add_user_message (no phantom second)
     //  - exactly one turn_complete (no duplicate)
     //  - both entries' content reaches the output (thinking + text)
-    //  - everything is keyed to the shared msg_id
-    const userReplays = out.filter(isUserMessageReplay);
+    //  - the assistant-side frames are keyed to the shared msg_id
+    //    ("msg_split"); add_user_message carries no msg_id per [D15]
+    const userReplays = out.filter(isAddUserMessage);
     expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].msg_id).toBe("msg_split");
     expect(userReplays[0].text).toBe("How many entities listed?");
 
     const turnCompletes = out.filter(isTurnComplete);
@@ -698,10 +698,10 @@ describe("translateJsonlSession — synthesized system_metadata", () => {
     const sm = sysMetas[0] as { model: string; session_id: string };
     expect(sm.model).toBe("claude-opus-4-6");
     expect(sm.session_id).toBe("sess-fixture-1");
-    // Position: between replay_started and the first user_message_replay.
+    // Position: between replay_started and the first add_user_message.
     const startIdx = out.findIndex((m) => m.type === "replay_started");
     const sysIdx = out.findIndex((m) => m.type === "system_metadata");
-    const firstUmIdx = out.findIndex((m) => m.type === "user_message_replay");
+    const firstUmIdx = out.findIndex((m) => m.type === "add_user_message");
     expect(startIdx).toBeGreaterThanOrEqual(0);
     expect(sysIdx).toBe(startIdx + 1);
     expect(firstUmIdx).toBe(sysIdx + 1);
@@ -786,8 +786,8 @@ describe("translateJsonlSession — skipped top-level types", () => {
     );
     // Contract: skipped entries produce zero outbound messages and
     // fire zero unknown_shape telemetry. The surrounding real turn
-    // still commits one user_message_replay + one turn_complete.
-    expect(out.filter(isUserMessageReplay)).toHaveLength(1);
+    // still commits one add_user_message + one turn_complete.
+    expect(out.filter(isAddUserMessage)).toHaveLength(1);
     expect(out.filter(isTurnComplete)).toHaveLength(1);
     expect(tel.unknownShapes.length).toBe(0);
     expect(tel.malformed.length).toBe(0);
@@ -815,7 +815,7 @@ describe("translateJsonlSession — unknown shapes", () => {
     expect(tel.unknownShapes).toEqual([
       { kind: "top_level", type: "frobnicate-future-2026" },
     ]);
-    expect(out.filter(isUserMessageReplay)).toHaveLength(1);
+    expect(out.filter(isAddUserMessage)).toHaveLength(1);
     expect(out.filter(isTurnComplete)).toHaveLength(1);
   });
 
@@ -884,9 +884,10 @@ describe("translateJsonlSession — in-flight trailing turn at EOF", () => {
     const types = out.slice(1, -1).map((m) => m.type);
     expect(types).not.toContain("turn_complete");
 
-    // Content frames are present and keyed to the in-flight turn's msg_id.
-    const userReplay = out.find(isUserMessageReplay)!;
-    expect(userReplay.msg_id).toBe("m_inflight");
+    // Content frames are present and keyed to the in-flight turn's
+    // msg_id ("m_inflight"). The add_user_message carries no msg_id
+    // per [D15]; identification is by text content.
+    const userReplay = out.find(isAddUserMessage)!;
     expect(userReplay.text).toBe("go");
     const toolUse = out.find((m): m is ToolUse => m.type === "tool_use")!;
     expect(toolUse.msg_id).toBe("m_inflight");
@@ -1150,11 +1151,12 @@ describe("translateJsonlEntry — direct unit tests", () => {
       }),
       ctx,
     );
-    // Contract on the emitted set: a user_message_replay + a
-    // turn_complete must be present (both keyed to the terminal entry's
-    // msg_id); the cycle is reset.
-    const userReplay = out.find((m): m is UserMessageReplay => m.type === "user_message_replay");
-    expect(userReplay?.msg_id).toBe("msg_term");
+    // Contract on the emitted set: an add_user_message + a
+    // turn_complete must be present. The turn_complete carries the
+    // terminal entry's msg_id ("msg_term"); add_user_message carries
+    // no msg_id per [D15]. The cycle is reset.
+    const userReplay = out.find((m): m is AddUserMessage => m.type === "add_user_message");
+    expect(userReplay).toBeDefined();
     const turnComplete = out.find((m): m is TurnComplete => m.type === "turn_complete");
     expect(turnComplete?.msg_id).toBe("msg_term");
     expect(ctx.cycleOpen).toBe(false);
@@ -1169,7 +1171,7 @@ describe("translateJsonlEntry — direct unit tests", () => {
     // frame is keyed to its own entry's msg_id — NEVER to the
     // terminal entry's id. The tugdeck reducer's per-Message
     // substrate ([D07]) keys text/tool by (msg_id, block_index); this
-    // contract is what makes that keying work end-to-end. user_message_replay
+    // contract is what makes that keying work end-to-end. add_user_message
     // is emitted exactly once (at the first entry of the cycle) — not
     // re-emitted on the second entry.
     const ctx = makeTranslateContext();
@@ -1193,7 +1195,7 @@ describe("translateJsonlEntry — direct unit tests", () => {
       const id = (m as { msg_id?: string }).msg_id;
       if (id !== undefined) expect(id).toBe("msg_first");
     }
-    expect(firstOut.some((m) => m.type === "user_message_replay")).toBe(true);
+    expect(firstOut.some((m) => m.type === "add_user_message")).toBe(true);
 
     // Tool_result emits from the user entry; keyed by tool_use_id.
     const trOut = translateJsonlEntry(
@@ -1206,7 +1208,7 @@ describe("translateJsonlEntry — direct unit tests", () => {
     expect(toolResult?.tool_use_id).toBe("tu_1");
 
     // Second assistant entry's content keys to msg_second (NOT msg_first).
-    // No re-emission of user_message_replay.
+    // No re-emission of add_user_message.
     const secondOut = translateJsonlEntry(
       assistantEntry({
         msgId: "msg_second",
@@ -1215,7 +1217,7 @@ describe("translateJsonlEntry — direct unit tests", () => {
       }),
       ctx,
     );
-    expect(secondOut.some((m) => m.type === "user_message_replay")).toBe(false);
+    expect(secondOut.some((m) => m.type === "add_user_message")).toBe(false);
     for (const m of secondOut) {
       const id = (m as { msg_id?: string }).msg_id;
       if (id !== undefined) expect(id).toBe("msg_second");

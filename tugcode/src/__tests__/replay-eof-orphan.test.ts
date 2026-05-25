@@ -29,7 +29,7 @@ import type {
   OutboundMessage,
   ReplayComplete,
   TurnComplete,
-  UserMessageReplay,
+  AddUserMessage,
 } from "../types.ts";
 
 async function collectSession(
@@ -88,8 +88,8 @@ const assistantToolUseEntry = (msgId: string): string =>
     },
   });
 
-const userReplaysOf = (out: OutboundMessage[]): UserMessageReplay[] =>
-  out.filter((m): m is UserMessageReplay => m.type === "user_message_replay");
+const addUserMessagesOf = (out: OutboundMessage[]): AddUserMessage[] =>
+  out.filter((m): m is AddUserMessage => m.type === "add_user_message");
 const turnCompletesOf = (out: OutboundMessage[]): TurnComplete[] =>
   out.filter((m): m is TurnComplete => m.type === "turn_complete");
 const replayCompleteOf = (out: OutboundMessage[]): ReplayComplete | undefined =>
@@ -109,28 +109,31 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
 
     const out = await collectSession(jsonl, true);
 
-    const userReplays = userReplaysOf(out);
+    const userReplays = addUserMessagesOf(out);
     const turnCompletes = turnCompletesOf(out);
 
     // Two cycles: the real turn + the flushed trailing orphan.
     expect(userReplays).toHaveLength(2);
     expect(userReplays[1].text).toBe("one more thing");
-    // Orphan keyed on a synthetic id — cannot collide with claude's.
-    expect(userReplays[1].msg_id).toMatch(/^orphan-/);
 
+    // The orphan's synthesized id rides on the turn_complete frame
+    // ([D13]: synthesized opener ids never appear on add_user_message,
+    // which carries no msg_id per [D15]). The orphan turn_complete is
+    // recognizable by its `orphan-*` msg_id and `interrupted` result.
     expect(turnCompletes).toHaveLength(2);
-    const orphanTc = turnCompletes.find(
-      (m) => m.msg_id === userReplays[1].msg_id,
+    const orphanTc = turnCompletes.find((m) =>
+      m.msg_id.startsWith("orphan-"),
     );
     expect(orphanTc).toBeDefined();
     expect(orphanTc?.result).toBe("interrupted");
 
-    // The orphan lands before the bracket-closing replay_complete.
-    const orphanIdx = out.findIndex(
-      (m) =>
-        m.type === "user_message_replay" &&
-        (m as UserMessageReplay).msg_id === userReplays[1].msg_id,
-    );
+    // The orphan add_user_message + turn_complete pair lands before
+    // the bracket-closing replay_complete. Locate the second
+    // add_user_message by position (sequential emit order is stable).
+    const userReplayPositions = out
+      .map((m, i) => (m.type === "add_user_message" ? i : -1))
+      .filter((i) => i >= 0);
+    const orphanIdx = userReplayPositions[1];
     const rcIdx = out.findIndex((m) => m.type === "replay_complete");
     expect(orphanIdx).toBeGreaterThanOrEqual(0);
     expect(orphanIdx).toBeLessThan(rcIdx);
@@ -152,7 +155,7 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
     const out = await collectSession(jsonl, false);
 
     // Only the real turn — the trailing prompt is not flushed.
-    expect(userReplaysOf(out)).toHaveLength(1);
+    expect(addUserMessagesOf(out)).toHaveLength(1);
     expect(turnCompletesOf(out)).toHaveLength(1);
     expect(replayCompleteOf(out)?.count).toBe(1);
   });
@@ -160,12 +163,14 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
   test("a JSONL that is only a user entry flushes one interrupted orphan on cold resume", async () => {
     const out = await collectSession(userTextEntry("did anyone hear me"), true);
 
-    const userReplays = userReplaysOf(out);
+    const userReplays = addUserMessagesOf(out);
     const turnCompletes = turnCompletesOf(out);
     expect(userReplays).toHaveLength(1);
     expect(userReplays[0].text).toBe("did anyone hear me");
-    expect(userReplays[0].msg_id).toMatch(/^orphan-/);
+    // The synthesized orphan id rides only on the turn_complete frame
+    // per [D13] — `add_user_message` carries no `msg_id` ([D15]).
     expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].msg_id).toMatch(/^orphan-/);
     expect(turnCompletes[0].result).toBe("interrupted");
     expect(replayCompleteOf(out)?.count).toBe(1);
   });
@@ -181,7 +186,7 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
 
     const out = await collectSession(jsonl, true);
 
-    expect(userReplaysOf(out)).toHaveLength(1);
+    expect(addUserMessagesOf(out)).toHaveLength(1);
     expect(turnCompletesOf(out)).toHaveLength(1);
     expect(turnCompletesOf(out)[0].result).toBe("success");
     expect(replayCompleteOf(out)?.count).toBe(1);
@@ -210,12 +215,12 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
     expect(turnCompletes[1].msg_id).toMatch(/^orphan-/);
     expect(turnCompletes[1].result).toBe("interrupted");
 
-    const userReplays = userReplaysOf(out);
+    const userReplays = addUserMessagesOf(out);
     expect(userReplays).toHaveLength(2);
     expect(userReplays[0].text).toBe("first prompt");
-    expect(userReplays[0].msg_id).toBe("msg_open");
     expect(userReplays[1].text).toBe("second prompt");
-    expect(userReplays[1].msg_id).toMatch(/^orphan-/);
+    // Per [D15], `add_user_message` carries no `msg_id`; correlation
+    // (cycle vs orphan) reads off the matching `turn_complete` above.
 
     expect(replayCompleteOf(out)?.count).toBe(2);
   });
@@ -284,7 +289,7 @@ describe("translateJsonlSession — [W1] clean-terminal recognition", () => {
     // Regression guard for the [W1] cascade: even though the corpus
     // shows no mid-session non-`end_turn` terminal, the translator
     // must close the cycle on one — otherwise the next user
-    // submission's `user_message_replay` is suppressed and its text is
+    // submission's `add_user_message` is suppressed and its text is
     // mis-flushed as an orphan, corrupting every later turn.
     const jsonl = [
       userTextEntry("first"),
@@ -295,15 +300,16 @@ describe("translateJsonlSession — [W1] clean-terminal recognition", () => {
 
     const out = await collectSession(jsonl, false);
 
-    const userReplays = userReplaysOf(out);
+    const userReplays = addUserMessagesOf(out);
     expect(userReplays).toHaveLength(2);
     expect(userReplays[0].text).toBe("first");
-    expect(userReplays[0].msg_id).toBe("msg_a");
     expect(userReplays[1].text).toBe("second");
-    expect(userReplays[1].msg_id).toBe("msg_b");
-
+    // Per [D15], `add_user_message` carries no `msg_id`; the
+    // turn↔msg correlation reads off the matching `turn_complete`.
     const turnCompletes = turnCompletesOf(out);
     expect(turnCompletes).toHaveLength(2);
+    expect(turnCompletes[0].msg_id).toBe("msg_a");
+    expect(turnCompletes[1].msg_id).toBe("msg_b");
     expect(turnCompletes.every((m) => m.result === "success")).toBe(true);
     expect(replayCompleteOf(out)?.count).toBe(2);
   });

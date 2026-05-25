@@ -419,7 +419,7 @@ describe("runReplay — happy path", () => {
       (e) =>
         e.type === "replay_started" ||
         e.type === "replay_complete" ||
-        e.type === "user_message_replay" ||
+        e.type === "add_user_message" ||
         e.type === "assistant_text" ||
         e.type === "turn_complete",
     );

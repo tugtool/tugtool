@@ -11,7 +11,7 @@
 //
 // Pre-fix, the translator's `pendingUserText` accumulator concatenated
 // the three user entries into a single string and emitted ONE
-// `user_message_replay` keyed on the assistant's `message.id`. The
+// `add_user_message` keyed on the assistant's `message.id`. The
 // committed TurnEntry showed: "hello[Request interrupted by user]what
 // time is it?" merged into one user message — the orphan submission
 // is silently absorbed into the next, the marker leaks into the
@@ -20,7 +20,7 @@
 //
 // Fix: each `user` JSONL entry is its own logical submission. When a
 // new user entry arrives while `pendingUserText` is non-null, flush
-// the prior as an orphan committed-turn pair (`user_message_replay`
+// the prior as an orphan committed-turn pair (`add_user_message`
 // + `turn_complete { result: "interrupted" }`) keyed on a synthetic
 // id, then continue. The "[Request interrupted by user]" marker is
 // recognized as a sentinel, used to trigger the flush, and dropped
@@ -32,7 +32,7 @@ import { translateJsonlSession } from "../replay.ts";
 import type {
   OutboundMessage,
   TurnComplete,
-  UserMessageReplay,
+  AddUserMessage,
 } from "../types.ts";
 
 async function collectSession(jsonl: string): Promise<OutboundMessage[]> {
@@ -76,21 +76,21 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     const out = await collectSession(jsonl);
 
     const userReplays = out.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     const turnCompletes = out.filter(
       (m): m is TurnComplete => m.type === "turn_complete",
     );
 
-    // TWO separate user_message_replay frames: orphan + real.
+    // TWO separate add_user_message frames: orphan + real.
     expect(userReplays).toHaveLength(2);
 
-    // Orphan goes first, with its own text and a synthetic msg_id.
+    // Orphan goes first, with its own text.
     expect(userReplays[0].text).toBe("hello");
-    expect(userReplays[0].msg_id).not.toBe("msg_response");
-    expect(userReplays[0].msg_id.length).toBeGreaterThan(0);
+    // No msg_id on add_user_message per [D15]; correlation reads off
+    // the matching turn_complete below.
 
-    // The marker is NOT emitted as its own user_message_replay — it's
+    // The marker is NOT emitted as its own add_user_message — it's
     // a sentinel for the prior orphan, dropped from the wire.
     expect(
       userReplays.some((m) => m.text === INTERRUPT_MARKER),
@@ -98,20 +98,20 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
 
     // The marker is NOT concatenated onto the next submission.
     expect(userReplays[1].text).toBe("what time is it?");
-    expect(userReplays[1].msg_id).toBe("msg_response");
 
     // TWO turn_completes: orphan's (interrupted) + real's (success).
+    // Identify the orphan by its synthetic id pattern (`orphan-*`),
+    // the real one by claude's actual msg_id ("msg_response"). Under
+    // [D13]'s tracker scheme the synthesized id rides on the
+    // turn_complete frame only.
     expect(turnCompletes).toHaveLength(2);
 
-    // Orphan's terminal carries result != "success" so the reducer
-    // commits an interrupted TurnEntry.
-    const orphanTc = turnCompletes.find(
-      (m) => m.msg_id === userReplays[0].msg_id,
+    const orphanTc = turnCompletes.find((m) =>
+      m.msg_id.startsWith("orphan-"),
     );
     expect(orphanTc).toBeDefined();
     expect(orphanTc?.result).not.toBe("success");
 
-    // Real turn's terminal carries success.
     const realTc = turnCompletes.find((m) => m.msg_id === "msg_response");
     expect(realTc).toBeDefined();
     expect(realTc?.result).toBe("success");
@@ -131,18 +131,19 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     const out = await collectSession(jsonl);
 
     const userReplays = out.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(2);
     expect(userReplays[0].text).toBe("first submission");
     expect(userReplays[1].text).toBe("second submission");
-    expect(userReplays[1].msg_id).toBe("msg_real");
+    // No msg_id on add_user_message per [D15]; the real turn's
+    // msg_id ("msg_real") rides on the matching turn_complete frame.
   });
 
-  test("clean turn (no orphan, no marker): single user_message_replay, no orphan terminal", async () => {
+  test("clean turn (no orphan, no marker): single add_user_message, no orphan terminal", async () => {
     // Regression guard: the orphan-flush logic must not fire when
     // there's nothing to flush. A normal user → assistant cycle
-    // produces exactly one user_message_replay and one turn_complete.
+    // produces exactly one add_user_message and one turn_complete.
     const jsonl = [
       userTextEntry("normal submission"),
       assistantEndTurnEntry("msg_normal", "normal reply"),
@@ -151,7 +152,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     const out = await collectSession(jsonl);
 
     const userReplays = out.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     const turnCompletes = out.filter(
       (m): m is TurnComplete => m.type === "turn_complete",
@@ -175,12 +176,12 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     const out = await collectSession(jsonl);
 
     const userReplays = out.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     const turnCompletes = out.filter(
       (m): m is TurnComplete => m.type === "turn_complete",
     );
-    // Exactly one user_message_replay (for the real submission).
+    // Exactly one add_user_message (for the real submission).
     expect(userReplays).toHaveLength(1);
     expect(userReplays[0].text).toBe("what time is it?");
     expect(turnCompletes).toHaveLength(1);
@@ -222,7 +223,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     const out = await collectSession(jsonl);
 
     const userReplays = out.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(2);
     expect(userReplays[0].text).toBe("plan an investigation");
@@ -250,7 +251,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     const out = await collectSession(jsonl);
 
     const userReplays = out.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(1);
     expect(userReplays[0].text).toBe("[Request interrupted by user]");
@@ -271,7 +272,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     const out = await collectSession(jsonl);
 
     const userReplays = out.filter(
-      (m): m is UserMessageReplay => m.type === "user_message_replay",
+      (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(1);
     expect(userReplays[0].text).toContain("[Request interrupted by user]");

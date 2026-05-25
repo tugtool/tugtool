@@ -34,7 +34,7 @@
  *
  *   2. Cold-boot replay regression — the same wake's content
  *      replayed through the JSONL replay bracket
- *      (`replay_started` → `user_message_replay` → `assistant_text` →
+ *      (`replay_started` → `add_user_message` → `assistant_text` →
  *      `turn_complete` → `replay_complete`). Confirms the existing
  *      replay path still paints the assistant text correctly when
  *      the content originated from a wake. (Per [#slice-2-replay-
@@ -280,7 +280,7 @@ describe("session-wake fixture replay — cold-boot replay regression", () => {
     // turn rehydrated from JSONL paints under `phase === "replaying"`
     // with the captured assistant text reaching the transcript.
     //
-    // The synthesized `user_message_replay` carries the wake's prior
+    // The synthesized `add_user_message` carries the wake's prior
     // user-text — for a wake that originated mid-session this would
     // historically be the user's original send; for the captured
     // PPF-01 reproduction it's the Monitor-arming send. We supply a
@@ -293,8 +293,9 @@ describe("session-wake fixture replay — cold-boot replay regression", () => {
       ipc_version: IPC_VERSION,
     });
     emit(conn, {
-      type: "user_message_replay",
-      msg_id: captured.msgId,
+      type: "add_user_message",
+      // No `msg_id` per [D15] — the reducer's `activeMsgId` is set by
+      // the first content event below, not pre-bound by this opener.
       text: "Use the Monitor tool to tail /var/log/system.log…",
       attachments: [],
       turnKey: `replay-key-${captured.msgId}`,
