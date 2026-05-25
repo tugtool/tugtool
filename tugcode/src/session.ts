@@ -27,8 +27,6 @@ import type {
   StreamingUsage,
   WakeStarted,
   Attachment,
-  ToolUse,
-  ToolUseStructured,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
@@ -41,7 +39,6 @@ import {
   translateJsonlSession,
 } from "./replay.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
-import { WakeScheduler } from "./scheduler.ts";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -1481,41 +1478,6 @@ export class SessionManager {
    */
   private claudeReadyPromise: Promise<void> | null = null;
   private claudeReadyResolve: (() => void) | null = null;
-  /**
-   * Shadow scheduler for Cohort B wakes (`ScheduleWakeup`, `CronCreate`) —
-   * the two harness facilities whose timers DO NOT emit
-   * `system/task_notification` events in stream-json spawn mode (the mode
-   * tugcode uses). See `roadmap/tugplan-tide-session-wake.md` [Q01] for the
-   * empirical capture and [D05] for the design.
-   *
-   * Constructed eagerly so every code path that registers a job (Step 9
-   * tool-use intercept) and every path that needs to cancel one (the
-   * double-fire safety in {@link handleTaskNotification}) has a stable
-   * reference. {@link shutdown} disposes it before killing claude so
-   * any pending shadow timers are stopped before the session unwinds.
-   */
-  private readonly scheduler: WakeScheduler;
-  /**
-   * CronCreate tool_use_ids whose `tool_use_result` has not arrived yet.
-   * On the first tool_use_result we observe with one of these ids, we
-   * harvest the cron's claude-side id from `structured_result.id` and
-   * remove the entry; subsequent {@link cronIdToToolUseId} lets a
-   * CronDelete intercept resolve `{id}` → original tool_use_id and
-   * cancel the right shadow job.
-   *
-   * See `roadmap/tugplan-tide-session-wake.md` Step 9.
-   */
-  private readonly pendingCronCreateToolUseIds: Set<string> = new Set();
-  /**
-   * Map of claude-side cron id (e.g. "3ea6c934") → original tool_use_id.
-   * Populated by {@link handleCronCreateResult} when claude's tool_result
-   * arrives with `tool_use_result.id`. Read by {@link handleSchedulingToolUse}
-   * on a CronDelete intercept to translate the user-visible cron id back
-   * to the tool_use_id the shadow scheduler keys on. Entry is removed
-   * when the CronDelete cancellation succeeds (or when the matching
-   * shadow job fires, since the scheduler entry is one-shot).
-   */
-  private readonly cronIdToToolUseId: Map<string, string> = new Map();
 
   constructor(
     projectDir: string,
@@ -1568,59 +1530,6 @@ export class SessionManager {
     this.replayTelemetry = options?.replayTelemetry;
     this.contextBreakdownEmitter = options?.contextBreakdownEmitter ?? null;
     this.openSessionsDb(options?.sessionsDbPath);
-
-    // Shadow scheduler injection. `emitFrame` mirrors
-    // `handleTaskNotification`'s bracket-open semantics for Cohort A:
-    // write the `wake_started` frame to tugdeck, set `isInWake`, AND
-    // open a fresh `ActiveTurn` so claude's response events route
-    // through `dispatchEventToTurn` instead of being silently dropped
-    // by `handleInterTurnEvent`. `writeStdin` then writes the
-    // user_message to claude's stdin, which causes claude to begin
-    // streaming its response into the just-opened turn. `claudeProcess`
-    // is dereferenced at fire time because the scheduler is constructed
-    // eagerly here, before any claude spawn. See [D05] and
-    // [#step-10-bug-wake-routing] for the routing-bug post-mortem.
-    this.scheduler = new WakeScheduler({
-      sessionId: this.sessionId,
-      emitFrame: (frame) => {
-        // Idempotency: if a wake bracket is already open (a prior
-        // Cohort A wake's turn is still running, or another shadow
-        // fired moments ago), the reducer would treat a second
-        // `wake_started` as a nested wake — suppress here to match
-        // `handleTaskNotification`'s policy.
-        if (this.isInWake) {
-          console.log(
-            `[tide::wake-scheduler] shadow fire suppressed; wake bracket ` +
-              `already open task_id=${frame.wake_trigger.task_id}`,
-          );
-          return;
-        }
-        writeLine(frame);
-        this.isInWake = true;
-        this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
-      },
-      writeStdin: (line) => {
-        // Suppressed-emit case: emitFrame returned without opening a
-        // turn, so claude wouldn't have anywhere to route its response.
-        // Drop the stdin write — the wake's prompt is lost but better
-        // than leaking it into someone else's turn.
-        if (!this.isInWake || this.activeTurn === null) {
-          console.log(
-            `[tide::wake-scheduler] shadow fire stdin-write skipped; ` +
-              `no fresh wake turn open`,
-          );
-          return;
-        }
-        const proc = this.claudeProcess;
-        if (proc === null) {
-          throw new Error(
-            "claude process not running; scheduled wake dropped",
-          );
-        }
-        proc.stdin.write(line + "\n");
-        proc.stdin.flush();
-      },
-    });
   }
 
   /**
@@ -2909,15 +2818,6 @@ export class SessionManager {
     if (frame === null) {
       return;
     }
-    // Double-fire safety hook (Slice 1b [D05]). If the harness ever
-    // fires a `task_notification` for a task we shadowed via the Step-9
-    // intercept, silently cancel the shadow so only one `wake_started`
-    // reaches tugdeck — the harness's. If our shadow fired first the
-    // matching entry was already removed by `WakeScheduler.handleFire`
-    // and this is a silent no-op; the late-arriving harness frame is
-    // then a "nested wake" which the reducer's existing idempotency at
-    // [D01] absorbs.
-    this.scheduler.cancelOnHarnessNotification(frame.wake_trigger.task_id);
     if (this.isInWake) {
       console.log(
         `[tugcode/wake] nested task_notification ignored ` +
@@ -2928,141 +2828,6 @@ export class SessionManager {
     writeLine(frame);
     this.isInWake = true;
     this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
-  }
-
-  /**
-   * Slice 1b shadow scheduler intercept (`roadmap/tugplan-tide-session-wake.md`
-   * [D05] / [Q04]). Called for every `tool_use` IPC frame produced by
-   * `routeTopLevelEvent` (the assistant snapshot path; `mapStreamEvent`'s
-   * `content_block_start` path also produces `tool_use` frames but with
-   * empty `input`, which fail the per-tool parsing here and are dropped
-   * silently — the empirical capture confirms `input:{}` on
-   * `content_block_start` and the complete input on the subsequent
-   * `assistant` snapshot, see
-   * `tugrust/.../v2.1.150-spike/test-croncreate-streamio-raw.jsonl`).
-   *
-   * Three intercepts, keyed by `tool_name`:
-   *   - ScheduleWakeup `{delaySeconds, prompt, reason?}` →
-   *     `scheduler.schedule({kind:"delay", ...})`.
-   *   - CronCreate `{cron, prompt, recurring}` →
-   *     `scheduler.schedule({kind:"cron", ...})` plus remember the
-   *     tool_use_id in {@link pendingCronCreateToolUseIds} so the
-   *     subsequent tool_result (handled in
-   *     {@link handleCronCreateResult}) can wire the claude-side cron
-   *     id → tool_use_id mapping needed by CronDelete.
-   *   - CronDelete `{id}` → look up the original tool_use_id from
-   *     {@link cronIdToToolUseId} and `scheduler.cancel(tool_use_id)`.
-   *
-   * Malformed inputs (missing required keys, wrong types) log at warn
-   * level and skip the schedule. Tool names outside the three
-   * scheduling tools fall through with no effect — the dispatch site
-   * blindly calls this for every `tool_use` and the method is the gate.
-   *
-   * Empirically pinned against
-   * `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/test-{schedulewakeup,croncreate}-streamio-raw.jsonl`.
-   */
-  private handleSchedulingToolUse(msg: ToolUse): void {
-    const input = msg.input as Record<string, unknown>;
-    if (msg.tool_name === "ScheduleWakeup") {
-      const delaySeconds = input.delaySeconds;
-      const prompt = input.prompt;
-      if (typeof delaySeconds !== "number" || typeof prompt !== "string") {
-        console.log(
-          `[tide::wake-scheduler] skipping ScheduleWakeup with malformed input ` +
-            `tool_use_id=${msg.tool_use_id}`,
-        );
-        return;
-      }
-      const reason = typeof input.reason === "string" ? input.reason : undefined;
-      this.scheduler.schedule({
-        kind: "delay",
-        taskId: msg.tool_use_id,
-        delaySeconds,
-        prompt,
-        reason,
-      });
-      return;
-    }
-    if (msg.tool_name === "CronCreate") {
-      const cron = input.cron;
-      const prompt = input.prompt;
-      const recurring = input.recurring;
-      if (
-        typeof cron !== "string" ||
-        typeof prompt !== "string" ||
-        typeof recurring !== "boolean"
-      ) {
-        console.log(
-          `[tide::wake-scheduler] skipping CronCreate with malformed input ` +
-            `tool_use_id=${msg.tool_use_id}`,
-        );
-        return;
-      }
-      this.scheduler.schedule({
-        kind: "cron",
-        taskId: msg.tool_use_id,
-        cron,
-        prompt,
-        recurring,
-      });
-      this.pendingCronCreateToolUseIds.add(msg.tool_use_id);
-      return;
-    }
-    if (msg.tool_name === "CronDelete") {
-      const id = input.id;
-      if (typeof id !== "string") {
-        console.log(
-          `[tide::wake-scheduler] skipping CronDelete with malformed input ` +
-            `tool_use_id=${msg.tool_use_id}`,
-        );
-        return;
-      }
-      const shadowTaskId = this.cronIdToToolUseId.get(id);
-      if (shadowTaskId === undefined) {
-        console.log(
-          `[tide::wake-scheduler] CronDelete for unknown cron id=${id}`,
-        );
-        return;
-      }
-      const cancelled = this.scheduler.cancel(shadowTaskId);
-      this.cronIdToToolUseId.delete(id);
-      console.log(
-        `[tide::wake-scheduler] cancelled-by-CronDelete cron_id=${id} ` +
-          `shadow_task_id=${shadowTaskId} cancelled=${cancelled}`,
-      );
-      return;
-    }
-    // Not a scheduling tool — no-op.
-  }
-
-  /**
-   * Wire up the claude-side cron id → tool_use_id mapping when a
-   * `tool_use_structured` frame for a previously-shadowed CronCreate
-   * arrives. Reads `structured_result.id` from the SDK-attached
-   * `tool_use_result` payload (verified shape in
-   * `tugrust/.../v2.1.150-spike/test-croncreate-streamio-raw.jsonl`:
-   * `"tool_use_result":{"id":"3ea6c934","humanSchedule":"...","recurring":false,"durable":false}`).
-   * Silent no-op for tool_use_ids we didn't shadow, or for results
-   * missing a string `id`.
-   */
-  private handleCronCreateResult(msg: ToolUseStructured): void {
-    if (!this.pendingCronCreateToolUseIds.has(msg.tool_use_id)) {
-      return;
-    }
-    this.pendingCronCreateToolUseIds.delete(msg.tool_use_id);
-    const id = msg.structured_result?.id;
-    if (typeof id !== "string" || id.length === 0) {
-      console.log(
-        `[tide::wake-scheduler] CronCreate tool_result missing id ` +
-          `tool_use_id=${msg.tool_use_id}`,
-      );
-      return;
-    }
-    this.cronIdToToolUseId.set(id, msg.tool_use_id);
-    console.log(
-      `[tide::wake-scheduler] cron-id-mapped cron_id=${id} ` +
-        `shadow_task_id=${msg.tool_use_id}`,
-    );
   }
 
   private maybeEmitContextBreakdown(event: Record<string, unknown>): void {
@@ -3165,18 +2930,6 @@ export class SessionManager {
       if (routeResult.parentToolUseId) {
         (ipcMsg as unknown as Record<string, unknown>).parent_tool_use_id =
           routeResult.parentToolUseId;
-      }
-      // Shadow scheduler intercepts (Slice 1b, plan [D05] / [Q04]).
-      // Run BEFORE the forwarding writeLine so a scheduling tool_use is
-      // observed for shadow registration even when `suppressEmit` is
-      // holding the wire emit back during a replay window. Forwarding
-      // remains untouched — claude's tool_use frame still reaches
-      // tugdeck so the user sees the call in the transcript; this is
-      // purely additive.
-      if (ipcMsg.type === "tool_use") {
-        this.handleSchedulingToolUse(ipcMsg);
-      } else if (ipcMsg.type === "tool_use_structured") {
-        this.handleCronCreateResult(ipcMsg);
       }
       // Gate site 1/7: suppressEmit holds back live forwarding while
       // runReplay's bracket is on the wire. State mutations
@@ -3918,7 +3671,6 @@ export class SessionManager {
    * teardown the OS / test fixtures may run.
    */
   async shutdown(): Promise<void> {
-    this.scheduler.dispose();
     this.closeSessionsDb();
     await this.killAndCleanup();
   }

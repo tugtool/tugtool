@@ -1,18 +1,15 @@
 {
   "name": "tugcode",
   "version": "0.8.0",
-  "description": "Claude Code bridge — stream-json IPC between Claude Code and tugcast",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "croner": "^10.0.1"
-  },
-  "scripts": {
-    "test": "bun test"
-  },
   "devDependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
     "bun-types": "^1.3.13",
     "typescript": "5.9.3"
-  }
+  },
+  "description": "Claude Code bridge — stream-json IPC between Claude Code and tugcast",
+  "private": true,
+  "scripts": {
+    "test": "bun test"
+  },
+  "type": "module"
 }
