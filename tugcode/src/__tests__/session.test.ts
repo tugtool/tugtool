@@ -348,7 +348,10 @@ describe("routeTopLevelEvent", () => {
     expect(result.gotResult).toBe(false);
   });
 
-  test("assistant tool_use blocks emits tool_use", () => {
+  test("assistant tool_use blocks emit content_block_start + tool_use", () => {
+    // Per [D07] / Fixup 7: synthetic and snapshot paths emit a
+    // content_block_start prelude before the tool_use IPC frame so
+    // the reducer mints uniformly across live / replay / synthetic.
     const event = {
       type: "assistant",
       message: {
@@ -358,12 +361,16 @@ describe("routeTopLevelEvent", () => {
       },
     };
     const result = routeTopLevelEvent(event, baseCtx);
-    expect(result.messages).toHaveLength(1);
-    const msg = result.messages[0] as any;
-    expect(msg.type).toBe("tool_use");
-    expect(msg.tool_name).toBe("Read");
-    expect(msg.tool_use_id).toBe("tu-1");
-    expect(msg.input).toEqual({ path: "/a.ts" });
+    const tu = result.messages.find((m: any) => m.type === "tool_use") as any;
+    expect(tu).toBeDefined();
+    expect(tu.tool_name).toBe("Read");
+    expect(tu.tool_use_id).toBe("tu-1");
+    expect(tu.input).toEqual({ path: "/a.ts" });
+    const cbs = result.messages.find((m: any) => m.type === "content_block_start") as any;
+    expect(cbs).toBeDefined();
+    expect(cbs.kind).toBe("tool_use");
+    expect(cbs.tool_use_id).toBe("tu-1");
+    expect(cbs.tool_name).toBe("Read");
   });
 
   test("assistant thinking blocks no longer emits thinking_text (delivered via streaming)", () => {
@@ -627,7 +634,11 @@ describe("routeTopLevelEvent", () => {
     expect((result.messages[0] as any).type).toBe("compact_boundary");
   });
 
-  test("assistant with mixed content (text + tool_use + thinking) emits only tool_use", () => {
+  test("assistant with mixed content emits tool_use (text + thinking already via streaming)", () => {
+    // Contract: text and thinking were delivered via streaming wire
+    // events; the assistant snapshot's only NEW content is the
+    // tool_use block (plus its content_block_start prelude per
+    // [D07] / Fixup 7).
     const event = {
       type: "assistant",
       message: {
@@ -639,12 +650,16 @@ describe("routeTopLevelEvent", () => {
       },
     };
     const result = routeTopLevelEvent(event, baseCtx);
-    // Text and thinking were already delivered via streaming; only tool_use is emitted.
-    expect(result.messages).toHaveLength(1);
     const types = result.messages.map((m: any) => m.type);
     expect(types).not.toContain("assistant_text");
-    expect(types).toContain("tool_use");
     expect(types).not.toContain("thinking_text");
+    expect(types).toContain("tool_use");
+    // The content_block_start prelude minted the reducer's
+    // ToolUseMessage; assert it lands too.
+    const cbs = result.messages.find((m: any) => m.type === "content_block_start") as any;
+    expect(cbs).toBeDefined();
+    expect(cbs.kind).toBe("tool_use");
+    expect(cbs.tool_use_id).toBe("tu-mixed");
   });
 
   test("result with permission_denials stores them in resultMetadata", () => {
@@ -3511,6 +3526,8 @@ describe("routeTopLevelEvent surfaces messageId from assistant snapshot", () => 
   });
 
   test("assistant tool_use blocks emit with claude's message.id", () => {
+    // Contract: tool_use IPC frame carries claude's message.id. (Frame
+    // count no longer pinned — Fixup 7 added content_block_start prelude.)
     const event = {
       type: "assistant",
       message: {
@@ -3522,8 +3539,9 @@ describe("routeTopLevelEvent surfaces messageId from assistant snapshot", () => 
     };
     const result = routeTopLevelEvent(event, baseCtx);
     expect(result.messageId).toBe("msg_claude_def");
-    expect(result.messages).toHaveLength(1);
-    expect((result.messages[0] as any).msg_id).toBe("msg_claude_def");
+    const tu = result.messages.find((m: any) => m.type === "tool_use") as any;
+    expect(tu).toBeDefined();
+    expect(tu.msg_id).toBe("msg_claude_def");
   });
 
   test("synthetic assistant text emits with claude's message.id", () => {
@@ -3559,8 +3577,11 @@ describe("routeTopLevelEvent surfaces messageId from assistant snapshot", () => 
     };
     const result = routeTopLevelEvent(event, baseCtx);
     expect(result.messageId).toBeUndefined();
-    expect(result.messages).toHaveLength(1);
-    expect((result.messages[0] as any).msg_id).toBe(baseCtx.msgId);
+    // Contract: tool_use IPC frame falls back to ctx.msgId when the
+    // assistant snapshot has no message.id.
+    const tu = result.messages.find((m: any) => m.type === "tool_use") as any;
+    expect(tu).toBeDefined();
+    expect(tu.msg_id).toBe(baseCtx.msgId);
   });
 
   test("non-assistant events leave messageId undefined", () => {

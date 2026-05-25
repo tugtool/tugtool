@@ -726,21 +726,34 @@ export function routeTopLevelEvent(
             });
           }
         } else if (block.type === "tool_use") {
-          // The streaming path's `content_block_start` for this tool
-          // already mints the reducer's ToolUseMessage; on the
-          // top-level `assistant` snapshot we only re-emit the tool_use
-          // IPC frame to deliver the final input. The mint is
-          // idempotent so a duplicate `content_block_start` would be
-          // safe — but we skip it to keep the snapshot path quiet on
-          // already-known blocks. (Synthetic messages don't have a
-          // streaming origin, but they also don't carry tool_use
-          // blocks in practice — slash-command outputs are pure text.)
+          // Emit content_block_start before tool_use for defensive
+          // consistency with the streaming and replay paths. For a
+          // tool_use that already arrived via the streaming wire's
+          // content_block_start, the reducer's mint is idempotent so
+          // this re-emit is a no-op. For a synthetic message whose
+          // tool block has no streaming origin (rare — slash-command
+          // outputs are usually pure text, but the type system doesn't
+          // forbid synthetic tool blocks), this emission is the ONLY
+          // mint signal the reducer gets; without it the tool would
+          // arrive at the reducer without a minted ToolUseMessage and
+          // be silently dropped.
+          const toolUseId = (block.id as string) || "";
+          const toolName = (block.name as string) || "";
+          messages.push({
+            type: "content_block_start",
+            msg_id: effectiveMsgId,
+            block_index: blockIndex,
+            kind: "tool_use",
+            tool_use_id: toolUseId,
+            tool_name: toolName,
+            ipc_version: 2,
+          });
           messages.push({
             type: "tool_use",
             msg_id: effectiveMsgId,
             seq: ctx.seq,
-            tool_name: (block.name as string) || "",
-            tool_use_id: (block.id as string) || "",
+            tool_name: toolName,
+            tool_use_id: toolUseId,
             input: (block.input as object) || {},
             ipc_version: 2,
           });
@@ -1224,24 +1237,60 @@ export function mapStreamEvent(
  * the per-block event stream faithfully on mid-turn reconnect ([D07]
  * § Mid-turn replay snapshot).
  *
- * Tool-result and structured-result data is also folded onto the matching
+ * Discriminated by `kind` — text/thinking variants carry only an
+ * accumulating `text` string; tool_use variant carries identity
+ * (toolUseId + toolName) plus mutable input/result fields. The
+ * discriminated union prevents nonsensical constructions like a "text"
+ * block carrying a `toolUseId` from type-checking.
+ *
+ * Mutation discipline: BlockState fields are mutated IN PLACE by
+ * {@link ActiveTurn.updateBlockStateFromMessages} — the `text` string is
+ * concatenated, `toolInput` / `toolResult` / `toolStructuredResult` are
+ * replaced. The mutability is internal to the owning ActiveTurn and is
+ * safe because (a) there are no external subscribers to BlockState
+ * references, and (b) the only reader (`emitInflightTurnFromActiveTurn`)
+ * runs at a moment when all upstream mutations for the relevant events
+ * have already landed. Future contributors: do NOT pass BlockState
+ * references to long-lived holders that expect immutability.
+ *
+ * Tool-result and structured-result data is folded onto the matching
  * tool_use entry — when the wire's `tool_result` lands (via the `user`
- * top-level event), we look up by `toolUseId` and stash the output, so a
+ * top-level event), we look up by `toolUseId` (O(1) via
+ * {@link ActiveTurn.toolCallByToolUseId}) and stash the output, so a
  * snapshot can emit the full tool lifecycle.
  */
-interface BlockState {
+type BlockState = TextBlockState | ThinkingBlockState | ToolUseBlockState;
+
+interface TextBlockState {
   index: number;
-  kind: "text" | "thinking" | "tool_use";
-  /** Accumulated text for `text` / `thinking` blocks. */
+  kind: "text";
+  /** Accumulated text; appended by text_delta, replaced by terminal text. */
   text: string;
-  /** Tool identity + state — populated only for `tool_use` blocks. */
-  toolUseId?: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  toolResult?: {
-    output: string;
-    isError: boolean;
-  };
+}
+
+interface ThinkingBlockState {
+  index: number;
+  kind: "thinking";
+  /** Accumulated thinking text. */
+  text: string;
+}
+
+interface ToolUseBlockState {
+  index: number;
+  kind: "tool_use";
+  /** Wire-assigned tool call id; primary key for tool_result correlation. */
+  toolUseId: string;
+  /** Tool name (e.g. "Bash"). */
+  toolName: string;
+  /**
+   * Tool input. Starts as `{}` at content_block_start time, replaced by
+   * the post-`input_json_delta` `tool_use` IPC event with the assembled
+   * input. Always present; may be empty.
+   */
+  toolInput: Record<string, unknown>;
+  /** Populated when the matching `tool_result` lands. */
+  toolResult?: { output: string; isError: boolean };
+  /** Populated when the matching `tool_use_structured` lands. */
   toolStructuredResult?: Record<string, unknown>;
 }
 
@@ -1284,6 +1333,19 @@ export class ActiveTurn {
    * path; the snapshot path must produce the same shape.
    */
   messageBlocks: Map<string, BlockState[]> = new Map();
+  /**
+   * Index from `tool_use_id` to the matching ToolUseBlockState in
+   * {@link messageBlocks}. Maintained alongside `messageBlocks` by
+   * `updateBlockStateFromMessages` so that `tool_use` / `tool_result` /
+   * `tool_use_structured` events can locate their target block in O(1)
+   * — without this index, lookup would walk every msgId's blocks per
+   * event, which is O(turns × blocks) per tool event.
+   *
+   * Same mutation discipline as the BlockState entries themselves: the
+   * map value is a reference to the live BlockState in `messageBlocks`,
+   * mutated in place.
+   */
+  toolCallByToolUseId: Map<string, ToolUseBlockState> = new Map();
   /** Outbound `seq` for the user-message half of this turn. */
   readonly seq: number;
   /**
@@ -1393,66 +1455,99 @@ export class ActiveTurn {
         // Idempotent: if a block with this index already exists, leave
         // it alone. Mirrors the reducer-side `handleContentBlockStart`
         // idempotence ([D07] § Mid-turn replay snapshot).
-        if (!blocks.some((b) => b.index === msg.block_index)) {
-          blocks.push({
+        if (blocks.some((b) => b.index === msg.block_index)) {
+          continue;
+        }
+        // Construct the kind-specific BlockState variant. The
+        // discriminated union guarantees that the required fields
+        // (tool_use_id + tool_name for tool_use blocks) are present at
+        // type-check time, so no `?? ""` defensive defaults.
+        let entry: BlockState;
+        if (msg.kind === "text") {
+          entry = { index: msg.block_index, kind: "text", text: "" };
+        } else if (msg.kind === "thinking") {
+          entry = { index: msg.block_index, kind: "thinking", text: "" };
+        } else {
+          entry = {
             index: msg.block_index,
-            kind: msg.kind,
-            text: "",
+            kind: "tool_use",
             toolUseId: msg.tool_use_id,
             toolName: msg.tool_name,
-            toolInput: msg.kind === "tool_use" ? {} : undefined,
-          });
-          // Keep blocks sorted by index for predictable iteration.
-          blocks.sort((a, b) => a.index - b.index);
-          this.messageBlocks.set(msg.msg_id, blocks);
+            toolInput: {},
+          };
+          // Index the tool block by tool_use_id for O(1) lookup from
+          // subsequent tool_use / tool_result / tool_use_structured
+          // events. The map holds a reference to the live BlockState
+          // in messageBlocks; mutations to it (input fill, result
+          // landing) flow through both views automatically.
+          this.toolCallByToolUseId.set(msg.tool_use_id, entry);
         }
+        blocks.push(entry);
+        // Keep blocks sorted by index for predictable iteration.
+        blocks.sort((a, b) => a.index - b.index);
+        this.messageBlocks.set(msg.msg_id, blocks);
       } else if (msg.type === "assistant_text" || msg.type === "thinking_text") {
         const blocks = this.messageBlocks.get(msg.msg_id);
         const block = blocks?.find((b) => b.index === msg.block_index);
-        if (block === undefined) continue;
+        if (block === undefined) {
+          // Text delta without a matching minted block — either
+          // tugcode emitted out of order or the wire shape regressed.
+          // Surface loudly so the bug is detectable; the reducer's
+          // own append-or-mutate rule would silently drop too.
+          console.error(
+            `[tugcode] ${msg.type} (msg_id=${msg.msg_id}, block_index=${msg.block_index}) without a matching content_block_start mint`,
+          );
+          continue;
+        }
+        if (block.kind !== "text" && block.kind !== "thinking") {
+          // Kind mismatch — a text delta arrived under a tool_use
+          // block_index. Wire-shape regression.
+          console.error(
+            `[tugcode] ${msg.type} for (msg_id=${msg.msg_id}, block_index=${msg.block_index}) targets a ${block.kind} block`,
+          );
+          continue;
+        }
         // is_partial: false (the terminal frame) carries the full text;
         // replace. is_partial: true is a delta; append.
         block.text = msg.is_partial ? block.text + msg.text : msg.text;
       } else if (msg.type === "tool_use") {
         // Tool_use IPC events may carry the final input (post
         // input_json_delta accumulation) — update the matching block's
-        // toolInput. Look up by tool_use_id since the block's msg_id +
-        // block_index aren't on this message.
-        for (const blocks of this.messageBlocks.values()) {
-          const block = blocks.find(
-            (b) => b.kind === "tool_use" && b.toolUseId === msg.tool_use_id,
+        // toolInput. O(1) lookup via toolCallByToolUseId.
+        const block = this.toolCallByToolUseId.get(msg.tool_use_id);
+        if (block === undefined) {
+          // No matching block — either tugcode emitted the tool_use
+          // without a preceding content_block_start, or the wire
+          // shape regressed. Surface loudly.
+          console.error(
+            `[tugcode] tool_use (tool_use_id=${msg.tool_use_id}) without a matching content_block_start mint`,
           );
-          if (block !== undefined) {
-            if (Object.keys(msg.input).length > 0) {
-              block.toolInput = msg.input as Record<string, unknown>;
-            }
-            block.toolName = msg.tool_name;
-            break;
-          }
+          continue;
         }
+        if (Object.keys(msg.input).length > 0) {
+          block.toolInput = msg.input as Record<string, unknown>;
+        }
+        block.toolName = msg.tool_name;
       } else if (msg.type === "tool_result") {
-        for (const blocks of this.messageBlocks.values()) {
-          const block = blocks.find(
-            (b) => b.kind === "tool_use" && b.toolUseId === msg.tool_use_id,
+        const block = this.toolCallByToolUseId.get(msg.tool_use_id);
+        if (block === undefined) {
+          // tool_result without a corresponding minted tool_use — the
+          // reducer would silently drop. Surface here.
+          console.error(
+            `[tugcode] tool_result (tool_use_id=${msg.tool_use_id}) without a matching tool_use mint`,
           );
-          if (block !== undefined) {
-            block.toolResult = {
-              output: msg.output,
-              isError: msg.is_error,
-            };
-            break;
-          }
+          continue;
         }
+        block.toolResult = { output: msg.output, isError: msg.is_error };
       } else if (msg.type === "tool_use_structured") {
-        for (const blocks of this.messageBlocks.values()) {
-          const block = blocks.find(
-            (b) => b.kind === "tool_use" && b.toolUseId === msg.tool_use_id,
+        const block = this.toolCallByToolUseId.get(msg.tool_use_id);
+        if (block === undefined) {
+          console.error(
+            `[tugcode] tool_use_structured (tool_use_id=${msg.tool_use_id}) without a matching tool_use mint`,
           );
-          if (block !== undefined) {
-            block.toolStructuredResult = msg.structured_result as Record<string, unknown>;
-            break;
-          }
+          continue;
         }
+        block.toolStructuredResult = msg.structured_result as Record<string, unknown>;
       }
     }
   }
@@ -3348,6 +3443,19 @@ export class SessionManager {
       // turn's text would be miskeyed (turn spans multiple msgIds and
       // blocks).
       //
+      // Scope: ONLY currentMessageId's blocks. A multi-msgId tool-use
+      // loop (e.g. thinking+tool → tool_result → thinking+tool →
+      // tool_result → text) emits per-delta wire events as it
+      // progresses; each iteration's text reaches the reducer
+      // incrementally via is_partial: true deltas BEFORE the next
+      // iteration's message_start. The intermediate iterations'
+      // content is already in the reducer's scratch by the time the
+      // terminal `result` lands, so we only need to baseline the
+      // FINAL iteration's blocks here. (For mid-turn replay snapshot
+      // the picture is different: that path replays ALL msgIds'
+      // blocks because the new client never saw the earlier deltas.
+      // See emitInflightTurnFromActiveTurn below.)
+      //
       // Slash commands (local commands) deliver output via the
       // user/isReplay handler synthesizing both a content_block_start
       // and a terminal assistant_text — those blocks land in
@@ -3488,56 +3596,76 @@ export class SessionManager {
     //    each msg_id (sorted on insert in updateBlockStateFromMessages).
     for (const [blockMsgId, blocks] of turn.messageBlocks) {
       for (const block of blocks) {
-        const tool_use_id =
-          block.kind === "tool_use" ? block.toolUseId : undefined;
-        const tool_name =
-          block.kind === "tool_use" ? block.toolName : undefined;
-        writeLine({
-          type: "content_block_start",
-          msg_id: blockMsgId,
-          block_index: block.index,
-          kind: block.kind,
-          tool_use_id,
-          tool_name,
-          ipc_version: 2,
-        });
-        if (block.kind === "text" && block.text.length > 0) {
+        // Emit the kind-specific content_block_start. Under the
+        // discriminated BlockState union, the tool_use branch's
+        // toolUseId / toolName are guaranteed strings (not undefined),
+        // so the wire frame is built without defensive `?? ""`.
+        if (block.kind === "text") {
           writeLine({
-            type: "assistant_text",
+            type: "content_block_start",
             msg_id: blockMsgId,
             block_index: block.index,
-            seq: this.nextSeq(),
-            rev: turn.rev,
-            text: block.text,
-            is_partial: false,
-            status: "streaming",
+            kind: "text",
             ipc_version: 2,
           });
-        } else if (block.kind === "thinking" && block.text.length > 0) {
+          if (block.text.length > 0) {
+            writeLine({
+              type: "assistant_text",
+              msg_id: blockMsgId,
+              block_index: block.index,
+              seq: this.nextSeq(),
+              rev: turn.rev,
+              text: block.text,
+              is_partial: false,
+              status: "streaming",
+              ipc_version: 2,
+            });
+          }
+        } else if (block.kind === "thinking") {
           writeLine({
-            type: "thinking_text",
+            type: "content_block_start",
             msg_id: blockMsgId,
             block_index: block.index,
-            seq: this.nextSeq(),
-            text: block.text,
-            is_partial: false,
-            status: "streaming",
+            kind: "thinking",
             ipc_version: 2,
           });
-        } else if (block.kind === "tool_use") {
+          if (block.text.length > 0) {
+            writeLine({
+              type: "thinking_text",
+              msg_id: blockMsgId,
+              block_index: block.index,
+              seq: this.nextSeq(),
+              text: block.text,
+              is_partial: false,
+              status: "streaming",
+              ipc_version: 2,
+            });
+          }
+        } else {
+          // kind === "tool_use" — discriminated union narrows toolUseId
+          // and toolName to required strings; no fallback needed.
+          writeLine({
+            type: "content_block_start",
+            msg_id: blockMsgId,
+            block_index: block.index,
+            kind: "tool_use",
+            tool_use_id: block.toolUseId,
+            tool_name: block.toolName,
+            ipc_version: 2,
+          });
           writeLine({
             type: "tool_use",
             msg_id: blockMsgId,
             seq: this.nextSeq(),
-            tool_name: block.toolName ?? "",
-            tool_use_id: block.toolUseId ?? "",
-            input: block.toolInput ?? {},
+            tool_name: block.toolName,
+            tool_use_id: block.toolUseId,
+            input: block.toolInput,
             ipc_version: 2,
           });
           if (block.toolResult !== undefined) {
             writeLine({
               type: "tool_result",
-              tool_use_id: block.toolUseId ?? "",
+              tool_use_id: block.toolUseId,
               output: block.toolResult.output,
               is_error: block.toolResult.isError,
               ipc_version: 2,
@@ -3546,8 +3674,8 @@ export class SessionManager {
           if (block.toolStructuredResult !== undefined) {
             writeLine({
               type: "tool_use_structured",
-              tool_use_id: block.toolUseId ?? "",
-              tool_name: block.toolName ?? "",
+              tool_use_id: block.toolUseId,
+              tool_name: block.toolName,
               structured_result: block.toolStructuredResult,
               ipc_version: 2,
             });

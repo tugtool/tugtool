@@ -947,15 +947,27 @@ function handleAssistantEntry(
   // All keyed on this entry's `message.id` (claude's id; no
   // canonicalization).
   for (const block of blocks) {
-    const blockStart: ContentBlockStart = {
-      type: "content_block_start",
-      msg_id: entryMsgId,
-      block_index: block.index,
-      kind: block.kind,
-      tool_use_id: block.kind === "tool_use" ? block.toolUseId : undefined,
-      tool_name: block.kind === "tool_use" ? block.toolName : undefined,
-      ipc_version: IPC_VERSION,
-    };
+    // Construct kind-specific content_block_start; the discriminated
+    // union narrows tool_use_id / tool_name to required strings only
+    // for the tool_use variant.
+    const blockStart: ContentBlockStart =
+      block.kind === "tool_use"
+        ? {
+            type: "content_block_start",
+            msg_id: entryMsgId,
+            block_index: block.index,
+            kind: "tool_use",
+            tool_use_id: block.toolUseId,
+            tool_name: block.toolName,
+            ipc_version: IPC_VERSION,
+          }
+        : {
+            type: "content_block_start",
+            msg_id: entryMsgId,
+            block_index: block.index,
+            kind: block.kind,
+            ipc_version: IPC_VERSION,
+          };
     out.push(blockStart);
 
     if (block.kind === "text" && block.text.length > 0) {

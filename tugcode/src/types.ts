@@ -275,7 +275,11 @@ export interface ThinkingText {
  *
  * The reducer mints a `Message` of the corresponding kind on receipt
  * and indexes by `(msg_id, block_index)` for subsequent delta lookup.
- * `tool_use_id` and `tool_name` are present only when `kind === "tool_use"`.
+ *
+ * Discriminated by `kind`: `tool_use_id` and `tool_name` are required
+ * when `kind === "tool_use"` and forbidden otherwise — the union below
+ * encodes this in the type system so nonsensical constructions are
+ * compile errors.
  *
  * Idempotent on the reducer side: a `content_block_start` for an
  * already-minted `(msg_id, block_index)` is a no-op. This is what
@@ -283,13 +287,34 @@ export interface ThinkingText {
  * safe: the live path may have already minted before the disconnect;
  * the snapshot's re-emission must not duplicate-mint.
  */
-export interface ContentBlockStart {
+export type ContentBlockStart =
+  | ContentBlockStartText
+  | ContentBlockStartThinking
+  | ContentBlockStartToolUse;
+
+export interface ContentBlockStartText {
   type: "content_block_start";
   msg_id: string;
   block_index: number;
-  kind: "text" | "thinking" | "tool_use";
-  tool_use_id?: string;
-  tool_name?: string;
+  kind: "text";
+  ipc_version: number;
+}
+
+export interface ContentBlockStartThinking {
+  type: "content_block_start";
+  msg_id: string;
+  block_index: number;
+  kind: "thinking";
+  ipc_version: number;
+}
+
+export interface ContentBlockStartToolUse {
+  type: "content_block_start";
+  msg_id: string;
+  block_index: number;
+  kind: "tool_use";
+  tool_use_id: string;
+  tool_name: string;
   ipc_version: number;
 }
 

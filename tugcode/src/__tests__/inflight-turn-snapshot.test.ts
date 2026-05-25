@@ -83,7 +83,6 @@ describe("emitInflightTurnFromActiveTurn — per-Message replay-the-stream", () 
       {
         index: 1,
         kind: "tool_use",
-        text: "",
         toolUseId: "tu_1",
         toolName: "Bash",
         toolInput: { command: "ls" },
@@ -138,7 +137,6 @@ describe("emitInflightTurnFromActiveTurn — per-Message replay-the-stream", () 
       {
         index: 1,
         kind: "tool_use",
-        text: "",
         toolUseId: "tu_A",
         toolName: "Read",
         toolInput: { path: "/foo" },
@@ -177,6 +175,49 @@ describe("emitInflightTurnFromActiveTurn — per-Message replay-the-stream", () 
         m.type === "assistant_text" && m.msg_id === "msg_B",
     );
     expect(finalText?.text).toBe("Here is the answer.");
+  });
+
+  test("seq is monotonically increasing across the snapshot's emissions", async () => {
+    // Contract: every emission that carries a `seq` field gets a fresh
+    // seq from this.nextSeq(); the resulting sequence is strictly
+    // monotonic across the snapshot. This invariant was implicit in
+    // the deleted gotResult=true shape-pin test (which checked
+    // assistant_text.seq < turn_complete.seq). Pinning it explicitly
+    // here so a future regression to "reuse turn.seq" or "skip
+    // nextSeq" is caught.
+    const turn = new ActiveTurn(0, "u", []);
+    turn.currentMessageId = "msg_seq";
+    turn.messageBlocks.set("msg_seq", [
+      { index: 0, kind: "text", text: "first" },
+      { index: 1, kind: "thinking", text: "pondering" },
+      {
+        index: 2,
+        kind: "tool_use",
+        toolUseId: "tu_seq",
+        toolName: "Bash",
+        toolInput: { command: "ls" },
+      },
+      { index: 3, kind: "text", text: "second" },
+    ]);
+    turn.gotResult = true; // triggers terminal turn_complete with its own seq
+    const manager = newManagerWithTurn(turn);
+    const { emitted } = await captureStdout(() =>
+      (manager as any).emitInflightTurnFromActiveTurn(turn),
+    );
+
+    // Collect every seq carried by an emitted message in order. Most
+    // IPC types carry `seq`; some don't (content_block_start,
+    // tool_result, replay_started, etc.). Order check applies only to
+    // those that do.
+    const seqs: number[] = [];
+    for (const m of emitted) {
+      const seq = (m as { seq?: unknown }).seq;
+      if (typeof seq === "number") seqs.push(seq);
+    }
+    expect(seqs.length).toBeGreaterThan(1);
+    for (let i = 1; i < seqs.length; i++) {
+      expect(seqs[i]).toBeGreaterThan(seqs[i - 1]);
+    }
   });
 
   test("idempotence on the wire: the snapshot's content_block_start for an already-minted block is safe to re-emit", async () => {
