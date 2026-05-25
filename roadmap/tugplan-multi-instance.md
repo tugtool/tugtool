@@ -1,0 +1,1168 @@
+<!-- tugplan-skeleton v2 -->
+
+## Multi-instance Tug.app {#multi-instance}
+
+**Purpose:** Make it possible to run multiple Tug.app instances concurrently on a single Mac with full state isolation between them — so a distributed production app can run alongside a development build editing its own source code, and a worktree-scoped development build can run alongside the main one. Fold proper Apple Developer ID code signing and release notarization into the same phase so the signing infrastructure modernizes once rather than twice.
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Ken |
+| Status | draft |
+| Target branch | main (commit on main per repo policy) |
+| Last updated | 2026-05-25 |
+
+---
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+Today every Tug.app launch hits hardcoded defaults: tugcast on TCP 55255, Vite on 55155, tmux session `cc0`, `~/.tugbank.db`, `~/Library/Application Support/Tug/sessions.db`. The first launch wins; the second fails to bind, the supervisor retries forever, and the user sees a blank window with cryptic logs (`tugcast: error: failed to bind to 127.0.0.1:55255` in `main.rs:554`). Single-instance is wired in by accident, not by design — there is no concept of an instance in the codebase at all.
+
+Two concrete workflows are blocked by this:
+
+1. **Production-and-development side by side.** Currently the only way to test a development build is to quit the distributed production app first. There is no path to running them simultaneously — e.g., to do regression testing between two builds, or to use the production app to edit the development app's source while the development app is running.
+2. **Worktree-scoped development.** The repo already has a `tugutil worktree setup` workflow that carves a per-plan worktree under `.tugtree/tugplan__<slug>` (`tugutil-core/src/worktree.rs:634`), but a Tug.app built from that worktree cannot launch alongside one built from `main` — same ports, same tmux session, same DB paths, same `dev.tugtool.app` bundle identifier.
+
+The current signing story compounds this: `setup-dev-signing.sh` provisions a locally-generated `Tug Dev` identity (`Justfile:307`); the harness carries a `code-sign-fingerprint` drift detection layer (`Justfile:571`, `.tugtool/code-sign-fingerprint`) because the designated requirement of a locally-generated cert is brittle — every rebuild of the cert invalidates TCC (Accessibility) grants. The user has now acquired an Apple Developer ID account, which stabilizes the DR across rebuilds and unlocks proper notarization for distribution. Folding this in with the multi-instance work means the signing infrastructure modernizes once.
+
+#### Strategy {#strategy}
+
+- **Bake identity at build time, not runtime.** Each `Tug.app` bundle carries `BUILD_PROFILE` (`production`/`development`), `BUILD_BRANCH` (git branch at build time, or `detached-<short-sha>` if HEAD was detached), and `BUILD_SOURCE_TREE` (development only) in its Info.plist. The running app reads its own bundle — no git lookup, no tugbank bootstrap, no shared lookup of any kind. HEAD can drift mid-session without affecting the running process. See [D01] [D02] [D03].
+- **Full per-instance state isolation.** Every long-lived resource gets a per-instance path or name: tugbank DB, session ledger, tmux session, log directory, tugbank-notify socket. The instance ID `<profile>-<branch-slug>` (e.g. `production-main`, `development-tide-wake-1`) is the namespacing key. See [D04] [D05].
+- **Hash-derived ports with walk-on-collision + registry file.** Tugcast and Vite ports are derived from a hash of the instance ID, walked on collision, and recorded in `$TMPDIR/tug-instances.json` so external tools (`tugutil tell`, `just logs`) can find a running instance. Stable across launches of the same identity; collision-tolerant when two different identities hash to the same offset. See [D08].
+- **No explicit single-instance enforcement.** Two instances of the same identity collide at `bind()`. The runtime detects EADDRINUSE-with-live-pid-match-in-registry, logs a clear message, and exits cleanly without a supervisor retry loop. Same-identity coexistence is structurally impossible by the identity scheme. See [D07] [D14].
+- **Per-identity Bundle IDs.** The distributed `(production, main)` keeps the canonical `dev.tugtool.app` so AX grants and codesign expectations survive. Everything else gets `dev.tugtool.app.<profile>-<branch-slug>`, with the common `(development, main)` case shortened to `dev.tugtool.app.dev` for ergonomics. Each branch's debug build is its own LaunchServices identity, its own dock icon, its own AX TCC entry. See [D10].
+- **Apple Developer ID + notarization folded in.** The local `Tug Dev` identity is retired. All builds (debug and release) sign with the Developer ID Application certificate. Release builds notarize via `notarytool`; debug builds skip notarization. The existing DR drift detection becomes belt-and-suspenders. See [D11].
+- **CLI discovery defaults to the natural instance.** `tugutil tell` resolves `--instance` flag > `TUG_INSTANCE` env var > cwd-derived (development) > sole-running > error. Standing in a worktree directory, commands hit that worktree's instance automatically. See [D09].
+- **One-time migration of legacy `~/.tugbank.db`.** First launch of `(production, main)` under the new scheme copies the legacy DB into `<data-dir>/production-main/tugbank.db` and leaves the legacy file in place as a backup. Other identities start with empty DBs. See [D06].
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+- A distributed `(production, main)` build and a development build of any branch run simultaneously on the same machine with independent dock icons, independent tugbank state (theme, layout, recents), independent claude session bindings, independent tmux sessions, independent ports, and independent log files. Measured by: launch both, change theme in one, verify the other is unaffected; run a claude session in one, verify the other's transcript is empty; tail both log files in parallel and confirm no interleaving.
+- A development build from `main` and a development build from a worktree branch run simultaneously. Same verification as above. Measured by: `git worktree add .tugtree/test-branch -b test-branch`, `just app` from the worktree, verify it coexists with the original `just app` from `main`.
+- A second launch of the same `(profile, branch)` identity exits cleanly with a single-line error in the log naming the live instance's PID. No blank window, no supervisor retry loop. Measured by: launch identity X, then attempt to launch identity X again; verify exit code non-zero, log message includes `another '<id>' instance is already running`, app does not present a window.
+- A `tugutil tell restart` invoked from a terminal cwd'd inside a development worktree hits *that worktree's* instance, not the production app or another running development instance. Measured by: launch two development instances on different worktrees; from each worktree cwd, `tugutil tell restart` and verify only the matching instance restarts.
+- Production releases sign with the Apple Developer ID Application cert and notarize successfully (`stapler validate` returns valid). Measured by: `just build-app` produces a `.app` that passes `codesign --verify --deep --strict` and `xcrun stapler validate`; Gatekeeper accepts the bundle on a clean Mac.
+- TCC Accessibility grants survive rebuilds of the same bundle ID. Measured by: grant AX to `dev.tugtool.app.dev`; rebuild and relaunch; CGEvent.post still works (no re-prompt). The harness's `code-sign-fingerprint` drift check passes with the Developer ID cert installed.
+- `cd tugrust && cargo nextest run` stays green across all commits. `cd tugdeck && bun x tsc --noEmit && bun test` stays green across all commits. The full `just app-test` sweep passes against the production-built bundle in the worktree it was built from.
+
+#### Scope {#scope}
+
+1. Build-time embedding of `BUILD_PROFILE`, `BUILD_BRANCH`, `BUILD_SOURCE_TREE` into every Tug.app bundle.
+2. Per-identity Bundle ID assignment via xcodebuild build-phase script.
+3. Apple Developer ID Application signing for all builds; notarization for release builds.
+4. Per-profile app icons (production vs development), with branch-name overlay for non-main development builds.
+5. Per-instance data directory layout under `~/Library/Application Support/Tug/instances/<id>/`.
+6. Per-instance tugbank database + notify socket.
+7. Per-instance session ledger.
+8. Per-instance tmux session name.
+9. Per-instance log directory (tuglog routing via env var).
+10. Hash-derived port allocation + walk-on-collision + `$TMPDIR/tug-instances.json` registry.
+11. Clean-exit-on-EADDRINUSE path in tugcast.
+12. One-time legacy `~/.tugbank.db` migration on first `(production, main)` launch.
+13. CLI discovery in tugutil/tugbank: flag > env > cwd > sole > error.
+14. `tugutil instance list` / `tugutil instance stop` subcommands.
+15. Justfile recipe updates (`just app`, `just launch`, `just logs`, `just app-test`) to use per-instance kill + paths.
+16. End-to-end integration verification with two instances running concurrently.
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- Cross-platform support. macOS only. Identity model is portable but the implementation references `~/Library/Application Support/`, `NSTemporaryDirectory()`, LaunchServices, TCC, codesign, notarytool — all macOS-specific. Linux/Windows port is a separate, future plan.
+- Shared claude session JSONLs across instances. `~/.claude/projects/<encoded-project>/` is intentionally shared — two instances opened to the same user project see the same session history. The per-instance `sessions.db` disambiguates liveness/binding. See [D13].
+- A `tugutil instance clone <from> <to>` command for copying state between identities. Useful but out of scope; users who want this can `cp -r` the per-instance directory manually.
+- Renaming an existing instance's identity. Changing `BUILD_BRANCH` requires a rebuild; no in-place rename.
+- Cleaning up stale `<data-dir>/<id>/` trees for identities whose builds were deleted. A future `tugutil instance prune` could do this; out of scope for Phase 1.
+- A graphical instance picker. CLI-only for now.
+- Auto-allocating ports from a contiguous shared pool managed by a daemon. The registry file is the only coordination mechanism.
+- Migrating session ledger or claude project state between instances. The legacy migration covers tugbank only.
+- Same-identity "take-over" semantics on relaunch. `tugrelaunch` already exists for the rebuild-and-relaunch flow; it does the SIGTERM-wait-restart dance deliberately. The default behavior is "refuse if already running" — see [D07].
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- An active Apple Developer Program membership with a Developer ID Application certificate provisioned in the user's login keychain. Required for Step 3 (signing) and Step 4 (notarization). The user has acquired this; the setup script is what consumes it.
+- `notarytool` (built into Xcode Command Line Tools, available as `xcrun notarytool`). Required for release notarization.
+- Existing `tugrust/scripts/build-app.sh` with its `--skip-sign --skip-notarize` flags (already plumbed; Step 3/4 fills in the body).
+- Existing `tugutil-core/src/worktree.rs` worktree machinery (already in place; the multi-instance story benefits from it but does not extend it).
+- `dirs` crate (already a workspace dep) for `data_dir()` resolution.
+- `serde_json` (already a workspace dep) for the registry file format.
+- `fs2` or equivalent for cross-platform `flock` on the registry file. Currently not in the workspace; Step 9 adds it or uses a hand-rolled `fcntl` wrapper.
+
+#### Constraints {#constraints}
+
+- Production builds destined for distribution must not embed any developer-specific paths in `BUILD_SOURCE_TREE`. The Info.plist key is omitted from `production` builds entirely; reading it from a Production app returns nil and any code path that depends on it is dev-only-gated.
+- Code signing must use a single Developer ID Application certificate across all builds. Mixing identities defeats the TCC stability story.
+- Notarization is mandatory for any bundle distributed outside the user's own Mac. Debug builds skip notarization; `build-app.sh` flags must control this clearly.
+- The registry file at `$TMPDIR/tug-instances.json` must tolerate concurrent reads/writes from multiple Tug processes starting at the same moment. File locking is mandatory; lockless reads-of-a-stale-file are acceptable as long as stale-PID pruning is part of the read path.
+- Per-instance data directories must be created with mode 0700; they may contain claude session tokens, user prompts, and other sensitive data.
+- The legacy `~/.tugbank.db` must remain readable by old binaries after migration. The migration is a one-way copy, not a move; the legacy file is touched only to be read.
+
+#### Assumptions {#assumptions}
+
+- A single physical user owns all running Tug instances. No multi-user-on-same-Mac story; all identities run as the same UID.
+- The user accepts a TCC Accessibility re-grant per new bundle ID (i.e., per branch). First launch of a new identity prompts; subsequent launches of the same identity do not.
+- The registry file `$TMPDIR/tug-instances.json` survives across reboots only incidentally; `$TMPDIR` is purged periodically by macOS. Long-lived state lives in `<data-dir>/<id>/`, not in `$TMPDIR`. The registry is ephemeral by design.
+- Git is installed and on PATH at build time. The build-phase script that captures `BUILD_BRANCH` requires it.
+- Each Tug.app bundle is launched at most once concurrently per identity. Two simultaneous launches of identity X are rejected at port-bind time, not pre-emptively at LaunchServices level.
+
+---
+
+### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
+
+This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-skeleton.md` for the full spec). Execution steps cite design decisions by `[DNN]`, specs by `Spec SNN`, lists by `List LNN`, tables by `Table TNN`, and risks by `Risk RNN`. Anchors are kebab-case, prefixed by artifact kind (`step-1`, `d01-...`, `r02-...`, etc.). No line-number citations.
+
+---
+
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
+
+#### [Q01] Registry file lock strategy (OPEN) {#q01-registry-lock}
+
+**Question:** Should `$TMPDIR/tug-instances.json` use POSIX advisory locking (`flock`), atomic rename (write-new + rename-over-old), or both?
+
+**Why it matters:** Concurrent launches of two different identities at exactly the same moment could race on the registry. A lost write means an external tool's discovery lookup misses one instance. Worse, an interrupted write could leave the file half-written and break JSON parsing for everyone.
+
+**Options:**
+- `flock(LOCK_EX)` around read-modify-write. Simple, well-understood, supported on macOS via the `fs2` crate.
+- Atomic rename: write `tug-instances.json.tmp`, then `rename(2)`. No locking, naturally atomic, but read-modify-write requires re-reading after acquiring an exclusive temp file.
+- Both: `flock` to serialize, atomic rename inside the locked section to survive crashes mid-write.
+
+**Plan to resolve:** Default to `flock + atomic rename` in Step 9 unless empirical testing shows the lock contention is meaningful. The cost of "both" is one extra rename per launch — negligible.
+
+**Resolution:** DEFERRED to Step 9 implementation. Will pick at code-time based on whether `fs2` is acceptable as a new workspace dep.
+
+#### [Q02] Icon design specifics (DEFERRED) {#q02-icon-design}
+
+**Question:** What do the production vs. development icons look like? What does the per-branch overlay on non-main development icons look like?
+
+**Why it matters:** Dock differentiation is the user-facing payoff of per-identity Bundle IDs. A clean visual story makes the multi-instance experience legible at a glance.
+
+**Plan to resolve:** Out of scope for Phase 1 plumbing. Step 5 ships the *mechanism* (Info.plist `CFBundleIconFile` + a build-phase script that selects the icon based on `BUILD_PROFILE` and optionally overlays a branch label for non-main dev builds), with a placeholder dev icon (production icon + diagonal stripe) and a `TODO` for the actual artwork. The user provides final artwork in a follow-on commit.
+
+**Resolution:** DEFERRED. Mechanism in Step 5; artwork follow-up.
+
+#### [Q03] What does `tugutil instance` look like beyond `list` / `stop`? (OPEN) {#q03-tugutil-instance}
+
+**Question:** `list` and `stop` are clearly in scope. What about `clone <src> <dst>`, `prune` (remove data dirs for identities with no current bundle on disk), `current` (print the identity of the cwd-derived instance), or `attach <id>` (open a terminal pointed at the right tmux session)?
+
+**Why it matters:** These are quality-of-life features that compound as the multi-instance story matures. Picking the wrong primitives in Phase 1 means churning the CLI later.
+
+**Plan to resolve:** Ship `list`, `stop`, `current` in Step 14. Defer `clone`, `prune`, `attach` to a follow-on plan; they're not blocking and the design will be clearer once people have used multi-instance for a while.
+
+**Resolution:** DEFERRED. `list`/`stop`/`current` in Phase 1; richer surface in a follow-on.
+
+---
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| Tugbank migration corrupts legacy file | high | low | One-way copy, never move; atomic write to temp + rename; bail early if either path errors | Migration test fails on real legacy DB |
+| Notarization is slow / flaky | med | med | `build-app.sh` reports notarytool status; retries on transient failures; release path is "submit + poll" not "submit + block" | Two consecutive notarization failures in a week |
+| Port hash collisions in practice | low | low | Walk-on-collision with up to 32 retries; registry file ensures discovered ports survive across launches | Walk depth >4 observed in real use |
+| Registry file corruption | med | low | flock + atomic rename + JSON parse failure recovery (re-init to empty); stale PID pruning on every read | One corruption event |
+| AX permission proliferation user-hostile | med | med | Document the cost in plan and README; investigate `xattr`-based grant migration in follow-on if it becomes painful | User explicitly complains; >10 branches with grants |
+| Developer ID cert expiration | high | low | One-year renewal cycle is a standard ops task; calendared independently | Cert within 60 days of expiration |
+| Legacy ~/.tugbank.db users without production-main bundle | med | low | Migration triggers on first launch of `(production, main)` only; users without that bundle keep using the legacy file until they install one | User reports "my data didn't migrate" |
+| LaunchServices bundle-ID cache stale | low | med | `lsregister -kill -r -domain local -domain system -domain user` documented as a known reset command | Newly-built bundle doesn't show up in `mdfind` |
+
+**Risk R01: Tugbank migration data loss** {#r01-tugbank-migration}
+
+- **Risk:** A bug in the migration path could corrupt or delete `~/.tugbank.db`, losing the user's accumulated theme, layout, recents, card state, and session metadata.
+- **Mitigation:**
+  - Migration is a *copy*, never a *move*. The legacy file stays on disk and is never written to by the new code path.
+  - Write to a temp file in `<data-dir>/production-main/tugbank.db.tmp` first, fsync, then rename. A crash mid-copy leaves the temp file orphaned, not the destination half-written.
+  - Migration runs at most once per `(production, main)` data dir. A marker file `<data-dir>/production-main/.migrated-from-legacy` prevents re-running.
+  - Pre-migration: SHA-256 of legacy file written to the data dir as a sentinel. If the user ever asks "did my data migrate?", we can answer authoritatively.
+- **Residual risk:** A truly catastrophic disk failure during the rename is the only remaining loss path. APFS atomic-rename guarantees keep this vanishingly rare.
+
+**Risk R02: Notarization stalls or fails** {#r02-notarization}
+
+- **Risk:** Apple's notary service is sometimes slow (5-30 min normal, hours possible) or returns transient failures. A `just build-app` that blocks on notarization indefinitely is a productivity sink.
+- **Mitigation:**
+  - `build-app.sh --notarize` submits and polls with a 30-min ceiling. Beyond that, the script reports the submission UUID and exits non-zero with instructions for `notarytool log <uuid>`.
+  - Debug builds *never* notarize. Developers iterating locally pay no notarization cost.
+  - Release builds notarize as a separate explicit step (`build-app.sh --notarize`), not a default of `--release`. CI configures this; manual users opt in.
+- **Residual risk:** First-time setup of a notarization keychain profile (`notarytool store-credentials`) is a one-time UX papercut, documented in the setup script's output.
+
+**Risk R03: Hash collisions in port allocation** {#r03-port-collision}
+
+- **Risk:** Two simultaneously-running instances hash to the same tugcast or Vite port. Without collision handling, the second fails to bind; with handling, the walk could be confusing if ports drift between launches.
+- **Mitigation:**
+  - Hash → 100-port window per profile (e.g., 55300-55399 for tugcast). Walk by +1 within the window on collision.
+  - Registry file records the actual claimed port. On subsequent launch of the same identity, prefer the previously-claimed port if free.
+  - If the entire window is exhausted, fall back to OS-ephemeral (`bind` to port 0) and record in registry.
+- **Residual risk:** External tools that assume a fixed port can't muscle-memory the address. `tugutil tell` reads the registry, so the user-facing CLI is unaffected.
+
+---
+
+### Design Decisions {#design-decisions}
+
+#### [D01] Identity is (build_profile, build_branch), baked at build time (DECIDED) {#d01-identity-build-time}
+
+**Decision:** Every Tug.app bundle carries a `BUILD_PROFILE` (`production` / `development`) and a `BUILD_BRANCH` (git branch name at build time, or `detached-<short-sha>` if HEAD was detached) in its Info.plist. The running app reads these from its own bundle; the instance ID is computed deterministically from them as `<profile>-<branch-slug>` where `branch-slug` replaces `/` with `-` and lowercases the result.
+
+**Rationale:**
+- No runtime git lookup means no dependency on `git` being on PATH or in a valid working tree at launch. Production users without git installed still launch correctly.
+- HEAD drifting during a session (e.g., the user `git checkout main` mid-debug) does not change the identity of an already-running process. Ports stay claimed; DBs stay open; tmux session stays attached.
+- Production releases pin the branch at the release pipeline level. End users get a stable identity.
+- No tugbank bootstrap entry required for identity discovery. Removes a layer of "where do I look this up" indirection that would otherwise be needed to break the chicken-and-egg between per-instance tugbank and identity-derived tugbank path.
+
+**Implications:**
+- A single .app bundle is one identity. Repointing a built bundle at a different worktree to "be" a different identity is not supported.
+- Switching branches in a worktree and wanting a Tug build for the new branch requires a rebuild (which is the natural workflow under `just app`).
+- The xcodebuild build-phase script that captures the values must run *every* build, not be cached, to keep `BUILD_BRANCH` current.
+
+#### [D02] Detached HEAD at build time becomes `detached-<short-sha>` (DECIDED) {#d02-detached-head}
+
+**Decision:** If `git rev-parse --abbrev-ref HEAD` returns `HEAD` (i.e., detached) at build time, `BUILD_BRANCH` is set to `detached-` followed by the first 8 characters of `git rev-parse HEAD`.
+
+**Rationale:**
+- Detached HEAD is rare but real (e.g., bisecting, testing a specific historical SHA). Forcing the user to create a branch first would be a usability hit.
+- Each detached-HEAD build still gets a unique identity, isolating its state.
+
+**Implications:**
+- A `detached-deadbeef` identity is just as much an instance as `development-main`. It gets its own dock icon, its own data dir, its own AX grant prompt.
+
+#### [D03] BUILD_SOURCE_TREE baked at build time for development bundles only (DECIDED) {#d03-source-tree-baked}
+
+**Decision:** Development builds embed `BUILD_SOURCE_TREE` (the absolute path the build was made from) in Info.plist. Production builds omit the key entirely.
+
+**Rationale:**
+- Production has no source tree concept. A distributed app on a stranger's Mac knows nothing about source trees.
+- Development builds replace the current `dev.tugexec.app/source-tree-path` tugbank key as the way the build knows where its source tree lives. Eliminates a shared tugbank bootstrap entry.
+- The path baked in is the path the bundle was *built from*, not whatever the user later wants it to point at. Inflexible by design — the alternative ("read source tree from a config file at runtime") was rejected as a vestige of the old shared-tugbank model.
+
+**Implications:**
+- Moving a dev bundle after build (`mv build/Debug/Tug.app /elsewhere/`) leaves the baked-in source tree path stale. The bundle still launches; tugcast still has resources via `TUGCAST_RESOURCE_ROOT` (set by Swift); but anything that reads `BUILD_SOURCE_TREE` for file-watching, etc., will point at the original location.
+- The `just app` recipe is the canonical way to set up a dev bundle; it ensures the source tree path matches `$PWD`.
+
+#### [D04] Full per-instance state isolation (DECIDED) {#d04-full-isolation}
+
+**Decision:** Every long-lived per-instance resource gets its own per-instance path or name: tugbank DB, session ledger, tmux session, log directory, tugbank-notify socket, tugcast TCP port, Vite TCP port, control socket. The single exception is claude project JSONLs under `~/.claude/projects/<encoded-project>/`, which are intentionally shared (see [D13]).
+
+**Rationale:**
+- The "ports + tmux only" minimal-isolation option was considered and rejected on the grounds that *user state* (theme, recents, card state, session bindings) bleeding between instances destroys the use case for running them in parallel. If a dev instance corrupts the user's production card state, the user is worse off than with no multi-instance at all.
+- Tugbank, ledger, and logs are all SQLite/file resources keyed by path. Adding a path component is cheap.
+- Tmux session and notify socket are keyed by name. Adding a suffix is cheap.
+
+**Implications:**
+- A user starting a fresh dev instance for the first time sees an empty deck — no theme, no recents, no cards. They have to set things up. This is correct: a new instance is a new instance.
+- The legacy `~/.tugbank.db` is migrated to `(production, main)` once, so existing users do not lose their accumulated state on the *production* side.
+- The shared claude project JSONLs mean two instances can both see and resume the same claude sessions if they happen to operate on the same project. Liveness disambiguation is per-instance via `sessions.db`.
+
+#### [D05] Flat-by-instance data directory layout (DECIDED) {#d05-flat-layout}
+
+**Decision:** Per-instance state lives at `~/Library/Application Support/Tug/instances/<id>/`, where `<id>` is the full `<profile>-<branch-slug>` instance ID. Each instance directory contains `tugbank.db`, `sessions.db`, and a `Logs/` subdirectory.
+
+**Rationale:**
+- One directory per instance = one `rm -rf` to nuke. Trivial cleanup.
+- The directory name matches the registry key 1:1, making cross-referencing the file system and the registry file straightforward.
+- The bucketed-by-profile alternative (`Tug/production/main/`, `Tug/development/foo/`) groups related instances but adds a layer of indirection for no functional benefit.
+
+**Implications:**
+- The shared `~/Library/Application Support/Tug/Logs/` location used by `tuglog::init()` today must be migrated. New code routes via `<data-dir>/<id>/Logs/`. Existing log files are left untouched on disk (read-only legacy).
+- `tugutil instance list` can `ls` the `instances/` directory for known-but-not-running identities.
+
+#### [D06] One-time legacy ~/.tugbank.db migration (DECIDED) {#d06-tugbank-migration}
+
+**Decision:** On first launch of `(production, main)` under the new scheme, if `<data-dir>/production-main/tugbank.db` does not exist and `~/.tugbank.db` does, copy the legacy DB into place. Mark the migration complete with a `<data-dir>/production-main/.migrated-from-legacy` marker file. The legacy file is never written to, moved, or deleted by Tug code; it stays as a backup.
+
+**Rationale:**
+- The user has real accumulated state in the legacy file (theme, layout, recents). A clean break would be hostile.
+- Only `(production, main)` migrates; other identities start fresh, which is correct (a worktree-scoped dev instance shouldn't inherit production state).
+- A copy is safer than a move. If the migration code has a bug, the legacy file is intact for recovery.
+
+**Implications:**
+- Users running `just app` from a dev build *before* ever launching the production app see an empty dev tugbank, which is expected. The legacy file is not migrated into dev instances.
+- A future `tugutil instance clone production-main development-main` could copy state from one to the other on demand; out of scope for Phase 1.
+
+#### [D07] No explicit single-instance enforcement; rely on port-bind failure (DECIDED) {#d07-no-enforcement}
+
+**Decision:** No code path actively refuses a duplicate launch at startup. The runtime relies on tugcast's `bind()` failure on EADDRINUSE to surface the conflict. To make the failure mode legible, tugcast on EADDRINUSE consults the registry file; if a live PID with matching `(profile, branch)` is registered for the in-use port, tugcast logs `tugcast: another '<id>' instance is already running (PID <n>)` and exits non-zero immediately — no supervisor retry loop.
+
+**Rationale:**
+- macOS LaunchServices' "same bundle ID = single instance" courtesy provides soft enforcement for free under the per-identity Bundle ID scheme: clicking the dev icon while it's running re-foregrounds the existing process.
+- Hard enforcement (active refuse with a Mach service or filesystem lock) adds infrastructure that the failure mode already covers.
+- The EADDRINUSE clean-exit improvement is the only piece of "enforcement" that actually does work; everything else is a status report on a hard failure.
+
+**Implications:**
+- Direct `Contents/MacOS/Tug` invocation or `open -n` (the harness's pattern) can launch a second process, which then fails at port-bind. The harness already handles this via `pkill -x Tug` cleanup; once instance-aware, the harness uses the registry's PID.
+- The Swift supervisor in `ProcessManager` needs to treat the EADDRINUSE-clean-exit case differently from "tugcast crashed" — see Step 12 for the policy: registry-attributable exit → surface alert, don't restart.
+
+#### [D08] Hash-derived ports + walk-on-collision + registry (DECIDED) {#d08-port-allocation}
+
+**Decision:** Tugcast and Vite ports are derived as `BASE + (hash(instance_id) mod WINDOW)`. Tugcast window: 55300-55399. Vite window: 55200-55299. Hash is FNV-1a 32-bit truncated to the window size. On collision (port already bound by another process), walk by +1 within the window for up to 32 attempts. If the window is exhausted, fall back to OS-ephemeral. The actual claimed port is recorded in `$TMPDIR/tug-instances.json`.
+
+**Rationale:**
+- Deterministic-by-default is friendlier for `tugutil tell` muscle memory and log-tail commands. Stable across launches of the same identity.
+- The 100-port window per service is wider than the practical "how many instances can a developer reasonably run" ceiling (≤5 in any realistic workflow), so true collisions are vanishingly rare.
+- Walk-on-collision handles the rare case without falling back to ephemeral immediately, which preserves stability.
+- The registry file is the authoritative source for "what port did this instance actually claim" — external tools never re-hash.
+
+**Implications:**
+- The default tugcast port 55255 (in `tugcast/src/cli.rs:20`) shifts to a window-based default. The CLI `--port` flag still works as an override.
+- The Vite port constant `DEFAULT_VITE_DEV_PORT = 55155` in `tugcast-core/src/lib.rs:42` is repurposed as the *production-main* default; other identities get derived values.
+- External tools that hardcode 55255 (probe-websocket.ts at port 55266 — already non-default — survives unchanged) need updating to read from the registry.
+
+#### [D09] CLI discovery resolution order (DECIDED) {#d09-cli-discovery}
+
+**Decision:** CLIs that need to address a specific instance (`tugutil tell`, `tugbank read/write`, etc.) resolve the target via, in order: (1) explicit `--instance <id>` flag (or `--profile <p> --branch <b>` combination); (2) `TUG_INSTANCE` env var; (3) walking up from cwd looking for a git working dir, reading its branch, prefixing with `development-`, looking up that ID in the registry (development-only path); (4) sole-running-instance fallback (if exactly one instance is registered, use it); (5) error with a list of running instances.
+
+**Rationale:**
+- Explicit > inferred > magic. The order is the natural one for power users.
+- The cwd-derived step makes "standing inside a worktree and running `tugutil tell`" Just Work, which is the dominant operational case.
+- Sole-running fallback covers the production-only case (no dev instances around).
+- The error message lists the running instances, so the user always has actionable next-step info.
+
+**Implications:**
+- `tugutil tell --port 12345` continues to work for direct addressing (an existing flag).
+- Adding `--instance` flag to `tugbank` CLI is mandatory (the `tugbank` binary needs to know which DB to open). Today it defaults to `~/.tugbank.db`; the new default is "resolve the instance first."
+- Production users without a dev instance running see no behavior change — `tugutil tell <action>` always finds `(production, main)`.
+
+#### [D10] Variant of C for Bundle IDs (DECIDED) {#d10-bundle-id}
+
+**Decision:** Bundle IDs are assigned per identity:
+- `(production, main)`: `dev.tugtool.app` (unchanged from today; preserves AX grants, codesign expectations, etc.)
+- `(development, main)`: `dev.tugtool.app.dev`
+- `(development, <other>)`: `dev.tugtool.app.development-<branch-slug>`
+- `(production, <other>)`: `dev.tugtool.app.production-<branch-slug>`
+
+Assignment happens via an xcodebuild build-phase script that writes `CFBundleIdentifier` into the bundle's Info.plist at build time, derived from the same `(BUILD_PROFILE, BUILD_BRANCH)` values used for the identity hash.
+
+**Rationale:**
+- LaunchServices treats each bundle ID as a distinct app: distinct dock icon, distinct AX TCC entry, distinct "is this running" answer. This is exactly the granularity we want.
+- Special-casing `(production, main)` preserves the canonical identifier for distribution, so existing AX grants and codesign records on the user's machine carry over.
+- Shortening `(development, main)` to `.dev` is a nicety; the common case gets a clean name.
+- The build-phase script reads the same Info.plist keys we're already writing for identity, so there's no duplicate source of truth.
+
+**Implications:**
+- The TCC database accumulates one row per branch the user has built. Acceptable cost; the user has explicitly accepted this trade-off.
+- `xcrun lsregister -kill -r -domain user` may be needed once after the first multi-bundle-ID build to refresh LaunchServices' cache.
+- Codesign + notarization configurations need to handle dynamic bundle IDs. `build-app.sh` reads the post-build Info.plist for the actual ID, not a hardcoded one.
+
+#### [D11] Apple Developer ID Application signing + notarization for release (DECIDED) {#d11-apple-signing}
+
+**Decision:** All builds (debug and release) sign with the user's Apple Developer ID Application certificate. The local `Tug Dev` identity (from `setup-dev-signing.sh`) is retired. Release builds additionally notarize via `xcrun notarytool submit --wait`; debug builds skip notarization. The certificate is stored in the user's login keychain; `notarytool` credentials are stored via `notarytool store-credentials` once and referenced by keychain profile name thereafter.
+
+**Rationale:**
+- Developer ID certs have a stable designated requirement across rebuilds (signed by an Apple intermediate). TCC grants survive rebuilds of the same bundle ID — the daily-iteration case.
+- Distribution requires notarization on macOS 10.15+. Folding it in now means no separate signing-modernization plan later.
+- The existing `code-sign-fingerprint` DR drift detection in the harness becomes belt-and-suspenders rather than load-bearing — still useful as a sanity check.
+
+**Implications:**
+- The `setup-dev-signing.sh` script is rewritten to register the user's Developer ID cert (or instruct on doing so manually) rather than generate a local one. The script no longer creates a private key.
+- `build-app.sh` gains `--notarize` flag (defaults to off; CI/release flow opts in).
+- The harness's `code-sign-fingerprint` sentinel file regenerates on first build under the new identity; the drift-detection logic continues to work unchanged.
+- Notarization adds 30-120s to release builds. Debug iteration is unaffected.
+
+#### [D12] TUG_INSTANCE_ID env var as runtime identity carrier (DECIDED) {#d12-instance-env-var}
+
+**Decision:** Swift computes the instance ID at launch from the bundle's Info.plist and sets `TUG_INSTANCE_ID=<id>` in the environment of the tugcast child process. Tugcast inherits it. Tugcode and any other spawned child inherits it transitively. Tuglog, tugbank-client, session-ledger, and notify-socket code all read `TUG_INSTANCE_ID` from the env to compute their per-instance paths.
+
+**Rationale:**
+- One source of truth at runtime. Swift owns the computation; everyone else reads.
+- Env vars propagate through `exec` naturally — no plumbing through CLI flags for every spawned process.
+- The Justfile harness recipes (`open -n --env TUG_INSTANCE_ID=foo Tug.app`) can override at launch time for testing.
+
+**Implications:**
+- The reverse direction is also fine: when `TUG_INSTANCE_ID` is set externally, Swift's launch-time identity check reads it rather than recomputing. This lets harness tests construct synthetic identities.
+- Code that runs *outside* a Tug process (e.g., `tugutil tell` invoked from a shell) does not have `TUG_INSTANCE_ID` set by anyone, so it falls back to the resolution order in [D09].
+
+#### [D13] Claude project JSONLs intentionally shared across instances (DECIDED) {#d13-claude-projects}
+
+**Decision:** `~/.claude/projects/<encoded-project-dir>/<sessionId>.jsonl` paths are computed exactly as today (by claude itself, keyed on the project directory the user opened inside Tug). Tug does not inject per-instance namespacing into these paths.
+
+**Rationale:**
+- Claude session JSONLs are claude's data, not Tug's. Two instances of Tug opened to the same user project should both see the same session history; that's expected behavior, not a collision.
+- The session ledger (per-instance, see [D04]) handles the "which session is bound to which card right now" question independently. Two instances each track their own live bindings.
+- Claude itself doesn't lock JSONLs; concurrent writes to different session files in the same directory are benign.
+
+**Implications:**
+- Two instances *could* spawn claude against the same project simultaneously, producing two unrelated session JSONLs in the same directory. Acceptable.
+- The session ledger's `claude_projects_root` (`session_ledger.rs:1611`) stays at its default `~/.claude/projects/`.
+- The `.tug-trash/` subdirectory inside each project dir is also shared. The sweep logic in `sweep_trash` is idempotent and safe to run from multiple instances.
+
+#### [D14] Same-tree double-launch structurally impossible (DECIDED) {#d14-same-tree}
+
+**Decision:** No explicit policy or code path addresses "two instances pointed at the same source tree." Under the identity scheme, two instances of the same `(profile, branch)` are mechanically prevented by port-bind collision (see [D07]); two instances of *different* `(profile, branch)` happening to point at the same physical path are benign because per-instance isolation handles the resource separation.
+
+**Rationale:**
+- Git enforces that a single branch is checked out in at most one worktree at a time. The identity `(development, foo)` is therefore unique to one worktree at any given moment.
+- Production has no source tree concept, so "production and dev pointing at the same tree" doesn't apply on the production side.
+- The contrived case of two manually-copied bundles with identical `(BUILD_PROFILE, BUILD_BRANCH, BUILD_SOURCE_TREE)` would produce identical instance IDs and collide at port-bind. We do not engineer around this; it requires deliberate user effort to set up.
+
+**Implications:**
+- The plan's Non-goals section names this explicitly so readers don't expect a story for it.
+
+#### [D15] Per-profile icons with per-branch overlay for non-main dev (DECIDED) {#d15-icons}
+
+**Decision:** Two base app icons ship in the bundle: a production icon and a development icon. The build-phase script that sets the bundle ID also selects the icon file. Non-main development builds additionally generate a branch-labeled variant (production icon or dev icon with the branch name composited on top) at build time and bake it into the bundle's `AppIcon.icns`.
+
+**Rationale:**
+- Dock differentiation is the user-facing payoff of per-identity Bundle IDs. Visible at a glance.
+- A separate production icon vs. development icon makes the "which one am I clicking" question trivial for the prod-vs-dev case.
+- The branch-name overlay is the right answer for "I have three dev worktrees open and need to tell them apart."
+
+**Implications:**
+- Build-phase script needs `iconutil` or equivalent to composite text onto an `.icns`. Reasonable; `sips` and `iconutil` are macOS-standard tools.
+- Artwork is deferred to [Q02]; mechanism lands in Step 5.
+
+---
+
+### Deep Dives {#deep-dives}
+
+#### Process tree and env propagation {#process-tree}
+
+The runtime process tree under multi-instance looks like this:
+
+```
+launchd
+  └─ Tug.app (Swift, bundle: dev.tugtool.app.development-foo)
+       └─ tugcast (Rust, env: TUG_INSTANCE_ID=development-foo)
+            ├─ tmux client → tmux server (session: cc-development-foo)
+            └─ tugcode (Bun-compiled, env: TUG_INSTANCE_ID inherited)
+                 └─ claude (Anthropic SDK)
+```
+
+Swift sets `TUG_INSTANCE_ID` once when spawning tugcast (per [D12]). Every downstream process inherits it. Tuglog initializes its log file path from the env var; tugbank-client (Swift and Rust both) reads it to compute the DB path; the notify socket helper reads it to compute the socket path; the session ledger reads it to compute its DB path.
+
+The Justfile's harness recipes today set `TUGAPP_*` env vars by passing `--env KEY=VALUE` to `/usr/bin/open` (see `tests/app-test/_harness/index.ts:1474-1496`). The same mechanism extends to `TUG_INSTANCE_ID` — harness tests can construct arbitrary synthetic identities by exporting `TUG_INSTANCE_ID=test-<n>` and pointing data dirs at temp paths.
+
+#### Bundle ID assignment at build time {#bundle-id-assignment}
+
+The xcodebuild build-phase script that writes `CFBundleIdentifier` runs after the default Info.plist is copied into the bundle but before code-signing. The script reads `BUILD_PROFILE` and `BUILD_BRANCH` (computed by an earlier build-phase script that captures them from the build environment + git) and writes the bundle ID:
+
+```bash
+profile="$(/usr/libexec/PlistBuddy -c "Print :BuildProfile" "$PLIST")"
+branch="$(/usr/libexec/PlistBuddy -c "Print :BuildBranch" "$PLIST")"
+case "$profile-$branch" in
+    production-main)
+        bundle_id="dev.tugtool.app" ;;
+    development-main)
+        bundle_id="dev.tugtool.app.dev" ;;
+    *)
+        slug="$(echo "$branch" | tr 'A-Z/' 'a-z-' | tr -cd 'a-z0-9-')"
+        bundle_id="dev.tugtool.app.${profile}-${slug}" ;;
+esac
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$PLIST"
+```
+
+Code-signing reads `CFBundleIdentifier` from the updated Info.plist; the signed bundle ends up with the dynamic ID.
+
+#### Registry file format {#registry-format}
+
+```json
+{
+  "version": 1,
+  "instances": [
+    {
+      "instance_id": "production-main",
+      "profile": "production",
+      "branch": "main",
+      "bundle_id": "dev.tugtool.app",
+      "bundle_path": "/Applications/Tug.app",
+      "pid": 12345,
+      "tugcast_port": 55301,
+      "vite_port": 55201,
+      "tmux_session": "cc-production-main",
+      "data_dir": "/Users/ken/Library/Application Support/Tug/instances/production-main",
+      "started_at": "2026-05-25T10:30:00Z"
+    }
+  ]
+}
+```
+
+Read path: `flock` shared, parse JSON, walk entries, for each entry check `kill(pid, 0)` — `Ok` means alive, `ESRCH` means dead and the entry is pruned (on the in-memory copy returned to the caller; the on-disk file is rewritten only by write-path consumers).
+
+Write path: `flock` exclusive, read current, prune dead entries, modify, write to `tug-instances.json.tmp`, fsync, `rename(2)`, release lock.
+
+#### Code-signing flow under Developer ID {#signing-flow}
+
+```
+Step (a): Build produces unsigned Tug.app at $BUILT_PRODUCTS_DIR/Tug.app
+Step (b): Build-phase script writes BUILD_PROFILE/BUILD_BRANCH/BUILD_SOURCE_TREE
+          to Info.plist, then writes CFBundleIdentifier (see #bundle-id-assignment)
+Step (c): codesign --force --options runtime \
+              --sign "Developer ID Application: <Name> (<TeamID>)" \
+              --entitlements tugapp/Tug.entitlements \
+              --timestamp \
+              Tug.app
+Step (d): (release only) zip and submit:
+            ditto -c -k --keepParent Tug.app Tug.zip
+            xcrun notarytool submit Tug.zip --keychain-profile "tug-notary" --wait
+            xcrun stapler staple Tug.app
+Step (e): codesign --verify --deep --strict Tug.app
+Step (f): spctl --assess --type execute --verbose Tug.app
+```
+
+Steps (a)-(c) happen on every build. Steps (d)-(f) only on release builds invoked via `build-app.sh --notarize`.
+
+---
+
+### Specification {#specification}
+
+#### Inputs and Outputs {#inputs-outputs}
+
+**Inputs (build-time):**
+- `BUILD_PROFILE` — selected by xcconfig (`Debug` ⇒ `development`, `Release` ⇒ `production`).
+- `BUILD_BRANCH` — captured at build time by a build-phase script: `git -C "$SRCROOT" rev-parse --abbrev-ref HEAD`, or `detached-$(git rev-parse HEAD | cut -c1-8)` if detached.
+- `BUILD_SOURCE_TREE` — captured at build time as `$SRCROOT` (development only).
+- `BUILD_COMMIT` — captured for diagnostics only: `git -C "$SRCROOT" rev-parse HEAD`.
+
+**Outputs (build-time):**
+- Info.plist entries: `BuildProfile`, `BuildBranch`, `BuildSourceTree` (dev only), `BuildCommit`, `CFBundleIdentifier` (dynamic per [D10]).
+- Code-signed bundle (always); notarized bundle (release only with `--notarize`).
+
+**Inputs (runtime):**
+- `TUG_INSTANCE_ID` env var — set by Swift at tugcast spawn; inherited transitively.
+- Registry file `$TMPDIR/tug-instances.json` — read by Swift on launch (to detect collisions and seed port preference); written by tugcast after successful port bind.
+
+**Outputs (runtime):**
+- Registered entry in `$TMPDIR/tug-instances.json` for the lifetime of the tugcast process.
+- Bound TCP ports (tugcast HTTP/WS, Vite dev).
+- Open SQLite handles to per-instance tugbank.db and sessions.db.
+- Attached tmux session.
+- Open log files under per-instance Logs/ directory.
+
+#### Terminology and Naming {#terminology}
+
+- **Instance ID** — the canonical string `<profile>-<branch-slug>` (e.g. `production-main`, `development-tide-wake-1`). Used as a path component, a tmux session suffix, a registry key.
+- **Identity** — the `(profile, branch)` tuple that defines a unique instance; the instance ID is its serialization.
+- **Profile** — exactly one of `production` or `development`.
+- **Branch** — the git branch the bundle was built from, or `detached-<short-sha>`.
+- **Branch slug** — branch normalized for filesystem and bundle-ID use: lowercased, `/` → `-`, characters not in `[a-z0-9-]` stripped.
+- **Bundle ID** — the `CFBundleIdentifier`. Distinct from instance ID; bundle ID has its own special-cases per [D10] while instance ID is uniform.
+- **Data dir** — `~/Library/Application Support/Tug/instances/<id>/`.
+- **Registry** — `$TMPDIR/tug-instances.json`.
+
+#### Supported Features {#supported-features}
+
+- Side-by-side coexistence of any number of instances with distinct `(profile, branch)` tuples (bounded only by port windows and TCC entries).
+- One-time migration of legacy `~/.tugbank.db` into `(production, main)`'s tugbank.
+- CLI discovery via flag, env, cwd, or sole-running fallback.
+- `tugutil instance list` and `tugutil instance stop`.
+- `tugutil instance current` (prints the cwd-derived instance ID, or errors).
+
+Explicitly not supported in this phase:
+- `tugutil instance clone`, `prune`, `attach` (deferred per [Q03]).
+- Reassigning an instance to a different identity without rebuild.
+- Cross-instance data migration beyond the one-time legacy tugbank.
+
+#### Modes / Policies {#modes-policies}
+
+- **Production builds** sign with Developer ID, notarize (when invoked with `--notarize`), omit `BUILD_SOURCE_TREE`. Distributed; `(production, main)` keeps the canonical `dev.tugtool.app` bundle ID.
+- **Development builds** sign with Developer ID, never notarize, include `BUILD_SOURCE_TREE` pointing at `$SRCROOT`. Bundle ID is `dev.tugtool.app.dev` for the main branch, `dev.tugtool.app.development-<slug>` otherwise.
+
+#### Semantics {#semantics}
+
+- The identity of a running process is fixed for its lifetime (set at Swift launch, frozen).
+- HEAD movement during a session does not change the identity. (Different from "the branch I'm on in the terminal," which can drift.)
+- Registry entries are pruned on read whenever a recorded PID is no longer alive (kill(pid, 0) returns ESRCH). The pruned entry is rewritten on the next write.
+- Per-instance directories are created lazily on first write. They are never deleted by Tug code; users delete them manually or via a future `tugutil instance prune`.
+- Migration runs at most once per `(production, main)` data dir, gated by the `.migrated-from-legacy` marker.
+
+#### Error and Warning Model {#error-model}
+
+- **EADDRINUSE at tugcast bind**: check registry; if a live PID matches the in-use port for the launching identity, log `tugcast: another '<id>' instance is already running (PID <n>)` and `exit(1)`. The Swift supervisor recognizes this exit pattern and shows an alert to the user; no automatic restart.
+- **Registry file corrupted**: JSON parse fails. Log a warning; rewrite the file with an empty `instances` array; continue. Lost-state recovery is acceptable because the registry is ephemeral.
+- **Migration failure**: tugbank copy fails. Log error; tugcast continues with an empty tugbank for the affected identity; the legacy file is untouched on disk and the migration will be re-attempted on next launch (no marker file written).
+- **Notarization timeout**: `build-app.sh` reports the submission UUID and exits with instructions for `xcrun notarytool log <uuid>`.
+
+#### Public API Surface {#public-api}
+
+Swift (`tugapp/Sources/`):
+- New `BuildInfo.swift` with `static let profile: String`, `static let branch: String`, `static let sourceTree: String?`, `static let instanceId: String`, `static let bundleId: String`. All read from the bundle's Info.plist at startup.
+- Updates to `ProcessManager` to set `TUG_INSTANCE_ID` and pass per-instance data paths via env.
+- Updates to `TugbankClient.configure` to honor the per-instance DB path.
+
+Rust (`tugrust/crates/`):
+- New helper module `tugcore::instance` (or extension to `tuglog`) providing `instance_id() -> Option<String>`, `data_dir() -> Result<PathBuf>`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`. All read `TUG_INSTANCE_ID` from env.
+- New helper module `tugcore::registry` providing `load() -> Result<Registry>`, `register(entry: InstanceEntry) -> Result<()>`, `find_by_id(id: &str) -> Option<InstanceEntry>`, `find_for_cwd() -> Option<InstanceEntry>`, `list_live() -> Vec<InstanceEntry>`.
+- Updates to `tugcast/src/main.rs` to read instance ID and call `register()` after port bind.
+- Updates to `tugutil/src/commands/tell.rs` (and new `tugutil/src/commands/instance.rs`) for the CLI discovery and `instance` subcommand.
+
+Shell (`tugrust/scripts/`, `tugapp/Tug.xcodeproj`):
+- New build-phase scripts: one to capture build-time identity into Info.plist; one to set `CFBundleIdentifier`; one to select the app icon.
+- Rewritten `setup-dev-signing.sh` for Developer ID workflow.
+- Updates to `build-app.sh` for notarization.
+
+#### Output Schemas {#output-schemas}
+
+Registry file `$TMPDIR/tug-instances.json` schema is defined under #registry-format.
+
+`tugutil instance list --json` output:
+```json
+{
+  "instances": [
+    {"id": "production-main", "pid": 12345, "tugcast_port": 55301, "started_at": "2026-05-25T10:30:00Z"},
+    {"id": "development-tide-wake-1", "pid": 12346, "tugcast_port": 55303, "started_at": "2026-05-25T11:15:00Z"}
+  ]
+}
+```
+
+#### Configuration Schema {#config-schema}
+
+No new configuration files. All configuration is via:
+- Build-time: xcconfig + Info.plist + git-derived values.
+- Runtime: `TUG_INSTANCE_ID` env var.
+- CLI: `--instance`, `--profile`, `--branch` flags on tugutil/tugbank.
+
+---
+
+### Compatibility / Migration / Rollout {#rollout}
+
+- **Compatibility policy**: New schema fields are additive. The registry file format carries a `version: 1` field; future incompatible changes bump the version and reset the file. The Info.plist keys are new; existing builds without them are treated as "legacy, unknown identity" and refused at startup (with a clear message: "rebuild Tug to multi-instance schema").
+- **Migration plan**:
+  - `~/.tugbank.db` → `<data-dir>/production-main/tugbank.db` on first launch of new `(production, main)`. One-way copy; legacy file untouched.
+  - `~/Library/Application Support/Tug/Logs/` → no migration; new code writes new paths, old logs stay on disk read-only.
+  - Existing AX grants for `dev.tugtool.app` survive unchanged (production-main keeps the same bundle ID). Other identities are new TCC entries, prompted on first launch.
+- **Rollout plan**: Single-phase rollout. Multi-instance is either available everywhere or not — no feature flag. The user is the only consumer until release.
+- **Rollback strategy**: Revert the merge; rebuild; previous-binary behavior restores. The `.migrated-from-legacy` marker file is harmless under reverted code.
+
+---
+
+### Definitive Symbol Inventory {#symbol-inventory}
+
+#### New crates {#new-crates}
+
+| Crate | Purpose |
+|-------|---------|
+| `tugcore` (new) | Per-instance helpers (instance ID, data dir, registry, notify-socket path). Optionally folded into `tuglog` if scope stays small. |
+
+#### New files {#new-files}
+
+| File | Purpose |
+|------|---------|
+| `tugapp/Sources/BuildInfo.swift` | Reads Info.plist build-time identity values; computes instance ID and bundle ID. |
+| `tugapp/Sources/InstanceConfig.swift` | Composes per-instance paths from instance ID for Swift consumers. |
+| `tugrust/crates/tugcore/src/instance.rs` | Rust per-instance path helpers (data_dir, tugbank_db_path, sessions_db_path, notify_socket_path, log_dir). |
+| `tugrust/crates/tugcore/src/registry.rs` | Registry file load/register/find/list. |
+| `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance` subcommand (list, stop, current). |
+| `tugrust/scripts/capture-build-info.sh` | xcodebuild build-phase script: writes BuildProfile/BuildBranch/BuildSourceTree/BuildCommit into Info.plist. |
+| `tugrust/scripts/assign-bundle-id.sh` | xcodebuild build-phase script: writes CFBundleIdentifier per [D10]. |
+| `tugrust/scripts/select-app-icon.sh` | xcodebuild build-phase script: selects/composites the icon per [D15]. |
+| `tugrust/scripts/notarize.sh` | Wraps `xcrun notarytool submit --wait` + `xcrun stapler staple`. |
+| `tugapp/Resources/AppIcon-dev.icns` | Development base icon (placeholder until [Q02] resolves). |
+
+#### Symbols to add / modify {#symbols}
+
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `BuildInfo` | enum | `tugapp/Sources/BuildInfo.swift` | Static accessors for build-time identity. |
+| `InstanceConfig` | struct | `tugapp/Sources/InstanceConfig.swift` | Per-instance Swift paths. |
+| `ProcessManager.spawnTugcast` | fn | `tugapp/Sources/ProcessManager.swift` | Adds `TUG_INSTANCE_ID` to child env; rewrites `controlSocketPath` to use registered port. |
+| `TugbankClient.configure` | static fn | `tugapp/Sources/TugbankClient.swift` | Accepts per-instance path; falls back to env-resolved path. |
+| `instance_id` | fn | `tugrust/crates/tugcore/src/instance.rs` | Reads `TUG_INSTANCE_ID` env var. |
+| `data_dir` | fn | `tugrust/crates/tugcore/src/instance.rs` | Computes `<base>/instances/<id>/`. |
+| `tugbank_db_path` | fn | `tugrust/crates/tugcore/src/instance.rs` | Returns `<data-dir>/tugbank.db`. |
+| `sessions_db_path` | fn | `tugrust/crates/tugcore/src/instance.rs` | Returns `<data-dir>/sessions.db`. |
+| `notify_socket_path` | fn | `tugrust/crates/tugbank-core/src/notify.rs` | Reads `TUG_INSTANCE_ID`; falls back to legacy path if unset. |
+| `log_dir` | fn | `tugrust/crates/tuglog/src/lib.rs` | Reads `TUG_INSTANCE_ID`; falls back to legacy path if unset. |
+| `Registry::load` | fn | `tugrust/crates/tugcore/src/registry.rs` | Reads + prunes-stale `$TMPDIR/tug-instances.json`. |
+| `Registry::register` | fn | `tugrust/crates/tugcore/src/registry.rs` | Adds entry under flock + atomic rename. |
+| `Registry::find_for_cwd` | fn | `tugrust/crates/tugcore/src/registry.rs` | Walks up cwd for git dir; resolves branch; looks up matching dev instance. |
+| `allocate_port` | fn | `tugrust/crates/tugcast/src/main.rs` | Hash-derived + walk-on-collision per [D08]. |
+| `Cli` (tugcast) | struct | `tugrust/crates/tugcast/src/cli.rs` | `--port` becomes optional; default is computed from instance ID. |
+| `SessionLedger::default_path` | fn | `tugrust/crates/tugcast/src/session_ledger.rs` | Reads `TUG_INSTANCE_ID`; returns per-instance path. |
+| `migrate_legacy_tugbank` | fn | `tugrust/crates/tugcast/src/migration.rs` | One-time legacy DB copy per [D06]. |
+| `InstanceCommands::List` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance list`. |
+| `InstanceCommands::Stop` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance stop <id>`. |
+| `InstanceCommands::Current` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance current`. |
+| `resolve_instance` | fn | `tugrust/crates/tugutil/src/commands/tell.rs` | CLI discovery order per [D09]. |
+
+---
+
+### Documentation Plan {#documentation-plan}
+
+- [ ] Update `docs/` (or create a new doc) explaining the identity model, where state lives per instance, and how to address a specific instance from the CLI.
+- [ ] Update `tests/app-test/README.md` to describe how the harness sets `TUG_INSTANCE_ID` and how parallel test instances coexist.
+- [ ] Update `Justfile` recipe comments where they mention port 55255, tmux session `cc0`, or `~/.tugbank.db`.
+- [ ] Add a one-paragraph entry in `CLAUDE.md` pointing at the design doc.
+
+---
+
+### Test Plan Concepts {#test-plan-concepts}
+
+#### Test Categories {#test-categories}
+
+| Category | Purpose | When to use |
+|----------|---------|-------------|
+| Unit | Identity computation, branch slugification, port hash, registry parse/write | Steps 1, 7, 8, 11, 13 |
+| Integration (Rust) | Tugcast binds derived port; session ledger opens at per-instance path; migration runs once | Steps 7-13 |
+| Integration (Swift) | BuildInfo reads Info.plist correctly; ProcessManager sets TUG_INSTANCE_ID; TugbankClient opens per-instance DB | Steps 1, 7 |
+| End-to-end (just app-test) | Two instances coexist; second-launch-same-identity exits cleanly; CLI discovery resolves correctly | Step 16 |
+| Drift (build artifacts) | Build outputs have correct Bundle ID, correct signing identity, correct notarization staple | Steps 2-5 |
+
+---
+
+### Execution Steps {#execution-steps}
+
+> Each step has a clear commit boundary and a checkpoint. **Commit after all checkpoints pass.**
+
+#### Step 1: Bake build-time identity into Info.plist + BuildInfo accessor {#step-1}
+
+**Commit:** `feat(multi-instance): bake BUILD_PROFILE/BUILD_BRANCH/BUILD_SOURCE_TREE into Info.plist`
+
+**References:** [D01] [D02] [D03], (#process-tree, #inputs-outputs, #terminology)
+
+**Artifacts:**
+- `tugrust/scripts/capture-build-info.sh` — new xcodebuild build-phase script.
+- `tugapp/Tug.xcodeproj/project.pbxproj` — registers the build-phase script as a Run Script phase.
+- `tugapp/Sources/BuildInfo.swift` — new file with `BuildInfo.profile`, `.branch`, `.sourceTree`, `.instanceId`, `.bundleId`.
+- `tugapp/Info.plist` — placeholder keys (overwritten at build time).
+
+**Tasks:**
+- [ ] Write `capture-build-info.sh` to compute `BUILD_PROFILE` (from `$CONFIGURATION`), `BUILD_BRANCH` (from `git -C "$SRCROOT" rev-parse --abbrev-ref HEAD`, falling back to `detached-<sha8>`), `BUILD_SOURCE_TREE` (from `$SRCROOT`; written only when profile is development), `BUILD_COMMIT` (from `git rev-parse HEAD`).
+- [ ] Add the script as a `Run Script` build phase in the Tug target, ordered before code-signing.
+- [ ] Write `BuildInfo.swift` with static accessors that read the Info.plist keys; compute `instanceId` and `bundleId` from profile + branch.
+- [ ] Branch slug helper: lowercase, `/` → `-`, strip non-`[a-z0-9-]`.
+
+**Tests:**
+- [ ] Unit test: branch slugification edge cases (`feat/foo` → `feat-foo`, `Tide-1` → `tide-1`, `wip/foo bar` → `wip-foo-bar`).
+- [ ] Integration test (Swift): `BuildInfo.instanceId` returns expected value for a built debug bundle.
+
+**Checkpoint:**
+- [ ] `xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug build` produces a bundle whose Info.plist contains the four new keys.
+- [ ] `defaults read $(pwd)/path/to/Tug.app/Contents/Info BuildBranch` returns the current git branch.
+
+---
+
+#### Step 2: Dynamic CFBundleIdentifier per identity {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(multi-instance): assign CFBundleIdentifier per (profile, branch)`
+
+**References:** [D10], (#bundle-id-assignment, #signing-flow)
+
+**Artifacts:**
+- `tugrust/scripts/assign-bundle-id.sh` — new build-phase script.
+- `tugapp/Tug.xcodeproj/project.pbxproj` — registers the script.
+
+**Tasks:**
+- [ ] Write `assign-bundle-id.sh` per #bundle-id-assignment.
+- [ ] Add as a Run Script build phase ordered after `capture-build-info.sh` and before code-signing.
+- [ ] Update Tug.entitlements and any code-signing-related xcconfigs to use `$(PRODUCT_BUNDLE_IDENTIFIER)` references where possible, so the dynamic ID propagates correctly.
+
+**Tests:**
+- [ ] Drift test: `codesign -d -r- Tug.app` reports a designated requirement whose identifier matches the post-build Info.plist `CFBundleIdentifier`.
+- [ ] Manual: build with `BUILD_BRANCH=test-branch`, verify Info.plist contains `dev.tugtool.app.development-test-branch`.
+
+**Checkpoint:**
+- [ ] `plutil -extract CFBundleIdentifier raw -o - Tug.app/Contents/Info.plist` returns the expected per-identity ID for production-main, development-main, and a non-main dev build.
+
+---
+
+#### Step 3: Apple Developer ID Application signing {#step-3}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(signing): use Apple Developer ID Application certificate for all builds`
+
+**References:** [D11], (#signing-flow)
+
+**Artifacts:**
+- `scripts/setup-dev-signing.sh` — rewritten to provision Developer ID cert (or instruct on doing so) rather than generate a local one.
+- `tugrust/scripts/build-app.sh` — updated to use Developer ID identity.
+- `tugapp/Tug.entitlements` — adds `com.apple.security.cs.allow-jit` etc. as required for hardened runtime if not already present.
+- `Justfile` — `setup-dev-signing` recipe updated.
+
+**Tasks:**
+- [ ] Rewrite `setup-dev-signing.sh` to verify the Developer ID Application cert is in the login keychain (`security find-identity -v -p codesigning | grep "Developer ID Application"`); if not, print instructions for downloading from developer.apple.com.
+- [ ] Update `build-app.sh` `--sign` path to use `Developer ID Application: <Name> (<TeamID>)` instead of `Tug Dev`.
+- [ ] Add `--options runtime` to the codesign invocation (hardened runtime is required for notarization).
+- [ ] Update `tugapp/Tug.entitlements` for hardened runtime compatibility (JIT, etc. — only what the app actually needs).
+- [ ] Refresh the `.tugtool/code-sign-fingerprint` sentinel against the new identity.
+
+**Tests:**
+- [ ] `codesign --verify --deep --strict Tug.app` returns 0.
+- [ ] `codesign -d --verbose=4 Tug.app` shows `Developer ID Application` as the signing authority.
+- [ ] The existing harness DR drift detection (`Justfile:571`) still passes after rebuild.
+
+**Checkpoint:**
+- [ ] A built Tug.app passes `codesign --verify --deep --strict` with no errors.
+- [ ] `just app-test harness-smoke/smoke.test.ts` passes (AX permission still works under the new identity).
+
+---
+
+#### Step 4: Release notarization via notarytool {#step-4}
+
+**Depends on:** #step-3
+
+**Commit:** `feat(signing): notarize release builds via notarytool`
+
+**References:** [D11], Risk R02, (#signing-flow)
+
+**Artifacts:**
+- `tugrust/scripts/notarize.sh` — new helper script.
+- `tugrust/scripts/build-app.sh` — `--notarize` flag wires through.
+- `Justfile` — new `notarize` recipe or extension to `build-app`.
+
+**Tasks:**
+- [ ] Write `notarize.sh`: `ditto -c -k --keepParent Tug.app Tug.zip`, `xcrun notarytool submit --keychain-profile "tug-notary" --wait Tug.zip`, capture submission UUID, check status, `xcrun stapler staple Tug.app` on success.
+- [ ] Add `--notarize` flag to `build-app.sh`; when set, runs `notarize.sh` after signing.
+- [ ] Add `setup-notary-credentials.sh` (or inline in setup-dev-signing.sh): walks the user through `xcrun notarytool store-credentials tug-notary --apple-id ... --team-id ... --password ...`.
+- [ ] Document the 30-min ceiling and the recovery path (`xcrun notarytool log <uuid>`) in the script's error output.
+
+**Tests:**
+- [ ] `xcrun stapler validate Tug.app` returns valid after notarization.
+- [ ] `spctl --assess --type execute --verbose Tug.app` shows `accepted` and `Notarized Developer ID`.
+
+**Checkpoint:**
+- [ ] A release build of `(production, main)` passes notarization end-to-end on a real network.
+
+---
+
+#### Step 5: Per-profile / per-branch app icon {#step-5}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(multi-instance): per-profile app icon + branch overlay for non-main dev`
+
+**References:** [D15], [Q02], (#process-tree)
+
+**Artifacts:**
+- `tugapp/Resources/AppIcon-dev.icns` — placeholder dev base icon (production icon + diagonal stripe).
+- `tugrust/scripts/select-app-icon.sh` — new build-phase script.
+
+**Tasks:**
+- [ ] Add a placeholder dev icon to the project's asset catalog. (Final artwork is deferred per [Q02].)
+- [ ] Write `select-app-icon.sh`: based on `BUILD_PROFILE`, copy the appropriate `.icns` into the bundle as `AppIcon.icns`. For non-main development builds, composite the branch name onto the icon using `sips` + `iconutil` and replace.
+- [ ] Add the script as a build phase ordered after `assign-bundle-id.sh`.
+
+**Tests:**
+- [ ] Visual check: a production build, a development-main build, and a development-foo build each have distinct dock icons.
+
+**Checkpoint:**
+- [ ] `defaults read $(pwd)/Tug.app/Contents/Info CFBundleIconFile` returns the expected icon name for each identity.
+
+---
+
+#### Step 6: Integration checkpoint — Slice A {#step-6}
+
+**Depends on:** #step-3, #step-4, #step-5
+
+**Commit:** `N/A (verification only)`
+
+**References:** [D01] [D02] [D03] [D10] [D11] [D15], (#success-criteria)
+
+**Tasks:**
+- [ ] Build `(production, main)` from `main`; verify Info.plist, bundle ID, signing identity, icon.
+- [ ] Build `(development, main)` from `main`; verify same.
+- [ ] Switch to a test branch; build `(development, test-branch)`; verify the bundle ID is `dev.tugtool.app.development-test-branch` and the dock icon includes the branch overlay.
+- [ ] Verify all three bundles install/coexist; LaunchServices sees three distinct apps.
+
+**Tests:**
+- [ ] All three bundles pass `codesign --verify --deep --strict`.
+- [ ] `mdfind "kMDItemCFBundleIdentifier == 'dev.tugtool.app.*'"` finds all expected bundles.
+
+**Checkpoint:**
+- [ ] Manual launch: each of the three bundles opens, dock shows three distinct icons.
+
+---
+
+#### Step 7: TUG_INSTANCE_ID env var + per-instance data directory helpers {#step-7}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(multi-instance): TUG_INSTANCE_ID env var + per-instance data dir helpers`
+
+**References:** [D04] [D05] [D12], (#process-tree)
+
+**Artifacts:**
+- New Rust module `tugrust/crates/tugcore/src/instance.rs` (or extension to `tuglog`).
+- `tugapp/Sources/InstanceConfig.swift` — Swift mirror.
+- Updated `ProcessManager.swift` to set `TUG_INSTANCE_ID` when spawning tugcast.
+- Updated `tugrust/crates/tuglog/src/lib.rs` to route log_dir via TUG_INSTANCE_ID.
+
+**Tasks:**
+- [ ] Create `tugcore::instance` with `instance_id()`, `data_dir()`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`. All read `TUG_INSTANCE_ID` from env; return `None` / legacy path if unset.
+- [ ] Create `InstanceConfig.swift` with mirror functions.
+- [ ] Update `ProcessManager.spawnTugcast` (and any other tugcast/tugcode/tugbank child-spawn site) to set `TUG_INSTANCE_ID=<id>` in child env.
+- [ ] Update `tuglog::init` to call the new `log_dir()` helper.
+
+**Tests:**
+- [ ] Unit (Rust): with `TUG_INSTANCE_ID=test-id` set, `data_dir()` returns `<base>/instances/test-id`; with unset, returns the legacy `Tug/` path.
+- [ ] Unit (Swift): `InstanceConfig.dataDir` mirrors the Rust behavior.
+
+**Checkpoint:**
+- [ ] Launching tugcast directly with `TUG_INSTANCE_ID=foo` produces a log file at `<base>/instances/foo/Logs/tugcast.log.<date>`.
+
+---
+
+#### Step 8: Per-instance tugbank DB + notify socket {#step-8}
+
+**Depends on:** #step-7
+
+**Commit:** `feat(multi-instance): per-instance tugbank database and notify socket`
+
+**References:** [D04], (#process-tree)
+
+**Artifacts:**
+- Updated `tugrust/crates/tugbank-core/src/notify.rs` — `socket_path()` reads `TUG_INSTANCE_ID`.
+- Updated `tugrust/crates/tugcast/src/main.rs` — `bank_path` resolution falls back through `--bank-path` > `TUGBANK_PATH` > `tugbank_db_path()` (new) > legacy `~/.tugbank.db`.
+- Updated `tugapp/Sources/TugbankClient.swift` — `configure` accepts a path; AppDelegate calls with `InstanceConfig.tugbankDbPath`.
+
+**Tasks:**
+- [ ] Update notify-socket `socket_path()` to include the instance ID suffix when `TUG_INSTANCE_ID` is set.
+- [ ] Update tugcast's `bank_path` resolution.
+- [ ] Update Swift's TugbankClient to honor per-instance path; remove the unconditional `~/.tugbank.db` fallback.
+- [ ] Update `tugbank` CLI to add `--instance <id>` flag that resolves the DB path via the same helper.
+
+**Tests:**
+- [ ] Integration (Rust): with TUG_INSTANCE_ID=test-a and test-b, two tugcasts open distinct DBs; writes to one are invisible to the other.
+- [ ] Integration: notify-socket receives domain-changed broadcasts only for its instance.
+
+**Checkpoint:**
+- [ ] Two tugcast processes with different TUG_INSTANCE_ID values run concurrently, each owning its own DB.
+
+---
+
+#### Step 9: Per-instance session ledger {#step-9}
+
+**Depends on:** #step-7
+
+**Commit:** `feat(multi-instance): per-instance session ledger`
+
+**References:** [D04]
+
+**Artifacts:**
+- Updated `tugrust/crates/tugcast/src/session_ledger.rs` — `default_path()` consults `tugcore::instance::sessions_db_path()`.
+
+**Tasks:**
+- [ ] Replace the body of `SessionLedger::default_path()` with a call to `tugcore::instance::sessions_db_path()`; preserve fallback to legacy path when TUG_INSTANCE_ID is unset.
+- [ ] Update tests in `session_ledger.rs` to set TUG_INSTANCE_ID in a serialized test mutex.
+
+**Tests:**
+- [ ] Existing session_ledger tests pass with TUG_INSTANCE_ID set in the test mutex.
+- [ ] Integration: two tugcasts with distinct TUG_INSTANCE_ID values track sessions independently.
+
+**Checkpoint:**
+- [ ] `ls ~/Library/Application Support/Tug/instances/*/sessions.db` shows one DB per running instance.
+
+---
+
+#### Step 10: Per-instance tmux session {#step-10}
+
+**Depends on:** #step-7
+
+**Commit:** `feat(multi-instance): per-instance tmux session name`
+
+**References:** [D04], (#process-tree)
+
+**Artifacts:**
+- Updated `tugrust/crates/tugcast/src/cli.rs` — `--session` default becomes `cc-<instance-id>` (or `cc0` if TUG_INSTANCE_ID unset).
+- Updated `Justfile` recipes that reference `cc0` (none currently AFAICT, but verify).
+
+**Tasks:**
+- [ ] Change `Cli::session`'s default from `"cc0"` to a computed value based on `TUG_INSTANCE_ID`. If unset, default to `cc0` (legacy compatibility).
+- [ ] Update the `long_about` help text to reflect the new default.
+- [ ] Update tugexec's `--session` default analogously.
+
+**Tests:**
+- [ ] Integration: two tugcasts with distinct TUG_INSTANCE_ID attach to distinct tmux sessions; `tmux ls` shows both.
+
+**Checkpoint:**
+- [ ] `tmux ls` after launching two instances shows `cc-production-main` and `cc-development-foo` as separate sessions.
+
+---
+
+#### Step 11: Hash-derived port allocation + registry file {#step-11}
+
+**Depends on:** #step-7
+
+**Commit:** `feat(multi-instance): hash-derived ports + $TMPDIR/tug-instances.json registry`
+
+**References:** [D08], [Q01], Risk R03, Risk R04, (#registry-format)
+
+**Artifacts:**
+- New `tugrust/crates/tugcore/src/registry.rs`.
+- Updated `tugrust/crates/tugcast/src/main.rs` — `allocate_port()` helper; call `Registry::register()` after bind.
+
+**Tasks:**
+- [ ] Implement `Registry::load()`, `register()`, `find_by_id()`, `find_for_cwd()`, `list_live()` with flock + atomic rename.
+- [ ] Implement `allocate_port(instance_id, base, window)` with FNV-1a hash + walk-on-collision + ephemeral fallback.
+- [ ] Wire tugcast's main to call `allocate_port` for the HTTP port if `--port` is not explicitly passed; call `Registry::register` after successful bind.
+- [ ] Vite port allocation in `tugexec` and Swift `vitePort` resolution use the same scheme.
+- [ ] Ensure `Registry::register` removes any stale entry for the same instance ID (e.g., from a previous crash).
+
+**Tests:**
+- [ ] Unit: hash determinism (same input → same port).
+- [ ] Unit: walk-on-collision returns the next free port.
+- [ ] Unit: registry round-trip (write, read, find).
+- [ ] Unit: stale PID pruning.
+- [ ] Integration: two tugcasts launched in quick succession claim distinct ports and both register.
+
+**Checkpoint:**
+- [ ] `cat $TMPDIR/tug-instances.json` shows expected entries after two launches.
+- [ ] `lsof -i :55301-55399` shows distinct PIDs for distinct instances.
+
+---
+
+#### Step 12: EADDRINUSE clean-exit path {#step-12}
+
+**Depends on:** #step-11
+
+**Commit:** `feat(multi-instance): clean-exit on duplicate-identity port collision`
+
+**References:** [D07], (#error-model)
+
+**Artifacts:**
+- Updated `tugrust/crates/tugcast/src/main.rs` — `bind()` failure path.
+- Updated `tugapp/Sources/ProcessManager.swift` — supervisor recognizes the exit code/pattern.
+
+**Tasks:**
+- [ ] In tugcast's `main()`, when the initial `TcpListener::bind()` returns `EADDRINUSE`, consult the registry; if a live PID with the same instance ID is registered, log `tugcast: another '<id>' instance is already running (PID <n>)` to stderr + tracing, then `std::process::exit(1)` with a distinguishable exit code (e.g., 73 = `EX_CANTCREAT`).
+- [ ] In Swift's `ProcessManager`, when tugcast exits with code 73 within 1s of launch, surface an `NSAlert` with the registry-derived running-instance info; do not call `startProcess()` again.
+
+**Tests:**
+- [ ] Integration (Rust): launch two tugcasts with identical TUG_INSTANCE_ID in quick succession; second exits with code 73 + expected log line.
+
+**Checkpoint:**
+- [ ] Launching `(development, foo)` twice in two terminals produces a clean alert + exit in the second; no supervisor retry loop.
+
+---
+
+#### Step 13: Legacy ~/.tugbank.db first-launch migration {#step-13}
+
+**Depends on:** #step-8
+
+**Commit:** `feat(multi-instance): one-time legacy ~/.tugbank.db migration into production-main`
+
+**References:** [D06], Risk R01
+
+**Artifacts:**
+- New function `migrate_legacy_tugbank` in `tugcast/src/migration.rs` (or a fresh module).
+- Updated `tugcast/src/main.rs` — call migration once at startup when instance is `production-main`.
+
+**Tasks:**
+- [ ] Implement migration per [D06]: check for `<data-dir>/production-main/.migrated-from-legacy` marker; if absent and `~/.tugbank.db` exists, copy to `<data-dir>/production-main/tugbank.db.tmp`, fsync, rename; write marker; log info.
+- [ ] Atomic-write the marker file.
+- [ ] Skip migration silently for non-production-main instances.
+
+**Tests:**
+- [ ] Integration: with a fresh `<data-dir>/production-main/` and a populated `~/.tugbank.db`, migration runs; second launch is a no-op.
+- [ ] Integration: with a corrupt `~/.tugbank.db`, migration logs an error but tugcast continues with an empty per-instance DB.
+- [ ] Integration: the legacy file is byte-for-byte unchanged after migration.
+
+**Checkpoint:**
+- [ ] First `(production, main)` launch under the new code: `<data-dir>/production-main/tugbank.db` exists with the legacy file's content; `<data-dir>/production-main/.migrated-from-legacy` exists; `~/.tugbank.db` is unchanged.
+
+---
+
+#### Step 14: CLI discovery + tugutil instance subcommand {#step-14}
+
+**Depends on:** #step-11
+
+**Commit:** `feat(multi-instance): CLI discovery + tugutil instance list/stop/current`
+
+**References:** [D09], [Q03], (#public-api)
+
+**Artifacts:**
+- New `tugrust/crates/tugutil/src/commands/instance.rs`.
+- Updated `tugrust/crates/tugutil/src/commands/tell.rs` — `resolve_instance` helper.
+- Updated `tugrust/crates/tugbank/src/main.rs` — `--instance` flag.
+
+**Tasks:**
+- [ ] Implement `tugutil instance list` (reads registry, prints live instances).
+- [ ] Implement `tugutil instance stop <id>` (looks up PID, sends SIGTERM, waits, escalates to SIGKILL if needed).
+- [ ] Implement `tugutil instance current` (cwd-derived; errors if not in a known dev worktree).
+- [ ] Implement `resolve_instance` in tell.rs per [D09]; thread `--instance` flag through.
+- [ ] Add `--instance` to `tugbank` CLI; resolve via the same helper.
+
+**Tests:**
+- [ ] Unit: resolution order tests (flag wins, env wins over cwd, cwd wins over sole, sole wins over error).
+- [ ] Integration: `tugutil instance list` shows running instances; `tugutil instance stop production-main` terminates the right process.
+
+**Checkpoint:**
+- [ ] `tugutil instance list` from a shell with one instance running shows one entry; `tugutil tell restart` invoked from a worktree cwd targets the matching dev instance.
+
+---
+
+#### Step 15: Harness + Justfile updates {#step-15}
+
+**Depends on:** #step-14
+
+**Commit:** `feat(multi-instance): harness and Justfile updates for instance-aware operations`
+
+**References:** [D04] [D09]
+
+**Artifacts:**
+- Updated `Justfile` recipes: `just app`, `just launch`, `just logs`, `just app-test`, `just tail-tugcast`, etc.
+- Updated `tests/app-test/_harness/index.ts` — sets TUG_INSTANCE_ID explicitly for test runs.
+
+**Tasks:**
+- [ ] `just app` and `just launch`: replace `pkill -x Tug` patterns with `tugutil instance stop` keyed on the cwd-derived ID.
+- [ ] `just logs` / `just tail-tugcast` / `just tail-replay`: read log path from `<data-dir>/<id>/Logs/` based on cwd-derived ID.
+- [ ] Update `just app-test` recipe: set `TUG_INSTANCE_ID=apptest-<run-id>` so test runs don't collide with the developer's live dev instance.
+- [ ] Update `tests/app-test/_harness/index.ts` to pass `TUG_INSTANCE_ID` via `--env`.
+
+**Tests:**
+- [ ] `just app-test harness-smoke/smoke.test.ts` passes with a live development instance also running.
+
+**Checkpoint:**
+- [ ] Running `just app-test` while a development worktree's `just app` is also running does not interfere with either.
+
+---
+
+#### Step 16: Integration checkpoint — multi-instance verification {#step-16}
+
+**Depends on:** #step-6, #step-13, #step-15
+
+**Commit:** `N/A (verification only)`
+
+**References:** All design decisions, (#success-criteria)
+
+**Tasks:**
+- [ ] Install `(production, main)` to `/Applications/Tug.app`; launch it.
+- [ ] From a development worktree on a non-main branch, `just app`; verify it launches alongside the production app.
+- [ ] Change the theme in production; verify dev's theme is unchanged.
+- [ ] Open a card and run a claude session in production; verify dev's transcript is empty.
+- [ ] Tail both log files; verify no interleaving.
+- [ ] `tugutil instance list` shows both instances.
+- [ ] `tugutil tell restart` from the worktree cwd restarts only the dev instance.
+- [ ] Attempt to launch a second `(development, foo)` from the same worktree; verify clean-exit alert.
+
+**Tests:**
+- [ ] All success criteria from #success-criteria pass.
+
+**Checkpoint:**
+- [ ] All checks above pass manually; `cd tugrust && cargo nextest run` passes; `cd tugdeck && bun test && bun x tsc --noEmit` passes; full `just app-test` sweep passes.
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** Two or more Tug.app instances run concurrently on a single Mac with full state isolation, Apple Developer ID signing, and CLI discovery that finds the right instance from cwd.
+
+#### Phase Exit Criteria ("Done means…") {#exit-criteria}
+
+- [ ] All sixteen execution steps' checkpoints pass.
+- [ ] All success criteria in #success-criteria pass.
+- [ ] No regression in `just app-test` sweep against the production build.
+- [ ] Documentation in `docs/` and `tests/app-test/README.md` reflects the new model.
+
+**Acceptance tests:**
+- [ ] End-to-end: production-main + development-(worktree) coexist; state isolated; tools resolve cwd-correctly.
+- [ ] End-to-end: second launch of same identity exits cleanly with readable alert.
+- [ ] Drift: legacy tugbank migration is idempotent and preserves the legacy file byte-for-byte.
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+- [ ] Final app icon artwork ([Q02]).
+- [ ] `tugutil instance clone <src> <dst>`, `prune`, `attach` ([Q03]).
+- [ ] Linux/Windows port (separate plan).
+- [ ] `tugutil instance current --json` for shell-script consumption.
+- [ ] Distribution channel (DMG, Sparkle updates) leveraging the notarization infrastructure from Step 4.
+
+| Checkpoint | Verification |
+|------------|--------------|
+| Build artifacts | `codesign --verify --deep --strict` + `stapler validate` (release) |
+| Runtime isolation | Manual: two instances, state diverges |
+| CLI discovery | `tugutil tell restart` from worktree cwd → correct instance |
+| Migration safety | Legacy file SHA-256 unchanged after migration |
+| TCC stability | AX grant survives rebuild of the same bundle ID |
