@@ -117,7 +117,8 @@ describe("translateJsonlSession — [W5a] genuine string-content prompt", () => 
     // and real msg_id ride on the matching turn_complete frames.
     const turnCompletes = turnCompletesOf(out);
     expect(turnCompletes).toHaveLength(2);
-    expect(turnCompletes[0].msg_id).toMatch(/^orphan-/);
+    // Orphan synthesized opener id (`u-N` under [D13]).
+    expect(turnCompletes[0].msg_id).toMatch(/^u-/);
     expect(turnCompletes[1].msg_id).toBe("m1");
   });
 

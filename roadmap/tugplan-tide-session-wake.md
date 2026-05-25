@@ -1360,7 +1360,7 @@ After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an o
 
 **References:** [D13] replay direct emission, [D14] activeMsgId tracking, (#spec-translate-context)
 
-**Status:** Not started.
+**Status:** Shipped. Cycle apparatus retired in tugcode/src/replay.ts (TranslateContext now `globalSeq` / `turnsCommitted` / `openTurnMsgId` / `orphanCounter` / `telemetry` only). Per-entry direct emission, with `noteContentMsgId` helper flipping synthesized opener ids to claude's real msg_id on first content arrival. EOF orphan synthesis unified into `emitOrphanIfOpen`. Three new test files (14 tests total) pin the new contract. Both TSC + test suites green; tugcode binary rebuilt.
 
 **Why this step exists.** Under the paired substrate's "turn = `user_message_replay` opener + N assistant frames + `turn_complete`, all sharing one `msg_id`" contract, the replay translator carried a cycle-pairing apparatus (`pendingUserText` / `pendingUserAttachments` / `cycleOpen` / `cycleMsgId` / `flushPendingOrphan` / `pendingWakeFromReplay`). Under [D07] the substrate is keyed by `turnKey` and accumulates `messages: Message[]` in arrival order; cycle pairing is no longer load-bearing and actively obstructs new opener kinds. The wake-replay regression was the first symptom — fixed by patching cycle pairing rather than retiring it. This step retires it per [D13].
 
@@ -1373,42 +1373,50 @@ After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an o
 
 **Tasks:**
 
-- [ ] Delete from `TranslateContext`: `pendingUserText`, `pendingUserAttachments`, `cycleOpen`, `cycleMsgId`, `pendingWakeFromReplay`.
-- [ ] Add `openTurnMsgId: string | null` to `TranslateContext`.
-- [ ] Delete `flushPendingOrphan`.
-- [ ] Add `noteContentMsgId(ctx, msg_id)` helper per [D13]: idempotent (no-op if `openTurnMsgId === msg_id`); otherwise sets `openTurnMsgId = msg_id`. Called from every content-emit path so synthesized opener ids flip to claude's real `msg_id` on first content arrival.
-- [ ] Rewrite `handleUserEntry` for per-content-block dispatch:
+- [x] Delete from `TranslateContext`: `pendingUserText`, `pendingUserAttachments`, `cycleOpen`, `cycleMsgId`, `pendingWakeFromReplay`.
+- [x] Add `openTurnMsgId: string | null` to `TranslateContext`.
+- [x] Delete `flushPendingOrphan`.
+- [x] Add `noteContentMsgId(ctx, msg_id)` helper per [D13]: idempotent (no-op if `openTurnMsgId === msg_id`); otherwise sets `openTurnMsgId = msg_id`. Called from every content-emit path so synthesized opener ids flip to claude's real `msg_id` on first content arrival.
+- [x] Rewrite `handleUserEntry` for per-content-block dispatch:
   - `<task-notification>` envelope → emit `wake_started{wake_trigger}` (via existing `extractTaskNotificationWake`). Set `openTurnMsgId` to a synthesized `w-<n>`.
   - text content (one or more blocks, concatenated per [D13]) → emit `add_user_message{text, attachments}`. Set `openTurnMsgId` to a synthesized `u-<n>`.
   - `tool_result` blocks → emit `tool_result` per block (does NOT touch `openTurnMsgId`).
   - Scaffolding (`<command-name>` etc.) → skip.
-- [ ] Rewrite `handleAssistantEntry`: emit per-block `content_block_start` + terminal frames; **at every emit site that carries `msg_id` (content_block_start, assistant_text, thinking_text, tool_use), call `noteContentMsgId(ctx, msg_id)`**; keep the same-`msg_id` peek-ahead for SDK continuation; on terminal `turn_complete` emit, clear `openTurnMsgId`.
-- [ ] Add translator-level orphan synthesis at the start of every entry AND at EOF. (The reducer's no-content fallback rule already landed in Step 5.5; this step just exercises it through `[D13]`'s orphan-synthesis path.)
-- [ ] Rebuild tugcode binary.
+- [x] Rewrite `handleAssistantEntry`: emit per-block `content_block_start` + terminal frames; **at every emit site that carries `msg_id` (content_block_start, assistant_text, thinking_text, tool_use), call `noteContentMsgId(ctx, msg_id)`**; keep the same-`msg_id` peek-ahead for SDK continuation; on terminal `turn_complete` emit, clear `openTurnMsgId`. ALSO: prepend a synthesized empty `add_user_message` when `openTurnMsgId === null` so an assistant entry with no preceding opener (the `--continue` and post-`/compact` cases) has a `pendingTurn` for the reducer to commit onto.
+- [x] Add translator-level orphan synthesis at the start of every entry AND at EOF — unified into `emitOrphanIfOpen(ctx)` called from `handleUserEntry` (before any new opener emit) and from `translateJsonlSession`'s EOF block (when `synthesizeDanglingTerminal === true`). Replaces the two old EOF paths (dangling-cycle synth + trailing-orphan flush).
+- [x] Rebuild tugcode binary.
 
 **Tests:**
 
-- [ ] New: `tugcode/src/__tests__/replay-wake-bracket.test.ts` — contract invariants for the wake's replay path:
+- [x] New: `tugcode/src/__tests__/replay-wake-bracket.test.ts` — contract invariants for the wake's replay path (4 tests):
   - JSONL with a `<task-notification>` envelope user entry → translator emits `wake_started`, NOT `add_user_message`.
-  - The substrate (via a test-harness reducer pass) commits a `TurnEntry` with `messages[0]?.kind !== "user_message"` — the wake discriminator invariant under [D07].
-- [ ] New: `tugcode/src/__tests__/replay-interrupted-with-content.test.ts` — pins the orphan-synthesis path with content arrival (the `noteContentMsgId` rule). Fixture: JSONL with `<task-notification>` user entry + partial assistant entry (some content_block_start + assistant_text deltas) + NO `turn_complete`. Asserts:
-  - Translator emits `wake_started`, then content frames carrying claude's real `msg_id`, then orphan `turn_complete{msg_id: <real claude msg_id>, result: "interrupted"}` at EOF (NOT the synthesized `w-<n>`).
-  - The substrate (via reducer pass) commits a `TurnEntry` with the partial content preserved.
-- [ ] New: `tugcode/src/__tests__/replay-interrupted-no-content.test.ts` — pins the orphan synthesis with NO content. Fixture: JSONL with just a user entry (text) + NO assistant entry. Asserts:
-  - Translator emits `add_user_message`, then orphan `turn_complete{msg_id: u-<n>, result: "interrupted"}` at EOF.
-  - The substrate commits a `TurnEntry` with `messages: [user_message]` via the reducer's no-content fallback.
-- [ ] Audit + update: `tugcode/src/__tests__/replay-eof-orphan.test.ts`, `replay-interrupted-orphan.test.ts`, `replay-dangling-cycle.test.ts`, `replay-hmr-mid-stream.test.ts`, `replay-pending-row-injection.test.ts`, `replay.test.ts`. Delete tests pinning internal cycle state (e.g., "pendingUserText is null after the orphan flush"); keep contract tests (e.g., "the orphan produces an `add_user_message` + interrupted `turn_complete` pair").
-- [ ] Tighten `tugdeck/src/__tests__/session-wake-fixture-replay.test.ts` Scenario 2 with the wake discriminator pin: `expect(entry.messages[0]?.kind !== "user_message").toBe(true)`.
-- [ ] Reducer test for the no-content fallback in `handleTurnComplete`: dispatch `turn_complete{msg_id: "u-1"}` while `activeMsgId === null` and `pendingTurn !== null` → commits `pendingTurn` as interrupted-before-response.
+  - Wake bracket ordering (`wake_started` before content frames).
+  - Mixed session: user-text turn + wake turn each get the right opener kind.
+  - Defensive: malformed envelope still emits `wake_started` (best-effort fields).
+- [x] New: `tugcode/src/__tests__/replay-interrupted-with-content.test.ts` — pins the orphan-synthesis path with content arrival (the `noteContentMsgId` rule, 5 tests):
+  - User opener + partial assistant content + EOF → orphan `turn_complete` carries claude's real `msg_id` (not the synthesized `u-N`).
+  - Wake opener + partial assistant content + EOF → same: orphan keyed on real id, not `w-N`.
+  - Mid-session interrupt (new opener mid-turn) → first turn's orphan keyed on real id; second turn's orphan (EOF, no content) keyed on `u-N`.
+  - Thinking-only content also fires `noteContentMsgId` (the swap rule isn't text-specific).
+  - Multi-block content: `noteContentMsgId` is idempotent (no extra mutations beyond the first swap).
+- [x] New: `tugcode/src/__tests__/replay-interrupted-no-content.test.ts` — pins the orphan synthesis with NO content (5 tests):
+  - User opener only + EOF → orphan `turn_complete` carries synthesized `u-N` id.
+  - Wake opener only + EOF → orphan `turn_complete` carries synthesized `w-N` id.
+  - User-then-user (no assistant between) → each gets its own no-content orphan with `u-N` ids.
+  - User opener with attachments only + EOF → orphan synth fires, attachments preserved on opener.
+  - Clean turn + trailing no-content user → first commits with real id, second orphans with `u-N`.
+- [x] Audit + update: `tugcode/src/__tests__/replay-eof-orphan.test.ts`, `replay-interrupted-orphan.test.ts`, `replay-string-content.test.ts`, `replay-hmr-mid-stream.test.ts`, `replay.test.ts`. Synthetic-id prefix updated from `orphan-` to `u-` / `w-`; tests pinning internal cycle state (`pendingUserText`, `cycleOpen`) rewrote to assert the new contract (per-entry direct emission, openTurnMsgId tracking).
+- [x] Tighten `tugdeck/src/__tests__/session-wake-fixture-replay.test.ts` Scenario 2 with the wake discriminator pin: `expect(entry.messages[0]?.kind !== "user_message").toBe(true)`. Updated to feed `wake_started` (the new translator's emission) instead of the prior `add_user_message`-for-envelope shape.
+- [x] Reducer test for the no-content fallback in `handleTurnComplete`: already landed in Step 5.5 (see `reducer.no-content-fallback.test.ts`).
 
 **Checkpoint:**
 
-- [ ] `cd tugcode && bun x tsc --noEmit && bun test` green.
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` green.
-- [ ] `grep -rE "pendingUserText|pendingUserAttachments|cycleOpen|cycleMsgId|flushPendingOrphan|pendingWakeFromReplay" tugcode/src` returns zero matches.
-- [ ] Manual sweep:
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green. (476 tests pass, was 462 + 14 new from the three new files.)
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` green. (2800 tests pass.)
+- [x] `grep -rE "pendingUserText|pendingUserAttachments|cycleOpen|cycleMsgId|flushPendingOrphan|pendingWakeFromReplay" tugcode/src` returns zero hits in production code (the only remaining matches are explanatory comments naming what was retired — in the [D13] retrospective on `TranslateContext` and in two test-file header comments documenting the pre-fix bug each test was originally written to guard).
+- [x] Manual sweep:
   - Cold-boot replay of a wake-containing JSONL paints the wake turn identical to the live path (Monitor tool call + assistant text, no phantom user row).
-  - Replay of an interrupted JSONL with partial assistant content (e.g., session killed mid-stream) commits a TurnEntry with the partial content visible — no "lost turn."
+  - Replay of an interrupted JSONL with partial assistant content (e.g., session killed mid-stream) commits a TurnEntry with the partial content visible — no "lost turn." Confirmed against session 0ff8b401, which carries the with-content interrupt shape on turn 3 (user "output a markdown table…" → assistant `stop_reason: null` with partial markdown → `[Request interrupted by user]` marker → next user submission); the partial markdown table commits cleanly via the `noteContentMsgId` rule (orphan `turn_complete` carries claude's real `msg_01UFe…` id, reducer matches normally).
 
 ---
 

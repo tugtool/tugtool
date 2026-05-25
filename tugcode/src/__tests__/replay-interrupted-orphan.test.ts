@@ -100,14 +100,14 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     expect(userReplays[1].text).toBe("what time is it?");
 
     // TWO turn_completes: orphan's (interrupted) + real's (success).
-    // Identify the orphan by its synthetic id pattern (`orphan-*`),
-    // the real one by claude's actual msg_id ("msg_response"). Under
-    // [D13]'s tracker scheme the synthesized id rides on the
-    // turn_complete frame only.
+    // Identify the orphan by its synthesized opener-id pattern
+    // (`u-*`), the real one by claude's actual msg_id
+    // ("msg_response"). Under [D13]'s tracker scheme the synthesized
+    // id rides on the turn_complete frame only.
     expect(turnCompletes).toHaveLength(2);
 
     const orphanTc = turnCompletes.find((m) =>
-      m.msg_id.startsWith("orphan-"),
+      m.msg_id.startsWith("u-"),
     );
     expect(orphanTc).toBeDefined();
     expect(orphanTc?.result).not.toBe("success");

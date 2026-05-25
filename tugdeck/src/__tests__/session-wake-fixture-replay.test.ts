@@ -271,36 +271,27 @@ describe("session-wake fixture replay — live wake bracket [PPF-01]", () => {
 // -----------------------------------------------------------------------------
 
 describe("session-wake fixture replay — cold-boot replay regression", () => {
-  it("a historic wake turn replayed via the JSONL replay bracket paints correctly", () => {
-    // Per [#slice-2-replay-translator] in the plan, Slice 1 does NOT
-    // synthesize `wake_started` frames during cold-boot rehydration —
-    // the replay translator treats the wake's content as ordinary
-    // user-bracketed turn data. This test pins that the existing
-    // replay path still works for the same content type, so a wake
-    // turn rehydrated from JSONL paints under `phase === "replaying"`
-    // with the captured assistant text reaching the transcript.
-    //
-    // The synthesized `add_user_message` carries the wake's prior
-    // user-text — for a wake that originated mid-session this would
-    // historically be the user's original send; for the captured
-    // PPF-01 reproduction it's the Monitor-arming send. We supply a
-    // placeholder here because Slice 1 doesn't inspect it; the test
-    // owns the wake content survival assertion only.
+  it("a historic wake turn replayed via the JSONL replay bracket paints as a wake (wake discriminator preserved)", () => {
+    // Step 5.6 closes the cold-boot rehydration gap: the replay
+    // translator now recognizes `<task-notification>` envelope user
+    // entries and synthesizes `wake_started` IPC frames (rather than
+    // emitting them as `add_user_message`). This test pins the
+    // resulting substrate shape — under [D07], a wake TurnEntry has
+    // NO `user_message` Message at the head of `messages` (the wake
+    // discriminator). Without this, the envelope text would render as
+    // a phantom "You" row on rehydration, the regression that
+    // motivated Steps 5.5 / 5.6.
     const { store, conn } = makeStore();
 
     emit(conn, {
       type: "replay_started",
       ipc_version: IPC_VERSION,
     });
-    emit(conn, {
-      type: "add_user_message",
-      // No `msg_id` per [D15] — the reducer's `activeMsgId` is set by
-      // the first content event below, not pre-bound by this opener.
-      text: "Use the Monitor tool to tail /var/log/system.log…",
-      attachments: [],
-      turnKey: `replay-key-${captured.msgId}`,
-      ipc_version: IPC_VERSION,
-    });
+    // The cold-boot translator synthesizes `wake_started` for the
+    // envelope user entry — NOT `add_user_message`. The captured
+    // wake_trigger metadata flows through to the substrate's
+    // `wakeTrigger` field on the committed TurnEntry.
+    emit(conn, wakeStartedFromCaptured());
     emit(conn, contentBlockStartTextFromCaptured());
     emit(conn, assistantTextFromCaptured());
     emit(conn, turnComplete(captured.msgId));
@@ -314,15 +305,28 @@ describe("session-wake fixture replay — cold-boot replay regression", () => {
     expect(snap.phase).toBe("idle");
     expect(snap.transcript.length).toBe(1);
     const entry = snap.transcript[0];
+
+    // Wake discriminator (the [D07] invariant): the committed wake
+    // TurnEntry's `messages` does NOT open with a `user_message`
+    // Message. Under Step 5.6's translator-side fix, the envelope
+    // synthesizes a `wake_started` frame, not an `add_user_message`,
+    // so the substrate never mints a `user_message` for the wake.
+    expect(entry.messages[0]?.kind !== "user_message").toBe(true);
+
+    // The captured assistant text reaches the transcript via the
+    // wake's assistant_text Message.
     const assistantTexts = entry.messages
       .filter((m): m is import("@/lib/code-session-store").AssistantText => m.kind === "assistant_text")
       .map((m) => m.text)
       .join("");
     expect(assistantTexts).toBe(captured.assistantText);
-    // Slice 1: wakeTrigger metadata is NOT preserved across cold-boot
-    // replay (the replay translator doesn't synthesize wake_started).
-    // Slice 2 will close this gap; this assertion makes the deferred
-    // work visible.
-    expect(snap.wakeTrigger).toBeNull();
+
+    // The wake's mid-bracket snapshot.wakeTrigger is the same kind of
+    // populated value as the live wake (verified in Scenario 1's
+    // live-bracket test); the post-commit snapshot clears it via the
+    // wake branch of handleTurnComplete. Step 6 (Slice 2) will
+    // propagate wakeTrigger onto the committed TurnEntry so chrome
+    // chips render on rehydrated wake turns; that's out of scope for
+    // Step 5.6, which only closes the wake-discriminator gap.
   });
 });

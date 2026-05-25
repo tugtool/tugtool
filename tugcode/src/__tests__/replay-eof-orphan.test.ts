@@ -116,13 +116,13 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
     expect(userReplays).toHaveLength(2);
     expect(userReplays[1].text).toBe("one more thing");
 
-    // The orphan's synthesized id rides on the turn_complete frame
-    // ([D13]: synthesized opener ids never appear on add_user_message,
-    // which carries no msg_id per [D15]). The orphan turn_complete is
-    // recognizable by its `orphan-*` msg_id and `interrupted` result.
+    // The orphan's synthesized opener id rides on the turn_complete
+    // frame per [D13] — `add_user_message` carries no `msg_id`
+    // ([D15]). The orphan turn_complete is recognizable by its
+    // `u-*` synthesized msg_id and `interrupted` result.
     expect(turnCompletes).toHaveLength(2);
     const orphanTc = turnCompletes.find((m) =>
-      m.msg_id.startsWith("orphan-"),
+      m.msg_id.startsWith("u-"),
     );
     expect(orphanTc).toBeDefined();
     expect(orphanTc?.result).toBe("interrupted");
@@ -142,10 +142,16 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
     expect(replayCompleteOf(out)?.count).toBe(2);
   });
 
-  test("reload-mid-stream (synthesizeDanglingTerminal off): the trailing orphan is left for the live path", async () => {
-    // The trailing submission IS the live `ActiveTurn`;
-    // `runReplay`'s `emitInflightTurnFromActiveTurn` owns it. Flushing
-    // it here would double it.
+  test("reload-mid-stream (synthesizeDanglingTerminal off): trailing opener emits but stays open for the live path", async () => {
+    // Under [D13]'s per-entry direct emission, the trailing user
+    // entry's `add_user_message` is emitted from the JSONL pass —
+    // not deferred to the live `ActiveTurn` snapshot. What stays
+    // deferred is the `turn_complete`: the orphan-synthesis at EOF
+    // is gated on `synthesizeDanglingTerminal=true`, so an open turn
+    // at EOF leaves no `turn_complete` on the wire here. The live
+    // `ActiveTurn` snapshot delivers it eventually (the substrate's
+    // `pendingTurn` lives in the reducer's `replaying` phase until
+    // the live drain catches up).
     const jsonl = [
       userTextEntry("hello"),
       assistantEntry("msg_1", "end_turn", "hi there"),
@@ -154,9 +160,13 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
 
     const out = await collectSession(jsonl, false);
 
-    // Only the real turn — the trailing prompt is not flushed.
-    expect(addUserMessagesOf(out)).toHaveLength(1);
+    // Both add_user_messages emit (per-entry direct emission). Only
+    // the first turn's turn_complete reaches the wire — the trailing
+    // turn stays open at EOF.
+    expect(addUserMessagesOf(out)).toHaveLength(2);
     expect(turnCompletesOf(out)).toHaveLength(1);
+    expect(turnCompletesOf(out)[0].msg_id).toBe("msg_1");
+    expect(turnCompletesOf(out)[0].result).toBe("success");
     expect(replayCompleteOf(out)?.count).toBe(1);
   });
 
@@ -167,18 +177,20 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
     const turnCompletes = turnCompletesOf(out);
     expect(userReplays).toHaveLength(1);
     expect(userReplays[0].text).toBe("did anyone hear me");
-    // The synthesized orphan id rides only on the turn_complete frame
+    // The synthesized opener id rides only on the turn_complete frame
     // per [D13] — `add_user_message` carries no `msg_id` ([D15]).
+    // The `u-` prefix marks a user-text opener's synthesized id.
     expect(turnCompletes).toHaveLength(1);
-    expect(turnCompletes[0].msg_id).toMatch(/^orphan-/);
+    expect(turnCompletes[0].msg_id).toMatch(/^u-/);
     expect(turnCompletes[0].result).toBe("interrupted");
     expect(replayCompleteOf(out)?.count).toBe(1);
   });
 
   test("no trailing orphan: a clean session adds no spurious flush", async () => {
-    // Regression guard — `flushPendingOrphan` is idempotent on empty
-    // pending state, so a session whose last entry already consumed
-    // its user text emits nothing extra at EOF even on a cold resume.
+    // Regression guard — `emitOrphanIfOpen` is idempotent on no open
+    // turn (`openTurnMsgId === null`), so a session whose last entry
+    // closed its turn emits nothing extra at EOF even on a cold
+    // resume.
     const jsonl = [
       userTextEntry("hello"),
       assistantEntry("msg_1", "end_turn", "hi"),
@@ -207,12 +219,17 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
 
     const turnCompletes = turnCompletesOf(out);
     expect(turnCompletes).toHaveLength(2);
-    // First terminal closes the dangling cycle, keyed on the
-    // assistant's `message.id`.
+    // First terminal closes the dangling cycle. Under [D13]'s
+    // `noteContentMsgId` rule, the first assistant entry's content
+    // events swapped openTurnMsgId from the synthesized `u-0` to
+    // claude's real `msg_open`; the next user opener's
+    // emitOrphanIfOpen carries that real id on its turn_complete.
     expect(turnCompletes[0].msg_id).toBe("msg_open");
     expect(turnCompletes[0].result).toBe("interrupted");
-    // Second terminal is the orphan flush, keyed on a synthetic id.
-    expect(turnCompletes[1].msg_id).toMatch(/^orphan-/);
+    // Second terminal is the EOF orphan synth, keyed on the
+    // synthesized opener id (`u-N`) — no content arrived for the
+    // trailing prompt, so openTurnMsgId stays the synthesized id.
+    expect(turnCompletes[1].msg_id).toMatch(/^u-/);
     expect(turnCompletes[1].result).toBe("interrupted");
 
     const userReplays = addUserMessagesOf(out);

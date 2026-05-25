@@ -233,33 +233,39 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-cycle context for the JSONL → frame translator.
+ * Per-session context for the JSONL → frame translator. Carries the
+ * minimum state required for [D13]'s per-entry direct emission
+ * discipline: a global sequence counter, a turn-commit count, the
+ * load-bearing msg_id of any currently open turn, and a synthesized-id
+ * counter. No cross-entry buffering of user submissions, no paired
+ * "cycle" gate — each entry maps to its own IPC events.
  *
- * "Cycle" = one user submission + claude's response (one or more
- * assistant entries, ending with a clean terminal `stop_reason` —
- * `end_turn`, `stop_sequence`, `max_tokens`, or `refusal`).
+ * **The open-turn tracker.** `openTurnMsgId` is the canonical record
+ * of "which turn is currently open on the wire." It carries:
  *
- * Each `assistant` JSONL entry emits its content frames immediately,
- * keyed on its own `message.id` — multi-message claude cycles produce
- * multiple separately-keyed assistant streams on the wire. The cycle's
- * `add_user_message` fires once, on the FIRST assistant entry,
- * keyed on claude's first `message.id`. The terminal `turn_complete`
- * fires only on the `end_turn` entry.
+ *   - a synthesized opener id (`u-<n>` for user-text openers,
+ *     `w-<n>` for wake openers) when no content event has emitted
+ *     yet — the turn exists only as `pendingTurn` in the reducer;
+ *   - claude's real `msg_id` once the first content event of the
+ *     turn emits — {@link noteContentMsgId} swaps the synthesized
+ *     opener id for the real id, so the orphan-synthesis path and the
+ *     reducer's `activeMsgId` (which ALSO sets to the real id on
+ *     first content per [D14]) stay in lockstep.
  *
- * `pendingUserText` and `pendingUserAttachments` hold the cycle's
- * user submission until the first assistant entry consumes them.
- * `cycleOpen` tracks whether `add_user_message` has fired yet so
- * subsequent assistant entries within the same cycle skip re-emitting
- * it. `turnsCommitted` advances once per `end_turn` (the count
- * surfaced via `replay_complete.count`).
+ * Cleared on every terminal `turn_complete` emit; checked at every
+ * new-opener boundary AND at EOF — non-null then triggers a
+ * `turn_complete{result: "interrupted"}` carrying `openTurnMsgId`.
  *
- * A cycle that survives end-of-file (no clean terminal `stop_reason`
- * ever arrived — the JSONL was truncated mid-stream, e.g. by a reload
- * while claude is still responding) needs no special EOF flush: each
- * assistant entry has already emitted its content per-entry. The
- * absence of `turn_complete` keeps the reducer's `pendingUserMessage`
- * and per-msg-id scratch populated until the live drain produces the
- * eventual `turn_complete` when claude's `result` lands.
+ * **Wake-replay regression guarantee.** Wake openers and user openers
+ * share the same tracker; the orphan-synthesis path doesn't care which
+ * kind of opener it's closing. The class of bug that produced the
+ * wake-replay regression (a new opener kind requiring a third mode
+ * added to cycle pairing) cannot recur — adding a new opener kind is
+ * a one-line addition (mint a new prefix), not a structural change.
+ *
+ * See `roadmap/tugplan-tide-session-wake.md` [D13] (replay direct
+ * emission), [D14] (activeMsgId tracking), and `#spec-translate-context`
+ * for the normative state-rules table.
  */
 export interface TranslateContext {
   /**
@@ -272,64 +278,21 @@ export interface TranslateContext {
   /** Number of turns committed via `turn_complete` so far. */
   turnsCommitted: number;
   /**
-   * Pending user submission's text — captured when a `user` JSONL
-   * entry with text content arrives, held until the FIRST `assistant`
-   * entry of the cycle emits the `add_user_message` (and clears
-   * this slot). `null` between cycles or before the cycle's user
-   * entry has been read.
+   * Tracks the load-bearing `msg_id` of the currently open turn.
+   * See the interface docstring above for the full lifecycle; see
+   * {@link noteContentMsgId} for the content-emit update rule and
+   * {@link emitOrphanIfOpen} for the orphan-synthesis path.
    */
-  pendingUserText: string | null;
-  /** Pending user-submission image attachments. */
-  pendingUserAttachments: Attachment[];
+  openTurnMsgId: string | null;
   /**
-   * True between the cycle's first `assistant` entry (which emits
-   * `add_user_message`) and its clean terminal entry (which emits
-   * `turn_complete` and resets the flag). Used to suppress repeated
-   * `add_user_message` emits across multi-message claude turns:
-   * the user submission appears once on the wire, even though the
-   * claude side can produce multiple assistant entries with distinct
-   * `message.id`s within one cycle.
-   */
-  cycleOpen: boolean;
-  /**
-   * `message.id` of the currently-open cycle's most-recent `assistant`
-   * entry, or `null` when no cycle is open. Tracked so that — when the
-   * JSONL ends with a cycle still open and the caller asked for a
-   * dangling-terminal synthesis (`synthesizeDanglingTerminal`) — the
-   * EOF-time synthetic `turn_complete` can key on the same id the
-   * cycle's content frames carried. Reset to `null` by the terminal
-   * `turn_complete` emit alongside `cycleOpen`.
-   */
-  cycleMsgId: string | null;
-  /**
-   * Counter for synthetic msg_ids assigned to orphan-interrupted
-   * submissions (user entries with no following assistant cycle).
-   * Bumped each time a prior `pendingUserText` is flushed as an
-   * interrupted TurnEntry — by `handleUserEntry` when a following
-   * user entry arrives, or at end-of-JSONL when the caller asked for
-   * a dangling-terminal synthesis. The id format is `orphan-<n>` so
-   * it cannot collide with claude's `msg_<base62>` ids.
+   * Counter for synthesized opener ids. Bumped every time a new
+   * synthesized id is minted (`u-<n>` for user-text openers,
+   * `w-<n>` for wake openers — see {@link mintOpenerId}). Monotonic
+   * within a translator session. Reaches the wire only via the
+   * orphan-synthesis `turn_complete` frame and ONLY in the no-content
+   * interrupt case ([D13]'s wire-appearance rule).
    */
   orphanCounter: number;
-  /**
-   * Wake-bracket trigger metadata captured from a `<task-notification>`
-   * envelope on a `user` JSONL entry. Set in {@link handleUserEntry}
-   * when the envelope is detected; consumed and cleared by the
-   * cycle's FIRST `assistant` entry, which emits a `wake_started`
-   * IPC frame instead of a `add_user_message`. `null` between
-   * cycles or for non-wake cycles.
-   *
-   * Live tugcode brackets wake turns by observing
-   * `system/task_notification` on the wire and emitting `wake_started`
-   * via {@link buildWakeStartedMessage}. The JSONL persists the same
-   * event as a synthetic `user` entry containing the XML envelope —
-   * so the replay translator recognizes the envelope and synthesizes
-   * the same IPC frame. Without this, the envelope would land in
-   * `pendingUserText` and surface as a phantom "You" row on
-   * rehydration ([D07] substrate distinguishes wake turns by the
-   * absence of a `user_message` Message at the head of `messages`).
-   */
-  pendingWakeFromReplay: ReplayWakeTrigger | null;
   /** Telemetry sink. */
   telemetry: ReplayTelemetry;
 }
@@ -353,14 +316,91 @@ export function makeTranslateContext(
   return {
     globalSeq: 0,
     turnsCommitted: 0,
-    pendingUserText: null,
-    pendingUserAttachments: [],
-    cycleOpen: false,
-    cycleMsgId: null,
+    openTurnMsgId: null,
     orphanCounter: 0,
-    pendingWakeFromReplay: null,
     telemetry,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Open-turn tracker primitives ([D13])
+// ---------------------------------------------------------------------------
+
+/**
+ * Note that a content frame for the given `msg_id` is being emitted.
+ * Idempotent (no-op if `openTurnMsgId === msgId`); otherwise swaps
+ * `openTurnMsgId` to `msgId` — which flips a synthesized opener id
+ * (`u-<n>` / `w-<n>`) to claude's real `msg_id` on the FIRST content
+ * event of a turn, per [D13]'s wire-truth update rule.
+ *
+ * Empty-id calls are a no-op: only real ids are load-bearing on the
+ * orphan-synthesis path; a content-block-start event with no `msg_id`
+ * doesn't tell us anything new about which turn is open.
+ *
+ * Called from every emit site in {@link handleAssistantEntry} that
+ * carries an `msg_id` (content_block_start, assistant_text,
+ * thinking_text, tool_use). With this rule, the orphan-synthesis
+ * `turn_complete` always carries an id the reducer can match — claude's
+ * real `msg_id` when content has arrived (reducer's normal-commit
+ * path), the synthesized opener id when it hasn't (reducer's
+ * no-content fallback per `#spec-reducer-state` rule 2).
+ */
+function noteContentMsgId(ctx: TranslateContext, msgId: string): void {
+  if (msgId.length === 0) return;
+  if (ctx.openTurnMsgId === msgId) return;
+  ctx.openTurnMsgId = msgId;
+}
+
+/**
+ * Mint a synthesized opener id and bump the counter. Returns
+ * `${prefix}-${n}` where `prefix` is `u` (user-text opener) or `w`
+ * (wake opener). The minted id is translator-internal in the
+ * steady-state path — opener frames (`add_user_message`,
+ * `wake_started`) carry no `msg_id` on the wire ([D15]). The id
+ * reaches the wire only on the orphan-synthesis `turn_complete` AND
+ * only when no content event arrived to swap it via
+ * {@link noteContentMsgId}.
+ */
+function mintOpenerId(ctx: TranslateContext, prefix: "u" | "w"): string {
+  const id = `${prefix}-${ctx.orphanCounter}`;
+  ctx.orphanCounter += 1;
+  return id;
+}
+
+/**
+ * Emit `turn_complete{msg_id: openTurnMsgId, result: "interrupted"}`
+ * when a turn is open at an orphan-synthesis trigger point — a new
+ * opener arriving (closing the prior turn) or EOF on a cold resume.
+ * Clears `openTurnMsgId` and bumps `turnsCommitted` (the orphan IS
+ * committed to the transcript).
+ *
+ * The committed turn's substrate shape depends on whether content
+ * arrived. With content (`openTurnMsgId` holds claude's real
+ * `msg_id`, having been swapped via {@link noteContentMsgId}), the
+ * reducer's `handleTurnComplete` matches on `activeMsgId` and commits
+ * scratch normally — the partial content lands in the TurnEntry.
+ * Without content (`openTurnMsgId` is still the synthesized opener
+ * id; `activeMsgId === null`), the reducer's no-content fallback
+ * (`#spec-reducer-state` rule 2) commits `pendingTurn` as an
+ * interrupted-before-response turn — `[user_message]` for `u-<n>`
+ * openers, `[]` for `w-<n>` openers.
+ *
+ * Idempotent on no open turn — returns `[]` if `openTurnMsgId` is
+ * null, so callers can invoke unconditionally before any new opener.
+ */
+function emitOrphanIfOpen(ctx: TranslateContext): OutboundMessage[] {
+  if (ctx.openTurnMsgId === null) return [];
+  const msgId = ctx.openTurnMsgId;
+  const turnComplete: TurnComplete = {
+    type: "turn_complete",
+    msg_id: msgId,
+    seq: ctx.globalSeq++,
+    result: "interrupted",
+    ipc_version: IPC_VERSION,
+  };
+  ctx.openTurnMsgId = null;
+  ctx.turnsCommitted += 1;
+  return [turnComplete];
 }
 
 // ---------------------------------------------------------------------------
@@ -540,9 +580,9 @@ export interface TranslateJsonlEntryOptions {
   /**
    * When true, the per-entry translator skips emitting `turn_complete`
    * for an `assistant` entry whose `stop_reason` is a clean terminal
-   * ({@link TERMINAL_STOP_REASONS}), leaving `ctx.cycleOpen` true so a
-   * following same-msg_id entry's content frames land in the same
-   * cycle.
+   * ({@link TERMINAL_STOP_REASONS}), leaving the open-turn tracker
+   * (`ctx.openTurnMsgId`) unchanged so a following same-msg_id entry's
+   * content frames land in the same logical turn.
    *
    * The session-level loop sets this when the immediately-following
    * non-skipped JSONL entry is another `assistant` entry sharing the
@@ -551,12 +591,13 @@ export interface TranslateJsonlEntryOptions {
    * (one snapshot when the thinking block was complete, another when
    * the text block was complete), with both records carrying
    * `stop_reason: "end_turn"`. Without suppression the leading entry
-   * would emit a terminal `turn_complete` and reset `cycleOpen`,
-   * causing the trailing entry to open a phantom second cycle whose
-   * `add_user_message` carries empty text and whose duplicate
-   * `turn_complete` is dedupe-dropped by the reducer — leaving
-   * `pendingUserMessage` populated and the post-replay phase stuck in
-   * `streaming` (canInterrupt=true) once `replay_complete` lands.
+   * would emit a terminal `turn_complete` and clear `openTurnMsgId`,
+   * causing the trailing entry's content emits to find no open turn
+   * (the reducer's `activeMsgId` would then be set by the trailing
+   * entry's first content event, and the trailing entry's terminal
+   * would dedupe-drop) — fragile, observable as a stale `pendingTurn`
+   * after `replay_complete`. Suppression keeps exactly one
+   * `turn_complete` at the end of the run.
    */
   suppressTurnComplete?: boolean;
 }
@@ -565,16 +606,16 @@ export interface TranslateJsonlEntryOptions {
  * Translate one JSONL entry into 0..N outbound messages. Pure with
  * respect to external state; the only mutation is on the passed `ctx`.
  *
- * Invariants:
- *   - A `user` entry with `text` content captures into
- *     `ctx.pendingUserText`; emits nothing yet (the cycle's user
- *     side appears on the wire once the first `assistant` entry of
- *     the cycle binds it to claude's `message.id`). `message.content`
+ * Invariants (per [D13]'s per-entry direct emission discipline):
+ *   - A `user` entry with `text` content emits exactly one
+ *     `add_user_message{text, attachments}` (text blocks within the
+ *     entry concatenate; one entry → one frame). `message.content`
  *     may be a bare string (a plain-text submission persisted without
  *     the block-array wrapper) — {@link contentBlocks} normalises it;
  *     a bare-string entry that is Claude Code scaffolding (slash-
- *     command markers, the `/compact` summary) is skipped outright
- *     (see {@link isNonSubmissionUserString}).
+ *     command markers, the `/compact` summary) is skipped outright,
+ *     and a `<task-notification>` envelope emits `wake_started`
+ *     instead (see {@link extractTaskNotificationWake}).
  *   - A `user` entry with `tool_result` blocks emits one
  *     `tool_result` outbound per block immediately. The reducer
  *     pairs them with the prior `tool_use` by `tool_use_id`; no
@@ -591,10 +632,14 @@ export interface TranslateJsonlEntryOptions {
  *     `replay_complete.count`), UNLESS `options.suppressTurnComplete`
  *     is true (set by the session-level loop when peek-ahead detects a
  *     same-msg_id continuation entry; see {@link TranslateJsonlEntryOptions}).
- *   - The cycle's `add_user_message` fires on the FIRST `assistant`
- *     entry of the cycle (when `pendingUserText` is consumed). Each
- *     subsequent `assistant` entry within the same cycle skips
- *     re-emitting it.
+ *     A terminal `turn_complete` clears `ctx.openTurnMsgId`.
+ *   - The opener (`add_user_message` or `wake_started`) is emitted
+ *     by the user entry that mints it — not by the assistant entry
+ *     that follows. Under [D13]'s per-entry direct emission discipline,
+ *     each entry maps to its own IPC events with no cross-entry
+ *     buffering. Multiple consecutive user-text entries each get
+ *     their own committed turn (orphan-synthesis closes the prior
+ *     before the next opener fires).
  *   - A `SKIPPED_TOP_LEVEL_TYPES` entry returns `[]` immediately.
  *   - Anything else falls into the `unknown_shape` skip path.
  */
@@ -690,99 +735,100 @@ function isInterruptMarkerEntry(entry: JsonlEntry, text: string): boolean {
 }
 
 /**
- * Flush any pending orphan user submission as a committed-interrupted
- * turn pair on the wire: `add_user_message` + `turn_complete{result:
- * "interrupted"}` keyed on a synthetic `orphan-<n>` id. The
- * synthesized id rides only on the `turn_complete` frame ([D13]'s
- * "synthesized opener ids never appear on `add_user_message`" rule);
- * the reducer's `handleTurnComplete` no-content fallback ([D14]'s
- * `activeMsgId === null && pendingTurn !== null` branch) commits the
- * pendingTurn without trying to match the synthesized id against
- * scratch.
+ * Per-entry translator for `user` JSONL entries. Direct emit, no
+ * cross-entry buffering — each entry maps to its own IPC events per
+ * [D13]:
  *
- * Resets `pendingUserText` / `pendingUserAttachments` and bumps both
- * `turnsCommitted` (the orphan IS committed; it shows in the
- * transcript) and `orphanCounter` (so subsequent orphans get unique
- * ids). Returns the emitted frames; caller appends to its own output.
+ *   - **`<task-notification>` envelope** (bare-string `message.content`
+ *     matching {@link extractTaskNotificationWake}): close any open
+ *     turn (orphan synthesis), emit `wake_started{wake_trigger}`, set
+ *     `openTurnMsgId` to a synthesized `w-<n>`. Live tugcode never
+ *     sees this envelope on the wire — the SDK lifts the same event as
+ *     `system/task_notification`. The JSONL persists the envelope text
+ *     so replay synthesizes the equivalent `wake_started` frame.
+ *   - **Scaffolding** (slash-command markers, `/compact` summary):
+ *     skip outright. CLI-internal bookkeeping, not transcript
+ *     submissions.
+ *   - **Text content** (`text` blocks, concatenated within the entry
+ *     per [D13]; optional `image` attachments): close any open turn,
+ *     emit `add_user_message{text, attachments}`, set `openTurnMsgId`
+ *     to a synthesized `u-<n>`. The synthesized id is translator-
+ *     internal — `add_user_message` carries no `msg_id` per [D15].
+ *   - **`tool_result` blocks**: emit `tool_result` per block (and one
+ *     `tool_use_structured` for the entry's first `tool_use_id` when
+ *     the entry-level `toolUseResult` is present). These are mid-turn
+ *     events inside the currently open turn (claude's tool-use loop);
+ *     they do NOT touch `openTurnMsgId`.
+ *   - **Interrupt-marker sentinel** ({@link isInterruptMarkerEntry}):
+ *     drop. The orphan-synthesis path at the next opener (or EOF)
+ *     closes any open turn naturally — the marker itself is a
+ *     non-event under [D13]'s model.
  *
- * Idempotent on empty pending state — returns `[]` when there's
- * nothing to flush, so callers can call unconditionally before
- * stashing a new submission.
+ * The opener path closes any prior open turn BEFORE emitting the new
+ * opener. Multiple consecutive openers without an assistant terminal
+ * in between (the interrupted-mid-submission case) each fire orphan
+ * synthesis for the prior, leaving every turn cleanly bracketed on
+ * the wire.
  */
-function flushPendingOrphan(ctx: TranslateContext): OutboundMessage[] {
-  if (ctx.pendingUserText === null && ctx.pendingUserAttachments.length === 0) {
-    return [];
-  }
-  const orphanMsgId = `orphan-${ctx.orphanCounter}`;
-  ctx.orphanCounter += 1;
-
-  const out: OutboundMessage[] = [];
-  const userMessage: AddUserMessage = {
-    type: "add_user_message",
-    text: ctx.pendingUserText ?? "",
-    attachments: ctx.pendingUserAttachments,
-    ipc_version: IPC_VERSION,
-  };
-  out.push(userMessage);
-
-  const turnComplete: TurnComplete = {
-    type: "turn_complete",
-    msg_id: orphanMsgId,
-    seq: ctx.globalSeq++,
-    // Non-"success" result tells the reducer to commit the TurnEntry
-    // with `result: "interrupted"` (see reducer.ts handleTurnComplete:
-    // `result: isSuccess ? "success" : "interrupted"`).
-    result: "interrupted",
-    ipc_version: IPC_VERSION,
-  };
-  out.push(turnComplete);
-
-  ctx.turnsCommitted += 1;
-  ctx.pendingUserText = null;
-  ctx.pendingUserAttachments = [];
-  return out;
-}
-
 function handleUserEntry(
   entry: JsonlEntry,
   ctx: TranslateContext,
 ): OutboundMessage[] {
+  const out: OutboundMessage[] = [];
   const rawContent = entry.message?.content;
-  // A `user` entry persisted with a bare-string `message.content` is
-  // either a plain-text submission (no attachments) or Claude Code
-  // command scaffolding. Skip the scaffolding outright — the
-  // `<command-*>` / `<local-command-*>` markers and the `/compact`
-  // continuation summary are CLI-internal, not transcript submissions.
-  // A genuine string submission falls through to `contentBlocks`,
-  // which wraps it as one synthetic text block for the walk below.
-  if (
-    typeof rawContent === "string" &&
-    isNonSubmissionUserString(entry, rawContent)
-  ) {
-    // A `<task-notification>` envelope ALSO captures the wake's
-    // trigger metadata onto the context so the cycle's first
-    // assistant entry can emit `wake_started` instead of
-    // `add_user_message`. Plain command scaffolding doesn't
-    // populate this slot.
+
+  // Bare-string `message.content` shapes: scaffolding (skip), the
+  // `<task-notification>` wake envelope (emit `wake_started`), or a
+  // plain-text submission (fall through to the block-walk below).
+  if (typeof rawContent === "string") {
+    if (entry.isCompactSummary === true) return out;
+    const trimmed = rawContent.trimStart();
+    if (
+      COMMAND_SCAFFOLDING_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
+    ) {
+      return out;
+    }
     const wake = extractTaskNotificationWake(rawContent);
     if (wake !== null) {
-      ctx.pendingWakeFromReplay = wake;
+      // New opener: close any prior open turn first, then emit
+      // wake_started. The synthesized `w-<n>` is translator-internal
+      // (`wake_started` carries no `msg_id` on the wire); it reaches
+      // the wire only via the orphan-synthesis `turn_complete` AND
+      // only when no content event arrives to swap it.
+      out.push(...emitOrphanIfOpen(ctx));
+      out.push({
+        type: "wake_started",
+        session_id: "",
+        wake_trigger: {
+          task_id: wake.taskId,
+          tool_use_id: "",
+          status: "completed",
+          summary: wake.summary,
+          output_file: "",
+        },
+        ipc_version: IPC_VERSION,
+      });
+      ctx.openTurnMsgId = mintOpenerId(ctx, "w");
+      return out;
     }
-    return [];
+    // Fall through: plain-text submission. `contentBlocks` wraps it
+    // as a single text block for the walk below.
   }
+
   const content = contentBlocks(rawContent);
-  // A user entry can carry `text` blocks (a fresh user submission)
-  // or `tool_result` blocks (a response to a prior tool_use). The two
-  // cases never mix in surveyed JSONLs — but the translator treats
-  // them independently so a future hybrid wouldn't break it.
   const textParts: string[] = [];
   const attachments: Attachment[] = [];
-  const out: OutboundMessage[] = [];
-  // First `tool_use_id` seen in a `tool_result` block — used to bind
-  // the entry-level `toolUseResult` payload (when present) to its
-  // initiating tool_use on the `tool_use_structured` IPC frame.
-  // Mirrors `session.ts:657` (`firstToolUseId`) on the live path.
+  // First `tool_use_id` seen — used to bind the entry-level
+  // `toolUseResult` payload (when present) to its initiating
+  // tool_use on the `tool_use_structured` IPC frame. Mirrors
+  // `session.ts` `firstToolUseId` on the live path.
   let firstToolUseId = "";
+  // Buffer tool_result emissions separately from the opener decision
+  // — they bind to the currently open turn (the assistant's prior
+  // tool_use), so they emit BEFORE any orphan-synthesis trigger from
+  // a new opener within the same entry (defensive against a future
+  // hybrid entry shape).
+  const toolResultFrames: OutboundMessage[] = [];
 
   for (const block of content) {
     const blockType = typeof block.type === "string" ? block.type : "";
@@ -793,10 +839,6 @@ function handleUserEntry(
       continue;
     }
     if (blockType === "tool_result") {
-      // Emit the tool_result directly. The reducer pairs it with the
-      // prior `tool_use` frame by `tool_use_id`; no translator-side
-      // buffering or msg_id keying is needed for tool_result on the
-      // wire (the shape carries no msg_id).
       const toolUseId =
         typeof block.tool_use_id === "string" ? block.tool_use_id : "";
       if (toolUseId.length === 0) {
@@ -815,7 +857,7 @@ function handleUserEntry(
         is_error: isError,
         ipc_version: IPC_VERSION,
       };
-      out.push(toolResult);
+      toolResultFrames.push(toolResult);
       continue;
     }
     if (blockType === "image") {
@@ -846,7 +888,6 @@ function handleUserEntry(
   // tool_use_id. Without this, replayed Read tool calls land in the
   // reducer with `structuredResult: null`, and the Read tool wrapper
   // has no clean `file.content` to render — the body comes up empty.
-  // Mirrors `session.ts:670-680` (the live path).
   const toolUseResult = entry.toolUseResult;
   if (toolUseResult !== undefined && firstToolUseId.length > 0) {
     const structured: ToolUseStructured = {
@@ -859,45 +900,52 @@ function handleUserEntry(
       structured_result: toolUseResult,
       ipc_version: IPC_VERSION,
     };
-    out.push(structured);
+    toolResultFrames.push(structured);
   }
 
+  // Emit tool_result + tool_use_structured frames first — they bind
+  // to the currently open turn (the assistant's prior tool_use call),
+  // so they MUST land before any orphan-synthesis trigger fires from
+  // a new opener within the same entry. In every surveyed JSONL,
+  // text and tool_result do NOT mix within a single user entry, but
+  // the ordering is defensive against a future hybrid shape.
+  out.push(...toolResultFrames);
+
   // Combine text blocks within this single entry — multi-block within
-  // one user entry is the same submission and concatenates.
+  // one user entry is the same submission and concatenates per [D13]
+  // ("the translator emits one `add_user_message` per user JSONL
+  // entry — never more").
   const entryText = textParts.join("");
 
   // Sentinel: claude's "[Request interrupted by user ...]" marker in
-  // any of its known forms (see `isInterruptMarkerEntry`). Flush any
-  // pending orphan as its own committed-interrupted turn, then drop
-  // the marker (don't accumulate, don't emit). The marker has no
-  // attachments by design. The compound check requires both the SDK's
-  // documented marker text AND the absence of `permissionMode` —
-  // see the matcher's docstring for the wire-corpus evidence.
+  // any of its known forms (see `isInterruptMarkerEntry`). Drop the
+  // marker outright. The orphan-synthesis path at the next opener
+  // (or EOF) handles any open-turn closure naturally — under [D13]'s
+  // model the marker is a non-event, not the orphan trigger it was
+  // under the cycle-pairing apparatus.
   if (isInterruptMarkerEntry(entry, entryText) && attachments.length === 0) {
-    out.push(...flushPendingOrphan(ctx));
     return out;
   }
 
-  // Real user submission. If there's already a pending submission
-  // (no assistant cycle separated us from a prior user entry),
-  // flush the prior as an orphan first — multiple consecutive user
-  // entries are structural orphans, never a single concatenated
-  // submission.
-  if (entryText.length > 0 || attachments.length > 0) {
-    if (
-      ctx.pendingUserText !== null ||
-      ctx.pendingUserAttachments.length > 0
-    ) {
-      out.push(...flushPendingOrphan(ctx));
-    }
-    if (entryText.length > 0) {
-      ctx.pendingUserText = entryText;
-    }
-    if (attachments.length > 0) {
-      ctx.pendingUserAttachments = attachments;
-    }
+  // No opener content: a tool_result-only entry (mid-turn) or a
+  // benign empty user entry. Return whatever tool_result frames we
+  // gathered (possibly none); do NOT touch openTurnMsgId.
+  if (entryText.length === 0 && attachments.length === 0) {
+    return out;
   }
 
+  // New opener: close any prior open turn first, then emit
+  // add_user_message. Multiple consecutive user-text entries with no
+  // assistant cycle between them are structural orphans — each gets
+  // its own committed turn rather than a concatenated submission.
+  out.push(...emitOrphanIfOpen(ctx));
+  out.push({
+    type: "add_user_message",
+    text: entryText,
+    attachments,
+    ipc_version: IPC_VERSION,
+  });
+  ctx.openTurnMsgId = mintOpenerId(ctx, "u");
   return out;
 }
 
@@ -946,6 +994,33 @@ function coerceToolResultContent(content: unknown): string {
   }
 }
 
+/**
+ * Per-entry translator for `assistant` JSONL entries. Emits the
+ * entry's content blocks (one `content_block_start` + kind-specific
+ * terminal per block, in arrival order) and, on a clean terminal
+ * `stop_reason`, a `turn_complete` keyed on the entry's `msg_id`.
+ *
+ * Calls {@link noteContentMsgId} at every msg_id-bearing emit so the
+ * open-turn tracker flips from a synthesized opener id to claude's
+ * real `msg_id` on the FIRST content event of the turn. The orphan-
+ * synthesis path (at next-opener boundary or EOF) reads
+ * `openTurnMsgId` to decide the orphan `turn_complete`'s msg_id:
+ *
+ *   - content arrived → real `msg_id` → reducer matches normally;
+ *   - no content → synthesized opener id → reducer's no-content
+ *     fallback commits `pendingTurn`.
+ *
+ * On a clean terminal, clears `openTurnMsgId` (matched commit). The
+ * `suppressTurnComplete` option defers the terminal when peek-ahead
+ * detects the SDK split a single assistant message across two
+ * same-msg_id JSONL records — the trailing record fires the single
+ * terminal.
+ *
+ * The cycle-pairing apparatus (`pendingUserText`, `pendingUserAttachments`,
+ * `cycleOpen`, `cycleMsgId`, `pendingWakeFromReplay`) is gone per
+ * [D13]; the assistant entry no longer mints any opener — the opener
+ * already fired from {@link handleUserEntry}.
+ */
 function handleAssistantEntry(
   entry: JsonlEntry,
   ctx: TranslateContext,
@@ -958,72 +1033,42 @@ function handleAssistantEntry(
 
   const out: OutboundMessage[] = [];
 
-  // Cycle opener fires once per cycle, on the FIRST assistant entry.
-  // Two shapes:
+  // Orphan-assistant synthesis: an `assistant` entry arriving with no
+  // open turn (the JSONL opens with an assistant; the prior turn
+  // closed; or a skipped entry like `isCompactSummary` swallowed the
+  // user side) needs a `pendingTurn` to commit onto. Emit an empty
+  // `add_user_message` to mint one. The empty text is a placeholder
+  // for "the user prompt belongs to a prior session" (the `--continue`
+  // case) or "the user prompt was CLI-internal" (the `/compact`
+  // continuation case); the substrate's `TurnEntry.messages[0]` is
+  // then a `user_message` with `text: ""`.
   //
-  //   - **Wake cycle** (`pendingWakeFromReplay` set by a prior
-  //     `<task-notification>` envelope user entry): emit a
-  //     `wake_started` IPC frame. The reducer's `handleWakeStarted`
-  //     opens `pendingTurn` with `isWake: true` and NO `user_message`
-  //     Message — matching the live wake bracket's substrate shape
-  //     ([D07] wake discriminator).
-  //   - **Normal cycle**: emit an `add_user_message` carrying the
-  //     captured `pendingUserText` / attachments. No `msg_id` on the
-  //     frame ([D14]): the reducer's `activeMsgId` is set by the
-  //     first content event, not by the user-side opener.
-  //
-  // Subsequent assistant entries in the same cycle skip this —
-  // multi-message claude turns produce one opener, multiple
-  // assistant streams.
-  if (!ctx.cycleOpen) {
-    if (ctx.pendingWakeFromReplay !== null) {
-      const wake = ctx.pendingWakeFromReplay;
-      const wakeStarted: WakeStarted = {
-        type: "wake_started",
-        session_id: "",
-        wake_trigger: {
-          task_id: wake.taskId,
-          tool_use_id: "",
-          status: "completed",
-          summary: wake.summary,
-          output_file: "",
-        },
-        ipc_version: IPC_VERSION,
-      };
-      out.push(wakeStarted);
-      ctx.pendingWakeFromReplay = null;
-    } else {
-      const userText = ctx.pendingUserText ?? "";
-      const userAttachments = ctx.pendingUserAttachments;
-      const userMessage: AddUserMessage = {
-        type: "add_user_message",
-        text: userText,
-        attachments: userAttachments,
-        ipc_version: IPC_VERSION,
-      };
-      out.push(userMessage);
-    }
-    ctx.pendingUserText = null;
-    ctx.pendingUserAttachments = [];
-    ctx.cycleOpen = true;
-  }
-
-  // Track the open cycle's most-recent assistant id so an EOF-time
-  // dangling-terminal synthetic can key on it. Only real ids are
-  // recorded — an entry with no `message.id` leaves the prior value.
-  if (entryMsgId.length > 0) {
-    ctx.cycleMsgId = entryMsgId;
+  // This is the one synthesized opener the translator emits beyond
+  // the user-entry path. It preserves the OLD model's behavior for
+  // these edge cases — without it, the assistant's content frames
+  // would arrive at the reducer with no pendingTurn (handleContentBlockStart
+  // looks up scratch by pendingTurn.turnKey) and the turn would never
+  // commit.
+  if (ctx.openTurnMsgId === null) {
+    const synthOpener: AddUserMessage = {
+      type: "add_user_message",
+      text: "",
+      attachments: [],
+      ipc_version: IPC_VERSION,
+    };
+    out.push(synthOpener);
+    ctx.openTurnMsgId = mintOpenerId(ctx, "u");
   }
 
   // Capture per-block records preserving the JSONL's arrival order.
   // Each block is keyed by its position in `message.content` (the
-  // block_index), which mirrors the live wire's `content_block_start.index`
-  // numbering. Per [D07], the reducer mints a Message at each
-  // `(msg_id, block_index)` and appends terminal text/tool content
-  // into the same Message — so the replay path must emit one
-  // content_block_start + terminal frame per block, in arrival order,
-  // to reconstruct the same `messages` sequence the live path would
-  // produce.
+  // block_index), which mirrors the live wire's
+  // `content_block_start.index` numbering. Per [D07], the reducer
+  // mints a Message at each `(msg_id, block_index)` and appends
+  // terminal text/tool content into the same Message — so the replay
+  // path emits one content_block_start + terminal frame per block, in
+  // arrival order, to reconstruct the same `messages` sequence the
+  // live path would produce.
   type BlockRecord =
     | { index: number; kind: "text"; text: string }
     | { index: number; kind: "thinking"; text: string }
@@ -1078,9 +1123,13 @@ function handleAssistantEntry(
   }
 
   // Emit per-block events in arrival order: content_block_start (mints
-  // the reducer's Message) followed by the kind-specific terminal frame.
-  // All keyed on this entry's `message.id` (claude's id; no
-  // canonicalization).
+  // the reducer's Message) followed by the kind-specific terminal
+  // frame. All keyed on this entry's `message.id` (claude's id; no
+  // canonicalization). At every msg_id-bearing emit, call
+  // `noteContentMsgId` so the open-turn tracker flips from the
+  // synthesized opener id (`u-<n>` or `w-<n>`) to claude's real
+  // `msg_id` on the FIRST content event — see [D13]'s wire-truth
+  // update rule.
   for (const block of blocks) {
     // Construct kind-specific content_block_start; the discriminated
     // union narrows tool_use_id / tool_name to required strings only
@@ -1104,6 +1153,7 @@ function handleAssistantEntry(
             ipc_version: IPC_VERSION,
           };
     out.push(blockStart);
+    noteContentMsgId(ctx, entryMsgId);
 
     if (block.kind === "text") {
       if (block.text.length > 0) {
@@ -1119,6 +1169,7 @@ function handleAssistantEntry(
           ipc_version: IPC_VERSION,
         };
         out.push(assistant);
+        noteContentMsgId(ctx, entryMsgId);
       }
     } else if (block.kind === "thinking") {
       if (block.text.length > 0) {
@@ -1133,6 +1184,7 @@ function handleAssistantEntry(
           ipc_version: IPC_VERSION,
         };
         out.push(thinking);
+        noteContentMsgId(ctx, entryMsgId);
       }
     } else if (block.kind === "tool_use") {
       const toolUse: ToolUse = {
@@ -1148,6 +1200,7 @@ function handleAssistantEntry(
         ipc_version: IPC_VERSION,
       };
       out.push(toolUse);
+      noteContentMsgId(ctx, entryMsgId);
     } else {
       // Exhaustiveness check — a future BlockRecord kind that the
       // upstream parser added but this terminal emitter forgot to
@@ -1168,8 +1221,8 @@ function handleAssistantEntry(
   // the reducer would dedupe, stranding pending state). `tool_use`,
   // `pause_turn`, and a null / absent stop_reason are non-terminal —
   // the cycle legitimately continues. Bumps `turnsCommitted` so
-  // `replay_complete.count` reflects committed cycles; closes the
-  // cycle so the next user submission starts fresh.
+  // `replay_complete.count` reflects committed cycles; clears
+  // `openTurnMsgId` so the next opener starts fresh.
   if (
     stopReason !== null &&
     TERMINAL_STOP_REASONS.has(stopReason) &&
@@ -1184,8 +1237,7 @@ function handleAssistantEntry(
     };
     out.push(turnComplete);
     ctx.turnsCommitted += 1;
-    ctx.cycleOpen = false;
-    ctx.cycleMsgId = null;
+    ctx.openTurnMsgId = null;
   }
 
   return out;
@@ -1241,21 +1293,23 @@ export interface TranslateSessionOptions {
    * synchronous; production never sets it. */
   disableYield?: boolean;
   /**
-   * When `true`, end-of-JSONL state that no live turn will resolve is
-   * committed before `replay_complete` rather than left stranded:
+   * When `true`, an open turn at EOF that no live turn will resolve
+   * is committed via {@link emitOrphanIfOpen} before `replay_complete`
+   * rather than left stranded. Under [D13]'s unified open-turn
+   * tracker, both pre-Step-5.6 EOF cases — a dangling assistant cycle
+   * ([replay-1]) and a trailing user-only orphan ([W2]) — collapse
+   * into the same path: if `ctx.openTurnMsgId !== null` at EOF, emit
+   * one `turn_complete{result: "interrupted"}` carrying that id.
    *
-   *   - a cycle still open at EOF (an assistant entry that never
-   *     reached a clean terminal `stop_reason`) gets a synthetic
-   *     `turn_complete { result: "interrupted" }` ([replay-1]);
-   *   - a trailing user submission with no following assistant entry
-   *     (the user submitted and quit before any output) is flushed via
-   *     `flushPendingOrphan` as a `add_user_message` +
-   *     `turn_complete { result: "interrupted" }` pair ([W2]).
-   *
-   * Both cover the cold-resume case: a resumed session whose final
-   * turn — or final bare prompt — was abandoned mid-flight commits it
-   * instead of stranding an in-flight row or silently dropping the
-   * prompt.
+   * The id naturally selects the reducer-side commit path:
+   *   - dangling cycle (content arrived, no clean terminal): the
+   *     `noteContentMsgId` rule swapped `openTurnMsgId` to claude's
+   *     real `msg_id`, so the reducer's `handleTurnComplete` matches
+   *     on `activeMsgId` and commits the partial content;
+   *   - trailing orphan (no content): `openTurnMsgId` is the
+   *     synthesized opener id (`u-<n>` / `w-<n>`), and the reducer's
+   *     no-content fallback (`#spec-reducer-state` rule 2) commits
+   *     `pendingTurn`.
    *
    * `runReplay` sets this from the absence of a live `ActiveTurn`:
    * `true` on a cold resume (no live turn will continue the JSONL),
@@ -1274,17 +1328,17 @@ export interface TranslateSessionOptions {
  * generator's `TReturn` parameter).
  *
  * `count` mirrors the per-wire `replay_complete.count` and counts
- * cycles committed via `turn_complete{result: "success"}` (one per
- * `assistant` JSONL entry whose `stop_reason` is a clean terminal)
- * plus orphan-interrupted cycles flushed via `flushPendingOrphan` (one
- * per orphaned user submission with no following assistant cycle,
- * including a trailing orphan flushed at EOF). A trailing in-flight
- * cycle (assistant entry with no clean terminal `stop_reason`) counts
- * only when {@link TranslateSessionOptions.synthesizeDanglingTerminal}
- * is set — the EOF-time synthetic `turn_complete` then commits it.
- * Without that option the cycle is left open (its content frames are
- * still emitted per-entry) and the live drain produces the eventual
- * `turn_complete` when claude's `result` lands.
+ * every turn committed via `turn_complete` — both clean terminals
+ * (`{result: "success"}`, one per `assistant` JSONL entry whose
+ * `stop_reason` is in {@link TERMINAL_STOP_REASONS}) and orphan
+ * synthesizes (`{result: "interrupted"}`, emitted by
+ * {@link emitOrphanIfOpen} when a new opener arrives or at EOF).
+ *
+ * EOF behavior depends on {@link TranslateSessionOptions.synthesizeDanglingTerminal}:
+ * `false` leaves an open turn for the live drain (the post-replay
+ * `turn_complete` lands when claude's `result` arrives); `true` emits
+ * the orphan synthetic so a cold-resumed session commits its final
+ * turn instead of stranding an in-flight row.
  */
 export interface TranslateSessionResult {
   count: number;
@@ -1486,56 +1540,37 @@ export async function* translateJsonlSession(
     }
   }
 
-  // The trailing in-flight assistant entry (if any) has already
-  // emitted its content frames per-entry above; the absence of a
-  // clean terminal `stop_reason` means no `turn_complete` fired, so
-  // the reducer's `pendingUserMessage` + per-msg-id scratch stay open.
+  // EOF orphan synthesis (gated on `synthesizeDanglingTerminal`).
+  // Under [D13]'s unified open-turn tracker model, both the
+  // "dangling assistant cycle" case (assistant content arrived but no
+  // clean terminal `stop_reason`) and the "trailing user-only orphan"
+  // case (user submitted and quit before any assistant entry) collapse
+  // into one path: if `openTurnMsgId !== null`, emit a single
+  // `turn_complete{result: "interrupted"}` carrying that id.
   //
-  // Two outcomes for that open cycle, decided by the caller via
+  // The id naturally selects the right reducer path:
+  //   - dangling cycle: `noteContentMsgId` already swapped
+  //     `openTurnMsgId` to claude's real `msg_id` from the open
+  //     assistant entry, so the reducer's normal `handleTurnComplete`
+  //     match commits the partial content;
+  //   - trailing orphan: `openTurnMsgId` is still the synthesized
+  //     opener id (`u-<n>` for user-text, `w-<n>` for wake — the
+  //     latter shouldn't reach EOF in practice but the path handles
+  //     it symmetrically), and the reducer's no-content fallback
+  //     (`#spec-reducer-state` rule 2) commits `pendingTurn`.
+  //
+  // The two outcomes for an open turn are decided by the caller via
   // `synthesizeDanglingTerminal`:
-  //   - `false` (default — the reload-mid-stream path, where a live
-  //     `ActiveTurn` is still producing the turn): leave the cycle
-  //     open. `runReplay`'s `emitInflightTurnFromActiveTurn` plus the
-  //     post-bracket live drain deliver the eventual `turn_complete`.
-  //   - `true` (a cold resume — no live turn continues this JSONL):
-  //     no `turn_complete` will ever arrive, so emit a synthetic one
-  //     keyed on the open cycle's assistant id. `result: "interrupted"`
-  //     commits the dangling turn as a terminal `interrupted`
+  //   - `false` (default — reload-mid-stream, where a live
+  //     `ActiveTurn` continues the turn): leave the turn open. The
+  //     live drain (or `emitInflightTurnFromActiveTurn`) delivers
+  //     the eventual `turn_complete`.
+  //   - `true` (cold resume — no live continuation): emit the orphan
+  //     synthetic so the resumed transcript shows an `interrupted`
   //     TurnEntry instead of stranding an in-flight row that animates
-  //     its thinking indicator forever ([replay-1]).
-  if (ctx.cycleOpen && synthesizeDanglingTerminal) {
-    const danglingTerminal: TurnComplete = {
-      type: "turn_complete",
-      msg_id: ctx.cycleMsgId ?? "",
-      seq: ctx.globalSeq++,
-      result: "interrupted",
-      ipc_version: IPC_VERSION,
-    };
-    yield danglingTerminal;
-    ctx.turnsCommitted += 1;
-    ctx.cycleOpen = false;
-    ctx.cycleMsgId = null;
-  }
-
-  // A trailing user submission with no following `assistant` entry
-  // (the user submitted and then quit before any output) leaves
-  // `ctx.pendingUserText` stranded: `flushPendingOrphan` runs only
-  // from `handleUserEntry` on the *next* user entry, and there is no
-  // next entry. Without an EOF flush the resumed transcript silently
-  // loses the user's last prompt ([W2] — 9 of 282 audited sessions).
-  //
-  // Flush it here, gated on `synthesizeDanglingTerminal` for the same
-  // reason as the dangling-cycle synthetic above: on reload-mid-stream
-  // the trailing submission IS the live `ActiveTurn`, which
-  // `runReplay`'s `emitInflightTurnFromActiveTurn` already delivers —
-  // flushing it here would double it. Ordered AFTER the dangling-cycle
-  // synthetic: a session can carry both (4 of the 9 audited [W2]
-  // sessions also had a dangling tool cycle) — the open cycle's turn
-  // closes first, then the trailing prompt commits as its own turn.
-  // `flushPendingOrphan` is idempotent on empty pending state, so this
-  // is a no-op for any session without a stranded submission.
+  //     its thinking indicator forever ([replay-1] / [W2]).
   if (synthesizeDanglingTerminal) {
-    for (const msg of flushPendingOrphan(ctx)) {
+    for (const msg of emitOrphanIfOpen(ctx)) {
       yield msg;
     }
   }

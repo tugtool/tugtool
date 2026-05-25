@@ -698,13 +698,26 @@ describe("translateJsonlSession — synthesized system_metadata", () => {
     const sm = sysMetas[0] as { model: string; session_id: string };
     expect(sm.model).toBe("claude-opus-4-6");
     expect(sm.session_id).toBe("sess-fixture-1");
-    // Position: between replay_started and the first add_user_message.
+    // Position: emitted at the FIRST assistant entry (which carries
+    // the model field) and BEFORE that entry's content_block_start
+    // events. Under [D13]'s per-entry direct emission, the first
+    // `add_user_message` fires from its user entry BEFORE the first
+    // assistant entry — so system_metadata lands after the first
+    // add_user_message but before any assistant content. This is
+    // soon enough to populate tugdeck's SessionMetadataStore before
+    // the assistant rows render.
     const startIdx = out.findIndex((m) => m.type === "replay_started");
     const sysIdx = out.findIndex((m) => m.type === "system_metadata");
-    const firstUmIdx = out.findIndex((m) => m.type === "add_user_message");
+    const firstAssistantContentIdx = out.findIndex(
+      (m) =>
+        m.type === "content_block_start" ||
+        m.type === "assistant_text" ||
+        m.type === "thinking_text" ||
+        m.type === "tool_use",
+    );
     expect(startIdx).toBeGreaterThanOrEqual(0);
-    expect(sysIdx).toBe(startIdx + 1);
-    expect(firstUmIdx).toBe(sysIdx + 1);
+    expect(sysIdx).toBeGreaterThan(startIdx);
+    expect(firstAssistantContentIdx).toBeGreaterThan(sysIdx);
   });
 
   test("claudeSessionId omitted defaults the synthesized session_id to empty string", async () => {
@@ -949,19 +962,27 @@ describe("translateJsonlSession — in-flight trailing turn at EOF", () => {
     expect((out.at(-1) as ReplayComplete).count).toBe(0);
   });
 
-  test("JSONL ending with bare user submission (no answering assistant) commits no turn", async () => {
-    // The buffer is opened by the *assistant* entry, not by `user`.
-    // A user submission with no assistant entry following has no
-    // buffered content to flush — the user's text stays in
-    // `pendingUserText` and is dropped at end-of-iterator. (Live
-    // wire treats an unanswered submission identically: it never
-    // commits a TurnEntry until claude responds.)
+  test("JSONL ending with bare user submission (no answering assistant) emits add_user_message but commits no turn", async () => {
+    // Under [D13]'s per-entry direct emission, the user entry's
+    // `add_user_message` lands on the wire immediately — it is no
+    // longer deferred to the first assistant entry. With
+    // `synthesizeDanglingTerminal: false` (the default), the open
+    // turn at EOF gets NO orphan `turn_complete`: the live drain
+    // (or a subsequent live submission) is responsible for closing
+    // it. The substrate end-state: a `pendingTurn` in the reducer,
+    // no committed TurnEntry — same as the live wire's treatment of
+    // an unanswered submission.
     const jsonl = makeJsonl([
       userEntry([{ type: "text", text: "abandoned prompt" }]),
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
-    // Just brackets; no inner messages.
-    expect(out.length).toBe(2);
+    // Brackets + the user opener (no terminal).
+    expect(out.length).toBe(3);
+    expect(out[0].type).toBe("replay_started");
+    expect(out[1].type).toBe("add_user_message");
+    expect((out[1] as AddUserMessage).text).toBe("abandoned prompt");
+    expect(out[2].type).toBe("replay_complete");
+    // count stays 0 — no turn_complete fired.
     expect((out.at(-1) as ReplayComplete).count).toBe(0);
   });
 
@@ -1122,28 +1143,38 @@ describe("translateJsonlSession — batched yields", () => {
 // ---------------------------------------------------------------------------
 
 describe("translateJsonlEntry — direct unit tests", () => {
-  test("user entry with text alone returns [] and stashes pendingUserText", () => {
+  test("user entry with text emits add_user_message immediately and opens a turn", () => {
+    // Per [D13]'s per-entry direct emission discipline, the user
+    // entry IS the opener frame — no cross-entry buffering. The
+    // open-turn tracker (`openTurnMsgId`) holds a synthesized opener
+    // id (`u-<n>`) until the first content event of the turn flips it
+    // to claude's real msg_id (per `noteContentMsgId`).
     const ctx = makeTranslateContext();
     const out = translateJsonlEntry(
       userEntry([{ type: "text", text: "hello" }]),
       ctx,
     );
-    expect(out).toEqual([]);
-    expect(ctx.pendingUserText).toBe("hello");
-    expect(ctx.cycleOpen).toBe(false);
+    const addUserMessage = out.find(
+      (m): m is AddUserMessage => m.type === "add_user_message",
+    );
+    expect(addUserMessage).toBeDefined();
+    expect(addUserMessage?.text).toBe("hello");
+    // openTurnMsgId is now set to a synthesized opener id ("u-0").
+    expect(ctx.openTurnMsgId).toBe("u-0");
   });
 
-  test("terminal assistant entry resets the cycle and increments turnsCommitted", () => {
-    // Contract: at end_turn, ctx returns to clean state (no pending
-    // user text, no open cycle) and turnsCommitted ticks. Wire-shape
-    // assertions (exact frame count, exact frame order) deleted — they
-    // were shape pins that broke on every substrate refactor.
+  test("terminal assistant entry closes the open turn and increments turnsCommitted", () => {
+    // Contract: a user→assistant pair commits one turn. The user
+    // entry emits the opener; the assistant entry's content flips
+    // `openTurnMsgId` to claude's real id (per `noteContentMsgId`);
+    // the terminal `turn_complete` carries that real id and clears
+    // the tracker.
     const ctx = makeTranslateContext();
-    translateJsonlEntry(
+    const userOut = translateJsonlEntry(
       userEntry([{ type: "text", text: "hello" }]),
       ctx,
     );
-    const out = translateJsonlEntry(
+    const assistantOut = translateJsonlEntry(
       assistantEntry({
         msgId: "msg_term",
         stopReason: "end_turn",
@@ -1151,34 +1182,41 @@ describe("translateJsonlEntry — direct unit tests", () => {
       }),
       ctx,
     );
-    // Contract on the emitted set: an add_user_message + a
-    // turn_complete must be present. The turn_complete carries the
-    // terminal entry's msg_id ("msg_term"); add_user_message carries
-    // no msg_id per [D15]. The cycle is reset.
-    const userReplay = out.find((m): m is AddUserMessage => m.type === "add_user_message");
+    // Opener fired from the user entry; carries no msg_id per [D15].
+    const userReplay = userOut.find(
+      (m): m is AddUserMessage => m.type === "add_user_message",
+    );
     expect(userReplay).toBeDefined();
-    const turnComplete = out.find((m): m is TurnComplete => m.type === "turn_complete");
+    expect(userReplay?.text).toBe("hello");
+    // Terminal turn_complete from the assistant entry; keyed on
+    // claude's real msg_id.
+    const turnComplete = assistantOut.find(
+      (m): m is TurnComplete => m.type === "turn_complete",
+    );
     expect(turnComplete?.msg_id).toBe("msg_term");
-    expect(ctx.cycleOpen).toBe(false);
-    expect(ctx.pendingUserText).toBeNull();
-    expect(ctx.pendingUserAttachments).toEqual([]);
+    // Open-turn tracker cleared; turnsCommitted ticked.
+    expect(ctx.openTurnMsgId).toBeNull();
     expect(ctx.turnsCommitted).toBe(1);
   });
 
-  test("multi-message cycle: each assistant entry emits under its own msg_id", () => {
+  test("multi-message cycle: each assistant entry emits under its own msg_id; opener fires exactly once", () => {
     // Contract: in a multi-message cycle (first entry has tool_use,
     // second is end_turn under a different msg_id), every emitted
     // frame is keyed to its own entry's msg_id — NEVER to the
     // terminal entry's id. The tugdeck reducer's per-Message
     // substrate ([D07]) keys text/tool by (msg_id, block_index); this
-    // contract is what makes that keying work end-to-end. add_user_message
-    // is emitted exactly once (at the first entry of the cycle) — not
-    // re-emitted on the second entry.
+    // contract is what makes that keying work end-to-end.
+    //
+    // Under [D13], the opener (`add_user_message`) fires from the
+    // user entry — NOT from any assistant entry. Subsequent assistant
+    // entries within the same cycle never carry it.
     const ctx = makeTranslateContext();
-    translateJsonlEntry(
+    const userOut = translateJsonlEntry(
       userEntry([{ type: "text", text: "do tools" }]),
       ctx,
     );
+    expect(userOut.some((m) => m.type === "add_user_message")).toBe(true);
+
     const firstOut = translateJsonlEntry(
       assistantEntry({
         msgId: "msg_first",
@@ -1190,22 +1228,30 @@ describe("translateJsonlEntry — direct unit tests", () => {
       }),
       ctx,
     );
+    // The assistant entry MUST NOT re-emit the opener.
+    expect(firstOut.some((m) => m.type === "add_user_message")).toBe(false);
     // Every msg_id-bearing frame from the first entry is keyed to msg_first.
     for (const m of firstOut) {
       const id = (m as { msg_id?: string }).msg_id;
       if (id !== undefined) expect(id).toBe("msg_first");
     }
-    expect(firstOut.some((m) => m.type === "add_user_message")).toBe(true);
 
-    // Tool_result emits from the user entry; keyed by tool_use_id.
+    // Tool_result emits from the user entry (mid-turn — does not
+    // touch openTurnMsgId); keyed by tool_use_id.
     const trOut = translateJsonlEntry(
       userEntry([
         { type: "tool_result", tool_use_id: "tu_1", content: "ls output" },
       ]),
       ctx,
     );
-    const toolResult = trOut.find((m): m is ToolResult => m.type === "tool_result");
+    const toolResult = trOut.find(
+      (m): m is ToolResult => m.type === "tool_result",
+    );
     expect(toolResult?.tool_use_id).toBe("tu_1");
+    // openTurnMsgId is claude's real msg_id from the first assistant
+    // entry's content (the noteContentMsgId rule). A mid-turn
+    // tool_result-only user entry does not change it.
+    expect(ctx.openTurnMsgId).toBe("msg_first");
 
     // Second assistant entry's content keys to msg_second (NOT msg_first).
     // No re-emission of add_user_message.
@@ -1222,11 +1268,13 @@ describe("translateJsonlEntry — direct unit tests", () => {
       const id = (m as { msg_id?: string }).msg_id;
       if (id !== undefined) expect(id).toBe("msg_second");
     }
-    const tc = secondOut.find((m): m is TurnComplete => m.type === "turn_complete");
+    const tc = secondOut.find(
+      (m): m is TurnComplete => m.type === "turn_complete",
+    );
     expect(tc?.msg_id).toBe("msg_second");
 
     expect(ctx.turnsCommitted).toBe(1);
-    expect(ctx.cycleOpen).toBe(false);
+    expect(ctx.openTurnMsgId).toBeNull();
   });
 
   test("unknown top-level type returns [] and fires telemetry", () => {
