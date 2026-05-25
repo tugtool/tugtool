@@ -861,23 +861,24 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - Fire callback (executed by croner when a job's time hits): packages a `wake_started` IPC frame via `emitFrame()` and a stream-json user_message via `writeStdin()`. Both invocations are wrapped in a try/catch — a downstream throw must not unschedule sibling jobs.
 
 **Tasks:**
-- [ ] `cd tugcode && bun add croner@^10.0.1` — install the dep; verify `bun.lock` updates with zero transitive deps.
-- [ ] Create `tugcode/src/scheduler.ts` with the `WakeScheduler` class per the API above.
-- [ ] Wire the class into `SessionManager` construction (`session.ts`): allocate one `WakeScheduler` per session; pass `(msg) => this.writeLine(JSON.stringify(msg))` as `emitFrame` and `(line) => this.claudeStdin.write(line + "\n")` as `writeStdin` (or whatever the existing channel names are — confirm against current `session.ts`).
-- [ ] Wire `WakeScheduler.dispose()` into `SessionManager.dispose()` so a session teardown stops every scheduled job.
-- [ ] JSDoc on every public method citing [D05] / [Q04] and the relevant captures.
+- [x] `cd tugcode && bun add croner@^10.0.1` — install the dep; verify `bun.lock` updates with zero transitive deps.
+- [x] Create `tugcode/src/scheduler.ts` with the `WakeScheduler` class per the API above.
+- [x] Wire the class into `SessionManager` construction (`session.ts`): allocate one `WakeScheduler` per session; `emitFrame` calls `writeLine`; `writeStdin` dereferences `this.claudeProcess` at fire time (the scheduler is constructed eagerly, before claude spawns) and throws cleanly into the scheduler's try/catch when no claude is alive.
+- [x] Wire `WakeScheduler.dispose()` into `SessionManager.shutdown()` so a session teardown stops every scheduled job.
+- [x] JSDoc on every public method citing [D05] / [Q04] and the relevant captures.
 
 **Tests:**
-- [ ] Pure-logic: `schedule` with `{ kind: "delay" }` accepts a delay in seconds and registers a croner Cron with a future Date target; assert `cron.nextRun()` is within `[now + delay − 50ms, now + delay + 50ms]`.
-- [ ] Pure-logic: `schedule` with `{ kind: "cron" }` accepts a 5-field cron expression and registers a croner Cron pattern; `recurring:false` configures `maxRuns:1`.
-- [ ] Pure-logic: `cancel(taskId)` returns true if job existed and is stopped (`job.cron.isStopped() === true`); returns false for an unknown taskId.
-- [ ] Pure-logic: `cancelOnHarnessNotification(taskId)` cancels the matching job (the double-fire safety hook from [D05]) — silent no-op for an unknown taskId.
-- [ ] Pure-logic: `dispose()` stops every job and clears the map; a second `dispose()` is idempotent.
-- [ ] Integration: a 200ms `kind: "delay"` job actually fires its callback (use a real timer, no fakes — bun:test supports this fine for short delays); assert `emitFrame` was called with `type:"wake_started"` and `writeStdin` was called with the JSON line carrying the scheduled prompt.
+- [x] Pure-logic: `schedule` with `{ kind: "delay" }` accepts a delay in seconds and registers a croner Cron with a future Date target; assert `nextRunAt(taskId)` is within the expected window of `now + delay`.
+- [x] Pure-logic: `schedule` with `{ kind: "cron" }` accepts a 5-field cron expression and registers a croner Cron pattern; `recurring:false` configures `maxRuns:1`.
+- [x] Pure-logic: `cancel(taskId)` returns true if job existed and is stopped (`isScheduled` flips false; `nextRunAt` returns null); returns false for an unknown taskId.
+- [x] Pure-logic: `cancelOnHarnessNotification(taskId)` cancels the matching job (the double-fire safety hook from [D05]) — silent no-op for an unknown taskId; `emitFrame` / `writeStdin` never called for a cancelled-on-harness job.
+- [x] Pure-logic: `dispose()` stops every job and clears the map; a second `dispose()` is idempotent; `schedule()` after `dispose()` is a silent no-op.
+- [x] Integration: a 200ms `kind: "delay"` job actually fires its callback (real timer); assert `emitFrame` was called with `type:"wake_started"` and `writeStdin` was called with the JSON line carrying the scheduled prompt; one-shot entry removed after fire.
+- [x] Integration: an `emitFrame` throw does not unschedule sibling jobs and does not prevent `writeStdin` for the same fire.
 
 **Checkpoint:**
-- [ ] `cd tugcode && bun x tsc --noEmit && bun test` green.
-- [ ] `cd tugcode && bun audit` — no high-severity advisories on croner or its transitive deps (it has zero deps; this should be trivially clean).
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green (459 pass, including 13 new scheduler tests).
+- [x] `cd tugcode && bun audit` — no vulnerabilities; croner ships zero transitive deps.
 
 ---
 

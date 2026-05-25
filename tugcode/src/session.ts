@@ -39,6 +39,7 @@ import {
   translateJsonlSession,
 } from "./replay.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
+import { WakeScheduler } from "./scheduler.ts";
 
 interface PendingRequest<T> {
   resolve: (value: T) => void;
@@ -1478,6 +1479,20 @@ export class SessionManager {
    */
   private claudeReadyPromise: Promise<void> | null = null;
   private claudeReadyResolve: (() => void) | null = null;
+  /**
+   * Shadow scheduler for Cohort B wakes (`ScheduleWakeup`, `CronCreate`) —
+   * the two harness facilities whose timers DO NOT emit
+   * `system/task_notification` events in stream-json spawn mode (the mode
+   * tugcode uses). See `roadmap/tugplan-tide-session-wake.md` [Q01] for the
+   * empirical capture and [D05] for the design.
+   *
+   * Constructed eagerly so every code path that registers a job (Step 9
+   * tool-use intercept) and every path that needs to cancel one (the
+   * double-fire safety in {@link handleTaskNotification}) has a stable
+   * reference. {@link shutdown} disposes it before killing claude so
+   * any pending shadow timers are stopped before the session unwinds.
+   */
+  private readonly scheduler: WakeScheduler;
 
   constructor(
     projectDir: string,
@@ -1530,6 +1545,29 @@ export class SessionManager {
     this.replayTelemetry = options?.replayTelemetry;
     this.contextBreakdownEmitter = options?.contextBreakdownEmitter ?? null;
     this.openSessionsDb(options?.sessionsDbPath);
+
+    // Shadow scheduler injection. `emitFrame` is the IPC stdout sink
+    // (same `writeLine` the rest of `SessionManager` uses); `writeStdin`
+    // dereferences `this.claudeProcess` at fire time because the scheduler
+    // is constructed eagerly here, before any claude spawn. A fire that
+    // arrives while no claude is alive (window between teardown and the
+    // next spawn) is logged and dropped — the scheduler's try/catch
+    // wraps both side effects so a downstream throw can't unschedule
+    // sibling jobs. See [D05].
+    this.scheduler = new WakeScheduler({
+      sessionId: this.sessionId,
+      emitFrame: (frame) => writeLine(frame),
+      writeStdin: (line) => {
+        const proc = this.claudeProcess;
+        if (proc === null) {
+          throw new Error(
+            "claude process not running; scheduled wake dropped",
+          );
+        }
+        proc.stdin.write(line + "\n");
+        proc.stdin.flush();
+      },
+    });
   }
 
   /**
@@ -3671,6 +3709,7 @@ export class SessionManager {
    * teardown the OS / test fixtures may run.
    */
   async shutdown(): Promise<void> {
+    this.scheduler.dispose();
     this.closeSessionsDb();
     await this.killAndCleanup();
   }
