@@ -345,7 +345,7 @@ For each Message in the active turn's `messages` array, the snapshot emits the e
 - `assistant_text` Message → `content_block_start { msg_id, block_index, kind: "text" }` then `assistant_text { msg_id, block_index, text: <full text>, is_partial: false }`.
 - `assistant_thinking` Message → `content_block_start { msg_id, block_index, kind: "thinking" }` then `thinking_text { msg_id, block_index, text: <full text>, is_partial: false }`.
 - `tool_use` Message → `content_block_start { msg_id, block_index, kind: "tool_use", tool_use_id, tool_name }` then `tool_use { tool_use_id, input: <full input> }`. If the tool has a `tool_result`, emit that next (`tool_result { tool_use_id, output, is_error }`); if it has a `structuredResult`, emit `tool_use_structured` after.
-- `user_message` Message (committed turns being rehydrated; not applicable to mid-turn snapshot since the user_message is already on the receiving side) → not emitted in the mid-turn snapshot path. In cold-boot JSONL replay, emitted via the existing `user_message_replay` IPC event.
+- `user_message` Message (committed turns being rehydrated; not applicable to mid-turn snapshot since the user_message is already on the receiving side) → not emitted in the mid-turn snapshot path. In cold-boot JSONL replay, emitted via the `add_user_message` IPC event (renamed under Step 5.5 from the prior operation-centric `user_message_replay`).
 
 **Reducer-side change: `handleContentBlockStart` is idempotent.** On `content_block_start` for an `(msg_id, block_index)` already present in `scratch[turnKey].blockIndex`: no-op (Message already minted). On new `(msg_id, block_index)`: mint and index. This idempotence is what makes Option 4 work — the live path may have already minted Messages before the disconnect; the snapshot's `content_block_start` for the same `(msg_id, block_index)` must be inert, not duplicate-mint. The same idempotence covers a defensive scenario where a future tugcode regression re-emits a `content_block_start` mid-stream.
 
@@ -994,17 +994,25 @@ The substrate is message-forward. Every emitter that produces events for it, and
 openTurnMsgId: string | null
 ```
 
-**Set** when any *opener* emits — `user_message_replay` (set to its synthesized `u-<n>`) or `wake_started` (set to a synthesized `w-<n>` used only internally for orphan tracking; never appears on the wire). **Cleared** when any `turn_complete` emits. **Read** at every entry boundary AND at EOF: non-null → emit `turn_complete{msg_id: openTurnMsgId, result: "interrupted"}` *before* the next opener.
+**Set** when any *opener* emits — `add_user_message` (set to its synthesized `u-<n>`, translator-internal) or `wake_started` (set to a synthesized `w-<n>`, also translator-internal; never appears on the wire). **Cleared** when any `turn_complete` emits. **Read** at every entry boundary AND at EOF: non-null → emit `turn_complete{msg_id: openTurnMsgId, result: "interrupted"}` *before* the next opener.
 
 This single field replaces the old `pendingUserText` / `pendingUserAttachments` / `cycleOpen` / `cycleMsgId` / `flushPendingOrphan` / `pendingWakeFromReplay` apparatus. Wake bracket orphans (transport loss mid-wake) get the same treatment as user-side orphans — the tracker doesn't care which kind of opener it's closing.
 
 The existing same-`msg_id` peek-ahead for the SDK's "one logical message split across two JSONL records" continuation case is kept (it's a per-entry "is this the terminal for its msg_id?" decision, not cycle pairing).
 
-**Multi-text-block within one user entry → one `user_message_replay`.** A single user JSONL entry carrying multiple text content blocks (rare but contractually possible) concatenates them into one `user_message_replay.text` per entry. Attachments accompany the same emit. Rationale: the user's mental model is "one submission = one row"; emitting multiple `user_message_replay` events per entry would create surprising visual surface. The translator emits one user_message_replay per user JSONL entry.
+**Multi-text-block within one user entry → one `add_user_message`.** A single user JSONL entry carrying multiple text content blocks (rare but contractually possible) concatenates them into one `add_user_message.text` per entry. Attachments accompany the same emit. Rationale: the user's mental model is "one submission = one row"; emitting multiple `add_user_message` events per entry would create surprising visual surface. The translator emits one `add_user_message` per user JSONL entry.
 
-*B. The reducer treats `activeMsgId` as a tracking field, not a correlation key.* Set by the first content event of each turn (already true on the LIVE path); read by `handleTurnComplete` to determine the committing turn and by `handleInterrupt` to distinguish CASE A from CASE B. `handleUserMessageReplay` stops pre-binding it.
+*B. The reducer treats `activeMsgId` as a tracking field, not a correlation key.* Set by the first content event of each turn (already true on the LIVE path); read by `handleTurnComplete` to determine the committing turn and by `handleInterrupt` to distinguish CASE A from CASE B. `handleAddUserMessage` (renamed from `handleUserMessageReplay` per Decision C) stops pre-binding it.
 
-*C. `msg_id` removed entirely from `UserMessageReplay` (wire) and `UserMessageReplayEvent` (reducer).* Under Decision B the reducer doesn't read it; under Decision A the orphan synthesis pattern flows its synthesized id through the matching `turn_complete.msg_id`, not through `user_message_replay`. The translator's `openTurnMsgId` tracker holds the synthesized `u-<n>` internally; it never emits on the wire as `user_message_replay.msg_id`.
+*C. `UserMessageReplay` → `AddUserMessage`; `msg_id` removed entirely.* Two changes bundled in one IPC contract update:
+
+1. **Rename `user_message_replay` → `add_user_message`** (wire frame type, IPC event type, reducer handler `handleUserMessageReplay` → `handleAddUserMessage`). The old name was operation-centric ("the action of replaying a user message"), inherited from the paired-substrate's user/assistant-halves mental model. Under message-forward, IPC events should be named after the *Message kind* they mint in the substrate — symmetric with `content_block_start { kind: "text" | "thinking" | "tool_use" }`'s message-kind-keyed naming. `add_user_message` says what the event does to the substrate: it adds a `user_message` Message. Sets the template for future `add_system_note` (Step 8 replay path) and any other Message-creating IPC events.
+
+   The outbound wire frame from tugdeck → tugcode → claude stays `UserMessage` (it's a *submission* heading to claude, semantically distinct from "add a Message to the substrate"). The two directions are typographically different: `UserMessage` outbound, `AddUserMessage` inbound. If a future symmetric rename is desired, the outbound becomes `SubmitUserMessage` — out of scope for Step 5.5.
+
+2. **Delete the `msg_id` field** from `AddUserMessage` (wire) and `AddUserMessageEvent` (reducer). Under Decision B the reducer doesn't read it; under Decision A the orphan synthesis pattern flows its synthesized id through the matching `turn_complete.msg_id`, not through `add_user_message`. The translator's `openTurnMsgId` tracker holds the synthesized `u-<n>` internally; it never emits on the wire as part of an `add_user_message` frame.
+
+The IPC shape becomes `{ type: "add_user_message", text, attachments, ipc_version }` — no `msg_id`, name reflects the substrate operation.
 
 Content frames (`assistant_text`, `thinking_text`, `tool_use`, `turn_complete`) continue to carry claude's real `msg_id` on the wire — that *is* load-bearing (handleTextDelta uses `(msg_id, block_index)` to resolve the Message via `blockIndex`; handleTurnComplete uses it for dedupe via `committedMsgIds`). Those stay unchanged.
 
@@ -1012,7 +1020,7 @@ This is a *wire contract change*. No back-compat to maintain: single-repo single
 
 *D. Per-Message render layout stays deferred — and Step 5.6 follows immediately.* The Step 5.5 data source still emits one `user` row + one `code` row per non-wake turn so the substrate refactor and the render-layout refactor are landable in separate commits. Step 5.6 (the per-Message row layout step) lands right after Step 5.5 and does the visible-layout half of the work. The user-facing rule is locked: "if a Message is separate on the wire, it must be separate in the transcript UI." Step 5.5 makes that landable; Step 5.6 lands it.
 
-*E. Dedupe semantics are assistant-side-only after Step 5.5.* `state.committedMsgIds` keys on the assistant's *real* `msg_id` carried by `turn_complete`. Under per-entry direct emission, the user-side `user_message_replay`'s synthesized `u-<n>` is not deduped — duplicate `user_message_replay` emits (a theoretical replay-overlap bug) would *overwrite* the prior `pendingTurn` rather than producing a duplicate. This is acceptable: replays don't naturally overlap, and the worst case is "lose the prior pendingTurn," not "double-commit a turn." The wake bracket's synthesized `w-<n>` (used only for orphan tracking) is never observed by the reducer at all. Document the assistant-side-only dedupe explicitly in `committedMsgIds`'s doc comment so a future bug investigation has the right mental model.
+*E. Dedupe semantics are assistant-side-only after Step 5.5.* `state.committedMsgIds` keys on the assistant's *real* `msg_id` carried by `turn_complete`. Under per-entry direct emission, the user-side `add_user_message`'s synthesized `u-<n>` is translator-internal and never reaches the wire (per Decision C) — so duplicate `add_user_message` emits (a theoretical replay-overlap bug) would *overwrite* the prior `pendingTurn` rather than producing a duplicate. This is acceptable: replays don't naturally overlap, and the worst case is "lose the prior pendingTurn," not "double-commit a turn." The wake bracket's synthesized `w-<n>` (used only for orphan tracking) is never observed by the reducer at all. Document the assistant-side-only dedupe explicitly in `committedMsgIds`'s doc comment so a future bug investigation has the right mental model.
 
 **Files (production).**
 
@@ -1022,25 +1030,33 @@ This is a *wire contract change*. No back-compat to maintain: single-repo single
 - Delete `flushPendingOrphan` (its synthesis pattern moves into the translator-level loop's per-entry handling driven by `openTurnMsgId`).
 - Rewrite `handleUserEntry`: per-content-block dispatch with no buffering.
   - `<task-notification>` envelope → emit `wake_started{wake_trigger}` directly (uses `extractTaskNotificationWake`, which can stay). Set `openTurnMsgId` to a synthesized `w-<n>` (translator-internal; never on the wire).
-  - `text` content (one or more text blocks in the entry, concatenated per Decision A) → emit `user_message_replay{text, attachments}` (NO `msg_id` — per Decision C, it's not on the wire). Set `openTurnMsgId` to a synthesized `u-<n>` (translator-internal).
+  - `text` content (one or more text blocks in the entry, concatenated per Decision A) → emit `add_user_message{text, attachments}` (no `msg_id`, name reflects substrate operation — per Decision C). Set `openTurnMsgId` to a synthesized `u-<n>` (translator-internal).
   - `tool_result` blocks → emit `tool_result` per block (already direct; does NOT affect `openTurnMsgId` — tool_result is mid-turn, not an opener).
   - Scaffolding (`<command-name>` etc.) → skip.
 - Rewrite `handleAssistantEntry`: emit per-block `content_block_start` + terminal frames, no cycle opener logic. Keep the same-`msg_id` peek-ahead for the SDK continuation case (it's a per-entry decision, not cycle pairing). On terminal `turn_complete` emit, clear `openTurnMsgId`.
 - Translator-level orphan synthesis: at the start of every entry AND at EOF, if `openTurnMsgId !== null`, emit `turn_complete{msg_id: openTurnMsgId, result: "interrupted"}` and clear `openTurnMsgId` *before* the new entry's emissions land.
 
-`tugcode/src/types.ts` — IPC contract change:
+`tugcode/src/types.ts` — IPC contract change (per Decision C):
 
-- `UserMessageReplay`: **delete the `msg_id` field**. The translator's `openTurnMsgId` tracker holds the synthesized id internally for orphan-synthesis bookkeeping; it never reaches the wire. The IPC shape becomes `{ type: "user_message_replay", text, attachments, ipc_version }` — no `msg_id`.
+- `UserMessageReplay` → **rename to `AddUserMessage`**; **delete the `msg_id` field**. The IPC frame's `type` becomes `"add_user_message"`. Final shape: `{ type: "add_user_message", text, attachments, ipc_version }`.
+
+`tugcode/src/replay.ts` — translator emits the renamed event:
+
+- All `user_message_replay` emit sites and type references → `add_user_message` / `AddUserMessage`.
 
 `tugdeck/src/lib/code-session-store/events.ts` — match the wire:
 
-- `UserMessageReplayEvent`: **delete the `msg_id` field**. The reducer doesn't read it (Decision B). Matching wire-shape change.
+- `UserMessageReplayEvent` → **rename to `AddUserMessageEvent`**; **delete the `msg_id` field**. The event's `type` becomes `"add_user_message"`. The reducer doesn't read `msg_id` (Decision B).
+
+`tugdeck/src/lib/code-session-store/reducer.ts` — match the event:
+
+- `handleUserMessageReplay` → **rename to `handleAddUserMessage`**. The `reduce()` switch arm `case "user_message_replay":` → `case "add_user_message":`. Behavior change per Decision B: stop pre-binding `activeMsgId`.
 
 `tugdeck/src/lib/code-session-store/reducer.ts` — drop msg_id pre-binding:
 
-- `handleUserMessageReplay`: remove `activeMsgId: event.msg_id`. The first content event of the turn sets `activeMsgId` (matches the LIVE handleSend pattern).
+- `handleAddUserMessage` (renamed from `handleUserMessageReplay` per Decision C): no `activeMsgId` pre-binding. The first content event of the turn sets `activeMsgId` (matches the LIVE handleSend pattern).
 - `handleWakeStarted`: accept from `replaying` (already addressed in commit `<TBD>`; this step ratifies it in the plan).
-- Doc-update every comment that says "the user side and assistant side of a turn share one msg_id" or "cycle's user_message_replay" — the substrate's correlation key is `turnKey`, not `msg_id`.
+- Doc-update every comment that says "the user side and assistant side of a turn share one msg_id" or "cycle's `user_message_replay`" — the substrate's correlation key is `turnKey`, not `msg_id`, and the event itself is now `add_user_message`.
 
 `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — drop `toolMsgId` threading:
 
@@ -1059,7 +1075,7 @@ This is a *wire contract change*. No back-compat to maintain: single-repo single
 
 `tugcode/src/__tests__/replay-wake-bracket.test.ts` (new) — **contract invariants** for the wake's replay path:
 
-- Pin: JSONL with a `<task-notification>` envelope user entry → translator emits `wake_started` IPC, NO `user_message_replay` for that entry. The cycle's subsequent assistant entry's content frames carry the real `msg_id`.
+- Pin: JSONL with a `<task-notification>` envelope user entry → translator emits `wake_started` IPC, NO `add_user_message` for that entry. The cycle's subsequent assistant entry's content frames carry the real `msg_id`.
 - Pin: the substrate (via a test-harness reducer pass) commits a `TurnEntry` with `messages[0]?.kind !== "user_message"` — the **wake discriminator invariant**, load-bearing under [D07]. Future cycle-pairing reintroduction would fail this pin.
 - This is the regression test for the wake-replay bug.
 
@@ -1069,7 +1085,7 @@ This is a *wire contract change*. No back-compat to maintain: single-repo single
 // Wake discriminator: a replayed wake's committed TurnEntry must NOT
 // open with a `user_message` Message — that absence IS the wake
 // signal under [D07]. The regression that produced this assertion's
-// addition was a translator that emitted user_message_replay for the
+// addition was a translator that emitted add_user_message (then named user_message_replay) for the
 // `<task-notification>` envelope, surfacing it as a phantom "You" row.
 expect(entry.messages[0]?.kind !== "user_message").toBe(true);
 ```
@@ -1078,9 +1094,9 @@ This converts Scenario 2 from "loose: text reached the substrate" to "strict: th
 
 `tugcode/src/__tests__/replay-eof-orphan.test.ts`, `replay-interrupted-orphan.test.ts`, `replay-dangling-cycle.test.ts`, `replay-hmr-mid-stream.test.ts`, `replay-pending-row-injection.test.ts`, `replay.test.ts`:
 
-- Audit for cycle-pairing pins (`cycleOpen`, `pendingUserText`, "cycle's first assistant entry binds msg_id", etc.). Update assertions to match per-entry direct emission. Delete tests that pin internal cycle state (e.g., "pendingUserText is null after the orphan flush"); keep contract tests (e.g., "the orphan produces a user_message_replay + interrupted turn_complete pair").
+- Audit for cycle-pairing pins (`cycleOpen`, `pendingUserText`, "cycle's first assistant entry binds msg_id", etc.). Update assertions to match per-entry direct emission. Delete tests that pin internal cycle state (e.g., "pendingUserText is null after the orphan flush"); keep contract tests (e.g., "the orphan produces an `add_user_message` + interrupted `turn_complete` pair"). Update all event-name references from `user_message_replay` to `add_user_message`.
 
-`tugdeck/src/lib/code-session-store/__tests__/*` — audit for `handleUserMessageReplay`-sets-activeMsgId assumptions. Most tests don't pin this; the ones that do should update or delete.
+`tugdeck/src/lib/code-session-store/__tests__/*` — audit for `handleAddUserMessage`-sets-activeMsgId assumptions (in tests that pre-date the rename, this is `handleUserMessageReplay`). Most tests don't pin this; the ones that do should update or delete. All `user_message_replay` event-type references update to `add_user_message`.
 
 **Files (docs).**
 
@@ -1107,9 +1123,10 @@ grep -rE "pendingUserMessage|inflightUserMessage|\.toolCallMap" tugdeck/src --in
 # Expected: zero matches. No migration-tag exceptions — we don't carry
 # history-as-comments. The git log is where history lives.
 
-# user_message_replay msg_id residue (the field is gone per Decision C)
-grep -rnE "user_message_replay.*msg_id|UserMessageReplay.*msg_id" tugcode/src tugdeck/src --include="*.ts"
-# Expected: zero matches.
+# user_message_replay event name residue (renamed to add_user_message per Decision C)
+grep -rnE "user_message_replay|UserMessageReplay|handleUserMessageReplay" tugcode/src tugdeck/src --include="*.ts"
+# Expected: zero matches in production code. Test fixtures may contain
+# pre-rename JSONL captures (those persist claude's own format, not ours).
 
 # Tool-dispatch msg_id field references
 grep -rE "toolMsgId|ToolBlockProps\.msgId|RenderInput.*msgId\b" tugdeck/src --include="*.tsx" --include="*.ts"
@@ -1125,9 +1142,9 @@ Any match without a `[D07]` doc tag is a missed site. The audit isn't done until
 
 - `tugcode/src/replay.ts`: `TranslateContext` carries only `globalSeq`, `turnsCommitted`, `openTurnMsgId`, `orphanCounter`, `telemetry`. No `pending*` opener fields. No `cycleOpen`. No `flushPendingOrphan`. The orphan-synthesis path is gated solely on `openTurnMsgId !== null`.
 - `handleUserEntry` is a pure per-entry dispatcher; `handleAssistantEntry` is a pure per-block emitter with one same-`msg_id` peek-ahead. Neither function mutates context beyond `globalSeq` and `openTurnMsgId`.
-- Multi-text-block user entries concatenate into one `user_message_replay` per entry (Decision A); a test pins this.
-- `tugdeck/src/lib/code-session-store/reducer.ts`: `handleUserMessageReplay` does not set `activeMsgId` and does not read `event.msg_id` (the field is gone per Decision C). `handleWakeStarted` accepts from `idle | replaying`. Every doc comment that names `pendingUserMessage` / `inflightUserMessage` is deleted (no migration tags — clean code, not history). `committedMsgIds`'s doc comment explicitly notes assistant-side-only dedupe (Decision E).
-- `tugcode/src/types.ts` and `tugdeck/src/lib/code-session-store/events.ts`: `UserMessageReplay` / `UserMessageReplayEvent` have no `msg_id` field. The orphan-synthesis path emits `turn_complete` with the translator's internal `openTurnMsgId` value — that's the only place a synthesized id reaches the wire.
+- Multi-text-block user entries concatenate into one `add_user_message` per entry (Decision A); a test pins this.
+- `tugdeck/src/lib/code-session-store/reducer.ts`: `handleAddUserMessage` (renamed from `handleUserMessageReplay` per Decision C) does not set `activeMsgId`. `handleWakeStarted` accepts from `idle | replaying`. Every doc comment that names `pendingUserMessage` / `inflightUserMessage` is deleted (no migration tags — clean code, not history). `committedMsgIds`'s doc comment explicitly notes assistant-side-only dedupe (Decision E).
+- `tugcode/src/types.ts` and `tugdeck/src/lib/code-session-store/events.ts`: `AddUserMessage` (was `UserMessageReplay`) and `AddUserMessageEvent` (was `UserMessageReplayEvent`) are the new names; neither carries an `msg_id` field. Wire frame type string is `"add_user_message"`. The orphan-synthesis path emits `turn_complete` with the translator's internal `openTurnMsgId` value — that's the only place a synthesized id reaches the wire.
 - `dispatchToolCallState`'s `msgId` parameter is gone; `ToolBlockProps.msgId` is gone; `CodeRowBody` no longer threads `toolMsgId`; `RenderInput.tool_call.msgId` is gone.
 - New test `replay-wake-bracket.test.ts` passes (pins the wake discriminator invariant). `session-wake-fixture-replay.test.ts` Scenario 2 tightened to pin the same invariant.
 - `cd tugcode && bun x tsc --noEmit && bun test` green.
@@ -1138,7 +1155,7 @@ Any match without a `[D07]` doc tag is a missed site. The audit isn't done until
 
 **Backwards compatibility: none, deliberately.**
 
-Step 5.5 is a wire-shape change. The `user_message_replay` IPC frame loses its `msg_id` field; the reducer drops it from the corresponding event. There's no back-compat carry: single-repo single-developer codebase, no shipping product with users on old binaries, no concurrent contributors with stale checkouts.
+Step 5.5 is a wire-shape change. The user-side IPC frame is renamed `user_message_replay` → `add_user_message` AND loses its `msg_id` field (both per Decision C); the reducer's matching event and handler rename in lockstep. There's no back-compat carry: single-repo single-developer codebase, no shipping product with users on old binaries, no concurrent contributors with stale checkouts.
 
 The two halves (tugcode IPC + tugdeck reducer) MUST land together — running an old tugdeck against a new tugcode would TSC-fail (the new tugcode emits an event missing a then-required field); running new tugdeck against old tugcode would TSC-fail symmetrically. Bundle into one commit; rebuild the tugcode binary (`bun build --compile` per the existing discipline).
 
