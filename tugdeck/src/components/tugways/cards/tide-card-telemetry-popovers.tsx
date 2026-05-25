@@ -261,25 +261,46 @@ function TurnNumberButton({
  * (`#N+1`). Each number is independently clickable, so the reader
  * can jump to either side of the turn. Mirrors the transcript's
  * own two-entries-per-turn structure.
+ *
+ * Wake turns ([D06]) have NO user row — `userRowIndexForTurn` returns
+ * `-1` for them, and we render only the assistant-half button (no
+ * `·` separator). The single-number rendering is the popover's
+ * visual cue that the turn doesn't have a user submission to
+ * scroll to.
  */
 function TurnEntryPair({
   turnIndex,
+  transcript,
   onScrollToRow,
 }: {
   turnIndex: number;
+  transcript: ReadonlyArray<TurnEntry>;
   onScrollToRow?: ScrollToRowHandler;
 }): React.ReactElement {
+  const userRow = userRowIndexForTurn(turnIndex, transcript);
+  const assistantRow = assistantRowIndexForTurn(turnIndex, transcript);
+  if (userRow < 0) {
+    // Wake turn — render only the assistant-half number, no separator.
+    return (
+      <span className="tide-popover-turn-pair" data-slot="tide-popover-turn-pair">
+        <TurnNumberButton
+          rowIndex={assistantRow}
+          onScrollToRow={onScrollToRow}
+        />
+      </span>
+    );
+  }
   return (
     <span className="tide-popover-turn-pair" data-slot="tide-popover-turn-pair">
       <TurnNumberButton
-        rowIndex={userRowIndexForTurn(turnIndex)}
+        rowIndex={userRow}
         onScrollToRow={onScrollToRow}
       />
       <span className="tide-popover-turn-pair-sep" aria-hidden>
         ·
       </span>
       <TurnNumberButton
-        rowIndex={assistantRowIndexForTurn(turnIndex)}
+        rowIndex={assistantRow}
         onScrollToRow={onScrollToRow}
       />
     </span>
@@ -415,7 +436,7 @@ export function TimePopoverContent({
   const rows = transcript.map((t, i) => (
     <PopoverRow
       key={t.turnKey}
-      label={<TurnEntryPair turnIndex={i} onScrollToRow={onScrollToRow} />}
+      label={<TurnEntryPair turnIndex={i} transcript={transcript} onScrollToRow={onScrollToRow} />}
       preview={<RequestPreview turn={t} />}
       value={formatTimeAlwaysHours(t.activeMs)}
       badge={<TurnEndStateBadge turn={t} />}
@@ -482,7 +503,7 @@ export function TokensPopoverContent({
   const rows = transcript.map((t, i) => (
     <PopoverRow
       key={t.turnKey}
-      label={<TurnEntryPair turnIndex={i} onScrollToRow={onScrollToRow} />}
+      label={<TurnEntryPair turnIndex={i} transcript={transcript} onScrollToRow={onScrollToRow} />}
       preview={<RequestPreview turn={t} />}
       value={formatTokensCaps(summary.perTurn[i] ?? 0)}
       badge={<TurnEndStateBadge turn={t} />}

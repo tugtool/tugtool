@@ -6535,31 +6535,40 @@ Conformance is satisfied trivially: no new body kind, no new token slot family, 
 
 #### [PPF-01] Tide UI does not re-paint when a session resumes after going idle
 
-**Status:** Active — first work item after this plan exits. Dive-in point: the reproduction recipe below + the reference session JSONL. The bug lives in tugcast / tugdeck session binding, not in any assistant-rendering surface.
+**Status:** Closing across three slices in [`roadmap/tugplan-tide-session-wake.md`](./tugplan-tide-session-wake.md). The empirical Step-6 cohort sweep revealed the bug is actually three sub-bugs across three tool cohorts; each closes in a different slice.
 
-**Surfaced during:** [#step-24-3-2](#step-24-3-2) HMR testing — a `Monitor` invocation that timed out 60s later produced the expected `task-notification` → assistant resume in the underlying `claude` JSONL, but the Tide UI stayed on the pre-idle frame and never showed the post-idle turn. Reopening the session in Tide should reveal the missing turns (unverified; user confirmed the symptom).
+| Cohort | Tools | Closing slice | Status |
+|---|---|---|---|
+| **A — in-invocation async** (`task_notification` fires on the wire) | Monitor; Bash `run_in_background:true` (idle); Task `run_in_background:true` (idle) | Slice 1 (Steps 1-7) — wake bracket | **Reducer + tugcode shipped; phantom user bubble fixed by Slice 1c-a** |
+| **B — harness re-invoke** (no signal in tugcode spawn mode) | ScheduleWakeup; CronCreate | Slice 1b (Steps 8-11) — tugcode shadow scheduler via croner | Planned; not yet implemented |
+| **C — not wake sources** | PushNotification (sync outbound); TaskOutput (blocking wait); Task/Bash `run_in_background:true` with active poll | n/a | No fix needed |
+| **Phantom user bubble** (committed wake's empty-text marker renders as a "You" row) | Affects every Cohort A and Cohort B wake | Slice 1c-a (Steps 12-13) — `TideTranscriptDataSource` single-row | Planned; not yet implemented |
 
-**Out of scope for this plan because:** the bug is in Tide's session-subscription lifecycle (when the assistant goes idle, Tide stops observing post-idle events from the same session), not in any of this plan's rendering / dispatch / policy concerns. Fixing it requires tugcast / tugdeck session-binding work that does not touch the assistant-rendering surface.
+**Surfaced during:** [#step-24-3-2](#step-24-3-2) HMR testing — a `Monitor` invocation that timed out 60s later produced the expected `task-notification` → assistant resume in the underlying `claude` JSONL, but the Tide UI stayed on the pre-idle frame. Wake-plan Step 6 manual repro of Session 56cce4fe also surfaced the phantom user bubble (the working Monitor wake painted a "You ✓ OK" row between user-initiated turns).
 
-**Reproduction recipe (for the follow-up plan):**
-1. Open a fresh Tide session against any project.
-2. Prompt: `Use the Monitor tool to tail /var/log/system.log until you see the word "kernel". Stop as soon as you see it.`
-3. Approve the permission prompt.
-4. Wait 60+ seconds (until the Monitor times out).
-5. Expected: the assistant resumes with `"The monitor timed out…"` + a follow-up `Bash` investigation. The transcript should paint these turns in the Tide UI.
-6. Observed: the UI stays on `State: Idle` indefinitely; reopening the session shows the missing turns. The session JSONL confirms the assistant DID resume server-side.
+**Out of scope for this plan because:** Tide session-binding + transcript work lives in `tugplan-tide-session-wake.md`, which is now the single source of truth. The rendering-plan PPF-01 entry stays here as a cross-reference; the implementation tracks there.
 
-**Reference session:** `~/.claude/projects/-private-tmp-todo-test/5c0aa961-019e-47a7-a39e-1c9327d5e9fc.jsonl`. Timeline:
-```
-14:47:32  Monitor armed (60s timeout)
-14:47:54  Claude: "Monitor armed; I'll report back..."
-          [55-second idle wait]
-14:48:51  task-notification arrives: "Monitor timed out — re-arm if needed."
-14:48:54  Claude resumes: "The monitor timed out after 60 seconds..."
-14:48:56  Claude fires Bash to investigate
-```
+**Reproduction recipes per cohort:**
 
-**Workaround until fixed:** reopen the session in Tide if the assistant has been idle long enough to potentially have resumed from a background event.
+*Cohort A (any of three):*
+1. Monitor: `Use the Monitor tool to tail /var/log/system.log with a 5-second timeout, watching for the word "kernel".`
+2. Bash run_in_background: `Run "sleep 4 && echo done" in the background using Bash with run_in_background:true. Then idle wait — do not poll.`
+3. Task run_in_background: `Spawn a general-purpose Agent with run_in_background:true that sleeps 8s and prints DONE. Then idle wait — do not poll.`
+
+Expected after wake fires: the wake turn paints in the transcript, NO user bubble appears for the wake.
+
+*Cohort B (broken until Slice 1b ships):*
+1. `Use ScheduleWakeup to wake yourself in 60 seconds with reason 'X'. When the wake fires, report back.`
+2. `Use CronCreate to schedule a one-shot job firing in 1 minute that prompts you to report 'X'.`
+
+Expected after Slice 1b: wake turn paints just like Cohort A. Currently: nothing happens after the scheduling tool returns.
+
+**Reference captures:** `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.150-spike/` holds raw stream-json captures for all three cohorts. See that directory's README for the per-file taxonomy.
+
+**Reference session (Cohort A symptom):** `~/.claude/projects/-Users-kocienda-Mounts-u-src-tugtool/56cce4fe-d01d-470b-ae0a-7c3695a14061.jsonl` shows ScheduleWakeup's harness-reinvoke shape in `sdk-cli` mode (lines 26-28: `queue-operation` enqueue → synthetic user-message with `isMeta:true`). The same shape does NOT surface in tugcode's `--input-format=stream-json` spawn — confirmed empirically by `probes/probe-sw-streamio.mjs` (90 s held subprocess; zero output after `result/success`).
+
+**Workaround until Slice 1c-a ships:** Cohort A wakes paint but with an empty "You" row above the wake content. Cosmetic only.
+**Workaround until Slice 1b ships:** for ScheduleWakeup / CronCreate, the wake silently never fires; reopen the session manually or use Cohort A tools (Monitor / Bash run_in_background / Task run_in_background) when an idle-wake is required.
 
 ---
 

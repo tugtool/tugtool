@@ -26,6 +26,7 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import type { TurnEntry } from "@/lib/code-session-store";
 import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import {
@@ -371,14 +372,52 @@ describe("TideTranscriptDataSource — subscribe + getVersion", () => {
 });
 
 describe("userRowIndexForTurn / assistantRowIndexForTurn", () => {
+  // A stub transcript of N non-wake turns, just enough to satisfy
+  // the helpers' signature. The body fields don't matter to the
+  // index helpers — only `userMessage.text` and
+  // `userMessage.attachments.length` are read (via `isWakeTurn`).
+  function nonWakeTranscript(n: number): ReadonlyArray<TurnEntry> {
+    return Array.from(
+      { length: n },
+      (_, i) =>
+        ({
+          turnKey: `tk-${i}`,
+          msgId: `msg-${i}`,
+          userMessage: { text: "u", attachments: [], submitAt: 0 },
+          thinking: "",
+          assistant: "a",
+          toolCalls: [],
+          result: "success",
+          endedAt: 0,
+          wallClockMs: 0,
+          awaitingApprovalMs: 0,
+          transportDowntimeMs: 0,
+          activeMs: 0,
+          ttftMs: null,
+          ttftcMs: null,
+          reconnectCount: 0,
+          maxStreamGapMs: 0,
+          turnEndReason: "complete",
+          cost: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            totalCostUsd: 0,
+          },
+        }) satisfies TurnEntry,
+    );
+  }
+
   it("maps a 0-based turn index onto its user / assistant row pair", () => {
-    // Each committed turn is two rows — user at 2k, code at 2k+1.
-    expect(userRowIndexForTurn(0)).toBe(0);
-    expect(assistantRowIndexForTurn(0)).toBe(1);
-    expect(userRowIndexForTurn(1)).toBe(2);
-    expect(assistantRowIndexForTurn(1)).toBe(3);
-    expect(userRowIndexForTurn(2)).toBe(4);
-    expect(assistantRowIndexForTurn(2)).toBe(5);
+    // Each committed (non-wake) turn is two rows — user at 2k, code at 2k+1.
+    const t = nonWakeTranscript(3);
+    expect(userRowIndexForTurn(0, t)).toBe(0);
+    expect(assistantRowIndexForTurn(0, t)).toBe(1);
+    expect(userRowIndexForTurn(1, t)).toBe(2);
+    expect(assistantRowIndexForTurn(1, t)).toBe(3);
+    expect(userRowIndexForTurn(2, t)).toBe(4);
+    expect(assistantRowIndexForTurn(2, t)).toBe(5);
   });
 
   it("addresses the `user` / `code` rows of a real multi-turn data source", () => {
@@ -398,16 +437,271 @@ describe("userRowIndexForTurn / assistantRowIndexForTurn", () => {
     store.send("second", []);
     driveSyntheticSuccessTurn(conn, msgId2, "second response text");
 
+    const transcript = store.getSnapshot().transcript;
     expect(ds.numberOfItems()).toBe(4);
-    expect(ds.kindForIndex(userRowIndexForTurn(0))).toBe("user");
-    expect(ds.kindForIndex(assistantRowIndexForTurn(0))).toBe("code");
-    expect(ds.kindForIndex(userRowIndexForTurn(1))).toBe("user");
-    expect(ds.kindForIndex(assistantRowIndexForTurn(1))).toBe("code");
+    expect(ds.kindForIndex(userRowIndexForTurn(0, transcript))).toBe("user");
+    expect(ds.kindForIndex(assistantRowIndexForTurn(0, transcript))).toBe("code");
+    expect(ds.kindForIndex(userRowIndexForTurn(1, transcript))).toBe("user");
+    expect(ds.kindForIndex(assistantRowIndexForTurn(1, transcript))).toBe("code");
     // Turn 0 spans transcript entries #0001 (user) and #0002 (code);
     // turn 1 spans #0003 and #0004. `#NNNN` is row index + 1.
-    expect(userRowIndexForTurn(0) + 1).toBe(1);
-    expect(assistantRowIndexForTurn(0) + 1).toBe(2);
-    expect(userRowIndexForTurn(1) + 1).toBe(3);
-    expect(assistantRowIndexForTurn(1) + 1).toBe(4);
+    expect(userRowIndexForTurn(0, transcript) + 1).toBe(1);
+    expect(assistantRowIndexForTurn(0, transcript) + 1).toBe(2);
+    expect(userRowIndexForTurn(1, transcript) + 1).toBe(3);
+    expect(assistantRowIndexForTurn(1, transcript) + 1).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 1c-a — wake single-row layout
+// ---------------------------------------------------------------------------
+
+/**
+ * Drive a complete wake bracket through `TestFrameChannel`: wake_started
+ * IPC frame → assistant_text → turn_complete. Commits a wake `TurnEntry`
+ * whose `userMessage.text === ""` (the empty-text sentinel from [D01]).
+ */
+function driveWakeTurn(
+  conn: TestFrameChannel,
+  msgId: string,
+  assistantText: string,
+  options: { taskId?: string; summary?: string } = {},
+): void {
+  const taskId = options.taskId ?? "wake-task-id";
+  const summary = options.summary ?? "wake summary";
+  conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+    type: "wake_started",
+    tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+    session_id: FIXTURE_IDS.CLAUDE_SESSION_ID,
+    wake_trigger: {
+      task_id: taskId,
+      tool_use_id: "wake-tool-use-id",
+      status: "completed",
+      summary,
+      output_file: "",
+    },
+    ipc_version: 2,
+  });
+  conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+    type: "assistant_text",
+    tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+    msg_id: msgId,
+    text: assistantText,
+    is_partial: false,
+    status: "complete",
+    seq: 0,
+    rev: 0,
+    ipc_version: 2,
+  });
+  conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+    type: "turn_complete",
+    tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+    msg_id: msgId,
+    seq: 1,
+    result: "success",
+    ipc_version: 2,
+  });
+}
+
+describe("TideTranscriptDataSource — wake single-row layout [D06]", () => {
+  it("a single committed wake turn occupies ONE row, not two (code only — no user row)", () => {
+    const { store, conn } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    driveWakeTurn(conn, FIXTURE_IDS.MSG_ID_N(1), "wake-content");
+
+    expect(ds.numberOfItems()).toBe(1);
+    expect(ds.kindForIndex(0)).toBe("code");
+    const row = ds.rowAt(0);
+    expect(row.kind).toBe("code");
+    expect(row.turn?.userMessage.text).toBe("");
+    expect(row.turn?.assistant).toBe("wake-content");
+  });
+
+  it("idForIndex for a wake row returns `${turnKey}-code` — the `-user` key is never minted", () => {
+    const { store, conn } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    driveWakeTurn(conn, FIXTURE_IDS.MSG_ID_N(1), "wake-content");
+
+    const turn = store.getSnapshot().transcript[0];
+    expect(ds.idForIndex(0)).toBe(`${turn.turnKey}-code`);
+    // The `-user` key should NOT appear anywhere in the layout — the
+    // wake has only one row, addressed by the code key.
+    expect(ds.idForIndex(0)).not.toContain("-user");
+  });
+
+  it("mixed transcript [user, wake, user] lays out as 5 rows, not 6", () => {
+    const { store, conn } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    // Turn 0 — normal user-initiated.
+    store.send("first", []);
+    driveSyntheticSuccessTurn(conn, FIXTURE_IDS.MSG_ID_N(1), "first response");
+    // Turn 1 — wake.
+    driveWakeTurn(conn, FIXTURE_IDS.MSG_ID_N(2), "wake response");
+    // Turn 2 — normal user-initiated.
+    store.send("third", []);
+    driveSyntheticSuccessTurn(conn, FIXTURE_IDS.MSG_ID_N(3), "third response");
+
+    expect(ds.numberOfItems()).toBe(5);
+    // Layout: [user(t0), code(t0), code(t1-wake), user(t2), code(t2)]
+    expect(ds.kindForIndex(0)).toBe("user");
+    expect(ds.kindForIndex(1)).toBe("code");
+    expect(ds.kindForIndex(2)).toBe("code");
+    expect(ds.kindForIndex(3)).toBe("user");
+    expect(ds.kindForIndex(4)).toBe("code");
+    // The wake's row (index 2) maps to transcript[1].
+    expect(ds.rowAt(2).turn?.assistant).toBe("wake response");
+    // The user-initiated turn at transcript[2] starts at row 3.
+    expect(ds.rowAt(3).turn?.userMessage.text).toBe("third");
+  });
+
+  it("userRowIndexForTurn returns -1 for a wake turn at that index", () => {
+    const { store, conn } = buildStore();
+    new TideTranscriptDataSource(store);
+
+    store.send("first", []);
+    driveSyntheticSuccessTurn(conn, FIXTURE_IDS.MSG_ID_N(1), "r1");
+    driveWakeTurn(conn, FIXTURE_IDS.MSG_ID_N(2), "wake-r");
+    store.send("third", []);
+    driveSyntheticSuccessTurn(conn, FIXTURE_IDS.MSG_ID_N(3), "r3");
+
+    const transcript = store.getSnapshot().transcript;
+    expect(userRowIndexForTurn(0, transcript)).toBe(0);
+    expect(userRowIndexForTurn(1, transcript)).toBe(-1); // wake — no user row
+    expect(userRowIndexForTurn(2, transcript)).toBe(3); // shifted by wake's single row
+  });
+
+  it("assistantRowIndexForTurn returns the wake's single row for a wake turn, normal offset for non-wake", () => {
+    const { store, conn } = buildStore();
+    new TideTranscriptDataSource(store);
+
+    store.send("first", []);
+    driveSyntheticSuccessTurn(conn, FIXTURE_IDS.MSG_ID_N(1), "r1");
+    driveWakeTurn(conn, FIXTURE_IDS.MSG_ID_N(2), "wake-r");
+    store.send("third", []);
+    driveSyntheticSuccessTurn(conn, FIXTURE_IDS.MSG_ID_N(3), "r3");
+
+    const transcript = store.getSnapshot().transcript;
+    expect(assistantRowIndexForTurn(0, transcript)).toBe(1);
+    expect(assistantRowIndexForTurn(1, transcript)).toBe(2); // wake's single row
+    expect(assistantRowIndexForTurn(2, transcript)).toBe(4);
+  });
+
+  it("an in-flight wake (waking phase, empty-text inflightUserMessage) takes 1 row, not 2", () => {
+    const { store, conn } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    // Open a wake bracket but do NOT commit it — leaves the wake's
+    // empty-text marker on inflightUserMessage.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "wake_started",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      session_id: FIXTURE_IDS.CLAUDE_SESSION_ID,
+      wake_trigger: {
+        task_id: "in-flight-wake",
+        tool_use_id: "u",
+        status: "completed",
+        summary: "s",
+        output_file: "",
+      },
+      ipc_version: 2,
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("waking");
+    expect(snap.inflightUserMessage?.text).toBe("");
+
+    // 0 committed + 1 in-flight wake row = 1 row.
+    expect(ds.numberOfItems()).toBe(1);
+    expect(ds.kindForIndex(0)).toBe("code");
+    const row = ds.rowAt(0);
+    expect(row.kind).toBe("code");
+    // No `inflight` payload for the wake's streaming code row — the
+    // empty-text marker is internal, not user content.
+    expect(row.inflight).toBeUndefined();
+    expect(row.turnKey).toBe(snap.inflightUserMessage?.turnKey);
+  });
+
+  it("an in-flight normal user turn still takes 2 rows (no regression)", () => {
+    const { store } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    store.send("hello", []);
+    expect(ds.numberOfItems()).toBe(2);
+    expect(ds.kindForIndex(0)).toBe("user");
+    expect(ds.kindForIndex(1)).toBe("code");
+  });
+
+  it("layout is reference-stable across rowAt calls for the same snapshot (memoization)", () => {
+    const { store, conn } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    store.send("first", []);
+    driveSyntheticSuccessTurn(conn, FIXTURE_IDS.MSG_ID_N(1), "r1");
+    driveWakeTurn(conn, FIXTURE_IDS.MSG_ID_N(2), "wake-r");
+
+    // Multiple rowAt calls within one render should return rows whose
+    // `turn` references are `Object.is`-equal to the snapshot's
+    // transcript entries (no defensive copies, no rebuilds per call).
+    const snap = store.getSnapshot();
+    const row0a = ds.rowAt(0);
+    const row0b = ds.rowAt(0);
+    expect(Object.is(row0a.turn, row0b.turn)).toBe(true);
+    expect(Object.is(row0a.turn, snap.transcript[0])).toBe(true);
+
+    const wakeRowA = ds.rowAt(2);
+    const wakeRowB = ds.rowAt(2);
+    expect(Object.is(wakeRowA.turn, wakeRowB.turn)).toBe(true);
+    expect(Object.is(wakeRowA.turn, snap.transcript[1])).toBe(true);
+  });
+
+  it("a wake committed turn's id is byte-identical across the inflight → committed transition", () => {
+    // Pin the [L26] invariant: the same `turnKey` used during waking
+    // is preserved onto `TurnEntry.turnKey` at turn_complete, so the
+    // cell wrapper survives the bracket without remounting.
+    const { store, conn } = buildStore();
+    const ds = new TideTranscriptDataSource(store);
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "wake_started",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      session_id: FIXTURE_IDS.CLAUDE_SESSION_ID,
+      wake_trigger: {
+        task_id: "t",
+        tool_use_id: "u",
+        status: "completed",
+        summary: "s",
+        output_file: "",
+      },
+      ipc_version: 2,
+    });
+    const inflightTurnKey = store.getSnapshot().inflightUserMessage!.turnKey;
+    const inflightId = ds.idForIndex(0);
+    expect(inflightId).toBe(`${inflightTurnKey}-code`);
+
+    // Commit the wake.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "assistant_text",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: FIXTURE_IDS.MSG_ID_N(1),
+      text: "wake content",
+      is_partial: false,
+      status: "complete",
+      seq: 0,
+      rev: 0,
+      ipc_version: 2,
+    });
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "turn_complete",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      msg_id: FIXTURE_IDS.MSG_ID_N(1),
+      seq: 1,
+      result: "success",
+      ipc_version: 2,
+    });
+    const committedId = ds.idForIndex(0);
+    expect(committedId).toBe(inflightId);
   });
 });

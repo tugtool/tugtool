@@ -806,8 +806,8 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - [x] Rewrite [Q01] with the captured three-cohort taxonomy (Cohort A in-invocation async, Cohort B harness re-invoke, Cohort C not-wake-sources).
 - [x] Document the new wire signals discovered (`task_started` / `task_progress` / `task_updated` / `status`) as Slice 2 chrome opportunities.
 - [x] Document the SDK type drift discovered (`tool_use_id` and `usage` fields present on the wire, missing from `SDKTaskNotificationMessage`).
-- [ ] Promote the staging captures from `/tmp/tide-cohort-sweep/` into the catalog under `v2.1.150-spike/` and commit them as artifacts (currently the captures exist but are not committed).
-- [ ] Update PPF-01 in [tide-assistant-rendering.md](./tide-assistant-rendering.md) — closed for Cohort A; ScheduleWakeup/CronCreate noted as closed by Slice 1b once that ships.
+- [x] Promote the staging captures from `/tmp/tide-cohort-sweep/` into the catalog under `v2.1.150-spike/` and commit them as artifacts. Seven captures + the probe script committed: `test-bash-runbg-wake-raw.jsonl`, `test-task-runbg-idle-wake-raw.jsonl`, `test-task-runbg-poll-raw.jsonl`, `test-taskoutput-blocking-raw.jsonl`, `test-schedulewakeup-streamio-raw.jsonl`, `test-croncreate-streamio-raw.jsonl`, `test-pushnotif-schema-raw.jsonl`, `probes/probe-sw-streamio.mjs`. The spike README updated with one row per file.
+- [x] Update PPF-01 in [tide-assistant-rendering.md](./tide-assistant-rendering.md) — three-cohort split table; Cohort A closed by Slice 1, Cohort B by Slice 1b, phantom user bubble by Slice 1c-a.
 
 **Tests:**
 - [x] None new — Step 5's tests cover the Cohort A reducer/store/fixture behavior. Step 6 is an empirical sweep; its output is the captured fixtures + the rewritten taxonomy.
@@ -816,8 +816,8 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - [x] Three-cohort taxonomy committed in [Q01] with capture file references.
 - [x] Cohort A manual Monitor repro passes (Session d258c0da screenshot — wake turn paints; phantom user bubble noted as Step 12 work).
 - [x] Cohort B confirmed broken in tugcode spawn mode by probe (90s subprocess hold; no wake fired); Slice 1b is the closer.
-- [ ] Captures promoted to the committed catalog (currently staged under `/tmp/tide-cohort-sweep/`).
-- [ ] PPF-01 entry in the rendering plan updated.
+- [x] Captures promoted to the committed catalog.
+- [x] PPF-01 entry in the rendering plan updated.
 
 ---
 
@@ -830,16 +830,18 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 **References:** [D01] [D02] [D03] [D04], (#success-criteria)
 
 **Tasks:**
-- [ ] Re-run all four gates from the project's standard checkpoint: tsc / bun test / audit:tokens lint / cargo nextest.
-- [ ] Confirm the new fixture-replay test runs in the standard `bun test` invocation (not gated behind a flag).
-- [ ] Confirm PPF-01 is closed for Cohort A in the rendering plan.
-- [ ] Confirm L02 contract held: any React component reading `wakeTrigger` goes through `useSyncExternalStore`, not through `useEffect` mirror state. (Slice 1 has no consumers; this is a forward-looking note for Slice 2 implementers.)
+- [x] Re-run all four gates: tugdeck `tsc` + `bun test` (2928/2928) + `audit:tokens lint` (0 violations); tugcode `tsc` + `bun test` (446/446); tugrust `cargo nextest` (1324/1324, 9 skipped).
+- [x] Confirm `session-wake-fixture-replay.test.ts` runs in the standard `bun test` invocation (verified — 3/3 pass, no flag gate).
+- [x] Confirm PPF-01 closed for Cohort A in the rendering plan (now includes the full three-cohort split table).
+- [x] L02 audit: `grep -rn "wakeTrigger" tugdeck/src` shows zero non-test reads from React components; the field lives on the snapshot and will reach future consumers via `useSyncExternalStore` only.
+- [x] L23 audit: `grep -rn "focus.*phase\|firstResponder.*phase"` shows no focus/responder code reads `session.phase`. Wake bracket doesn't intersect the focus subsystem; focus destination is undisturbed across `waking → idle`.
+- [x] L26 audit: `${turnKey}-code` is minted by `frameToEvent` on `wake_started` receipt and copied unchanged through `pendingUserMessage` → committed `TurnEntry`. Step 5's `each wake mints a fresh turnKey — back-to-back wakes do not collide` test pins this; the cell wrapper survives the bracket.
 
 **Tests:**
-- [ ] Full test suite green.
+- [x] Full test suite green across all three packages.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test && bun run audit:tokens lint && cd ../tugrust && cargo nextest run` — all four green in sequence.
+- [x] All four gates green in sequence.
 
 ---
 
@@ -1006,25 +1008,27 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - Inflight handling: when `inflightUserMessage !== null`, the layout adds either 1 or 2 rows starting at `inflightStartRow`. If the inflight is a wake (empty-text marker), only the code row exists; if normal, both user and code.
 
 **Tasks:**
-- [ ] Add `isWakeTurn` and `isWakeInflight` helpers; export.
-- [ ] Add the `RowLayout` type and the per-snapshot memoization.
-- [ ] Refactor `numberOfItems`, `idForIndex`, `kindForIndex`, `rowAt` to read from `layout`. The `idForIndex` for wake turns must NOT mint a `${turnKey}-user` key (only `${turnKey}-code`) — that's the React-reconciliation correctness invariant from [L26].
-- [ ] Update `userRowIndexForTurn` and `assistantRowIndexForTurn` accordingly. Find every caller (`grep -rn "userRowIndexForTurn\|assistantRowIndexForTurn" tugdeck/src`); audit each for `>= 0` checks and add where missing.
-- [ ] JSDoc on every helper + on the layout type, citing [D06] / [Q05] and the empty-text sentinel.
+- [x] Add `isWakeTurn` and `isWakeInflight` helpers; export from `tide-transcript-data-source.ts`. Pinned definition `userMessage.text === "" && userMessage.attachments.length === 0` matches the [D01] empty-text sentinel.
+- [x] Add the `RowLayout` interface (exported for test reuse) + `buildRowLayout(snap)` builder + private `_layoutMemo` and `private layout(snap)` accessor on `TideTranscriptDataSource`. Same memoization shape as `_windowsMemo`.
+- [x] Refactor `numberOfItems`, `idForIndex`, `kindForIndex`, `rowAt` to read from `layout` via a new private `locateCommittedRow(index, layout)` helper that binary-searches `turnStartRow` for the owning turn. The `-user` key is never minted for a wake turn — `idForIndex` for a wake row returns `${turnKey}-code` directly.
+- [x] Update `userRowIndexForTurn(turnIndex, transcript)` and `assistantRowIndexForTurn(turnIndex, transcript)` — signature change. The only non-test caller is `TurnEntryPair` in `tide-card-telemetry-popovers.tsx`; updated to thread `transcript` through and to render a single assistant-half button (no `·` separator) when the user-row index returns `-1`.
+- [x] JSDoc on every new export — `isWakeTurn`, `isWakeInflight`, `RowLayout`, `buildRowLayout`, the layout accessor, and `userRowIndexForTurn`/`assistantRowIndexForTurn` — citing [D06] / [Q05] and the empty-text sentinel.
 
 **Tests:**
-- [ ] Pure-logic: `numberOfItems` returns `2 * (non-wake count) + 1 * (wake count) + inflight rows + queuedSends.length` for a mixed transcript.
-- [ ] Pure-logic: `kindForIndex` returns `"code"` for a wake turn's single row (never `"user"` for that index).
-- [ ] Pure-logic: `idForIndex` for a wake turn's row returns `${turnKey}-code` (the `-user` key is never minted for a wake — would mismatch the cell wrapper and break React reconciliation).
-- [ ] Pure-logic: `rowAt` for a wake turn returns `{kind: "code", turn, perTurnTokens, turnKey}` directly (no descriptor for the absent user row).
-- [ ] Pure-logic: a mixed transcript with `[user-turn, wake-turn, user-turn]` lays out as `[user, code, code, user, code]` (5 rows, not 6).
-- [ ] Pure-logic: an inflight wake (in-flight `inflightUserMessage.text === ""`) takes 1 row, not 2; an inflight user turn takes 2.
-- [ ] Pure-logic: `userRowIndexForTurn(turnIndex)` returns `-1` for a wake turn at `turnIndex`, returns the right offset for a non-wake turn.
-- [ ] Pure-logic: `assistantRowIndexForTurn(turnIndex)` returns the wake's single row for a wake turn, returns the offset+1 for a non-wake turn.
-- [ ] Reference-stability: two consecutive `rowAt(index)` calls with the same snapshot return rows whose payload references are `Object.is`-equal (the layout is memoized; the per-turn `turn` and `inflight` refs come from the snapshot directly).
+- [x] All 8 pure-logic tests pass in `tide-transcript-data-source.test.ts`:
+  - Single committed wake → 1 row, `kindForIndex(0) === "code"`, `rowAt(0).turn.userMessage.text === ""`.
+  - `idForIndex(wakeRow)` returns `${turnKey}-code`; never contains `-user`.
+  - Mixed `[user, wake, user]` transcript lays out as 5 rows in pattern `[user, code, code, user, code]`.
+  - `userRowIndexForTurn` returns `-1` for the wake's index, correctly-shifted offsets for surrounding turns.
+  - `assistantRowIndexForTurn` returns the wake's single row index; offset+1 for non-wake turns.
+  - In-flight wake takes 1 row (no `inflight` payload on the descriptor).
+  - In-flight normal user turn still takes 2 rows (no regression).
+  - Reference-stability: consecutive `rowAt` calls return same `turn` references; layout is memoized per snapshot.
+  - `[L26]` invariant: wake's `idForIndex` is byte-identical across inflight → committed transition.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` green.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` green (2937 / 2937 — 9 new tests).
+- [x] `cd tugdeck && bun run audit:tokens lint` zero violations.
 
 ---
 
