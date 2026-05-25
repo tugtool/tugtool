@@ -822,12 +822,20 @@ See [D07] for the full wire-truth-driven append rule.
 
 **Files (tests — net coverage preserved, shape updated):**
 
-- `tugdeck/src/lib/code-session-store/__tests__/*` — ~30 reducer tests. Most diffs are mechanical: `expect(state.scratch.get(msgId)?.assistant).toBe(...)` → `expect(findTrailingMessage(state.scratch.get(msgId)!, "assistant_text")?.text).toBe(...)`. Build a small test helper module (`__tests__/_helpers/messages.ts`) for "find Message of kind", "construct fixture TurnEntry with messages", etc.
-- `tugdeck/src/lib/__tests__/tide-transcript-data-source.test.ts` — substantial rewrite. The variable-rows-per-turn invariants the current tests pin are replaced by per-Message row counts. New invariants: a turn with N Messages produces N rows; the message-kind narrows the cell renderer.
+- `tugdeck/src/lib/code-session-store/__tests__/*` — ~30 reducer tests. Most diffs are mechanical: `expect(state.scratch.get(msgId)?.assistant).toBe(...)` → `expect(findMessageByKind(state.scratch.get(turnKey)!, "assistant_text")?.text).toBe(...)`. Build a small test helper module (`__tests__/_helpers/messages.ts`) for "find Message of kind", "construct fixture TurnEntry with messages", "build event sequence for a multi-msgId turn", etc.
+- `tugdeck/src/lib/__tests__/tide-transcript-data-source.test.ts` — substantial rewrite. The variable-rows-per-turn invariants the current tests pin are replaced by per-Message row counts. New invariants: a turn with N Messages produces N rows; the message-kind narrows the cell renderer; messageKey is stable across in-flight → committed.
 - `tugdeck/src/__tests__/session-wake-fixture-replay.test.ts` — fixture-replay test. The captured fixtures don't change; the assertions about shape do.
 - `tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.ts` — same.
 - `tugdeck/src/components/tugways/cards/__tests__/tide-card-transcript-tool-calls.test.ts` — tool-call rendering test; shape updates.
-- New test: `tugdeck/src/lib/code-session-store/__tests__/reducer.message-sequence.test.ts` — pin the append-or-mutate rule against fixture event sequences (the regression net for Risk #2).
+
+**New tests added under Step 5 (the regression net for substrate correctness):**
+
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.message-sequence.test.ts` — pins three invariants against synthesized event sequences:
+  1. **Block boundary correctness:** `content_block_start{idx:0,kind:text}` → text deltas → `content_block_start{idx:1,kind:tool_use}` → input_json deltas produces a `messages` array of `[AssistantText, ToolUseMessage]` in that order.
+  2. **Multi-msgId concatenation:** events for two `msg_id`s within one turn (`message_start A → text → tool_use → tool_result → message_start B → text → result`) commit a single `TurnEntry` whose `messages` array spans BOTH msgIds.
+  3. **Interleaved thinking:** `thinking(block 0)` + `text(block 1)` in one message commit as two distinct Messages in arrival order — neither merged nor reordered.
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.message-key-stability.test.ts` — pins that `messageKey` is byte-identical across in-flight → committed transition for every Message kind (the per-Message analogue of today's `turnKey` stability test).
+- `tugcode/src/__tests__/map-stream-event-block-index.test.ts` (Commit 1) — pins that `mapStreamEvent` emits `content_block_start` with correct `block_index` and forwards `block_index` on every text/thinking delta. Loads `capture-sw-60-*.stdout` and `capture-cron-1m-*.stdout` as fixtures; asserts the emission count + ordering.
 
 **Commit sequence — two commits, tugcode then tugdeck:**
 
@@ -867,11 +875,50 @@ If commit 2 ends up too large to review comfortably, split by file at commit tim
 - `grep -rE "isWakeTurn|isWakeInflight|userRowIndexForTurn|assistantRowIndexForTurn|inflightUserMessage|\\.toolCallMap|\\bpendingUserMessage\\b" tugdeck/src` returns nothing (or only deletion-marker comments awaiting a follow-up cleanup commit).
 - `grep -rE "TurnEntry\\.userMessage|TurnEntry\\.assistant\\b|TurnEntry\\.thinking|TurnEntry\\.toolCalls" tugdeck/src` returns nothing.
 
-**Checkpoint:**
+**Pre-flight checklist (before starting Commit 1):**
 
-- `cd tugdeck && bun x tsc --noEmit && bun test` green; full reducer + data source + fixture-replay suites pass.
-- Manual sweep: send a normal turn; send a turn that triggers a tool call mid-stream; trigger a wake (any Cohort A or B); verify all render correctly in HMR.
-- The new fixture-replay test for multi-block / interleaved ordering passes against a captured trace.
+1. Verify today's tugdeck reducer default-drops unknown event types safely (the dispatch switch's default branch must not throw or corrupt state). If it throws, harden it first as a zero-impact prep commit so Commit 1's new `content_block_start` events flow through harmlessly when received by an old tugdeck.
+2. Confirm `bun build --compile` produces the right tugcode binary in `tugrust/target/debug/tugcode` (and the Tug.app sibling location). Sanity check by running today's tugcode against today's tugdeck end-to-end after a rebuild — establish baseline before any change.
+3. Re-read `mapStreamEvent` end-to-end to confirm there are no other sites where block_index is silently dropped beyond the two I've identified (`content_block_start` for tool_use, `content_block_delta` for text/thinking).
+4. Verify the test capture fixtures (`capture-sw-60-*`, `capture-cron-1m-*`) are sufficient for the multi-msgId test. They show tool-use loops; if a more complex multi-iteration trace is needed (e.g., multiple tool calls per loop), capture a fresh probe.
+
+**Definition of Done — Commit 1 (tugcode IPC extension):**
+
+- New `ContentBlockStart` IPC frame type; `AssistantText` / `ThinkingText` carry `block_index`.
+- `mapStreamEvent` emits one `content_block_start` per wire `content_block_start`; every text/thinking delta carries `block_index`.
+- New unit test `map-stream-event-block-index.test.ts` passes against captured fixtures.
+- Existing tugcode drift tests + unit tests pass.
+- `cd tugcode && bun x tsc --noEmit && bun test` green.
+- Tugcode binary rebuilt; manual sweep confirms today's tugdeck still works against the new tugcode (new events ignored by old reducer; old events still work).
+- Commit on main.
+
+**Definition of Done — Commit 2 (tugdeck substrate refactor):**
+
+- `TurnEntry` reshape (`messages: ReadonlyArray<Message>`); paired fields deleted.
+- Reducer substrate (turnKey-keyed scratch, `pendingTurn`, `handleContentBlockStart`, append-or-mutate rule).
+- Snapshot exposes `activeTurn` (replaces `inflightUserMessage`).
+- Data source iterates messages; offset table + sentinel helpers deleted.
+- 5 consumer files updated.
+- All reducer + data source + replay + card tests pass.
+- New tests pass: `reducer.message-sequence.test.ts`, `reducer.message-key-stability.test.ts`.
+- `cd tugdeck && bun x tsc --noEmit && bun test` green.
+- Manual sweep against the matrix below.
+- Commit on main.
+
+**Checkpoint (post Commit 2 manual sweep):**
+
+- Send a normal user turn → user row + code row render correctly.
+- Send a turn that triggers a tool call mid-stream → tool row appears in arrival position (NOT below all text).
+- Send a turn that triggers a multi-iteration tool loop → every iteration's thinking + tool_use + final text preserved in the transcript (correctness improvement over today).
+- Trigger a wake (Cohort A: Monitor; Cohort B: ScheduleWakeup or Cron) → wake turn renders single-row with no phantom user bubble.
+- Reopen a session via session-history → replayed turns render with the same shape as live.
+- Grep checks: `grep -rE "isWakeTurn|isWakeInflight|userRowIndexForTurn|assistantRowIndexForTurn|inflightUserMessage|\\.toolCallMap" tugdeck/src` returns nothing.
+
+**Backwards compatibility during transition window:**
+
+After Commit 1 lands and before Commit 2 lands, tugcode emits new events that tugdeck's old reducer doesn't know about. The reducer's default-drop behavior (verified in pre-flight #1) ensures these are inert — no state corruption, no thrown errors. Existing functionality is preserved end-to-end. The transition window can be any length; we choose it (no concurrent contributors).
+
+After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an old tugcode binary against new tugdeck would surface a fatal dev-log entry on every text event (missing `block_index`). The fix is to rebuild tugcode — `bun build --compile` produces the binary that both Tug.app and the standalone tugcode use. No silent failure mode.
 
 #### Step 6: Slice 2 — trigger-aware chrome (resolves [Q02]) {#step-6}
 
