@@ -336,23 +336,26 @@ The implementation shipped across the following work; all steps are complete exc
 
 #### Step 4: Robustness — wire-shape drift test + resume-mode verification {#step-4}
 
-**Status:** Pending.
+**Status:** Drift test shipped (`tugcode/src/__tests__/wake-reinit-drift.test.ts`, 10 cases against captured fixtures). Resume-mode manual repro pending.
 
 **Scope:**
 
-1. **Drift test for the Cohort B re-init pattern.** Load `tugcode/probes/wake-investigation/capture-sw-60-*.stdout` and `capture-cron-1m-*.stdout`. Walk the events; assert (a) exactly one `system/init` at session spawn, (b) a second `system/init` arrives between the first turn's `result` and the wake's `message_start`, (c) no `system/task_notification` precedes the wake. A future Claude Code release that changes this pattern fails the test loudly with a fixture diff instead of silently breaking Cohort B in production.
+1. **Drift test for the Cohort B re-init pattern (SHIPPED).** Loads `tugcode/probes/wake-investigation/capture-sw-60-*.stdout` and `capture-cron-1m-*.stdout` and asserts five invariants per capture:
+   - exactly two `system/init` events (spawn + wake fire),
+   - the first turn closes with `result/success` before the wake fires,
+   - the second `system/init` is followed by the wake's `message_start`,
+   - no `system/task_notification` precedes the wake (rules out Cohort A misclassification),
+   - the wake turn closes with its own `result/success`.
 
-2. **Resume-mode manual repro.** Spawn a Tide session, schedule a ScheduleWakeup, close the session before the wake fires, reopen the session via `--resume`. Verify the harness restores the unexpired task and that tugcode's detector paints the wake turn when it fires.
+   A future Claude Code release that changes any of these invariants fails the test loudly with a fixture-diff message instead of silently breaking Cohort B in production.
 
-**Files (drift test only):**
+2. **Resume-mode manual repro (PENDING).** Spawn a Tide session, schedule a ScheduleWakeup, close the session before the wake fires, reopen the session via `--resume`. Verify the harness restores the unexpired task and that tugcode's detector paints the wake turn when it fires.
+
+**Files (drift test):**
 - `tugcode/src/__tests__/wake-reinit-drift.test.ts`.
 
-**Tests:**
-- ScheduleWakeup capture exercises the spawn-init → first-turn → wake-init → wake-stream → result sequence.
-- CronCreate capture exercises the same.
-
 **Checkpoint:**
-- `cd tugcode && bun x tsc --noEmit && bun test` green.
+- `cd tugcode && bun x tsc --noEmit && bun test` green (463 tests pass).
 - Resume manual case passes.
 
 ---
