@@ -13,6 +13,7 @@ Cargo.lock
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # macOS
 .DS_Store
