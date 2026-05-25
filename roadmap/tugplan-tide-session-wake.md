@@ -35,7 +35,7 @@ Each of these resumes claude with a synthetic user_message that drives an assist
 - tugcode is the wake detector — observe claude's stream-json stdout, recognize wake-bracket signals, emit a single `wake_started` IPC frame to tugdeck.
 - tugdeck's reducer treats `wake_started` as the start of a new turn (a `waking` phase) that closes implicitly on the next `turn_complete`.
 - One bracket on the wire for two distinct wake-trigger sources (in-invocation task notifications and harness-fired re-inits) — the reducer cannot tell them apart and doesn't need to.
-- Transcript treats wake turns as single-row entries (the wake carries no user-typed text, so there is no "You" bubble to render). Slice 1c-b generalizes this via a per-turn message sequence model ([D07]).
+- Transcript treats wake turns as single-row entries (the wake carries no user-typed text, so there is no "You" bubble to render). Slice 1c-b lifts this to a full sequence substrate ([D07]) — reducer scratch, streaming PropertyStore paths, snapshot, and data source all model a turn as an ordered sequence of typed Messages; the wake's natural absence of a `user_message` Message replaces the sentinel.
 - No tugcode-side scheduler. Claude Code's built-in scheduler is the source of truth for ScheduleWakeup / CronCreate timing; tugcode only reacts to its fire signal.
 - Slice 2 layers trigger-aware chrome on top of the bracket: tugcode buffers `ScheduleWakeup` / `CronCreate` tool_use payloads in a per-session FIFO ([D08]) and drains them when a Cohort B wake fires, producing a chip-class UI element ([D09]).
 - Wake-trigger metadata persists out-of-band via a sidecar JSONL ([D10]) so cold-boot rehydration paints the same chrome as live.
@@ -53,7 +53,7 @@ Each of these resumes claude with a synthetic user_message that drives an assist
 
 **Slice 1c-b + Slice 2 (in flight):**
 
-- `TurnEntry` represents the wire faithfully as a sequence of typed messages; the empty-text-sentinel branch ([D06]) is removed and existing transcript tests pass against the new shape.
+- Reducer, streaming substrate, snapshot, and data source all model a turn as a sequence of typed Messages ([D07]). Wire interleaving (text → tool → text) commits as `[AssistantText, ToolUseMessage, AssistantText]` rather than a flattened single string. The empty-text wake sentinel ([D06]) is gone from every site. All existing transcript / reducer / replay tests pass against the new shape.
 - Each wake turn paints with a chip identifying its trigger kind (Monitor / Scheduled / Cron) and a click-expand detail panel.
 - After closing and reopening a session, wake turns retain the same chip and detail content (no metadata loss across rehydration).
 - A wake fired by `ScheduleWakeup` / `CronCreate` renders its registered prompt as a subdued `system_note` row above the assistant's response.
@@ -70,7 +70,7 @@ Each of these resumes claude with a synthetic user_message that drives an assist
 
 **Slice 1c-b + Slice 2 (in flight):**
 
-5. Replace `TurnEntry`'s paired `userMessage` + `assistant` shape with a per-turn message sequence ([D07]). Removes the [D06] sentinel.
+5. Lift the turn model to a full sequence substrate ([D07]): reducer scratch holds `Message[]` per active turn, streaming PropertyStore paths key per-Message, `TurnEntry` exposes `messages: ReadonlyArray<Message>`, `ToolCallState` retires onto `ToolUseMessage`, `thinking` becomes a Message kind. Removes the [D06] sentinel end-to-end.
 6. Trigger-aware chrome — chip renderer above the wake turn keyed on `WakeTrigger.kind`; Cohort B FIFO correlation in tugcode ([D08], [D09]).
 7. Replay-translator metadata persistence — sidecar JSONL ([D10]) so rehydration paints the same chrome as live.
 8. System-note rendering for the registered scheduled prompt — Cohort B only; carried on `wake_started.wake_trigger.prompt` ([D11]).
@@ -142,7 +142,8 @@ Field signal (Session 3702c898): user noted the Stop button flips on during a wa
 | `system/task_notification` SDK type misses fields the wire emits (e.g., `tool_use_id`) | low | low | Existing drift test `tugcode/src/__tests__/wake-sdk-drift.test.ts` pins both compile-time (declared fields) and runtime (wire fields) coverage. |
 | Concurrent wakes (Cohort A `task_notification` and Cohort B re-init arriving in close succession) double-bracket on the wire | low | low | Both handlers guard on `this.isInWake` and no-op if a bracket is already open. The reducer also flattens nested wakes at [D01]. |
 | Resume-mode session (`--resume`) restores unexpired harness tasks that then fire — same detector applies but is unverified empirically | medium | low | Step 4 manual repro. The detector's heuristic is turn-state-based and doesn't care about session lifecycle, so it should hold. |
-| Sequence-model rework (Step 5) touches every consumer of `TurnEntry.userMessage` / `TurnEntry.assistant` and risks silent transcript regressions | medium | high | Audit all consumers via grep before landing; full reducer + transcript-data-source test suite must pass; the existing wake / inflight / replay test cases form the regression net. Manual repro of a representative session matrix gates merge. |
+| Sequence-substrate rework (Step 5, [D07]) touches reducer state, streaming PropertyStore paths, snapshot shape, and every consumer of `TurnEntry.userMessage` / `.assistant` / `.thinking` / `.toolCalls`. Risks silent transcript regressions and streaming-cell remount cascades | medium | high | Single landing commit; full reducer + transcript-data-source + replay test suite must pass; the existing wake / inflight / replay test cases form the regression net. Per-Message `messageKey` preserves [L26] mount identity. Manual repro of a representative session matrix gates merge. |
+| `[D07]` append-or-mutate heuristic (trailing-Message-kind match) misorders the wire — e.g. a `thinking_text` partial arrives while an `assistant_text` block is mid-stream and spuriously closes the text block. Multi-block assistant turns commit with the wrong segmentation | medium | medium | Verify the wire contract against captured fixtures BEFORE locking the rule (Step 5 open contract #1, #2). If the wire provides a stronger signal (`text_block_start` etc.), key on that. Add a fixture-replay test of a multi-block / interleaved-thinking trace as the regression net. |
 | Cohort B FIFO ([D08]) misattributes a fire to the wrong scheduled task when multiple ScheduleWakeup tasks register with identical `delaySeconds` | low | low | Documented [D08] edge case; UI chip shows the misattributed prompt rather than the correct one — visible to user; corrective is to query claude. Upgrade path exists if/when upstream exposes a correlation id. |
 | Sidecar JSONL ([D10]) and claude's JSONL drift out of sync (e.g., partial write on crash leaves a turn with metadata pointing at a missing turn_index) | medium | low | Sidecar writes use append-only with fsync per record. Replay-translator tolerates orphan sidecar entries (skip + warn) and missing entries (omit chrome). |
 | Hidden cancellation user_message ([D12]) produces a visible "Cancelled." assistant turn that leaks into the transcript despite suppression | medium | low | Filter the turn at the tugcode boundary (no `submit_accepted`, drop subsequent `assistant_text` until `turn_complete`). Known limitation noted in Step 9; future polish can prompt-engineer the synthetic message to suppress acknowledgment. |
@@ -197,25 +198,158 @@ The wake's user_message (the registered prompt) is injected into claude's intern
 
 **Rationale:** Wake turns carry no user-typed text — the empty-text marker is a contract sentinel, not user data. Rendering it as a "You" row produces a phantom user bubble.
 
-**Status:** Interim. Step 5 supersedes this sentinel by switching `TurnEntry` to a per-message sequence ([D07]); the empty-text check and the offset table are removed entirely when Step 5 lands.
+**Status:** **Superseded by [D07].** Step 5 retires the sentinel end-to-end:
+- The reducer no longer populates `pendingUserMessage` with empty text for wakes (replaced by `pendingTurn` with `isWake: true` and `initialMessages: []`).
+- The committed wake `TurnEntry.messages` simply contains no `user_message` Message — iteration yields zero user rows naturally.
+- `isWakeTurn` / `isWakeInflight` / `userRowIndexForTurn`'s `-1` sentinel / the offset-table layout machinery all delete.
 
-#### [D07] Per-turn message sequence replaces paired userMessage/assistant {#d07-sequence-model}
+The sentinel pattern was the right interim shape under Slice 1c-a's constraint that the committed entry be a paired record; [D07] removes that constraint at the substrate level, and the sentinel goes with it.
 
-**Decision:** `TurnEntry` becomes `{ turnKey, phase, messages: Message[], wakeTrigger?: WakeTrigger | null }`. `Message` is a discriminated union:
+#### [D07] Full sequence substrate — Message identity, per-Message streaming, ToolCallState retirement {#d07-sequence-substrate}
+
+**Decision:** Reducer state, committed entry shape, streaming substrate, and the data source all model a turn as an ordered sequence of typed Messages. The Message is the unit of identity, mutation, and rendering. Paired-field aggregation (`userMessage` + `assistant` + `thinking`) and parallel storage (`toolCallMap` beside scratch) retire.
+
+**Message union:**
 
 ```ts
+type MessageKind =
+  | "user_message"
+  | "assistant_text"
+  | "assistant_thinking"
+  | "system_note"
+  | "tool_use";
+
+interface MessageBase {
+  /**
+   * Stable React-row identity, minted at Message creation and unchanged
+   * through every subsequent mutation (streaming append, tool_result
+   * landing on a tool_use, etc.). Derived as `${turnKey}-m${seq}` where
+   * `seq` is a monotonic per-turn counter — debuggable and uniqueness
+   * is intrinsic to the construction.
+   */
+  messageKey: string;
+  createdAt: number;
+}
+
+interface UserMessage extends MessageBase {
+  kind: "user_message";
+  text: string;
+  attachments: ReadonlyArray<AtomSegment>;
+  submitAt: number;
+}
+
+interface AssistantText extends MessageBase {
+  kind: "assistant_text";
+  text: string;             // mutates by append during streaming
+}
+
+interface AssistantThinking extends MessageBase {
+  kind: "assistant_thinking";
+  text: string;
+}
+
+interface SystemNote extends MessageBase {
+  kind: "system_note";
+  text: string;
+  source: "scheduled" | "compact" | "other";
+}
+
+interface ToolUseMessage extends MessageBase {
+  kind: "tool_use";
+  toolUseId: string;
+  toolName: string;
+  input: unknown;
+  status: "pending" | "done" | "error";
+  result: unknown | null;
+  structuredResult: unknown | null;
+  parentToolUseId?: string;
+  toolWallMs: number | null;
+}
+
 type Message =
-  | { kind: "user_message"; text: string; attachments: Attachment[] }
-  | { kind: "assistant_text"; text: string; codeBlocks: CodeBlock[] }
-  | { kind: "system_note"; text: string; source: "scheduled" | "compact" | "other" }
-  | { kind: "tool_use"; toolName: string; toolUseId: string; input: unknown; result?: unknown };
+  | UserMessage
+  | AssistantText
+  | AssistantThinking
+  | SystemNote
+  | ToolUseMessage;
 ```
 
-`CodeSessionSnapshot` mirrors. The transcript data source iterates `messages` directly and emits one row per Message (with assistant_text aggregation preserved during streaming).
+**Reducer state shape:**
 
-**Rationale:** Matches the wire shape — each stream-json event is a discrete message. Removes the [D06] empty-text-sentinel hack. Scales to multiple consecutive assistant messages, system notes, and tool-only turns without further structural changes. Wake turns become naturally single-row (their `messages` array contains only `assistant_text`).
+```ts
+interface ScratchEntry {
+  messages: Message[];                    // arrival-order sequence
+  toolCallIndex: Map<string, number>;     // toolUseId → messages array index
+                                          // (O(1) lookup for tool_result / tool_use_structured)
+  nextMessageSeq: number;                 // monotonic counter for messageKey minting
+}
 
-**Migration:** Step 5 lands the new shape and rewrites all consumers in a single commit; no shim period because there are no external consumers of the in-memory `TurnEntry` shape.
+state.scratch: Map<msgId, ScratchEntry>;  // shape change: messages, not {assistant,thinking}
+state.pendingTurn: PendingTurn | null;    // replaces pendingUserMessage
+// state.toolCallMap retires (folded into ScratchEntry.toolCallIndex)
+
+interface PendingTurn {
+  turnKey: string;
+  submitAt: number;
+  isWake: boolean;
+  initialMessages: Message[];   // [user_message] for handleSend;
+                                // [] or [system_note] for handleWakeStarted
+  nextMessageSeq: number;       // carries through to ScratchEntry at drain
+}
+```
+
+**TurnEntry shape:**
+
+```ts
+interface TurnEntry {
+  turnKey: string;
+  msgId: string;
+  messages: ReadonlyArray<Message>;
+  // turn-level metadata unchanged: result, endedAt, wallClockMs,
+  // awaitingApprovalMs, transportDowntimeMs, activeMs, ttftMs,
+  // ttftcMs, reconnectCount, maxStreamGapMs, turnEndReason, cost
+}
+```
+
+Removed fields: `userMessage`, `thinking`, `assistant`, `toolCalls`.
+
+**Append-or-mutate rule for text Messages.** When an `assistant_text` (or `assistant_thinking`) delta lands:
+
+1. If `scratch[msgId].messages` is empty OR its trailing Message kind ≠ this delta's kind → append a fresh Message of this kind.
+2. Otherwise → mutate the trailing Message's `text`.
+
+Wire interleaving is preserved: `text → tool_use → tool_result → text` produces `[AssistantText, ToolUseMessage, AssistantText]` — two distinct text Messages bracketing the tool call, as the wire emitted. Today's substrate squashes this to one concatenated string; tomorrow's preserves the temporal sequence.
+
+**Streaming substrate — per-Message PropertyStore paths.** The three fixed channels retire:
+
+| Today | Tomorrow |
+|---|---|
+| `turn.${turnKey}.assistant` | `turn.${turnKey}.message.${messageKey}.text` (per AssistantText / AssistantThinking) |
+| `turn.${turnKey}.thinking` | (same as above) |
+| `turn.${turnKey}.tools` | `turn.${turnKey}.message.${messageKey}.state` (per ToolUseMessage, JSON-serialized) |
+
+The `write-inflight` effect carries `messageKey` and `channel: "text" | "state"`. [L26] holds per-Message: `messageKey` is stable from creation through commit; the cell wrapper for that Message subscribes once and retains its source forever.
+
+**Wake handling.** `handleWakeStarted` sets `pendingTurn = { turnKey, submitAt, isWake: true, initialMessages: [...] }`. `initialMessages` is `[]` for a bare wake, or `[SystemNote{prompt}]` once Step 8's `wakeTrigger.prompt` is populated (no separate code path needed in Step 8 — the system_note is just an initial Message). The wake's `messages` never contain a `user_message` Message, so the data source produces no user row. No sentinel.
+
+**`pendingUserMessage` and `snapshot.inflightUserMessage` retire.** Replaced by `state.pendingTurn` (reducer-internal) and `snapshot.activeTurn: ActiveTurnSnapshot | null` (public) exposing `{ turnKey, submitAt, isWake, messages: ReadonlyArray<Message> }`. The data source iterates `activeTurn.messages` for inflight rows, same way it iterates `turn.messages` for committed rows.
+
+**ToolCallState retires.** Its fields move onto `ToolUseMessage`. Tool calls live in `messages` in arrival position; `toolCallIndex` is the O(1) lookup for tool_result handling, pointing into the messages array instead of being parallel storage.
+
+**Rationale.** Three forces make the substrate the right scope:
+
+1. **Wire-shape fidelity.** The wire emits a sequence; today's substrate flattens it. A boundary-translation refactor (paired substrate, sequence at commit) leaves the temporal interleaving — text before a tool call vs. text after — unrecoverable. Future renders can't show what claude actually did because the data is gone.
+2. **Extension at the kind level.** Adding a new Message kind under the substrate model is: add a union case, add a handler, add a renderer. The `TurnEntry` shape never changes. Under the boundary model, every new kind needs a new field on `TurnEntry`, a new merge step in `buildTurnEntry`, and consumer updates — the type system theater of "messages" hides that the substrate doesn't believe in them.
+3. **Single representation.** Boundary translation maintains two reps (paired substrate + synthesized messages). They drift. The substrate model is one rep end-to-end: reducer holds it, streaming writes it, snapshot exposes it, render iterates it.
+
+**Migration.** Single landing commit. The dependencies between types, reducer state, handlers, streaming paths, data source, consumers, and tests are tight enough that dual-rep migration would carry more risk (drift between reps) than just cutting over. The working tree is green at each step of the cutover; the commit boundary is just where the last `bun x tsc --noEmit && bun test` goes green.
+
+**Open contracts to verify before locking.** Two open contracts gate the append-or-mutate rule:
+
+1. Does the wire emit any signal that distinguishes "continuation of the previous text block" from "new text block separated by a tool call" beyond the bare ordering? If yes, the append-or-mutate rule should key on that signal rather than on the trailing-Message-kind heuristic.
+2. For thinking: does claude ever interleave `thinking_text` with `assistant_text` mid-block, or are they always discrete? The heuristic depends on this.
+
+Both verified against `tugcode/probes/wake-investigation/capture-*.stdout` before Step 5 lands code.
 
 #### [D08] Cohort B trigger correlation via per-session FIFO {#d08-cohort-b-fifo}
 
@@ -327,22 +461,33 @@ wakeTrigger: WakeTrigger | null;  // camelCase, populated on wake_started, clear
 
 `CodeSessionSnapshot` mirrors the same.
 
-Slice 1c-b ([D07], Step 5) replaces `TurnEntry`'s paired fields with a sequence:
+Slice 1c-b ([D07], Step 5) replaces the paired substrate with a full sequence substrate. See [D07] for the full type definitions; the surface relevant to the snapshot is:
 
 ```ts
 interface TurnEntry {
   turnKey: string;
-  phase: TurnPhase;
-  messages: Message[];
-  wakeTrigger?: WakeTrigger | null;
+  msgId: string;
+  messages: ReadonlyArray<Message>;
+  // turn-level metadata unchanged: result, endedAt, wallClockMs,
+  // awaitingApprovalMs, transportDowntimeMs, activeMs, ttftMs,
+  // ttftcMs, reconnectCount, maxStreamGapMs, turnEndReason, cost
 }
 
-type Message =
-  | { kind: "user_message"; text: string; attachments: Attachment[] }
-  | { kind: "assistant_text"; text: string; codeBlocks: CodeBlock[] }
-  | { kind: "system_note"; text: string; source: "scheduled" | "compact" | "other" }
-  | { kind: "tool_use"; toolName: string; toolUseId: string; input: unknown; result?: unknown };
+interface ActiveTurnSnapshot {
+  turnKey: string;
+  submitAt: number;
+  isWake: boolean;
+  messages: ReadonlyArray<Message>;     // live, mutates as wire events land
+}
+
+interface CodeSessionSnapshot {
+  // ... unchanged surface ...
+  transcript: ReadonlyArray<TurnEntry>;
+  activeTurn: ActiveTurnSnapshot | null;   // replaces inflightUserMessage
+}
 ```
+
+Removed from `TurnEntry`: `userMessage`, `thinking`, `assistant`, `toolCalls`. Removed from snapshot: `inflightUserMessage`. Removed from reducer state: `toolCallMap` (folded into `ScratchEntry.toolCallIndex` per [D07]), `pendingUserMessage` (replaced by `pendingTurn`).
 
 #### Phase transitions {#spec-phase-transitions}
 
@@ -360,27 +505,25 @@ idle ───wake_started──→ waking ───turn_complete──→ idle 
 
 #### Transcript rendering {#spec-transcript}
 
-**Slice 1 (interim, Step 3):**
+**Slice 1c-b (Step 5):** the data source iterates `turn.messages` for each committed turn and `activeTurn.messages` for the in-flight turn, emitting one row per Message. The row's React key is `messageKey` (stable from Message creation through commit per [D07] / [L26]).
 
-For each committed turn:
+Per-Message row kinds:
 
-- `userMessage.text === "" && userMessage.attachments.length === 0` → emit 1 row (`{ kind: "code" }`, key `${turnKey}-code`)
-- Otherwise → emit 2 rows (`{ kind: "user" }` then `{ kind: "code" }`)
+- `user_message` → `{ kind: "user", messageKey, message }`
+- `assistant_text` → `{ kind: "code", messageKey, message, turnKey }` (cell subscribes to `turn.${turnKey}.message.${messageKey}.text`)
+- `assistant_thinking` → `{ kind: "thinking", messageKey, message, turnKey }` (cell subscribes to the same per-Message text path)
+- `system_note` → `{ kind: "system-note", messageKey, message }` (Step 8 renders these for `source === "scheduled"`)
+- `tool_use` → `{ kind: "tool", messageKey, message, turnKey }` (cell subscribes to `turn.${turnKey}.message.${messageKey}.state`; future polish; for Slice 1c-b the row exists but the renderer may fall back to today's tool log surface)
 
-For the inflight slot: same rule, using `inflightUserMessage`.
+The `cellRenderers` map gains the new kinds; per [L26] each kind resolves to a single stable component-type + renderer-reference (no inline lambda traps).
 
-**Slice 1c-b (Step 5):**
+Wake-turn chrome (Step 6): if `turn.wakeTrigger != null` (committed) or `activeTurn.isWake && activeTurn.messages.length > 0` (inflight), emit a `{ kind: "chrome", trigger }` row before the first message row of the turn. Chrome rows are not Messages — they're a per-turn affordance the data source synthesizes from `wakeTrigger`.
 
-For each committed turn, iterate `messages` and emit one row per Message:
+Ghost rows for queued sends unchanged: one per `QueuedSend`, key `${turnKey}-ghost`.
 
-- `user_message` → `{ kind: "user" }` row (skipped if `text === "" && attachments.length === 0`).
-- `assistant_text` → `{ kind: "code" }` row (assistant_text Messages are reducer-aggregated during streaming so there is one per logical assistant block).
-- `system_note` → `{ kind: "systemNote", source }` row (Step 8 renders these for `source === "scheduled"`).
-- `tool_use` → not yet rendered in transcript (tool log lives elsewhere); reserved for future use.
+**No `isWakeTurn` / `isWakeInflight` predicates.** A wake's `messages` simply doesn't contain a `user_message` Message, so no user row is emitted — the iteration produces exactly the rows the data shape implies.
 
-Wake-turn chrome (Step 6): if `turn.wakeTrigger != null`, emit a `{ kind: "chrome", trigger }` row before the first message row of the turn.
-
-For the inflight slot: same iteration over the inflight turn's `messages`.
+**No `userRowIndexForTurn` / `assistantRowIndexForTurn` sentinels.** Consumers needing a flat row index for a specific Message use `messageRowIndex(turnIndex, messageKey)` which walks the prefix; the function is total (returns a valid index or throws on unknown key — no `-1` sentinel branch for consumers to handle).
 
 ---
 
@@ -446,36 +589,52 @@ Rollback is trivial: revert the commits. No persisted state shape changes.
 
 `tugdeck/src/lib/code-session-store/types.ts`:
 
-- `Message` discriminated union ([D07], Step 5).
-- `TurnEntry` reshaped to `{ turnKey, phase, messages: Message[], wakeTrigger? }` (Step 5).
+- `MessageKind`, `Message` discriminated union ([D07], Step 5).
+- `TurnEntry` reshaped to `{ turnKey, msgId, messages, ...turn-level metadata }`; `userMessage` / `thinking` / `assistant` / `toolCalls` fields deleted (Step 5).
+- `ActiveTurnSnapshot` interface; `CodeSessionSnapshot.activeTurn` replaces `inflightUserMessage` (Step 5).
+- `ToolCallState` interface deleted — fields move onto `ToolUseMessage` (Step 5).
 - `WakeTrigger` extended with `kind`, `prompt`, `scheduled_for`, `cron_expression`, `cron_id` (Step 6).
 - `CancelScheduledTaskFrame` outbound IPC type (Step 9).
 
 `tugdeck/src/lib/code-session-store/reducer.ts`:
 
-- Commit paths rewritten to append `Message` records (Step 5).
-- `handleWakeStarted` synthesizes a `system_note` Message when `wakeTrigger.prompt` is present (Step 8).
-
-`tugdeck/src/lib/code-session-store/replay/replay-translator.ts`:
-
-- Emits `Message` records during rehydration (Step 5).
-- Accepts a `wakeTriggers` index parameter; synthesizes `WakeStartedEvent` at matched turn boundaries (Step 7).
+- `state.scratch` reshaped from `Map<msgId, {assistant, thinking}>` to `Map<msgId, ScratchEntry>` (Step 5).
+- `state.pendingTurn` replaces `state.pendingUserMessage` (Step 5).
+- `state.toolCallMap` deleted; tool index folded into `ScratchEntry.toolCallIndex` (Step 5).
+- `handleTextDelta` rewrites for append-or-mutate trailing Message (Step 5).
+- `handleToolUse` / `handleToolResult` / `handleToolUseStructured` update Messages via `toolCallIndex` (Step 5).
+- `handleSend` / `handleWakeStarted` seed `pendingTurn.initialMessages` (Step 5; Step 8 extends `handleWakeStarted` to include the `SystemNote` for `wakeTrigger.prompt`).
+- `buildTurnEntry` simplifies to `messages: Array.from(scratch[msgId]?.messages ?? [])` plus turn-level metadata (Step 5).
+- `write-inflight` effect kind carries `messageKey` and `channel: "text" | "state"` (Step 5).
 
 `tugdeck/src/lib/code-session-store/store.ts`:
 
+- Snapshot derivation builds `activeTurn` from `pendingTurn` + scratch (Step 5).
 - `cancelScheduledTask(cron_id)` action (Step 9).
 
 `tugdeck/src/lib/tide-transcript-data-source.ts`:
 
-- Per-message iteration replaces offset-table (Step 5).
-- `isWakeTurn` / `isWakeInflight` helpers deleted.
+- Per-Message iteration replaces offset-table (Step 5).
+- `isWakeTurn` / `isWakeInflight` / `userRowIndexForTurn` / `assistantRowIndexForTurn` / `RowLayout` / `buildRowLayout` / `locateCommittedRow` all deleted (Step 5).
+- New: `MessageLayout`, `messageRowIndex(turnIndex, messageKey)`.
+- `TideTranscriptCellKind` extends to `"user" | "code" | "thinking" | "system-note" | "tool" | "ghost"` (Step 5; renderer registrations added in Step 6 / 8 as those steps land).
 - Emits `{ kind: "chrome", trigger }` row before wake-turn messages (Step 6).
-- Emits `{ kind: "systemNote", source }` row for `system_note` Messages (Step 8).
 
-`tugdeck/src/components/tugways/cards/tide-card-row-code.tsx`:
+`tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`:
 
-- Reads `TurnEntry.messages` instead of `TurnEntry.assistant` (Step 5).
-- Renders `<TranscriptChrome>` chip for wake turns (Step 6).
+- Cell renderers updated: each Message kind maps to one renderer; per-Message streaming subscriptions key off `messageKey` (Step 5).
+
+`tugdeck/src/components/tugways/cards/turn-entry-markdown.ts`:
+
+- Iterates `turn.messages` filtering `assistant_text` (was: read `turn.assistant`) (Step 5).
+
+`tugdeck/src/components/tugways/cards/tide-card-telemetry-popovers.tsx`:
+
+- Reads the first `user_message` Message's text (was: `turn.userMessage.text.trim()`) (Step 5).
+
+`tugdeck/src/components/tugways/chrome/tide-thinking-block.tsx`:
+
+- Reads `assistant_thinking` Message(s) (was: `TurnEntry.thinking`) (Step 5).
 
 `tugcode/src/session.ts`:
 
@@ -570,29 +729,82 @@ The implementation shipped across the following work; all steps are complete exc
 
 **Resolution / scope decision (2026-05-25):** in-session reliability is the gating success criterion; cross-restart wake delivery is not. The resume-mode failure is corroborated by the broader pattern of scheduled-task reliability bugs filed against Claude Code (see [#40228](https://github.com/anthropics/claude-code/issues/40228) durable flag, [#44128](https://github.com/anthropics/claude-code/issues/44128) tasks don't fire when desktop closed, [#36131](https://github.com/anthropics/claude-code/issues/36131) tasks need active focus, [#56194](https://github.com/anthropics/claude-code/issues/56194) feature request for app-independent scheduling). All four of those issues are open and unaddressed upstream; our case fits the same pattern. The findings doc is moved to [`archive/`](./archive/wake-investigation-findings.md) to keep the active plan focused on shipped capability. Slice 1 closes; the resume-mode failure stands as a known upstream limitation that the existing detector will pick up automatically if/when Anthropic ships a fix.
 
-#### Step 5: Slice 1c-b — transcript sequence-model rework {#step-5}
+#### Step 5: Slice 1c-b — full sequence substrate {#step-5}
 
 **Status:** Not started.
 
-**Scope:** Replace `TurnEntry`'s paired `userMessage` + `assistant` fields with a per-turn message sequence per [D07]. The transcript data source iterates `messages` directly instead of running the [D06] empty-text-sentinel offset table. Wake turns become naturally single-row (their `messages` array contains only `assistant_text`). Removes the [D06] sentinel and the `isWakeTurn` / `isWakeInflight` helpers. Unblocks Step 8 (system-note rendering needs the `system_note` Message kind).
+**Scope:** Lift the turn model to a sequence substrate end-to-end per [D07]. Reducer state, streaming PropertyStore paths, snapshot, data source, and every consumer model a turn as an ordered sequence of typed Messages. Message is the unit of identity, mutation, streaming subscription, and rendering. Paired-field aggregation and parallel `toolCallMap` storage retire. The [D06] wake sentinel is removed at every site.
 
-**Files:**
+This is **not** a boundary-translation refactor. The substrate believes in the sequence; consumers don't have to maintain a fiction.
 
-- `tugdeck/src/lib/code-session-store/types.ts` — `Message` discriminated union; `TurnEntry` reshape; `CodeSessionSnapshot` mirror.
-- `tugdeck/src/lib/code-session-store/reducer.ts` — commit paths append `Message` records; all phase guards re-audited against the new shape.
-- `tugdeck/src/lib/code-session-store/replay/replay-translator.ts` — emit `Message` records during rehydration.
-- `tugdeck/src/lib/tide-transcript-data-source.ts` — per-message iteration; delete offset-table and wake helpers; `userRowIndexForTurn` removed entirely (no more sentinel return).
-- `tugdeck/src/components/tugways/cards/tide-card-row-code.tsx` and `tide-card-telemetry-popovers.tsx` — read `messages` instead of `userMessage` / `assistant`.
-- Tests: reducer + transcript-data-source + replay suites refactored against the new shape. Net coverage preserved.
+**Architectural decisions locked in [D07]:**
+
+- Message union: `user_message | assistant_text | assistant_thinking | system_note | tool_use`.
+- `messageKey` derivation: `${turnKey}-m${seq}` with `seq` monotonic per turn — debuggable, intrinsically unique.
+- `TideTranscriptCellKind` extends to narrow per-kind values (`user | code | thinking | system-note | tool | ghost`) — one renderer per kind, no internal dispatch (matches [L26]'s renderer-reference axis: one stable lambda per kind).
+- `ToolCallState` retires onto `ToolUseMessage`.
+- `state.pendingUserMessage` and `snapshot.inflightUserMessage` replaced by `state.pendingTurn` and `snapshot.activeTurn`.
+
+**Open contracts to verify against captured wire fixtures BEFORE locking handler code:**
+
+1. Does the stream-json wire emit any signal that distinguishes "continuation of the prior text block" from "new text block separated by a tool call" beyond the bare event ordering? Candidates: `message_start` / `content_block_start` / similar.
+2. Do `thinking_text` and `assistant_text` events ever interleave mid-block, or are thinking blocks always discrete from assistant blocks?
+
+The append-or-mutate rule's heuristic ("trailing-Message-kind match") is correct under both questions resolving to "no special signal — bare ordering is enough." If either resolves otherwise, the rule keys on the wire signal instead. Verification probe: parse `tugcode/probes/wake-investigation/capture-*.stdout` for `assistant_text` + `thinking_text` + `tool_use` event sequences and classify the inter-event signals.
+
+**Files (production):**
+
+- `tugdeck/src/lib/code-session-store/types.ts` — Message union, ScratchEntry, PendingTurn, ActiveTurnSnapshot, TurnEntry reshape. `ToolCallState` deleted; `inflightUserMessage` deleted; `userMessage` / `thinking` / `assistant` / `toolCalls` deleted from TurnEntry.
+- `tugdeck/src/lib/code-session-store/events.ts` — review event shapes for any field renames the reducer-side change implies.
+- `tugdeck/src/lib/code-session-store/effects.ts` — `write-inflight` effect kind carries `messageKey` and `channel: "text" | "state"`.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — substrate change (see [D07] handler-by-handler table). Bulk of the work.
+- `tugdeck/src/lib/code-session-store/code-session-store.ts` (or wherever the snapshot builder lives) — derive `activeTurn` from `pendingTurn` + scratch.
+- `tugdeck/src/lib/tide-transcript-data-source.ts` — per-Message iteration; delete `isWakeTurn` / `isWakeInflight` / `RowLayout` / `buildRowLayout` / `userRowIndexForTurn` / `assistantRowIndexForTurn` / `locateCommittedRow`; introduce `MessageLayout` + `messageRowIndex`.
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — cell renderers per Message kind; per-Message streaming subscription paths.
+- `tugdeck/src/components/tugways/cards/turn-entry-markdown.ts` — iterate messages filtering `assistant_text`.
+- `tugdeck/src/components/tugways/cards/tide-card-telemetry-popovers.tsx` — read first `user_message` Message text.
+- `tugdeck/src/components/tugways/chrome/tide-thinking-block.tsx` — read `assistant_thinking` Message text.
+
+**Files (tests — net coverage preserved, shape updated):**
+
+- `tugdeck/src/lib/code-session-store/__tests__/*` — ~30 reducer tests. Most diffs are mechanical: `expect(state.scratch.get(msgId)?.assistant).toBe(...)` → `expect(findTrailingMessage(state.scratch.get(msgId)!, "assistant_text")?.text).toBe(...)`. Build a small test helper module (`__tests__/_helpers/messages.ts`) for "find Message of kind", "construct fixture TurnEntry with messages", etc.
+- `tugdeck/src/lib/__tests__/tide-transcript-data-source.test.ts` — substantial rewrite. The variable-rows-per-turn invariants the current tests pin are replaced by per-Message row counts. New invariants: a turn with N Messages produces N rows; the message-kind narrows the cell renderer.
+- `tugdeck/src/__tests__/session-wake-fixture-replay.test.ts` — fixture-replay test. The captured fixtures don't change; the assertions about shape do.
+- `tugdeck/src/__tests__/assistant-rendering-fixture-replay.test.ts` — same.
+- `tugdeck/src/components/tugways/cards/__tests__/tide-card-transcript-tool-calls.test.ts` — tool-call rendering test; shape updates.
+- New test: `tugdeck/src/lib/code-session-store/__tests__/reducer.message-sequence.test.ts` — pin the append-or-mutate rule against fixture event sequences (the regression net for Risk #2).
+
+**Commit sequence (single landing commit):**
+
+The dependencies between types, reducer state, handlers, streaming paths, data source, consumers, and tests are tight enough that dual-rep migration carries more risk (drift between reps) than a clean cutover. Working-tree process:
+
+1. **Probe the wire** to resolve the two open contracts. Update [D07]'s append-or-mutate rule if the wire provides a stronger signal.
+2. **Draft `types.ts`** changes locally; tsc reveals the consumer-error set.
+3. **Rewrite reducer** state shape + handlers. Reducer tests fail in expected places only (no regressions in unrelated handlers).
+4. **Rewrite snapshot builder** (`activeTurn` derivation).
+5. **Rewrite data source.** Data-source tests fail in expected places.
+6. **Rewrite consumers** (5 files).
+7. **Update all failing tests** in one pass.
+8. `cd tugdeck && bun x tsc --noEmit && bun test` green.
+9. One commit on main.
+
+If the cutover ends up too large to review comfortably, split by file at commit time using `git add -p` — but the working tree is always green at the commit boundary.
 
 **Manual repro:**
 
 - A normal user → assistant turn renders two rows (user_message + assistant_text).
-- A wake turn renders one row (assistant_text only; no empty-text sentinel involved).
-- Replay of a recorded session produces identical row output to pre-Step-5.
-- `grep -r "isWakeTurn\|isWakeInflight" tugdeck/src` returns nothing.
+- A turn where claude says text, calls a tool, then says more text commits as three rows in order — distinct from today's "all text squashed into one row above the tool log."
+- A turn with interleaved thinking renders the thinking block in its arrival position relative to assistant text.
+- A wake turn renders one row (assistant_text only; no empty-text sentinel anywhere).
+- Replay of a recorded session produces identical row output to pre-Step-5 for simple turns; multi-block / interleaved turns now render with preserved ordering.
+- `grep -rE "isWakeTurn|isWakeInflight|userRowIndexForTurn|assistantRowIndexForTurn|inflightUserMessage|\\.toolCallMap|\\bpendingUserMessage\\b" tugdeck/src` returns nothing (or only deletion-marker comments awaiting a follow-up cleanup commit).
+- `grep -rE "TurnEntry\\.userMessage|TurnEntry\\.assistant\\b|TurnEntry\\.thinking|TurnEntry\\.toolCalls" tugdeck/src` returns nothing.
 
-**Checkpoint:** `cd tugdeck && bun x tsc --noEmit && bun test` green; manual sweep of the transcript across the wake / non-wake / replay matrix.
+**Checkpoint:**
+
+- `cd tugdeck && bun x tsc --noEmit && bun test` green; full reducer + data source + fixture-replay suites pass.
+- Manual sweep: send a normal turn; send a turn that triggers a tool call mid-stream; trigger a wake (any Cohort A or B); verify all render correctly in HMR.
+- The new fixture-replay test for multi-block / interleaved ordering passes against a captured trace.
 
 #### Step 6: Slice 2 — trigger-aware chrome (resolves [Q02]) {#step-6}
 
@@ -607,7 +819,7 @@ The implementation shipped across the following work; all steps are complete exc
 - `tugdeck/src/lib/code-session-store/types.ts` — `WakeTrigger` extended with `kind`, `prompt?`, `scheduled_for?`, `cron_expression?`, `cron_id?`.
 - `tugdeck/src/lib/code-session-store/reducer.ts` — propagate extended fields onto `TurnEntry.wakeTrigger` at `handleWakeStarted`.
 - `tugdeck/src/components/tugways/transcript/transcript-chrome.tsx` (new) — chip renderer with click-to-expand detail panel per [D09].
-- `tugdeck/src/components/tugways/cards/tide-card-row-code.tsx` — render chrome chip above wake-turn assistant text.
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — render chrome chip above wake-turn assistant text within the existing code-row renderer.
 - `tugdeck/src/lib/tide-transcript-data-source.ts` — emit `{ kind: "chrome", trigger }` row before the first message row of any wake turn.
 
 **Manual repro:**
