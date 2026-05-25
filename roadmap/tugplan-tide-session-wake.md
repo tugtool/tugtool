@@ -31,11 +31,13 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 
 #### Strategy {#strategy}
 
-- **Mirror the existing replay bracket.** The reducer already has a working pattern for "events flow but no user turn is in flight" — the `replay_started`/`replay_complete` bracket and the `replaying` phase. Spontaneous wake gets a parallel bracket (`wake_started`/`wake_complete`) and a parallel phase (`waking`). No new architectural concept; one new state in an enum the reducer already iterates.
+- **Mirror the existing replay bracket — but simpler.** The reducer already has a working pattern for "events flow but no user turn is in flight" — the `replay_started`/`replay_complete` bracket and the `replaying` phase. Spontaneous wake gets a parallel phase (`waking`) and a parallel open-bracket frame (`wake_started`). Unlike replay, wake does NOT need its own close frame — claude's existing `turn_complete` is the close. One new state in an enum the reducer already iterates.
 - **Detect at the source (tugcode), not in the reducer.** Detection lives where the SDK shape is known. [D02] [D04] explain why reducer-only detection was considered and rejected: it conflates detection with event handling, forces turnKey minting inside a pure handler, and reproduces detection logic that the cold-boot replay translator would need separately. Distributed detection keeps the reducer a state machine and the wire vocabulary explicit.
 - **Cold-boot replay is unaffected.** The reducer's `handleTextDelta` guard already allows `"replaying"`, so historic wake turns rehydrating through `replay_started/replay_complete` already paint correctly. No JSONL translator changes are needed in Slice 1. Trigger-metadata persistence through the translator is a Slice 2 concern (called out at [#slice-2-replay-translator]).
-- **Loosen exactly one reducer guard.** `handleTextDelta` accepts `"waking"` alongside `"replaying"`. The other two guards (`handleTurnComplete`, `handleUserMessageReplay`) are addressed by the bracket design (`handleWakeStarted` sets `activeMsgId` so the turn-complete early-return doesn't fire; `user_message_replay` from a wake-triggering task-notification synthetic-user-text is dropped quietly in Slice 1 and surfaced as a system note in Slice 2 chrome). Pure additive change to the guard: every existing drop still drops.
-- **Reset per-turn telemetry on wake-start.** A wake turn is a real turn for live telemetry — but the per-turn fields (`firstAssistantDeltaAt`, `lastStreamEventAt`, `awaitingApprovalSince`, the interval arrays, etc.) all need resetting at wake-start, exactly the way `handleSend` resets them on user submit. Without this, a wake inherits the prior turn's telemetry. Spec [#spec-wake-started-state-reset] enumerates the exact field list.
+- **Loosen exactly one reducer guard.** `handleTextDelta` accepts `"waking"` alongside `"replaying"`. The other two guards (`handleTurnComplete`, `handleUserMessageReplay`) are addressed by the bracket design (the wake's first text event sets `activeMsgId` so the turn-complete early-return doesn't fire; `user_message_replay` from a wake-triggering task-notification synthetic-user-text is dropped quietly in Slice 1 and surfaced as a system note in Slice 2 chrome). Pure additive change to the guard: every existing drop still drops.
+- **Single open-bracket frame on the wire — `turn_complete` is the close.** Spec [#spec-wire-frames] defines only `wake_started`; there is no `wake_complete` frame. claude's normal end-of-turn `result → turn_complete` is the close signal. The reducer extends `handleTurnComplete`'s commit path with one branch: when `phase === "waking"`, the commit also clears `wakeTrigger` and `pendingUserMessage` and transitions to `idle` (parallel to the `streaming → idle` commit). Half the wire frames removed, all the ordering ambiguity gone.
+- **TurnKey minted by the tugdeck store wrapper (`frameToEvent`), not tugcode.** This mirrors the existing replay-event pattern (`reducer.ts:1606-1609` — turnKeys are a per-turn React-key seed that has no meaning outside tugdeck). The `wake_started` wire frame does NOT carry a turnKey; the store wrapper mints one on frame receipt and adds it to the dispatched event.
+- **Reset per-turn telemetry on wake-start via the shared helper.** A wake turn is a real turn for live telemetry — but the per-turn fields (`firstAssistantDeltaAt`, `lastStreamEventAt`, `awaitingApprovalSince`, the interval arrays, etc.) all need resetting at wake-start, exactly the way `handleSend` resets them on user submit. The existing `resetPerTurnTelemetry()` helper at `reducer.ts:1619` is already factored out for this purpose — `handleWakeStarted` calls it. Future fields added to the helper automatically apply to wakes too (no silent regression from manual enumeration drift).
 - **Ship in two slices.** Slice 1: wire + reducer + tests + cohort verification (UI shows wake turn correctly, no chrome differentiation). Slice 2 (deferred to a follow-up plan): trigger-aware chrome for wake turns + replay-translator metadata. Slice 1 closes PPF-01; Slice 2 is polish.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -49,9 +51,9 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 
 #### Scope {#scope}
 
-1. New wire frame types: `wake_started`, `wake_complete` (TS types + Rust definitions for tugcast).
-2. tugcode detector + emitter: detects "content arriving in idle with no preceding user_message" and emits the bracket; attaches task-notification payload as trigger metadata when present.
-3. tugdeck reducer: new `waking` phase, new `handleWakeStarted`/`handleWakeComplete` (including per-turn telemetry reset), guard loosening in `handleTextDelta`, a `wakeTrigger` state field.
+1. New wire frame type: `wake_started` (TS type + Rust definition pass-through in tugcast). No `wake_complete` — `turn_complete` is the close.
+2. tugcode detector + emitter: detects "content arriving in idle with no preceding user_message" and emits `wake_started`; attaches task-notification payload as trigger metadata when present.
+3. tugdeck reducer: new `waking` phase, new `handleWakeStarted` (delegates per-turn telemetry reset to existing `resetPerTurnTelemetry()` helper at `reducer.ts:1619`), guard loosening in `handleTextDelta`, extension to `handleTurnComplete`'s commit path for the `waking → idle` transition, a `wakeTrigger` state field. Store-wrapper change in `frameToEvent` to mint the turnKey on receipt of `wake_started` (mirrors the existing replay pattern).
 4. Comment update at `reducer.ts:827` so the old "Live Claude should not emit this" assertion no longer reads as a reason to revert the guard change.
 5. Pure-logic reducer tests + a fixture-replay test against a captured wake session.
 6. Cohort verification: each tool in the provisional cohort exercised against the new path; plan claims tightened to the verified subset.
@@ -80,14 +82,14 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 - The wake transition must not disturb the first-responder focus destination ([L23]). Prompt-entry focus stays put through `waking → idle` transitions.
 - New wire frames must be additive — existing clients that don't yet handle them must fall through without erroring (default arm with a debug log).
 - Tests must use the project's pure-logic patterns; no jsdom / happy-dom (deleted 2026-05-13 per repo policy).
-- TurnKey minting stays out of pure-reducer handlers — the store wrapper or tugcode's outbound layer mints turnKeys before dispatch, mirroring the existing replay pattern.
+- TurnKey minting stays out of pure-reducer handlers AND out of tugcode (tugcode is a Node subprocess; turnKeys are tugdeck React-key seeds). The tugdeck store wrapper's `frameToEvent` is the canonical mint site — same pattern as the existing replay events (`reducer.ts:1606-1609`).
 
 #### Assumptions {#assumptions}
 
 - The SDK's task-notification flow emits `SDKTaskNotificationMessage` *near* the resumed content (within a small wall-clock window — seconds, not minutes). Verified in Step 1; if violated, the detector's `task_notification`-as-metadata correlation window needs widening or the metadata attachment needs to be retroactive (revise [D02]).
 - The supervisor side (tugcast `agent_supervisor`) currently passes the SDK system messages through to the wire without filtering. Confirmed for `subtype === "init"`; assumed to hold for `subtype === "task_notification"`. Verified in Step 1.
 - A single wake corresponds to a single bracket. Nested wakes (one task-notification firing during the wake turn of another task-notification) are theoretically possible; the design at [D01] flattens them to a single outer bracket — the inner wake is absorbed silently. Pinned by a test in Step 5.
-- TurnKey minting at the store-wrapper / tugcode layer is preferable to letting the reducer mint its own. Justified by the existing pattern (replay events follow this convention) and by reducer purity. Verified by adopting the same pattern for `wake_started` frames.
+- TurnKey minting at the store wrapper is preferable to letting the reducer or tugcode mint. Justified by the existing pattern (replay events follow this convention per `reducer.ts:1606-1609`) and by reducer purity + cross-process clarity (turnKeys are React-key seeds; tugcode has no React).
 
 ---
 
@@ -138,7 +140,8 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 | Nested wakes (wake during a wake) produce a malformed bracket | med | low | Test pinned in Step 5; the reducer flattens nested wakes to a single outer bracket via an idempotent `handleWakeStarted` (second call while already `waking` is a no-op except for trigger-metadata update) | A real-session JSONL with two overlapping task-notifications |
 | `task_notification` arrives *after* the resumed content (out-of-order) | med | low | Detector uses correlation window (configurable; default 5s) to attach trigger metadata retroactively; if the window misses, the wake still brackets correctly with an anonymous trigger | Step 1 capture shows an ordering closer than the window allows |
 | User types a `send` *during* an in-flight wake turn (race) | med | low | The reducer's `handleSend` allow-list adds `"waking"`; a send during waking is enqueued the same way a send during streaming is — the `queuedSends` machinery already handles this case. Test pinned in Step 5 | An interaction test surfaces a queueing race |
-| Transport disconnect mid-wake (the `wake_complete` never arrives) | med | low | Recovery: on `transport_open` → `transport_settled` the reducer's existing bind-resume machinery rehydrates from JSONL, which contains the wake turn as a completed entry — so reopening the session paints it. No separate watchdog needed; the existing reconnect path is the safety net | An observed case where reconnect doesn't rehydrate the in-flight wake |
+| Transport disconnect mid-wake (the closing `turn_complete` never arrives) | med | low | Recovery: on `transport_open` → `transport_settled` the reducer's existing bind-resume machinery rehydrates from JSONL, which contains the wake turn as a completed entry — so reopening the session paints it. No separate watchdog needed; the existing reconnect path is the safety net | An observed case where reconnect doesn't rehydrate the in-flight wake |
+| Phantom empty user bubble from the empty-text marker `pendingUserMessage` | med | med | Spec [#spec-guard-loosenings] requires `handleTurnComplete`'s commit branch for `waking → idle` to skip writing the empty-text marker into the committed transcript entry. Test pinned in Step 5 asserts no phantom bubble in the committed entry. If the existing commit code doesn't already skip empty-text pendings, Step 4 adds the skip. | A fixture-replay test surfaces a phantom bubble |
 
 **Risk R01: SDK message ordering / shape drifts on a future claude-agent-sdk upgrade** {#r01-sdk-drift}
 
@@ -158,7 +161,7 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 
 #### [D01] Bracket pattern with a new `waking` phase, not a synthetic user_message (DECIDED) {#d01-bracket-pattern}
 
-**Decision:** Add `wake_started` / `wake_complete` wire frames and a `"waking"` value to `CodeSessionPhase`. Don't fake a user_message to slip the wake turn through the existing `submitting → … → idle` machinery.
+**Decision:** Add a single `wake_started` wire frame and a `"waking"` value to `CodeSessionPhase`. Use claude's existing `turn_complete` as the close signal (no `wake_complete`). Don't fake a user_message to slip the wake turn through the existing `submitting → … → idle` machinery.
 
 **Rationale:**
 - The existing `replay_started`/`replay_complete` bracket is the proven pattern for "events flow but no user turn is in flight." Mirroring it costs one enum value and two new handlers; no reducer concept needs inventing.
@@ -169,8 +172,8 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 **Implications:**
 - New `CodeSessionPhase` enum value: `"waking"`. Every exhaustive switch on phase must add the case.
 - One reducer guard loosens: `handleTextDelta` accepts `"waking"`.
-- New reducer state field: `wakeTrigger: { taskId, status, summary } | null`, set on `handleWakeStarted`, cleared on `handleWakeComplete`.
-- `handleWakeStarted` resets per-turn telemetry the same way `handleSend` does (spec at [#spec-wake-started-state-reset]).
+- New reducer state field: `wakeTrigger: { taskId, status, summary } | null`, set on `handleWakeStarted`, cleared in `handleTurnComplete`'s commit when transitioning from `waking → idle`.
+- `handleWakeStarted` resets per-turn telemetry by calling the existing `resetPerTurnTelemetry()` helper (`reducer.ts:1619`) — same helper `handleSend` uses on the queue-flush path.
 
 #### [D02] tugcode (not tugcast, not tugdeck) detects spontaneous wake (DECIDED) {#d02-tugcode-detector}
 
@@ -187,8 +190,8 @@ The cohort of mechanisms that may drive wakes was provisionally listed (Monitor,
 **Implications:**
 - tugcode owns one new piece of state per session: a `userMessageSeenSinceLastResult` boolean (or equivalent). Flipped true on `SDKUserMessage`, flipped false on `SDKResultMessage`.
 - When content arrives with the boolean still false, tugcode emits `wake_started` with the most recent `task_notification` payload (if any, within a 5s correlation window) as trigger metadata, then forwards the content.
-- The wake closes on the next `SDKResultMessage`: tugcode emits `wake_complete` before forwarding the result.
-- The turnKey for the wake is minted by tugcode at `wake_started` emit time and carried on the frame.
+- The wake closes implicitly when claude emits its end-of-turn `result` (which tugcode already translates into a `turn_complete` IPC frame). No separate `wake_complete` frame on the wire.
+- TurnKey for the wake is minted by tugdeck's store wrapper (`frameToEvent`) on receipt of `wake_started`. tugcode does not mint turnKeys; they are tugdeck React-key seeds.
 
 #### [D03] Guard loosening is additive — every drop case is still a drop case (DECIDED) {#d03-additive-guards}
 
@@ -213,7 +216,7 @@ The reducer-only approach would have `handleTextDelta` inline the detection: whe
 1. **Conflates detection with event handling.** `handleTextDelta` becomes responsible for both "is this a wake?" and "fold the text into scratch." Two responsibilities in one handler is the wrong shape.
 2. **Forces turnKey minting inside a pure handler.** TurnKeys are minted by the store wrapper before dispatch today (see comment at `reducer.ts:2703-2705`). A wake transition needs a turnKey, but the reducer can't mint one without breaking purity. Workarounds (`Math.random()`, `Date.now()`, a closure over a counter) all break the cold/hot symmetry with replay events.
 3. **Reproduces detection logic that already exists at the source.** tugcode already knows the SDK shape and can detect spontaneously by sequence analysis. Detecting again in the reducer is redundant and forces the reducer to know things about the SDK it has no business knowing.
-4. **Doesn't actually save layers.** Even reducer-only needs *some* signal carrying trigger metadata for Slice 2. That signal has to land somewhere — and "wake_started/wake_complete on the wire" is the cleanest place.
+4. **Doesn't actually save layers.** Even reducer-only needs *some* signal carrying trigger metadata for Slice 2. That signal has to land somewhere — and `wake_started` on the wire (with claude's existing `turn_complete` as the implicit close) is the cleanest place.
 
 **Implications:**
 - Step 2's wire-frame additions are load-bearing, not optional scaffolding.
@@ -226,25 +229,21 @@ The reducer-only approach would have `handleTextDelta` inline the detection: whe
 
 #### Wire frames {#spec-wire-frames}
 
-Two new IPC message types emitted by tugcode, forwarded by tugcast, consumed by tugdeck. Both go on the existing CODE_OUTPUT feed; both carry the session ID.
+One new IPC message type emitted by tugcode, forwarded by tugcast, consumed by tugdeck. Goes on the existing CODE_OUTPUT feed; carries the session ID. The bracket *opens* with this frame and *closes* implicitly via the existing `turn_complete` frame that claude already emits at end-of-turn — no separate close frame is needed.
 
 ```ts
-// New entry in tugcode/src/protocol-types.ts and mirrored in tugcast Rust:
+// New entry in tugcode/src/protocol-types.ts:
 type WakeStartedMessage = {
   type: "wake_started";
   session_id: string;
-  turnKey: string;  // minted by tugcode; mirrors the replay-event pattern
+  // No turnKey here — tugdeck's store wrapper (`frameToEvent`) mints
+  // it on receipt and adds it to the dispatched event, mirroring the
+  // existing replay-event pattern (`reducer.ts:1606-1609`).
   wake_trigger: {
     task_id: string;
     status: "completed" | "failed" | "stopped";
     summary: string;
   } | null;  // null if no task_notification was correlated within the window
-};
-
-type WakeCompleteMessage = {
-  type: "wake_complete";
-  session_id: string;
-  msg_id: string;  // claude's id for the resumed assistant message
 };
 ```
 
@@ -271,56 +270,68 @@ wakeTrigger: {
 } | null;
 ```
 
-#### `handleWakeStarted` state reset (mirrors `handleSend`) {#spec-wake-started-state-reset}
+#### `handleWakeStarted` state reset {#spec-wake-started-state-reset}
 
-`handleSend` (`reducer.ts:486-540`) resets a specific set of per-turn fields at submit time. `handleWakeStarted` must reset the same fields so a wake turn's telemetry is its own, not the prior user turn's. Fields to reset:
+The reducer already factors per-turn telemetry reset into a `resetPerTurnTelemetry()` helper at `reducer.ts:1619` (used by `handleSend`'s queue-flush path). `handleWakeStarted` calls the same helper — no field-by-field enumeration. A future field added to the helper applies to wakes automatically (no silent regression from list drift).
 
-- `awaitingApprovalSince: null`
-- `awaitingApprovalAccumulatedMs: 0`
-- `transportDowntimeAccumulatedMs: 0`
-- `transportReconnectCount: 0`
-- `lastStreamEventAt: null`
-- `maxStreamGapMs: 0`
-- `firstAssistantDeltaAt: null`
-- `firstToolUseAt: null`
-- `interruptInFlight: false`
-- `interruptInFlightSegmentStartedAt: null`
-- `awaitingApprovalIntervals: []`
-- `transportDowntimeIntervals: []`
-- `interruptInFlightIntervals: []`
-- `liveTurnUsage: null`
-- `costAtSubmit: state.lastCost` (the wake's cost-delta baseline is the current cumulative cost)
+```ts
+function handleWakeStarted(state, event): { state, effects } {
+  if (state.phase === "waking") {
+    // Idempotent: nested wake is a no-op except for trigger-metadata refresh.
+    return {
+      state: state.wakeTrigger === null && event.wake_trigger !== null
+        ? { ...state, wakeTrigger: event.wake_trigger }
+        : state,
+      effects: [],
+    };
+  }
+  return {
+    state: {
+      ...state,
+      phase: "waking",
+      wakeTrigger: event.wake_trigger,
+      pendingUserMessage: {
+        text: "",                      // empty-text sentinel for "this is a wake"
+        atoms: [],
+        submitAt: Date.now(),
+        turnKey: event.turnKey,        // minted by store wrapper, on event
+      },
+      costAtSubmit: state.lastCost,    // wake's cost-delta baseline
+      ...resetPerTurnTelemetry(),      // single source of truth — same as handleSend
+    },
+    effects: [],
+  };
+}
+```
 
 What `handleWakeStarted` does *not* do (vs `handleSend`):
-- No real `pendingUserMessage` write — there is no user message backing a wake. Instead, `pendingUserMessage` is set to a marker object: `{ text: "", atoms: [], submitAt: Date.now(), turnKey: event.turnKey }`. The empty text is the "this is a wake" sentinel; consumers that render the user-message bubble must check for empty text and skip the render (Slice 1 acceptance; Slice 2 may render a system-note chrome).
-- No `pendingDraftRestore: null` clear — the user's draft (if any) should not be touched by a wake.
+- No real user-message text in `pendingUserMessage` — the empty-text sentinel signals "this is a wake." Consumers that render the user-message bubble must check `pendingUserMessage.text === ""` and skip the render. Slice 2 may render a system-note chrome instead (a follow-up could add an explicit `kind: "user" | "wake"` discriminator if the empty-text convention proves fragile).
+- No `pendingDraftRestore: null` clear — the user's in-progress draft (if any) must not be touched by a wake.
 - `phase: "waking"` (not `"submitting"`).
-- `wakeTrigger: event.wake_trigger` (set from frame).
 
 #### Reducer phase transitions {#spec-phase-transitions}
 
 - `idle` + `wake_started` → `waking` (with state reset per [#spec-wake-started-state-reset])
-- `waking` + `assistant_text` / `thinking_text` / `tool_use` → stays `waking` (events flow through the loosened guard)
-- `waking` + `turn_complete` → commits the turn entry like a normal `streaming`/`tool_work` → `idle` commit, but routed through a new `handleWakeComplete` that also clears `wakeTrigger` and `pendingUserMessage`
-- `waking` + `wake_complete` (explicit close from tugcode) → also commits and returns to `idle`. Belt-and-suspenders: `turn_complete` is the primary close; `wake_complete` is the explicit signal if claude exits the wake without a clean `result`
-- `waking` + `wake_started` (nested wake) → no-op (idempotent), with optional `wakeTrigger` metadata update if the new payload is non-null and the old was null
-- `waking` + `send` → enqueued via `queuedSends`, mirroring the streaming-phase enqueue behavior
+- `waking` + `assistant_text` / `thinking_text` / `tool_use` → stays `waking` (events flow through the loosened guard at `handleTextDelta`)
+- `waking` + `turn_complete` → commits the turn entry through the existing `handleTurnComplete` commit path. The commit path gains one branch: when `state.phase === "waking"`, it clears `wakeTrigger` and `pendingUserMessage` alongside the normal commit, then transitions to `idle`. The empty-text `pendingUserMessage` sentinel is *not* written into the committed transcript entry — the commit code skips empty-text marker pendings (Step 4 must verify the commit logic does this; if it doesn't today, add the skip).
+- `waking` + `wake_started` (nested wake) → idempotent no-op, with optional `wakeTrigger` metadata refresh if the new payload is non-null and the old was null
+- `waking` + `send` → enqueued via `queuedSends`, mirroring the streaming-phase enqueue behavior. (UX note: a user typing during a wake almost certainly wants to interrupt; the safer queue-the-send default may be revisited in Slice 2 if real-use feedback says so.)
 
 #### Guard loosening (only one needed) {#spec-guard-loosenings}
 
-`handleTextDelta` (`reducer.ts:833-841`): add `"waking"` to the phase allow-list.
+`handleTextDelta` (`reducer.ts:833-841`): add `"waking"` to the phase allow-list. This is the only guard loosening.
 
-`handleTurnComplete` (`reducer.ts:1462-1467`): the `activeMsgId === null && phase === "idle"` early-return stays as-is — the `waking` phase has `activeMsgId` set by the first text event.
+`handleTurnComplete` (`reducer.ts:1462-1467`): the `activeMsgId === null && phase === "idle"` early-return stays as-is — the `waking` phase has `activeMsgId` set by the first text event. **Extension (not loosening):** the commit-path branch that today maps `streaming`/`tool_work → idle` is extended to also map `waking → idle`. The extension also clears `wakeTrigger` and `pendingUserMessage`. Step 4 must verify the existing commit code skips empty-text marker `pendingUserMessage` writes (so the wake's marker doesn't render as a phantom user bubble); if it doesn't, add the skip.
 
 `handleUserMessageReplay` (`reducer.ts:2689-2691`): unchanged. The synthetic user_message_replay frame from a task-notification injection is dropped quietly in Slice 1. Slice 2 may revisit if the SDK emits one and chrome wants to render it as a system note.
 
-The comment at `reducer.ts:827` ("Live Claude should not emit this — but defensive handling…") must be updated as part of Step 4 so the next reader doesn't think the drop semantic is intentional in the broader sense. Updated comment should read approximately: *"Incoming text outside of an active turn or a wake — drop. Live claude emits content into idle only when a spontaneous wake is in progress; the wake bracket (`wake_started`/`wake_complete`) transitions phase to `waking` and is what allows the events through here. Stray text outside both an active turn and a wake bracket is still a defensive drop."*
+The comment at `reducer.ts:827` ("Live Claude should not emit this — but defensive handling…") must be updated as part of Step 4 so the next reader doesn't think the drop semantic is intentional in the broader sense. Updated comment should read approximately: *"Incoming text outside of an active turn or a wake — drop. Live claude emits content into idle only when a spontaneous wake is in progress; the `wake_started` frame transitions phase to `waking` and is what allows the events through here (closed implicitly by `turn_complete`). Stray text outside both an active turn and a wake is still a defensive drop."*
 
 ---
 
 ### Compatibility / Migration / Rollout {#rollout}
 
-- **Compatibility policy:** Wire-frame additions are non-breaking. Existing clients that don't recognize `wake_started` / `wake_complete` log a debug message and ignore them. Existing servers that don't emit them produce no behavior change. New phase `"waking"` is invisible to anything outside the reducer until a wake actually fires.
+- **Compatibility policy:** The single wire-frame addition is non-breaking. Existing clients that don't recognize `wake_started` log a debug message and ignore it. Existing servers that don't emit it produce no behavior change. New phase `"waking"` is invisible to anything outside the reducer until a wake actually fires.
 - **Migration plan:**
   - Step 2 lands the types (no behavior).
   - Step 3 lands tugcode emitter (the wire produces frames only when wake conditions are met — no impact on user-initiated turns).
@@ -347,15 +358,15 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 |--------|------|----------|-------|
 | `"waking"` | enum value | `tugdeck/src/lib/code-session-store/types.ts` | New `CodeSessionPhase` value |
 | `wakeTrigger` | state field | `tugdeck/src/lib/code-session-store/types.ts` | New optional field on `CodeSessionState` |
-| `handleWakeStarted` | function | `tugdeck/src/lib/code-session-store/reducer.ts` | New — resets per-turn telemetry per [#spec-wake-started-state-reset] |
-| `handleWakeComplete` | function | `tugdeck/src/lib/code-session-store/reducer.ts` | Mirrors the `streaming → idle` commit path; clears `wakeTrigger` |
-| `WakeStartedEvent` | type | `tugdeck/src/lib/code-session-store/events.ts` (or sibling) | Wire-frame TS shape with pre-minted `turnKey` |
-| `WakeCompleteEvent` | type | same | Wire-frame TS shape |
+| `handleWakeStarted` | function | `tugdeck/src/lib/code-session-store/reducer.ts` | New — calls existing `resetPerTurnTelemetry()` helper per [#spec-wake-started-state-reset] |
+| `handleTurnComplete` extension | function | `tugdeck/src/lib/code-session-store/reducer.ts` | New `waking → idle` commit branch; clears `wakeTrigger` and `pendingUserMessage`; skips writing the empty-text marker into the committed entry |
+| `frameToEvent` extension | function | `tugdeck/src/lib/code-session-store/<store wrapper>` | Recognizes `wake_started` frames; mints turnKey; dispatches `WakeStartedEvent` to the reducer |
+| `WakeStartedEvent` | type | `tugdeck/src/lib/code-session-store/events.ts` (or sibling) | Reducer event shape (with `turnKey` minted by `frameToEvent`) |
 | `routeTopLevelEvent` wake-detector arm | function | `tugcode/src/session.ts:540+` | Tracks `userMessageSeenSinceLastResult`, emits `wake_started` on first idle-content, attaches correlated task_notification metadata |
 | `userMessageSeenSinceLastResult` | session field | tugcode SessionManager | Detector state |
 | `lastTaskNotification` | session field | tugcode SessionManager | Most recent task_notification within correlation window |
-| `WakeStartedMessage` / `WakeCompleteMessage` | TS types | `tugcode/src/protocol-types.ts` | IPC contract |
-| Rust frame variants | enum | tugcast (CODE_OUTPUT frame types) | Mirror IPC types |
+| `WakeStartedMessage` | TS type | `tugcode/src/protocol-types.ts` | IPC contract (no turnKey field; no wake_complete sibling) |
+| Rust frame pass-through | enum arm or opaque case | tugcast (CODE_OUTPUT frame types) | Implementer picks typed-variant vs opaque-pass-through based on the actual frame-type infrastructure |
 | Updated comment | comment | `reducer.ts:827` | Reflects the wake-bracket reality |
 
 ---
@@ -403,24 +414,24 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 ---
 
-#### Step 2: Wire-frame protocol — `wake_started` / `wake_complete` {#step-2}
+#### Step 2: Wire-frame protocol — `wake_started` {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `feat(tide-wake): protocol — wake_started / wake_complete IPC frames`
+**Commit:** `feat(tide-wake): protocol — wake_started IPC frame`
 
 **References:** [D01] bracket pattern, Spec [#spec-wire-frames], (#strategy)
 
 **Artifacts:**
-- TypeScript types in `tugcode/src/protocol-types.ts` (outbound shapes).
-- Mirrored TypeScript types in `tugdeck/src/lib/code-session-store/events.ts` (or sibling).
-- Rust frame variants in tugcast (the crate that owns the IPC enum for CODE_OUTPUT frames).
+- TypeScript outbound type in `tugcode/src/protocol-types.ts`.
+- Mirrored TypeScript event type in `tugdeck/src/lib/code-session-store/events.ts` (or sibling) — with `turnKey: string` on the reducer-event side (minted by the store wrapper in Step 4, not on the wire).
+- tugcast handling — implementer surveys the existing CODE_OUTPUT frame infrastructure and picks either typed-enum-variant or opaque pass-through based on what's already in place.
 - No emitters or consumers yet — purely additive types so the wire vocabulary exists before Steps 3 and 4 land.
 
 **Tasks:**
-- [ ] Add `WakeStartedMessage` and `WakeCompleteMessage` to `tugcode/src/protocol-types.ts`.
+- [ ] Add `WakeStartedMessage` to `tugcode/src/protocol-types.ts`. No `WakeCompleteMessage` — `turn_complete` closes the bracket.
 - [ ] Mirror in tugdeck event types (default-arm consumers log debug and ignore).
-- [ ] Add Rust variants in tugcast (forwarder treats them as opaque pass-through for now).
+- [ ] Handle in tugcast (typed variant or opaque pass-through per existing pattern).
 - [ ] Confirm by running tsc + cargo check that the new types thread through without breaking any consumer.
 
 **Tests:**
@@ -443,22 +454,22 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 **Artifacts:**
 - `routeTopLevelEvent` in `tugcode/src/session.ts` gains a wake-detector pass that tracks `userMessageSeenSinceLastResult` and `lastTaskNotification`.
 - Bracket open: on first content (assistant/thinking/tool_use) after a `result` with `userMessageSeenSinceLastResult === false`, tugcode emits `wake_started` with the most recent task_notification payload (if within the 5s correlation window) as trigger metadata.
-- Bracket close: on the next `result` while `isInWake === true`, tugcode emits `wake_complete` immediately before forwarding the result.
-- TurnKey minting: tugcode mints a turnKey at `wake_started` emit time and carries it on the frame (mirrors the existing replay-event pattern).
+- Bracket close: implicit. tugcode does NOT emit any wake-close frame — claude's normal end-of-turn `result → turn_complete` is the close signal, and the reducer's commit path handles the `waking → idle` transition (Step 4).
+- tugcode clears its `isInWake` flag on the `result` so a subsequent wake brackets correctly.
 
 **Tasks:**
 - [ ] Detector state on SessionManager: `userMessageSeenSinceLastResult: boolean`, `lastTaskNotification: { payload, receivedAt } | null`, `isInWake: boolean`.
 - [ ] Flip `userMessageSeenSinceLastResult` on `SDKUserMessage`; reset on `SDKResultMessage`.
 - [ ] On `SDKTaskNotificationMessage`: cache the payload + timestamp in `lastTaskNotification`.
-- [ ] On content arriving while `isIdle && !userMessageSeenSinceLastResult`: mint turnKey, emit `wake_started` (with trigger metadata if cached notification is within 5s, else null), flip `isInWake = true`, then forward content.
-- [ ] On `SDKResultMessage` while `isInWake`: emit `wake_complete`, then forward the result, then clear `isInWake`, `lastTaskNotification`.
+- [ ] On content arriving while `isIdle && !userMessageSeenSinceLastResult`: emit `wake_started` (with trigger metadata if cached notification is within 5s, else null), flip `isInWake = true`, then forward content. **No turnKey on the frame — tugdeck mints it.**
+- [ ] On `SDKResultMessage` while `isInWake`: forward the result normally; clear `isInWake`, `lastTaskNotification`. **No `wake_complete` emitted.**
 - [ ] Handle nested wakes: a second wake-start condition while already `isInWake` is a no-op (idempotent).
 
 **Tests:**
-- [ ] tugcode unit test: feed the Step-1 captured JSONL through `routeTopLevelEvent` and assert the emitted IPC sequence brackets correctly.
+- [ ] tugcode unit test: feed the Step-1 captured JSONL through `routeTopLevelEvent` and assert the emitted IPC sequence contains exactly one `wake_started` followed by content followed by `turn_complete` (no `wake_complete`).
 - [ ] tugcode unit test: feed a synthetic "content with no task_notification" sequence; assert the bracket opens with `wake_trigger: null`.
-- [ ] tugcode unit test: feed a synthetic nested-wake sequence; assert only one outer bracket emits.
-- [ ] tugcode unit test: feed a synthetic "user_message arrives between result and content"; assert NO wake bracket opens.
+- [ ] tugcode unit test: feed a synthetic nested-wake sequence; assert only one `wake_started` emits.
+- [ ] tugcode unit test: feed a synthetic "user_message arrives between result and content"; assert NO `wake_started` emits.
 
 **Checkpoint:**
 - [ ] `cd tugcode && bun test` green.
@@ -466,35 +477,37 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 
 ---
 
-#### Step 4: tugdeck reducer — `waking` phase, handlers, guard loosening, comment update {#step-4}
+#### Step 4: tugdeck reducer + store wrapper — `waking` phase, handler, commit extension, guard loosening, comment update {#step-4}
 
 **Depends on:** #step-2
 
-**Commit:** `feat(tide-wake): reducer — waking phase, handleWake*, guard loosen, comment refresh`
+**Commit:** `feat(tide-wake): reducer — waking phase, handleWakeStarted, handleTurnComplete extension, frameToEvent mint, guard loosen, comment refresh`
 
 **References:** [D01] bracket pattern, [D03] additive guards, Spec [#spec-reducer-state, #spec-phase-transitions, #spec-guard-loosenings, #spec-wake-started-state-reset], [Q03] interrupt during wake, (#strategy)
 
 **Artifacts:**
 - `"waking"` added to `CodeSessionPhase` enum.
 - `wakeTrigger` state field on `CodeSessionState` (default `null`).
-- `handleWakeStarted` in `reducer.ts` — implements the per-turn telemetry reset per [#spec-wake-started-state-reset], sets `phase: "waking"`, `wakeTrigger: event.wake_trigger`, sets the marker `pendingUserMessage` (empty text, supplied turnKey).
-- `handleWakeComplete` in `reducer.ts` — commits the turn (same commit path as `handleTurnComplete`), clears `wakeTrigger`, clears `pendingUserMessage`, transitions to `idle`.
-- Switch arms in the main reducer dispatcher (`reducer.ts:2826+`) for `wake_started` and `wake_complete`.
+- `handleWakeStarted` in `reducer.ts` — per the spec at [#spec-wake-started-state-reset], calls existing `resetPerTurnTelemetry()` helper at `reducer.ts:1619`; sets `phase: "waking"`, `wakeTrigger: event.wake_trigger`, marker `pendingUserMessage` (empty text, supplied turnKey).
+- `handleTurnComplete` extension — the existing commit path gains one branch: when `state.phase === "waking"`, it commits the turn entry, clears `wakeTrigger` and `pendingUserMessage`, and transitions to `idle` (parallel to the existing `streaming → idle` commit). The commit must skip writing the empty-text marker `pendingUserMessage` into the committed entry to avoid a phantom empty user bubble — Step 4 verifies the existing commit code does this; if not, the branch adds the skip.
+- Store-wrapper extension (`frameToEvent`) — recognizes `wake_started` frames, mints a turnKey, dispatches `WakeStartedEvent` to the reducer (mirrors the existing replay-event mint pattern at `reducer.ts:1606-1609`).
+- Switch arm in the main reducer dispatcher (`reducer.ts:2826+`) for `wake_started` (single arm — no `wake_complete`).
 - `handleTextDelta` guard accepts `"waking"`.
 - `handleSend`, `handleInterrupt`, `handleTurnComplete` reviewed for `waking`-phase interactions — `handleSend` enqueues per existing `streaming`-phase behavior, `handleInterrupt` per [Q03] resolution.
 - Comment at `reducer.ts:827` updated per [#spec-guard-loosenings].
-- Exhaustive-switch type-checks for all phase-keyed code: telemetry hooks (`hooks/use-lifecycle-tick.ts`), chrome (`tide-card-telemetry-*`), `canSubmit`/`canInterrupt` derivations.
+- Exhaustive-switch type-checks for all phase-keyed code (tsc is the gate).
 
 **Tasks:**
 - [ ] Add the enum value + state field.
-- [ ] Implement `handleWakeStarted` with the full telemetry reset (test pinned in Step 5).
-- [ ] Implement `handleWakeComplete`.
-- [ ] Wire the dispatcher arms.
+- [ ] Extend `frameToEvent` (store wrapper) to mint a turnKey on `wake_started` receipt and dispatch `WakeStartedEvent` (mirrors `reducer.ts:1606-1609` comment about replay-event minting).
+- [ ] Implement `handleWakeStarted` calling `resetPerTurnTelemetry()` (single source of truth — do NOT inline the field list).
+- [ ] Extend `handleTurnComplete`: add the `waking → idle` commit branch (clears `wakeTrigger`, clears `pendingUserMessage`, skips empty-text marker in the committed transcript entry).
+- [ ] Wire the dispatcher arm for `wake_started` (no `wake_complete` arm).
 - [ ] Loosen the `handleTextDelta` guard.
 - [ ] Update the comment at `reducer.ts:827`.
 - [ ] Update every exhaustive `switch` on `CodeSessionPhase` to include `"waking"` (tsc will flag them).
 - [ ] Decide [Q03] (interrupt during wake): document the decision inline in `handleInterrupt` and add the corresponding behavior. Default: `canInterrupt = true` during `waking`; interrupt frame is the same shape as a normal-turn interrupt.
-- [ ] **[L23 check]** {#step-4-l23-check}: Verify that no first-responder logic keys off `phase === "idle"` in a way that a `waking` transition would disturb. Specifically check: the prompt-entry's focus restoration on idle, the responder-chain at `idle → submitting` transitions, the card lifecycle delegate's idle-state behavior. If any do, audit and document the interaction.
+- [ ] **[L23 check]** {#step-4-l23-check}: Two `phase === "idle"` reads are pre-flighted to telemetry chrome (`tide-card-telemetry-popovers.tsx:766`, `tide-card-telemetry-renderers.tsx:607`) — both are `isIdle = snap.phase === "idle"` threaded into popover/renderer logic. Verify they treat `"waking"` as not-idle correctly (probably correct — the popovers want to read "the card is active" during a wake, same as during a user turn). Audit any responder-chain or first-responder code for analogous reads (grep `phase === "idle"` and `phase === 'idle'` across tugdeck/src). No prompt-entry focus restoration was found pre-flight; confirm none surfaces.
 
 **Tests:**
 - [ ] None at this step (tests live in #step-5).
@@ -518,15 +531,16 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - A drift test in `tugcode/__tests__/` pinning `SDKTaskNotificationMessage` shape.
 
 **Tasks:**
-- [ ] Pure-logic: `handleWakeStarted` transitions `idle → waking` with `wakeTrigger` set; per-turn telemetry fields all reset (enumerate per [#spec-wake-started-state-reset]).
-- [ ] Pure-logic: `handleWakeComplete` transitions `waking → idle` with `wakeTrigger` cleared and `pendingUserMessage` cleared.
+- [ ] Pure-logic: `handleWakeStarted` transitions `idle → waking` with `wakeTrigger` set and `pendingUserMessage` set to the empty-text marker; per-turn telemetry fields all reset (assertion can spot-check the helper was called, e.g., `firstAssistantDeltaAt === null`).
+- [ ] Pure-logic: `handleTurnComplete` during `waking` transitions `waking → idle` with `wakeTrigger` cleared, `pendingUserMessage` cleared, transcript entry committed, AND no phantom empty user bubble (assert the committed entry contains no empty-text user-message segment).
 - [ ] Pure-logic: `handleTextDelta` accepts text events during `waking`; still drops them during `idle`/`errored`/etc.
-- [ ] Pure-logic: `handleTurnComplete` commits a waking turn correctly through `waking → idle` (via the existing commit path; activeMsgId is set by the first text event).
-- [ ] Pure-logic: nested wake (`handleWakeStarted` while already `waking`) is idempotent; trigger metadata updates if new payload is non-null and old was null.
+- [ ] Pure-logic: `handleTextDelta` during `waking` sets `activeMsgId` from the first event so the `handleTurnComplete` early-return at `idle && null` does not fire.
+- [ ] Pure-logic: nested wake (`handleWakeStarted` while already `waking`) is idempotent; trigger metadata refreshes if new payload is non-null and old was null.
 - [ ] Pure-logic: `handleSend` during `waking` enqueues into `queuedSends`.
 - [ ] Pure-logic: interrupt during wake ([Q03] resolution pinned here).
 - [ ] Pure-logic: drop-case regression — every existing drop case (stray text outside any turn, etc.) still drops.
-- [ ] Fixture replay: feed the Step-1 captured JSONL through the full pipeline; assert the wake turn lands in `transcript` with the expected text and the `wakeTrigger` metadata.
+- [ ] Store-wrapper test: `frameToEvent` on a `wake_started` frame mints a turnKey and dispatches `WakeStartedEvent` with the trigger payload threaded through.
+- [ ] Fixture replay: feed the Step-1 captured JSONL through the full pipeline; assert the wake turn lands in `transcript` with the expected text and the `wakeTrigger` metadata, and no phantom user bubble.
 - [ ] Cold-boot replay regression: replay the captured JSONL through the *cold-boot* path (`replay_started` bracket); confirm the wake turn paints correctly under `phase === "replaying"` (proves no Slice 1 work is needed on the replay translator).
 - [ ] Drift: compile-time check pinning `SDKTaskNotificationMessage` fields.
 
@@ -590,7 +604,7 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 ### Roadmap / Follow-ons (Explicitly Not Required for This Plan) {#roadmap}
 
 - **Slice 2 — trigger-aware chrome.** Render wake turns with a chip / banner showing the trigger ("Monitor t-abc completed", "ScheduleWakeup fired", etc.). Resolves [Q02] if real-use feedback says it's needed.
-- **Slice 2 — replay-translator metadata persistence** {#slice-2-replay-translator}. Today, cold-boot rehydration of historic wake turns paints them through the `replaying` phase correctly, but the `wakeTrigger` metadata is lost (replay events don't carry it). Slice 2 chrome that wants to render the trigger needs the translator to synthesize `wake_started/wake_complete` brackets from the JSONL. Not needed for Slice 1.
+- **Slice 2 — replay-translator metadata persistence** {#slice-2-replay-translator}. Today, cold-boot rehydration of historic wake turns paints them through the `replaying` phase correctly, but the `wakeTrigger` metadata is lost (replay events don't carry it). Slice 2 chrome that wants to render the trigger needs the translator to synthesize `wake_started` frames (with the captured trigger payload) inline within the existing `replay_started/replay_complete` bracket. No `wake_complete` synthesis needed — the replayed `turn_complete` closes it the same way the live path does. Not needed for Slice 1.
 - **Slice 2 — system-note rendering for synthetic user_message_replay.** If Step 1 confirms the SDK emits a user_message_replay with the synthetic user text ("Monitor timed out…"), Slice 2 may render this as a transcript system note. Slice 1 drops it.
 - **Wake-aware Stop button.** If [Q03] is deferred at Slice 1, the Stop button's behavior during `waking` may be a follow-up: ergonomics around "the agent woke up and is doing something I didn't ask for — let me stop it" deserve their own polish pass.
 - **Telemetry surface for wakes.** A dev-panel inspector showing "how many turns this session were wakes vs user-initiated" — useful for understanding tool-cohort traffic patterns and confirming the fix is exercised by real workflows.
