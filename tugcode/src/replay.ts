@@ -970,31 +970,35 @@ function handleAssistantEntry(
           };
     out.push(blockStart);
 
-    if (block.kind === "text" && block.text.length > 0) {
-      const assistant: AssistantText = {
-        type: "assistant_text",
-        msg_id: entryMsgId,
-        block_index: block.index,
-        seq: ctx.globalSeq++,
-        rev: 0,
-        text: block.text,
-        is_partial: false,
-        status: "complete",
-        ipc_version: IPC_VERSION,
-      };
-      out.push(assistant);
-    } else if (block.kind === "thinking" && block.text.length > 0) {
-      const thinking: ThinkingText = {
-        type: "thinking_text",
-        msg_id: entryMsgId,
-        block_index: block.index,
-        seq: ctx.globalSeq++,
-        text: block.text,
-        is_partial: false,
-        status: "complete",
-        ipc_version: IPC_VERSION,
-      };
-      out.push(thinking);
+    if (block.kind === "text") {
+      if (block.text.length > 0) {
+        const assistant: AssistantText = {
+          type: "assistant_text",
+          msg_id: entryMsgId,
+          block_index: block.index,
+          seq: ctx.globalSeq++,
+          rev: 0,
+          text: block.text,
+          is_partial: false,
+          status: "complete",
+          ipc_version: IPC_VERSION,
+        };
+        out.push(assistant);
+      }
+    } else if (block.kind === "thinking") {
+      if (block.text.length > 0) {
+        const thinking: ThinkingText = {
+          type: "thinking_text",
+          msg_id: entryMsgId,
+          block_index: block.index,
+          seq: ctx.globalSeq++,
+          text: block.text,
+          is_partial: false,
+          status: "complete",
+          ipc_version: IPC_VERSION,
+        };
+        out.push(thinking);
+      }
     } else if (block.kind === "tool_use") {
       const toolUse: ToolUse = {
         type: "tool_use",
@@ -1009,6 +1013,12 @@ function handleAssistantEntry(
         ipc_version: IPC_VERSION,
       };
       out.push(toolUse);
+    } else {
+      // Exhaustiveness check — a future BlockRecord kind that the
+      // upstream parser added but this terminal emitter forgot to
+      // handle fails at compile.
+      const _exhaustive: never = block;
+      throw new Error(`unknown BlockRecord kind: ${JSON.stringify(_exhaustive)}`);
     }
   }
 

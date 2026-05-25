@@ -737,8 +737,19 @@ export function routeTopLevelEvent(
           // mint signal the reducer gets; without it the tool would
           // arrive at the reducer without a minted ToolUseMessage and
           // be silently dropped.
+          //
+          // Wire-input boundary check: top-level assistant snapshots
+          // MUST carry `id` and `name` on tool_use content blocks (the
+          // snapshot is supposed to be the complete summary of the
+          // message). Missing fields surface as a console.error;
+          // emission proceeds so the reducer at least mints something.
           const toolUseId = (block.id as string) || "";
           const toolName = (block.name as string) || "";
+          if (toolUseId === "" || toolName === "") {
+            console.error(
+              `[tugcode] assistant snapshot tool_use missing id or name (msg_id=${effectiveMsgId}, block_index=${blockIndex}, id="${toolUseId}", name="${toolName}")`,
+            );
+          }
           messages.push({
             type: "content_block_start",
             msg_id: effectiveMsgId,
@@ -1121,8 +1132,21 @@ export function mapStreamEvent(
       // (input is filled in by the post-`input_json_delta` `tool_use`
       // emission at the matching `assistant` top-level event or via a
       // continuation `tool_use` event).
+      //
+      // Wire-input boundary check: claude's wire MUST carry `id` and
+      // `name` on tool_use content blocks (verified across all captured
+      // probes). If either is missing the emission still proceeds with
+      // an empty string so the reducer at least mints SOMETHING, but
+      // we surface the anomaly loudly — a regression in claude's wire
+      // shape would otherwise produce a tool Message with an empty
+      // toolUseId that no tool_result could correlate against.
       const toolUseId = (contentBlock.id as string) || "";
       const toolName = (contentBlock.name as string) || "";
+      if (toolUseId === "" || toolName === "") {
+        console.error(
+          `[tugcode] content_block_start tool_use missing id or name on live wire (msg_id=${ctx.msgId}, block_index=${blockIndex}, id="${toolUseId}", name="${toolName}")`,
+        );
+      }
       messages.push({
         type: "content_block_start",
         msg_id: ctx.msgId,
@@ -1467,7 +1491,7 @@ export class ActiveTurn {
           entry = { index: msg.block_index, kind: "text", text: "" };
         } else if (msg.kind === "thinking") {
           entry = { index: msg.block_index, kind: "thinking", text: "" };
-        } else {
+        } else if (msg.kind === "tool_use") {
           entry = {
             index: msg.block_index,
             kind: "tool_use",
@@ -1481,6 +1505,13 @@ export class ActiveTurn {
           // in messageBlocks; mutations to it (input fill, result
           // landing) flow through both views automatically.
           this.toolCallByToolUseId.set(msg.tool_use_id, entry);
+        } else {
+          // Exhaustiveness check — if a future ContentBlockStart kind
+          // is added to the discriminated union, this `never` typecheck
+          // fails at compile-time, forcing the mint logic to handle the
+          // new case explicitly.
+          const _exhaustive: never = msg;
+          throw new Error(`unknown content_block_start kind: ${JSON.stringify(_exhaustive)}`);
         }
         blocks.push(entry);
         // Keep blocks sorted by index for predictable iteration.
@@ -3641,9 +3672,9 @@ export class SessionManager {
               ipc_version: 2,
             });
           }
-        } else {
-          // kind === "tool_use" — discriminated union narrows toolUseId
-          // and toolName to required strings; no fallback needed.
+        } else if (block.kind === "tool_use") {
+          // Discriminated union narrows toolUseId and toolName to
+          // required strings; no fallback needed.
           writeLine({
             type: "content_block_start",
             msg_id: blockMsgId,
@@ -3680,6 +3711,12 @@ export class SessionManager {
               ipc_version: 2,
             });
           }
+        } else {
+          // Exhaustiveness check — a new BlockState kind added in the
+          // future fails this compile-time `never` typecheck, forcing
+          // the snapshot path to handle the new case explicitly.
+          const _exhaustive: never = block;
+          throw new Error(`unknown BlockState kind: ${JSON.stringify(_exhaustive)}`);
         }
       }
     }
