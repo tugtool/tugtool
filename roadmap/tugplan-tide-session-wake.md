@@ -142,7 +142,7 @@ Field signal (Session 3702c898): user noted the Stop button flips on during a wa
 | `system/task_notification` SDK type misses fields the wire emits (e.g., `tool_use_id`) | low | low | Existing drift test `tugcode/src/__tests__/wake-sdk-drift.test.ts` pins both compile-time (declared fields) and runtime (wire fields) coverage. |
 | Concurrent wakes (Cohort A `task_notification` and Cohort B re-init arriving in close succession) double-bracket on the wire | low | low | Both handlers guard on `this.isInWake` and no-op if a bracket is already open. The reducer also flattens nested wakes at [D01]. |
 | Resume-mode session (`--resume`) restores unexpired harness tasks that then fire — same detector applies but is unverified empirically | medium | low | Step 4 manual repro. The detector's heuristic is turn-state-based and doesn't care about session lifecycle, so it should hold. |
-| Sequence-substrate rework (Step 5, [D07]) touches reducer state, streaming PropertyStore paths, snapshot shape, and every consumer of `TurnEntry.userMessage` / `.assistant` / `.thinking` / `.toolCalls`. Risks silent transcript regressions and streaming-cell remount cascades | medium | high | Single landing commit; full reducer + transcript-data-source + replay test suite must pass; the existing wake / inflight / replay test cases form the regression net. Per-Message `messageKey` preserves [L26] mount identity. Manual repro of a representative session matrix gates merge. |
+| Sequence-substrate rework (Step 5, [D07]) touches reducer state, streaming PropertyStore paths, snapshot shape, and every consumer of `TurnEntry.userMessage` / `.assistant` / `.thinking` / `.toolCalls`. Risks silent transcript regressions and streaming-cell remount cascades | medium | high | Step 5's substrate-only render scope (see [D07] § Render-surface scope) preserves today's visual layout — substrate gains the sequence model but the code row's content rendering surface is unchanged. This shrinks the user-visible blast radius to "did the existing surfaces continue to receive the right data?" Plus: full reducer + transcript-data-source + replay test suite must pass; existing wake / inflight / replay test cases form the regression net; per-Message `messageKey` preserves [L26] mount identity; manual repro of a representative session matrix gates merge. |
 | `[D07]` `(msg_id, block_index)` correlation breaks — tugcode forwards an inconsistent index, or wire ordering between `content_block_start` and the first matching delta inverts under partial-message buffering | low | high | Wire contract is verified explicit (every `content_block_delta` carries the same `index` as its opening `content_block_start`). tugcode mapStreamEvent unit tests + drift tests pin the forwarding. A reducer-side defensive guard logs (does not throw) when a delta arrives without a matching mint, surfacing any future tugcode regression at the dev-log without breaking the user's session. |
 | IPC contract change (new `content_block_start` event + `block_index` on existing text events) is a wire shape change requiring tugcode rebuild + drift-test updates; downstream consumers that ignored the new fields silently miss the substrate change | medium | medium | Two-commit landing (tugcode first, tugdeck second) keeps the IPC and the substrate decoupled. Tugcode's drift test asserts the new emissions. Tugdeck's reducer treats absence of `block_index` as a fatal dev-log entry (the field is required after Step 5; an old tugcode binary running against new tugdeck would surface immediately). Rebuild + manual repro of the matrix gates Commit 2. |
 | Cohort B FIFO ([D08]) misattributes a fire to the wrong scheduled task when multiple ScheduleWakeup tasks register with identical `delaySeconds` | low | low | Documented [D08] edge case; UI chip shows the misattributed prompt rather than the correct one — visible to user; corrective is to query claude. Upgrade path exists if/when upstream exposes a correlation id. |
@@ -328,6 +328,37 @@ Removed fields: `userMessage`, `thinking`, `assistant`, `toolCalls`.
 5. On `tool_result` / `tool_use_structured`: look up via `toolCallIndex.get(tool_use_id)` and mutate the Message's `result` / `status` / `structuredResult`.
 
 Wire interleaving is preserved naturally: `text(block 0) → tool_use(block 1) → tool_result → message_start(new msg_id) → thinking(block 0) → tool_use(block 1) → tool_result → message_start(new msg_id) → text(block 0)` produces a `messages` sequence that mirrors the wire exactly — every iteration's thinking and text and tool call land in their wire position. Today's substrate squashes this into one assistant string per msgId AND only keeps the last msgId; tomorrow's preserves the full conversation.
+
+**Tool-use creation guard.** Two wire paths produce tool-use information:
+
+1. `content_block_start { kind: "tool_use", tool_use_id, tool_name }` — opens the block. The handler mints a fresh `ToolUseMessage` with `input: {}`, indexes by `(msg_id, block_index)` in `blockIndex` AND by `tool_use_id` in `toolCallIndex`, appends to `messages`.
+2. Subsequent `tool_use` IPC event (the input-fill event tugcode emits after `input_json_delta` accumulates the full input JSON) — the handler looks up via `toolCallIndex.get(tool_use_id)` and MUTATES the existing Message's `input`. It does NOT re-mint. Same pattern for `tool_result` (updates `status` + `result` + `toolWallMs`) and `tool_use_structured` (updates `structuredResult`).
+
+The guard is type-safe: the handler asserts `toolCallIndex.has(tool_use_id)` before mutation; a missed mint (which would indicate a wire-shape regression) surfaces as a fatal dev-log entry rather than a silent re-creation that orphans the original Message.
+
+**Phase machine — transitions unchanged.** The `submitting → awaiting_first_token → streaming` ladder advances on the first text delta (`assistant_text` or `thinking_text`), NOT on `content_block_start`. Block-open is metadata; first delta is the first user-visible content. `handleContentBlockStart` mints the Message and updates indices but does NOT touch phase. This preserves today's TTFT semantics — `firstAssistantDeltaAt` and `firstToolUseAt` still capture the wall-clock of the first user-visible event of each kind.
+
+**Mid-turn replay snapshot pattern (Option 4 — replay-the-stream).** When the WebSocket reconnects mid-turn, tugcode's `emitInflightTurnFromActiveTurn` emits the full event stream that built the active turn up to the snapshot moment, bracketed by the existing `replay_started` / `replay_complete`. The reducer processes these events through the same handlers it uses live and during cold-boot JSONL replay — no special snapshot handler, no snapshot-vs-live branching.
+
+For each Message in the active turn's `messages` array, the snapshot emits the events that the live path would have emitted to produce it:
+
+- `assistant_text` Message → `content_block_start { msg_id, block_index, kind: "text" }` then `assistant_text { msg_id, block_index, text: <full text>, is_partial: false }`.
+- `assistant_thinking` Message → `content_block_start { msg_id, block_index, kind: "thinking" }` then `thinking_text { msg_id, block_index, text: <full text>, is_partial: false }`.
+- `tool_use` Message → `content_block_start { msg_id, block_index, kind: "tool_use", tool_use_id, tool_name }` then `tool_use { tool_use_id, input: <full input> }`. If the tool has a `tool_result`, emit that next (`tool_result { tool_use_id, output, is_error }`); if it has a `structuredResult`, emit `tool_use_structured` after.
+- `user_message` Message (committed turns being rehydrated; not applicable to mid-turn snapshot since the user_message is already on the receiving side) → not emitted in the mid-turn snapshot path. In cold-boot JSONL replay, emitted via the existing `user_message_replay` IPC event.
+
+**Reducer-side change: `handleContentBlockStart` is idempotent.** On `content_block_start` for an `(msg_id, block_index)` already present in `scratch[turnKey].blockIndex`: no-op (Message already minted). On new `(msg_id, block_index)`: mint and index. This idempotence is what makes Option 4 work — the live path may have already minted Messages before the disconnect; the snapshot's `content_block_start` for the same `(msg_id, block_index)` must be inert, not duplicate-mint. The same idempotence covers a defensive scenario where a future tugcode regression re-emits a `content_block_start` mid-stream.
+
+The reducer's "REPLACE on `is_partial: false`" idiom from today retires under Step 5. Under the new model, `is_partial: false` for text Messages still means "this is the terminal text for this block" but the reducer treats it as a replace AT THE MESSAGE LEVEL (mutate the Message's text to the full value via shallow-clone) rather than at the scratch-string level. The "live deltas resume after replay_complete" behavior continues to work: subsequent `is_partial: true` deltas append to the now-baselined Message's text.
+
+**Mutation discipline (L02 reference stability).** Mutations follow copy-on-write at the smallest container that changes:
+
+- **Text delta** (assistant_text or thinking_text append): shallow-clone the trailing matching Message with the concatenated text; replace it in the messages array via shallow-clone of the array's trailing slot. All other Messages in the array stay reference-identical. The `ScratchEntry` itself is shallow-cloned for the dispatch.
+- **Tool-use mutation** (input fill / tool_result / tool_use_structured): shallow-clone the indexed Message with updated fields; replace it in the messages array via shallow-clone of that slot. Other Messages reference-identical.
+- **Append** (content_block_start, system_note prepend): shallow-clone the messages array with the new Message appended (or prepended); existing Messages reference-identical.
+- **No in-place mutation of Messages.** A consumer that holds a reference to `messages[3]` from a prior render can safely compare it by reference to the current `messages[3]` to detect changes.
+
+Snapshot identity is Object.is-stable across dispatches that produce no state change. L02 consumers downstream see no churn during quiescence. The pattern mirrors today's `state.scratch` copy-on-write (`const scratch = new Map(state.scratch); scratch.set(msgId, {...existing, [field]: buffer})`).
 
 **Streaming substrate — per-Message PropertyStore paths.** The three fixed channels retire:
 
@@ -529,25 +560,24 @@ idle ───wake_started──→ waking ───turn_complete──→ idle 
 
 #### Transcript rendering {#spec-transcript}
 
-**Slice 1c-b (Step 5):** the data source iterates `turn.messages` for each committed turn and `activeTurn.messages` for the in-flight turn, emitting one row per Message. The row's React key is `messageKey` (stable from Message creation through commit per [D07] / [L26]).
+**Slice 1c-b (Step 5) — substrate-only render scope per [D07].** The data source's row contract is unchanged from Slice 1c-a: one `user` row per turn that contains a `user_message` Message + one `code` row per turn + ghost rows for queued sends. The data source's row-shape decisions are now driven by message presence instead of by the empty-text sentinel:
 
-Per-Message row kinds:
+- Emit a `user` row iff `turn.messages` (or `activeTurn.messages`) contains a `user_message` Message at its first position. Wake turns naturally don't (their `messages` opens with `assistant_text`), so no user row.
+- Emit a `code` row per turn (committed or in-flight). The code row's renderer iterates `messages` and dispatches each Message kind to its inline renderer (`assistant_text` → text area; `assistant_thinking` → `TideThinkingBlock`; `tool_use` → `TideCardTranscriptToolCalls`; `system_note` → added in Step 8).
 
-- `user_message` → `{ kind: "user", messageKey, message }`
-- `assistant_text` → `{ kind: "code", messageKey, message, turnKey }` (cell subscribes to `turn.${turnKey}.message.${messageKey}.text`)
-- `assistant_thinking` → `{ kind: "thinking", messageKey, message, turnKey }` (cell subscribes to the same per-Message text path)
-- `system_note` → `{ kind: "system-note", messageKey, message }` (Step 8 renders these for `source === "scheduled"`)
-- `tool_use` → `{ kind: "tool", messageKey, message, turnKey }` (cell subscribes to `turn.${turnKey}.message.${messageKey}.state`; future polish; for Slice 1c-b the row exists but the renderer may fall back to today's tool log surface)
+The `TideTranscriptCellKind` enum stays at `user | code | ghost`. The code row's internal renderer is what handles per-Message dispatch.
 
-The `cellRenderers` map gains the new kinds; per [L26] each kind resolves to a single stable component-type + renderer-reference (no inline lambda traps).
-
-Wake-turn chrome (Step 6): if `turn.wakeTrigger != null` (committed) or `activeTurn.isWake && activeTurn.messages.length > 0` (inflight), emit a `{ kind: "chrome", trigger }` row before the first message row of the turn. Chrome rows are not Messages — they're a per-turn affordance the data source synthesizes from `wakeTrigger`.
+Wake-turn chrome (Step 6): if `turn.wakeTrigger != null` (committed) or `activeTurn.isWake && activeTurn.messages.length > 0` (inflight), the chrome chip renders above the code row's content (inside the code row, not as a separate list row).
 
 Ghost rows for queued sends unchanged: one per `QueuedSend`, key `${turnKey}-ghost`.
 
-**No `isWakeTurn` / `isWakeInflight` predicates.** A wake's `messages` simply doesn't contain a `user_message` Message, so no user row is emitted — the iteration produces exactly the rows the data shape implies.
+**No `isWakeTurn` / `isWakeInflight` predicates.** The "does this turn have a user_message Message?" check is inline and trivial (`turn.messages[0]?.kind === "user_message"`); no named helper needed.
 
-**No `userRowIndexForTurn` / `assistantRowIndexForTurn` sentinels.** Consumers needing a flat row index for a specific Message use `messageRowIndex(turnIndex, messageKey)` which walks the prefix; the function is total (returns a valid index or throws on unknown key — no `-1` sentinel branch for consumers to handle).
+**No `userRowIndexForTurn`'s `-1` sentinel.** `userRowIndexForTurn(turnIndex, transcript)` either returns a valid index when the turn has a user_message Message, or the function isn't called for wake turns (callers gate on `turn.messages[0]?.kind === "user_message"`).
+
+**Per-Message PropertyStore paths.** The code row's renderer subscribes to per-Message streaming paths (`turn.${turnKey}.message.${messageKey}.text` for text/thinking Messages; `turn.${turnKey}.message.${messageKey}.state` for tool_use Messages) and composes the rendered output in arrival order. [L26] holds per-Message: each Message's renderer reference is stable; the code row's outer wrapper is keyed by `turnKey` and stable across in-flight → committed; internal Message subscriptions key on stable `messageKey`s.
+
+**Future deliberate UX step ("per-Message row layout").** Promoting selected Message kinds (`assistant_thinking`, `system_note`, `tool_use`) to top-level list rows is a separate visual change with its own design and review. Step 5 does not make it.
 
 ---
 
@@ -660,11 +690,13 @@ Rollback is trivial: revert the commits. No persisted state shape changes.
 
 `tugdeck/src/lib/tide-transcript-data-source.ts`:
 
-- Per-Message iteration replaces offset-table (Step 5).
-- `isWakeTurn` / `isWakeInflight` / `userRowIndexForTurn` / `assistantRowIndexForTurn` / `RowLayout` / `buildRowLayout` / `locateCommittedRow` all deleted (Step 5).
-- New: `MessageLayout`, `messageRowIndex(turnIndex, messageKey)`.
-- `TideTranscriptCellKind` extends to `"user" | "code" | "thinking" | "system-note" | "tool" | "ghost"` (Step 5; renderer registrations added in Step 6 / 8 as those steps land).
-- Emits `{ kind: "chrome", trigger }` row before wake-turn messages (Step 6).
+- Substrate-only scope per [D07]: row contract preserved (user + code + ghost). Decisions driven by message presence instead of empty-text sentinel (Step 5).
+- `isWakeTurn` / `isWakeInflight` predicates deleted; checks inlined via `turn.messages[0]?.kind === "user_message"` (Step 5).
+- `userRowIndexForTurn`'s `-1` sentinel branch deleted; callers gate the call instead (Step 5).
+- `assistantRowIndexForTurn` simplified (one code row per turn; no wake-row special case) (Step 5).
+- `RowLayout` / `buildRowLayout` / `locateCommittedRow` simplify (the variable-rows-per-turn machinery added in Slice 1c-a retires; rows-per-turn is `(has_user_message ? 1 : 0) + 1` — the user row is conditional, the code row is always present) (Step 5).
+- `TideTranscriptCellKind` unchanged: `"user" | "code" | "ghost"` (Step 5; Step 6 chrome renders inside the code row; per-Message rows are a future deliberate UX step).
+- Wake chrome inlined into the code row by the code-row renderer (Step 6); not a new row kind.
 
 `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`:
 
@@ -787,11 +819,20 @@ This is **not** a boundary-translation refactor. The substrate believes in the s
 
 - Message union: `user_message | assistant_text | assistant_thinking | system_note | tool_use`.
 - `messageKey` derivation: wire-derived Messages use `${msg_id}-b${block_index}` (intrinsically unique, matches wire structure); user_message uses `${turnKey}-user`; system_notes use `${turnKey}-sys${seq}`.
-- `TideTranscriptCellKind` extends to narrow per-kind values (`user | code | thinking | system-note | tool | ghost`) — one renderer per kind, no internal dispatch (matches [L26]'s renderer-reference axis: one stable lambda per kind).
-- `ToolCallState` retires onto `ToolUseMessage`.
+- `TideTranscriptCellKind` unchanged for Step 5: `user | code | ghost`. Substrate gains the sequence model; row layout preserved. See "Render-surface scope" below.
+- `ToolCallState` retires onto `ToolUseMessage`. Consumer code reads tool calls via `messages.filter(kind === "tool_use")` or via a helper (`getToolUseMessages(turn)`).
 - `state.pendingUserMessage` and `snapshot.inflightUserMessage` replaced by `state.pendingTurn` and `snapshot.activeTurn`.
 - `state.scratch` re-keys from `Map<msgId, ...>` to `Map<turnKey, ...>`. One scratch entry per turn; spans every msgId iteration of the turn's tool-use loop.
 - IPC contract extends: tugcode emits new `content_block_start` (and optional `content_block_stop`) events; existing `AssistantTextEvent` / `ThinkingTextEvent` gain `block_index`.
+
+**Render-surface scope (substrate-only).** Step 5 changes the data substrate, not the visible transcript layout. The data source emits rows for `user_message | ghost` only. Other Message kinds exist in `turn.messages` and `activeTurn.messages` but render via the existing inline surfaces inside the code row:
+
+- `assistant_text` Messages: their content drives the code row's text area. The code row subscribes to per-Message streaming paths and joins them at render time. When a turn has multiple `assistant_text` Messages (multi-block / multi-iteration), they render in sequence within the code row with the interleaved tool calls between them — same visual as today's "text + tools + text" layout, just driven by Message sequence instead of paired fields.
+- `assistant_thinking` Messages: rendered via existing `TideThinkingBlock` inside the code row. Content comes from `assistant_thinking` Messages instead of `TurnEntry.thinking`.
+- `tool_use` Messages: rendered via existing `TideCardTranscriptToolCalls` inside the code row. Component accepts `ReadonlyArray<ToolUseMessage>` (renamed from `ReadonlyArray<ToolCallState>`; same field shape).
+- `system_note` Messages: zero instances exist until Step 8; renderer added then.
+
+This preserves today's transcript visual exactly. The substrate gains the sequence model and the correctness wins (preserved interleaving + multi-msgId concatenation); the row layout is unchanged. A future deliberate UX step ("per-Message row layout") can promote selected Message kinds to top-level rows when that visual change is intentional and worth its own design and review.
 
 **Wire contract — verified against captures (`tugcode/probes/wake-investigation/capture-*.stdout`):**
 
@@ -804,8 +845,10 @@ See [D07] for the full wire-truth-driven append rule.
 **Files (production — tugcode side):**
 
 - `tugcode/src/session.ts` — `mapStreamEvent`'s `content_block_start` branch emits a new `content_block_start` IPC frame (with `msg_id`, `block_index`, `kind`, optional `tool_use_id` / `tool_name`); existing `assistant_text` / `thinking_text` emissions gain `block_index`. Optional `content_block_stop` emission for diagnostics. Tugcode-side text/thinking flow no longer needs to track "is this a continuation of an earlier block" since the boundary is now explicit on the wire to tugdeck.
+- `tugcode/src/session.ts` — `emitInflightTurnFromActiveTurn` (mid-turn replay snapshot emitter): rewritten under the per-Message snapshot pattern from [D07]. See [D07] § Mid-turn replay snapshot for the decision.
+- `tugcode/src/replay.ts` — cold-boot JSONL → IPC translator. Updated to emit `content_block_start` for each text/thinking/tool_use block per replayed message, and to carry `block_index` on the resulting `assistant_text` / `thinking_text` emissions. Per-turn output ordering gains the block-start preludes; the reducer's `replaying` phase still commits one `TurnEntry` per `turn_complete`, now with `messages` populated correctly across all msgIds of the turn.
 - `tugcode/src/ipc.ts` (or wherever IPC frame types live) — new `ContentBlockStart` type; `AssistantText` / `ThinkingText` types gain `block_index`.
-- `tugcode/src/__tests__/*` — drift tests + mapStreamEvent unit tests updated. `tugcode/src/__tests__/wake-sdk-drift.test.ts` (existing) extends to assert block-index forwarding.
+- `tugcode/src/__tests__/*` — drift tests + mapStreamEvent unit tests updated. `tugcode/src/__tests__/wake-sdk-drift.test.ts` (existing) extends to assert block-index forwarding. New: `tugcode/src/__tests__/replay-block-emissions.test.ts` pins replay translator's per-message block emissions against a representative JSONL fixture (and against a multi-msgId tool-use-loop fixture — the multi-iteration case that today's substrate dropped intermediate thinking from).
 
 **Files (production — tugdeck side):**
 
@@ -814,11 +857,14 @@ See [D07] for the full wire-truth-driven append rule.
 - `tugdeck/src/lib/code-session-store/effects.ts` — `write-inflight` effect kind carries `messageKey` and `channel: "text" | "state"`.
 - `tugdeck/src/lib/code-session-store/reducer.ts` — substrate change (see [D07] handler-by-handler table). Bulk of the work. New `handleContentBlockStart` handler. `scratch` re-keys to `turnKey`.
 - `tugdeck/src/lib/code-session-store/code-session-store.ts` (or wherever the snapshot builder lives) — derive `activeTurn` from `pendingTurn` + scratch.
-- `tugdeck/src/lib/tide-transcript-data-source.ts` — per-Message iteration; delete `isWakeTurn` / `isWakeInflight` / `RowLayout` / `buildRowLayout` / `userRowIndexForTurn` / `assistantRowIndexForTurn` / `locateCommittedRow`; introduce `MessageLayout` + `messageRowIndex`.
-- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — cell renderers per Message kind; per-Message streaming subscription paths.
-- `tugdeck/src/components/tugways/cards/turn-entry-markdown.ts` — iterate messages filtering `assistant_text`.
-- `tugdeck/src/components/tugways/cards/tide-card-telemetry-popovers.tsx` — read first `user_message` Message text.
-- `tugdeck/src/components/tugways/chrome/tide-thinking-block.tsx` — read `assistant_thinking` Message text.
+- `tugdeck/src/lib/tide-transcript-data-source.ts` — under Step 5's substrate-only render scope, the data source iterates `turn.messages` looking only for `user_message` Messages to emit user rows; the code row is still one row per turn. Delete `isWakeTurn` / `isWakeInflight` / `userRowIndexForTurn`'s `-1` sentinel branch; replace the offset table with a simpler "does the turn's messages array contain a user_message?" check. (A future per-Message-row step replaces this fully.)
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — the code row's data feed becomes per-Message: subscribes to each `assistant_text` Message's `text` path and joins them in sequence. The current `turn.${turnKey}.assistant` subscription retires.
+- `tugdeck/src/components/tugways/cards/tide-card-transcript-tool-calls.tsx` — accepts `ReadonlyArray<ToolUseMessage>` in place of `ReadonlyArray<ToolCallState>` (same field shape; type alias retired; callers extract from `turn.messages.filter(kind === "tool_use")` or via a helper). Internal logic unchanged.
+- `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — `dispatchToolCallState(toolCall, msgId)` accepts `ToolUseMessage` (renamed from `ToolCallState`); function name kept as `dispatchToolCallState` for grep-stability, OR renamed to `dispatchToolUseMessage` — implementer's call. Internal logic unchanged; the new type's added fields (`messageKey`, `createdAt`, `kind`) are unused by the renderer but harmless.
+- `tugdeck/src/components/tugways/cards/turn-entry-markdown.ts` — replaces `turn.assistant.trim()` with iteration over `turn.messages` filtering `assistant_text` and joining with the markdown-block separator. Tool calls accessed via the same filter pattern for `tool_use` Messages (existing `parentToolUseId` nesting logic unchanged; the field is on `ToolUseMessage`).
+- `tugdeck/src/components/tugways/cards/tide-card-telemetry-popovers.tsx` — replaces `turn.userMessage.text.trim()` with reading the `user_message` Message: `turn.messages.find(m => m.kind === "user_message")?.text.trim() ?? ""`.
+- `tugdeck/src/components/tugways/chrome/tide-thinking-block.tsx` — accepts `text` prop unchanged; caller derives the text from `assistant_thinking` Messages (concatenated if multiple) instead of `TurnEntry.thinking`. Component internals unchanged.
+- Galleries (`gallery-tool-block-default.tsx`, `gallery-task-inline-tool-block.tsx`): fixture files; their `ToolCallState` references become `ToolUseMessage`. Mechanical.
 
 **Files (tests — net coverage preserved, shape updated):**
 
@@ -836,6 +882,8 @@ See [D07] for the full wire-truth-driven append rule.
   3. **Interleaved thinking:** `thinking(block 0)` + `text(block 1)` in one message commit as two distinct Messages in arrival order — neither merged nor reordered.
 - `tugdeck/src/lib/code-session-store/__tests__/reducer.message-key-stability.test.ts` — pins that `messageKey` is byte-identical across in-flight → committed transition for every Message kind (the per-Message analogue of today's `turnKey` stability test).
 - `tugcode/src/__tests__/map-stream-event-block-index.test.ts` (Commit 1) — pins that `mapStreamEvent` emits `content_block_start` with correct `block_index` and forwards `block_index` on every text/thinking delta. Loads `capture-sw-60-*.stdout` and `capture-cron-1m-*.stdout` as fixtures; asserts the emission count + ordering.
+- `tugcode/src/__tests__/inflight-turn-snapshot.test.ts` (Commit 1) — pins that `emitInflightTurnFromActiveTurn` emits the per-Message replay stream correctly per [D07] § Mid-turn replay snapshot: for an active turn with assistant_text + tool_use + tool_result + assistant_text, the snapshot emits `content_block_start` + terminal frame for each, in arrival order, inside the `replay_started` / `replay_complete` bracket.
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.snapshot-idempotence.test.ts` (Commit 2) — pins that `handleContentBlockStart` is a no-op for `(msg_id, block_index)` pairs already present in `scratch[turnKey].blockIndex`. Covers the live-then-snapshot race: live `content_block_start` mints, then a `replay_started` bracket re-emits the same `content_block_start` — second emission must not duplicate-mint.
 
 **Commit sequence — two commits, tugcode then tugdeck:**
 
