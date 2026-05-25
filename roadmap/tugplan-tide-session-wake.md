@@ -336,11 +336,11 @@ The implementation shipped across the following work; all steps are complete exc
 
 #### Step 4: Robustness — wire-shape drift test + resume-mode verification {#step-4}
 
-**Status:** Drift test shipped (`tugcode/src/__tests__/wake-reinit-drift.test.ts`, 10 cases against captured fixtures). Resume-mode manual repro pending.
+**Status:** Drift test shipped (10 cases). Resume-mode probe shipped; **empirical finding: scheduled wakes do not fire after resume in stream-json spawn mode** — an upstream Claude Code limitation, NOT a tugcode bug. Documented in `roadmap/wake-investigation-findings.md`.
 
-**Scope:**
+**Artifacts:**
 
-1. **Drift test for the Cohort B re-init pattern (SHIPPED).** Loads `tugcode/probes/wake-investigation/capture-sw-60-*.stdout` and `capture-cron-1m-*.stdout` and asserts five invariants per capture:
+1. **Drift test for the Cohort B re-init pattern (SHIPPED).** `tugcode/src/__tests__/wake-reinit-drift.test.ts` loads `tugcode/probes/wake-investigation/capture-sw-60-*.stdout` and `capture-cron-1m-*.stdout` and asserts five invariants per capture:
    - exactly two `system/init` events (spawn + wake fire),
    - the first turn closes with `result/success` before the wake fires,
    - the second `system/init` is followed by the wake's `message_start`,
@@ -349,14 +349,17 @@ The implementation shipped across the following work; all steps are complete exc
 
    A future Claude Code release that changes any of these invariants fails the test loudly with a fixture-diff message instead of silently breaking Cohort B in production.
 
-2. **Resume-mode manual repro (PENDING).** Spawn a Tide session, schedule a ScheduleWakeup, close the session before the wake fires, reopen the session via `--resume`. Verify the harness restores the unexpired task and that tugcode's detector paints the wake turn when it fires.
+2. **Resume-mode probe (SHIPPED, finding documented).** `tugcode/probes/wake-investigation/probe-resume.mjs` spawns tugcode in new mode, schedules a ScheduleWakeup, kills tugcode, respawns in `--session-mode resume`, holds 150s past the scheduled fire time, and reports a PASS / FAIL verdict.
 
-**Files (drift test):**
-- `tugcode/src/__tests__/wake-reinit-drift.test.ts`.
+   **Empirical result: FAIL.** In `--input-format stream-json --output-format stream-json --resume <id>` mode, claude restores the scheduled task's metadata (it can describe what's pending when asked) but the in-process scheduler does NOT actually fire restored tasks. No `system/init` re-emit, no synthetic user_message, no assistant turn — the wake simply never lands. The official scheduled-tasks docs claim `--resume` restores unexpired tasks; that does not appear to hold in our spawn configuration. Documented in detail in [`wake-investigation-findings.md`](./wake-investigation-findings.md).
+
+   **Why this is not a tugcode bug:** the detector handles the fire signal correctly; the fire just doesn't arrive. If a future Claude Code release restarts the scheduler in this mode, the probe will PASS without tugcode code changes.
+
+   **User-visible implication:** if a Tide session is closed before a scheduled wake fires and the user then reopens the session via the resume path, the wake will NOT fire. Sessions that stay open continuously are unaffected (Probes 1-4 confirmed live).
 
 **Checkpoint:**
-- `cd tugcode && bun x tsc --noEmit && bun test` green (463 tests pass).
-- Resume manual case passes.
+- `cd tugcode && bun x tsc --noEmit && bun test` green (463 tests).
+- Resume-mode probe `bun probe-resume.mjs` runs end-to-end; current VERDICT line is `FAIL` for the reason above. If/when upstream changes, the same probe will surface a `PASS`.
 
 ---
 

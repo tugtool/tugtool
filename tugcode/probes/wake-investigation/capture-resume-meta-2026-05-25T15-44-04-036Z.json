@@ -1,0 +1,14 @@
+{
+  "sessionId": "a2b0737b-b653-40f1-89ec-be8489615772",
+  "phase1": {
+    "stdoutLines": 18,
+    "capture": "capture-resume-phase1-2026-05-25T15-44-04-036Z"
+  },
+  "phase2": {
+    "stdoutLines": 13,
+    "wakeStartedCount": 0,
+    "assistantTextCount": 4,
+    "capture": "capture-resume-phase2-2026-05-25T15-44-04-036Z"
+  },
+  "verdict": "FAIL: no wake_started observed"
+}

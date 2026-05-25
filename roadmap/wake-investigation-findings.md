@@ -173,6 +173,50 @@ In Session 86ae1b78 (recurring `* * * * *` CronCreate), the user saw both shadow
 
 This is the exact symptom of running two schedulers in parallel. The redesign — delete the shadow, trust the harness — fixes it by construction.
 
+## Resume-mode behavior — scheduled wakes do NOT fire after resume
+
+**Tested via `probe-resume.mjs` on 2026-05-25 (sessions f9977732, a2b0737b).**
+
+**Setup:** spawn tugcode in `--session-mode new`, register a `ScheduleWakeup delaySeconds:60`, kill tugcode (SIGTERM → claude exits cleanly with code=0) ~10 seconds after the registration completes. Respawn tugcode in `--session-mode resume --resume-session <id>`, send a nudge user_message ("Just resuming. What's pending?"), hold for 150 seconds (past the scheduled fire time).
+
+**Expected per docs ([code.claude.com/docs/en/scheduled-tasks](https://code.claude.com/docs/en/scheduled-tasks)):** *"Resuming with `claude --resume` or `claude --continue` brings back any task that hasn't expired … a one-shot whose scheduled time hasn't passed yet."*
+
+**Observed:**
+
+- The resumed claude **knows** the wakeup is scheduled — when asked "What's pending?" it reports *"The wakeup is scheduled to fire at 08:46:00 (~111s from when it was set). When it fires, I'll reply with exactly `RESUMED_SW fired`..."*
+- The scheduled fire time (15:46:00 local) elapses without the harness firing.
+- No `system/init` re-emit, no synthetic user_message, no assistant turn — the timer simply never goes off.
+- The probe runs until 15:47:00 (a full minute past the scheduled fire) and observes nothing on claude's stdout beyond the nudge's own turn.
+
+**Conclusion:** in `--input-format stream-json --output-format stream-json --resume <id>` mode, claude restores the scheduled task's **metadata** (it can describe what's pending) but the in-process scheduler does NOT actually fire restored tasks. This contradicts the published documentation, which doesn't carve out stream-json mode.
+
+**Why this is an upstream behavior, not a tugcode bug:**
+
+- The detector is correct: a re-init from the harness scheduler would still be classified as a wake by `handleClaudeLine`. The wake just doesn't arrive.
+- No stream-json wire signal is produced for the restored task. Whatever fires the harness scheduler in interactive mode does not run in our spawn configuration after `--resume`.
+
+**Implication for Tide:**
+
+- A scheduled wake registered in session A, closed before the wake fires, then reopened via Tide's "resume" path → the wake will NOT fire. The user would have to re-register the task in the resumed session.
+- For sessions that stay open continuously, this never comes up — the harness scheduler fires fine (Probes 1-4 verified live in sessions 95d18839, 017f1206, 5f5af4de, 2cad794c).
+
+**Reproduce:**
+
+```
+cd tugcode/probes/wake-investigation
+bun probe-resume.mjs
+# Phase 1 (~20s): schedule wakeup, kill tugcode
+# Phase 2 (~150s): respawn with --session-mode resume, wait for fire
+# VERDICT line at the end: PASS or FAIL
+```
+
+Captures:
+- `capture-resume-phase1-2026-05-25T15-44-04-036Z.{stdout,stderr}` — wake registration.
+- `capture-resume-phase2-2026-05-25T15-44-04-036Z.{stdout,stderr}` — post-resume; no wake_started.
+- `capture-resume-meta-2026-05-25T15-44-04-036Z.json` — verdict + line counts.
+
+If a future Claude Code release fixes this, the probe will PASS without code changes; the detector already handles the fire signal correctly.
+
 ## Probe reproducibility
 
 ```
