@@ -47,6 +47,7 @@
 import type {
   AssistantText,
   Attachment,
+  ContentBlockStart,
   OutboundMessage,
   ReplayComplete,
   ReplayStarted,
@@ -879,43 +880,49 @@ function handleAssistantEntry(
     ctx.cycleMsgId = entryMsgId;
   }
 
-  // Accumulate this entry's content into per-message locals. Each
-  // assistant entry is its own keyed unit on the wire; nothing carries
-  // across entries.
-  let assistantText = "";
-  let thinkingText = "";
-  const toolUses: Array<{
-    toolUseId: string;
-    toolName: string;
-    input: unknown;
-  }> = [];
+  // Capture per-block records preserving the JSONL's arrival order.
+  // Each block is keyed by its position in `message.content` (the
+  // block_index), which mirrors the live wire's `content_block_start.index`
+  // numbering. Per [D07], the reducer mints a Message at each
+  // `(msg_id, block_index)` and appends terminal text/tool content
+  // into the same Message — so the replay path must emit one
+  // content_block_start + terminal frame per block, in arrival order,
+  // to reconstruct the same `messages` sequence the live path would
+  // produce.
+  type BlockRecord =
+    | { index: number; kind: "text"; text: string }
+    | { index: number; kind: "thinking"; text: string }
+    | { index: number; kind: "tool_use"; toolUseId: string; toolName: string; input: unknown };
+  const blocks: BlockRecord[] = [];
 
-  for (const block of content) {
+  for (let blockIndex = 0; blockIndex < content.length; blockIndex++) {
+    const block = content[blockIndex];
     const blockType = typeof block.type === "string" ? block.type : "";
     if (blockType === "text") {
-      if (typeof block.text === "string") {
-        assistantText += block.text;
-      }
+      const text = typeof block.text === "string" ? block.text : "";
+      blocks.push({ index: blockIndex, kind: "text", text });
       continue;
     }
     if (blockType === "thinking") {
-      if (typeof block.thinking === "string") {
-        thinkingText += block.thinking;
-      } else if (typeof block.text === "string") {
-        // Tolerate a handful of older JSONL shapes that put the
-        // thinking text in the `text` field on a `thinking` block.
-        thinkingText += block.text;
-      }
+      // Tolerate a handful of older JSONL shapes that put the thinking
+      // text in the `text` field on a `thinking` block.
+      const text =
+        typeof block.thinking === "string"
+          ? block.thinking
+          : typeof block.text === "string"
+            ? block.text
+            : "";
+      blocks.push({ index: blockIndex, kind: "thinking", text });
       continue;
     }
     if (blockType === "tool_use") {
       const toolUseId = typeof block.id === "string" ? block.id : "";
       const toolName = typeof block.name === "string" ? block.name : "";
       const input = block.input ?? {};
-      // Skip tool_use blocks with no id — they can't be paired with
-      // a tool_result and are useless to the reducer.
+      // Skip tool_use blocks with no id — they can't be paired with a
+      // tool_result and are useless to the reducer.
       if (toolUseId.length > 0) {
-        toolUses.push({ toolUseId, toolName, input });
+        blocks.push({ index: blockIndex, kind: "tool_use", toolUseId, toolName, input });
       }
       continue;
     }
@@ -935,49 +942,62 @@ function handleAssistantEntry(
     ctx.telemetry.unknownShape({ kind: "content_block", type: blockType });
   }
 
-  // Emit this entry's content frames keyed on this entry's
-  // `message.id` (claude's id; no canonicalization).
-  for (const tu of toolUses) {
-    const toolUse: ToolUse = {
-      type: "tool_use",
+  // Emit per-block events in arrival order: content_block_start (mints
+  // the reducer's Message) followed by the kind-specific terminal frame.
+  // All keyed on this entry's `message.id` (claude's id; no
+  // canonicalization).
+  for (const block of blocks) {
+    const blockStart: ContentBlockStart = {
+      type: "content_block_start",
       msg_id: entryMsgId,
-      seq: ctx.globalSeq++,
-      tool_name: tu.toolName,
-      tool_use_id: tu.toolUseId,
-      input:
-        typeof tu.input === "object" && tu.input !== null
-          ? (tu.input as object)
-          : {},
+      block_index: block.index,
+      kind: block.kind,
+      tool_use_id: block.kind === "tool_use" ? block.toolUseId : undefined,
+      tool_name: block.kind === "tool_use" ? block.toolName : undefined,
       ipc_version: IPC_VERSION,
     };
-    out.push(toolUse);
-  }
+    out.push(blockStart);
 
-  if (thinkingText.length > 0) {
-    const thinking: ThinkingText = {
-      type: "thinking_text",
-      msg_id: entryMsgId,
-      seq: ctx.globalSeq++,
-      text: thinkingText,
-      is_partial: false,
-      status: "complete",
-      ipc_version: IPC_VERSION,
-    };
-    out.push(thinking);
-  }
-
-  if (assistantText.length > 0) {
-    const assistant: AssistantText = {
-      type: "assistant_text",
-      msg_id: entryMsgId,
-      seq: ctx.globalSeq++,
-      rev: 0,
-      text: assistantText,
-      is_partial: false,
-      status: "complete",
-      ipc_version: IPC_VERSION,
-    };
-    out.push(assistant);
+    if (block.kind === "text" && block.text.length > 0) {
+      const assistant: AssistantText = {
+        type: "assistant_text",
+        msg_id: entryMsgId,
+        block_index: block.index,
+        seq: ctx.globalSeq++,
+        rev: 0,
+        text: block.text,
+        is_partial: false,
+        status: "complete",
+        ipc_version: IPC_VERSION,
+      };
+      out.push(assistant);
+    } else if (block.kind === "thinking" && block.text.length > 0) {
+      const thinking: ThinkingText = {
+        type: "thinking_text",
+        msg_id: entryMsgId,
+        block_index: block.index,
+        seq: ctx.globalSeq++,
+        text: block.text,
+        is_partial: false,
+        status: "complete",
+        ipc_version: IPC_VERSION,
+      };
+      out.push(thinking);
+    } else if (block.kind === "tool_use") {
+      const toolUse: ToolUse = {
+        type: "tool_use",
+        msg_id: entryMsgId,
+        seq: ctx.globalSeq++,
+        tool_name: block.toolName,
+        tool_use_id: block.toolUseId,
+        input:
+          typeof block.input === "object" && block.input !== null
+            ? (block.input as object)
+            : {},
+        ipc_version: IPC_VERSION,
+      };
+      out.push(toolUse);
+    }
   }
 
   // Cycle terminal: on a clean terminal `stop_reason`

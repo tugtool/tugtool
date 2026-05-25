@@ -45,6 +45,7 @@ function makeMinimalTranscript(): TugcodeTranscript {
           {
             type: "assistant_text",
             msg_id: "m0",
+            block_index: 0,
             seq: 0,
             rev: 0,
             text: "Hello, world.",
@@ -181,6 +182,7 @@ describe("StubReplayEngine", () => {
             {
               type: "assistant_text",
               msg_id: "a",
+              block_index: 0,
               seq: 0,
               rev: 0,
               text: "first",
@@ -196,6 +198,7 @@ describe("StubReplayEngine", () => {
             {
               type: "assistant_text",
               msg_id: "b",
+              block_index: 0,
               seq: 0,
               rev: 0,
               text: "second",

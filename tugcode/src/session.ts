@@ -697,13 +697,26 @@ export function routeTopLevelEvent(
       const isSynthetic = model === "<synthetic>";
       const content = (message?.content as Array<Record<string, unknown>>) || [];
 
-      for (const block of content) {
+      for (let blockIndex = 0; blockIndex < content.length; blockIndex++) {
+        const block = content[blockIndex];
         if (block.type === "text" && isSynthetic) {
           const text = (block.text as string) || "";
           if (text.length > 0) {
+            // Synthetic messages have no streaming `content_block_start`
+            // (they arrive as a complete snapshot). Synthesize one so
+            // the reducer's mint path is uniform with the live and
+            // replay paths per [D07].
+            messages.push({
+              type: "content_block_start",
+              msg_id: effectiveMsgId,
+              block_index: blockIndex,
+              kind: "text",
+              ipc_version: 2,
+            });
             messages.push({
               type: "assistant_text",
               msg_id: effectiveMsgId,
+              block_index: blockIndex,
               seq: ctx.seq,
               rev: ctx.rev,
               text,
@@ -713,6 +726,15 @@ export function routeTopLevelEvent(
             });
           }
         } else if (block.type === "tool_use") {
+          // The streaming path's `content_block_start` for this tool
+          // already mints the reducer's ToolUseMessage; on the
+          // top-level `assistant` snapshot we only re-emit the tool_use
+          // IPC frame to deliver the final input. The mint is
+          // idempotent so a duplicate `content_block_start` would be
+          // safe — but we skip it to keep the snapshot path quiet on
+          // already-known blocks. (Synthetic messages don't have a
+          // streaming origin, but they also don't carry tool_use
+          // blocks in practice — slash-command outputs are pure text.)
           messages.push({
             type: "tool_use",
             msg_id: effectiveMsgId,
@@ -737,9 +759,18 @@ export function routeTopLevelEvent(
       if (event.isReplay === true && typeof rawContent === "string") {
         const stdoutMatch = rawContent.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
         if (stdoutMatch) {
+          // Slash-command stdout: synthesize a single text block.
+          messages.push({
+            type: "content_block_start",
+            msg_id: ctx.msgId,
+            block_index: 0,
+            kind: "text",
+            ipc_version: 2,
+          });
           messages.push({
             type: "assistant_text",
             msg_id: ctx.msgId,
+            block_index: 0,
             seq: ctx.seq,
             rev: ctx.rev,
             text: stdoutMatch[1],
@@ -818,9 +849,19 @@ export function routeTopLevelEvent(
             if (typeof blockContent === "string") {
               const stdoutMatch = blockContent.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
               if (stdoutMatch) {
+                // Slash-command stdout via tool_result: same synthesized
+                // block pattern as the user-content path above.
+                messages.push({
+                  type: "content_block_start",
+                  msg_id: ctx.msgId,
+                  block_index: 0,
+                  kind: "text",
+                  ipc_version: 2,
+                });
                 messages.push({
                   type: "assistant_text",
                   msg_id: ctx.msgId,
+                  block_index: 0,
                   seq: ctx.seq,
                   rev: ctx.rev,
                   text: stdoutMatch[1],
@@ -1040,40 +1081,68 @@ export function mapStreamEvent(
     }
   } else if (eventType === "content_block_start") {
     const contentBlock = event.content_block as Record<string, unknown> | undefined;
-    if (contentBlock?.type === "tool_use") {
+    const blockIndex = typeof event.index === "number" ? event.index : 0;
+    if (contentBlock?.type === "text") {
+      // Surface the block open to tugdeck so the reducer can mint an
+      // assistant_text Message before any delta lands. Idempotent on
+      // the reducer side per [D07].
+      messages.push({
+        type: "content_block_start",
+        msg_id: ctx.msgId,
+        block_index: blockIndex,
+        kind: "text",
+        ipc_version: 2,
+      });
+    } else if (contentBlock?.type === "thinking") {
+      messages.push({
+        type: "content_block_start",
+        msg_id: ctx.msgId,
+        block_index: blockIndex,
+        kind: "thinking",
+        ipc_version: 2,
+      });
+    } else if (contentBlock?.type === "tool_use") {
+      // Two emissions: a content_block_start so the reducer mints the
+      // ToolUseMessage with kind/id/name, and the existing tool_use
+      // IPC frame so the toolCallMap entry forms with empty input
+      // (input is filled in by the post-`input_json_delta` `tool_use`
+      // emission at the matching `assistant` top-level event or via a
+      // continuation `tool_use` event).
+      const toolUseId = (contentBlock.id as string) || "";
+      const toolName = (contentBlock.name as string) || "";
+      messages.push({
+        type: "content_block_start",
+        msg_id: ctx.msgId,
+        block_index: blockIndex,
+        kind: "tool_use",
+        tool_use_id: toolUseId,
+        tool_name: toolName,
+        ipc_version: 2,
+      });
       messages.push({
         type: "tool_use",
         msg_id: ctx.msgId,
         seq: ctx.seq,
-        tool_name: (contentBlock.name as string) || "",
-        tool_use_id: (contentBlock.id as string) || "",
+        tool_name: toolName,
+        tool_use_id: toolUseId,
         input: {},
         ipc_version: 2,
       });
     }
   } else if (eventType === "content_block_delta") {
     const delta = event.delta as Record<string, unknown> | undefined;
+    const blockIndex = typeof event.index === "number" ? event.index : 0;
     if (delta?.type === "text_delta" && typeof delta.text === "string") {
       partialText += delta.text;
-      // LOAD-BEARING INVARIANT: the wire emit carries the delta only
-      // (`text: delta.text`), not the cumulative `partialText`. Mid-turn
-      // replay's "snapshot then resume" pattern depends on this:
-      //
-      //   1. emitInflightTurnFromActiveTurn writes one consolidated
-      //      `assistant_text { text: turn.partialText, is_partial: false }`
-      //      inside the bracket — the reducer REPLACES its scratch
-      //      with that text.
-      //   2. After replay_complete, live deltas resume here. The reducer
-      //      APPENDS each `is_partial: true` delta to scratch from that
-      //      baseline.
-      //
-      // If this branch ever switched to emitting cumulative text, the
-      // first post-bracket delta would re-include the snapshot's text,
-      // and the reducer's append would double-count. The mid-turn
-      // integration test would catch the regression.
+      // The wire emit carries the delta only (`text: delta.text`), not
+      // the cumulative `partialText`. The reducer's append-or-mutate
+      // rule keyed on `(msg_id, block_index)` appends each delta to
+      // the Message minted by the preceding `content_block_start`. See
+      // [D07] § Append-or-mutate rule.
       messages.push({
         type: "assistant_text",
         msg_id: ctx.msgId,
+        block_index: blockIndex,
         seq: ctx.seq,
         rev: newRev++,
         text: delta.text,
@@ -1086,6 +1155,7 @@ export function mapStreamEvent(
       const thinkingMsg: ThinkingText = {
         type: "thinking_text",
         msg_id: ctx.msgId,
+        block_index: blockIndex,
         seq: ctx.seq,
         text: delta.thinking,
         is_partial: true,
@@ -1147,7 +1217,35 @@ export function mapStreamEvent(
  * cancels a turn in flight. Single-threaded JS event loop guarantees
  * mutation safety without locks.
  */
-class ActiveTurn {
+/**
+ * Per-content-block tracking entry on `ActiveTurn.messageBlocks`. Captures
+ * the kind and contents of a single content block (text / thinking /
+ * tool_use) as it arrives, so `emitInflightTurnFromActiveTurn` can replay
+ * the per-block event stream faithfully on mid-turn reconnect ([D07]
+ * § Mid-turn replay snapshot).
+ *
+ * Tool-result and structured-result data is also folded onto the matching
+ * tool_use entry — when the wire's `tool_result` lands (via the `user`
+ * top-level event), we look up by `toolUseId` and stash the output, so a
+ * snapshot can emit the full tool lifecycle.
+ */
+interface BlockState {
+  index: number;
+  kind: "text" | "thinking" | "tool_use";
+  /** Accumulated text for `text` / `thinking` blocks. */
+  text: string;
+  /** Tool identity + state — populated only for `tool_use` blocks. */
+  toolUseId?: string;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  toolResult?: {
+    output: string;
+    isError: boolean;
+  };
+  toolStructuredResult?: Record<string, unknown>;
+}
+
+export class ActiveTurn {
   /**
    * Sliding pointer to the most recent claude `message.id` seen on this
    * turn's stream. Updated on every `message_start` (via
@@ -1161,11 +1259,31 @@ class ActiveTurn {
    * treat null as "nothing claude-keyable to emit yet."
    *
    * Multi-message claude turns (text → tool_use → tool_result → second
-   * text) overwrite this pointer on the second `message_start`. Each
+   * text) overwrite this pointer on the second `message.id`. Each
    * `message.id` is its own thing on the wire; the reducer renders them
    * as separate panels keyed by id.
    */
   currentMessageId: string | null = null;
+  /**
+   * Per-message content blocks observed during this turn, in arrival
+   * order. Keyed by msg_id (a turn may span multiple msgIds via
+   * tool-use-loop iterations); each value is the ordered list of blocks
+   * for that message.
+   *
+   * Populated by `updateBlockStateFromMessages` (called from
+   * `dispatchEventToTurn` after each routed/streamed batch), and read by
+   * `emitInflightTurnFromActiveTurn` to reconstruct the per-block event
+   * stream for mid-turn replay ([D07] § Mid-turn replay snapshot).
+   *
+   * Why this lives on ActiveTurn rather than being inferred from
+   * `partialText`: the wire emits text in discrete blocks separated by
+   * tool calls. `partialText` concatenates everything since the turn
+   * began (no block boundaries preserved); for a faithful replay
+   * snapshot we need the per-block structure too. The reducer-side
+   * sequence substrate ([D07]) consumes block-aware events on the live
+   * path; the snapshot path must produce the same shape.
+   */
+  messageBlocks: Map<string, BlockState[]> = new Map();
   /** Outbound `seq` for the user-message half of this turn. */
   readonly seq: number;
   /**
@@ -1252,6 +1370,90 @@ class ActiveTurn {
     if (this.resolveCompletion !== null) {
       this.resolveCompletion();
       this.resolveCompletion = null;
+    }
+  }
+
+  /**
+   * Update {@link messageBlocks} from a batch of emitted IPC messages.
+   * Called by `dispatchEventToTurn` after each `routeTopLevelEvent` /
+   * `mapStreamEvent` batch — the messages reveal the block events
+   * (content_block_start / text deltas / tool_use / tool_result), and
+   * this method mirrors them onto per-block state so the mid-turn
+   * snapshot path can reconstruct the wire sequence.
+   *
+   * Pure structural mutation — no I/O, no emit. The same messages are
+   * either written to the wire (live) or suppressed (during runReplay's
+   * bracket); either way the block state must update so the snapshot is
+   * ready if the bracket fires.
+   */
+  updateBlockStateFromMessages(messages: ReadonlyArray<OutboundMessage>): void {
+    for (const msg of messages) {
+      if (msg.type === "content_block_start") {
+        const blocks = this.messageBlocks.get(msg.msg_id) ?? [];
+        // Idempotent: if a block with this index already exists, leave
+        // it alone. Mirrors the reducer-side `handleContentBlockStart`
+        // idempotence ([D07] § Mid-turn replay snapshot).
+        if (!blocks.some((b) => b.index === msg.block_index)) {
+          blocks.push({
+            index: msg.block_index,
+            kind: msg.kind,
+            text: "",
+            toolUseId: msg.tool_use_id,
+            toolName: msg.tool_name,
+            toolInput: msg.kind === "tool_use" ? {} : undefined,
+          });
+          // Keep blocks sorted by index for predictable iteration.
+          blocks.sort((a, b) => a.index - b.index);
+          this.messageBlocks.set(msg.msg_id, blocks);
+        }
+      } else if (msg.type === "assistant_text" || msg.type === "thinking_text") {
+        const blocks = this.messageBlocks.get(msg.msg_id);
+        const block = blocks?.find((b) => b.index === msg.block_index);
+        if (block === undefined) continue;
+        // is_partial: false (the terminal frame) carries the full text;
+        // replace. is_partial: true is a delta; append.
+        block.text = msg.is_partial ? block.text + msg.text : msg.text;
+      } else if (msg.type === "tool_use") {
+        // Tool_use IPC events may carry the final input (post
+        // input_json_delta accumulation) — update the matching block's
+        // toolInput. Look up by tool_use_id since the block's msg_id +
+        // block_index aren't on this message.
+        for (const blocks of this.messageBlocks.values()) {
+          const block = blocks.find(
+            (b) => b.kind === "tool_use" && b.toolUseId === msg.tool_use_id,
+          );
+          if (block !== undefined) {
+            if (Object.keys(msg.input).length > 0) {
+              block.toolInput = msg.input as Record<string, unknown>;
+            }
+            block.toolName = msg.tool_name;
+            break;
+          }
+        }
+      } else if (msg.type === "tool_result") {
+        for (const blocks of this.messageBlocks.values()) {
+          const block = blocks.find(
+            (b) => b.kind === "tool_use" && b.toolUseId === msg.tool_use_id,
+          );
+          if (block !== undefined) {
+            block.toolResult = {
+              output: msg.output,
+              isError: msg.is_error,
+            };
+            break;
+          }
+        }
+      } else if (msg.type === "tool_use_structured") {
+        for (const blocks of this.messageBlocks.values()) {
+          const block = blocks.find(
+            (b) => b.kind === "tool_use" && b.toolUseId === msg.tool_use_id,
+          );
+          if (block !== undefined) {
+            block.toolStructuredResult = msg.structured_result as Record<string, unknown>;
+            break;
+          }
+        }
+      }
     }
   }
 }
@@ -3026,11 +3228,16 @@ export class SessionManager {
       }
       // Gate site 1/7: suppressEmit holds back live forwarding while
       // runReplay's bracket is on the wire. State mutations
-      // (turn.currentMessageId, turn.rev, turn.partialText) continue
-      // regardless — the snapshot emission in
-      // emitInflightTurnFromActiveTurn reads them.
+      // (turn.currentMessageId, turn.rev, turn.partialText,
+      // turn.messageBlocks) continue regardless — the snapshot emission
+      // in emitInflightTurnFromActiveTurn reads them.
       if (!turn.suppressEmit) writeLine(ipcMsg);
     }
+    // Mirror routed messages onto per-block state for mid-turn replay
+    // snapshot ([D07] § Mid-turn replay snapshot). Runs regardless of
+    // suppressEmit so the snapshot has up-to-date block state if the
+    // bracket fires.
+    turn.updateBlockStateFromMessages(routeResult.messages);
 
     // Tier 2: delegate stream_event inner payload to mapStreamEvent().
     if (routeResult.streamEvent) {
@@ -3055,14 +3262,18 @@ export class SessionManager {
             routeResult.parentToolUseId;
         }
         // Gate site 2/7: live deltas during the suppressed window
-        // accumulate into turn.partialText (assigned below) but stay
-        // off the wire. After runReplay clears suppressEmit, future
-        // deltas writeLine normally. The reducer's "snapshot then
-        // resume" pattern (is_partial:false replace from snapshot,
-        // then is_partial:true append from live deltas) reconciles
-        // the two halves into one TurnEntry.
+        // accumulate into turn state (partialText, messageBlocks) but
+        // stay off the wire. After runReplay clears suppressEmit,
+        // future deltas writeLine normally. Mid-turn replay's
+        // snapshot path emits per-block events from messageBlocks
+        // ([D07] § Mid-turn replay snapshot); subsequent live deltas
+        // append via (msg_id, block_index) match against Messages the
+        // snapshot already minted.
         if (!turn.suppressEmit) writeLine(ipcMsg);
       }
+      // Mirror streamed messages onto per-block state. Same rationale
+      // as the routeResult call above.
+      turn.updateBlockStateFromMessages(streamResult.messages);
       turn.rev = streamResult.newRev;
       turn.partialText = streamResult.partialText;
       // Latch this iteration's `usage`. The latest `message_delta` is
@@ -3127,22 +3338,52 @@ export class SessionManager {
 
     if (routeResult.gotResult) {
       turn.gotResult = true;
-      // Emit final complete assistant_text only if there was streamed
-      // text. Slash commands (local commands) deliver output via the
-      // user/isReplay handler, not via streaming — partialText stays
-      // empty for those.
-      if (turn.partialText.length > 0) {
+      // Emit final complete terminal frames for each text/thinking
+      // block of the current message. The per-delta path has already
+      // delivered the text incrementally; these terminal frames serve
+      // as a safety baseline (REPLACE-equivalent for the matching
+      // Message) and let the reducer recover from any delta-loss
+      // window. One frame per block — under [D07]'s per-Message
+      // substrate, a single consolidated terminal emit for the full
+      // turn's text would be miskeyed (turn spans multiple msgIds and
+      // blocks).
+      //
+      // Slash commands (local commands) deliver output via the
+      // user/isReplay handler synthesizing both a content_block_start
+      // and a terminal assistant_text — those blocks land in
+      // messageBlocks via updateBlockStateFromMessages above, so the
+      // iteration below picks them up too. No special-case needed.
+      //
+      // Gate site 4/7. Skipped emits during the suppressed window are
+      // reconstructed by emitInflightTurnFromActiveTurn.
+      const currentBlocks =
+        turn.currentMessageId !== null
+          ? turn.messageBlocks.get(turn.currentMessageId) ?? []
+          : [];
+      for (const block of currentBlocks) {
+        if (block.kind !== "text" && block.kind !== "thinking") continue;
+        if (block.text.length === 0) continue;
+        if (turn.suppressEmit) continue;
         const completeSeq = this.nextSeq();
-        // Gate site 4/7. Skipped emits during the suppressed window
-        // are reconstructed by emitInflightTurnFromActiveTurn from
-        // turn.partialText + turn.gotResult.
-        if (!turn.suppressEmit) {
+        if (block.kind === "text") {
           writeLine({
             type: "assistant_text",
             msg_id: turn.currentMessageId ?? "",
+            block_index: block.index,
             seq: completeSeq,
             rev: 0,
-            text: turn.partialText,
+            text: block.text,
+            is_partial: false,
+            status: "complete",
+            ipc_version: 2,
+          });
+        } else {
+          writeLine({
+            type: "thinking_text",
+            msg_id: turn.currentMessageId ?? "",
+            block_index: block.index,
+            seq: completeSeq,
+            text: block.text,
             is_partial: false,
             status: "complete",
             ipc_version: 2,
@@ -3227,24 +3468,92 @@ export class SessionManager {
       ipc_version: 2,
     });
 
-    // 2. assistant_text — one consolidated emit with `is_partial:false`,
-    //    which tells the reducer to REPLACE its scratch (not append).
-    //    Subsequent live deltas after the bracket carry `is_partial:true`
-    //    and append to this baseline. Allocate a fresh seq via
-    //    nextSeq() rather than reusing turn.seq (the user-half's seq);
-    //    matches the existing pattern at the gotResult complete-text
-    //    site in dispatchEventToTurn.
-    if (turn.partialText.length > 0) {
-      writeLine({
-        type: "assistant_text",
-        msg_id: msgId,
-        seq: this.nextSeq(),
-        rev: turn.rev,
-        text: turn.partialText,
-        is_partial: false,
-        status: "streaming",
-        ipc_version: 2,
-      });
+    // 2. Per-message block stream — for each msg_id observed during
+    //    this turn (a tool-use loop may span several), iterate the
+    //    blocks in arrival order and emit the wire-faithful sequence:
+    //    content_block_start (mints the reducer's Message) followed
+    //    by the terminal text / tool_use / tool_result frames that
+    //    carry the block's accumulated content.
+    //
+    //    This is [D07]'s Mid-turn replay snapshot pattern (Option 4 —
+    //    replay-the-stream): the snapshot IS the event stream that
+    //    built the turn up to this moment. The reducer processes
+    //    these events through the same handlers it uses live and
+    //    during cold-boot replay; content_block_start is idempotent
+    //    so any Messages the live path minted before the disconnect
+    //    are not duplicate-minted.
+    //
+    //    Iteration order is by msg_id insertion order (Map iteration
+    //    is insertion-ordered in ECMA), then by block.index within
+    //    each msg_id (sorted on insert in updateBlockStateFromMessages).
+    for (const [blockMsgId, blocks] of turn.messageBlocks) {
+      for (const block of blocks) {
+        const tool_use_id =
+          block.kind === "tool_use" ? block.toolUseId : undefined;
+        const tool_name =
+          block.kind === "tool_use" ? block.toolName : undefined;
+        writeLine({
+          type: "content_block_start",
+          msg_id: blockMsgId,
+          block_index: block.index,
+          kind: block.kind,
+          tool_use_id,
+          tool_name,
+          ipc_version: 2,
+        });
+        if (block.kind === "text" && block.text.length > 0) {
+          writeLine({
+            type: "assistant_text",
+            msg_id: blockMsgId,
+            block_index: block.index,
+            seq: this.nextSeq(),
+            rev: turn.rev,
+            text: block.text,
+            is_partial: false,
+            status: "streaming",
+            ipc_version: 2,
+          });
+        } else if (block.kind === "thinking" && block.text.length > 0) {
+          writeLine({
+            type: "thinking_text",
+            msg_id: blockMsgId,
+            block_index: block.index,
+            seq: this.nextSeq(),
+            text: block.text,
+            is_partial: false,
+            status: "streaming",
+            ipc_version: 2,
+          });
+        } else if (block.kind === "tool_use") {
+          writeLine({
+            type: "tool_use",
+            msg_id: blockMsgId,
+            seq: this.nextSeq(),
+            tool_name: block.toolName ?? "",
+            tool_use_id: block.toolUseId ?? "",
+            input: block.toolInput ?? {},
+            ipc_version: 2,
+          });
+          if (block.toolResult !== undefined) {
+            writeLine({
+              type: "tool_result",
+              tool_use_id: block.toolUseId ?? "",
+              output: block.toolResult.output,
+              is_error: block.toolResult.isError,
+              ipc_version: 2,
+            });
+          }
+          if (block.toolStructuredResult !== undefined) {
+            writeLine({
+              type: "tool_use_structured",
+              tool_use_id: block.toolUseId ?? "",
+              tool_name: block.toolName ?? "",
+              structured_result: block.toolStructuredResult,
+              ipc_version: 2,
+            });
+          }
+        }
+      }
     }
 
     // 3. streaming_usage — re-emit the turn's most recent in-flight
@@ -3270,33 +3579,27 @@ export class SessionManager {
       if (usageFrame !== null) writeLine(usageFrame);
     }
 
-    // 4. Re-emit any pending `can_use_tool` control_request as a
-    //    `tool_use` + `control_request_forward` pair for this turn.
+    // 4. Re-emit any pending `can_use_tool` control_request_forward.
     //
-    //    Control requests are an out-of-band SDK channel — they never
-    //    land in JSONL. The `tool_use` they gate WAS emitted on the
-    //    live wire when the assistant first transitioned to the tool
-    //    block, but tugcode does not buffer per-turn tool state for
-    //    the resume path (see comment above), and JSONL won't carry
-    //    the tool_use until the assistant message commits — which
-    //    can't happen while the SDK is blocked on the user's
-    //    decision. tugcode's `pendingControlRequests` map is the only
-    //    place this state lives between issue and response, and it
-    //    carries everything we need to synthesize both frames:
-    //    `tool_name` + `tool_use_id` + `input` reconstruct the tool
-    //    block; the `request_id` preserves the round-trip identity
-    //    so the response from the rehydrated dialog still correlates
-    //    back to the same SDK-side control request.
+    //    Under [D07]'s per-block tracking, the matching tool_use is
+    //    already in messageBlocks and was re-emitted in step 2 above.
+    //    We only need to re-emit the OOB control_request_forward
+    //    here (the SDK's approval request, which never lands in
+    //    JSONL). The forward references the tool by `tool_use_id` so
+    //    the rehydrated dialog correlates back to the same SDK
+    //    request.
     //
-    //    Order matches the live wire: `tool_use` first (so the
-    //    reducer's `toolCallMap` populates and the dialog renders
-    //    above an existing tool block), then `control_request_forward`
-    //    (which references the tool by `tool_use_id`).
+    //    Defensive fallback: if the tool_use_id is NOT in any
+    //    messageBlocks entry (race / lossy stream / regression), we
+    //    synthesize a content_block_start + tool_use pair here at
+    //    block_index 0 of the current msg_id so the reducer has
+    //    something to anchor the dialog to. The reducer's
+    //    content_block_start is idempotent — if the real
+    //    content_block_start arrives later, it's a no-op.
     //
     //    Only `can_use_tool` subtypes carry the tool-shape we need;
     //    other subtypes (set_model, set_permission_mode, interrupt,
     //    stop_task) are not dialog-driving and skipped.
-    const inflightMsgId = turn.currentMessageId ?? "";
     for (const [requestId, cr] of this.pendingControlRequests) {
       const request = cr.request as Record<string, unknown> | undefined;
       const subtype = request?.subtype as string | undefined;
@@ -3306,16 +3609,29 @@ export class SessionManager {
       const toolInput =
         (request.input as Record<string, unknown>) || {};
       const isQuestion = toolName === "AskUserQuestion";
-      // Synthesize the `tool_use` only when we have both ids — the
-      // reducer keys its `toolCallMap` on `tool_use_id` and a missing
-      // one would leak an unreachable entry. AskUserQuestion is
-      // rendered by the live dialog only — the tool_use_id pair is
-      // still emitted for parity, but the dispatch treats it as
-      // dialog-bound and doesn't paint a separate block.
-      if (toolUseId !== "" && inflightMsgId !== "") {
+      // Defensive synthesis: only fire if the tool wasn't already
+      // re-emitted in step 2 (its tool_use_id isn't in any block of
+      // any msg_id).
+      let toolAlreadyEmitted = false;
+      for (const blocks of turn.messageBlocks.values()) {
+        if (blocks.some((b) => b.kind === "tool_use" && b.toolUseId === toolUseId)) {
+          toolAlreadyEmitted = true;
+          break;
+        }
+      }
+      if (!toolAlreadyEmitted && toolUseId !== "" && msgId !== "") {
+        writeLine({
+          type: "content_block_start",
+          msg_id: msgId,
+          block_index: 0,
+          kind: "tool_use",
+          tool_use_id: toolUseId,
+          tool_name: toolName,
+          ipc_version: 2,
+        });
         writeLine({
           type: "tool_use",
-          msg_id: inflightMsgId,
+          msg_id: msgId,
           seq: this.nextSeq(),
           tool_name: toolName,
           tool_use_id: toolUseId,

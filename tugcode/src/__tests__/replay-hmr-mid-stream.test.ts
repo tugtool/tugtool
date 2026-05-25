@@ -28,6 +28,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  ActiveTurn,
   type JsonlReadResult,
   SessionManager,
 } from "../session.ts";
@@ -117,28 +118,27 @@ function installInflightTurn(
     lastMessageDeltaUsage?: Record<string, unknown> | null;
     lastMessageStartUsage?: Record<string, unknown> | null;
   },
-): { turn: { suppressEmit: boolean; currentMessageId: string | null } } {
-  // Construct an ActiveTurn-shaped object directly. The constructor
-  // is private to the production module and its only meaningful state
-  // for `runReplay`'s snapshot path is what we set here. The
-  // `finish()` method is the only behavioral coupling — `runReplay`
-  // doesn't call it on the in-flight path, so a no-op is fine.
-  const turn = {
-    currentMessageId: opts.currentMessageId,
-    seq: 0,
-    userText: opts.userText,
-    userAttachments: [],
-    rev: opts.rev ?? 0,
-    partialText: opts.partialText,
-    gotResult: opts.gotResult ?? false,
-    interrupted: opts.interrupted ?? false,
-    suppressEmit: false,
-    completion: Promise.resolve(),
-    finish: () => {},
-    lastMessageDeltaUsage: opts.lastMessageDeltaUsage ?? null,
-    lastMessageStartUsage: opts.lastMessageStartUsage ?? null,
-  };
-  (manager as unknown as { activeTurn: typeof turn }).activeTurn = turn;
+): { turn: ActiveTurn } {
+  // Construct a real ActiveTurn — the snapshot path reads messageBlocks
+  // (the per-block tracking added by [D07]'s Mid-turn replay design),
+  // so we populate that with the supplied partialText as a single
+  // text block. Tests that need richer block sequences (multi-block,
+  // thinking, tool_use) can mutate `turn.messageBlocks` directly
+  // after the call.
+  const turn = new ActiveTurn(0, opts.userText, []);
+  turn.currentMessageId = opts.currentMessageId;
+  turn.rev = opts.rev ?? 0;
+  turn.partialText = opts.partialText;
+  turn.gotResult = opts.gotResult ?? false;
+  turn.interrupted = opts.interrupted ?? false;
+  turn.lastMessageDeltaUsage = opts.lastMessageDeltaUsage ?? null;
+  turn.lastMessageStartUsage = opts.lastMessageStartUsage ?? null;
+  if (opts.currentMessageId !== null && opts.partialText.length > 0) {
+    turn.messageBlocks.set(opts.currentMessageId, [
+      { index: 0, kind: "text", text: opts.partialText },
+    ]);
+  }
+  (manager as unknown as { activeTurn: ActiveTurn }).activeTurn = turn;
   return { turn };
 }
 
@@ -658,58 +658,11 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     expect(emitted.find((m) => m.type === "streaming_usage")).toBeUndefined();
   });
 
-  test("snapshot wire order: streaming_usage lands after assistant_text and before control_request_forward", async () => {
-    const manager = makeManager({ jsonl: "" });
-    installInflightTurn(manager, {
-      currentMessageId: "msg_order_check",
-      userText: "do the thing",
-      partialText: "OK, working...",
-      lastMessageDeltaUsage: {
-        input_tokens: 1,
-        output_tokens: 50,
-        cache_read_input_tokens: 1000,
-        cache_creation_input_tokens: 500,
-      },
-    });
-
-    (
-      manager as unknown as {
-        pendingControlRequests: Map<string, Record<string, unknown>>;
-      }
-    ).pendingControlRequests.set("req-order", {
-      type: "control_request",
-      request_id: "req-order",
-      request: {
-        subtype: "can_use_tool",
-        tool_name: "Bash",
-        tool_use_id: "tu_order",
-        input: { command: "echo hi" },
-      },
-    });
-
-    const { emitted } = await captureStdout(() => manager.runReplay());
-
-    const idxAssistant = emitted.findIndex(
-      (m): m is AssistantText =>
-        m.type === "assistant_text" &&
-        (m as AssistantText).msg_id === "msg_order_check",
-    );
-    const idxUsage = emitted.findIndex(
-      (m): m is StreamingUsage =>
-        m.type === "streaming_usage" &&
-        (m as StreamingUsage).msg_id === "msg_order_check",
-    );
-    const idxToolUse = emitted.findIndex(
-      (m): m is ToolUse =>
-        m.type === "tool_use" &&
-        (m as ToolUse).tool_use_id === "tu_order",
-    );
-    const idxForward = emitted.findIndex(
-      (m) => m.type === "control_request_forward",
-    );
-    expect(idxAssistant).toBeGreaterThanOrEqual(0);
-    expect(idxUsage).toBeGreaterThan(idxAssistant);
-    expect(idxToolUse).toBeGreaterThan(idxUsage);
-    expect(idxForward).toBeGreaterThan(idxToolUse);
-  });
+  // (deleted: "snapshot wire order" — pure ordering pin. Under [D07]'s
+  // Mid-turn replay snapshot (Option 4: replay-the-stream) the reducer
+  // processes events independently of inter-frame order; the ordering
+  // here was a brittle implementation detail. The CONTRACTS this test
+  // hinted at — that streaming_usage, tool_use, and
+  // control_request_forward all emit when their respective state is
+  // populated — are pinned by the dedicated tests above.)
 });

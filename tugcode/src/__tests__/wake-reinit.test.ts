@@ -83,7 +83,11 @@ describe("SessionManager — system/init re-init detector via handleClaudeLine",
     // during the user's first turn (which is exactly what happens in
     // production — see initialize() comment about claude staying silent
     // until first input).
-    (manager as any).activeTurn = { gotResult: false }; // stub turn
+    (manager as any).activeTurn = {
+      gotResult: false,
+      messageBlocks: new Map(),
+      updateBlockStateFromMessages: () => {},
+    }; // stub turn
     expect((manager as any).sessionInitSeen).toBe(false);
 
     (manager as any).handleClaudeLine(initLine());
@@ -98,7 +102,11 @@ describe("SessionManager — system/init re-init detector via handleClaudeLine",
     expect((manager as any).sessionInitSeen).toBe(true);
 
     // User submits → activeTurn set.
-    (manager as any).activeTurn = { gotResult: false };
+    (manager as any).activeTurn = {
+      gotResult: false,
+      messageBlocks: new Map(),
+      updateBlockStateFromMessages: () => {},
+    };
 
     // Claude emits compact_boundary mid-turn, then re-emits system/init.
     // The second init lands while activeTurn is set — it must NOT be

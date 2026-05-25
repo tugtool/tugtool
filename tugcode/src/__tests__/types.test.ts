@@ -155,6 +155,7 @@ describe("outbound message types", () => {
     const msg: AssistantText = {
       type: "assistant_text",
       msg_id: "m1",
+      block_index: 0,
       seq: 0,
       rev: 0,
       text: "hello",
@@ -184,6 +185,7 @@ describe("outbound message types", () => {
     const msg: ThinkingText = {
       type: "thinking_text",
       msg_id: "m3",
+      block_index: 0,
       seq: 0,
       text: "thinking...",
       is_partial: true,

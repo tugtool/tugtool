@@ -112,6 +112,23 @@ export interface SessionInit {
 export interface AssistantText {
   type: "assistant_text";
   msg_id: string;
+  /**
+   * Position of this text block within its message (the `index` from
+   * the wire's `content_block_start { index }` for the block this
+   * delta belongs to). Within a single `message_start`, blocks are
+   * numbered 0, 1, 2, ... in arrival order; index resets to 0 at the
+   * next `message_start`. The reducer uses `(msg_id, block_index)` as
+   * the mint key: a new `content_block_start` mints a Message,
+   * subsequent deltas with the same pair append to it.
+   *
+   * Synthetic emissions (slash-command output, the consolidated
+   * mid-turn snapshot, terminal emissions from top-level `assistant`
+   * snapshots) carry `block_index: 0` paired with a preceding
+   * synthetic `content_block_start { block_index: 0, kind: "text" }`
+   * so the reducer's mint path is uniform across live, replay, and
+   * synthetic.
+   */
+  block_index: number;
   seq: number;
   rev: number;
   text: string;
@@ -242,10 +259,37 @@ export interface ErrorEvent {
 export interface ThinkingText {
   type: "thinking_text";
   msg_id: string;
+  /** See {@link AssistantText.block_index} — same semantics. */
+  block_index: number;
   seq: number;
   text: string;
   is_partial: boolean;
   status: string;
+  ipc_version: number;
+}
+
+/**
+ * Opens a content block within an assistant message. Emitted by tugcode's
+ * `mapStreamEvent` at every wire `content_block_start`, and by `replay.ts`
+ * + `emitInflightTurnFromActiveTurn` at every reconstructed block.
+ *
+ * The reducer mints a `Message` of the corresponding kind on receipt
+ * and indexes by `(msg_id, block_index)` for subsequent delta lookup.
+ * `tool_use_id` and `tool_name` are present only when `kind === "tool_use"`.
+ *
+ * Idempotent on the reducer side: a `content_block_start` for an
+ * already-minted `(msg_id, block_index)` is a no-op. This is what
+ * makes the mid-turn replay snapshot pattern ([D07] § Mid-turn replay)
+ * safe: the live path may have already minted before the disconnect;
+ * the snapshot's re-emission must not duplicate-mint.
+ */
+export interface ContentBlockStart {
+  type: "content_block_start";
+  msg_id: string;
+  block_index: number;
+  kind: "text" | "thinking" | "tool_use";
+  tool_use_id?: string;
+  tool_name?: string;
   ipc_version: number;
 }
 
@@ -591,6 +635,7 @@ export type OutboundMessage =
   | TurnCancelled
   | ErrorEvent
   | ThinkingText
+  | ContentBlockStart
   | ControlRequestForward
   | SystemMetadata
   | CostUpdate
