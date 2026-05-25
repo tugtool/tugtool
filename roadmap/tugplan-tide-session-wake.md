@@ -468,23 +468,27 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 **References:** [D01] bracket pattern, Spec [#spec-wire-frames], (#strategy)
 
 **Artifacts:**
-- TypeScript outbound type in `tugcode/src/protocol-types.ts`.
-- Mirrored TypeScript event type in `tugdeck/src/lib/code-session-store/events.ts` (or sibling) — with `turnKey: string` on the reducer-event side (minted by the store wrapper in Step 4, not on the wire).
-- tugcast handling — implementer surveys the existing CODE_OUTPUT frame infrastructure and picks either typed-enum-variant or opaque pass-through based on what's already in place.
+- Inbound stream-json type in `tugcode/src/protocol-types.ts`: `SystemTaskNotificationMessage` (mirrors `SDKTaskNotificationMessage` at `@anthropic-ai/claude-agent-sdk/sdk.d.ts:1659-1668`). Step 3 will read this shape when adding the `case "system"` arm.
+- Outbound IPC type in `tugcode/src/types.ts`: `WakeStarted` interface; added to the `OutboundMessage` union next to the existing replay-bracket types.
+- Mirrored reducer event type in `tugdeck/src/lib/code-session-store/events.ts`: `WakeStartedEvent` (carries `turnKey: string` minted by the store wrapper before dispatch, matching the `UserMessageReplayEvent` pattern); added to the `CodeSessionEvent` union.
+- tugcast: zero code changes required. Survey of `agent_bridge.rs` confirms tugcast handles frames as opaque bytes and only `line.contains("\"type\":\"X\"")` peeks for specific instrumented types (`protocol_ack`, `session_init`, `replay_started`/`replay_complete`, `turn_complete`, `system_metadata`, `resume_failed`). `wake_started` is not in that set — it passes through opaquely.
 - No emitters or consumers yet — purely additive types so the wire vocabulary exists before Steps 3 and 4 land.
 
 **Tasks:**
-- [ ] Add `WakeStartedMessage` to `tugcode/src/protocol-types.ts`. No `WakeCompleteMessage` — `turn_complete` closes the bracket.
-- [ ] Mirror in tugdeck event types (default-arm consumers log debug and ignore).
-- [ ] Handle in tugcast (typed variant or opaque pass-through per existing pattern).
-- [ ] Confirm by running tsc + cargo check that the new types thread through without breaking any consumer.
+- [x] Add `SystemTaskNotificationMessage` to `tugcode/src/protocol-types.ts` (inbound shape — what Step 3's detector reads from claude stdout).
+- [x] Add `WakeStarted` IPC interface to `tugcode/src/types.ts` and extend the `OutboundMessage` union. No `WakeComplete` — `turn_complete` closes the bracket.
+- [x] Mirror in tugdeck as `WakeStartedEvent` and extend the `CodeSessionEvent` union (carries `turnKey: string` per the store-wrapper mint contract).
+- [x] tugcast: no code change required (opaque pass-through verified).
+- [x] Confirm by running tsc + tests + cargo that the new types thread through without breaking any consumer.
 
 **Tests:**
-- [ ] None at this step — types are additive, no behavior change yet.
+- [x] None at this step — types are additive, no behavior change yet.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` green.
-- [ ] `cd tugrust && cargo nextest run` green.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` green (2892 / 2892 pass).
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green (437 / 437 pass).
+- [x] `cd tugrust && cargo nextest run` green (1324 passed, 9 skipped).
+- [x] `cd tugdeck && bun run audit:tokens lint` zero violations (hygiene; no token surface touched).
 
 ---
 

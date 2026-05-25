@@ -511,6 +511,45 @@ export interface UserMessageReplay {
  * `phase: idle → replaying` on this event and gates `canSubmit` /
  * `canInterrupt` to `false` for the duration.
  */
+/**
+ * Bracket marker emitted by tugcode when it observes a
+ * `system/task_notification` event on the claude stream-json wire.
+ * Signals that claude is about to resume from idle in response to a
+ * deferred-completion tool's async event (Monitor timing out, a cron
+ * job firing, a wakeup arriving, etc.) — without a preceding user
+ * submission.
+ *
+ * The reducer transitions `phase: idle → waking` on this event and
+ * accepts the subsequent assistant_text / thinking_text / tool_use
+ * events that would otherwise be dropped by guards expecting an
+ * active turn. The bracket closes implicitly on the next
+ * `turn_complete` (no separate `wake_complete` frame on the wire —
+ * the reducer's commit path extends to map `waking → idle`).
+ *
+ * `wake_trigger` is a verbatim forward of the SDK's
+ * `SDKTaskNotificationMessage` payload (`sdk.d.ts:1659-1668`),
+ * minus the `type:"system" / subtype:"task_notification"` envelope.
+ * `turnKey` is intentionally absent here — tugdeck's store wrapper
+ * (`frameToEvent`) mints it on frame receipt, mirroring the existing
+ * `user_message_replay` pattern.
+ *
+ * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
+ * rationale and [Q01] for the empirical capture this contract is
+ * pinned against.
+ */
+export interface WakeStarted {
+  type: "wake_started";
+  session_id: string;
+  wake_trigger: {
+    task_id: string;
+    tool_use_id: string;
+    status: "completed" | "failed" | "stopped";
+    summary: string;
+    output_file: string;
+  };
+  ipc_version: number;
+}
+
 export interface ReplayStarted {
   type: "replay_started";
   ipc_version: number;
@@ -564,7 +603,8 @@ export type OutboundMessage =
   | ResumeFailed
   | UserMessageReplay
   | ReplayStarted
-  | ReplayComplete;
+  | ReplayComplete
+  | WakeStarted;
 
 // Type guards
 export function isInboundMessage(msg: unknown): msg is InboundMessage {

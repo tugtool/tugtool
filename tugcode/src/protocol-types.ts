@@ -25,6 +25,37 @@ export interface SystemInitMessage {
   apiKeySource: string;
 }
 
+/**
+ * System task-notification — fired by the SDK's task subsystem when a
+ * deferred-completion tool (Monitor, CronCreate, ScheduleWakeup,
+ * PushNotification, RemoteTrigger, TaskOutput, …) raises an event
+ * after the parent assistant turn has already completed. Claude
+ * receives this in its conversation context and resumes a fresh turn
+ * to respond, *without* a preceding user submission.
+ *
+ * Wire shape mirrors `SDKTaskNotificationMessage` at
+ * `@anthropic-ai/claude-agent-sdk/sdk.d.ts:1659-1668` field-for-field
+ * — tugcode forwards the payload verbatim onto the {@link
+ * WakeStarted} IPC frame defined in `types.ts`.
+ *
+ * Tools using *active-polling* semantics (`Bash` and `Agent` with
+ * `run_in_background: true`) do NOT fire this event — they emit
+ * `system/task_started` + `system/task_updated` + periodic
+ * `system/status` while claude actively calls the tool's read API.
+ * Those are out of scope for the wake bracket.
+ */
+export interface SystemTaskNotificationMessage {
+  type: "system";
+  subtype: "task_notification";
+  session_id: string;
+  task_id: string;
+  tool_use_id: string;
+  status: "completed" | "failed" | "stopped";
+  summary: string;
+  output_file: string;
+  uuid?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Result message
 // ---------------------------------------------------------------------------
