@@ -968,6 +968,183 @@ After Commit 1 lands and before Commit 2 lands, tugcode emits new events that tu
 
 After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an old tugcode binary against new tugdeck would surface a fatal dev-log entry on every text event (missing `block_index`). The fix is to rebuild tugcode — `bun build --compile` produces the binary that both Tug.app and the standalone tugcode use. No silent failure mode.
 
+#### Step 5.5: Message-forward refactor — complete what [D07] started {#step-5-5}
+
+**Status:** Not started.
+
+**Why this step exists.** Step 5 shifted the *substrate* (reducer state + committed `TurnEntry`) from paired-field aggregation to a Message sequence ([D07]). It did NOT audit the *emitters and consumers* on either side of that substrate to verify they matched the new mental model. The result: pockets of cycle-pairing and msg_id-as-correlation thinking survived the refactor, hidden inside emitters that "happen to produce the right IPC events." The wake-replay regression (cold-boot rehydration painted a phantom `<task-notification>` user row, fixed by commit `<TBD>`) is the first symptom of this gap; without a complete audit + refactor, every future kind that doesn't fit the paired-cycle assumption (Step 8's `system_note`, Step 11's `system_metadata` per-row promotion, any future Message kind) will surface the same class of bug.
+
+The substrate is message-forward. Every emitter that produces events for it, and every consumer that reads from it, must be message-forward too — or the seam between message-forward substrate and paired-shape neighbor leaks at every new case.
+
+**Scope.** Complete the message-forward refactor end-to-end. Eliminate every remaining instance of:
+
+1. **Cycle-pairing in the replay translator.** `pendingUserText` / `pendingUserAttachments` / `cycleOpen` / `cycleMsgId` / `flushPendingOrphan` / `pendingWakeFromReplay` all exist because the *old* IPC contract demanded "a turn = one `user_message_replay` opener + N assistant frames + one `turn_complete`, all sharing the same `msg_id`." Under [D07] the substrate is keyed by `turnKey` and accumulates `messages: Message[]` in arrival order. The cycle machinery is no longer load-bearing; it actively obstructs new kinds (the wake bracket fix had to add a *third* mode to the pairing rather than a single switch arm).
+
+2. **`msg_id` as a substrate-correlation key.** The reducer's `handleUserMessageReplay` sets `state.activeMsgId` from the event's `msg_id` — a pattern inherited from the cycle-pairing era when the user side and assistant side of a turn shared one `msg_id`. The live `handleSend` path already does NOT pre-bind `activeMsgId`; the first content event sets it. The replay path should match.
+
+3. **Paired-field language in surrounding code.** Doc comments, type fields, prop names that still speak in `userMessage` / `assistant` / `thinking` / `toolCalls` / `pendingUserMessage` / `inflightUserMessage` / "cycle" / "opener" idioms. These mislead the next reader into reasoning about the substrate as paired.
+
+4. **`msgId` as a tool-block routing key.** `dispatchToolCallState(toolCall, msgId, ...)` and the `tide-card-transcript.tsx` `toolMsgId` threading exist because tool blocks were once dispatched as a flat list with msg_id correlation. Under [D07] each `ToolUseMessage` carries its own `messageKey`; `msgId` is debug metadata, not a load-bearing prop.
+
+**Architectural decision (locked).**
+
+*A. The replay translator is per-JSONL-entry direct emission.* Each user / assistant JSONL entry maps to its own IPC events, with no cross-entry bookkeeping beyond a single named state field on `TranslateContext`:
+
+```ts
+openTurnMsgId: string | null
+```
+
+**Set** when any *opener* emits — `user_message_replay` (set to its synthesized `u-<n>`) or `wake_started` (set to a synthesized `w-<n>` used only internally for orphan tracking; never appears on the wire). **Cleared** when any `turn_complete` emits. **Read** at every entry boundary AND at EOF: non-null → emit `turn_complete{msg_id: openTurnMsgId, result: "interrupted"}` *before* the next opener.
+
+This single field replaces the old `pendingUserText` / `pendingUserAttachments` / `cycleOpen` / `cycleMsgId` / `flushPendingOrphan` / `pendingWakeFromReplay` apparatus. Wake bracket orphans (transport loss mid-wake) get the same treatment as user-side orphans — the tracker doesn't care which kind of opener it's closing.
+
+The existing same-`msg_id` peek-ahead for the SDK's "one logical message split across two JSONL records" continuation case is kept (it's a per-entry "is this the terminal for its msg_id?" decision, not cycle pairing).
+
+**Multi-text-block within one user entry → one `user_message_replay`.** A single user JSONL entry carrying multiple text content blocks (rare but contractually possible) concatenates them into one `user_message_replay.text` per entry. Attachments accompany the same emit. Rationale: the user's mental model is "one submission = one row"; emitting multiple `user_message_replay` events per entry would create surprising visual surface. The translator emits one user_message_replay per user JSONL entry.
+
+*B. The reducer treats `activeMsgId` as a tracking field, not a correlation key.* Set by the first content event of each turn (already true on the LIVE path); read by `handleTurnComplete` to determine the committing turn and by `handleInterrupt` to distinguish CASE A from CASE B. `handleUserMessageReplay` stops pre-binding it.
+
+*C. `msg_id` stays on the IPC wire as debug metadata.* It identifies which Claude message a frame came from; useful for diagnostics and replay reproducibility. It does NOT drive substrate correlation. `UserMessageReplayEvent.msg_id` becomes a synthesized per-entry id (still required on the type for back-compat with old tugcode binaries during the transition; the new reducer stops *using* it).
+
+*D. Per-Message render layout stays deferred — and Step 5.6 follows immediately.* The Step 5.5 data source still emits one `user` row + one `code` row per non-wake turn so the substrate refactor and the render-layout refactor are landable in separate commits. Step 5.6 (the per-Message row layout step) lands right after Step 5.5 and does the visible-layout half of the work. The user-facing rule is locked: "if a Message is separate on the wire, it must be separate in the transcript UI." Step 5.5 makes that landable; Step 5.6 lands it.
+
+*E. Dedupe semantics are assistant-side-only after Step 5.5.* `state.committedMsgIds` keys on the assistant's *real* `msg_id` carried by `turn_complete`. Under per-entry direct emission, the user-side `user_message_replay`'s synthesized `u-<n>` is not deduped — duplicate `user_message_replay` emits (a theoretical replay-overlap bug) would *overwrite* the prior `pendingTurn` rather than producing a duplicate. This is acceptable: replays don't naturally overlap, and the worst case is "lose the prior pendingTurn," not "double-commit a turn." The wake bracket's synthesized `w-<n>` (used only for orphan tracking) is never observed by the reducer at all. Document the assistant-side-only dedupe explicitly in `committedMsgIds`'s doc comment so a future bug investigation has the right mental model.
+
+**Files (production).**
+
+`tugcode/src/replay.ts` — the bulk of the work:
+
+- Delete from `TranslateContext`: `pendingUserText`, `pendingUserAttachments`, `cycleOpen`, `cycleMsgId`, `pendingWakeFromReplay`. Add: `openTurnMsgId: string | null` (per Decision A: tracks any open turn — user or wake — until a `turn_complete` closes it; drives orphan synthesis).
+- Delete `flushPendingOrphan` (its synthesis pattern moves into the translator-level loop's per-entry handling driven by `openTurnMsgId`).
+- Rewrite `handleUserEntry`: per-content-block dispatch with no buffering.
+  - `<task-notification>` envelope → emit `wake_started{wake_trigger}` directly (uses `extractTaskNotificationWake`, which can stay). Set `openTurnMsgId` to a synthesized `w-<n>`.
+  - `text` content (one or more text blocks in the entry, concatenated per Decision A) → emit one `user_message_replay{msg_id: u-<n>, text, attachments}`. Set `openTurnMsgId` to that `u-<n>`.
+  - `tool_result` blocks → emit `tool_result` per block (already direct; does NOT affect `openTurnMsgId` — tool_result is mid-turn, not an opener).
+  - Scaffolding (`<command-name>` etc.) → skip.
+- Rewrite `handleAssistantEntry`: emit per-block `content_block_start` + terminal frames, no cycle opener logic. Keep the same-`msg_id` peek-ahead for the SDK continuation case (it's a per-entry decision, not cycle pairing). On terminal `turn_complete` emit, clear `openTurnMsgId`.
+- Translator-level orphan synthesis: at the start of every entry AND at EOF, if `openTurnMsgId !== null`, emit `turn_complete{msg_id: openTurnMsgId, result: "interrupted"}` and clear `openTurnMsgId` *before* the new entry's emissions land.
+
+`tugcode/src/types.ts` — minor IPC cleanup:
+
+- `UserMessageReplay`: doc-update — `msg_id` is now a synthesized per-entry id (no longer the assistant cycle's id); kept on the wire for debugging.
+
+`tugdeck/src/lib/code-session-store/events.ts` — match the wire:
+
+- `UserMessageReplayEvent.msg_id`: doc-update to match; field stays required (back-compat with old tugcode binaries during the transition; the new reducer stops *using* it).
+
+`tugdeck/src/lib/code-session-store/reducer.ts` — drop msg_id pre-binding:
+
+- `handleUserMessageReplay`: remove `activeMsgId: event.msg_id`. The first content event of the turn sets `activeMsgId` (matches the LIVE handleSend pattern).
+- `handleWakeStarted`: accept from `replaying` (already addressed in commit `<TBD>`; this step ratifies it in the plan).
+- Doc-update every comment that says "the user side and assistant side of a turn share one msg_id" or "cycle's user_message_replay" — the substrate's correlation key is `turnKey`, not `msg_id`.
+
+`tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — drop `toolMsgId` threading:
+
+- Remove `toolMsgId` from `CodeRowBodyProps`; tool blocks already receive `ToolUseMessage` and read `messageKey`.
+- Remove the `inflightMsgId` subscription + the `turn.msgId` fallback that fed `toolMsgId`.
+
+`tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts` — drop the `msgId` parameter from the tool dispatch:
+
+- `dispatchToolCallState(toolCall, msgId, depth?, ...)` → `dispatchToolCallState(toolCall, depth?, ...)`. The `msgId` parameter no longer flows into `baseProps` (tool blocks read what they need from `ToolUseMessage`).
+- `ToolBlockProps.msgId`: deprecate or remove (audit every tool-block consumer; today none read it for behavior).
+- `RenderInput.tool_call.msgId`: remove from the union (the `dispatch` entry point no longer threads it).
+
+`tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx` — same: drop the `msgId` threading on recursive dispatch.
+
+**Files (tests).**
+
+`tugcode/src/__tests__/replay-wake-bracket.test.ts` (new) — **contract invariants** for the wake's replay path:
+
+- Pin: JSONL with a `<task-notification>` envelope user entry → translator emits `wake_started` IPC, NO `user_message_replay` for that entry. The cycle's subsequent assistant entry's content frames carry the real `msg_id`.
+- Pin: the substrate (via a test-harness reducer pass) commits a `TurnEntry` with `messages[0]?.kind !== "user_message"` — the **wake discriminator invariant**, load-bearing under [D07]. Future cycle-pairing reintroduction would fail this pin.
+- This is the regression test for the wake-replay bug.
+
+`tugdeck/src/__tests__/session-wake-fixture-replay.test.ts` (existing) — **tighten Scenario 2 (cold-boot replay regression)** to pin the wake discriminator invariant explicitly:
+
+```ts
+// Wake discriminator: a replayed wake's committed TurnEntry must NOT
+// open with a `user_message` Message — that absence IS the wake
+// signal under [D07]. The regression that produced this assertion's
+// addition was a translator that emitted user_message_replay for the
+// `<task-notification>` envelope, surfacing it as a phantom "You" row.
+expect(entry.messages[0]?.kind !== "user_message").toBe(true);
+```
+
+This converts Scenario 2 from "loose: text reached the substrate" to "strict: the substrate shape is identical to the LIVE wake bracket."
+
+`tugcode/src/__tests__/replay-eof-orphan.test.ts`, `replay-interrupted-orphan.test.ts`, `replay-dangling-cycle.test.ts`, `replay-hmr-mid-stream.test.ts`, `replay-pending-row-injection.test.ts`, `replay.test.ts`:
+
+- Audit for cycle-pairing pins (`cycleOpen`, `pendingUserText`, "cycle's first assistant entry binds msg_id", etc.). Update assertions to match per-entry direct emission. Delete tests that pin internal cycle state (e.g., "pendingUserText is null after the orphan flush"); keep contract tests (e.g., "the orphan produces a user_message_replay + interrupted turn_complete pair").
+
+`tugdeck/src/lib/code-session-store/__tests__/*` — audit for `handleUserMessageReplay`-sets-activeMsgId assumptions. Most tests don't pin this; the ones that do should update or delete.
+
+**Files (docs).**
+
+`roadmap/tugplan-tide-session-wake.md` — this plan:
+
+- Update [D07] § "Mid-turn replay snapshot pattern" to add: "The cold-boot JSONL replay translator follows the same message-forward discipline: each JSONL entry maps to its own IPC events with no cross-entry bookkeeping. Cycle-pairing is gone."
+- Add a postmortem note (here, under this Step) on the lesson: when refactoring the substrate, *also* audit every emitter and consumer for residue of the old substrate's mental model. The substrate change isn't done until the seams stop leaking.
+
+**Audit checklist — every site to verify or fix.**
+
+Run these greps after the refactor lands; the noted patterns should be either gone or doc-comments only (with a `// [D07]` justification):
+
+```sh
+# Cycle-pairing residue in tugcode
+grep -rE "pendingUserText|pendingUserAttachments|cycleOpen|cycleMsgId|flushPendingOrphan|pendingWakeFromReplay" tugcode/src
+# Expected: zero matches outside of test fixtures asserting their absence.
+
+# msg_id-as-correlation residue in tugdeck reducer
+grep -nE "activeMsgId: event\.msg_id" tugdeck/src/lib/code-session-store/reducer.ts
+# Expected: zero matches.
+
+# Old paired-field doc residue
+grep -rE "pendingUserMessage|inflightUserMessage|\.toolCallMap" tugdeck/src --include="*.ts" --include="*.tsx" | grep -v "// \\[D07\\]"
+# Expected: zero matches (or only doc lines with the [D07] migration tag).
+
+# Tool-dispatch msg_id field references
+grep -rE "toolMsgId|ToolBlockProps\.msgId|RenderInput.*msgId\b" tugdeck/src --include="*.tsx" --include="*.ts"
+# Expected: zero matches. The dispatchToolCallState signature change is
+# TSC-enforced (signature mismatch fails compilation); this grep targets
+# residual *field references* that could survive TS as comments or dead
+# code references.
+```
+
+Any match without a `[D07]` doc tag is a missed site. The audit isn't done until the greps come back clean.
+
+**Definition of Done.**
+
+- `tugcode/src/replay.ts`: `TranslateContext` carries only `globalSeq`, `turnsCommitted`, `openTurnMsgId`, `orphanCounter`, `telemetry`. No `pending*` opener fields. No `cycleOpen`. No `flushPendingOrphan`. The orphan-synthesis path is gated solely on `openTurnMsgId !== null`.
+- `handleUserEntry` is a pure per-entry dispatcher; `handleAssistantEntry` is a pure per-block emitter with one same-`msg_id` peek-ahead. Neither function mutates context beyond `globalSeq` and `openTurnMsgId`.
+- Multi-text-block user entries concatenate into one `user_message_replay` per entry (Decision A); a test pins this.
+- `tugdeck/src/lib/code-session-store/reducer.ts`: `handleUserMessageReplay` does not set `activeMsgId`. `handleWakeStarted` accepts from `idle | replaying`. Every doc comment that names `pendingUserMessage` / `inflightUserMessage` has either been deleted or carries a `// [D07] migration: superseded by …` tag. `committedMsgIds`'s doc comment explicitly notes assistant-side-only dedupe (Decision E).
+- `dispatchToolCallState`'s `msgId` parameter is gone; `ToolBlockProps.msgId` is gone; `CodeRowBody` no longer threads `toolMsgId`; `RenderInput.tool_call.msgId` is gone.
+- New test `replay-wake-bracket.test.ts` passes (pins the wake discriminator invariant). `session-wake-fixture-replay.test.ts` Scenario 2 tightened to pin the same invariant.
+- `cd tugcode && bun x tsc --noEmit && bun test` green.
+- `cd tugdeck && bun x tsc --noEmit && bun test` green.
+- Audit greps return clean (zero non-tagged matches).
+- Manual sweep: cold-boot replay of a wake-containing JSONL paints the wake turn identical to the live path (Monitor tool call + assistant text, no phantom user row).
+- Tugcode binary rebuilt; commit on main.
+
+**Backwards compatibility during the transition window.**
+
+Step 5.5 changes the replay translator's *emission shape* (per-entry direct, synthesized `u-<n>` msg_ids) and the reducer's *correlation rule* (`activeMsgId` set by first content event, not pre-bound). Both halves can land in either order; neither requires the other to function:
+
+- *New tugcode (replay path) → old tugdeck reducer:* Old reducer pre-binds `activeMsgId` from the user_message_replay's `msg_id` — now a synthesized `u-<n>`. First wire content event then overwrites `activeMsgId` with claude's real `msg_id`. `turn_complete` carries the real `msg_id`; `committedMsgIds` correctness preserved. CASE A echo gate is replay-irrelevant (it gates LIVE submit interrupts). Verdict: works.
+- *Old tugcode (replay path) → new tugdeck reducer:* Old translator emits user_message_replay with claude's real `msg_id`. New reducer no longer pre-binds; first content event sets `activeMsgId` to the same real `msg_id`. Identical behavior. Verdict: works.
+
+Neither direction produces a silent failure mode. The transition window can be any length.
+
+The tool-dispatch `msgId` cleanup is TSC-enforced (signature mismatch); landing the dispatch.ts side without the consumer updates would fail to compile. So those bundle into one commit naturally.
+
+**Postmortem note (the lesson Step 5.5 ratifies).**
+
+Step 5 (the substrate refactor) was scoped as "change the reducer state shape; change the IPC contract; update consumers to read the new shape." It was NOT scoped as "audit every emitter and consumer for residue of the OLD substrate's mental model." That gap is what produced the wake-replay regression — the cycle-pairing in `replay.ts` was a vestige of the paired-substrate's "turn = user_message_replay + assistant" contract, and Step 5 left it in place because Step 5's checklist was "does it emit the new IPC events?" not "is the way it does so still appropriate?"
+
+**The general lesson:** when a substrate changes, the substrate change is half the work. The other half is verifying that every emitter that produces events for it, and every consumer that reads from it, *thinks* in the new substrate's mental model — not the old one. A substrate refactor is incomplete until its surrounding code stops leaking the old shape at the seams. The seams ARE the test: any new case that forces you to add bookkeeping to existing infrastructure (rather than adding one switch arm) is a signal that the infrastructure still thinks in the old model and needs to change.
+
+This lesson applies to every future substrate-level change in the codebase. Carry the audit-the-seams discipline.
+
 #### Step 6: Slice 2 — trigger-aware chrome (resolves [Q02]) {#step-6}
 
 **Status:** Not started.
