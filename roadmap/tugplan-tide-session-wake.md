@@ -1145,6 +1145,214 @@ Step 5 (the substrate refactor) was scoped as "change the reducer state shape; c
 
 This lesson applies to every future substrate-level change in the codebase. Carry the audit-the-seams discipline.
 
+#### Step 5.6: Per-Message render layout — visible layout matches substrate {#step-5-6}
+
+**Status:** Not started. Sequenced immediately after Step 5.5.
+
+**Why this step exists.** Step 5 made the substrate message-forward; Step 5.5 makes every emitter and consumer message-forward; Step 5.6 makes the *visible transcript* message-forward. Today the data source emits one `user` row + one `code` row per non-wake turn — a row contract inherited from the paired substrate's "turn = user + assistant" mental model. Under [D07] the substrate is a sequence of typed Messages, but the visible layout still groups them inside one `code` row that internally iterates the sequence. The substrate's truth (`messages: Message[]`) is hidden behind a row contract that says "two rows per turn."
+
+The user-facing rule, locked: **if a Message is separate on the wire, it must be separate in the transcript UI.** A turn's thinking block, each tool call, and each text Message gets its own list row. The substrate's sequence becomes the transcript's sequence — one Message, one row, no aggregation inside the row.
+
+This step completes the message-forward refactor by aligning the *visible* model with the *substrate* model. Future Message kinds (`system_note` in Step 8; anything beyond) drop into the per-Message row pipeline by adding one renderer to the dispatch map. No row-count math change. No turn-pair special cases. The substrate's openness to new kinds extends through to the UI.
+
+**Architectural decisions (locked).**
+
+*A. Row contract: one row per Message.* `numberOfItems = sum(turn.messages.length for turn in transcript) + activeTurn?.messages.length + queuedSends.length`. Variable-per-turn row math retires; the only per-turn computation is the message-count prefix sum (cached per snapshot identity).
+
+*B. React-row identity = `messageKey`.* Each row's React key IS the Message's `messageKey` (Step 5 already minted them stable across in-flight → committed). Stable across inflight → committed *for free* — the substrate already guarantees it. The data source no longer mints `${turnKey}-user` / `${turnKey}-code` composite keys; the Message's own key is the row's identity. Ghost rows continue to key on `${turnKey}-ghost`.
+
+*C. `TideTranscriptCellKind` expands to one kind per Message kind, plus ghost:*
+
+```ts
+export type TideTranscriptCellKind =
+  | "user_message"
+  | "assistant_text"
+  | "assistant_thinking"
+  | "tool_use"
+  | "system_note"
+  | "ghost";
+```
+
+The cellRenderers map has one renderer per kind — per [L26], one `useCallback`-stable reference per kind. The old `"user" | "code" | "ghost"` taxonomy retires; the unified `"code"` aggregation kind (which itself was an anti-remount tactic for the paired model) is no longer needed because each Message is its own row with its own stable `messageKey`.
+
+*D. Per-Message identifier labels.* Each row header carries its kind's identifier:
+
+- `user_message` → "You"
+- `assistant_text` → model name (per the existing `useSessionModelName` subscription)
+- `assistant_thinking` → "Thinking" (collapsible chrome's own label is consistent with this)
+- `tool_use` → the tool's display name (or model name + tool name — implementer's call during build; the dispatch already names tools)
+- `system_note` → kind-specific label (`"Scheduled"` for `source: "scheduled"`, etc. — Step 8 picks the exact labels)
+- `ghost` → "You" with `disabled`-tone visual treatment (existing)
+
+Consecutive Messages of the same kind in the same turn each show their identifier — no suppression. Each row is its own identity. (Visual density polish is a separate UX pass if it surfaces.)
+
+*E. Per-Message COPY in each row's controls; turn-level COPY moves to the last assistant-side Message of each committed turn.* Per-Message COPY copies only that Message's own text content. The whole-turn COPY (via `turnEntryToMarkdown`) attaches to the *last* Message of a committed turn — semantically "this is the end of the turn; here's everything that happened in it." The data source flags `isLastMessageOfTurn: boolean` on the row descriptor; the per-Message row renderer additionally renders the turn-level chrome (Z1B end-state badge + per-turn tokens + whole-turn COPY) when set.
+
+*F. Z1B (turn-level end-state row) attaches to the last Message of each committed turn.* Same mechanism as Decision E. In-flight turns (no commit yet) show no Z1B aggregate — there's nothing to summarize. The user-row's static "OK" badge becomes a per-row footer on the `user_message` row directly; identical to today's user-half Z1B output but tied to the Message's row.
+
+*G. Permission / Question slots stay attached to the last in-flight Message's row body.* They're transient input affordances (not Messages on the wire), so they don't get their own row kind. The user sees them at the foot of the last in-flight Message — exactly where the dialog is contextually anchored ("you just got this content; here's the dialog asking what to do"). When committed, in-flight goes away → dialog rows go away. Stable.
+
+*H. Sequence numbering = rowIndex + 1, per row.* Already the case; with N times more rows than today, the badge values change but the formula doesn't.
+
+*I. Z2 popover scroll-to-row helpers refactor.* `userRowIndexForTurn` returns the row index of the turn's `user_message` Message (or −1 for wake turns — gated as today). `assistantRowIndexForTurn` returns the row index of the LAST assistant-side Message of the turn (the row that carries Z1B). Add `messageRowIndex(messageKey, snapshot): number | -1` for future per-Message scroll targets (Step 6 chrome chip click → scroll to first wake assistant Message; etc.).
+
+**Files (production — data source).**
+
+`tugdeck/src/lib/tide-transcript-data-source.ts` — substantially rewritten:
+
+- `RowLayout` becomes: `{ totalRows, turnMessageStart: number[] (one per turn), activeTurnMessageStart: number, activeTurnMessageCount: number, ghostStartRow }`. `buildRowLayout` walks `snap.transcript` once summing `turn.messages.length`.
+- `idForIndex(index)`: returns the Message's `messageKey` directly (ghost rows return `${turnKey}-ghost`).
+- `kindForIndex(index)`: returns the Message's `kind` directly (or `"ghost"`).
+- `rowAt(index)`: returns `{ kind, message, turn (committed?), activeTurn (in-flight?), isLastMessageOfTurn, perTurnTokens (only on isLastMessageOfTurn), turnKey }`. Drop the unified `turn` payload — each row knows its specific Message.
+- `userRowIndexForTurn(turnIndex, transcript)`: walks the prefix counting `turn.messages.length`; returns the first row offset for the turn IFF `messages[0]?.kind === "user_message"`, else −1 (wake).
+- `assistantRowIndexForTurn(turnIndex, transcript)`: returns `turnStart + turn.messages.length - 1` (the LAST Message of the turn — where Z1B sits). For a wake with no Messages yet (impossible at commit time), returns turnStart.
+- Add `messageRowIndex(messageKey, snapshot)`: walks the full snapshot, returns the row index of the matching Message (committed or in-flight). Used by future Z2 chrome chip click handlers.
+
+**Files (production — renderers).**
+
+`tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — substantially rewritten:
+
+- DELETE `CodeRowCell` (the unified per-turn assistant row renderer); DELETE `CodeRowBody` (its message-iteration helper).
+- DELETE `UserRowCell` (today's per-turn user row renderer); replaced by `UserMessageRow`.
+- Add per-Message row renderers, each a thin component:
+  - `UserMessageRow` — TugTranscriptEntry participant="user", body = Message.text, controls = COPY + (always) "OK" badge.
+  - `AssistantTextRow` — participant="code", identifier = model name, body = TugMarkdownBlock subscribed to `turn.${turnKey}.message.${messageKey}.text`, controls = per-Message COPY + (if isLastMessageOfTurn) Z1B + whole-turn COPY.
+  - `AssistantThinkingRow` — participant="code", identifier = "Thinking", body = TideThinkingBlock subscribed to the same path-shape, controls = (if isLastMessageOfTurn) Z1B + whole-turn COPY.
+  - `ToolUseRow` — participant="code", identifier = tool display name (or model + tool — see Decision D), body = `dispatchToolCallState(message)`, controls = (if isLastMessageOfTurn) Z1B + whole-turn COPY. Permission/Question slots from `useSyncExternalStore` on `codeSessionStore.pendingApproval`/`pendingQuestion` render at the body foot when this row is the LAST in-flight row AND a slot is pending.
+  - `SystemNoteRow` — participant="code", identifier = kind-specific label, body = Message.text (or future enriched format), controls = COPY. (Step 8 lands the actual visual; Step 5.6 ships the scaffold so the dispatch covers all five Message kinds.)
+  - `GhostRow` — unchanged from today.
+- `cellRenderers` map structurally holds one entry per Message kind plus ghost. Each is a `useCallback`-stable reference per [L26].
+- `useTranscriptCellMenu` continues to provide per-row context menus (COPY / SELECT_ALL); each per-Message renderer wraps in `ResponderScope` as today.
+
+`tugdeck/src/components/tugways/cards/tide-card-z1b.tsx`:
+
+- No internal change. The component already renders given props (turn, perTurnTokens, bodyText). Step 5.6 just changes *where* it's mounted (last Message's row footer instead of always-mounted code row footer).
+
+`tugdeck/src/components/tugways/cards/turn-entry-markdown.ts`:
+
+- No change. Still serializes the whole turn; called by the last-Message row's whole-turn COPY.
+
+**Files (production — Z2 popovers + consumers).**
+
+`tugdeck/src/components/tugways/cards/tide-card-telemetry-popovers.tsx`:
+
+- `TurnEntryPair` already gates on `hasUserMessage` before calling `userRowIndexForTurn`. Under Step 5.6 the helper returns the row index of the user_message Message specifically (semantically unchanged for non-wake turns; still −1 for wake). The pair button shows the turn's first user-row index and last assistant-row index. Visually equivalent to today (each turn shows two numbers).
+- `RequestPreview` reads `messages.find(kind === "user_message")?.text` — unchanged from Step 5.
+
+`tugdeck/src/components/tugways/cards/tide-card-telemetry-renderers.tsx`:
+
+- No structural change. Still derives turn-level metrics from `turn.activeMs` / `turn.cost` / etc.
+
+**Files (tests).**
+
+Add:
+
+- `tugdeck/src/lib/__tests__/tide-transcript-data-source.per-message.test.ts` (new) — pins:
+  - One row per Message (committed + in-flight).
+  - `idForIndex` returns the Message's `messageKey` exactly.
+  - `kindForIndex` returns the Message's `kind` exactly.
+  - `rowAt` returns the Message + `isLastMessageOfTurn` flagged on the last Message of each committed turn.
+  - `userRowIndexForTurn` returns the user_message row (or −1 for wake).
+  - `assistantRowIndexForTurn` returns the LAST Message row of the turn.
+  - `messageRowIndex(messageKey, snapshot)` round-trips messageKey → rowIndex correctly.
+- `tugdeck/src/lib/code-session-store/__tests__/reducer.message-key-stability.test.ts` (existing — Step 5) — extend to also assert the messageKey appears at the same rowIndex across in-flight → committed for the SAME Message (via the data source). This is the new key-stability invariant under per-Message rows.
+
+Update:
+
+- `tugdeck/src/lib/__tests__/tide-transcript-data-source.test.ts` — substantial rewrite. The "variable-rows-per-turn" tests become "one-row-per-message" tests. idForIndex assertions change from `${turnKey}-user` / `${turnKey}-code` to literal messageKeys.
+- `tugdeck/src/components/tugways/cards/__tests__/*` — any test that mounts the transcript with paired-row assumptions (most do not; the row layout was an internal detail). Audit and update.
+- Gallery test files (`gallery-tide-thinking.tsx`, `gallery-tool-block-default.tsx`, etc.) — fixtures continue to mount their components standalone; no per-Message-row dependency.
+
+**Audit checklist — every site to verify or fix.**
+
+Run these greps after Step 5.6 lands. Any non-trivial match outside the renderers themselves indicates leftover paired-row assumptions:
+
+```sh
+# Old paired-row kinds
+grep -rE "kindForIndex.*\"user\"|kindForIndex.*\"code\"|kind === \"code\"|kind === \"user\"" tugdeck/src --include="*.ts" --include="*.tsx"
+# Expected: zero matches. All kinds are now Message-kind-specific.
+
+# Old per-turn row helpers used without a Message-row mental model
+grep -rE "turnHasUserMessage|turnHasUserPerTurn|activeHasUser" tugdeck/src --include="*.ts" --include="*.tsx"
+# Expected: zero matches outside the deletion commit's diff. Replaced by
+# direct messageKey-keyed row enumeration.
+
+# CodeRowCell / CodeRowBody references (deleted in Step 5.6)
+grep -rE "CodeRowCell|CodeRowBody" tugdeck/src --include="*.ts" --include="*.tsx"
+# Expected: zero matches.
+
+# Composite React keys (replaced by messageKey)
+grep -rE "\\\${turnKey}-(user|code)\\b" tugdeck/src --include="*.ts" --include="*.tsx"
+# Expected: zero matches outside the `-ghost` suffix usage (which stays).
+```
+
+**Tuglaw verification.**
+
+- **[L02]** External state via `useSyncExternalStore` only. Each per-Message row reads from the snapshot via the data source (which exposes useSyncExternalStore). PropertyStore subscriptions per Message (text streaming) use the existing per-Message paths from Step 5. No new useState injection. ✓
+- **[L22]** Store updates that drive direct DOM updates observe the store directly. TugMarkdownBlock / TideThinkingBlock continue to observe their per-Message PropertyStore paths and write the DOM imperatively per delta. Per-Message rows don't change this. ✓
+- **[L23]** User-visible state (scroll, selection, focus, content) preserved across transitions. The in-flight → committed transition for a given Message is now zero-change: same messageKey, same React key, same component type, same renderer reference — the row is *literally* the same React node. Today's paired-row architecture needed a stable `turnKey` + unified `"code"` kind hack to achieve this; Step 5.6 gets it for free from the Message identity itself. ✓
+- **[L26]** Mount identity stable across logical transitions. Three identity inputs:
+  - *Key* — `messageKey`, stable from mint through commit (Step 5 invariant).
+  - *Component type* — one component per Message kind; kind is a Message-level invariant (a Message's kind never changes after mint).
+  - *Renderer reference* — `useCallback`-stable per kind, registered in the `cellRenderers` map exactly once per kind.
+  All three byte-identical across in-flight → committed. The wrapper survives. Scroll position survives. Streaming subscriptions survive (per-Message path is also messageKey-stable). ✓
+
+**Render-surface scope (the visual changes Step 5.6 ships).**
+
+Before (Step 5):
+```
+#0005  You         Use the Monitor tool...                       ← 1 row
+#0006  claude      [Monitor tool block with chrome]              ← 1 row containing:
+                   Monitor armed. Waiting for "kernel" or 15s.     - thinking block (if any)
+                   [Z1B: OK • 11s • 3.2K tokens • COPY]            - tool block
+                                                                   - assistant text + Z1B
+```
+
+After (Step 5.6):
+```
+#0005  You         Use the Monitor tool...                       ← user_message row
+                   [OK badge]
+#0006  claude      [Monitor tool block]                          ← tool_use row
+                   tail -f /var/log/system.log...
+#0007  claude      Monitor armed. Waiting for "kernel" or 15s.   ← assistant_text row
+                   [Z1B: OK • 11s • 3.2K tokens • COPY]            (isLastMessageOfTurn → Z1B here)
+```
+
+For a multi-iteration tool-use loop, the rows expand correspondingly — the structure that was previously hidden inside one code row becomes visible as the user's mental model of "what happened in this turn."
+
+**Backwards compatibility.**
+
+No wire / IPC change. Step 5.6 is purely tugdeck-side rendering. Existing JSONL fixtures, replay paths, and live emission all continue to feed the substrate the same way. The transition is invisible to tugcode and to persisted state.
+
+The visible-layout change is observable to the user immediately (more rows per turn). No migration step needed; existing committed turns rehydrate into their per-Message rows automatically.
+
+**Definition of Done.**
+
+- `tide-transcript-data-source.ts`: one row per Message; `idForIndex` returns messageKey; `kindForIndex` returns Message kind; `rowAt` flags `isLastMessageOfTurn`. `userRowIndexForTurn` / `assistantRowIndexForTurn` updated; `messageRowIndex` added.
+- `tide-card-transcript.tsx`: `CodeRowCell` / `CodeRowBody` deleted; five per-Message row renderers (`UserMessageRow`, `AssistantTextRow`, `AssistantThinkingRow`, `ToolUseRow`, `SystemNoteRow`) plus `GhostRow` registered in `cellRenderers`; `useCallback`-stable per [L26].
+- Z1B attaches to the last Message of each committed turn (via `isLastMessageOfTurn` flag).
+- Permission / Question slots attach to the last in-flight Message's row body.
+- All audit greps return zero matches.
+- All four tuglaws ([L02] / [L22] / [L23] / [L26]) verified by inspection and by the per-Message-row stability test.
+- `cd tugdeck && bun x tsc --noEmit && bun test` green.
+- New test `tide-transcript-data-source.per-message.test.ts` passes; updated tests pass.
+- Manual sweep:
+  - A user → assistant turn paints as N rows where N = `turn.messages.length`.
+  - A multi-block assistant response (text → tool → text) paints as three rows in arrival order.
+  - A wake turn paints as N rows starting with the wake's first assistant Message (no phantom "You").
+  - The in-flight → committed transition is zero-shift: no row reshuffling, no scroll jump, no remount of any Message's subtree.
+  - Z1B appears on the LAST row of each committed turn (one Z1B per turn, attached to its last Message).
+  - Per-Message COPY in each text-bearing row's controls.
+- Commit on main.
+
+**Postmortem note (carry-forward).**
+
+Step 5.5's postmortem said: *a substrate refactor is incomplete until its surrounding code stops leaking the old shape at the seams.* Step 5.6 ratifies that the visible render layer was one of those seams — the substrate said "sequence of Messages," but the visible layout still said "two rows per turn." Step 5.6 closes that seam.
+
+The general lesson reinforced: when a substrate goes message-forward, *all* of its surfaces — IPC emission, IPC consumption, reducer state, snapshot derivation, data source projection, AND the visible render — must go message-forward together. The substrate's truth must propagate through every layer that surfaces it. Leaving any layer paired-shaped creates the next leak.
+
+This is the discipline going forward: substrate changes own their seams. Plan for the whole job from the start.
+
 #### Step 6: Slice 2 — trigger-aware chrome (resolves [Q02]) {#step-6}
 
 **Status:** Not started.
