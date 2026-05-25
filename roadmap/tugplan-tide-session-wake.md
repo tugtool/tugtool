@@ -143,7 +143,8 @@ Field signal (Session 3702c898): user noted the Stop button flips on during a wa
 | Concurrent wakes (Cohort A `task_notification` and Cohort B re-init arriving in close succession) double-bracket on the wire | low | low | Both handlers guard on `this.isInWake` and no-op if a bracket is already open. The reducer also flattens nested wakes at [D01]. |
 | Resume-mode session (`--resume`) restores unexpired harness tasks that then fire — same detector applies but is unverified empirically | medium | low | Step 4 manual repro. The detector's heuristic is turn-state-based and doesn't care about session lifecycle, so it should hold. |
 | Sequence-substrate rework (Step 5, [D07]) touches reducer state, streaming PropertyStore paths, snapshot shape, and every consumer of `TurnEntry.userMessage` / `.assistant` / `.thinking` / `.toolCalls`. Risks silent transcript regressions and streaming-cell remount cascades | medium | high | Single landing commit; full reducer + transcript-data-source + replay test suite must pass; the existing wake / inflight / replay test cases form the regression net. Per-Message `messageKey` preserves [L26] mount identity. Manual repro of a representative session matrix gates merge. |
-| `[D07]` append-or-mutate heuristic (trailing-Message-kind match) misorders the wire — e.g. a `thinking_text` partial arrives while an `assistant_text` block is mid-stream and spuriously closes the text block. Multi-block assistant turns commit with the wrong segmentation | medium | medium | Verify the wire contract against captured fixtures BEFORE locking the rule (Step 5 open contract #1, #2). If the wire provides a stronger signal (`text_block_start` etc.), key on that. Add a fixture-replay test of a multi-block / interleaved-thinking trace as the regression net. |
+| `[D07]` `(msg_id, block_index)` correlation breaks — tugcode forwards an inconsistent index, or wire ordering between `content_block_start` and the first matching delta inverts under partial-message buffering | low | high | Wire contract is verified explicit (every `content_block_delta` carries the same `index` as its opening `content_block_start`). tugcode mapStreamEvent unit tests + drift tests pin the forwarding. A reducer-side defensive guard logs (does not throw) when a delta arrives without a matching mint, surfacing any future tugcode regression at the dev-log without breaking the user's session. |
+| IPC contract change (new `content_block_start` event + `block_index` on existing text events) is a wire shape change requiring tugcode rebuild + drift-test updates; downstream consumers that ignored the new fields silently miss the substrate change | medium | medium | Two-commit landing (tugcode first, tugdeck second) keeps the IPC and the substrate decoupled. Tugcode's drift test asserts the new emissions. Tugdeck's reducer treats absence of `block_index` as a fatal dev-log entry (the field is required after Step 5; an old tugcode binary running against new tugdeck would surface immediately). Rebuild + manual repro of the matrix gates Commit 2. |
 | Cohort B FIFO ([D08]) misattributes a fire to the wrong scheduled task when multiple ScheduleWakeup tasks register with identical `delaySeconds` | low | low | Documented [D08] edge case; UI chip shows the misattributed prompt rather than the correct one — visible to user; corrective is to query claude. Upgrade path exists if/when upstream exposes a correlation id. |
 | Sidecar JSONL ([D10]) and claude's JSONL drift out of sync (e.g., partial write on crash leaves a turn with metadata pointing at a missing turn_index) | medium | low | Sidecar writes use append-only with fsync per record. Replay-translator tolerates orphan sidecar entries (skip + warn) and missing entries (omit chrome). |
 | Hidden cancellation user_message ([D12]) produces a visible "Cancelled." assistant turn that leaks into the transcript despite suppression | medium | low | Filter the turn at the tugcode boundary (no `submit_accepted`, drop subsequent `assistant_text` until `turn_complete`). Known limitation noted in Step 9; future polish can prompt-engineer the synthetic message to suppress acknowledgment. |
@@ -278,14 +279,18 @@ type Message =
 
 ```ts
 interface ScratchEntry {
-  messages: Message[];                    // arrival-order sequence
-  toolCallIndex: Map<string, number>;     // toolUseId → messages array index
-                                          // (O(1) lookup for tool_result / tool_use_structured)
-  nextMessageSeq: number;                 // monotonic counter for messageKey minting
+  turnKey: string;                                    // canonical turn identity
+  messages: Message[];                                // arrival-order sequence across ALL msgIds of this turn
+  blockIndex: Map<string, number>;                    // (msg_id + ":" + block_index) → messages array index
+  toolCallIndex: Map<string, number>;                 // toolUseId → messages array index
+                                                      // (O(1) lookup for tool_result / tool_use_structured)
+  systemNoteSeq: number;                              // monotonic counter for system_note messageKey
 }
 
-state.scratch: Map<msgId, ScratchEntry>;  // shape change: messages, not {assistant,thinking}
-state.pendingTurn: PendingTurn | null;    // replaces pendingUserMessage
+state.scratch: Map<turnKey, ScratchEntry>;            // KEY CHANGE: turnKey, not msgId.
+                                                      // One entry per turn; spans every msgId iteration.
+state.pendingTurn: PendingTurn | null;                // replaces pendingUserMessage
+state.activeMsgId: string | null;                     // latest msgId of the active turn (carried for tool_use_id correlation)
 // state.toolCallMap retires (folded into ScratchEntry.toolCallIndex)
 
 interface PendingTurn {
@@ -294,9 +299,10 @@ interface PendingTurn {
   isWake: boolean;
   initialMessages: Message[];   // [user_message] for handleSend;
                                 // [] or [system_note] for handleWakeStarted
-  nextMessageSeq: number;       // carries through to ScratchEntry at drain
 }
 ```
+
+The shift from `Map<msgId, ScratchEntry>` to `Map<turnKey, ScratchEntry>` is the substrate's recognition that a turn is the user-facing unit and a `msg_id` is an internal iteration identifier of claude's tool-use loop. The substrate stops conflating the two.
 
 **TurnEntry shape:**
 
@@ -313,12 +319,15 @@ interface TurnEntry {
 
 Removed fields: `userMessage`, `thinking`, `assistant`, `toolCalls`.
 
-**Append-or-mutate rule for text Messages.** When an `assistant_text` (or `assistant_thinking`) delta lands:
+**Append-or-mutate rule for text Messages.** Wire-truth-driven:
 
-1. If `scratch[msgId].messages` is empty OR its trailing Message kind ≠ this delta's kind → append a fresh Message of this kind.
-2. Otherwise → mutate the trailing Message's `text`.
+1. On `content_block_start { msg_id, block_index, kind }`: mint a new Message of `kind` with `messageKey: "${msg_id}-b${block_index}"`; append to `scratch[turnKey].messages`; record the index in `scratch[turnKey].blockIndex.set("${msg_id}:${block_index}", arrayIdx)`. For `kind: "tool_use"`, also index by `tool_use_id` in `toolCallIndex`.
+2. On `assistant_text` (or `thinking_text`) delta with `(msg_id, block_index)`: look up the Message via `blockIndex.get("${msg_id}:${block_index}")` and mutate its `text` by append.
+3. On `content_block_stop`: no state mutation (marker only; absence-tolerant).
+4. On `tool_use` IPC event (later input fill): look up via `toolCallIndex.get(tool_use_id)` and mutate the Message's `input`.
+5. On `tool_result` / `tool_use_structured`: look up via `toolCallIndex.get(tool_use_id)` and mutate the Message's `result` / `status` / `structuredResult`.
 
-Wire interleaving is preserved: `text → tool_use → tool_result → text` produces `[AssistantText, ToolUseMessage, AssistantText]` — two distinct text Messages bracketing the tool call, as the wire emitted. Today's substrate squashes this to one concatenated string; tomorrow's preserves the temporal sequence.
+Wire interleaving is preserved naturally: `text(block 0) → tool_use(block 1) → tool_result → message_start(new msg_id) → thinking(block 0) → tool_use(block 1) → tool_result → message_start(new msg_id) → text(block 0)` produces a `messages` sequence that mirrors the wire exactly — every iteration's thinking and text and tool call land in their wire position. Today's substrate squashes this into one assistant string per msgId AND only keeps the last msgId; tomorrow's preserves the full conversation.
 
 **Streaming substrate — per-Message PropertyStore paths.** The three fixed channels retire:
 
@@ -344,12 +353,27 @@ The `write-inflight` effect carries `messageKey` and `channel: "text" | "state"`
 
 **Migration.** Single landing commit. The dependencies between types, reducer state, handlers, streaming paths, data source, consumers, and tests are tight enough that dual-rep migration would carry more risk (drift between reps) than just cutting over. The working tree is green at each step of the cutover; the commit boundary is just where the last `bun x tsc --noEmit && bun test` goes green.
 
-**Open contracts to verify before locking.** Two open contracts gate the append-or-mutate rule:
+**Wire contract verified against captures.** Two facts pin the design:
 
-1. Does the wire emit any signal that distinguishes "continuation of the previous text block" from "new text block separated by a tool call" beyond the bare ordering? If yes, the append-or-mutate rule should key on that signal rather than on the trailing-Message-kind heuristic.
-2. For thinking: does claude ever interleave `thinking_text` with `assistant_text` mid-block, or are they always discrete? The heuristic depends on this.
+1. **The wire is explicitly block-bracketed.** Every content block lives inside a `content_block_start { index, content_block: { type: "text" | "thinking" | "tool_use", ... } }` → N × `content_block_delta { index, delta }` → `content_block_stop { index }` envelope. The block kind is on the start event; the index is monotonic per message and resets at each `message_start`. The append-or-mutate rule keys on wire truth, not a heuristic: a new `(msg_id, block_index)` pair mints a new Message; subsequent deltas with the same `(msg_id, block_index)` append.
+2. **Thinking and text are always discrete blocks.** They use different `content_block.type` values and distinct indices; the wire never interleaves them within a single block.
 
-Both verified against `tugcode/probes/wake-investigation/capture-*.stdout` before Step 5 lands code.
+**IPC contract change (tugcode → tugdeck).** Tugcode already parses `content_block_start` / `content_block_delta` internally — it currently collapses them into per-msg_id text streams before forwarding. Step 5 surfaces the block structure:
+
+- New event: `content_block_start { msg_id, block_index, kind: "text" | "thinking" | "tool_use", tool_use_id?, tool_name? }`. Emitted at every wire `content_block_start`. Drives the reducer's Message-mint.
+- New event (optional, marker only): `content_block_stop { msg_id, block_index }`. Reducer-tolerant — used for diagnostics; not required for correctness.
+- `AssistantTextEvent` / `ThinkingTextEvent` gain `block_index: number`. Reducer correlates each delta with its mint via `(msg_id, block_index)`.
+- `tool_use` / `tool_result` / `tool_use_structured` IPC unchanged — `tool_use_id` is already the identity; `tool_use` events update the input on the matching `tool_use` Message in place.
+
+**Multi-msgId-per-turn handling (correctness improvement).** The wire emits multiple `message_start` events per logical turn — a tool-use loop iterates `thinking + tool_use → tool_result → thinking + tool_use → tool_result → text` across multiple distinct `msg_id`s, all bracketed by one `result` event. Today's substrate keys `scratch` by `msg_id`; `buildTurnEntry` reads only `scratch[activeMsgId]` (the final iteration). Earlier iterations' thinking text is in scratch but never read into the committed `TurnEntry` — a silent loss.
+
+Step 5 keys scratch by `turnKey`, not `msg_id`. A turn's `ScratchEntry` accumulates Messages across every iteration, preserving thinking/tool calls/text in arrival order. `msg_id` becomes metadata stored on each Message (carried through the `(msg_id, block_index)` mint key) rather than a substrate primary key. At commit, `messages` contains the full turn — every iteration's contribution faithfully preserved.
+
+**`messageKey` derivation finalizes:**
+
+- User message: `${turnKey}-user` (one per turn at most).
+- Wire-derived Messages (text / thinking / tool_use): `${msg_id}-b${block_index}`. Intrinsically unique within a session; debuggable.
+- System notes (Step 8's scheduled prompts; future `compact_boundary` notes): `${turnKey}-sys${seq}` where `seq` is monotonic within the turn.
 
 #### [D08] Cohort B trigger correlation via per-session FIFO {#d08-cohort-b-fifo}
 
@@ -587,6 +611,21 @@ Rollback is trivial: revert the commits. No persisted state shape changes.
 
 **Slice 1c-b + Slice 2 (in flight):**
 
+`tugcode/src/session.ts` (Step 5 IPC extension):
+
+- `mapStreamEvent`'s `content_block_start` branch emits a new `content_block_start` IPC frame (`msg_id`, `block_index`, `kind`, optional `tool_use_id` / `tool_name`).
+- `assistant_text` / `thinking_text` emissions gain `block_index` from the wire's `content_block_delta.index`.
+- Optional: `content_block_stop` emission for diagnostics.
+
+`tugcode/src/ipc.ts` (Step 5):
+
+- `ContentBlockStart` IPC frame type.
+- `AssistantText` / `ThinkingText` gain `block_index: number`.
+
+`tugcode/src/__tests__/wake-sdk-drift.test.ts` (Step 5):
+
+- Existing fields pinned plus `block_index` and the new `content_block_start` events.
+
 `tugdeck/src/lib/code-session-store/types.ts`:
 
 - `MessageKind`, `Message` discriminated union ([D07], Step 5).
@@ -596,15 +635,22 @@ Rollback is trivial: revert the commits. No persisted state shape changes.
 - `WakeTrigger` extended with `kind`, `prompt`, `scheduled_for`, `cron_expression`, `cron_id` (Step 6).
 - `CancelScheduledTaskFrame` outbound IPC type (Step 9).
 
+`tugdeck/src/lib/code-session-store/events.ts`:
+
+- `ContentBlockStartEvent` (new): `{ type: "content_block_start", msg_id, block_index, kind, tool_use_id?, tool_name? }` (Step 5).
+- `ContentBlockStopEvent` (new, optional): `{ type: "content_block_stop", msg_id, block_index }` (Step 5).
+- `AssistantTextEvent` / `ThinkingTextEvent` gain `block_index: number` (Step 5).
+
 `tugdeck/src/lib/code-session-store/reducer.ts`:
 
-- `state.scratch` reshaped from `Map<msgId, {assistant, thinking}>` to `Map<msgId, ScratchEntry>` (Step 5).
+- `state.scratch` re-keys from `Map<msgId, {assistant, thinking}>` to `Map<turnKey, ScratchEntry>` (Step 5; correctness improvement — preserves all msgId iterations).
 - `state.pendingTurn` replaces `state.pendingUserMessage` (Step 5).
 - `state.toolCallMap` deleted; tool index folded into `ScratchEntry.toolCallIndex` (Step 5).
-- `handleTextDelta` rewrites for append-or-mutate trailing Message (Step 5).
-- `handleToolUse` / `handleToolResult` / `handleToolUseStructured` update Messages via `toolCallIndex` (Step 5).
+- New `handleContentBlockStart` mints a Message of the given kind, indexes by `(msg_id, block_index)` (Step 5).
+- `handleTextDelta` rewrites to look up the open Message via `(msg_id, block_index)` and mutate text (Step 5).
+- `handleToolUse` / `handleToolResult` / `handleToolUseStructured` mutate Messages via `toolCallIndex` (Step 5).
 - `handleSend` / `handleWakeStarted` seed `pendingTurn.initialMessages` (Step 5; Step 8 extends `handleWakeStarted` to include the `SystemNote` for `wakeTrigger.prompt`).
-- `buildTurnEntry` simplifies to `messages: Array.from(scratch[msgId]?.messages ?? [])` plus turn-level metadata (Step 5).
+- `buildTurnEntry` simplifies to `messages: Array.from(scratch[turnKey]?.messages ?? [])` plus turn-level metadata (Step 5).
 - `write-inflight` effect kind carries `messageKey` and `channel: "text" | "state"` (Step 5).
 
 `tugdeck/src/lib/code-session-store/store.ts`:
@@ -740,24 +786,33 @@ This is **not** a boundary-translation refactor. The substrate believes in the s
 **Architectural decisions locked in [D07]:**
 
 - Message union: `user_message | assistant_text | assistant_thinking | system_note | tool_use`.
-- `messageKey` derivation: `${turnKey}-m${seq}` with `seq` monotonic per turn — debuggable, intrinsically unique.
+- `messageKey` derivation: wire-derived Messages use `${msg_id}-b${block_index}` (intrinsically unique, matches wire structure); user_message uses `${turnKey}-user`; system_notes use `${turnKey}-sys${seq}`.
 - `TideTranscriptCellKind` extends to narrow per-kind values (`user | code | thinking | system-note | tool | ghost`) — one renderer per kind, no internal dispatch (matches [L26]'s renderer-reference axis: one stable lambda per kind).
 - `ToolCallState` retires onto `ToolUseMessage`.
 - `state.pendingUserMessage` and `snapshot.inflightUserMessage` replaced by `state.pendingTurn` and `snapshot.activeTurn`.
+- `state.scratch` re-keys from `Map<msgId, ...>` to `Map<turnKey, ...>`. One scratch entry per turn; spans every msgId iteration of the turn's tool-use loop.
+- IPC contract extends: tugcode emits new `content_block_start` (and optional `content_block_stop`) events; existing `AssistantTextEvent` / `ThinkingTextEvent` gain `block_index`.
 
-**Open contracts to verify against captured wire fixtures BEFORE locking handler code:**
+**Wire contract — verified against captures (`tugcode/probes/wake-investigation/capture-*.stdout`):**
 
-1. Does the stream-json wire emit any signal that distinguishes "continuation of the prior text block" from "new text block separated by a tool call" beyond the bare event ordering? Candidates: `message_start` / `content_block_start` / similar.
-2. Do `thinking_text` and `assistant_text` events ever interleave mid-block, or are thinking blocks always discrete from assistant blocks?
+1. Content blocks are explicitly bracketed (`content_block_start` / `content_block_stop`); index is monotonic per message; kind is on the start event.
+2. Thinking and text are always discrete blocks (different `content_block.type`, never interleaved within a block).
+3. A logical turn spans multiple `message_start` events (one per tool-use loop iteration). Today's substrate keys scratch by `msg_id` and only reads the final iteration's content at commit — silently dropping intermediate iterations' thinking text. Step 5 fixes this by keying scratch by `turnKey`.
 
-The append-or-mutate rule's heuristic ("trailing-Message-kind match") is correct under both questions resolving to "no special signal — bare ordering is enough." If either resolves otherwise, the rule keys on the wire signal instead. Verification probe: parse `tugcode/probes/wake-investigation/capture-*.stdout` for `assistant_text` + `thinking_text` + `tool_use` event sequences and classify the inter-event signals.
+See [D07] for the full wire-truth-driven append rule.
 
-**Files (production):**
+**Files (production — tugcode side):**
 
-- `tugdeck/src/lib/code-session-store/types.ts` — Message union, ScratchEntry, PendingTurn, ActiveTurnSnapshot, TurnEntry reshape. `ToolCallState` deleted; `inflightUserMessage` deleted; `userMessage` / `thinking` / `assistant` / `toolCalls` deleted from TurnEntry.
-- `tugdeck/src/lib/code-session-store/events.ts` — review event shapes for any field renames the reducer-side change implies.
+- `tugcode/src/session.ts` — `mapStreamEvent`'s `content_block_start` branch emits a new `content_block_start` IPC frame (with `msg_id`, `block_index`, `kind`, optional `tool_use_id` / `tool_name`); existing `assistant_text` / `thinking_text` emissions gain `block_index`. Optional `content_block_stop` emission for diagnostics. Tugcode-side text/thinking flow no longer needs to track "is this a continuation of an earlier block" since the boundary is now explicit on the wire to tugdeck.
+- `tugcode/src/ipc.ts` (or wherever IPC frame types live) — new `ContentBlockStart` type; `AssistantText` / `ThinkingText` types gain `block_index`.
+- `tugcode/src/__tests__/*` — drift tests + mapStreamEvent unit tests updated. `tugcode/src/__tests__/wake-sdk-drift.test.ts` (existing) extends to assert block-index forwarding.
+
+**Files (production — tugdeck side):**
+
+- `tugdeck/src/lib/code-session-store/types.ts` — Message union, ScratchEntry (turnKey-keyed), PendingTurn, ActiveTurnSnapshot, TurnEntry reshape. `ToolCallState` deleted; `inflightUserMessage` deleted; `userMessage` / `thinking` / `assistant` / `toolCalls` deleted from TurnEntry.
+- `tugdeck/src/lib/code-session-store/events.ts` — new `ContentBlockStartEvent` (and optional `ContentBlockStopEvent`); `AssistantTextEvent` / `ThinkingTextEvent` gain `block_index: number`.
 - `tugdeck/src/lib/code-session-store/effects.ts` — `write-inflight` effect kind carries `messageKey` and `channel: "text" | "state"`.
-- `tugdeck/src/lib/code-session-store/reducer.ts` — substrate change (see [D07] handler-by-handler table). Bulk of the work.
+- `tugdeck/src/lib/code-session-store/reducer.ts` — substrate change (see [D07] handler-by-handler table). Bulk of the work. New `handleContentBlockStart` handler. `scratch` re-keys to `turnKey`.
 - `tugdeck/src/lib/code-session-store/code-session-store.ts` (or wherever the snapshot builder lives) — derive `activeTurn` from `pendingTurn` + scratch.
 - `tugdeck/src/lib/tide-transcript-data-source.ts` — per-Message iteration; delete `isWakeTurn` / `isWakeInflight` / `RowLayout` / `buildRowLayout` / `userRowIndexForTurn` / `assistantRowIndexForTurn` / `locateCommittedRow`; introduce `MessageLayout` + `messageRowIndex`.
 - `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` — cell renderers per Message kind; per-Message streaming subscription paths.
@@ -774,21 +829,33 @@ The append-or-mutate rule's heuristic ("trailing-Message-kind match") is correct
 - `tugdeck/src/components/tugways/cards/__tests__/tide-card-transcript-tool-calls.test.ts` — tool-call rendering test; shape updates.
 - New test: `tugdeck/src/lib/code-session-store/__tests__/reducer.message-sequence.test.ts` — pin the append-or-mutate rule against fixture event sequences (the regression net for Risk #2).
 
-**Commit sequence (single landing commit):**
+**Commit sequence — two commits, tugcode then tugdeck:**
 
-The dependencies between types, reducer state, handlers, streaming paths, data source, consumers, and tests are tight enough that dual-rep migration carries more risk (drift between reps) than a clean cutover. Working-tree process:
+The tugcode IPC extension is additive (new event type, new field on existing events) and can land first without breaking tugdeck — the new events flow through ignored by the old reducer; the new `block_index` field is a no-op for the old handlers. The tugdeck refactor then lands as a single substrate change.
 
-1. **Probe the wire** to resolve the two open contracts. Update [D07]'s append-or-mutate rule if the wire provides a stronger signal.
-2. **Draft `types.ts`** changes locally; tsc reveals the consumer-error set.
-3. **Rewrite reducer** state shape + handlers. Reducer tests fail in expected places only (no regressions in unrelated handlers).
-4. **Rewrite snapshot builder** (`activeTurn` derivation).
-5. **Rewrite data source.** Data-source tests fail in expected places.
-6. **Rewrite consumers** (5 files).
-7. **Update all failing tests** in one pass.
+**Commit 1 — tugcode IPC extension:**
+1. Add `ContentBlockStart` IPC frame type; extend `AssistantText` / `ThinkingText` with `block_index`.
+2. Update `mapStreamEvent`: emit `content_block_start` at every wire `content_block_start`; forward `block_index` on every text/thinking delta.
+3. Update mapStreamEvent unit tests + drift tests to assert the new emissions.
+4. Rebuild tugcode binary (`bun build --compile`); verify tugcode still produces today's IPC stream plus the new events.
+5. `cd tugcode && bun x tsc --noEmit && bun test` green.
+6. Commit on main.
+
+**Commit 2 — tugdeck substrate refactor:**
+1. Draft `types.ts` changes; tsc reveals the consumer-error set.
+2. Add `ContentBlockStartEvent` to events.ts (+ `block_index` on existing text events).
+3. Rewrite reducer state shape + handlers; add `handleContentBlockStart`. Reducer tests fail in expected places only.
+4. Rewrite snapshot builder (`activeTurn` derivation).
+5. Rewrite data source.
+6. Rewrite consumers (5 files).
+7. Update all failing tests in one pass.
 8. `cd tugdeck && bun x tsc --noEmit && bun test` green.
-9. One commit on main.
+9. Manual repro of the matrix below.
+10. Commit on main.
 
-If the cutover ends up too large to review comfortably, split by file at commit time using `git add -p` — but the working tree is always green at the commit boundary.
+The two-commit shape makes each commit independently revertable: tugcode change can roll back without affecting tugdeck (new events become unused emissions); tugdeck change can roll back without affecting tugcode (the new IPC events flow back into the void).
+
+If commit 2 ends up too large to review comfortably, split by file at commit time using `git add -p` — but the working tree is always green at the commit boundary.
 
 **Manual repro:**
 
