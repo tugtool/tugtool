@@ -602,31 +602,40 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 **References:** [D01] [D03], [R01], (#test-plan-concepts)
 
 **Artifacts:**
-- `tugdeck/src/lib/code-session-store/__tests__/handle-wake.test.ts` (pure-logic).
-- `tugdeck/src/__tests__/session-wake-fixture-replay.test.ts` (catalog replay).
-- A drift test in `tugcode/__tests__/` pinning the SDK type: import `SDKTaskNotificationMessage` from `@anthropic-ai/claude-agent-sdk` and assert that the five fields we forward (`task_id`, `tool_use_id`, `status`, `summary`, `output_file`) all exist on the type. A future SDK that adds a field is fine (we just don't forward the new one); a future SDK that removes a field breaks tsc and surfaces the drift immediately. Cross-referenced against the Step-1 captured fixture, which exhibits the same field set on the wire.
+- `tugdeck/src/lib/code-session-store/__tests__/handle-wake.test.ts` (pure-logic — 26 tests, all green).
+- `tugdeck/src/lib/code-session-store/__tests__/code-session-store.wake.test.ts` (store-wrapper + snapshot projections — 7 tests, all green). Split from the fixture-replay test so the per-store-wrapper concerns (turnKey mint, snapshot `canInterrupt` / `canSubmit` gates, end-to-end PPF-01 round-trip) stay separate from the fixture-grounding concerns.
+- `tugdeck/src/__tests__/session-wake-fixture-replay.test.ts` (catalog replay — 3 tests, all green). Reads the Step-1 capture, extracts the wake signal + terminal assistant text fields, synthesizes the IPC frames tugcode emits, and drives the reducer end-to-end. Two scenarios: live wake bracket (with `wakeTrigger` survival assertion), and cold-boot replay regression (with the deferred-to-Slice-2 `wakeTrigger` loss documented).
+- `tugcode/src/__tests__/wake-sdk-drift.test.ts` (3 tests, all green). Compile-time pinning of every SDK-declared field tugcode forwards via `buildWakeStartedMessage` PLUS a runtime cross-validation against the captured fixture's `task_notification` line that pins the wire shape (including `tool_use_id`, which the SDK type currently omits — documented in the test header for a future SDK type-fix).
 
 **Tasks:**
-- [ ] Pure-logic: `handleWakeStarted` transitions `idle → waking` with `wakeTrigger` set and `pendingUserMessage` set to the empty-text marker; per-turn telemetry fields all reset (assertion can spot-check the helper was called, e.g., `firstAssistantDeltaAt === null`).
-- [ ] Pure-logic: `handleTurnComplete` during `waking` transitions `waking → idle` with `wakeTrigger` cleared, `pendingUserMessage` cleared, transcript entry committed, AND no phantom empty user bubble (assert the committed entry contains no empty-text user-message segment).
-- [ ] Pure-logic: `handleTextDelta` accepts text events during `waking`; still drops them during `idle`/`errored`/etc.
-- [ ] Pure-logic: `handleTextDelta` during `waking` sets `activeMsgId` from the first event so the `handleTurnComplete` early-return at `idle && null` does not fire.
-- [ ] Pure-logic: nested wake (`handleWakeStarted` while already `waking`) is idempotent; trigger metadata refreshes if new payload is non-null and old was null.
-- [ ] Pure-logic: `handleSend` during `waking` enqueues into `queuedSends`.
-- [ ] Pure-logic: interrupt during wake ([Q03] resolution pinned here).
-- [ ] Pure-logic: drop-case regression — every existing drop case (stray text outside any turn, etc.) still drops.
-- [ ] Store-wrapper test: `frameToEvent` on a `wake_started` frame mints a turnKey and dispatches `WakeStartedEvent` with the trigger payload threaded through.
-- [ ] Fixture replay: feed the Step-1 captured JSONL through the full pipeline; assert the wake turn lands in `transcript` with the expected text and the `wakeTrigger` metadata, and no phantom user bubble.
-- [ ] Cold-boot replay regression: replay the captured JSONL through the *cold-boot* path (`replay_started` bracket); confirm the wake turn paints correctly under `phase === "replaying"` (proves no Slice 1 work is needed on the replay translator).
-- [ ] Drift: compile-time check importing `SDKTaskNotificationMessage` from `@anthropic-ai/claude-agent-sdk` and asserting the five forwarded fields (`task_id`, `tool_use_id`, `status`, `summary`, `output_file`) exist. Cross-validated against the Step-1 fixture at `v2.1.150-spike/test-monitor-wake-raw.jsonl` line 49 (the captured wire shape matches the SDK type).
+- [x] Pure-logic: `handleWakeStarted` transitions `idle → waking` with `wakeTrigger` set and `pendingUserMessage` set to the empty-text marker; per-turn telemetry fields all reset (spot-checked `firstAssistantDeltaAt`, `lastStreamEventAt`, `maxStreamGapMs`, `interruptInFlight`, `awaitingApprovalAccumulatedMs`); `costAtSubmit` captures `state.lastCost` AFTER the helper-spread overrides its `null` reset; `pendingDraftRestore` preserved; defensive drop for every non-idle non-waking phase.
+- [x] Pure-logic: `handleTurnComplete` during `waking` transitions `waking → idle` with `wakeTrigger` cleared, `pendingUserMessage` cleared, transcript entry committed; the committed entry's `userMessage.text === ""` (empty-string IS the wake sentinel — pinned explicitly so a future change to inject placeholder text would break this test); error-path also covered (interrupted partial wake commits as `result: "interrupted"`).
+- [x] Pure-logic: `handleTextDelta` accepts text events during `waking`; still drops them during `idle` / `awaiting_approval` and other phases not on the allow-list ([D03] additive-guard contract pinned for both assistant_text and thinking_text).
+- [x] Pure-logic: `handleTextDelta` during `waking` sets `activeMsgId` from the first event; explicit test that walks `wake_started → assistant_text → turn_complete` and confirms the `idle && null` early-return does NOT fire.
+- [x] Pure-logic: nested wake (`handleWakeStarted` while already `waking`) is idempotent — second call is a same-state-ref no-op when `wakeTrigger` is already set; refresh path covered (synthetic `wakeTrigger === null` while phase still `waking` pins the refresh contract on the reducer side, even though the live path never produces this combination).
+- [x] Pure-logic: `handleSend` during `waking` enqueues into `queuedSends`; the wake's commit does NOT auto-flush the queued send (the queued message waits for an explicit follow-up send — the wake does not surprise the user by dispatching their queued text).
+- [x] Pure-logic: interrupt during wake ([Q03] resolution pinned with 4 tests):
+  - CASE A wake pull-down: idle, clears `wakeTrigger`, sends interrupt frame, increments `pendingCaseAEchoes`, does NOT push the empty-text marker into `pendingDraftRestore`.
+  - CASE A wake pull-down preserves any prior `pendingDraftRestore`.
+  - CASE B wake interrupt: `interruptInFlight: true`, segment-start captured, `wakeTrigger` remains pending the bracket-close, phase stays `waking`.
+  - Wire echo for CASE A wake pull-down is suppressed by `pendingCaseAEchoes` (turn_complete(error) with empty msg_id decrements the counter and produces zero effects).
+- [x] Pure-logic: drop-case regression — every existing drop case (stray text outside any turn, thinking_text outside a turn, assistant_text from awaiting_approval) still drops.
+- [x] Pure-logic: terminal-error paths defensively clear `wakeTrigger` — `session_state_errored`, `wire_error`, and `transport_close` from `waking` all leave `state.wakeTrigger === null`. Transport-close also commits a transport-lost transcript entry as part of the same dispatch.
+- [x] Store-wrapper test: `frameToEvent` on a `wake_started` frame mints a turnKey (the wire frame deliberately omits one; assertion checks the snapshot's `inflightUserMessage.turnKey` is a non-empty string) and threads the camelCase `wakeTrigger` payload through to the snapshot; back-to-back wakes mint distinct turnKeys so per-turn paths don't collide.
+- [x] Snapshot projection test: `canInterrupt` reads `true` and `canSubmit` reads `false` during `waking` (per [Q03] resolution); both flip on the wake's commit to `idle`.
+- [x] Fixture replay: feed the Step-1 captured JSONL through the full pipeline — extract task_notification (line 49) and terminal assistant text (line 62) from the fixture, synthesize the IPC frames tugcode emits, drive through the reducer. Asserts: snapshot.phase is `waking` mid-bracket with translated camelCase `wakeTrigger`; on `turn_complete` the wake turn commits with empty-text user marker, the captured assistant text in `entry.assistant`, `wakeTrigger` cleared on the snapshot, and the per-turn write path carries the assistant text under the minted turnKey.
+- [x] Cold-boot replay regression: replay the captured JSONL through the cold-boot path (`replay_started` → `user_message_replay` → `assistant_text` → `turn_complete` → `replay_complete`); confirms the wake turn paints correctly under `phase === "replaying"` and proves no Slice 1 work is needed on the replay translator. Asserts (and documents) that `wakeTrigger` is NOT preserved across cold-boot rehydration today — deferred to Slice 2 per [#slice-2-replay-translator].
+- [x] Drift: compile-time check via typed variable declaration referencing `SDKTaskNotificationMessage` from `@anthropic-ai/claude-agent-sdk` — covers the 4 SDK-declared forwarded fields (`task_id`, `status`, `summary`, `output_file`) plus the status union literals. Cross-validated against the Step-1 fixture at `v2.1.150-spike/test-monitor-wake-raw.jsonl` line 49 — runtime check pins all 5 forwarded wire fields (the 4 SDK-declared + `tool_use_id`, which the SDK type currently omits — documented in the test header so a future SDK type-fix doesn't get treated as breaking).
 
 **Tests:**
-- [ ] All new tests pass.
+- [x] All new tests pass (36 new in tugdeck, 3 new in tugcode).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test` green.
-- [ ] `bun x tsc --noEmit` green.
-- [ ] `bun run audit:tokens lint` green (no token surface touched, but run for hygiene).
+- [x] `cd tugdeck && bun test` green (2928 / 2928 — 36 new).
+- [x] `cd tugdeck && bun x tsc --noEmit` green.
+- [x] `cd tugdeck && bun run audit:tokens lint` zero violations.
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green (446 / 446 — 3 new).
+- [x] `cd tugrust && cargo nextest run` green (1324 passed, 9 skipped).
 
 ---
 
