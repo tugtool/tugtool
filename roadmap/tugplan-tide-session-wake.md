@@ -898,19 +898,20 @@ The comment at `reducer.ts:827` ("Live Claude should not emit this — but defen
 - **CronDelete intercept** reads `{id: string}` from `event.input` (or whatever the tool's argument key actually is — verify against `capture-croncreate.jsonl` and the CronCreate response shape; the response says `id:"3ea6c934"`, so CronDelete likely takes `id`). Calls `this.scheduler.cancel(id)`. Important: claude's CronCreate generates its own task id (e.g. `3ea6c934`) but our shadow registered under `tool_use_id`. We need to map between the two — store the claude-side `id` from the CronCreate tool_result and key our shadow on that for cancellation. See task list below.
 
 **Tasks:**
-- [ ] Add the `handleSchedulingToolUse` method on `SessionManager`. Place it next to `handleTaskNotification` so the wake-related intercepts cluster.
-- [ ] Wire the dispatch site: in `routeTopLevelEvent` (or the per-turn equivalent), when `event.type === "tool_use"` and `event.tool_name in {ScheduleWakeup, CronCreate, CronDelete}`, call the intercept BEFORE the existing forward-to-tugdeck path. Forwarding still happens — the intercept is purely additive.
-- [ ] Handle the CronCreate → CronDelete `id` mapping. CronCreate's `tool_result` carries `{id: "3ea6c934", …}`. Watch for the matching `tool_result` event (the `tool_use_id` matches the tool_use we shadowed), parse `tool_result.toolUseResult.id`, and update the scheduler entry's key from `tool_use_id` to the claude-side `id`. CronDelete's intercept then keys lookup by claude's `id`. (Alternative: maintain a `Map<claudeCronId, tool_use_id>` lookup table.)
-- [ ] JSDoc on every intercept citing the relevant Step-6 capture file as the empirical anchor for the tool's input shape.
+- [x] Add the `handleSchedulingToolUse` method on `SessionManager`, alongside `handleCronCreateResult`. Placed next to `handleTaskNotification` so the wake-related intercepts cluster.
+- [x] Wire the dispatch site: in `dispatchEventToTurn`, the per-message loop calls `handleSchedulingToolUse(ipcMsg)` for `tool_use` frames and `handleCronCreateResult(ipcMsg)` for `tool_use_structured` frames BEFORE the gated `writeLine`. Forwarding still happens — the intercept is purely additive.
+- [x] Handle the CronCreate → CronDelete `id` mapping via a `Map<claudeCronId, tool_use_id>` lookup table (`cronIdToToolUseId`). On `tool_use_structured` for a previously-shadowed CronCreate (tracked in `pendingCronCreateToolUseIds`), parse `structured_result.id` and record the mapping; on CronDelete intercept, resolve `{id}` → tool_use_id and `scheduler.cancel(tool_use_id)`.
+- [x] JSDoc on every intercept citing the relevant Step-6 capture file (`test-schedulewakeup-streamio-raw.jsonl`, `test-croncreate-streamio-raw.jsonl`) as the empirical anchor for the tool's input shape.
 
 **Tests:**
-- [ ] Pure-logic: `handleSchedulingToolUse` on a `ScheduleWakeup` event calls `scheduler.schedule({ kind: "delay", … })` with the parsed payload; a malformed input (missing `delaySeconds`) logs a warning and does NOT schedule.
-- [ ] Pure-logic: same for `CronCreate` (`kind: "cron"`) and `CronDelete` (`cancel` call).
-- [ ] Pure-logic: CronCreate → tool_result with `id:"3ea6c934"` → CronDelete with `id:"3ea6c934"` cancels the right shadow job.
-- [ ] Pure-logic: tool_use events for OTHER tool names (Bash, Read, etc.) bypass the intercept entirely (no scheduler call).
+- [x] Pure-logic: `handleSchedulingToolUse` on a `ScheduleWakeup` event calls `scheduler.schedule({ kind: "delay", … })` with the parsed payload; a malformed input (missing `delaySeconds` / missing `prompt`) logs a warning and does NOT schedule.
+- [x] Pure-logic: same for `CronCreate` (`kind: "cron"`, recurring true and false, malformed `recurring`) and `CronDelete` (cancel via id mapping; unknown id is silent no-op; non-string id skips).
+- [x] Pure-logic: end-to-end CronCreate → tool_result with `id:"3ea6c934"` → CronDelete with `id:"3ea6c934"` cancels the right shadow job and clears the map entry.
+- [x] Pure-logic: tool_use events for OTHER tool names (Bash, Read, Monitor) bypass the intercept entirely.
+- [x] Pure-logic: empty input (`{}`) from the `content_block_start` path is dropped by required-field parsing (no double-schedule alongside the subsequent `assistant` snapshot's full-input frame).
 
 **Checkpoint:**
-- [ ] `cd tugcode && bun x tsc --noEmit && bun test` green.
+- [x] `cd tugcode && bun x tsc --noEmit && bun test` green (476 pass, 17 new intercept cases).
 
 ---
 
