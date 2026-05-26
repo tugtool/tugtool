@@ -259,10 +259,11 @@ export function parseQuestions(
 }
 
 /**
- * The starting selection set, one entry per question. A single-select
- * question pre-selects its first option — mirroring `PermissionDialog`'s
- * scope-picker default so a bare Return commits a sane answer. A
- * multi-select question starts empty (the user opts in to each).
+ * The starting selection set, one entry per question. Every question
+ * — single-select OR multi-select — pre-selects its first option, so
+ * a bare Return commits a sane default answer for the whole wizard.
+ * The user can deselect (multi-select) or pick a different option
+ * (single-select) before advancing.
  *
  * Pure; exported for the test suite.
  */
@@ -270,7 +271,7 @@ export function initialQuestionSelections(
   questions: ReadonlyArray<ParsedQuestion>,
 ): string[][] {
   return questions.map((q) =>
-    q.multiSelect || q.options.length === 0 ? [] : [q.options[0].label],
+    q.options.length === 0 ? [] : [q.options[0].label],
   );
 }
 
@@ -975,26 +976,24 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   }, [session]);
 
   // Keyboard handler — `1`..`9` selects option N (1-indexed) in the
-  // current question. Escape is NOT intercepted here: it bubbles up
-  // to the prompt entry's `CANCEL_DIALOG` action which calls
-  // `popInteractive()` — same gesture our `handleCancel` invokes —
-  // so letting it bubble keeps Cancel ≡ Esc through one code path.
-  // (An earlier draft caught Esc locally; that doubled the logic
-  // and diverged the two surfaces on subtle edge cases.)
+  // current question. Bound on the questions wrapper, so it only
+  // fires when focus is inside the dialog (we don't steal digit
+  // typing from the prompt entry below the transcript).
   //
-  // Single-select pick auto-advances via the same `handleSelect`
-  // path used by clicks. Skip when focus is inside a text input so
-  // the wizard can still hold a comments field someday without
-  // intercepting typing. Mounted on the dialog root via `onKeyDown`
-  // so we don't reach for `window`.
+  // Enter is handled separately at the document level — see the
+  // capture-phase listener below — because the prompt entry usually
+  // holds focus while a question is pending, and we want Enter
+  // pressed there to advance the wizard rather than submit a new
+  // prompt.
+  //
+  // Escape is NOT intercepted: it bubbles up to the prompt entry's
+  // `CANCEL_DIALOG` action which calls `popInteractive()` — same
+  // gesture our `handleCancel` invokes — so letting it bubble keeps
+  // Cancel ≡ Esc through one code path.
   const handleKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (questions.length === 0) return;
-      // Treat `1`–`9` (and their numpad twins) as the option-pick
-      // gesture. Skip modifier keys so `⌘1` etc. stay free for the
-      // host shell.
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      // Refuse interception when focus is inside an editable surface.
       const target = e.target;
       if (
         target instanceof HTMLElement &&
@@ -1016,6 +1015,54 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     },
     [questions, currentIndex, handleSelect],
   );
+
+  // Document-level Enter handler in CAPTURE phase. The prompt entry
+  // below the transcript holds focus while the AI is awaiting an
+  // answer — without this, pressing Return submits a new prompt
+  // rather than advancing the wizard. Capture-phase + stopPropagation
+  // intercepts Enter before the prompt entry's own keydown listener
+  // sees it. Active only while `isPending`; cleaned up automatically
+  // when the dialog unmounts or the request resolves.
+  //
+  // Modifier-Enter (Shift / Cmd / Ctrl / Alt) is left alone so the
+  // prompt entry can still take a newline / send-from-anywhere
+  // gesture if it has one.
+  React.useEffect(() => {
+    if (!isPending) return;
+    if (questions.length === 0) return;
+    const onDocumentKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== "Enter") return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      // If focus is inside the dialog and lands on an enabled button,
+      // let the native click handle Enter (option-card pick, Back,
+      // Cancel-popover trigger, the enabled Submit at review).
+      const t = e.target;
+      if (t instanceof HTMLButtonElement && !t.disabled) return;
+      if (currentIndex < questions.length) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleAdvance();
+      } else if (
+        countConfirmedAnswers(selections, visited) === questions.length
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSubmit();
+      }
+    };
+    document.addEventListener("keydown", onDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+    };
+  }, [
+    isPending,
+    questions.length,
+    currentIndex,
+    selections,
+    visited,
+    handleAdvance,
+    handleSubmit,
+  ]);
 
   // Mount-time focus on the primary action so a Return key submits.
   // `TugInlineDialog` is a stateless presentation surface — callers
@@ -1109,7 +1156,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       </TugConfirmPopover>
       <TugPushButton
         ref={submitRef}
-        emphasis="filled"
+        emphasis={isAtReview ? "filled" : "outlined"}
         role="action"
         size="xs"
         disabled={!allAnswered}
@@ -1138,7 +1185,13 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // questions for the touch target to feel coupled to the row it
   // mutates, but stable across question advances so the button
   // never moves under the mouse.
+  //
+  // The dialog mounts inside a host `<div>` so `handleKeyDown` (Enter
+  // = advance / submit; digit = option-pick) catches events from
+  // anywhere in the dialog — including when the disabled `Submit`
+  // button holds focus at the start of the wizard.
   return (
+    <div onKeyDown={handleKeyDown}>
     <TugInlineDialog
       icon={<MessageCircleQuestion />}
       iconRole="info"
@@ -1166,7 +1219,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               <ArrowLeft size={14} aria-hidden="true" /> Back
             </TugPushButton>
             <TugPushButton
-              emphasis="outlined"
+              emphasis={isAtReview ? "outlined" : "filled"}
               role="action"
               size="xs"
               disabled={isAtReview}
@@ -1181,7 +1234,6 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         <div
           className="tide-question-dialog-questions"
           data-slot="tide-question-dialog-questions"
-          onKeyDown={handleKeyDown}
         >
           {single !== null ? (
             // Single-question payload — no rail, no wizard chrome.
@@ -1250,6 +1302,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         </div>
       ) : null}
     </TugInlineDialog>
+    </div>
   );
 };
 

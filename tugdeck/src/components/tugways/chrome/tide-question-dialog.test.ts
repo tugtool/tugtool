@@ -189,10 +189,12 @@ describe("initialQuestionSelections", () => {
     ).toEqual([["A"]]);
   });
 
-  it("starts a multi-select question empty", () => {
+  it("pre-selects the first option of a multi-select question too", () => {
+    // A bare Return through the wizard should commit a sane default
+    // answer for every question; multi-select participates in that.
     expect(
       initialQuestionSelections([parsed("Q", true, ["A", "B"])]),
-    ).toEqual([[]]);
+    ).toEqual([["A"]]);
   });
 
   it("seeds each question of a mixed payload independently", () => {
@@ -201,7 +203,7 @@ describe("initialQuestionSelections", () => {
         parsed("single", false, ["X", "Y"]),
         parsed("multi", true, ["P", "Q"]),
       ]),
-    ).toEqual([["X"], []]);
+    ).toEqual([["X"], ["P"]]);
   });
 });
 
@@ -446,7 +448,7 @@ describe("seedQuestionDialogState", () => {
 
   it("returns the default seed when no saved state is present", () => {
     const seeded = seedQuestionDialogState(undefined, twoQuestions);
-    expect(seeded.selections).toEqual([["A"], []]);
+    expect(seeded.selections).toEqual([["A"], ["X"]]);
     expect(seeded.visited).toEqual([false, false]);
     expect(seeded.currentIndex).toBe(0);
   });
@@ -466,7 +468,7 @@ describe("seedQuestionDialogState", () => {
     // partially trust it.
     const bad = { selections: "nope", visited: [], currentIndex: 0 };
     const seeded = seedQuestionDialogState(bad, twoQuestions);
-    expect(seeded.selections).toEqual([["A"], []]);
+    expect(seeded.selections).toEqual([["A"], ["X"]]);
     expect(seeded.visited).toEqual([false, false]);
     expect(seeded.currentIndex).toBe(0);
   });
@@ -478,7 +480,7 @@ describe("seedQuestionDialogState", () => {
       currentIndex: 1,
     };
     const seeded = seedQuestionDialogState(bad, twoQuestions);
-    expect(seeded.selections).toEqual([["A"], []]);
+    expect(seeded.selections).toEqual([["A"], ["X"]]);
     expect(seeded.visited).toEqual([false, false]);
     expect(seeded.currentIndex).toBe(0);
   });
@@ -511,7 +513,7 @@ describe("seedQuestionDialogState", () => {
       currentIndex: 0,
     } as QuestionDialogPreservedState;
     const seeded = seedQuestionDialogState(saved, twoQuestions);
-    expect(seeded.selections).toEqual([["B"], []]);
+    expect(seeded.selections).toEqual([["B"], ["X"]]);
     expect(seeded.visited).toEqual([true, false]);
   });
 
