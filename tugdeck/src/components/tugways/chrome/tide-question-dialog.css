@@ -103,12 +103,15 @@ body {
   --tugx-question-single-options-padding: 0;
 }
 
-/* ---- Wizard nav row (Back · summary · Next) ----
+/* ---- Wizard nav row (summary · Back · Next) ----
  *
- * Sits above the question accordion. Centered as a group; the
- * progress summary (`{N} questions · {M} answered`) reads between
- * the wizard nav buttons. Capped at the same width as the question
- * rail / options block so the whole stack reads as one column.
+ * Sits above the question accordion, spanning the full dialog
+ * content width so its trailing edge aligns with the header's
+ * Cancel / Submit cluster directly above it. Progress summary
+ * (`{N} questions · {M} answered`) anchors the leading edge;
+ * Back / Next pair anchors the trailing edge. Back / Next inherit
+ * the dialog's `--tugx-idialog-action-w` so all four wizard
+ * buttons (Back, Next, Cancel, Submit) share a uniform width.
  * Stable across question advances — the click targets never move
  * out from under the mouse. */
 .tide-question-dialog-nav {
@@ -117,30 +120,47 @@ body {
   justify-content: space-between;
   gap: var(--tug-space-md);
   width: 100%;
-  max-width: var(--tugx-idialog-options-max-width);
-  margin: 0 auto;
 }
 
 .tide-question-dialog-nav-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Match the heading text's left position in a question row: the
+   * row's own padding-left, then the marker column, then the
+   * marker-to-text gap. The summary then visually aligns with
+   * "1. How should the calculator accept input?" below. */
+  padding-left: calc(
+    var(--tugx-question-row-padding)
+    + var(--tugx-question-marker-size)
+    + var(--tugx-question-marker-gap)
+  );
   font-size:   var(--tugx-idialog-description-size);
   line-height: var(--tugx-idialog-description-leading);
   opacity:     var(--tugx-idialog-description-opacity);
-  text-align: center;
+  text-align: left;
+}
+
+.tide-question-dialog-nav-buttons {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--tugx-idialog-actions-gap);
+}
+
+.tide-question-dialog-nav-buttons .tug-button {
+  width: var(--tugx-idialog-action-w);
 }
 
 /* ---- Wizard rail ----
  *
- * The accordion column matches the options stack width on
- * `TugInlineDialog` so multi-question dialogs read as one centered
- * column rather than spanning the full frame. */
+ * Spans the full dialog content width — the question rows are
+ * left-aligned within that, matching the leading edge of the
+ * wizard-nav summary above. */
 
 .tide-question-dialog-questions {
   display: flex;
   flex-direction: column;
   gap: var(--tugx-question-stack-gap);
   width: 100%;
-  max-width: var(--tugx-idialog-options-max-width);
-  margin: 0 auto;
 }
 
 /* ---- Row: shared chrome ---- */

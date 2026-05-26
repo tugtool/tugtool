@@ -55,6 +55,11 @@ body {
   --tugx-idialog-row-height:        2.25rem;
   --tugx-idialog-row-gap:           0.625rem;
   --tugx-idialog-actions-gap:       0.375rem;
+  /* Fixed width for every action-cluster button in the dialog. Both
+   * Deny / Allow (PermissionDialog) and Cancel / Submit / Back /
+   * Next (QuestionDialog) inherit it, so all four buttons line up
+   * at the same width regardless of label or leading icon. */
+  --tugx-idialog-action-w:          5rem;
 
   /* Icon column — its height matches the title's first-line height
    * (font-size × line-height), so `align-items: center` puts the
@@ -207,11 +212,17 @@ body {
 }
 
 /* Trailing-edge action cluster — typically Cancel / Submit, Deny /
- * Allow, or any primary controls. */
+ * Allow, or any primary controls. Every button inside takes a
+ * uniform min-width so the cluster reads as a balanced pair
+ * regardless of label length. */
 .tug-inline-dialog-actions {
   flex: 0 0 auto;
   display: flex;
   gap: var(--tugx-idialog-actions-gap);
+}
+
+.tug-inline-dialog-actions .tug-button {
+  width: var(--tugx-idialog-action-w);
 }
 
 /* ---- Body slot ----

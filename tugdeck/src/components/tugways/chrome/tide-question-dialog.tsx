@@ -1143,27 +1143,29 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           className="tide-question-dialog-nav"
           data-slot="tide-question-dialog-nav"
         >
-          <TugPushButton
-            emphasis="outlined"
-            role="action"
-            size="xs"
-            disabled={isFirstQuestion}
-            onClick={handleBack}
-          >
-            <ArrowLeft size={14} aria-hidden="true" /> Back
-          </TugPushButton>
           <span className="tide-question-dialog-nav-summary">
             {wizardSummary}
           </span>
-          <TugPushButton
-            emphasis="outlined"
-            role="action"
-            size="xs"
-            disabled={isAtReview}
-            onClick={handleAdvance}
-          >
-            Next <ArrowRight size={14} aria-hidden="true" />
-          </TugPushButton>
+          <div className="tide-question-dialog-nav-buttons">
+            <TugPushButton
+              emphasis="outlined"
+              role="action"
+              size="xs"
+              disabled={isFirstQuestion}
+              onClick={handleBack}
+            >
+              <ArrowLeft size={14} aria-hidden="true" /> Back
+            </TugPushButton>
+            <TugPushButton
+              emphasis="outlined"
+              role="action"
+              size="xs"
+              disabled={isAtReview}
+              onClick={handleAdvance}
+            >
+              Next <ArrowRight size={14} aria-hidden="true" />
+            </TugPushButton>
+          </div>
         </div>
       ) : null}
       {hasQuestions ? (
