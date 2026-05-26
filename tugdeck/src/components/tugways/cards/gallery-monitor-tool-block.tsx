@@ -35,7 +35,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const COMMAND_SHORT_OUTPUT: ToolBlockProps = {
   toolUseId: "monitor-1",
   toolName: "Monitor",
-  msgId: "gallery-msg",
   seq: 0,
   input: {
     command: "tail -F /var/log/app.log",
@@ -49,7 +48,6 @@ const COMMAND_SHORT_OUTPUT: ToolBlockProps = {
 const LONG_OUTPUT: ToolBlockProps = {
   toolUseId: "monitor-2",
   toolName: "Monitor",
-  msgId: "gallery-msg",
   seq: 1,
   input: {
     command: "journalctl -u app.service -f",
@@ -71,7 +69,6 @@ const LONG_OUTPUT: ToolBlockProps = {
 const PATH_HEADER: ToolBlockProps = {
   toolUseId: "monitor-3",
   toolName: "Monitor",
-  msgId: "gallery-msg",
   seq: 2,
   input: { path: "/var/spool/build/status.json" },
   textOutput: '{ "status": "queued" }',
@@ -82,7 +79,6 @@ const PATH_HEADER: ToolBlockProps = {
 const PID_HEADER: ToolBlockProps = {
   toolUseId: "monitor-4",
   toolName: "Monitor",
-  msgId: "gallery-msg",
   seq: 3,
   input: { pid: 12345 },
   textOutput: "process still alive",
@@ -93,7 +89,6 @@ const PID_HEADER: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "monitor-5",
   toolName: "Monitor",
-  msgId: "gallery-msg",
   seq: 4,
   input: { command: "tail -F" },
   status: "streaming",
@@ -102,7 +97,6 @@ const STREAMING: ToolBlockProps = {
 const ERROR: ToolBlockProps = {
   toolUseId: "monitor-6",
   toolName: "Monitor",
-  msgId: "gallery-msg",
   seq: 5,
   input: { command: "tail -F /missing.log", until: "ready" },
   textOutput: "tail: cannot open '/missing.log' for reading: No such file or directory",

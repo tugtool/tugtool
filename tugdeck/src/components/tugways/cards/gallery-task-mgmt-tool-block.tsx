@@ -23,7 +23,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const LIST: ToolBlockProps = {
   toolUseId: "taskmgmt-1",
   toolName: "TaskList",
-  msgId: "gallery-msg",
   seq: 0,
   input: {},
   textOutput: [
@@ -40,7 +39,6 @@ const LIST: ToolBlockProps = {
 const GET: ToolBlockProps = {
   toolUseId: "taskmgmt-2",
   toolName: "TaskGet",
-  msgId: "gallery-msg",
   seq: 1,
   input: { taskId: "abc123" },
   textOutput:
@@ -52,7 +50,6 @@ const GET: ToolBlockProps = {
 const OUTPUT_SHORT: ToolBlockProps = {
   toolUseId: "taskmgmt-3",
   toolName: "TaskOutput",
-  msgId: "gallery-msg",
   seq: 2,
   input: { task_id: "shell-7", block: true, timeout: 30000 },
   textOutput: "compiling tugcast v0.42.1\nrunning 28 tests\nall tests passed",
@@ -63,7 +60,6 @@ const OUTPUT_SHORT: ToolBlockProps = {
 const OUTPUT_LONG: ToolBlockProps = {
   toolUseId: "taskmgmt-4",
   toolName: "TaskOutput",
-  msgId: "gallery-msg",
   seq: 3,
   input: { task_id: "shell-8", block: false, timeout: 5000 },
   textOutput: [
@@ -82,7 +78,6 @@ const OUTPUT_LONG: ToolBlockProps = {
 const STOP: ToolBlockProps = {
   toolUseId: "taskmgmt-5",
   toolName: "TaskStop",
-  msgId: "gallery-msg",
   seq: 4,
   input: { task_id: "shell-7" },
   textOutput: "stopped",
@@ -93,7 +88,6 @@ const STOP: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "taskmgmt-6",
   toolName: "TaskOutput",
-  msgId: "gallery-msg",
   seq: 5,
   input: { task_id: "shell-9" },
   status: "streaming",
@@ -102,7 +96,6 @@ const STREAMING: ToolBlockProps = {
 const ERROR: ToolBlockProps = {
   toolUseId: "taskmgmt-7",
   toolName: "TaskGet",
-  msgId: "gallery-msg",
   seq: 6,
   input: { taskId: "missing-id" },
   textOutput: "Error: no task with id 'missing-id'",

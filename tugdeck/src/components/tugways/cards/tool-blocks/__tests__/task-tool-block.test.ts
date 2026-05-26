@@ -313,7 +313,7 @@ describe("synthetic Grep-in-subagent fixture — nested call routes via GrepTool
 
     // AgentTranscriptBlock at depth 0 dispatches its nested calls at
     // depth + 1.
-    const result = dispatchToolCallState(toolEntry.toolCall, "msg-17", 1);
+    const result = dispatchToolCallState(toolEntry.toolCall, 1);
     expect(result.Component).toBe(GrepToolBlock);
     expect(result.props.depth).toBe(1);
   });
@@ -333,7 +333,7 @@ describe("synthetic depth fixture — depth-3 renders, depth-4 collapses", () =>
 
     // A depth-3 AgentTranscriptBlock dispatches its nested Agent at
     // depth 4 — the nested TaskToolBlock carries `depth: 4`.
-    const result = dispatchToolCallState(toolEntry.toolCall, "msg-17", 4);
+    const result = dispatchToolCallState(toolEntry.toolCall, 4);
     expect(result.Component).toBe(TaskToolBlock);
     expect(result.props.depth).toBe(4);
   });

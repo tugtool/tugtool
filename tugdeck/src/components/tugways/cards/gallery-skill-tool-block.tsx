@@ -33,7 +33,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const SHORT_ARGS_SHORT_RESULT: ToolBlockProps = {
   toolUseId: "skill-1",
   toolName: "Skill",
-  msgId: "gallery-msg",
   seq: 0,
   input: { skill: "commit", args: "feat(tide): land Step 24.3.2" },
   textOutput: "done",
@@ -53,7 +52,6 @@ const LONG_ARGS = [
 const LONG_ARGS_FIXTURE: ToolBlockProps = {
   toolUseId: "skill-2",
   toolName: "Skill",
-  msgId: "gallery-msg",
   seq: 1,
   input: { skill: "review", args: LONG_ARGS },
   textOutput: "review queued",
@@ -64,7 +62,6 @@ const LONG_ARGS_FIXTURE: ToolBlockProps = {
 const NO_ARGS: ToolBlockProps = {
   toolUseId: "skill-3",
   toolName: "Skill",
-  msgId: "gallery-msg",
   seq: 2,
   input: { skill: "status" },
   textOutput: "branch: main · ahead by 2",
@@ -75,7 +72,6 @@ const NO_ARGS: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "skill-4",
   toolName: "Skill",
-  msgId: "gallery-msg",
   seq: 3,
   input: { skill: "commit" },
   status: "streaming",
@@ -84,7 +80,6 @@ const STREAMING: ToolBlockProps = {
 const ERROR: ToolBlockProps = {
   toolUseId: "skill-5",
   toolName: "Skill",
-  msgId: "gallery-msg",
   seq: 4,
   input: { skill: "deploy", args: "production --force" },
   textOutput: "Error: deploy skill requires CI to be green; current build failed.",

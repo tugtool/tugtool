@@ -668,21 +668,18 @@ const PendingDispatchBody: React.FC<PendingDispatchBodyProps> = ({
   // (plus `caution` which is only set on drift — preview is never
   // drift); `messageKey` + `createdAt` are required by the type but
   // not read by the renderer.
-  const result = dispatchToolCallState(
-    {
-      kind: "tool_use",
-      messageKey: `permission-dialog/${requestId}`,
-      createdAt: 0,
-      toolUseId: `permission-dialog/${requestId}`,
-      toolName,
-      input,
-      status: "done",
-      result: null,
-      structuredResult: null,
-      toolWallMs: null,
-    },
-    `permission-dialog/${requestId}`,
-  );
+  const result = dispatchToolCallState({
+    kind: "tool_use",
+    messageKey: `permission-dialog/${requestId}`,
+    createdAt: 0,
+    toolUseId: `permission-dialog/${requestId}`,
+    toolName,
+    input,
+    status: "done",
+    result: null,
+    structuredResult: null,
+    toolWallMs: null,
+  });
   const Component = result.Component as React.ComponentType<
     Record<string, unknown>
   >;

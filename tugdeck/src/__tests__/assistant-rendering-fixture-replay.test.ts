@@ -149,7 +149,7 @@ describe("assistant-rendering fixture replay — dispatch routing", () => {
 
         for (const ev of toolUses) {
           const toolCall = toolCallFromEvent(ev);
-          const result = dispatchToolCallState(toolCall, "msg-replay");
+          const result = dispatchToolCallState(toolCall);
 
           // Item 5 — the dispatched component matches the routing
           // table: bespoke for Table T02 tools, DefaultToolBlock
@@ -202,21 +202,18 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
   });
 
   test("a synthetic unknown-tool dispatch raises an unknown_tool caution", () => {
-    const result = dispatchToolCallState(
-      {
-        kind: "tool_use",
-        messageKey: "tu-synthetic-msg",
-        createdAt: 0,
-        toolUseId: "tu-synthetic",
-        toolName: "ZzzSyntheticUnknownTool",
-        input: {},
-        status: "done",
-        result: null,
-        structuredResult: null,
-        toolWallMs: null,
-      },
-      "msg-replay",
-    );
+    const result = dispatchToolCallState({
+      kind: "tool_use",
+      messageKey: "tu-synthetic-msg",
+      createdAt: 0,
+      toolUseId: "tu-synthetic",
+      toolName: "ZzzSyntheticUnknownTool",
+      input: {},
+      status: "done",
+      result: null,
+      structuredResult: null,
+      toolWallMs: null,
+    });
     expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toEqual({
       reason: "unknown_tool",

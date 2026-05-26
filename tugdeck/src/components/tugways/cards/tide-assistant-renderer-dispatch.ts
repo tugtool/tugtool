@@ -146,7 +146,6 @@ export type RenderInput =
   | {
       kind: "tool_call";
       toolCall: ToolUseMessage;
-      msgId: string;
     }
   | {
       kind: "user_text";
@@ -851,7 +850,7 @@ export function dispatch(
   context: DispatchContext,
 ): DispatchResult {
   if (input.kind === "tool_call") {
-    return dispatchToolCallState(input.toolCall, input.msgId);
+    return dispatchToolCallState(input.toolCall);
   }
   if (input.kind === "system_metadata") {
     // Version-drift check ([D04]): a `system_metadata.version` that
@@ -904,9 +903,16 @@ function extractTextOutput(result: unknown): string | undefined {
  * caution threaded onto the props and returned on the result.
  *
  * Exported so the transcript view can route a `ToolUseMessage` (from
- * `TurnEntry.toolCalls` or the parsed `inflight.tools` snapshot) to a
+ * `TurnEntry.messages` or `ActiveTurnSnapshot.messages`) to a
  * `(Component, props)` pair without fabricating a full
  * `DispatchContext` — the tool-call branch never consumed it.
+ *
+ * No `msgId` parameter per [D16]. The Message is the identity: tool
+ * blocks read what they need (`toolUseId`, `toolName`, `input`,
+ * `result`, `structuredResult`) from the `ToolUseMessage` they
+ * receive. Under [D07] each `ToolUseMessage` carries its own
+ * `messageKey`; the underlying claude `msg_id` is metadata on the
+ * Message, not a routing key.
  *
  * `depth` (default `0`) is the [D17] recursion depth: `AgentTranscriptBlock`
  * passes `depth + 1` when it routes a *nested* tool call, so a nested
@@ -920,7 +926,6 @@ function extractTextOutput(result: unknown): string | undefined {
  */
 export function dispatchToolCallState(
   toolCall: ToolUseMessage,
-  msgId: string,
   depth = 0,
   childToolCallsByParent?: ChildToolCallsMap,
   session?: CodeSessionStore,
@@ -941,7 +946,6 @@ export function dispatchToolCallState(
   const baseProps = {
     toolUseId: toolCall.toolUseId,
     toolName: toolCall.toolName,
-    msgId,
     seq: 0, // populated by the transcript view from event ordering
     input: toolCall.input,
     structuredResult: toolCall.structuredResult,

@@ -243,7 +243,6 @@ export function composeAgentTranscriptData(
 export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   toolUseId,
   toolName,
-  msgId,
   input,
   structuredResult,
   textOutput,
@@ -313,7 +312,6 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
       <AgentTranscriptBlock
         data={transcriptData}
         depth={depth}
-        msgId={msgId}
         childToolCallsByParent={childToolCallsByParent}
         embedded
         className="task-tool-block-transcript"

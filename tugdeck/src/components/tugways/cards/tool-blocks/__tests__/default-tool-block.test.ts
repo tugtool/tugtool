@@ -108,7 +108,7 @@ function fakeToolCall(
 
 describe("dispatch → DefaultToolBlock", () => {
   test("a synthetic unknown tool routes to DefaultToolBlock with a caution", () => {
-    const result = dispatchToolCallState(fakeToolCall("ZzzUnknown"), "m1");
+    const result = dispatchToolCallState(fakeToolCall("ZzzUnknown"));
     expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toEqual({
       reason: "unknown_tool",
@@ -136,10 +136,7 @@ describe("dispatch → DefaultToolBlock", () => {
       expect(defaultIntentToolNames().size).toBe(0);
       return;
     }
-    const result = dispatchToolCallState(
-      fakeToolCall(sample),
-      "m1",
-    );
+    const result = dispatchToolCallState(fakeToolCall(sample));
     expect(result.Component).toBe(DefaultToolBlock);
     expect(result.caution).toBeUndefined();
     expect(result.props.caution).toBeUndefined();

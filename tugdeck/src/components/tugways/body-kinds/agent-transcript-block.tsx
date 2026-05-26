@@ -131,13 +131,6 @@ export interface AgentTranscriptBlockProps {
   maxDepth?: number;
 
   /**
-   * Owning turn's message id — threaded onto nested
-   * `dispatchToolCallState` calls so nested wrappers carry a stable
-   * identifier.
-   */
-  msgId?: string;
-
-  /**
    * Subagent-nesting map ([#step-17-5]) — `parentToolUseId → children[]`,
    * built once by the transcript view. Threaded through so a
    * `tool_use` entry that is *itself* an `Agent` resolves its own
@@ -304,7 +297,6 @@ interface AgentEntryViewProps {
   entry: AgentTranscriptEntry;
   /** Recursion depth of the *parent* block — nested calls dispatch at +1. */
   depth: number;
-  msgId: string;
   /** Subagent-nesting map, threaded on to nested dispatch ([#step-17-5]). */
   childToolCallsByParent: ChildToolCallsMap | undefined;
 }
@@ -319,7 +311,6 @@ interface AgentEntryViewProps {
 const AgentEntryView: React.FC<AgentEntryViewProps> = ({
   entry,
   depth,
-  msgId,
   childToolCallsByParent,
 }) => {
   if (entry.kind === "text") {
@@ -335,7 +326,6 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
   }
   const { Component, props } = dispatchToolCallState(
     entry.toolCall,
-    msgId,
     depth + 1,
     childToolCallsByParent,
   );
@@ -358,7 +348,6 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
   data,
   depth = 0,
   maxDepth = AGENT_MAX_DEPTH,
-  msgId = "",
   childToolCallsByParent,
   label,
   embedded = false,
@@ -541,7 +530,6 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
               }
               entry={entry}
               depth={depth}
-              msgId={msgId}
               childToolCallsByParent={childToolCallsByParent}
             />
           ))}

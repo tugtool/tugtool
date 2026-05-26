@@ -22,7 +22,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const CREATE: ToolBlockProps = {
   toolUseId: "cron-1",
   toolName: "CronCreate",
-  msgId: "gallery-msg",
   seq: 0,
   input: {
     cron: "57 8 * * *",
@@ -38,7 +37,6 @@ const CREATE: ToolBlockProps = {
 const DELETE: ToolBlockProps = {
   toolUseId: "cron-2",
   toolName: "CronDelete",
-  msgId: "gallery-msg",
   seq: 1,
   input: { id: "cron-abc123" },
   textOutput: "Deleted",
@@ -49,7 +47,6 @@ const DELETE: ToolBlockProps = {
 const LIST: ToolBlockProps = {
   toolUseId: "cron-3",
   toolName: "CronList",
-  msgId: "gallery-msg",
   seq: 2,
   input: {},
   textOutput: [
@@ -64,7 +61,6 @@ const LIST: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "cron-4",
   toolName: "CronCreate",
-  msgId: "gallery-msg",
   seq: 3,
   input: { cron: "0 9" },
   status: "streaming",
@@ -73,7 +69,6 @@ const STREAMING: ToolBlockProps = {
 const ERROR: ToolBlockProps = {
   toolUseId: "cron-5",
   toolName: "CronDelete",
-  msgId: "gallery-msg",
   seq: 4,
   input: { id: "cron-missing" },
   textOutput: "Error: no cron job with id 'cron-missing'",

@@ -24,7 +24,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const LIST: ToolBlockProps = {
   toolUseId: "rt-1",
   toolName: "RemoteTrigger",
-  msgId: "gallery-msg",
   seq: 0,
   input: { action: "list" },
   textOutput: JSON.stringify(
@@ -44,7 +43,6 @@ const LIST: ToolBlockProps = {
 const GET: ToolBlockProps = {
   toolUseId: "rt-2",
   toolName: "RemoteTrigger",
-  msgId: "gallery-msg",
   seq: 1,
   input: { action: "get", trigger_id: "trg-aaa" },
   textOutput: JSON.stringify(
@@ -65,7 +63,6 @@ const GET: ToolBlockProps = {
 const CREATE: ToolBlockProps = {
   toolUseId: "rt-3",
   toolName: "RemoteTrigger",
-  msgId: "gallery-msg",
   seq: 2,
   input: {
     action: "create",
@@ -84,7 +81,6 @@ const CREATE: ToolBlockProps = {
 const UPDATE: ToolBlockProps = {
   toolUseId: "rt-4",
   toolName: "RemoteTrigger",
-  msgId: "gallery-msg",
   seq: 3,
   input: {
     action: "update",
@@ -100,7 +96,6 @@ const UPDATE: ToolBlockProps = {
 const RUN: ToolBlockProps = {
   toolUseId: "rt-5",
   toolName: "RemoteTrigger",
-  msgId: "gallery-msg",
   seq: 4,
   input: { action: "run", trigger_id: "trg-aaa" },
   textOutput: JSON.stringify(
@@ -115,7 +110,6 @@ const RUN: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "rt-6",
   toolName: "RemoteTrigger",
-  msgId: "gallery-msg",
   seq: 5,
   input: { action: "list" },
   status: "streaming",
@@ -124,7 +118,6 @@ const STREAMING: ToolBlockProps = {
 const ERROR: ToolBlockProps = {
   toolUseId: "rt-7",
   toolName: "RemoteTrigger",
-  msgId: "gallery-msg",
   seq: 6,
   input: { action: "get", trigger_id: "trg-missing" },
   textOutput: "Error 404: trigger 'trg-missing' not found",

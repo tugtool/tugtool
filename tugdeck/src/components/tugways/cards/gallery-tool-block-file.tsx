@@ -94,7 +94,6 @@ const LONG_SOURCE = Array.from(
 const READ_FULL: ToolBlockProps = {
   toolUseId: "gallery-read-full",
   toolName: "Read",
-  msgId: "gallery-file-msg",
   seq: 0,
   input: { file_path: "src/greet.ts" },
   structuredResult: {
@@ -113,7 +112,6 @@ const READ_FULL: ToolBlockProps = {
 const READ_WINDOWED: ToolBlockProps = {
   toolUseId: "gallery-read-windowed",
   toolName: "Read",
-  msgId: "gallery-file-msg",
   seq: 1,
   input: { file_path: "src/synthesized/long-module.ts", offset: 40, limit: 12 },
   structuredResult: {
@@ -132,7 +130,6 @@ const READ_WINDOWED: ToolBlockProps = {
 const READ_ERROR: ToolBlockProps = {
   toolUseId: "gallery-read-error",
   toolName: "Read",
-  msgId: "gallery-file-msg",
   seq: 2,
   input: { file_path: "src/missing.ts" },
   textOutput: "ENOENT: no such file or directory, open 'src/missing.ts'",
@@ -147,7 +144,6 @@ const READ_ERROR: ToolBlockProps = {
 const EDIT_STRUCTURED: ToolBlockProps = {
   toolUseId: "gallery-edit-structured",
   toolName: "Edit",
-  msgId: "gallery-file-msg",
   seq: 3,
   input: {
     file_path: "src/greet.ts",
@@ -180,7 +176,6 @@ const EDIT_STRUCTURED: ToolBlockProps = {
 const EDIT_TWO_TEXT: ToolBlockProps = {
   toolUseId: "gallery-edit-two-text",
   toolName: "Edit",
-  msgId: "gallery-file-msg",
   seq: 4,
   input: {
     file_path: "src/version.ts",
@@ -193,7 +188,6 @@ const EDIT_TWO_TEXT: ToolBlockProps = {
 const EDIT_ERROR: ToolBlockProps = {
   toolUseId: "gallery-edit-error",
   toolName: "Edit",
-  msgId: "gallery-file-msg",
   seq: 5,
   input: {
     file_path: "src/greet.ts",
@@ -212,7 +206,6 @@ const EDIT_ERROR: ToolBlockProps = {
 const WRITE_NEW: ToolBlockProps = {
   toolUseId: "gallery-write-new",
   toolName: "Write",
-  msgId: "gallery-file-msg",
   seq: 6,
   input: {
     file_path: "/tmp/hello.txt",
@@ -229,7 +222,6 @@ const WRITE_NEW: ToolBlockProps = {
 const WRITE_OVERWRITE: ToolBlockProps = {
   toolUseId: "gallery-write-overwrite",
   toolName: "Write",
-  msgId: "gallery-file-msg",
   seq: 7,
   input: {
     file_path: "src/version.ts",
@@ -246,7 +238,6 @@ const WRITE_OVERWRITE: ToolBlockProps = {
 const WRITE_ERROR: ToolBlockProps = {
   toolUseId: "gallery-write-error",
   toolName: "Write",
-  msgId: "gallery-file-msg",
   seq: 8,
   input: { file_path: "/root/protected.txt", content: "denied" },
   textOutput: "EACCES: permission denied, open '/root/protected.txt'",
@@ -261,7 +252,6 @@ const WRITE_ERROR: ToolBlockProps = {
 const NOTEBOOK_REPLACE: ToolBlockProps = {
   toolUseId: "gallery-notebook-replace",
   toolName: "NotebookEdit",
-  msgId: "gallery-file-msg",
   seq: 9,
   input: {
     notebook_path: "/tmp/sample.ipynb",
@@ -284,7 +274,6 @@ const NOTEBOOK_REPLACE: ToolBlockProps = {
 const NOTEBOOK_INSERT: ToolBlockProps = {
   toolUseId: "gallery-notebook-insert",
   toolName: "NotebookEdit",
-  msgId: "gallery-file-msg",
   seq: 10,
   input: {
     notebook_path: "/tmp/sample.ipynb",
@@ -306,7 +295,6 @@ const NOTEBOOK_INSERT: ToolBlockProps = {
 const NOTEBOOK_DELETE: ToolBlockProps = {
   toolUseId: "gallery-notebook-delete",
   toolName: "NotebookEdit",
-  msgId: "gallery-file-msg",
   seq: 11,
   input: {
     notebook_path: "/tmp/sample.ipynb",

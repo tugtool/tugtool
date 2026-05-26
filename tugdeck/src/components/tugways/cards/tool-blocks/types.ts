@@ -130,8 +130,6 @@ export interface ToolBlockProps<TInput = unknown, TStructured = unknown> {
   toolUseId: string;
   /** Canonical tool name as emitted on the wire (case may vary). */
   toolName: string;
-  /** Owning turn's message id; used to scope streaming subscriptions. */
-  msgId: string;
   /** Owning turn's sequence number; used for ordering across concurrent calls. */
   seq: number;
   /** Tool input as it arrives. May be empty / partial during streaming. */

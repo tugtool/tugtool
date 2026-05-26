@@ -25,7 +25,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const CHECK: ToolBlockProps = {
   toolUseId: "sog-1",
   toolName: "ShareOnboardingGuide",
-  msgId: "gallery-msg",
   seq: 0,
   input: { mode: "check" },
   textOutput: "Found existing guide: https://claude.ai/code/onboarding/abc123 (status: has_existing)",
@@ -36,7 +35,6 @@ const CHECK: ToolBlockProps = {
 const CREATE: ToolBlockProps = {
   toolUseId: "sog-2",
   toolName: "ShareOnboardingGuide",
-  msgId: "gallery-msg",
   seq: 1,
   input: { mode: "create" },
   textOutput: "Created new guide: https://claude.ai/code/onboarding/xyz789",
@@ -47,7 +45,6 @@ const CREATE: ToolBlockProps = {
 const UPDATE: ToolBlockProps = {
   toolUseId: "sog-3",
   toolName: "ShareOnboardingGuide",
-  msgId: "gallery-msg",
   seq: 2,
   input: { mode: "update", short_code: "abc123" },
   textOutput: "Updated guide: https://claude.ai/code/onboarding/abc123",
@@ -58,7 +55,6 @@ const UPDATE: ToolBlockProps = {
 const DELETE: ToolBlockProps = {
   toolUseId: "sog-4",
   toolName: "ShareOnboardingGuide",
-  msgId: "gallery-msg",
   seq: 3,
   input: { mode: "delete", short_code: "abc123" },
   textOutput: "Deleted guide abc123",
@@ -69,7 +65,6 @@ const DELETE: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "sog-5",
   toolName: "ShareOnboardingGuide",
-  msgId: "gallery-msg",
   seq: 4,
   input: { mode: "check" },
   status: "streaming",
@@ -78,7 +73,6 @@ const STREAMING: ToolBlockProps = {
 const ERROR: ToolBlockProps = {
   toolUseId: "sog-6",
   toolName: "ShareOnboardingGuide",
-  msgId: "gallery-msg",
   seq: 5,
   input: { mode: "update", short_code: "missing" },
   textOutput: "Error: no guide with short_code 'missing'",

@@ -55,7 +55,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const UNKNOWN_JSON: ToolBlockProps = {
   toolUseId: "gallery-default-unknown-json",
   toolName: "WeatherLookup",
-  msgId: "gallery-default-msg",
   seq: 0,
   input: { city: "Kyoto", units: "metric", includeForecast: true },
   structuredResult: {
@@ -73,7 +72,6 @@ const UNKNOWN_JSON: ToolBlockProps = {
 const UNKNOWN_TEXT: ToolBlockProps = {
   toolUseId: "gallery-default-unknown-text",
   toolName: "FormatProse",
-  msgId: "gallery-default-msg",
   seq: 1,
   input: { style: "concise", text: "the quick brown fox" },
   textOutput:
@@ -85,7 +83,6 @@ const UNKNOWN_TEXT: ToolBlockProps = {
 const AUDIT_CONFIRMED: ToolBlockProps = {
   toolUseId: "gallery-default-audit-confirmed",
   toolName: "TaskUpdate",
-  msgId: "gallery-default-msg",
   seq: 2,
   input: { taskId: "7", status: "completed" },
   structuredResult: { taskId: "7", status: "completed", updatedAt: "2026-05-14T00:00:00Z" },
@@ -95,7 +92,6 @@ const AUDIT_CONFIRMED: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "gallery-default-streaming",
   toolName: "SlowImport",
-  msgId: "gallery-default-msg",
   seq: 3,
   input: {},
   status: "streaming",
@@ -105,7 +101,6 @@ const STREAMING: ToolBlockProps = {
 const ERRORED: ToolBlockProps = {
   toolUseId: "gallery-default-error",
   toolName: "DeployService",
-  msgId: "gallery-default-msg",
   seq: 4,
   input: { service: "tugcast", environment: "staging" },
   textOutput: "Deploy rejected: environment 'staging' is locked for the release freeze.",
@@ -117,7 +112,6 @@ const ERRORED: ToolBlockProps = {
 const NO_OUTPUT: ToolBlockProps = {
   toolUseId: "gallery-default-no-output",
   toolName: "TouchFile",
-  msgId: "gallery-default-msg",
   seq: 5,
   input: { path: "/tmp/marker" },
   status: "ready",

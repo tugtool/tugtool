@@ -32,7 +32,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const CREATED: ToolBlockProps = {
   toolUseId: "tcr-1",
   toolName: "TaskCreate",
-  msgId: "gallery-msg",
   seq: 0,
   input: { subject: "Write the spec" },
   isError: false,
@@ -45,7 +44,6 @@ const CREATED: ToolBlockProps = {
 const STARTED: ToolBlockProps = {
   toolUseId: "tup-1",
   toolName: "TaskUpdate",
-  msgId: "gallery-msg",
   seq: 1,
   input: { taskId: "2", status: "in_progress" },
   isError: false,
@@ -55,7 +53,6 @@ const STARTED: ToolBlockProps = {
 const COMPLETED: ToolBlockProps = {
   toolUseId: "tup-2",
   toolName: "TaskUpdate",
-  msgId: "gallery-msg",
   seq: 2,
   input: { taskId: "2", status: "completed" },
   isError: false,
@@ -65,7 +62,6 @@ const COMPLETED: ToolBlockProps = {
 const RESET: ToolBlockProps = {
   toolUseId: "tup-3",
   toolName: "TaskUpdate",
-  msgId: "gallery-msg",
   seq: 3,
   input: { taskId: "2", status: "pending" },
   isError: false,
@@ -75,7 +71,6 @@ const RESET: ToolBlockProps = {
 const UNKNOWN_ID_FALLBACK: ToolBlockProps = {
   toolUseId: "tup-4",
   toolName: "TaskUpdate",
-  msgId: "gallery-msg",
   seq: 4,
   input: { taskId: "99", status: "completed" },
   isError: false,
@@ -85,7 +80,6 @@ const UNKNOWN_ID_FALLBACK: ToolBlockProps = {
 const STREAMING_CREATE: ToolBlockProps = {
   toolUseId: "tcr-stream",
   toolName: "TaskCreate",
-  msgId: "gallery-msg",
   seq: 5,
   input: {},
   status: "streaming",
@@ -94,7 +88,6 @@ const STREAMING_CREATE: ToolBlockProps = {
 const STREAMING_UPDATE: ToolBlockProps = {
   toolUseId: "tup-stream",
   toolName: "TaskUpdate",
-  msgId: "gallery-msg",
   seq: 6,
   input: { taskId: "2" }, // status not yet arrived
   status: "streaming",
@@ -103,7 +96,6 @@ const STREAMING_UPDATE: ToolBlockProps = {
 const ERROR_CREATE: ToolBlockProps = {
   toolUseId: "tcr-err",
   toolName: "TaskCreate",
-  msgId: "gallery-msg",
   seq: 7,
   input: { subject: "Write the spec" },
   textOutput: "Error: subject is required",
@@ -114,7 +106,6 @@ const ERROR_CREATE: ToolBlockProps = {
 const ERROR_UPDATE: ToolBlockProps = {
   toolUseId: "tup-err",
   toolName: "TaskUpdate",
-  msgId: "gallery-msg",
   seq: 8,
   input: { taskId: "99", status: "completed" },
   textOutput: "Error: no task with id '99'",

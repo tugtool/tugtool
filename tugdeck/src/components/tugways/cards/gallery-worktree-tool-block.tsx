@@ -33,7 +33,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const ENTER_BRANCH_ONLY: ToolBlockProps = {
   toolUseId: "wt-1",
   toolName: "EnterWorktree",
-  msgId: "gallery-msg",
   seq: 0,
   input: { branch: "feature/tide-step-24-3-2" },
   textOutput: "",
@@ -44,7 +43,6 @@ const ENTER_BRANCH_ONLY: ToolBlockProps = {
 const ENTER_BRANCH_PLUS_PATH: ToolBlockProps = {
   toolUseId: "wt-2",
   toolName: "EnterWorktree",
-  msgId: "gallery-msg",
   seq: 1,
   input: {
     branch: "feature/tide-step-24-3-2",
@@ -58,7 +56,6 @@ const ENTER_BRANCH_PLUS_PATH: ToolBlockProps = {
 const EXIT_BRANCH: ToolBlockProps = {
   toolUseId: "wt-3",
   toolName: "ExitWorktree",
-  msgId: "gallery-msg",
   seq: 2,
   input: { branch: "feature/tide-step-24-3-2" },
   textOutput: "",
@@ -69,7 +66,6 @@ const EXIT_BRANCH: ToolBlockProps = {
 const PATH_ONLY: ToolBlockProps = {
   toolUseId: "wt-4",
   toolName: "EnterWorktree",
-  msgId: "gallery-msg",
   seq: 3,
   input: { path: "/Users/kocienda/wt/main" },
   textOutput: "",
@@ -80,7 +76,6 @@ const PATH_ONLY: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "wt-5",
   toolName: "EnterWorktree",
-  msgId: "gallery-msg",
   seq: 4,
   input: {},
   status: "streaming",
@@ -89,7 +84,6 @@ const STREAMING: ToolBlockProps = {
 const ERROR: ToolBlockProps = {
   toolUseId: "wt-6",
   toolName: "EnterWorktree",
-  msgId: "gallery-msg",
   seq: 5,
   input: {
     branch: "feature/x",

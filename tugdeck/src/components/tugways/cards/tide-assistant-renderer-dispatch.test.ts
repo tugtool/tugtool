@@ -148,7 +148,6 @@ describe("dispatch — tool_call routing", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Edit"),
-      msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
     expect(result.Component).toBe(FakeEditWrapper);
@@ -159,7 +158,6 @@ describe("dispatch — tool_call routing", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("ZzzUnknownTool"),
-      msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
     expect(result.Component).toBe(DefaultToolBlock);
@@ -196,7 +194,6 @@ describe("dispatch — tool_call routing", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall(sample),
-      msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
     expect(result.Component).toBe(DefaultToolBlock);
@@ -225,7 +222,7 @@ describe("dispatch — tool_call routing", () => {
     registerToolBlock("taskupdate", TaskInlineToolBlock);
     for (const toolName of ["TaskCreate", "TaskUpdate"]) {
       const result = dispatch(
-        { kind: "tool_call", toolCall: fakeToolCall(toolName), msgId: "m1" },
+        { kind: "tool_call", toolCall: fakeToolCall(toolName), },
         fakeContext,
       );
       expect(result.Component).toBe(TaskInlineToolBlock);
@@ -244,13 +241,15 @@ describe("dispatch — tool_call routing", () => {
         input: { file_path: "/x.ts", old_string: "a", new_string: "b" },
         status: "done",
       }),
-      msgId: "msg-7",
     };
     const result = dispatch(input, fakeContext);
     const props = result.props as Record<string, unknown>;
     expect(props.toolUseId).toBe("tu-42");
     expect(props.toolName).toBe("Edit");
-    expect(props.msgId).toBe("msg-7");
+    // Per [D16], `msgId` is no longer a prop on tool-block dispatch —
+    // the Message is the identity; tool blocks read what they need
+    // from the `ToolUseMessage` they receive.
+    expect(props.msgId).toBeUndefined();
     expect(props.status).toBe("ready");
     expect(props.isError).toBe(false);
     expect(props.input).toEqual({
@@ -265,7 +264,6 @@ describe("dispatch — tool_call routing", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Bash", { status: "pending" }),
-      msgId: "m1",
     };
     const props = dispatch(input, fakeContext).props as { status: string };
     expect(props.status).toBe("streaming");
@@ -276,7 +274,6 @@ describe("dispatch — tool_call routing", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Bash", { status: "error" }),
-      msgId: "m1",
     };
     const props = dispatch(input, fakeContext).props as {
       status: string;
@@ -570,7 +567,6 @@ describe("dispatch — shape drift routing", () => {
     const input: RenderInput = {
       kind: "tool_call",
       toolCall: fakeToolCall("Read", { structuredResult: { file: 42 } }),
-      msgId: "m1",
     };
     const result = dispatch(input, fakeContext);
     expect(result.Component).toBe(DefaultToolBlock);
@@ -589,7 +585,6 @@ describe("dispatch — shape drift routing", () => {
     registerToolBlock("read", FakeEditWrapper);
     const result = dispatchToolCallState(
       fakeToolCall("Read", { structuredResult: { file: { content: "x" } } }),
-      "m1",
     );
     expect(result.Component).toBe(FakeEditWrapper);
     expect(result.caution).toBeUndefined();

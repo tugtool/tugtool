@@ -1428,7 +1428,7 @@ After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an o
 
 **References:** [D16] tool dispatch msgId removed
 
-**Status:** Not started. Independent of Steps 5.5 / 5.6 (TSC-enforced tugdeck-only cleanup); can land in any order with them, but lands before Step 5.9 so the per-Message row renderers don't inherit dead `msgId` plumbing.
+**Status:** Shipped. `msgId` dropped from `ToolBlockProps`, `RenderInput.tool_call`, and `dispatchToolCallState`'s positional surface. CodeRowBody's `toolMsgId` thread + the `useSyncExternalStore(activeMsgId)` subscription it fed retired. `AgentTranscriptBlock` / `TaskToolBlock` recursive thread retired. Gallery fixtures and test callsites updated. Both TSC + test suites green; tugdeck 2800 pass, tugcode 476 pass; grep audit returns zero.
 
 **Why this step exists.** `msgId` threading on the tool-block dispatch surface (`dispatchToolCallState`, `ToolBlockProps`, `RenderInput.tool_call`, `CodeRowBody`'s `toolMsgId`) was load-bearing under the paired-substrate's "tool blocks are a flat list correlated by msg_id" model. Under [D07] each `ToolUseMessage` carries its own `messageKey`; the msg_id is metadata on the Message, not a routing key. This step retires the dead surface per [D16].
 
@@ -1442,10 +1442,10 @@ After Commit 2 lands, tugdeck strictly requires the new IPC fields. Running an o
 
 **Tasks:**
 
-- [ ] `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts`: drop `msgId` parameter from `dispatchToolCallState`; remove from `baseProps` construction; remove from `RenderInput.tool_call`.
-- [ ] `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`: drop `toolMsgId` from `CodeRowBodyProps`; remove the `inflightMsgId` subscription; remove the `turn.msgId` fallback.
-- [ ] `tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx`: drop `msgId` from recursive dispatch.
-- [ ] Audit every tool-block consumer of `ToolBlockProps`; confirm zero behavioral reads of `msgId`. Remove the prop from each consumer's type and TSX.
+- [x] `tugdeck/src/components/tugways/cards/tide-assistant-renderer-dispatch.ts`: drop `msgId` parameter from `dispatchToolCallState`; remove from `baseProps` construction; remove from `RenderInput.tool_call`.
+- [x] `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`: drop `toolMsgId` from `CodeRowBodyProps`; remove the `inflightMsgId` subscription; remove the `turn.msgId` fallback.
+- [x] `tugdeck/src/components/tugways/body-kinds/agent-transcript-block.tsx`: drop `msgId` from recursive dispatch (also dropped from `AgentTranscriptBlockProps` and `AgentEntryViewProps` — the prop was passthrough-only).
+- [x] Audit every tool-block consumer of `ToolBlockProps`; confirm zero behavioral reads of `msgId`. Remove the prop from each consumer's type and TSX. (Audit findings: `TaskToolBlock` destructured `msgId` only to thread back into nested `AgentTranscriptBlock` — pure passthrough, no behavioral read; 11 gallery files carried `msgId` literals as type-satisfying fixtures with no behavioral use; consumer-fallback rule was unneeded.)
 
 **Consumer-fallback rule (if any tool-block needs `msg_id` for behavior).** The audit should find zero such cases. If one surfaces, choose between two recoveries, in this preference order:
 
@@ -1456,13 +1456,13 @@ User-message and system-note messageKeys don't carry an msg_id (no claude-side `
 
 **Tests:**
 
-- [ ] Existing tool-block tests pass (signature change is TSC-enforced; behavior unchanged).
+- [x] Existing tool-block tests pass (signature change is TSC-enforced; behavior unchanged). Test fixtures updated: `tide-assistant-renderer-dispatch.test.ts` (8 tool_call RenderInput literals + 1 `expect(props.msgId).toBe(...)` → `expect(props.msgId).toBeUndefined()`), `default-tool-block.test.ts` (2 dispatchToolCallState calls), `task-tool-block.test.ts` (2 calls), `assistant-rendering-fixture-replay.test.ts` (2 calls), `tide-permission-dialog.tsx`'s `PendingDispatchBody` synthetic dispatch.
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` green.
-- [ ] `grep -rE "toolMsgId|ToolBlockProps\.msgId|RenderInput.*msgId\b" tugdeck/src --include="*.tsx" --include="*.ts"` returns zero matches.
-- [ ] Manual sweep: tool blocks render and update correctly across live, replay, and in-flight → committed transitions; no behavior regression.
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` green. (2800 tests pass, no regressions.)
+- [x] `grep -rE "toolMsgId|ToolBlockProps\.msgId|RenderInput.*msgId\b" tugdeck/src --include="*.tsx" --include="*.ts"` returns zero matches.
+- [x] Manual sweep: tool blocks render and update correctly across live, replay, and in-flight → committed transitions; no behavior regression.
 
 ---
 

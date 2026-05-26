@@ -29,7 +29,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const PARSED_RESULTS: ToolBlockProps = {
   toolUseId: "websearch-1",
   toolName: "WebSearch",
-  msgId: "gallery-msg",
   seq: 0,
   input: { query: "react 19 release notes" },
   textOutput: [
@@ -45,7 +44,6 @@ const PARSED_RESULTS: ToolBlockProps = {
 const MARKDOWN_FALLBACK: ToolBlockProps = {
   toolUseId: "websearch-2",
   toolName: "WebSearch",
-  msgId: "gallery-msg",
   seq: 1,
   input: { query: "claude code documentation" },
   textOutput: [
@@ -62,7 +60,6 @@ const MARKDOWN_FALLBACK: ToolBlockProps = {
 const DOMAIN_FILTERED: ToolBlockProps = {
   toolUseId: "websearch-3",
   toolName: "WebSearch",
-  msgId: "gallery-msg",
   seq: 2,
   input: {
     query: "rust async traits",
@@ -79,7 +76,6 @@ const DOMAIN_FILTERED: ToolBlockProps = {
 const EMPTY_RESULTS: ToolBlockProps = {
   toolUseId: "websearch-4",
   toolName: "WebSearch",
-  msgId: "gallery-msg",
   seq: 3,
   input: { query: "totally-unique-query-string-xyz-12345" },
   textOutput: "No results found for that query.",

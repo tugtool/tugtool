@@ -67,7 +67,6 @@ const MOUNT_IN_SAVED_STATE_PROPS: ToolBlockProps = {
   // (the BashToolBlock derives its preservation key from `toolUseId`).
   toolUseId: "toolu_mount_in_saved_state_e8",
   toolName: "Bash",
-  msgId: "gallery-mount-in-saved-state-msg",
   seq: 0,
   input: { command: "echo many lines" },
   structuredResult: {
@@ -103,7 +102,6 @@ export function GalleryBashMountInSavedState(): React.ReactElement {
 const ECHO_HELLO: ToolBlockProps = {
   toolUseId: "echo-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 0,
   input: { command: "echo 'hello from bash'" },
   structuredResult: { stdout: "hello from bash\n", stderr: "", interrupted: false },
@@ -136,7 +134,6 @@ index abc1234..def5678 100644
 const GIT_SHOW_HEAD: ToolBlockProps = {
   toolUseId: "git-show-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 1,
   input: { command: "git show HEAD" },
   structuredResult: { stdout: GIT_SHOW_FIXTURE, stderr: "", interrupted: false },
@@ -158,7 +155,6 @@ index 1111111..2222222 100644
 const GIT_DIFF: ToolBlockProps = {
   toolUseId: "git-diff-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 2,
   input: { command: "git diff lib/foo.ts" },
   structuredResult: { stdout: GIT_DIFF_FIXTURE, stderr: "", interrupted: false },
@@ -177,7 +173,6 @@ nothing to commit, working tree clean
 const GIT_STATUS: ToolBlockProps = {
   toolUseId: "git-status-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 3,
   input: { command: "git status" },
   structuredResult: { stdout: GIT_STATUS_FIXTURE, stderr: "", interrupted: false },
@@ -202,7 +197,6 @@ Found 1 error.
 const BUILD_FAILURE: ToolBlockProps = {
   toolUseId: "build-failure-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 4,
   input: { command: "npm run build" },
   structuredResult: {
@@ -223,7 +217,6 @@ const BUILD_FAILURE: ToolBlockProps = {
 const INTERRUPTED: ToolBlockProps = {
   toolUseId: "interrupted-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 5,
   input: { command: "sleep 600" },
   structuredResult: {
@@ -251,7 +244,6 @@ const ANSI_RICH_FIXTURE =
 const ANSI_RICH: ToolBlockProps = {
   toolUseId: "ansi-rich-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 6,
   input: { command: "ls --color" },
   structuredResult: {
@@ -272,7 +264,6 @@ const ANSI_RICH: ToolBlockProps = {
 const NO_OUTPUT: ToolBlockProps = {
   toolUseId: "no-output-1",
   toolName: "Bash",
-  msgId: "gallery-msg",
   seq: 7,
   input: { command: "cd /tmp" },
   structuredResult: { stdout: "", stderr: "", interrupted: false },

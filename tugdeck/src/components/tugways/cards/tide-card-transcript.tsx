@@ -548,14 +548,6 @@ interface CodeRowBodyProps {
   messages: ReadonlyArray<import("@/lib/code-session-store").Message>;
   turnKey: string;
   streamingStore: PropertyStore;
-  /**
-   * `msg_id` threaded onto tool blocks. For committed rows the
-   * canonical `turn.msgId`; for in-flight rows the snapshot's live
-   * `activeMsgId`. Tool blocks key off it for cross-tool coordination
-   * (today: none; reserved for future use). Empty string is
-   * acceptable while no msg_id has bound yet.
-   */
-  toolMsgId: string;
   session: CodeSessionStore;
 }
 
@@ -563,7 +555,6 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   messages,
   turnKey,
   streamingStore,
-  toolMsgId,
   session,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
@@ -625,7 +616,6 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     if (message.parentToolUseId !== undefined) continue;
     const { Component, props } = dispatchToolCallState(
       message,
-      toolMsgId,
       0,
       childrenByParent,
       session,
@@ -773,17 +763,6 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
     );
   }
 
-  // In-flight `msg_id` threaded onto streaming tool blocks. For
-  // committed rows we already have the canonical `turn.msgId`.
-  const inflightMsgId = useSyncExternalStore(
-    codeSessionStore.subscribe,
-    useCallback(
-      () => codeSessionStore.getSnapshot().activeMsgId ?? "",
-      [codeSessionStore],
-    ),
-  );
-  const toolMsgId = isCommitted ? (turn?.msgId ?? "") : inflightMsgId;
-
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
   return (
@@ -834,7 +813,6 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                 messages={messages}
                 turnKey={turnKey}
                 streamingStore={streamingStore}
-                toolMsgId={toolMsgId}
                 session={codeSessionStore}
               />
               {permissionSlot}

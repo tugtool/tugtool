@@ -31,7 +31,6 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 const FRESH_FETCH: ToolBlockProps = {
   toolUseId: "webfetch-1",
   toolName: "WebFetch",
-  msgId: "gallery-msg",
   seq: 0,
   input: {
     url: "https://www.anthropic.com",
@@ -51,7 +50,6 @@ const FRESH_FETCH: ToolBlockProps = {
 const CACHE_HIT: ToolBlockProps = {
   toolUseId: "webfetch-2",
   toolName: "WebFetch",
-  msgId: "gallery-msg",
   seq: 1,
   input: {
     url: "https://react.dev/blog/2024/04/25/react-19",
@@ -71,7 +69,6 @@ const CACHE_HIT: ToolBlockProps = {
 const STREAMING: ToolBlockProps = {
   toolUseId: "webfetch-3",
   toolName: "WebFetch",
-  msgId: "gallery-msg",
   seq: 2,
   input: { url: "https://example.com/long-running" },
   status: "streaming",
@@ -80,7 +77,6 @@ const STREAMING: ToolBlockProps = {
 const FETCH_ERROR: ToolBlockProps = {
   toolUseId: "webfetch-4",
   toolName: "WebFetch",
-  msgId: "gallery-msg",
   seq: 3,
   input: {
     url: "https://nonexistent.example",
