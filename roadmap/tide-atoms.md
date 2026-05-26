@@ -238,19 +238,31 @@ The Chromium row is sanity-check only — it confirms we understood the engine m
 - `reducer.ts:handleSend` and the queued-send flush at `reducer.ts:2147-2218` consume the pre-flattened values.
 - `TurnEntry.userMessage.text` is never mutated to remove `U+FFFC`; it stays raw for transcript rendering.
 
-#### [D02] Image atoms ride as inline `Attachment` records; non-image atoms as substituted text (DECIDED) {#d02-image-attach-text-rest}
+#### [D02] Atoms with bytes ride as inline `Attachment` records; drop / paste rejects what can't ride (DECIDED) {#d02-image-attach-text-rest}
 
-**Decision:** At submit, atoms with `type === "image"` and bytes in the per-card bytes-store are emitted as `Attachment{filename, content, media_type}` entries on the `user_message` wire frame. All other atom types (`file`, `doc`, `link`, `command`) ride only as substituted text in the wire body — no separate transport.
+**Decision:** The wire-side discriminator is **bytes in the per-card store, not atom type**. At submit, any atom whose `id` resolves to a bytes-store entry rides as `Attachment{filename, content, media_type}` on the `user_message` wire frame; atoms without an id (or whose id is unknown to the store) ride only as substituted text in `wireText`. Image atoms ship base64 image bytes; text-file atoms (Finder drops of `.md` / `.json` / source files) ship raw UTF-8 text.
+
+The drop / paste pipeline rejects file kinds it can't ship at drop time (not at submit time): binary non-image, non-text sources (PDF, archives, audio, video) produce no atom — instead they surface a banner via the `attachment_rejected` channel. The user sees the rejection immediately; no skeleton chip is left behind for them to wonder about.
+
+Skeleton-atom feedback: image and text drops insert their atoms *synchronously* with a UUID id and a pending appearance (dimmed + pulsing). The async byte-fill runs in the background; on success, the bytes land in the store and the pending-sync `ViewPlugin` mutates `data-pending` off via direct DOM (no widget rebuild). On failure, the skeleton atom is removed and the user sees the banner. Submit is gated while any pending atom is in the doc — submitting a half-processed image would silently ship just the filename.
 
 **Rationale:**
-- Image bytes can only reach claude via the Attachment slot (the Anthropic content-block protocol mandates `{type:"image", source:{...}}` blocks).
-- Non-image references are conventionally textual. Test 24 in `transport-exploration.md` empirically established that `@`-paths reach claude as plain text in stream-json mode; claude's own `Read` tool fetches if needed. This matches the terminal's behavior.
-- Avoids inventing a new ref-shape on the wire.
-- Forward-compatible: a future `kind: "ref"` arm slots in additively to the union without breaking the existing inline shape.
+- Image bytes can only reach claude via the Attachment slot (Anthropic content-block protocol mandates `{type:"image", source:{...}}` blocks).
+- Text-file bytes from Finder drops have nowhere to land otherwise — claude can't `Read` a path outside the workspace. tugcode's `buildContentBlocks` already wraps any non-image Attachment in a `text` content block (`session.ts:331-334`); we extend the browser side to populate that path.
+- Workspace `@`-mentions still ride as text in `wireText` — Test 24 in `transport-exploration.md` empirically established that claude's `Read` tool fetches workspace-relative paths on demand. This matches the terminal's behavior and stays cheap on tokens.
+- Silently inserting filename-only atoms for unsupported binaries was confusing — the chip looked usable but the bytes were silently dropped at submit. Drop-time rejection is the honest signal and steers the user toward a workable path (convert, or wait for v2 PDF support).
+- Skeleton atoms give instant visual feedback at the drop point. Without them, 1-2 s of async work felt like the drop failed.
+- PDF / `document` content blocks remain deferred per [Q03](#q03-pdf-deferred).
+- Forward-compatible: a future `kind: "ref"` arm or `document` content block slots in additively without breaking the existing shape.
 
 **Implications:**
-- `buildContentBlocks` in tugcode (`session.ts:297-343`) is unchanged; we feed it real attachments instead of empty.
-- file / doc / link atoms in v1 never carry bytes; only their `value` field appears in wire text.
+- `buildContentBlocks` in tugcode (`session.ts:297-343`) is unchanged; the existing image / text branches handle the new mix.
+- `tugdeck/src/lib/text-attachment.ts` (`isTextSource`, `readTextAttachment`) classifies and reads text-file drops.
+- `buildWirePayload` ships any atom with `id !== undefined` + bytes — the bytes-store's `mediaType` drives tugcode's image-vs-text content-block branching.
+- File / doc atoms from `@`-completion continue to ride as text only (no id, no bytes).
+- Binary non-image, non-text drops surface an `attachment_rejected` banner and never become atoms.
+- Skeleton atom rendering goes through `createAtomImgElement(...{ id, pending: true })`; the appearance is themed via `pendingAtomTheme`. The pending-sync `ViewPlugin` (in `atom-decoration.ts`) subscribes to the bytes-store and reconciles `data-pending` via direct DOM mutation when bytes arrive.
+- `performSubmit` (`tug-prompt-entry.tsx`) checks for pending atoms via the bytes-store and bails with a banner when any are still processing.
 
 #### [D03] Per-card `AtomBytesStore` keyed by UUID (DECIDED) {#d03-atom-bytes-store}
 
@@ -378,8 +390,8 @@ No discriminated union, no `kind`, no `path`. Forward-compatible extensions land
 
 ```ts
 interface AtomBytesEntry {
-  content: string;       // base64
-  mediaType: string;     // "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+  content: string;       // base64 for binary (image), raw text for text/*
+  mediaType: string;     // image/png | image/jpeg | image/gif | image/webp | text/* | known code MIMEs
 }
 
 interface AtomBytesStore {
@@ -389,10 +401,16 @@ interface AtomBytesStore {
   get(id: string): AtomBytesEntry | null;
   /** Remove bytes by id. Used when the atom is deleted from the editor. */
   delete(id: string): void;
+  /** Entry count — diagnostics + cheap is-empty check. */
+  size(): number;
   /** JSON-serializable snapshot for state preservation. */
   snapshot(): Record<string, AtomBytesEntry>;
   /** Restore from a snapshot (idempotent on existing keys). */
   restore(snap: Record<string, AtomBytesEntry>): void;
+  /** Drop all entries. Used at card unmount / store disposal. */
+  clear(): void;
+  /** Subscribe to mutations; returns unsubscribe. Fires on put/delete/restore/clear. */
+  subscribe(listener: () => void): () => void;
 }
 ```
 
@@ -518,15 +536,20 @@ The bytes-store and the wire only ever carry one of:
 
 Source images outside this set fall into one of two paths: SVG rasterizes to PNG; HEIC / HEIF / AVIF flow through the raster branch unchanged (WebKit decodes them and the pipeline re-encodes in source MIME, with JPEG fallback if needed). Anything else is rejected.
 
-#### List L03: Atom-type → wire mapping {#l03-atom-to-wire-mapping}
+#### List L03: Atom → wire mapping {#l03-atom-to-wire-mapping}
 
-| Atom `type` | Wire emission | Notes |
-|------------|---------------|-------|
-| `image` | Substituted text (filename) + `Attachment` with bytes | Only path that ships actual bytes |
-| `file` | Substituted text (workspace-relative path) | Claude `Read`s on demand |
-| `doc` | Substituted text (path) | Same as `file` |
-| `link` | Substituted text (URL) | Claude treats as a URL string in prose |
-| `command` | Substituted text (command name) | Usually intercepted client-side before submit; harmless if it reaches the wire |
+The discriminator is **whether the atom has bytes in the per-card store**, not its `type`. The same atom type can ride as Attachment-with-bytes (Finder drop) or as text-only (`@`-completion).
+
+| Atom shape | Wire emission | Source |
+|-----------|---------------|--------|
+| `type: "image"` + `id` + bytes | Substituted text (filename) + `Attachment` (base64 image, `image/*` media_type) | Drop / paste of image |
+| `type: "file"` + `id` + bytes | Substituted text (filename) + `Attachment` (raw text, `text/*` or known code MIME) | Drop of `.md` / `.json` / `.ts` etc. from Finder ([D02]) |
+| `type: "file"` / `type: "doc"` (no id) | Substituted text (workspace-relative path) only | `@`-completion — claude `Read`s on demand |
+| `type: "image"` (no id) | Substituted text (filename) only | Defensive — image atom without paired bytes |
+| `type: "link"` | Substituted text (URL) | Claude treats as a URL string in prose |
+| `type: "command"` | Substituted text (command name) | Usually intercepted client-side before submit |
+| Other types with `id` + bytes | Substituted text + `Attachment` | Forward-compatible — any future atom type with bytes flows through |
+| Binary file drop (PDF, archive, audio, video) | Substituted text (filename) only | No bytes-store entry; not shippable on v1's wire |
 
 #### Table T01: Failure modes & surfacing {#t01-failure-modes}
 
@@ -576,6 +599,7 @@ No failure is silent. No failure drops the user's submission without surfacing.
 | `tugdeck/src/lib/atom-bytes-store.ts` | Per-card bytes side-table ([Spec S02](#s02-atom-bytes-store)) |
 | `tugdeck/src/lib/build-wire-payload.ts` | Pure atom → Attachment + text-substitution translator ([Spec S03](#s03-build-wire-payload)) |
 | `tugdeck/src/lib/image-downsample.ts` | Canvas-based image normalization pipeline ([Spec S04](#s04-image-downsample)) |
+| `tugdeck/src/lib/text-attachment.ts` | Text-source classifier (MIME + extension allowlist) and async reader with 1 MB cap; powers the Finder-text-drop branch of the drop pipeline per [D02](#d02-image-attach-text-rest) |
 | `tugdeck/src/components/tugways/tug-atom-chip.tsx` | Shared chip primitive ([Spec S05](#s05-atom-chip)) |
 | `tugdeck/src/components/tugways/tug-atom-chip.css` | Chip styling |
 | `tugdeck/src/components/tugways/cards/tug-attachment-strip.tsx` | Image thumbnail strip ([Spec S06](#s06-attachment-strip)) |
@@ -746,29 +770,40 @@ No failure is silent. No failure drops the user's submission without surfacing.
 **References:** [D01](#d01-ffc-substitution-at-submit), [D02](#d02-image-attach-text-rest), [Spec S03](#s03-build-wire-payload), [List L03](#l03-atom-to-wire-mapping), [Table T01](#t01-failure-modes), (#send-path)
 
 **Artifacts:**
-- `tugdeck/src/lib/build-wire-payload.ts` — pure function per [Spec S03](#s03-build-wire-payload).
-- `code-session-store.ts:send(text, atoms)` calls `buildWirePayload` and dispatches the action with `wireText` + `attachments` pre-flattened.
-- `reducer.ts:handleSend` (`reducer.ts:666-749`) and queued-send flush (`reducer.ts:2147-2218`) consume the flattened payload — the literal `text: event.text` and `attachments: []` lines go away.
+- `tugdeck/src/lib/build-wire-payload.ts` — pure function per [Spec S03](#s03-build-wire-payload). Returns `{ wireText, attachments }` from `(text, atoms, bytesStore)`. Single O(n) pass; image atoms with bytes emit `Attachment` records, all atoms substitute their `value` into the text.
+- `Attachment` wire type defined in `tugdeck/src/protocol.ts`; `InboundMessage.user_message.attachments` tightened from `unknown[]` to `Attachment[]`.
+- `code-session-store.ts:send(text, atoms)` calls `buildWirePayload` with the per-card `AtomBytesStore` and dispatches `SendActionEvent { text, atoms, wireText, attachments, turnKey }` with both substrate-form and wire-form populated.
+- `SendActionEvent` (in `events.ts`) gains `wireText: string` + `attachments: Attachment[]` slots.
+- Internal `queuedSends` entry shape (in `reducer.ts`) extended with `wireText` + `attachments` so the queue-flush at `handleTurnComplete` can construct the `send-frame` effect without re-reading the bytes-store — keeping the reducer pure.
+- `reducer.ts:handleSend` (`reducer.ts:680-815`) and queued-send flush (`reducer.ts:2160-2240`) consume the flattened payload: the wire `send-frame` reads `event.wireText` + `event.attachments`; the substrate `UserMessage` keeps `event.text` + `event.atoms` (raw, with `U+FFFC`, for transcript chip placement).
+- 40+ reducer-side test sites updated to populate the new fields on `SendActionEvent` constructions.
 
 **Tasks:**
-- [ ] Implement `buildWirePayload` per [Spec S03](#s03-build-wire-payload).
-- [ ] Plumb the bytes-store ref through `code-session-store.send` → action → reducer.
-- [ ] Replace the `text: event.text` and `attachments: []` literals in `handleSend` and queued-flush with the flattened values.
-- [ ] Update reducer tests that pin `attachments: []` to assert the flattened shape instead.
+- [x] Implement `buildWirePayload` per [Spec S03](#s03-build-wire-payload).
+- [x] Define `Attachment` in `protocol.ts` and tighten `InboundMessage.user_message.attachments`.
+- [x] Plumb the bytes-store read through `code-session-store.send` → `buildWirePayload` → action → reducer.
+- [x] Replace the `text: event.text` and `attachments: []` literals in `handleSend` and queued-flush with the flattened values (`event.wireText` / `event.attachments`).
+- [x] Extend `queuedSends` entry shape so the queue-flush has pre-flattened wire data; mid-turn push captures all four fields.
+- [x] Update reducer-side tests that construct `SendActionEvent` to populate `wireText` + `attachments` (40+ sites across `__tests__/reducer.*.test.ts`).
 
 **Tests:**
-- [ ] `unit: buildWirePayload — text with 3 U+FFFC and 3 atoms → wireText substitutes correctly`
-- [ ] `unit: buildWirePayload — image atom with bytes → Attachment emitted with correct content + mediaType + filename`
-- [ ] `unit: buildWirePayload — image atom missing from bytes-store → Attachment skipped; text substitution proceeds`
-- [ ] `unit: buildWirePayload — atoms.length < count(U+FFFC) → leftover U+FFFC passes through (defensive)`
-- [ ] `unit: buildWirePayload — file / doc / link / command atoms → text-only emission, no Attachment`
-- [ ] `integration: handleSend with one image atom + one file atom → send-frame carries 1 Attachment and wireText with substituted values`
-- [ ] `integration: queued-send flush — same shape assertions`
+- [x] `unit: buildWirePayload — text with multiple U+FFFC and matching atoms → wireText substitutes correctly`
+- [x] `unit: buildWirePayload — image atom with bytes → Attachment emitted with correct content + mediaType + filename`
+- [x] `unit: buildWirePayload — image atom missing from bytes-store → Attachment skipped; text substitution proceeds`
+- [x] `unit: buildWirePayload — atoms.length < count(U+FFFC) → leftover U+FFFC passes through (defensive)`
+- [x] `unit: buildWirePayload — atoms.length > count(U+FFFC) → extra atoms dropped`
+- [x] `unit: buildWirePayload — file / doc / link / command atoms → text-only emission, no Attachment`
+- [x] `unit: buildWirePayload — mixed image + file + image — attachments only for images; document order preserved`
+- [x] `unit: buildWirePayload — purity (no atom or bytes-store mutation; same inputs → same outputs)`
+- [x] `unit: buildWirePayload — non-ASCII characters around atoms preserved verbatim`
+- [ ] `integration: handleSend with one image atom + one file atom → send-frame carries 1 Attachment and wireText with substituted values` — exercised by Step 8's end-to-end app-test (a synthetic test against `reducer.handleSend` would just re-pin what the pure tests already pin, since both halves are pure functions).
+- [ ] `integration: queued-send flush — same shape assertions` — same.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugdeck && bun run check`
-- [ ] Manual: drop a PNG → submit → observe in Tug.app's dev tools that the WS frame carries an `Attachment` with real bytes; claude responds describing the image, not "I see U+FFFC objects".
+- [x] `bun test` — full tugdeck suite, **2924 pass, 0 fail** (24 new buildWirePayload tests + 40+ updated reducer-test constructions)
+- [x] `bun run check` — TypeScript clean
+- [x] `bun run audit:tokens lint` — zero violations
+- [ ] Manual: drop a PNG → submit → observe in Tug.app's dev tools that the WS frame carries an `Attachment` with real bytes; claude responds describing the image, not "I see U+FFFC objects". — deferred to Step 8's manual smoke (depends on Step 5's transcript rendering to fully verify the user-visible flow).
 
 ---
 

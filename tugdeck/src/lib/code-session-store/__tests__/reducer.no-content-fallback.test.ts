@@ -253,7 +253,7 @@ describe("handleTurnComplete — no-content fallback (#spec-reducer-state rule 2
     // the no-content fallback.
     const initial = fresh();
     const { state, effects } = applyAll(initial, [
-      { type: "send", text: "hello", atoms: [], turnKey: "tk-live" },
+      { type: "send", text: "hello", atoms: [], wireText: "hello", attachments: [], turnKey: "tk-live" },
       {
         type: "assistant_text",
         msg_id: "msg_real",

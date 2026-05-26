@@ -30,7 +30,7 @@ function fresh(): CodeSessionState {
 describe("[D07] handleContentBlockStart idempotence", () => {
   test("re-emitting content_block_start for an already-minted (msg_id, block_index) is a state-ref-stable no-op", () => {
     const turnKey = "idem-1";
-    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], turnKey });
+    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], wireText: "x", attachments: [], turnKey });
     const r1 = reduce(r0.state, {
       type: "content_block_start",
       msg_id: "m1",
@@ -58,7 +58,7 @@ describe("[D07] handleContentBlockStart idempotence", () => {
 
   test("re-emit of content_block_start for tool_use is idempotent (same toolCallIndex too)", () => {
     const turnKey = "idem-2";
-    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], turnKey });
+    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], wireText: "x", attachments: [], turnKey });
     const r1 = reduce(r0.state, {
       type: "content_block_start",
       msg_id: "m1",
@@ -87,7 +87,7 @@ describe("[D07] handleContentBlockStart idempotence", () => {
 
   test("subsequent text delta after a re-emitted content_block_start still mutates the existing Message (no duplicate)", () => {
     const turnKey = "idem-3";
-    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], turnKey });
+    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], wireText: "x", attachments: [], turnKey });
     const r1 = reduce(r0.state, {
       type: "content_block_start",
       msg_id: "m1",

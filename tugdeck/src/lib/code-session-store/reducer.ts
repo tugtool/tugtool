@@ -30,6 +30,7 @@
  */
 
 import type { AtomSegment } from "../tug-atom-img";
+import type { Attachment } from "../../protocol";
 import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
@@ -320,8 +321,24 @@ export interface CodeSessionState {
    * reused as the new in-flight turn's React-key seed. Carrying the
    * key with the queued send (rather than minting at drain time)
    * keeps the reducer pure.
+   *
+   * `text` / `atoms` are the raw substrate form; `wireText` /
+   * `attachments` are the pre-flattened wire form built by
+   * `buildWirePayload` at the queueing `send`. Both halves travel
+   * together so the queue-flush at `handleTurnComplete` can construct
+   * both the next turn's `UserMessage` (substrate-side) and its
+   * `send-frame` effect (wire-side) without re-reading the
+   * bytes-store — keeping the reducer pure. Per
+   * [D01](../../../roadmap/tide-atoms.md#d01-ffc-substitution-at-submit)
+   * and [D02](../../../roadmap/tide-atoms.md#d02-image-attach-text-rest).
    */
-  queuedSends: Array<{ text: string; atoms: AtomSegment[]; turnKey: string }>;
+  queuedSends: Array<{
+    text: string;
+    atoms: AtomSegment[];
+    wireText: string;
+    attachments: Attachment[];
+    turnKey: string;
+  }>;
   lastError: {
     cause:
       | "session_state_errored"
@@ -756,8 +773,17 @@ function handleSend(
           kind: "send-frame",
           msg: {
             type: "user_message",
-            text: event.text,
-            attachments: [],
+            // Wire-ready text — `U+FFFC` substituted with atom values
+            // by `buildWirePayload` in the store wrapper before
+            // dispatch. The substrate's `UserMessage.text` retains
+            // the raw form (with `U+FFFC`) so the transcript chip
+            // renderer (Step 5) can paint chips at the right
+            // positions. Per [D01].
+            text: event.wireText,
+            // Image-atom Attachments built by `buildWirePayload`
+            // from the per-card bytes-store. Order matches the atoms'
+            // document order. Per [D02].
+            attachments: event.attachments,
           },
         },
       ],
@@ -767,9 +793,17 @@ function handleSend(
   // Mid-turn send — enqueue. The queue is speculative: a single
   // entry flushes at `turn_complete(success)` via the single-tick
   // collapse in `handleTurnComplete`; `interrupt()` clears it.
+  // Both substrate-form and wire-form ride the entry so the flush
+  // can construct both halves without re-reading the bytes-store.
   const queuedSends = [
     ...state.queuedSends,
-    { text: event.text, atoms: [...event.atoms], turnKey: event.turnKey },
+    {
+      text: event.text,
+      atoms: [...event.atoms],
+      wireText: event.wireText,
+      attachments: [...event.attachments],
+      turnKey: event.turnKey,
+    },
   ];
   return { state: { ...state, queuedSends }, effects: [] };
 }
@@ -2223,8 +2257,12 @@ function handleTurnComplete(
           kind: "send-frame",
           msg: {
             type: "user_message",
-            text: next.text,
-            attachments: [],
+            // The queued entry already carries the wire-flattened
+            // form built at queue time by `buildWirePayload`. We
+            // pass it through verbatim — the reducer never re-reads
+            // the bytes-store. Per [D01] / [D02].
+            text: next.wireText,
+            attachments: next.attachments,
           },
         },
       ],

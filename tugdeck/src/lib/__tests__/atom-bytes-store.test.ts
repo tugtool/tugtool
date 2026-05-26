@@ -308,6 +308,152 @@ describe("clear", () => {
 });
 
 // ---------------------------------------------------------------------------
+// subscribe
+// ---------------------------------------------------------------------------
+
+describe("subscribe", () => {
+  test("listener fires on put", () => {
+    const store = createAtomBytesStore();
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.put("a", PNG_ENTRY);
+    expect(count).toBe(1);
+  });
+
+  test("listener fires on delete of known id", () => {
+    const store = createAtomBytesStore();
+    store.put("a", PNG_ENTRY);
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.delete("a");
+    expect(count).toBe(1);
+  });
+
+  test("listener does NOT fire on delete of unknown id (no-op)", () => {
+    const store = createAtomBytesStore();
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.delete("never-stored");
+    expect(count).toBe(0);
+  });
+
+  test("listener fires on non-empty restore", () => {
+    const store = createAtomBytesStore();
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.restore({ a: PNG_ENTRY });
+    expect(count).toBe(1);
+  });
+
+  test("listener does NOT fire on empty restore", () => {
+    const store = createAtomBytesStore();
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.restore({});
+    expect(count).toBe(0);
+  });
+
+  test("listener does NOT fire on no-op clear of empty store", () => {
+    const store = createAtomBytesStore();
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.clear();
+    expect(count).toBe(0);
+  });
+
+  test("listener fires on clear of populated store", () => {
+    const store = createAtomBytesStore();
+    store.put("a", PNG_ENTRY);
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.clear();
+    expect(count).toBe(1);
+  });
+
+  test("multiple listeners all fire on a single mutation", () => {
+    const store = createAtomBytesStore();
+    let a = 0;
+    let b = 0;
+    store.subscribe(() => {
+      a += 1;
+    });
+    store.subscribe(() => {
+      b += 1;
+    });
+    store.put("k", PNG_ENTRY);
+    expect(a).toBe(1);
+    expect(b).toBe(1);
+  });
+
+  test("unsubscribe stops further notifications", () => {
+    const store = createAtomBytesStore();
+    let count = 0;
+    const unsub = store.subscribe(() => {
+      count += 1;
+    });
+    store.put("a", PNG_ENTRY);
+    expect(count).toBe(1);
+    unsub();
+    store.put("b", JPEG_ENTRY);
+    expect(count).toBe(1);
+  });
+
+  test("unsubscribe is idempotent (calling twice is fine)", () => {
+    const store = createAtomBytesStore();
+    const unsub = store.subscribe(() => {});
+    unsub();
+    expect(() => unsub()).not.toThrow();
+  });
+
+  test("listener that throws does not block other listeners", () => {
+    const store = createAtomBytesStore();
+    let goodCount = 0;
+    // Suppress the expected console.error from the bad listener.
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      store.subscribe(() => {
+        throw new Error("intentional");
+      });
+      store.subscribe(() => {
+        goodCount += 1;
+      });
+      store.put("a", PNG_ENTRY);
+    } finally {
+      console.error = originalError;
+    }
+    expect(goodCount).toBe(1);
+  });
+
+  test("restore that filters out all entries does NOT fire listeners", () => {
+    const store = createAtomBytesStore();
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+    store.restore({
+      // All malformed — every entry is filtered.
+      bad: null as unknown as AtomBytesEntry,
+    });
+    expect(count).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Independence of instances
 // ---------------------------------------------------------------------------
 

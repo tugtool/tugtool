@@ -265,13 +265,34 @@ export function encodeCodeInput(msg: object, tugSessionId: string): ArrayBuffer 
 }
 
 /**
+ * Inline attachment payload — the wire shape `tugcode/src/types.ts`'s
+ * `Attachment` mirrors. Carries one image (`media_type: "image/png"`,
+ * `"image/jpeg"`, `"image/gif"`, `"image/webp"`) or a `text/*` source
+ * already decoded as a string. tugcode's `buildContentBlocks`
+ * dispatches on `media_type` to build the matching Anthropic content
+ * block.
+ *
+ * Per [Spec S01](roadmap/tide-atoms.md#s01-attachment-wire-type) — the
+ * snake_case field names match the wire / Anthropic API verbatim, not
+ * the camelCase used internally on `AttachmentRecord`.
+ */
+export interface Attachment {
+  /** User-visible label; round-trips through the journal + JSONL. */
+  filename: string;
+  /** Base64 for binary, raw text for text/*. */
+  content: string;
+  /** RFC 6838 media type. */
+  media_type: string;
+}
+
+/**
  * Client-to-server message shapes for the CODE_INPUT feed. The union mirrors
  * the stream-json inbound messages tugcode accepts. T3.4.a only emits the
  * first four variants; the remaining entries are forward-compat placeholders
  * so later phases can extend without re-opening the union.
  */
 export type InboundMessage =
-  | { type: "user_message"; text: string; attachments: unknown[] }
+  | { type: "user_message"; text: string; attachments: Attachment[] }
   | { type: "interrupt" }
   | {
       type: "tool_approval";

@@ -65,7 +65,7 @@ describe("[D07] reducer message-sequence", () => {
     const turnKey = "t1";
     const msgId = "msg1";
     const { effects } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey },
       {
         type: "content_block_start",
         msg_id: msgId,
@@ -131,7 +131,7 @@ describe("[D07] reducer message-sequence", () => {
   test("multi-msgId concatenation: events across two msg_ids commit one TurnEntry whose messages span both", () => {
     const turnKey = "t2";
     const { effects } = applyAll(fresh(), [
-      { type: "send", text: "tool loop", atoms: [], turnKey },
+      { type: "send", text: "tool loop", atoms: [], wireText: "tool loop", attachments: [], turnKey },
       // First msgId iteration
       {
         type: "content_block_start",
@@ -194,7 +194,7 @@ describe("[D07] reducer message-sequence", () => {
     const turnKey = "t3";
     const msgId = "msg3";
     const { effects } = applyAll(fresh(), [
-      { type: "send", text: "interleave", atoms: [], turnKey },
+      { type: "send", text: "interleave", atoms: [], wireText: "interleave", attachments: [], turnKey },
       {
         type: "content_block_start",
         msg_id: msgId,

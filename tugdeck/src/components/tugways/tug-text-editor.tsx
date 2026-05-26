@@ -109,10 +109,13 @@ import { tugTheme } from "./tug-text-editor/theme";
 import { hostFocusMirror } from "./tug-text-editor/host-state";
 import {
   addAtomsEffect,
+  atomBytesStoreFacet,
   atomDecorationField,
   atomInvertedEffects,
   getAtomHeightPx,
   insertAtomAtSelection,
+  pendingAtomSyncPlugin,
+  pendingAtomTheme,
   regenerateAtomsEffect,
 } from "./tug-text-editor/atom-decoration";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
@@ -795,6 +798,17 @@ function buildExtensions(
     atomDecorationField,
     atomInvertedEffects,
     atomicRangesExt,
+    // Bytes-store facet — read by `AtomWidget.toDOM` and the
+    // pending-sync `ViewPlugin` to derive the pending appearance
+    // for skeleton atoms (drop / paste inserted them synchronously
+    // before the async byte-fill completed).
+    atomBytesStoreFacet.of(getBytesStore),
+    // Subscribes to the bytes-store; on bytes-arrival, walks atom
+    // widgets in `view.contentDOM` and toggles `data-pending` via
+    // direct DOM mutation ([L06]). No-op when no bytes-store is
+    // registered (facet default thunk returns `null`).
+    pendingAtomSyncPlugin,
+    pendingAtomTheme,
     clipboardExtension(getBytesStore, onAttachmentError),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
   ];

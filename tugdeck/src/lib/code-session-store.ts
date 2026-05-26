@@ -38,6 +38,7 @@ import {
   createAtomBytesStore,
   type AtomBytesStore,
 } from "./atom-bytes-store";
+import { buildWirePayload } from "./build-wire-payload";
 import {
   createInitialState,
   deriveActiveTurnSnapshot,
@@ -530,7 +531,29 @@ export class CodeSessionStore {
     // `turnKey` is generated in the impure wrapper layer (not in the
     // reducer) so the reducer remains pure and time-independent —
     // mirrors how timers live outside the reducer.
-    this.dispatch({ type: "send", text, atoms, turnKey: mintTurnKey() });
+    //
+    // `buildWirePayload` also runs here, in the impure wrapper, so
+    // the bytes-store lookup (a side-effecting read on the per-card
+    // side-table) stays out of the reducer. The dispatch carries
+    // both substrate-form (`text` / `atoms`) and wire-form
+    // (`wireText` / `attachments`) so the reducer can construct the
+    // `UserMessage` Message and the `send-frame` effect without
+    // ever touching the bytes-store. Per
+    // [D01](../../roadmap/tide-atoms.md#d01-ffc-substitution-at-submit)
+    // and [D02](../../roadmap/tide-atoms.md#d02-image-attach-text-rest).
+    const { wireText, attachments } = buildWirePayload(
+      text,
+      atoms,
+      this.atomBytesStore,
+    );
+    this.dispatch({
+      type: "send",
+      text,
+      atoms,
+      wireText,
+      attachments,
+      turnKey: mintTurnKey(),
+    });
   }
 
   /**

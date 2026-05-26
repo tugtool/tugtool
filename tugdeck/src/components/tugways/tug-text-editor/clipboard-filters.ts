@@ -393,7 +393,7 @@ function handlePaste(
     if (imageFiles !== null && imageFiles.length > 0) {
       event.preventDefault();
       const { from } = view.state.selection.main;
-      void processAttachmentFiles(
+      processAttachmentFiles(
         view,
         imageFiles,
         from,

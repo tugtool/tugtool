@@ -43,7 +43,7 @@ function applyAll(
 describe("[D07] messageKey stability across inflight → committed", () => {
   test("user_message: same key on the active snapshot and the committed TurnEntry", () => {
     const turnKey = "stable-1";
-    const r1 = reduce(fresh(), { type: "send", text: "hi", atoms: [], turnKey });
+    const r1 = reduce(fresh(), { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey });
     const active = deriveActiveTurnSnapshot(r1.state)!;
     const activeUserKey = active.messages[0].messageKey;
 
@@ -74,7 +74,7 @@ describe("[D07] messageKey stability across inflight → committed", () => {
 
   test("assistant_text: messageKey from content_block_start carries through every delta + commit", () => {
     const turnKey = "stable-2";
-    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], turnKey });
+    const r0 = reduce(fresh(), { type: "send", text: "x", atoms: [], wireText: "x", attachments: [], turnKey });
     // First, mint the block.
     const r1 = reduce(r0.state, {
       type: "content_block_start",
@@ -121,6 +121,8 @@ describe("[D07] messageKey stability across inflight → committed", () => {
       type: "send",
       text: "use tool",
       atoms: [],
+      wireText: "use tool",
+      attachments: [],
       turnKey,
     });
     const r1 = reduce(r0.state, {

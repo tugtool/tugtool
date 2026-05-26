@@ -89,7 +89,7 @@ describe("handleTurnComplete — live path", () => {
   it("derives telemetry from reducer state and emits a record-telemetry effect", () => {
     const initial = fresh();
     const { state, effects } = applyAll(initial, [
-      { type: "send", text: "hello", atoms: [], turnKey: "tk1" },
+      { type: "send", text: "hello", atoms: [], wireText: "hello", attachments: [], turnKey: "tk1" },
       {
         type: "assistant_text",
         msg_id: "msg-A",
@@ -136,7 +136,7 @@ describe("handleTurnComplete — live path", () => {
   it("persists interrupted turns too (telemetry block has real timing intervals even when cost is zero)", () => {
     const initial = fresh();
     const { effects } = applyAll(initial, [
-      { type: "send", text: "ask", atoms: [], turnKey: "tk1" },
+      { type: "send", text: "ask", atoms: [], wireText: "ask", attachments: [], turnKey: "tk1" },
       // No cost_update — turn ends without one.
       { type: "turn_complete", msg_id: "msg-A", result: "error" },
     ]);
@@ -337,7 +337,7 @@ describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
     // terminal reason so the NEXT resume can recover it.
     const initial = fresh();
     const { effects } = applyAll(initial, [
-      { type: "send", text: "hello", atoms: [], turnKey: "tk1" },
+      { type: "send", text: "hello", atoms: [], wireText: "hello", attachments: [], turnKey: "tk1" },
       {
         type: "assistant_text",
         msg_id: "msg-A",

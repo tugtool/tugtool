@@ -885,6 +885,30 @@ export const TugPromptEntry = React.forwardRef<
     if (isEffectivelyEmpty(view)) return;
     const captured = editor.captureState();
     const positionedAtoms: PositionedAtom[] = getAtomsInState(view.state);
+
+    // Attachment pending-gate: any atom carrying an id but no
+    // bytes-store entry is mid-processing (drop inserted the
+    // skeleton; async byte-fill hasn't completed yet). Submitting
+    // now would ship the filename as text only, dropping the bytes
+    // silently — confusing UX. Surface a banner via the existing
+    // attachment-error channel and bail; the user retries once the
+    // pulsing pending chips settle. Per
+    // [D02](roadmap/tide-atoms.md#d02-image-attach-text-rest)'s
+    // pending-atom contract.
+    const pendingAttachmentCount = positionedAtoms.filter(
+      (a) =>
+        a.segment.id !== undefined &&
+        attachmentBytesStore.get(a.segment.id) === null,
+    ).length;
+    if (pendingAttachmentCount > 0) {
+      publishAttachmentError(
+        pendingAttachmentCount === 1
+          ? "Attachment is still processing — wait for it to finish before submitting."
+          : `${pendingAttachmentCount} attachments are still processing — wait for them to finish before submitting.`,
+      );
+      return;
+    }
+
     const currentRoute = routeLifecycle.getRoute() || null;
     // Strip the leading prefix character iff it maps to the active
     // route per [Q09]=a. Atoms ride along verbatim — they sit in the

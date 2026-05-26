@@ -52,6 +52,24 @@ export type AtomLabelMode = "filename" | "relative" | "absolute";
 export interface AtomImgOptions {
   /** Maximum label width in pixels before truncation with ellipsis. */
   maxLabelWidth?: number;
+  /**
+   * Atom id (UUID minted at drop / paste). When present, the rendered
+   * `<img>` carries a `data-atom-id` attribute the pending-sync
+   * `ViewPlugin` keys off when mutating `data-pending` after bytes
+   * arrive. Atoms without an id (legacy completion atoms, link /
+   * command atoms) don't get this attribute.
+   */
+  id?: string;
+  /**
+   * When `true`, the rendered `<img>` carries a `data-pending="true"`
+   * attribute. CSS in `atom-decoration.ts`'s `baseTheme` block
+   * applies a dimmed + pulsing appearance so the user sees the atom
+   * is mid-processing. The pending-sync `ViewPlugin` toggles this
+   * attribute via direct DOM mutation when the bytes-store's matching
+   * id transitions to "has bytes" — no CM6 widget rebuild, no React.
+   * [L06].
+   */
+  pending?: boolean;
 }
 
 // ---- SVG helpers ----
@@ -261,6 +279,17 @@ export function createAtomImgElement(
   img.dataset.atomLabel = label;
   img.dataset.atomValue = value;
   img.title = value;
+
+  // Optional: pair this widget with its bytes-store entry. Set only
+  // when the caller has an id to attach. The pending-sync ViewPlugin
+  // queries `[data-atom-id]` to toggle `data-pending` after bytes
+  // arrive (skeleton → ready transition).
+  if (options?.id !== undefined) {
+    img.dataset.atomId = options.id;
+  }
+  if (options?.pending === true) {
+    img.dataset.pending = "true";
+  }
 
   return img;
 }

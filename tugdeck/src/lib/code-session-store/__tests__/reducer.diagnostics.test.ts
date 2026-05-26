@@ -60,7 +60,7 @@ function advance(ms: number): void {
 describe("reducer — diagnostics", () => {
   it("ttftMs is the time from submitAt to first assistant_text", () => {
     const { state: s1 } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
     ]);
     const submitAt = s1.pendingTurn!.submitAt;
     advance(200);
@@ -85,7 +85,7 @@ describe("reducer — diagnostics", () => {
 
   it("ttftcMs is the time from submitAt to first tool_use", () => {
     const { state: s1 } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
     ]);
     const submitAt = s1.pendingTurn!.submitAt;
     advance(120);
@@ -126,7 +126,7 @@ describe("reducer — diagnostics", () => {
 
   it("maxStreamGapMs captures the largest inter-event gap", () => {
     const { state: s1 } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
     ]);
     advance(50);
     const { state: s2 } = applyAll(s1, [
@@ -169,7 +169,7 @@ describe("reducer — diagnostics", () => {
 
   it("turnEndReason: a clean completion lands as 'complete'", () => {
     const { effects } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -184,7 +184,7 @@ describe("reducer — diagnostics", () => {
 
   it("turnEndReason: an interrupted turn (CASE B) lands as 'interrupted'", () => {
     const { state } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -205,7 +205,7 @@ describe("reducer — diagnostics", () => {
 
   it("turnEndReason: a wire error without a preceding interrupt lands as 'error'", () => {
     const { state } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",

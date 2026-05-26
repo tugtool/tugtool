@@ -165,6 +165,25 @@ export interface AtomBytesStore {
    * release any retained bytes. Idempotent.
    */
   clear(): void;
+
+  /**
+   * Subscribe to store mutations. The listener fires once per call
+   * to `put`, `delete`, `restore`, or `clear` — coalesced (no
+   * per-key info passed); subscribers re-query whatever ids they
+   * care about.
+   *
+   * Returns an unsubscribe function. Idempotent — calling
+   * unsubscribe twice is a no-op.
+   *
+   * Used by the drop / paste pipeline's pending-atom sync: an atom
+   * inserted synchronously with an `id` but no bytes-store entry
+   * renders in a "pending" appearance; when the matching byte
+   * payload eventually lands via `put`, subscribers fire and the
+   * pending-sync `ViewPlugin` mutates `data-pending` off the
+   * widget's DOM element ([L06] — appearance via DOM, no widget
+   * rebuild).
+   */
+  subscribe(listener: () => void): () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,17 +211,41 @@ export interface AtomBytesStore {
  */
 export function createAtomBytesStore(): AtomBytesStore {
   const map = new Map<string, AtomBytesEntry>();
+  // Listener set — array rather than Set for cheap iteration and
+  // because listener identities don't need to be unique (a consumer
+  // re-subscribing returns a fresh unsubscribe).
+  const listeners: Array<() => void> = [];
+
+  /**
+   * Fire every registered listener. Errors in one listener don't
+   * block siblings — wrapped in try/catch so a buggy subscriber
+   * can't corrupt the store's notification cycle. We log via
+   * `console.error` rather than re-throwing so the producer (the
+   * code that called `put` / `delete` / etc.) sees its operation
+   * succeed; subscriber bugs surface in the dev console.
+   */
+  function notify(): void {
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (err) {
+        console.error("[atom-bytes-store] subscriber threw:", err);
+      }
+    }
+  }
 
   return {
     put(id, entry) {
       map.set(id, entry);
+      notify();
     },
     get(id) {
       const entry = map.get(id);
       return entry === undefined ? null : entry;
     },
     delete(id) {
-      map.delete(id);
+      const had = map.delete(id);
+      if (had) notify();
     },
     size() {
       return map.size;
@@ -215,6 +258,7 @@ export function createAtomBytesStore(): AtomBytesStore {
       return out;
     },
     restore(snap) {
+      let added = 0;
       for (const [id, entry] of Object.entries(snap)) {
         // Defensive: filter to entries that look like AtomBytesEntry.
         // A malformed snapshot (corrupt persistence, schema drift)
@@ -232,10 +276,27 @@ export function createAtomBytesStore(): AtomBytesStore {
           content: (entry as AtomBytesEntry).content,
           mediaType: (entry as AtomBytesEntry).mediaType,
         });
+        added += 1;
       }
+      // Single notification per restore call, fired only when the
+      // snapshot actually contributed entries. Subscribers re-query
+      // whatever ids they care about.
+      if (added > 0) notify();
     },
     clear() {
+      const wasEmpty = map.size === 0;
       map.clear();
+      if (!wasEmpty) notify();
+    },
+    subscribe(listener) {
+      listeners.push(listener);
+      let unsubscribed = false;
+      return () => {
+        if (unsubscribed) return;
+        unsubscribed = true;
+        const idx = listeners.indexOf(listener);
+        if (idx >= 0) listeners.splice(idx, 1);
+      };
     },
   };
 }

@@ -67,13 +67,18 @@ import {
   TUG_ATOM_CHAR,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
-import { addAtomsEffect } from "./atom-decoration";
+import { addAtomsEffect, removeAtomById } from "./atom-decoration";
 import type { DropHandler } from "@/lib/tug-text-types";
 import {
   classifySourceMime,
   downsampleImage,
   type DownsampleError,
 } from "@/lib/image-downsample";
+import {
+  describeTextAttachmentError,
+  isTextSource,
+  readTextAttachment,
+} from "@/lib/text-attachment";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 
 // ---------------------------------------------------------------------------
@@ -108,31 +113,6 @@ const IMG_EXTS: ReadonlySet<string> = new Set([
 
 /** CSS class applied to the drop caret indicator element. */
 const DROP_CARET_CLASS = "cm-tug-drop-caret";
-
-/**
- * CSS class applied to the transient overlay that appears when a
- * drop / paste pipeline is processing an image and the work has
- * exceeded {@link PROCESSING_INDICATOR_DELAY_MS}.
- *
- * The indicator is a `<div>` inserted into `view.scrollDOM` and
- * removed once processing completes; only shows for sources slow
- * enough that the user would otherwise feel a hitch (Risk R01 in
- * `roadmap/tide-atoms.md`). Styled via the substrate's `baseTheme`
- * below so the indicator picks up theme tokens without tugways-side
- * CSS.
- */
-const PROCESSING_INDICATOR_CLASS = "cm-tug-attachment-processing";
-
-/**
- * Threshold for surfacing the processing indicator. Most screenshots
- * downsample in well under this; only oversized sources (4K+) or the
- * `HTMLImageElement` fallback path trip it. The constant lives here
- * (not in `image-downsample.ts`) because the indicator is a drop /
- * paste UX concern, not a downsample-pipeline concern — the
- * downsample function returns whenever it returns; the
- * "show an overlay if it takes > 100 ms" policy is the consumer's.
- */
-const PROCESSING_INDICATOR_DELAY_MS = 100;
 
 // ---------------------------------------------------------------------------
 // Default file → atom conversion
@@ -406,25 +386,6 @@ const tugDropCaretTheme = EditorView.baseTheme({
     pointerEvents: "none",
     backgroundColor: "var(--tug7-element-highlight-fill-normal-drop-rest)",
   },
-  // Transient overlay shown while an image drop / paste is still
-  // downsampling. Theme-token colors mean brio / harmony pick up the
-  // right surface without per-substrate overrides. `aria-live` is set
-  // on the element at construction so assistive tech announces it
-  // when it appears.
-  [`.${PROCESSING_INDICATOR_CLASS}`]: {
-    position: "absolute",
-    bottom: "8px",
-    right: "8px",
-    padding: "4px 10px",
-    borderRadius: "6px",
-    pointerEvents: "none",
-    fontSize: "12px",
-    lineHeight: "16px",
-    backgroundColor: "var(--tug7-surface-global-primary-normal-overlay-rest)",
-    color: "var(--tug7-element-global-text-normal-default-rest)",
-    boxShadow: "var(--tug7-element-global-shadow-normal-overlay-rest)",
-    zIndex: "10",
-  },
 });
 
 // ---------------------------------------------------------------------------
@@ -458,186 +419,248 @@ export function describeDownsampleError(
 }
 
 /**
- * Counter of in-flight processing pipelines per host element. The
- * indicator is shown while count > 0 so two concurrent drops (rare
- * but possible) don't blink the indicator off mid-work.
- *
- * Keyed by the host `HTMLElement` so multiple editors don't share
- * counters. `null` hosts are tolerated; the indicator is per-host
- * and a null host means there is none to attach to.
+ * Mint a stable atom id for a freshly-dropped or freshly-pasted
+ * file. UUIDs are the right shape (large keyspace, no coordination,
+ * no collisions across cards or sessions). Defensive `??` covers
+ * vanishingly unlikely future engines without `crypto.randomUUID`.
  */
-const processingCounts: WeakMap<HTMLElement, number> = new WeakMap();
+function mintAtomId(): string {
+  return typeof crypto !== "undefined"
+    && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `atom-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 /**
- * Show or hide the processing indicator for a given view. The
- * indicator element is created on first show and reused; removed on
- * the last hide. Idempotent — multiple shows / hides nest via the
- * `processingCounts` map.
+ * Per-file classification result. `kind === "skeleton"` means the
+ * file can produce an atom + bytes (after async processing); the
+ * skeleton atom is inserted synchronously and bytes land later.
+ * `kind === "reject"` means the file isn't shippable on v1's wire
+ * (PDF, archive, audio, video) — no atom is inserted; the message
+ * surfaces via `onError`.
  */
-function setProcessingIndicator(
-  view: EditorView,
-  active: boolean,
-): void {
-  const host = view.scrollDOM;
-  const prev = processingCounts.get(host) ?? 0;
-  const next = active ? prev + 1 : Math.max(0, prev - 1);
-  processingCounts.set(host, next);
+type ClassifiedDrop =
+  | {
+      kind: "skeleton-image";
+      file: File;
+      atom: AtomSegment;
+    }
+  | {
+      kind: "skeleton-text";
+      file: File;
+      atom: AtomSegment;
+    }
+  | {
+      kind: "reject";
+      file: File;
+      message: string;
+    };
 
-  // Find or remove the indicator element based on the new count.
-  const existing = host.querySelector<HTMLDivElement>(
-    `.${PROCESSING_INDICATOR_CLASS}`,
-  );
-  if (next > 0 && existing === null) {
-    const el = document.createElement("div");
-    el.className = PROCESSING_INDICATOR_CLASS;
-    el.setAttribute("aria-live", "polite");
-    el.textContent = "Processing image…";
-    host.appendChild(el);
-  } else if (next === 0 && existing !== null) {
-    existing.remove();
+/**
+ * Synchronously decide what each file should become. Returns a flat
+ * array — image / text classifications mint atom ids and build the
+ * skeleton atom right here so the caller can immediately insert
+ * placeholders into the doc.
+ *
+ * The classification mirrors `processAttachmentFiles`'s previous
+ * three-branch shape (image → text → fallthrough) but with the
+ * fallthrough switched from "filename-only atom" to "reject".
+ * Surfacing PDF / binary files as inert filename atoms was
+ * confusing — the chip looked usable but the bytes were silently
+ * dropped at submit time. Rejection at drop time is the honest
+ * signal.
+ */
+function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
+  const out: ClassifiedDrop[] = [];
+  for (const file of files) {
+    // Branch 1: image (png / jpeg / gif / webp / heic / heif / avif
+    // and svg via rasterization).
+    const cls = classifySourceMime(file.type);
+    if (cls !== "unsupported") {
+      out.push({
+        kind: "skeleton-image",
+        file,
+        atom: {
+          kind: "atom",
+          type: "image",
+          label: file.name,
+          value: file.name,
+          id: mintAtomId(),
+        },
+      });
+      continue;
+    }
+    // Branch 2: text — `text/*`, known `application/*` text MIMEs,
+    // or empty MIME with a text-allowlisted extension.
+    if (isTextSource(file)) {
+      out.push({
+        kind: "skeleton-text",
+        file,
+        atom: {
+          kind: "atom",
+          type: "file",
+          label: file.name,
+          value: file.name,
+          id: mintAtomId(),
+        },
+      });
+      continue;
+    }
+    // Branch 3: unsupported (PDF / archive / audio / video / etc.).
+    // Reject at drop time with a clear banner — silently inserting
+    // a filename-only atom would be misleading because the user
+    // expects claude to see the file's contents, but binary content
+    // has no v1 wire path. Per
+    // [D02](roadmap/tide-atoms.md#d02-image-attach-text-rest).
+    out.push({
+      kind: "reject",
+      file,
+      message:
+        `Unsupported file type: ${file.name}. ` +
+        `Tug accepts images and text/code files; ` +
+        `PDFs and other binaries aren't supported yet.`,
+    });
   }
+  return out;
 }
 
 /**
- * Build the atom segment for a non-image file. Mirrors the
- * `defaultFilesToAtoms` behavior for the bytes-store-aware path —
- * non-images keep `label: filename` / `value: filename` / no `id`.
- * Image extension classification is by file extension (the simplest
- * resolver-free heuristic; the downsample pipeline does the real
- * MIME check after that).
- */
-function nonImageAtomFromFile(file: File): AtomSegment {
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const type = IMG_EXTS.has(ext) ? "image" : "file";
-  return { kind: "atom", type, label: file.name, value: file.name };
-}
-
-/**
- * The async pipeline drop / paste callers share for converting
- * user-supplied files into atoms + bytes-store entries. Designed for
- * the bytes-store-aware path; the legacy synchronous default
- * (`defaultFilesToAtoms`) stays in place for hosts that don't supply
- * a store.
+ * Convert user-dropped or user-pasted files into atoms — instant
+ * skeleton insertion at the drop position, then async byte-fill in
+ * the background.
  *
- * Algorithm:
- *  1. Schedule the processing-indicator overlay for
- *     `PROCESSING_INDICATOR_DELAY_MS` later (cancelled if processing
- *     finishes first).
- *  2. For each file: if its MIME classifies as an image, await
- *     `downsampleImage`. On success, mint a UUID, populate the
- *     bytes-store, build an atom with `id` set. On error, push to a
- *     rejection list (the caller surfaces these as
- *     `attachment_rejected` banner messages).
- *  3. Non-image files fall through to `nonImageAtomFromFile` (no
- *     bytes, no id).
- *  4. After all files settle, hide the indicator. If the view is
- *     still alive, dispatch `insertAtomsAt` with the successful
- *     atoms; rejected files publish their errors via `onError`.
+ * The synchronous half:
+ *  1. Classify each file (image / text / reject).
+ *  2. Reject branch immediately publishes its banner message; no
+ *     atom is inserted (per [D02]).
+ *  3. Image / text branches mint UUIDs, build skeleton atoms with
+ *     the id set but NO bytes-store entry yet. The atom widget's
+ *     `toDOM` queries the bytes-store via `atomBytesStoreFacet`,
+ *     finds no entry, and renders in the pending appearance
+ *     (dimmed + pulsing) — instant feedback at the drop point.
+ *  4. `insertAtomsAt` dispatches all skeleton atoms in one
+ *     transaction. The user sees them appear at the drop point
+ *     synchronously.
+ *
+ * The asynchronous half runs in the background, one job per
+ * skeleton atom:
+ *  - Image: `downsampleImage(file)` → on success, `bytesStore.put`
+ *    populates the entry; the bytes-store's `subscribe` notification
+ *    fires `syncPendingAttributes`, which mutates the atom widget's
+ *    `data-pending` attribute off via direct DOM. On failure,
+ *    `removeAtomById` deletes the skeleton atom and the error
+ *    surfaces via `onError`.
+ *  - Text: same shape with `readTextAttachment`.
  *
  * The view's liveness is checked through `view.dom.isConnected`
- * before dispatching the insert — if the editor unmounted while we
- * were processing (user closed the card, swapped pane), the
- * insertion is suppressed and the bytes-store entries we already
- * populated will be GC'd alongside the store at dispose.
+ * before dispatching the failure-path deletion — if the editor
+ * unmounted while we were processing, the deletion is suppressed
+ * (the doc is gone anyway).
+ *
+ * Returns `void` synchronously; the async work is fire-and-forget.
+ * Callers don't need to `await`.
  *
  * Exported so the paste handler in `clipboard-filters.ts` can share
  * the same pipeline.
  */
-export async function processAttachmentFiles(
+export function processAttachmentFiles(
   view: EditorView,
   files: readonly File[],
   insertPos: number,
   bytesStore: AtomBytesStore,
   onError: (message: string) => void,
-): Promise<void> {
+): void {
   if (files.length === 0) return;
 
-  // Indicator is delayed — most images complete in well under
-  // 100 ms; we only show the overlay for sources that would
-  // otherwise feel slow.
-  let indicatorShown = false;
-  const indicatorTimer = setTimeout(() => {
-    setProcessingIndicator(view, true);
-    indicatorShown = true;
-  }, PROCESSING_INDICATOR_DELAY_MS);
+  // Step 1 — synchronous classification.
+  const classified = classifyDroppedFiles(files);
 
-  // Mint an id only when we have bytes to associate with it; non-
-  // image files use the legacy no-id shape.
-  const mintId = (): string => {
-    // Tide.app's WebKit supports `crypto.randomUUID` (since macOS 12);
-    // defensive `??` covers vanishingly unlikely future engines that
-    // lack it.
-    return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `atom-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  };
+  // Surface rejection messages immediately. The user will see the
+  // banner appear in the same paint as the (potentially partial)
+  // atom-insertion below.
+  for (const entry of classified) {
+    if (entry.kind === "reject") {
+      onError(entry.message);
+    }
+  }
+
+  // Step 2 — synchronous skeleton atom insertion. We pull only the
+  // skeleton entries; rejections contribute no atoms.
+  const skeletonAtoms: AtomSegment[] = [];
+  for (const entry of classified) {
+    if (entry.kind !== "reject") {
+      skeletonAtoms.push(entry.atom);
+    }
+  }
+  if (skeletonAtoms.length === 0) return;
+
+  insertAtomsAt(view, insertPos, skeletonAtoms);
+
+  // Step 3 — fire-and-forget async byte-fill, one job per skeleton.
+  // Each job is independent; failures don't poison siblings.
+  for (const entry of classified) {
+    if (entry.kind === "reject") continue;
+    void runAttachmentJob(view, entry, bytesStore, onError);
+  }
+}
+
+/**
+ * Run the async half of a single attachment job. Populates the
+ * bytes-store on success (which notifies the pending-sync plugin
+ * → the atom widget transitions out of pending appearance), or
+ * removes the skeleton atom on failure (which surfaces via
+ * `onError` in the same call).
+ *
+ * Defensive try / catch around the await: a synchronous throw from
+ * `downsampleImage` / `readTextAttachment` would otherwise reject
+ * the spawning Promise unhandled. Wrap so the user gets a clean
+ * banner message and the skeleton atom is cleaned up.
+ */
+async function runAttachmentJob(
+  view: EditorView,
+  job:
+    | { kind: "skeleton-image"; file: File; atom: AtomSegment }
+    | { kind: "skeleton-text"; file: File; atom: AtomSegment },
+  bytesStore: AtomBytesStore,
+  onError: (message: string) => void,
+): Promise<void> {
+  const id = job.atom.id;
+  // Defensive — every skeleton path mints an id; this branch is
+  // unreachable at runtime but keeps TypeScript honest about the
+  // optional field.
+  if (id === undefined) return;
 
   try {
-    const results = await Promise.all(
-      Array.from(files).map(async (file): Promise<{
-        atom: AtomSegment | null;
-        error: string | null;
-      }> => {
-        const cls = classifySourceMime(file.type);
-        if (cls === "unsupported") {
-          return { atom: nonImageAtomFromFile(file), error: null };
-        }
-        const outcome = await downsampleImage(file);
-        if (!outcome.ok) {
-          return {
-            atom: null,
-            error: describeDownsampleError(outcome.error, file.name),
-          };
-        }
-        const id = mintId();
-        bytesStore.put(id, {
-          content: outcome.result.content,
-          mediaType: outcome.result.mediaType,
-        });
-        return {
-          atom: {
-            kind: "atom",
-            type: "image",
-            label: file.name,
-            value: file.name,
-            id,
-          },
-          error: null,
-        };
-      }),
-    );
-
-    const atoms: AtomSegment[] = [];
-    for (const r of results) {
-      if (r.atom !== null) atoms.push(r.atom);
-      if (r.error !== null) onError(r.error);
+    if (job.kind === "skeleton-image") {
+      const outcome = await downsampleImage(job.file);
+      if (!outcome.ok) {
+        // Remove skeleton, surface error.
+        if (view.dom.isConnected) removeAtomById(view, id);
+        onError(describeDownsampleError(outcome.error, job.file.name));
+        return;
+      }
+      bytesStore.put(id, {
+        content: outcome.result.content,
+        mediaType: outcome.result.mediaType,
+      });
+      return;
     }
-
-    // Drop the indicator before dispatching so the insertion paint
-    // is the first user-visible signal that processing completed.
-    clearTimeout(indicatorTimer);
-    if (indicatorShown) setProcessingIndicator(view, false);
-
-    if (atoms.length === 0) return;
-
-    // The view may have been destroyed (card closed, pane swapped)
-    // while we were processing. CM6's `dispatch` would throw on a
-    // destroyed view; the `isConnected` check is the cheapest
-    // liveness proxy short of a private API.
-    if (!view.dom.isConnected) return;
-
-    // Clamp insertPos to the live doc length — the doc may have
-    // grown or shrunk while we were processing.
-    const clampedPos = Math.min(insertPos, view.state.doc.length);
-    insertAtomsAt(view, clampedPos, atoms);
+    // job.kind === "skeleton-text"
+    const outcome = await readTextAttachment(job.file);
+    if (!outcome.ok) {
+      if (view.dom.isConnected) removeAtomById(view, id);
+      onError(describeTextAttachmentError(outcome.error, job.file.name));
+      return;
+    }
+    bytesStore.put(id, {
+      content: outcome.result.content,
+      mediaType: outcome.result.mediaType,
+    });
   } catch (err) {
-    // Defensive: any synchronous throw inside the Promise.all
-    // composition (extremely unlikely, every leaf is wrapped) lands
-    // here. Surface it as a generic decode failure.
-    clearTimeout(indicatorTimer);
-    if (indicatorShown) setProcessingIndicator(view, false);
+    // Pipeline threw — surface generically, remove the skeleton.
+    if (view.dom.isConnected) removeAtomById(view, id);
     const reason = err instanceof Error ? err.message : "unknown error";
-    onError(`Image processing failed: ${reason}`);
+    onError(`Attachment processing failed: ${job.file.name} (${reason})`);
   }
 }
 
@@ -834,11 +857,12 @@ export function tugDropExtension(
           return true;
         }
 
-        // Bytes-store-aware path: run the async pipeline. The drop
-        // event handler returns synchronously to satisfy CM6; the
-        // pipeline dispatches the insertion (and surfaces any
-        // attachment-rejection errors) when it settles.
-        void processAttachmentFiles(
+        // Bytes-store-aware path: synchronously classifies files,
+        // inserts skeleton atoms at the drop point for image / text
+        // sources, and spawns fire-and-forget async byte-fill jobs.
+        // Unsupported files (PDF / archive / audio / video) surface
+        // via `onAttachmentError` instead of inserting a chip.
+        processAttachmentFiles(
           view,
           Array.from(files),
           insertPos,

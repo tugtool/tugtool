@@ -62,7 +62,7 @@ function streamingUsage(
 describe("reducer — handleStreamingUsage", () => {
   it("stores the frame's decoded usage as liveTurnUsage", () => {
     const state = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       streamingUsage("msg_a", {
         input_tokens: 3,
         cache_creation_input_tokens: 7327,
@@ -83,7 +83,7 @@ describe("reducer — handleStreamingUsage", () => {
     // a later message's frame carries the grown window. The cell
     // shows the most recent frame, never an accumulation.
     const state = applyAll(fresh(), [
-      { type: "send", text: "run echo", atoms: [], turnKey: "k1" },
+      { type: "send", text: "run echo", atoms: [], wireText: "run echo", attachments: [], turnKey: "k1" },
       streamingUsage("msg_a", {
         input_tokens: 3,
         cache_creation_input_tokens: 7340,
@@ -111,7 +111,7 @@ describe("reducer — handleStreamingUsage", () => {
     // 3 + 13148 + 7327 = 20478. output is excluded — it is the
     // model's response, not its resident input.
     const state = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       streamingUsage("msg_a", {
         input_tokens: 3,
         cache_creation_input_tokens: 7327,
@@ -124,7 +124,7 @@ describe("reducer — handleStreamingUsage", () => {
 
   it("never overwrites a captured sessionInitTokens", () => {
     const state = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       streamingUsage("msg_a", {
         input_tokens: 3,
         cache_read_input_tokens: 18572,
@@ -142,7 +142,7 @@ describe("reducer — handleStreamingUsage", () => {
 
   it("resets liveTurnUsage at handleSend but keeps sessionInitTokens", () => {
     const afterTurn = applyAll(fresh(), [
-      { type: "send", text: "first", atoms: [], turnKey: "k1" },
+      { type: "send", text: "first", atoms: [], wireText: "first", attachments: [], turnKey: "k1" },
       streamingUsage("msg_a", { input_tokens: 3, cache_read_input_tokens: 18572, output_tokens: 80 }),
       { type: "assistant_text", msg_id: "msg_a",
       block_index: 0,
@@ -155,7 +155,7 @@ describe("reducer — handleStreamingUsage", () => {
     expect(afterTurn.sessionInitTokens).toBe(18575);
     // A new turn's `handleSend` clears the live frame, not sessionInit.
     const nextTurn = applyAll(afterTurn, [
-      { type: "send", text: "second", atoms: [], turnKey: "k2" },
+      { type: "send", text: "second", atoms: [], wireText: "second", attachments: [], turnKey: "k2" },
     ]);
     expect(nextTurn.liveTurnUsage).toBeNull();
     expect(nextTurn.sessionInitTokens).toBe(18575);
@@ -163,7 +163,7 @@ describe("reducer — handleStreamingUsage", () => {
 
   it("supersedes liveTurnUsage at handleTurnComplete", () => {
     const state = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       streamingUsage("msg_a", {
         input_tokens: 3,
         cache_read_input_tokens: 13148,
@@ -184,7 +184,7 @@ describe("reducer — handleStreamingUsage", () => {
 
   it("drops a frame with no msg_id — a malformed frame", () => {
     const state = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       { type: "streaming_usage", usage: { output_tokens: 50 } } as CodeSessionEvent,
     ]);
     expect(state.liveTurnUsage).toBeNull();
@@ -202,7 +202,7 @@ describe("reducer — handleStreamingUsage", () => {
     // the contract here so a future regression that adds a phase
     // guard would surface.
     const state = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
       { type: "replay_started" } as CodeSessionEvent,
       streamingUsage("msg_inflight", {
         input_tokens: 1,

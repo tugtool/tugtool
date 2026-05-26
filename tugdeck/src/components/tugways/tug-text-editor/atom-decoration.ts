@@ -31,9 +31,9 @@
  */
 
 import { invertedEffects } from "@codemirror/commands";
-import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import type { DecorationSet } from "@codemirror/view";
-import { StateEffect, StateField } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
+import type { DecorationSet, PluginValue, ViewUpdate } from "@codemirror/view";
+import { Facet, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import {
   createAtomImgElement,
@@ -41,6 +41,7 @@ import {
   TUG_ATOM_CHAR,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
+import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 
 /**
  * Atom-height contract for the substrate.
@@ -71,6 +72,34 @@ export interface PositionedAtom {
   /** Atom identity. */
   segment: AtomSegment;
 }
+
+// ---------------------------------------------------------------------------
+// Bytes-store facet — read by AtomWidget at toDOM time
+// ---------------------------------------------------------------------------
+
+/**
+ * CM6 facet exposing the per-card `AtomBytesStore` to atom widgets.
+ * `tug-text-editor.tsx` registers it via
+ * `atomBytesStoreFacet.of(getBytesStore)` so the widget can query
+ * bytes-state at mount time to decide initial `pending` appearance.
+ *
+ * The facet carries a thunk (not the store directly) so widgets read
+ * the live store at the moment of mount — matching the [L07] pattern
+ * the drop / completion extensions use. Editors that don't
+ * participate in attachment bytes simply don't register the facet;
+ * the default thunk returns `null` and widgets render in their
+ * non-pending appearance unconditionally.
+ *
+ * After mount, the `pendingAtomSyncPlugin` (below) takes over and
+ * keeps `data-pending` synchronized with the bytes-store via direct
+ * DOM mutation — no widget rebuild needed when bytes arrive.
+ */
+export const atomBytesStoreFacet = Facet.define<
+  () => AtomBytesStore | null,
+  () => AtomBytesStore | null
+>({
+  combine: (values) => (values.length > 0 ? values[0]! : () => null),
+});
 
 // ---------------------------------------------------------------------------
 // AtomWidget
@@ -120,11 +149,27 @@ export class AtomWidget extends WidgetType {
     );
   }
 
-  override toDOM(): HTMLImageElement {
+  override toDOM(view: EditorView): HTMLImageElement {
+    // Initial pending state: derived from the live bytes-store at
+    // mount time. An atom with an `id` but no matching store entry
+    // is mid-processing (drop fired, async byte-fill hasn't
+    // completed yet); render in the pending appearance until the
+    // pending-sync ViewPlugin updates the DOM. Atoms without an
+    // `id` never render as pending (legacy completion atoms, link /
+    // command atoms — no bytes-store relationship).
+    let pending = false;
+    if (this.segment.id !== undefined) {
+      const getStore = view.state.facet(atomBytesStoreFacet);
+      const store = getStore();
+      if (store !== null && store.get(this.segment.id) === null) {
+        pending = true;
+      }
+    }
     return createAtomImgElement(
       this.segment.type,
       this.segment.label,
       this.segment.value,
+      { id: this.segment.id, pending },
     );
   }
 
@@ -382,5 +427,194 @@ export const atomInvertedEffects: Extension = invertedEffects.of((tr) => {
     result.push(addAtomsEffect.of(removed));
   }
   return result;
+});
+
+// ---------------------------------------------------------------------------
+// Atom-by-id deletion
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the document position of an atom with the given id. Returns
+ * `null` when no atom matches — typical when the user deleted the
+ * skeleton atom themselves (Cmd-Z, backspace) before the async byte
+ * fill completed.
+ *
+ * Used by the drop / paste pipeline's failure path: when
+ * `downsampleImage` or `readTextAttachment` rejects a file, we look
+ * up the skeleton atom by id and dispatch a deletion. Cheap O(N)
+ * walk over the decoration set — N is small (atoms in a single
+ * prompt) so no index needed.
+ */
+export function findAtomPositionById(
+  state: EditorState,
+  id: string,
+): number | null {
+  const cursor = state.field(atomDecorationField).iter();
+  while (cursor.value !== null) {
+    const widget = (cursor.value.spec as { widget?: WidgetType }).widget;
+    if (widget instanceof AtomWidget && widget.segment.id === id) {
+      return cursor.from;
+    }
+    cursor.next();
+  }
+  return null;
+}
+
+/**
+ * Dispatch a transaction that deletes the skeleton atom carrying
+ * `id`. The decoration field's auto-mapping drops the matching
+ * widget when the U+FFFC character is removed; CM6's atomic-ranges
+ * provider keeps cursor motion sane.
+ *
+ * No-op when the atom isn't found (user already deleted it, or the
+ * id never matched a live atom — defensive).
+ *
+ * Used exclusively by the drop / paste pipeline's failure path; not
+ * a general-purpose primitive.
+ */
+export function removeAtomById(view: EditorView, id: string): void {
+  const pos = findAtomPositionById(view.state, id);
+  if (pos === null) return;
+  view.dispatch({
+    changes: { from: pos, to: pos + 1, insert: "" },
+    userEvent: "delete.tug-atom-attachment-error",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Pending-sync ViewPlugin
+// ---------------------------------------------------------------------------
+
+/**
+ * Reconcile atom widgets' `data-pending` attribute with the live
+ * bytes-store. Subscribes to the store at mount; on every
+ * notification, walks every atom widget in `view.contentDOM` and
+ * sets / clears `data-pending` based on whether that widget's
+ * `data-atom-id` has a matching store entry.
+ *
+ * Why DOM mutation rather than CM6 widget rebuild: the bytes
+ * arriving for an atom changes the atom's *appearance* only — the
+ * underlying segment (type / label / value / id) is unchanged.
+ * Forcing a widget rebuild would flicker the chip, churn through
+ * `eq()` comparisons, and risk losing focus / selection state if
+ * the widget's DOM was the focused element. Direct attribute
+ * mutation is the [L06] path: ephemeral appearance state belongs in
+ * the DOM, not React or CM6 state.
+ *
+ * Idempotent: setting an attribute to the value it already holds is
+ * a no-op in the DOM. So repeated notifications during a busy drop
+ * (many atoms transitioning at once) don't churn the document.
+ *
+ * Lifecycle: unsubscribes on plugin destroy so abandoned views don't
+ * leak listeners. The plugin is mounted as part of the extension
+ * factory exported below so consumers that don't supply a
+ * `atomBytesStoreFacet` (gallery, stand-alone editors) get a no-op
+ * plugin — the facet's default thunk returns `null` and the plugin
+ * never finds a store to subscribe to.
+ */
+class PendingAtomSyncPlugin implements PluginValue {
+  private unsubscribe: (() => void) | null = null;
+
+  constructor(private readonly view: EditorView) {
+    this.subscribeIfStoreAvailable();
+  }
+
+  update(update: ViewUpdate): void {
+    // Subscribe lazily if the facet wasn't ready at construction.
+    // The drop / paste pipeline can populate the facet via a
+    // reconfigure in some host shells; this catches that path.
+    if (this.unsubscribe === null) {
+      this.subscribeIfStoreAvailable();
+    }
+    // The widget's own toDOM() handles initial state on mount;
+    // ViewUpdate doesn't need to do anything except subscribe if it
+    // hasn't yet. Bytes-arriving subscriptions handle the rest.
+    void update;
+  }
+
+  destroy(): void {
+    if (this.unsubscribe !== null) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+  }
+
+  private subscribeIfStoreAvailable(): void {
+    const getStore = this.view.state.facet(atomBytesStoreFacet);
+    const store = getStore();
+    if (store === null) return;
+    const view = this.view;
+    this.unsubscribe = store.subscribe(() => {
+      syncPendingAttributes(view, store);
+    });
+  }
+}
+
+/**
+ * For each atom widget in `view.contentDOM`, set or clear
+ * `data-pending` based on whether the matching id is present in the
+ * bytes-store. Pure DOM walk + attribute mutation; no React, no
+ * CM6 transactions. The widget's `data-atom-id` is the join key.
+ *
+ * Exported for the rare consumer that wants to force a manual sync
+ * (e.g., after restoring from a snapshot); the ViewPlugin's
+ * subscribe path handles the common case automatically.
+ */
+export function syncPendingAttributes(
+  view: EditorView,
+  store: AtomBytesStore,
+): void {
+  const imgs = view.contentDOM.querySelectorAll<HTMLImageElement>(
+    "img[data-atom-id]",
+  );
+  for (const img of imgs) {
+    const id = img.dataset.atomId;
+    if (id === undefined) continue;
+    const hasBytes = store.get(id) !== null;
+    if (hasBytes) {
+      if (img.dataset.pending !== undefined) {
+        delete img.dataset.pending;
+      }
+    } else {
+      if (img.dataset.pending !== "true") {
+        img.dataset.pending = "true";
+      }
+    }
+  }
+}
+
+/**
+ * The pending-sync `ViewPlugin` exported for editor extension
+ * registration. The atom widget's `toDOM` handles initial render;
+ * this plugin handles the transition from pending → ready as bytes
+ * arrive after async processing completes.
+ */
+export const pendingAtomSyncPlugin = ViewPlugin.fromClass(
+  PendingAtomSyncPlugin,
+);
+
+// ---------------------------------------------------------------------------
+// Pending appearance theme
+// ---------------------------------------------------------------------------
+
+/**
+ * CM6 `baseTheme` block styling the pending atom appearance. Applies
+ * via attribute selector on the atom `<img>` element written by
+ * `createAtomImgElement`. Pulsing opacity is the cheapest visual
+ * cue that says "this is processing" without redrawing the SVG —
+ * the alpha animates on the GPU, leaving the chip's geometry,
+ * positioning, and editing semantics untouched.
+ *
+ * [L06] — appearance via CSS only; no React, no state.
+ */
+export const pendingAtomTheme: Extension = EditorView.baseTheme({
+  "img[data-pending]": {
+    opacity: "0.55",
+    animation: "tug-atom-pending-pulse 1.2s ease-in-out infinite",
+  },
+  "@keyframes tug-atom-pending-pulse": {
+    "0%, 100%": { opacity: "0.55" },
+    "50%": { opacity: "0.85" },
+  },
 });
 
