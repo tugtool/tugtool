@@ -1,53 +1,40 @@
 /**
- * gallery-tug-inline-dialog.tsx — `TugInlineDialog` demo tab for the
- * Component Gallery.
+ * gallery-tug-inline-dialog.tsx — concrete usages of `TugInlineDialog`
+ * for the Component Gallery.
  *
- * Six sections, each demonstrating one knob of the new header-bar
- * primitive's surface:
+ * One card, two sections — each a real consumer of `TugInlineDialog`
+ * mounted against a minimal `CodeSessionStore` double. Tuning the
+ * primitive's tokens or layout immediately reflects in both sections
+ * so changes can be evaluated against the two callsites we actually
+ * ship.
  *
- *   1. Bare CTA — title + description + trailing `actions` (one OK
- *      button).
- *   2. Caution shield + permission shape — `iconRole="caution"`,
- *      ShieldAlert, a radio-group `options` block (scope picker),
- *      `actions={<Deny/><Allow/>}`.
- *   3. Destructive confirm — `iconRole="danger"`, TriangleAlert,
- *      `actions={<Cancel/><Discard role="danger"/>}`.
- *   4. Rich children — a standalone `JsonTreeBlock` inside the body
- *      slot.
- *   5. Leading + trailing actions — `leadingActions={<Back/><Next/>}`
- *      + `actions={<Cancel/><Submit/>}`. Demonstrates the question-
- *      dialog shape with both action clusters on the header row.
- *   6. Icon-role gallery — five compact tiles side by side, one per
- *      `iconRole`, against the same dummy title.
+ *   1. PermissionDialog — caution-shield request for a Bash command,
+ *      with the `permission_suggestions` scope-picker radio stack.
+ *      Mock store implements `subscribe` / `getSnapshot.pendingApproval`
+ *      / `respondApproval`.
+ *   2. QuestionDialog — 4-question wizard (the "calculator" walkthrough),
+ *      single-select with auto-advance. Mock store implements
+ *      `subscribe` / `getSnapshot.pendingQuestion` / `respondQuestion`
+ *      / `popInteractive`.
  *
- * The result-indicator pattern from `gallery-alert.tsx` is reused so
- * each section reports the user's last click without needing a real
- * downstream effect.
+ * Each section has a Reset button beneath the dialog that re-arms the
+ * pending request, so multiple Allow / Deny / Submit / Cancel
+ * round-trips can be exercised in the same session.
  *
  * @module components/tugways/cards/gallery-tug-inline-dialog
  */
 
 import React from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Info,
-  Settings2,
-  ShieldAlert,
-  Shell,
-  TriangleAlert,
-} from "lucide-react";
 
-import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
-import {
-  TUG_INLINE_DIALOG_ICON_ROLES,
-  type TugInlineDialogIconRole,
-  type TugInlineDialogOption,
-} from "@/components/tugways/tug-inline-dialog";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
+import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugSeparator } from "@/components/tugways/tug-separator";
-import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
+import type {
+  CodeSessionStore,
+  ControlRequestForward,
+} from "@/lib/code-session-store";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -61,343 +48,339 @@ const resultStyle: React.CSSProperties = {
   marginTop: "8px",
 };
 
-const ICON_ROLE_TILE_ROW: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "row",
-  flexWrap: "wrap",
-  gap: "0.75rem",
-  alignItems: "stretch",
+// ---------------------------------------------------------------------------
+// Mock CodeSessionStore — minimal surface for PermissionDialog
+// ---------------------------------------------------------------------------
+
+interface PermissionSnapshot {
+  pendingApproval: ControlRequestForward | null;
+}
+
+class MockPermissionStore {
+  private _pending: ControlRequestForward | null;
+  private _listeners: Array<() => void> = [];
+  // Cache the snapshot object so a useSyncExternalStore selector
+  // doesn't see a fresh reference on every call (would loop).
+  private _snapshot: PermissionSnapshot;
+
+  constructor(initial: ControlRequestForward) {
+    this._pending = initial;
+    this._snapshot = { pendingApproval: initial };
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this._listeners.push(listener);
+    return () => {
+      const idx = this._listeners.indexOf(listener);
+      if (idx >= 0) this._listeners.splice(idx, 1);
+    };
+  };
+
+  getSnapshot = (): PermissionSnapshot => this._snapshot;
+
+  respondApproval = (
+    requestId: string,
+    _payload: { decision: "allow" | "deny"; message?: string },
+  ): void => {
+    if (this._pending?.request_id === requestId) {
+      this._pending = null;
+      this._snapshot = { pendingApproval: null };
+      this._notify();
+    }
+  };
+
+  arm(request: ControlRequestForward): void {
+    this._pending = request;
+    this._snapshot = { pendingApproval: request };
+    this._notify();
+  }
+
+  private _notify(): void {
+    for (const listener of this._listeners.slice()) listener();
+  }
+}
+
+const LIVE_BASH_REQUEST: ControlRequestForward = {
+  request_id: "gallery-tug-inline-dialog:bash",
+  is_question: false,
+  tool_name: "Bash",
+  input: { command: "tokei" },
+  permission_suggestions: [
+    {
+      behavior: "allow",
+      destination: "project",
+      rules: [{ ruleContent: "Bash(tokei)", toolName: "Bash" }],
+      type: "addRule",
+    },
+  ],
 };
 
 // ---------------------------------------------------------------------------
-// Permission-shape demo data
+// Mock CodeSessionStore — minimal surface for QuestionDialog
 // ---------------------------------------------------------------------------
 
-const PERMISSION_SCOPE_OPTIONS: ReadonlyArray<TugInlineDialogOption> = [
-  {
-    value: "allow-once",
-    label: "Allow once",
-    description: "Allow this single invocation. No rule is added.",
+interface QuestionSnapshot {
+  pendingQuestion: ControlRequestForward | null;
+}
+
+class MockQuestionStore {
+  private _pending: ControlRequestForward | null;
+  private _listeners: Array<() => void> = [];
+  private _snapshot: QuestionSnapshot;
+
+  constructor(initial: ControlRequestForward) {
+    this._pending = initial;
+    this._snapshot = { pendingQuestion: initial };
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this._listeners.push(listener);
+    return () => {
+      const idx = this._listeners.indexOf(listener);
+      if (idx >= 0) this._listeners.splice(idx, 1);
+    };
+  };
+
+  getSnapshot = (): QuestionSnapshot => this._snapshot;
+
+  respondQuestion = (
+    requestId: string,
+    _payload: { answers: Record<string, unknown> },
+  ): void => {
+    if (this._pending?.request_id === requestId) {
+      this._clear();
+    }
+  };
+
+  popInteractive = (): void => {
+    this._clear();
+  };
+
+  arm(request: ControlRequestForward): void {
+    this._pending = request;
+    this._snapshot = { pendingQuestion: request };
+    this._notify();
+  }
+
+  private _clear(): void {
+    this._pending = null;
+    this._snapshot = { pendingQuestion: null };
+    this._notify();
+  }
+
+  private _notify(): void {
+    for (const listener of this._listeners.slice()) listener();
+  }
+}
+
+// Mirrors the user's "calculator" walkthrough — 4 single-select
+// questions, varied option lists, sensible recommended defaults.
+const LIVE_CALCULATOR_REQUEST: ControlRequestForward = {
+  request_id: "gallery-tug-inline-dialog:calculator",
+  is_question: true,
+  tool_name: "AskUserQuestion",
+  input: {
+    questions: [
+      {
+        question: "How should the calculator accept input?",
+        multiSelect: false,
+        options: [
+          {
+            label: "Interactive REPL",
+            description:
+              "Prompt the user in a loop, read one expression per line until they quit",
+          },
+          {
+            label: "Command-line args",
+            description:
+              "Read the expression from argv, e.g. `calc 2 + 3`, then exit",
+          },
+          {
+            label: "Both modes",
+            description: "Use argv if provided, otherwise fall back to a REPL",
+          },
+        ],
+      },
+      {
+        question: "Which operations should it support?",
+        multiSelect: false,
+        options: [
+          { label: "Basic four", description: "+ − × ÷" },
+          { label: "Basic four plus modulo", description: "+ − × ÷ %" },
+          {
+            label: "Scientific",
+            description: "+ − × ÷ % plus sin/cos/tan, log, exp, etc.",
+          },
+        ],
+      },
+      {
+        question: "What number type should it use?",
+        multiSelect: false,
+        options: [
+          { label: "double", description: "IEEE-754 64-bit floating point" },
+          {
+            label: "long double",
+            description: "Wider float, platform-dependent precision",
+          },
+          {
+            label: "GMP arbitrary precision",
+            description: "Big numbers; linked against libgmp",
+          },
+        ],
+      },
+      {
+        question: "How polished should error handling be?",
+        multiSelect: false,
+        options: [
+          {
+            label: "Minimal",
+            description: "Print errno-style messages, exit non-zero",
+          },
+          {
+            label: "Friendly",
+            description: "Catch parse errors, print a hint with caret",
+          },
+          {
+            label: "Full",
+            description:
+              "Friendly errors + suggestions; retry the prompt in REPL mode",
+          },
+        ],
+      },
+    ],
   },
-  {
-    value: "allow-project",
-    label: "Allow for this project",
-  },
-];
+};
 
 // ---------------------------------------------------------------------------
 // GalleryTugInlineDialog
 // ---------------------------------------------------------------------------
 
 export function GalleryTugInlineDialog(): React.ReactElement {
-  // Per-section result strings so each demo shows what the user last
-  // clicked. Mirrors `gallery-alert.tsx`.
-  const [bareResult, setBareResult] = React.useState<string>("—");
-  const [permissionResult, setPermissionResult] = React.useState<string>("—");
-  const [destructiveResult, setDestructiveResult] = React.useState<string>("—");
-  const [richResult, setRichResult] = React.useState<string>("—");
-  const [wizardResult, setWizardResult] = React.useState<string>("—");
+  const [permissionResult, setPermissionResult] =
+    React.useState<string>("(pending)");
+  const [questionResult, setQuestionResult] =
+    React.useState<string>("(pending)");
 
-  // Permission-shape selected scope. Mandatory single-select.
-  const [permissionScope, setPermissionScope] = React.useState<string>(
-    PERMISSION_SCOPE_OPTIONS[0].value,
+  const permissionStore = React.useMemo(
+    () => new MockPermissionStore(LIVE_BASH_REQUEST),
+    [],
   );
-
-  // Sample JSON for the rich-children section. Stable across renders so
-  // the JsonTreeBlock's component-state-preservation key doesn't churn.
-  const sampleJson = React.useMemo(
-    () => ({
-      file_path: "/Users/me/project/src/index.ts",
-      offset: 1,
-      limit: 200,
-      checksum: "sha256:0e8c9c1a…",
-      flags: { recursive: true, follow_symlinks: false },
-    }),
+  const questionStore = React.useMemo(
+    () => new MockQuestionStore(LIVE_CALCULATOR_REQUEST),
     [],
   );
 
-  const iconForRole = (role: TugInlineDialogIconRole): React.ReactNode => {
-    switch (role) {
-      case "default":
-        return <Settings2 />;
-      case "caution":
-        return <ShieldAlert />;
-      case "danger":
-        return <TriangleAlert />;
-      case "success":
-        return <Shell />;
-      case "info":
-      default:
-        return <Info />;
-    }
-  };
+  // Wrap respondApproval so this section echoes the outcome. The
+  // wrapper still calls the real method so PermissionDialog's
+  // pending-state machine clears as it does in production.
+  React.useEffect(() => {
+    const original = permissionStore.respondApproval;
+    permissionStore.respondApproval = (requestId, payload) => {
+      original(requestId, payload);
+      const summary =
+        payload.decision === "allow"
+          ? `Allowed${payload.message !== undefined ? ` — scope: ${payload.message}` : ""}`
+          : "Denied";
+      setPermissionResult(summary);
+    };
+    return () => {
+      permissionStore.respondApproval = original;
+    };
+  }, [permissionStore]);
+
+  // Wrap respondQuestion + popInteractive on the QuestionDialog store
+  // similarly.
+  React.useEffect(() => {
+    const originalRespond = questionStore.respondQuestion;
+    const originalPop = questionStore.popInteractive;
+    questionStore.respondQuestion = (requestId, payload) => {
+      originalRespond(requestId, payload);
+      const summary = Object.entries(payload.answers)
+        .map(([q, a]) => `${q.slice(0, 30)}… → ${String(a)}`)
+        .join("\n");
+      setQuestionResult(`Submitted:\n${summary}`);
+    };
+    questionStore.popInteractive = () => {
+      originalPop();
+      setQuestionResult("Cancelled");
+    };
+    return () => {
+      questionStore.respondQuestion = originalRespond;
+      questionStore.popInteractive = originalPop;
+    };
+  }, [questionStore]);
+
+  const handleResetPermission = React.useCallback(() => {
+    permissionStore.arm(LIVE_BASH_REQUEST);
+    setPermissionResult("(pending)");
+  }, [permissionStore]);
+  const handleResetQuestion = React.useCallback(() => {
+    questionStore.arm(LIVE_CALCULATOR_REQUEST);
+    setQuestionResult("(pending)");
+  }, [questionStore]);
 
   return (
     <div className="cg-content" data-testid="gallery-tug-inline-dialog">
-      {/* ---- 1. Bare CTA ---- */}
+      {/* ---- 1. PermissionDialog ---- */}
       <div className="cg-section">
-        <TugLabel className="cg-section-title">Bare CTA</TugLabel>
+        <TugLabel className="cg-section-title">PermissionDialog</TugLabel>
         <div style={labelStyle}>
-          Title + description + a single trailing action button; default{" "}
-          <code>info</code> icon role.
+          The real <code>PermissionDialog</code> mounted on a mock{" "}
+          <code>CodeSessionStore</code>. Caution-shield iconRole; scope
+          picker in <code>options</code>; <code>Deny</code> /{" "}
+          <code>Allow</code> in trailing <code>actions</code>.
         </div>
-        <TugInlineDialog
-          icon={<Info />}
-          iconRole="info"
-          title="Save this layout?"
-          description="Layouts persist across reloads and apply to every new card opened in this workspace."
-          actions={
-            <TugPushButton
-              emphasis="filled"
-              role="action"
-              size="xs"
-              onClick={() => setBareResult("Saved")}
-            >
-              Save
-            </TugPushButton>
-          }
-        />
-        <div style={resultStyle}>
-          Result: <strong>{bareResult}</strong>
-        </div>
-      </div>
-
-      <TugSeparator />
-
-      {/* ---- 2. Caution shield + permission shape ---- */}
-      <div className="cg-section">
-        <TugLabel className="cg-section-title">Permission shape</TugLabel>
-        <div style={labelStyle}>
-          <code>iconRole="caution"</code> + ShieldAlert; the{" "}
-          <code>options</code> radio group is the scope picker —
-          mandatory single-select; <code>actions</code> carries
-          Deny / Allow.
-        </div>
-        <TugInlineDialog
-          icon={<ShieldAlert />}
-          iconRole="caution"
-          title="Permission requested"
-          description={
-            <>
-              This command requires approval ·{" "}
-              <span style={{ verticalAlign: "middle" }}>
-                <Shell size={12} aria-hidden="true" />
-              </span>{" "}
-              Bash · <code>tokei</code>
-            </>
-          }
-          actions={
-            <>
-              <TugPushButton
-                emphasis="outlined"
-                role="danger"
-                size="xs"
-                onClick={() => setPermissionResult("Denied")}
-              >
-                Deny
-              </TugPushButton>
-              <TugPushButton
-                emphasis="filled"
-                role="action"
-                size="xs"
-                onClick={() =>
-                  setPermissionResult(`Allowed — scope: ${permissionScope}`)
-                }
-              >
-                Allow
-              </TugPushButton>
-            </>
-          }
-          options={PERMISSION_SCOPE_OPTIONS}
-          selectedOption={permissionScope}
-          onSelectOption={setPermissionScope}
-          optionsAriaLabel="Permission scope"
+        <PermissionDialog
+          input={{ kind: "permission", request: LIVE_BASH_REQUEST }}
+          context={{
+            session: permissionStore as unknown as CodeSessionStore,
+          }}
         />
         <div style={resultStyle}>
           Result: <strong>{permissionResult}</strong>
         </div>
+        <div style={{ marginTop: "0.5rem" }}>
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="xs"
+            onClick={handleResetPermission}
+          >
+            Reset request
+          </TugPushButton>
+        </div>
       </div>
 
       <TugSeparator />
 
-      {/* ---- 3. Destructive confirm ---- */}
+      {/* ---- 2. QuestionDialog ---- */}
       <div className="cg-section">
-        <TugLabel className="cg-section-title">Destructive confirm</TugLabel>
+        <TugLabel className="cg-section-title">QuestionDialog</TugLabel>
         <div style={labelStyle}>
-          <code>iconRole="danger"</code> + TriangleAlert; trailing{" "}
-          <code>actions</code> = Cancel (outlined-action) + Discard
-          (filled-danger).
+          The real <code>QuestionDialog</code> mounted on a mock{" "}
+          <code>CodeSessionStore</code>. Info iconRole; question
+          accordion in the body slot; wizard nav (Back / Next) above the
+          accordion; <code>Cancel</code> / <code>Submit</code> in
+          trailing <code>actions</code>.
         </div>
-        <TugInlineDialog
-          icon={<TriangleAlert />}
-          iconRole="danger"
-          title="Discard unsaved changes?"
-          description="You've made changes to “Homepage Copy” that haven't been saved. Leaving now will discard them."
-          actions={
-            <>
-              <TugPushButton
-                emphasis="outlined"
-                role="action"
-                size="xs"
-                onClick={() => setDestructiveResult("Cancelled")}
-              >
-                Cancel
-              </TugPushButton>
-              <TugPushButton
-                emphasis="filled"
-                role="danger"
-                size="xs"
-                onClick={() => setDestructiveResult("Discarded")}
-              >
-                Discard
-              </TugPushButton>
-            </>
-          }
+        <QuestionDialog
+          input={{ kind: "question", request: LIVE_CALCULATOR_REQUEST }}
+          context={{
+            session: questionStore as unknown as CodeSessionStore,
+          }}
         />
-        <div style={resultStyle}>
-          Result: <strong>{destructiveResult}</strong>
+        <div style={{ ...resultStyle, whiteSpace: "pre-wrap" }}>
+          Result: <strong>{questionResult}</strong>
         </div>
-      </div>
-
-      <TugSeparator />
-
-      {/* ---- 4. Rich children ---- */}
-      <div className="cg-section">
-        <TugLabel className="cg-section-title">Rich children</TugLabel>
-        <div style={labelStyle}>
-          A standalone <code>JsonTreeBlock</code> in the body slot —
-          body kinds compose cleanly without chrome.
-        </div>
-        <TugInlineDialog
-          icon={<ShieldAlert />}
-          iconRole="caution"
-          title="Permission requested"
-          description={
-            <>
-              This will run <code>Read</code> with the parameters below.
-            </>
-          }
-          actions={
-            <>
-              <TugPushButton
-                emphasis="outlined"
-                role="danger"
-                size="xs"
-                onClick={() => setRichResult("Denied")}
-              >
-                Deny
-              </TugPushButton>
-              <TugPushButton
-                emphasis="filled"
-                role="action"
-                size="xs"
-                onClick={() => setRichResult("Allowed")}
-              >
-                Allow
-              </TugPushButton>
-            </>
-          }
-        >
-          <JsonTreeBlock data={sampleJson} label="input" />
-        </TugInlineDialog>
-        <div style={resultStyle}>
-          Result: <strong>{richResult}</strong>
-        </div>
-      </div>
-
-      <TugSeparator />
-
-      {/* ---- 5. Leading + trailing actions (question-dialog shape) ---- */}
-      <div className="cg-section">
-        <TugLabel className="cg-section-title">
-          Leading + trailing actions
-        </TugLabel>
-        <div style={labelStyle}>
-          <code>leadingActions</code> carries wizard nav (Back / Next) at
-          the leading edge of the header row; <code>actions</code>{" "}
-          carries dialog controls (Cancel / Submit) at the trailing
-          edge. The text column absorbs the space between them.
-        </div>
-        <TugInlineDialog
-          icon={<Info />}
-          iconRole="info"
-          title="Claude has questions"
-          description="4 questions · 0 answered"
-          leadingActions={
-            <>
-              <TugPushButton
-                emphasis="outlined"
-                role="action"
-                size="xs"
-                onClick={() => setWizardResult("Back")}
-              >
-                <ArrowLeft size={14} aria-hidden="true" /> Back
-              </TugPushButton>
-              <TugPushButton
-                emphasis="outlined"
-                role="action"
-                size="xs"
-                onClick={() => setWizardResult("Next")}
-              >
-                Next <ArrowRight size={14} aria-hidden="true" />
-              </TugPushButton>
-            </>
-          }
-          actions={
-            <>
-              <TugPushButton
-                emphasis="outlined"
-                role="danger"
-                size="xs"
-                onClick={() => setWizardResult("Cancelled")}
-              >
-                Cancel
-              </TugPushButton>
-              <TugPushButton
-                emphasis="filled"
-                role="action"
-                size="xs"
-                onClick={() => setWizardResult("Submitted")}
-              >
-                Submit
-              </TugPushButton>
-            </>
-          }
-        />
-        <div style={resultStyle}>
-          Result: <strong>{wizardResult}</strong>
-        </div>
-      </div>
-
-      <TugSeparator />
-
-      {/* ---- 6. Icon-role gallery ---- */}
-      <div className="cg-section">
-        <TugLabel className="cg-section-title">Icon-role gallery</TugLabel>
-        <div style={labelStyle}>
-          The five <code>iconRole</code> values rendered side by side
-          against the same dummy title and a single OK action.
-        </div>
-        <div style={ICON_ROLE_TILE_ROW}>
-          {TUG_INLINE_DIALOG_ICON_ROLES.map((role) => (
-            <div key={role} style={{ flex: "1 1 0", minWidth: 0 }}>
-              <TugInlineDialog
-                icon={iconForRole(role)}
-                iconRole={role}
-                title={role}
-                actions={
-                  <TugPushButton
-                    emphasis="outlined"
-                    role="action"
-                    size="xs"
-                    onClick={() => undefined}
-                  >
-                    OK
-                  </TugPushButton>
-                }
-              />
-            </div>
-          ))}
+        <div style={{ marginTop: "0.5rem" }}>
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="xs"
+            onClick={handleResetQuestion}
+          >
+            Reset request
+          </TugPushButton>
         </div>
       </div>
     </div>
