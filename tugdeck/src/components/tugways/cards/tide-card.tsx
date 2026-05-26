@@ -1842,11 +1842,19 @@ export function TideCardBody({
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
   // still dead. The user recovers by closing and reopening the card.
-  // `resume_failed` is excluded here because the card observer unmounts
-  // the bound body on that cause (the picker sheet re-renders instead).
+  // Two causes are excluded from this dead-session classification:
+  //  - `resume_failed`: the card observer unmounts the bound body on
+  //    that cause (the picker sheet re-renders instead).
+  //  - `attachment_rejected`: transient input-validation feedback
+  //    (drop / paste of an unsupported file, oversize image, etc.).
+  //    The session is otherwise healthy; the next submit can proceed
+  //    without retry. Escalating it to the session-dead overlay was a
+  //    Step 3 v1 defect surfaced by live testing (Step 3.5.1 in
+  //    `roadmap/tide-atoms.md`).
   const sessionErrored =
     codeSnap.lastError !== null &&
-    codeSnap.lastError.cause !== "resume_failed";
+    codeSnap.lastError.cause !== "resume_failed" &&
+    codeSnap.lastError.cause !== "attachment_rejected";
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,

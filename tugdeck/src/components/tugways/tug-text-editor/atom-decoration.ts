@@ -598,23 +598,38 @@ export const pendingAtomSyncPlugin = ViewPlugin.fromClass(
 // ---------------------------------------------------------------------------
 
 /**
- * CM6 `baseTheme` block styling the pending atom appearance. Applies
- * via attribute selector on the atom `<img>` element written by
- * `createAtomImgElement`. Pulsing opacity is the cheapest visual
- * cue that says "this is processing" without redrawing the SVG —
- * the alpha animates on the GPU, leaving the chip's geometry,
- * positioning, and editing semantics untouched.
+ * CM6 `baseTheme` block styling the pending atom appearance.
+ * Applies via attribute selector on the atom `<img>` element
+ * written by `createAtomImgElement`.
+ *
+ * Step 3.5.4 polish: the v1 0.55 ↔ 0.85 pulse was too subtle — live
+ * testing reported "I'm not sure it reads correctly". The current
+ * tuning combines a wider opacity amplitude (0.4 ↔ 1.0, 60% range)
+ * with a saturation pulse that desaturates the chip at the trough
+ * and snaps it back to full color at the crest. The combination
+ * reads unambiguously as "this is processing" without redrawing
+ * the SVG — alpha and filter both animate on the GPU, leaving the
+ * chip's geometry, positioning, and editing semantics untouched.
+ *
+ * Faster cycle (1.0s vs. 1.2s) makes the pulse feel active rather
+ * than ambient — important for the 1-2 s window during a large
+ * image downsample.
  *
  * [L06] — appearance via CSS only; no React, no state.
  */
 export const pendingAtomTheme: Extension = EditorView.baseTheme({
   "img[data-pending]": {
-    opacity: "0.55",
-    animation: "tug-atom-pending-pulse 1.2s ease-in-out infinite",
+    animation: "tug-atom-pending-pulse 1s ease-in-out infinite",
   },
   "@keyframes tug-atom-pending-pulse": {
-    "0%, 100%": { opacity: "0.55" },
-    "50%": { opacity: "0.85" },
+    "0%, 100%": {
+      opacity: "0.4",
+      filter: "saturate(0.4)",
+    },
+    "50%": {
+      opacity: "1",
+      filter: "saturate(1)",
+    },
   },
 });
 

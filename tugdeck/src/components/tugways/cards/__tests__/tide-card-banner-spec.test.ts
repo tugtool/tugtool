@@ -155,6 +155,32 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
     }
   });
 
+  it("attachment_rejected surfaces as an error banner — does NOT escalate to session-dead overlay (Step 3.5.1)", () => {
+    // Distinct from session_state_errored / wire_error: this cause is
+    // transient input-validation feedback (drop / paste of an
+    // unsupported file). The banner appears, the user reads it, the
+    // next successful turn clears it. The session-dead overlay
+    // (the "card can't reach its session" alert with the unplug icon)
+    // is suppressed by `sessionErrored` in `tide-card.tsx`.
+    const at = 1_700_000_000_500;
+    const spec = deriveTideCardBannerSpec(
+      baseSnap({
+        lastError: {
+          cause: "attachment_rejected",
+          message: "Unsupported file type: foo.pdf.",
+          at,
+        },
+      }),
+      { dismissedAt: null },
+    );
+    expect(spec).toEqual({
+      kind: "error",
+      cause: "attachment_rejected",
+      message: "Unsupported file type: foo.pdf.",
+      at,
+    });
+  });
+
   it("resume_failed never surfaces (intercepted upstream by useTideCardObserver)", () => {
     const spec = deriveTideCardBannerSpec(
       baseSnap({

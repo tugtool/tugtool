@@ -421,480 +421,120 @@ export function fitWithinLongEdge(
   };
 }
 
-/** Read a Blob as a base64 string (no `data:` prefix). */
-async function blobToBase64(blob: Blob): Promise<string> {
-  // FileReader gives us a `data:<mime>;base64,<payload>` string; we
-  // strip the prefix and return only the payload. This avoids the
-  // chunked-btoa song-and-dance and is straightforward in WebKit.
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("FileReader did not yield a string"));
-        return;
-      }
-      const comma = result.indexOf(",");
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("FileReader error"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-/** Read a Blob as a data URL (`data:<mime>;base64,<payload>`). */
-async function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("FileReader did not yield a string"));
-        return;
-      }
-      resolve(result);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("FileReader error"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-/**
- * Decode a Blob to an ImageBitmap-like source the canvas can paint.
- * Prefers `createImageBitmap` (off-main-thread on supporting
- * engines); falls back to an `HTMLImageElement` wired through
- * `URL.createObjectURL`. Always frees the object-URL on cleanup.
- *
- * Returns a uniform `{ width, height, draw }` shape so callers don't
- * have to branch on bitmap vs. image element.
- */
-interface DecodedSource {
-  readonly width: number;
-  readonly height: number;
-  draw(ctx: CanvasRenderingContext2D, dw: number, dh: number): void;
-  close(): void;
-}
-
-async function decodeSource(blob: Blob): Promise<DecodedSource> {
-  // Prefer ImageBitmap — off-main-thread on supporting browsers.
-  if (typeof createImageBitmap === "function") {
-    try {
-      const bmp = await createImageBitmap(blob);
-      return {
-        width: bmp.width,
-        height: bmp.height,
-        draw(ctx, dw, dh) {
-          ctx.drawImage(bmp, 0, 0, dw, dh);
-        },
-        close() {
-          bmp.close();
-        },
-      };
-    } catch (err) {
-      // Fall through to the HTMLImageElement path. Defensive: if
-      // `createImageBitmap` ever rejects (corrupt bytes, an exotic
-      // subformat WebKit's ImageBitmap path doesn't handle but the
-      // `<img>` path does), this gives us one more decode attempt
-      // before surfacing `decode-failed`.
-      void err;
-    }
-  }
-
-  return decodeViaImageElement(blob);
-}
-
-async function decodeViaImageElement(blob: Blob): Promise<DecodedSource> {
-  const url = URL.createObjectURL(blob);
-  return new Promise<DecodedSource>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      resolve({
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        draw(ctx, dw, dh) {
-          ctx.drawImage(img, 0, 0, dw, dh);
-        },
-        close() {
-          URL.revokeObjectURL(url);
-        },
-      });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("HTMLImageElement decode failed"));
-    };
-    img.src = url;
-  });
-}
-
-/**
- * Paint a decoded source onto a fresh canvas at the requested
- * dimensions and return the canvas. The caller owns disposal.
- *
- * Uses `OffscreenCanvas` when available (modern engines, supports
- * off-thread paint), falls back to `HTMLCanvasElement`. The
- * `toBlob`-equivalent surface differs between the two; the caller
- * funnels through `canvasToBlob` below to paper over that.
- */
-type RenderCanvas = HTMLCanvasElement | OffscreenCanvas;
-
-function paintTo(
-  source: DecodedSource,
-  width: number,
-  height: number,
-): RenderCanvas {
-  const canvas: RenderCanvas =
-    typeof OffscreenCanvas === "function"
-      ? new OffscreenCanvas(width, height)
-      : Object.assign(document.createElement("canvas"), { width, height });
-  if (canvas instanceof OffscreenCanvas) {
-    canvas.width = width;
-    canvas.height = height;
-  } else {
-    canvas.width = width;
-    canvas.height = height;
-  }
-  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | null;
-  if (ctx === null) {
-    throw new Error("2D canvas context unavailable");
-  }
-  source.draw(ctx, width, height);
-  return canvas;
-}
-
-/**
- * Encode a canvas to a Blob in the requested MIME type at the given
- * quality. Unifies the `HTMLCanvasElement.toBlob` and
- * `OffscreenCanvas.convertToBlob` surfaces.
- */
-async function canvasToBlob(
-  canvas: RenderCanvas,
-  mimeType: string,
-  quality?: number,
-): Promise<Blob> {
-  if (canvas instanceof OffscreenCanvas) {
-    // Some engines accept quality only for lossy formats; passing
-    // undefined for PNG / GIF is fine.
-    return canvas.convertToBlob(
-      quality !== undefined ? { type: mimeType, quality } : { type: mimeType },
-    );
-  }
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob === null) {
-          reject(new Error(`canvas.toBlob returned null for ${mimeType}`));
-        } else {
-          resolve(blob);
-        }
-      },
-      mimeType,
-      quality,
-    );
-  });
-}
-
-/**
- * Build a thumbnail data URL from a decoded source. The same canvas
- * pipeline at the smaller target size; output is always PNG since
- * the snapshot-side `<img src>` doesn't care about size.
- */
-async function bakeThumbnailFromSource(
-  source: DecodedSource,
-): Promise<string> {
-  const { width, height } = fitWithinLongEdge(
-    source.width,
-    source.height,
-    THUMBNAIL_MAX_EDGE_PX,
-  );
-  const canvas = paintTo(source, width, height);
-  const blob = await canvasToBlob(canvas, "image/png");
-  return blobToDataUrl(blob);
-}
-
-/**
- * Encode-with-fallback. Tries the source MIME first; if the result
- * exceeds `MAX_BYTE_SIZE`, walks the JPEG quality ladder. Returns
- * the first encoded form that fits, or `null` if every step exceeded
- * the cap.
- */
-async function encodeWithFallback(
-  canvas: RenderCanvas,
-  sourceMime: string,
-): Promise<{ blob: Blob; mediaType: string } | null> {
-  // Lossy MIMEs start with their natural quality; lossless ones
-  // encode once. We always try the source format first.
-  const tryNative = await canvasToBlob(canvas, sourceMime);
-  if (tryNative.size <= MAX_BYTE_SIZE) {
-    return { blob: tryNative, mediaType: sourceMime };
-  }
-
-  // The source didn't fit. Fall back to JPEG at progressively
-  // lower quality. We attempt the ladder even when the source is
-  // already JPEG — the source might have been encoded at quality
-  // 95+ and would shrink at 80.
-  for (const q of JPEG_QUALITY_LADDER) {
-    const jpeg = await canvasToBlob(canvas, "image/jpeg", q);
-    if (jpeg.size <= MAX_BYTE_SIZE) {
-      return { blob: jpeg, mediaType: "image/jpeg" };
-    }
-  }
-
-  return null;
-}
-
 // ---------------------------------------------------------------------------
-// `downsampleImage` — main entry point.
+// `downsampleImage` / `bakeThumbnail` — Web Worker shims.
+//
+// The actual canvas pipeline (decode + resize + encode + thumbnail
+// bake) lives in `./workers/image-downsample-worker.ts`. The main
+// thread spawns one worker per attachment job, posts the Blob,
+// awaits the structured response, and terminates. The worker owns
+// its own `OffscreenCanvas`, so all the heavy paint / encode work
+// runs off the main event loop — keystrokes, scrolls, and the
+// pending-atom pulse continue normally even during a 25 MB image
+// drop. See Step 3.5.3 in `roadmap/tide-atoms.md`.
+//
+// Pure helpers (`isAnimatedGif`, `classifySourceMime`,
+// `fitWithinLongEdge`) and constants remain in this module because
+// the worker imports them — and so do the unit tests, which exercise
+// the pure surface only.
 // ---------------------------------------------------------------------------
+
+import type { WorkerRequest, WorkerResponse } from "./workers/image-downsample-worker";
+
+/**
+ * Spawn a one-shot worker, post a request, await the matching
+ * response, and terminate. The worker also calls `close()` on
+ * itself after responding, so `terminate()` here is defensive
+ * cleanup — it ensures the worker dies promptly even if its
+ * own self-close hits a race.
+ *
+ * On worker.onerror (a crash / load failure that doesn't reach the
+ * worker's structured error handler), the promise resolves with a
+ * fallback value supplied by the caller — for `downsampleImage`
+ * that's a `decode-failed` outcome; for `bakeThumbnail` it's
+ * `null`. The caller's existing error path handles either way.
+ */
+function runDownsampleWorker<TFallback>(
+  request: WorkerRequest,
+  fallback: TFallback,
+): Promise<WorkerResponse | { kind: "fallback"; value: TFallback }> {
+  return new Promise((resolve) => {
+    const worker = new Worker(
+      new URL("./workers/image-downsample-worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      worker.terminate();
+      resolve(e.data);
+    };
+    worker.onerror = () => {
+      worker.terminate();
+      resolve({ kind: "fallback", value: fallback });
+    };
+    worker.postMessage(request);
+  });
+}
 
 /**
  * Normalize a dropped or pasted image for inline submission. Never
  * throws; every failure is a `{ ok: false, error }` outcome.
  *
  * Pipeline per [D05]:
- *  1. Classify source MIME ([Table T03]).
- *  2. GIF: animated → passthrough with size check; static → raster
- *     pipeline. Both branches share the size cap.
- *  3. SVG: rasterize to PNG at `SVG_RASTER_MAX_EDGE_PX`.
- *  4. Raster (PNG / JPEG / WebP / HEIC / HEIF / AVIF / static GIF):
- *     decode via `createImageBitmap` (with HTMLImageElement
- *     fallback); resize maintaining aspect to `MAX_LONG_EDGE_PX`;
- *     re-encode in source MIME; JPEG-ladder fallback if > 5 MB.
- *  5. Bake a `THUMBNAIL_MAX_EDGE_PX` thumbnail in the same operation.
+ *  1. Spawn an `image-downsample-worker`.
+ *  2. The worker's pipeline: classify MIME → GIF / SVG / raster
+ *     branch → decode via `createImageBitmap` → resize to
+ *     `MAX_LONG_EDGE_PX` → encode in source MIME → JPEG-ladder
+ *     fallback if > `MAX_BYTE_SIZE` → bake thumbnail at
+ *     `THUMBNAIL_MAX_EDGE_PX`.
+ *  3. Worker posts the `DownsampleOutcome` and exits; main thread
+ *     terminates and returns.
+ *
+ * The worker runs entirely off the main thread, so UI input
+ * (typing, scrolling, button clicks) stays responsive during the
+ * 1-2 s a large image takes to process.
  *
  * Source MIME is read from `source.type`; callers that have a more
- * reliable MIME signal (e.g., a `File.type` from a drop event) should
- * pass it through.
+ * reliable MIME signal (e.g., a `File.type` from a drop event)
+ * should pass it through.
  */
 export async function downsampleImage(
   source: Blob | File,
 ): Promise<DownsampleOutcome> {
-  const mediaType = source.type;
-  const cls = classifySourceMime(mediaType);
-
-  if (cls === "unsupported") {
-    return { ok: false, error: { kind: "unsupported-format", mediaType } };
-  }
-
-  // GIF branch — animated GIFs passthrough; static GIFs go to canvas.
-  if (cls === "gif-animatable") {
-    return downsampleGif(source, mediaType);
-  }
-
-  // SVG branch — rasterize to PNG.
-  if (cls === "svg") {
-    return downsampleSvg(source);
-  }
-
-  // Raster branch — PNG / JPEG / WebP / HEIC / HEIF / AVIF.
-  return downsampleRaster(source, mediaType);
+  const decodeFailedFallback: DownsampleOutcome = {
+    ok: false,
+    error: { kind: "decode-failed", reason: "worker spawn or transport failed" },
+  };
+  const response = await runDownsampleWorker(
+    { kind: "downsample", blob: source },
+    decodeFailedFallback,
+  );
+  if (response.kind === "downsample-result") return response.outcome;
+  if (response.kind === "fallback") return response.value;
+  // Should not happen — defensive narrowing for the
+  // thumbnail-result branch (worker should only respond with the
+  // matching kind for our request).
+  return decodeFailedFallback;
 }
 
 /**
- * Bake a thumbnail data URL for an already-decoded image source.
- * Convenience wrapper used by the reducer commit path (replay
- * attachments need a thumbnail even though they skipped the full
- * downsample pipeline at submit time).
+ * Bake a thumbnail data URL for an already-API-compliant image
+ * source. Used by the reducer commit path (replay attachments need
+ * a thumbnail even though they skipped the full downsample pipeline
+ * at submit time).
  *
- * The input is the raw Blob/File of an already-API-compliant image;
- * we just produce the 256 px preview. Returns `null` on decode
- * failure rather than the discriminated-error shape because the
- * caller has already committed to using the bytes — a missing
- * thumbnail is a soft degradation (fallback to a generic icon), not
- * a submission-blocking failure.
+ * Returns `null` on decode failure rather than the discriminated-
+ * error shape — the caller has already committed to using the
+ * bytes; a missing thumbnail is a soft degradation, not a
+ * submission-blocking failure.
  */
 export async function bakeThumbnail(
   source: Blob | File,
 ): Promise<string | null> {
-  try {
-    const decoded = await decodeSource(source);
-    try {
-      return await bakeThumbnailFromSource(decoded);
-    } finally {
-      decoded.close();
-    }
-  } catch (err) {
-    void err;
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Branch implementations.
-// ---------------------------------------------------------------------------
-
-async function downsampleGif(
-  source: Blob,
-  mediaType: string,
-): Promise<DownsampleOutcome> {
-  const buffer = await source.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-
-  if (isAnimatedGif(bytes)) {
-    // Animated: passthrough. Canvas resize would collapse the
-    // animation to a single frame; Anthropic Vision accepts native
-    // GIF bytes and analyzes frames. Per [Q04].
-    if (source.size > MAX_BYTE_SIZE) {
-      return {
-        ok: false,
-        error: { kind: "too-large-after-fallback", byteSize: source.size },
-      };
-    }
-    const content = await blobToBase64(source);
-    // Bake a thumbnail from the GIF's first frame (the decode path
-    // naturally takes the first frame when the GIF is animated and
-    // decoded as a still image).
-    let thumbnailDataUrl: string;
-    let width: number;
-    let height: number;
-    try {
-      const decoded = await decodeSource(source);
-      try {
-        thumbnailDataUrl = await bakeThumbnailFromSource(decoded);
-        width = decoded.width;
-        height = decoded.height;
-      } finally {
-        decoded.close();
-      }
-    } catch (err) {
-      void err;
-      // Decode failed but we already have the passthrough bytes; ship
-      // them without a thumbnail rather than rejecting the drop. The
-      // transcript-strip falls back to a generic icon.
-      thumbnailDataUrl = "";
-      width = 0;
-      height = 0;
-    }
-    return {
-      ok: true,
-      result: {
-        content,
-        mediaType,
-        thumbnailDataUrl,
-        width,
-        height,
-        byteSize: source.size,
-      },
-    };
-  }
-
-  // Static GIF — flow through the raster pipeline.
-  return downsampleRaster(source, mediaType);
-}
-
-async function downsampleSvg(source: Blob): Promise<DownsampleOutcome> {
-  // SVG goes through the standard decode path; the resulting bitmap
-  // is rasterized at SVG_RASTER_MAX_EDGE_PX, then re-encoded as PNG.
-  let decoded: DecodedSource;
-  try {
-    decoded = await decodeSource(source);
-  } catch (err) {
-    return {
-      ok: false,
-      error: { kind: "decode-failed", reason: errorReason(err) },
-    };
-  }
-  try {
-    const { width, height } = fitWithinLongEdge(
-      // Many SVGs declare 0×0 intrinsic dimensions when no viewBox
-      // is set; fall back to the raster target as the canvas size.
-      decoded.width > 0 ? decoded.width : SVG_RASTER_MAX_EDGE_PX,
-      decoded.height > 0 ? decoded.height : SVG_RASTER_MAX_EDGE_PX,
-      SVG_RASTER_MAX_EDGE_PX,
-    );
-    const canvas = paintTo(decoded, width, height);
-    const png = await canvasToBlob(canvas, "image/png");
-    if (png.size > MAX_BYTE_SIZE) {
-      // Extremely unlikely for a 1024 px PNG, but uphold the cap.
-      return {
-        ok: false,
-        error: { kind: "too-large-after-fallback", byteSize: png.size },
-      };
-    }
-    const content = await blobToBase64(png);
-    const thumbnailDataUrl = await bakeThumbnailFromSource(decoded);
-    return {
-      ok: true,
-      result: {
-        content,
-        mediaType: "image/png",
-        thumbnailDataUrl,
-        width,
-        height,
-        byteSize: png.size,
-      },
-    };
-  } finally {
-    decoded.close();
-  }
-}
-
-async function downsampleRaster(
-  source: Blob,
-  mediaType: string,
-): Promise<DownsampleOutcome> {
-  let decoded: DecodedSource;
-  try {
-    decoded = await decodeSource(source);
-  } catch (err) {
-    return {
-      ok: false,
-      error: { kind: "decode-failed", reason: errorReason(err) },
-    };
-  }
-  try {
-    const { width, height } = fitWithinLongEdge(
-      decoded.width,
-      decoded.height,
-      MAX_LONG_EDGE_PX,
-    );
-    if (width === 0 || height === 0) {
-      return {
-        ok: false,
-        error: { kind: "decode-failed", reason: "zero-dimension source" },
-      };
-    }
-    const canvas = paintTo(decoded, width, height);
-    const encoded = await encodeWithFallback(canvas, mediaType);
-    if (encoded === null) {
-      // Exhausted the quality ladder.
-      const lastResort = await canvasToBlob(
-        canvas,
-        "image/jpeg",
-        JPEG_QUALITY_LADDER[JPEG_QUALITY_LADDER.length - 1],
-      );
-      return {
-        ok: false,
-        error: {
-          kind: "too-large-after-fallback",
-          byteSize: lastResort.size,
-        },
-      };
-    }
-    const content = await blobToBase64(encoded.blob);
-    const thumbnailDataUrl = await bakeThumbnailFromSource(decoded);
-    return {
-      ok: true,
-      result: {
-        content,
-        mediaType: encoded.mediaType,
-        thumbnailDataUrl,
-        width,
-        height,
-        byteSize: encoded.blob.size,
-      },
-    };
-  } finally {
-    decoded.close();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Misc.
-// ---------------------------------------------------------------------------
-
-function errorReason(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  return "unknown decode error";
+  const response = await runDownsampleWorker(
+    { kind: "thumbnail", blob: source },
+    null,
+  );
+  if (response.kind === "thumbnail-result") return response.thumbnailDataUrl;
+  if (response.kind === "fallback") return response.value;
+  return null;
 }

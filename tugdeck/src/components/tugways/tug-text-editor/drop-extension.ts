@@ -76,6 +76,7 @@ import {
 } from "@/lib/image-downsample";
 import {
   describeTextAttachmentError,
+  isTextMimeType,
   isTextSource,
   readTextAttachment,
 } from "@/lib/text-attachment";
@@ -419,6 +420,49 @@ export function describeDownsampleError(
 }
 
 /**
+ * Drag-time supportedness check. Returns `true` when at least one
+ * `DataTransferItem` could land as a supported attachment after the
+ * drop fires. Used by `dragenter` / `dragover` to decide whether to
+ * `preventDefault` — when nothing in the drag looks supportable, we
+ * skip `preventDefault` and the OS shows the no-drop cursor. The
+ * drop event never fires; no banner, no chip, no surprise.
+ *
+ * Three positive signals:
+ *  1. Image MIME the downsample pipeline accepts
+ *     (`classifySourceMime !== "unsupported"`).
+ *  2. Text MIME the wire-flattening accepts (`isTextMimeType`).
+ *  3. Empty MIME — could be a text file by extension. We can't read
+ *     the filename during a drag (WebKit security), so we
+ *     optimistically accept and let the drop's full classification
+ *     (`isTextSource`, which has extension fallback) decide.
+ *
+ * Any item meeting ANY criterion accepts the drag; this is the
+ * least-surprising rule for mixed drops (one PDF + one PNG should
+ * accept and process the PNG, not refuse the whole drag).
+ *
+ * `null` / empty `DataTransfer` returns `false` — the caller's
+ * existing `types.includes("Files")` check handles the non-file
+ * drag case before reaching here, so this branch is defensive.
+ */
+function dragHasSupportedItem(dataTransfer: DataTransfer | null): boolean {
+  if (dataTransfer === null) return false;
+  const items = dataTransfer.items;
+  if (items === undefined || items.length === 0) return false;
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i]!;
+    if (item.kind !== "file") continue;
+    const mime = item.type;
+    // Empty MIME — could be a text file by extension. Defer to drop.
+    if (mime === "") return true;
+    // Image MIMEs the downsample pipeline knows how to handle.
+    if (classifySourceMime(mime) !== "unsupported") return true;
+    // Text MIMEs — text/* and known application/* text types.
+    if (isTextMimeType(mime)) return true;
+  }
+  return false;
+}
+
+/**
  * Mint a stable atom id for a freshly-dropped or freshly-pasted
  * file. UUIDs are the right shape (large keyspace, no coordination,
  * no collisions across cards or sessions). Defensive `??` covers
@@ -435,9 +479,9 @@ function mintAtomId(): string {
  * Per-file classification result. `kind === "skeleton"` means the
  * file can produce an atom + bytes (after async processing); the
  * skeleton atom is inserted synchronously and bytes land later.
- * `kind === "reject"` means the file isn't shippable on v1's wire
- * (PDF, archive, audio, video) — no atom is inserted; the message
- * surfaces via `onError`.
+ * Unsupported files don't reach this classifier in pure-unsupported
+ * drags (rejected at `dragover` per Step 3.5.2) and are silently
+ * skipped in mixed drops — they never appear in the output array.
  */
 type ClassifiedDrop =
   | {
@@ -449,11 +493,6 @@ type ClassifiedDrop =
       kind: "skeleton-text";
       file: File;
       atom: AtomSegment;
-    }
-  | {
-      kind: "reject";
-      file: File;
-      message: string;
     };
 
 /**
@@ -463,12 +502,15 @@ type ClassifiedDrop =
  * placeholders into the doc.
  *
  * The classification mirrors `processAttachmentFiles`'s previous
- * three-branch shape (image → text → fallthrough) but with the
- * fallthrough switched from "filename-only atom" to "reject".
- * Surfacing PDF / binary files as inert filename atoms was
- * confusing — the chip looked usable but the bytes were silently
- * dropped at submit time. Rejection at drop time is the honest
- * signal.
+ * three-branch shape: image → text → silent-skip. Pure-unsupported
+ * drags are rejected at the cursor by `dragHasSupportedItem` in
+ * `dragenter` / `dragover` (Step 3.5.2), so the only way an
+ * unsupported file reaches this classifier is in a mixed drop
+ * (e.g., user dragged a folder containing a PDF alongside an
+ * image). In that case the supported items still process; the
+ * unsupported ones quietly fall off the list — the OS already
+ * signaled rejection for any pure-unsupported drag, and a banner
+ * for the partial case would be more noise than signal.
  */
 function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
   const out: ClassifiedDrop[] = [];
@@ -506,20 +548,11 @@ function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
       });
       continue;
     }
-    // Branch 3: unsupported (PDF / archive / audio / video / etc.).
-    // Reject at drop time with a clear banner — silently inserting
-    // a filename-only atom would be misleading because the user
-    // expects claude to see the file's contents, but binary content
-    // has no v1 wire path. Per
-    // [D02](roadmap/tide-atoms.md#d02-image-attach-text-rest).
-    out.push({
-      kind: "reject",
-      file,
-      message:
-        `Unsupported file type: ${file.name}. ` +
-        `Tug accepts images and text/code files; ` +
-        `PDFs and other binaries aren't supported yet.`,
-    });
+    // Branch 3: unsupported. Silently drop — the dragover gate
+    // already refused all-unsupported drags; this branch only
+    // matters for mixed drops where the supported subset still
+    // processes. Per [D02](roadmap/tide-atoms.md#d02-image-attach-text-rest)
+    // and Step 3.5.2.
   }
   return out;
 }
@@ -572,35 +605,45 @@ export function processAttachmentFiles(
 ): void {
   if (files.length === 0) return;
 
-  // Step 1 — synchronous classification.
-  const classified = classifyDroppedFiles(files);
+  // Step 1 — synchronous classification. Unsupported files have
+  // already been rejected at `dragover` (Step 3.5.2); only the
+  // mixed-drop case (supported + unsupported in one drag) might
+  // contain unsupported entries that the classifier silently
+  // drops. Either way, the returned list contains only skeleton
+  // entries.
+  const skeletons = classifyDroppedFiles(files);
+  if (skeletons.length === 0) return;
 
-  // Surface rejection messages immediately. The user will see the
-  // banner appear in the same paint as the (potentially partial)
-  // atom-insertion below.
-  for (const entry of classified) {
-    if (entry.kind === "reject") {
-      onError(entry.message);
-    }
-  }
-
-  // Step 2 — synchronous skeleton atom insertion. We pull only the
-  // skeleton entries; rejections contribute no atoms.
-  const skeletonAtoms: AtomSegment[] = [];
-  for (const entry of classified) {
-    if (entry.kind !== "reject") {
-      skeletonAtoms.push(entry.atom);
-    }
-  }
-  if (skeletonAtoms.length === 0) return;
-
+  // Step 2 — synchronous skeleton atom insertion. Atoms appear at
+  // the drop point immediately; the pending appearance signals
+  // that async byte-fill is still running.
+  const skeletonAtoms: AtomSegment[] = skeletons.map((s) => s.atom);
   insertAtomsAt(view, insertPos, skeletonAtoms);
+
+  // Step 3.5.5 — fix for "skeleton sometimes fails to appear in a
+  // brand-new empty editor". When the user drops a file before
+  // having clicked into the editor (the common case on a freshly-
+  // opened card), the editor isn't focused and CM6 may not have
+  // run its initial measure pass — the widget gets minted in the
+  // decoration set but the layout doesn't paint it. Force both:
+  //
+  //  - `view.focus()` puts DOM focus on `contentDOM` so the
+  //    editor becomes the active responder. Idempotent when
+  //    already focused.
+  //  - `view.requestMeasure(...)` queues a measure pass that
+  //    triggers the widget's `toDOM` and a layout flush, ensuring
+  //    the chip paints in the same frame as the insertion.
+  //
+  // Both calls are no-ops in the common case (already-focused +
+  // already-measured editor); they only matter for the
+  // empty-editor drop path the v1 design missed.
+  view.focus();
+  view.requestMeasure({ read: () => null });
 
   // Step 3 — fire-and-forget async byte-fill, one job per skeleton.
   // Each job is independent; failures don't poison siblings.
-  for (const entry of classified) {
-    if (entry.kind === "reject") continue;
-    void runAttachmentJob(view, entry, bytesStore, onError);
+  for (const skeleton of skeletons) {
+    void runAttachmentJob(view, skeleton, bytesStore, onError);
   }
 }
 
@@ -755,12 +798,36 @@ export function tugDropExtension(
         // runs. Only claim file drags — keyboard-driven or
         // application-specific drags pass through.
         if (!event.dataTransfer?.types.includes("Files")) return false;
+        // Drag-level rejection (Step 3.5.2): if every item in the
+        // drag has a known-unsupported MIME (PDF, archive, audio,
+        // video), refuse to accept the drag here. Skipping
+        // `preventDefault` makes the OS show the no-drop cursor and
+        // suppresses the eventual `drop` event entirely — no
+        // banner, no chip, no surprise. Empty-MIME items still pass
+        // (filename-based classification happens at drop time).
+        if (!dragHasSupportedItem(event.dataTransfer)) return false;
         event.preventDefault();
         setDropActive(host, true);
         return true;
       },
       dragover(event, view) {
         if (!event.dataTransfer?.types.includes("Files")) return false;
+        // Same drag-level supportedness check as `dragenter`. Some
+        // engines fire `dragover` without a preceding `dragenter`
+        // (relatedTarget transitions, fast cursor movement); the
+        // check at both gates guarantees the no-drop cursor is
+        // stable for the entire hover, not just the first frame.
+        if (!dragHasSupportedItem(event.dataTransfer)) {
+          // Defensive cleanup: if the drag started over a supported
+          // item and then transitioned to all-unsupported (rare,
+          // but DataTransfer mutability during a drag is engine-
+          // dependent), clear the drop-active ring and caret.
+          setDropActive(host, false);
+          if (view.state.field(tugDropCaretField) !== null) {
+            view.dispatch({ effects: setTugDropCaretPos.of(null) });
+          }
+          return false;
+        }
         event.preventDefault();
         try {
           event.dataTransfer.dropEffect = "copy";

@@ -14,6 +14,7 @@ import { describe, expect, test } from "bun:test";
 import {
   MAX_TEXT_BYTE_SIZE,
   describeTextAttachmentError,
+  isTextMimeType,
   isTextSource,
   readTextAttachment,
 } from "../text-attachment";
@@ -92,6 +93,40 @@ describe("isTextSource — application/* exact matches", () => {
     expect(
       isTextSource(makeFile("schema.graphql", "application/graphql")),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isTextMimeType — MIME-only check (no filename access)
+// ---------------------------------------------------------------------------
+
+describe("isTextMimeType — MIME-only check for dragover use", () => {
+  test("text/* accepted", () => {
+    expect(isTextMimeType("text/plain")).toBe(true);
+    expect(isTextMimeType("text/markdown")).toBe(true);
+    expect(isTextMimeType("text/html")).toBe(true);
+  });
+
+  test("known application/* text MIMEs accepted", () => {
+    expect(isTextMimeType("application/json")).toBe(true);
+    expect(isTextMimeType("application/typescript")).toBe(true);
+    expect(isTextMimeType("application/yaml")).toBe(true);
+  });
+
+  test("charset parameter stripped before lookup", () => {
+    expect(isTextMimeType("text/plain;charset=utf-8")).toBe(true);
+    expect(isTextMimeType("application/json; charset=utf-8")).toBe(true);
+  });
+
+  test("empty MIME returns false (no extension access at dragover)", () => {
+    expect(isTextMimeType("")).toBe(false);
+  });
+
+  test("binary MIMEs rejected", () => {
+    expect(isTextMimeType("application/pdf")).toBe(false);
+    expect(isTextMimeType("application/zip")).toBe(false);
+    expect(isTextMimeType("image/png")).toBe(false);
+    expect(isTextMimeType("video/mp4")).toBe(false);
   });
 });
 

@@ -245,6 +245,35 @@ function normalizeMime(mime: string): string {
 }
 
 /**
+ * MIME-only text-source check. Returns `true` when `mediaType`
+ * itself is a known text MIME — without consulting any filename or
+ * extension. Used by the `dragover` rejection gate, which has access
+ * to `DataTransferItem.type` but cannot read filenames during a
+ * drag (a WebKit security restriction: `getAsFile()` returns `null`
+ * until drop fires).
+ *
+ * Stricter than {@link isTextSource}: empty MIME does NOT count as
+ * a text source here (we have no extension to fall back on at drag
+ * time). At drop time, full classification — including the
+ * extension fallback — runs through `isTextSource`.
+ *
+ * @example
+ * ```ts
+ * isTextMimeType("text/markdown")            // true
+ * isTextMimeType("application/json")         // true
+ * isTextMimeType("text/plain;charset=utf-8") // true
+ * isTextMimeType("")                         // false (no extension info at dragover)
+ * isTextMimeType("application/pdf")          // false
+ * ```
+ */
+export function isTextMimeType(mediaType: string): boolean {
+  const type = normalizeMime(mediaType);
+  if (type === "") return false;
+  if (type.startsWith("text/")) return true;
+  return TEXT_MIME_EXACT.has(type);
+}
+
+/**
  * Return `true` when `file` looks like a text source the drop /
  * paste pipeline should read into a text Attachment. Pure function —
  * reads `file.type` and `file.name` only.
