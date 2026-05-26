@@ -83,7 +83,7 @@ Two scope additions over earlier drafts: **image downsampling at insert time** (
 - **Cross-card paste with bytes.** Clipboard sidecar round-trips atom identities only.
 - **Free-prose `@path` detection in assistant markdown.** Tool blocks are the structured surface.
 - **Lightbox** for click-to-enlarge — v1.1 polish; v1 opens in a new tab.
-- **HEIC / AVIF source decoding outside Tug.app's WebKit.** ([Q02](#q02-heic-avif))
+- **WASM image decoders.** WebKit decodes every format the v1 allowlist accepts; no parallel decoder needed. ([Q02](#q02-heic-avif))
 
 #### Dependencies / Prerequisites {#dependencies}
 
@@ -107,7 +107,7 @@ Two scope additions over earlier drafts: **image downsampling at insert time** (
 #### Assumptions {#assumptions}
 
 - Claude continues to accept the existing `image` content-block shape (`source: { type: "base64", media_type, data }`). The drift regression catches breakage; `test-23` is the canary.
-- `createImageBitmap` and `OffscreenCanvas` (or `HTMLCanvasElement` fallback) work consistently across Tug.app's WebKit and the dev-mode browser path. Verified manually in Step 1.
+- `createImageBitmap` and `OffscreenCanvas` (or `HTMLCanvasElement` fallback) work in Tug.app's WebKit. Verified empirically during Q02 resolution.
 - tugcast's filetree provider can be extended with additional ignore patterns without re-architecting the existing `.gitignore` handling. Verified by reading the provider source as part of Step 4.
 
 ---
@@ -144,22 +144,22 @@ This plan follows [`tuglaws/tugplan-skeleton.md`](../tuglaws/tugplan-skeleton.md
 
 **Resolution:** OPEN. Provisional: (a) holds bytes for card lifetime; revisit at integration checkpoint based on heap profile.
 
-#### [Q02] HEIC / AVIF source decoding in non-WebKit environments (DECIDED) {#q02-heic-avif}
+#### [Q02] HEIC / AVIF source decoding (DECIDED) {#q02-heic-avif}
 
-**Question:** macOS users drag a `.heic` from Photos. Tug.app's WebKit decodes HEIC natively; the dev-mode browser path (Chromium-based) does not. Should the downsample pipeline transcode HEIC → PNG via canvas, surface a clear "unsupported in dev mode" error, or attempt a WASM fallback?
+**Question:** macOS users drag a `.heic` from Photos or a `.avif` from a web page. Does Tug.app's WebKit decode them natively through the `createImageBitmap` canvas pipeline, or do we need a WASM decoder?
 
-**Why it matters:** Tug.app is the primary surface; the dev path is for developers. Inconsistency is acceptable as long as it's clear.
+**Why it matters:** Tug.app is the shipping surface. The engine question — does WebKit handle these formats — drives whether we need a parallel decoder.
 
-**Empirical findings (2026-05-26):** A throwaway harness served 8×8 HEIC and AVIF test images (generated via `sips` and `avifenc`) and ran `createImageBitmap(blob)` on each in both browsers.
+**Empirical findings (2026-05-26):** A throwaway harness served 8×8 HEIC and AVIF test images (generated via `sips` and `avifenc`) and ran `createImageBitmap(blob)` on each.
 
 | Engine | HEIC via `createImageBitmap` | HEIC via `<img>` | AVIF via `createImageBitmap` | AVIF via `<img>` |
 |--------|------------------------------|------------------|------------------------------|------------------|
-| Safari/WebKit (Version 18.6) | ok, 8×8 | ok | ok, 8×8 | ok |
-| Chrome 148 (Chromium) | fail (`InvalidStateError: The source image could not be decoded.`) | fail | ok, 8×8 | ok |
+| WebKit (macOS Safari 18.6, same engine Tug.app uses) | ok, 8×8 | ok | ok, 8×8 | ok |
+| Chromium (Chrome 148, sanity check) | fail (`InvalidStateError`) | fail | ok, 8×8 | ok |
 
-So Tug.app (WebKit) decodes both formats via the canvas path; Chromium decodes AVIF but cannot decode HEIC at all (not even in `<img>`).
+The Chromium row is sanity-check only — it confirms we understood the engine matrix correctly. Tug.app does not run on Chromium.
 
-**Resolution:** DECIDED — option (a). The `downsampleImage` pipeline ([Spec S04](#s04-image-downsample)) attempts `createImageBitmap` on HEIC inputs; in Tug.app this succeeds and the image flows through the standard resize/transcode path; in dev mode (Chromium) it returns the `decode-failed` discriminated error, which surfaces as a toast `"HEIC unsupported in dev mode — convert to PNG or JPEG first"`. AVIF needs no special handling — it works uniformly. No WASM HEIC decoder. v2 follow-on if dev-mode HEIC parity ever matters.
+**Resolution:** DECIDED — HEIC and AVIF flow through the standard raster branch of `downsampleImage`. WebKit's `createImageBitmap` decodes both natively; the resize / re-encode pipeline doesn't care what the source format was. No WASM decoder. No special-case branch. If a future engine change ever broke WebKit's HEIC support, the existing `decode-failed` discriminated error would surface cleanly from the canvas pipeline — but that's not a planned surface.
 
 #### [Q03] PDF / `document` content block timing (DEFERRED) {#q03-pdf-deferred}
 
@@ -192,7 +192,7 @@ So Tug.app (WebKit) decodes both formats via the canvas path; Chromium decodes A
 **Risk R01: Canvas downsample blocks main thread** {#r01-canvas-blocking}
 
 - **Risk:** Decoding + resizing a 12 MP PNG takes ~50-100 ms on the main thread; users perceive a UI hitch on drop / paste.
-- **Mitigation:** Use `OffscreenCanvas` + `createImageBitmap` (off-main-thread on Tug.app's WebKit and modern Chromium). If neither is available, fall back to the synchronous `HTMLCanvasElement` path and show a `<TugProcessingIndicator>` overlay for operations whose decode-start to encode-end exceeds 100 ms. The indicator is suppressed for fast paths (most images).
+- **Mitigation:** Use `OffscreenCanvas` + `createImageBitmap` (off-main-thread on Tug.app's WebKit). If neither is available, fall back to the synchronous `HTMLCanvasElement` path and show a `<TugProcessingIndicator>` overlay for operations whose decode-start to encode-end exceeds 100 ms. The indicator is suppressed for fast paths (most images).
 - **Residual risk:** A pathological 100 MP image on a fallback path still blocks. Rejected early via dimension check before the canvas decode would even start.
 
 **Risk R02: Anthropic content-block drift** {#r02-anthropic-drift}
@@ -292,7 +292,7 @@ So Tug.app (WebKit) decodes both formats via the canvas path; Chromium decodes A
 5. If encoded size > 5 MB, transcode to JPEG with quality ladder 90 → 80 → 70 → 60. Stop at the first quality whose encoded size ≤ 5 MB.
 6. If still > 5 MB at quality 60, reject the drop / paste with an explicit error toast naming the file.
 7. SVG (`image/svg+xml`) rasterizes to PNG at 1024×1024 (max), preserving aspect.
-8. HEIC / AVIF behavior per [Q02](#q02-heic-avif): Tug.app canvas-decodes both; Chromium dev mode decodes AVIF but rejects HEIC with a `decode-failed` error surfaced as a clear toast.
+8. HEIC / AVIF / HEIF flow through the raster branch unchanged — WebKit decodes all three via `createImageBitmap`. No special-case branch. Per [Q02](#q02-heic-avif).
 
 **Rationale:**
 - The Anthropic backend rejects images > 5 MB decoded or with bad dimensions; normalizing client-side prevents API rejections.
@@ -516,7 +516,7 @@ The bytes-store and the wire only ever carry one of:
 - `image/gif`
 - `image/webp`
 
-Source images outside this set are transcoded by the downsample pipeline (SVG → PNG; HEIC → PNG on Tug.app) or rejected (everything else).
+Source images outside this set fall into one of two paths: SVG rasterizes to PNG; HEIC / HEIF / AVIF flow through the raster branch unchanged (WebKit decodes them and the pipeline re-encodes in source MIME, with JPEG fallback if needed). Anything else is rejected.
 
 #### List L03: Atom-type → wire mapping {#l03-atom-to-wire-mapping}
 
@@ -533,7 +533,7 @@ Source images outside this set are transcoded by the downsample pipeline (SVG �
 | Failure | Where caught | Surface |
 |---------|--------------|---------|
 | Image > 5 MB after JPEG-quality-60 fallback | `downsampleImage` ([Spec S04](#s04-image-downsample)) | Toast: "Image too large after compression: {filename}" — drop / paste rejected |
-| Unsupported image format (e.g., HEIC in dev mode) | `downsampleImage` | Toast: "Image format unsupported: {mediaType}" — drop / paste rejected |
+| Unsupported image format (e.g., TIFF, BMP) | `downsampleImage` | Toast: "Image format unsupported: {mediaType}" — drop / paste rejected |
 | Image decode fails (corrupt file) | `downsampleImage` | Toast: "Could not decode image: {filename}" — drop / paste rejected |
 | Atom missing from bytes-store at submit (user deleted chip after drop) | `buildWirePayload` ([Spec S03](#s03-build-wire-payload)) | Silently skip the Attachment; substituted text still inserts `atom.value` so claude sees the filename |
 | `U+FFFC` count ≠ `atoms.length` (substrate invariant break) | `buildWirePayload` defensive guard | Leftover `U+FFFC` passes through to claude as a literal character; visible regression on the assistant side |
@@ -561,8 +561,8 @@ No failure is silent. No failure drops the user's submission without surfacing.
 | `image/gif` (animated, >1 frame) | Size check only; pass through if ≤ 5 MB; reject otherwise ([Q04](#q04-animated-gif)) | `image/gif` |
 | `image/gif` (static, ≤1 frame) | Resize if needed; re-encode GIF; JPEG fallback if > 5 MB ([Q04](#q04-animated-gif)) | `image/gif` or `image/jpeg` |
 | `image/svg+xml` | Rasterize to PNG at 1024×1024 | `image/png` |
-| `image/heic` / `image/heif` | Canvas decode (Tug.app only) → PNG; reject in dev mode ([Q02](#q02-heic-avif)) | `image/png` or rejection |
-| `image/avif` | Same as HEIC | `image/png` or rejection |
+| `image/heic` / `image/heif` | Canvas decode via WebKit → resize → re-encode in source MIME (JPEG fallback if > 5 MB). Per [Q02](#q02-heic-avif). | `image/heic` / `image/heif` (or `image/jpeg` on fallback) |
+| `image/avif` | Same as HEIC | `image/avif` (or `image/jpeg` on fallback) |
 | Anything else | Reject with `unsupported-format` | — |
 
 ---
@@ -667,7 +667,7 @@ No failure is silent. No failure drops the user's submission without surfacing.
 - [x] Implement dimension resize to long-edge ≤ 2576 px.
 - [x] Implement re-encode by source MIME with JPEG quality ladder (90/80/70/60).
 - [x] Implement SVG rasterization at 1024×1024.
-- [x] HEIC / AVIF behavior per [Q02](#q02-heic-avif): the canvas-decode path naturally produces a `decode-failed` error in Chromium for HEIC; surface that with a clear toast message naming HEIC specifically. AVIF works in both engines and needs no special handling.
+- [x] HEIC / AVIF / HEIF flow through the standard raster branch — WebKit decodes them natively via `createImageBitmap`. No special-case branch. Per [Q02](#q02-heic-avif).
 - [x] Surface `unsupported-format`, `too-large-after-fallback`, `decode-failed` discriminated errors.
 - [x] Export `bakeThumbnail` as a thin wrapper around the same pipeline at 256 px target.
 
@@ -686,9 +686,8 @@ No failure is silent. No failure drops the user's submission without surfacing.
 - [x] `bun test` (full tugdeck suite: 2874 pass, 0 fail)
 - [x] `bun run check` (TypeScript clean)
 - [x] `bun run audit:tokens lint` (zero violations)
-- [ ] Manual: drop a real 4K screenshot in Tug.app dev mode; observe that `downsampleImage` produces a ≤ 5 MB output (verified via console log). — deferred to Step 2 when drop/paste handlers invoke the pipeline.
-- [ ] Manual: drop a `.heic` photo in Tug.app — canvas decode succeeds, image flows through (verifies [Q02](#q02-heic-avif) on the real surface). — deferred to Step 2.
-- [ ] Manual: drop a `.heic` photo in dev-mode Chrome — `decode-failed` toast appears with the HEIC-specific message; no crash. — deferred to Step 2 (toast plumbing lands with drop / paste handlers).
+- [ ] Manual: drop a real 4K screenshot in Tug.app; observe that `downsampleImage` produces a ≤ 5 MB output (verified via console log). — deferred to Step 2 when drop/paste handlers invoke the pipeline.
+- [ ] Manual: drop a `.heic` photo in Tug.app — canvas decode succeeds, image flows through (smoke-verifies [Q02](#q02-heic-avif) on the live surface). — deferred to Step 2.
 
 ---
 
@@ -960,7 +959,6 @@ No failure is silent. No failure drops the user's submission without surfacing.
 - [ ] Lightbox component for click-to-enlarge (v1.1 polish).
 - [ ] Free-prose `@path` detection in assistant markdown.
 - [ ] Bytes-store retention policy refinements based on heap-profile data from [Q01](#q01-replay-enlarge-bytes).
-- [ ] WASM HEIC decoder for dev-mode parity with Tug.app — out of scope per [Q02](#q02-heic-avif); revisit only if dev-mode HEIC parity ever matters.
 
 | Checkpoint | Verification |
 |------------|--------------|

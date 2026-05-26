@@ -25,11 +25,10 @@
  *  - `image/gif` (static, ≤ 1 frame) → canvas resize like any other
  *    raster, with the GIF / JPEG fallback ladder above.
  *  - `image/svg+xml` → rasterize to PNG at long-edge ≤ 1024 px.
- *  - `image/heic` / `image/heif` / `image/avif` → canvas decode
- *    attempt. WebKit (Tug.app, Safari) decodes all three; Chromium
- *    (dev mode) decodes AVIF but rejects HEIC with a `decode-failed`
- *    error the caller surfaces as a toast. Verified empirically
- *    against `claude 2.1.148` engines (see [Q02] in `tide-atoms.md`).
+ *  - `image/heic` / `image/heif` / `image/avif` → flow through the
+ *    raster branch unchanged. WebKit (the engine Tug.app uses)
+ *    decodes all three natively via `createImageBitmap`. Verified
+ *    empirically (see [Q02] in `tide-atoms.md`).
  *  - Anything else → `unsupported-format` discriminated error.
  *
  * ## Discriminated errors
@@ -43,19 +42,20 @@
  *    and the result still exceeds 5 MB. This is genuinely huge
  *    content (a 50 MP screenshot of a single hue gradient, say); the
  *    user should crop, downscale, or split the image.
- *  - `decode-failed` — the browser could not decode the source
- *    (corrupt bytes, or HEIC in Chromium). The `reason` field carries
- *    a short engine-provided string for diagnostics.
+ *  - `decode-failed` — the engine could not decode the source
+ *    (corrupt bytes, or a format the engine genuinely can't read).
+ *    The `reason` field carries a short engine-provided string for
+ *    diagnostics.
  *
  * ## Off-main-thread preference
  *
- * The pipeline prefers `createImageBitmap(blob)` because supporting
- * browsers (Tug.app's WebKit, modern Chromium) decode off the main
- * thread. The fallback (`HTMLImageElement` + `drawImage`) is
- * main-thread blocking. For images outside the typical-screenshot
- * range, callers should expect a short UI hitch on the fallback path
- * (Risk R01 in `tide-atoms.md`). The 100 ms processing-indicator
- * threshold lives in the caller (drop / paste handlers, Step 2).
+ * The pipeline prefers `createImageBitmap(blob)` because WebKit
+ * decodes off the main thread along that path. The fallback
+ * (`HTMLImageElement` + `drawImage`) is main-thread blocking. For
+ * images outside the typical-screenshot range, callers should expect
+ * a short UI hitch on the fallback path (Risk R01 in
+ * `tide-atoms.md`). The 100 ms processing-indicator threshold lives
+ * in the caller (drop / paste handlers, Step 2).
  *
  * ## Pure parts
  *
@@ -138,10 +138,10 @@ const SUPPORTED_RASTER_MIMES: ReadonlySet<string> = new Set([
   "image/webp",
   "image/gif",
   // HEIC / HEIF / AVIF flow through the canvas decode path; WebKit
-  // decodes them natively. Chromium dev mode decodes AVIF but fails
-  // HEIC at the `createImageBitmap` step — the failure surfaces as
-  // `decode-failed`, which is the right error class for a "this file
-  // looked supported but the browser can't read it" condition.
+  // decodes them natively (per Q02 empirical findings). A decode
+  // failure on these still routes through the `decode-failed` error
+  // class — the right class for "this file looked supported but the
+  // engine can't read it" (corrupt bytes, exotic subformat).
   "image/heic",
   "image/heif",
   "image/avif",
@@ -425,8 +425,7 @@ export function fitWithinLongEdge(
 async function blobToBase64(blob: Blob): Promise<string> {
   // FileReader gives us a `data:<mime>;base64,<payload>` string; we
   // strip the prefix and return only the payload. This avoids the
-  // chunked-btoa song-and-dance and works uniformly across WebKit /
-  // Chromium / Firefox.
+  // chunked-btoa song-and-dance and is straightforward in WebKit.
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -492,11 +491,11 @@ async function decodeSource(blob: Blob): Promise<DecodedSource> {
         },
       };
     } catch (err) {
-      // Fall through to the HTMLImageElement path; some engines (or
-      // some formats on some engines — e.g., HEIC in Chromium) reject
-      // here. The img-element path also fails for those cases, but
-      // for other engines it can sometimes succeed where
-      // createImageBitmap doesn't.
+      // Fall through to the HTMLImageElement path. Defensive: if
+      // `createImageBitmap` ever rejects (corrupt bytes, an exotic
+      // subformat WebKit's ImageBitmap path doesn't handle but the
+      // `<img>` path does), this gives us one more decode attempt
+      // before surfacing `decode-failed`.
       void err;
     }
   }
