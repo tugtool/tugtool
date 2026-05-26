@@ -382,17 +382,23 @@ export interface CodeSessionState {
    * a fast reconnect, a manual dev-tool replay) so the worst case is
    * a silent no-op, not a duplicate transcript row.
    *
-   * **Assistant-side-only dedupe** (per [D14]). The ids stored here
-   * are claude's *real* `msg_id` values, set onto `activeMsgId` by
-   * the first content event of each turn (`assistant_text` /
-   * `thinking_text` / `tool_use` / `content_block_start`) and read
-   * back here at `handleTurnComplete`. The replay translator's
-   * synthesized user-side `u-<n>` and wake-side `w-<n>` opener ids
-   * ([D13]) are translator-internal and never reach this set — they
-   * appear on the wire only on orphan-synthesis `turn_complete`
-   * frames for the no-content interrupt case, which route through
-   * `handleTurnComplete`'s no-content fallback (`pendingTurn`-based
-   * commit, no msg_id match) and add nothing to this set.
+   * **Assistant-side-first dedupe** (per [D14]). In the steady-state
+   * path the ids stored here are claude's *real* `msg_id` values, set
+   * onto `activeMsgId` by the first content event of each turn
+   * (`assistant_text` / `thinking_text` / `tool_use` /
+   * `content_block_start`) and read back here at `handleTurnComplete`.
+   *
+   * The no-content interrupt fallback ([D13] / `#spec-reducer-state`
+   * rule 2) also adds an entry: when the translator emits an
+   * orphan-synthesis `turn_complete` carrying a synthesized opener
+   * id (`u-<n>` for user-text openers, `w-<n>` for wake openers),
+   * `handleTurnComplete` falls through to a `pendingTurn`-based
+   * commit and adds the synthesized id to this set so a duplicate
+   * orphan-synthesis frame (replay overlap, dev-tool re-emission)
+   * is deduped on second arrival rather than committing a phantom
+   * second TurnEntry. The synthesized ids are unique per
+   * `orphanCounter`, so cross-orphan collisions don't happen in
+   * normal operation. See `reducer.no-content-fallback.test.ts`.
    *
    * Maintained alongside the class wrapper's `_transcript` array. The
    * reducer adds entries on `turn_complete`; `dispose` and clear
