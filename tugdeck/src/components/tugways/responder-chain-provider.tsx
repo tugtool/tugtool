@@ -92,6 +92,16 @@ function FallbackContextMenu({ x, y, onClose }: { x: number; y: number; onClose:
   );
 }
 
+// ---- Default-button press-visual duration ----
+
+/**
+ * How long the `data-pressing="true"` attribute stays on a button
+ * after it's activated by Return through the default-button stack.
+ * Long enough to read as a "click" without lingering. CSS treats
+ * `[data-pressing="true"]` as a stand-in for `:active`.
+ */
+const DEFAULT_BUTTON_PRESS_MS = 120;
+
 // ---- ResponderChainProvider ----
 
 /**
@@ -211,6 +221,17 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         if (!skipActivation) {
           const defaultButton = manager.peekDefaultButton();
           if (defaultButton !== null) {
+            // Press visual ([L06] — appearance via DOM). The button's
+            // CSS variants treat `[data-pressing="true"]` the same as
+            // `:active` (`:is(:active, [data-pressing="true"])`
+            // selectors in `tug-button.css`), so a Return-activation
+            // paints identically to a real mouse click. Native
+            // `:active` doesn't fire for a synthetic `.click()`, so
+            // we toggle the attribute by hand.
+            defaultButton.setAttribute("data-pressing", "true");
+            window.setTimeout(() => {
+              defaultButton.removeAttribute("data-pressing");
+            }, DEFAULT_BUTTON_PRESS_MS);
             defaultButton.click();
             event.preventDefault();
             event.stopPropagation();

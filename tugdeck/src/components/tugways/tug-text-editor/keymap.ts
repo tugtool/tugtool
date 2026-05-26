@@ -96,6 +96,19 @@ export interface TugTextEditorKeymapConfig {
    * to whatever the default keymap chooses (typically: do nothing).
    */
   historyProvider: HistoryProvider | null;
+  /**
+   * When the editor's resolved Enter action is `"submit"`, the
+   * keymap consults this callback to see whether a higher-priority
+   * default button is registered (typically by a dialog overlaying
+   * the editor). When the callback returns a non-null `HTMLButtonElement`,
+   * the editor clicks it instead of calling {@link onSubmit} — the
+   * chain's bubble-phase activation path (press visual + click)
+   * runs through the click handler the button itself owns. When
+   * the callback returns `null` (no dialog default registered),
+   * Enter falls through to the editor's own submit. Optional;
+   * omit to keep the original "Enter always submits" behavior.
+   */
+  peekDefaultButton?: () => HTMLButtonElement | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +318,25 @@ function handleEnter(
   const action = resolveEnterAction(config, isNumpad, event.shiftKey);
   if (action === "submit") {
     event.preventDefault();
+    // Defer to a chain-registered default button (e.g., a dialog's
+    // primary action) when one is in scope. The click routes
+    // through the button's own onClick — and the chain provider's
+    // bubble-phase activation already paints the press visual via
+    // `data-pressing` — so a Return from inside the editor looks
+    // and behaves like a real mouse click on that button. Without
+    // a default button registered, the editor's own submit runs.
+    const defaultButton = config.peekDefaultButton?.() ?? null;
+    if (defaultButton !== null) {
+      // Mirror the press-visual the chain provider applies for
+      // direct (non-editor) default-button activations, so the
+      // two paths look identical.
+      defaultButton.setAttribute("data-pressing", "true");
+      window.setTimeout(() => {
+        defaultButton.removeAttribute("data-pressing");
+      }, 120);
+      defaultButton.click();
+      return true;
+    }
     config.onSubmit();
     return true;
   }

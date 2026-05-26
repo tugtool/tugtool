@@ -1462,9 +1462,11 @@ function TideProjectPickerForm({
   );
 
   // Form-level keyboard handling. ArrowUp/Down moves selection across
-  // selectable session rows; Enter activates Open with the user-
-  // intended selection (resolved from a focused cell wrapper if
-  // applicable, else from state). Forget is mouse-driven via the
+  // selectable session rows. Enter is handled by the responder chain
+  // — the Open button registers itself as the default button (via
+  // `emphasis="filled" role="action"` on `TugPushButton`), and the
+  // chain's bubble-phase Stage-2 listener clicks it for any Enter
+  // pressed outside an editable. Forget is mouse-driven via the
   // per-row trash button + confirm popover.
   const handleFormKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -1479,43 +1481,8 @@ function TideProjectPickerForm({
         handleArrowKey(e.key === "ArrowDown" ? "down" : "up");
         return;
       }
-
-      if (e.key === "Enter") {
-        if (inInput) return;
-        let effective = selection;
-        if (target instanceof HTMLElement) {
-          const indexAttr = target.getAttribute("data-tug-list-cell-index");
-          // Resolve from a focused sessions-list cell — recents-list
-          // cells (path-recent) are click-to-fill-input, not
-          // selection, so they're skipped here.
-          if (indexAttr !== null && target.closest(".tide-card-picker-sessions-list") !== null) {
-            const i = Number.parseInt(indexAttr, 10);
-            if (
-              !Number.isNaN(i) &&
-              i >= 0 &&
-              i < sessionsDataSource.numberOfItems()
-            ) {
-              const row = sessionsDataSource.rowAt(i);
-              if (row.kind === "session-new") {
-                effective = { kind: "session-new" };
-              } else if (
-                row.kind === "session-resume" &&
-                row.row.state !== "live"
-              ) {
-                effective = {
-                  kind: "session-resume",
-                  sessionId: row.row.session_id,
-                };
-              }
-            }
-          }
-        }
-        e.preventDefault();
-        submitWith(effective);
-        return;
-      }
     },
-    [handleArrowKey, sessionsDataSource, selection, submitWith],
+    [handleArrowKey],
   );
 
   // Cell-context value — `currentPath` drives path-recent's

@@ -1160,11 +1160,20 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // keystroke without rebuilding any extension. Initialised with
     // a no-op submit; the layout-effect below installs the real
     // values before any user input can land [L03, L07].
+    // Default-button defer: when the responder chain has a button
+    // pushed (typically a dialog's primary action), a `submit` Enter
+    // inside the editor activates that button instead of the
+    // editor's own onSubmit. Reads through a closure over the live
+    // manager so a dialog mounted later than the editor still wins.
+    const peekDefaultButton = useCallback((): HTMLButtonElement | null => {
+      return responderChainManager?.peekDefaultButton() ?? null;
+    }, [responderChainManager]);
     const keymapConfigRef = useRef<TugTextEditorKeymapConfig>({
       returnAction,
       numpadEnterAction,
       onSubmit: noopSubmit,
       historyProvider: null,
+      peekDefaultButton,
     });
 
     // Mirror the live policy props into the keymap config ref. Runs
@@ -1176,8 +1185,9 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         numpadEnterAction,
         onSubmit: onSubmit ?? noopSubmit,
         historyProvider: historyProvider ?? null,
+        peekDefaultButton,
       };
-    }, [returnAction, numpadEnterAction, onSubmit, historyProvider]);
+    }, [returnAction, numpadEnterAction, onSubmit, historyProvider, peekDefaultButton]);
 
     // Expose the imperative delegate. The closure reads `viewRef.current`
     // at call time so consumers see the live view across StrictMode's

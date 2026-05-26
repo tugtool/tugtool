@@ -539,11 +539,6 @@ interface QuestionRowProps {
  *  same optical baseline. */
 const ROW_MARKER_ICON_SIZE = 14;
 
-/** Keys that fire the Next button via `TugPushButton`'s `shortcut`
- *  prop. Module-scope tuple so the array literal doesn't re-allocate
- *  on every render. */
-const NEXT_KEYS: ReadonlyArray<string> = ["Enter", "ArrowRight"];
-
 /**
  * Render the lucide marker for a row status. Centralized so the
  * status → icon mapping has one source of truth (the row CSS keys
@@ -1021,20 +1016,33 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     [questions, currentIndex, handleSelect],
   );
 
-  // Document-level Cmd-. handler in CAPTURE phase. Mirrors Esc
-  // semantically: a bypass-the-popover system-cancel gesture. The
-  // popover is for *mouse* clicks on the Cancel button; Cmd-. and
-  // Esc are the keyboard equivalents of the prompt entry's Stop
-  // gesture and should go straight to `popInteractive`.
+  // Document-level capture-phase handler for wizard navigation and
+  // system cancel.
   //
-  // Enter / ArrowLeft / ArrowRight are declared as button-bound
-  // `shortcut` props on the JSX below — the button owns its own
-  // press visual and capture-phase keystroke interception. We don't
-  // need to repeat that wiring at the dialog level.
+  //  - Cmd-.            → Cancel, mirroring Esc. Bypasses the
+  //                       Cancel popover (which is for mouse clicks)
+  //                       and goes straight to `popInteractive` —
+  //                       same path Esc walks through the chain.
+  //  - ArrowLeft        → Back (no modifiers).
+  //  - ArrowRight       → Next (no modifiers).
+  //
+  // Enter is NOT handled here — `TugPushButton` auto-registers as
+  // the responder chain's default button when painted filled-action
+  // (Submit at review, Next during wizard), and the chain's
+  // Stage-2 bubble-phase listener owns Enter→click + press visual.
+  // The editor's keymap defers Enter to the same default button via
+  // `peekDefaultButton`, so Return from the prompt entry advances
+  // the wizard without any custom hijacking here.
+  //
+  // Arrows are dialog-specific gestures (wizard nav), not "default
+  // button" gestures, so they stay at the dialog level. While the
+  // dialog is pending these shadow the prompt entry's cursor-
+  // movement arrows — answering the question is the active task.
   React.useEffect(() => {
     if (!isPending) return;
     if (questions.length === 0) return;
-    const onCmdPeriod = (e: KeyboardEvent): void => {
+    const onDialogKey = (e: KeyboardEvent): void => {
+      // Cmd-. — Cancel.
       if (
         e.key === "." &&
         e.metaKey &&
@@ -1045,13 +1053,39 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         e.preventDefault();
         e.stopPropagation();
         handleCancel();
+        return;
+      }
+      // Arrows are no-modifier-only.
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.key === "ArrowLeft") {
+        if (currentIndex > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleBack();
+        }
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        if (currentIndex < questions.length) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleAdvance();
+        }
+        return;
       }
     };
-    document.addEventListener("keydown", onCmdPeriod, true);
+    document.addEventListener("keydown", onDialogKey, true);
     return () => {
-      document.removeEventListener("keydown", onCmdPeriod, true);
+      document.removeEventListener("keydown", onDialogKey, true);
     };
-  }, [isPending, questions.length, handleCancel]);
+  }, [
+    isPending,
+    questions.length,
+    currentIndex,
+    handleAdvance,
+    handleBack,
+    handleCancel,
+  ]);
 
   // Mount-time focus on the primary action so a Return key submits.
   // `TugInlineDialog` is a stateless presentation surface — callers
@@ -1147,7 +1181,6 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         role="action"
         size="xs"
         disabled={!allAnswered}
-        shortcut={isAtReview ? "Enter" : undefined}
         onClick={handleSubmit}
       >
         Submit
@@ -1202,7 +1235,6 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               role="action"
               size="xs"
               disabled={isFirstQuestion}
-              shortcut="ArrowLeft"
               onClick={handleBack}
             >
               <ArrowLeft size={14} aria-hidden="true" /> Back
@@ -1212,7 +1244,6 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               role="action"
               size="xs"
               disabled={isAtReview}
-              shortcut={NEXT_KEYS}
               onClick={handleAdvance}
             >
               Next <ArrowRight size={14} aria-hidden="true" />
