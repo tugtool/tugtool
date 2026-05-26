@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | kocienda |
-| Status | in progress (Slice 1 shipped; Slice 1c-b + Slice 2 in flight) |
+| Status | Closed (Slices 1 + 1c-b shipped through Step 5.8; Slice 2 — Steps 6-9 — deferred; Step 10 integration ceremony skipped). Straggling wake issues are picked up ad-hoc as they surface during further Tide card work. |
 | Target branch | main |
 | Last updated | 2026-05-25 |
 
@@ -1460,7 +1460,7 @@ A prior revision of this step tried "transcript-level chrome below `TugListView`
 
 **References:** [D10] sidecar JSONL persistence, [D08] FIFO correlation
 
-**Status:** Not started.
+**Status:** Deferred. Sidecar files are an anti-pattern we don't want to take on for this — they introduce file-lifecycle and atomicity problems whose maintenance cost dwarfs the value of cold-boot wake-bracket rehydration. The primary consumer of rehydrated wake metadata is the in-process resume path, which is itself blocked upstream by Step 4's known limitation. Reconsider after Step 4's upstream resolves AND a non-sidecar persistence approach has been designed — possibly piggy-backing on claude's own JSONL extension points if/when they emerge.
 
 **Scope:** Cold-boot rehydration paints Step 6's chrome with the original trigger metadata. Tugcode persists wake-trigger metadata to a sidecar JSONL per [D10]; the replay translator joins on `turn_index` and synthesizes `WakeStartedEvent`s inline within the replay bracket. No `wake_complete` synthesis needed — the replayed `turn_complete` closes it.
 
@@ -1505,7 +1505,7 @@ A prior revision of this step tried "transcript-level chrome below `TugListView`
 
 **References:** [D11] prompt on wake_started, [D15] add_<kind> naming (add_system_note follows the same template)
 
-**Status:** Not started.
+**Status:** Deferred. The `system_note` Message kind's only motivating consumer is the rehydrated wake turn that Step 7 was scoped to produce. With Step 7 deferred, building the renderer + reducer wiring + persistence story for a primitive with no current consumer is premature scope. Reconsider alongside Step 7.
 
 **Scope:** Render the registered scheduled prompt as a `system_note` Message inside the wake turn, above the assistant's response. Cohort B only. Realizes [D11]. Requires Step 5 (sequence model) and Step 6 (Cohort B FIFO; the prompt is already captured there).
 
@@ -1548,7 +1548,7 @@ A prior revision of this step tried "transcript-level chrome below `TugListView`
 
 **References:** [D12] cancellation transport via hidden user_message
 
-**Status:** Not started.
+**Status:** Deferred. The right-click-the-cron-chip-to-cancel affordance is not load-bearing for v1; direct `/cancel cron <id>` in chat works today via claude's own tool channel. The "hidden user_message back-channel" transport is tricky operating mode (synthetic message can leak into the transcript before suppression, suppression filter has its own lifecycle questions); the polish cost outweighs the user-visible win. Reconsider when a stronger product motivation for in-transcript cancellation surfaces, or when the upstream offers a host-initiated tool channel that doesn't require synthetic user messages.
 
 **Scope:** UI affordance to cancel a recurring scheduled task without typing into chat. Right-click the "Cron" chip from Step 6 → "Cancel" → routes a hidden CronDelete request through the user_message back-channel per [D12]. `ScheduleWakeup` has no cancellation surface — no upstream `WakeDelete` tool exists; one-shot wakes can't be cancelled.
 
@@ -1588,15 +1588,13 @@ A prior revision of this step tried "transcript-level chrome below `TugListView`
 
 #### Step 10: Integration checkpoint {#step-10}
 
-**Depends on:** #step-5-5, #step-5-6, #step-5-7, #step-5-8, #step-6, #step-7, #step-8, #step-9
+**Depends on:** #step-5-5, #step-5-6, #step-5-7, #step-5-8, #step-6
 
 **Commit:** `N/A (verification only)`
 
 **References:** (#success-criteria, #spec-wire-frames, #spec-translate-context, #spec-transcript, #spec-z1c)
 
-**Status:** Not started.
-
-**Scope:** Verify the message-forward cluster (Steps 5.5–5.9) and Slice 2 (Steps 6–9) work together end-to-end. No new code. One coordinated manual sweep + audit pass.
+**Status:** Skipped (plan closed). The message-forward cluster (Steps 5.5–5.8) is covered by its own per-step checkpoints, and the Slice 2 sweep items (chip rehydration / system_note / cron cancel) all live on deferred steps. Straggling wake issues are picked up ad-hoc as they surface during further Tide card work.
 
 **Tasks:**
 
