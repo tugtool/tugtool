@@ -293,6 +293,29 @@ export interface TranslateContext {
    * interrupt case ([D13]'s wire-appearance rule).
    */
   orphanCounter: number;
+  /**
+   * Per-`msg_id` running count of content blocks emitted so far.
+   *
+   * Claude Code occasionally persists ONE assistant message across
+   * multiple JSONL entries that share a `message.id` (e.g. a thinking
+   * block in one entry and a text block in a follow-on entry — see
+   * session ecc343d8). Each entry's `content[]` array starts at index
+   * 0 in the JSONL, but the LIVE wire delivers those same blocks with
+   * consecutive `index` values (0, 1, …) across the message. The
+   * reducer's `${msg_id}:${block_index}` minting is idempotent, so if
+   * the translator naively re-uses the per-entry local index 0 for
+   * the continuation entry's first block, that mint collides with the
+   * prior thinking mint and the second-block frame (text) lands on
+   * the wrong-kind Message — losing its content on render.
+   *
+   * This map preserves the wire's per-msg_id block-index discipline:
+   * the per-entry translator reads the current count for `msg_id`,
+   * emits `content_block_start` with `block_index = count + i`, then
+   * stores `count + entry.content.length` back. Cleared on every
+   * terminal `turn_complete` emit (paired with `openTurnMsgId`'s
+   * clear) since per-msg_id state is meaningless across turns.
+   */
+  blockCountByMsgId: Map<string, number>;
   /** Telemetry sink. */
   telemetry: ReplayTelemetry;
 }
@@ -318,6 +341,7 @@ export function makeTranslateContext(
     turnsCommitted: 0,
     openTurnMsgId: null,
     orphanCounter: 0,
+    blockCountByMsgId: new Map(),
     telemetry,
   };
 }
@@ -1069,18 +1093,34 @@ function handleAssistantEntry(
   // path emits one content_block_start + terminal frame per block, in
   // arrival order, to reconstruct the same `messages` sequence the
   // live path would produce.
+  //
+  // **Per-msg_id block-index offset.** When one `message.id` spans
+  // multiple JSONL entries (e.g. thinking-only then text-only — see
+  // session ecc343d8 / `TranslateContext.blockCountByMsgId`), each
+  // entry's `content[]` array re-starts its local index at 0. The
+  // wire delivered those blocks with CONSECUTIVE indices though, and
+  // the reducer's idempotent mint keys on `(msg_id, block_index)`. We
+  // start this entry's emitted block_index at the running count for
+  // this `msg_id` (default 0 for the first entry) and bump it once
+  // the per-block emit loop finishes — preserving the wire's
+  // consecutive-index discipline across entry boundaries.
   type BlockRecord =
     | { index: number; kind: "text"; text: string }
     | { index: number; kind: "thinking"; text: string }
     | { index: number; kind: "tool_use"; toolUseId: string; toolName: string; input: unknown };
   const blocks: BlockRecord[] = [];
+  const baseBlockIndex = entryMsgId.length > 0
+    ? ctx.blockCountByMsgId.get(entryMsgId) ?? 0
+    : 0;
+  let localBlockIndex = 0;
 
-  for (let blockIndex = 0; blockIndex < content.length; blockIndex++) {
-    const block = content[blockIndex];
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i];
     const blockType = typeof block.type === "string" ? block.type : "";
     if (blockType === "text") {
       const text = typeof block.text === "string" ? block.text : "";
-      blocks.push({ index: blockIndex, kind: "text", text });
+      blocks.push({ index: baseBlockIndex + localBlockIndex, kind: "text", text });
+      localBlockIndex += 1;
       continue;
     }
     if (blockType === "thinking") {
@@ -1092,7 +1132,8 @@ function handleAssistantEntry(
           : typeof block.text === "string"
             ? block.text
             : "";
-      blocks.push({ index: blockIndex, kind: "thinking", text });
+      blocks.push({ index: baseBlockIndex + localBlockIndex, kind: "thinking", text });
+      localBlockIndex += 1;
       continue;
     }
     if (blockType === "tool_use") {
@@ -1102,7 +1143,14 @@ function handleAssistantEntry(
       // Skip tool_use blocks with no id — they can't be paired with a
       // tool_result and are useless to the reducer.
       if (toolUseId.length > 0) {
-        blocks.push({ index: blockIndex, kind: "tool_use", toolUseId, toolName, input });
+        blocks.push({
+          index: baseBlockIndex + localBlockIndex,
+          kind: "tool_use",
+          toolUseId,
+          toolName,
+          input,
+        });
+        localBlockIndex += 1;
       }
       continue;
     }
@@ -1120,6 +1168,13 @@ function handleAssistantEntry(
       continue;
     }
     ctx.telemetry.unknownShape({ kind: "content_block", type: blockType });
+  }
+
+  // Bump the per-msg_id block count by the number of blocks this
+  // entry contributed. A trailing same-msg_id continuation entry will
+  // start its block_index at this updated count.
+  if (entryMsgId.length > 0 && localBlockIndex > 0) {
+    ctx.blockCountByMsgId.set(entryMsgId, baseBlockIndex + localBlockIndex);
   }
 
   // Emit per-block events in arrival order: content_block_start (mints
@@ -1238,6 +1293,14 @@ function handleAssistantEntry(
     out.push(turnComplete);
     ctx.turnsCommitted += 1;
     ctx.openTurnMsgId = null;
+    // Per-msg_id block-count tracking is meaningful only within a
+    // single turn; clear it at the terminal turn_complete so a future
+    // assistant entry that happens to reuse this `msg_id` (e.g. a
+    // resume scenario or a defensive replay) starts its block_index
+    // discipline from 0 again.
+    if (entryMsgId.length > 0) {
+      ctx.blockCountByMsgId.delete(entryMsgId);
+    }
   }
 
   return out;

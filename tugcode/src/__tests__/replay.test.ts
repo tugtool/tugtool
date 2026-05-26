@@ -666,6 +666,149 @@ describe("translateJsonlSession — same-msg_id continuation", () => {
     expect(tc.map((t) => t.msg_id)).toEqual(["msg_one", "msg_two"]);
     expect((out.at(-1) as ReplayComplete).count).toBe(2);
   });
+
+  test("same-msg_id continuation: per-entry blocks get consecutive block_index values (session ecc343d8 regression)", async () => {
+    // Session ecc343d8 captured a thinking-only entry followed by a
+    // text-only entry, both sharing msg_id. Both entries' content[]
+    // arrays start at index 0 — but the wire delivered those blocks
+    // with consecutive indices (0, 1). The reducer's
+    // `${msg_id}:${block_index}` mint is idempotent, so naively re-
+    // using local index 0 for the second entry's first block collides
+    // with the first entry's thinking mint and the text frame paints
+    // onto the wrong-kind Message, losing its content on render.
+    //
+    // The translator must offset the continuation entry's block_index
+    // by the count of blocks emitted for this msg_id so far. This
+    // pin asserts:
+    //  - content_block_start frames emit consecutive (0, 1) indices
+    //    across the two entries
+    //  - thinking_text and assistant_text frames carry matching
+    //    block_index values so they paint into their respective Messages
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "hello" }]),
+      assistantEntry({
+        msgId: "msg_split",
+        stopReason: "end_turn",
+        content: [{ type: "thinking", thinking: "thinking content" }],
+      }),
+      assistantEntry({
+        msgId: "msg_split",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "Hello! reply text" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+
+    type CbsLike = {
+      type: "content_block_start";
+      msg_id: string;
+      block_index: number;
+      kind: "text" | "thinking" | "tool_use";
+    };
+    const blockStarts = out.filter(
+      (m): m is OutboundMessage & CbsLike => m.type === "content_block_start",
+    );
+    expect(blockStarts).toHaveLength(2);
+    expect(blockStarts[0]).toMatchObject({
+      msg_id: "msg_split",
+      block_index: 0,
+      kind: "thinking",
+    });
+    expect(blockStarts[1]).toMatchObject({
+      msg_id: "msg_split",
+      block_index: 1,
+      kind: "text",
+    });
+
+    const thinking = out.find(isThinkingText)!;
+    const assistant = out.find(isAssistantText)!;
+    expect(thinking.msg_id).toBe("msg_split");
+    expect(thinking.block_index).toBe(0);
+    expect(assistant.msg_id).toBe("msg_split");
+    expect(assistant.block_index).toBe(1);
+    expect(assistant.text).toBe("Hello! reply text");
+  });
+
+  test("same-msg_id three-way: each continuation entry's block_index continues the sequence", async () => {
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u" }]),
+      assistantEntry({
+        msgId: "msg_run",
+        stopReason: "end_turn",
+        content: [{ type: "thinking", thinking: "first" }],
+      }),
+      assistantEntry({
+        msgId: "msg_run",
+        stopReason: "end_turn",
+        content: [{ type: "thinking", thinking: "second" }],
+      }),
+      assistantEntry({
+        msgId: "msg_run",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "final" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const blockStarts = out.filter(
+      (m) => m.type === "content_block_start",
+    ) as Array<OutboundMessage & { block_index: number; msg_id: string }>;
+    expect(blockStarts.map((b) => b.block_index)).toEqual([0, 1, 2]);
+    expect(blockStarts.every((b) => b.msg_id === "msg_run")).toBe(true);
+  });
+
+  test("per-entry multi-block plus continuation: indices stay monotonic", async () => {
+    // An entry with two local blocks (thinking, text), followed by a
+    // continuation entry with one more block (text). Expected
+    // block_index sequence: 0, 1, 2.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u" }]),
+      assistantEntry({
+        msgId: "msg_multi",
+        stopReason: "end_turn",
+        content: [
+          { type: "thinking", thinking: "t" },
+          { type: "text", text: "a" },
+        ],
+      }),
+      assistantEntry({
+        msgId: "msg_multi",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "b" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const blockStarts = out.filter(
+      (m) => m.type === "content_block_start",
+    ) as Array<OutboundMessage & { block_index: number }>;
+    expect(blockStarts.map((b) => b.block_index)).toEqual([0, 1, 2]);
+  });
+
+  test("distinct msg_ids each start their block_index at 0 (independent counters)", async () => {
+    // Two unrelated turns. Each msg_id's per-msg_id block counter
+    // resets at the prior turn_complete, so msg_two starts at 0
+    // again — not at 1 from the cross-turn carryover bug.
+    const jsonl = makeJsonl([
+      userEntry([{ type: "text", text: "u1" }]),
+      assistantEntry({
+        msgId: "msg_one",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a1" }],
+      }),
+      userEntry([{ type: "text", text: "u2" }]),
+      assistantEntry({
+        msgId: "msg_two",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: "a2" }],
+      }),
+    ]);
+    const out = await collectSession({ kind: "ok", jsonl });
+    const blockStarts = out.filter(
+      (m) => m.type === "content_block_start",
+    ) as Array<OutboundMessage & { block_index: number; msg_id: string }>;
+    expect(blockStarts).toHaveLength(2);
+    expect(blockStarts[0]).toMatchObject({ msg_id: "msg_one", block_index: 0 });
+    expect(blockStarts[1]).toMatchObject({ msg_id: "msg_two", block_index: 0 });
+  });
 });
 
 // ---------------------------------------------------------------------------
