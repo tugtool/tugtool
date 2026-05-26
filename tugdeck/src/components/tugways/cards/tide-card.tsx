@@ -2378,9 +2378,10 @@ export function TideCardBody({
   // gallery) or a dev placement-experiment Z4B assignment fills it.
   const effectiveFooterContent =
     footerContent ?? experimentSlots.promptIndicatorsContent;
-  // Project badge — the leading occupant of the Z4B indicator cluster.
-  // The project-path badge is the default; the placement-experiment
-  // harness overrides it when its mapping assigns a datum to Z3.
+  // Project badge — sits between the Claude Code route badge and the
+  // Session badge in the Z4B indicator cluster. The project-path
+  // badge is the default; the placement-experiment harness overrides
+  // it when its mapping assigns a datum to Z3.
   const effectivePromptStatusContent =
     experimentSlots.promptStatusContent ?? projectStatusContent;
 
@@ -2538,11 +2539,11 @@ export function TideCardBody({
                 onAfterSubmit={handleAfterSubmit}
                 indicatorsContent={
                   <>
-                    {effectivePromptStatusContent}
                     <TideRouteIndicatorBadge
                       codeSessionStore={codeSessionStore}
                       sessionMetadataStore={sessionMetadataStore}
                     />
+                    {effectivePromptStatusContent}
                     <TideSessionIdBadge cardId={cardId} />
                     {effectiveFooterContent}
                   </>
