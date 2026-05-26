@@ -32,15 +32,14 @@
  *  - **pending** — not yet visited. Shows `○ N. Question text` only.
  *    Clickable to skip ahead.
  *
- * **All controls live on the header row.** Wizard nav (`Back` /
- * `Next`) flows into the primitive's `leadingActions` slot at the
- * leading edge; dialog controls (`Cancel` / `Submit`) flow into the
- * trailing `actions` slot. The four buttons hold a stable on-screen
- * position across question advances so the question accordion below
- * can grow / shrink without the click targets ever moving out from
- * under the mouse. Single-question payloads omit `leadingActions`
- * (nothing to navigate); the title's text column extends to the
- * leading edge instead.
+ * **Two control rows.** Dialog controls (`Cancel` / `Submit`) flow
+ * into the primitive's trailing `actions` slot on the header row.
+ * Wizard nav (`Back` / `Next`) sits on its own row inside the body
+ * slot, between the dialog description and the question accordion —
+ * close enough to the questions for the touch target to feel coupled
+ * to the row it mutates, but stable across question advances so the
+ * button never moves out from under the mouse. Single-question
+ * payloads omit the nav row (nothing to navigate).
  *
  * The wizard exposes a **review state** at the end of the flow:
  * `currentIndex === questions.length` paints every row as its
@@ -535,7 +534,7 @@ interface QuestionRowProps {
 /** Pixel size for the lucide row-marker icons. Matches the heading
  *  `--tug-font-size-lg` glyph height so the icon and prose sit on the
  *  same optical baseline. */
-const ROW_MARKER_ICON_SIZE = 18;
+const ROW_MARKER_ICON_SIZE = 14;
 
 /**
  * Render the lucide marker for a row status. Centralized so the
@@ -680,13 +679,14 @@ function QuestionOptionGroup({
 }
 
 /**
- * The `current` row — title + options. Back/Next live in the dialog's
- * header `leadingActions` slot on `TugInlineDialog`, not inside the
- * row itself, so they keep a stable on-screen position across question
- * advances (the button never jumps out from under the mouse). The
- * options group is the only place a `TugDialogButton` lives in the
- * wizard, so the role / aria semantics stay scoped to one row at a
- * time (avoids cross-row radio-group leaks).
+ * The `current` row — title + options. Back/Next live on their own
+ * sub-row inside the body slot (between the dialog description and
+ * the question accordion), not inside the row itself, so they keep a
+ * stable on-screen position across question advances (the button
+ * never jumps out from under the mouse). The options group is the
+ * only place a `TugDialogButton` lives in the wizard, so the role /
+ * aria semantics stay scoped to one row at a time (avoids cross-row
+ * radio-group leaks).
  */
 function CurrentRow({
   index,
@@ -1137,21 +1137,31 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     </TugPushButton>
   );
 
-  // Composes `TugInlineDialog`'s header-bar primitive. The wizard
-  // nav (Back / Next) flows into `leadingActions`; dialog controls
+  // Composes `TugInlineDialog`'s header-bar primitive. Dialog controls
   // (Cancel / Submit, or just Dismiss when there are no questions)
-  // flow into `actions`. The question accordion (or the salvage
-  // message) renders in the body slot below the header row.
+  // flow into `actions` on the header row. The wizard nav (Back / Next)
+  // sits on its own row inside the body slot, between the dialog
+  // description and the question accordion — close enough to the
+  // questions for the touch target to feel coupled to the row it
+  // mutates, but stable across question advances so the button
+  // never moves under the mouse.
   return (
     <TugInlineDialog
       icon={<MessageCircleQuestion />}
       iconRole="info"
       title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
       description={description}
-      leadingActions={navActions}
       actions={dialogActions}
       className={cn("tide-question-dialog", className)}
     >
+      {navActions !== null ? (
+        <div
+          className="tide-question-dialog-nav"
+          data-slot="tide-question-dialog-nav"
+        >
+          {navActions}
+        </div>
+      ) : null}
       {hasQuestions ? (
         <div
           className="tide-question-dialog-questions"

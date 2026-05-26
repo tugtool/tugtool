@@ -62,21 +62,24 @@ body {
   --tugx-question-row-padding: var(--tug-space-md);
   --tugx-question-marker-gap:  var(--tug-space-sm);
 
-  /* Heading typography — applies to every row state. */
-  --tugx-question-heading-size:    var(--tug-font-size-lg);
+  /* Heading typography — applies to every row state. Sized to match
+   * the dialog title (0.875 rem) so the question rail reads as
+   * supporting content under the title, not as competing chrome. */
+  --tugx-question-heading-size:    0.875rem;
   --tugx-question-heading-weight:  600;
   --tugx-question-heading-leading: 1.4;
 
-  /* Answer summary on done rows — sits below the heading at body
-   * size, muted enough to read as a derived value not a heading. */
-  --tugx-question-answer-size:   var(--tug-font-size-md);
+  /* Answer summary on done rows — sits below the heading at a
+   * notch-smaller size, muted enough to read as a derived value
+   * not a heading. */
+  --tugx-question-answer-size:   0.8125rem;
   --tugx-question-answer-color:  var(--tug7-element-global-text-normal-default-rest);
   --tugx-question-answer-leading: 1.4;
 
   /* Markers — one slot per state so themes can tune independently.
    * Markers render as inline lucide icons that paint via `currentColor`,
    * so the row's `data-status` rule sets `color` on the marker span. */
-  --tugx-question-marker-size:             var(--tug-font-size-lg);
+  --tugx-question-marker-size:             0.875rem;
   --tugx-question-marker-done-color:       var(--tug7-element-global-text-normal-success-rest);
   --tugx-question-marker-recommended-color: var(--tug7-element-global-text-normal-link-rest);
   --tugx-question-marker-current-color:    var(--tug7-element-global-text-normal-link-rest);
@@ -98,6 +101,17 @@ body {
 
   /* Single-question payload preserves the legacy compact layout. */
   --tugx-question-single-options-padding: 0;
+}
+
+/* ---- Wizard nav row (Back / Next) ----
+ *
+ * Sits above the question accordion, centered so it visually pairs
+ * with the centered description above it. Stable across question
+ * advances. */
+.tide-question-dialog-nav {
+  display: flex;
+  justify-content: center;
+  gap: var(--tug-space-xs);
 }
 
 /* ---- Wizard rail ---- */
