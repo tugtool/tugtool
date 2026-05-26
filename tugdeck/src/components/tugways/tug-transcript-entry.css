@@ -238,6 +238,33 @@ body {
   -webkit-user-select: text;
 }
 
+/* Optional in-flight indicator slot — only the in-flight-tip row's
+ * `inflightFooter` prop is populated; every other row passes
+ * `undefined` / `null` and the slot doesn't render at all (the
+ * primitive's conditional render means no DOM, no vertical space).
+ *
+ * Sandwiched between the body and the `controls` (Z1B) slot so the
+ * row footer reads top-to-bottom as `body → in-flight indicator →
+ * end-state`. The margin matches the controls slot so the
+ * vertical rhythm with the body above is consistent across the
+ * two footer slots. */
+.tug-transcript-entry__inflight-footer {
+  margin-top: var(--tugx-transcript-controls-margin-top);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tugx-transcript-controls-gap);
+}
+
+/* Collapse the slot to zero when its only React child is a component
+ * whose render is currently `null` (e.g. `TideZ1C` returns `null` for
+ * `awaiting_approval` / `interruptInFlight` / `idle` / `replaying` /
+ * `errored`). The wrapper is in the DOM but has no child nodes, so
+ * `:empty` matches and we zero the vertical rhythm. */
+.tug-transcript-entry__inflight-footer:empty {
+  margin-top: 0;
+}
+
 .tug-transcript-entry__controls {
   margin-top: var(--tugx-transcript-controls-margin-top);
   display: flex;

@@ -1500,25 +1500,25 @@ A prior revision of this step tried "transcript-level chrome below `TugListView`
 
 **Tasks:**
 
-- [ ] Add `inflightFooter?: React.ReactNode` slot to `TugTranscriptEntry`. Below the body, above (or beside) the `controls` slot. Collapse-when-empty CSS: when the slot has no children, no vertical space is consumed.
-- [ ] Remove `min-height` from `TideZ1B` so the `controls` slot collapses to zero when Z1B renders no end-state (in-flight code row).
-- [ ] Create `TideZ1C` component (`tide-card-z1c.tsx` + `.css`). The component subscribes to a memoized `{phase, interruptInFlight}` selector via `useSyncExternalStore` (one subscription, no churn on text deltas — text-delta dispatches build a fresh snapshot reference but don't change phase / interruptInFlight, so the memoized selector returns the prior reference).
-- [ ] Implement `tideZ1CContent(phase, interruptInFlight)` per [D19]'s table. Returns `null` for `awaiting_approval` (waiting, not thinking), `interruptInFlight === true` (instant from user's POV; Z1B paints end-state), and `idle` / `replaying` / `errored`.
-- [ ] The Z1C component renders the three-bar `TugThinkingIndicator` (default styling, `labelPosition="hidden"`, no caution chrome). Phase label rides on `aria-label` for screen readers; visible glyph stays identical to the pre-Step-5.8 in-row indicator.
-- [ ] In `CodeRowCell`, pass `<TideZ1C codeSessionStore={...} />` to `inflightFooter` iff `!isCommitted`. The active subscription mounts only on the in-flight code row.
-- [ ] Z1C's CSS pins the indicator at the row body's left edge (matching the body indent) and the same 2px top offset Z1B's pre-Step-5.8 live branch used, so the visual is identical.
+- [x] Add `inflightFooter?: React.ReactNode` slot to `TugTranscriptEntry`. Sandwiched between the body and the `controls` slot. Wrapper rendered iff prop is non-null + non-undefined; `:empty` CSS rule collapses the wrapper margin when the inner React render produces no DOM children.
+- [x] Remove `min-height` from `TideZ1B` so the `controls` slot collapses to zero when Z1B renders no end-state. `CodeRowCell` further gates `controls` to `undefined` when the in-flight code row has no trailing chrome, so the wrapper is not rendered at all.
+- [x] Create `TideZ1C` component (`tide-card-z1c.tsx` + `.css`). The component subscribes to a memoized `{phase, interruptInFlight}` selector via `useSyncExternalStore`. Pure-logic helper `tideZ1CContent` co-located in the same `.tsx` file (a sibling `.ts` would have collided on the extension-less import path).
+- [x] Implement `tideZ1CContent(phase, interruptInFlight)` per [D19]'s table. Returns `null` for `awaiting_approval`, `interruptInFlight === true`, and `idle` / `replaying` / `errored`.
+- [x] The Z1C component renders the bare three-bar `TugThinkingIndicator` (default styling, `labelPosition="hidden"`). Phase label rides on `aria-label`; visible glyph stays identical to the pre-Step-5.8 in-row indicator.
+- [x] In `CodeRowCell`, pass `<TideZ1C codeSessionStore={...} />` to `inflightFooter` iff `!isCommitted`. The active subscription mounts only on the in-flight code row.
+- [x] Z1C inherits position from the `inflightFooter` slot (the slot's flex / margin own row-level layout); the `tide-card-z1c.css` file is a paired-CSS hook for future indicator-specific tweaks and contains no positioning rules.
 
 **Tests:**
 
-- [ ] New: `tideZ1CContent` content-by-phase pin — each phase maps to the expected label per [D19]. `awaiting_approval`, `interruptInFlight=true`, `idle`, `replaying`, `errored` all return `null`.
-- [ ] New: `TugTranscriptEntry` `inflightFooter` slot pin — when `inflightFooter={null}` (or omitted), the slot consumes zero vertical space; when populated, the slot renders the node at the expected position.
-- [ ] Existing TideZ1B tests update — in-flight branch tests delete; committed-end-state tests stay. (No-op if TideZ1B carries no pre-existing tests.)
+- [x] New: `tideZ1CContent` content-by-phase pin — each phase maps to the expected label per [D19]. `awaiting_approval`, `interruptInFlight=true`, `idle`, `replaying`, `errored` all return `null`.
+- [ ] ~~New: `TugTranscriptEntry` `inflightFooter` slot pin~~. Skipped — per the project's no-fake-DOM testing policy there is no render-test surface; the slot's structural contract (render iff non-null; `:empty` collapse) is covered by the manual sweep.
+- [x] Existing TideZ1B tests update — in-flight branch tests delete; committed-end-state tests stay. (No-op: TideZ1B carries no pre-existing tests; doc + CSS in-flight references and the `data-mode` selectors / `--tugx-tide-z1b-indent-live` knob were removed.)
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bun x tsc --noEmit && bun test` green.
-- [ ] `grep -nE "participant === \"code\".*!turn|!turn.*participant === \"code\"" tugdeck/src/components/tugways/cards/tide-card-z1b.tsx` returns zero matches.
-- [ ] Manual sweep:
+- [x] `cd tugdeck && bun x tsc --noEmit && bun test` green.
+- [x] `grep -nE "participant === \"code\".*!turn|!turn.*participant === \"code\"" tugdeck/src/components/tugways/cards/tide-card-z1b.tsx` returns zero matches.
+- [x] Manual sweep:
   - Submit a turn; the three-bar indicator appears at the bottom-left of the in-flight code row's body (same indent as the body), animates while phase advances.
   - Turn completes; Z1C slot collapses; Z1B renders end-state on the committed code row at the same position.
   - Open a permission dialog (`awaiting_approval`); the indicator hides — the dialog is the sole affordance.

@@ -134,6 +134,20 @@ export interface TugTranscriptEntryProps {
   sequenceNumber?: number;
   /** Row body content. The primitive imposes no opinion on text rendering. */
   body: React.ReactNode;
+  /**
+   * Optional in-flight indicator slot, sandwiched between the body and
+   * the `controls` slot. Used by transcript hosts to mount per-row
+   * in-flight chrome (e.g. the Tide card's `TideZ1C` indicator) on the
+   * row that is currently the in-flight tip; every other row passes
+   * `undefined` / `null` and the slot consumes no vertical space.
+   *
+   * Two slots — `inflightFooter` and `controls` — instead of a single
+   * multiplexed footer because the two carry disjoint chromes with
+   * independent lifecycles: in-flight indicator vs. committed
+   * end-state. Keeping them separate means neither has to know about
+   * the other's render condition.
+   */
+  inflightFooter?: React.ReactNode;
   /** Optional trailing affordance row beneath the body (badges, copy button, etc.). */
   controls?: React.ReactNode;
   /** Forwarded class name for consumer overrides. */
@@ -164,6 +178,7 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
   timestamp,
   sequenceNumber,
   body,
+  inflightFooter,
   controls,
   className,
 }) => {
@@ -263,6 +278,11 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
           )}
         </div>
         <div className="tug-transcript-entry__body">{body}</div>
+        {inflightFooter !== undefined && inflightFooter !== null && (
+          <div className="tug-transcript-entry__inflight-footer">
+            {inflightFooter}
+          </div>
+        )}
         {controls !== undefined && (
           <div className="tug-transcript-entry__controls">{controls}</div>
         )}

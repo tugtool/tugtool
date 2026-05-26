@@ -57,7 +57,6 @@
      of the identifier above it. */
   --tugx-tide-z1b-indent: 0px;
   padding-left: var(--tugx-tide-z1b-indent);
-  min-height: var(--tug-space-xl, 20px);
   width: 100%;
   /* The single spacing knob for the whole row. Applied as the
      flex `gap` here AND on `.tide-z1b-end-state`, so every
@@ -67,6 +66,20 @@
   --tugx-tide-z1b-gap: 14px;
   gap: var(--tugx-tide-z1b-gap);
   margin-top: 2px;
+}
+
+/* Collapse the slot to zero when Z1B renders no end-state (in-flight
+   code row — TideZ1B's children are both `null` for that case). The
+   `:empty` selector matches when the div has no child nodes; the
+   primitive does not render the controls wrapper at all when the
+   prop is `undefined`, but Z1B is always passed via the controls
+   prop, so the wrapper IS in the DOM and we collapse the inner Z1B
+   div via this rule. The flex / padding / margin-top are zeroed so
+   no vertical rhythm is consumed. */
+.tide-z1b:empty {
+  margin-top: 0;
+  padding-left: 0;
+  min-height: 0;
 }
 
 /* ============================================================================

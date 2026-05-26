@@ -68,15 +68,12 @@
  *    function of `participant` + `turn` + `bodyText`. The caller
  *    has already subscribed to the data source.
  *  - [L06] all appearance state flows through CSS classes /
- *    `data-mode` + `data-participant` attributes. No inline style
- *    for appearance.
+ *    `data-participant` attributes and the `:empty` collapse rule.
+ *    No inline style for appearance.
  *  - [L19] file pair with the component; `data-slot` anchors on
  *    every visible primitive.
  *  - [L20] consumer-only — no new token slot family. The component
  *    inherits typography from the row's chrome.
- *  - [L26] always-mounted Z1B slot survives the in-flight ↔
- *    terminal swap. Both participant variants share the same
- *    slot-div mount contract.
  *
  * @module components/tugways/cards/tide-card-z1b
  */
