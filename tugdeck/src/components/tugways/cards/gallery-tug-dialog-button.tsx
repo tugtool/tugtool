@@ -32,6 +32,7 @@ import { ChevronRight, ShieldAlert, Shell } from "lucide-react";
 
 import { TugDialogButton } from "@/components/tugways/tug-dialog-button";
 import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -378,13 +379,28 @@ export function GalleryTugDialogButton(): React.ReactElement {
               Bash · <code>tokei</code>
             </>
           }
-          confirmLabel="Allow"
-          confirmRole="action"
-          cancelLabel="Deny"
-          onConfirm={() =>
-            setComposedResult(`Allowed — scope: ${composedScope}`)
+          actions={
+            <>
+              <TugPushButton
+                emphasis="outlined"
+                role="danger"
+                size="xs"
+                onClick={() => setComposedResult("Denied")}
+              >
+                Deny
+              </TugPushButton>
+              <TugPushButton
+                emphasis="filled"
+                role="action"
+                size="xs"
+                onClick={() =>
+                  setComposedResult(`Allowed — scope: ${composedScope}`)
+                }
+              >
+                Allow
+              </TugPushButton>
+            </>
           }
-          onCancel={() => setComposedResult("Denied")}
           options={RADIO_CHOICES.map((choice) => ({
             value: choice.id,
             label: choice.label,

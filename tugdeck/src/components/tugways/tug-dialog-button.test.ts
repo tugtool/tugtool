@@ -125,9 +125,8 @@ describe("resolveDialogButtonAriaLabel", () => {
   });
 
   it("passes through an empty string verbatim (consumer's choice, not 'use default')", () => {
-    // Mirrors the contract baked into TugInlineDialog's
-    // `resolveCancelLabel`: an empty string is a deliberate consumer
-    // choice, not a sentinel for "use the default."
+    // An empty string is a deliberate consumer choice, not a sentinel
+    // for "use the default."
     expect(resolveDialogButtonAriaLabel("Allow", "")).toBe("");
   });
 });

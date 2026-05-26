@@ -6,26 +6,21 @@
    - --tugx-idialog-icon-danger-color  | --tugx-idialog-bg            (icon — danger tone)
    - --tugx-idialog-icon-success-color | --tugx-idialog-bg            (icon — success tone)
    - --tugx-idialog-icon-info-color    | --tugx-idialog-bg            (icon — info tone)
-   `TugInlineDialog` is a tugways primitive — the inline counterpart to
-   `TugAlert`. The frame is a raised card sized for fixed centered CTA
-   placement; inside, an icon column tints to one of five named roles
-   while the text column carries title + description + optional
-   children, an optional radio-group `options` block stacks rich-label
-   `TugDialogButton`s one-per-row, and the actions row right-aligns
-   cancel + confirm.
+   `TugInlineDialog` is the inline header-bar dialog primitive. The
+   frame is a raised card; inside, a single header row anchors a small
+   icon at the leading edge, optional leadingActions next to it, a
+   title + inline description text column that absorbs available
+   space, and an optional trailing actions cluster. A free-form body
+   slot and an optional 450 px-centered radio stack render below.
 */
 
 /**
  * tug-inline-dialog.css — `TugInlineDialog` primitive.
  *
- * Layout proportions mirror `tug-alert.css` so the inline and modal
- * forms read as the same family. Differences from Alert:
- *   - Frame is centered via `margin: auto` instead of fixed-positioned
- *     overlay portal.
- *   - `max-width` lives on the frame itself (the consumer cannot
- *     widen it; richer content scrolls inside `children`).
- *   - No overlay scrim or open/close animations — the primitive is a
- *     plain inline content block.
+ * Header-bar layout. The icon column's `height` matches the title's
+ * `font-size × line-height` so the glyph's vertical center sits on
+ * the title's first-line center — whether or not a description
+ * follows.
  *
  * Tuglaw cross-check:
  *  - [L06] appearance via DOM-mutation + CSS, not React state. The
@@ -43,45 +38,46 @@
 
 body {
   /* Frame */
-  --tugx-idialog-max-width:    32.5rem; /* ~520 px — fixed centered CTA presence. */
-  --tugx-idialog-margin:       var(--tug-space-lg) auto;
-  --tugx-idialog-padding:      1.5rem;
+  --tugx-idialog-padding:      0.625rem 0.75rem;
   --tugx-idialog-bg:           var(--tug7-surface-global-primary-normal-raised-rest);
   --tugx-idialog-border:       var(--tug7-element-global-border-normal-default-rest);
   --tugx-idialog-radius:       var(--tug-radius-md);
   --tugx-idialog-text-color:   var(--tug7-element-global-text-normal-default-rest);
 
-  /* Spacing grid mirrors Alert: A=tight, B=generous. */
-  --tugx-idialog-space-a: 0.75rem;
-  --tugx-idialog-space-b: 1.5rem;
+  /* Vertical rhythm between header row, body, and options. */
+  --tugx-idialog-frame-gap:    0.875rem;
 
-  /* Icon column — fixed 48 px square, tinted via [data-icon-role]. */
-  --tugx-idialog-icon-size:          48px;
+  /* Header row */
+  --tugx-idialog-row-gap:           0.625rem;
+  --tugx-idialog-actions-gap:       0.375rem;
+  --tugx-idialog-text-col-gap:      0.5rem;
+
+  /* Icon column — its height matches the title's first-line height
+   * (font-size × line-height), so `align-items: center` puts the
+   * icon's vertical center on the title's first-line center. */
+  --tugx-idialog-icon-size:          20px;
   --tugx-idialog-icon-default-color: var(--tug7-element-global-icon-normal-muted-rest);
   --tugx-idialog-icon-caution-color: var(--tug7-element-global-text-normal-caution-rest);
   --tugx-idialog-icon-danger-color:  var(--tug7-element-global-text-normal-danger-rest);
   --tugx-idialog-icon-success-color: var(--tug7-element-global-text-normal-success-rest);
   --tugx-idialog-icon-info-color:    var(--tug7-element-global-text-normal-link-rest);
 
-  /* Title — matches Alert's title (1 rem / 600 / 1.4). */
-  --tugx-idialog-title-size:    1rem;
+  /* Title */
+  --tugx-idialog-title-size:    0.875rem;
   --tugx-idialog-title-weight:  600;
-  --tugx-idialog-title-leading: 1.4;
+  --tugx-idialog-title-leading: 1.3;
 
-  /* Description — matches Alert's message (0.875 rem / 1.5 / opacity .8). */
-  --tugx-idialog-description-size:    0.875rem;
-  --tugx-idialog-description-leading: 1.5;
+  /* Description */
+  --tugx-idialog-description-size:    0.8125rem;
+  --tugx-idialog-description-leading: 1.4;
   --tugx-idialog-description-opacity: 0.8;
 
-  /* Children block — own gap separate from text-column tight gap. */
-  --tugx-idialog-children-gap: var(--tug-space-md);
+  /* Body slot */
+  --tugx-idialog-body-gap: 0.5rem;
 
-  /* Options block — `options` prop's one-per-row radio stack. */
-  --tugx-idialog-options-gap: var(--tug-space-sm);
-
-  /* Actions row — same pattern as Alert. */
-  --tugx-idialog-actions-gap:  var(--tugx-idialog-space-a);
-  --tugx-idialog-action-min-w: 5rem;
+  /* Options block (radio stack) — centered, fixed max width. */
+  --tugx-idialog-options-gap:       0.25rem;
+  --tugx-idialog-options-max-width: 450px;
 
   /* Focus ring — for keyboard navigation. */
   --tugx-idialog-focus-ring: var(--tug7-element-global-text-normal-link-rest);
@@ -92,10 +88,8 @@ body {
 .tug-inline-dialog {
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-idialog-space-b);
+  gap: var(--tugx-idialog-frame-gap);
   width: 100%;
-  max-width: var(--tugx-idialog-max-width);
-  margin: var(--tugx-idialog-margin);
   padding: var(--tugx-idialog-padding);
   background: var(--tugx-idialog-bg);
   color: var(--tugx-idialog-text-color);
@@ -104,23 +98,32 @@ body {
   box-sizing: border-box;
 }
 
-/* ---- Body row — icon left, text right (Alert HIG layout) ---- */
+/* ---- Header row (icon + leadingActions + text column + actions) ----
+ *
+ * Order in the flex row:
+ *   [icon] [leadingActions?] [text column grows] [actions?]
+ *
+ * The text column is `flex: 1 1 auto`, so it absorbs all available
+ * inline space — pushing the trailing `actions` cluster to the
+ * trailing edge and pinning `leadingActions` (when present) right
+ * after the icon at the leading edge.
+ */
 
-.tug-inline-dialog-body-row {
+.tug-inline-dialog-row {
   display: flex;
-  gap: var(--tugx-idialog-space-b);
   align-items: flex-start;
+  gap: var(--tugx-idialog-row-gap);
 }
 
-/* ---- Icon column ---- */
-
+/* Icon column: its height matches the title's first-line height
+ * (font-size × line-height) and `align-items: center` then puts the
+ * icon's vertical center on the title's first-line center —
+ * regardless of whether a description follows. */
 .tug-inline-dialog-icon {
   flex: 0 0 auto;
-  width:  var(--tugx-idialog-icon-size);
-  height: var(--tugx-idialog-icon-size);
   display: flex;
   align-items: center;
-  justify-content: center;
+  height: calc(var(--tugx-idialog-title-size) * var(--tugx-idialog-title-leading));
   /* color: set by [data-icon-role] selectors below. The icon
    * inherits via SVG `currentColor`. */
 }
@@ -141,20 +144,32 @@ body {
   color: var(--tugx-idialog-icon-info-color);
 }
 
-/* Lucide icons render as SVG with `stroke="currentColor"`; ensure the
- * icon stretches to the column's intrinsic size if the consumer
- * passes a Lucide component without a `size` prop, but otherwise
- * respects whatever sizing the consumer chose. */
+/* Constrain a Lucide / SVG icon passed without an explicit `size`
+ * prop to the icon column's width. Consumers passing `size={20}`
+ * (recommended) take precedence — explicit width/height on the SVG
+ * shorts this rule. */
 .tug-inline-dialog-icon > svg {
-  width:  100%;
-  height: 100%;
+  width:  var(--tugx-idialog-icon-size);
+  height: var(--tugx-idialog-icon-size);
 }
 
-/* ---- Text column (title + description + children) ---- */
+/* Leading-edge action cluster — typically wizard nav (Back / Next). */
+.tug-inline-dialog-leading-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--tugx-idialog-actions-gap);
+}
 
+/* Text column: title + inline description, baseline-aligned and
+ * allowed to wrap on narrow widths. Absorbs the row's available
+ * inline space via `flex: 1 1 auto`. */
 .tug-inline-dialog-text {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--tugx-idialog-text-col-gap);
+  flex-wrap: wrap;
 }
 
 .tug-inline-dialog-title {
@@ -165,7 +180,6 @@ body {
 }
 
 .tug-inline-dialog-description {
-  margin: var(--tugx-idialog-space-a) 0 0 0;
   font-size:   var(--tugx-idialog-description-size);
   line-height: var(--tugx-idialog-description-leading);
   opacity:     var(--tugx-idialog-description-opacity);
@@ -179,46 +193,47 @@ body {
   font-size: inherit;
 }
 
-/* ---- Children slot (inside the text column) ---- */
+/* Trailing-edge action cluster — typically Cancel / Submit, Deny /
+ * Allow, or any primary controls. */
+.tug-inline-dialog-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--tugx-idialog-actions-gap);
+}
 
-.tug-inline-dialog-children {
+/* ---- Body slot ----
+ *
+ * Free-form region between the header row and the options block.
+ * Receives the per-tool body (DiffBlock, JsonTreeBlock, dispatch
+ * wrapper, question accordion). `min-width: 0` lets wide bodies
+ * shrink/scroll inside the frame. */
+
+.tug-inline-dialog-body {
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-idialog-children-gap);
-  margin-top: var(--tugx-idialog-space-b);
-  /* Children inherit the text column's `min-width: 0`, so a wide
-   * body kind (DiffBlock, JsonTreeBlock) can shrink/scroll inside
-   * the column without overflowing the dialog frame. */
+  gap: var(--tugx-idialog-body-gap);
   min-width: 0;
 }
 
-/* ---- Options block (`options` prop — radio TugDialogButton stack) ---- */
-/*
- * One row per option, stacked vertically. The row-grid partition is
- * gone — descriptive labels (which `TugDialogButton` is sized for)
- * read clearly only when each row owns the dialog's full width.
+/* ---- Options block (radio TugDialogButton stack) ----
  *
- * `role="radiogroup"` lives on the wrapper for screen-reader
- * semantics; each child `TugDialogButton` carries `role="radio"` +
- * `aria-checked` per its choice-mode contract.
- */
-
+ * Centered, max 450 px wide regardless of frame width. Tighter
+ * `TugDialogButton` rows than the primitive's defaults — these
+ * overrides are scoped to descendants of the options container so
+ * they don't leak into anything else mounted inside the dialog. */
 .tug-inline-dialog-options {
   display: flex;
   flex-direction: column;
   gap: var(--tugx-idialog-options-gap);
-}
+  width: 100%;
+  max-width: var(--tugx-idialog-options-max-width);
+  margin: 0 auto;
 
-/* ---- Actions row (Cancel left, Confirm right — Alert pattern) ---- */
-
-.tug-inline-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--tugx-idialog-actions-gap);
-}
-
-.tug-inline-dialog-actions .tug-button {
-  min-width: var(--tugx-idialog-action-min-w);
+  --tugx-dialog-button-padding-x:        0.625rem;
+  --tugx-dialog-button-padding-y:        0.375rem;
+  --tugx-dialog-button-gap-stack:        0.125rem;
+  --tugx-dialog-button-label-size:       0.8125rem;
+  --tugx-dialog-button-description-size: 0.75rem;
 }
 
 /* ---- Focus styling ---- */

@@ -18,13 +18,11 @@
  * while the request is the session's `pendingQuestion`. Once answered
  * (or skipped) it renders `null`.
  *
- * Layout (composed on `TideInteractiveDialog` — the Tide interactive-
- * dialog family's input-form primitive, which itself wraps
- * `TugInlineDialog`; see [D01] / [D08]). Paged wizard. A single-
- * question payload renders inline (the question text goes in the
- * dialog `description` and the options fill the children slot). A
- * multi-question payload renders a vertical stack of *rows*, one per
- * question, in three states:
+ * Layout (composed on `TugInlineDialog`'s header-bar primitive — see
+ * [D01] / [D08]). Paged wizard. A single-question payload renders
+ * inline (the question text goes in the dialog `description` and the
+ * options fill the children slot). A multi-question payload renders
+ * a vertical stack of *rows*, one per question, in three states:
  *
  *  - **done** — the user has picked at least one option. Row shows
  *    `✓ N. Question text · → chosen answer`. Clickable to jump back.
@@ -34,14 +32,15 @@
  *  - **pending** — not yet visited. Shows `○ N. Question text` only.
  *    Clickable to skip ahead.
  *
- * **All controls live above the questions.** A single actions row
- * — `[← Back][Next →]` cluster on the leading edge, `[Cancel][Submit]`
- * cluster on the trailing edge — sits between the title/description
- * and the question stack. The four buttons hold a stable on-screen
- * position across question advances so the question stack below can
- * grow / shrink without the click targets ever moving out from
- * under the mouse. The primitive's bottom actions row is suppressed
- * via `hideActions`.
+ * **All controls live on the header row.** Wizard nav (`Back` /
+ * `Next`) flows into the primitive's `leadingActions` slot at the
+ * leading edge; dialog controls (`Cancel` / `Submit`) flow into the
+ * trailing `actions` slot. The four buttons hold a stable on-screen
+ * position across question advances so the question accordion below
+ * can grow / shrink without the click targets ever moving out from
+ * under the mouse. Single-question payloads omit `leadingActions`
+ * (nothing to navigate); the title's text column extends to the
+ * leading edge instead.
  *
  * The wizard exposes a **review state** at the end of the flow:
  * `currentIndex === questions.length` paints every row as its
@@ -87,11 +86,10 @@
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot` on the question-stack containers, this docstring.
  *  - [L20] component-token sovereignty — the dialog frame is
- *    delegated to `TideInteractiveDialog` (the family-default
- *    cancel-role + actions-row layer) which in turn delegates to
- *    `TugInlineDialog` (`--tugx-idialog-*`); each option row is a
- *    `TugDialogButton` (`--tugx-dialog-button-*`). This component
- *    owns only the small `--tugx-question-*` wizard-rail family.
+ *    delegated to `TugInlineDialog` (`--tugx-idialog-*`); each
+ *    option row is a `TugDialogButton` (`--tugx-dialog-button-*`).
+ *    This component owns only the small `--tugx-question-*`
+ *    wizard-rail family.
  *  - [L23] in-progress answer state (selection set, visit set,
  *    wizard focus) is user data and must survive reload / cross-pane
  *    move / cold boot. The dialog opts into the [A9] Component State
@@ -106,7 +104,7 @@
  *
  * Decisions:
  *  - [D13] inline (not modal) prompts; primary action focused on
- *    mount by the underlying `TugInlineDialog` so Return submits.
+ *    mount by this component (via `submitRef`) so Return submits.
  *    Three-layer survival contract: wire (tugcode in-flight snapshot)
  *    delivers the open request, reducer (`handleControlRequestForward`
  *    rehydrate branch) restores it to `pendingQuestion`, and this
@@ -130,7 +128,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { TideInteractiveDialog } from "@/components/tugways/tide-interactive-dialog";
+import { TugInlineDialog } from "@/components/tugways/tug-inline-dialog";
 import {
   TugConfirmPopover,
   type TugConfirmPopoverHandle,
@@ -683,12 +681,12 @@ function QuestionOptionGroup({
 
 /**
  * The `current` row — title + options. Back/Next live in the dialog's
- * actions row (via the `extraActions` slot on `TideInteractiveDialog`),
- * not inside the row itself, so they keep a stable on-screen position
- * across question advances (the button never jumps out from under the
- * mouse). The options group is the only place a `TugDialogButton`
- * lives in the wizard, so the role / aria semantics stay scoped to
- * one row at a time (avoids cross-row radio-group leaks).
+ * header `leadingActions` slot on `TugInlineDialog`, not inside the
+ * row itself, so they keep a stable on-screen position across question
+ * advances (the button never jumps out from under the mouse). The
+ * options group is the only place a `TugDialogButton` lives in the
+ * wizard, so the role / aria semantics stay scoped to one row at a
+ * time (avoids cross-row radio-group leaks).
  */
 function CurrentRow({
   index,
@@ -1038,11 +1036,10 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   const isAtReview = currentIndex >= questions.length;
 
   // Mount-time focus on the primary action so a Return key submits.
-  // `TugInlineDialog`'s built-in focus-on-mount targets its own
-  // confirm button which we suppress with `hideActions`; this ref
-  // points at our own `Submit` instead. The effect runs once; a
-  // genuinely new request remounts the whole component (keyed by
-  // `request_id` upstream).
+  // `TugInlineDialog` is a stateless presentation surface — callers
+  // own focus management for whatever buttons they pass in `actions`.
+  // The effect runs once; a genuinely new request remounts the whole
+  // component (keyed by `request_id` upstream).
   const submitRef = React.useRef<HTMLButtonElement | null>(null);
   React.useLayoutEffect(() => {
     submitRef.current?.focus();
@@ -1067,88 +1064,94 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     });
   }, [handleCancel]);
 
-  // The full actions row above the question stack. Two clusters:
-  // wizard nav (Back / Next) leading edge, dialog controls (Cancel /
-  // Submit) trailing edge, separated by `space-between`. All four
-  // buttons hold a stable on-screen position across question
-  // advances — the question stack below can grow or shrink as
-  // options change, but the click targets never move out from
-  // under the mouse. Single-question payloads omit the wizard nav
-  // (nothing to navigate) but still render Cancel / Submit.
-  const actionsRow: React.ReactNode = hasQuestions ? (
-    <div
-      className="tide-question-dialog-actions"
-      data-slot="tide-question-dialog-actions"
-    >
-      {single === null ? (
-        <div className="tide-question-dialog-actions-nav">
-          <TugPushButton
-            emphasis="outlined"
-            role="action"
-            disabled={isFirstQuestion}
-            onClick={handleBack}
-          >
-            <ArrowLeft size={14} aria-hidden="true" /> Back
-          </TugPushButton>
-          <TugPushButton
-            emphasis="outlined"
-            role="action"
-            disabled={isAtReview}
-            onClick={handleAdvance}
-          >
-            Next <ArrowRight size={14} aria-hidden="true" />
-          </TugPushButton>
-        </div>
-      ) : (
-        <span />
-      )}
-      <div className="tide-question-dialog-actions-dialog">
-        <TugConfirmPopover
-          ref={cancelPopoverRef}
-          message="Cancel this question?"
-          confirmLabel="Yes, cancel"
-          cancelLabel="Keep going"
-          confirmRole="danger"
-          side="bottom"
-        >
-          <TugPushButton emphasis="outlined" role="danger" onClick={handleCancelClick}>
-            Cancel
-          </TugPushButton>
-        </TugConfirmPopover>
-        <TugPushButton
-          ref={submitRef}
-          emphasis="filled"
-          role="action"
-          disabled={!allAnswered}
-          onClick={handleSubmit}
-        >
-          Submit
-        </TugPushButton>
-      </div>
-    </div>
+  // Action clusters flow into the dialog primitive's two slots on the
+  // header row. Wizard nav (Back / Next) → `leadingActions`; dialog
+  // controls (Cancel / Submit) → `actions`. All four buttons hold a
+  // stable on-screen position across question advances — the question
+  // accordion below can grow or shrink as options change, but the
+  // click targets never move out from under the mouse. Single-question
+  // payloads omit the wizard nav (nothing to navigate) and pass
+  // `undefined` for `leadingActions` so the title's text column extends
+  // to the leading edge.
+  const navActions: React.ReactNode = hasQuestions && single === null ? (
+    <>
+      <TugPushButton
+        emphasis="outlined"
+        role="action"
+        size="xs"
+        disabled={isFirstQuestion}
+        onClick={handleBack}
+      >
+        <ArrowLeft size={14} aria-hidden="true" /> Back
+      </TugPushButton>
+      <TugPushButton
+        emphasis="outlined"
+        role="action"
+        size="xs"
+        disabled={isAtReview}
+        onClick={handleAdvance}
+      >
+        Next <ArrowRight size={14} aria-hidden="true" />
+      </TugPushButton>
+    </>
   ) : null;
+  const dialogActions: React.ReactNode = hasQuestions ? (
+    <>
+      <TugConfirmPopover
+        ref={cancelPopoverRef}
+        message="Cancel this question?"
+        confirmLabel="Yes, cancel"
+        cancelLabel="Keep going"
+        confirmRole="danger"
+        side="bottom"
+      >
+        <TugPushButton
+          emphasis="outlined"
+          role="danger"
+          size="xs"
+          onClick={handleCancelClick}
+        >
+          Cancel
+        </TugPushButton>
+      </TugConfirmPopover>
+      <TugPushButton
+        ref={submitRef}
+        emphasis="filled"
+        role="action"
+        size="xs"
+        disabled={!allAnswered}
+        onClick={handleSubmit}
+      >
+        Submit
+      </TugPushButton>
+    </>
+  ) : (
+    <TugPushButton
+      ref={submitRef}
+      emphasis="filled"
+      role="action"
+      size="xs"
+      onClick={handleSubmit}
+    >
+      Dismiss
+    </TugPushButton>
+  );
 
-  // Composes the Tide interactive-dialog family's input-form primitive
-  // ([D01] / [D08]); the primitive delegates the visible chrome to
-  // `TugInlineDialog` one layer down. The question dialog hoists its
-  // own action surface into `children` above the questions (so the
-  // four buttons hold a stable position across advances) and
-  // suppresses the primitive's bottom actions row via `hideActions`.
+  // Composes `TugInlineDialog`'s header-bar primitive. The wizard
+  // nav (Back / Next) flows into `leadingActions`; dialog controls
+  // (Cancel / Submit, or just Dismiss when there are no questions)
+  // flow into `actions`. The question accordion (or the salvage
+  // message) renders in the body slot below the header row.
   return (
-    <TideInteractiveDialog
+    <TugInlineDialog
       icon={<MessageCircleQuestion />}
       iconRole="info"
       title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
       description={description}
-      confirmLabel={hasQuestions ? "Submit" : "Dismiss"}
-      confirmRole="action"
-      onConfirm={handleSubmit}
-      onCancel={handleCancel}
-      cancelLabel={null}
-      hideActions={hasQuestions}
+      leadingActions={navActions}
+      actions={dialogActions}
       className={cn("tide-question-dialog", className)}
     >
-      {actionsRow}
       {hasQuestions ? (
         <div
           className="tide-question-dialog-questions"
@@ -1221,7 +1224,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
           )}
         </div>
       ) : null}
-    </TideInteractiveDialog>
+    </TugInlineDialog>
   );
 };
 

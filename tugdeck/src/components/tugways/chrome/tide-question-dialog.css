@@ -56,13 +56,6 @@
 /* ---- Component-tier aliases — question-dialog layout only [L17] ---- */
 
 body {
-  /* Frame width override — questions carry richer prose than the
-   * permission dialog's allow/deny pickers, so the question dialog
-   * gets a wider fixed presence. Centering stays at the
-   * `TugInlineDialog` primitive's `margin: var(--tug-space-lg) auto`,
-   * so this knob only changes width, not horizontal placement. */
-  --tugx-question-frame-width: 700px;
-
   /* Wizard rail */
   --tugx-question-stack-gap:   var(--tug-space-xs);
   --tugx-question-row-radius:  var(--tug-radius-md);
@@ -99,9 +92,6 @@ body {
   --tugx-question-expand-duration: 180ms;
   --tugx-question-expand-easing:   cubic-bezier(0.2, 0, 0, 1);
 
-  /* Wizard Back / Next nav strip (in the dialog actions row). */
-  --tugx-question-nav-gap: var(--tug-space-sm);
-
   /* Options block — slightly tighter inter-button gap so the option
    * column reads as a single answer group rather than a list. */
   --tugx-question-option-gap: var(--tug-space-2xs);
@@ -109,21 +99,6 @@ body {
   /* Single-question payload preserves the legacy compact layout. */
   --tugx-question-single-options-padding: 0;
 }
-
-/* Frame width override — scoped to the question dialog so permission
- * dialogs keep their CTA-sized 520 px presence. */
-.tide-question-dialog {
-  --tugx-idialog-max-width: var(--tugx-question-frame-width);
-}
-
-/* Actions-row separation (Mac HIG opposed-choices layout) is now
- * owned by `TideInteractiveDialog` ([D03]) — it applies to the
- * whole interactive-dialog family via the `.tide-interactive-dialog
- * [data-slot="tug-inline-dialog-actions"]` rule in
- * `tide-interactive-dialog.css`. The previous local override here
- * was removed when QuestionDialog migrated onto the primitive
- * (Step 3). PermissionDialog inherited the same layout via the
- * same migration. */
 
 /* ---- Wizard rail ---- */
 
@@ -300,28 +275,6 @@ body {
   gap: var(--tugx-question-option-gap);
 }
 
-/* ---- Actions row (above the question stack) ---- */
-
-/* Hosts all four buttons in one stable row above the questions:
- *   [← Back][Next →]               [Cancel][Submit]
- * Two clusters, `space-between` pacing — wizard nav on the leading
- * edge, dialog controls on the trailing edge. The whole row holds
- * its position across question advances so the click target never
- * moves out from under the mouse. */
-.tide-question-dialog-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--tugx-question-nav-gap);
-  margin-bottom: var(--tug-space-md);
-}
-
-.tide-question-dialog-actions-nav,
-.tide-question-dialog-actions-dialog {
-  display: flex;
-  gap: var(--tug-space-xs);
-}
-
 /* ---- Single-question payload — collapse the wizard chrome ---- */
 
 /* When only one question is presented, the dialog's `description`
@@ -331,7 +284,7 @@ body {
  * dialog. The wrapper still mounts `CurrentRow` for code-path
  * uniformity; CSS just hides the chrome. Back / Next isn't an
  * issue for single-question payloads — the dialog component omits
- * the `extraActions` group when there is nothing to navigate. */
+ * the `leadingActions` group when there is nothing to navigate. */
 .tide-question-dialog-questions:has(> .tide-question-dialog-row:only-child)
   > .tide-question-dialog-row[data-status="current"] {
   background: transparent;

@@ -1,56 +1,61 @@
 /**
- * `TugInlineDialog` — inline confirm/cancel dialog primitive.
+ * `TugInlineDialog` — inline header-bar dialog primitive.
  *
- * The inline counterpart to `TugAlert`: same icon-left / title +
- * description-right / actions-bottom-right proportions, but rendered
- * inline in transcript flow (or any other ambient layout) rather than
- * as an app-modal overlay. Used as the visual primitive for
- * permission prompts ([D13]), upcoming question dialogs ([#step-19]),
- * and any future inline-CTA confirm need.
+ * The inline counterpart to `TugAlert`: same icon + title + description
+ * vocabulary, but rendered inline in transcript flow (or any other
+ * ambient layout) rather than as an app-modal overlay. Used as the
+ * visual primitive for `PermissionDialog` and `QuestionDialog`, and
+ * any future inline-CTA need.
  *
  * Public surface (see `TugInlineDialogProps` for the full contract):
  *
- *   - `icon` — any React node; the consumer chooses the shape.
+ *   - `icon` — any React node; the consumer chooses the shape. The
+ *     primitive sizes the visible icon column to 20 px and tints the
+ *     glyph via `iconRole`. The icon's vertical center sits on the
+ *     title's first-line center (via `height: calc(font-size ×
+ *     line-height)`), so it stays correctly aligned whether or not a
+ *     description follows.
  *   - `iconRole` — tone for the icon's `color` (one of five named
- *     roles). The fixed 48 px shape and size match `TugAlert` so the
- *     two read as the same family; the `color` token differs per role.
- *   - `title` — strong CTA, plain string, 1 rem / 600 / leading 1.4.
- *   - `description` — rich ReactNode; can carry inline icons and
- *     `<code>`. The cohesive sentence belongs here; do not fragment
- *     the same idea across multiple slots.
- *   - `children` — free-form region between description and any
- *     options/actions (body picker, supplementary content). Left-aligned
- *     with the description text column.
- *   - `options` + `selectedOption` + `onSelectOption` — optional radio
- *     group of `TugDialogButton`s rendered between the children slot
- *     and the actions row. Mandatory single-select: clicking a row
- *     picks it; the only escape from the choice is the cancel
- *     button. Consumers read `selectedOption` from their own state to
- *     decide what `onConfirm` should commit.
- *   - `confirmLabel` + `confirmRole` — the primary action, always
- *     right-most, filled-{role}.
- *   - `cancelLabel` + `onCancel` — the cancel action, immediately to
- *     the left of confirm; `cancelLabel: null` suppresses the cancel
- *     button entirely (single-action dialogs).
+ *     roles).
+ *   - `title` — strong CTA, plain string.
+ *   - `description` — optional rich ReactNode rendered inline with
+ *     the title on a baseline-aligned, wrap-able text column. Can
+ *     carry inline icons and `<code>`.
+ *   - `leadingActions` — optional cluster rendered on the leading
+ *     edge of the header row, right after the icon. Use for wizard
+ *     navigation (`Back` / `Next`) or any secondary controls that
+ *     belong on the same row as the title.
+ *   - `actions` — optional cluster rendered on the trailing edge of
+ *     the header row. Use for the dialog's primary controls (`Allow`
+ *     / `Deny`, `Cancel` / `Submit`). Callers own the buttons and
+ *     therefore own focus management — pass a `ref` through if you
+ *     want focus-on-mount.
+ *   - `children` — free-form body region rendered between the header
+ *     row and the options block. The per-tool body (`DiffBlock`,
+ *     `JsonTreeBlock`, transcript-wrapper preview) goes here.
+ *   - `options` + `selectedOption` + `onSelectOption` — optional
+ *     radio-group of `TugDialogButton`s. Centered, capped at 450 px
+ *     wide regardless of frame width. Mandatory single-select.
  *
- * Layout (`max-width` ~520 px via `--tugx-idialog-max-width`):
+ * Layout:
  *
- *   +------------------------------------------+
- *   | [Icon]  Title                            |
- *   |         Description (ReactNode)          |
- *   |         [children]                       |
- *   |         [options — radio TugDialogButton]|
- *   |                                          |
- *   |                  [Cancel]  [Confirm]     |
- *   +------------------------------------------+
+ *   +------------------------------------------------------------+
+ *   | [icon] [leadingActions] [title — description] [actions]    |
+ *   |                                                            |
+ *   | {children — full width}                                    |
+ *   |                                                            |
+ *   |               [options — 450 px centered]                  |
+ *   +------------------------------------------------------------+
  *
- * The dialog is centered horizontally via `margin: auto` and never
- * stretches to fill its container — uniform CTA presence wherever it
- * mounts.
+ * The header row uses a single flex container with the text column
+ * set to `flex: 1 1 auto`, which absorbs the available space between
+ * `leadingActions` and `actions`. When `leadingActions` is omitted
+ * (the PermissionDialog shape), the text column grows from right
+ * after the icon up to the trailing `actions` cluster.
  *
  * Laws:
- *  - [L06] appearance via DOM attributes (`data-icon-role`) + CSS, not
- *    React state. The `iconRole` flips a CSS selector; the icon's
+ *  - [L06] appearance via DOM attributes (`data-icon-role`) + CSS,
+ *    not React state. The `iconRole` flips a CSS selector; the icon's
  *    `color` is owned by the rule, not by inline `style`.
  *  - [L17] every `--tugx-idialog-*` slot resolves to a `--tug7-*` /
  *    `--tug-*` base token in one hop.
@@ -58,14 +63,11 @@
  *    exported props interface, `data-slot="tug-inline-dialog"` on the
  *    root.
  *  - [L20] component-token sovereignty — owns the `--tugx-idialog-*`
- *    slot family ([Table T07]); composes no other component's tokens.
+ *    slot family; composes no other component's tokens.
  *  - [L24] state zoning — no React state inside the primitive (it is
  *    a stateless presentation surface; consumers own the open/close
- *    lifecycle and the `selectedOption` value when options are used).
- *
- * Decisions:
- *  - [D13] inline (not modal) prompts; primary action focused on
- *    mount via `useLayoutEffect` so a Return key answers the prompt.
+ *    lifecycle, the `selectedOption` value when options are used, and
+ *    focus management for whatever buttons they pass in `actions`).
  *
  * @module components/tugways/tug-inline-dialog
  */
@@ -76,7 +78,6 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { TugDialogButton } from "./tug-dialog-button";
-import { TugPushButton } from "./tug-push-button";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -91,29 +92,10 @@ export type TugInlineDialogIconRole =
   | "info";
 
 /**
- * Confirm-button color domain. `action` paints the standard primary
- * action; `danger` paints destructive-confirm chrome (Discard, Delete).
- */
-export type TugInlineDialogConfirmRole = "action" | "danger";
-
-/**
- * Cancel-button color domain. Same union as confirm, but applies to
- * the leading-edge outlined button — `danger` reads as a "walk-away"
- * destructive-secondary in the Mac HIG vocabulary.
- */
-export type TugInlineDialogCancelRole = "action" | "danger";
-
-/**
  * Descriptor for a single option in the dialog's radio group. Options
- * are mandatory-single-select per the [#step-18-6] design preview:
- * one is always chosen, and the only path out of the choice is the
- * dialog's cancel button (the off-ramp).
- *
- * Consumers (e.g. `PermissionDialog`'s `permission_suggestions` flow,
- * future `QuestionDialog`'s option list) build an array of these and
- * pair it with a `selectedOption` value + `onSelectOption` callback.
- * Reading the selected value at confirm time is the consumer's job —
- * the primitive is presentational only.
+ * are mandatory-single-select: one is always chosen, and the only
+ * path out of the choice is whatever button the consumer renders in
+ * `actions`.
  */
 export interface TugInlineDialogOption {
   /** Stable identifier; matched against {@link TugInlineDialogProps.selectedOption}. */
@@ -127,9 +109,7 @@ export interface TugInlineDialogOption {
   description?: React.ReactNode;
   /**
    * Color domain for the row. `action` (default) paints the standard
-   * outline; `danger` paints the destructive variant. The selection
-   * affordance picks up the row's role tint per `TugDialogButton`'s
-   * cascade.
+   * outline; `danger` paints the destructive variant.
    *
    * @default "action"
    */
@@ -141,8 +121,9 @@ export interface TugInlineDialogOption {
 export interface TugInlineDialogProps {
   /**
    * Icon node — typically a Lucide component. The primitive sizes the
-   * column to 48 px and tints the rendered icon's `color` via
-   * `iconRole`; the consumer chooses the shape.
+   * column to 20 px and tints the rendered icon's `color` via
+   * `iconRole`. The icon's vertical center is pinned to the title's
+   * first-line center.
    */
   icon: React.ReactNode;
   /**
@@ -156,35 +137,46 @@ export interface TugInlineDialogProps {
   /** Strong call-to-action title. Plain string. */
   title: string;
   /**
-   * Rich description — ReactNode so consumers can embed inline icons
-   * and `<code>` (e.g. `"This command requires approval · "` +
-   * `<Shell />` + `" Bash · "` + `<code>tokei</code>`). The cohesive
-   * sentence belongs here; do not fragment the same idea across
-   * multiple slots.
+   * Optional rich description — ReactNode so consumers can embed
+   * inline icons and `<code>`. The cohesive sentence belongs here;
+   * do not fragment the same idea across multiple slots.
    */
-  description: React.ReactNode;
+  description?: React.ReactNode;
   /**
-   * Free-form region inside the text column between the description
-   * and the dialog's options/actions block. For an Edit confirm: a
-   * `DiffBlock`. For a question: supplementary context. *Choices go
-   * on `options` instead* — the primitive owns the radio-group
-   * layout, ARIA semantics, and selection rendering.
+   * Optional cluster of controls rendered on the leading edge of the
+   * header row, immediately after the icon. Use for wizard navigation
+   * (`Back` / `Next`) or any secondary controls that belong on the
+   * same row as the title. When omitted, the text column extends from
+   * right after the icon up to the trailing `actions` cluster.
+   */
+  leadingActions?: React.ReactNode;
+  /**
+   * Optional cluster of controls rendered on the trailing edge of the
+   * header row. Use for the dialog's primary controls (`Allow` /
+   * `Deny`, `Cancel` / `Submit`). Callers own the buttons and
+   * therefore own focus management.
+   */
+  actions?: React.ReactNode;
+  /**
+   * Free-form body region inside the dialog between the header row
+   * and the options block. For an Edit confirm: a `DiffBlock`. For a
+   * Bash request: nothing (the command sits in the description).
+   * For a question wizard: the question accordion.
    *
-   * Left-aligned with the description text column (not the icon).
+   * Body content is full-width by default; consumers can constrain it
+   * via local styling if needed.
    */
   children?: React.ReactNode;
   /**
-   * Optional radio-group of choices. Rendered between the children
-   * slot and the cancel/confirm row, one row per choice
-   * ([#step-18-6] one-per-row pattern). When set, consumers MUST
-   * also provide {@link selectedOption} + {@link onSelectOption}; the
-   * group is mandatory-single-select (no toggle-off — the cancel
-   * button is the off-ramp).
+   * Optional radio-group of choices. Rendered below the body, one row
+   * per choice, centered and capped at 450 px wide. When set,
+   * consumers MUST also provide {@link selectedOption} +
+   * {@link onSelectOption}; the group is mandatory-single-select.
    */
   options?: ReadonlyArray<TugInlineDialogOption>;
   /**
-   * The currently selected option's `value`. Required when {@link
-   * options} is set; ignored otherwise. The primitive is fully
+   * The currently selected option's `value`. Required when
+   * {@link options} is set; ignored otherwise. The primitive is fully
    * controlled — it never tracks the selection internally.
    */
   selectedOption?: string;
@@ -197,68 +189,9 @@ export interface TugInlineDialogProps {
   onSelectOption?: (value: string) => void;
   /**
    * Optional ARIA label for the radio-group container. Defaults to
-   * the dialog's title when omitted. Useful when the title alone
-   * isn't a faithful description of what the radio group selects
-   * (e.g. "Permission requested" + a scope picker).
+   * the dialog's title when omitted.
    */
   optionsAriaLabel?: string;
-  /** Primary action label. */
-  confirmLabel: string;
-  /**
-   * Confirm-button color domain. `action` → filled-action (default),
-   * `danger` → filled-danger.
-   *
-   * @default "action"
-   */
-  confirmRole?: TugInlineDialogConfirmRole;
-  /**
-   * Visually + behaviorally disable the confirm button. Use this when
-   * the dialog gates submission on local state (e.g. the question
-   * wizard waits until all questions are answered before lighting up
-   * "Submit all"). The button stays in the tab order and announces
-   * `aria-disabled="true"`, mirroring TugButton's chain-action gate
-   * — never the HTML `disabled` so screen readers still read the
-   * label and the focus stack doesn't shift on each toggle.
-   *
-   * @default false
-   */
-  confirmDisabled?: boolean;
-  /** Fired when the user clicks the confirm button. */
-  onConfirm: () => void;
-  /**
-   * Cancel button label. Defaults to {@link DEFAULT_CANCEL_LABEL}.
-   * Pass `null` to suppress the cancel button entirely.
-   *
-   * @default "Cancel"
-   */
-  cancelLabel?: string | null;
-  /**
-   * Cancel-button colour domain. `"action"` (the default) renders the
-   * cancel as an outlined-action — same neutral tone as the existing
-   * permission and alert flows. `"danger"` renders it as an
-   * outlined-danger so it reads as a "walk away from this" choice
-   * (Mac HIG `Don't Save` vocabulary) — the question dialog uses
-   * this so the leading-edge button visibly differs from the
-   * trailing-edge primary.
-   *
-   * @default "action"
-   */
-  cancelRole?: TugInlineDialogCancelRole;
-  /** Fired when the user clicks the cancel button. Ignored when `cancelLabel` is `null`. */
-  onCancel?: () => void;
-  /**
-   * Suppress the cancel + confirm actions row entirely. Use when the
-   * consumer renders its own action surface inside `children` — e.g.
-   * the question-dialog wizard hoists Back / Next / Cancel / Submit
-   * into one row above the question stack so the buttons hold a
-   * stable position across question advances. When `true`, the
-   * mount-time focus on the confirm button is also skipped (the ref
-   * is null); the consumer is responsible for focusing whatever
-   * primary action it renders.
-   *
-   * @default false
-   */
-  hideActions?: boolean;
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
 }
@@ -266,9 +199,6 @@ export interface TugInlineDialogProps {
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for the test suite.
 // ---------------------------------------------------------------------------
-
-/** Default cancel-button label when the consumer omits `cancelLabel`. */
-export const DEFAULT_CANCEL_LABEL = "Cancel";
 
 /** Every {@link TugInlineDialogIconRole}, in declaration order. Pinned for tests. */
 export const TUG_INLINE_DIALOG_ICON_ROLES: ReadonlyArray<TugInlineDialogIconRole> =
@@ -281,19 +211,6 @@ export const TUG_INLINE_DIALOG_ICON_ROLES: ReadonlyArray<TugInlineDialogIconRole
  */
 export function iconRoleSlot(role: TugInlineDialogIconRole): string {
   return `--tugx-idialog-icon-${role}-color`;
-}
-
-/**
- * Resolve the cancel-label to render. Returns `null` for the
- * "suppress the cancel button" branch (consumer passed `null`
- * explicitly), the default label when the consumer omits the prop,
- * and the consumer's value otherwise. Pure; exported for tests.
- */
-export function resolveCancelLabel(
-  cancelLabel: string | null | undefined,
-): string | null {
-  if (cancelLabel === null) return null;
-  return cancelLabel ?? DEFAULT_CANCEL_LABEL;
 }
 
 /**
@@ -311,7 +228,7 @@ export function shouldRenderOptions(
 // ---------------------------------------------------------------------------
 
 /**
- * Inline confirm/cancel dialog primitive. See module docstring for the
+ * Inline header-bar dialog primitive. See module docstring for the
  * layout, prop contract, and law cross-check.
  */
 export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
@@ -319,35 +236,25 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
   iconRole = "default",
   title,
   description,
+  leadingActions,
+  actions,
   children,
   options,
   selectedOption,
   onSelectOption,
   optionsAriaLabel,
-  confirmLabel,
-  confirmRole = "action",
-  confirmDisabled = false,
-  onConfirm,
-  cancelLabel,
-  cancelRole = "action",
-  onCancel,
-  hideActions = false,
   className,
 }) => {
-  const confirmRef = React.useRef<HTMLButtonElement | null>(null);
-
-  // [D13] — focus the primary action button on mount so a Return key
-  // answers the prompt without an explicit click. Mount-once: the
-  // primitive itself doesn't track open/close (stateless); a re-mount
-  // is the consumer's signal to refocus. When `hideActions` is set the
-  // confirm button is not rendered, so the ref is null and this is a
-  // no-op — the consumer focuses its own primary action.
-  React.useLayoutEffect(() => {
-    confirmRef.current?.focus();
-  }, []);
-
-  const resolvedCancelLabel = resolveCancelLabel(cancelLabel);
-  const hasChildren = children !== undefined && children !== null && children !== false;
+  const hasDescription =
+    description !== undefined && description !== null && description !== false;
+  const hasLeadingActions =
+    leadingActions !== undefined &&
+    leadingActions !== null &&
+    leadingActions !== false;
+  const hasActions =
+    actions !== undefined && actions !== null && actions !== false;
+  const hasChildren =
+    children !== undefined && children !== null && children !== false;
   const renderOptions = shouldRenderOptions(options);
 
   return (
@@ -356,23 +263,44 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
       data-icon-role={iconRole}
       className={cn("tug-inline-dialog", className)}
     >
-      <div className="tug-inline-dialog-body-row">
-        <div className="tug-inline-dialog-icon" aria-hidden="true">
+      <div
+        className="tug-inline-dialog-row"
+        data-slot="tug-inline-dialog-row"
+      >
+        <span className="tug-inline-dialog-icon" aria-hidden="true">
           {icon}
-        </div>
+        </span>
+        {hasLeadingActions ? (
+          <div
+            className="tug-inline-dialog-leading-actions"
+            data-slot="tug-inline-dialog-leading-actions"
+          >
+            {leadingActions}
+          </div>
+        ) : null}
         <div className="tug-inline-dialog-text">
           <h3 className="tug-inline-dialog-title">{title}</h3>
-          <div className="tug-inline-dialog-description">{description}</div>
-          {hasChildren ? (
-            <div
-              className="tug-inline-dialog-children"
-              data-slot="tug-inline-dialog-children"
-            >
-              {children}
-            </div>
+          {hasDescription ? (
+            <div className="tug-inline-dialog-description">{description}</div>
           ) : null}
         </div>
+        {hasActions ? (
+          <div
+            className="tug-inline-dialog-actions"
+            data-slot="tug-inline-dialog-actions"
+          >
+            {actions}
+          </div>
+        ) : null}
       </div>
+      {hasChildren ? (
+        <div
+          className="tug-inline-dialog-body"
+          data-slot="tug-inline-dialog-body"
+        >
+          {children}
+        </div>
+      ) : null}
       {renderOptions ? (
         <div
           className="tug-inline-dialog-options"
@@ -394,31 +322,6 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
           ))}
         </div>
       ) : null}
-      {hideActions ? null : (
-        <div
-          className="tug-inline-dialog-actions"
-          data-slot="tug-inline-dialog-actions"
-        >
-          {resolvedCancelLabel !== null ? (
-            <TugPushButton
-              emphasis="outlined"
-              role={cancelRole}
-              onClick={onCancel}
-            >
-              {resolvedCancelLabel}
-            </TugPushButton>
-          ) : null}
-          <TugPushButton
-            ref={confirmRef}
-            emphasis="filled"
-            role={confirmRole}
-            disabled={confirmDisabled}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </TugPushButton>
-        </div>
-      )}
     </div>
   );
 };

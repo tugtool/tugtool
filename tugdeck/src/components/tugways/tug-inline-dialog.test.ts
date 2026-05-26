@@ -3,22 +3,19 @@
  *
  * `TugInlineDialog` is a presentation primitive — its observable
  * behaviour is its prop-to-DOM mapping plus a small set of exported
- * helpers (`iconRoleSlot`, `resolveCancelLabel`, `shouldRenderOptions`,
- * the `TUG_INLINE_DIALOG_ICON_ROLES` enumeration). Per project policy
+ * helpers (`iconRoleSlot`, `shouldRenderOptions`, the
+ * `TUG_INLINE_DIALOG_ICON_ROLES` enumeration). Per project policy
  * (pure-logic `bun:test` + real-app tests; no fake-DOM render tests),
  * the suite pins those helpers exhaustively. The visual layout +
- * focus-on-mount + the radio-group integration with `TugDialogButton`
- * are vetted in the gallery card and HMR-vetted end-to-end via the
- * `PermissionDialog` adoption.
+ * the radio-group integration with `TugDialogButton` are vetted in
+ * the gallery card and HMR-vetted end-to-end via `PermissionDialog`
+ * and `QuestionDialog`.
  *
  * Coverage:
  *  - `iconRoleSlot` — every declared role maps to its
  *    `--tugx-idialog-icon-{role}-color` slot.
  *  - `TUG_INLINE_DIALOG_ICON_ROLES` lists exactly the five expected
  *    roles in declaration order.
- *  - `resolveCancelLabel` — `undefined` → default; `null` →
- *    suppression; explicit string → passthrough; empty string →
- *    passthrough (the consumer's choice, not a "use default" signal).
  *  - `shouldRenderOptions` — `undefined` / `[]` → false; non-empty
  *    array → true.
  */
@@ -26,10 +23,8 @@
 import { describe, it, expect } from "bun:test";
 
 import {
-  DEFAULT_CANCEL_LABEL,
   TUG_INLINE_DIALOG_ICON_ROLES,
   iconRoleSlot,
-  resolveCancelLabel,
   shouldRenderOptions,
   type TugInlineDialogIconRole,
   type TugInlineDialogOption,
@@ -67,30 +62,6 @@ describe("TUG_INLINE_DIALOG_ICON_ROLES", () => {
       "success",
       "info",
     ]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveCancelLabel — default / suppression / passthrough
-// ---------------------------------------------------------------------------
-
-describe("resolveCancelLabel", () => {
-  it("returns the default label when the consumer omits the prop", () => {
-    expect(resolveCancelLabel(undefined)).toBe(DEFAULT_CANCEL_LABEL);
-    expect(DEFAULT_CANCEL_LABEL).toBe("Cancel");
-  });
-
-  it("returns null when the consumer passes null (suppress the cancel button)", () => {
-    expect(resolveCancelLabel(null)).toBeNull();
-  });
-
-  it("passes through an explicit string", () => {
-    expect(resolveCancelLabel("Deny")).toBe("Deny");
-    expect(resolveCancelLabel("Discard")).toBe("Discard");
-  });
-
-  it("passes through an empty string verbatim (consumer's choice, not 'use default')", () => {
-    expect(resolveCancelLabel("")).toBe("");
   });
 });
 

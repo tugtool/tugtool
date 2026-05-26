@@ -62,6 +62,7 @@ import { GalleryBanner } from "./gallery-banner";
 import { GalleryCardBanner } from "./gallery-card-banner";
 import { GalleryAlert } from "./gallery-alert";
 import { GalleryTugInlineDialog } from "./gallery-tug-inline-dialog";
+import { GalleryPermissionDialogCompact } from "./gallery-permission-dialog-compact";
 import { GalleryTugDialogButton } from "./gallery-tug-dialog-button";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
@@ -1104,6 +1105,20 @@ export function registerGalleryCards(): void {
     contentFactory: (_cardId) => <GalleryTugInlineDialog />,
     defaultMeta: {
       title: "TugInlineDialog",
+      icon: "ShieldAlert",
+      closable: true,
+    },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.overlays,
+  });
+
+  registerCard({
+    componentId: "gallery-permission-dialog-compact",
+    contentFactory: (_cardId) => <GalleryPermissionDialogCompact />,
+    defaultMeta: {
+      title: "PermissionDialog (compact proposals)",
       icon: "ShieldAlert",
       closable: true,
     },

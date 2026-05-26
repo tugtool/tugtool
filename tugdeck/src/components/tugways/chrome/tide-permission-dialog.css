@@ -1,11 +1,10 @@
 /* @tug-pairings:
    - --tugx-perm-reason-color    | --tugx-idialog-bg    (muted-italic reason span inside the pending dialog's description)
    `PermissionDialog` is pending-only post-Step-3.5 (`#step-3-5`).
-   The visible chrome is delegated entirely to `TideInteractiveDialog`
-   → `TugInlineDialog`. This stylesheet keeps only the small set of
-   inline-fragment styles the pending dialog drops into the
-   primitive's `description` slot (an inline Shell glyph nudge, a
-   muted-italic reason-line span).
+   The visible chrome is delegated entirely to `TugInlineDialog`.
+   This stylesheet keeps only the small set of inline-fragment styles
+   the pending dialog drops into the primitive's `description` slot
+   (an inline Shell glyph nudge, a muted-italic reason-line span).
 */
 
 /**
@@ -13,12 +12,11 @@
  *
  * `PermissionDialog` has a single visible state — *pending* — after
  * Step 3.5 removed the recorded chrome (JSONL has no durable record
- * to reconstruct one from; see `roadmap/tide-interactive-dialogs.md`
- * `#step-3-5`). The pending dialog composes `TideInteractiveDialog`
- * (owns the cancel-role + actions-row family defaults) which in turn
- * composes on `TugInlineDialog` (owns `--tugx-idialog-*` and the
- * dialog frame). The only things this file owns are two small inline
- * fragments dropped into the dialog's `description` slot:
+ * to reconstruct one from; see `roadmap/archive/tide-interactive-dialogs.md`
+ * `#step-3-5`). The pending dialog composes `TugInlineDialog`
+ * (owns `--tugx-idialog-*` and the dialog frame). The only things
+ * this file owns are two small inline fragments dropped into the
+ * dialog's `description` slot:
  *
  *   - `.tide-permission-dialog-inline-icon` — the vertical-align
  *     nudge for the inline Shell glyph embedded in the rich Bash
