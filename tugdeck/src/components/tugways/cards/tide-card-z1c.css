@@ -21,10 +21,10 @@
  * @module components/tugways/cards/tide-card-z1c
  */
 
-/* Hook scope only — present so any future indicator-specific tweaks
-   (vertical nudge, custom bar width, etc.) attach by data-slot rather
-   than by relying on the inflightFooter wrapper's selector. */
+/* Z1C indicator nudge — push 2 × `--tug-space-xs` (8 px) right so
+ * the thinking bars don't sit flush against the body-column edge
+ * underneath the identifier line. Twice the standard inline spacing
+ * unit reads as a deliberate gutter without losing alignment. */
 [data-slot="tide-z1c"] {
-  /* No declarations yet — the inflightFooter slot's flex / margin /
-     padding own the row-level positioning. */
+  margin-left: var(--tug-space-xs);
 }
