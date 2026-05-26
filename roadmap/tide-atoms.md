@@ -807,6 +807,57 @@ No failure is silent. No failure drops the user's submission without surfacing.
 
 ---
 
+#### Step 3.5: Drop UX polish — drag-level rejection, off-thread downsample, skeleton fidelity {#step-3-5}
+
+**Depends on:** #step-3
+
+**Commit:** `fix(tugdeck): drag-level rejection, worker downsample, skeleton polish`
+
+**References:** [D02](#d02-image-attach-text-rest), [D05](#d05-client-downsample), [Risk R01](#r01-canvas-blocking), [Spec S02](#s02-atom-bytes-store), [Spec S04](#s04-image-downsample), [List L03](#l03-atom-to-wire-mapping), (#strategy)
+
+**Why this step exists:** Step 3 shipped the wire flattening, text-attachment support, and a v1 skeleton-atom drop UX. Live testing surfaced four defects the v1 design didn't anticipate:
+
+1. **Banner cascade.** `tide-card.tsx`'s `sessionErrored` check treats *any* `lastError` (except `resume_failed`) as "session is dead", showing the unplug-icon alert dialog. When the new `attachment_rejected` cause landed there, dropping a PDF triggered the catastrophic session-failure dialog. The cause is transient input feedback, not a dead session.
+2. **Drop-time rejection feels overblown.** The v1 design accepts an unsupported drop and then surfaces a banner explaining it was rejected. The browser drag-and-drop API supports rejection *at hover time* via the `dragover` handler's `preventDefault` gate — the OS shows the no-drop cursor and the drop event never fires. The right model rejects at the cursor, not via a post-drop banner.
+3. **Main thread blocked during encode.** v1's `paintTo` + `convertToBlob` run on the main thread (even with `OffscreenCanvas`, since the canvas was never transferred to a Worker). A 25 MB image jams the UI for ~2 s — keystrokes, scrolls, button clicks all stalled. The right answer is a true Web Worker that owns an `OffscreenCanvas` via `transferControlToOffscreen`.
+4. **Skeleton atom appearance + render bugs.** The v1 `opacity: 0.55` + pulse reads as "slightly dim" rather than "actively processing". And dropping into a brand-new, empty editor sometimes shows nothing at all (the atom is inserted but doesn't render — likely a focus / measure timing issue).
+
+This step closes all four. Worker-bound canvas pipeline is the load-bearing piece; the others are smaller cleanups that hang off the same UX rework.
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/cards/tide-card.tsx` — `sessionErrored` excludes `attachment_rejected` alongside `resume_failed`. The banner still surfaces via the existing banner channel; only the session-dead overlay path is bypassed.
+- `tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts` — `dragover` handler examines `event.dataTransfer.items` and refuses (no `preventDefault`) when every item has a known-unsupported MIME (`application/pdf`, `application/zip`, `audio/*`, `video/*`, etc.). Drop-time rejection banner is removed; the cursor signal replaces it. The drop handler silently skips unsupported items in mixed drops.
+- New `tugdeck/src/lib/workers/image-downsample-worker.ts` — Web Worker that owns the canvas pipeline. Decodes via `createImageBitmap`, resizes via `OffscreenCanvas`, encodes via `convertToBlob`, posts the result back. All heavy work off the main thread.
+- `tugdeck/src/lib/image-downsample.ts` — main-thread `downsampleImage` becomes a thin client that spawns a worker (one per call), posts the Blob, awaits the result, terminates the worker. `bakeThumbnail` follows the same shape.
+- `tugdeck/src/components/tugways/tug-text-editor/atom-decoration.ts` — `pendingAtomTheme` rewritten: wider pulse amplitude (0.45 ↔ 0.95), animated icon-slot spinner, ellipsis suffix on the label so the chip clearly reads "this is processing".
+- `tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts` (insertion path) — after `insertAtomsAt`, dispatch `view.focus()` + `view.requestMeasure({ read() { return null; } })` so a drop on an unfocused / unmeasured editor doesn't drop the skeleton paint on the floor.
+
+**Tasks:**
+- [ ] **3.5.1 — Banner cascade fix.** In `tide-card.tsx:1847-1849`, extend the `sessionErrored` exclusion list to include `"attachment_rejected"`. Add a render test asserting the unplug-icon dialog does not appear for an `attachment_rejected` `lastError`. Per [Table T01](#t01-failure-modes).
+- [ ] **3.5.2 — Drag-level rejection.** `tugDropExtension`'s `dragover` handler walks `event.dataTransfer.items`; if every item's `type` is a known-unsupported MIME, return without `preventDefault`. Otherwise preventDefault (accept). Drop handler's branch 3 stops surfacing the rejection banner — silently skip unsupported items (they're already rejected at the cursor level for pure-unsupported drops; mixed drops just process the supported subset).
+- [ ] **3.5.3 — Web Worker downsample.** New `tugdeck/src/lib/workers/image-downsample-worker.ts`. Main-thread `downsampleImage` spawns a worker, posts `{ blob }`, awaits `{ ok: true, result } | { ok: false, error }`, terminates. `isAnimatedGif` (synchronous parser) stays main-thread — it's microseconds and avoids the worker round-trip.
+- [ ] **3.5.4 — Skeleton visual polish.** Rewrite `pendingAtomTheme` with stronger opacity floor + amplitude. Add a CSS-animated spinner glyph rendered inside the chip's icon slot via a separate SVG overlay (positioned absolute on top of the atom `<img>`) — keeps the atom widget itself unchanged. Append `…` to the chip label for pending atoms.
+- [ ] **3.5.5 — Empty-editor skeleton-render fix.** After `insertAtomsAt` in `drop-extension.ts`, call `view.focus()` (no-op when already focused) and `view.requestMeasure({ read: () => null })` to force a layout pass. Add a manual checkpoint: open a fresh card with no content, drop a PNG → skeleton atom must appear at the drop point.
+
+**Tests:**
+- [ ] `unit: dragover with all-unsupported items → returns without preventDefault` (synthetic `DragEvent` with `dataTransfer.items` mock; verify the handler's return value)
+- [ ] `unit: dragover with at least one image item → preventDefault is called`
+- [ ] `unit: dragover with at least one text MIME item → preventDefault is called`
+- [ ] `unit: dragover with all empty-MIME items → preventDefault is called (extension fallback at drop time)`
+- [ ] `unit: tide-card-banner-spec — lastError.cause === "attachment_rejected" produces a banner, not a session-dead overlay` (extend existing banner-spec tests)
+- [ ] `unit: worker downsample wrapper — posting a synthetic blob returns the expected result shape (using a Worker mock)` — pure-logic-testable parts only; canvas work is real-app verified.
+- [ ] Manual: drop a 25 MB PNG; observe the editor stays responsive to keystrokes throughout encoding.
+- [ ] Manual: drop a PDF onto the editor; observe the OS no-drop cursor; release; observe no banner / no atom appears.
+- [ ] Manual: open a fresh card with empty editor; drop a PNG; skeleton atom appears immediately at the drop point.
+
+**Checkpoint:**
+- [ ] `bun test` clean
+- [ ] `bun run check` clean
+- [ ] `bun run audit:tokens lint` clean
+- [ ] Manual: all three drop scenarios above behave correctly.
+
+---
+
 #### Step 4: Completion-time secret-file filter + `.tugattachignore` {#step-4}
 
 **Depends on:** (none — independent of Steps 1-3)
