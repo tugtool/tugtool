@@ -18,9 +18,9 @@
  *   - `iconRole` — tone for the icon's `color` (one of five named
  *     roles).
  *   - `title` — strong CTA, plain string.
- *   - `description` — optional rich ReactNode rendered inline with
- *     the title on a baseline-aligned, wrap-able text column. Can
- *     carry inline icons and `<code>`.
+ *   - `description` — optional rich ReactNode rendered on its own
+ *     row directly below the header bar (between the header and the
+ *     body slot). Can carry inline icons and `<code>`.
  *   - `leadingActions` — optional cluster rendered on the leading
  *     edge of the header row, right after the icon. Use for wizard
  *     navigation (`Back` / `Next`) or any secondary controls that
@@ -40,18 +40,19 @@
  * Layout:
  *
  *   +------------------------------------------------------------+
- *   | [icon] [leadingActions] [title — description] [actions]    |
- *   |                                                            |
+ *   | [icon] [leadingActions] [title]            [actions]       |  ← fixed-height header
+ *   | description                                                |
  *   | {children — full width}                                    |
- *   |                                                            |
  *   |               [options — 450 px centered]                  |
  *   +------------------------------------------------------------+
  *
- * The header row uses a single flex container with the text column
- * set to `flex: 1 1 auto`, which absorbs the available space between
- * `leadingActions` and `actions`. When `leadingActions` is omitted
- * (the PermissionDialog shape), the text column grows from right
- * after the icon up to the trailing `actions` cluster.
+ * The header row uses a single fixed-height flex container with the
+ * title set to `flex: 1 1 auto`, which absorbs the available space
+ * between `leadingActions` and `actions`. When `leadingActions` is
+ * omitted (the PermissionDialog shape), the title grows from right
+ * after the icon up to the trailing `actions` cluster. All header
+ * elements are vertically centered. Description, body, and options
+ * stack as their own rows below.
  *
  * Laws:
  *  - [L06] appearance via DOM attributes (`data-icon-role`) + CSS,
@@ -278,12 +279,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
             {leadingActions}
           </div>
         ) : null}
-        <div className="tug-inline-dialog-text">
-          <h3 className="tug-inline-dialog-title">{title}</h3>
-          {hasDescription ? (
-            <div className="tug-inline-dialog-description">{description}</div>
-          ) : null}
-        </div>
+        <h3 className="tug-inline-dialog-title">{title}</h3>
         {hasActions ? (
           <div
             className="tug-inline-dialog-actions"
@@ -293,6 +289,9 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
           </div>
         ) : null}
       </div>
+      {hasDescription ? (
+        <div className="tug-inline-dialog-description">{description}</div>
+      ) : null}
       {hasChildren ? (
         <div
           className="tug-inline-dialog-body"

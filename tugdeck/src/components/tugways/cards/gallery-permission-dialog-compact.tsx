@@ -197,7 +197,7 @@ const LIVE_BASH_REQUEST: ControlRequestForward = {
   request_id: "gallery-permission-dialog-compact:bash",
   is_question: false,
   tool_name: "Bash",
-  input: { command: "tokei" },
+  input: { command: "tokei qwodihqwd oqwih qwoihqw oqwdoihqwd qwdohqwd qwdoih qwdoihqwdoih " },
   permission_suggestions: [
     {
       behavior: "allow",

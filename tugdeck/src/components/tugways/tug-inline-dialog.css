@@ -37,8 +37,11 @@
 /* ---- Component-tier aliases — inline-dialog-specific only [L17] ---- */
 
 body {
-  /* Frame */
-  --tugx-idialog-padding:      0.625rem 0.75rem;
+  /* Frame — capped width and centered so the dialog reads as a
+   * distinct CTA box inside its container rather than spanning
+   * the full card width. */
+  --tugx-idialog-max-width:    520px;
+  --tugx-idialog-padding:      0.625rem 0.75rem 1.5rem;
   --tugx-idialog-bg:           var(--tug7-surface-global-primary-normal-raised-rest);
   --tugx-idialog-border:       var(--tug7-element-global-border-normal-default-rest);
   --tugx-idialog-radius:       var(--tug-radius-md);
@@ -47,10 +50,11 @@ body {
   /* Vertical rhythm between header row, body, and options. */
   --tugx-idialog-frame-gap:    0.875rem;
 
-  /* Header row */
+  /* Header row — fixed height; every element (icon, title,
+   * leadingActions, actions) vertically centered. */
+  --tugx-idialog-row-height:        2.25rem;
   --tugx-idialog-row-gap:           0.625rem;
   --tugx-idialog-actions-gap:       0.375rem;
-  --tugx-idialog-text-col-gap:      0.5rem;
 
   /* Icon column — its height matches the title's first-line height
    * (font-size × line-height), so `align-items: center` puts the
@@ -77,7 +81,7 @@ body {
 
   /* Options block (radio stack) — centered, fixed max width. */
   --tugx-idialog-options-gap:       0.25rem;
-  --tugx-idialog-options-max-width: 450px;
+  --tugx-idialog-options-max-width: 435px;
 
   /* Focus ring — for keyboard navigation. */
   --tugx-idialog-focus-ring: var(--tug7-element-global-text-normal-link-rest);
@@ -90,6 +94,8 @@ body {
   flex-direction: column;
   gap: var(--tugx-idialog-frame-gap);
   width: 100%;
+  max-width: var(--tugx-idialog-max-width);
+  margin: 0 auto;
   padding: var(--tugx-idialog-padding);
   background: var(--tugx-idialog-bg);
   color: var(--tugx-idialog-text-color);
@@ -98,32 +104,34 @@ body {
   box-sizing: border-box;
 }
 
-/* ---- Header row (icon + leadingActions + text column + actions) ----
+/* ---- Header row (icon + leadingActions + title + actions) ----
  *
  * Order in the flex row:
- *   [icon] [leadingActions?] [text column grows] [actions?]
+ *   [icon] [leadingActions?] [title grows] [actions?]
  *
- * The text column is `flex: 1 1 auto`, so it absorbs all available
- * inline space — pushing the trailing `actions` cluster to the
- * trailing edge and pinning `leadingActions` (when present) right
- * after the icon at the leading edge.
+ * Fixed height. Every element vertically centered via
+ * `align-items: center`. The title is `flex: 1 1 auto`, so it
+ * absorbs all available inline space — pushing the trailing `actions`
+ * cluster to the trailing edge and pinning `leadingActions` (when
+ * present) right after the icon at the leading edge.
  */
 
 .tug-inline-dialog-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--tugx-idialog-row-gap);
+  min-height: var(--tugx-idialog-row-height);
 }
 
-/* Icon column: its height matches the title's first-line height
- * (font-size × line-height) and `align-items: center` then puts the
- * icon's vertical center on the title's first-line center —
- * regardless of whether a description follows. */
+/* Icon column — square, sized to the icon-size token. The row's
+ * `align-items: center` does the vertical centering. */
 .tug-inline-dialog-icon {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  height: calc(var(--tugx-idialog-title-size) * var(--tugx-idialog-title-leading));
+  justify-content: center;
+  width:  var(--tugx-idialog-icon-size);
+  height: var(--tugx-idialog-icon-size);
   /* color: set by [data-icon-role] selectors below. The icon
    * inherits via SVG `currentColor`. */
 }
@@ -160,26 +168,31 @@ body {
   gap: var(--tugx-idialog-actions-gap);
 }
 
-/* Text column: title + inline description, baseline-aligned and
- * allowed to wrap on narrow widths. Absorbs the row's available
- * inline space via `flex: 1 1 auto`. */
-.tug-inline-dialog-text {
+/* Title: absorbs the row's available inline space, single line.
+ * Truncates with ellipsis on narrow widths rather than wrapping —
+ * the header row is fixed-height by contract. */
+.tug-inline-dialog-title {
   flex: 1 1 auto;
   min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: var(--tugx-idialog-text-col-gap);
-  flex-wrap: wrap;
-}
-
-.tug-inline-dialog-title {
   margin: 0;
   font-size:   var(--tugx-idialog-title-size);
   font-weight: var(--tugx-idialog-title-weight);
   line-height: var(--tugx-idialog-title-leading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Description — its own row below the header bar, before the body
+ * slot and the options stack. Horizontally centered. Negative
+ * vertical margin tightens the gap to its neighbors relative to the
+ * frame's `--tugx-idialog-frame-gap` default (the prompt reads as
+ * tighter-paced supporting copy, not another section). */
 .tug-inline-dialog-description {
+  width: 100%;
+  max-width: var(--tugx-idialog-options-max-width);
+  margin: -0.2rem auto -0.7rem;
+  text-align: center;
   font-size:   var(--tugx-idialog-description-size);
   line-height: var(--tugx-idialog-description-leading);
   opacity:     var(--tugx-idialog-description-opacity);
