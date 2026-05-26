@@ -441,6 +441,32 @@ export const TugConfirmPopover = React.forwardRef<
     ? openProp === true && anchorEl != null
     : undefined;
 
+  // Explicit default-focus target on open. Driven by `confirmRole`
+  // intent, not DOM order:
+  //   - `danger`: Enter should NOT fire a destructive action, so
+  //     focus lands on Cancel. Enter (a native button activation)
+  //     dismisses.
+  //   - `action` / `accent`: Enter accepts. Focus the Confirm
+  //     button so native Enter-on-button activates it. (The filled
+  //     +action default-button registration also wires the global
+  //     Enter→default path, but explicit focus keeps the behaviour
+  //     locked in even when the chain manager isn't in scope.)
+  // We `preventDefault()` so Radix's FocusScope doesn't run its own
+  // first-focusable walk afterwards.
+  const cancelButtonRef = React.useRef<HTMLButtonElement>(null);
+  const confirmButtonRef = React.useRef<HTMLButtonElement>(null);
+  const handleOpenAutoFocus = React.useCallback(
+    (event: Event) => {
+      event.preventDefault();
+      const target =
+        confirmRole === "danger"
+          ? cancelButtonRef.current
+          : confirmButtonRef.current;
+      target?.focus();
+    },
+    [confirmRole],
+  );
+
   return (
     <TugPopover
       ref={popoverRef}
@@ -456,7 +482,11 @@ export const TugConfirmPopover = React.forwardRef<
       {isControlled && (
         <TugPopoverAnchor virtualRef={virtualAnchorRef} />
       )}
-      <TugPopoverContent side={side} sideOffset={sideOffset}>
+      <TugPopoverContent
+        side={side}
+        sideOffset={sideOffset}
+        onOpenAutoFocus={handleOpenAutoFocus}
+      >
         <div
           data-slot="tug-confirm-popover"
           className="tug-confirm-popover"
@@ -465,10 +495,16 @@ export const TugConfirmPopover = React.forwardRef<
           ref={responderRef as (el: HTMLDivElement | null) => void}
         >
           <div className="tug-confirm-popover-actions">
-            <TugPushButton emphasis="ghost" size="sm" onClick={onCancelClick}>
+            <TugPushButton
+              ref={cancelButtonRef}
+              emphasis="ghost"
+              size="sm"
+              onClick={onCancelClick}
+            >
               {cancelLabel}
             </TugPushButton>
             <TugPushButton
+              ref={confirmButtonRef}
               emphasis="filled"
               role={confirmRole}
               size="sm"

@@ -72,6 +72,18 @@ export interface CardMeta {
   title: string;
   icon?: string;
   closable?: boolean;
+  /**
+   * Whether closing the pane requires user confirmation through the
+   * close-confirm popover. Drives single-card panes only — a multi-card
+   * pane always confirms regardless of any per-card value (the host
+   * resolves the rule as `cards.length > 1 || activeMeta.confirmClose`).
+   *
+   * Defaults to `false`: a single-card pane's X-button click and Cmd-W
+   * close the pane immediately. Card types whose contents are not
+   * trivially recoverable (transcripts, drafts, etc.) opt in by setting
+   * this to `true` and pay the two-step close as a guard.
+   */
+  confirmClose?: boolean;
 }
 
 /**

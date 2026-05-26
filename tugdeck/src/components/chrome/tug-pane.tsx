@@ -71,6 +71,20 @@ import {
  */
 export const CARD_TITLE_BAR_HEIGHT = 36;
 
+/**
+ * Imperative handle on CardTitleBar — lets the surrounding TugPane
+ * route the chain-action close (Cmd-W) through the same confirm popover
+ * the X button opens, so a `confirmClose` pane never bypasses the guard.
+ */
+export interface CardTitleBarHandle {
+  /**
+   * Run the title-bar close flow as if the X button had been clicked.
+   * When `confirmClose` is `true` the popover opens; when `false` the
+   * pane closes immediately via `onClose`.
+   */
+  requestClose: () => void;
+}
+
 export interface CardTitleBarProps {
   title: string;
   icon?: string;
@@ -115,10 +129,9 @@ export interface CardTitleBarProps {
    *   - `cardCount <= 1` → "Close Card?" with a "Close" confirm
    *     button.
    *
-   * The popover itself opens for every pane regardless of count — a
-   * plain click on X opens it, and `onClose` fires only once the
-   * user confirms. Option-click on X bypasses the popover and closes
-   * the pane immediately. Either way the X click activates a
+   * Whether the popover opens at all is governed by `confirmClose`,
+   * not this prop. Option-click on X bypasses the popover regardless
+   * and closes the pane immediately. Either way the X click activates a
    * background pane first (the button carries no `data-no-activate`),
    * so the user sees the pane they are about to discard.
    *
@@ -126,24 +139,36 @@ export interface CardTitleBarProps {
    * the prop get the single-card popover copy.
    */
   cardCount?: number;
+  /**
+   * Whether the X button (and the imperative `requestClose()` handle)
+   * routes through the close-confirm popover. When `false`, X-click and
+   * Cmd-W both close the pane immediately — no popover. When `true`,
+   * the popover opens and `onClose` fires only once the user confirms.
+   *
+   * The Option-click escape hatch always closes immediately regardless
+   * of this flag.
+   */
+  confirmClose?: boolean;
   onCollapse: () => void;
   onClose?: () => void;
   onDragStart?: (event: React.PointerEvent) => void;
 }
 
-export function CardTitleBar({
+export const CardTitleBar = React.forwardRef<CardTitleBarHandle, CardTitleBarProps>(
+function CardTitleBar({
   title,
   icon,
   closable = true,
   collapsed,
   cardCount = 1,
+  confirmClose = false,
   onCollapse,
   onClose,
   onDragStart,
   onSettingsClick,
   settingsEnabled = true,
   settingsActive = false,
-}: CardTitleBarProps) {
+}: CardTitleBarProps, ref) {
   const handleTitleBarPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
@@ -192,15 +217,17 @@ export function CardTitleBar({
         event.clientY <= rect.bottom;
       if (!inside) return;
       // Option-click is the power-user escape hatch: close the pane
-      // immediately, no confirmation. A plain click opens the
-      // confirm popover instead — two clicks to discard a pane.
-      if (event.altKey) {
+      // immediately, no confirmation. On a `confirmClose` pane a plain
+      // click opens the confirm popover instead — two clicks to
+      // discard a pane. On a pane that doesn't opt in, a plain click
+      // is functionally identical to Option-click.
+      if (event.altKey || !confirmClose) {
         onClose?.();
       } else {
         closeConfirmPopoverRef.current?.open();
       }
     },
-    [onClose],
+    [onClose, confirmClose],
   );
 
   const handleCloseClick = useCallback(
@@ -212,13 +239,13 @@ export function CardTitleBar({
       // setState(true), a no-op when already open), and the
       // Option-bypass close is safe to repeat — the pane is gone
       // after the first call.
-      if (event?.altKey) {
+      if (event?.altKey || !confirmClose) {
         onClose?.();
         return;
       }
       closeConfirmPopoverRef.current?.open();
     },
-    [onClose],
+    [onClose, confirmClose],
   );
 
   const handleConfirmClose = useCallback(() => {
@@ -229,6 +256,31 @@ export function CardTitleBar({
   const handleCancelClose = useCallback(() => {
     closeConfirmPopoverRef.current?.close();
   }, []);
+
+  // Explicit focus target on popover open. Pane close is a non-
+  // destructive `action`-role confirmation, so Enter should accept —
+  // we focus the Close button by ref rather than relying on Radix
+  // FocusScope's first-focusable default. DOM order of Cancel/Close
+  // is irrelevant to behaviour this way.
+  const popoverCloseButtonRef = useRef<HTMLButtonElement>(null);
+
+  const handlePopoverOpenAutoFocus = useCallback((event: Event) => {
+    event.preventDefault();
+    popoverCloseButtonRef.current?.focus();
+  }, []);
+
+  // Imperative bridge for the surrounding TugPane: route Cmd-W through
+  // the same flow the X button uses, so a `confirmClose` pane gets the
+  // popover on keyboard close too rather than slipping past the guard.
+  React.useImperativeHandle(ref, () => ({
+    requestClose: () => {
+      if (confirmClose) {
+        closeConfirmPopoverRef.current?.open();
+      } else {
+        onClose?.();
+      }
+    },
+  }), [confirmClose, onClose]);
 
   const handleCollapsePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -348,7 +400,11 @@ export function CardTitleBar({
                 data-testid="tug-pane-close-button"
               />
             </TugPopoverAnchor>
-            <TugPopoverContent side="bottom" sideOffset={6}>
+            <TugPopoverContent
+              side="bottom"
+              sideOffset={6}
+              onOpenAutoFocus={handlePopoverOpenAutoFocus}
+            >
               <div
                 data-slot="tug-pane-close-confirm"
                 className="tug-confirm-popover"
@@ -362,8 +418,9 @@ export function CardTitleBar({
                     Cancel
                   </TugPushButton>
                   <TugPushButton
+                    ref={popoverCloseButtonRef}
                     emphasis="filled"
-                    role="danger"
+                    role="action"
                     size="sm"
                     onClick={handleConfirmClose}
                   >
@@ -380,7 +437,7 @@ export function CardTitleBar({
       </div>
     </div>
   );
-}
+});
 
 // ===========================================================================
 // Portal + dirty contexts (card content consumes these)
@@ -728,21 +785,29 @@ export function TugPane({
     };
   }, [stackId, frameEl]);
 
+  // Imperative handle on the title bar so the chain-action close path
+  // can route through the same confirm popover the X button opens.
+  // Wired below into the `TUG_ACTIONS.CLOSE` responder.
+  const titleBarRef = useRef<CardTitleBarHandle>(null);
+
   // Chain-action close (Cmd-W via TUG_ACTIONS.CLOSE). Browser-standard
   // "close the active tab" semantics: multi-tab → remove the active
-  // card; single-tab → close the pane. The title-bar X is a different
-  // gesture (`handleTitleBarClose`), with a different policy: always
-  // closes the entire pane, behind a confirm popover owned by
-  // CardTitleBar.
+  // card with no confirm (one of N tabs is recoverable). Single-tab →
+  // delegate to the title bar's `requestClose()`, which honours the
+  // pane's `confirmClose` policy: opens the popover when the active
+  // card opts in, closes immediately otherwise. This keeps Cmd-W and
+  // the X button symmetric: a pane that confirms on click also
+  // confirms on key, and a pane that doesn't never traps Cmd-W behind
+  // a guard.
   const handleChromeClose = useCallback(() => {
     const currentCards = cardsRef.current;
     const currentActiveId = activeCardIdRef.current;
     if (currentCards && currentCards.length > 1 && currentActiveId) {
       store.removeCard(stackId, currentActiveId);
     } else {
-      onClose?.();
+      titleBarRef.current?.requestClose();
     }
-  }, [onClose, store, stackId]);
+  }, [store, stackId]);
 
   // Title-bar X close. Always closes the entire pane. CardTitleBar
   // is responsible for surfacing the confirm popover before calling
@@ -1465,6 +1530,14 @@ export function TugPane({
 
   const closable = effectiveMeta.closable !== false;
 
+  // Pane-close confirmation policy. Multi-card panes always confirm —
+  // closing the pane discards every hosted tab at once, so the guard is
+  // unconditional. Single-card panes follow the active card's opt-in
+  // (`confirmClose: true` in its registration). Defaults to no
+  // confirm for single-card panes whose card type doesn't opt in.
+  const paneConfirmClose =
+    (cards?.length ?? 1) > 1 || effectiveMeta.confirmClose === true;
+
   const rootRefCallback = useCallback(
     (el: HTMLDivElement | null) => {
       setCardEl(el);
@@ -1509,11 +1582,13 @@ export function TugPane({
           data-collapsed={collapsed ? "true" : "false"}
         >
           <CardTitleBar
+            ref={titleBarRef}
             title={displayTitle}
             icon={effectiveMeta.icon}
             closable={closable}
             collapsed={collapsed}
             cardCount={cards?.length ?? 1}
+            confirmClose={paneConfirmClose}
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}

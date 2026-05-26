@@ -621,6 +621,21 @@ export interface TugPopoverContentProps {
    * @default false
    */
   arrow?: boolean;
+  /**
+   * Override Radix's open-time auto-focus. Radix Popover's `FocusScope`
+   * focuses the first focusable descendant by default, which couples
+   * the Enter-key activation to DOM order rather than caller intent.
+   * Confirm-style popovers should pick the focused button explicitly:
+   *
+   *   - `accept` semantics (Enter should activate the Confirm/primary
+   *     button): pass a handler that `preventDefault()`s and focuses the
+   *     Confirm button ref.
+   *   - `cancel` semantics (Enter should dismiss, used for destructive
+   *     confirmations): same shape, but focus the Cancel button ref.
+   *
+   * Forwarded verbatim to Radix's `Popover.Content`.
+   */
+  onOpenAutoFocus?: (event: Event) => void;
   /** Additional CSS class names. */
   className?: string;
   children: React.ReactNode;
@@ -643,7 +658,15 @@ export interface TugPopoverContentProps {
  */
 export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverContentProps>(
   function TugPopoverContent(
-    { side = "bottom", align = "center", sideOffset = 6, arrow = false, className, children },
+    {
+      side = "bottom",
+      align = "center",
+      sideOffset = 6,
+      arrow = false,
+      onOpenAutoFocus,
+      className,
+      children,
+    },
     forwardedRef,
   ) {
     const overlayRoot = useCanvasOverlay();
@@ -668,6 +691,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           side={side}
           align={align}
           sideOffset={sideOffset}
+          onOpenAutoFocus={onOpenAutoFocus}
           onCloseAutoFocus={ctx?.onCloseAutoFocus}
           // Suppress Radix DismissableLayer's focus-outside dismissal.
           // Focus moving to a sibling element (e.g. the editor under a

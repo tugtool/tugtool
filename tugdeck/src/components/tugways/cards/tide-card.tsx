@@ -2745,7 +2745,7 @@ export function registerTideCard(): void {
   registerCard({
     componentId: "tide",
     contentFactory: (cardId) => <TideCardContent cardId={cardId} />,
-    defaultMeta: { title: "Tide", icon: "MessageSquareText", closable: true },
+    defaultMeta: { title: "Tide", icon: "MessageSquareText", closable: true, confirmClose: true },
     defaultFeedIds: [
       FeedId.CODE_INPUT,
       FeedId.CODE_OUTPUT,
