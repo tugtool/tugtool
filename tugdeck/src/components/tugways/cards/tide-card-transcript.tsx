@@ -158,6 +158,7 @@ export function formatTranscriptTimestamp(ms: number): string {
   const raw = d.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
+    second: "2-digit",
   });
   // Replace the locale-emitted ASCII colon with U+2236 RATIO.
   // Locales that use a non-colon separator (some European locales
