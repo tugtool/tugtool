@@ -103,23 +103,44 @@ body {
   --tugx-question-single-options-padding: 0;
 }
 
-/* ---- Wizard nav row (Back / Next) ----
+/* ---- Wizard nav row (Back · summary · Next) ----
  *
- * Sits above the question accordion, centered so it visually pairs
- * with the centered description above it. Stable across question
- * advances. */
+ * Sits above the question accordion. Centered as a group; the
+ * progress summary (`{N} questions · {M} answered`) reads between
+ * the wizard nav buttons. Capped at the same width as the question
+ * rail / options block so the whole stack reads as one column.
+ * Stable across question advances — the click targets never move
+ * out from under the mouse. */
 .tide-question-dialog-nav {
   display: flex;
-  justify-content: center;
-  gap: var(--tug-space-xs);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  width: 100%;
+  max-width: var(--tugx-idialog-options-max-width);
+  margin: 0 auto;
 }
 
-/* ---- Wizard rail ---- */
+.tide-question-dialog-nav-summary {
+  font-size:   var(--tugx-idialog-description-size);
+  line-height: var(--tugx-idialog-description-leading);
+  opacity:     var(--tugx-idialog-description-opacity);
+  text-align: center;
+}
+
+/* ---- Wizard rail ----
+ *
+ * The accordion column matches the options stack width on
+ * `TugInlineDialog` so multi-question dialogs read as one centered
+ * column rather than spanning the full frame. */
 
 .tide-question-dialog-questions {
   display: flex;
   flex-direction: column;
   gap: var(--tugx-question-stack-gap);
+  width: 100%;
+  max-width: var(--tugx-idialog-options-max-width);
+  margin: 0 auto;
 }
 
 /* ---- Row: shared chrome ---- */

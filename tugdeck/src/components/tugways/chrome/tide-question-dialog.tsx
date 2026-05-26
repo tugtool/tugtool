@@ -34,12 +34,14 @@
  *
  * **Two control rows.** Dialog controls (`Cancel` / `Submit`) flow
  * into the primitive's trailing `actions` slot on the header row.
- * Wizard nav (`Back` / `Next`) sits on its own row inside the body
+ * Wizard nav (`Back` / `Next`) shares a single row with the
+ * progress summary (`{N} questions · {M} answered`) inside the body
  * slot, between the dialog description and the question accordion —
  * close enough to the questions for the touch target to feel coupled
  * to the row it mutates, but stable across question advances so the
  * button never moves out from under the mouse. Single-question
- * payloads omit the nav row (nothing to navigate).
+ * payloads omit the nav row (nothing to navigate, no progress to
+ * summarize).
  *
  * The wizard exposes a **review state** at the end of the flow:
  * `currentIndex === questions.length` paints every row as its
@@ -1006,50 +1008,25 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     [questions, currentIndex, handleSelect],
   );
 
-  if (!isPending) return null;
-
-  const hasQuestions = questions.length > 0;
-  const single = questions.length === 1 ? questions[0] : null;
-  const seededCount = countAnswered(selections);
-  const confirmedCount = countConfirmedAnswers(selections, visited);
-  // `Submit` lights up when every row carries a selection
-  // (preseeded recommendations or user-picked). "No required
-  // answers" means the user can sign off on every default in a
-  // single click — that's the literal expression of that.
-  const allAnswered = hasQuestions && seededCount === questions.length;
-
-  // Dialog description — single question repeats its text here
-  // verbatim (unchanged from the legacy layout); multi-question
-  // reports user-confirmed progress (not the preseeded count, so
-  // the headline reads "engagement" rather than "seed").
-  const description: React.ReactNode = !hasQuestions
-    ? "Claude sent a question that could not be displayed."
-    : single !== null
-      ? single.question
-      : `${questions.length} questions · ${confirmedCount} answered`;
-
-  // Wizard navigation state. `currentIndex === questions.length` is
-  // the review state added at the end of the flow — no row is
-  // current, every row paints its post-interaction summary, and the
-  // user scans the full set of answers before submitting.
-  const isFirstQuestion = currentIndex === 0;
-  const isAtReview = currentIndex >= questions.length;
-
   // Mount-time focus on the primary action so a Return key submits.
   // `TugInlineDialog` is a stateless presentation surface — callers
   // own focus management for whatever buttons they pass in `actions`.
-  // The effect runs once; a genuinely new request remounts the whole
-  // component (keyed by `request_id` upstream).
+  // Declared HERE, before the `!isPending` early return, so every
+  // render of this component calls the same set of hooks in the same
+  // order ([L02] / [L24] structure zone). A genuinely new request
+  // remounts the whole component (keyed by `request_id` upstream).
   const submitRef = React.useRef<HTMLButtonElement | null>(null);
   React.useLayoutEffect(() => {
-    submitRef.current?.focus();
-  }, []);
+    if (isPending) submitRef.current?.focus();
+  }, [isPending]);
 
   // Cancel guards itself with a confirmation popover: a stray click
   // shouldn't tear the AI's question down without a second beat. The
   // popover is anchored to the Cancel trigger via `TugConfirmPopover`'s
   // imperative API (`ref.confirm() → Promise<boolean>`); a `true`
   // resolution walks the family `Cancel ≡ popInteractive` path.
+  // Declared above the early return for the same Rules-of-Hooks
+  // reason as `submitRef`.
   const cancelPopoverRef = React.useRef<TugConfirmPopoverHandle | null>(null);
   const handleCancelClick = React.useCallback(() => {
     const popover = cancelPopoverRef.current;
@@ -1064,37 +1041,44 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     });
   }, [handleCancel]);
 
-  // Action clusters flow into the dialog primitive's two slots on the
-  // header row. Wizard nav (Back / Next) → `leadingActions`; dialog
-  // controls (Cancel / Submit) → `actions`. All four buttons hold a
-  // stable on-screen position across question advances — the question
-  // accordion below can grow or shrink as options change, but the
-  // click targets never move out from under the mouse. Single-question
-  // payloads omit the wizard nav (nothing to navigate) and pass
-  // `undefined` for `leadingActions` so the title's text column extends
-  // to the leading edge.
-  const navActions: React.ReactNode = hasQuestions && single === null ? (
-    <>
-      <TugPushButton
-        emphasis="outlined"
-        role="action"
-        size="xs"
-        disabled={isFirstQuestion}
-        onClick={handleBack}
-      >
-        <ArrowLeft size={14} aria-hidden="true" /> Back
-      </TugPushButton>
-      <TugPushButton
-        emphasis="outlined"
-        role="action"
-        size="xs"
-        disabled={isAtReview}
-        onClick={handleAdvance}
-      >
-        Next <ArrowRight size={14} aria-hidden="true" />
-      </TugPushButton>
-    </>
-  ) : null;
+  if (!isPending) return null;
+
+  const hasQuestions = questions.length > 0;
+  const single = questions.length === 1 ? questions[0] : null;
+  const confirmedCount = countConfirmedAnswers(selections, visited);
+  // `Submit` lights up when the user has actively confirmed every
+  // question — i.e. landed on each row and committed an answer (the
+  // preseed alone isn't enough). Forces the user to scan the full
+  // set before submitting.
+  const allAnswered = hasQuestions && confirmedCount === questions.length;
+
+  // Dialog description — single question repeats its text here
+  // verbatim (unchanged from the legacy layout); the multi-question
+  // summary moves into the wizard-nav row alongside Back / Next, so
+  // this prop is `undefined` for multi-question payloads.
+  const dialogDescription: React.ReactNode | undefined = !hasQuestions
+    ? "Claude sent a question that could not be displayed."
+    : single !== null
+      ? single.question
+      : undefined;
+  const wizardSummary: string | null =
+    hasQuestions && single === null
+      ? `${questions.length} questions · ${confirmedCount} answered`
+      : null;
+
+  // Wizard navigation state. `currentIndex === questions.length` is
+  // the review state added at the end of the flow — no row is
+  // current, every row paints its post-interaction summary, and the
+  // user scans the full set of answers before submitting.
+  const isFirstQuestion = currentIndex === 0;
+  const isAtReview = currentIndex >= questions.length;
+
+  // Dialog controls (Cancel / Submit, or just Dismiss when there
+  // are no questions) flow into the primitive's trailing `actions`
+  // slot. Wizard nav (Back / Next) and the question-progress summary
+  // live together on their own row inside the body slot — see the
+  // JSX below. Single-question payloads omit the wizard-nav row
+  // entirely (nothing to navigate, no progress to report).
   const dialogActions: React.ReactNode = hasQuestions ? (
     <>
       <TugConfirmPopover
@@ -1150,16 +1134,36 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
       icon={<MessageCircleQuestion />}
       iconRole="info"
       title={questions.length > 1 ? "Claude has questions" : "Claude has a question"}
-      description={description}
+      description={dialogDescription}
       actions={dialogActions}
       className={cn("tide-question-dialog", className)}
     >
-      {navActions !== null ? (
+      {wizardSummary !== null ? (
         <div
           className="tide-question-dialog-nav"
           data-slot="tide-question-dialog-nav"
         >
-          {navActions}
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="xs"
+            disabled={isFirstQuestion}
+            onClick={handleBack}
+          >
+            <ArrowLeft size={14} aria-hidden="true" /> Back
+          </TugPushButton>
+          <span className="tide-question-dialog-nav-summary">
+            {wizardSummary}
+          </span>
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="xs"
+            disabled={isAtReview}
+            onClick={handleAdvance}
+          >
+            Next <ArrowRight size={14} aria-hidden="true" />
+          </TugPushButton>
         </div>
       ) : null}
       {hasQuestions ? (
