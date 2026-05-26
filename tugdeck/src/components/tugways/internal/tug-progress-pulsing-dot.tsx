@@ -49,7 +49,7 @@ const PULSE_KEYFRAMES: Keyframe[] = [
   { transform: "translate(-50%, -50%) scale(1.9)", opacity: 0 },
 ];
 
-const IDLE_DOT_SCALE = 0.6;
+const IDLE_DOT_SCALE = 0.85;
 
 function isAnimating(state: TugProgressIndicatorState): boolean {
   return state === "running";
