@@ -100,7 +100,7 @@ body {
   gap: var(--tugx-idialog-frame-gap);
   width: 100%;
   max-width: var(--tugx-idialog-max-width);
-  margin: 0 auto;
+  margin: var(--tug-space-md) auto;
   padding: var(--tugx-idialog-padding);
   background: var(--tugx-idialog-bg);
   color: var(--tugx-idialog-text-color);
