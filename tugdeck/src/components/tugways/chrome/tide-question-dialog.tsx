@@ -539,6 +539,11 @@ interface QuestionRowProps {
  *  same optical baseline. */
 const ROW_MARKER_ICON_SIZE = 14;
 
+/** Keys that fire the Next button via `TugPushButton`'s `shortcut`
+ *  prop. Module-scope tuple so the array literal doesn't re-allocate
+ *  on every render. */
+const NEXT_KEYS: ReadonlyArray<string> = ["Enter", "ArrowRight"];
+
 /**
  * Render the lucide marker for a row status. Centralized so the
  * status → icon mapping has one source of truth (the row CSS keys
@@ -1016,53 +1021,37 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
     [questions, currentIndex, handleSelect],
   );
 
-  // Document-level Enter handler in CAPTURE phase. The prompt entry
-  // below the transcript holds focus while the AI is awaiting an
-  // answer — without this, pressing Return submits a new prompt
-  // rather than advancing the wizard. Capture-phase + stopPropagation
-  // intercepts Enter before the prompt entry's own keydown listener
-  // sees it. Active only while `isPending`; cleaned up automatically
-  // when the dialog unmounts or the request resolves.
+  // Document-level Cmd-. handler in CAPTURE phase. Mirrors Esc
+  // semantically: a bypass-the-popover system-cancel gesture. The
+  // popover is for *mouse* clicks on the Cancel button; Cmd-. and
+  // Esc are the keyboard equivalents of the prompt entry's Stop
+  // gesture and should go straight to `popInteractive`.
   //
-  // Modifier-Enter (Shift / Cmd / Ctrl / Alt) is left alone so the
-  // prompt entry can still take a newline / send-from-anywhere
-  // gesture if it has one.
+  // Enter / ArrowLeft / ArrowRight are declared as button-bound
+  // `shortcut` props on the JSX below — the button owns its own
+  // press visual and capture-phase keystroke interception. We don't
+  // need to repeat that wiring at the dialog level.
   React.useEffect(() => {
     if (!isPending) return;
     if (questions.length === 0) return;
-    const onDocumentKeyDown = (e: KeyboardEvent): void => {
-      if (e.key !== "Enter") return;
-      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      // If focus is inside the dialog and lands on an enabled button,
-      // let the native click handle Enter (option-card pick, Back,
-      // Cancel-popover trigger, the enabled Submit at review).
-      const t = e.target;
-      if (t instanceof HTMLButtonElement && !t.disabled) return;
-      if (currentIndex < questions.length) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleAdvance();
-      } else if (
-        countConfirmedAnswers(selections, visited) === questions.length
+    const onCmdPeriod = (e: KeyboardEvent): void => {
+      if (
+        e.key === "." &&
+        e.metaKey &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.shiftKey
       ) {
         e.preventDefault();
         e.stopPropagation();
-        handleSubmit();
+        handleCancel();
       }
     };
-    document.addEventListener("keydown", onDocumentKeyDown, true);
+    document.addEventListener("keydown", onCmdPeriod, true);
     return () => {
-      document.removeEventListener("keydown", onDocumentKeyDown, true);
+      document.removeEventListener("keydown", onCmdPeriod, true);
     };
-  }, [
-    isPending,
-    questions.length,
-    currentIndex,
-    selections,
-    visited,
-    handleAdvance,
-    handleSubmit,
-  ]);
+  }, [isPending, questions.length, handleCancel]);
 
   // Mount-time focus on the primary action so a Return key submits.
   // `TugInlineDialog` is a stateless presentation surface — callers
@@ -1081,8 +1070,6 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
   // popover is anchored to the Cancel trigger via `TugConfirmPopover`'s
   // imperative API (`ref.confirm() → Promise<boolean>`); a `true`
   // resolution walks the family `Cancel ≡ popInteractive` path.
-  // Declared above the early return for the same Rules-of-Hooks
-  // reason as `submitRef`.
   const cancelPopoverRef = React.useRef<TugConfirmPopoverHandle | null>(null);
   const handleCancelClick = React.useCallback(() => {
     const popover = cancelPopoverRef.current;
@@ -1160,6 +1147,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
         role="action"
         size="xs"
         disabled={!allAnswered}
+        shortcut={isAtReview ? "Enter" : undefined}
         onClick={handleSubmit}
       >
         Submit
@@ -1214,6 +1202,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               role="action"
               size="xs"
               disabled={isFirstQuestion}
+              shortcut="ArrowLeft"
               onClick={handleBack}
             >
               <ArrowLeft size={14} aria-hidden="true" /> Back
@@ -1223,6 +1212,7 @@ export const QuestionDialog: React.FC<QuestionDialogProps> = ({
               role="action"
               size="xs"
               disabled={isAtReview}
+              shortcut={NEXT_KEYS}
               onClick={handleAdvance}
             >
               Next <ArrowRight size={14} aria-hidden="true" />

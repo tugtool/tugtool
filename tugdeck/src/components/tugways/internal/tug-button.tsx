@@ -71,6 +71,20 @@ export type TugButtonSize = "2xs" | "xs" | "sm" | "md" | "lg";
  */
 export type TugButtonSubtype = "text" | "icon" | "icon-text";
 
+/**
+ * Declarative keyboard-shortcut spec for {@link TugButtonProps.shortcut}.
+ * A bare string binds one key; an array binds multiple keys to the
+ * same button. Values are KeyboardEvent `key` strings — `"Enter"`,
+ * `"ArrowLeft"`, `"."`, etc.
+ *
+ * Modifier-bearing presses are ignored at match time; if you need a
+ * modifier-bound gesture, route it through the responder chain or a
+ * dialog-level handler instead. The presence-key is the boolean
+ * `shortcut !== undefined`; reading the live keys happens through a
+ * ref so the listener never has to re-install on a spec change.
+ */
+export type TugButtonShortcut = string | ReadonlyArray<string>;
+
 /** TugButton border-radius tokens (proportional, rem-based like Tailwind) */
 export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 
@@ -166,6 +180,35 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    */
   target?: string;
 
+  /**
+   * Declarative keyboard shortcut for this button. When set, the
+   * button installs a document-level capture-phase keydown listener
+   * while mounted. A matching keystroke (with no modifiers) does
+   * three things, in order:
+   *
+   *   1. `preventDefault` + `stopPropagation`, so the host (e.g. a
+   *      focused prompt entry) never sees the key.
+   *   2. Briefly sets `data-pressing="true"` on the button — the
+   *      same paint as `:active` (see the `:is(:active,
+   *      [data-pressing="true"])` selectors in `tug-button.css`),
+   *      so a keyboard activation looks like a real mouse click.
+   *   3. Calls `.click()` on the button, which routes through
+   *      `handleClick` exactly like a real click — direct-mode
+   *      `onClick` or chain-mode `action` dispatch.
+   *
+   * Skipped when the button is disabled (`:disabled`,
+   * `aria-disabled`, or `loading`) — so a single key can declare
+   * the same shortcut on multiple buttons, with `disabled` choosing
+   * which one fires. Modifier-bearing presses (Shift / Cmd / Ctrl
+   * / Alt) are ignored; route those through the responder chain
+   * or a dialog-level handler instead.
+   *
+   * The shortcut and visual press are appearance-zone concerns
+   * ([L06]): no React state churns, the listener is `useLayoutEffect`
+   * per [L03], and `data-pressing` is a plain DOM attribute that
+   * the cascade picks up.
+   */
+  shortcut?: TugButtonShortcut;
   /**
    * Disable the button.
    * @selector :disabled
@@ -328,6 +371,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   onClick,
   action,
   target,
+  shortcut,
   disabled = false,
   loading = false,
   children,
@@ -453,6 +497,52 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   const internalButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const confirmingRef = React.useRef(false);
   const timerRef = React.useRef<number | null>(null);
+
+  // ---- Declarative keyboard shortcut ([L03] / [L06]) ----
+  //
+  // The shortcut spec is held in a ref so the document listener
+  // installed below never has to re-subscribe when the caller passes
+  // a different array literal across renders. Only the *presence* of
+  // a shortcut governs install / teardown; the keys themselves are
+  // read live at dispatch time.
+  const shortcutRef = React.useRef<TugButtonShortcut | undefined>(shortcut);
+  shortcutRef.current = shortcut;
+  const hasShortcut = shortcut !== undefined;
+  React.useLayoutEffect(() => {
+    if (!hasShortcut) return;
+    const onShortcutKey = (e: KeyboardEvent): void => {
+      const spec = shortcutRef.current;
+      if (spec === undefined) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const keys = typeof spec === "string" ? [spec] : spec;
+      if (!keys.includes(e.key)) return;
+      const node = internalButtonRef.current;
+      if (node === null) return;
+      if (node.disabled) return;
+      if (node.getAttribute("aria-disabled") === "true") return;
+      // Capture-phase preventDefault + stopPropagation steals the
+      // keystroke from any host element (e.g. a focused prompt
+      // entry below the dialog) before it can fire its own handler.
+      e.preventDefault();
+      e.stopPropagation();
+      // Press visual ([L06]). The CSS variants treat
+      // `[data-pressing="true"]` the same as `:active`, so a
+      // keyboard activation paints identical to a mouse click.
+      // Native `:active` doesn't fire for programmatic clicks, so
+      // we toggle the attribute by hand.
+      node.setAttribute("data-pressing", "true");
+      window.setTimeout(() => {
+        node.removeAttribute("data-pressing");
+      }, 120);
+      // Route through the live click handler — onClick or chain
+      // dispatch, whichever the button is wired for.
+      node.click();
+    };
+    document.addEventListener("keydown", onShortcutKey, true);
+    return () => {
+      document.removeEventListener("keydown", onShortcutKey, true);
+    };
+  }, [hasShortcut]);
 
   // Merged ref forwards to the caller while keeping our internal handle for
   // imperative DOM mutation during the confirmation cycle. Stable across
