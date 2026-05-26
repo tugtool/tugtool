@@ -144,20 +144,22 @@ This plan follows [`tuglaws/tugplan-skeleton.md`](../tuglaws/tugplan-skeleton.md
 
 **Resolution:** OPEN. Provisional: (a) holds bytes for card lifetime; revisit at integration checkpoint based on heap profile.
 
-#### [Q02] HEIC / AVIF source decoding in non-WebKit environments (OPEN) {#q02-heic-avif}
+#### [Q02] HEIC / AVIF source decoding in non-WebKit environments (DECIDED) {#q02-heic-avif}
 
 **Question:** macOS users drag a `.heic` from Photos. Tide.app's WebKit decodes HEIC natively; the dev-mode browser path (Chromium-based) does not. Should the downsample pipeline transcode HEIC → PNG via canvas, surface a clear "unsupported in dev mode" error, or attempt a WASM fallback?
 
 **Why it matters:** Tide.app is the primary surface; the dev path is for developers. Inconsistency is acceptable as long as it's clear.
 
-**Options:**
-- (a) Tide.app transcodes via canvas (canvas decodes HEIC on WebKit); dev mode rejects with `"HEIC unsupported in dev mode — convert to PNG/JPEG"`.
-- (b) Bundle a WASM HEIC decoder (e.g., libheif-js) for parity. Adds ~500 KB to the bundle.
-- (c) Reject HEIC everywhere; require user transcode.
+**Empirical findings (2026-05-26):** A throwaway harness served 8×8 HEIC and AVIF test images (generated via `sips` and `avifenc`) and ran `createImageBitmap(blob)` on each in both browsers.
 
-**Plan to resolve:** Verify WebKit canvas decode in Tide.app (manual smoke test in Step 1); decide (a) vs. (b) vs. (c) based on what's actually decodable.
+| Engine | HEIC via `createImageBitmap` | HEIC via `<img>` | AVIF via `createImageBitmap` | AVIF via `<img>` |
+|--------|------------------------------|------------------|------------------------------|------------------|
+| Safari/WebKit (Version 18.6) | ok, 8×8 | ok | ok, 8×8 | ok |
+| Chrome 148 (Chromium) | fail (`InvalidStateError: The source image could not be decoded.`) | fail | ok, 8×8 | ok |
 
-**Resolution:** OPEN. Provisional: (a). Tide.app handles it via canvas; dev mode surfaces a clear error.
+So Tide.app (WebKit) decodes both formats via the canvas path; Chromium decodes AVIF but cannot decode HEIC at all (not even in `<img>`).
+
+**Resolution:** DECIDED — option (a). The `downsampleImage` pipeline ([Spec S04](#s04-image-downsample)) attempts `createImageBitmap` on HEIC inputs; in Tide.app this succeeds and the image flows through the standard resize/transcode path; in dev mode (Chromium) it returns the `decode-failed` discriminated error, which surfaces as a toast `"HEIC unsupported in dev mode — convert to PNG or JPEG first"`. AVIF needs no special handling — it works uniformly. No WASM HEIC decoder. v2 follow-on if dev-mode HEIC parity ever matters.
 
 #### [Q03] PDF / `document` content block timing (DEFERRED) {#q03-pdf-deferred}
 
@@ -167,20 +169,13 @@ This plan follows [`tuglaws/tugplan-skeleton.md`](../tuglaws/tugplan-skeleton.md
 
 **Resolution:** DEFERRED. Not in v1 scope. Forward-compat: the Attachment shape extension is additive (a `application/pdf` media type with `document` content block in tugcode); no breaking change. v2 candidate.
 
-#### [Q04] Animated GIF handling (OPEN) {#q04-animated-gif}
+#### [Q04] Animated GIF handling (DECIDED) {#q04-animated-gif}
 
-**Question:** A user drops a 4 MB animated GIF. Canvas resize collapses to a single-frame image and loses the animation. Anthropic Vision accepts `image/gif` and presumably analyzes all frames. Should the downsample pipeline skip canvas re-encode for GIFs and pass through?
+**Question:** A user drops a 4 MB animated GIF. Canvas resize collapses to a single-frame image and loses the animation. Anthropic Vision accepts `image/gif` and analyzes frames. Should the downsample pipeline skip canvas re-encode for GIFs and pass through, always canvas-encode (lose animation), or detect animated vs. static?
 
-**Why it matters:** Niche but real; engineers screenshot terminal animations / dashboards as GIFs.
+**Why it matters:** Niche but real; engineers screenshot terminal animations and dashboards as GIFs. Static GIFs (the much more common case) should be canvas-resized like any other image so we can normalize their dimensions and re-encode for smaller payloads.
 
-**Options:**
-- (a) Detect GIF, skip canvas resize; check size only; accept ≤ 5 MB, reject otherwise.
-- (b) Always canvas-re-encode (loses animation; preserves first frame).
-- (c) Detect animated vs. static GIF (read frame count); animated passes through (a); static goes through canvas (b).
-
-**Plan to resolve:** Implement (a) in Step 1 as the simplest correct answer.
-
-**Resolution:** OPEN. Provisional: (a). Loses no information; trades off "can't shrink large GIFs" against "preserve animation". If users hit the 5 MB cap on animated GIFs, escalate to a `gifsicle`-style server-side downsampler — v1.1.
+**Resolution:** DECIDED — option (c). The `downsampleImage` pipeline detects animated vs. static by walking the raw GIF bytes and counting image-descriptor blocks (`0x2C` markers after the global color table); >1 frame ⇒ animated, ≤1 frame ⇒ static. Animated GIFs pass through unchanged with a size-only check (reject if > 5 MB). Static GIFs route through the canvas pipeline like JPEG / PNG / WebP (resize to long-edge ≤ 2576 px, re-encode as GIF, then JPEG-quality-ladder fallback if still > 5 MB). The frame-count detector is a small pure function (`isAnimatedGif(bytes: Uint8Array): boolean`) added in Step 1 with unit-test coverage for known animated and static fixtures. If users hit the 5 MB cap on animated GIFs in the wild, escalate to a `gifsicle`-style server-side downsampler — v1.1.
 
 ---
 
@@ -290,13 +285,14 @@ This plan follows [`tuglaws/tugplan-skeleton.md`](../tuglaws/tugplan-skeleton.md
 
 **Decision:** Every dropped or pasted image runs through a canvas-based normalization pipeline at insert time, *before* bytes reach the bytes-store:
 
-1. Decode the source to an `ImageBitmap` via `createImageBitmap(blob)` (preferred — off-main-thread on supporting browsers) or via `HTMLImageElement` + canvas `drawImage` (fallback).
-2. If `max(width, height) > 2576` (Opus 4.7 long-edge cap), resize maintaining aspect ratio so long-edge = 2576 px.
-3. Re-encode in source MIME (`image/png` → PNG, `image/jpeg` → JPEG, `image/webp` → WebP, `image/gif` → see [Q04](#q04-animated-gif)).
-4. If encoded size > 5 MB, transcode to JPEG with quality ladder 90 → 80 → 70 → 60. Stop at the first quality whose encoded size ≤ 5 MB.
-5. If still > 5 MB at quality 60, reject the drop / paste with an explicit error toast naming the file.
-6. SVG (`image/svg+xml`) rasterizes to PNG at 1024×1024 (max), preserving aspect.
-7. HEIC / AVIF behavior per [Q02](#q02-heic-avif): Tide.app canvas-decodes; dev mode rejects.
+1. **GIF pre-check.** If the source MIME is `image/gif`, run `isAnimatedGif(bytes)` (frame-count via `0x2C` marker walk). Animated → size check only (pass through if ≤ 5 MB; reject otherwise). Static → continue to the canvas pipeline. Detail per [Q04](#q04-animated-gif).
+2. Decode the source to an `ImageBitmap` via `createImageBitmap(blob)` (preferred — off-main-thread on supporting browsers) or via `HTMLImageElement` + canvas `drawImage` (fallback).
+3. If `max(width, height) > 2576` (Opus 4.7 long-edge cap), resize maintaining aspect ratio so long-edge = 2576 px.
+4. Re-encode in source MIME (`image/png` → PNG, `image/jpeg` → JPEG, `image/webp` → WebP, static `image/gif` → GIF).
+5. If encoded size > 5 MB, transcode to JPEG with quality ladder 90 → 80 → 70 → 60. Stop at the first quality whose encoded size ≤ 5 MB.
+6. If still > 5 MB at quality 60, reject the drop / paste with an explicit error toast naming the file.
+7. SVG (`image/svg+xml`) rasterizes to PNG at 1024×1024 (max), preserving aspect.
+8. HEIC / AVIF behavior per [Q02](#q02-heic-avif): Tide.app canvas-decodes both; Chromium dev mode decodes AVIF but rejects HEIC with a `decode-failed` error surfaced as a clear toast.
 
 **Rationale:**
 - The Anthropic backend rejects images > 5 MB decoded or with bad dimensions; normalizing client-side prevents API rejections.
@@ -445,9 +441,12 @@ type DownsampleError =
 function downsampleImage(
   source: Blob | File,
 ): Promise<{ ok: true; result: DownsampleResult } | { ok: false; error: DownsampleError }>;
+
+/** Frame-count detection for GIF input per [Q04](#q04-animated-gif). Pure. */
+function isAnimatedGif(bytes: Uint8Array): boolean;
 ```
 
-Pipeline implements [D05](#d05-client-downsample). The function never throws; the discriminated result lets callers surface specific errors. `ImageBitmap` path is preferred; `HTMLImageElement` fallback is used when `createImageBitmap` is unavailable or fails.
+Pipeline implements [D05](#d05-client-downsample). The function never throws; the discriminated result lets callers surface specific errors. `ImageBitmap` path is preferred; `HTMLImageElement` fallback is used when `createImageBitmap` is unavailable or fails. `isAnimatedGif` runs ahead of the canvas pipeline for `image/gif` inputs; animated → passthrough, static → canvas.
 
 #### Spec S05: `AtomChip` component contract {#s05-atom-chip}
 
@@ -559,7 +558,8 @@ No failure is silent. No failure drops the user's submission without surfacing.
 | `image/png` | Resize if needed; re-encode PNG; JPEG fallback if > 5 MB | `image/png` or `image/jpeg` |
 | `image/jpeg` | Resize if needed; re-encode JPEG (start at quality 90) | `image/jpeg` |
 | `image/webp` | Resize if needed; re-encode WebP; JPEG fallback if > 5 MB | `image/webp` or `image/jpeg` |
-| `image/gif` | Size check only; pass through if ≤ 5 MB ([Q04](#q04-animated-gif)) | `image/gif` |
+| `image/gif` (animated, >1 frame) | Size check only; pass through if ≤ 5 MB; reject otherwise ([Q04](#q04-animated-gif)) | `image/gif` |
+| `image/gif` (static, ≤1 frame) | Resize if needed; re-encode GIF; JPEG fallback if > 5 MB ([Q04](#q04-animated-gif)) | `image/gif` or `image/jpeg` |
 | `image/svg+xml` | Rasterize to PNG at 1024×1024 | `image/png` |
 | `image/heic` / `image/heif` | Canvas decode (Tide.app only) → PNG; reject in dev mode ([Q02](#q02-heic-avif)) | `image/png` or rejection |
 | `image/avif` | Same as HEIC | `image/png` or rejection |
@@ -610,6 +610,7 @@ No failure is silent. No failure drops the user's submission without surfacing.
 | `AttachmentRecord` | type | `code-session-store/types.ts` | `{ id, role, filename, mediaType, thumbnailDataUrl, byteSize }` |
 | `buildWirePayload` | fn | `build-wire-payload.ts` | [Spec S03](#s03-build-wire-payload) |
 | `downsampleImage` | fn | `image-downsample.ts` | [Spec S04](#s04-image-downsample) |
+| `isAnimatedGif` | fn | `image-downsample.ts` | Pure GIF frame-count detector per [Q04](#q04-animated-gif) |
 | `bakeThumbnail` | fn | `image-downsample.ts` | Calls into the same canvas pipeline at 256 px target |
 | `AtomChip` | component | `tug-atom-chip.tsx` | [Spec S05](#s05-atom-chip) |
 | `TugAtomTextBody` | component | `tug-atom-text-body.tsx` | Walks `(text, atoms)` and interleaves `AtomChip` widgets |
@@ -660,15 +661,15 @@ No failure is silent. No failure drops the user's submission without surfacing.
 - `tugdeck/src/lib/__tests__/image-downsample.test.ts` — unit coverage with canvas stubs.
 
 **Tasks:**
+- [ ] Implement `isAnimatedGif(bytes: Uint8Array): boolean` — frame-count detection via image-descriptor markers per [Q04](#q04-animated-gif).
+- [ ] Implement the GIF pre-check branch: animated → size-only validation; static → canvas pipeline.
 - [ ] Implement the `createImageBitmap` path with `HTMLImageElement` fallback per [D05](#d05-client-downsample).
 - [ ] Implement dimension resize to long-edge ≤ 2576 px.
 - [ ] Implement re-encode by source MIME with JPEG quality ladder (90/80/70/60).
 - [ ] Implement SVG rasterization at 1024×1024.
-- [ ] Implement HEIC / AVIF behavior per [Q02](#q02-heic-avif): canvas decode attempt, error on failure.
-- [ ] Implement animated-GIF passthrough per [Q04](#q04-animated-gif).
+- [ ] HEIC / AVIF behavior per [Q02](#q02-heic-avif): the canvas-decode path naturally produces a `decode-failed` error in Chromium for HEIC; surface that with a clear toast message naming HEIC specifically. AVIF works in both engines and needs no special handling.
 - [ ] Surface `unsupported-format`, `too-large-after-fallback`, `decode-failed` discriminated errors.
 - [ ] Export `bakeThumbnail` as a thin wrapper around the same pipeline at 256 px target.
-- [ ] Verify in Tide.app that WebKit canvas decodes HEIC for [Q02](#q02-heic-avif) (manual smoke).
 
 **Tests:**
 - [ ] `unit: oversize PNG → resized to 2576 px long edge, encoded ≤ 5 MB`
@@ -676,14 +677,19 @@ No failure is silent. No failure drops the user's submission without surfacing.
 - [ ] `unit: 8 MB PNG → JPEG transcode required; encoded ≤ 5 MB`
 - [ ] `unit: 50 MB synthetic PNG → too-large-after-fallback error`
 - [ ] `unit: SVG source → rasterized to PNG at 1024×1024`
-- [ ] `unit: animated GIF ≤ 5 MB → passthrough unchanged`
+- [ ] `unit: isAnimatedGif on known animated fixture → true`
+- [ ] `unit: isAnimatedGif on known static fixture → false`
+- [ ] `unit: animated GIF ≤ 5 MB → passthrough unchanged (bytes equal input)`
 - [ ] `unit: animated GIF > 5 MB → too-large-after-fallback error`
+- [ ] `unit: static GIF oversize → resized and re-encoded via canvas path`
 - [ ] `unit: corrupt blob → decode-failed error`
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test src/lib/__tests__/image-downsample.test.ts`
 - [ ] `cd tugdeck && bun run check`
 - [ ] Manual: drop a real 4K screenshot in Tide.app dev mode; observe that `downsampleImage` produces a ≤ 5 MB output (verified via console log).
+- [ ] Manual: drop a `.heic` photo in Tide.app — canvas decode succeeds, image flows through (verifies [Q02](#q02-heic-avif) on the real surface).
+- [ ] Manual: drop a `.heic` photo in dev-mode Chrome — `decode-failed` toast appears with the HEIC-specific message; no crash.
 
 ---
 
@@ -902,16 +908,14 @@ No failure is silent. No failure drops the user's submission without surfacing.
 
 **Commit:** `N/A (verification only)`
 
-**References:** [D01](#d01-ffc-substitution-at-submit) … [D08](#d08-tool-block-only), [Q01](#q01-replay-enlarge-bytes) (resolve), [Q02](#q02-heic-avif) (resolve), [Q04](#q04-animated-gif) (resolve), [Table T01](#t01-failure-modes), (#success-criteria)
+**References:** [D01](#d01-ffc-substitution-at-submit) … [D08](#d08-tool-block-only), [Q01](#q01-replay-enlarge-bytes) (resolve), [Table T01](#t01-failure-modes), (#success-criteria)
 
 **Tasks:**
 - [ ] Verify all artifacts from Steps 1-7 are complete and cooperate end-to-end.
 - [ ] Re-run `just capture-capabilities` against the current claude (`2.1.148` or later at exit time). `test-23-image-attachment.jsonl` byte-identical pre/post.
 - [ ] Heap-profile a 50-turn synthetic session with five 4 MB inline images per turn — resolve [Q01](#q01-replay-enlarge-bytes).
-- [ ] Smoke-test HEIC drop in Tide.app and the dev-mode browser — resolve [Q02](#q02-heic-avif).
-- [ ] Drop an animated GIF — verify [Q04](#q04-animated-gif) provisional answer (passthrough) is acceptable.
 - [ ] Walk the tuglaws checklist for new components: `tug-atom-chip.tsx`, `tug-attachment-strip.tsx`, `tug-atom-text-body.tsx`, the bytes-store, `image-downsample.ts`.
-- [ ] Update [Q01](#q01-replay-enlarge-bytes), [Q02](#q02-heic-avif), [Q04](#q04-animated-gif) resolutions in this plan.
+- [ ] Update [Q01](#q01-replay-enlarge-bytes) resolution in this plan based on profile data.
 
 **Tests:**
 - [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens lint`
@@ -938,8 +942,8 @@ No failure is silent. No failure drops the user's submission without surfacing.
 
 - [ ] Every success criterion in [`#success-criteria`](#success-criteria) verified by its named verification.
 - [ ] `test-23-image-attachment.jsonl` byte-identical pre/post (no regression in the existing image content-block path).
-- [ ] [Q01](#q01-replay-enlarge-bytes), [Q02](#q02-heic-avif), [Q04](#q04-animated-gif) resolved with documented evidence.
-- [Q03](#q03-pdf-deferred) remains deferred.
+- [ ] [Q01](#q01-replay-enlarge-bytes) resolved with documented heap-profile evidence.
+- [Q02](#q02-heic-avif) and [Q04](#q04-animated-gif) already resolved at plan-draft time; [Q03](#q03-pdf-deferred) remains deferred.
 - [ ] Manual smoke per [Step 8](#step-8): drop → paste → `@`-mention → submit → restore round-trip works end-to-end.
 - [ ] No new IndexedDB or localStorage. No new tugcast verb. No new feed ID.
 - [ ] `bun run check`, `bun test` (tugdeck + tugcode), `cargo nextest run --workspace` all clean with `-D warnings`.
@@ -957,7 +961,7 @@ No failure is silent. No failure drops the user's submission without surfacing.
 - [ ] Lightbox component for click-to-enlarge (v1.1 polish).
 - [ ] Free-prose `@path` detection in assistant markdown.
 - [ ] Bytes-store retention policy refinements based on heap-profile data from [Q01](#q01-replay-enlarge-bytes).
-- [ ] WASM HEIC decoder for dev-mode parity with Tide.app, if [Q02](#q02-heic-avif) resolution calls for it.
+- [ ] WASM HEIC decoder for dev-mode parity with Tide.app — out of scope per [Q02](#q02-heic-avif); revisit only if dev-mode HEIC parity ever matters.
 
 | Checkpoint | Verification |
 |------------|--------------|
