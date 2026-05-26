@@ -56,7 +56,7 @@ import "./tug-task-item.css";
 import React from "react";
 import { Check, Circle } from "lucide-react";
 
-import { TugLabel, type TugLabelColor, type TugLabelRole } from "./tug-label";
+import { TugLabel, type TugLabelEmphasis, type TugLabelRole } from "./tug-label";
 import { TugProgress } from "./tug-progress";
 import { TugTooltip } from "./tug-tooltip";
 
@@ -144,10 +144,10 @@ export const TugTaskItem: React.FC<TugTaskItemProps> = ({
   //   - `in_progress` → `role="action"` so the label text picks
   //     up the same active-tone color family the ring uses (one
   //     consistent role-driven accent for the whole row).
-  //   - `completed`   → `color="muted"` so finished rows fade
+  //   - `completed`   → `emphasis="muted"` so finished rows fade
   //     to prose weight; the strikethrough is applied via CSS.
   //   - `pending`     → default color, no emphasis.
-  const labelColor: TugLabelColor | undefined =
+  const labelEmphasis: TugLabelEmphasis | undefined =
     status === "completed" ? "muted" : undefined;
   const labelRole: TugLabelRole | undefined =
     status === "in_progress" ? "action" : undefined;
@@ -166,7 +166,7 @@ export const TugTaskItem: React.FC<TugTaskItemProps> = ({
       </span>
       <TugLabel
         size="sm"
-        color={labelColor}
+        emphasis={labelEmphasis}
         role={labelRole}
         className="tug-task-item-label"
         data-slot={DATA_SLOT_LABEL}

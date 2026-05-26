@@ -12,7 +12,7 @@
  *
  * The marker reads as ambient conversation-flow annotation, NOT as
  * a tool-call card — no frame, no border, no background. Just an
- * inline-flex row carrying a small icon and a calm-styled label.
+ * inline-flex row carrying a small icon and a whisper-styled label.
  * That visual restraint is the whole point of [D100]'s two-surface
  * decision: the TASKS status-bar cell is primary, the marker is
  * subordinate, color is reserved for the error case.
@@ -32,7 +32,7 @@
  *    directly; layout isn't a token-family concern.
  *
  * Tuglaw cross-check:
- *  - [L06] no React state for appearance. The error-vs-calm split
+ *  - [L06] no React state for appearance. The error-vs-whisper split
  *    is JSX-data-driven (different children), not a CSS class flip
  *    on a single element; the data-tone attribute lets a future
  *    style hook target the error row from CSS without re-rendering.
@@ -45,7 +45,7 @@
 
 body {
   /* Icon color — muted by default; stays muted on error rows too
-   * (the label carries the danger tone; the icon stays calm so the
+   * (the label carries the danger tone; the icon stays muted so the
    * row reads as "annotation + signal text" rather than "all-loud
    * banner"). */
   --tugx-task-inline-icon-color: var(--tug7-element-global-text-normal-muted-rest);

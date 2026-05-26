@@ -132,7 +132,7 @@ export const GalleryTugTaskItem: React.FC = () => {
         {/* ---- Section 1 — Status palette ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugTaskItem — Status Palette</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             Three statuses, three role-driven treatments. `in_progress` uses TugProgress
             `role="action"` (standard active accent) and a matching background band.
           </TugLabel>
@@ -152,7 +152,7 @@ export const GalleryTugTaskItem: React.FC = () => {
         {/* ---- Section 2 — In-progress: idle gate ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">In-progress — Idle Gate</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             The `idle` prop swaps the animating indeterminate ring for the
             `stopped` (closed outlined circle, no animation) state. Same row,
             same color — just no motion. Use when the surrounding session is
@@ -183,7 +183,7 @@ export const GalleryTugTaskItem: React.FC = () => {
         {/* ---- Section 3 — Description tooltip ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Description Tooltip</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             When `description` is set, the row is wrapped in a TugTooltip;
             hover any row below to surface it.
           </TugLabel>
@@ -204,7 +204,7 @@ export const GalleryTugTaskItem: React.FC = () => {
         {/* ---- Section 4 — Realistic list composition ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">List Composition</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             How a consumer composes a task list — a flex column of
             TugTaskItems with a small inter-item gap. The Tide TASKS popover
             uses this exact shape.
@@ -233,7 +233,7 @@ export const GalleryTugTaskItem: React.FC = () => {
         {/* ---- Section 5 — Idle cycle ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Idle Cycle</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             Toggles the `idle` prop on a realistic list every 2 s. The
             in_progress row's ring switches between animating and stopped;
             pending / completed rows are unaffected.

@@ -21,7 +21,7 @@
  * marker is ambient.
  *
  * Per-event reading (label text + icon carry the meaning; color is
- * uniform — see "Why calm-uniform" below):
+ * uniform — see "Why whisper-uniform" below):
  *  - `TaskCreate` → `"Created: <subject>"` (subject is in the
  *    input — narrowed via `narrowTaskCreateInput`).
  *  - `TaskUpdate → in_progress` → `"Started: <subject>"`.
@@ -34,18 +34,18 @@
  *    have arrived out of order in replay; the bare id is the
  *    least-misleading thing we can render).
  *  - Streaming (input still arriving) → `"Creating…"` /
- *    `"Updating…"` placeholder, calm treatment.
+ *    `"Updating…"` placeholder, whisper treatment.
  *  - Errored event → error text + `role="danger"` +
- *    `emphasis="normal"` (drop calm so the danger color reads
- *    cleanly — `calm`'s `color:` would otherwise override the
+ *    `emphasis="normal"` (drop whisper so the danger color reads
+ *    cleanly — `whisper`'s `color:` would otherwise override the
  *    role tint).
  *
- * Why calm-uniform, not role-colored. An earlier draft proposed
+ * Why whisper-uniform, not role-colored. An earlier draft proposed
  * `role="action"` for Created / Started and `role="success"` for
  * Completed — colored accents per event. The audit volume of these
  * events in a real session is high enough (often 8–12 per turn for
  * a multi-task plan) that role-coloring pulls weight away from the
- * TASKS cell. `emphasis="calm"` keeps every row visually
+ * TASKS cell. `emphasis="whisper"` keeps every row visually
  * subordinate to the cell. Color is reserved for the rare error
  * case, where it earns the visual interrupt.
  *
@@ -224,7 +224,7 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
   const kind = deriveTaskInlineKind(toolName);
 
   // Error branch: surface the error text with a danger tint. Drop
-  // calm so the role's text color reads cleanly (calm's `color:`
+  // whisper so the role's text color reads cleanly (whisper's `color:`
   // rule would otherwise win in the cascade). When `textOutput` is
   // missing on an errored event (rare — `tool_result.is_error` true
   // without an output body), fall back to a generic "Failed" label
@@ -268,7 +268,7 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
         aria-hidden="true"
         className="task-inline-tool-block-icon"
       />
-      <TugLabel size="sm" emphasis="calm">
+      <TugLabel size="sm" emphasis="whisper">
         {labelText}
       </TugLabel>
     </div>
@@ -299,7 +299,7 @@ export function composeMarkerText({
 }: ComposeArgs): string {
   // Streaming branch — input is still arriving; we may not yet
   // have a subject (TaskCreate) or a taskId (TaskUpdate). Fall back
-  // to the streaming placeholder. The calm treatment is the same
+  // to the streaming placeholder. The whisper treatment is the same
   // as the steady-state row.
   if (status === "streaming") {
     if (kind === "create") return "Creating…";

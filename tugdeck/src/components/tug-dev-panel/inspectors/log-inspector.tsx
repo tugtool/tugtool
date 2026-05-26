@@ -368,7 +368,7 @@ export const LogInspector: React.FC = () => {
           <div className="tug-devlog-source">
             <TugLabel
               size="3xs"
-              color="muted"
+              emphasis="muted"
               className="tug-devlog-source-label"
             >
               Source
@@ -487,7 +487,7 @@ export const LogInspector: React.FC = () => {
           {visibleOrdered.length === 0 ? (
             <TugLabel
               size="xs"
-              color="muted"
+              emphasis="muted"
               className="tug-devlog-empty"
             >
               {snapshot.entries.length === 0

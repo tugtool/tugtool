@@ -24,9 +24,6 @@ export type TugLabelSize =
   | "xs" | "sm" | "md" | "lg" | "xl"
   | "2xl" | "3xl" | "4xl" | "5xl" | "6xl" | "7xl" | "8xl";
 
-/** TugLabel color variants. */
-export type TugLabelColor = "default" | "muted";
-
 /**
  * TugLabel role — paints the label text in a standard role tone
  * (`--tug7-element-tone-text-normal-<role>-rest`). Use for labels
@@ -35,8 +32,6 @@ export type TugLabelColor = "default" | "muted";
  * `TugProgress role="action"`). The role suffix follows the same
  * "action → active" alias TugProgress uses, so the same role name
  * lights up the same color family across both primitives.
- *
- * When set, `role` overrides `color`.
  */
 export type TugLabelRole =
   | "accent"
@@ -51,18 +46,20 @@ export type TugLabelRole =
 export type TugLabelAlign = "start" | "center" | "end";
 
 /**
- * TugLabel emphasis — adjusts weight/style/case of the label text.
+ * TugLabel emphasis — a volume scale for how loud the label speaks.
  *
- * - `normal` (default): inherits the base weight/style.
- * - `calm`: muted gray + italic — reads quieter than normal, like a whisper.
- * - `strong`: bold.
  * - `shout`: bold + ALL CAPS.
+ * - `strong`: bold.
+ * - `normal` (default): inherits the base weight/style.
+ * - `muted`: muted gray, upright — quieter than normal.
+ * - `whisper`: muted gray + italic — like a whisper, the quietest tier.
  *
- * Emphasis composes with `color` and `role` — `calm` lays italics over
- * whichever color the label is already painted, then tints toward the
- * muted token so it actually feels quieter than the base.
+ * `muted` and `whisper` paint `--tug7-element-global-text-normal-muted-rest`;
+ * `whisper` adds italic on top. When `role` is also set, the emphasis color
+ * wins (source order in the cascade), so reach for `role` when a role-driven
+ * accent should show through.
  */
-export type TugLabelEmphasis = "calm" | "normal" | "strong" | "shout";
+export type TugLabelEmphasis = "muted" | "normal" | "shout" | "strong" | "whisper";
 
 /** TugLabel props. */
 export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
@@ -75,13 +72,7 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
    */
   size?: TugLabelSize;
   /**
-   * Color variant.
-   * @selector .tug-label-color-muted
-   * @default "default"
-   */
-  color?: TugLabelColor;
-  /**
-   * Role tone — when set, overrides `color` with the standard
+   * Role tone — paints the label with the standard
    * `--tug7-element-tone-text-normal-<role>-rest` token. Use for
    * labels paired with role-driven accents (e.g. an in-progress
    * task row whose ring is `TugProgress role="action"`).
@@ -89,8 +80,10 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
    */
   role?: TugLabelRole;
   /**
-   * Emphasis variant — adjusts weight/style/case of the label text.
-   * @selector .tug-label-emphasis-calm | .tug-label-emphasis-strong | .tug-label-emphasis-shout
+   * Emphasis variant — a volume scale from `shout` (loudest) to
+   * `whisper` (quietest). `muted` and `whisper` both paint the
+   * muted text token; `whisper` adds italic.
+   * @selector .tug-label-emphasis-muted | .tug-label-emphasis-whisper | .tug-label-emphasis-strong | .tug-label-emphasis-shout
    * @default "normal"
    */
   emphasis?: TugLabelEmphasis;
@@ -164,7 +157,6 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       children,
       htmlFor,
       size = "md",
-      color = "default",
       role,
       emphasis = "normal",
       mono = false,
@@ -284,11 +276,7 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     const labelClassName = cn(
       "tug-label",
       `tug-label-size-${size}`,
-      // `role` overrides `color` per the prop's spec — the role
-      // class adds a higher-specificity `color:` rule that wins
-      // the cascade against `.tug-label-color-muted` etc.
       role !== undefined && `tug-label-role-${role}`,
-      role === undefined && color !== "default" && `tug-label-color-${color}`,
       emphasis !== "normal" && `tug-label-emphasis-${emphasis}`,
       mono && "tug-label-mono",
       align !== "start" && `tug-label-align-${align}`,

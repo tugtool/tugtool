@@ -69,7 +69,7 @@ export function GalleryTitleBar() {
     >
       <div className="cg-section">
         <TugLabel className="cg-section-title">Title Bar Demo (Step 3)</TugLabel>
-        <TugLabel size="2xs" color="muted">CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal ellipsis), and close buttons.</TugLabel>
+        <TugLabel size="2xs" emphasis="muted">CardTitleBar in isolation: collapse/expand toggle (chevron), menu (horizontal ellipsis), and close buttons.</TugLabel>
       </div>
 
       <TugSeparator />
@@ -79,7 +79,7 @@ export function GalleryTitleBar() {
         <TugLabel className="cg-section-title">Preview Controls</TugLabel>
         <TugBox variant="bordered" rounded="sm" style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
           <div className="cg-control-group">
-            <TugLabel size="2xs" color="muted">Icon</TugLabel>
+            <TugLabel size="2xs" emphasis="muted">Icon</TugLabel>
             <TugPopupButton
               label={iconName || "None"}
               size="sm"
@@ -138,7 +138,7 @@ export function GalleryTitleBar() {
         </div>
 
         {lastEvent !== null && (
-          <TugLabel size="2xs" color="muted" data-testid="gallery-title-bar-event-status">{`Last event: ${lastEvent}`}</TugLabel>
+          <TugLabel size="2xs" emphasis="muted" data-testid="gallery-title-bar-event-status">{`Last event: ${lastEvent}`}</TugLabel>
         )}
 
         <div style={{ marginTop: "8px" }}>

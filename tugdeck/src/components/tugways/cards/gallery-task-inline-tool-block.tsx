@@ -3,7 +3,7 @@
  * `TaskInlineToolBlock`.
  *
  * The wrapper intentionally renders no `ToolBlockChrome` — every
- * fixture below is a single inline-flow row (icon + calm label),
+ * fixture below is a single inline-flow row (icon + whisper label),
  * laid out as the transcript would render them in sequence. The
  * sections walk through each per-event branch the wrapper supports
  * plus the streaming + error variants.
@@ -185,7 +185,7 @@ export function GalleryTaskInlineToolBlock(): React.ReactElement {
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Error on TaskCreate — danger tone, calm dropped
+          Error on TaskCreate — danger tone, whisper dropped
         </TugLabel>
         <TaskInlineToolBlock {...ERROR_CREATE} />
       </div>
@@ -194,7 +194,7 @@ export function GalleryTaskInlineToolBlock(): React.ReactElement {
 
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Error on TaskUpdate — danger tone, calm dropped
+          Error on TaskUpdate — danger tone, whisper dropped
         </TugLabel>
         <TaskInlineToolBlock {...ERROR_UPDATE} />
       </div>

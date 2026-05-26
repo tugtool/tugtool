@@ -170,7 +170,7 @@ export function GalleryTugCue() {
           <TugLabel className="cg-section-title">Real-host preview</TugLabel>
           <TugBox variant="bordered" rounded="sm" style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
             <div className="cg-control-group">
-              <TugLabel size="2xs" color="muted">Role</TugLabel>
+              <TugLabel size="2xs" emphasis="muted">Role</TugLabel>
               <TugPopupButton
                 label={hostRole}
                 size="sm"
@@ -183,7 +183,7 @@ export function GalleryTugCue() {
               />
             </div>
             <div className="cg-control-group">
-              <TugLabel size="2xs" color="muted">Density</TugLabel>
+              <TugLabel size="2xs" emphasis="muted">Density</TugLabel>
               <TugPopupButton
                 label={hostDensity}
                 size="sm"
@@ -292,7 +292,7 @@ export function GalleryTugCue() {
         {/* ---- Affordance use-cases ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Affordance use-cases — three shapes for collapse / expand</TugLabel>
-          <TugLabel size="xs" color="muted">
+          <TugLabel size="xs" emphasis="muted">
             Shape A — reveal cue (TugCue role=active). Shape B — structural divider (TugCue role=muted align=start mono). Shape C — header collapse toggle (TugIconButton with ChevronsUp). All three pictured inside fake-FileBlock frames so the call-site context reads true.
           </TugLabel>
 
@@ -302,7 +302,7 @@ export function GalleryTugCue() {
             const expanded = !!matrixExpandedById[id];
             return (
               <div style={{ marginTop: "12px" }}>
-                <TugLabel size="2xs" color="muted">Shape A — reveal cue (collapsed FileBlock)</TugLabel>
+                <TugLabel size="2xs" emphasis="muted">Shape A — reveal cue (collapsed FileBlock)</TugLabel>
                 <div className="cg-tug-cue-host">
                   <div className="cg-tug-cue-host-header">
                     <span>src/components/tugways/big-file.tsx</span>
@@ -331,7 +331,7 @@ export function GalleryTugCue() {
             const expanded = !!matrixExpandedById[id];
             return (
               <div style={{ marginTop: "12px" }}>
-                <TugLabel size="2xs" color="muted">Shape B — structural divider (diff hunk header)</TugLabel>
+                <TugLabel size="2xs" emphasis="muted">Shape B — structural divider (diff hunk header)</TugLabel>
                 <div className="cg-tug-cue-frame">
                   <TugCue
                     role="muted"
@@ -354,7 +354,7 @@ export function GalleryTugCue() {
             const collapsed = !!matrixExpandedById[id]; // toggled
             return (
               <div style={{ marginTop: "12px" }}>
-                <TugLabel size="2xs" color="muted">Shape C — header collapse toggle (TugIconButton, paired with Copy)</TugLabel>
+                <TugLabel size="2xs" emphasis="muted">Shape C — header collapse toggle (TugIconButton, paired with Copy)</TugLabel>
                 <div className="cg-tug-cue-host">
                   <div className="cg-tug-cue-host-header">
                     <span style={{ flex: 1 }}>src/components/tugways/big-file.tsx</span>

@@ -181,7 +181,7 @@ export function GalleryPushButton() {
         <TugLabel className="cg-section-title">Preview Controls</TugLabel>
         <TugBox variant="bordered" rounded="sm" style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
           <div className="cg-control-group">
-            <TugLabel size="2xs" color="muted">Emphasis</TugLabel>
+            <TugLabel size="2xs" emphasis="muted">Emphasis</TugLabel>
             <TugPopupButton
               label={previewEmphasis}
               size="sm"
@@ -194,7 +194,7 @@ export function GalleryPushButton() {
             />
           </div>
           <div className="cg-control-group">
-            <TugLabel size="2xs" color="muted">Role</TugLabel>
+            <TugLabel size="2xs" emphasis="muted">Role</TugLabel>
             <TugPopupButton
               label={roleDropdownLabel}
               size="sm"
@@ -204,7 +204,7 @@ export function GalleryPushButton() {
           </div>
 
           <div className="cg-control-group">
-            <TugLabel size="2xs" color="muted">Size</TugLabel>
+            <TugLabel size="2xs" emphasis="muted">Size</TugLabel>
             <TugPopupButton
               label={previewSize}
               size="sm"
@@ -427,10 +427,10 @@ export function GalleryPushButton() {
         <div className="cg-matrix">
           {ALL_SUBTYPES.map((subtype) => (
             <div key={subtype} className="cg-subtype-block">
-              <TugLabel size="2xs" color="muted">{`subtype: ${subtype}`}</TugLabel>
+              <TugLabel size="2xs" emphasis="muted">{`subtype: ${subtype}`}</TugLabel>
               {ALL_COMBOS.map(({ emphasis, role }) => (
                 <div key={`${emphasis}-${role}`} className="cg-variant-row">
-                  <TugLabel size="2xs" color="muted">{`${emphasis}-${role}`}</TugLabel>
+                  <TugLabel size="2xs" emphasis="muted">{`${emphasis}-${role}`}</TugLabel>
                   <div className="cg-size-group">
                     {ALL_SIZES.map((size) => (
                       <SubtypeButton

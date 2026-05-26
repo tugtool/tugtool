@@ -22,7 +22,7 @@
  *     </ToolBlockFieldRow>
  *
  * Typography choices, pinned here so every wrapper inherits them:
- *  - Label is a `TugLabel size="sm" color="muted"` — same font scale
+ *  - Label is a `TugLabel size="sm" emphasis="muted"` — same font scale
  *    as the value so it doesn't shrink into illegibility (a previous
  *    iteration used `2xs` and that was a UX regression). Muted
  *    color provides the visual subordination.
@@ -91,7 +91,7 @@ export const ToolBlockFieldRow: React.FC<ToolBlockFieldRowProps> = ({
   >
     <TugLabel
       size="sm"
-      color="muted"
+      emphasis="muted"
       className="tool-block-field-row-key"
     >
       {`${label}:`}

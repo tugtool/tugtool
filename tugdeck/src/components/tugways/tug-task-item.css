@@ -49,7 +49,7 @@ body {
 
   /* `completed` icon — the standard "success" tone family (green)
      so the checkmark reads as "done" rather than just "muted". The
-     label stays muted via `TugLabel color="muted"`; only the
+     label stays muted via `TugLabel emphasis="muted"`; only the
      indicator picks up the success tone. */
   --tugx-task-item-success-color:   var(--tug7-element-tone-text-normal-success-rest);
 }
@@ -119,7 +119,7 @@ body {
 
 /* The checkmark glyph picks up the success tone so finished rows
    read as "done", not "muted". The label stays muted via
-   `TugLabel color="muted"` (set in the .tsx). */
+   `TugLabel emphasis="muted"` (set in the .tsx). */
 /* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
 .tug-task-item[data-status="completed"] .tug-task-item-indicator {
   color: var(--tugx-task-item-success-color);

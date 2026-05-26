@@ -8,7 +8,7 @@
  *
  * No DOM: per the project's testing policy these are `bun:test`
  * pure-logic assertions, not fake-DOM render tests. The visible
- * tone treatment (`emphasis="calm"` for the steady-state row /
+ * tone treatment (`emphasis="whisper"` for the steady-state row /
  * `role="danger"` + `emphasis="normal"` for an errored event) is
  * implementation-encoded in the React branch — not separately
  * extractable as a pure helper, so it isn't pinned here.

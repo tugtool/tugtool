@@ -4,17 +4,18 @@
    ========================================================================= */
 
 /* @tug-pairings {
- *   ".tug-label":              element=field-text-normal-label-rest      surface=surface-global-primary-normal-default-rest
- *   ".tug-label-required":     element=field-text-normal-required-rest   surface=surface-global-primary-normal-default-rest
- *   ".tug-label-disabled":     element=field-text-normal-plain-disabled  surface=surface-global-primary-normal-default-rest
- *   ".tug-label-role-accent":  element=tone-text-normal-accent-rest      surface=surface-global-primary-normal-default-rest
- *   ".tug-label-role-action":  element=tone-text-normal-active-rest      surface=surface-global-primary-normal-default-rest
- *   ".tug-label-role-agent":   element=tone-text-normal-agent-rest       surface=surface-global-primary-normal-default-rest
- *   ".tug-label-role-caution": element=tone-text-normal-caution-rest     surface=surface-global-primary-normal-default-rest
- *   ".tug-label-role-danger":  element=tone-text-normal-danger-rest      surface=surface-global-primary-normal-default-rest
- *   ".tug-label-role-data":    element=tone-text-normal-data-rest        surface=surface-global-primary-normal-default-rest
- *   ".tug-label-role-success": element=tone-text-normal-success-rest     surface=surface-global-primary-normal-default-rest
- *   ".tug-label-emphasis-calm": element=global-text-normal-muted-rest    surface=surface-global-primary-normal-default-rest
+ *   ".tug-label":                  element=field-text-normal-label-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-required":         element=field-text-normal-required-rest   surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-disabled":         element=field-text-normal-plain-disabled  surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-accent":      element=tone-text-normal-accent-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-action":      element=tone-text-normal-active-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-agent":       element=tone-text-normal-agent-rest       surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-caution":     element=tone-text-normal-caution-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-danger":      element=tone-text-normal-danger-rest      surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-data":        element=tone-text-normal-data-rest        surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-role-success":     element=tone-text-normal-success-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-emphasis-muted":   element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-emphasis-whisper": element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
  * } */
 
 /**
@@ -24,7 +25,6 @@
  * | --tug7-element-field-text-normal-label-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label (color)                   |
  * | --tug7-element-field-text-normal-required-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-required (color)          |
  * | --tug7-element-field-text-normal-plain-disabled | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-disabled (color)          |
- * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-color-muted (color)       |
  * | --tug7-element-tone-text-normal-accent-rest  | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-accent (color)       |
  * | --tug7-element-tone-text-normal-active-rest  | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-action (color)       |
  * | --tug7-element-tone-text-normal-agent-rest   | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-agent (color)        |
@@ -32,7 +32,8 @@
  * | --tug7-element-tone-text-normal-danger-rest  | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-danger (color)       |
  * | --tug7-element-tone-text-normal-data-rest    | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-data (color)         |
  * | --tug7-element-tone-text-normal-success-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-success (color)      |
- * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-calm (color)     |
+ * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-muted (color)    |
+ * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-whisper (color)  |
  */
 
 
@@ -79,15 +80,6 @@
 .tug-label-size-8xl { font-size: var(--tug-font-size-8xl); }
 
 /* ============================================================================
-   Color Variants
-   ========================================================================= */
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-label-color-muted {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* ============================================================================
    Role tones — `--tug7-element-tone-text-normal-<suffix>-rest`. The
    `action` role aliases to the `active` token suffix to match
    `TugProgress`'s role naming, so the same role name lights up the
@@ -110,26 +102,32 @@
 .tug-label-role-success { color: var(--tug7-element-tone-text-normal-success-rest); }
 
 /* ============================================================================
-   Emphasis Variants — adjust weight/style/case of the label text.
-   `calm` lays italics over the base color and tints toward the muted
-   token so it reads quieter than `normal`. `strong` is bold; `shout`
-   is bold + ALL CAPS. Emphasis composes with size, color, and role.
+   Emphasis Variants — a volume scale from `shout` (loudest) to
+   `whisper` (quietest). `muted` and `whisper` both paint the muted
+   text token; `whisper` adds italic on top so it reads as the
+   quietest tier. Emphasis composes with size and role; when a role
+   is also set, the emphasis color wins by source order.
    ========================================================================= */
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-label-emphasis-calm {
-  font-style: italic;
-  color: var(--tug7-element-global-text-normal-muted-rest);
+.tug-label-emphasis-shout {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .tug-label-emphasis-strong {
   font-weight: 700;
 }
 
-.tug-label-emphasis-shout {
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-emphasis-muted {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-emphasis-whisper {
+  font-style: italic;
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ============================================================================

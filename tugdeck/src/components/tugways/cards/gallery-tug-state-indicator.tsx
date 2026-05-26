@@ -152,7 +152,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
         {/* ---- Section 1 — Tone palette ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugStateIndicator — Tone Palette</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             The four tones in the indicator's palette. Default and danger are static (no ring);
             success and caution animate (pulsing ring).
           </TugLabel>
@@ -180,7 +180,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
         {/* ---- Section 2 — All session states ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugStateIndicator — All Session States</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             Every `phase × transportState × interruptInFlight` triple. Transport health dominates
             phase: offline → danger/static, restoring → caution/animated. Interrupt-in-flight
             promotes to caution/animated unless the wire is already offline/restoring.
@@ -202,7 +202,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
         {/* ---- Section 3 — Size variants ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugStateIndicator — Size Variants</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             The same active state at 10 / 12 / 16 / 20 / 24 / 32 px. The `size` prop drives
             `--tugx-state-indicator-size`; the dot is half the host diameter.
           </TugLabel>
@@ -234,7 +234,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
         {/* ---- Section 4 — Handoff cycle ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugStateIndicator — Handoff Cycle</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             Toggle the switch to cycle the state every 2 s. The dot updates immediately; the
             in-flight ring pulse runs to completion in the prior tone; the next pulse runs in
             the new tone (or the ring vanishes when the new tone is static). The cycle is
@@ -266,7 +266,7 @@ export function GalleryTugStateIndicator(): React.ReactElement {
         {/* ---- Section 5 — Label Position ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugStateIndicator — Label Position</TugLabel>
-          <TugLabel size="2xs" color="muted">
+          <TugLabel size="2xs" emphasis="muted">
             The `labelPosition` prop renders the canonical phase title to the right of the dot
             (default), to the left, or hides it. When the label is visible the TugTooltip is
             suppressed — the same information is already on screen. When hidden, the tooltip

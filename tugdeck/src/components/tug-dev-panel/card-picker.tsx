@@ -80,7 +80,7 @@ export const CardPicker: React.FC<CardPickerProps> = ({
 
   return (
     <div className={cn("tug-devpanel-cardpicker", className)}>
-      <TugLabel size="3xs" color="muted" className="tug-devpanel-cardpicker-label">
+      <TugLabel size="3xs" emphasis="muted" className="tug-devpanel-cardpicker-label">
         Card
       </TugLabel>
       {empty ? (
