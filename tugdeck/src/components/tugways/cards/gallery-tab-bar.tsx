@@ -159,9 +159,9 @@ export function TugTabBarDemo() {
           Reset
         </TugPushButton>
       </div>
-      <TugLabel size="2xs" emphasis="muted" data-testid="demo-overflow-status">{overflowCount > 0 ? `Overflow stage: ${overflowStage} — ${overflowCount} tab${overflowCount !== 1 ? "s" : ""} in overflow` : `Overflow stage: ${overflowStage}`}</TugLabel>
+      <TugLabel size="2xs" emphasis="calm" data-testid="demo-overflow-status">{overflowCount > 0 ? `Overflow stage: ${overflowStage} — ${overflowCount} tab${overflowCount !== 1 ? "s" : ""} in overflow` : `Overflow stage: ${overflowStage}`}</TugLabel>
       {lastSelected !== null && (
-        <TugLabel size="2xs" emphasis="muted">{`Last selected: ${lastSelected}`}</TugLabel>
+        <TugLabel size="2xs" emphasis="calm">{`Last selected: ${lastSelected}`}</TugLabel>
       )}
     </div>
     </ResponderScope>

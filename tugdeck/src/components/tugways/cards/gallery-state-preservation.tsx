@@ -45,7 +45,7 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 function PreservedCheckboxDemo(): React.ReactElement {
   return (
     <div className="cg-variant-row">
-      <TugLabel size="2xs" emphasis="muted">Uncontrolled opt-in</TugLabel>
+      <TugLabel size="2xs" emphasis="calm">Uncontrolled opt-in</TugLabel>
       <div className="cg-size-group">
         <TugCheckbox
           componentStatePreservationKey="uncontrolled-done"
@@ -84,7 +84,7 @@ function ControlledPreservedCheckboxDemo(): React.ReactElement {
         className="cg-variant-row"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <TugLabel size="2xs" emphasis="muted">Controlled opt-in</TugLabel>
+        <TugLabel size="2xs" emphasis="calm">Controlled opt-in</TugLabel>
         <div className="cg-size-group">
           <TugCheckbox
             componentStatePreservationKey="controlled-done"
@@ -94,7 +94,7 @@ function ControlledPreservedCheckboxDemo(): React.ReactElement {
             checked={checked}
           />
         </div>
-        <TugLabel size="2xs" emphasis="muted">
+        <TugLabel size="2xs" emphasis="calm">
           {`parent state: ${checked ? "checked" : "unchecked"}`}
         </TugLabel>
       </div>
@@ -126,7 +126,7 @@ export function GalleryStatePreservation(): React.ReactElement {
       </div>
       <TugSeparator />
       <div className="cg-section">
-        <TugLabel size="2xs" emphasis="muted">
+        <TugLabel size="2xs" emphasis="calm">
           Toggle any of the above, reload the window, and confirm the
           state survives on the very first paint. Each new opt-in
           component lands here as its step merges.

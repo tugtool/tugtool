@@ -144,11 +144,11 @@ export const TugTaskItem: React.FC<TugTaskItemProps> = ({
   //   - `in_progress` → `role="action"` so the label text picks
   //     up the same active-tone color family the ring uses (one
   //     consistent role-driven accent for the whole row).
-  //   - `completed`   → `emphasis="muted"` so finished rows fade
+  //   - `completed`   → `emphasis="calm"` so finished rows fade
   //     to prose weight; the strikethrough is applied via CSS.
   //   - `pending`     → default color, no emphasis.
   const labelEmphasis: TugLabelEmphasis | undefined =
-    status === "completed" ? "muted" : undefined;
+    status === "completed" ? "calm" : undefined;
   const labelRole: TugLabelRole | undefined =
     status === "in_progress" ? "action" : undefined;
 

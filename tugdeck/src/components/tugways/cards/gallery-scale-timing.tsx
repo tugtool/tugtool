@@ -165,7 +165,7 @@ export function GalleryScaleTiming() {
           <TugSlider value={timing} senderId={timingId} min={0.1} max={10.0} step={0.1} label="--tug-timing" layout="stacked" size="sm" formatter={decimal2Formatter} style={{ marginBottom: "16px" }} />
           <div className="cg-control-group cg-st-slider-row">
             <TugCheckbox checked={motionOn} senderId={motionCheckId} label="Motion enabled (--tug-motion)" size="sm" />
-            <TugLabel size="2xs" emphasis="muted">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">{motionOn ? "1 — animations play" : "0 — all animation/transition zeroed via data-tug-motion"}</TugLabel>
           </div>
         </div>
       </div>
@@ -177,15 +177,15 @@ export function GalleryScaleTiming() {
         <TugLabel className="cg-section-title">JS Helper Readout</TugLabel>
         <TugBox variant="bordered" rounded="sm" data-testid="st-readout" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
           <div className="cg-st-readout-row">
-            <TugLabel size="2xs" emphasis="muted" mono>getTugZoom()</TugLabel>
+            <TugLabel size="2xs" emphasis="calm" mono>getTugZoom()</TugLabel>
             <TugLabel size="2xs" mono data-testid="st-readout-scale">{formatValue(readout.scale)}</TugLabel>
           </div>
           <div className="cg-st-readout-row">
-            <TugLabel size="2xs" emphasis="muted" mono>getTugTiming()</TugLabel>
+            <TugLabel size="2xs" emphasis="calm" mono>getTugTiming()</TugLabel>
             <TugLabel size="2xs" mono data-testid="st-readout-timing">{formatValue(readout.timing)}</TugLabel>
           </div>
           <div className="cg-st-readout-row">
-            <TugLabel size="2xs" emphasis="muted" mono>isTugMotionEnabled()</TugLabel>
+            <TugLabel size="2xs" emphasis="calm" mono>isTugMotionEnabled()</TugLabel>
             <TugLabel size="2xs" mono data-testid="st-readout-motion">{String(readout.motionEnabled)}</TugLabel>
           </div>
         </TugBox>
@@ -222,7 +222,7 @@ export function GalleryScaleTiming() {
 
           {/* ---- Petals Spinner ---- */}
           <div className="cg-st-preview-row">
-            <TugLabel size="2xs" emphasis="muted">Petals</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">Petals</TugLabel>
             {[18].map((sz) => (
               <span
                 key={sz}
@@ -237,7 +237,7 @@ export function GalleryScaleTiming() {
 
           {/* ---- Pole Progress Bar ---- */}
           <div className="cg-st-preview-row">
-            <TugLabel size="2xs" emphasis="muted">Pole</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">Pole</TugLabel>
             <div style={{ width: "30%" }}>
               <div className="tug-pole"><div className="tug-pole-inner" /></div>
             </div>

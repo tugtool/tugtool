@@ -64,7 +64,7 @@ export const LogRow: React.FC<LogRowProps> = ({ entry }) => {
         <TugLabel
           size="3xs"
           mono
-          emphasis="muted"
+          emphasis="calm"
           className="tug-devlog-row-time"
         >
           {formatTimestamp(entry.timestamp)}
@@ -79,7 +79,7 @@ export const LogRow: React.FC<LogRowProps> = ({ entry }) => {
         <TugLabel
           size="3xs"
           mono
-          emphasis="muted"
+          emphasis="calm"
           className="tug-devlog-row-source"
         >
           {entry.source}

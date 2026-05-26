@@ -14,7 +14,7 @@
  *   ".tug-label-role-danger":      element=tone-text-normal-danger-rest      surface=surface-global-primary-normal-default-rest
  *   ".tug-label-role-data":        element=tone-text-normal-data-rest        surface=surface-global-primary-normal-default-rest
  *   ".tug-label-role-success":     element=tone-text-normal-success-rest     surface=surface-global-primary-normal-default-rest
- *   ".tug-label-emphasis-muted":   element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-emphasis-calm":    element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
  *   ".tug-label-emphasis-whisper": element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
  * } */
 
@@ -32,7 +32,7 @@
  * | --tug7-element-tone-text-normal-danger-rest  | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-danger (color)       |
  * | --tug7-element-tone-text-normal-data-rest    | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-data (color)         |
  * | --tug7-element-tone-text-normal-success-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-success (color)      |
- * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-muted (color)    |
+ * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-calm (color)     |
  * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-whisper (color)  |
  */
 
@@ -103,7 +103,7 @@
 
 /* ============================================================================
    Emphasis Variants — a volume scale from `shout` (loudest) to
-   `whisper` (quietest). `muted` and `whisper` both paint the muted
+   `whisper` (quietest). `calm` and `whisper` both paint the muted
    text token; `whisper` adds italic on top so it reads as the
    quietest tier. Emphasis composes with size and role; when a role
    is also set, the emphasis color wins by source order.
@@ -120,7 +120,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-label-emphasis-muted {
+.tug-label-emphasis-calm {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 

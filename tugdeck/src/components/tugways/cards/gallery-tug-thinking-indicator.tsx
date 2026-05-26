@@ -147,7 +147,7 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
         {/* ---- Section 1 — Animating vs static ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugThinkingIndicator — Animating vs static</TugLabel>
-          <TugLabel size="2xs" emphasis="muted">
+          <TugLabel size="2xs" emphasis="calm">
             Three vertical bars that pulse in staggered sequence via
             TugAnimator.group(). When `animating` is true the bars run a
             chained pulse cycle; when false the bars sit at rest (visible,
@@ -190,7 +190,7 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
         {/* ---- Section 2 — Size variants ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugThinkingIndicator — Size Variants</TugLabel>
-          <TugLabel size="2xs" emphasis="muted">
+          <TugLabel size="2xs" emphasis="calm">
             The same animating state at 10 / 12 / 16 / 20 / 24 / 32 px. The
             `size` prop drives `--tugx-thinking-indicator-size`; bar width
             and gap scale proportionally so the three-bar identity holds
@@ -222,7 +222,7 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
         {/* ---- Section 3 — Label position ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugThinkingIndicator — Label Position</TugLabel>
-          <TugLabel size="2xs" emphasis="muted">
+          <TugLabel size="2xs" emphasis="calm">
             The `labelPosition` prop renders the label to the right of the
             glyph (default), to the left, or hides it. The default text is
             "Thinking…"; supply `label` to override.
@@ -266,7 +266,7 @@ export function GalleryTugThinkingIndicator(): React.ReactElement {
         {/* ---- Section 4 — Live tinker bench ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugThinkingIndicator — Live Tinker Bench</TugLabel>
-          <TugLabel size="2xs" emphasis="muted">
+          <TugLabel size="2xs" emphasis="calm">
             Tune every knob — animating, label position, size, shrink scale,
             opacity dip, cycle speed, and shrink direction. The bars'
             transform-origin updates live; mid-cycle slider changes take

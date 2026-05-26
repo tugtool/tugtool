@@ -47,14 +47,14 @@ export function GallerySplitPane() {
           <TugSplitPane orientation="vertical" storageKey="gallery.inner">
             <TugSplitPanel id="inner-left" defaultSize="50%" minSize="25%">
               <div style={PANE_CONTENT}>
-                <TugLabel size="sm" emphasis="muted">
+                <TugLabel size="sm" emphasis="calm">
                   top left
                 </TugLabel>
               </div>
             </TugSplitPanel>
             <TugSplitPanel id="inner-right" defaultSize="50%" minSize="25%">
               <div style={PANE_CONTENT}>
-                <TugLabel size="sm" emphasis="muted">
+                <TugLabel size="sm" emphasis="calm">
                   top right
                 </TugLabel>
               </div>
@@ -63,7 +63,7 @@ export function GallerySplitPane() {
         </TugSplitPanel>
         <TugSplitPanel id="outer-bottom" defaultSize="40%" minSize="20%" collapsible>
           <div style={PANE_CONTENT}>
-            <TugLabel size="sm" emphasis="muted">
+            <TugLabel size="sm" emphasis="calm">
               bottom
             </TugLabel>
           </div>

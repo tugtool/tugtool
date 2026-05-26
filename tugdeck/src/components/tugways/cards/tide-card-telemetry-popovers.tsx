@@ -323,7 +323,7 @@ function TurnEntryPair({
  */
 function RequestPreview({ turn }: { turn: TurnEntry }): React.ReactElement {
   return (
-    <TugLabel className="tide-popover-row-request" mono emphasis="muted">
+    <TugLabel className="tide-popover-row-request" mono emphasis="calm">
       {requestPreviewText(turn)}
     </TugLabel>
   );

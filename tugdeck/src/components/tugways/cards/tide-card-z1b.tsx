@@ -203,7 +203,7 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
         <>
           <TugLabel
             size="xs"
-            emphasis="muted"
+            emphasis="calm"
             aria-hidden
             className="tide-z1b-separator"
           >
@@ -306,11 +306,11 @@ function EndStateDisplay({
       </TugBadge>
       {participant === "code" && turn !== undefined ? (
         <>
-          <TugLabel size="xs" emphasis="muted" aria-hidden>
+          <TugLabel size="xs" emphasis="calm" aria-hidden>
             •
           </TugLabel>
           <TugLabel size="xs">{formatDurationMs(turn.activeMs)}</TugLabel>
-          <TugLabel size="xs" emphasis="muted" aria-hidden>
+          <TugLabel size="xs" emphasis="calm" aria-hidden>
             •
           </TugLabel>
           <TugLabel size="xs">

@@ -82,7 +82,7 @@ export const FieldRow: React.FC<FieldRowProps> = ({
         </TugLabel>
         <TugLabel
           size="3xs"
-          emphasis="muted"
+          emphasis="calm"
           mono
           ellipsis="end"
           maxLines={1}
@@ -102,7 +102,7 @@ export const FieldRow: React.FC<FieldRowProps> = ({
         {hint !== undefined ? (
           <TugLabel
             size="3xs"
-            emphasis="muted"
+            emphasis="calm"
             className="tug-devpanel-field-hint"
           >
             {hint}

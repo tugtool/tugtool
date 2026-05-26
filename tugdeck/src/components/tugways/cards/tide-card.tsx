@@ -1678,7 +1678,7 @@ function TideProjectPickerForm({
         {dirMissing && (
           <TugLabel
             className="tide-card-picker-dir-warning"
-            emphasis="muted"
+            emphasis="calm"
             data-testid="tide-card-picker-dir-warning"
           >
             {"Directory doesn't exist"}

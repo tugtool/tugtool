@@ -12,7 +12,7 @@
  *    wrapper's body region used to hand-roll as
  *    `.<wrapper>-body { flex column, gap xs, padding sm }`.
  *  - `ToolBlockFieldRow` — the `<label>: <value>` row carrying the
- *    standard `TugLabel size="sm" emphasis="muted"` key + the
+ *    standard `TugLabel size="sm" emphasis="calm"` key + the
  *    baseline-aligned (or stacked) value. Inline by default;
  *    `layout="stacked"` for block-shaped values.
  *  - `ToolBlockDisclosure` — the native `<details>` + rotating

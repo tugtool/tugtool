@@ -112,7 +112,7 @@ export function GallerySlider() {
               senderId={smId}
               label="Small"
             />
-            <TugLabel size="2xs" emphasis="muted">{`Value: ${smValue}`}</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">{`Value: ${smValue}`}</TugLabel>
           </div>
           <div className="gs-size-item">
             <span className="gs-demo-label">md</span>
@@ -124,7 +124,7 @@ export function GallerySlider() {
               componentStatePreservationKey="slider-md"
               data-testid="gallery-slider-persistent"
             />
-            <TugLabel size="2xs" emphasis="muted">{`Value: ${mdValue}`}</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">{`Value: ${mdValue}`}</TugLabel>
           </div>
           <div className="gs-size-item">
             <span className="gs-demo-label">lg</span>
@@ -134,7 +134,7 @@ export function GallerySlider() {
               senderId={lgId}
               label="Large"
             />
-            <TugLabel size="2xs" emphasis="muted">{`Value: ${lgValue}`}</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">{`Value: ${lgValue}`}</TugLabel>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 /* @tug-pairings: none — `ToolBlockFieldRow` is layout-only; the
- * label's color comes from `TugLabel emphasis="muted"`'s own tokens.
+ * label's color comes from `TugLabel emphasis="calm"`'s own tokens.
  * Value children inherit their own typography (mono via `<code>`,
  * sans via `TugLabel`, etc.).
  */

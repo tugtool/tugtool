@@ -174,7 +174,7 @@ function PhysicsCurvesDemo() {
     <ResponderScope>
     <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Physics Solvers</TugLabel>
-      <TugLabel size="2xs" emphasis="muted">Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver drive WAAPI animations with physically-accurate motion.</TugLabel>
+      <TugLabel size="2xs" emphasis="calm">Pre-computed keyframe arrays from SpringSolver, GravitySolver, and FrictionSolver drive WAAPI animations with physically-accurate motion.</TugLabel>
       <div className="cg-anim-stages" data-testid="anim-physics-stage">
         {/* Spring — horizontal */}
         <TugBox
@@ -286,7 +286,7 @@ function DurationTokensDemo() {
     <ResponderScope>
     <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Duration Tokens</TugLabel>
-      <TugLabel size="2xs" emphasis="muted">Duration tokens resolve to base ms values scaled by getTugTiming(). Click each to see the speed difference.</TugLabel>
+      <TugLabel size="2xs" emphasis="calm">Duration tokens resolve to base ms values scaled by getTugTiming(). Click each to see the speed difference.</TugLabel>
       <TugBox
         variant="filled"
         resize="horizontal"
@@ -397,7 +397,7 @@ function CancelModesDemo() {
     <ResponderScope>
     <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Cancellation Modes</TugLabel>
-      <TugLabel size="2xs" emphasis="muted">Start a slow animation, then cancel it with each mode to see the difference. snap-to-end jumps to final state, hold-at-current freezes in place, reverse-from-current animates back to start.</TugLabel>
+      <TugLabel size="2xs" emphasis="calm">Start a slow animation, then cancel it with each mode to see the difference. snap-to-end jumps to final state, hold-at-current freezes in place, reverse-from-current animates back to start.</TugLabel>
       <TugBox
         variant="filled"
         resize="horizontal"
@@ -430,7 +430,7 @@ function CancelModesDemo() {
         </TugPushButton>
         <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" label="Travel" style={{ maxWidth: "200px" }} />
       </div>
-      <TugLabel size="2xs" emphasis="muted" data-testid="anim-cancel-status">{`Status: ${status}`}</TugLabel>
+      <TugLabel size="2xs" emphasis="calm" data-testid="anim-cancel-status">{`Status: ${status}`}</TugLabel>
     </div>
     </ResponderScope>
   );
@@ -511,7 +511,7 @@ function NamedSlotsDemo() {
     <ResponderScope>
     <div className="cg-section" ref={responderRef as (el: HTMLDivElement | null) => void}>
       <TugLabel className="cg-section-title">Named Slots</TugLabel>
-      <TugLabel size="2xs" emphasis="muted">Animations with the same key on the same element automatically cancel the previous one. Different keys coexist independently.</TugLabel>
+      <TugLabel size="2xs" emphasis="calm">Animations with the same key on the same element automatically cancel the previous one. Different keys coexist independently.</TugLabel>
       <TugBox
         variant="filled"
         resize="horizontal"
@@ -542,7 +542,7 @@ function NamedSlotsDemo() {
         <TugSlider value={pct} senderId={pctId} min={10} max={100} step={5} size="sm" label="Travel" style={{ maxWidth: "200px" }} />
       </div>
       {lastAction !== null && (
-        <TugLabel size="2xs" emphasis="muted" data-testid="anim-slot-status">{lastAction}</TugLabel>
+        <TugLabel size="2xs" emphasis="calm" data-testid="anim-slot-status">{lastAction}</TugLabel>
       )}
     </div>
     </ResponderScope>

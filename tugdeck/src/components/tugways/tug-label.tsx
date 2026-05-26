@@ -51,15 +51,15 @@ export type TugLabelAlign = "start" | "center" | "end";
  * - `shout`: bold + ALL CAPS.
  * - `strong`: bold.
  * - `normal` (default): inherits the base weight/style.
- * - `muted`: muted gray, upright — quieter than normal.
+ * - `calm`: muted gray, upright — quieter than normal.
  * - `whisper`: muted gray + italic — like a whisper, the quietest tier.
  *
- * `muted` and `whisper` paint `--tug7-element-global-text-normal-muted-rest`;
+ * `calm` and `whisper` paint `--tug7-element-global-text-normal-muted-rest`;
  * `whisper` adds italic on top. When `role` is also set, the emphasis color
  * wins (source order in the cascade), so reach for `role` when a role-driven
  * accent should show through.
  */
-export type TugLabelEmphasis = "muted" | "normal" | "shout" | "strong" | "whisper";
+export type TugLabelEmphasis = "calm" | "normal" | "shout" | "strong" | "whisper";
 
 /** TugLabel props. */
 export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
@@ -81,9 +81,9 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
   role?: TugLabelRole;
   /**
    * Emphasis variant — a volume scale from `shout` (loudest) to
-   * `whisper` (quietest). `muted` and `whisper` both paint the
+   * `whisper` (quietest). `calm` and `whisper` both paint the
    * muted text token; `whisper` adds italic.
-   * @selector .tug-label-emphasis-muted | .tug-label-emphasis-whisper | .tug-label-emphasis-strong | .tug-label-emphasis-shout
+   * @selector .tug-label-emphasis-calm | .tug-label-emphasis-whisper | .tug-label-emphasis-strong | .tug-label-emphasis-shout
    * @default "normal"
    */
   emphasis?: TugLabelEmphasis;
