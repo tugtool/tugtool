@@ -229,24 +229,31 @@
   margin-inline: 2px;
 }
 
-/* TASKS value row — leading TugProgressIndicator ring + `N/M` (or
-   `None`) label, centered as a group within the uniform cell width.
-   The ring's size is set via the `size` prop on the component; this
-   file controls only the row gap. The ring picks up the cell's text
-   color through `role="inherit"` ([L20] — this file does not
-   override `TugProgressIndicator`'s `--tugx-progress-indicator-fill`
-   slot). */
+/* TASKS value row — a single `TugProgressIndicator` (pulsing-dot
+   variant) whose `label` carries the `N/M` text (or `None`). The
+   indicator is the cell's only child and fills the uniform cell
+   width via its own flex layout. */
 .tide-telemetry-status-cell[data-priority="tasks"]
   .tide-telemetry-status-value-wrap {
   gap: var(--tug-space-xs);
 }
 
-/* Dim the value when there are no tasks (`–/–`) so the cell reads
-   as a quiet placeholder rather than an active datum. Matches the
-   muted treatment of the ring's `disabled` opacity above. */
+/* The indicator's label inside the TASKS cell takes the same focal
+   "value" treatment as every other cell: bold, tabular-nums,
+   step-up size. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .tide-telemetry-status-cell[data-priority="tasks"]
-  .tide-telemetry-status-value[data-empty="true"] {
+  .tug-progress-indicator-label-active {
+  font-size: 0.8125rem;
+  font-weight: bold;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dim the indicator + label when there are no tasks so the cell
+   reads as a quiet placeholder. */
+.tide-telemetry-status-cell[data-priority="tasks"]
+  .tide-telemetry-status-value-wrap[data-empty="true"] {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 

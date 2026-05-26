@@ -55,8 +55,14 @@ function isAnimating(state: TugProgressIndicatorState): boolean {
   return state === "running";
 }
 
+/**
+ * `stopped` and `completed` paint a reduced-size dot — these are the
+ * two "settled" poses (nothing happening, or work finished). `paused`
+ * and `aborted` keep the full-size dot so the held / canceled signal
+ * reads as prominent.
+ */
 function isQuiet(state: TugProgressIndicatorState): boolean {
-  return state === "stopped" || state === "aborted";
+  return state === "stopped" || state === "completed";
 }
 
 export interface TugProgressPulsingDotProps {

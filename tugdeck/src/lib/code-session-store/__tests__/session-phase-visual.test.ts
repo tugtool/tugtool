@@ -138,9 +138,9 @@ describe("tideSessionPhaseVisual — role/state mapping", () => {
     "tool_work",
     "replaying",
     "waking",
-  ] as const)("active phase %s → success/running", (key) => {
+  ] as const)("active phase %s → action/running", (key) => {
     expect(tideSessionPhaseVisual(key)).toEqual({
-      role: "success",
+      role: "action",
       state: "running",
     });
   });

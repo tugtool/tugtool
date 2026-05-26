@@ -158,6 +158,7 @@ export const TideZ1C: React.FC<TideZ1CProps> = ({ codeSessionStore }) => {
       data-slot="tide-z1c"
       variant="wave"
       state="running"
+      role="inherit"
       aria-label={content.label}
       aria-live="polite"
     />

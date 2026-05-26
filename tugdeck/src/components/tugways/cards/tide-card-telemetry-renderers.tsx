@@ -37,7 +37,10 @@ import {
   TugPopoverContent,
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
-import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import {
+  TugProgressIndicator,
+  type TugProgressIndicatorState,
+} from "@/components/tugways/tug-progress-indicator";
 import {
   tideSessionPhaseKey,
   tideSessionPhaseVisual,
@@ -592,27 +595,36 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   const stateLabelText = TIDE_SESSION_PHASE_LABELS[statePhaseKey];
 
   // TASKS cell — assembled from the Task* event stream ([D100]).
-  // Three ring states keep layout identical across "no tasks" /
-  // "quiescent" / "working":
-  //   - `disabled` (grayed, paused) — no Task* call has happened
-  //     yet; the label reads `-/-` so the cell occupies the same
-  //     width as the populated states.
-  //   - `stopped` (closed outlined circle, no animation) — tasks
-  //     exist but no work is happening: all tasks completed OR the
-  //     session phase is `idle` (regardless of task statuses;
-  //     idle = the assistant isn't doing anything, so the ring
-  //     should not imply otherwise even if tasks remain "pending").
-  //   - animating (default indeterminate spin) — tasks exist and
-  //     work is in flight.
+  // The cell is a single `TugProgressIndicator` (pulsing-dot variant)
+  // whose state collapses the task list down to one of four poses:
+  //   - `stopped` — no tasks, OR idle with work remaining (the dot
+  //     reads quiet so the cell doesn't imply ongoing activity)
+  //   - `running` — tasks exist, not all complete, session active
+  //   - `completed` — every task done; the indicator paints in the
+  //     success role to mark the milestone
+  //   - (`aborted` is reserved for future error surfacing)
   const taskListState = useTaskListState(codeSessionStore);
   const taskCounts = countTasks(taskListState.tasks);
   const hasTasks = taskCounts.total > 0;
   const isIdle = snap.phase === "idle";
+  const allTasksComplete =
+    hasTasks && taskCounts.completed === taskCounts.total;
   const tasksWorking =
-    hasTasks && taskCounts.completed < taskCounts.total && !isIdle;
+    hasTasks && !allTasksComplete && !isIdle;
   const tasksLabelText = hasTasks
     ? `${taskCounts.completed}/${taskCounts.total}`
     : "None";
+  // State drives both the indicator's pose and its color via the
+  // component's state→role default: running → action (blue),
+  // completed → success (green), stopped → inherit (muted).
+  const tasksIndicatorState: TugProgressIndicatorState =
+    !hasTasks
+      ? "stopped"
+      : allTasksComplete
+        ? "completed"
+        : tasksWorking
+          ? "running"
+          : "stopped";
 
   // Per-anchor popover content. Each popover receives only the
   // inputs it needs — no shared context object — so future popover
@@ -766,22 +778,29 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
             data-priority="tasks"
           >
             <TideTelemetryEndcapRuleLabel label="TASKS" ticksDirection="down" />
-            <span className="tide-telemetry-status-value-wrap">
-              {hasTasks ? (
-                <TugProgressIndicator
-                  variant="ring"
-                  size={10}
-                  role="inherit"
-                  state={tasksWorking ? "running" : "stopped"}
-                  aria-label={`${taskCounts.completed} of ${taskCounts.total} tasks complete`}
-                />
-              ) : null}
-              <span
-                className="tide-telemetry-status-value"
-                data-empty={hasTasks ? undefined : "true"}
-              >
-                {tasksLabelText}
-              </span>
+            <span
+              className="tide-telemetry-status-value-wrap"
+              data-empty={hasTasks ? undefined : "true"}
+            >
+              <TugProgressIndicator
+                variant="pulsing-dot"
+                glyphPosition="both"
+                size={10}
+                state={tasksIndicatorState}
+                label={tasksLabelText}
+                labelAlign="center"
+                phaseLabels={{
+                  none: "None",
+                  max: hasTasks
+                    ? `${taskCounts.total}/${taskCounts.total}`
+                    : "0/0",
+                }}
+                aria-label={
+                  hasTasks
+                    ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
+                    : "No tasks"
+                }
+              />
             </span>
           </span>
         </TugPopoverTrigger>

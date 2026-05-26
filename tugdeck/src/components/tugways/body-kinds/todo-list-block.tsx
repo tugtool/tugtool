@@ -73,11 +73,13 @@ import "./todo-list-block.css";
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { Check, Circle } from "lucide-react";
 
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
-import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import {
+  TugProgressIndicator,
+  type TugProgressIndicatorState,
+} from "@/components/tugways/tug-progress-indicator";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -289,14 +291,21 @@ class TaskListDataSource implements TugListViewDataSource {
 // ---------------------------------------------------------------------------
 
 /**
- * Icon rendered for a given status:
- *  - `pending`   — static lucide `Circle` (always closed outline).
- *  - `completed` — static lucide `Check`.
- *  - `in_progress` — {@link TugProgressIndicator} ring. Default state
- *    is `running` (animated arc); when the surrounding data source
- *    is `idle`, the indicator switches to `stopped` — a proper
- *    primitive state, not a CSS pause of the rotating arc.
+ * Resolve a task status × the session's idle gate onto the
+ * indicator's `state`. The role falls out of the indicator's
+ * state→role default (running → action, completed → success,
+ * stopped → inherit). Same vocabulary the popover uses so the two
+ * surfaces read identically.
  */
+function taskRowState(
+  status: TaskStatus,
+  idle: boolean,
+): TugProgressIndicatorState {
+  if (status === "completed") return "completed";
+  if (status === "in_progress") return idle ? "stopped" : "running";
+  return "stopped";
+}
+
 function TaskRowIcon({
   status,
   idle,
@@ -304,19 +313,14 @@ function TaskRowIcon({
   status: TaskStatus;
   idle: boolean;
 }): React.ReactElement {
-  if (status === "in_progress") {
-    return (
-      <TugProgressIndicator
-        variant="ring"
-        size={14}
-        role="inherit"
-        state={idle ? "stopped" : "running"}
-        aria-hidden="true"
-      />
-    );
-  }
-  const Icon = status === "completed" ? Check : Circle;
-  return <Icon size={14} />;
+  return (
+    <TugProgressIndicator
+      variant="pulsing-dot"
+      size={14}
+      state={taskRowState(status, idle)}
+      aria-hidden="true"
+    />
+  );
 }
 
 /**

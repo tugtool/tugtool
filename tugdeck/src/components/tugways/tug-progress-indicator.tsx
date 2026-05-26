@@ -31,6 +31,22 @@
  * `disabled` is a state per the seven-slot convention [T-classification]:
  *  it dims and freezes any variant, independent of `state`.
  *
+ * **State implies role.** When no explicit `role` is passed (and no
+ * `phaseVisual` returns one), the effective role defaults from the
+ * effective state via {@link defaultRoleForState}:
+ *
+ *   running   → action   (blue — work in flight)
+ *   paused    → caution  (yellow — held)
+ *   stopped   → inherit  (muted — quiescent)
+ *   completed → success  (green — finished)
+ *   aborted   → danger   (red — canceled / errored)
+ *
+ * This is a deliberate conflation: state IS visually paired with a
+ * role in nearly every callsite, and the default removes a repetitive
+ * `role={statusToRole(state)}` mapping that every consumer would
+ * otherwise re-derive. The explicit `role` prop still wins for the
+ * cases that need to override (e.g. `restoring → caution + running`).
+ *
  * Phase API (replaces TugStateIndicator's CodeSession-aware reducer):
  *
  *   phase         — caller-defined identifier emitted as data-phase
@@ -145,43 +161,51 @@ const ROLE_TO_TOKEN_SUFFIX: Record<Exclude<TugProgressIndicatorRole, "inherit">,
 };
 
 /**
- * Per-variant token family. `surface-toggle` paints stroked / filled
- * progress geometry (arc, bar, wedge); `element-text` paints discrete
- * marks that read like ink (dot, wave bars, single-arc rotor). Keeps the
- * existing visual tuning that each variant inherited from its predecessor
- * component.
+ * All variants resolve their fill from the same token family —
+ * `--tug7-surface-toggle-primary-normal-{role}-rest` — so the role
+ * tone reads identically across ring/bar/pie/spinner/pulsing-dot/
+ * wave. This is the same family used for any control-surface tone
+ * elsewhere in the system; switching to it makes the indicator's
+ * blue match every other "active" control's blue at a glance.
  */
-const VARIANT_TOKEN_FAMILY: Record<TugProgressIndicatorVariant, "surface-toggle" | "element-text"> = {
-  ring: "surface-toggle",
-  bar: "surface-toggle",
-  pie: "surface-toggle",
-  spinner: "element-text",
-  "pulsing-dot": "element-text",
-  wave: "element-text",
-};
-
 function buildFillStyle(
-  variant: TugProgressIndicatorVariant,
+  _variant: TugProgressIndicatorVariant,
   role: TugProgressIndicatorRole,
-  effectiveState: TugProgressIndicatorState,
 ): React.CSSProperties {
-  // `aborted` always paints in the danger family regardless of the caller's
-  // role choice — the canceled visual must read as "stopped in error" and
-  // the danger tone is the established cross-component cue. (Mirrors how
-  // TugStateIndicator's `errored` phase locked to danger.)
-  const resolvedRole: TugProgressIndicatorRole =
-    effectiveState === "aborted" ? "danger" : role;
-
-  if (resolvedRole === "inherit") {
+  if (role === "inherit") {
     return { "--tugx-progress-indicator-fill": "currentColor" } as React.CSSProperties;
   }
-  const suffix = ROLE_TO_TOKEN_SUFFIX[resolvedRole];
-  const family = VARIANT_TOKEN_FAMILY[variant];
-  const token =
-    family === "surface-toggle"
-      ? `--tug7-surface-toggle-primary-normal-${suffix}-rest`
-      : `--tug7-element-global-text-normal-${suffix}-rest`;
-  return { "--tugx-progress-indicator-fill": `var(${token})` } as React.CSSProperties;
+  const suffix = ROLE_TO_TOKEN_SUFFIX[role];
+  return {
+    "--tugx-progress-indicator-fill": `var(--tug7-surface-toggle-primary-normal-${suffix}-rest)`,
+  } as React.CSSProperties;
+}
+
+/**
+ * Default role for a given effective state. The state×role pairing is
+ * the design system's standard mapping; callsites that don't want to
+ * override simply pass `state` and the role falls out automatically.
+ *
+ *   running   → action   (blue — work in flight)
+ *   paused    → caution  (yellow — held)
+ *   stopped   → inherit  (muted — quiescent)
+ *   completed → success  (green — finished)
+ *   aborted   → danger   (red — canceled / errored)
+ */
+function defaultRoleForState(state: TugProgressIndicatorState): TugProgressIndicatorRole {
+  switch (state) {
+    case "running":
+      return "action";
+    case "paused":
+      return "caution";
+    case "completed":
+      return "success";
+    case "aborted":
+      return "danger";
+    case "stopped":
+    default:
+      return "inherit";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -359,13 +383,15 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
     const boxDisabled = useTugBoxDisabled();
     const effectiveDisabled = disabled || boxDisabled;
 
-    // Resolve role + state. Explicit props win; phaseVisual fills defaults.
+    // Resolve state first (explicit > phaseVisual > default), then role
+    // (explicit > phaseVisual > default-from-state). State implies role
+    // by default — see `defaultRoleForState`.
     const phaseDerived =
       phase !== undefined && phaseVisual !== undefined ? phaseVisual(phase) : undefined;
-    const effectiveRole: TugProgressIndicatorRole =
-      role ?? phaseDerived?.role ?? "inherit";
     const effectiveState: TugProgressIndicatorState =
       state ?? phaseDerived?.state ?? "running";
+    const effectiveRole: TugProgressIndicatorRole =
+      role ?? phaseDerived?.role ?? defaultRoleForState(effectiveState);
 
     // Visible label text: explicit label wins; otherwise the phase's entry.
     const visibleLabel =
@@ -383,7 +409,7 @@ export const TugProgressIndicator = React.forwardRef<HTMLSpanElement, TugProgres
       "aria-valuemax": isDeterminate ? 100 : undefined,
     };
 
-    const fillStyle = buildFillStyle(variant, effectiveRole, effectiveState);
+    const fillStyle = buildFillStyle(variant, effectiveRole);
 
     const rootStyle: React.CSSProperties = {
       ...fillStyle,

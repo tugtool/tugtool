@@ -101,7 +101,6 @@ import { GalleryTideChrome } from "./gallery-tide-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
-import { GalleryTugTaskItem } from "./gallery-tug-task-item";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -902,16 +901,6 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-progress-indicator",
     contentFactory: (_cardId) => <GalleryTugProgressIndicator />,
     defaultMeta: { title: "TugProgressIndicator", icon: "Activity", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-tug-task-item",
-    contentFactory: (_cardId) => <GalleryTugTaskItem />,
-    defaultMeta: { title: "TugTaskItem", icon: "ListChecks", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

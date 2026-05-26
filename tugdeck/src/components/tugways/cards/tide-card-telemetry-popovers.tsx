@@ -76,7 +76,12 @@ import {
 } from "@/lib/tide-transcript-data-source";
 import { formatSequenceNumber } from "@/components/tugways/tug-transcript-entry";
 import { TugLabel } from "@/components/tugways/tug-label";
-import { TugTaskItem } from "@/components/tugways/tug-task-item";
+import {
+  TugProgressIndicator,
+  type TugProgressIndicatorState,
+} from "@/components/tugways/tug-progress-indicator";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import type { TaskStatus } from "@/lib/code-session-store/select-task-list";
 import {
   composeTaskCopyText,
   composeTaskSummary,
@@ -794,25 +799,37 @@ export function StateChangeLogPopoverContent({
 // ---------------------------------------------------------------------------
 
 /**
+ * Resolve a task status × the session's idle gate onto the
+ * indicator's `state`. The role falls out of the indicator's
+ * state→role default (running → action, completed → success,
+ * stopped → inherit).
+ *
+ *  - `pending`     → stopped   (quiet muted dot)
+ *  - `in_progress` → running   (action-colored dot + ring pulse)
+ *                     idle session demotes to stopped
+ *  - `completed`   → completed (success-colored filled dot)
+ */
+function taskRowState(
+  status: TaskStatus,
+  idle: boolean,
+): TugProgressIndicatorState {
+  if (status === "completed") return "completed";
+  if (status === "in_progress") return idle ? "stopped" : "running";
+  return "stopped";
+}
+
+/**
  * Tasks popover — opened from the `TASKS` cell in the status row.
- * Renders the full assembled task list ([D100]) as a flex column
- * of `TugTaskItem` rows. `TugTaskItem` is the standard "indicator
- * + label" primitive built for this surface: it provides the
- * role-driven colors (TugProgressIndicator `role="action"` for the
- * `in_progress` ring, matching `surface-tone-*` / `element-tone-*`
- * active tokens for the highlight band and label color) and
- * handles its own idle gate. The popover frame supplies the
- * title; a footer below carries the count summary and Copy
- * action.
+ * Renders the full assembled task list ([D100]) as a flex column of
+ * {@link TugProgressIndicator} rows in the `pulsing-dot` variant
+ * with `glyphPosition="left"`. Each row's status drives its
+ * `(role, state)` pair through {@link taskRowVisual}; an `idle`
+ * session demotes any `in_progress` row to `state="stopped"`
+ * (same gate that stops the status-bar TASKS dot). Rows with
+ * descriptions wrap in a `TugTooltip` so the longer prose surfaces
+ * on hover.
  *
- * `idle` mirrors the session's `phase === "idle"` and is threaded
- * straight through to each `TugTaskItem` — the `in_progress`
- * row's ring switches into its `stopped` state when the assistant
- * isn't doing anything, same gate that stops the status-bar TASKS
- * ring.
- *
- * An empty `tasks` array renders the standard popover empty
- * message.
+ * An empty `tasks` array renders the standard popover empty message.
  */
 export function TasksPopoverContent({
   state,
@@ -838,19 +855,36 @@ export function TasksPopoverContent({
         className="tide-tasks-popover-body"
         data-slot="tide-tasks-popover-body"
       >
-        {state.tasks.map((task) => (
-          <TugTaskItem
-            key={task.taskId}
-            status={task.status}
-            label={
-              task.status === "in_progress" && task.activeForm !== undefined
-                ? task.activeForm
-                : task.subject
-            }
-            description={task.description}
-            idle={idle}
-          />
-        ))}
+        {state.tasks.map((task) => {
+          const text =
+            task.status === "in_progress" && task.activeForm !== undefined
+              ? task.activeForm
+              : task.subject;
+          const row = (
+            <TugProgressIndicator
+              variant="pulsing-dot"
+              glyphPosition="left"
+              size={14}
+              state={taskRowState(task.status, idle)}
+              label={text}
+              data-status={task.status}
+              className="tide-tasks-popover-row"
+            />
+          );
+          if (task.description === undefined) {
+            return <React.Fragment key={task.taskId}>{row}</React.Fragment>;
+          }
+          return (
+            <TugTooltip
+              key={task.taskId}
+              content={task.description}
+              side="top"
+              align="start"
+            >
+              {row}
+            </TugTooltip>
+          );
+        })}
       </div>
       <div
         className="tide-tasks-popover-footer"

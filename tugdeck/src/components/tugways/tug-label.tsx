@@ -28,7 +28,7 @@ export type TugLabelSize =
  * TugLabel role — paints the label text in a standard role tone
  * (`--tug7-element-tone-text-normal-<role>-rest`). Use for labels
  * that need to mirror a role-driven accent in a surrounding
- * surface (e.g. a `TugTaskItem`'s in-progress row whose ring is
+ * surface (e.g. a task list row whose dot is
  * `TugProgressIndicator role="action"`). The role suffix follows
  * the same "action → active" alias TugProgressIndicator uses, so the same role name
  * lights up the same color family across both primitives.

@@ -394,11 +394,12 @@
 /* ============================================================================
    Tasks popover
    ============================================================================
-   The popover renders the task list as a flex column of standard
-   `TugTaskItem` primitives, then frames it with a footer carrying
-   the count summary + Copy. The rows sit on the popover surface
-   directly — no extra inner frame, no body-kind chrome to suppress
-   — matching the visual rhythm of Time / Tokens / Context.
+   The popover renders the task list as a flex column of
+   `TugProgressIndicator` rows (`variant="pulsing-dot"`,
+   `glyphPosition="left"`), then frames it with a footer carrying the
+   count summary + Copy. The rows sit on the popover surface directly
+   — no extra inner frame, no body-kind chrome to suppress — matching
+   the visual rhythm of Time / Tokens / Context.
    ========================================================================= */
 
 .tide-popover-frame:has(.tide-tasks-popover-body) {
@@ -411,6 +412,21 @@
   flex-direction: column;
   gap: 2px;
   padding-block: var(--tug-space-xs);
+}
+
+/* Per-row padding so the indicator/label don't hug the popover edges. */
+.tide-tasks-popover-row {
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+}
+
+/* Completed rows: strikethrough the label so the "done" reading is
+   reinforced beyond the success-colored dot. The strikethrough is a
+   presentation-only cue on the row's label slot; the indicator's own
+   appearance is owned by the component via its `state` prop. */
+.tide-tasks-popover-row[data-status="completed"]
+  .tug-progress-indicator-label-active {
+  text-decoration: line-through;
+  opacity: 0.7;
 }
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */

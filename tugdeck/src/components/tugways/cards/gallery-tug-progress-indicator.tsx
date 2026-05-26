@@ -211,12 +211,10 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
               <div className="gpi-matrix-row-head">{variant}</div>
               {STATES.map((s) => (
                 <div key={s} className="gpi-matrix-cell">
-                  <TugProgressIndicator
-                    variant={variant}
-                    size={20}
-                    role="action"
-                    state={s}
-                  />
+                  {/* No explicit `role` — each state's default role
+                      shows through (running→action, paused→caution,
+                      stopped→inherit, completed→success, aborted→danger). */}
+                  <TugProgressIndicator variant={variant} size={20} state={s} />
                 </div>
               ))}
             </React.Fragment>

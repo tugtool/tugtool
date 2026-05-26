@@ -108,8 +108,13 @@ export const TIDE_SESSION_PHASE_LABELS: Record<TideSessionPhaseKey, string> = {
  *  - `offline`, `errored`        → `{ role: danger,  state: aborted }`
  *  - `restoring`, `interrupting`,
  *    `awaiting_approval`         → `{ role: caution, state: running }`
- *  - active stream phases        → `{ role: success, state: running }`
+ *  - active stream phases        → `{ role: action,  state: running }`
  *  - `idle`                      → `{ role: inherit, state: stopped }`
+ *
+ * `action` (blue) is the canonical "work in flight" tone across the
+ * design system. `success` is reserved for the "done" reading
+ * (`state: completed`) — paired together they give a clear
+ * blue-while-running → green-when-finished story.
  */
 export function tideSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPhaseVisual {
   switch (phaseKey as TideSessionPhaseKey) {
@@ -126,7 +131,7 @@ export function tideSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPh
     case "tool_work":
     case "replaying":
     case "waking":
-      return { role: "success", state: "running" };
+      return { role: "action", state: "running" };
     case "idle":
     default:
       return { role: "inherit", state: "stopped" };
