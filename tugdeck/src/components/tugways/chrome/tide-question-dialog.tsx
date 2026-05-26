@@ -597,7 +597,10 @@ function AnsweredRow({
       </span>
       <span className="tide-question-dialog-row-body">
         <span className="tide-question-dialog-row-heading">
-          {index + 1}. {question.question}
+          <span className="tide-question-dialog-row-heading-number">
+            {index + 1}.
+          </span>
+          {question.question}
         </span>
         <span
           className="tide-question-dialog-row-answer"
@@ -634,7 +637,10 @@ function PendingRow({
       </span>
       <span className="tide-question-dialog-row-body">
         <span className="tide-question-dialog-row-heading">
-          {index + 1}. {question.question}
+          <span className="tide-question-dialog-row-heading-number">
+            {index + 1}.
+          </span>
+          {question.question}
         </span>
       </span>
     </button>
@@ -722,7 +728,10 @@ function CurrentRow({
           <RowMarker status="current" />
         </span>
         <span className="tide-question-dialog-row-heading">
-          {index + 1}. {question.question}
+          <span className="tide-question-dialog-row-heading-number">
+            {index + 1}.
+          </span>
+          {question.question}
         </span>
       </div>
       <div

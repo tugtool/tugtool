@@ -95,6 +95,14 @@ body {
   --tugx-question-expand-duration: 180ms;
   --tugx-question-expand-easing:   cubic-bezier(0.2, 0, 0, 1);
 
+  /* Number prefix in the row heading. Reserved width is enough for a
+   * two-digit number ("##.") with tabular numerals; the trailing gap
+   * separates the prefix from the question text. The options wrap
+   * adds matching padding-left so option cards align with the
+   * question text below them. */
+  --tugx-question-number-w:   1.5ch;
+  --tugx-question-number-gap: 0.4ch;
+
   /* Options block — slightly tighter inter-button gap so the option
    * column reads as a single answer group rather than a list. */
   --tugx-question-option-gap: var(--tug-space-2xs);
@@ -218,6 +226,19 @@ body {
   line-height: var(--tugx-question-heading-leading);
 }
 
+/* Number prefix ("1.", "2.", …). Tabular numerals + a fixed
+ * inline-block width so every question's text column starts at the
+ * same x position, regardless of single- vs. double-digit count. The
+ * options wrap below indents to match this width so option cards
+ * land flush with the question text. */
+.tide-question-dialog-row-heading-number {
+  display: inline-block;
+  width: var(--tugx-question-number-w);
+  margin-right: var(--tugx-question-number-gap);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
 .tide-question-dialog-row-body {
   display: flex;
   flex-direction: column;
@@ -322,6 +343,15 @@ body {
   grid-column: 1 / -1;
   display: block;
   margin-top: var(--tug-space-sm);
+  /* Indent option cards so their leading edge aligns with the
+   * question text — past the marker column, the marker→text gap,
+   * and the reserved number-prefix width. */
+  padding-left: calc(
+    var(--tugx-question-marker-size)
+    + var(--tugx-question-marker-gap)
+    + var(--tugx-question-number-w)
+    + var(--tugx-question-number-gap)
+  );
 }
 
 .tide-question-dialog-options {
