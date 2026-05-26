@@ -1,6 +1,6 @@
 /**
- * tide-card-z1b.tsx — Z1B "status / end-state" row for both halves
- * of a tide-card transcript turn (user + assistant).
+ * tide-card-z1b.tsx — Z1B "end-state" row for both halves of a
+ * tide-card transcript turn (user + assistant).
  *
  * The component lands inside `TugTranscriptEntry`'s controls slot
  * on both row halves. Z1A (identifier + timestamp + sequence) is
@@ -13,15 +13,21 @@
  *
  *     [TugTranscriptEntry header — Z1A: identifier + timestamp]
  *     [body — per-half content]
- *     [Z1B — status / end-state + copy]      ← THIS COMPONENT
+ *     [Z1B — end-state + copy]               ← THIS COMPONENT
+ *
+ * **Committed-end-state only.** Per [D19], TideZ1B owns the
+ * end-state aggregate (OK / interrupted / error badge, per-turn
+ * time + tokens, whole-turn COPY). The transcript-level in-flight
+ * indicator is `TideZ1C`'s job (chrome below `TugListView`, not a
+ * list row). TideZ1B no longer multiplexes "indicator ↔
+ * end-state" — the live thinking indicator does not appear here.
  *
  * **Participant variants.** The component dispatches on `participant`:
  *
- *  - **`participant="code"`** — asst-half. Committed state shows
- *    `[badge • time • tokens] • [COPY]`, the badge driven by
- *    `endStateBadgeFor(turn.turnEndReason)`. In-flight state shows
- *    `[TugThinkingIndicator]` (the live "agent is working on this
- *    turn" signal).
+ *  - **`participant="code"`** — asst-half. Renders
+ *    `[badge • time • tokens] • [COPY]` only when `turn` is
+ *    defined; renders nothing (an empty slot div) while in-flight
+ *    (`turn === undefined`).
  *  - **`participant="user"`** — user-half. Always shows
  *    `[badge] • [COPY]` with a static "OK" badge — no time /
  *    tokens (those are asst-side data). The user's submission is
@@ -32,22 +38,13 @@
  *    submitting.
  *
  * **Mode dispatch — purely per-row.** The component takes one
- * data-driving prop: `turn`. The data source's invariant is "a row
- * with `turn === undefined` is the (single) in-flight row; a row
- * with `turn !== undefined` is a committed row." Z1B dispatches
- * directly on that, per participant:
+ * data-driving prop: `turn`. End-state presence is derived
+ * per-participant:
  *
- *  - user half → always `terminal` (the submission is complete the
+ *  - user half → always end-state (submission completes the
  *    instant it posts; `turn` only adds the copy text once it lands).
- *  - code half, `turn !== undefined` → committed → `terminal` mode.
- *  - code half, `turn === undefined` → in-flight → `live` mode.
- *
- * The session `phase` is deliberately NOT an input here. Phase is
- * a session-wide signal; using it would force every assistant row
- * to re-derive "is this the in-flight row?" (the only one phase
- * actually applies to). The data source has already encoded that
- * distinction at the row level, so the component reads it
- * straight off `row.turn`.
+ *  - code half, `turn !== undefined` → end-state.
+ *  - code half, `turn === undefined` → no child (empty slot div).
  *
  * **Mount-identity discipline ([L26]).** Z1B is a single always-
  * mounted `<div data-slot="tide-z1b">` whose CHILD swaps exactly
@@ -92,7 +89,6 @@ import { Check, ShieldAlert, ShieldX, Unplug } from "lucide-react";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
-import { TugThinkingIndicator } from "@/components/tugways/tug-thinking-indicator";
 import { endStateBadgeFor } from "@/lib/code-session-store/end-state";
 import type {
   TurnEntry,
@@ -119,18 +115,19 @@ export interface TideZ1BProps {
   /**
    * Which transcript half the Z1B sits on. The user variant
    * suppresses the time / tokens metrics (those are asst-side
-   * data) and renders nothing in the in-flight branch (no live
-   * indicator on the user row). The asst variant carries the
-   * full metrics row and the `TugThinkingIndicator` while
-   * in-flight.
+   * data) and is always end-state (the submission completes the
+   * instant it posts). The asst variant carries the full metrics
+   * row, but only renders end-state once `turn` is defined; while
+   * in-flight, the transcript-level `TideZ1C` carries the
+   * indicator (this slot is empty).
    */
   participant: TideZ1BParticipant;
   /**
    * The committed turn entry for this row, if any. `undefined` for
    * the in-flight row (the single row the data source emits while
    * a turn is mid-stream); populated post-`turn_complete` for every
-   * committed row. The presence of this field is the SOLE driver
-   * of the live ↔ terminal mode dispatch.
+   * committed row. The presence of this field gates whether the
+   * code half renders its end-state.
    */
   turn?: TurnEntry;
   /**
@@ -169,16 +166,15 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
   bodyText,
 }) => {
   const isUserHalf = participant === "user";
-  // Per-row mode dispatch.
+  // End-state presence — per [D19] TideZ1B is committed-end-state
+  // only.
   //
-  //  - User half: the submission is complete the instant it posts,
-  //    so the row always carries its end-state — in-flight and
-  //    committed alike. Always `terminal`.
-  //  - Code half: `turn !== undefined` is the data source's "this
-  //    row is committed" signal; while in-flight (`turn ===
-  //    undefined`) the live thinking indicator stands in.
+  //  - User half: submission completes the instant it posts; end-
+  //    state is shown immediately, in-flight and committed alike.
+  //  - Code half: end-state shown only when `turn !== undefined`.
+  //    While in-flight the transcript-level `TideZ1C` carries the
+  //    indicator; this slot renders nothing.
   const hasEndState = isUserHalf || turn !== undefined;
-  const mode: "live" | "terminal" = hasEndState ? "terminal" : "live";
   // End-state reason. The user half is pinned to `complete` — its
   // badge reports "the message was submitted," never the response's
   // outcome, so an interrupt / error never bleeds onto the user row.
@@ -197,7 +193,6 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
       className="tide-z1b"
       data-slot="tide-z1b"
       data-participant={participant}
-      data-mode={mode}
     >
       {hasEndState ? (
         <EndStateDisplay
@@ -206,9 +201,7 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
           turn={turn}
           perTurnTokens={perTurnTokens}
         />
-      ) : (
-        <TugThinkingIndicator animating={true} labelPosition="hidden" />
-      )}
+      ) : null}
       {showCopy ? (
         <>
           <TugLabel

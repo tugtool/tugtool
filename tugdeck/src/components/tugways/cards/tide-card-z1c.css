@@ -1,0 +1,38 @@
+/**
+ * tide-card-z1c.css — TideZ1C in-flight indicator row.
+ *
+ * Per [D19] / `#spec-z1c`, TideZ1C is the in-flight footer chrome
+ * for the assistant row — rendered inside `TugTranscriptEntry`'s
+ * controls slot of the in-flight code row, in the same DOM
+ * position the pre-Step-5.8 `TideZ1B[data-mode="live"]` branch
+ * occupied. Z1C inherits the row's indentation from the entry
+ * wrapper and matches Z1B's vertical rhythm so the in-flight ↔
+ * committed swap is visually flush.
+ *
+ * Layout-only — the indicator's own appearance comes from
+ * `TugThinkingIndicator`'s default token family.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] file pair with the component; `data-slot` anchors the
+ *    indicator root.
+ *  - [L20] one slot family declared here (`--tugx-tide-z1c-*`); no
+ *    other component's token namespace is touched.
+ *
+ * @module components/tugways/cards/tide-card-z1c
+ */
+
+.tide-z1c {
+  display: flex;
+  align-items: center;
+  /* Left indent matches the pre-Step-5.8 `TideZ1B
+     [data-mode="live"]` value so the three-bar indicator sits at
+     the same horizontal offset as before. */
+  --tugx-tide-z1c-indent: 3.5px;
+  padding-left: var(--tugx-tide-z1c-indent);
+  /* Vertical rhythm matches Z1B's slot so the indicator sits at
+     the same offset its end-state successor will occupy when the
+     turn commits. */
+  margin-top: 2px;
+  min-height: var(--tug-space-xl, 20px);
+  width: 100%;
+}

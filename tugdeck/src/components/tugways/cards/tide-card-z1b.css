@@ -33,22 +33,18 @@
 /* ============================================================================
    Z1B slot div — always-mounted container ([L26])
    ============================================================================
-   The slot div is unconditionally rendered across the in-flight ↔
-   terminal transition; only its child swaps. `data-participant`
-   selects the variant (user / code); `data-mode` selects the
-   visual treatment for each branch:
+   Per [D19], TideZ1B owns committed-end-state only — the live
+   thinking indicator now lives in `TideZ1C` (transcript-level
+   chrome below the list view, not a row). The slot div is still
+   unconditionally rendered across the in-flight ↔ committed
+   transition so any focus / hover state survives the swap; only
+   its child appears/disappears as `turn` lands. `data-participant`
+   selects the variant (user / code).
 
-     live      → TugThinkingIndicator pulses; no trailing copy
-                 (`participant="code"` in-flight only)
-     terminal  → EndStateDisplay + optional trailing copy
-                 (both participants; user shows `[badge] • [COPY]`,
-                  code shows `[badge • time • tokens] • [COPY]`)
-
-   The user half is always `terminal` — its submission completes
-   the instant it posts, so the end-state row shows immediately,
-   in-flight and committed alike. `live` is reached only by the
-   in-flight code half. The slot's `min-height` keeps the vertical
-   rhythm consistent across both modes.
+   The user half is always end-state — its submission completes
+   the instant it posts. The code half renders its end-state once
+   `turn` is defined; while in-flight, the slot is empty (TideZ1C
+   carries the indicator).
    ========================================================================= */
 
 .tide-z1b {
@@ -57,14 +53,10 @@
      row-middle line; with the inline badge (no fixed height) the
      text baselines also align. */
   align-items: center;
-  /* Left indent for the Z1B row — nudges the row right of the
-     identifier above it. Two knobs, one per mode: the thinking
-     indicator and the end-state badge carry different internal
-     whitespace, so each aligns to the identifier at its own
-     offset. Each token is applied on its `data-mode` rule below;
-     raise to nudge further right, lower toward 0 to sit flush. */
-  --tugx-tide-z1b-indent-live: 3.5px;      /* thinking indicator */
-  --tugx-tide-z1b-indent-terminal: 0px;  /* end-state row */
+  /* Left indent for the Z1B end-state row — nudges the row right
+     of the identifier above it. */
+  --tugx-tide-z1b-indent: 0px;
+  padding-left: var(--tugx-tide-z1b-indent);
   min-height: var(--tug-space-xl, 20px);
   width: 100%;
   /* The single spacing knob for the whole row. Applied as the
@@ -74,24 +66,7 @@
      tighten or loosen the entire Z1B line. */
   --tugx-tide-z1b-gap: 14px;
   gap: var(--tugx-tide-z1b-gap);
-  margin-top: 0;
-}
-
-/* Thinking-indicator (live) row. `--tugx-tide-z1b-indent-live` is
-   this mode's own left-indent knob — tune it independently of the
-   terminal row's. Shares the terminal row's 2px top margin so the
-   indicator sits at the same vertical offset its end-state
-   successor will occupy. */
-.tide-z1b[data-mode="live"] {
   margin-top: 2px;
-  padding-left: var(--tugx-tide-z1b-indent-live);
-}
-
-/* End-state (terminal) row. `--tugx-tide-z1b-indent-terminal` is
-   this mode's left-indent knob. */
-.tide-z1b[data-mode="terminal"] {
-  margin-top: 2px;
-  padding-left: var(--tugx-tide-z1b-indent-terminal);
 }
 
 /* ============================================================================

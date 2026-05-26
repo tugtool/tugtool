@@ -594,12 +594,14 @@ The pre-Step-5 fixed channels (`turn.${turnKey}.assistant` / `.thinking` / `.too
 - `ToolUseRow` body = `dispatchToolCallState(message)`; the dispatch reads tool state from the Message and from `turn.${turnKey}.message.${messageKey}.state` for streaming updates.
 - One subscription per row. No multiplexing.
 
-#### [D19] TideZ1B owns committed-end-state; TideZ1C owns transcript-level in-flight indicator {#d19-z1b-z1c-separation}
+#### [D19] TideZ1B owns committed-end-state; TideZ1C owns per-row in-flight indicator zone {#d19-z1b-z1c-separation}
 
-**Decision:** Split today's TideZ1B's multiplexed responsibility into two distinct components with disjoint domains:
+**Decision:** Split today's TideZ1B's multiplexed responsibility into two distinct components with disjoint domains. Both attach to the row via a `TugTranscriptEntry` slot; both collapse to zero-height when empty.
 
-- **TideZ1B** (committed-end-state aggregate): rendered as row chrome on the *last assistant-side Message* of each committed turn per [D22]. Carries the per-turn end-state badge (OK / interrupted), per-turn tokens, per-turn wall-clock, whole-turn COPY.
-- **TideZ1C** (transcript-level in-flight indicator): rendered as chrome BELOW `TugListView`, in the same DOM layer as `TideJumpToBottomButton`. NOT a list row. Always mounted; visibility toggled via `data-visible` per [L06]. Visible when `snapshot.activeTurn !== null`; hidden when null. Content driven by `snapshot.phase` + `snapshot.interruptInFlight` via `useSyncExternalStore`:
+- **TideZ1B** (committed-end-state aggregate): rendered in `TugTranscriptEntry`'s existing `controls` slot — the row footer. Carries the per-turn end-state badge (OK / interrupted / error / transport_lost), per-turn tokens, per-turn wall-clock, whole-turn COPY. Collapses to zero when no end-state is yet defined (no `min-height` when empty). Per [D22], renders on the *last assistant-side Message* of each committed turn.
+- **TideZ1C** (per-row in-flight indicator zone): rendered in a **new** `inflightFooter` slot on `TugTranscriptEntry`. *Every* row carries the slot uniformly; the slot collapses to zero-height by default. Only the **in-flight-tip row** mounts an active `TideZ1C` (with `useSyncExternalStore` subscription) and paints the indicator; all other rows pass `null` and the slot stays collapsed. In Step 5.8 the "in-flight tip" is the in-flight code row (`!isCommitted`); in Step 5.9 it is the row carrying the Message flagged `isLastInflightMessage`.
+
+**Z1C content table** (driven by `snapshot.phase` + `snapshot.interruptInFlight`; empty rows mean the slot collapses):
 
 | Phase / state | Indicator |
 |---|---|
@@ -607,19 +609,27 @@ The pre-Step-5 fixed channels (`turn.${turnKey}.assistant` / `.thinking` / `.too
 | `awaiting_first_token` | TugThinkingIndicator "Thinking…" |
 | `streaming` | TugThinkingIndicator "Streaming…" |
 | `tool_work` | TugThinkingIndicator "Tool work…" |
-| `awaiting_approval` | caution-tone pulse "Awaiting approval" |
 | `waking` | TugThinkingIndicator "Waking…" |
-| `interruptInFlight === true` | caution-tone pulse "Interrupting…" (overrides phase) |
+| `awaiting_approval` | (collapsed — we're waiting, not thinking; the pending dialog *is* the affordance) |
+| `interruptInFlight === true` | (collapsed — interrupt is instant from the user's POV; Z1B paints the end-state once the turn commits) |
+| `idle` / `replaying` / `errored` | (collapsed) |
+
+The visible glyph is whatever `TugThinkingIndicator` paints by default (no label, no caution chrome). The phase label rides on `aria-label` for screen readers; visible content stays the same three-bar glyph the pre-Step-5.8 in-row indicator carried.
 
 **Rationale:**
-- Today's TideZ1B multiplexes "indicator ↔ end-state display." Under per-Message rows the indicator would hop between rows as new Messages mint — semantically wrong (one indicator, one anchor).
-- The two chromes have semantically distinct domains: Z1B is *what just finished*, Z1C is *what's currently happening*.
-- Z1C as transcript-level chrome doesn't compete for scroll-to-row targets, doesn't churn React keys, doesn't move when new Messages mint.
+- Today's TideZ1B multiplexes "indicator ↔ end-state display." Under per-Message rows the indicator would hop between rows as new Messages mint — undesirable as a multiplexed slot, but coherent as a per-row zone that lights up on whichever row currently *is* the tip (the row mint/unmint motion around the hop absorbs it visually).
+- Two chromes for two distinct domains: Z1B is *what just finished*, Z1C is *what's currently happening*.
+- Per-row uniform structure means no row-math contagion (Z1C is not a list row — it adds nothing to `totalRows`, no scroll-to-row helpers need to skip it, no React key churn).
+- Position is "free": the zone inherits the row body's indent and footer placement; the indicator naturally appears where Z1B's pre-Step-5.8 live branch used to render.
+- Hiding Z1C during `awaiting_approval` keeps the pending dialog as the sole affordance — no redundant "Awaiting approval" status alongside the request.
+- Hiding Z1C while `interruptInFlight` is true keeps the stop gesture feeling instant from the user's POV; Z1B carries the formal "interrupted" result.
 
 **Implications:**
-- New component `TideZ1C` in `tide-card-transcript.tsx`, sibling of `TideJumpToBottomButton` below `<TugListView>`.
-- `TideZ1B`'s existing component code stays; the `participant === "code"` + no-turn in-flight branch is removed. TideZ1B becomes purely the committed-end-state renderer.
-- Z1C subscribes to `snapshot.phase` + `snapshot.interruptInFlight` + `snapshot.activeTurn !== null` via `useSyncExternalStore` — only ephemeral appearance (visibility) is via DOM attr per [L06].
+- `TugTranscriptEntry` gains an opt-in `inflightFooter?: React.ReactNode` slot with a collapse-when-empty CSS rule.
+- TideZ1B's CSS loses its `min-height` so the controls slot collapses when no end-state is rendered.
+- New component `TideZ1C` (file pair `tide-card-z1c.tsx` + `.css`) with a pure-logic helper `tideZ1CContent(phase, interruptInFlight)` returning `{label} | null`. The component mounts only on the in-flight-tip row; the only row-local React state is the memoized snapshot selector.
+- In Step 5.8, `CodeRowCell` passes `<TideZ1C codeSessionStore={...} />` to `inflightFooter` iff `!isCommitted`. In Step 5.9, every per-Message row renderer reads `isLastInflightMessage` and passes Z1C accordingly.
+- Subscription discipline: only the in-flight-tip row's Z1C subscribes via `useSyncExternalStore`. Other rows pass `null` (no subscription, no wake on dispatch). Step 5.9's `isLastInflightMessage` flag is the discriminator; Step 5.8 uses the simpler `!isCommitted` check on the single code row.
 
 #### [D20] Entry-wrapper `suppressIdentifier` for kinds with their own header {#d20-suppress-identifier}
 
@@ -899,17 +909,18 @@ The pre-Step-5.9 `"user" | "code" | "ghost"` taxonomy retires; the unified `"cod
 
 **Z2 popover scroll-to-row helpers (Step 5.9).** `userRowIndexForTurn(turnIndex, transcript)` returns the row index of the turn's `user_message` Message (or −1 for wake turns; callers gate on `turn.messages[0]?.kind === "user_message"`). `assistantRowIndexForTurn(turnIndex, transcript)` returns the row index of the LAST assistant-side Message of the turn (the row that carries Z1B per [D22]); for an interrupted-before-response turn with `messages = [user_message]` only, it returns the user_message row index (Z2 always lands the user somewhere meaningful). New helper `messageRowIndex(messageKey, snapshot): number | -1` round-trips messageKey → rowIndex for future per-Message scroll targets.
 
-#### TideZ1C — transcript-level in-flight indicator {#spec-z1c}
+#### TideZ1C — per-row in-flight indicator zone {#spec-z1c}
 
-`TideZ1C` (added by Step 5.8 per [D19]) is chrome BELOW `TugListView`, in the same DOM layer as `TideJumpToBottomButton`. NOT a list row — does not participate in row-count math, does not compete for scroll-to-row targets, does not churn React keys, does not move when new Messages mint.
+`TideZ1C` (added by Step 5.8 per [D19]) is the in-flight indicator chrome for the assistant row. It attaches to the row via a new `inflightFooter` slot on `TugTranscriptEntry` — *every* `TugTranscriptEntry` instance carries the slot uniformly, and the slot collapses to zero-height when no content is passed. Z1C is **not** a list row: it adds nothing to `totalRows`, no scroll-to-row helper needs to skip it, and it does not churn React keys.
 
 Contract:
-- Always mounted.
-- Visibility toggled via `data-visible` attribute per [L06] (ephemeral appearance state via DOM, not React state).
-- Visible when `snapshot.activeTurn !== null`. Hidden when `null`.
-- Content driven by `snapshot.phase` + `snapshot.interruptInFlight` (subscribed via `useSyncExternalStore`); see [D19] for the phase → indicator table.
+- Slot present on every row (per-Message rows in Step 5.9; user / code / ghost rows in Step 5.8). The slot is empty and collapsed unless the row is the **in-flight tip**.
+- In Step 5.8, the in-flight tip is the in-flight code row (`!isCommitted`). In Step 5.9, it is the row carrying the Message flagged `isLastInflightMessage`.
+- Only the in-flight-tip row mounts an active `TideZ1C`; that one component subscribes via `useSyncExternalStore` to a memoized `{phase, interruptInFlight}` selector. All other rows pass `null` for `inflightFooter` and stay subscription-free.
+- Indicator content is resolved by `tideZ1CContent(phase, interruptInFlight)` per [D19]'s table; when it returns `null` the slot stays collapsed and the row paints nothing.
+- Position is inherited from the row body's indent and footer placement (no absolute positioning, no manual offset math) — visually identical to the position TideZ1B's pre-Step-5.8 live branch occupied.
 
-TideZ1B's pre-Step-5.8 in-flight branch (`participant === "code"` + no `turn`) is removed; TideZ1B becomes purely the committed-end-state renderer mounted on the last assistant-side Message's row footer per [D22].
+TideZ1B's pre-Step-5.8 in-flight branch (`participant === "code"` + no `turn`) is removed; TideZ1B becomes purely the committed-end-state renderer in the `controls` slot and itself collapses to zero-height when no end-state is yet defined (no `min-height` when empty), so the two slots never conflict for vertical space.
 
 ---
 
@@ -1466,47 +1477,53 @@ User-message and system-note messageKeys don't carry an msg_id (no claude-side `
 
 ---
 
-#### Step 5.8: TideZ1C — transcript-level in-flight chrome {#step-5-8}
+#### Step 5.8: TideZ1C — per-row in-flight indicator zone {#step-5-8}
 
 **Depends on:** #step-5
 
-**Commit:** `tugdeck(tide-wake-5/8): TideZ1C transcript-level in-flight indicator`
+**Commit:** `tugdeck(tide-wake-5/8): TideZ1C per-row in-flight indicator zone`
 
 **References:** [D19] Z1B/Z1C separation, (#spec-z1c)
 
-**Status:** Not started. Independent of Steps 5.5–5.7; lands before Step 5.9 so the per-Message row layout inherits a TideZ1B that's already purely committed-end-state.
+**Status:** In progress. Lands before Step 5.9 so the per-Message row layout inherits a TideZ1B that's already purely committed-end-state and a uniform Z1C slot already wired through `TugTranscriptEntry`.
 
-**Why this step exists.** Today's TideZ1B multiplexes "indicator ↔ end-state display." Under per-Message rows the indicator would hop between rows as new Messages mint — semantically wrong. [D19] separates the two responsibilities. This step ships the split: TideZ1B loses its in-flight branch; a new TideZ1C lives below `TugListView` as transcript-level chrome.
+**Why this step exists.** Today's TideZ1B multiplexes "indicator ↔ end-state display." Under per-Message rows the multiplex would conflate two distinct domains. [D19] separates them: TideZ1B owns committed-end-state in the `controls` slot; TideZ1C owns the in-flight indicator in a **new** `inflightFooter` slot on `TugTranscriptEntry`. Every row carries the slot uniformly (collapsed by default); only the in-flight-tip row mounts an active Z1C that subscribes to phase and paints the indicator. Position is inherited from the row body's indent — visually flush with the location TideZ1B's old live branch occupied.
+
+A prior revision of this step tried "transcript-level chrome below `TugListView`" — the indicator ended up marooned at the bottom of the transcript pane instead of at the in-flight row's footer. The per-row-zone approach dissolves the row-math contagion (Z1C is not a list row), inherits indentation for free, and Step 5.9 inherits naturally because every per-Message row already has the slot.
 
 **Artifacts:**
 
-- New component `TideZ1C` inline in `tide-card-transcript.tsx`, rendered as a sibling of `TideJumpToBottomButton` below `<TugListView>`. Always mounted; visibility toggled via `data-visible` per [L06]. Subscribes to `snapshot.phase` + `snapshot.interruptInFlight` + `snapshot.activeTurn !== null` via `useSyncExternalStore`.
-- `TideZ1B` loses its in-flight branch (`participant === "code"` + no `turn`). Becomes purely the committed-end-state renderer.
+- New optional `inflightFooter?: React.ReactNode` slot on `TugTranscriptEntry`, with collapse-when-empty CSS (no `min-height` when the slot is absent / `null`).
+- New file pair: `tide-card-z1c.tsx` (the `TideZ1C` component) + `tide-card-z1c.css` (layout for the rendered indicator). Pure-logic helper `tideZ1CContent(phase, interruptInFlight)` in `tide-card-z1c.ts` (sibling) — returns `{label} | null` per [D19]'s table.
+- `TideZ1B` loses its in-flight branch (`participant === "code"` + no `turn`). Becomes purely the committed-end-state renderer. Its CSS drops the `min-height` rule so the `controls` slot collapses when no end-state is rendered.
+- `CodeRowCell` passes `<TideZ1C codeSessionStore={...} />` to `inflightFooter` iff `!isCommitted`; passes `null` (slot collapsed) when committed. `UserRowCell` / `GhostRowCell` pass nothing — the slot stays collapsed.
 
 **Tasks:**
 
-- [ ] **Pre-flight: read `TideJumpToBottomButton`'s implementation** to confirm the visibility pattern it actually uses. The `data-visible` attribute pattern in [D19] / `#spec-z1c` is the recommended target, but if `TideJumpToBottomButton` uses a different pattern (CSS class toggle, opacity transition, conditional render), generalize: TideZ1C MUST follow whatever pattern the existing transcript-level chrome uses for visibility. Update [D19] and `#spec-z1c` if needed so the spec matches the existing pattern.
-- [ ] Add `TideZ1C` per the content table in [D19]: `submitting` → "Submitting…"; `awaiting_first_token` → "Thinking…"; `streaming` → "Streaming…"; `tool_work` → "Tool work…"; `awaiting_approval` → caution-tone "Awaiting approval"; `waking` → "Waking…"; `interruptInFlight === true` → caution-tone "Interrupting…" (overrides phase).
-- [ ] TideZ1C subscribes to the snapshot via a single combined selector returning `{phase, interruptInFlight, isInflight: activeTurn !== null}` (one `useSyncExternalStore` call, not three; reduces churn).
-- [ ] Mount `TideZ1C` in `tide-card-transcript.tsx` as a sibling of `TideJumpToBottomButton` below `<TugListView>`.
-- [ ] Delete TideZ1B's in-flight branch.
-- [ ] Add CSS for the visibility toggle matching the pattern verified in the pre-flight step.
+- [ ] Add `inflightFooter?: React.ReactNode` slot to `TugTranscriptEntry`. Below the body, above (or beside) the `controls` slot. Collapse-when-empty CSS: when the slot has no children, no vertical space is consumed.
+- [ ] Remove `min-height` from `TideZ1B` so the `controls` slot collapses to zero when Z1B renders no end-state (in-flight code row).
+- [ ] Create `TideZ1C` component (`tide-card-z1c.tsx` + `.css`). The component subscribes to a memoized `{phase, interruptInFlight}` selector via `useSyncExternalStore` (one subscription, no churn on text deltas — text-delta dispatches build a fresh snapshot reference but don't change phase / interruptInFlight, so the memoized selector returns the prior reference).
+- [ ] Implement `tideZ1CContent(phase, interruptInFlight)` per [D19]'s table. Returns `null` for `awaiting_approval` (waiting, not thinking), `interruptInFlight === true` (instant from user's POV; Z1B paints end-state), and `idle` / `replaying` / `errored`.
+- [ ] The Z1C component renders the three-bar `TugThinkingIndicator` (default styling, `labelPosition="hidden"`, no caution chrome). Phase label rides on `aria-label` for screen readers; visible glyph stays identical to the pre-Step-5.8 in-row indicator.
+- [ ] In `CodeRowCell`, pass `<TideZ1C codeSessionStore={...} />` to `inflightFooter` iff `!isCommitted`. The active subscription mounts only on the in-flight code row.
+- [ ] Z1C's CSS pins the indicator at the row body's left edge (matching the body indent) and the same 2px top offset Z1B's pre-Step-5.8 live branch used, so the visual is identical.
 
 **Tests:**
 
-- [ ] New: TideZ1C visibility-toggle pin — `data-visible="true"` when `activeTurn !== null`; `data-visible="false"` when `null`.
-- [ ] New: TideZ1C content-by-phase pin — each phase maps to the expected indicator/label per [D19].
-- [ ] Existing TideZ1B tests update — in-flight branch tests delete; committed-end-state tests stay.
+- [ ] New: `tideZ1CContent` content-by-phase pin — each phase maps to the expected label per [D19]. `awaiting_approval`, `interruptInFlight=true`, `idle`, `replaying`, `errored` all return `null`.
+- [ ] New: `TugTranscriptEntry` `inflightFooter` slot pin — when `inflightFooter={null}` (or omitted), the slot consumes zero vertical space; when populated, the slot renders the node at the expected position.
+- [ ] Existing TideZ1B tests update — in-flight branch tests delete; committed-end-state tests stay. (No-op if TideZ1B carries no pre-existing tests.)
 
 **Checkpoint:**
 
 - [ ] `cd tugdeck && bun x tsc --noEmit && bun test` green.
 - [ ] `grep -nE "participant === \"code\".*!turn|!turn.*participant === \"code\"" tugdeck/src/components/tugways/cards/tide-card-z1b.tsx` returns zero matches.
 - [ ] Manual sweep:
-  - Submit a turn; TideZ1C appears below the list with "Submitting…" then "Thinking…" then "Streaming…" as phase advances.
-  - Turn completes; TideZ1C hides; TideZ1B renders on the committed assistant code row.
-  - Interrupt mid-stream; TideZ1C flips to "Interrupting…" with caution tone.
-  - Trigger a wake (Monitor / ScheduleWakeup); TideZ1C shows "Waking…" then advances.
+  - Submit a turn; the three-bar indicator appears at the bottom-left of the in-flight code row's body (same indent as the body), animates while phase advances.
+  - Turn completes; Z1C slot collapses; Z1B renders end-state on the committed code row at the same position.
+  - Open a permission dialog (`awaiting_approval`); the indicator hides — the dialog is the sole affordance.
+  - Interrupt mid-stream; the indicator hides immediately (interrupt feels instant); Z1B paints "interrupted" once the turn commits.
+  - Trigger a wake (Monitor / ScheduleWakeup); indicator shows the "Waking…" pulse (label not visible, just the bars) then advances through phases.
 
 ---
 

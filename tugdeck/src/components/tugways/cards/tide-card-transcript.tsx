@@ -88,6 +88,8 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
 import { TideZ1B } from "@/components/tugways/cards/tide-card-z1b";
+import "./tide-card-z1c.css";
+import { tideZ1CContent } from "@/components/tugways/cards/tide-card-z1c";
 import {
   dispatch as dispatchRenderInput,
   dispatchToolCallState,
@@ -95,6 +97,7 @@ import {
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
 import { TideJumpToBottomButton } from "@/components/tugways/cards/tide-jump-to-bottom-button";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import { TugThinkingIndicator } from "@/components/tugways/tug-thinking-indicator";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
@@ -821,21 +824,12 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
           }
           controls={
             (() => {
-              // Z1B — always-mounted status / end-state row driven by
-              // the live session `phase`. The slot div is rendered
-              // unconditionally so the indicator → end-state swap
-              // preserves DOM identity ([L26]); only the child node
-              // inside swaps. The terminal end-state surfaces the
-              // tone-coded badge for all four `TurnEndReason` values,
-              // so the pre-promotion body-internal "Interrupted"
-              // badge is no longer needed (Z1B's `interrupted` badge
-              // covers that case).
-              //
-              // Optional Z1 placement-experiment renderer trails Z1B
-              // when the experiment maps an alt-datum (per-turn cost,
-              // ttft, etc.) onto the assistant row. Default
-              // production wiring leaves `renderTurnTrailing`
-              // undefined and Z1B is the sole footer.
+              // Z1B — always-mounted end-state row per [D19]. The
+              // slot div is rendered unconditionally so end-state
+              // arrives in place (no remount) when `turn` lands.
+              // The in-flight indicator (TideZ1C) is NOT here —
+              // it belongs to its own structural zone (TBD), not
+              // Z1B's slot.
               const trailing =
                 renderTurnTrailing !== undefined && row.turnKey !== undefined
                   ? renderTurnTrailing({
@@ -865,6 +859,85 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
   );
 };
 
+
+// ---------------------------------------------------------------------------
+// `TideZ1C` — in-flight indicator for the assistant row ([D19] /
+// `#spec-z1c`).
+//
+// Rendered inside the in-flight code row's `TugTranscriptEntry`
+// controls slot, in the same DOM position the pre-Step-5.8
+// `TideZ1B[data-mode="live"]` branch occupied. The parent
+// `CodeRowCell` mounts Z1C iff `!isCommitted`, so visibility is
+// gated structurally (no `data-visible` attribute is needed).
+//
+// The component subscribes to a combined `{phase,
+// interruptInFlight}` selector (one `useSyncExternalStore` call,
+// memoized so text-delta snapshot rebuilds that don't change
+// those two fields don't cause a re-render — required because the
+// snapshot reference rotates on every [D07] copy-on-write tick).
+// The selector drives the indicator's `aria-label` only; the
+// visible chrome is the same three-bar `TugThinkingIndicator`
+// (with `labelPosition="hidden"`) the pre-Step-5.8 live branch
+// rendered.
+// ---------------------------------------------------------------------------
+
+interface TideZ1CSelection {
+  phase: import("@/lib/code-session-store/types").CodeSessionPhase;
+  interruptInFlight: boolean;
+}
+
+interface TideZ1CProps {
+  codeSessionStore: CodeSessionStore;
+}
+
+const TideZ1C: React.FC<TideZ1CProps> = ({ codeSessionStore }) => {
+  // Memoized narrowed selector — returns the SAME object reference
+  // across snapshot dispatches that don't change `phase` or
+  // `interruptInFlight`. Required for `useSyncExternalStore`'s
+  // `Object.is` stability guard; without it the component would
+  // re-render on every text delta (each one builds a fresh
+  // snapshot reference for [D07] copy-on-write).
+  const lastSelectionRef = useRef<TideZ1CSelection | null>(null);
+  const getSelection = useCallback((): TideZ1CSelection => {
+    const snap = codeSessionStore.getSnapshot();
+    const prev = lastSelectionRef.current;
+    if (
+      prev !== null &&
+      prev.phase === snap.phase &&
+      prev.interruptInFlight === snap.interruptInFlight
+    ) {
+      return prev;
+    }
+    const next: TideZ1CSelection = {
+      phase: snap.phase,
+      interruptInFlight: snap.interruptInFlight,
+    };
+    lastSelectionRef.current = next;
+    return next;
+  }, [codeSessionStore]);
+
+  const selection = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    getSelection,
+  );
+
+  const content = tideZ1CContent(selection.phase, selection.interruptInFlight);
+
+  return (
+    <div
+      className="tide-z1c"
+      data-slot="tide-z1c"
+      // `aria-label` carries the indicator's phase for screen
+      // readers (the visible label is suppressed to match the
+      // pre-Step-5.8 in-row appearance). `aria-live="polite"`
+      // announces phase changes without interrupting.
+      aria-label={content?.label ?? undefined}
+      aria-live="polite"
+    >
+      <TugThinkingIndicator animating={true} labelPosition="hidden" />
+    </div>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Host
