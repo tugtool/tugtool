@@ -680,7 +680,12 @@ export interface CodeSessionSnapshot {
       | "wire_error"
       | "session_unknown"
       | "session_not_owned"
-      | "resume_failed";
+      | "resume_failed"
+      // Transient attachment-rejection (oversize / unsupported /
+      // decode-failed image at drop or paste). Originates from
+      // `CodeSessionStore.publishAttachmentError`. Per
+      // [Table T01](../../../roadmap/tide-atoms.md#t01-failure-modes).
+      | "attachment_rejected";
     message: string;
     at: number;
   } | null;

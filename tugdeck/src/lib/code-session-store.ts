@@ -35,6 +35,10 @@ import {
 import { FeedStore } from "@/lib/feed-store";
 import type { AtomSegment } from "./tug-atom-img";
 import {
+  createAtomBytesStore,
+  type AtomBytesStore,
+} from "./atom-bytes-store";
+import {
   createInitialState,
   deriveActiveTurnSnapshot,
   reduce,
@@ -214,6 +218,21 @@ export class CodeSessionStore {
    */
   private readonly _replayTimers: Map<string, unknown> = new Map();
 
+  /**
+   * Per-card bytes side-table for inline image attachments. One
+   * instance is created at construction and survives until `dispose`;
+   * the drop / paste handlers in the embedded text editor populate
+   * it, the wire-flattening at submit-time reads from it, and the
+   * `useCardStatePreservation` snapshot round-trips its contents
+   * across cold boot / pane restore.
+   *
+   * Exposed via {@link getAtomBytesStore} so non-React consumers
+   * (the drop / paste extensions inside CodeMirror) can reach it
+   * through a thunk read at fire time ([L07]). Per
+   * [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+   */
+  private readonly atomBytesStore: AtomBytesStore;
+
   private state: CodeSessionState;
   private _transcript: ReadonlyArray<TurnEntry> = [];
   private _listeners: Array<() => void> = [];
@@ -237,6 +256,13 @@ export class CodeSessionStore {
     this.displayLabel = options.displayLabel ?? options.tugSessionId.slice(0, 8);
     this.sessionMode = options.sessionMode;
     this.timerSource = options.timerSource ?? DEFAULT_TIMER_SOURCE;
+
+    // Per-card bytes side-table — populated at drop / paste, drained
+    // at `clear()` on dispose. Snapshot rides
+    // `useCardStatePreservation` so attachment bytes survive cold
+    // boot and pane restore alongside the rest of the prompt-entry
+    // draft. Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+    this.atomBytesStore = createAtomBytesStore();
 
     // The streaming document holds per-turn streaming paths only,
     // shaped `turn.${turnKey}.${channel}` (assistant / thinking /
@@ -508,6 +534,42 @@ export class CodeSessionStore {
   }
 
   /**
+   * Per-card byte-payload store for inline image attachments. The
+   * drop / paste extensions populate it at insert time; the
+   * wire-flattening at submit reads from it; the
+   * `useCardStatePreservation` snapshot round-trips it across pane
+   * restore and cold boot. See {@link AtomBytesStore} and
+   * [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+   *
+   * Returns the live instance — callers should not snapshot or
+   * memoize the reference across disposal. Survives until
+   * `dispose()` clears it.
+   */
+  getAtomBytesStore(): AtomBytesStore {
+    return this.atomBytesStore;
+  }
+
+  /**
+   * Surface a transient attachment-rejection error on the card's
+   * banner. Called by the drop / paste pipelines when
+   * `downsampleImage` returns a discriminated error (oversized image
+   * after JPEG-quality-60 fallback, unsupported source MIME, or a
+   * decode failure on a corrupt / exotic source).
+   *
+   * Routes through the same `lastError` channel transport / wire
+   * errors use; the existing `tide-card-banner-spec` and
+   * `tide-card.tsx` label map render it as an inline banner. The
+   * banner self-dismisses on the user's next successful submit
+   * (the `lastError: null` reset in the turn-complete commit path).
+   *
+   * No-ops when the store has been disposed.
+   */
+  publishAttachmentError(message: string): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "attachment_rejected", message });
+  }
+
+  /**
    * System notification: the per-card binding has been (re-)acked by
    * the supervisor and the wire is fully settled. Dispatched by the
    * `cardSessionBindingStore` subscriber in `tide-session-restore.ts`
@@ -741,6 +803,9 @@ export class CodeSessionStore {
     this._replayTimers.clear();
     this._listeners = [];
     this.state.queuedSends = [];
+    // Release any retained attachment bytes; the bytes-store is per-
+    // card and has no consumers past dispose.
+    this.atomBytesStore.clear();
     // No per-turn-path cleanup on dispose: the streamingDocument
     // dies with the store instance, taking its accumulated paths
     // with it. Consumers that survived past dispose would already

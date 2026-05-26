@@ -69,6 +69,12 @@ import {
 } from "@/lib/tug-atom-img";
 import { addAtomsEffect } from "./atom-decoration";
 import type { DropHandler } from "@/lib/tug-text-types";
+import {
+  classifySourceMime,
+  downsampleImage,
+  type DownsampleError,
+} from "@/lib/image-downsample";
+import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -102,6 +108,31 @@ const IMG_EXTS: ReadonlySet<string> = new Set([
 
 /** CSS class applied to the drop caret indicator element. */
 const DROP_CARET_CLASS = "cm-tug-drop-caret";
+
+/**
+ * CSS class applied to the transient overlay that appears when a
+ * drop / paste pipeline is processing an image and the work has
+ * exceeded {@link PROCESSING_INDICATOR_DELAY_MS}.
+ *
+ * The indicator is a `<div>` inserted into `view.scrollDOM` and
+ * removed once processing completes; only shows for sources slow
+ * enough that the user would otherwise feel a hitch (Risk R01 in
+ * `roadmap/tide-atoms.md`). Styled via the substrate's `baseTheme`
+ * below so the indicator picks up theme tokens without tugways-side
+ * CSS.
+ */
+const PROCESSING_INDICATOR_CLASS = "cm-tug-attachment-processing";
+
+/**
+ * Threshold for surfacing the processing indicator. Most screenshots
+ * downsample in well under this; only oversized sources (4K+) or the
+ * `HTMLImageElement` fallback path trip it. The constant lives here
+ * (not in `image-downsample.ts`) because the indicator is a drop /
+ * paste UX concern, not a downsample-pipeline concern — the
+ * downsample function returns whenever it returns; the
+ * "show an overlay if it takes > 100 ms" policy is the consumer's.
+ */
+const PROCESSING_INDICATOR_DELAY_MS = 100;
 
 // ---------------------------------------------------------------------------
 // Default file → atom conversion
@@ -375,7 +406,240 @@ const tugDropCaretTheme = EditorView.baseTheme({
     pointerEvents: "none",
     backgroundColor: "var(--tug7-element-highlight-fill-normal-drop-rest)",
   },
+  // Transient overlay shown while an image drop / paste is still
+  // downsampling. Theme-token colors mean brio / harmony pick up the
+  // right surface without per-substrate overrides. `aria-live` is set
+  // on the element at construction so assistive tech announces it
+  // when it appears.
+  [`.${PROCESSING_INDICATOR_CLASS}`]: {
+    position: "absolute",
+    bottom: "8px",
+    right: "8px",
+    padding: "4px 10px",
+    borderRadius: "6px",
+    pointerEvents: "none",
+    fontSize: "12px",
+    lineHeight: "16px",
+    backgroundColor: "var(--tug7-surface-global-primary-normal-overlay-rest)",
+    color: "var(--tug7-element-global-text-normal-default-rest)",
+    boxShadow: "var(--tug7-element-global-shadow-normal-overlay-rest)",
+    zIndex: "10",
+  },
 });
+
+// ---------------------------------------------------------------------------
+// Image-attachment async pipeline
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a `DownsampleError` into a user-facing string suitable for
+ * the `attachment_rejected` banner. The discriminated shape lets us
+ * tailor copy per failure mode; the resulting messages match the
+ * surface entries in [Table T01]
+ * (`roadmap/tide-atoms.md#t01-failure-modes`).
+ *
+ * Exported for the paste handler (in `clipboard-filters.ts`) which
+ * uses the same convention.
+ */
+export function describeDownsampleError(
+  err: DownsampleError,
+  filename: string,
+): string {
+  switch (err.kind) {
+    case "unsupported-format":
+      return `Image format unsupported: ${err.mediaType}`;
+    case "too-large-after-fallback": {
+      const mb = (err.byteSize / 1024 / 1024).toFixed(1);
+      return `Image too large after compression: ${filename} (${mb} MB)`;
+    }
+    case "decode-failed":
+      return `Could not decode image: ${filename}`;
+  }
+}
+
+/**
+ * Counter of in-flight processing pipelines per host element. The
+ * indicator is shown while count > 0 so two concurrent drops (rare
+ * but possible) don't blink the indicator off mid-work.
+ *
+ * Keyed by the host `HTMLElement` so multiple editors don't share
+ * counters. `null` hosts are tolerated; the indicator is per-host
+ * and a null host means there is none to attach to.
+ */
+const processingCounts: WeakMap<HTMLElement, number> = new WeakMap();
+
+/**
+ * Show or hide the processing indicator for a given view. The
+ * indicator element is created on first show and reused; removed on
+ * the last hide. Idempotent — multiple shows / hides nest via the
+ * `processingCounts` map.
+ */
+function setProcessingIndicator(
+  view: EditorView,
+  active: boolean,
+): void {
+  const host = view.scrollDOM;
+  const prev = processingCounts.get(host) ?? 0;
+  const next = active ? prev + 1 : Math.max(0, prev - 1);
+  processingCounts.set(host, next);
+
+  // Find or remove the indicator element based on the new count.
+  const existing = host.querySelector<HTMLDivElement>(
+    `.${PROCESSING_INDICATOR_CLASS}`,
+  );
+  if (next > 0 && existing === null) {
+    const el = document.createElement("div");
+    el.className = PROCESSING_INDICATOR_CLASS;
+    el.setAttribute("aria-live", "polite");
+    el.textContent = "Processing image…";
+    host.appendChild(el);
+  } else if (next === 0 && existing !== null) {
+    existing.remove();
+  }
+}
+
+/**
+ * Build the atom segment for a non-image file. Mirrors the
+ * `defaultFilesToAtoms` behavior for the bytes-store-aware path —
+ * non-images keep `label: filename` / `value: filename` / no `id`.
+ * Image extension classification is by file extension (the simplest
+ * resolver-free heuristic; the downsample pipeline does the real
+ * MIME check after that).
+ */
+function nonImageAtomFromFile(file: File): AtomSegment {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const type = IMG_EXTS.has(ext) ? "image" : "file";
+  return { kind: "atom", type, label: file.name, value: file.name };
+}
+
+/**
+ * The async pipeline drop / paste callers share for converting
+ * user-supplied files into atoms + bytes-store entries. Designed for
+ * the bytes-store-aware path; the legacy synchronous default
+ * (`defaultFilesToAtoms`) stays in place for hosts that don't supply
+ * a store.
+ *
+ * Algorithm:
+ *  1. Schedule the processing-indicator overlay for
+ *     `PROCESSING_INDICATOR_DELAY_MS` later (cancelled if processing
+ *     finishes first).
+ *  2. For each file: if its MIME classifies as an image, await
+ *     `downsampleImage`. On success, mint a UUID, populate the
+ *     bytes-store, build an atom with `id` set. On error, push to a
+ *     rejection list (the caller surfaces these as
+ *     `attachment_rejected` banner messages).
+ *  3. Non-image files fall through to `nonImageAtomFromFile` (no
+ *     bytes, no id).
+ *  4. After all files settle, hide the indicator. If the view is
+ *     still alive, dispatch `insertAtomsAt` with the successful
+ *     atoms; rejected files publish their errors via `onError`.
+ *
+ * The view's liveness is checked through `view.dom.isConnected`
+ * before dispatching the insert — if the editor unmounted while we
+ * were processing (user closed the card, swapped pane), the
+ * insertion is suppressed and the bytes-store entries we already
+ * populated will be GC'd alongside the store at dispose.
+ *
+ * Exported so the paste handler in `clipboard-filters.ts` can share
+ * the same pipeline.
+ */
+export async function processAttachmentFiles(
+  view: EditorView,
+  files: readonly File[],
+  insertPos: number,
+  bytesStore: AtomBytesStore,
+  onError: (message: string) => void,
+): Promise<void> {
+  if (files.length === 0) return;
+
+  // Indicator is delayed — most images complete in well under
+  // 100 ms; we only show the overlay for sources that would
+  // otherwise feel slow.
+  let indicatorShown = false;
+  const indicatorTimer = setTimeout(() => {
+    setProcessingIndicator(view, true);
+    indicatorShown = true;
+  }, PROCESSING_INDICATOR_DELAY_MS);
+
+  // Mint an id only when we have bytes to associate with it; non-
+  // image files use the legacy no-id shape.
+  const mintId = (): string => {
+    // Tide.app's WebKit supports `crypto.randomUUID` (since macOS 12);
+    // defensive `??` covers vanishingly unlikely future engines that
+    // lack it.
+    return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `atom-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  };
+
+  try {
+    const results = await Promise.all(
+      Array.from(files).map(async (file): Promise<{
+        atom: AtomSegment | null;
+        error: string | null;
+      }> => {
+        const cls = classifySourceMime(file.type);
+        if (cls === "unsupported") {
+          return { atom: nonImageAtomFromFile(file), error: null };
+        }
+        const outcome = await downsampleImage(file);
+        if (!outcome.ok) {
+          return {
+            atom: null,
+            error: describeDownsampleError(outcome.error, file.name),
+          };
+        }
+        const id = mintId();
+        bytesStore.put(id, {
+          content: outcome.result.content,
+          mediaType: outcome.result.mediaType,
+        });
+        return {
+          atom: {
+            kind: "atom",
+            type: "image",
+            label: file.name,
+            value: file.name,
+            id,
+          },
+          error: null,
+        };
+      }),
+    );
+
+    const atoms: AtomSegment[] = [];
+    for (const r of results) {
+      if (r.atom !== null) atoms.push(r.atom);
+      if (r.error !== null) onError(r.error);
+    }
+
+    // Drop the indicator before dispatching so the insertion paint
+    // is the first user-visible signal that processing completed.
+    clearTimeout(indicatorTimer);
+    if (indicatorShown) setProcessingIndicator(view, false);
+
+    if (atoms.length === 0) return;
+
+    // The view may have been destroyed (card closed, pane swapped)
+    // while we were processing. CM6's `dispatch` would throw on a
+    // destroyed view; the `isConnected` check is the cheapest
+    // liveness proxy short of a private API.
+    if (!view.dom.isConnected) return;
+
+    // Clamp insertPos to the live doc length — the doc may have
+    // grown or shrunk while we were processing.
+    const clampedPos = Math.min(insertPos, view.state.doc.length);
+    insertAtomsAt(view, clampedPos, atoms);
+  } catch (err) {
+    // Defensive: any synchronous throw inside the Promise.all
+    // composition (extremely unlikely, every leaf is wrapped) lands
+    // here. Surface it as a generic decode failure.
+    clearTimeout(indicatorTimer);
+    if (indicatorShown) setProcessingIndicator(view, false);
+    const reason = err instanceof Error ? err.message : "unknown error";
+    onError(`Image processing failed: ${reason}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Extension factory
@@ -418,6 +682,28 @@ function setDropActive(host: HTMLElement | null, active: boolean): void {
  * extensions use. Returns `null` to opt into the default
  * extension-based file→atom conversion.
  *
+ * `getBytesStore` and `onAttachmentError` are the bytes-store-aware
+ * additions (Step 2 of `roadmap/tide-atoms.md`). When `getBytesStore`
+ * returns a live `AtomBytesStore`, the drop pipeline runs through
+ * the async `processAttachmentFiles` path: image files are
+ * downsampled, given a stable UUID, and stashed in the store; the
+ * resulting atoms carry the id. When `getBytesStore` returns `null`
+ * (gallery cards, prompt-entry instances unrelated to a tide
+ * session), the legacy synchronous `defaultFilesToAtoms` path runs
+ * — image atoms come back with `value: filename` and no bytes,
+ * exactly as before.
+ *
+ * `onAttachmentError(message)` publishes a downsample-rejection
+ * message to the host's banner channel. Routes to
+ * `CodeSessionStore.publishAttachmentError` in production; tests can
+ * pass a spy.
+ *
+ * A host-supplied `getDropHandler()` still wins over the default —
+ * the gallery card uses that escape hatch to inject deterministic
+ * test atoms. When both `getBytesStore()` and `getDropHandler()` are
+ * non-null, the custom handler takes precedence and no async
+ * processing happens.
+ *
  * The DOM event handlers attach to `view.contentDOM` via
  * `EditorView.domEventHandlers`. Drag events on the scroller
  * padding (the gap between contentDOM and scrollDOM) bubble up
@@ -432,6 +718,8 @@ function setDropActive(host: HTMLElement | null, active: boolean): void {
 export function tugDropExtension(
   host: HTMLElement | null,
   getDropHandler: () => DropHandler | null,
+  getBytesStore: () => AtomBytesStore | null = () => null,
+  onAttachmentError: (message: string) => void = () => undefined,
 ): Extension {
   return [
     tugDropCaretField,
@@ -506,23 +794,57 @@ export function tugDropExtension(
         event.preventDefault();
         setDropActive(host, false);
 
-        const handler = getDropHandler();
-        const atoms = handler !== null
-          ? handler(files)
-          : defaultFilesToAtoms(files);
-        if (atoms.length === 0) {
-          if (view.state.field(tugDropCaretField) !== null) {
-            view.dispatch({ effects: setTugDropCaretPos.of(null) });
-          }
-          return true;
-        }
-
         const pos = dropOffsetAtCoords(view, event.clientX, event.clientY);
         const insertPos = pos !== null ? pos : view.state.doc.length;
 
-        // `insertAtomsAt` includes the caret-clear effect in the
-        // same transaction as the insert.
-        insertAtomsAt(view, insertPos, atoms);
+        // Custom host-supplied handler wins — gallery cards use this
+        // to inject deterministic test atoms without going through
+        // the downsample path.
+        const handler = getDropHandler();
+        if (handler !== null) {
+          const atoms = handler(files);
+          if (atoms.length === 0) {
+            if (view.state.field(tugDropCaretField) !== null) {
+              view.dispatch({ effects: setTugDropCaretPos.of(null) });
+            }
+            return true;
+          }
+          insertAtomsAt(view, insertPos, atoms);
+          return true;
+        }
+
+        // Hide the drop caret synchronously — the async pipeline
+        // will dispatch its own insertion transaction once
+        // processing completes, but the user already let go of the
+        // drag and the caret should track that.
+        if (view.state.field(tugDropCaretField) !== null) {
+          view.dispatch({ effects: setTugDropCaretPos.of(null) });
+        }
+
+        const bytesStore = getBytesStore();
+        if (bytesStore === null) {
+          // No bytes-store — fall back to the legacy synchronous
+          // default. Image atoms come back with no bytes; this
+          // matches the pre-Step-2 behavior for hosts that don't
+          // participate in attachment bytes (gallery card without
+          // a custom handler, future detached prompt-entries).
+          const atoms = defaultFilesToAtoms(files);
+          if (atoms.length === 0) return true;
+          insertAtomsAt(view, insertPos, atoms);
+          return true;
+        }
+
+        // Bytes-store-aware path: run the async pipeline. The drop
+        // event handler returns synchronously to satisfy CM6; the
+        // pipeline dispatches the insertion (and surfaces any
+        // attachment-rejection errors) when it settles.
+        void processAttachmentFiles(
+          view,
+          Array.from(files),
+          insertPos,
+          bytesStore,
+          onAttachmentError,
+        );
         return true;
       },
     }),

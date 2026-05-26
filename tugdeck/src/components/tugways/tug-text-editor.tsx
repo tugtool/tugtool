@@ -99,6 +99,7 @@ import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import type { AtomSegment } from "@/lib/tug-atom-img";
+import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 import type { HistoryProvider, InputAction } from "@/lib/tug-text-types";
 import {
   hasNativeClipboardBridge,
@@ -115,7 +116,10 @@ import {
   regenerateAtomsEffect,
 } from "./tug-text-editor/atom-decoration";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
-import { clipboardExt, parseClipboardHtmlEnvelope } from "./tug-text-editor/clipboard-filters";
+import {
+  clipboardExtension,
+  parseClipboardHtmlEnvelope,
+} from "./tug-text-editor/clipboard-filters";
 import { tugDropExtension } from "./tug-text-editor/drop-extension";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
 import type { TextSelectionAdapter } from "./text-selection-adapter";
@@ -511,6 +515,37 @@ export interface TugTextEditorProps
    */
   dropHandler?: DropHandler;
   /**
+   * Per-card byte-payload store for inline image attachments. When
+   * provided, the drop and paste pipelines route image files through
+   * the async `downsampleImage` → bytes-store path: each image atom
+   * comes back with a UUID `id` paired with bytes in this store, and
+   * the wire-flattening at submit (Step 3) packs them as Attachments.
+   *
+   * Defaults to `undefined`, in which case drops use the legacy
+   * synchronous `defaultFilesToAtoms` (image atoms with no bytes) and
+   * image clipboard items fall through to the substrate's text-paste
+   * path. Gallery cards and stand-alone harnesses leave this absent;
+   * tide-card prompt-entry instances wire it through from their
+   * `CodeSessionStore`. Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+   *
+   * The prop is a controlled reference — pass the same store
+   * instance on every render. A late-arriving store (mounted as
+   * `undefined`, then re-rendered with a value) is picked up via
+   * ref-mirroring; the next drop / paste uses the latest reference.
+   */
+  attachmentBytesStore?: AtomBytesStore;
+  /**
+   * Callback invoked when the drop / paste downsample pipeline
+   * rejects a file (oversize image, unsupported source format,
+   * decode failure). The string is a user-facing message suitable
+   * for a banner.
+   *
+   * Defaults to a no-op. Tide-card prompt-entry passes
+   * `CodeSessionStore.publishAttachmentError`. Per
+   * [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+   */
+  onAttachmentError?: (message: string) => void;
+  /**
    * Opt in to tugdeck card state preservation. When `true`, the
    * editor registers `onSave` / `onRestore` / `onCardActivated` /
    * `onCardWillDeactivate` callbacks with the enclosing `CardHost`
@@ -671,6 +706,8 @@ function buildExtensions(
   getKeymapConfig: () => TugTextEditorKeymapConfig,
   getCompletionProviders: () => Record<string, CompletionProvider>,
   getDropHandler: () => DropHandler | null,
+  getBytesStore: () => AtomBytesStore | null,
+  onAttachmentError: (message: string) => void,
   initial: {
     placeholder: string;
     lineWrap: boolean;
@@ -758,8 +795,8 @@ function buildExtensions(
     atomDecorationField,
     atomInvertedEffects,
     atomicRangesExt,
-    clipboardExt,
-    tugDropExtension(host, getDropHandler),
+    clipboardExtension(getBytesStore, onAttachmentError),
+    tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
   ];
 }
 
@@ -777,6 +814,8 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       completionDirection = "down",
       onTypeaheadChange,
       dropHandler,
+      attachmentBytesStore,
+      onAttachmentError,
       preserveState = true,
       placeholder = "",
       maxRows = DEFAULT_MAX_ROWS,
@@ -961,6 +1000,26 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       dropHandlerRef.current = dropHandler ?? null;
     }, [dropHandler]);
+
+    // Live attachment-store ref + error-callback ref. Drop and paste
+    // extensions read these thunks at fire time so a late-arriving
+    // store (or a host that swaps stores between cards) is picked up
+    // without rebuilding the editor [L07]. The default `null` /
+    // no-op keeps stand-alone harnesses, gallery cards, and other
+    // non-bytes-store consumers running unchanged.
+    const attachmentBytesStoreRef = useRef<AtomBytesStore | null>(
+      attachmentBytesStore ?? null,
+    );
+    useLayoutEffect(() => {
+      attachmentBytesStoreRef.current = attachmentBytesStore ?? null;
+    }, [attachmentBytesStore]);
+
+    const onAttachmentErrorRef = useRef<(message: string) => void>(
+      onAttachmentError ?? (() => undefined),
+    );
+    useLayoutEffect(() => {
+      onAttachmentErrorRef.current = onAttachmentError ?? (() => undefined);
+    }, [onAttachmentError]);
 
     // Snapshot of host-supplied extensions captured at mount only;
     // reactivity inside the host extension itself must come through
@@ -1615,6 +1674,8 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           () => keymapConfigRef.current,
           () => completionProvidersRef.current,
           () => dropHandlerRef.current,
+          () => attachmentBytesStoreRef.current,
+          (message) => onAttachmentErrorRef.current(message),
           {
             placeholder: initialPlaceholder,
             lineWrap: initialLineWrap,

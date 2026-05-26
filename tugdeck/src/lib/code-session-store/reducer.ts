@@ -34,6 +34,7 @@ import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
   AssistantTextEvent,
+  AttachmentRejectedEvent,
   CancelQueuedSendActionEvent,
   CodeSessionEvent,
   ContentBlockStartEvent,
@@ -328,7 +329,19 @@ export interface CodeSessionState {
       | "wire_error"
       | "session_unknown"
       | "session_not_owned"
-      | "resume_failed";
+      | "resume_failed"
+      // Inline-attachment rejection at drop / paste time. Distinct
+      // cause from transport / wire errors because:
+      //  - the session is otherwise healthy (the next submit can
+      //    proceed without retry / reconnect),
+      //  - the message names a specific file the user can act on
+      //    (resize, convert, drop a smaller image),
+      //  - it self-clears on the next successful turn commit per
+      //    the standard `lastError: null` reset path.
+      // Originates from `CodeSessionStore.publishAttachmentError`,
+      // dispatched as `{ type: "attachment_rejected", message }`.
+      // Per [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+      | "attachment_rejected";
     message: string;
     at: number;
   } | null;
@@ -2685,6 +2698,36 @@ function handleSessionStateErrored(
   };
 }
 
+/**
+ * Surface a transient attachment-rejection error on the card banner.
+ * Distinct from `handleWireError` and `handleSessionStateErrored`:
+ * the session is otherwise healthy (no phase transition to
+ * `"errored"`), the next submit can proceed without retry, and the
+ * banner self-dismisses on the next successful turn commit via the
+ * standard `lastError: null` reset.
+ *
+ * Originates from `CodeSessionStore.publishAttachmentError`, called
+ * by the drop / paste pipelines when `downsampleImage` returns a
+ * discriminated error. Per
+ * [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+ */
+function handleAttachmentRejected(
+  state: CodeSessionState,
+  event: AttachmentRejectedEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state: {
+      ...state,
+      lastError: {
+        cause: "attachment_rejected",
+        message: event.message,
+        at: Date.now(),
+      },
+    },
+    effects: [],
+  };
+}
+
 function handleWireError(
   state: CodeSessionState,
   event: WireErrorEvent,
@@ -3604,6 +3647,8 @@ export function reduce(
       return handleTickTimeoutDwellDone(state);
     case "tick_preflight_done":
       return handleTickPreflightDone(state);
+    case "attachment_rejected":
+      return handleAttachmentRejected(state, event);
     default:
       return { state, effects: [] };
   }

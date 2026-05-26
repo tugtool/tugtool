@@ -359,6 +359,25 @@ export interface WireErrorEvent {
 }
 
 /**
+ * Transient attachment-rejection error from the drop / paste
+ * pipelines. Dispatched by `CodeSessionStore.publishAttachmentError`
+ * when `downsampleImage` returns one of its discriminated errors
+ * (oversize image, unsupported source format, decode failure).
+ *
+ * Routes through `state.lastError` with `cause:
+ * "attachment_rejected"`. Distinct from wire / session errors — the
+ * session stays in its current phase (idle, submitting, …), only the
+ * banner surfaces the message. Self-clears on the next successful
+ * turn commit.
+ *
+ * Per [Table T01](../../../roadmap/tide-atoms.md#t01-failure-modes).
+ */
+export interface AttachmentRejectedEvent {
+  type: "attachment_rejected";
+  message: string;
+}
+
+/**
  * Internal event mapped from a `SESSION_STATE { state: "errored" }`
  * frame. The store's `frameToEvent` extracts the `detail` field from
  * the wire payload; the reducer rolls it into `state.lastError.message`.
@@ -666,4 +685,5 @@ export type CodeSessionEvent =
   | BindResumeAcknowledgedEvent
   | TickSoftBudgetEvent
   | TickTimeoutDwellDoneEvent
-  | TickPreflightDoneEvent;
+  | TickPreflightDoneEvent
+  | AttachmentRejectedEvent;

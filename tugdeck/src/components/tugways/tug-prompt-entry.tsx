@@ -183,6 +183,20 @@ interface TugPromptEntryState {
    * `maximized` prop and on restore it re-emits via `onMaximizeChange`.
    */
   maximized?: boolean;
+  /**
+   * Snapshot of the per-card `AtomBytesStore` — base64 image bytes
+   * for atoms currently in the draft. Round-trips through the
+   * `useCardStatePreservation` bag so a card that is deactivated,
+   * cmd-tab'd away, or cold-booted from disk restores its in-flight
+   * image attachments with bytes intact (no need to re-drop the
+   * file). Optional so older persisted snapshots restore with no
+   * attachment bytes (the corresponding atoms become unsubmittable
+   * skeletons rather than crashes).
+   *
+   * Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store) and
+   * [L23](../../tuglaws/tuglaws.md#l23).
+   */
+  attachmentBytes?: Record<string, { content: string; mediaType: string }>;
 }
 
 /**
@@ -220,11 +234,12 @@ export function coerceRestorePayload(raw: unknown): TugPromptEntryState {
   if (raw === null || typeof raw !== "object") return fallback;
   const obj = raw as Partial<TugPromptEntryState> & LegacyTugPromptEntryState;
   const maximized = typeof obj.maximized === "boolean" ? obj.maximized : false;
+  const attachmentBytes = coerceAttachmentBytes(obj.attachmentBytes);
 
   // New shape — `route` + `draft` are both present.
   if (typeof obj.route === "string") {
     const draft = isEditingState(obj.draft) ? obj.draft : null;
-    return { route: obj.route, draft, maximized };
+    return { route: obj.route, draft, maximized, attachmentBytes };
   }
 
   // Legacy shape — `currentRoute` + `perRoute`.
@@ -237,10 +252,36 @@ export function coerceRestorePayload(raw: unknown): TugPromptEntryState {
     const perRoute = obj.perRoute as Record<string, unknown>;
     const candidate = perRoute[obj.currentRoute];
     const draft = isEditingState(candidate) ? candidate : null;
-    return { route: obj.currentRoute, draft, maximized };
+    return { route: obj.currentRoute, draft, maximized, attachmentBytes };
   }
 
   return fallback;
+}
+
+/**
+ * Defensive coercion for the persisted `attachmentBytes` map. Filters
+ * out non-object payloads (corrupt persistence, schema drift) and
+ * entries missing the required `content` / `mediaType` shape. Returns
+ * `undefined` when the input contains zero valid entries — that
+ * value round-trips through the snapshot pipeline cleanly and gates
+ * `restore` from being called with an empty object.
+ */
+function coerceAttachmentBytes(
+  value: unknown,
+): Record<string, { content: string; mediaType: string }> | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const out: Record<string, { content: string; mediaType: string }> = {};
+  let any = false;
+  for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (entry === null || typeof entry !== "object") continue;
+    const e = entry as { content?: unknown; mediaType?: unknown };
+    if (typeof e.content !== "string" || typeof e.mediaType !== "string") {
+      continue;
+    }
+    out[id] = { content: e.content, mediaType: e.mediaType };
+    any = true;
+  }
+  return any ? out : undefined;
 }
 
 /**
@@ -583,6 +624,26 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     snapRef.current = snap;
   }, [snap]);
+
+  // Inline-attachment wiring. The per-card bytes-store and the
+  // attachment-error publisher come from `codeSessionStore`; both are
+  // stable across renders for a given store instance, so memoizing on
+  // `[codeSessionStore]` is sufficient. The store handle and bound
+  // callback flow through to `TugTextEditor` so the drop / paste
+  // extensions can populate the side-table at insert time and surface
+  // downsample-rejection messages via the existing banner channel.
+  // Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store) and
+  // [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+  const attachmentBytesStore = useMemo(
+    () => codeSessionStore.getAtomBytesStore(),
+    [codeSessionStore],
+  );
+  const publishAttachmentError = useCallback(
+    (message: string): void => {
+      codeSessionStore.publishAttachmentError(message);
+    },
+    [codeSessionStore],
+  );
 
   // Z5 submit-button state machine. The button's whole view — label,
   // icon, `disabled`, `data-mode` — is a pure function of the
@@ -1146,15 +1207,35 @@ export const TugPromptEntry = React.forwardRef<
           scrollAnchor: snap.scrollAnchor ?? null,
         };
       }
+      // Snapshot the bytes-store alongside the draft so a card that
+      // restores from disk (or HMR cycle) rehydrates its in-flight
+      // image attachments with bytes intact. The store's `snapshot`
+      // returns a fresh plain object — JSON-serializable. Omitted
+      // when empty so persisted payloads stay small. Per [L23].
+      const bytesSnap = attachmentBytesStore.snapshot();
+      const attachmentBytes = Object.keys(bytesSnap).length > 0
+        ? bytesSnap
+        : undefined;
       return {
         route: routeLifecycle.getRoute(),
         draft,
         maximized: maximizedRef.current ?? false,
+        attachmentBytes,
       };
     },
     onRestore: (raw, { isActive }) => {
       const restored = coerceRestorePayload(raw);
       routeLifecycle.setRoute(restored.route);
+      // Rehydrate the bytes-store BEFORE the editor restores its
+      // draft so the moment the substrate reads atom-ids back, the
+      // corresponding bytes are already there for buildWirePayload
+      // (Step 3) to read at submit. Additive on existing keys per
+      // [Spec S02] — if the live store has accumulated unrelated
+      // entries from drops that happened after the snapshot was
+      // taken (rare), they survive the restore.
+      if (restored.attachmentBytes !== undefined) {
+        attachmentBytesStore.restore(restored.attachmentBytes);
+      }
       const editor = textEditorRef.current;
       if (editor !== null) {
         if (restored.draft !== null) {
@@ -1294,6 +1375,8 @@ export const TugPromptEntry = React.forwardRef<
               placeholder={placeholderByRoute?.[route] ?? ""}
               completionProviders={completionProviders}
               dropHandler={dropHandler}
+              attachmentBytesStore={attachmentBytesStore}
+              onAttachmentError={publishAttachmentError}
               historyProvider={currentHistoryProvider}
               returnAction={
                 returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"

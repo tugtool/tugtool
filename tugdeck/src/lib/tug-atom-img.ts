@@ -20,12 +20,29 @@ import { findEmbeddableFace } from "./tug-atom-fonts";
 /** U+FFFC — Object Replacement Character representing an atom in the text flow. */
 export const TUG_ATOM_CHAR = "\uFFFC";
 
-/** Segment type used by TugTextEngine. */
+/**
+ * Segment type used by TugTextEngine.
+ *
+ * The optional `id` field is a UUID minted at drop / paste time for
+ * image atoms that have associated bytes in the per-card
+ * `AtomBytesStore`. Atoms inserted via `@`-completion / typing /
+ * legacy paths do not carry an id. The reducer-side substrate, state
+ * preservation, and clipboard sidecar all round-trip the field
+ * verbatim — present-when-known, absent otherwise.
+ *
+ * The id pairs an atom (display surface) with its bytes (storage
+ * surface). At submit time, `buildWirePayload` consults the
+ * bytes-store by id; at transcript-commit time, the same id moves
+ * onto `AttachmentRecord.id` for click-to-enlarge lookup. Per
+ * [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+ */
 export interface AtomSegment {
   kind: "atom";
   type: string;
   label: string;
   value: string;
+  /** UUID minted at drop / paste; pairs the atom with its byte payload. */
+  id?: string;
 }
 
 /** Label display mode for file paths. */

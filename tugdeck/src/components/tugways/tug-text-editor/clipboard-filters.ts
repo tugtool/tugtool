@@ -55,6 +55,8 @@ import {
   getAtomsInRange,
   type PositionedAtom,
 } from "./atom-decoration";
+import { processAttachmentFiles } from "./drop-extension";
+import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 
 // ---------------------------------------------------------------------------
 // Wire format
@@ -322,17 +324,87 @@ function handleCopyOrCut(
 }
 
 /**
+ * Walk a `DataTransferItemList` and return the `File` objects for
+ * items whose MIME starts with `image/`. The shape DataTransferItem
+ * is awkward — items can be type `file`, type `string`, or both —
+ * and `getAsFile()` returns `null` for non-file items. This helper
+ * isolates that quirk so the paste handler stays readable.
+ *
+ * Returns `null` when no image items are present (the common case —
+ * text paste, internal sidecar paste); callers fall through to the
+ * sidecar/text path. Returns an empty array only if items report as
+ * images but `getAsFile()` yields nothing (rare; defensive).
+ */
+function extractImageFiles(
+  items: DataTransferItemList | null,
+): readonly File[] | null {
+  if (items === null || items.length === 0) return null;
+  const out: File[] = [];
+  let anyImage = false;
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i]!;
+    if (item.kind !== "file") continue;
+    if (!item.type.startsWith("image/")) continue;
+    anyImage = true;
+    const file = item.getAsFile();
+    if (file !== null) out.push(file);
+  }
+  return anyImage ? out : null;
+}
+
+/**
  * Handle a paste event in browser mode (the substrate's
  * native-bridge paste path lives in `tug-text-editor.tsx` and calls
  * `parseClipboardHtmlEnvelope` directly). The browser-mode handler
- * prefers the custom MIME sidecar — it's the most reliable carrier
- * inside a single WebKit instance because no html normalization
- * intervenes.
+ * has three branches in priority order:
+ *
+ *  1. **Image clipboard items.** If `clipboardData.items` contains
+ *     one or more `image/*` files (Cmd+Shift+4 screenshot pastes,
+ *     copy-from-Preview, etc.), claim the event and route the files
+ *     through the same async pipeline drop uses — downsample, mint
+ *     ids, populate the bytes-store, insert atoms.
+ *  2. **Tug atom sidecar.** The custom MIME (`application/x-tug-atoms`)
+ *     carries an internal copy from another tug surface. Decodes
+ *     and re-inserts atoms verbatim.
+ *  3. **Default.** Returns false; CM6's default text-paste path
+ *     handles the event.
+ *
+ * Image pastes only fire when a bytes-store is available. Without a
+ * store (gallery card, future detached prompt-entry), image items
+ * fall through to the next branch — typically nothing comes back
+ * since clipboards with image items don't usually carry the
+ * substrate's atom sidecar.
  */
-function handlePaste(view: EditorView, event: ClipboardEvent): boolean {
+function handlePaste(
+  view: EditorView,
+  event: ClipboardEvent,
+  getBytesStore: () => AtomBytesStore | null,
+  onAttachmentError: (message: string) => void,
+): boolean {
   const dt = event.clipboardData;
   if (dt === null) return false;
 
+  // Branch 1: image clipboard items. Only fires when a bytes-store
+  // is available; otherwise we have nowhere to stash the bytes and
+  // the user would get an atom with no content.
+  const bytesStore = getBytesStore();
+  if (bytesStore !== null) {
+    const imageFiles = extractImageFiles(dt.items);
+    if (imageFiles !== null && imageFiles.length > 0) {
+      event.preventDefault();
+      const { from } = view.state.selection.main;
+      void processAttachmentFiles(
+        view,
+        imageFiles,
+        from,
+        bytesStore,
+        onAttachmentError,
+      );
+      return true;
+    }
+  }
+
+  // Branch 2: tug atom sidecar (internal copy/paste).
   const sidecarRaw = dt.getData(TUG_ATOMS_MIME);
   if (sidecarRaw === "") return false; // no sidecar — let CM6 default paste run
 
@@ -361,20 +433,42 @@ function handlePaste(view: EditorView, event: ClipboardEvent): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The clipboard extension wires the copy/cut/paste handlers into the
- * editor's DOM event pipeline.
+ * Build the clipboard extension. Optional thunks unlock the
+ * image-paste branch ([Step 2] of `roadmap/tide-atoms.md`):
+ *
+ *  - `getBytesStore`: per-card bytes-store; when present, image
+ *    clipboard items route through the async downsample pipeline.
+ *    Default `() => null` keeps the pre-Step-2 behavior (image
+ *    pastes fall through to text).
+ *  - `onAttachmentError`: surfaces downsample-rejection messages on
+ *    the host's banner channel. Default no-op.
+ *
+ * Copy and cut paths are unchanged; they don't need the new params.
  */
-export const clipboardExt: Extension = EditorView.domEventHandlers({
-  copy(event, view) {
-    return handleCopyOrCut(view, event, false);
-  },
-  cut(event, view) {
-    return handleCopyOrCut(view, event, true);
-  },
-  paste(event, view) {
-    return handlePaste(view, event);
-  },
-});
+export function clipboardExtension(
+  getBytesStore: () => AtomBytesStore | null = () => null,
+  onAttachmentError: (message: string) => void = () => undefined,
+): Extension {
+  return EditorView.domEventHandlers({
+    copy(event, view) {
+      return handleCopyOrCut(view, event, false);
+    },
+    cut(event, view) {
+      return handleCopyOrCut(view, event, true);
+    },
+    paste(event, view) {
+      return handlePaste(view, event, getBytesStore, onAttachmentError);
+    },
+  });
+}
+
+/**
+ * Pre-Step-2 const export. Equivalent to `clipboardExtension()` with
+ * default thunks (no bytes-store wiring, no error surfacing). Kept
+ * for consumers (and tests) that don't participate in attachment
+ * bytes; new consumers should call `clipboardExtension` directly.
+ */
+export const clipboardExt: Extension = clipboardExtension();
 
 // `TUG_ATOM_CHAR` is re-exported from this module so callers (notably
 // tests) can build sidecar fixtures without a separate import. It's

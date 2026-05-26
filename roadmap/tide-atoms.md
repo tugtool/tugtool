@@ -700,33 +700,40 @@ No failure is silent. No failure drops the user's submission without surfacing.
 **References:** [D03](#d03-atom-bytes-store), [Spec S02](#s02-atom-bytes-store), [Table T01](#t01-failure-modes), [Risk R01](#r01-canvas-blocking), (#strategy)
 
 **Artifacts:**
-- `tugdeck/src/lib/atom-bytes-store.ts` — implements [Spec S02](#s02-atom-bytes-store).
-- `AtomSegment.id?: string` field added in `tug-atom-img.ts:24`.
-- `drop-extension.ts` calls `downsampleImage` for image files; mints atom-id via `crypto.randomUUID()`; stashes bytes in `bytesStore`; emits the atom with `id` set.
-- `clipboard-filters.ts` paste handler — reads `image/*` `ClipboardItem` entries; same path as drop.
-- `useCardStatePreservation` save/restore pair includes the bytes-store snapshot (a new bag slot, separate from `pendingDraftRestore.atoms`).
+- `tugdeck/src/lib/atom-bytes-store.ts` — implements [Spec S02](#s02-atom-bytes-store) (+ `clear()` for store-dispose drain).
+- `AtomSegment.id?: string` field added in `tug-atom-img.ts`.
+- `drop-extension.ts` exports the async `processAttachmentFiles` helper used by both drop and paste; `tugDropExtension` factory now accepts optional `getBytesStore` + `onAttachmentError` thunks. DOM-managed processing indicator (≥100 ms threshold).
+- `clipboard-filters.ts` `clipboardExt` becomes `clipboardExtension(getBytesStore, onAttachmentError)`; `handlePaste` detects `image/*` clipboard items and routes through the shared pipeline. Legacy `clipboardExt` const preserved with default thunks.
+- `tug-text-editor.tsx` props gain `attachmentBytesStore` + `onAttachmentError`; ref-mirrored and threaded into `buildExtensions`.
+- `tug-prompt-entry.tsx` reads `attachmentBytesStore` from `codeSessionStore.getAtomBytesStore()` and passes `codeSessionStore.publishAttachmentError` as the error callback.
+- `code-session-store.ts` owns the per-card `AtomBytesStore` instance, exposes `getAtomBytesStore()`, and has a new `publishAttachmentError(message)` dispatcher.
+- Reducer: new `attachment_rejected` `lastError.cause` (in `reducer.ts`, `types.ts`, and `events.ts`); banner label added to `tide-card.tsx` `CAUSE_LABELS`.
+- `useCardStatePreservation` extended: `TugPromptEntryState.attachmentBytes` slot + `coerceAttachmentBytes` defensive coercion; onSave snapshots the store, onRestore feeds `bytesStore.restore`.
 - CASE-A interrupt restore inherits the bytes-store snapshot (no new code; the state-preservation snapshot covers it).
 
 **Tasks:**
-- [ ] Implement `AtomBytesStore` per [Spec S02](#s02-atom-bytes-store) with a `Map<string, AtomBytesEntry>` backing.
-- [ ] Add `id?: string` to `AtomSegment` and ensure all existing constructions compile.
-- [ ] Wire `downsampleImage` into `drop-extension.ts` per [D05](#d05-client-downsample); non-image drops continue to use `defaultFilesToAtoms` with no bytes.
-- [ ] Wire the paste handler in `clipboard-filters.ts` for `image/*` clipboard items; non-image clipboard items continue through the existing path.
-- [ ] Wire bytes-store snapshot into `useCardStatePreservation` (new bag slot `attachmentBytes`).
-- [ ] Show a `<TugProcessingIndicator>` overlay for `downsampleImage` operations exceeding 100 ms ([Risk R01](#r01-canvas-blocking)).
-- [ ] Surface `downsampleImage` errors via the existing toast / `lastError` path per [Table T01](#t01-failure-modes).
+- [x] Implement `AtomBytesStore` per [Spec S02](#s02-atom-bytes-store) with a `Map<string, AtomBytesEntry>` backing (plus `size()` / `clear()` helpers).
+- [x] Add `id?: string` to `AtomSegment` and ensure all existing constructions compile.
+- [x] Wire `downsampleImage` into `drop-extension.ts` per [D05](#d05-client-downsample); non-image drops continue to use `defaultFilesToAtoms` with no bytes; gallery card's custom handler still wins.
+- [x] Wire the paste handler in `clipboard-filters.ts` for `image/*` clipboard items; non-image clipboard items continue through the existing path.
+- [x] Wire bytes-store snapshot into `useCardStatePreservation` (new bag slot `attachmentBytes`).
+- [x] Show a processing-indicator overlay for `downsampleImage` operations exceeding 100 ms ([Risk R01](#r01-canvas-blocking)) — DOM-managed inside `view.scrollDOM`, themed via the substrate's `baseTheme` (no React state, [L06]).
+- [x] Surface `downsampleImage` errors via the `lastError` channel per [Table T01](#t01-failure-modes) — new `attachment_rejected` cause renders through the existing banner.
 
 **Tests:**
-- [ ] `unit: put / get / delete / snapshot / restore round-trip on AtomBytesStore`
-- [ ] `integration: drop a synthetic Image File → atom-id minted, bytes-store populated, atom inserted with id`
-- [ ] `integration: paste a synthetic image/png ClipboardItem → same`
-- [ ] `integration: drop a 6 MB PNG → downsampleImage applies; bytes-store entry is ≤ 5 MB encoded`
-- [ ] `integration: drop a 100 MB PNG → toast surfaces; atom not inserted`
+- [x] `unit: put / get / delete / snapshot / restore round-trip on AtomBytesStore` (26 pure-logic tests in `__tests__/atom-bytes-store.test.ts`)
+- [x] `unit: snapshot returns a fresh object; entries are fresh shapes; JSON-serializable`
+- [x] `unit: restore is additive on existing keys; overwrites overlapping ids; filters malformed entries`
+- [x] `unit: clear drops all entries; idempotent on empty`
+- [x] `unit: instance independence — two stores share no state`
+- [ ] Real-app coverage of drop / paste pipelines against actual image bytes — exercised by the integration smoke in Step 8's `just app-test` recipe (the canvas pipeline behavior is verified in the same surface that runs the production code).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugdeck && bun run check`
-- [ ] Manual: drop image → close and reopen the card → atom is restored with bytes intact (state preservation works).
+- [x] `bun test` — full tugdeck suite, **2900 pass, 0 fail**
+- [x] `bun run check` — TypeScript clean
+- [x] `bun run audit:tokens lint` — zero violations
+- [x] `cargo nextest run --workspace` — 1324 pass, 0 fail
+- [ ] Manual: drop image → close and reopen the card → atom is restored with bytes intact (state preservation works). — deferred to Step 8's manual smoke alongside the rest of the end-to-end flow (drop/paste integration depends on Step 3's wire-flattening to actually exercise the bytes-store at submit).
 
 ---
 
