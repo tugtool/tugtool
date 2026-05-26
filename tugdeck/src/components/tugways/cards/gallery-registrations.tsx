@@ -56,7 +56,6 @@ import { GalleryPopover } from "./gallery-popover";
 import { GalleryBox } from "./gallery-box";
 import { GalleryTextarea } from "./gallery-textarea";
 import { GallerySeparator } from "./gallery-separator";
-import { GalleryProgress } from "./gallery-progress";
 import { GalleryAccordion } from "./gallery-accordion";
 import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
@@ -101,9 +100,8 @@ import { GalleryImageBlock } from "./gallery-image-block";
 import { GalleryTideChrome } from "./gallery-tide-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
-import { GalleryTugStateIndicator } from "./gallery-tug-state-indicator";
+import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
 import { GalleryTugTaskItem } from "./gallery-tug-task-item";
-import { GalleryTugThinkingIndicator } from "./gallery-tug-thinking-indicator";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -901,9 +899,9 @@ export function registerGalleryCards(): void {
   });
 
   registerCard({
-    componentId: "gallery-tug-state-indicator",
-    contentFactory: (_cardId) => <GalleryTugStateIndicator />,
-    defaultMeta: { title: "TugStateIndicator", icon: "CircleDot", closable: true },
+    componentId: "gallery-tug-progress-indicator",
+    contentFactory: (_cardId) => <GalleryTugProgressIndicator />,
+    defaultMeta: { title: "TugProgressIndicator", icon: "Activity", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
@@ -914,16 +912,6 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-task-item",
     contentFactory: (_cardId) => <GalleryTugTaskItem />,
     defaultMeta: { title: "TugTaskItem", icon: "ListChecks", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-tug-thinking-indicator",
-    contentFactory: (_cardId) => <GalleryTugThinkingIndicator />,
-    defaultMeta: { title: "TugThinkingIndicator", icon: "Hourglass", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
@@ -984,16 +972,6 @@ export function registerGalleryCards(): void {
     componentId: "gallery-card-banner",
     contentFactory: (_cardId) => <GalleryCardBanner />,
     defaultMeta: { title: "TugPaneBanner", icon: "CircleAlert", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.feedback,
-  });
-
-  registerCard({
-    componentId: "gallery-progress",
-    contentFactory: (_cardId) => <GalleryProgress />,
-    defaultMeta: { title: "TugProgress", icon: "Activity", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

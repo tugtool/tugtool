@@ -89,7 +89,7 @@ import {
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
 import { sendSpawnSession } from "@/lib/session-lifecycle";
-import { TugProgress } from "../tug-progress";
+import { TugProgressIndicator } from "../tug-progress-indicator";
 import {
   tideRestoreRegistry,
   cancelTideRestore,
@@ -262,7 +262,7 @@ export interface TideCardContentProps {
    * telemetry update is contained (the row grows into space the
    * transcript ceded; no scroll repositioning). Per [D100] this slot
    * houses `TideTelemetryStatusRow`, which carries a `TASKS` cell
-   * (TugProgress ring + `N/M`) and an associated popover —
+   * (TugProgressIndicator ring + `N/M`) and an associated popover —
    * superseding the prior Z2A/Z2B split.
    */
   statusBarContent?: React.ReactNode;
@@ -721,9 +721,9 @@ function TideRestoring({
           </p>
           <div className="tide-card-restoring-footer">
             <span className="tide-card-restoring-spinner">
-              <TugProgress
+              <TugProgressIndicator
                 variant="spinner"
-                size="sm"
+                size={14}
                 aria-label={spinnerLabel}
               />
             </span>

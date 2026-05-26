@@ -26,8 +26,8 @@
  * re-render on every delta.
  *
  * **Visible appearance.** The visible glyph is the bare three-bar
- * `TugThinkingIndicator` (default styling, `labelPosition="hidden"`)
- * — identical to the pre-Step-5.8 in-row indicator. The phase
+ * {@link TugProgressIndicator} `variant="wave"` (no inline label) —
+ * identical to the pre-Step-5.8 in-row indicator. The phase
  * label rides on `aria-label` for screen readers; the visible
  * surface stays the same three bars regardless of phase. Per
  * [D19], `awaiting_approval` and `interruptInFlight === true` both
@@ -51,7 +51,7 @@ import "./tide-card-z1c.css";
 
 import React, { useCallback, useRef, useSyncExternalStore } from "react";
 
-import { TugThinkingIndicator } from "@/components/tugways/tug-thinking-indicator";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { CodeSessionPhase } from "@/lib/code-session-store/types";
 
@@ -154,10 +154,10 @@ export const TideZ1C: React.FC<TideZ1CProps> = ({ codeSessionStore }) => {
   if (content === null) return null;
 
   return (
-    <TugThinkingIndicator
+    <TugProgressIndicator
       data-slot="tide-z1c"
-      animating={true}
-      labelPosition="hidden"
+      variant="wave"
+      state="running"
       aria-label={content.label}
       aria-live="polite"
     />

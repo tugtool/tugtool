@@ -1,0 +1,71 @@
+/* @tug-pairings: none — color-setting rules below self-pair (background-color
+   set in the same rule). The dot's color resolves from
+   --tugx-progress-indicator-fill, paired by the parent indicator. */
+
+/**
+ * Internal glyph for TugProgressIndicator's `pulsing-dot` variant.
+ *
+ * Geometry: the root span is a positioned square whose width/height
+ * comes from `--tugx-progress-pulsing-dot-size` (parent-set). The dot
+ * paints at `--tugx-progress-pulsing-dot-dot-size` (half the root in
+ * the active states, smaller while quiet).
+ *
+ * Motion: the ring's `display` and pulse animation are owned by the
+ * component's TugAnimator chain (see `tug-progress-pulsing-dot.tsx`).
+ * Default ring state is `display: none`; the chain flips it to `block`
+ * and runs a finite WAAPI pulse at every boundary. No CSS `@keyframes`,
+ * no `animation: ... infinite`.
+ *
+ * Tuglaws cross-check:
+ *  - [L06] dot color is set via a CSS custom property; the ring's
+ *    `display` is set imperatively at pulse boundaries.
+ *  - [L13] motion via TugAnimator (WAAPI), not CSS keyframes.
+ *  - [L16] dot's `background-color` is self-paired (same rule).
+ *  - [L19] file pair, `data-slot="tug-progress-pulsing-dot"`.
+ *  - [L20] owns its `--tugx-progress-pulsing-dot-*` sub-family; reads
+ *    `--tugx-progress-indicator-fill` from the parent indicator.
+ */
+
+.tug-progress-pulsing-dot {
+  --tugx-progress-pulsing-dot-size: 16px;
+  --tugx-progress-pulsing-dot-dot-size: calc(var(--tugx-progress-pulsing-dot-size) / 2);
+
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--tugx-progress-pulsing-dot-size);
+  height: var(--tugx-progress-pulsing-dot-size);
+}
+
+.tug-progress-pulsing-dot-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--tugx-progress-pulsing-dot-dot-size);
+  height: var(--tugx-progress-pulsing-dot-dot-size);
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background-color: var(--tugx-progress-indicator-fill, currentColor);
+  transition:
+    width  calc(200ms * var(--tug-timing, 1)) ease,
+    height calc(200ms * var(--tug-timing, 1)) ease;
+}
+
+.tug-progress-pulsing-dot-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--tugx-progress-pulsing-dot-size);
+  height: var(--tugx-progress-pulsing-dot-size);
+  border-radius: 999px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--tugx-progress-indicator-fill, currentColor);
+  box-sizing: border-box;
+  display: none;
+  transform: translate(-50%, -50%);
+}
+
+.tug-progress-pulsing-dot-disabled {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}

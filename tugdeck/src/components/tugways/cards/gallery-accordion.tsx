@@ -13,7 +13,7 @@ import { Settings, User, Bell } from "lucide-react";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugBadge } from "@/components/tugways/tug-badge";
-import { TugProgress } from "@/components/tugways/tug-progress";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugSwitch } from "@/components/tugways/tug-switch";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -328,7 +328,7 @@ export function GalleryAccordion() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">Nested Content</TugLabel>
         <div style={{ maxWidth: "480px" }}>
-          <div style={labelStyle}>accordion as a container for real UI — TugBadge, TugProgress, TugInput, TugSwitch</div>
+          <div style={labelStyle}>accordion as a container for real UI — TugBadge, TugProgressIndicator, TugInput, TugSwitch</div>
           <TugAccordion type="multiple">
             <TugAccordionItem value="nested-status" trigger="Status Badges">
               <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
@@ -340,8 +340,8 @@ export function GalleryAccordion() {
             </TugAccordionItem>
             <TugAccordionItem value="nested-progress" trigger="Upload Progress">
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <TugProgress variant="bar" value={0.6} label="assets.zip — 60%" />
-                <TugProgress variant="bar" value={1} label="config.json — complete" role="success" />
+                <TugProgressIndicator variant="bar" size={6} value={0.6} label="assets.zip — 60%" />
+                <TugProgressIndicator variant="bar" size={6} value={1} label="config.json — complete" role="success" />
               </div>
             </TugAccordionItem>
             <TugAccordionItem value="nested-input" trigger="Quick Search">

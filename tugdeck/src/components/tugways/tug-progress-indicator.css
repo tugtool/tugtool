@@ -1,0 +1,131 @@
+/* @tug-pairings {
+  --tugx-progress-indicator-label-color | --tugx-progress-indicator-surface | content
+} */
+
+/**
+ * tug-progress-indicator.css — TugProgressIndicator host frame.
+ *
+ * @tug-pairings
+ * | Element                                | Surface                              | Role    | Context                                                   |
+ * |----------------------------------------|--------------------------------------|---------|-----------------------------------------------------------|
+ * | --tugx-progress-indicator-label-color  | --tugx-progress-indicator-surface    | content | .tug-progress-indicator-label-active (color)              |
+ *
+ * The glyph's fill / stroke pairings live in the internal variant CSS
+ * files [L20]. This file declares only the label pairing — every other
+ * paint rule is variant-internal.
+ *
+ * Tuglaws cross-check:
+ *  - [L06] layout toggles (glyphPosition, labelAlign, labelPosition) drive
+ *    data-* attributes on the root span; CSS reads them. No React state
+ *    for appearance.
+ *  - [L13] motion lives inside the variant components.
+ *  - [L16] every color-setting rule below is self-paired (the label) or
+ *    sets background-color (none here).
+ *  - [L17] every `--tugx-progress-indicator-*` alias resolves to a
+ *    base `--tug7-*` token in one hop.
+ *  - [L19] file pair, `data-slot="tug-progress-indicator"`, @tug-pairings
+ *    declared.
+ *  - [L20] public component owns its `--tugx-progress-indicator-*` slots
+ *    exclusively; the internal variants own their own glyph token
+ *    sub-families and do not reach into other components.
+ */
+
+/* ---- Component-tier aliases [L17, L20] ---- */
+
+body {
+  /* Geometry — overridable per call site via the inline style on the root
+     when the consumer passes `size`. */
+  --tugx-progress-indicator-size: 16px;
+  --tugx-progress-indicator-label-gap: var(--tug-space-sm, 6px);
+
+  /* The host surface the indicator is expected to render against.
+     Consumers on a non-default surface re-declare this in their own scope.
+     Mirrors the same pattern TugStateIndicator and TugThinkingIndicator
+     used (--tugx-state-indicator-surface, --tugx-thinking-indicator-surface). */
+  --tugx-progress-indicator-surface: var(--tug7-surface-global-primary-normal-default-rest);
+
+  /* Visible-label text color — paired against the host surface. */
+  --tugx-progress-indicator-label-color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* ============================================================================
+   Host span
+   Layout: flex row of (left glyph?, label?, right glyph?). The
+   `data-glyph-position` attribute drives the visual ordering.
+   ========================================================================= */
+
+.tug-progress-indicator {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tugx-progress-indicator-label-gap);
+}
+
+.tug-progress-indicator[data-label-position="tooltip"] {
+  /* Tooltip suppresses the inline label; no gap to collapse around. */
+  gap: 0;
+}
+
+/* ============================================================================
+   Glyph slot — owns the fixed-size square that the size prop drives.
+   Internal variants render inside this slot.
+   ========================================================================= */
+
+.tug-progress-indicator-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* ============================================================================
+   Disabled — dims the entire indicator. Internal variants freeze their
+   animations via the `disabled` flag they receive directly.
+   ========================================================================= */
+
+.tug-progress-indicator[data-disabled] {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}
+
+/* ============================================================================
+   Visible label
+   Default `labelAlign="start"` renders the active text only. The
+   `labelAlign="center"` mode renders ghost spans for every phaseLabels
+   entry plus the active label in the same grid cell; the cell sizes to
+   the widest entry and the active label centers within it.
+   ========================================================================= */
+
+.tug-progress-indicator-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--tug-font-size-sm, 0.8125rem);
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: none;
+  /* @tug-renders-on var(--tugx-progress-indicator-surface) */
+  color: var(--tugx-progress-indicator-label-color);
+}
+
+.tug-progress-indicator-label-center {
+  display: grid;
+  /* All children land in the same single-cell grid track ("stack"). The
+     cell sizes to the widest child; visibility-hidden ghosts contribute
+     width but not paint. */
+  grid-template-areas: "stack";
+  justify-items: center;
+}
+
+.tug-progress-indicator-label-center > .tug-progress-indicator-label-ghost,
+.tug-progress-indicator-label-center > .tug-progress-indicator-label-active {
+  grid-area: stack;
+}
+
+.tug-progress-indicator-label-ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tug-progress-indicator-label-active {
+  /* In start-align mode the label is a plain inline span; in center-align
+     mode it overlays the ghosts via grid stacking. */
+}

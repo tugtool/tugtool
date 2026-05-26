@@ -205,19 +205,16 @@ body {
   font-weight: 600;
 }
 
-/* The in_progress row's icon is a `TugProgress` ring (not a lucide
-   SVG); the ring carries its own indeterminate rotation animation
-   and its own `prefers-reduced-motion` handling, so this file no
-   longer owns a spinner keyframe. Size the ring to fit the 14×14
-   icon slot — color is delivered by the `TugProgress` `role="inherit"`
-   prop ([L20] — this file does not override the ring's
-   `--tugx-progress-fill` slot; the row's `color` cascade
-   (`--tugx-todo-active-color` set on `[data-status="in_progress"]`)
-   reaches the ring via `currentColor`). */
-.tugx-todo-row[data-status="in_progress"] .tugx-todo-row-icon .tug-progress-ring {
-  width: 14px;
-  height: 14px;
-}
+/* The in_progress row's icon is a {@link TugProgressIndicator} ring
+   (not a lucide SVG); the ring carries its own indeterminate rotation
+   animation and its own `prefers-reduced-motion` handling, so this
+   file no longer owns a spinner keyframe. The ring's 14×14 size is
+   set on the component via the `size` prop; color is delivered by
+   `role="inherit"` ([L20] — this file does not override the
+   indicator's `--tugx-progress-indicator-fill` slot; the row's
+   `color` cascade (`--tugx-todo-active-color` set on
+   `[data-status="in_progress"]`) reaches the ring via
+   `currentColor`). */
 
 /* `completed` — strikethrough + muted prose so finished work fades. */
 /* @tug-renders-on: --tugx-block-bg */

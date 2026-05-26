@@ -1,36 +1,24 @@
 /* @tug-pairings {
-  --tugx-progress-fill                                    | --tug7-surface-progress-primary-normal-default-rest | control
+  --tugx-progress-indicator-fill | --tug7-surface-progress-primary-normal-default-rest | control
 } */
 
 /**
  * @tug-pairings
- * | Element                | Surface                                                  | Role    | Context                                       |
- * |------------------------|----------------------------------------------------------|---------|-----------------------------------------------|
- * | --tugx-progress-fill   | --tug7-surface-progress-primary-normal-default-rest      | control | .tug-progress-ring-arc (stroke) — fill arc     |
+ * | Element                          | Surface                                                | Role    | Context                                       |
+ * |----------------------------------|--------------------------------------------------------|---------|-----------------------------------------------|
+ * | --tugx-progress-indicator-fill   | --tug7-surface-progress-primary-normal-default-rest    | control | .tug-progress-ring-arc (stroke)                |
+ *
+ * Internal glyph for TugProgressIndicator's `ring` variant.
+ *
+ * Sizing comes from inline width/height on the root span (driven by the
+ * `size` prop on the parent TugProgressIndicator). The SVG viewBox is
+ * always "0 0 32 32"; CSS sizing scales the rendering.
+ *
+ * Motion: [L13] indeterminate rotation uses a CSS `@keyframes` because the
+ * arc lives in a Radix-free, library-free SVG and the lifecycle is owned
+ * by React directly. Paused state suppresses the animation via
+ * `animation-play-state`.
  */
-
-/* --- TugProgressRing: circular arc progress indicator ---
- *
- * An SVG ring with a background track and foreground arc. The arc starts at
- * 12 o'clock (top) via a -90deg rotation on the SVG element.
- *
- * Determinate: arc fills from 0° to 360° via stroke-dashoffset (set inline) [L06].
- * Indeterminate: a partial arc (~25% of circumference) rotates continuously.
- *
- * Size is controlled by explicit width/height on the root span.
- * The SVG viewBox is always "0 0 32 32" — CSS sizing scales the rendering.
- *
- * Color source: var(--tugx-progress-fill) — injected by parent TugProgress.
- * Track color: var(--tug7-surface-progress-primary-normal-default-rest).
- *
- * Motion compliance [L13]: all durations scale via calc(Xms * var(--tug-timing, 1)).
- * When data-tug-motion="off" is set on <body>, animation-duration: 0s !important
- * suppresses all animations.
- */
-
-/* ============================================================================
-   Root Container
-   ========================================================================= */
 
 .tug-progress-ring {
   display: inline-flex;
@@ -38,57 +26,26 @@
   justify-content: center;
 }
 
-/* ============================================================================
-   Size Variants
-   ========================================================================= */
-
-.tug-progress-ring-sm { width: 16px; height: 16px; }
-.tug-progress-ring-md { width: 24px; height: 24px; }
-.tug-progress-ring-lg { width: 32px; height: 32px; }
-
-/* ============================================================================
-   SVG
-   ========================================================================= */
-
 .tug-progress-ring-svg {
   width: 100%;
   height: 100%;
-  /* Rotate -90deg so arc starts at 12 o'clock (SVG circles start at 3 o'clock) */
-  transform: rotate(-90deg);
+  transform: rotate(-90deg); /* arc starts at 12 o'clock */
 }
-
-/* ============================================================================
-   Track Circle (background)
-   ========================================================================= */
 
 /* @tug-renders-on: (component background — rendered in parent context) */
 .tug-progress-ring-track {
   stroke: var(--tug7-surface-progress-primary-normal-default-rest, rgba(255, 255, 255, 0.1));
 }
 
-/* ============================================================================
-   Arc Circle (foreground fill)
-   ========================================================================= */
-
 .tug-progress-ring-arc {
-  stroke: var(--tugx-progress-fill, currentColor);
+  stroke: var(--tugx-progress-indicator-fill, currentColor);
   transition: stroke-dashoffset calc(300ms * var(--tug-timing, 1)) ease;
 }
 
-/* ============================================================================
-   Indeterminate Animation
-   ========================================================================= */
-
-/* Partial arc (~25% of circumference = 91.1 * 0.25 ≈ 22.8) visible,
-   remainder (91.1 - 22.8 ≈ 68.3) hidden via dashoffset */
-.tug-progress-ring-indeterminate .tug-progress-ring-arc {
-  stroke-dashoffset: 68.3;
-}
-
-/* Rotate the SVG continuously so the arc segment chases around the ring.
-   Starts from -90deg (12 o'clock) and completes one full revolution. */
+/* Indeterminate: rotate the SVG continuously so the visible partial arc
+   chases around the ring. */
 .tug-progress-ring-indeterminate .tug-progress-ring-svg {
-  transform: none; /* override the static -90deg; animation handles orientation */
+  transform: none;
   animation: tug-progress-ring-spin calc(1200ms * var(--tug-timing, 1)) linear infinite;
 }
 
@@ -97,22 +54,10 @@
   to   { transform: rotate(270deg); }
 }
 
-/* ============================================================================
-   Stopped State
-   ========================================================================= */
-
-/* `stopped` renders the arc as a closed circle (`stroke-dashoffset:
-   0` set inline in the component) with no rotation. The arc draws
-   at full circumference, matching the track's diameter so the two
-   read as one outlined ring. No animation, no transition jitter
-   when the prop flips. */
-.tug-progress-ring-stopped .tug-progress-ring-arc {
-  transition: none;
+/* Paused freezes the in-flight rotation. */
+.tug-progress-ring-paused .tug-progress-ring-svg {
+  animation-play-state: paused;
 }
-
-/* ============================================================================
-   Disabled State
-   ========================================================================= */
 
 .tug-progress-ring-disabled {
   opacity: var(--tugx-control-disabled-opacity, 0.45);

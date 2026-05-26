@@ -156,7 +156,7 @@
  * substrate contract requires the consumer to supply the hover hint —
  * `TugPopoverTrigger` itself adds no cursor or background change. The
  * canonical pattern for status-row cells (the Z2 layout's TIME / TOKENS
- * / CONTEXT cells and the `TugStateIndicator`) is to wrap the cell in
+ * / CONTEXT cells and the `TugProgressIndicator`) is to wrap the cell in
  * `TugPopoverTrigger` and apply a `cursor: pointer` + subtle
  * hover-tinted background class so the click target is discoverable.
  */

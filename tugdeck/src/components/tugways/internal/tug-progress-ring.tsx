@@ -1,15 +1,22 @@
 /**
- * TugProgressRing — Internal building block for the circular arc progress indicator.
+ * TugProgressRing — Internal building block for the circular arc progress glyph.
  *
- * App code should use TugProgress instead.
+ * App code should use {@link TugProgressIndicator} instead.
  *
- * Renders an SVG ring with two circles: a background track and a foreground arc.
- * When value is undefined (indeterminate), a partial arc segment rotates continuously.
- * When value is a number (determinate), the arc grows from 0° to 360° proportional
- * to value/max. Arc length is controlled via stroke-dashoffset set imperatively [L06].
+ * Renders an SVG ring with a background track and a foreground arc. The arc
+ * starts at 12 o'clock via a -90deg rotation on the SVG.
  *
- * Color is inherited from the parent's --tugx-progress-fill CSS variable.
- * Track uses --tug7-surface-progress-primary-normal-default-rest.
+ * State semantics:
+ *   running   — value undefined: indeterminate rotating partial arc.
+ *               value set: arc drawn at fraction, no rotation.
+ *   paused    — animation-play-state paused; current pose held.
+ *   stopped   — arc hidden; only the track outline is visible (quiescent).
+ *   completed — closed circle drawn in the indicator fill color (no break).
+ *   aborted   — arc drawn at value (if any) or hidden; the danger tint comes
+ *               from the parent via `--tugx-progress-indicator-fill`.
+ *
+ * Color is inherited from the parent's `--tugx-progress-indicator-fill`.
+ * Track uses `--tug7-surface-progress-primary-normal-default-rest`.
  *
  * Laws: [L06] arc offset via inline style, [L13] CSS keyframes only,
  *       [L16] pairings declared, [L19] component authoring guide
@@ -18,58 +25,58 @@
 import React, { useRef, useLayoutEffect } from "react";
 import { cn } from "@/lib/utils";
 import "./tug-progress-ring.css";
-
-export type TugProgressRingSize = "sm" | "md" | "lg";
+import type { TugProgressIndicatorState } from "../tug-progress-indicator";
 
 export interface TugProgressRingProps {
-  /** Progress value, 0 to max. Undefined = indeterminate (rotating arc). */
+  /** Determinate progress value, 0 to max. Undefined = indeterminate. */
   value?: number;
   /** Maximum value. @default 1 */
   max?: number;
-  /** Size variant. Controls ring diameter and stroke width.
-   *  @selector .tug-progress-ring-sm | .tug-progress-ring-md | .tug-progress-ring-lg
-   *  @default "md" */
-  size?: TugProgressRingSize;
-  /** When true, animation freezes and opacity dims. */
+  /** Diameter in CSS px. @default 16 */
+  size?: number;
+  /** Lifecycle state. @default "running" */
+  state?: TugProgressIndicatorState;
+  /** When true, opacity dims and animation freezes. */
   disabled?: boolean;
-  /**
-   * When true, the ring renders as a closed outlined circle with no
-   * animation — distinct from both indeterminate (rotating partial
-   * arc) and disabled (dimmed). Use to communicate a quiescent state
-   * where there is genuinely no work to indicate (e.g. a Tasks
-   * indicator with no active tasks). Overrides `value` rendering;
-   * the arc draws full circumference (no break) and the indeterminate
-   * animation is suppressed.
-   * @default false
-   */
-  stopped?: boolean;
   /** Additional CSS class names. */
   className?: string;
 }
 
 const STROKE_WIDTH = 3;
-const RADIUS = 16 - STROKE_WIDTH / 2; // 14.5
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS; // ~91.1
+const RADIUS = 16 - STROKE_WIDTH / 2;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+const INDETERMINATE_VISIBLE_OFFSET = CIRCUMFERENCE * 0.75;
 
 export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRingProps>(
-  function TugProgressRing({ value, max = 1, size = "md", disabled = false, stopped = false, className }, ref) {
-    // `stopped` overrides both indeterminate and determinate
-    // rendering: the arc draws the full circumference (offset 0) and
-    // the `tug-progress-ring-indeterminate` class is suppressed so
-    // the rotating-spin keyframe does not apply. Determinate mode is
-    // independent of `stopped` — when `stopped` is false the `value`
-    // / `max` semantics behave as before.
+  function TugProgressRing(
+    { value, max = 1, size = 16, state = "running", disabled = false, className },
+    ref,
+  ) {
     const isDeterminate = value !== undefined;
     const fraction = isDeterminate
       ? Math.min(Math.max(value / max, 0), 1)
       : 0;
-    const dashOffset = stopped
-      ? 0
-      : isDeterminate
-        ? CIRCUMFERENCE * (1 - fraction)
-        : undefined;
 
-    // Track mode changes to suppress transition on indeterminate → determinate switch [L06]
+    // State decides the arc length:
+    //   completed → full closed circle (offset 0)
+    //   stopped / aborted (with no value) → hidden arc (offset = circumference)
+    //   determinate → fraction
+    //   running indeterminate → handled by .indeterminate animation
+    let dashOffset: number | undefined;
+    if (state === "completed") {
+      dashOffset = 0;
+    } else if (state === "stopped") {
+      dashOffset = CIRCUMFERENCE;
+    } else if (isDeterminate) {
+      dashOffset = CIRCUMFERENCE * (1 - fraction);
+    } else if (state === "aborted") {
+      dashOffset = CIRCUMFERENCE;
+    }
+
+    const isIndeterminate =
+      !isDeterminate && (state === "running" || state === "paused");
+
+    // Suppress the dashoffset transition when switching modes [L06].
     const prevDeterminateRef = useRef(isDeterminate);
     const arcRef = useRef<SVGCircleElement>(null);
 
@@ -87,25 +94,27 @@ export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRing
       }
     }, [isDeterminate]);
 
+    const sizeStyle: React.CSSProperties = {
+      width: `${size}px`,
+      height: `${size}px`,
+    };
+
     return (
       <span
         ref={ref}
         data-slot="tug-progress-ring"
+        data-state={state}
         aria-hidden="true"
+        style={sizeStyle}
         className={cn(
           "tug-progress-ring",
-          `tug-progress-ring-${size}`,
-          !stopped && !isDeterminate && "tug-progress-ring-indeterminate",
-          stopped && "tug-progress-ring-stopped",
+          isIndeterminate && state === "running" && "tug-progress-ring-indeterminate",
+          state === "paused" && "tug-progress-ring-paused",
           disabled && "tug-progress-ring-disabled",
           className,
         )}
       >
-        <svg
-          className="tug-progress-ring-svg"
-          viewBox="0 0 32 32"
-        >
-          {/* Background track circle */}
+        <svg className="tug-progress-ring-svg" viewBox="0 0 32 32">
           <circle
             className="tug-progress-ring-track"
             cx="16"
@@ -114,7 +123,6 @@ export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRing
             fill="none"
             strokeWidth={STROKE_WIDTH}
           />
-          {/* Foreground arc */}
           <circle
             ref={arcRef}
             className="tug-progress-ring-arc"
@@ -124,7 +132,11 @@ export const TugProgressRing = React.forwardRef<HTMLSpanElement, TugProgressRing
             fill="none"
             strokeWidth={STROKE_WIDTH}
             strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={stopped || isDeterminate ? dashOffset : undefined}
+            strokeDashoffset={
+              isIndeterminate && !isDeterminate
+                ? INDETERMINATE_VISIBLE_OFFSET
+                : dashOffset
+            }
             strokeLinecap="round"
           />
         </svg>

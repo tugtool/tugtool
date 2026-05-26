@@ -77,7 +77,7 @@ export interface TugPaneBannerProps {
    * Optional custom node rendered in place of the Lucide icon. When
    * provided, the strip uses this node and ignores `icon`. Use for
    * indicators that need their own animation or composition — e.g. a
-   * `TugProgress` spinner — that a static Lucide glyph can't express.
+   * `TugProgressIndicator` spinner — that a static Lucide glyph can't express.
    * The node should be sized to fit the 16px icon slot.
    */
   iconSlot?: React.ReactNode;

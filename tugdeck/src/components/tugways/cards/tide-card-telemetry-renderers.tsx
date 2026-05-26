@@ -37,11 +37,13 @@ import {
   TugPopoverContent,
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import {
-  labelTextFor,
-  TugStateIndicator,
-} from "@/components/tugways/tug-state-indicator";
-import type { TugStateIndicatorState } from "@/components/tugways/tug-state-indicator";
+  tideSessionPhaseKey,
+  tideSessionPhaseVisual,
+  TIDE_SESSION_PHASE_LABELS,
+  type TideSessionPhaseInput,
+} from "@/lib/code-session-store/session-phase-visual";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import {
@@ -70,7 +72,6 @@ import {
   TokensPopoverContent,
   type ScrollToRowHandler,
 } from "./tide-card-telemetry-popovers";
-import { TugProgress } from "@/components/tugways/tug-progress";
 import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
 import { countTasks } from "@/components/tugways/body-kinds/todo-list-block";
 
@@ -454,13 +455,14 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
  * path uses the static value in that case).
  *
  * The STATE cell mirrors the other three: an endcap-rule legend
- * above a value. The value is the human-readable phase title
- * (`labelTextFor`): "Idle", "Running tools", "Awaiting first
+ * above a value. The value is the human-readable phase title from
+ * `TIDE_SESSION_PHASE_LABELS`: "Idle", "Running tools", "Awaiting first
  * response". Flanking the value, pinned to either end of the value
- * area, are two label-less `TugStateIndicator` glyphs — their
- * concentric dot + pulsing ring read
- * `phase × transportState × interruptInFlight` and give the cell
- * the live motion a static figure cannot.
+ * area, are two label-less `TugProgressIndicator` pulsing-dot glyphs
+ * — their dot + pulsing ring read
+ * `phase × transportState × interruptInFlight` (resolved via
+ * `tideSessionPhaseKey` + `tideSessionPhaseVisual`) and give the
+ * cell the live motion a static figure cannot.
  *
  * The row renders four cells — STATE / TIME / TOKENS / CONTEXT.
  * Cumulative TOTAL TIME / TOTAL TOKENS are not separate cells; the
@@ -578,15 +580,16 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
-  const indicatorState: TugStateIndicatorState = {
+  const indicatorState: TideSessionPhaseInput = {
     phase: snap.phase,
     transportState: snap.transportState,
     interruptInFlight: snap.interruptInFlight,
   };
+  const statePhaseKey = tideSessionPhaseKey(indicatorState);
   // STATE cell value — the human-readable phase title. The two
-  // flanking indicators take `indicatorState` directly and derive
-  // their own tone + pulse.
-  const stateLabelText = labelTextFor(indicatorState);
+  // flanking indicators take the same phase key and derive their
+  // own role + state via tideSessionPhaseVisual.
+  const stateLabelText = TIDE_SESSION_PHASE_LABELS[statePhaseKey];
 
   // TASKS cell — assembled from the Task* event stream ([D100]).
   // Three ring states keep layout identical across "no tasks" /
@@ -670,19 +673,21 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
           >
             <TideTelemetryEndcapRuleLabel label="STATE" ticksDirection="down" />
             <span className="tide-telemetry-status-value-wrap">
-              <TugStateIndicator
-                state={indicatorState}
+              <TugProgressIndicator
+                variant="pulsing-dot"
                 size={12}
-                labelPosition="none"
+                phase={statePhaseKey}
+                phaseVisual={tideSessionPhaseVisual}
                 aria-hidden
               />
               <span className="tide-telemetry-status-value">
                 {stateLabelText}
               </span>
-              <TugStateIndicator
-                state={indicatorState}
+              <TugProgressIndicator
+                variant="pulsing-dot"
                 size={12}
-                labelPosition="none"
+                phase={statePhaseKey}
+                phaseVisual={tideSessionPhaseVisual}
                 aria-hidden
               />
             </span>
@@ -763,11 +768,11 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
             <TideTelemetryEndcapRuleLabel label="TASKS" ticksDirection="down" />
             <span className="tide-telemetry-status-value-wrap">
               {hasTasks ? (
-                <TugProgress
+                <TugProgressIndicator
                   variant="ring"
-                  size="sm"
+                  size={10}
                   role="inherit"
-                  stopped={!tasksWorking}
+                  state={tasksWorking ? "running" : "stopped"}
                   aria-label={`${taskCounts.completed} of ${taskCounts.total} tasks complete`}
                 />
               ) : null}

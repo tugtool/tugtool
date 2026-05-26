@@ -636,7 +636,7 @@ interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource
    * lambda's identity to the metadata snapshot — and a single
    * lambda-identity flip remounts every cell in the window (per
    * the [L26] note on this file's `cellRenderers` map), restarting
-   * any in-flight `TugThinkingIndicator` animation in the assistant
+   * any in-flight `TugProgressIndicator` wave animation in the assistant
    * row's Z1B chrome. See [Step 20.4.16] Sub-step A for the full
    * diagnosis.
    */
@@ -1033,7 +1033,7 @@ export const TideTranscriptHost = forwardRef<
   // dep that DOES churn (the pre-20.4.16 `modelName` was exactly such
   // a dep — flipped from `null` to the resolved value on `system_init`)
   // would remount every cell in the window on each churn, restarting
-  // any in-flight `TugThinkingIndicator` animation. Per-cell metadata
+  // any in-flight `TugProgressIndicator` wave animation. Per-cell metadata
   // reads happen INSIDE `CodeRowCell` via `useSessionModelName` so the
   // renderer lambda stays inert.
   const codeRenderer = useCallback<

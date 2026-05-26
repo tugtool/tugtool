@@ -1,20 +1,19 @@
 /**
  * TugTaskItem — one row in a task / checklist surface: a leading
- * status indicator (icon or progress ring) + a `TugLabel`.
+ * status indicator + a `TugLabel`.
  *
  * The three statuses each pick a standard-role visual treatment so
  * the colors come from the seven-slot system, not bespoke aliases:
  *
  *  - `pending`     — lucide `Circle` icon, muted text color.
- *  - `in_progress` — `TugProgress` ring `variant="ring"`
+ *  - `in_progress` — {@link TugProgressIndicator} `variant="ring"`
  *                    `role="action"` (resolves to the standard
  *                    "active" accent — blue, matched by the
  *                    component's own background band and label
  *                    color tokens, both of which alias the
  *                    `surface-tone-*` / `element-tone-*` active
  *                    family). When the host passes `idle`, the
- *                    ring renders in its `stopped` state (closed
- *                    outlined circle, no animation).
+ *                    indicator renders in its `stopped` state.
  *  - `completed`   — lucide `Check` icon, muted text color, with a
  *                    line-through on the label so finished rows
  *                    fade visually.
@@ -25,16 +24,6 @@
  * the longer prose surfaces on hover; the row itself stays
  * single-line.
  *
- * Why this component exists. Before this primitive, the task list
- * was rendered ad-hoc inside `TodoListBlock` with row-specific
- * lucide icons + hand-rolled CSS for the highlight band. That
- * produced non-standard accent colors (because the row had no path
- * to the standard "active" tone) and forced any consumer needing
- * a task row to either re-implement the rendering or wrap the
- * whole body kind. `TugTaskItem` consolidates the "indicator +
- * label" composition into one reusable primitive with proper
- * role-driven colors.
- *
  * Laws:
  *  - [L06] Visual state (highlight, strikethrough) is driven by
  *    `data-status` on the root; CSS owns the appearance. The
@@ -43,10 +32,9 @@
  *  - [L19] File pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="tug-task-item"` on the root, this docstring.
  *  - [L20] Component-token sovereignty — this file owns only
- *    `--tugx-task-item-*` slots, and composes `TugProgress` /
- *    `TugLabel` / `TugTooltip` through their public APIs
- *    (`role`, `color`, `content`). It never overrides any of
- *    those components' own token slots.
+ *    `--tugx-task-item-*` slots, and composes
+ *    {@link TugProgressIndicator} / `TugLabel` / `TugTooltip`
+ *    through their public APIs.
  *
  * @module components/tugways/tug-task-item
  */
@@ -57,7 +45,7 @@ import React from "react";
 import { Check, Circle } from "lucide-react";
 
 import { TugLabel, type TugLabelEmphasis, type TugLabelRole } from "./tug-label";
-import { TugProgress } from "./tug-progress";
+import { TugProgressIndicator } from "./tug-progress-indicator";
 import { TugTooltip } from "./tug-tooltip";
 
 // ---------------------------------------------------------------------------
@@ -102,10 +90,9 @@ const DATA_SLOT_ROOT = "tug-task-item";
 const DATA_SLOT_INDICATOR = "tug-task-item-indicator";
 const DATA_SLOT_LABEL = "tug-task-item-label";
 
-// Match the `TugProgress variant="ring" size="sm"` outer dimension
-// (16 px) so the lucide icons used for `pending` / `completed`
-// occupy the same visual extent as the in-progress ring — no size
-// jitter on a status change.
+// Match the indicator's outer dimension so the lucide icons used for
+// `pending` / `completed` occupy the same visual extent as the
+// in-progress ring — no size jitter on a status change.
 const ICON_SIZE_PX = 16;
 
 // ---------------------------------------------------------------------------
@@ -127,11 +114,11 @@ export const TugTaskItem: React.FC<TugTaskItemProps> = ({
   const indicator = (() => {
     if (status === "in_progress") {
       return (
-        <TugProgress
+        <TugProgressIndicator
           variant="ring"
-          size="sm"
+          size={ICON_SIZE_PX}
           role="action"
-          stopped={idle}
+          state={idle ? "stopped" : "running"}
           aria-hidden="true"
         />
       );

@@ -77,7 +77,7 @@ import { Check, Circle } from "lucide-react";
 
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
-import { TugProgress } from "@/components/tugways/tug-progress";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -133,12 +133,10 @@ export interface TodoListBlockProps {
 
   /**
    * Quiescent gate — when `true`, the in_progress row's progress
-   * ring renders in the {@link TugProgress} `stopped` state (closed
-   * outlined circle, no animation) instead of the default
-   * indeterminate spinning arc. Use to keep the row visually quiet
-   * when the surrounding session is idle (matching the status-bar
-   * TASKS ring's stopped gate). Pending and completed rows are
-   * unaffected.
+   * indicator renders in its `stopped` state instead of the default
+   * running animation. Use to keep the row visually quiet when the
+   * surrounding session is idle (matching the status-bar TASKS
+   * ring's stopped gate). Pending and completed rows are unaffected.
    * @default false
    */
   idle?: boolean;
@@ -251,10 +249,10 @@ class TaskListDataSource implements TugListViewDataSource {
     private readonly tasks: readonly TaskItem[],
     /**
      * Mirrors the session's idle gate so the in_progress row can
-     * pass `stopped={idle}` into its `TugProgress` ring. The
+     * pass `state="stopped"` into its progress indicator. The
      * `useMemo` keying TodoListBlock's data source includes `idle`,
      * so an idle flip produces a fresh instance and re-renders the
-     * cells with the new ring state.
+     * cells with the new indicator state.
      */
     readonly idle: boolean,
   ) {}
@@ -294,11 +292,10 @@ class TaskListDataSource implements TugListViewDataSource {
  * Icon rendered for a given status:
  *  - `pending`   — static lucide `Circle` (always closed outline).
  *  - `completed` — static lucide `Check`.
- *  - `in_progress` — {@link TugProgress} ring. Default state is the
- *    indeterminate rotating arc; when the surrounding data source
- *    is `idle`, the ring switches to its `stopped` rendering
- *    (closed outlined circle, no animation) — a proper primitive
- *    state, not a CSS pause of the rotating arc.
+ *  - `in_progress` — {@link TugProgressIndicator} ring. Default state
+ *    is `running` (animated arc); when the surrounding data source
+ *    is `idle`, the indicator switches to `stopped` — a proper
+ *    primitive state, not a CSS pause of the rotating arc.
  */
 function TaskRowIcon({
   status,
@@ -309,11 +306,11 @@ function TaskRowIcon({
 }): React.ReactElement {
   if (status === "in_progress") {
     return (
-      <TugProgress
+      <TugProgressIndicator
         variant="ring"
-        size="sm"
+        size={14}
         role="inherit"
-        stopped={idle}
+        state={idle ? "stopped" : "running"}
         aria-hidden="true"
       />
     );
@@ -327,8 +324,9 @@ function TaskRowIcon({
  * the text variant (subject vs. activeForm), and the visual
  * treatment via the row's `data-status` attribute (CSS owns colour,
  * weight, and strikethrough — pure [L06]). The in_progress row's
- * icon is a `TugProgress` ring driven by `dataSource.idle` so it
- * stops cleanly when the surrounding session is idle. When
+ * icon is a {@link TugProgressIndicator} ring driven by
+ * `dataSource.idle` so it stops cleanly when the surrounding session
+ * is idle. When
  * `description` is present, the row is wrapped in a `TugTooltip` so
  * the longer prose surfaces on hover; the row body stays
  * single-line.

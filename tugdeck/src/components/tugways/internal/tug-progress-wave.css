@@ -1,0 +1,49 @@
+/* @tug-pairings: none — color-setting rules below self-pair
+   (background-color set in the same rule). The bar color resolves from
+   --tugx-progress-indicator-fill, paired by the parent indicator. */
+
+/**
+ * Internal glyph for TugProgressIndicator's `wave` variant.
+ *
+ * Geometry: three vertical bars arranged in a flex row, sized from
+ * `--tugx-progress-wave-size` (parent-set). Bar width and gap derive
+ * from the size via `--tugx-progress-wave-bar-width` and `-bar-gap`.
+ *
+ * Motion: the bars' scaleY transforms are owned by the component's
+ * TugAnimator group at pulse boundaries. The rest pose is seeded as an
+ * inline transform on each bar so the silhouette renders correctly on
+ * first paint and so static states (stopped / completed / aborted)
+ * paint without animation.
+ *
+ * Tuglaws cross-check:
+ *  - [L06] bar transforms are inline styles; the wave's data-state on
+ *    the root drives any CSS that depends on the state.
+ *  - [L13] motion via TugAnimator (WAAPI), not CSS keyframes.
+ *  - [L16] bar's `background-color` is self-paired.
+ *  - [L19] file pair, `data-slot="tug-progress-wave"`.
+ *  - [L20] owns its `--tugx-progress-wave-*` sub-family; reads
+ *    `--tugx-progress-indicator-fill` from the parent indicator.
+ */
+
+.tug-progress-wave {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: var(--tugx-progress-wave-size);
+  gap: var(--tugx-progress-wave-bar-gap);
+}
+
+.tug-progress-wave-bar {
+  width: var(--tugx-progress-wave-bar-width);
+  height: var(--tugx-progress-wave-size);
+  background-color: var(--tugx-progress-indicator-fill, currentColor);
+  border-radius: 1px;
+  transform-origin: center bottom;
+  flex: 0 0 auto;
+}
+
+.tug-progress-wave-disabled {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+}

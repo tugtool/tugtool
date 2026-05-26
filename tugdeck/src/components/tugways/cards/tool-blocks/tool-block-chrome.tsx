@@ -98,7 +98,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { TideCautionBadge } from "@/components/tugways/chrome/tide-caution-badge";
-import { TugProgress } from "@/components/tugways/tug-progress";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import {
   BlockActionsCluster,
   BlockCopyButton,
@@ -275,11 +275,10 @@ export interface ToolBlockChromeProps {
  * `BashToolBlock` shows it while the command field is still
  * arriving).
  *
- * Renders a single `TugProgress` ring in indeterminate mode (no
- * `value` prop) — the project-standard "work in flight" indicator.
- * The earlier bespoke three-dot pulse was retired here so every
- * in-flight tool block speaks the same visual vocabulary as
- * `TugProgress` everywhere else in the app.
+ * Renders a single {@link TugProgressIndicator} ring in
+ * indeterminate mode — the project-standard "work in flight"
+ * indicator. Every in-flight tool block speaks the same visual
+ * vocabulary.
  */
 export const StreamingPlaceholder: React.FC = () => (
   <div
@@ -290,9 +289,9 @@ export const StreamingPlaceholder: React.FC = () => (
      * text color instead of the theme's accent (orange in brio).
      * The placeholder is a "we're waiting" cue, not a foreground
      * accent — same vocabulary as the surrounding prose tone. */}
-    <TugProgress
+    <TugProgressIndicator
       variant="ring"
-      size="sm"
+      size={16}
       role="inherit"
       aria-label="In progress"
     />

@@ -133,7 +133,7 @@ export const GalleryTugTaskItem: React.FC = () => {
         <div className="cg-section">
           <TugLabel className="cg-section-title">TugTaskItem — Status Palette</TugLabel>
           <TugLabel size="2xs" emphasis="calm">
-            Three statuses, three role-driven treatments. `in_progress` uses TugProgress
+            Three statuses, three role-driven treatments. `in_progress` uses TugProgressIndicator
             `role="action"` (standard active accent) and a matching background band.
           </TugLabel>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "8px 0" }}>

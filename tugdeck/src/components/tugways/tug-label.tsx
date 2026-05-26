@@ -29,8 +29,8 @@ export type TugLabelSize =
  * (`--tug7-element-tone-text-normal-<role>-rest`). Use for labels
  * that need to mirror a role-driven accent in a surrounding
  * surface (e.g. a `TugTaskItem`'s in-progress row whose ring is
- * `TugProgress role="action"`). The role suffix follows the same
- * "action → active" alias TugProgress uses, so the same role name
+ * `TugProgressIndicator role="action"`). The role suffix follows
+ * the same "action → active" alias TugProgressIndicator uses, so the same role name
  * lights up the same color family across both primitives.
  */
 export type TugLabelRole =
@@ -75,7 +75,7 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
    * Role tone — paints the label with the standard
    * `--tug7-element-tone-text-normal-<role>-rest` token. Use for
    * labels paired with role-driven accents (e.g. an in-progress
-   * task row whose ring is `TugProgress role="action"`).
+   * task row whose ring is `TugProgressIndicator role="action"`).
    * @selector .tug-label-role-action | .tug-label-role-success | …
    */
   role?: TugLabelRole;

@@ -225,34 +225,20 @@
    the value-wrap edges. A margin on the glyphs only — the value-wrap
    keeps its `--tugx-tide-status-cell-width`, so the STATE cell stays
    the same width as every other status cell and nothing relays out. */
-.tide-telemetry-status-cell[data-priority="state"] .tug-state-indicator {
+.tide-telemetry-status-cell[data-priority="state"] .tug-progress-indicator {
   margin-inline: 2px;
 }
 
-/* TASKS value row — leading TugProgress ring + `N/M` (or `None`)
-   label, centered as a group within the uniform cell width.
-     - Compact ring (12px) so the icon reads as a small status
-       glyph rather than dominating the row chrome.
-     - `--tugx-progress-fill: currentColor` so the ring picks up the
-       surrounding value text color (matches the cell's typography
-       rather than using a role-tinted fill). [L20] component-scoped
-       override of the progress slot.
-     - Small leading gap separates the ring from the label so the
-       two read as one unit.
-*/
+/* TASKS value row — leading TugProgressIndicator ring + `N/M` (or
+   `None`) label, centered as a group within the uniform cell width.
+   The ring's size is set via the `size` prop on the component; this
+   file controls only the row gap. The ring picks up the cell's text
+   color through `role="inherit"` ([L20] — this file does not
+   override `TugProgressIndicator`'s `--tugx-progress-indicator-fill`
+   slot). */
 .tide-telemetry-status-cell[data-priority="tasks"]
   .tide-telemetry-status-value-wrap {
   gap: var(--tug-space-xs);
-}
-
-/* Size the ring to 10px in the TASKS cell — the role/fill is set on
-   the component via `role="inherit"` ([L20] — this file does not
-   override `TugProgress`'s `--tugx-progress-fill` slot; it controls
-   color only via the cell's own `color` cascade, which the
-   `inherit`-role ring picks up via `currentColor`). */
-.tide-telemetry-status-cell[data-priority="tasks"] .tug-progress-ring {
-  width: 10px;
-  height: 10px;
 }
 
 /* Dim the value when there are no tasks (`–/–`) so the cell reads

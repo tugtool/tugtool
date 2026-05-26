@@ -1,15 +1,24 @@
 /**
  * TugProgressBar — Internal building block for the horizontal progress bar.
  *
- * App code should use TugProgress instead.
+ * App code should use {@link TugProgressIndicator} instead.
  *
- * Renders a track with a fill region. When value is undefined (indeterminate),
- * the fill shows animated barber-pole diagonal stripes. When value is a number
- * (determinate), the fill shows a solid color at the proportional width.
- * The transition between modes is CSS-driven [L06, L13].
+ * Renders a track with a fill region.
  *
- * Color is inherited from the parent's --tugx-progress-fill CSS variable.
- * Track background uses --tug7-surface-progress-primary-normal-default-rest.
+ * State semantics:
+ *   running   — value undefined: barber-pole indeterminate fill animation.
+ *               value set: fill drawn at fraction.
+ *   paused    — animation paused at current pose.
+ *   stopped   — fill hidden (zero width); only the track is visible.
+ *   completed — fill at 100%.
+ *   aborted   — fill drawn at value (if any) or hidden; danger tint comes
+ *               from the parent via `--tugx-progress-indicator-fill`.
+ *
+ * Track height: `--tugx-progress-indicator-size` (parent-set). Width fills
+ * the parent container.
+ *
+ * Color is inherited from the parent's `--tugx-progress-indicator-fill`.
+ * Track uses `--tug7-surface-progress-primary-normal-default-rest`.
  *
  * Laws: [L06] fill width via inline style, [L13] CSS keyframes only,
  *       [L16] pairings declared, [L19] component authoring guide
@@ -18,32 +27,48 @@
 import React, { useRef, useLayoutEffect } from "react";
 import { cn } from "@/lib/utils";
 import "./tug-progress-bar.css";
-
-export type TugProgressBarSize = "sm" | "md" | "lg";
+import type { TugProgressIndicatorState } from "../tug-progress-indicator";
 
 export interface TugProgressBarProps {
-  /** Progress value, 0 to max. Undefined = indeterminate (barber-pole). */
+  /** Determinate progress value, 0 to max. Undefined = indeterminate. */
   value?: number;
   /** Maximum value. @default 1 */
   max?: number;
-  /** Size variant. Controls track height.
-   *  @selector .tug-progress-bar-sm | .tug-progress-bar-md | .tug-progress-bar-lg
-   *  @default "md" */
-  size?: TugProgressBarSize;
-  /** When true, animation freezes and opacity dims. */
+  /** Track height in CSS px. @default 6 */
+  size?: number;
+  /** Lifecycle state. @default "running" */
+  state?: TugProgressIndicatorState;
+  /** When true, opacity dims and animation freezes. */
   disabled?: boolean;
   /** Additional CSS class names. */
   className?: string;
 }
 
 export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarProps>(
-  function TugProgressBar({ value, max = 1, size = "md", disabled = false, className }, ref) {
+  function TugProgressBar(
+    { value, max = 1, size = 6, state = "running", disabled = false, className },
+    ref,
+  ) {
     const isDeterminate = value !== undefined;
-    const percentage = isDeterminate
-      ? Math.min(Math.max((value / max) * 100, 0), 100)
+    const fraction = isDeterminate
+      ? Math.min(Math.max(value / max, 0), 1)
       : 0;
 
-    // Track mode changes to suppress transition on indeterminate → determinate switch [L06]
+    let widthPct: number | undefined;
+    if (state === "completed") {
+      widthPct = 100;
+    } else if (state === "stopped") {
+      widthPct = 0;
+    } else if (isDeterminate) {
+      widthPct = fraction * 100;
+    } else if (state === "aborted") {
+      widthPct = 0;
+    }
+
+    const isIndeterminate =
+      !isDeterminate && (state === "running" || state === "paused");
+
+    // Suppress the width transition on indeterminate → determinate switch [L06].
     const prevDeterminateRef = useRef(isDeterminate);
     const fillRef = useRef<HTMLDivElement>(null);
 
@@ -51,11 +76,8 @@ export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarPro
       const wasDeterminate = prevDeterminateRef.current;
       prevDeterminateRef.current = isDeterminate;
 
-      // Switching from indeterminate to determinate: suppress width transition
-      // so the fill snaps to position instead of animating from 100% → value
       if (!wasDeterminate && isDeterminate && fillRef.current) {
         fillRef.current.style.transition = "none";
-        // Re-enable after one frame so subsequent value updates animate
         requestAnimationFrame(() => {
           if (fillRef.current) {
             fillRef.current.style.transition = "";
@@ -64,14 +86,20 @@ export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarPro
       }
     }, [isDeterminate]);
 
+    const sizeStyle: React.CSSProperties = {
+      height: `${size}px`,
+    };
+
     return (
       <div
         ref={ref}
         data-slot="tug-progress-bar"
+        data-state={state}
         aria-hidden="true"
+        style={sizeStyle}
         className={cn(
           "tug-progress-bar-track",
-          `tug-progress-bar-${size}`,
+          state === "paused" && "tug-progress-bar-paused",
           disabled && "tug-progress-bar-disabled",
           className,
         )}
@@ -80,9 +108,9 @@ export const TugProgressBar = React.forwardRef<HTMLDivElement, TugProgressBarPro
           ref={fillRef}
           className={cn(
             "tug-progress-bar-fill",
-            !isDeterminate && "tug-progress-bar-indeterminate",
+            isIndeterminate && state === "running" && "tug-progress-bar-indeterminate",
           )}
-          style={isDeterminate ? { width: `${percentage}%` } : undefined}
+          style={widthPct !== undefined ? { width: `${widthPct}%` } : undefined}
         />
       </div>
     );

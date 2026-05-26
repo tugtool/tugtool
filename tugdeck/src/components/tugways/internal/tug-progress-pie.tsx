@@ -1,15 +1,22 @@
 /**
- * TugProgressPie — Internal building block for the filled pie wedge progress indicator.
+ * TugProgressPie — Internal building block for the filled pie wedge glyph.
  *
- * App code should use TugProgress instead.
+ * App code should use {@link TugProgressIndicator} instead.
  *
- * Renders a circular div with conic-gradient that fills clockwise from 12 o'clock.
- * When value is undefined (indeterminate), a ~25% wedge rotates continuously.
- * When value is a number (determinate), the wedge angle is set via a CSS custom
- * property imperatively [L06].
+ * Renders a circular div with conic-gradient that fills clockwise from
+ * 12 o'clock.
  *
- * Color is inherited from the parent's --tugx-progress-fill CSS variable.
- * Track uses --tug7-surface-progress-primary-normal-default-rest.
+ * State semantics:
+ *   running   — value undefined: 25% wedge rotates continuously.
+ *               value set: wedge drawn at fraction (no rotation).
+ *   paused    — animation paused at current pose.
+ *   stopped   — wedge hidden (angle = 0).
+ *   completed — full circle (angle = 360).
+ *   aborted   — wedge drawn at value (if any) or hidden; danger tint comes
+ *               from the parent via `--tugx-progress-indicator-fill`.
+ *
+ * Color is inherited from the parent's `--tugx-progress-indicator-fill`.
+ * Track uses `--tug7-surface-progress-primary-normal-default-rest`.
  *
  * Laws: [L06] angle via inline CSS variable, [L13] CSS keyframes only,
  *       [L16] pairings declared, [L19] component authoring guide
@@ -18,32 +25,47 @@
 import React, { useRef, useLayoutEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import "./tug-progress-pie.css";
-
-export type TugProgressPieSize = "sm" | "md" | "lg";
+import type { TugProgressIndicatorState } from "../tug-progress-indicator";
 
 export interface TugProgressPieProps {
-  /** Progress value, 0 to max. Undefined = indeterminate (rotating wedge). */
+  /** Determinate progress value, 0 to max. Undefined = indeterminate. */
   value?: number;
   /** Maximum value. @default 1 */
   max?: number;
-  /** Size variant. Controls pie diameter.
-   *  @selector .tug-progress-pie-sm | .tug-progress-pie-md | .tug-progress-pie-lg
-   *  @default "md" */
-  size?: TugProgressPieSize;
-  /** When true, animation freezes and opacity dims. */
+  /** Diameter in CSS px. @default 16 */
+  size?: number;
+  /** Lifecycle state. @default "running" */
+  state?: TugProgressIndicatorState;
+  /** When true, opacity dims and animation freezes. */
   disabled?: boolean;
   /** Additional CSS class names. */
   className?: string;
 }
 
 export const TugProgressPie = React.forwardRef<HTMLSpanElement, TugProgressPieProps>(
-  function TugProgressPie({ value, max = 1, size = "md", disabled = false, className }, ref) {
+  function TugProgressPie(
+    { value, max = 1, size = 16, state = "running", disabled = false, className },
+    ref,
+  ) {
     const isDeterminate = value !== undefined;
-    const angle = isDeterminate
-      ? Math.min(Math.max(value / max, 0), 1) * 360
+    const fraction = isDeterminate
+      ? Math.min(Math.max(value / max, 0), 1)
       : 0;
 
-    // Track mode changes to suppress transition on indeterminate → determinate switch [L06]
+    let angle: number | undefined;
+    if (state === "completed") {
+      angle = 360;
+    } else if (state === "stopped") {
+      angle = 0;
+    } else if (isDeterminate) {
+      angle = fraction * 360;
+    } else if (state === "aborted") {
+      angle = 0;
+    }
+
+    const isIndeterminate =
+      !isDeterminate && (state === "running" || state === "paused");
+
     const prevDeterminateRef = useRef(isDeterminate);
     const pieRef = useRef<HTMLSpanElement>(null);
 
@@ -61,7 +83,6 @@ export const TugProgressPie = React.forwardRef<HTMLSpanElement, TugProgressPiePr
       }
     }, [isDeterminate]);
 
-    // Merge internal pieRef with forwarded ref
     const setRef = useCallback(
       (el: HTMLSpanElement | null) => {
         (pieRef as React.MutableRefObject<HTMLSpanElement | null>).current = el;
@@ -71,23 +92,28 @@ export const TugProgressPie = React.forwardRef<HTMLSpanElement, TugProgressPiePr
       [ref],
     );
 
+    const styleObj: React.CSSProperties = {
+      width: `${size}px`,
+      height: `${size}px`,
+    };
+    if (angle !== undefined) {
+      (styleObj as Record<string, string>)["--tug-progress-pie-angle"] = `${angle}deg`;
+    }
+
     return (
       <span
         ref={setRef}
         data-slot="tug-progress-pie"
+        data-state={state}
         aria-hidden="true"
         className={cn(
           "tug-progress-pie",
-          `tug-progress-pie-${size}`,
-          !isDeterminate && "tug-progress-pie-indeterminate",
+          isIndeterminate && state === "running" && "tug-progress-pie-indeterminate",
+          state === "paused" && "tug-progress-pie-paused",
           disabled && "tug-progress-pie-disabled",
           className,
         )}
-        style={
-          isDeterminate
-            ? ({ "--tug-progress-pie-angle": `${angle}deg` } as React.CSSProperties)
-            : undefined
-        }
+        style={styleObj}
       />
     );
   },

@@ -54,9 +54,10 @@ import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
 import type { TugArcGaugeSegment } from "@/components/tugways/tug-arc-gauge";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import {
-  indicatorVisualFor,
-  type TugStateIndicatorTone,
-} from "@/components/tugways/tug-state-indicator";
+  tideSessionPhaseKey,
+  tideSessionPhaseVisual,
+  type TideSessionPhaseInput,
+} from "@/lib/code-session-store/session-phase-visual";
 import {
   endStateBadgeFor,
   type EndStateBadge,
@@ -668,13 +669,24 @@ function ContextBreakdownBody({
 // State-change log popover
 // ---------------------------------------------------------------------------
 
+type StateChangeTone = "default" | "success" | "caution" | "danger";
+
 /**
- * Map a state-indicator tone to the matching color token the
- * indicator's CSS uses for its dot. Lets the popover's tone dot
- * read the same color as the indicator would for that triple
- * without instantiating a `TugStateIndicator` per row.
+ * Map a session-phase input onto a tone key. Resolves the same
+ * (phase × transport × interrupt) → tone triple the inline
+ * {@link TugProgressIndicator} uses, without instantiating an
+ * indicator per row.
  */
-function stateChangeToneVar(tone: TugStateIndicatorTone): string {
+function stateChangeToneFor(input: TideSessionPhaseInput): StateChangeTone {
+  const visual = tideSessionPhaseVisual(tideSessionPhaseKey(input));
+  if (visual.role === "danger") return "danger";
+  if (visual.role === "caution") return "caution";
+  if (visual.role === "success") return "success";
+  return "default";
+}
+
+/** Map a tone key to the color token used in the popover's tone dot. */
+function stateChangeToneVar(tone: StateChangeTone): string {
   switch (tone) {
     case "success":
       return "var(--tug7-element-global-text-normal-success-rest)";
@@ -752,7 +764,7 @@ export function StateChangeLogPopoverContent({
         <div className="tide-state-log-grid">
           {rows.map((row, i) => {
             const f = formatted[i]!;
-            const tone = indicatorVisualFor(row).tone;
+            const tone = stateChangeToneFor(row);
             return (
               <React.Fragment key={`${f.atText}-${i}`}>
                 <span
@@ -786,7 +798,7 @@ export function StateChangeLogPopoverContent({
  * Renders the full assembled task list ([D100]) as a flex column
  * of `TugTaskItem` rows. `TugTaskItem` is the standard "indicator
  * + label" primitive built for this surface: it provides the
- * role-driven colors (TugProgress `role="action"` for the
+ * role-driven colors (TugProgressIndicator `role="action"` for the
  * `in_progress` ring, matching `surface-tone-*` / `element-tone-*`
  * active tokens for the highlight band and label color) and
  * handles its own idle gate. The popover frame supplies the
