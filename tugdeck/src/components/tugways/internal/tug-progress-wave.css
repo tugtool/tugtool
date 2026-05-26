@@ -28,19 +28,22 @@
 .tug-progress-wave {
   display: inline-flex;
   flex-direction: row;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   height: var(--tugx-progress-wave-size);
   gap: var(--tugx-progress-wave-bar-gap);
 }
 
+/* Bars scale around their own vertical center so the pulse expands /
+   contracts symmetrically from both the top and the bottom — keeps the
+   wave's midline anchored while the bars grow or shrink. */
 .tug-progress-wave-bar {
   width: var(--tugx-progress-wave-bar-width);
   height: var(--tugx-progress-wave-size);
   background-color: var(--tugx-progress-indicator-fill, currentColor);
   border-radius: 1px;
-  transform-origin: center bottom;
+  transform-origin: center center;
   flex: 0 0 auto;
 }
 

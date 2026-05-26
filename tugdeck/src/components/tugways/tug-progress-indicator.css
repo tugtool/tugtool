@@ -61,6 +61,19 @@ body {
   gap: var(--tugx-progress-indicator-label-gap);
 }
 
+/* The bar variant fills the host's full width — its track has no
+   intrinsic width, so the public root and its glyph slot both stretch.
+   This is the same pattern the legacy TugProgress used for `variant="bar"`. */
+.tug-progress-indicator[data-variant="bar"] {
+  display: flex;
+  width: 100%;
+}
+
+.tug-progress-indicator[data-variant="bar"] .tug-progress-indicator-glyph {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
 .tug-progress-indicator[data-label-position="tooltip"] {
   /* Tooltip suppresses the inline label; no gap to collapse around. */
   gap: 0;

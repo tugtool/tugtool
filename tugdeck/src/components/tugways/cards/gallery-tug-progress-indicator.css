@@ -1,0 +1,125 @@
+/* @tug-pairings: none — gallery-scoped layout only, every color rule
+   below either self-pairs (background-color + color in the same rule)
+   or reads existing seven-slot text tokens annotated with
+   @tug-renders-on. */
+
+/**
+ * gallery-tug-progress-indicator.css — local layout for the
+ * TugProgressIndicator gallery card. The classes are gallery-scoped
+ * (`gpi-*`) and never touch indicator-internal tokens.
+ *
+ * Tuglaws cross-check:
+ *  - [L06] interactive picker state is React state (allowed in a
+ *    gallery), but the rendered indicator's appearance flows through
+ *    its own props.
+ *  - [L16] each rule that sets `color` also sets `background-color`
+ *    (self-paired) or carries an `@tug-renders-on` annotation.
+ *  - [L17] every alias resolves to a `--tug7-*` token in one hop.
+ *  - [L19] file pair (`.tsx` + `.css`).
+ *  - [L20] reads only its own `gpi-*` classes and seven-slot tokens;
+ *    does not override `--tugx-progress-indicator-*`.
+ */
+
+/* ============================================================================
+   Grid of labeled glyph cards (variants, roles)
+   ========================================================================= */
+
+.gpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+}
+
+.gpi-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  border-radius: var(--tug-radius-sm, 6px);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+}
+
+.gpi-cell-wide {
+  grid-column: span 2;
+  min-width: 150px;
+}
+
+.gpi-cell-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
+.gpi-cell-caption {
+  font-size: 10px;
+  font-family: var(--tug-font-mono, ui-monospace, monospace);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: center;
+  user-select: none;
+  line-height: 1;
+}
+
+/* ============================================================================
+   Matrix — header row + header column + cells (states, determinate)
+   ========================================================================= */
+
+.gpi-matrix {
+  display: grid;
+  gap: 4px;
+  align-items: center;
+}
+
+.gpi-matrix-corner {
+  /* Empty top-left corner cell — keeps the header row aligned. */
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gpi-matrix-col-head {
+  font-size: 10px;
+  font-family: var(--tug-font-mono, ui-monospace, monospace);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: center;
+  padding: 2px 0;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gpi-matrix-row-head {
+  font-size: 11px;
+  font-family: var(--tug-font-mono, ui-monospace, monospace);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  padding-right: 8px;
+  text-align: right;
+  min-width: 72px;
+}
+
+.gpi-matrix-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  min-height: 36px;
+  border: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  border-radius: var(--tug-radius-sm, 6px);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+}
+
+/* ============================================================================
+   Demo frame — neutral container for the live indicator
+   ========================================================================= */
+
+.gpi-demo-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: 16px;
+  border: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  border-radius: var(--tug-radius-md, 8px);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+}

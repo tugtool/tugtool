@@ -6,49 +6,71 @@
  * @tug-pairings
  * | Element                          | Surface                                            | Role    | Context                                       |
  * |----------------------------------|----------------------------------------------------|---------|-----------------------------------------------|
- * | --tugx-progress-indicator-fill   | --tug7-surface-global-primary-normal-default-rest  | control | .tug-progress-spinner-arc (stroke)             |
+ * | --tugx-progress-indicator-fill   | --tug7-surface-global-primary-normal-default-rest  | control | .tug-progress-spinner-spoke (fill)             |
  *
  * Internal glyph for TugProgressIndicator's `spinner` variant.
  *
- * Sizing comes from inline width/height (driven by the parent's `size`
- * prop). Motion: [L13] running rotation uses a CSS `@keyframes`. Paused
- * state suppresses via `animation-play-state`.
+ * Twelve radial capsule spokes laid out in SVG (viewBox 100×100). Each
+ * spoke is a rounded rectangle running vertically above the center
+ * from inner radius 28 to outer radius 48; the SVG `transform` on
+ * each rect rotates it `(i * 30)deg` around the center, so the spokes
+ * fan around an empty middle.
+ *
+ * Sizing comes from inline width/height on the root span (driven by
+ * the parent's `size` prop). The SVG scales to fill.
+ *
+ * Motion: [L13] running uses a CSS `@keyframes` fade (opacity 1 → rest
+ * → 1); each spoke gets a staggered `animation-delay` (set inline so
+ * the per-spoke phase is data-driven, not hand-keyframed). Paused
+ * freezes via `animation-play-state`. Stopped/aborted paint every
+ * spoke at rest opacity. Completed lifts every spoke to full opacity.
  */
 
 .tug-progress-spinner {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  --tugx-progress-spinner-cycle: 1100ms;
+  --tugx-progress-spinner-rest-opacity: 0.16;
+  display: inline-block;
 }
 
 .tug-progress-spinner-svg {
   width: 100%;
   height: 100%;
-  transform: rotate(-90deg);
+  display: block;
 }
 
-.tug-progress-spinner-arc {
-  stroke: var(--tugx-progress-indicator-fill, currentColor);
+.tug-progress-spinner-spoke {
+  fill: var(--tugx-progress-indicator-fill, currentColor);
+  opacity: var(--tugx-progress-spinner-rest-opacity);
 }
 
-.tug-progress-spinner-running .tug-progress-spinner-svg {
-  animation: tug-progress-spinner-spin calc(1100ms * var(--tug-timing, 1)) cubic-bezier(0.4, 0.0, 0.2, 1) infinite;
+.tug-progress-spinner-running .tug-progress-spinner-spoke {
+  animation: tug-progress-spinner-fade
+    calc(var(--tugx-progress-spinner-cycle) * var(--tug-timing, 1))
+    linear
+    infinite;
 }
 
-@keyframes tug-progress-spinner-spin {
-  from { transform: rotate(-90deg); }
-  to   { transform: rotate(270deg); }
-}
-
-.tug-progress-spinner-paused .tug-progress-spinner-svg {
-  animation: tug-progress-spinner-spin calc(1100ms * var(--tug-timing, 1)) cubic-bezier(0.4, 0.0, 0.2, 1) infinite;
+.tug-progress-spinner-paused .tug-progress-spinner-spoke {
+  animation: tug-progress-spinner-fade
+    calc(var(--tugx-progress-spinner-cycle) * var(--tug-timing, 1))
+    linear
+    infinite;
   animation-play-state: paused;
+}
+
+.tug-progress-spinner-completed .tug-progress-spinner-spoke {
+  opacity: 1;
 }
 
 .tug-progress-spinner-disabled {
   opacity: var(--tugx-control-disabled-opacity, 0.45);
 }
 
-.tug-progress-spinner-disabled .tug-progress-spinner-svg {
+.tug-progress-spinner-disabled .tug-progress-spinner-spoke {
   animation-play-state: paused;
+}
+
+@keyframes tug-progress-spinner-fade {
+  0%   { opacity: 1; }
+  100% { opacity: var(--tugx-progress-spinner-rest-opacity); }
 }

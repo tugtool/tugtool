@@ -201,8 +201,10 @@ export const TugProgressWave = React.forwardRef<
             // Seed the bar's rest pose so the silhouette renders
             // correctly on first paint (before WAAPI's first keyframe).
             // Also the source of truth while paused/stopped/completed.
+            // Center-pivoted so the pulse scales symmetrically from
+            // both the top and the bottom of the bar.
             style={{
-              transformOrigin: "center bottom",
+              transformOrigin: "center center",
               transform: `scaleY(${restScale})`,
             }}
           />
