@@ -129,7 +129,16 @@ export function parseTaskCreateResultId(result: unknown): string | undefined {
 // ---------------------------------------------------------------------------
 
 const EMPTY_TASKS: readonly TaskItem[] = Object.freeze([]);
-const EMPTY_STATE: TaskListState = Object.freeze({ tasks: EMPTY_TASKS });
+
+/**
+ * Reference-stable empty `TaskListState`. Returned by
+ * {@link reduceTaskListState} when no tasks have been created, and by
+ * `useTaskListState` when the current turn has no Task* activity.
+ * Exported so consumers can compare with `Object.is` (or `===`) for
+ * the "no tasks" branch without rebuilding their own sentinel.
+ */
+export const EMPTY_TASK_LIST_STATE: TaskListState = Object.freeze({ tasks: EMPTY_TASKS });
+const EMPTY_STATE = EMPTY_TASK_LIST_STATE;
 
 /**
  * Fold an in-order iterable of `ToolUseMessage` into the current
