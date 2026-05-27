@@ -410,10 +410,7 @@ impl WorkspaceRegistry {
         // it doesn't borrow from `ftq`). This frees `ftq` to be moved
         // into the subsequent `send(...)` call without a borrow
         // conflict against `ftq.root`.
-        let target = ftq
-            .root
-            .as_ref()
-            .and_then(|p| self.find_entry_by_path(p));
+        let target = ftq.root.as_ref().and_then(|p| self.find_entry_by_path(p));
         if let Some(entry) = target {
             // Capture the root for the warn-log up front — `ftq` moves
             // into `send`. `.unwrap_or_default()` is unreachable in

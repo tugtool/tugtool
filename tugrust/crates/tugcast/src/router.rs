@@ -767,8 +767,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                 // "initial value" delivery — broadcast carries only
                 // future frames. Lagged errors (slow client falling
                 // behind the buffer) log and continue.
-                let snapshot_broadcasts =
-                    std::mem::take(&mut router.snapshot_broadcast_senders);
+                let snapshot_broadcasts = std::mem::take(&mut router.snapshot_broadcast_senders);
                 for tx in snapshot_broadcasts {
                     let mut bcast_rx = tx.subscribe();
                     let snap_tx_clone = snap_tx.clone();
@@ -781,10 +780,7 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                                     }
                                 }
                                 Err(broadcast::error::RecvError::Lagged(n)) => {
-                                    warn!(
-                                        skipped = n,
-                                        "broadcast snapshot stream lagged"
-                                    );
+                                    warn!(skipped = n, "broadcast snapshot stream lagged");
                                 }
                                 Err(broadcast::error::RecvError::Closed) => break,
                             }

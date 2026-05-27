@@ -110,10 +110,7 @@ impl FileTreeFeed {
     /// at construction time and after every walk-rebuild so the index
     /// invariant ("nothing in `files` is denylisted") holds.
     fn sweep_secrets(files: BTreeSet<String>, filter: &SecretFilter) -> BTreeSet<String> {
-        files
-            .into_iter()
-            .filter(|p| !filter.is_secret(p))
-            .collect()
+        files.into_iter().filter(|p| !filter.is_secret(p)).collect()
     }
 
     /// Run the feed loop. Custom async task — not SnapshotFeed.
@@ -554,10 +551,7 @@ mod tests {
 
     /// Construct a feed rooted at `workspace_root` with `initial_files`
     /// — exercises the real `SecretFilter` path that production uses.
-    fn test_feed_rooted(
-        workspace_root: PathBuf,
-        files: BTreeSet<String>,
-    ) -> FileTreeFeed {
+    fn test_feed_rooted(workspace_root: PathBuf, files: BTreeSet<String>) -> FileTreeFeed {
         let (tx, _) = broadcast::channel(16);
         let (_qtx, qrx) = mpsc::channel(16);
         let (ft_response_tx, _) = broadcast::channel::<Frame>(16);
