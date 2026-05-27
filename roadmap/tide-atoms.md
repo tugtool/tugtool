@@ -242,7 +242,7 @@ The Chromium row is sanity-check only — it confirms we understood the engine m
 
 **Decision:** The wire-side discriminator is **bytes in the per-card store, not atom type**. At submit, any atom whose `id` resolves to a bytes-store entry rides as `Attachment{filename, content, media_type}` on the `user_message` wire frame; atoms without an id (or whose id is unknown to the store) ride only as substituted text in `wireText`. Image atoms ship base64 image bytes; text-file atoms (Finder drops of `.md` / `.json` / source files) ship raw UTF-8 text.
 
-The drop / paste pipeline rejects file kinds it can't ship at drop time (not at submit time): binary non-image, non-text sources (PDF, archives, audio, video) produce no atom — instead they surface a banner via the `attachment_rejected` channel. The user sees the rejection immediately; no skeleton chip is left behind for them to wonder about.
+The drop / paste pipeline rejects file kinds it can't ship at drop time (not at submit time): binary non-image, non-text sources (PDF, archives, audio, video) produce no atom — they're silently skipped. In Tug.app today (Path A) the OS shows the accept cursor during drag and the missing chip on release is the only signal, because WKWebView's `dataTransfer.items` is empty during `dragenter` / `dragover` (per [WebKit bug #223517](https://bugs.webkit.org/show_bug.cgi?id=223517)) and we can't classify until drop fires. Step 3.5.7's native bridge restores cursor-level rejection by reading `NSPasteboard` from the Swift host and posting the file info to JS — once 3.5.7 ships, PDFs will show the red rejection ring and OS no-drop cursor *before* release.
 
 Skeleton-atom feedback: image and text drops insert their atoms *synchronously* with a UUID id and a pending appearance (dimmed + pulsing). The async byte-fill runs in the background; on success, the bytes land in the store and the pending-sync `ViewPlugin` mutates `data-pending` off via direct DOM (no widget rebuild). On failure, the skeleton atom is removed and the user sees the banner. Submit is gated while any pending atom is in the doc — submitting a half-processed image would silently ship just the filename.
 
@@ -838,6 +838,12 @@ This step closes all four. Worker-bound canvas pipeline is the load-bearing piec
 - [x] **3.5.3 — Web Worker downsample.** New `tugdeck/src/lib/workers/image-downsample-worker.ts` owns the canvas pipeline (decode + resize + encode + thumbnail bake). Main-thread `downsampleImage` and `bakeThumbnail` become thin worker shims that spawn one-shot workers per call, post the Blob, await the discriminated response, and terminate. Worker uses its own `OffscreenCanvas` (not transferred from main thread) so all heavy paint / encode work runs off the main event loop. Pure helpers (`isAnimatedGif`, `classifySourceMime`, `fitWithinLongEdge`) and constants remain in `image-downsample.ts` and are imported by the worker.
 - [x] **3.5.4 — Skeleton visual polish.** `pendingAtomTheme` rewritten with wider opacity amplitude (0.4 ↔ 1.0, was 0.55 ↔ 0.85) plus a saturation pulse (0.4 ↔ 1.0) so the chip desaturates at the trough and snaps back to full color at the crest. Faster cycle (1.0 s, was 1.2 s) reads as active rather than ambient. Spinner glyph / ellipsis suffix deferred — the opacity + saturation combination tested clearly enough that the additional SVG overlay was unnecessary.
 - [x] **3.5.5 — Empty-editor skeleton-render fix.** After `insertAtomsAt` in `processAttachmentFiles`, call `view.focus()` + `view.requestMeasure({ read: () => null })` so a drop into an unmeasured / unfocused editor flushes layout in the same frame as the insertion. Both are idempotent no-ops in the common case (already-focused + already-measured editor).
+- [x] **3.5.6 — Drag visual feedback restoration + reject CSS infrastructure for Step 3.5.7.** Three sub-fixes:
+  1. *Banner cascade still applied* (3.5.1) — the `attachment_rejected` `lastError` cause was being treated as session-dead, triggering the unplug-icon alert. Fixed by extending `tide-card.tsx`'s `sessionErrored` exclusion list (already done in 3.5.1).
+  2. *PDF rejection design walked back.* The 3.5.2 intent — cursor-level rejection via `dragover` returning false for unsupported items — turned out to be infeasible in WKWebView. Instrumented logging confirmed: WebKit redacts `DataTransfer.items` entirely during `dragenter` / `dragover` for cross-origin Finder drags (`items.length === 0`, `files.length === 0`; only `types: ["Files"]` is exposed). At drop time the full MIME info appears. This is [WebKit bug #223517](https://bugs.webkit.org/show_bug.cgi?id=223517), unresolved as of December 2023 — confirmed not fixable from JS by any preference / flag / configuration. Path A (this step) backs out to JS-only accept-all-then-silent-skip-at-drop; Path B (Step 3.5.7 below) brings cursor-level rejection back via a native bridge.
+  3. *Three-state `setDropActive` + reject-ring CSS preserved for Path B.* The `null | "accept" | "reject"` state machine and the `[data-drop-active="reject"]` CSS rule (paints the border in `--tug7-element-global-border-normal-danger-rest`) stay in place as infrastructure ready for the native bridge to flip it on. Today JS-only code only ever sets `"accept"` or `null`.
+
+  Net result of 3.5.6: `dragenter` / `dragover` always claim file drags (override CM6's internal handler), always show the accept ring + copy cursor, never reject at the cursor. `drop` calls `dropHasSupportedFile` which inspects the now-unredacted `dataTransfer.files` and refuses pure-unsupported drops silently (no atom, no banner — the missing chip is the signal).
 
 **Tests:**
 - [x] `unit: tide-card-banner-spec — attachment_rejected surfaces as banner error, does NOT escalate to session-dead overlay` (Step 3.5.1)
@@ -852,6 +858,68 @@ This step closes all four. Worker-bound canvas pipeline is the load-bearing piec
 - [x] `bun run check` — TypeScript clean
 - [x] `bun run audit:tokens lint` — zero violations
 - [ ] Manual: all three drop scenarios above behave correctly.
+
+---
+
+#### Step 3.5.7: Native drag bridge — cursor-level rejection via NSDraggingDestination {#step-3-5-7}
+
+**Depends on:** #step-3-5
+
+**Commit:** `feat(tugapp+tugdeck): native drag bridge for cursor-level file-type rejection`
+
+**References:** [D02](#d02-image-attach-text-rest), [Spec S04](#s04-image-downsample), (#strategy)
+
+**Why this step exists:** Step 3.5.6 walked back cursor-level rejection because it's infeasible in JS-only WKWebView code — [WebKit bug #223517](https://bugs.webkit.org/show_bug.cgi?id=223517) reveals empty `DataTransferItemList` during `dragenter` / `dragover` for cross-origin file drags (the Finder drag case). The bug is unresolved and the WebKit team's own documented workaround is *"the only workaround to this bug is not to filter by file type at all"*. That's the JS world's hard ceiling.
+
+But Tug.app is not the JS world. Tug.app is a macOS app whose Swift host owns the WKWebView's container view. The native side has full access to `NSPasteboard` during drag — including all UTIs / MIMEs / filenames / file URLs — because it operates outside the sandboxed web content. The right architecture: native side reads the pasteboard, native side posts the file info to JS via `WKScriptMessageHandler`, JS uses that info to drive the same `dragHasSupportedItem` style accept/reject decision the cursor-level CSS already supports (Step 3.5.6 preserved the `[data-drop-active="reject"]` rule and the three-state `setDropActive` for exactly this).
+
+This step ships that bridge. After it lands, dragging a PDF over the prompt entry shows the red rejection ring and the OS no-drop cursor *before release* — the original UX intent of Step 3.5.2.
+
+**Strategy:**
+- Use macOS's `NSDraggingDestination` protocol on the WKWebView's container view (or a thin subclass). `draggingEntered:`, `draggingUpdated:`, `draggingExited:`, and `prepareForDragOperation:` receive the full `NSDraggingInfo` with `NSPasteboard` access.
+- Read the pasteboard's file URLs (`NSPasteboard.PasteboardType.fileURL`) at every drag update. Resolve each to its UTI / MIME via `NSWorkspace.shared.type(ofFile:)` or the file URL's `getResourceValue(forKey: .typeIdentifierKey)`.
+- Post the drag-snapshot to JS via the existing message channel (already used by the test harness for `evalJS`). JS-side reads from a new global (e.g., `window.__tugActiveDrag`) keyed by drag-session id; the drop extension's `dragHasSupportedItem` checks this in addition to (or instead of) `event.dataTransfer`.
+- On `draggingExited:` / drop end, clear the JS-side snapshot so a subsequent drag starts fresh.
+- All JS-side classification logic from `dragHasSupportedItem` + `isTextMimeType` + `classifySourceMime` works unchanged on the bridge data.
+
+#### [Q05] Bridge message timing vs. dragover events (OPEN) {#q05-bridge-timing}
+
+**Question:** WKWebView's `dragenter` / `dragover` events fire synchronously when the OS dispatches the drag to the WebView. The native bridge's `WKScriptMessageHandler.postMessage` is asynchronous (queued on the JS thread). Can JS see the bridge data inside the same `dragover` tick that fired, or does the bridge data lag by one event?
+
+**Why it matters:** If the bridge data lags, the first dragover frame after `draggingEntered:` would see no data and would have to default to "accept" — flashing the accept ring before the reject ring on the next frame. Annoying but not catastrophic; we'd document it.
+
+**Plan to resolve:** Build the bridge minimally first (Step 3.5.7.a), measure the timing in dev panel, decide on a synchronization strategy (probably: native side calls `evaluateJavaScript("window.__tugActiveDrag = ...")` synchronously inside `draggingEntered:`, which blocks until JS receives the assignment — slower but synchronization-correct).
+
+**Resolution:** OPEN — answered empirically at 3.5.7.a.
+
+**Artifacts:**
+- `tugapp/Tug/Drag/TugDragDestination.swift` (new) — a thin `NSView` subclass adopting `NSDraggingDestination`. Reads the pasteboard on every drag update; serializes to a JSON snapshot; posts to the WebView.
+- `tugapp/Tug/Drag/PasteboardSnapshot.swift` (new) — pure-Swift helper that reads file URLs from `NSPasteboard`, resolves UTIs, returns the snapshot shape.
+- `tugapp/Tug/Window/TugContainerView.swift` (or wherever the WKWebView's container lives — modify) — installs `TugDragDestination` as the drag target.
+- `tugapp/Tug/Window/WebViewBridge.swift` (modify) — adds a new bridge channel `tugActiveDrag` so JS can subscribe to drag updates (or just calls `evaluateJavaScript` directly with the JSON).
+- `tugdeck/src/lib/native-drag-bridge.ts` (new) — pure JS interface: `subscribe(listener) → unsubscribe`, `getSnapshot() → { files: [{name, mimeType, size}] } | null`. Implements the JS side via either a `WKScriptMessageHandler` callback or by reading `window.__tugActiveDrag`.
+- `tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts` (modify) — `dragHasSupportedItem` consults `nativeDragBridge.getSnapshot()` first; falls back to `types.includes("Files")` only when the bridge is unavailable (dev-mode browser path, not Tug.app). The three-state `setDropActive` and reject CSS go live: bridge says "PDF" → state = "reject" → red ring + `dropEffect = "none"`.
+- `roadmap/tide-atoms.md` — update [D02] to remove the "cursor rejection infeasible" caveat; close [Q05](#q05-bridge-timing).
+
+**Tasks:**
+- [ ] **3.5.7.a — Native scaffold.** New Swift files: `TugDragDestination.swift`, `PasteboardSnapshot.swift`. Wire `TugDragDestination` as the drag target of whatever NSView contains the WKWebView. At each `draggingEntered:` / `draggingUpdated:`, serialize the pasteboard to JSON and call `webView.evaluateJavaScript("window.__tugActiveDrag = <JSON>")`. At `draggingExited:` / `concludeDragOperation:`, clear it (`window.__tugActiveDrag = null`).
+- [ ] **3.5.7.b — JS bridge consumer.** New `tugdeck/src/lib/native-drag-bridge.ts`. Either polls `window.__tugActiveDrag` on every dragover or installs a postMessage listener. Exports `getCurrentDragFiles(): readonly { name, mimeType, size }[] | null`.
+- [ ] **3.5.7.c — Wire drop-extension to the bridge.** `dragHasSupportedItem` checks the bridge snapshot first; if present, classifies via the same image / text MIME logic. Falls back to types-only when the bridge is absent. The accept / reject visual flows through the existing `setDropActive` three-state path.
+- [ ] **3.5.7.d — Bridge-timing resolution.** Verify [Q05](#q05-bridge-timing) via dev panel timing measurements; document the synchronization strategy in the bridge file's docstring.
+- [ ] **3.5.7.e — Path B test surface.** Add an `app-test` recipe that simulates a PDF drag via the existing CGEvent / pasteboard harness (or accept that this is manual-only — drag isn't easily synthesizable through `evalJS`).
+
+**Tests:**
+- [ ] `unit (Swift): PasteboardSnapshot — reads file URLs, resolves UTIs to MIMEs, returns the expected JSON shape` (XCTest)
+- [ ] `unit (TS): native-drag-bridge — getCurrentDragFiles returns null when window.__tugActiveDrag is unset; returns parsed array when set` (pure-logic Bun test)
+- [ ] Manual: drag a PDF over the prompt entry — observe red reject ring + OS no-drop cursor *before* release; release; observe no banner / no atom.
+- [ ] Manual: drag a PNG — observe blue accept ring + OS copy cursor; release; observe skeleton atom appears and downsamples in the background.
+- [ ] Manual: drag a mixed-content folder (PDF + PNG) — observe accept ring (at least one supported item); release; PNG appears, PDF silently skipped.
+
+**Checkpoint:**
+- [ ] `cd tugapp && xcodebuild -scheme Tug build` clean
+- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens lint` clean
+- [ ] Manual: the three scenarios above behave correctly in Tug.app.
+- [ ] [D02](#d02-image-attach-text-rest) updated to reflect cursor-level rejection working again.
 
 ---
 

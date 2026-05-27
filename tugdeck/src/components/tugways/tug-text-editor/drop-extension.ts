@@ -420,43 +420,43 @@ export function describeDownsampleError(
 }
 
 /**
- * Drag-time supportedness check. Returns `true` when at least one
- * `DataTransferItem` could land as a supported attachment after the
- * drop fires. Used by `dragenter` / `dragover` to decide whether to
- * `preventDefault` — when nothing in the drag looks supportable, we
- * skip `preventDefault` and the OS shows the no-drop cursor. The
- * drop event never fires; no banner, no chip, no surprise.
+ * Drop-time supportedness check. Walks `dataTransfer.files`, which
+ * is fully populated with real MIME info at the moment `drop`
+ * fires (unlike at `dragenter` / `dragover`, where WebKit redacts
+ * per-item MIME info entirely — `dataTransfer.items.length === 0`
+ * for cross-origin file drags from Finder). Returns `true` if any
+ * file is an image (per `classifySourceMime`) or a text source
+ * (per `isTextMimeType`, with empty MIME treated as potentially
+ * text by extension — the drop pipeline's full `isTextSource`
+ * does the filename fallback).
  *
- * Three positive signals:
- *  1. Image MIME the downsample pipeline accepts
- *     (`classifySourceMime !== "unsupported"`).
- *  2. Text MIME the wire-flattening accepts (`isTextMimeType`).
- *  3. Empty MIME — could be a text file by extension. We can't read
- *     the filename during a drag (WebKit security), so we
- *     optimistically accept and let the drop's full classification
- *     (`isTextSource`, which has extension fallback) decide.
+ * Used by the `drop` handler to silently refuse drops whose every
+ * file is known-unsupported (PDF, archive, audio, video, etc.). The
+ * user sees no atom and no banner; the OS already gave them a
+ * "copy" cursor during drag (WebKit gave us no way to refuse it at
+ * the cursor — see Step 3.5.7's native-bridge work for the cursor-
+ * level rejection path), so the empty result is the only signal.
  *
- * Any item meeting ANY criterion accepts the drag; this is the
- * least-surprising rule for mixed drops (one PDF + one PNG should
- * accept and process the PNG, not refuse the whole drag).
- *
- * `null` / empty `DataTransfer` returns `false` — the caller's
- * existing `types.includes("Files")` check handles the non-file
- * drag case before reaching here, so this branch is defensive.
+ * WebKit reference: bug #223517 (DataTransferItemList is empty
+ * during dragenter/dragover events when dragging files) —
+ * unresolved as of December 2023. Confirmed empirically in
+ * WKWebView via the Step 3.5.7 instrumentation pass: `types`
+ * carries `["Files"]` during drag but `items` and `files` are
+ * both length-0; only at `drop` time does WKWebView reveal the
+ * real MIME and filename.
  */
-function dragHasSupportedItem(dataTransfer: DataTransfer | null): boolean {
+function dropHasSupportedFile(dataTransfer: DataTransfer | null): boolean {
   if (dataTransfer === null) return false;
-  const items = dataTransfer.items;
-  if (items === undefined || items.length === 0) return false;
-  for (let i = 0; i < items.length; i += 1) {
-    const item = items[i]!;
-    if (item.kind !== "file") continue;
-    const mime = item.type;
-    // Empty MIME — could be a text file by extension. Defer to drop.
+  const files = dataTransfer.files;
+  if (!files || files.length === 0) return false;
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i]!;
+    const mime = file.type;
+    // Empty MIME — could still be text by extension (e.g., `.ts`
+    // from Finder). Optimistic accept; the drop pipeline runs
+    // `isTextSource` which does the extension classification.
     if (mime === "") return true;
-    // Image MIMEs the downsample pipeline knows how to handle.
     if (classifySourceMime(mime) !== "unsupported") return true;
-    // Text MIMEs — text/* and known application/* text types.
     if (isTextMimeType(mime)) return true;
   }
   return false;
@@ -501,16 +501,20 @@ type ClassifiedDrop =
  * skeleton atom right here so the caller can immediately insert
  * placeholders into the doc.
  *
- * The classification mirrors `processAttachmentFiles`'s previous
- * three-branch shape: image → text → silent-skip. Pure-unsupported
- * drags are rejected at the cursor by `dragHasSupportedItem` in
- * `dragenter` / `dragover` (Step 3.5.2), so the only way an
- * unsupported file reaches this classifier is in a mixed drop
- * (e.g., user dragged a folder containing a PDF alongside an
- * image). In that case the supported items still process; the
- * unsupported ones quietly fall off the list — the OS already
- * signaled rejection for any pure-unsupported drag, and a banner
- * for the partial case would be more noise than signal.
+ * The classification has three branches: image → text → silent-skip.
+ * In WKWebView all file drags are cursor-accepted (WebKit redacts
+ * per-item MIME during drag — see `dropHasSupportedFile`), so any
+ * unsupported file reaches this classifier even for pure-unsupported
+ * drops. The drop handler's call to `dropHasSupportedFile` refuses
+ * pure-unsupported drops before this classifier runs; what reaches
+ * here is either fully-supported drops or mixed drops where some
+ * subset is unsupported. The classifier silently drops unsupported
+ * entries from the output — the supported subset still processes.
+ * No banner: the user already saw the copy cursor, so a banner on
+ * top would be jarring; the missing chip is the signal.
+ *
+ * When Step 3.5.7's native bridge lands, cursor-level rejection
+ * comes back and pure-unsupported drops never reach this code path.
  */
 function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
   const out: ClassifiedDrop[] = [];
@@ -712,22 +716,46 @@ async function runAttachmentJob(
 // ---------------------------------------------------------------------------
 
 /**
+ * Drop-active state. Three-valued, written to `data-drop-active`
+ * on the host wrapper:
+ *
+ *  - `null`    — no drag in progress; attribute absent.
+ *  - `"accept"` — drag contains at least one supported item; the
+ *                editor will accept the drop. Border ring paints in
+ *                the standard drop color.
+ *  - `"reject"` — drag is over the editor but contains no supported
+ *                items (e.g., a PDF dragged from Finder). The
+ *                editor refuses the drop; border ring paints in
+ *                the danger color so the user sees the rejection
+ *                visually in addition to the OS no-drop cursor.
+ *
+ * Per Step 3.5.2 (and the post-3.5 cursor / border regression
+ * fix). The "reject" variant was added because v1 silently hid the
+ * border for unsupported drags, leaving the user with no signal
+ * that their drag was even seen.
+ */
+type DropActiveState = "accept" | "reject" | null;
+
+/**
  * Mark/clear the host's `data-drop-active` attribute. The CSS in
  * `tug-text-editor.css` keys the drop ring, caret-hide, and inactive-
- * selection-paint rules off this attribute; setting/clearing it is
- * the only signal those rules need.
+ * selection-paint rules off this attribute presence; an additional
+ * `[data-drop-active="reject"]` rule overrides the ring color for
+ * the rejection variant.
  *
  * Idempotent — checking before mutating avoids redundant attribute
  * writes that would re-trigger MutationObservers (none today, but
  * cheap insurance).
  */
-function setDropActive(host: HTMLElement | null, active: boolean): void {
+function setDropActive(host: HTMLElement | null, state: DropActiveState): void {
   if (host === null) return;
-  const has = host.hasAttribute("data-drop-active");
-  if (active && !has) {
-    host.setAttribute("data-drop-active", "");
-  } else if (!active && has) {
-    host.removeAttribute("data-drop-active");
+  const current = host.getAttribute("data-drop-active");
+  if (state === null) {
+    if (current !== null) host.removeAttribute("data-drop-active");
+    return;
+  }
+  if (current !== state) {
+    host.setAttribute("data-drop-active", state);
   }
 }
 
@@ -793,48 +821,48 @@ export function tugDropExtension(
     tugDropCaretTheme,
     EditorView.domEventHandlers({
       dragenter(event, _view) {
-        // Required to allow drops at all. Without it the WebView
-        // refuses the drag and the dragover/drop pipeline never
-        // runs. Only claim file drags — keyboard-driven or
-        // application-specific drags pass through.
+        // Only claim file drags. Keyboard-driven or application-
+        // specific drags pass through.
         if (!event.dataTransfer?.types.includes("Files")) return false;
-        // Drag-level rejection (Step 3.5.2): if every item in the
-        // drag has a known-unsupported MIME (PDF, archive, audio,
-        // video), refuse to accept the drag here. Skipping
-        // `preventDefault` makes the OS show the no-drop cursor and
-        // suppresses the eventual `drop` event entirely — no
-        // banner, no chip, no surprise. Empty-MIME items still pass
-        // (filename-based classification happens at drop time).
-        if (!dragHasSupportedItem(event.dataTransfer)) return false;
+        // Claim the event so CM6's internal drag handler doesn't
+        // also try to accept it with `dropEffect = "copy"` (which
+        // would be redundant but defensive in case CM6's behavior
+        // changes).
+        //
+        // WebKit/WKWebView does not expose per-item MIME info during
+        // `dragenter` / `dragover` (filed as WebKit bug #223517,
+        // unresolved as of Dec 2023). The only signal we have is
+        // `types.includes("Files")` — a binary "this is a file
+        // drag" yes/no. So we accept all file drags at the cursor
+        // level and classify at drop time, where
+        // `dataTransfer.files` is fully populated. The OS shows the
+        // green-plus accept cursor for any file drag — a PDF will
+        // appear acceptable during drag, then silently produce no
+        // atom on release (`processAttachmentFiles` classifies
+        // each file and skips unsupported ones).
+        //
+        // The three-state `setDropActive` infrastructure (with the
+        // `"reject"` CSS variant) is preserved for Step 3.5.7's
+        // native-bridge work, where Tug.app's Swift host reads
+        // `NSPasteboard` directly and posts the real MIME info to
+        // JS — giving us back the ability to reject at the cursor.
         event.preventDefault();
-        setDropActive(host, true);
+        setDropActive(host, "accept");
         return true;
       },
       dragover(event, view) {
         if (!event.dataTransfer?.types.includes("Files")) return false;
-        // Same drag-level supportedness check as `dragenter`. Some
-        // engines fire `dragover` without a preceding `dragenter`
-        // (relatedTarget transitions, fast cursor movement); the
-        // check at both gates guarantees the no-drop cursor is
-        // stable for the entire hover, not just the first frame.
-        if (!dragHasSupportedItem(event.dataTransfer)) {
-          // Defensive cleanup: if the drag started over a supported
-          // item and then transitioned to all-unsupported (rare,
-          // but DataTransfer mutability during a drag is engine-
-          // dependent), clear the drop-active ring and caret.
-          setDropActive(host, false);
-          if (view.state.field(tugDropCaretField) !== null) {
-            view.dispatch({ effects: setTugDropCaretPos.of(null) });
-          }
-          return false;
-        }
+        // Same as `dragenter`: claim the event and accept (we can't
+        // classify in WKWebView until drop time). See the
+        // dragenter comment for the WebKit limitation.
         event.preventDefault();
         try {
           event.dataTransfer.dropEffect = "copy";
         } catch {
           // `dropEffect` is read-only in some environments.
         }
-        setDropActive(host, true);
+        setDropActive(host, "accept");
+
         // Update the drop-caret StateField. The ViewPlugin will
         // re-measure on the next update and reposition the caret.
         const pos = dropOffsetAtCoords(view, event.clientX, event.clientY);
@@ -853,14 +881,14 @@ export function tugDropExtension(
         if (related !== null && view.contentDOM.contains(related)) {
           return false;
         }
-        setDropActive(host, false);
+        setDropActive(host, null);
         if (view.state.field(tugDropCaretField) !== null) {
           view.dispatch({ effects: setTugDropCaretPos.of(null) });
         }
         return false;
       },
       dragend(_event, view) {
-        setDropActive(host, false);
+        setDropActive(host, null);
         if (view.state.field(tugDropCaretField) !== null) {
           view.dispatch({ effects: setTugDropCaretPos.of(null) });
         }
@@ -872,17 +900,34 @@ export function tugDropExtension(
           // No files — clear the caret if a previous dragover
           // left one up, then bail without preventDefault so the
           // browser handles the (non-file) drop natively.
-          setDropActive(host, false);
+          setDropActive(host, null);
           if (view.state.field(tugDropCaretField) !== null) {
             view.dispatch({ effects: setTugDropCaretPos.of(null) });
           }
           return false;
         }
+
+        // At drop time `dataTransfer.files` is fully populated with
+        // real MIME info — this is the actual supportedness check
+        // (the dragenter/dragover check was binary "is a file drag"
+        // only, per WebKit's redaction). If every file in the drop
+        // is unsupported, refuse silently: the user already saw the
+        // copy cursor, so a banner on top would be jarring. The
+        // missing chip is the signal.
+        if (!dropHasSupportedFile(event.dataTransfer ?? null)) {
+          event.preventDefault();
+          setDropActive(host, null);
+          if (view.state.field(tugDropCaretField) !== null) {
+            view.dispatch({ effects: setTugDropCaretPos.of(null) });
+          }
+          return true;
+        }
+
         // Suppress the WebView's default file-URL navigation. Done
         // first so even an early `return` below leaves the page
         // intact.
         event.preventDefault();
-        setDropActive(host, false);
+        setDropActive(host, null);
 
         const pos = dropOffsetAtCoords(view, event.clientX, event.clientY);
         const insertPos = pos !== null ? pos : view.state.doc.length;
