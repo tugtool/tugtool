@@ -927,9 +927,73 @@ Synchronous evaluateJavaScript is *not* used — it would block the AppKit drag 
 
 ---
 
+#### Step pre-4: Per-card FILETREE_QUERY routing {#step-pre-4}
+
+**Depends on:** (none — independent of Steps 1-3.5)
+
+**Blocks:** [Step 4](#step-4)'s manual smoke (the `@`-popup must hit the card's project workspace, not the bootstrap, for the secret filter to be observable).
+
+**Commit:** `feat(tugcast): route FILETREE_QUERY to per-card workspaces`
+
+**References:** (this step), [`tugrust/crates/tugcast/src/main.rs:217-245`](../tugrust/crates/tugcast/src/main.rs) (the bootstrap-only adapter), [`tugrust/crates/tugcast/src/feeds/workspace_registry.rs`](../tugrust/crates/tugcast/src/feeds/workspace_registry.rs) (`W2` per-session `get_or_create`).
+
+#### The bug, in one sentence {#step-pre-4-bug}
+
+The `FILETREE_QUERY` adapter forwards every JS-side completion query to **`bootstrap.ft_query_tx`** — the single bootstrap workspace's filetree channel, fixed at startup to the tugtool repo. Per-session `WorkspaceEntry` instances are constructed for each tide-card project (each gets its own `FileWatcher`, `FileTreeFeed`, and now `SecretFilter`), but the routing adapter does not multiplex; their channels are never read from. Result: `@`-completion in a card whose project is `/tmp/files` queries the *tugtool repo's* index, returns matches against that index (or no matches at all), and the SecretFilter from [Step 4](#step-4) is provably unobservable from the popup.
+
+This is a pre-existing architectural gap (`bootstrap.ft_query_tx.clone()` committed 2026-04-14), surfaced by the [Step 4](#step-4) manual smoke. It is independent of Step 4's code — Step 4 backend works correctly when queried directly (verified by the `/tmp/files` repro test), but the user-visible feature requires this routing fix.
+
+#### Strategy {#step-pre-4-strategy}
+
+The fix is small and additive — no protocol bump, no JS payload schema change beyond a field that already exists. Three layers:
+
+1. **JS-side: populate the `root` field on every `FILETREE_QUERY`** with the active card's project directory. `FileTreeStore.sendQuery` already accepts an optional `root` parameter; `getFileCompletionProvider` currently passes none. The card-services layer knows the project dir at construction time — pass it down into `FileTreeStore` so the provider can include it on every query.
+
+2. **Rust-side: registry lookup by path.** Add `WorkspaceRegistry::find_entry_by_path(&Path) -> Option<Arc<WorkspaceEntry>>`. Derives the `WorkspaceKey` the same way `get_or_create` does (canonical path → key), looks up the inner map.
+
+3. **Rust-side: rewire the adapter.** Give the adapter task access to the registry (`Arc<WorkspaceRegistry>`). On each frame: if `root` is set and a registered entry matches, send to *that* entry's `ft_query_tx`; otherwise fall back to bootstrap (preserves single-workspace behavior and keeps the legacy `--source-tree`-only callers working).
+
+The existing `[D09]` "retarget the bootstrap to a new root" semantics that lives inside `FileTreeFeed::handle_query` becomes dead code in production once JS always passes `root` — the registry lookup short-circuits before the retarget. Removing the retarget code is out-of-scope (low value, would churn tests); leaving it is harmless.
+
+#### Artifacts {#step-pre-4-artifacts}
+
+- `tugrust/crates/tugcast/src/feeds/workspace_registry.rs` (modify) — `find_entry_by_path(&Path) -> Option<Arc<WorkspaceEntry>>` that canonicalizes the input the same way `get_or_create` does (so a JS-supplied `/tmp/files` matches an entry registered as `/private/tmp/files`).
+- `tugrust/crates/tugcast/src/main.rs` (modify) — adapter task captures `Arc<WorkspaceRegistry>`; per-frame lookup → entry-specific `ft_query_tx`; bootstrap fallback when the lookup misses or `root` is unset.
+- `tugdeck/src/lib/filetree-store.ts` (modify) — `FileTreeStore` constructor takes an optional `projectDir` (string); `getFileCompletionProvider` passes it as `root` on every `sendQuery`.
+- `tugdeck/src/lib/card-services-store.ts` (modify) — pass the card's `projectDir` into the `FileTreeStore` constructor at the existing construction site.
+
+#### Tasks {#step-pre-4-tasks}
+
+- [ ] **pre-4.a — Registry lookup.** Add `WorkspaceRegistry::find_entry_by_path`. Reuse the path-canonicalization logic from `get_or_create` so paths the JS sees (`/tmp/files`) match entries the registry holds (`/private/tmp/files` post-canonicalize on macOS).
+- [ ] **pre-4.b — Adapter rewire.** Adapter receives `Arc<WorkspaceRegistry>` from `main.rs`. For each frame, parse `{ query, root? }`; if `root.is_some()` and `find_entry_by_path` returns Some → forward to that entry's `ft_query_tx`; else fall back to the bootstrap entry's `ft_query_tx`. The legacy `[D09]` retarget path inside `FileTreeFeed::handle_query` is preserved but becomes unreached for routed queries.
+- [ ] **pre-4.c — JS plumbing.** `FileTreeStore` constructor gains optional `projectDir: string | undefined`; `getFileCompletionProvider` uses it on `sendQuery`. Card-services construction site passes the card's project dir.
+- [ ] **pre-4.d — Stale-routing safety.** If the entry's `ft_query_tx` send fails (channel closed during teardown race), log `warn!` and silently drop. Do not panic; do not fall back to bootstrap (a closed entry's stale tugtool results would be the wrong UX).
+
+#### Tests {#step-pre-4-tests}
+
+- [ ] `unit (Rust): WorkspaceRegistry::find_entry_by_path returns Some for a registered path; returns None for an unknown path; canonicalizes /tmp/files → matches an entry registered at /private/tmp/files.`
+- [ ] `integration (Rust): two workspaces registered (tugtool repo + /tmp/files); FILETREE_QUERY{root: "/tmp/files", query: "b"} reaches the /tmp/files feed and returns "bar"; FILETREE_QUERY{root: <tugtool>, query: <something only tugtool has>} reaches the bootstrap.`
+- [ ] `integration (Rust): FILETREE_QUERY with no root field falls through to the bootstrap (back-compat).`
+- [ ] `integration (Rust): FILETREE_QUERY with unknown root falls through to the bootstrap (defensive).`
+- [ ] Manual: open a card with project `/tmp/files` (containing `.env`, `.tugattachignore` (`.env`), `bar`, `foo`); type `@` → see `bar`, `foo`, `.tugattachignore`; type `@.env` → no suggestion appears. This is the [Step 4](#step-4) manual smoke that this step unblocks.
+
+#### Checkpoint {#step-pre-4-checkpoint}
+
+- [ ] `cd tugrust && cargo nextest run -p tugcast` clean
+- [ ] `cd tugrust && cargo build --tests --workspace` warnings-as-errors clean
+- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens lint` clean
+- [ ] Manual: the `/tmp/files` scenario above behaves correctly in Tug.app — this also closes the last open checkbox of [Step 4](#step-4)'s checkpoint.
+
+#### Out of scope {#step-pre-4-out-of-scope}
+
+- **Other per-card feeds (FILESYSTEM, GIT) likely share the same bootstrap-only adapter shape.** Their UX impact in the W2 multi-workspace model is unknown today; surveying and (if needed) fixing them is a separate piece of work. This step is scoped to filetree because that is the one feature the [Step 4](#step-4) acceptance criteria need.
+- **Retiring the `[D09]` retarget code in `FileTreeFeed::handle_query`** — once routing is the production path the retarget becomes dead but harmless. Removing it would churn existing retarget tests for no UX benefit; leave for a future cleanup.
+
+---
+
 #### Step 4: Completion-time secret-file filter + `.tugattachignore` {#step-4}
 
-**Depends on:** (none — independent of Steps 1-3)
+**Depends on:** [Step pre-4](#step-pre-4) (for manual smoke validation only; the backend itself is independent of Steps 1-3.5).
 
 **Commit:** `feat(tugcast): filetree provider secret-file denylist + .tugattachignore`
 
