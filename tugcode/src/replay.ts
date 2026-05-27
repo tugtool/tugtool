@@ -164,6 +164,28 @@ export interface JsonlEntry {
    */
   isCompactSummary?: boolean;
   /**
+   * Set by Claude Code on `user` JSONL entries it injects as SDK-side
+   * bookkeeping rather than transcript submissions. Surveyed shapes
+   * across the live JSONL corpus:
+   *   - image-attachment coordinate hints
+   *     (`[Image: original WxH, displayed at WxH. Multiply coordinates …]`)
+   *     and source-path notes (`[Image: source: /…]`) the SDK appends
+   *     after every image submission so the AI can map clicks back
+   *     to the original;
+   *   - skill body / `/loop` content the SDK loads when a slash command
+   *     is invoked ("Base directory for this skill: …");
+   *   - any other SDK-injected pseudo-user entry the runtime persists
+   *     for context continuity.
+   *
+   * None of these are transcript-visible submissions — Claude Code's own
+   * UI never shows them. Each surfaces as an extra `add_user_message`
+   * opener if the translator processes it, which closes the prior real
+   * turn as `interrupted` (bogus phantom row) AND injects a meta-text
+   * pseudo-prompt cell. The translator skips them unconditionally
+   * regardless of content shape.
+   */
+  isMeta?: boolean;
+  /**
    * The active permission mode at submit time (`"acceptEdits"`,
    * `"default"`, etc.). Claude Code stamps this on every *real* user
    * submission as it leaves the CLI's input layer. Crucially, it is
@@ -800,6 +822,14 @@ function handleUserEntry(
 ): OutboundMessage[] {
   const out: OutboundMessage[] = [];
   const rawContent = entry.message?.content;
+
+  // SDK-injected bookkeeping entry. Image coordinate / source-path
+  // hints, skill body loaders, `/loop` content imports — none are
+  // user submissions. Surfacing any of them as an `add_user_message`
+  // would (a) inject a pseudo-prompt row into the transcript and (b)
+  // close the prior real turn as `interrupted` via orphan synthesis.
+  // See `JsonlEntry.isMeta` for the surveyed shape inventory.
+  if (entry.isMeta === true) return out;
 
   // Bare-string `message.content` shapes: scaffolding (skip), the
   // `<task-notification>` wake envelope (emit `wake_started`), or a

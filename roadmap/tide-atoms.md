@@ -1513,8 +1513,8 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 - [x] `cd tugdeck && bun test` — full suite green (3067 pass / 0 fail, +11 strip tests).
 - [x] `cd tugdeck && bun run check` — tsc clean.
 - [x] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
-- [ ] Manual: drop two images into a card, type some text around them, submit. Transcript shows the two chips at the original text positions with `#0001-image-1` / `#0001-image-2` labels; thumbnail strip below the body shows two tiles with matching captions. *(Pending — user smoke test.)*
-- [ ] Manual (restore parity): reload Tug.app. Transcript renders identically — same chip positions, same labels, same thumbnails. *(Pending — user smoke test.)*
+- [x] Manual: drop two images into a card, type some text around them, submit. Transcript shows the two chips at the original text positions with `#0001-image-1` / `#0001-image-2` labels; thumbnail strip below the body shows two tiles with matching captions.
+- [x] Manual (restore parity): reload Tug.app. Transcript renders identically — same chip positions, same labels, same thumbnails.
 
 ---
 
