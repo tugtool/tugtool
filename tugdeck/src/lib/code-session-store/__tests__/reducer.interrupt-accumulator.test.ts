@@ -69,7 +69,7 @@ describe("reducer — interrupt-in-flight accumulator", () => {
 
   it("`interrupt` from a content-bearing phase (CASE B) opens the segment at Date.now()", () => {
     const { state: s } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -93,7 +93,7 @@ describe("reducer — interrupt-in-flight accumulator", () => {
 
   it("`turn_complete` closes the open interrupt segment and pushes `[start, end]` to the intervals array", () => {
     const { state: opened } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -130,7 +130,7 @@ describe("reducer — interrupt-in-flight accumulator", () => {
     // content has arrived yet). The UI never sees an INTERRUPTING
     // state in this path — phase goes straight back to idle.
     const { state } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       { type: "interrupt_action" },
     ]);
     expect(state.phase).toBe("idle");
@@ -143,7 +143,7 @@ describe("reducer — interrupt-in-flight accumulator", () => {
     // Run a CASE B interrupt cycle to populate the array, then submit
     // again and confirm the arrays + segment-start are wiped.
     const { state: prior } = applyAll(fresh(), [
-      { type: "send", text: "first", atoms: [], wireText: "first", attachments: [], turnKey: "k1" },
+      { type: "send", text: "first", atoms: [], content: [{ type: "text" as const, text: "first" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -157,7 +157,7 @@ describe("reducer — interrupt-in-flight accumulator", () => {
     expect(prior.interruptInFlightIntervals.length).toBe(1);
 
     const { state: nextTurn } = applyAll(prior, [
-      { type: "send", text: "second", atoms: [], wireText: "second", attachments: [], turnKey: "k2" },
+      { type: "send", text: "second", atoms: [], content: [{ type: "text" as const, text: "second" }], turnKey: "k2" },
     ]);
     expect(nextTurn.interruptInFlightIntervals).toEqual([]);
     expect(nextTurn.interruptInFlightSegmentStartedAt).toBeNull();
@@ -169,7 +169,7 @@ describe("reducer — interrupt-in-flight accumulator", () => {
     // A normal successful turn — no interrupt fired — leaves the
     // interrupt intervals array empty and the segment-start null.
     const { state } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       { type: "assistant_text", msg_id: "m1",
       block_index: 0,
       text: "ok", is_partial: false },
@@ -184,7 +184,7 @@ describe("reducer — interrupt-in-flight accumulator", () => {
 describe("reducer — pause-axis interval arrays at turn boundary", () => {
   it("a closed awaiting-approval dialog populates `awaitingApprovalIntervals` mid-turn", () => {
     const { state: opened } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -217,7 +217,7 @@ describe("reducer — pause-axis interval arrays at turn boundary", () => {
 
   it("a closed transport-downtime interval populates `transportDowntimeIntervals` when the wire settles", () => {
     const { state: opened } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",

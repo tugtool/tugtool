@@ -6915,6 +6915,73 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn dispatch_one_derives_journal_row_from_content_blocks() {
+        // Step 5c invariant: a `user_message` payload carrying
+        // Anthropic-API `content` blocks (post-Step-5c wire shape)
+        // produces a journal row whose `user_text` is the concatenation
+        // of text-block contents and `user_attachments` is one
+        // wire-shape Attachment JSON per image block (filename: "",
+        // media_type + content sourced from the block). The frame
+        // forwards unchanged.
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let session_id_str = "sess-content-blocks";
+        let tug_session_id = TugSessionId::new(session_id_str);
+
+        let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id_str);
+
+        // Interleaved content blocks (text, image, text) — the shape
+        // tugdeck's `buildWirePayload` emits at submit time.
+        let body = serde_json::json!({
+            "tug_session_id": session_id_str,
+            "type": "user_message",
+            "content": [
+                {"type": "text", "text": "describe "},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": "PNG-DATA",
+                    },
+                },
+                {"type": "text", "text": " this"},
+            ],
+        });
+        let original_payload = serde_json::to_vec(&body).unwrap();
+        let frame = Frame::new(FeedId::CODE_INPUT, original_payload.clone());
+
+        sup.dispatch_one(frame).await;
+
+        // Journal row landed with the derived legacy view: text-block
+        // contents concatenated; image block reshaped to wire-shape
+        // Attachment with filename: "".
+        let rows = ledger
+            .list_pending_turns_for_session(session_id_str)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].user_text, "describe  this");
+        // user_attachments is decoded by the ledger reader into a
+        // Vec<serde_json::Value> — each entry is one wire-shape
+        // Attachment object derived from an image content block.
+        let atts = &rows[0].user_attachments;
+        assert_eq!(atts.len(), 1);
+        assert_eq!(atts[0]["filename"], "");
+        assert_eq!(atts[0]["media_type"], "image/png");
+        assert_eq!(atts[0]["content"], "PNG-DATA");
+
+        // Forwarded frame is byte-identical to the input — the
+        // dispatcher reads the derived view for the journal but
+        // forwards the raw content-block payload to tugcode unchanged.
+        let mut entry = entry_arc.lock().await;
+        let queued = entry.queue.pop().expect("frame queued");
+        assert_eq!(
+            queued.payload, original_payload,
+            "dispatcher must forward content-block user_message frames unchanged (Step 5c)",
+        );
+    }
+
     // ── Step 5.10 — replay-bracket gate on the journal-pop intercept ─────────
     //
     // The merger's `process_outbound_frame_journal_gate` tracks per-session

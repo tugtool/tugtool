@@ -65,7 +65,7 @@ describe("reducer — transport downtime", () => {
   it("a turn with one disconnect/reconnect cycle accumulates the gap and increments reconnectCount", () => {
     // Submit + open the turn.
     const { state: s1 } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -100,7 +100,7 @@ describe("reducer — transport downtime", () => {
 
   it("a turn that ends while the transport is down commits with turnEndReason transport_lost", () => {
     const { state: s1 } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",

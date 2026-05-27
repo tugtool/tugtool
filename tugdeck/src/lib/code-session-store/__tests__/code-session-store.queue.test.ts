@@ -73,13 +73,24 @@ function dispatchTurnCompleteSuccess(
 function userMessageFrames(
   conn: TestFrameChannel,
 ): Array<{ text: string }> {
+  // Post-Step-5c the wire shape is content blocks. Concatenate the
+  // `text` block contents back into a single string so existing
+  // tests' `.text === "foo"` assertions keep working — they pin
+  // submission identity, not block structure.
   return conn.recordedFrames
     .filter(
       (f) =>
         f.feedId === FeedId.CODE_INPUT &&
         (f.decoded as { type?: string }).type === "user_message",
     )
-    .map((f) => ({ text: (f.decoded as { text: string }).text }));
+    .map((f) => {
+      const content = (f.decoded as { content?: Array<{ type: string; text?: string }> }).content ?? [];
+      const text = content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text ?? "")
+        .join("");
+      return { text };
+    });
 }
 
 describe("CodeSessionStore — queue flush via turn_complete(success) collapse (Step 7)", () => {

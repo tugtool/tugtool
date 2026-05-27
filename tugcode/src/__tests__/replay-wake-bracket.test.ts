@@ -158,7 +158,7 @@ describe("translateJsonlSession — wake-bracket replay synthesis [D13] [D07]", 
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(addUserMessages).toHaveLength(1);
-    expect(addUserMessages[0].text).toBe("set up the monitor");
+    expect((addUserMessages[0].content[0] as { type: string; text: string }).text).toBe("set up the monitor");
 
     const wakeStarteds = out.filter(
       (m): m is WakeStarted => m.type === "wake_started",

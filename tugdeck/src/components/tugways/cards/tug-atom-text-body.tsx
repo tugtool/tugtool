@@ -42,6 +42,7 @@ import {
   getAtomHeightPx,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
+import { formatSequenceNumber } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
 // Walking substrate — exported for pure-logic tests
@@ -104,6 +105,39 @@ export function walkAtomText(
 }
 
 // ---------------------------------------------------------------------------
+// Chip-label decoration — pure, exported for tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the chip's displayed label given an atom and an optional
+ * transcript message number.
+ *
+ * - When `messageNumber` is set AND the atom is an image, the label is
+ *   prefixed with `#NNNN-` (zero-padded to 4 digits via
+ *   {@link formatSequenceNumber}). Example: `messageNumber=1`,
+ *   `atom.label="image-1"` → `"#0001-image-1"`. This is the
+ *   transcript-side rendering — the chip's label matches the
+ *   per-message attachment-strip caption ([Step 6](roadmap/tide-atoms.md#step-6)).
+ * - When `messageNumber` is unset, the atom's stored `label` is
+ *   returned verbatim. This is the editor's pre-submit rendering case:
+ *   the editor has no transcript position to encode.
+ * - Non-image atoms (file, doc, link, command) always render their
+ *   stored `label` verbatim — file paths and URLs carry no per-message
+ *   linkage to encode.
+ *
+ * Pure on inputs.
+ */
+export function decorateChipLabel(
+  atom: AtomSegment,
+  messageNumber: number | undefined,
+): string {
+  if (messageNumber === undefined || atom.type !== "image") {
+    return atom.label;
+  }
+  return `${formatSequenceNumber(messageNumber)}-${atom.label}`;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -116,6 +150,17 @@ export interface TugAtomTextBodyProps {
    * render as visible text (no crash).
    */
   atoms: ReadonlyArray<AtomSegment>;
+  /**
+   * Optional 1-based transcript message number. When set, each image
+   * atom's *displayed* chip label is decorated as
+   * `#${pad4(messageNumber)}-${atom.label}` (e.g., `#0001-image-1`) —
+   * the linkage between an inline chip and its companion entry in the
+   * per-message attachment strip ([Step 6](roadmap/tide-atoms.md#step-6)).
+   * Non-image atoms are unaffected. When unset (the editor's
+   * pre-submit rendering case), atoms render with their stored
+   * `label` verbatim.
+   */
+  messageNumber?: number;
   /** Forwarded to the root span. */
   className?: string;
   /** Forwarded to the root span (for test anchoring). */
@@ -131,7 +176,7 @@ export const TugAtomTextBody = React.forwardRef<
   HTMLSpanElement,
   TugAtomTextBodyProps
 >(function TugAtomTextBody(
-  { text, atoms, className, "data-testid": dataTestid },
+  { text, atoms, messageNumber, className, "data-testid": dataTestid },
   ref,
 ) {
   const segments = walkAtomText(text, atoms);
@@ -160,9 +205,10 @@ export const TugAtomTextBody = React.forwardRef<
             <React.Fragment key={`s-${i}`}>{TUG_ATOM_CHAR}</React.Fragment>
           );
         }
+        const displayLabel = decorateChipLabel(seg.atom, messageNumber);
         const { dataUri, width, height } = buildAtomSVGDataUri(
           seg.atom.type,
-          seg.atom.label,
+          displayLabel,
           seg.atom.value,
         );
         // No inline `vertical-align` — the stylesheet's
@@ -176,7 +222,7 @@ export const TugAtomTextBody = React.forwardRef<
             key={`a-${i}`}
             className="tug-atom-text-body__chip"
             src={dataUri}
-            alt={seg.atom.label}
+            alt={displayLabel}
             width={width}
             height={height}
             title={seg.atom.value}

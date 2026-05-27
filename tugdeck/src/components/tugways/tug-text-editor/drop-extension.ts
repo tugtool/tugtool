@@ -730,6 +730,12 @@ async function runAttachmentJob(
       bytesStore.put(id, {
         content: outcome.result.content,
         mediaType: outcome.result.mediaType,
+        // Carry the downsample pipeline's already-baked thumbnail
+        // through to the bytes-store so the post-submit synthesizer
+        // sees a fully-populated entry and doesn't re-bake. Per
+        // [Step 5c](roadmap/tide-atoms.md#step-5c) — Step 6's strip
+        // renderer reads `thumbnailDataUrl` unconditionally.
+        thumbnailDataUrl: outcome.result.thumbnailDataUrl,
       });
       return;
     }

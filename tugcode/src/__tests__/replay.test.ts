@@ -494,19 +494,31 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
     const um = out.find(isAddUserMessage)!;
-    expect(um.text).toBe("what is in this image?");
-    expect(um.attachments.length).toBe(1);
-    expect(um.attachments[0]).toEqual({
-      filename: "",
-      content: "iVBORw0KGgoAAAANSUhEUgAA",
-      media_type: "image/png",
-    });
+    // Post-Step-5c: replay emits interleaved content blocks verbatim
+    // from JSONL. Text block + image block; image source carries the
+    // base64 + media_type but no filename (the wire shape doesn't
+    // carry filenames).
+    expect(um.content).toEqual([
+      { type: "text", text: "what is in this image?" },
+      {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: "image/png",
+          data: "iVBORw0KGgoAAAANSUhEUgAA",
+        },
+      },
+    ]);
   });
 
-  test("turn with no preceding user entry emits add_user_message with empty text", async () => {
+  test("turn with no preceding user entry emits add_user_message with empty content", async () => {
     // Edge case: a JSONL that opens with an assistant entry — this
     // happens after `--continue` flows where the user's prompt was
-    // recorded in a prior session file.
+    // recorded in a prior session file. The orphan-assistant
+    // synthesizer in `handleAssistantEntry` emits a synth opener
+    // with `content: []` so the reducer's `pendingTurn` is seeded;
+    // tugdeck's `synthesizeUserMessageFromBlocks` produces
+    // `(text: "", atoms: [])` from the empty content array.
     const jsonl = makeJsonl([
       assistantEntry({
         msgId: "m_t",
@@ -516,8 +528,7 @@ describe("translateJsonlSession — thinking + image + degenerate", () => {
     ]);
     const out = await collectSession({ kind: "ok", jsonl });
     const um = out.find(isAddUserMessage)!;
-    expect(um.text).toBe("");
-    expect(um.attachments).toEqual([]);
+    expect(um.content).toEqual([]);
   });
 
   test("empty JSONL emits replay_started → replay_complete with count=0", async () => {
@@ -572,7 +583,7 @@ describe("translateJsonlSession — same-msg_id continuation", () => {
     //    ("msg_split"); add_user_message carries no msg_id per [D15]
     const userReplays = out.filter(isAddUserMessage);
     expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].text).toBe("How many entities listed?");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("How many entities listed?");
 
     const turnCompletes = out.filter(isTurnComplete);
     expect(turnCompletes).toHaveLength(1);
@@ -1044,7 +1055,7 @@ describe("translateJsonlSession — in-flight trailing turn at EOF", () => {
     // msg_id ("m_inflight"). The add_user_message carries no msg_id
     // per [D15]; identification is by text content.
     const userReplay = out.find(isAddUserMessage)!;
-    expect(userReplay.text).toBe("go");
+    expect(((userReplay.content[0] ?? {}) as { text?: string }).text).toBe("go");
     const toolUse = out.find((m): m is ToolUse => m.type === "tool_use")!;
     expect(toolUse.msg_id).toBe("m_inflight");
     expect(toolUse.tool_use_id).toBe("tu_inflight");
@@ -1123,7 +1134,7 @@ describe("translateJsonlSession — in-flight trailing turn at EOF", () => {
     expect(out.length).toBe(3);
     expect(out[0].type).toBe("replay_started");
     expect(out[1].type).toBe("add_user_message");
-    expect((out[1] as AddUserMessage).text).toBe("abandoned prompt");
+    expect(((out[1] as AddUserMessage).content[0] as { text?: string } | undefined)?.text ?? "").toBe("abandoned prompt");
     expect(out[2].type).toBe("replay_complete");
     // count stays 0 — no turn_complete fired.
     expect((out.at(-1) as ReplayComplete).count).toBe(0);
@@ -1301,7 +1312,7 @@ describe("translateJsonlEntry — direct unit tests", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(addUserMessage).toBeDefined();
-    expect(addUserMessage?.text).toBe("hello");
+    expect(((addUserMessage?.content[0] ?? {}) as { text?: string }).text).toBe("hello");
     // openTurnMsgId is now set to a synthesized opener id ("u-0").
     expect(ctx.openTurnMsgId).toBe("u-0");
   });
@@ -1330,7 +1341,7 @@ describe("translateJsonlEntry — direct unit tests", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplay).toBeDefined();
-    expect(userReplay?.text).toBe("hello");
+    expect(((userReplay?.content[0] ?? {}) as { text?: string }).text).toBe("hello");
     // Terminal turn_complete from the assistant entry; keyed on
     // claude's real msg_id.
     const turnComplete = assistantOut.find(

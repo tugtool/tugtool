@@ -203,13 +203,13 @@ describe("CodeSessionStore — retry recovery from errored (Step 8)", () => {
     expect(snap.lastError).toBe(errAtFirst);
 
     // The retry also wrote a fresh user_message frame.
-    const retryFrame = conn.recordedFrames.find(
-      (f, idx) =>
-        idx > 0 && // skip the first submit
-        (f.decoded as { type?: string; text?: string }).type ===
-          "user_message" &&
-        (f.decoded as { text?: string }).text === "retry",
-    );
+    const retryFrame = conn.recordedFrames.find((f, idx) => {
+      if (idx === 0) return false; // skip the first submit
+      const dec = f.decoded as { type?: string; content?: Array<{ type: string; text?: string }> };
+      if (dec.type !== "user_message") return false;
+      const content = dec.content ?? [];
+      return content.some((b) => b.type === "text" && b.text === "retry");
+    });
     expect(retryFrame).toBeDefined();
 
     // Drive the retry turn to completion.

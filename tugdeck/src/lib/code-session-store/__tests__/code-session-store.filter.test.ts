@@ -90,7 +90,7 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
     expect(userFrames[0].decoded).toMatchObject({
       tug_session_id: TUG_A,
       type: "user_message",
-      text: "from A",
+      content: [{ type: "text", text: "from A" }],
     });
 
     storeB.send("from B", []);
@@ -101,7 +101,7 @@ describe("CodeSessionStore — multi-instance filter isolation (Step 9)", () => 
     expect(userFrames[1].decoded).toMatchObject({
       tug_session_id: TUG_B,
       type: "user_message",
-      text: "from B",
+      content: [{ type: "text", text: "from B" }],
     });
 
     // Drive A through a short turn. B sees none of it.

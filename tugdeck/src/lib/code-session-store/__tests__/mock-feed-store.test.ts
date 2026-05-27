@@ -160,8 +160,7 @@ describe("TestFrameChannel — send recording", () => {
     const conn = new TestFrameChannel();
     const msg: InboundMessage = {
       type: "user_message",
-      text: "hi",
-      attachments: [],
+      content: [{ type: "text", text: "hi" }],
     };
     conn.send(
       FeedId.CODE_INPUT,
@@ -172,8 +171,7 @@ describe("TestFrameChannel — send recording", () => {
     expect(conn.recordedFrames[0].feedId).toBe(FeedId.CODE_INPUT);
     expect(conn.recordedFrames[0].decoded).toEqual({
       type: "user_message",
-      text: "hi",
-      attachments: [],
+      content: [{ type: "text", text: "hi" }],
       tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
     });
   });

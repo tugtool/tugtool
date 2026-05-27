@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import {
   type JsonlReadResult,
   SessionManager,
+  buildContentBlocksFromLegacyJournal,
   extractUserMessageTextCounts,
   jsonlPathFor,
 } from "../session.ts";
@@ -285,7 +286,7 @@ describe("runReplay — pending-row injection", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(synthetics).toHaveLength(1);
-    expect(synthetics[0].text).toBe("submission claude never saw");
+    expect((synthetics[0].content[0] as any).text).toBe("submission claude never saw");
     // No `msg_id` on `add_user_message` per [D15] — the journal id is
     // not exposed on the wire; identification is by text content.
     // The synthetic lands inside the `replay_started` /
@@ -327,7 +328,7 @@ describe("runReplay — pending-row injection", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(replays).toHaveLength(1);
-    expect(replays[0].text).toBe("claude saw this");
+    expect((replays[0].content[0] as any).text).toBe("claude saw this");
   });
 
   test("multiple pending rows, partial JSONL match: synthetic fires only for unmatched", async () => {
@@ -361,7 +362,7 @@ describe("runReplay — pending-row injection", () => {
     // and one synthetic for the unmatched row. Identification by text
     // — `add_user_message` carries no `msg_id` per [D15].
     expect(replays).toHaveLength(2);
-    const synthetic = replays.find((r) => r.text === "claude has not seen");
+    const synthetic = replays.find((r) => (((r as any).content?.[0]) as any)?.text === "claude has not seen");
     expect(synthetic).toBeDefined();
   });
 
@@ -401,10 +402,17 @@ describe("runReplay — pending-row injection", () => {
     // emission are wire-indistinguishable, which is the correct
     // substrate-truth: each "hello" submission gets one row.
     expect(replays).toHaveLength(2);
-    expect(replays.every((r) => r.text === "hello")).toBe(true);
+    expect(replays.every((r) => (((r as any).content?.[0]) as any)?.text === "hello")).toBe(true);
   });
 
-  test("attachments round-trip from journal BLOB to synthetic frame", async () => {
+  test("attachments round-trip from journal BLOB to synthetic frame as content blocks", async () => {
+    // Step 5c: the synthetic frame's `content` must match what
+    // `buildContentBlocksFromLegacyJournal` produces from the journal
+    // row's text + attachments columns. This is the never-drop
+    // gap-bridge path's contract — the synthetic frame's shape
+    // matches the JSONL-replay path's shape (modulo the lossy
+    // text-first interleaving that the journal's flat columns can't
+    // preserve).
     const fx = freshFixture();
     const attachments = [
       { filename: "f.txt", content: "body", media_type: "text/plain" },
@@ -424,10 +432,16 @@ describe("runReplay — pending-row injection", () => {
 
     const synthetic = emitted.find(
       (m): m is AddUserMessage =>
-        m.type === "add_user_message" && m.text === "with file",
+        m.type === "add_user_message" && ((m as any).content?.[0] as any)?.text === "with file",
     );
     expect(synthetic).toBeDefined();
-    expect(synthetic?.attachments).toEqual(attachments);
+    // Pin the exact content-block shape: matches the helper's output
+    // for the same (text, attachments) input. Text-first then
+    // attachment content — the journal's flat columns lost the
+    // original interleaving, and the helper's projection is
+    // text-first-then-attachments by design.
+    const expectedContent = buildContentBlocksFromLegacyJournal("with file", attachments);
+    expect(synthetic?.content).toEqual(expectedContent as never);
   });
 
   test("session with no journal rows: no synthetic; replay completes cleanly", async () => {
@@ -466,7 +480,7 @@ describe("runReplay — pending-row injection", () => {
 
       const synthetic = emitted.find(
         (m): m is AddUserMessage =>
-          m.type === "add_user_message" && m.text === "hello",
+          m.type === "add_user_message" && ((m as any).content?.[0] as any)?.text === "hello",
       );
       expect(synthetic).toBeDefined();
 
@@ -518,7 +532,7 @@ describe("runReplay — bracket-window invariant for synthetic emit", () => {
     );
     const syntheticIdx = emitted.findIndex(
       (m): m is AddUserMessage =>
-        m.type === "add_user_message" && m.text === "bracket-test",
+        m.type === "add_user_message" && ((m as any).content?.[0] as any)?.text === "bracket-test",
     );
     expect(startedIdx).toBeGreaterThanOrEqual(0);
     expect(completeIdx).toBeGreaterThan(startedIdx);

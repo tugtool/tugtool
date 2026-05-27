@@ -1,7 +1,8 @@
 /**
  * `build-wire-payload` — pure flattening of the substrate's
- * `(text, atoms)` pair into the wire-ready `(wireText, attachments)`
- * pair the `user_message` IPC frame carries.
+ * `(text, atoms)` pair into Anthropic-API-shaped `ContentBlock[]`,
+ * paired with a resolver mapping image-block index → originating atom
+ * id.
  *
  * ## What this module does
  *
@@ -9,81 +10,93 @@
  * with `U+FFFC` (object replacement character) placeholders at every
  * atom position, and a parallel `AtomSegment[]` whose entries carry
  * the chip data. The substrate keeps both halves because the
- * transcript chip renderer (Step 5) walks `text` looking for
- * `U+FFFC` and reads the corresponding atom — substituting in the
+ * editor's chip renderer walks `text` looking for `U+FFFC` and reads
+ * the corresponding atom for placement — substituting in the
  * substrate would erase the chip-position information.
  *
- * The wire, by contrast, is plain text + Anthropic content blocks.
- * `U+FFFC` characters would reach claude as the OS's object-
- * replacement glyph (tofu); image bytes only land in claude's
- * context if they ride the `Attachment[]` slot. So at submit time
- * we flatten — substitute each `U+FFFC` with the corresponding
- * atom's `value`, pack image-atom bytes into Attachments — and ship
- * the flattened form on the wire.
+ * The wire, by contrast, is Anthropic's content-block array: an
+ * ordered sequence of `{ type: "text", text }` and
+ * `{ type: "image", source }` blocks. To preserve image-atom
+ * **positions** through JSONL round-trip (Anthropic records `messages`
+ * verbatim), this builder emits **interleaved** blocks rather than
+ * flattening all images into a leading attachment list. The shape
+ * lands in claude's JSONL unchanged; restoring an interleaved
+ * sequence reconstitutes which slots in the message were image atoms
+ * without any side-channel substrate journaling.
  *
- * Per [D01](roadmap/tide-atoms.md#d01-ffc-substitution-at-submit)
- * and [D02](roadmap/tide-atoms.md#d02-image-attach-text-rest).
+ * Per [Step 5c](roadmap/tide-atoms.md#step-5c) and
+ * [Spec S03](roadmap/tide-atoms.md#s03-build-wire-payload) (revised).
  *
- * ## Atom-to-wire mapping ([List L03](roadmap/tide-atoms.md#l03-atom-to-wire-mapping))
+ * ## Atom-to-wire mapping
  *
  * The discriminator is **bytes in the store, not atom type**: any
- * atom whose `id` resolves to a bytes-store entry rides as an
- * Attachment (image bytes as base64, text content as raw text);
- * atoms without an id, or whose id is unknown to the store, ride
- * only as substituted text in `wireText`.
+ * atom whose `id` resolves to a bytes-store entry emits a standalone
+ * `image` block at its position; all other atoms substitute their
+ * `value` into the surrounding text block.
  *
- *  - `image` + id + bytes (drop / paste of an image) → Attachment
- *    (image bytes) + substituted text (filename / value).
- *  - `file` + id + bytes (drop of a `.md` / `.json` / source file
- *    from Finder) → Attachment (raw text content) + substituted
- *    text. tugcode's `buildContentBlocks` wraps the text content
- *    in a `text` content block.
+ *  - `image` + id + bytes (drop / paste of an image) → standalone
+ *    `image` content block at the atom's position. The surrounding
+ *    text blocks have the atom's `U+FFFC` removed.
  *  - `file` / `doc` (no id — `@`-completion of a workspace path) →
- *    substituted text only. The path goes verbatim into `wireText`;
- *    claude's `Read` tool fetches on demand per Test 24's finding.
+ *    `atom.value` substituted into the current text block. Claude's
+ *    `Read` tool fetches the path on demand.
+ *  - `file` + id + bytes (drop of a `.md` / source file from Finder) →
+ *    today: same as the no-id case — substitute the label / path into
+ *    text. (Inline text-file attachments rode the legacy `Attachment`
+ *    `text/*` shape; the content-block wire doesn't carry a parallel
+ *    `text-file` source. We can revisit if a need arises.)
  *  - `image` (no id; defensive) → substituted text only.
  *  - `link` → substituted text (the URL).
  *  - `command` → substituted text (the command name).
- *  - Any unknown atom type with id + bytes → Attachment;
- *    without → substituted text only.
  *
- * ## Invariants per [Spec S03](roadmap/tide-atoms.md#s03-build-wire-payload)
+ * ## Returned `atomIdAt` resolver
  *
- *  - **Pure.** The bytes-store is read-only here; mutations live in
- *    the drop / paste / commit paths. Same inputs always yield the
- *    same `(wireText, attachments)` pair.
- *  - **No `U+FFFC` in wireText when `atoms.length === count(U+FFFC, text)`.**
- *    The substrate maintains this invariant on every state mutation;
- *    we just walk in lockstep.
- *  - **Defensive on count mismatch.** If `atoms.length < count(U+FFFC, text)`,
- *    extra `U+FFFC` chars pass through. This is a visible regression
- *    on the assistant side rather than a crash — preferable to
- *    silently dropping characters or throwing inside the dispatch
- *    pipeline.
- *  - **Silent skip on missing bytes.** An image atom whose id is
- *    not in the store contributes only its substituted text. This
- *    handles the edge case of an atom dropped before the bytes
- *    finished encoding (impossible today since `processAttachmentFiles`
- *    awaits before inserting the atom, but defensive against future
- *    paths).
+ * The walk that produces blocks also tracks which atoms became image
+ * blocks (atoms with bytes in the store) and in what order. The
+ * returned `atomIdAt(imageBlockIndex)` is a closure over that
+ * mapping; passing it to `synthesizeUserMessageFromBlocks` ensures
+ * the synthesized substrate's atoms reuse the editor's original atom
+ * ids — bytes-store entries from drop / paste stay live across the
+ * submit boundary instead of orphaning under fresh UUIDs.
+ *
+ * The resolver returns `undefined` for any index outside the
+ * emitted image-block range (defensive against caller bugs).
+ *
+ * ## Invariants per [Spec S03] (revised)
+ *
+ *  - **Pure on inputs.** The bytes-store is read-only here; mutations
+ *    live in the drop / paste / synthesizer paths. Same inputs always
+ *    yield the same `(content, atomIdAt)` pair.
+ *  - **No `U+FFFC` in any text block** when `atoms.length` matches
+ *    `count(U+FFFC, text)`. The substrate maintains this on every
+ *    state mutation; we walk in lockstep.
+ *  - **Defensive on count mismatch.** If `atoms.length <
+ *    count(U+FFFC, text)`, extra `U+FFFC` chars pass through into the
+ *    current text block (visible-regression rather than crash).
+ *  - **Adjacent text segments coalesce.** A walk over alternating
+ *    text + atom produces one text block per contiguous text run —
+ *    consecutive image atoms emit consecutive image blocks with no
+ *    empty text block between them; an image at the start or end of
+ *    text doesn't generate an empty surrounding text block.
+ *  - **Silent skip on missing bytes.** An image atom whose id is not
+ *    in the store contributes only its substituted text to the
+ *    current text block — no image block, and `atomIdAt` doesn't
+ *    count this position.
  *
  * ## Why this lives outside the reducer
  *
  * The reducer is pure with no side effects. The bytes-store IS
- * external state — looking up bytes by id is a side-effecting read
- * (the store's contents change over time). Doing the read here, in
- * the impure store wrapper (`CodeSessionStore.send`), keeps the
- * reducer pure: it receives the already-flattened wire fields on the
- * `SendActionEvent` and never has to touch the bytes-store.
+ * external state — looking up bytes by id is a side-effecting read.
+ * Doing the read here, in the impure store wrapper
+ * (`CodeSessionStore.send`), keeps the reducer pure.
  *
- * Laws: [L02] — bytes-store is external state, not React-observable
- *       (the substrate's atom array drives rendering, not the
- *       bytes-store's contents). [L07] — `code-session-store.send`
- *       reads the live store at the moment of dispatch.
- *       [L19] — file structure / docstring discipline.
+ * Laws: [L02] — bytes-store is external state, not React-observable.
+ *       [L07] — `code-session-store.send` reads the live store at the
+ *       moment of dispatch. [L19] — file structure / docstring
+ *       discipline.
  */
 
-import type { Attachment } from "@/protocol";
+import type { ContentBlock } from "@/protocol";
 import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
 import type { AtomBytesStore } from "./atom-bytes-store";
 
@@ -92,20 +105,20 @@ import type { AtomBytesStore } from "./atom-bytes-store";
 // ---------------------------------------------------------------------------
 
 /**
- * Flattened wire payload — what `code-session-store.send` builds
- * before dispatching the `SendActionEvent`.
- *
- *  - `wireText` is the text claude sees. No `U+FFFC` characters when
- *    the substrate's count invariant holds; raw atom labels / values
- *    are inlined at the positions where the chips used to live.
- *  - `attachments` is one entry per image atom with bytes in the
- *    store. Order matches the atoms' document order — the same
- *    order the chips render in. tugcode's `buildContentBlocks`
- *    consumes this verbatim.
+ * Wire payload built by {@link buildWirePayload}. The `content` array
+ * is forwarded verbatim on the `user_message` IPC frame; the
+ * `atomIdAt` resolver is consumed by the synthesizer so the
+ * synthesized substrate reuses the editor's original atom ids.
  */
 export interface WirePayload {
-  wireText: string;
-  attachments: Attachment[];
+  content: ContentBlock[];
+  /**
+   * For each image block in `content`, the originating
+   * `AtomSegment.id`. Index is the 0-based position of the image
+   * block among image blocks (not among all blocks). Returns
+   * `undefined` for any index outside the emitted range.
+   */
+  atomIdAt: (imageBlockIndex: number) => string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,98 +126,76 @@ export interface WirePayload {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the wire-ready `(wireText, attachments)` pair from the
- * substrate's `(text, atoms)` form.
+ * Build the wire-ready `ContentBlock[]` from the substrate's
+ * `(text, atoms)` form.
  *
- * Walks `text` character-by-character, substituting each `U+FFFC` with
- * the corresponding atom's `value`, while accumulating image atoms'
- * Attachment records via lookups in `bytesStore`. Single pass, O(n)
- * in `text.length`.
- *
- * @example
- * ```ts
- * const text = "Look at ￼ and read ￼.";
- * const atoms: AtomSegment[] = [
- *   { kind: "atom", type: "image", label: "shot.png", value: "shot.png", id: "img-1" },
- *   { kind: "atom", type: "file", label: "README.md", value: "README.md" },
- * ];
- * const bytes = createAtomBytesStore();
- * bytes.put("img-1", { content: "iVBORw0…", mediaType: "image/png" });
- *
- * buildWirePayload(text, atoms, bytes);
- * // → {
- * //     wireText: "Look at shot.png and read README.md.",
- * //     attachments: [{ filename: "shot.png", content: "iVBORw0…", media_type: "image/png" }],
- * //   }
- * ```
- *
- * @example
- * ```ts
- * // Missing bytes — image atom contributes text only, no Attachment.
- * const text = "￼";
- * const atoms: AtomSegment[] = [
- *   { kind: "atom", type: "image", label: "missing.png", value: "missing.png", id: "img-x" },
- * ];
- * buildWirePayload(text, atoms, createAtomBytesStore());
- * // → { wireText: "missing.png", attachments: [] }
- * ```
+ * Walks `text` character-by-character. A `U+FFFC` consumes the next
+ * atom; an image atom (id + bytes in the store) closes any pending
+ * text block, emits an image block, and opens a fresh text
+ * accumulator. A non-image (or bytes-less) atom appends its
+ * `value` to the current text accumulator. Single pass, O(n) in
+ * `text.length`.
  */
 export function buildWirePayload(
   text: string,
   atoms: ReadonlyArray<AtomSegment>,
   bytesStore: AtomBytesStore,
 ): WirePayload {
-  // Fast path: no atoms means no substitution and no attachments.
-  // Any `U+FFFC` characters in the text are passed through verbatim
-  // (defensive — should be impossible when atoms.length === 0 and
-  // the substrate's invariant holds, but we don't reach for the
-  // bytes-store on the empty path).
-  if (atoms.length === 0) {
-    return { wireText: text, attachments: [] };
-  }
-
-  let wireText = "";
-  const attachments: Attachment[] = [];
+  const content: ContentBlock[] = [];
+  // Per-image-block atom id, captured during the walk so the
+  // resolver mirrors exactly which atoms became blocks.
+  const imageBlockAtomIds: Array<string | undefined> = [];
+  let textBuf = "";
   let atomIdx = 0;
+
+  function flushText(): void {
+    if (textBuf.length > 0) {
+      content.push({ type: "text", text: textBuf });
+      textBuf = "";
+    }
+  }
 
   // Walk characters via `for…of` so surrogate pairs (emoji, rare
   // CJK) don't accidentally split a code point. `U+FFFC` is in the
   // Basic Multilingual Plane (a single 16-bit code unit), so the
-  // visit count for that char is unchanged either way; but using
-  // the code-point iterator is the safer pattern for future-proofing
-  // against UTF-16 edge cases.
+  // visit count for that char is unchanged either way; but using the
+  // code-point iterator is safer for future UTF-16 edge cases.
   for (const ch of text) {
-    if (ch === TUG_ATOM_CHAR && atomIdx < atoms.length) {
-      const atom = atoms[atomIdx]!;
-      atomIdx += 1;
-      wireText += atom.value;
-      // Any atom with an id whose bytes are in the store contributes
-      // an Attachment. Image atoms ship base64; text-file atoms ship
-      // raw UTF-8 text. tugcode's `buildContentBlocks` dispatches on
-      // `media_type` (image/* → `image` block; everything else →
-      // `text` block) — the store's MIME drives that decision.
-      //
-      // Atoms without an id (file / doc atoms from `@`-completion;
-      // link / command atoms; image atoms whose bytes were evicted)
-      // contribute only the substituted text above.
-      if (atom.id !== undefined) {
-        const bytes = bytesStore.get(atom.id);
-        if (bytes !== null) {
-          attachments.push({
-            filename: atom.label,
-            content: bytes.content,
-            media_type: bytes.mediaType,
-          });
-        }
-      }
+    if (ch !== TUG_ATOM_CHAR) {
+      textBuf += ch;
       continue;
     }
-    // Defensive: a `U+FFFC` with no paired atom (atoms.length <
-    // count(U+FFFC, text)) passes through verbatim. The substrate
-    // maintains this invariant, but if it ever breaks we surface a
-    // visible regression instead of crashing the submit pipeline.
-    wireText += ch;
+    const atom = atoms[atomIdx];
+    if (atom === undefined) {
+      // Defensive: `U+FFFC` with no paired atom passes through into
+      // the current text block. Substrate maintains parity; this is
+      // the visible-regression branch.
+      textBuf += ch;
+      continue;
+    }
+    atomIdx += 1;
+    const bytes = atom.id !== undefined ? bytesStore.get(atom.id) : null;
+    if (atom.type === "image" && bytes !== null && atom.id !== undefined) {
+      flushText();
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: bytes.mediaType,
+          data: bytes.content,
+        },
+      });
+      imageBlockAtomIds.push(atom.id);
+      continue;
+    }
+    // Non-image, bytes-less, or otherwise not promoted to an image
+    // block — substitute the atom's value into the current text run.
+    textBuf += atom.value;
   }
+  flushText();
 
-  return { wireText, attachments };
+  return {
+    content,
+    atomIdAt: (i) => imageBlockAtomIds[i],
+  };
 }

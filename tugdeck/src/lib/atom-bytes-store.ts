@@ -93,6 +93,27 @@ export interface AtomBytesEntry {
    * trusts its producers).
    */
   mediaType: string;
+  /**
+   * Inline thumbnail data URL — `data:image/<mime>;base64,<bytes>` —
+   * baked at a 256-px max edge by the downsample pipeline (drop /
+   * paste) or by the synthesizer's thumbnail-bake on the replay path.
+   *
+   * Optional because:
+   *  - the drop / paste pipeline lands a `DownsampleResult` synchronously
+   *    with the thumbnail in hand; the synthesizer's replay path bakes
+   *    asynchronously and fills this in when the worker returns;
+   *  - the bake can fail silently on the replay path (corrupt bytes,
+   *    exotic format that round-tripped through JSONL but the canvas
+   *    can't redecode) — the thumbnail strip can render a fallback tile.
+   *
+   * The synthesizer treats an entry that already carries a thumbnail
+   * as fully populated and does not re-bake — this preserves the
+   * drop-time bake across the submit boundary.
+   *
+   * Per [Step 5c](roadmap/tide-atoms.md#step-5c) and the
+   * thumbnail-at-synthesis design.
+   */
+  thumbnailDataUrl?: string;
 }
 
 /**
@@ -253,7 +274,14 @@ export function createAtomBytesStore(): AtomBytesStore {
     snapshot() {
       const out: Record<string, AtomBytesEntry> = {};
       for (const [id, entry] of map) {
-        out[id] = { content: entry.content, mediaType: entry.mediaType };
+        const e: AtomBytesEntry = {
+          content: entry.content,
+          mediaType: entry.mediaType,
+        };
+        if (entry.thumbnailDataUrl !== undefined) {
+          e.thumbnailDataUrl = entry.thumbnailDataUrl;
+        }
+        out[id] = e;
       }
       return out;
     },
@@ -272,10 +300,12 @@ export function createAtomBytesStore(): AtomBytesStore {
         ) {
           continue;
         }
-        map.set(id, {
-          content: (entry as AtomBytesEntry).content,
-          mediaType: (entry as AtomBytesEntry).mediaType,
-        });
+        const e = entry as AtomBytesEntry;
+        const next: AtomBytesEntry = { content: e.content, mediaType: e.mediaType };
+        if (typeof e.thumbnailDataUrl === "string") {
+          next.thumbnailDataUrl = e.thumbnailDataUrl;
+        }
+        map.set(id, next);
         added += 1;
       }
       // Single notification per restore call, fired only when the

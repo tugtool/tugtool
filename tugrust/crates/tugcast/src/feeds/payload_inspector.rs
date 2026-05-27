@@ -1,13 +1,22 @@
 //! payload_inspector — single-pass partial-shape parser for stream-json
 //! payloads on the CODE_INPUT and CODE_OUTPUT feeds.
 //!
-//! The supervisor's dispatcher (`dispatch_one`) reads `text` and
-//! `attachments` off every inbound `user_message` to seed the
-//! submission journal row, and the merger (`apply_outbound_turn_intercept`)
-//! reads only `msg_type` to decide whether a frame is a
-//! `turn_complete` / `turn_cancelled` that should pop the journal's
-//! oldest pending row. One `serde_json::from_slice` reads everything
-//! both sites need.
+//! The supervisor's dispatcher (`dispatch_one`) reads the derived
+//! legacy-shape `text` + `attachments` view off every inbound
+//! `user_message` to seed the submission journal row, and the merger
+//! (`apply_outbound_turn_intercept`) reads only `msg_type` to decide
+//! whether a frame is a `turn_complete` / `turn_cancelled` that should
+//! pop the journal's oldest pending row. One `serde_json::from_slice`
+//! reads everything both sites need.
+//!
+//! Post-Step-5c, inbound `user_message` payloads carry Anthropic-API
+//! `content: ContentBlock[]` blocks; the legacy `text` + `attachments`
+//! columns the journal still uses are **derived** via
+//! [`derive_legacy_journal_view`] from the content blocks. Only the
+//! never-drop synthetic emit path consumes the legacy view (the
+//! JSONL-replay path operates on the raw blocks via tugcode), so the
+//! lossy text-concat / image-attachment-reshape projection is the
+//! gap-bridge cost — accepted.
 //!
 //! All fields are optional. A payload with no `type` (malformed,
 //! truncated, or just a different shape than we expected) yields a
@@ -36,15 +45,27 @@ pub struct InspectedPayload {
     #[serde(rename = "type", default)]
     pub msg_type: Option<String>,
 
-    /// `text` field on inbound `user_message`. The dispatcher persists
-    /// this on the journal row.
+    /// `content` blocks on inbound `user_message` post-Step-5c. The
+    /// dispatcher uses [`derive_legacy_journal_view`] to project this
+    /// into the legacy `text` + `attachments` columns the journal
+    /// stores. Stored as raw `Vec<serde_json::Value>` so the inspector
+    /// is agnostic to the inner block shape (text / image / future
+    /// block types).
+    #[serde(default)]
+    pub content: Option<Vec<serde_json::Value>>,
+
+    /// Derived `text` field for the journal. Post-Step-5c this is no
+    /// longer read directly off the payload; it's populated by
+    /// [`derive_legacy_journal_view`] (run by the dispatcher) from
+    /// `content`. The dispatcher persists this on the journal row.
     #[serde(default)]
     pub text: Option<String>,
 
-    /// `attachments` array on inbound `user_message`. The dispatcher
-    /// persists these onto the journal row as a JSON BLOB. Stored as
-    /// `Vec<serde_json::Value>` so the inspector doesn't need to know
-    /// the inner attachment shape.
+    /// Derived `attachments` array for the journal. Post-Step-5c this
+    /// is populated by [`derive_legacy_journal_view`] from the
+    /// `content` blocks — each `image` block becomes a wire-Attachment
+    /// JSON object (`filename: ""`, `media_type`, `content`). The
+    /// dispatcher persists these onto the journal row as a JSON BLOB.
     #[serde(default)]
     pub attachments: Option<Vec<serde_json::Value>>,
 }
@@ -54,8 +75,24 @@ impl InspectedPayload {
     /// for malformed JSON; the supervisor treats that as "pass
     /// through unchanged" so a corrupted byte stream doesn't
     /// short-circuit the dispatch routing logic.
+    ///
+    /// On a successful parse with `msg_type == Some("user_message")`
+    /// and `content` present, the legacy `text` + `attachments` view
+    /// is populated via [`derive_legacy_journal_view`] before
+    /// returning. Pre-5c payloads carrying raw `text` + `attachments`
+    /// (e.g. wire-shape echoes from a non-upgraded source) keep the
+    /// values they carry — the helper only fires when `content` is
+    /// the source.
     pub fn from_slice(payload: &[u8]) -> Option<Self> {
-        serde_json::from_slice(payload).ok()
+        let mut inspected: Self = serde_json::from_slice(payload).ok()?;
+        if inspected.msg_type.as_deref() == Some("user_message") {
+            if let Some(blocks) = inspected.content.as_ref() {
+                let (text, attachments) = derive_legacy_journal_view(blocks);
+                inspected.text = Some(text);
+                inspected.attachments = Some(attachments);
+            }
+        }
+        Some(inspected)
     }
 
     /// Convenience: borrow the type discriminator as a `&str` so
@@ -65,24 +102,161 @@ impl InspectedPayload {
     }
 }
 
+/// Project Anthropic-API content blocks into the journal's legacy
+/// `(text, attachments)` shape.
+///
+/// - `text` is the concatenation of every `text` block's `text`
+///   string in order. Block separators are not introduced; a
+///   `text/image/text` interleaving becomes `text || text` in the
+///   journal, losing the gap between them. Acceptable lossy
+///   projection: the journal's only consumer is the never-drop
+///   synthetic emit path (which fires on the rare gap between
+///   submit-ack and JSONL-write), and that path doesn't need
+///   interleaving fidelity.
+/// - `attachments` is one wire-shape `Attachment` JSON object per
+///   `image` block: `{filename: "", media_type, content}`. The
+///   `filename` field is left blank — the journal layer has no
+///   filename source post-Step-5c (the wire shape doesn't carry
+///   filenames; the legacy JSONL-replay path also hardcoded
+///   `filename: ""`).
+///
+/// Non-text, non-image blocks (e.g. future block types) are skipped
+/// silently. Pure on inputs; no allocation beyond the output.
+pub fn derive_legacy_journal_view(
+    blocks: &[serde_json::Value],
+) -> (String, Vec<serde_json::Value>) {
+    let mut text = String::new();
+    let mut attachments: Vec<serde_json::Value> = Vec::new();
+    for block in blocks {
+        let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if block_type == "text" {
+            if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
+                text.push_str(t);
+            }
+        } else if block_type == "image" {
+            let source = block.get("source");
+            let media_type = source
+                .and_then(|s| s.get("media_type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let data = source
+                .and_then(|s| s.get("data"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            attachments.push(serde_json::json!({
+                "filename": "",
+                "content": data,
+                "media_type": media_type,
+            }));
+        }
+        // Any other block type is silently skipped — defensive against
+        // future wire shapes.
+    }
+    (text, attachments)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // ── derive_legacy_journal_view — pure helper ────────────────────────────
+
+    #[test]
+    fn derive_legacy_text_only() {
+        let blocks = vec![
+            serde_json::json!({"type": "text", "text": "hello"}),
+            serde_json::json!({"type": "text", "text": " world"}),
+        ];
+        let (text, atts) = derive_legacy_journal_view(&blocks);
+        assert_eq!(text, "hello world");
+        assert!(atts.is_empty());
+    }
+
+    #[test]
+    fn derive_legacy_interleaved_text_image_text() {
+        // `text/image/text` collapses to `text || text` for the
+        // journal; the image becomes a wire-shape Attachment JSON
+        // object with `filename: ""`.
+        let blocks = vec![
+            serde_json::json!({"type": "text", "text": "before "}),
+            serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "iVBORw0KGgo=",
+                },
+            }),
+            serde_json::json!({"type": "text", "text": " after"}),
+        ];
+        let (text, atts) = derive_legacy_journal_view(&blocks);
+        assert_eq!(text, "before  after");
+        assert_eq!(atts.len(), 1);
+        assert_eq!(atts[0]["filename"], "");
+        assert_eq!(atts[0]["media_type"], "image/png");
+        assert_eq!(atts[0]["content"], "iVBORw0KGgo=");
+    }
+
+    #[test]
+    fn derive_legacy_image_only() {
+        let blocks = vec![
+            serde_json::json!({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/jpeg", "data": "AAA="},
+            }),
+        ];
+        let (text, atts) = derive_legacy_journal_view(&blocks);
+        assert_eq!(text, "");
+        assert_eq!(atts.len(), 1);
+        assert_eq!(atts[0]["media_type"], "image/jpeg");
+    }
+
+    #[test]
+    fn derive_legacy_empty_blocks() {
+        let (text, atts) = derive_legacy_journal_view(&[]);
+        assert_eq!(text, "");
+        assert!(atts.is_empty());
+    }
+
+    #[test]
+    fn derive_legacy_skips_unknown_block_types() {
+        // Defensive: a block type the inspector doesn't recognize is
+        // silently dropped — no panic, no journal corruption.
+        let blocks = vec![
+            serde_json::json!({"type": "text", "text": "keep me"}),
+            serde_json::json!({"type": "future_block", "data": "ignore"}),
+        ];
+        let (text, atts) = derive_legacy_journal_view(&blocks);
+        assert_eq!(text, "keep me");
+        assert!(atts.is_empty());
+    }
+
     // ── round-trip across the three intercept-relevant message types ─────────
 
     #[test]
-    fn inspects_user_message_with_text_and_attachments() {
+    fn inspects_user_message_with_content_blocks_derives_legacy_view() {
         let payload = br#"{
             "tug_session_id": "sess-abc",
             "type": "user_message",
-            "text": "hello",
-            "attachments": [{"path": "/tmp/foo.txt"}]
+            "content": [
+                {"type": "text", "text": "describe "},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "PNG"}},
+                {"type": "text", "text": " this"}
+            ]
         }"#;
         let i = InspectedPayload::from_slice(payload).expect("parses");
         assert_eq!(i.msg_type(), Some("user_message"));
-        assert_eq!(i.text.as_deref(), Some("hello"));
-        assert_eq!(i.attachments.as_deref().map(|a| a.len()), Some(1));
+        // Derived legacy text concatenates text blocks (no image
+        // separator); derived attachments carry one entry per image
+        // block, `filename: ""`.
+        assert_eq!(i.text.as_deref(), Some("describe  this"));
+        let atts = i.attachments.as_deref().expect("attachments derived");
+        assert_eq!(atts.len(), 1);
+        assert_eq!(atts[0]["media_type"], "image/png");
+        assert_eq!(atts[0]["content"], "PNG");
+        assert_eq!(atts[0]["filename"], "");
     }
 
     #[test]
@@ -101,6 +275,7 @@ mod tests {
         // Inbound-only fields stay None on outbound payloads.
         assert_eq!(i.text, None);
         assert_eq!(i.attachments, None);
+        assert_eq!(i.content, None);
     }
 
     #[test]
@@ -128,14 +303,18 @@ mod tests {
         // None of the user_message fields apply.
         assert_eq!(i.text, None);
         assert_eq!(i.attachments, None);
+        assert_eq!(i.content, None);
     }
 
     #[test]
     fn inspects_extra_unknown_fields_are_ignored() {
         // A future wire-shape addition (e.g. a new top-level field
         // tugcast doesn't yet know about) must not break the parse.
-        let payload =
-            br#"{"type":"user_message","text":"hi","attachments":[],"future_field":{"nested":42}}"#;
+        let payload = br#"{
+            "type": "user_message",
+            "content": [{"type": "text", "text": "hi"}],
+            "future_field": {"nested": 42}
+        }"#;
         let i = InspectedPayload::from_slice(payload).expect("parses");
         assert_eq!(i.msg_type(), Some("user_message"));
         assert_eq!(i.text.as_deref(), Some("hi"));
@@ -164,24 +343,6 @@ mod tests {
         assert_eq!(i.msg_type(), Some("user_message"));
         assert_eq!(i.text, None);
         assert_eq!(i.attachments, None);
-    }
-
-    // ── attachments shape is preserved as raw Value ─────────────────────────
-
-    #[test]
-    fn attachments_preserve_inner_shape_as_value() {
-        let payload = br#"{
-            "type": "user_message",
-            "text": "with files",
-            "attachments": [
-                {"filename": "a.txt", "content": "hello", "media_type": "text/plain"},
-                {"filename": "b.png", "content": "<base64>", "media_type": "image/png"}
-            ]
-        }"#;
-        let i = InspectedPayload::from_slice(payload).expect("parses");
-        let atts = i.attachments.expect("attachments present");
-        assert_eq!(atts.len(), 2);
-        assert_eq!(atts[0]["filename"], "a.txt");
-        assert_eq!(atts[1]["media_type"], "image/png");
+        assert_eq!(i.content, None);
     }
 }

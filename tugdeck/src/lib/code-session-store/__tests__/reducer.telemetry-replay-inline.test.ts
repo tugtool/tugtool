@@ -89,7 +89,7 @@ describe("handleTurnComplete — live path", () => {
   it("derives telemetry from reducer state and emits a record-telemetry effect", () => {
     const initial = fresh();
     const { state, effects } = applyAll(initial, [
-      { type: "send", text: "hello", atoms: [], wireText: "hello", attachments: [], turnKey: "tk1" },
+      { type: "send", text: "hello", atoms: [], content: [{ type: "text" as const, text: "hello" }], turnKey: "tk1" },
       {
         type: "assistant_text",
         msg_id: "msg-A",
@@ -136,7 +136,7 @@ describe("handleTurnComplete — live path", () => {
   it("persists interrupted turns too (telemetry block has real timing intervals even when cost is zero)", () => {
     const initial = fresh();
     const { effects } = applyAll(initial, [
-      { type: "send", text: "ask", atoms: [], wireText: "ask", attachments: [], turnKey: "tk1" },
+      { type: "send", text: "ask", atoms: [], content: [{ type: "text" as const, text: "ask" }], turnKey: "tk1" },
       // No cost_update — turn ends without one.
       { type: "turn_complete", msg_id: "msg-A", result: "error" },
     ]);
@@ -166,7 +166,7 @@ describe("handleTurnComplete — replay path", () => {
         // by the first content event below, not pre-bound by this
         // opener per [D14].
         text: "old turn",
-        attachments: [],
+        atoms: [],
         turnKey: "tk-replay",
       },
       {
@@ -239,7 +239,7 @@ describe("handleTurnComplete — replay path", () => {
         // no-content fallback (#spec-reducer-state rule 2) commits
         // `pendingTurn` regardless of the turn_complete's msg_id.
         text: "pre-persistence turn",
-        attachments: [],
+        atoms: [],
         turnKey: "tk-old",
       },
       {
@@ -282,7 +282,7 @@ describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
         // No `msg_id` per [D15] — no-content fallback commits
         // `pendingTurn` via #spec-reducer-state rule 2.
         text: "interrupted turn",
-        attachments: [],
+        atoms: [],
         turnKey: "tk-int",
       },
       {
@@ -316,7 +316,7 @@ describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
         // No `msg_id` per [D15] — no-content fallback commits
         // `pendingTurn` via #spec-reducer-state rule 2.
         text: "pre-field turn",
-        attachments: [],
+        atoms: [],
         turnKey: "tk-pre",
       },
       {
@@ -337,7 +337,7 @@ describe("handleTurnComplete — [replay-2] terminal-reason recovery", () => {
     // terminal reason so the NEXT resume can recover it.
     const initial = fresh();
     const { effects } = applyAll(initial, [
-      { type: "send", text: "hello", atoms: [], wireText: "hello", attachments: [], turnKey: "tk1" },
+      { type: "send", text: "hello", atoms: [], content: [{ type: "text" as const, text: "hello" }], turnKey: "tk1" },
       {
         type: "assistant_text",
         msg_id: "msg-A",

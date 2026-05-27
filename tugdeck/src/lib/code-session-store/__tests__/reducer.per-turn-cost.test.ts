@@ -56,7 +56,7 @@ function applyAll(
 describe("reducer — per-turn cost delta", () => {
   it("first turn: TurnCost token fields are this turn's raw cost_update usage", () => {
     const events: CodeSessionEvent[] = [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -90,7 +90,7 @@ describe("reducer — per-turn cost delta", () => {
   it("second turn: token fields are raw per-turn usage; totalCostUsd is the cumulative delta", () => {
     // Turn 1: usage=(3, 10, 6180, 12507), cumulative cost=0.045.
     const r1 = applyAll(fresh(), [
-      { type: "send", text: "first", atoms: [], wireText: "first", attachments: [], turnKey: "k1" },
+      { type: "send", text: "first", atoms: [], content: [{ type: "text" as const, text: "first" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -114,7 +114,7 @@ describe("reducer — per-turn cost delta", () => {
     ]);
     // Turn 2: per-turn usage=(4, 180, 6349, 31204); cumulative cost=0.060.
     const r2 = applyAll(r1.state, [
-      { type: "send", text: "second", atoms: [], wireText: "second", attachments: [], turnKey: "k2" },
+      { type: "send", text: "second", atoms: [], content: [{ type: "text" as const, text: "second" }], turnKey: "k2" },
       {
         type: "assistant_text",
         msg_id: "m2",
@@ -148,7 +148,7 @@ describe("reducer — per-turn cost delta", () => {
 
   it("a turn with NO cost_update commits with cost = all zeros", () => {
     const { effects } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -169,7 +169,7 @@ describe("reducer — per-turn cost delta", () => {
   it("costAtSubmit is snapshotted at handleSend, not at completion", () => {
     // Seed a lastCost from a prior turn.
     const seeded = applyAll(fresh(), [
-      { type: "send", text: "first", atoms: [], wireText: "first", attachments: [], turnKey: "k1" },
+      { type: "send", text: "first", atoms: [], content: [{ type: "text" as const, text: "first" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -194,7 +194,7 @@ describe("reducer — per-turn cost delta", () => {
 
     // New send. costAtSubmit should equal the seeded lastCost.
     const afterSend = applyAll(seeded, [
-      { type: "send", text: "next", atoms: [], wireText: "next", attachments: [], turnKey: "k2" },
+      { type: "send", text: "next", atoms: [], content: [{ type: "text" as const, text: "next" }], turnKey: "k2" },
     ]).state;
     expect(afterSend.costAtSubmit).not.toBeNull();
     expect(afterSend.costAtSubmit?.totalCostUsd).toBeCloseTo(0.045);

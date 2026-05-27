@@ -30,7 +30,7 @@
  */
 
 import type { AtomSegment } from "../tug-atom-img";
-import type { Attachment } from "../../protocol";
+import type { ContentBlock } from "../../protocol";
 import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
@@ -322,21 +322,26 @@ export interface CodeSessionState {
    * key with the queued send (rather than minting at drain time)
    * keeps the reducer pure.
    *
-   * `text` / `atoms` are the raw substrate form; `wireText` /
-   * `attachments` are the pre-flattened wire form built by
-   * `buildWirePayload` at the queueing `send`. Both halves travel
-   * together so the queue-flush at `handleTurnComplete` can construct
-   * both the next turn's `UserMessage` (substrate-side) and its
-   * `send-frame` effect (wire-side) without re-reading the
-   * bytes-store — keeping the reducer pure. Per
-   * [D01](../../../roadmap/tide-atoms.md#d01-ffc-substitution-at-submit)
-   * and [D02](../../../roadmap/tide-atoms.md#d02-image-attach-text-rest).
+   * `content` is the Anthropic-API content-block array forwarded on
+   * the `send-frame` effect at queue-flush time. `text` + `atoms`
+   * are the already-synthesized substrate (produced by
+   * `synthesizeUserMessageFromBlocks` at the queueing `send`) —
+   * synthesis happens once per submission regardless of whether the
+   * message goes active or queued. The bytes-store entries are also
+   * minted at synthesis time and persist across the queue gap (the
+   * bytes-store is per-card-mount).
+   *
+   * Same field names as {@link QueuedSend} (the public snapshot
+   * projection) so the snapshot can pass the array reference
+   * through without reshaping — preserves `Object.is` stability for
+   * `useSyncExternalStore` consumers ([L02]).
+   *
+   * Per [Step 5c](../../../roadmap/tide-atoms.md#step-5c).
    */
   queuedSends: Array<{
+    content: ContentBlock[];
     text: string;
     atoms: AtomSegment[];
-    wireText: string;
-    attachments: Attachment[];
     turnKey: string;
   }>;
   lastError: {
@@ -773,17 +778,13 @@ function handleSend(
           kind: "send-frame",
           msg: {
             type: "user_message",
-            // Wire-ready text — `U+FFFC` substituted with atom values
-            // by `buildWirePayload` in the store wrapper before
-            // dispatch. The substrate's `UserMessage.text` retains
-            // the raw form (with `U+FFFC`) so the transcript chip
-            // renderer (Step 5) can paint chips at the right
-            // positions. Per [D01].
-            text: event.wireText,
-            // Image-atom Attachments built by `buildWirePayload`
-            // from the per-card bytes-store. Order matches the atoms'
-            // document order. Per [D02].
-            attachments: event.attachments,
+            // Anthropic-API content-block array built by
+            // `buildWirePayload` in the store wrapper before
+            // dispatch. The substrate's `UserMessage` retains the
+            // synthesized `(text, atoms)` pair so the transcript chip
+            // renderer can paint chips at the original positions.
+            // Per [Step 5c].
+            content: event.content,
           },
         },
       ],
@@ -793,15 +794,16 @@ function handleSend(
   // Mid-turn send — enqueue. The queue is speculative: a single
   // entry flushes at `turn_complete(success)` via the single-tick
   // collapse in `handleTurnComplete`; `interrupt()` clears it.
-  // Both substrate-form and wire-form ride the entry so the flush
-  // can construct both halves without re-reading the bytes-store.
+  // The queued entry carries both the wire content blocks (for the
+  // send-frame at flush time) and the already-synthesized substrate
+  // (so the flush mints the new turn's `UserMessage` without
+  // re-running the synthesizer at the reducer layer).
   const queuedSends = [
     ...state.queuedSends,
     {
+      content: event.content,
       text: event.text,
       atoms: [...event.atoms],
-      wireText: event.wireText,
-      attachments: [...event.attachments],
       turnKey: event.turnKey,
     },
   ];
@@ -2194,6 +2196,11 @@ function handleTurnComplete(
   if (isSuccess && state.queuedSends.length > 0) {
     const [next, ...rest] = state.queuedSends;
     const flushedSubmitAt = Date.now();
+    // Mint the flushed turn's `UserMessage` directly from the
+    // queued entry's already-synthesized substrate — no re-synthesis
+    // at flush time. Bytes-store entries minted at the original
+    // queueing `send` stayed live across the queue gap (the
+    // bytes-store is per-card-mount). Per [Step 5c].
     const flushedUserMessage: UserMessage = {
       kind: "user_message",
       messageKey: userMessageKey(next.turnKey),
@@ -2257,12 +2264,11 @@ function handleTurnComplete(
           kind: "send-frame",
           msg: {
             type: "user_message",
-            // The queued entry already carries the wire-flattened
-            // form built at queue time by `buildWirePayload`. We
-            // pass it through verbatim — the reducer never re-reads
-            // the bytes-store. Per [D01] / [D02].
-            text: next.wireText,
-            attachments: next.attachments,
+            // The queued entry carries the wire content blocks built
+            // at queue time by `buildWirePayload`. We pass them
+            // through verbatim — the reducer never re-reads the
+            // bytes-store. Per [Step 5c].
+            content: next.content,
           },
         },
       ],
@@ -3318,17 +3324,17 @@ function handleAddUserMessage(
   if (state.phase !== "replaying") {
     return { state, effects: [] };
   }
-  const attachments: ReadonlyArray<AtomSegment> = (() => {
-    const raw = event.attachments;
-    return Array.isArray(raw) ? (raw as ReadonlyArray<AtomSegment>) : [];
-  })();
+  // The store wrapper has already walked the inbound `content` blocks
+  // through `synthesizeUserMessageFromBlocks` and dispatches the
+  // substrate `(text, atoms)` pair on the event. The reducer trusts
+  // the contract — no shape check, no fallback path. Per [Step 5c].
   const now = Date.now();
   const userMessage: UserMessage = {
     kind: "user_message",
     messageKey: userMessageKey(event.turnKey),
     createdAt: now,
     text: event.text,
-    attachments,
+    attachments: event.atoms,
     submitAt: now,
   };
   return {

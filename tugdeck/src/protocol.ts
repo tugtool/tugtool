@@ -265,24 +265,37 @@ export function encodeCodeInput(msg: object, tugSessionId: string): ArrayBuffer 
 }
 
 /**
- * Inline attachment payload — the wire shape `tugcode/src/types.ts`'s
- * `Attachment` mirrors. Carries one image (`media_type: "image/png"`,
- * `"image/jpeg"`, `"image/gif"`, `"image/webp"`) or a `text/*` source
- * already decoded as a string. tugcode's `buildContentBlocks`
- * dispatches on `media_type` to build the matching Anthropic content
- * block.
+ * Anthropic content-block wire shape — the API-native form of one
+ * message's body, as an ordered array of text + image blocks.
  *
- * Per [Spec S01](roadmap/tide-atoms.md#s01-attachment-wire-type) — the
- * snake_case field names match the wire / Anthropic API verbatim, not
- * the camelCase used internally on `AttachmentRecord`.
+ * Carried verbatim on the `user_message` IPC frame post-Step-5c.
+ * Tugdeck's `buildWirePayload` emits interleaved blocks honoring the
+ * original atom positions in the substrate; tugcode forwards the array
+ * straight to the Anthropic SDK with no construction step.
+ *
+ * Per [Spec S01](roadmap/tide-atoms.md#s01-attachment-wire-type)
+ * (retired wire-shape `Attachment`) and [Step 5c](roadmap/tide-atoms.md#step-5c).
  */
-export interface Attachment {
-  /** User-visible label; round-trips through the journal + JSONL. */
-  filename: string;
-  /** Base64 for binary, raw text for text/*. */
-  content: string;
-  /** RFC 6838 media type. */
+export type ContentBlock = ContentBlockText | ContentBlockImage;
+
+export interface ContentBlockText {
+  type: "text";
+  /** Raw text — atoms with no associated bytes substitute their value
+   *  into this run; `U+FFFC` is not emitted. */
+  text: string;
+}
+
+export interface ContentBlockImage {
+  type: "image";
+  source: ContentBlockImageSourceBase64;
+}
+
+export interface ContentBlockImageSourceBase64 {
+  type: "base64";
+  /** RFC 6838 media type — `image/png`, `image/jpeg`, etc. */
   media_type: string;
+  /** Base64-encoded image bytes (no `data:` prefix). */
+  data: string;
 }
 
 /**
@@ -292,7 +305,7 @@ export interface Attachment {
  * so later phases can extend without re-opening the union.
  */
 export type InboundMessage =
-  | { type: "user_message"; text: string; attachments: Attachment[] }
+  | { type: "user_message"; content: ContentBlock[] }
   | { type: "interrupt" }
   | {
       type: "tool_approval";

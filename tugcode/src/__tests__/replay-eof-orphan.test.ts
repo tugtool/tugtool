@@ -114,7 +114,7 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
 
     // Two cycles: the real turn + the flushed trailing orphan.
     expect(userReplays).toHaveLength(2);
-    expect(userReplays[1].text).toBe("one more thing");
+    expect((userReplays[1].content[0] as any).text).toBe("one more thing");
 
     // The orphan's synthesized opener id rides on the turn_complete
     // frame per [D13] — `add_user_message` carries no `msg_id`
@@ -176,7 +176,7 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
     const userReplays = addUserMessagesOf(out);
     const turnCompletes = turnCompletesOf(out);
     expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].text).toBe("did anyone hear me");
+    expect((userReplays[0].content[0] as any).text).toBe("did anyone hear me");
     // The synthesized opener id rides only on the turn_complete frame
     // per [D13] — `add_user_message` carries no `msg_id` ([D15]).
     // The `u-` prefix marks a user-text opener's synthesized id.
@@ -234,8 +234,8 @@ describe("translateJsonlSession — [W2] EOF orphan flush", () => {
 
     const userReplays = addUserMessagesOf(out);
     expect(userReplays).toHaveLength(2);
-    expect(userReplays[0].text).toBe("first prompt");
-    expect(userReplays[1].text).toBe("second prompt");
+    expect((userReplays[0].content[0] as any).text).toBe("first prompt");
+    expect((userReplays[1].content[0] as any).text).toBe("second prompt");
     // Per [D15], `add_user_message` carries no `msg_id`; correlation
     // (cycle vs orphan) reads off the matching `turn_complete` above.
 
@@ -319,8 +319,8 @@ describe("translateJsonlSession — [W1] clean-terminal recognition", () => {
 
     const userReplays = addUserMessagesOf(out);
     expect(userReplays).toHaveLength(2);
-    expect(userReplays[0].text).toBe("first");
-    expect(userReplays[1].text).toBe("second");
+    expect((userReplays[0].content[0] as any).text).toBe("first");
+    expect((userReplays[1].content[0] as any).text).toBe("second");
     // Per [D15], `add_user_message` carries no `msg_id`; the
     // turn↔msg correlation reads off the matching `turn_complete`.
     const turnCompletes = turnCompletesOf(out);

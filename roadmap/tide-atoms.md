@@ -1379,88 +1379,88 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 
 **Tugdeck wire generation:**
 
-- [ ] **5c.a — `ContentBlock` types.** Define `ContentBlock` union in `protocol.ts`; replace `Attachment` exports. Type-only change; consumers compile against the new shape.
-- [ ] **5c.b — `buildWirePayload` refactor.** Return `{ content: ContentBlock[] }`. Walker emits interleaved blocks; file atoms substitute, image atoms become blocks. Adjacent text coalesces. Update [Spec S03](#s03-build-wire-payload).
-- [ ] **5c.c — Wire frame retyping.** `UserMessageWireFrame` carries `content`. The frame builder in the WS-send wrapper passes `event.content` through.
+- [x] **5c.a — `ContentBlock` types.** Define `ContentBlock` union in `protocol.ts`; replace `Attachment` exports. Type-only change; consumers compile against the new shape.
+- [x] **5c.b — `buildWirePayload` refactor.** Return `{ content: ContentBlock[] }`. Walker emits interleaved blocks; file atoms substitute, image atoms become blocks. Adjacent text coalesces. Update [Spec S03](#s03-build-wire-payload).
+- [x] **5c.c — Wire frame retyping.** `UserMessageWireFrame` carries `content`. The frame builder in the WS-send wrapper passes `event.content` through.
 
 **Tugcast (Rust) — inspector + journal projection:**
 
-- [ ] **5c.d — Inspector `content` field.** `InspectedPayload` parses `content` from the inbound `user_message` payload. Existing `text` + `attachments` fields stay typed as today; their populated values come from `derive_legacy_journal_view(content)`.
-- [ ] **5c.e — `derive_legacy_journal_view` helper.** Pure function in `payload_inspector.rs`. Takes content blocks; returns `(text: String, attachments: Vec<serde_json::Value>)`. Text concatenates the text-block contents; attachments reshape each image block into the wire-shape `{filename, content, media_type}` (filename derived from… we have nothing to derive from here at the inspector layer — leave blank, matching the existing JSONL-replay path's hardcoded `filename: ""`).
-- [ ] **5c.f — Supervisor intercept unchanged.** `agent_supervisor.rs:dispatch_one`'s `user_message` intercept consumes `inspected.text` + `inspected.attachments` (now derived) for `insert_pending_turn`. Confirm pass-through forwarding still hands `content` to tugcode unchanged.
+- [x] **5c.d — Inspector `content` field.** `InspectedPayload` parses `content` from the inbound `user_message` payload. Existing `text` + `attachments` fields stay typed as today; their populated values come from `derive_legacy_journal_view(content)`.
+- [x] **5c.e — `derive_legacy_journal_view` helper.** Pure function in `payload_inspector.rs`. Takes content blocks; returns `(text: String, attachments: Vec<serde_json::Value>)`. Text concatenates the text-block contents; attachments reshape each image block into the wire-shape `{filename, content, media_type}` (filename derived from… we have nothing to derive from here at the inspector layer — leave blank, matching the existing JSONL-replay path's hardcoded `filename: ""`).
+- [x] **5c.f — Supervisor intercept unchanged.** `agent_supervisor.rs:dispatch_one`'s `user_message` intercept consumes `inspected.text` + `inspected.attachments` (now derived) for `insert_pending_turn`. Confirm pass-through forwarding still hands `content` to tugcode unchanged.
 
 **Tugcode pass-through + synthetic:**
 
-- [ ] **5c.g — IPC types.** `UserMessage` / `AddUserMessage` carry `content`.
-- [ ] **5c.h — `user_message` handler.** Pass `content` to the SDK directly; remove the text+attachments→content-blocks construction.
-- [ ] **5c.i — Replay emit.** `handleUserEntry` emits `{ content: blocks }`; remove the concat-text-extract-images loop. Empty-text / empty-attachments edge cases stay handled at the synthesizer layer downstream.
-- [ ] **5c.j — Never-drop synthetic.** `injectPendingRowSynthetics` (session.ts) emits `{ content: ContentBlock[] }`. Add `buildContentBlocksFromLegacyJournal(text, attachments): ContentBlock[]` — flat (all images first, then text) — used here. Acceptable interleaving loss for the never-drop gap-bridge path.
+- [x] **5c.g — IPC types.** `UserMessage` / `AddUserMessage` carry `content`.
+- [x] **5c.h — `user_message` handler.** Pass `content` to the SDK directly; remove the text+attachments→content-blocks construction.
+- [x] **5c.i — Replay emit.** `handleUserEntry` emits `{ content: blocks }`; remove the concat-text-extract-images loop. Empty-text / empty-attachments edge cases stay handled at the synthesizer layer downstream.
+- [x] **5c.j — Never-drop synthetic.** `injectPendingRowSynthetics` (session.ts) emits `{ content: ContentBlock[] }`. Add `buildContentBlocksFromLegacyJournal(text, attachments): ContentBlock[]` — flat (all images first, then text) — used here. Acceptable interleaving loss for the never-drop gap-bridge path.
 
 **Tugdeck synthesis + decoration:**
 
-- [ ] **5c.k — `synthesizeUserMessageFromBlocks` helper.** Shared between live and replay. Optional `atomIdAt(imageBlockIndex)` resolver in the options bag — live path supplies it from the editor's substrate; replay path omits it. Bakes thumbnails per image block (`bakeThumbnail` invocation lands here, not in commit path). Pure-on-inputs (modulo bytes-store side effect).
-- [ ] **5c.l — `handleSend` integration.** Calls `buildWirePayload` (now returns `{content, atomIdAt}`); sends the frame with `content`; calls synthesizer with `wirePayload.atomIdAt`. Stores the active-turn `UserMessage` with the synthesized substrate, or builds the queued-send entry `{content, syntheticText, syntheticAtoms, turnKey}` when the message goes to the queue.
-- [ ] **5c.m — `handleAddUserMessage` integration.** Calls synthesizer on `event.content` with no resolver. Removes the loose `event.attachments as ReadonlyArray<AtomSegment>` cast outright. No fallback path.
-- [ ] **5c.n — `handleTurnComplete` queue-flush integration.** When `state.queuedSends.length > 0` at a successful `turn_complete`, take the first queued entry; send its `content` to claude; mint the new active turn's `UserMessage` directly from `syntheticText` + `syntheticAtoms` (no re-synthesis). Bytes-store entries from the original submit time stay live across the gap.
-- [ ] **5c.o — `messageNumber` prop on `TugAtomTextBody`.** Threads through to the chip label. Default behavior (no prop set) unchanged. Extract `pad4` if a shared helper isn't already present.
-- [ ] **5c.p — `UserMessageCell` wiring.** Passes `messageNumber={index + 1}` to `TugAtomTextBody`.
+- [x] **5c.k — `synthesizeUserMessageFromBlocks` helper.** Shared between live and replay. Optional `atomIdAt(imageBlockIndex)` resolver in the options bag — live path supplies it from the editor's substrate; replay path omits it. Bakes thumbnails per image block (`bakeThumbnail` invocation lands here, not in commit path). Pure-on-inputs (modulo bytes-store side effect).
+- [x] **5c.l — `handleSend` integration.** Calls `buildWirePayload` (now returns `{content, atomIdAt}`); sends the frame with `content`; calls synthesizer with `wirePayload.atomIdAt`. Stores the active-turn `UserMessage` with the synthesized substrate, or builds the queued-send entry `{content, syntheticText, syntheticAtoms, turnKey}` when the message goes to the queue.
+- [x] **5c.m — `handleAddUserMessage` integration.** Calls synthesizer on `event.content` with no resolver. Removes the loose `event.attachments as ReadonlyArray<AtomSegment>` cast outright. No fallback path.
+- [x] **5c.n — `handleTurnComplete` queue-flush integration.** When `state.queuedSends.length > 0` at a successful `turn_complete`, take the first queued entry; send its `content` to claude; mint the new active turn's `UserMessage` directly from `syntheticText` + `syntheticAtoms` (no re-synthesis). Bytes-store entries from the original submit time stay live across the gap.
+- [x] **5c.o — `messageNumber` prop on `TugAtomTextBody`.** Threads through to the chip label. Default behavior (no prop set) unchanged. Extract `pad4` if a shared helper isn't already present.
+- [x] **5c.p — `UserMessageCell` wiring.** Passes `messageNumber={index + 1}` to `TugAtomTextBody`.
 
 #### Tests {#step-5c-tests}
 
 **Synthesizer (pure, bun:test):**
 
-- [ ] `synthesizeUserMessageFromBlocks([]) → { text: "", atoms: [] }`.
-- [ ] `synthesizeUserMessageFromBlocks([{text: "hello"}]) → { text: "hello", atoms: [] }`.
-- [ ] `synthesizeUserMessageFromBlocks([{text: "a "}, {image}, {text: " b"}]) → { text: "a ￼ b", atoms: [{label: "image-1", id: <uuid>, …}] }`. Bytes land in the per-call bytes-store under `id` with `thumbnailDataUrl` populated.
-- [ ] `synthesizeUserMessageFromBlocks(consecutive images) → { text: "￼￼", atoms: [image-1, image-2] }`.
-- [ ] `synthesizeUserMessageFromBlocks(image-only) → { text: "￼", atoms: [image-1] }`.
-- [ ] **`atomIdAt` resolver honored (live path):** calling with `atomIdAt: (i) => ["editor-id-A", "editor-id-B"][i]` produces atoms with ids `editor-id-A` and `editor-id-B`; bytes-store entries land under those same ids. Confirms the live path reuses editor ids and doesn't orphan bytes-store entries.
-- [ ] **No resolver = fresh UUIDs (replay path):** calling with no `atomIdAt` produces atoms with freshly minted UUIDs; bytes-store entries under those UUIDs. Confirms the replay path operates without an editor-substrate dependency.
-- [ ] **Resolver returns `undefined` for an index → fresh UUID for that block:** mixed mode (some atoms have editor ids, some don't — defensive against partially-populated editor substrates) works without crashing.
-- [ ] `synthesizeUserMessageFromBlocks` is byte-identical on two calls with the same inputs **and same resolver** (the substrate's atom ids match deterministically); without a resolver, the rest of the substrate is byte-identical but UUIDs differ (documented seam, not a bug).
-- [ ] **Thumbnail bake happens during synthesis:** bytes-store entries from the synthesizer carry a populated `thumbnailDataUrl` (matches a 256-px-max-edge data URL shape). Pin the size + the `data:image/…;base64,…` prefix.
+- [x] `synthesizeUserMessageFromBlocks([]) → { text: "", atoms: [] }`.
+- [x] `synthesizeUserMessageFromBlocks([{text: "hello"}]) → { text: "hello", atoms: [] }`.
+- [x] `synthesizeUserMessageFromBlocks([{text: "a "}, {image}, {text: " b"}]) → { text: "a ￼ b", atoms: [{label: "image-1", id: <uuid>, …}] }`. Bytes land in the per-call bytes-store under `id` with `thumbnailDataUrl` populated.
+- [x] `synthesizeUserMessageFromBlocks(consecutive images) → { text: "￼￼", atoms: [image-1, image-2] }`.
+- [x] `synthesizeUserMessageFromBlocks(image-only) → { text: "￼", atoms: [image-1] }`.
+- [x] **`atomIdAt` resolver honored (live path):** calling with `atomIdAt: (i) => ["editor-id-A", "editor-id-B"][i]` produces atoms with ids `editor-id-A` and `editor-id-B`; bytes-store entries land under those same ids. Confirms the live path reuses editor ids and doesn't orphan bytes-store entries.
+- [x] **No resolver = fresh UUIDs (replay path):** calling with no `atomIdAt` produces atoms with freshly minted UUIDs; bytes-store entries under those UUIDs. Confirms the replay path operates without an editor-substrate dependency.
+- [x] **Resolver returns `undefined` for an index → fresh UUID for that block:** mixed mode (some atoms have editor ids, some don't — defensive against partially-populated editor substrates) works without crashing.
+- [x] `synthesizeUserMessageFromBlocks` is byte-identical on two calls with the same inputs **and same resolver** (the substrate's atom ids match deterministically); without a resolver, the rest of the substrate is byte-identical but UUIDs differ (documented seam, not a bug).
+- [x] **Thumbnail bake happens during synthesis:** bytes-store entries from the synthesizer carry a populated `thumbnailDataUrl` (matches a 256-px-max-edge data URL shape). Pin the size + the `data:image/…;base64,…` prefix.
 
 **`buildWirePayload` round-trip (pure, bun:test):**
 
-- [ ] `buildWirePayload(text="a￼b", atoms=[fileAtom]).content === [{text: "a/path/to/file.txtb"}]` — file atom substituted, single text block.
-- [ ] `buildWirePayload(text="a￼b", atoms=[imageAtom-with-bytes]).content === [{text: "a"}, {image: …}, {text: "b"}]` — image becomes its own block, surrounding text intact.
-- [ ] **`buildWirePayload`'s `atomIdAt(0)` returns the editor atom's id** for an image block that emerged from an atom with bytes in the store.
-- [ ] **`buildWirePayload`'s `atomIdAt` correctly skips bytes-less atoms.** Editor has two image atoms; only one has bytes in the store. `content` has one image block; `atomIdAt(0)` returns the bytes-bearing atom's id (not the other one's). Pins the no-mismatch promise.
-- [ ] `buildWirePayload` over `(text, atoms)` → `synthesizeUserMessageFromBlocks(content, store, { atomIdAt: wirePayload.atomIdAt })` → a substrate where image-atom positions are preserved, image-atom labels are `image-N`, **and atom ids are reused from the editor** (no orphans).
+- [x] `buildWirePayload(text="a￼b", atoms=[fileAtom]).content === [{text: "a/path/to/file.txtb"}]` — file atom substituted, single text block.
+- [x] `buildWirePayload(text="a￼b", atoms=[imageAtom-with-bytes]).content === [{text: "a"}, {image: …}, {text: "b"}]` — image becomes its own block, surrounding text intact.
+- [x] **`buildWirePayload`'s `atomIdAt(0)` returns the editor atom's id** for an image block that emerged from an atom with bytes in the store.
+- [x] **`buildWirePayload`'s `atomIdAt` correctly skips bytes-less atoms.** Editor has two image atoms; only one has bytes in the store. `content` has one image block; `atomIdAt(0)` returns the bytes-bearing atom's id (not the other one's). Pins the no-mismatch promise.
+- [x] `buildWirePayload` over `(text, atoms)` → `synthesizeUserMessageFromBlocks(content, store, { atomIdAt: wirePayload.atomIdAt })` → a substrate where image-atom positions are preserved, image-atom labels are `image-N`, **and atom ids are reused from the editor** (no orphans).
 
 **Render-time label (bun:test, pure-logic):**
 
-- [ ] `TugAtomTextBody` with `messageNumber={1}` and a single image atom labeled `image-1` → walks to a chip whose internal label/alt is `#0001-image-1`. Pin the substring on the rendered `<img alt>` and on the SVG text content.
-- [ ] `TugAtomTextBody` with `messageNumber` unset → chip label is the atom's stored `label` verbatim (no `#NNNN-` prefix). This is the editor-rendering case.
+- [x] `TugAtomTextBody` with `messageNumber={1}` and a single image atom labeled `image-1` → walks to a chip whose label is `#0001-image-1`. Pinned via `decorateChipLabel(atom, 1) === "#0001-image-1"` — the pure decoration helper extracted from the component body. (The original "pin the SVG text content" half would require DOM rendering, which we can't unit-test post-happy-dom; the formula is the same single line, so pinning the helper covers the contract.)
+- [x] `TugAtomTextBody` with `messageNumber` unset → chip label is the atom's stored `label` verbatim (no `#NNNN-` prefix). Pinned via `decorateChipLabel(atom, undefined) === atom.label`.
 
 **Integration (pure-logic over event/state, bun:test):**
 
-- [ ] `handleSend` with a substrate containing one image atom → `UserMessage` lands on `pendingTurn` with synthesized substrate (`label: "image-1"`); wire frame's `content` carries the interleaved blocks; bytes-store has the image entry **under the editor's original atom id** (not a freshly-minted UUID) — confirming the live path's resolver is wired correctly.
-- [ ] `handleSend` with a substrate containing two image atoms → bytes-store entries land under the two editor ids (no orphans).
-- [ ] `handleAddUserMessage` with an `add_user_message` event carrying content blocks → `UserMessage` substrate matches `handleSend`'s output for the same content blocks (modulo UUID values, which are intentionally fresh on the replay path).
-- [ ] `handleSend` while a turn is in-flight → produces a queued-send entry of shape `{content, syntheticText, syntheticAtoms, turnKey}`. Synthesis happens once at submit (bytes-store entries land at this moment), not deferred to flush.
-- [ ] `handleTurnComplete` with a non-empty queue → flushes the first queued entry, sends its `content` to claude, mints the new active turn's `UserMessage` directly from the queued entry's `syntheticText` + `syntheticAtoms` (no re-synthesis at flush time, bytes-store entries unchanged).
+- [x] `handleSend` with a substrate containing one image atom → `UserMessage` lands on `pendingTurn` with synthesized substrate (`label: "image-1"`); wire frame's `content` carries the interleaved blocks; bytes-store has the image entry **under the editor's original atom id** (not a freshly-minted UUID) — confirming the live path's resolver is wired correctly. (`code-session-store.step-5c.test.ts`)
+- [x] `handleSend` with a substrate containing two image atoms → bytes-store entries land under the two editor ids (no orphans).
+- [x] `handleAddUserMessage` with an `add_user_message` event carrying content blocks → `UserMessage` substrate matches `handleSend`'s output for the same content blocks (modulo UUID values, which are intentionally fresh on the replay path).
+- [x] `handleSend` while a turn is in-flight → produces a queued-send entry of shape `{content, text, atoms, turnKey}`. Synthesis happens once at submit (bytes-store entries land at this moment), not deferred to flush.
+- [x] `handleTurnComplete` with a non-empty queue → flushes the first queued entry, sends its `content` to claude, mints the new active turn's `UserMessage` directly from the queued entry's `text` + `atoms` (no re-synthesis at flush time, bytes-store entries unchanged).
 
 **Tugcast (Rust, cargo nextest):**
 
-- [ ] `derive_legacy_journal_view([{text: "hello"}, {image}, {text: " world"}]) → ("hello world", [<image-attachment-json>])` — text concatenates, image reshapes to wire-Attachment JSON with `filename: ""`, `media_type` + `content` from the block's source.
-- [ ] `InspectedPayload::from_slice` with a `content`-only payload populates `text` + `attachments` via the derive helper. (Integration with the existing inspector tests — extend, don't replace.)
-- [ ] `agent_supervisor.dispatch_one` integration: an inbound `user_message` frame with `content` blocks results in a journal row whose `user_text` matches the derived text and `user_attachments` matches the derived wire-shape array.
+- [x] `derive_legacy_journal_view([{text: "hello"}, {image}, {text: " world"}]) → ("hello world", [<image-attachment-json>])` — text concatenates, image reshapes to wire-Attachment JSON with `filename: ""`, `media_type` + `content` from the block's source.
+- [x] `InspectedPayload::from_slice` with a `content`-only payload populates `text` + `attachments` via the derive helper. (Integration with the existing inspector tests — extend, don't replace.)
+- [x] `agent_supervisor.dispatch_one` integration: an inbound `user_message` frame with `content` blocks results in a journal row whose `user_text` matches the derived text and `user_attachments` matches the derived wire-shape array. (`dispatch_one_derives_journal_row_from_content_blocks` in `agent_supervisor.rs` — and pins that the forwarded payload is byte-identical to the input, no content-block reshaping by the dispatcher.)
 
 **Tugcode never-drop synthetic (bun:test):**
 
-- [ ] `buildContentBlocksFromLegacyJournal("hello", [imageAttachment]) → [{image…}, {text: "hello"}]` — flat all-images-first shape. Pin the shape; document the interleaving loss as accepted for the gap-bridge path.
-- [ ] `injectPendingRowSynthetics` with one pending row → emits one synthetic `add_user_message` frame whose `content` matches the legacy-journal builder's output for that row. The synthetic frame's shape matches the JSONL-replay path's shape (modulo interleaving fidelity, which only the JSONL path preserves).
+- [x] `buildContentBlocksFromLegacyJournal("hello", [imageAttachment])` — flat shape (text-first-then-attachments). Pinned by the renamed-from-`buildContentBlocks` tests in `session.test.ts`. The plan's earlier spec said "images first" but the actual shape is text-first; documented this in the helper's revised docstring.
+- [x] `injectPendingRowSynthetics` with one pending row → emits one synthetic `add_user_message` frame whose `content` matches the legacy-journal builder's output for that row. (`replay-pending-row-injection.test.ts` — strengthened the `attachments round-trip` test to pin the exact content-block shape via `buildContentBlocksFromLegacyJournal`.)
 
 #### Checkpoint {#step-5c-checkpoint}
 
-- [ ] `cd tugdeck && bun test` — full suite green; new synthesizer + label-decoration tests pass.
-- [ ] `cd tugdeck && bun run check` — tsc clean. The retyped `Attachment` → `ContentBlock` migration surfaces every consumer that wasn't updated.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
-- [ ] `cd tugcode && bun test` — pass-through handlers + replay emit green.
-- [ ] `cd tugrust && cargo nextest run --workspace` — no Rust changes expected, but verify tugcast's frame-forwarding sees no schema break.
-- [ ] `test-23-image-attachment.jsonl` — byte-identical pre/post (the wire shape claude sees is unchanged at the Anthropic API level — content blocks were always the API shape, we just stopped flattening them on our side).
-- [ ] Manual (Tug.app): drop a `raphael.jpeg`, type "describe", drop a `cat.png`, type "and this one", submit. Transcript shows: `describe #0001-image-1 and this one #0001-image-2` (chips at original positions). Reload the app. Transcript shows identical labels and chip positions, restored from JSONL.
+- [x] `cd tugdeck && bun test` — full suite green; new synthesizer + label-decoration tests pass.
+- [x] `cd tugdeck && bun run check` — tsc clean. The retyped `Attachment` → `ContentBlock` migration surfaces every consumer that wasn't updated.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [x] `cd tugcode && bun test` — pass-through handlers + replay emit green.
+- [x] `cd tugrust && cargo nextest run --workspace` — no Rust changes expected, but verify tugcast's frame-forwarding sees no schema break.
+- [x] `test-23-image-attachment.jsonl` — Anthropic API-shape unchanged (content blocks were always the API shape). The fixture is a CODE_OUTPUT stream-json fixture, not the inbound wire-to-claude; the byte-identical claim as originally written conflated the two layers. What we actually verify: (a) `dispatch_one_inserts_journal_row_without_augmenting_frame` pins that the dispatcher forwards the inbound `user_message` frame byte-unchanged (pre-Step-5c shape) and `dispatch_one_derives_journal_row_from_content_blocks` pins the same invariant for the post-Step-5c content-block shape; (b) tugcode's `handleUserMessage` writes `{role:"user", content}` to claude's stdin verbatim — the inbound content blocks ARE the API shape. Interleaving differs vs. pre-5c by design (was: text-first-then-images; now: original interleaving preserved), which is the win, not a regression — so a literal byte-comparison vs. the pre-state fixture would fail by intent. The relevant invariant — no construction reshaping by tugcode — is pinned in `handleUserMessage`'s test that decodes the bytes written to stdin.
+- [x] Manual (Tug.app): drop a `raphael.jpeg`, type "describe", drop a `cat.png`, type "and this one", submit. Transcript shows: `describe #0001-image-1 and this one #0001-image-2` (chips at original positions). Reload the app. Transcript shows identical labels and chip positions, restored from JSONL.
 
 #### Out of scope {#step-5c-out-of-scope}
 

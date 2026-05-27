@@ -23,8 +23,7 @@ describe("encodeCodeInputPayload / decodeCodeInputPayload", () => {
   it("round-trips a user_message frame", () => {
     const msg: InboundMessage = {
       type: "user_message",
-      text: "hello, claude",
-      attachments: [],
+      content: [{ type: "text", text: "hello, claude" }],
     };
     expect(roundTrip(msg)).toEqual({
       ...msg,
@@ -69,8 +68,7 @@ describe("encodeCodeInputPayload / decodeCodeInputPayload", () => {
   it("emits tug_session_id as the first JSON field for router parse order", () => {
     const msg: InboundMessage = {
       type: "user_message",
-      text: "x",
-      attachments: [],
+      content: [{ type: "text", text: "x" }],
     };
     const bytes = encodeCodeInputPayload(msg, TUG_SESSION_ID);
     const json = new TextDecoder().decode(bytes);

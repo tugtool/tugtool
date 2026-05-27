@@ -86,18 +86,18 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     expect(userReplays).toHaveLength(2);
 
     // Orphan goes first, with its own text.
-    expect(userReplays[0].text).toBe("hello");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("hello");
     // No msg_id on add_user_message per [D15]; correlation reads off
     // the matching turn_complete below.
 
     // The marker is NOT emitted as its own add_user_message — it's
     // a sentinel for the prior orphan, dropped from the wire.
     expect(
-      userReplays.some((m) => m.text === INTERRUPT_MARKER),
+      userReplays.some((m) => (((m as any).content?.[0]) as any)?.text === INTERRUPT_MARKER),
     ).toBe(false);
 
     // The marker is NOT concatenated onto the next submission.
-    expect(userReplays[1].text).toBe("what time is it?");
+    expect(((userReplays[1].content[0] ?? {}) as { text?: string }).text ?? "").toBe("what time is it?");
 
     // TWO turn_completes: orphan's (interrupted) + real's (success).
     // Identify the orphan by its synthesized opener-id pattern
@@ -134,8 +134,8 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(2);
-    expect(userReplays[0].text).toBe("first submission");
-    expect(userReplays[1].text).toBe("second submission");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("first submission");
+    expect(((userReplays[1].content[0] ?? {}) as { text?: string }).text ?? "").toBe("second submission");
     // No msg_id on add_user_message per [D15]; the real turn's
     // msg_id ("msg_real") rides on the matching turn_complete frame.
   });
@@ -159,7 +159,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     );
     expect(userReplays).toHaveLength(1);
     expect(turnCompletes).toHaveLength(1);
-    expect(userReplays[0].text).toBe("normal submission");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("normal submission");
     expect(turnCompletes[0].result).toBe("success");
   });
 
@@ -183,7 +183,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     );
     // Exactly one add_user_message (for the real submission).
     expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].text).toBe("what time is it?");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("what time is it?");
     expect(turnCompletes).toHaveLength(1);
   });
 
@@ -226,11 +226,11 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(2);
-    expect(userReplays[0].text).toBe("plan an investigation");
-    expect(userReplays[1].text).toBe("ok now do something else");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("plan an investigation");
+    expect(((userReplays[1].content[0] ?? {}) as { text?: string }).text ?? "").toBe("ok now do something else");
     // The marker text itself does not appear in any submission.
     for (const r of userReplays) {
-      expect(r.text.includes("[Request interrupted by user")).toBe(false);
+      expect(((r.content[0] as { text?: string } | undefined)?.text ?? "").includes("[Request interrupted by user")).toBe(false);
     }
   });
 
@@ -254,7 +254,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].text).toBe("[Request interrupted by user]");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("[Request interrupted by user]");
   });
 
   test("coincidental prefix in the middle of a longer message is NOT dropped", async () => {
@@ -275,6 +275,6 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(userReplays).toHaveLength(1);
-    expect(userReplays[0].text).toContain("[Request interrupted by user]");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text ?? "").toContain("[Request interrupted by user]");
   });
 });

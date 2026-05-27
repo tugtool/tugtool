@@ -93,7 +93,7 @@ describe("translateJsonlSession — orphan synthesis with NO content ([D13])", (
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(addUserMessages).toHaveLength(1);
-    expect(addUserMessages[0].text).toBe("did anyone hear me");
+    expect(((addUserMessages[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("did anyone hear me");
 
     const turnCompletes = out.filter(
       (m): m is TurnComplete => m.type === "turn_complete",
@@ -160,8 +160,8 @@ describe("translateJsonlSession — orphan synthesis with NO content ([D13])", (
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(addUserMessages).toHaveLength(2);
-    expect(addUserMessages[0].text).toBe("first");
-    expect(addUserMessages[1].text).toBe("second");
+    expect(((addUserMessages[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("first");
+    expect(((addUserMessages[1].content[0] ?? {}) as { text?: string }).text ?? "").toBe("second");
 
     const turnCompletes = out.filter(
       (m): m is TurnComplete => m.type === "turn_complete",
@@ -205,9 +205,17 @@ describe("translateJsonlSession — orphan synthesis with NO content ([D13])", (
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(addUserMessages).toHaveLength(1);
-    expect(addUserMessages[0].text).toBe("");
-    expect(addUserMessages[0].attachments).toHaveLength(1);
-    expect(addUserMessages[0].attachments[0].media_type).toBe("image/png");
+    // Post-Step-5c: image-only submission emits a single image
+    // content block (no text); the wire shape carries image bytes
+    // directly inside the block's `source`, not as a parallel
+    // attachments array.
+    expect(addUserMessages[0].content).toHaveLength(1);
+    const imageBlock = addUserMessages[0].content[0] as {
+      type: string;
+      source: { media_type: string; data: string };
+    };
+    expect(imageBlock.type).toBe("image");
+    expect(imageBlock.source.media_type).toBe("image/png");
 
     const turnCompletes = out.filter(
       (m): m is TurnComplete => m.type === "turn_complete",
@@ -246,7 +254,7 @@ describe("translateJsonlSession — orphan synthesis with NO content ([D13])", (
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     expect(addUserMessages).toHaveLength(2);
-    expect(addUserMessages[0].text).toBe("good question");
-    expect(addUserMessages[1].text).toBe("follow-up nobody saw");
+    expect(((addUserMessages[0].content[0] ?? {}) as { text?: string }).text ?? "").toBe("good question");
+    expect(((addUserMessages[1].content[0] ?? {}) as { text?: string }).text ?? "").toBe("follow-up nobody saw");
   });
 });

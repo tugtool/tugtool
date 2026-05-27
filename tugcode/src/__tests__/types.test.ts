@@ -25,7 +25,7 @@ import type {
 describe("types.ts type guards", () => {
   test("isInboundMessage discriminates valid messages", () => {
     expect(isInboundMessage({ type: "protocol_init", version: 1 })).toBe(true);
-    expect(isInboundMessage({ type: "user_message", text: "hi", attachments: [] })).toBe(true);
+    expect(isInboundMessage({ type: "user_message", content: [{ type: "text", text: "hi" }] })).toBe(true);
     expect(isInboundMessage({ type: "invalid_type" })).toBe(false);
     expect(isInboundMessage(null)).toBe(false);
     expect(isInboundMessage(undefined)).toBe(false);
@@ -44,7 +44,7 @@ describe("types.ts type guards", () => {
   });
 
   test("isUserMessage discriminates user_message", () => {
-    const msg = { type: "user_message" as const, text: "hello", attachments: [] };
+    const msg = { type: "user_message" as const, content: [{ type: "text" as const, text: "hello" }] };
     expect(isUserMessage(msg)).toBe(true);
     expect(isProtocolInit(msg)).toBe(false);
   });

@@ -52,7 +52,7 @@
 import type {
   AddUserMessage,
   AssistantText,
-  Attachment,
+  ContentBlock,
   ContentBlockStart,
   OutboundMessage,
   ReplayComplete,
@@ -840,8 +840,13 @@ function handleUserEntry(
   }
 
   const content = contentBlocks(rawContent);
+  // Submitted content blocks for the `add_user_message` frame —
+  // preserves interleaving (text / image / text / image …) verbatim
+  // from JSONL, which is Anthropic's canonical storage format. Per
+  // [Step 5c](roadmap/tide-atoms.md#step-5c).
+  const submittedContent: ContentBlock[] = [];
   const textParts: string[] = [];
-  const attachments: Attachment[] = [];
+  let hasImage = false;
   // First `tool_use_id` seen — used to bind the entry-level
   // `toolUseResult` payload (when present) to its initiating
   // tool_use on the `tool_use_structured` IPC frame. Mirrors
@@ -859,6 +864,7 @@ function handleUserEntry(
     if (blockType === "text") {
       if (typeof block.text === "string") {
         textParts.push(block.text);
+        submittedContent.push({ type: "text", text: block.text });
       }
       continue;
     }
@@ -889,11 +895,11 @@ function handleUserEntry(
       const mediaType =
         typeof source.media_type === "string" ? source.media_type : "image/png";
       const data = typeof source.data === "string" ? source.data : "";
-      attachments.push({
-        filename: "",
-        content: data,
-        media_type: mediaType,
+      submittedContent.push({
+        type: "image",
+        source: { type: "base64", media_type: mediaType, data },
       });
+      hasImage = true;
       continue;
     }
     if (blockType.length === 0) {
@@ -947,14 +953,14 @@ function handleUserEntry(
   // (or EOF) handles any open-turn closure naturally — under [D13]'s
   // model the marker is a non-event, not the orphan trigger it was
   // under the cycle-pairing apparatus.
-  if (isInterruptMarkerEntry(entry, entryText) && attachments.length === 0) {
+  if (isInterruptMarkerEntry(entry, entryText) && !hasImage) {
     return out;
   }
 
   // No opener content: a tool_result-only entry (mid-turn) or a
   // benign empty user entry. Return whatever tool_result frames we
   // gathered (possibly none); do NOT touch openTurnMsgId.
-  if (entryText.length === 0 && attachments.length === 0) {
+  if (submittedContent.length === 0) {
     return out;
   }
 
@@ -962,11 +968,13 @@ function handleUserEntry(
   // add_user_message. Multiple consecutive user-text entries with no
   // assistant cycle between them are structural orphans — each gets
   // its own committed turn rather than a concatenated submission.
+  // Post-Step-5c: emit the interleaved content blocks verbatim from
+  // JSONL; tugdeck's wrapper walks them through
+  // `synthesizeUserMessageFromBlocks` to produce the substrate.
   out.push(...emitOrphanIfOpen(ctx));
   out.push({
     type: "add_user_message",
-    text: entryText,
-    attachments,
+    content: submittedContent,
     ipc_version: IPC_VERSION,
   });
   ctx.openTurnMsgId = mintOpenerId(ctx, "u");
@@ -1074,10 +1082,13 @@ function handleAssistantEntry(
   // looks up scratch by pendingTurn.turnKey) and the turn would never
   // commit.
   if (ctx.openTurnMsgId === null) {
+    // Empty-content opener — the substrate's `UserMessage` substrate
+    // walker (`synthesizeUserMessageFromBlocks`) produces `(text: "",
+    // atoms: [])` from a zero-block content array, which is exactly
+    // the "no user prompt to render" semantics we want here.
     const synthOpener: AddUserMessage = {
       type: "add_user_message",
-      text: "",
-      attachments: [],
+      content: [],
       ipc_version: IPC_VERSION,
     };
     out.push(synthOpener);

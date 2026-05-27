@@ -25,6 +25,7 @@ import {
   encodeRecordContextBreakdown,
   encodeRecordSessionStateChange,
   encodeRecordTurnTelemetry,
+  type ContentBlock,
   type FeedIdValue,
 } from "@/protocol";
 import type { TugConnection } from "@/connection";
@@ -39,6 +40,7 @@ import {
   type AtomBytesStore,
 } from "./atom-bytes-store";
 import { buildWirePayload } from "./build-wire-payload";
+import { synthesizeUserMessageFromBlocks } from "./synthesize-user-message";
 import {
   createInitialState,
   deriveActiveTurnSnapshot,
@@ -532,26 +534,30 @@ export class CodeSessionStore {
     // reducer) so the reducer remains pure and time-independent —
     // mirrors how timers live outside the reducer.
     //
-    // `buildWirePayload` also runs here, in the impure wrapper, so
-    // the bytes-store lookup (a side-effecting read on the per-card
-    // side-table) stays out of the reducer. The dispatch carries
-    // both substrate-form (`text` / `atoms`) and wire-form
-    // (`wireText` / `attachments`) so the reducer can construct the
-    // `UserMessage` Message and the `send-frame` effect without
-    // ever touching the bytes-store. Per
-    // [D01](../../roadmap/tide-atoms.md#d01-ffc-substitution-at-submit)
-    // and [D02](../../roadmap/tide-atoms.md#d02-image-attach-text-rest).
-    const { wireText, attachments } = buildWirePayload(
-      text,
-      atoms,
+    // Step 5c's two-stage flatten lives here, in the impure wrapper:
+    //  1. `buildWirePayload` walks the editor's `(text, atoms)` and
+    //     emits Anthropic-API content blocks with image atoms as
+    //     standalone blocks at their original positions. The
+    //     returned `atomIdAt` resolver maps image-block index to
+    //     the editor's original atom id so the synthesizer can reuse
+    //     those ids (no bytes-store orphans).
+    //  2. `synthesizeUserMessageFromBlocks` produces the JSONL-honest
+    //     substrate (`image-N` atom labels, `U+FFFC` positions) and
+    //     ensures the bytes-store carries `content` + `mediaType` +
+    //     `thumbnailDataUrl` for every image block.
+    // The reducer receives the synthesized substrate + the wire
+    // content blocks and never touches the bytes-store.
+    const wire = buildWirePayload(text, atoms, this.atomBytesStore);
+    const synth = synthesizeUserMessageFromBlocks(
+      wire.content,
       this.atomBytesStore,
+      { atomIdAt: wire.atomIdAt },
     );
     this.dispatch({
       type: "send",
-      text,
-      atoms,
-      wireText,
-      attachments,
+      text: synth.text,
+      atoms: synth.atoms,
+      content: wire.content,
       turnKey: mintTurnKey(),
     });
   }
@@ -917,7 +923,29 @@ export class CodeSessionStore {
         // of historical user submissions, and the cell wrapper
         // identity is purely React's concern. Minting here keeps the
         // reducer pure: it never calls `crypto.randomUUID()`.
-        return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
+        //
+        // Step 5c: the wire's `content` blocks (Anthropic API shape,
+        // carried verbatim through tugcast / tugcode) are walked
+        // through `synthesizeUserMessageFromBlocks` to produce the
+        // substrate `(text, atoms)` pair. No resolver — replay path
+        // mints fresh atom ids; the bytes-store is per-card-mount
+        // (fresh on reload) so orphan-from-id-reuse is impossible.
+        const content = Array.isArray(ev.content)
+          ? (ev.content as ContentBlock[])
+          : [];
+        const synth = synthesizeUserMessageFromBlocks(
+          content,
+          this.atomBytesStore,
+        );
+        return {
+          type: "add_user_message",
+          text: synth.text,
+          atoms: synth.atoms,
+          tug_session_id: typeof ev.tug_session_id === "string"
+            ? ev.tug_session_id
+            : undefined,
+          turnKey: mintTurnKey(),
+        } as unknown as CodeSessionEvent;
       }
       if (ev.type === "wake_started") {
         // Same mint contract as `add_user_message`: the wake's

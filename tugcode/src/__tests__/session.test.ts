@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { ActiveTurn, SessionManager, buildClaudeArgs, buildContentBlocks, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
+import { ActiveTurn, SessionManager, buildClaudeArgs, buildContentBlocksFromLegacyJournal, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
 import type { StreamingUsage } from "../types.ts";
 
@@ -277,7 +277,7 @@ describe("stdin message format", () => {
       writtenData.push(String(data));
     };
 
-    const userMsg = { type: "user_message" as const, text: "hello world", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "hello world" }] };
     await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     // Should have captured at least one write
@@ -1051,7 +1051,7 @@ describe("control protocol (Step 2.2)", () => {
     // Spy on stdin to suppress control_response writes from breaking the test
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "do something", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "do something" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     const forwards = ipcMessages.filter((m: any) => m.type === "control_request_forward");
@@ -1078,7 +1078,7 @@ describe("control protocol (Step 2.2)", () => {
     ]);
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "ask me", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "ask me" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     const forwards = ipcMessages.filter((m: any) => m.type === "control_request_forward");
@@ -1244,7 +1244,7 @@ describe("control protocol (Step 2.2)", () => {
     // Suppress any stdin writes (control_request_forward ack etc.)
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "do something", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "do something" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     // A control_request_cancel IPC must be emitted so the frontend dismisses the dialog.
@@ -1486,19 +1486,19 @@ describe("structured tool results and user message parsing (Step 2.3)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildContentBlocks tests (Step 4)
+// buildContentBlocksFromLegacyJournal tests (Step 4)
 // ---------------------------------------------------------------------------
 
-describe("buildContentBlocks", () => {
+describe("buildContentBlocksFromLegacyJournal", () => {
   test("text-only message produces single text block", () => {
-    const blocks = buildContentBlocks("hello world", []);
+    const blocks = buildContentBlocksFromLegacyJournal("hello world", []);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("text");
     expect(blocks[0].text).toBe("hello world");
   });
 
   test("text attachment produces text content block", () => {
-    const blocks = buildContentBlocks("intro", [
+    const blocks = buildContentBlocksFromLegacyJournal("intro", [
       { filename: "file.txt", content: "file contents", media_type: "text/plain" },
     ]);
     expect(blocks).toHaveLength(2);
@@ -1511,7 +1511,7 @@ describe("buildContentBlocks", () => {
   test("image attachment produces image content block with base64 source", () => {
     // ~10 bytes of fake base64 (well under 5MB)
     const fakeBase64 = "aGVsbG8=";
-    const blocks = buildContentBlocks("see image", [
+    const blocks = buildContentBlocksFromLegacyJournal("see image", [
       { filename: "photo.png", content: fakeBase64, media_type: "image/png" },
     ]);
     expect(blocks).toHaveLength(2);
@@ -1525,7 +1525,7 @@ describe("buildContentBlocks", () => {
 
   test("unsupported image media type is rejected per PN-12", () => {
     expect(() =>
-      buildContentBlocks("img", [
+      buildContentBlocksFromLegacyJournal("img", [
         { filename: "photo.bmp", content: "abc", media_type: "image/bmp" },
       ])
     ).toThrow("Unsupported image type: image/bmp");
@@ -1535,14 +1535,14 @@ describe("buildContentBlocks", () => {
     // ~5MB base64 = 5*1024*1024 * 4/3 ≈ 7MB of base64 chars; use slightly more
     const oversizedContent = "A".repeat(7 * 1024 * 1024 + 1);
     expect(() =>
-      buildContentBlocks("big", [
+      buildContentBlocksFromLegacyJournal("big", [
         { filename: "huge.png", content: oversizedContent, media_type: "image/png" },
       ])
     ).toThrow("~5MB limit");
   });
 
   test("mixed text and image produces correct ordered content array", () => {
-    const blocks = buildContentBlocks("caption", [
+    const blocks = buildContentBlocksFromLegacyJournal("caption", [
       { filename: "img.jpg", content: "aGVsbG8=", media_type: "image/jpeg" },
     ]);
     expect(blocks).toHaveLength(2);
@@ -1552,7 +1552,7 @@ describe("buildContentBlocks", () => {
   });
 
   test("empty text with no attachments produces fallback empty text block", () => {
-    const blocks = buildContentBlocks("", []);
+    const blocks = buildContentBlocksFromLegacyJournal("", []);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("text");
     expect(blocks[0].text).toBe("");
@@ -1562,7 +1562,7 @@ describe("buildContentBlocks", () => {
     const types = ["image/png", "image/jpeg", "image/gif", "image/webp"];
     for (const mediaType of types) {
       expect(() =>
-        buildContentBlocks("img", [
+        buildContentBlocksFromLegacyJournal("img", [
           { filename: "img", content: "aGVsbG8=", media_type: mediaType },
         ])
       ).not.toThrow();
@@ -2120,7 +2120,7 @@ describe("handleUserMessage integration", () => {
     ]);
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "hi", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "hi" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     // System metadata must have been emitted.
@@ -2157,8 +2157,13 @@ describe("handleUserMessage integration", () => {
     const fakeBase64 = "aGVsbG8="; // "hello" in base64
     const userMsg = {
       type: "user_message" as const,
-      text: "look at this image",
-      attachments: [{ filename: "photo.png", content: fakeBase64, media_type: "image/png" }],
+      content: [
+        { type: "text" as const, text: "look at this image" },
+        {
+          type: "image" as const,
+          source: { type: "base64" as const, media_type: "image/png", data: fakeBase64 },
+        },
+      ],
     };
     await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
@@ -2185,7 +2190,7 @@ describe("handleUserMessage integration", () => {
     ]);
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "go", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "go" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     const tc = ipcMessages.find((m: any) => m.type === "turn_complete") as any;
@@ -2214,7 +2219,7 @@ describe("handleUserMessage integration", () => {
     ]);
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "run slash", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "run slash" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
@@ -2239,7 +2244,7 @@ describe("handleUserMessage integration", () => {
     ]);
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "/context", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "/context" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     // Must have the command output as assistant_text.
@@ -2283,7 +2288,7 @@ describe("ControlRequestForward blocked_path and tool_use_id (Step 6)", () => {
     ]);
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "write to etc", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "write to etc" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     const forward = ipcMessages.find((m: any) => m.type === "control_request_forward") as any;
@@ -2310,7 +2315,7 @@ describe("ControlRequestForward blocked_path and tool_use_id (Step 6)", () => {
     ]);
     mockStdin.write = (_data: unknown) => {};
 
-    const userMsg = { type: "user_message" as const, text: "read file", attachments: [] };
+    const userMsg = { type: "user_message" as const, content: [{ type: "text" as const, text: "read file" }] };
     const ipcMessages = await captureIpcOutput(() => manager.handleUserMessage(userMsg));
 
     const forward = ipcMessages.find((m: any) => m.type === "control_request_forward") as any;
@@ -2346,7 +2351,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/context", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/context" }] })
     );
 
     const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
@@ -2376,7 +2381,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/cost", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/cost" }] })
     );
 
     const textMsgs = ipcMessages.filter((m: any) => m.type === "assistant_text");
@@ -2396,7 +2401,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/compact", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/compact" }] })
     );
 
     // No assistant_text (no output to show, partialText empty).
@@ -2425,7 +2430,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/compact", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/compact" }] })
     );
 
     // Error message extracted from stderr tags.
@@ -2481,7 +2486,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/review", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/review" }] })
     );
 
     // Tool use emitted from assistant event.
@@ -2511,7 +2516,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/security-review", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/security-review" }] })
     );
 
     const partials = ipcMessages.filter((m: any) => m.type === "assistant_text" && m.is_partial);
@@ -2541,7 +2546,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/keybindings-help", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/keybindings-help" }] })
     );
 
     // No assistant_text (nothing to show).
@@ -2562,7 +2567,7 @@ describe("slash commands: all 12 from §13", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "/debug", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "/debug" }] })
     );
 
     // No assistant_text.
@@ -2818,7 +2823,7 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "test" }] })
     );
 
     const cu = ipcMessages.find((m: any) => m.type === "cost_update") as any;
@@ -2870,7 +2875,7 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "test" }] })
     );
 
     const cu = ipcMessages.find((m: any) => m.type === "cost_update") as any;
@@ -2899,7 +2904,7 @@ describe("protocol audit: §12 cost/usage fields in result", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "test" }] })
     );
 
     const cu = ipcMessages.find((m: any) => m.type === "cost_update") as any;
@@ -2926,7 +2931,7 @@ describe("protocol audit: §14 extended thinking", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "think hard", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "think hard" }] })
     );
 
     // Thinking text emitted before regular text.
@@ -2968,7 +2973,7 @@ describe("protocol audit: §15 parent_tool_use_id forwarding", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "spawn task", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "spawn task" }] })
     );
 
     // system_metadata should have parent_tool_use_id.
@@ -2998,7 +3003,7 @@ describe("protocol audit: §15 parent_tool_use_id forwarding", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "test" }] })
     );
 
     // No parent_tool_use_id on top-level messages.
@@ -3043,7 +3048,7 @@ describe("protocol audit: §16 multiple parallel tool uses", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "do both", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "do both" }] })
     );
 
     // Both tool_use IPC messages.
@@ -3083,7 +3088,7 @@ describe("protocol audit: §17 context compaction", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "long conversation", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "long conversation" }] })
     );
 
     // compact_boundary emitted.
@@ -3127,7 +3132,7 @@ describe("api_retry events forwarded through transport", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "hello", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "hello" }] })
     );
 
     // Two api_retry events forwarded.
@@ -3176,7 +3181,7 @@ describe("api_retry events forwarded through transport", () => {
     mockStdin.write = (_data: unknown) => {};
 
     const ipcMessages = await captureIpcOutput(() =>
-      manager.handleUserMessage({ type: "user_message", text: "test", attachments: [] })
+      manager.handleUserMessage({ type: "user_message", content: [{ type: "text" as const, text: "test" }] })
     );
 
     const retries = ipcMessages.filter((m: any) => m.type === "api_retry");
@@ -3307,9 +3312,12 @@ describe("protocol audit: §8 file and image attachments", () => {
     await captureIpcOutput(() =>
       manager.handleUserMessage({
         type: "user_message",
-        text: "What is this?",
-        attachments: [
-          { filename: "screenshot.png", content: "iVBORw0KGgo=", media_type: "image/png" },
+        content: [
+          { type: "text", text: "What is this?" },
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" },
+          },
         ],
       })
     );
@@ -3608,7 +3616,20 @@ describe("dispatchEventToTurn slides ActiveTurn.currentMessageId", () => {
       crypto.randomUUID(),
     );
     const seq = (manager as any).nextSeq();
-    return { manager, turn: new ActiveTurn(seq, text, attachments) };
+    const content: Array<unknown> = [];
+    if (text.length > 0) content.push({ type: "text", text });
+    for (const att of attachments) {
+      if (att.media_type.startsWith("image/")) {
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: att.media_type, data: att.content },
+        });
+      } else {
+        content.push({ type: "text", text: att.content });
+      }
+    }
+    if (content.length === 0) content.push({ type: "text", text: "" });
+    return { manager, turn: new ActiveTurn(seq, content as ReadonlyArray<never>) };
   }
 
   test("message_start slides currentMessageId from null", async () => {
@@ -3751,7 +3772,7 @@ describe("dispatchEventToTurn slides ActiveTurn.currentMessageId", () => {
   });
 });
 
-describe("ActiveTurn carries userText and userAttachments after handleUserMessage", () => {
+describe("ActiveTurn carries userContent after handleUserMessage", () => {
   // Build a mock subprocess whose stdout NEVER closes, so handleUserMessage
   // installs an ActiveTurn and stays awaiting turn.completion. The test
   // inspects the activeTurn while it's pending, then resolves the await
@@ -3784,7 +3805,7 @@ describe("ActiveTurn carries userText and userAttachments after handleUserMessag
     };
   }
 
-  test("plain text submission populates userText and empty attachments", async () => {
+  test("plain text submission populates userContent as a single text block", async () => {
     const manager = new SessionManager(
       "/tmp/canon-userText-" + Date.now(),
       crypto.randomUUID(),
@@ -3794,8 +3815,7 @@ describe("ActiveTurn carries userText and userAttachments after handleUserMessag
 
     const userMsg = {
       type: "user_message" as const,
-      text: "hello there",
-      attachments: [],
+      content: [{ type: "text" as const, text: "hello there" }]
     };
     const turnPromise = captureIpcOutput(() => manager.handleUserMessage(userMsg));
     // Yield so handleUserMessage's pre-await synchronous block (which
@@ -3803,15 +3823,14 @@ describe("ActiveTurn carries userText and userAttachments after handleUserMessag
     await new Promise((r) => setTimeout(r, 5));
     const active = (manager as any).activeTurn;
     expect(active).not.toBeNull();
-    expect(active.userText).toBe("hello there");
-    expect(active.userAttachments).toEqual([]);
+    expect(active.userContent).toEqual([{ type: "text", text: "hello there" }]);
     // Cleanup: close the stream → drain sees EOF → signalEofToActiveTurn
     // resolves turn.completion → handleUserMessage's finally fires.
     closeStream();
     await turnPromise;
   });
 
-  test("attachment submission preserves attachment array on ActiveTurn", async () => {
+  test("image-bearing submission preserves the interleaved content blocks on ActiveTurn", async () => {
     const manager = new SessionManager(
       "/tmp/canon-userAtt-" + Date.now(),
       crypto.randomUUID(),
@@ -3819,23 +3838,26 @@ describe("ActiveTurn carries userText and userAttachments after handleUserMessag
     const { closeStream, mockStdin } = injectNonTerminatingMock(manager);
     mockStdin.write = (_data: unknown) => {};
 
-    const att = {
-      filename: "f.txt",
-      content: "file body",
-      media_type: "text/plain",
-    };
     const userMsg = {
       type: "user_message" as const,
-      text: "see attached",
-      attachments: [att],
+      content: [
+        { type: "text" as const, text: "see attached" },
+        {
+          type: "image" as const,
+          source: { type: "base64" as const, media_type: "image/png", data: "DATA" },
+        },
+      ],
     };
     const turnPromise = captureIpcOutput(() => manager.handleUserMessage(userMsg));
     await new Promise((r) => setTimeout(r, 5));
     const active = (manager as any).activeTurn;
     expect(active).not.toBeNull();
-    expect(active.userText).toBe("see attached");
-    expect(active.userAttachments).toHaveLength(1);
-    expect(active.userAttachments[0]).toEqual(att);
+    expect(active.userContent).toHaveLength(2);
+    expect(active.userContent[0]).toEqual({ type: "text", text: "see attached" });
+    expect(active.userContent[1]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "DATA" },
+    });
     closeStream();
     await turnPromise;
   });
@@ -3885,8 +3907,7 @@ describe("handleUserMessage integration: live emits use canonical msg_id", () =>
     const ipc = await captureIpcOutput(() =>
       manager.handleUserMessage({
         type: "user_message",
-        text: "hi",
-        attachments: [],
+        content: [{ type: "text" as const, text: "hi" }]
       }),
     );
 
@@ -3940,8 +3961,7 @@ describe("handleUserMessage integration: live emits use canonical msg_id", () =>
     const ipc = await captureIpcOutput(() =>
       manager.handleUserMessage({
         type: "user_message",
-        text: "/cost",
-        attachments: [],
+        content: [{ type: "text" as const, text: "/cost" }]
       }),
     );
 
@@ -3993,8 +4013,7 @@ describe("Step 5.1 wire-shape pin: claude's id flows through unchanged", () => {
     const ipc = await captureIpcOutput(() =>
       manager.handleUserMessage({
         type: "user_message",
-        text: "hi",
-        attachments: [],
+        content: [{ type: "text" as const, text: "hi" }]
       }),
     );
 
@@ -4046,8 +4065,7 @@ describe("Step 5.1 wire-shape pin: claude's id flows through unchanged", () => {
     const ipc = await captureIpcOutput(() =>
       manager.handleUserMessage({
         type: "user_message",
-        text: "hi",
-        attachments: [],
+        content: [{ type: "text" as const, text: "hi" }]
       }),
     );
 
@@ -4073,7 +4091,7 @@ describe("ActiveTurn.suppressEmit gates dispatchEventToTurn", () => {
       "/tmp/suppress-" + Date.now() + "-" + Math.random().toString(36).slice(2),
       crypto.randomUUID(),
     );
-    const turn = new ActiveTurn((manager as any).nextSeq(), "", []);
+    const turn = new ActiveTurn((manager as any).nextSeq(), [{ type: "text", text: "" }]);
     if (opts.currentMessageId !== undefined) {
       turn.currentMessageId = opts.currentMessageId;
     }
@@ -4185,8 +4203,7 @@ describe("signalEofToActiveTurn honors suppressEmit", () => {
     const turn = {
       currentMessageId: "msg_eof",
       seq: 0,
-      userText: "",
-      userAttachments: [],
+      userContent: [{ type: "text", text: "" }],
       rev: 0,
       partialText: "partial",
       gotResult: false,
@@ -4214,8 +4231,7 @@ describe("signalEofToActiveTurn honors suppressEmit", () => {
     const turn = {
       currentMessageId: "msg_eof2",
       seq: 0,
-      userText: "",
-      userAttachments: [],
+      userContent: [{ type: "text", text: "" }],
       rev: 0,
       partialText: "",
       gotResult: false,
@@ -4259,7 +4275,26 @@ describe("emitInflightTurnFromActiveTurn", () => {
       "/tmp/emit-inflight-" + Date.now() + "-" + Math.random().toString(36).slice(2),
       crypto.randomUUID(),
     );
-    const turn = new ActiveTurn(100, overrides.userText ?? "", overrides.userAttachments ?? []);
+    // Build content blocks from legacy `(text, attachments)` test
+    // overrides so existing test bodies don't need rewriting. Flat
+    // shape — interleaving was already lost by the old setup helper
+    // since it took separate text + attachments parameters.
+    const content: Array<unknown> = [];
+    if ((overrides.userText ?? "").length > 0) {
+      content.push({ type: "text", text: overrides.userText });
+    }
+    for (const att of overrides.userAttachments ?? []) {
+      if (att.media_type.startsWith("image/")) {
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: att.media_type, data: att.content },
+        });
+      } else {
+        content.push({ type: "text", text: att.content });
+      }
+    }
+    if (content.length === 0) content.push({ type: "text", text: "" });
+    const turn = new ActiveTurn(100, content as ReadonlyArray<never>);
     turn.currentMessageId = overrides.msgId ?? "msg_X";
     if (overrides.textBlock !== null && overrides.textBlock !== undefined) {
       turn.messageBlocks.set(turn.currentMessageId, [
@@ -4289,7 +4324,7 @@ describe("emitInflightTurnFromActiveTurn", () => {
     const userReplay = ipc.find((m: any) => m.type === "add_user_message") as any;
     expect(userReplay).toBeDefined();
     expect(userReplay.msg_id).toBeUndefined();
-    expect(userReplay.text).toBe("hi");
+    expect(userReplay.content).toEqual([{ type: "text", text: "hi" }]);
 
     const text = ipc.find((m: any) => m.type === "assistant_text" && !m.is_partial) as any;
     expect(text).toBeDefined();
@@ -4301,19 +4336,23 @@ describe("emitInflightTurnFromActiveTurn", () => {
     expect(ipc.some((m: any) => m.type === "turn_cancelled")).toBe(false);
   });
 
-  test("attachments pass through add_user_message verbatim", async () => {
-    const att = { filename: "f.txt", content: "contents", media_type: "text/plain" };
+  test("content blocks pass through add_user_message verbatim", async () => {
     const { manager, turn } = setupTurn({
       msgId: "msg_att",
       userText: "see",
-      userAttachments: [att],
+      userAttachments: [{ filename: "f.txt", content: "contents", media_type: "text/plain" }],
       textBlock: "ok",
     });
     const ipc = await captureIpcOutput(async () => {
       (manager as any).emitInflightTurnFromActiveTurn(turn);
     });
     const userReplay = ipc.find((m: any) => m.type === "add_user_message") as any;
-    expect(userReplay.attachments).toEqual([att]);
+    // Setup helper produced two text blocks: the prompt + the
+    // text-file attachment's contents. Verbatim pass-through.
+    expect(userReplay.content).toEqual([
+      { type: "text", text: "see" },
+      { type: "text", text: "contents" },
+    ]);
   });
 
   test("no content blocks: snapshot emits add_user_message only (no text frame)", async () => {
@@ -4459,13 +4498,11 @@ describe("overlapping-turn routing", () => {
     const captured = await captureIpcOutput(async () => {
       const p1 = manager.handleUserMessage({
         type: "user_message",
-        text: "first",
-        attachments: [],
+        content: [{ type: "text" as const, text: "first" }]
       });
       const p2 = manager.handleUserMessage({
         type: "user_message",
-        text: "second",
-        attachments: [],
+        content: [{ type: "text" as const, text: "second" }]
       });
       await Promise.all([p1, p2]);
     });
@@ -4507,13 +4544,11 @@ describe("overlapping-turn routing", () => {
     const captured = await captureIpcOutput(async () => {
       const p1 = manager.handleUserMessage({
         type: "user_message",
-        text: "first",
-        attachments: [],
+        content: [{ type: "text" as const, text: "first" }]
       });
       const p2 = manager.handleUserMessage({
         type: "user_message",
-        text: "second",
-        attachments: [],
+        content: [{ type: "text" as const, text: "second" }]
       });
       await Promise.all([p1, p2]);
     });
@@ -4538,8 +4573,7 @@ describe("overlapping-turn routing", () => {
     const captured = await captureIpcOutput(() =>
       manager.handleUserMessage({
         type: "user_message",
-        text: "only",
-        attachments: [],
+        content: [{ type: "text" as const, text: "only" }]
       }),
     );
 

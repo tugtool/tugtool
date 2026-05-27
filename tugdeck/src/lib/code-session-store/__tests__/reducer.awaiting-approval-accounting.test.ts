@@ -72,7 +72,7 @@ describe("reducer — awaiting-approval accounting", () => {
     // submit → assistant_text (kicks awaiting_first_token → streaming)
     // → control_request_forward (paused) → respond_approval → turn_complete
     const { state: s1 } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
     ]);
     advance(50);
     const { state: s2 } = applyAll(s1, [
@@ -128,7 +128,7 @@ describe("reducer — awaiting-approval accounting", () => {
 
   it("two sequential permission dialogs accumulate the sum", () => {
     const seeded = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -194,7 +194,7 @@ describe("reducer — awaiting-approval accounting", () => {
 
   it("a question dialog accumulates the wait with the same semantics", () => {
     const seeded = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -229,7 +229,7 @@ describe("reducer — awaiting-approval accounting", () => {
 
   it("a CASE B interrupt while paused folds the in-progress interval", () => {
     const seeded = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",
@@ -271,7 +271,7 @@ describe("reducer — awaiting-approval accounting", () => {
 
   it("a turn with no dialogs commits with awaitingApprovalMs === 0", () => {
     const { effects } = applyAll(fresh(), [
-      { type: "send", text: "hi", atoms: [], wireText: "hi", attachments: [], turnKey: "k1" },
+      { type: "send", text: "hi", atoms: [], content: [{ type: "text" as const, text: "hi" }], turnKey: "k1" },
       {
         type: "assistant_text",
         msg_id: "m1",

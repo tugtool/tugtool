@@ -1,6 +1,41 @@
 // IPC message type definitions (tugcast ↔ tugcode stdin/stdout)
 
-// Helper types
+/**
+ * Anthropic content-block wire shape — carried verbatim on the
+ * `user_message` IPC frame post-Step-5c. Tugcode forwards `content`
+ * to the Anthropic SDK with no construction step (the inbound shape
+ * IS the API shape).
+ *
+ * Per tugdeck's `protocol.ts`'s `ContentBlock` — keep field names in
+ * lockstep.
+ */
+export type ContentBlock = ContentBlockText | ContentBlockImage;
+
+export interface ContentBlockText {
+  type: "text";
+  text: string;
+}
+
+export interface ContentBlockImage {
+  type: "image";
+  source: ContentBlockImageSourceBase64;
+}
+
+export interface ContentBlockImageSourceBase64 {
+  type: "base64";
+  media_type: string;
+  data: string;
+}
+
+/**
+ * Legacy wire-shape attachment — used only on the journal-projection
+ * path (`derive_legacy_journal_view` in tugcast and
+ * `buildContentBlocksFromLegacyJournal` here). The live user_message
+ * frame carries {@link ContentBlock}[] directly; this shape exists for
+ * the never-drop synthetic emit path that bridges the gap between
+ * submit and JSONL ack and reads from the tugcast journal's legacy
+ * `text` + `attachments` columns.
+ */
 export interface Attachment {
   filename: string;
   content: string; // text or base64
@@ -22,8 +57,14 @@ export interface ProtocolInit {
 
 export interface UserMessage {
   type: "user_message";
-  text: string;
-  attachments: Attachment[];
+  /**
+   * Anthropic-API content-block array — forwarded to the Anthropic
+   * SDK verbatim. Tugcast forwards inbound `user_message` frames
+   * without reshape; the journal's legacy `text` + `attachments`
+   * columns are derived from this via
+   * `derive_legacy_journal_view`. Per Step 5c.
+   */
+  content: ContentBlock[];
 }
 
 export interface ToolApproval {
@@ -586,8 +627,22 @@ export interface ResumeFailed {
  */
 export interface AddUserMessage {
   type: "add_user_message";
-  text: string;
-  attachments: Attachment[];
+  /**
+   * Anthropic-API content-block array.
+   *
+   * On the JSONL-replay path (`replay.ts`), this is the recorded
+   * message's `content` array passed through verbatim — JSONL is
+   * Anthropic's storage format, so the interleaving of text + image
+   * blocks survives round-trip.
+   *
+   * On the never-drop synthetic path (`session.ts`'s
+   * `injectPendingRowSynthetics`), this is built via
+   * `buildContentBlocksFromLegacyJournal` from the tugcast journal's
+   * legacy `text` + `attachments` columns — a flat all-images-first
+   * shape. Interleaving is lost here; the never-drop path is the
+   * gap-bridge, not the primary restore path.
+   */
+  content: ContentBlock[];
   ipc_version: number;
 }
 

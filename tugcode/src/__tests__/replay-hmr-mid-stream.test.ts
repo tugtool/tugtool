@@ -125,7 +125,7 @@ function installInflightTurn(
   // text block. Tests that need richer block sequences (multi-block,
   // thinking, tool_use) can mutate `turn.messageBlocks` directly
   // after the call.
-  const turn = new ActiveTurn(0, opts.userText, []);
+  const turn = new ActiveTurn(0, [{ type: "text", text: opts.userText }]);
   turn.currentMessageId = opts.currentMessageId;
   turn.rev = opts.rev ?? 0;
   turn.partialText = opts.partialText;
@@ -207,7 +207,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
       (m): m is AddUserMessage => m.type === "add_user_message",
     );
     const inflightUserReplay = userReplays.find(
-      (m) => m.text === "in-flight user text",
+      (m: any) => m.content !== undefined && Array.isArray(m.content) && m.content.some((b: any) => b.type === "text" && b.text === "in-flight user text"),
     );
     expect(inflightUserReplay).toBeDefined();
 
@@ -229,7 +229,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const idxSnapshot = emitted.findIndex(
       (m) =>
         m.type === "add_user_message" &&
-        (m as AddUserMessage).text === "in-flight user text",
+        (m as AddUserMessage).content.some((b: any) => b.type === "text" && b.text === "in-flight user text"),
     );
     const idxComplete = emitted.findIndex(
       (m) => m.type === "replay_complete",
@@ -265,7 +265,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const inflightUserReplay = emitted.find(
       (m): m is AddUserMessage =>
         m.type === "add_user_message" &&
-        (m as AddUserMessage).text === "submitted but no claude reply yet",
+        (m as AddUserMessage).content.some((b: any) => b.type === "text" && b.text === "submitted but no claude reply yet"),
     );
     expect(inflightUserReplay).toBeDefined();
     // No `msg_id` on `add_user_message` per [D15] — identification
@@ -300,7 +300,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const inflightUserReplay = emitted.find(
       (m): m is AddUserMessage =>
         m.type === "add_user_message" &&
-        (m as AddUserMessage).text === "claude hasn't even started yet",
+        (m as AddUserMessage).content.some((b: any) => b.type === "text" && b.text === "claude hasn't even started yet"),
     );
     expect(inflightUserReplay).toBeDefined();
     // No `msg_id` on `add_user_message` per [D15] — even in the
@@ -392,7 +392,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const committedUmr = emitted.find(
       (m): m is AddUserMessage =>
         m.type === "add_user_message" &&
-        (m as AddUserMessage).text === "hello",
+        (m as AddUserMessage).content.some((b: any) => b.type === "text" && b.text === "hello"),
     );
     expect(committedUmr).toBeDefined();
 
@@ -418,7 +418,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const inflightUmr = emitted.find(
       (m): m is AddUserMessage =>
         m.type === "add_user_message" &&
-        (m as AddUserMessage).text === "follow-up question",
+        (m as AddUserMessage).content.some((b: any) => b.type === "text" && b.text === "follow-up question"),
     );
     expect(inflightUmr).toBeDefined();
 
@@ -449,7 +449,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     const idxInflightUmr = emitted.findIndex(
       (m) =>
         m.type === "add_user_message" &&
-        (m as AddUserMessage).text === "follow-up question",
+        (m as AddUserMessage).content.some((b: any) => b.type === "text" && b.text === "follow-up question"),
     );
     const idxComplete = emitted.findIndex(
       (m) => m.type === "replay_complete",

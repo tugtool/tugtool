@@ -94,7 +94,7 @@ describe("translateJsonlSession — [W5a] genuine string-content prompt", () => 
     // iterated into single-character non-blocks. No msg_id on
     // add_user_message per [D15]; turn↔msg correlation reads off
     // the matching turn_complete (msg_id "m1").
-    expect(userReplays[0].text).toBe("use bash to echo hello");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text).toBe("use bash to echo hello");
   });
 
   test("two consecutive string-content submissions orphan-flush correctly", async () => {
@@ -111,8 +111,8 @@ describe("translateJsonlSession — [W5a] genuine string-content prompt", () => 
 
     const userReplays = addUserMessagesOf(out);
     expect(userReplays).toHaveLength(2);
-    expect(userReplays[0].text).toBe("first prompt");
-    expect(userReplays[1].text).toBe("second prompt");
+    expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text).toBe("first prompt");
+    expect(((userReplays[1].content[0] ?? {}) as { text?: string }).text).toBe("second prompt");
     // No msg_id on add_user_message per [D15]; orphan synthetic id
     // and real msg_id ride on the matching turn_complete frames.
     const turnCompletes = turnCompletesOf(out);
@@ -136,7 +136,7 @@ describe("translateJsonlSession — [W5a] genuine string-content prompt", () => 
     const out = await collectSession(jsonl);
 
     const userReplays = addUserMessagesOf(out);
-    expect(userReplays.map((m) => m.text)).toEqual(["hello", "what now"]);
+    expect(userReplays.map((m) => ((m.content[0] ?? {}) as { text?: string }).text ?? "")).toEqual(["hello", "what now"]);
     // No msg_id on add_user_message per [D15]; the real turn's
     // msg_id ("m1") rides on the matching turn_complete frame.
   });
@@ -169,7 +169,7 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
       // submission that the real prompt would orphan-flush.
       const userReplays = addUserMessagesOf(out);
       expect(userReplays).toHaveLength(1);
-      expect(userReplays[0].text).toBe("the real prompt");
+      expect(((userReplays[0].content[0] ?? {}) as { text?: string }).text).toBe("the real prompt");
       // No msg_id on add_user_message per [D15]; msg_id "m1" rides
       // on the matching turn_complete.
       expect(turnCompletesOf(out)).toHaveLength(1);
@@ -191,9 +191,12 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
     expect(userReplays).toHaveLength(1);
     // The continuation turn replays with an empty user message — the
     // summary is CLI-internal and is not surfaced as transcript text.
-    expect(userReplays[0].text).toBe("");
+    // Post-Step-5c the synth opener carries `content: []` (the
+    // reducer's substrate synth derives `text: ""` from it).
+    expect(userReplays[0].content).toEqual([]);
     expect(out.some((m) => m.type === "add_user_message" &&
-      (m as AddUserMessage).text.includes("being continued"))).toBe(false);
+      (m as AddUserMessage).content.some((b) =>
+        b.type === "text" && b.text.includes("being continued")))).toBe(false);
   });
 
   test("a full /compact sequence: real prompts replay, scaffolding skipped, no junk turns", async () => {
@@ -218,8 +221,12 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
     // None of the four scaffolding entries became an orphan turn.
     const userReplays = addUserMessagesOf(out);
     expect(userReplays).toHaveLength(2);
-    expect(userReplays[0].text).toBe("first real question");
-    expect(userReplays[1].text).toBe("");
+    expect(userReplays[0].content).toEqual([
+      { type: "text", text: "first real question" },
+    ]);
+    // The continuation's synth opener carries `content: []` (no
+    // user prompt — the summary entry was skipped scaffolding).
+    expect(userReplays[1].content).toEqual([]);
     // No msg_id on add_user_message per [D15]; msg_ids ("m_a" /
     // "m_b") ride on the matching turn_complete frames below.
 

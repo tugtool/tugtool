@@ -439,6 +439,7 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
               data-testid="tide-card-transcript-user-body"
               text={text}
               atoms={atoms}
+              messageNumber={index + 1}
             />
           }
           controls={

@@ -22,6 +22,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  decorateChipLabel,
   formatAtomTextForCopy,
   walkAtomText,
   type AtomTextSegment,
@@ -191,5 +192,79 @@ describe("formatAtomTextForCopy", () => {
 
   test("empty text → empty string", () => {
     expect(formatAtomTextForCopy("", [])).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// decorateChipLabel — Step 5c's transcript-vs-editor chip rendering
+// ---------------------------------------------------------------------------
+
+// Synthesized image atom — what the post-Step-5c synthesizer produces
+// for an image content block. Label and value are both `image-N` (the
+// editor's filename is gone at the submit boundary by design).
+const ATOM_IMAGE_1: AtomSegment = {
+  kind: "atom",
+  type: "image",
+  label: "image-1",
+  value: "image-1",
+};
+
+describe("decorateChipLabel", () => {
+  test("messageNumber set + image atom → `#NNNN-image-N` prefix", () => {
+    // The transcript-side rendering: the chip's displayed label
+    // carries the per-message transcript position so the per-message
+    // attachment strip ([Step 6]) can pair it via matching captions.
+    expect(decorateChipLabel(ATOM_IMAGE_1, 1)).toBe("#0001-image-1");
+  });
+
+  test("messageNumber=999 still pads to 4 digits", () => {
+    expect(decorateChipLabel(ATOM_IMAGE_1, 999)).toBe("#0999-image-1");
+  });
+
+  test("messageNumber=10000 grows naturally past 4 digits", () => {
+    // `formatSequenceNumber` pads only when needed.
+    expect(decorateChipLabel(ATOM_IMAGE_1, 10000)).toBe("#10000-image-1");
+  });
+
+  test("messageNumber unset → image atom's stored label verbatim (editor case)", () => {
+    // The editor's pre-submit rendering: no transcript position to
+    // encode. The chip carries the atom's stored label as-is. Pre-
+    // submit, that's still the user's filename (e.g. `raphael.jpeg`);
+    // post-submit through the synthesizer, that's `image-N`. Either
+    // way: no decoration when `messageNumber` is undefined.
+    expect(decorateChipLabel(ATOM_IMAGE_1, undefined)).toBe("image-1");
+  });
+
+  test("non-image atom (file): no decoration even when messageNumber is set", () => {
+    // File / doc / link / command atoms carry no per-message linkage
+    // (their `value` is a path or URL, displayed verbatim). The
+    // prefix would be misleading here, so the decorator skips it.
+    const fileAtom: AtomSegment = {
+      kind: "atom",
+      type: "file",
+      label: "README.md",
+      value: "README.md",
+    };
+    expect(decorateChipLabel(fileAtom, 1)).toBe("README.md");
+  });
+
+  test("non-image atom (link): no decoration", () => {
+    const linkAtom: AtomSegment = {
+      kind: "atom",
+      type: "link",
+      label: "https://example.com",
+      value: "https://example.com",
+    };
+    expect(decorateChipLabel(linkAtom, 42)).toBe("https://example.com");
+  });
+
+  test("editor case for synthesized atom: label === value === 'image-1' renders verbatim", () => {
+    // The post-Step-5c synthesizer lands a substrate whose image
+    // atoms carry `label: "image-1"`, `value: "image-1"`. In the
+    // editor's pre-submit surface, where `messageNumber` is unset,
+    // the chip renders the raw label — confirming the synthesizer's
+    // output is renderable as-is when the transcript context is
+    // absent.
+    expect(decorateChipLabel(ATOM_IMAGE_1, undefined)).toBe("image-1");
   });
 });

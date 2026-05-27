@@ -27,6 +27,7 @@ import type {
   StreamingUsage,
   WakeStarted,
   Attachment,
+  ContentBlock,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
@@ -289,12 +290,31 @@ function formatReplayValue(v: unknown): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the content blocks array for a user message.
- * Converts text and attachments into the claude API content block format.
+ * Build Anthropic-API content blocks from the tugcast journal's
+ * legacy `(text, attachments)` shape — flat: `text` first (if
+ * non-empty), then all attachments in order. Used on the never-drop
+ * synthetic emit path (`injectPendingRowSynthetics`) where the
+ * source of truth is the journal's legacy columns, not a live
+ * `user_message` frame.
+ *
+ * Renamed from `buildContentBlocks` (Step 5c). The live
+ * `handleUserMessage` path no longer constructs content blocks here
+ * — the inbound `user_message` frame already carries `content`, and
+ * the SDK forwarding is pass-through. This helper survives because
+ * the never-drop synthetic must bridge from the journal's legacy
+ * shape (tugcast's `session_ledger.rs` `turns.user_text` /
+ * `turns.user_attachments`) to the wire's content-block shape.
+ *
+ * Interleaving is lost here — the original atom positions cannot be
+ * recovered from the flat journal columns. The never-drop path is
+ * the gap-bridge, not the primary restore path. The JSONL-replay
+ * path preserves interleaving because Anthropic records `content`
+ * arrays verbatim.
+ *
  * Validates image types and sizes per PN-12 (#pn-image-limits).
  * Exported for unit testing.
  */
-export function buildContentBlocks(
+export function buildContentBlocksFromLegacyJournal(
   text: string,
   attachments: Array<Attachment>
 ): Array<Record<string, unknown>> {
@@ -1373,19 +1393,17 @@ export class ActiveTurn {
   /** Outbound `seq` for the user-message half of this turn. */
   readonly seq: number;
   /**
-   * The user's prompt text, captured by `handleUserMessage` from the
-   * inbound `UserMessage`. Source-of-truth for the in-flight turn's
-   * `add_user_message` payload during `runReplay`.
+   * The user's submitted content blocks, captured by
+   * `handleUserMessage` from the inbound `UserMessage`. Source-of-truth
+   * for the in-flight turn's synthetic `add_user_message` payload
+   * during `runReplay` (mid-turn replay re-emits exactly these
+   * blocks). Per [Step 5c](roadmap/tide-atoms.md#step-5c).
+   *
+   * Replaces the prior `userText` + `userAttachments` pair — the
+   * inbound wire shape is now Anthropic-API content blocks directly,
+   * and the synthetic emit forwards them unchanged.
    */
-  readonly userText: string;
-  /**
-   * Attachments captured by `handleUserMessage` from the inbound
-   * `UserMessage`. Threaded through to the synthesized
-   * `add_user_message` so attachment-bearing turns reconstruct
-   * faithfully on mid-turn replay. Empty array when the user submitted
-   * plain text.
-   */
-  readonly userAttachments: ReadonlyArray<Attachment>;
+  readonly userContent: ReadonlyArray<ContentBlock>;
   /** Streaming-text revision counter, bumped per stream-event delta. */
   rev: number = 0;
   /** Accumulated streaming text; emitted as a final `assistant_text` on `gotResult`. */
@@ -1434,12 +1452,10 @@ export class ActiveTurn {
 
   constructor(
     seq: number,
-    userText: string,
-    userAttachments: ReadonlyArray<Attachment>,
+    userContent: ReadonlyArray<ContentBlock>,
   ) {
     this.seq = seq;
-    this.userText = userText;
-    this.userAttachments = userAttachments;
+    this.userContent = userContent;
     let resolve: () => void = () => {};
     this.completion = new Promise<void>((r) => {
       resolve = r;
@@ -1646,8 +1662,7 @@ export class SessionManager {
    * merge-vs-queue intent down from tugdeck is a follow-on concern.
    */
   private pendingTurnInputs: Array<{
-    text: string;
-    attachments: ReadonlyArray<Attachment>;
+    content: ReadonlyArray<ContentBlock>;
   }> = [];
   /**
    * True once the stdout drain has observed EOF on claude's stdout.
@@ -2928,10 +2943,16 @@ export class SessionManager {
         continue;
       }
       const attachments = this.decodeUserAttachmentsBlob(row.user_attachments);
+      // Synthesize Anthropic-API content blocks from the journal's
+      // legacy `text` + `attachments` columns. Flat shape (text
+      // first, then attachments); interleaving is unrecoverable
+      // from these columns. The never-drop synthetic path is the
+      // gap-bridge, not the primary restore path — the JSONL replay
+      // pass preserves interleaving via `replay.ts`'s pass-through.
+      const content = buildContentBlocksFromLegacyJournal(row.user_text, attachments);
       writeLine({
         type: "add_user_message",
-        text: row.user_text,
-        attachments,
+        content: content as ContentBlock[],
         ipc_version: 2,
       });
       logReplay("pending_row_synthetic_emit", {
@@ -3121,8 +3142,7 @@ export class SessionManager {
     if (pending === undefined) return;
     this.activeTurn = new ActiveTurn(
       this.nextSeq(),
-      pending.text,
-      pending.attachments,
+      pending.content,
     );
   }
 
@@ -3593,18 +3613,17 @@ export class SessionManager {
    */
   private emitInflightTurnFromActiveTurn(turn: ActiveTurn): void {
     const msgId = turn.currentMessageId ?? "";
-    // 1. add_user_message — synthetic. Carries the turn's text +
-    //    attachments. No `msg_id` on this frame ([D14]): the
-    //    reducer's `activeMsgId` is set by the first content event
-    //    of the turn (`assistant_text` / `thinking_text` /
-    //    `tool_use` / `content_block_start`), not by the user-side
-    //    opener. `msgId` from `turn.currentMessageId` is still
-    //    locally tracked below so the content frames (which DO carry
-    //    msg_id) can be re-emitted with claude's real id.
+    // 1. add_user_message — synthetic. Carries the turn's content
+    //    blocks (Anthropic API shape) as-submitted. No `msg_id` on
+    //    this frame ([D14]): the reducer's `activeMsgId` is set by
+    //    the first content event of the turn (`assistant_text` /
+    //    `thinking_text` / `tool_use` / `content_block_start`), not
+    //    by the user-side opener. `msgId` from `turn.currentMessageId`
+    //    is still locally tracked below so the content frames (which
+    //    DO carry msg_id) can be re-emitted with claude's real id.
     writeLine({
       type: "add_user_message",
-      text: turn.userText,
-      attachments: turn.userAttachments.slice(),
+      content: turn.userContent.slice(),
       ipc_version: 2,
     });
 
@@ -3904,8 +3923,9 @@ export class SessionManager {
   }
 
   /**
-   * Handle user_message: convert attachments to content blocks and
-   * write them to claude's stdin. If no turn is running, open the
+   * Handle user_message: forward the inbound content blocks to
+   * claude's stdin verbatim (the wire shape IS the API shape post-
+   * Step-5c — no construction). If no turn is running, open the
    * `ActiveTurn` for it and await its completion; if a turn is
    * already in flight, queue the message in {@link pendingTurnInputs}
    * and return — claude buffers it and the stdout drain opens its
@@ -3945,8 +3965,10 @@ export class SessionManager {
       return;
     }
 
-    // Build content blocks from text and attachments per PN-12.
-    const contentBlocks = buildContentBlocks(msg.text, msg.attachments || []);
+    // Forward the inbound content blocks directly to claude. The
+    // wire shape IS the Anthropic API shape post-Step-5c; no
+    // construction step. Per [Step 5c](roadmap/tide-atoms.md#step-5c).
+    const contentBlocks = msg.content;
 
     const userInput = JSON.stringify({
       type: "user",
@@ -3991,8 +4013,7 @@ export class SessionManager {
     if (this.activeTurn === null && this.pendingTurnInputs.length === 0) {
       const turn = new ActiveTurn(
         this.nextSeq(),
-        msg.text,
-        msg.attachments ?? [],
+        msg.content,
       );
       this.activeTurn = turn;
       // The drain clears `this.activeTurn` when it brackets the turn;
@@ -4001,8 +4022,7 @@ export class SessionManager {
       await turn.completion;
     } else {
       this.pendingTurnInputs.push({
-        text: msg.text,
-        attachments: msg.attachments ?? [],
+        content: msg.content,
       });
     }
   }
