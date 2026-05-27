@@ -1138,44 +1138,55 @@ Pure rename — no new behaviour. The gates are existence-and-green:
 - **Route-indicator badge naming (`data-route="code"`).** Whether route names should follow participant names is a Tide-wide consistency question, not a transcript-rendering question.
 - **`shell` participant rename.** This step leaves `shell` untouched. If/when shell-output rendering lands, the symmetric question (`ShellOutputCell`? `ShellTurnCell`?) gets answered in that step.
 - **DOM attribute name (`data-participant` itself).** Whether to call it `data-speaker` / `data-role` / `data-author` is a styling-convention discussion, not a scope of this rename. The attribute *value* is what flips here; the attribute *name* stays.
-- **Step 5 body rewrite.** [Step 5](#step-5)'s artifact list and tasks still reference `UserRowCell` and the wider "extract `AtomChip`" scope. After this rename lands, Step 5's body will be revised in its own plan-touch to (a) target the renamed `UserMessageCell` and (b) reflect the smaller scope agreed in conversation (transcript-only atom rendering, no editor refactor, no `AtomChip` primitive, no gallery card). That revision is deferred so this commit stays purely a rename.
 
 ---
 
-#### Step 5: `AtomChip` primitive + user-row atom rendering {#step-5}
+#### Step 5: Atom rendering in the transcript user-message row {#step-5}
 
 **Depends on:** #step-3, #step-pre-5
 
-**Commit:** `feat(tugdeck): AtomChip primitive + transcript user-row atom rendering`
+**Commit:** `feat(tugdeck): render atoms in the transcript user-message row`
 
-**References:** [D07](#d07-atom-chip-primitive), [Spec S05](#s05-atom-chip), (#transcript-rendering)
+**References:** (#transcript-rendering)
+
+**Scope decision (recorded here; [D07] and [Spec S05] are superseded):** Earlier drafts proposed a shared React `AtomChip` primitive consumed by the editor's CM6 widget, the transcript user row, and assistant-side tool-block path rendering. That extra surface is dropped. The editor already renders atoms correctly as `<img>` replaced elements (`tug-atom-img.ts`); rebuilding it as a React component buys nothing the substrate doesn't already give us for free and risks the carefully-engineered caret / selection / clipboard behaviour that depends on `<img>`'s replaced-element semantics. The transcript user row is the actual gap — `UserMessageCell` currently dumps the raw substrate text (including U+FFFC) into a plain `<span>`. The minimum honest fix is a small React component that walks `(text, atoms)` and renders the same `<img>` the editor uses today, via the same SVG builder, at each `U+FFFC` position.
+
+The single mechanical refactor needed: extract the SVG-data-URI builder from `createAtomImgElement` as a pure helper (`buildAtomSVGDataUri(type, label, value)`), so the new React component can render `<img src={dataUri} ...>` directly without mounting React inside a CM6 widget. `createAtomImgElement` keeps its current shape and calls the extracted helper internally — the editor's render path is byte-for-byte unchanged.
 
 **Artifacts:**
-- `tugdeck/src/components/tugways/tug-atom-chip.tsx` + CSS per [Spec S05](#s05-atom-chip).
-- `tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx` — walks `(text, atoms)`, interleaves `AtomChip` at `U+FFFC` positions.
-- `tugdeck/src/components/tugways/tug-text-editor/atom-decoration.ts` — CM6 widget mounts `<AtomChip>` instead of `createAtomImgElement`'s raw DOM widget (or `createAtomImgElement` delegates internally; either way `AtomChip` is the single render path).
-- `tide-card-transcript.tsx:UserRowCell` (`:368-451`) replaces the body `<span>{text}</span>` with `<TugAtomTextBody text={text} atoms={atoms} />`.
-- A gallery card variant for design tuning (`gallery-atom-chip.tsx`).
+
+- [`tugdeck/src/lib/tug-atom-img.ts`](../tugdeck/src/lib/tug-atom-img.ts) (modify) — extract `buildAtomSVGDataUri(type, label, value, options?): { dataUri: string; width: number; height: number; baselineOffset: number }` as a pure helper. `createAtomImgElement` continues to be the editor's entry point and calls the helper internally; its output (and CM6 widget integration) is unchanged.
+- `tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx` (new) — `<TugAtomTextBody text={string} atoms={ReadonlyArray<AtomSegment>}>`. Splits `text` on `U+FFFC`, interleaves `<img src={dataUri} width=... height=... alt={atom.label} style={{verticalAlign: ...px}}>` per atom built via `buildAtomSVGDataUri`. Pure render; no effects, no refs.
+- [`tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`](../tugdeck/src/components/tugways/cards/tide-card-transcript.tsx) (modify) — `UserMessageCell`'s body `<span>{text}</span>` becomes `<TugAtomTextBody text={text} atoms={atoms} />`. `atoms` is read from `committedUser?.attachments ?? activeUser?.attachments ?? []` on the same Message that supplies `text`.
+
+**Explicitly not in this step:**
+
+- No new `AtomChip` React component.
+- No changes to `atom-decoration.ts` or any CM6 widget code.
+- No gallery card variant. (Existing galleries already exercise the editor's atom rendering; the new `TugAtomTextBody` is a pure walker and is covered by the render tests below.)
+- No assistant-side tool-block atom rendering — that's still parked in [Step 7](#step-7) (whose body will be revisited when Step 7 is current; the AtomChip-based design captured there is superseded by the same scope decision recorded above).
 
 **Tasks:**
-- [ ] Extract chip rendering from `createAtomImgElement` into the `AtomChip` React component per [Spec S05](#s05-atom-chip); preserve theme-token reads via `getTokenValue`.
-- [ ] Refactor the CM6 atom-decoration to render `AtomChip` inside a CM6 widget (existing pattern; see `atom-decoration.ts`).
-- [ ] Build `TugAtomTextBody` per the existing render contract (walks `text`, splits at `U+FFFC`, interleaves chips).
-- [ ] Wire `UserRowCell` to use `TugAtomTextBody`.
-- [ ] Add the gallery card variant for design review.
+
+- [ ] **5.a — Extract SVG helper.** Pull the SVG-data-URI build path out of `createAtomImgElement` into `buildAtomSVGDataUri(type, label, value, options?)`. Make sure `createAtomImgElement`'s observable output is byte-identical (same `img.src`, `img.width`, `img.height`, `verticalAlign`, dataset attributes, title). Existing editor tests should pass unchanged.
+- [ ] **5.b — Build `TugAtomTextBody`.** New React component in `tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx`. Walks `text`, split at `U+FFFC`, interleaves text spans with `<img>` elements. Each `<img>` reads `(type, label, value)` from the parallel `atoms[i]` entry and uses `buildAtomSVGDataUri` for `src`. Defensive: if `atoms.length < count(U+FFFC, text)`, extra U+FFFC chars pass through as visible characters (same defensive posture as `buildWirePayload`'s invariant).
+- [ ] **5.c — Wire `UserMessageCell`.** Replace the body `<span>{text}</span>` in `tide-card-transcript.tsx` with `<TugAtomTextBody text={text} atoms={atoms} />`. Source `atoms` from `committedUser?.attachments ?? activeUser?.attachments ?? []`.
 
 **Tests:**
-- [ ] `render: AtomChip with type:"file" + label:"README.md" → renders chip with file icon + label`
-- [ ] `render: AtomChip with type:"image" + label:"screenshot.png" → renders chip with image icon`
-- [ ] `render: TugAtomTextBody with "before ￼ after" + [{file atom}] → renders [text "before "] [chip] [text " after"]`
-- [ ] `render: TugAtomTextBody with no atoms → renders plain text only`
-- [ ] `render: UserRowCell against a committed turn with 2 atoms → chips appear at expected positions`
+
+- [ ] `unit: buildAtomSVGDataUri returns a data: URI string + width/height/baselineOffset numbers; stable for same inputs (purity check).`
+- [ ] `render: TugAtomTextBody with no atoms ("hello world", []) renders plain text only.`
+- [ ] `render: TugAtomTextBody with one atom ("before ￼ after", [{file atom}]) renders [text "before "] [img] [text " after"]. Single <img> present; src is the SVG data URI; alt is the atom's label.`
+- [ ] `render: TugAtomTextBody with two atoms ("￼ and ￼", [a1, a2]) renders [img@a1] [text " and "] [img@a2]. Order preserved.`
+- [ ] `render: TugAtomTextBody with mismatched count (atoms.length < FFFC count) — extra U+FFFC characters render as visible text; no crash.`
+- [ ] `integration: UserMessageCell against a committed turn with 2 attachments → 2 <img> elements appear at the correct positions in the row body.`
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bun run audit:tokens lint`
-- [ ] Manual: open the gallery card → chip renders match the editor's chips by eye.
+
+- [ ] `cd tugdeck && bun test` — full suite green.
+- [ ] `cd tugdeck && bun run check` — tsc clean.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [ ] Manual: in a tide card, type a message with an `@`-completed atom (e.g., `look at @file.txt`), submit → transcript user row shows the same chip the editor showed pre-submit. The chip's icon, label, and baseline match the editor by eye.
 
 ---
 
