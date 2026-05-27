@@ -48,7 +48,9 @@ Two scope additions over earlier drafts: **image downsampling at insert time** (
 
 **Transcript rendering:**
 - The transcript user row renders atom chips at `U+FFFC` positions for both in-flight and committed turns. (verification: render test in `tide-card-transcript.test.tsx` + manual against gallery card)
-- The transcript user row renders an image-thumbnail strip above the body when the turn has image attachments. (verification: same as above)
+- The transcript user row renders a per-message thumbnail strip below the body when the turn has image attachments. (verification: same as above)
+- **Inline chip label and strip tile caption are the same string** for the same image — `#${pad4(messageNumber)}-image-${idx}` (e.g. `#0001-image-1`) — providing visual linkage between chip and thumbnail. The two strings are verifiably-equal on the rendered DOM. (verification: render test pinning the equality + manual against gallery card)
+- **Live and restored transcripts render identically** for the same message: same chip labels, same chip positions, same strip captions, same thumbnails. The submit boundary is the substrate-synthesis boundary; everything downstream is JSONL-honest. (verification: cold-restart smoke in [Step 8](#step-8) + integration test in `tide-card-transcript.test.tsx`)
 - Read / Edit / Write / NotebookEdit tool blocks render their `file_path` (and `notebook_path`) as a chip (`<img>` built via `buildAtomSVGDataUri`), identical to the user-side chip rendering. (verification: render test + manual)
 
 **Permission gating:**
@@ -381,9 +383,24 @@ The earlier draft proposed extracting chip rendering into a shared React compone
 
 ### Specification {#specification}
 
-#### Spec S01: `Attachment` wire type (unchanged) {#s01-attachment-wire-type}
+#### Spec S01: `Attachment` wire type (RETIRED) {#s01-attachment-wire-type}
 
-`tugdeck/src/protocol.ts` and `tugcode/src/types.ts`:
+> **Retired** as part of [Step 5c](#step-5c). The `Attachment` shape is superseded by Anthropic-API-shaped `ContentBlock[]` carried directly on the `user_message` wire frame. The legacy shape is preserved at the bottom of this section for historical record and to anchor any pre-5c references in the rest of this doc.
+
+The current wire shape uses Anthropic's `ContentBlock` array directly. The `user_message` frame carries `content: ContentBlock[]` instead of `text: string + attachments: Attachment[]`. See [Spec S03 (REVISED)](#s03-build-wire-payload) for the `buildWirePayload` contract that produces this shape.
+
+```ts
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+```
+
+The tugcast session-ledger's internal `(user_text, user_attachments)` projection (for the never-drop journal) still uses the legacy fields — derived inside `payload_inspector.rs` via `derive_legacy_journal_view(content)`. That projection is purely a tugcast-side detail; the wire and the substrate use content blocks.
+
+<details>
+<summary>Legacy `Attachment` interface (retired)</summary>
+
+`tugdeck/src/protocol.ts` and `tugcode/src/types.ts` (pre-5c):
 
 ```ts
 interface Attachment {
@@ -393,7 +410,9 @@ interface Attachment {
 }
 ```
 
-No discriminated union, no `kind`, no `path`. Forward-compatible extensions land additively in v2.
+No discriminated union, no `kind`, no `path`. The "survives JSONL round-trip" claim about `filename` was incorrect — Anthropic's `image` content block has no filename field, so the live wire's `filename` was lost on JSONL replay (tugcode's replay path hardcoded `filename: ""`). [Step 5c](#step-5c)'s submit-time substrate-synthesis is the resolution: the renderer's chip label is derived deterministically (`#NNNN-image-N`) rather than from a wire-preserved filename.
+
+</details>
 
 #### Spec S02: `AtomBytesStore` interface {#s02-atom-bytes-store}
 
@@ -427,7 +446,9 @@ interface AtomBytesStore {
 
 One instance per `CodeSessionStore` (per-tide-card scope). Lifetime: mount → unmount, with state-preservation snapshot ride-along.
 
-#### Spec S03: `buildWirePayload` contract {#s03-build-wire-payload}
+#### Spec S03: `buildWirePayload` contract (REVISED) {#s03-build-wire-payload}
+
+> **Revised** as part of [Step 5c](#step-5c). The earlier `{wireText, attachments}` return shape is superseded by interleaved `ContentBlock[]` matching Anthropic's API directly. The walker emits image atoms as standalone `image` blocks at their original positions in the substrate text; file-path atoms substitute into the surrounding text block. The function also returns an `atomIdAt` resolver built during the walk — the live path passes it to `synthesizeUserMessageFromBlocks` so synthesized atoms reuse the editor's original ids (no bytes-store orphans).
 
 `tugdeck/src/lib/build-wire-payload.ts`:
 
@@ -437,16 +458,37 @@ function buildWirePayload(
   atoms: ReadonlyArray<AtomSegment>,         // parallel atoms array; atoms.length === count(U+FFFC in text)
   bytesStore: AtomBytesStore,
 ): {
-  wireText: string;                          // text with each U+FFFC replaced by the corresponding atom's value
-  attachments: Attachment[];                 // one entry per image-atom with bytes in the store
+  content: ContentBlock[];                   // interleaved blocks (text, image, text, image, ...) preserving original order
+  atomIdAt: (imageBlockIndex: number) => string | undefined;
+                                             // resolver for synthesizer: image-block index → editor atom id
 };
 ```
 
 **Invariants:**
-- Pure: same inputs → same outputs (the bytes-store is read-only here; mutations live on drop/paste/commit paths).
-- `wireText` contains no `U+FFFC` characters when `atoms.length === count(U+FFFC, text)`.
-- Defensive: if `atoms.length < count(U+FFFC, text)`, extra `U+FFFC` chars pass through. Visible regression rather than crash.
-- An image atom whose id is missing from the store is silently skipped (the substituted text still inserts `atom.value` so claude sees the filename).
+- Pure: same inputs → same outputs (the bytes-store is read-only here; mutations live on drop/paste/commit paths and synthesis).
+- The `content` array preserves the original document order: text accumulates between `U+FFFC` positions; each image atom with bytes in the store becomes a standalone `image` block at that position; each file-path atom substitutes `atom.value` into the surrounding text block. Adjacent text segments coalesce into a single text block.
+- An image atom whose id is missing from the store is silently skipped (the substituted text still inserts `atom.value` so claude sees the filename). The walker tracks this — `atomIdAt(i)` returns the id of the i-th atom that actually became an image block, not the i-th editor atom.
+- Defensive: if `atoms.length < count(U+FFFC, text)`, extra `U+FFFC` chars pass through into text blocks verbatim. Visible regression rather than crash.
+
+<details>
+<summary>Legacy `buildWirePayload` contract (superseded)</summary>
+
+Pre-5c:
+
+```ts
+function buildWirePayload(
+  text: string,
+  atoms: ReadonlyArray<AtomSegment>,
+  bytesStore: AtomBytesStore,
+): {
+  wireText: string;       // text with each U+FFFC replaced by the corresponding atom's value
+  attachments: Attachment[];  // one entry per image-atom with bytes in the store
+};
+```
+
+The flat shape (`wireText` plus a separate `attachments` array) lost the original atom positions on the wire. claude's JSONL recorded the flat shape (text + sequential image blocks). On cold-restart, the renderer had no way to reconstruct which positions in the text were originally atoms — the chip placement was lost. [Step 5c](#step-5c) preserves position by emitting interleaved blocks; JSONL records the interleaving; restore reads it back as substrate.
+
+</details>
 
 #### Spec S04: `image-downsample` contract {#s04-image-downsample}
 
@@ -1256,10 +1298,14 @@ Five coordinated layers:
 4. **Substrate synthesis (live + replay, single shared implementation).** Both `handleSend` (live submit) and `handleAddUserMessage` (JSONL replay) walk the content blocks and synthesize a `UserMessage` substrate identically:
    - Walk blocks in order, maintaining a per-message image-counter and a text accumulator.
    - For each `text` block: append `block.text` to the accumulator.
-   - For each `image` block: emit `U+FFFC` into the accumulator; mint an `AtomSegment` with `type: "image"`, `label: "image-N"` (where N is the 1-based per-message image counter — no `#NNNN-` prefix at this layer), `value: "image-N"`; resolve the atom's `id` via the optional `atomIdAt(blockIndex)` resolver, or mint a fresh UUID when no resolver is supplied; **bake the thumbnail (256-px max edge) from the block's bytes** and write the bytes-store entry as `{content, mediaType, thumbnailDataUrl}` under that id.
+   - For each `image` block: emit `U+FFFC` into the accumulator; mint an `AtomSegment` with `type: "image"`, `label: "image-N"` (where N is the 1-based per-message image counter — no `#NNNN-` prefix at this layer), `value: "image-N"`; resolve the atom's `id` via the optional `atomIdAt(imageBlockIndex)` resolver, or mint a fresh UUID when no resolver is supplied; **bake the thumbnail (256-px max edge) from the block's bytes** and write the bytes-store entry as `{content, mediaType, thumbnailDataUrl}` under that id.
    - Yield `{ text: accumulator, atoms: [...] }`.
-   - The synthesis is deterministic on its inputs **plus the id resolver**. The live path passes a resolver that maps block index → the original atom's id (sourced from the editor's substrate at submit time), so bytes-store entries from drop/paste don't become orphans when the synthesizer runs. The replay path passes no resolver — fresh UUIDs are minted because JSONL doesn't carry the original ids, and the bytes-store is per-card-mount (fresh on reload) so id reuse from a prior session is impossible.
+   - The synthesis is deterministic on its inputs **plus the id resolver**. The live path passes a resolver that maps **image-block index → original atom id** so bytes-store entries from drop/paste don't become orphans. The replay path passes no resolver — fresh UUIDs are minted; the bytes-store is per-card-mount (fresh on reload) so id reuse from a prior session is impossible.
    - **The thumbnail bake is part of synthesis, not a separate commit-path step.** Both live and replay produce bytes-store entries that already carry `thumbnailDataUrl` — the strip renderer in [Step 6](#step-6) can read it unconditionally, with no "did the bake happen yet?" branch.
+
+5. **`buildWirePayload` returns its own resolver.** The walk that produces content blocks also knows which editor atoms became image blocks (atoms with `id` whose bytes are in the store) and in what order. Returning a resolver built from that walk eliminates the chance of an index mismatch between "editor's image-atom count" and "blocks that actually became image blocks" — e.g., when an editor atom has no bytes in the store and `buildWirePayload` defensively skips emitting its block ([Spec S03] invariant). `handleSend` passes the wire payload's `atomIdAt` straight through to the synthesizer; no cross-data-source matching, no resolver-built-externally fragility.
+
+6. **Queued-send shape carries both halves.** When the user submits while a turn is in-flight, the message queues for later flush ([`reducer.ts:798`](../tugdeck/src/lib/code-session-store/reducer.ts) today carries `{text, atoms, wireText, attachments, turnKey}`). Post-5c, the queued entry carries `{content: ContentBlock[], syntheticText: string, syntheticAtoms: AtomSegment[], turnKey: string}` — the wire content (for send-on-flush) plus the already-synthesized substrate (so `handleTurnComplete`'s queue-flush branch mints the new `UserMessage` directly without re-synthesizing). Synthesis happens exactly once per submission, at `handleSend` time, regardless of whether the message goes active or queued. Bytes-store entries are minted at synthesis time and persist across the queue gap (the bytes-store is per-card-mount).
 
 5. **Render-time label decoration.** `TugAtomTextBody` accepts an optional `messageNumber: number` prop. When set, each image atom's *displayed* chip label becomes `#${pad4(messageNumber)}-${atom.label}` (e.g., `#0001-image-1`). When unset, the atom's stored `label` is used as-is — leaving the editor's pre-submit chip rendering (which doesn't have a transcript position) unaffected. The 4-digit padding matches the existing transcript sequence-number convention (`#NNNN`).
 
@@ -1273,7 +1319,7 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 
 **Tugdeck — wire generation:**
 
-- [`tugdeck/src/lib/build-wire-payload.ts`](../tugdeck/src/lib/build-wire-payload.ts) — `buildWirePayload` returns `{ content: ContentBlock[] }` (no `wireText`, no `attachments`). Walker over `(text, atoms)` emits interleaved blocks: text accumulates between `U+FFFC` positions; each image atom (with bytes in the store) becomes a standalone `image` block; each file-path atom substitutes `atom.value` into the current text block. Adjacent text segments coalesce into a single text block; an image at the start / end of text doesn't generate empty surrounding text blocks.
+- [`tugdeck/src/lib/build-wire-payload.ts`](../tugdeck/src/lib/build-wire-payload.ts) — `buildWirePayload` returns `{ content: ContentBlock[]; atomIdAt: (imageBlockIndex: number) => string | undefined }`. Walker over `(text, atoms)` emits interleaved blocks: text accumulates between `U+FFFC` positions; each image atom (with bytes in the store) becomes a standalone `image` block; each file-path atom substitutes `atom.value` into the current text block. Adjacent text segments coalesce into a single text block; an image at the start / end of text doesn't generate empty surrounding text blocks. The walker tracks which atoms became image blocks (atoms whose bytes were in the store) and returns `atomIdAt` as a closure over that mapping — `handleSend` passes it straight to the synthesizer with no cross-data-source matching.
 - [`tugdeck/src/protocol.ts`](../tugdeck/src/protocol.ts) — `ContentBlock` union type matching Anthropic's API shape. `UserMessageWireFrame` revised: `{ type: "user_message", content: ContentBlock[] }` (drops `text` and `attachments`). Old `Attachment` interface deprecated and removed.
 
 **Tugdeck — synthesizer + reducer:**
@@ -1308,7 +1354,8 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 
   Bakes thumbnails as it walks; bytes-store entries get `thumbnailDataUrl` at synthesis time. Pure on its inputs (deterministic blocks → substrate); bytes-store side-effect is the documented seam.
 
-- [`tugdeck/src/lib/code-session-store/reducer.ts`](../tugdeck/src/lib/code-session-store/reducer.ts) — `handleSend` runs `buildWirePayload`, sends the frame with `content`, then calls the synthesizer with an `atomIdAt` resolver derived from the editor's substrate (`(blockIdx) => editorAtoms.filter(a => a.type === "image")[blockIdx]?.id`). `handleAddUserMessage` calls the same synthesizer with no resolver. No fallback path, no cast.
+- [`tugdeck/src/lib/code-session-store/reducer.ts`](../tugdeck/src/lib/code-session-store/reducer.ts) — `handleSend` runs `buildWirePayload`, sends the frame with `content`, then calls the synthesizer with the wire payload's `atomIdAt` (no externally-built resolver). `handleAddUserMessage` calls the same synthesizer with no resolver. No fallback path, no cast.
+   The **queued-send entry shape** changes: today's `{text, atoms, wireText, attachments, turnKey}` (line ~798) becomes `{content: ContentBlock[], syntheticText: string, syntheticAtoms: AtomSegment[], turnKey: string}`. Synthesis happens once at `handleSend` time regardless of active-vs-queued; `handleTurnComplete`'s queue-flush branch (line ~2194) sends the queued entry's `content` to claude and mints the new turn's `UserMessage` directly from `syntheticText` + `syntheticAtoms` — no re-synthesis at flush time.
 - [`tugdeck/src/lib/code-session-store/events.ts`](../tugdeck/src/lib/code-session-store/events.ts) — `AddUserMessageEvent` revised: `content: ContentBlock[]` (drops `text` and `attachments`). The wire wrapper that converts inbound frames to events already passes through unknown fields; the rewrite just retypes the field.
 
 **Tugcast (Rust) — inspector + journal:**
@@ -1352,10 +1399,11 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 **Tugdeck synthesis + decoration:**
 
 - [ ] **5c.k — `synthesizeUserMessageFromBlocks` helper.** Shared between live and replay. Optional `atomIdAt(imageBlockIndex)` resolver in the options bag — live path supplies it from the editor's substrate; replay path omits it. Bakes thumbnails per image block (`bakeThumbnail` invocation lands here, not in commit path). Pure-on-inputs (modulo bytes-store side effect).
-- [ ] **5c.l — `handleSend` integration.** Calls `buildWirePayload` → sends content; builds the `atomIdAt` resolver from the editor's pre-submit atom array (`(blockIdx) => editorImageAtoms[blockIdx]?.id`); calls synthesizer; stores `UserMessage` with synthesized substrate.
+- [ ] **5c.l — `handleSend` integration.** Calls `buildWirePayload` (now returns `{content, atomIdAt}`); sends the frame with `content`; calls synthesizer with `wirePayload.atomIdAt`. Stores the active-turn `UserMessage` with the synthesized substrate, or builds the queued-send entry `{content, syntheticText, syntheticAtoms, turnKey}` when the message goes to the queue.
 - [ ] **5c.m — `handleAddUserMessage` integration.** Calls synthesizer on `event.content` with no resolver. Removes the loose `event.attachments as ReadonlyArray<AtomSegment>` cast outright. No fallback path.
-- [ ] **5c.n — `messageNumber` prop on `TugAtomTextBody`.** Threads through to the chip label. Default behavior (no prop set) unchanged. Extract `pad4` if a shared helper isn't already present.
-- [ ] **5c.o — `UserMessageCell` wiring.** Passes `messageNumber={index + 1}` to `TugAtomTextBody`.
+- [ ] **5c.n — `handleTurnComplete` queue-flush integration.** When `state.queuedSends.length > 0` at a successful `turn_complete`, take the first queued entry; send its `content` to claude; mint the new active turn's `UserMessage` directly from `syntheticText` + `syntheticAtoms` (no re-synthesis). Bytes-store entries from the original submit time stay live across the gap.
+- [ ] **5c.o — `messageNumber` prop on `TugAtomTextBody`.** Threads through to the chip label. Default behavior (no prop set) unchanged. Extract `pad4` if a shared helper isn't already present.
+- [ ] **5c.p — `UserMessageCell` wiring.** Passes `messageNumber={index + 1}` to `TugAtomTextBody`.
 
 #### Tests {#step-5c-tests}
 
@@ -1376,7 +1424,9 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 
 - [ ] `buildWirePayload(text="a￼b", atoms=[fileAtom]).content === [{text: "a/path/to/file.txtb"}]` — file atom substituted, single text block.
 - [ ] `buildWirePayload(text="a￼b", atoms=[imageAtom-with-bytes]).content === [{text: "a"}, {image: …}, {text: "b"}]` — image becomes its own block, surrounding text intact.
-- [ ] `buildWirePayload` over `(text, atoms)` → `synthesizeUserMessageFromBlocks(content)` → a substrate where image-atom positions are preserved and image-atom labels are `image-N`.
+- [ ] **`buildWirePayload`'s `atomIdAt(0)` returns the editor atom's id** for an image block that emerged from an atom with bytes in the store.
+- [ ] **`buildWirePayload`'s `atomIdAt` correctly skips bytes-less atoms.** Editor has two image atoms; only one has bytes in the store. `content` has one image block; `atomIdAt(0)` returns the bytes-bearing atom's id (not the other one's). Pins the no-mismatch promise.
+- [ ] `buildWirePayload` over `(text, atoms)` → `synthesizeUserMessageFromBlocks(content, store, { atomIdAt: wirePayload.atomIdAt })` → a substrate where image-atom positions are preserved, image-atom labels are `image-N`, **and atom ids are reused from the editor** (no orphans).
 
 **Render-time label (bun:test, pure-logic):**
 
@@ -1388,6 +1438,8 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 - [ ] `handleSend` with a substrate containing one image atom → `UserMessage` lands on `pendingTurn` with synthesized substrate (`label: "image-1"`); wire frame's `content` carries the interleaved blocks; bytes-store has the image entry **under the editor's original atom id** (not a freshly-minted UUID) — confirming the live path's resolver is wired correctly.
 - [ ] `handleSend` with a substrate containing two image atoms → bytes-store entries land under the two editor ids (no orphans).
 - [ ] `handleAddUserMessage` with an `add_user_message` event carrying content blocks → `UserMessage` substrate matches `handleSend`'s output for the same content blocks (modulo UUID values, which are intentionally fresh on the replay path).
+- [ ] `handleSend` while a turn is in-flight → produces a queued-send entry of shape `{content, syntheticText, syntheticAtoms, turnKey}`. Synthesis happens once at submit (bytes-store entries land at this moment), not deferred to flush.
+- [ ] `handleTurnComplete` with a non-empty queue → flushes the first queued entry, sends its `content` to claude, mints the new active turn's `UserMessage` directly from the queued entry's `syntheticText` + `syntheticAtoms` (no re-synthesis at flush time, bytes-store entries unchanged).
 
 **Tugcast (Rust, cargo nextest):**
 
@@ -1515,10 +1567,10 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 - [ ] `cd tugcode && bun test`
 - [ ] `cd tugrust && cargo nextest run --workspace`
 - [ ] `just app-test` end-to-end recipe (new): drop a PNG → mention a workspace `@CLAUDE.md` → submit → assert:
-  - (a) the wire frame carries one `Attachment` with the right shape;
-  - (b) the wire text contains `CLAUDE.md` literally (no `U+FFFC`);
-  - (c) the transcript renders a thumbnail tile + a chip for `CLAUDE.md`;
-  - (d) cold-restart of the card replays both correctly from JSONL + journal.
+  - (a) the wire frame carries `content: ContentBlock[]` with one image block + one text block in the correct order (image at the position where the chip sat in the editor);
+  - (b) the text block contains `CLAUDE.md` literally (no `U+FFFC`) — `@`-completion paths substitute into text per [Spec S03 (REVISED)](#s03-build-wire-payload);
+  - (c) the transcript renders a `#NNNN-image-1` chip at the image's position + a thumbnail tile in the strip with matching `#NNNN-image-1` caption; `CLAUDE.md` appears inline as plain text (no chip wrapping);
+  - (d) cold-restart of the card replays both correctly from JSONL — chip positions, labels, and thumbnails are byte-identical to the live render.
 - [ ] Manual smoke: paste a screenshot, drop a 4K PNG, `@`-mention `CLAUDE.md`, type `@.env` (no popup match expected), submit, verify thumbnails in editor, chips in transcript, tool-block path chips when claude reads a file, full state survives close-and-reopen.
 
 **Checkpoint:**
