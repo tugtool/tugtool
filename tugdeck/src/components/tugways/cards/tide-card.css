@@ -241,6 +241,35 @@
      `…` settings sheet's slider drives `--tugx-tide-magnification`
      between 0.5 and 1.5, so the font-size sweeps 7px through 21px. */
   font-size: calc(14px * var(--tugx-tide-magnification));
+
+  /* Cascade-scoped magnification overrides for render-block typography
+     and image-thumbnail geometry [L20]. The primitives consume their
+     own `--tugx-block-*` / `--tugx-toolblock-*` / `--tugx-attachment-
+     strip-*` slots, which globally resolve to fixed `--tug-font-size-*`
+     px values and hard pixel dimensions — neither rides the
+     magnification cascade on its own. Inside the transcript we
+     redeclare the slots in em (font-size axis) or magnification-scaled
+     calc (geometry axis), so terminal output, tool-block chrome, and
+     attachment thumbnails track the same multiplier as body text.
+     Ratios preserve the source values against the 14px nominal root:
+     11/14 ≈ 0.786em, 12/14 ≈ 0.857em, 13/14 ≈ 0.929em. The
+     virtualized terminal scroller (>300 lines) still uses a JS-side
+     `LINE_HEIGHT_PX` constant that is unaware of magnification —
+     out of scope for the cascade-only fix here. */
+  --tugx-block-code-font-size: 0.929em;
+  --tugx-block-strip-size: 0.786em;
+  --tugx-toolblock-header-size: 0.929em;
+  --tugx-toolblock-caution-size: 0.786em;
+  --tugx-toolblock-error-size: 0.929em;
+  --tugx-attachment-strip-tile-size:
+    calc(64px * var(--tugx-tide-magnification));
+  --tugx-attachment-strip-gap:
+    calc(8px * var(--tugx-tide-magnification));
+  --tugx-attachment-strip-margin-top:
+    calc(8px * var(--tugx-tide-magnification));
+  --tugx-attachment-strip-caption-size: 0.7em;
+  --tugx-attachment-strip-caption-gap:
+    calc(4px * var(--tugx-tide-magnification));
 }
 
 /* [DT10] transcript-replay paint gate. While the card's lifecycle
