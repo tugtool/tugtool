@@ -17,19 +17,20 @@
  *      required to indicate the editor accepts drops; without it
  *      the OS refuses the drag and no `drop` event ever fires.
  *      We further set `dataTransfer.dropEffect = "copy"` so the
- *      cursor shows the copy-cursor variant.
+ *      cursor shows the copy-cursor variant. The editor accepts
+ *      every file drag — there is no cursor-level rejection — so
+ *      we don't need to look at per-file MIME information at this
+ *      stage.
  *
  *   3. **`drop` insertion.** `preventDefault()` to suppress the
  *      WebView's default navigate-to-file-URL behavior, then a
- *      single transaction inserts each dropped image as an atom at
- *      the (bias-adjusted) drop offset. Non-image files are
- *      silently dropped — the Claude Agent SDK's user-message
- *      input pipeline only accepts text + image content blocks, so
- *      inline attachments are images-only. (Workspace files are
- *      handled via `@`-mention typeahead instead.) File → atom
- *      conversion defers to a host-supplied `DropHandler` thunk;
- *      without one an extension-based default routes image files
- *      through the downsample pipeline and rejects everything else.
+ *      single transaction inserts each dropped file into the
+ *      editor. Files with image extensions (png / jpg / jpeg /
+ *      gif / svg / webp) become atoms (image chips routed through
+ *      the downsample pipeline when a bytes-store is available);
+ *      every other file inserts its basename as plain text. Mixed
+ *      drops interleave the two with single-space separators, all
+ *      in one CM6 transaction.
  *
  * The caret is implemented with CM6's standard StateField +
  * ViewPlugin + `requestMeasure` pattern — same shape as CM6's
@@ -74,15 +75,10 @@ import {
 import { addAtomsEffect, removeAtomById } from "./atom-decoration";
 import type { DropHandler } from "@/lib/tug-text-types";
 import {
-  classifySourceMime,
   downsampleImage,
   type DownsampleError,
 } from "@/lib/image-downsample";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
-import {
-  getCurrentDragFiles,
-  type NativeDragFileEntry,
-} from "@/lib/native-drag-bridge";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -118,31 +114,61 @@ const IMG_EXTS: ReadonlySet<string> = new Set([
 const DROP_CARET_CLASS = "cm-tug-drop-caret";
 
 // ---------------------------------------------------------------------------
-// Default file → atom conversion
+// Drop classification — image vs filename text
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a `FileList` into atom segments using only the file name.
- * Image-extension files land as `type: "image"` so the atom renders
- * with the image-kind treatment from `tug-atom-img`; non-image
- * files are silently dropped — inline attachments are images-only
- * per Anthropic Agent SDK's input shape. The label and value are
- * both the bare filename — callers that need real paths (or
- * content hashes, or server-side URLs) supply their own
- * `DropHandler` and the default is bypassed entirely.
+ * Decide whether a file should render as an image atom (chip) or
+ * insert its basename as plain text. Extension-based: anything with
+ * a recognized image extension (png / jpg / jpeg / gif / svg / webp)
+ * becomes an atom; everything else becomes filename text.
  *
- * This is the no-bytes-store fallback path (gallery / standalone
- * harness). The bytes-store-aware path (the live editor) routes
- * through `processAttachmentFiles` instead and applies the same
- * image-only filter via `classifySourceMime`.
+ * Extension-based on purpose. Inline atom-chip support is images-only
+ * (the downsample pipeline only handles raster + svg). Non-image
+ * basenames as plain text fall through to the regular text channel
+ * without any chip machinery — the model just reads the literal name
+ * in the user's message.
  */
-function defaultFilesToAtoms(files: FileList): AtomSegment[] {
-  const out: AtomSegment[] = [];
+function isImageFile(file: File): boolean {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return IMG_EXTS.has(ext);
+}
+
+/**
+ * One item in the mixed-drop insertion plan. An `atom` item carries
+ * an `AtomSegment` that lands at a `U+FFFC` placeholder in the doc;
+ * a `text` item inserts a literal substring (currently used for the
+ * basename of non-image dropped files).
+ */
+type DropMixedItem =
+  | { kind: "atom"; segment: AtomSegment }
+  | { kind: "text"; text: string };
+
+/**
+ * Default no-bytes-store path: convert a `FileList` into a flat list
+ * of mixed items, one per file in order. Image-extension files
+ * become atom items (no `id`, no bytes — the downsample pipeline
+ * only runs in the bytes-store-aware path); everything else becomes
+ * a text item carrying the basename.
+ *
+ * Used by gallery cards / standalone harness where no
+ * `AtomBytesStore` is wired. The bytes-store-aware path (the live
+ * editor) routes through `processAttachmentFiles` which builds the
+ * same item shape but also mints atom ids and starts async
+ * byte-fill jobs.
+ */
+function defaultFilesToMixedItems(files: FileList): DropMixedItem[] {
+  const out: DropMixedItem[] = [];
   for (let i = 0; i < files.length; i++) {
     const f = files[i]!;
-    const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
-    if (!IMG_EXTS.has(ext)) continue;
-    out.push({ kind: "atom", type: "image", label: f.name, value: f.name });
+    if (isImageFile(f)) {
+      out.push({
+        kind: "atom",
+        segment: { kind: "atom", type: "image", label: f.name, value: f.name },
+      });
+    } else {
+      out.push({ kind: "text", text: f.name });
+    }
   }
   return out;
 }
@@ -350,6 +376,8 @@ const tugDropCaretPlugin = ViewPlugin.fromClass(TugDropCaretPlugin);
  * `insertAtomAtSelection`. No `scrollIntoView`: the user's eye is
  * already on the drop site, so an automatic scroll would be jarring.
  *
+ * Thin wrapper over {@link insertMixedAt} for the custom-host-handler
+ * path, whose `DropHandler` contract returns `AtomSegment[]` directly.
  * Exported so tests can drive the insertion without a `DragEvent`.
  */
 export function insertAtomsAt(
@@ -357,12 +385,47 @@ export function insertAtomsAt(
   pos: number,
   atoms: readonly AtomSegment[],
 ): void {
-  if (atoms.length === 0) return;
-  const insert = TUG_ATOM_CHAR.repeat(atoms.length);
-  const positioned = atoms.map((segment, i) => ({
-    position: pos + i,
-    segment,
-  }));
+  insertMixedAt(
+    view,
+    pos,
+    atoms.map((segment) => ({ kind: "atom", segment })),
+  );
+}
+
+/**
+ * Dispatch a single transaction inserting a mix of atom + text items
+ * at `pos`. Items are joined with a single space; each atom takes
+ * one `U+FFFC` placeholder paired with an `addAtomsEffect` entry at
+ * the corresponding position, and each text item inserts its literal
+ * substring verbatim.
+ *
+ * Selection lands immediately after the last inserted character — the
+ * same end-of-insert convention `insertAtomsAt` used in the
+ * atoms-only era. Hides the drop caret in the same transaction.
+ *
+ * Used by the bytes-store-aware path (`processAttachmentFiles`) and
+ * the no-bytes-store default path. The atoms-only `insertAtomsAt`
+ * wrapper feeds through here too, so multi-image drops also pick up
+ * single-space separators between chips.
+ */
+function insertMixedAt(
+  view: EditorView,
+  pos: number,
+  items: readonly DropMixedItem[],
+): void {
+  if (items.length === 0) return;
+  let insert = "";
+  const positioned: Array<{ position: number; segment: AtomSegment }> = [];
+  for (let i = 0; i < items.length; i += 1) {
+    if (i > 0) insert += " ";
+    const item = items[i]!;
+    if (item.kind === "atom") {
+      positioned.push({ position: pos + insert.length, segment: item.segment });
+      insert += TUG_ATOM_CHAR;
+    } else {
+      insert += item.text;
+    }
+  }
   view.dispatch({
     changes: { from: pos, insert },
     effects: [
@@ -371,7 +434,7 @@ export function insertAtomsAt(
       // insertion — atomic from the user's perspective.
       setTugDropCaretPos.of(null),
     ],
-    selection: { anchor: pos + atoms.length },
+    selection: { anchor: pos + insert.length },
     userEvent: "input.tug-atom-drop",
   });
 }
@@ -427,78 +490,6 @@ export function describeDownsampleError(
 }
 
 /**
- * Drop-time supportedness check. Walks `dataTransfer.files`, which
- * is fully populated with real MIME info at the moment `drop`
- * fires (unlike at `dragenter` / `dragover`, where WebKit redacts
- * per-item MIME info entirely — `dataTransfer.items.length === 0`
- * for cross-origin file drags from Finder). Returns `true` if any
- * file is an image (per `classifySourceMime`).
- *
- * Used by the `drop` handler to silently refuse drops whose every
- * file is non-image (PDF, archive, audio, video, text, source code,
- * etc.). The user sees no atom and no banner; the missing chip is
- * the signal. Inline attachments are limited to images per Anthropic
- * Agent SDK's input shape — text and document content blocks are
- * not accepted on the user-message input pipeline. For workspace
- * files, the canonical path is `@`-mention (the model uses the Read
- * tool).
- *
- * WebKit reference: bug #223517 (DataTransferItemList is empty
- * during dragenter/dragover events when dragging files) —
- * unresolved as of December 2023. Confirmed empirically in
- * WKWebView via the Step 3.5.7 instrumentation pass: `types`
- * carries `["Files"]` during drag but `items` and `files` are
- * both length-0; only at `drop` time does WKWebView reveal the
- * real MIME and filename.
- */
-function dropHasSupportedFile(dataTransfer: DataTransfer | null): boolean {
-  if (dataTransfer === null) return false;
-  const files = dataTransfer.files;
-  if (!files || files.length === 0) return false;
-  for (let i = 0; i < files.length; i += 1) {
-    const file = files[i]!;
-    if (classifySourceMime(file.type) !== "unsupported") return true;
-  }
-  return false;
-}
-
-/**
- * Native-bridge supportedness check. Operates on the
- * `PasteboardSnapshot` pushed in by the Swift host
- * (`tugapp/Sources/Drag/TugDragDestination.swift`) at every
- * `draggingEntered:` / `draggingUpdated:`. Mirrors the drop-time
- * `dropHasSupportedFile` logic — only an image-classifiable MIME
- * makes the drag acceptable. An entry whose `mimeType` is absent
- * is treated optimistically (true) since some Finder file URLs
- * arrive without a registered MIME and the drop-time classifier
- * does the final filtering (refusing at the cursor based on
- * missing MIME would over-reject otherwise-supported images).
- *
- * Returns `true` if at least one entry is image-classifiable;
- * `false` only when *every* entry is known-unsupported (a PDF-only
- * drag, a `.txt` drag, an audio/video drag, etc.). The drop
- * extension uses the boolean to drive the three-state
- * `setDropActive` accept / reject ring during drag — the first
- * branch the JS world has ever had into per-item MIME during drag
- * inside WKWebView. See `tugapp/Sources/Drag/PasteboardSnapshot.swift`.
- */
-function nativeDragHasSupportedFile(
-  entries: readonly NativeDragFileEntry[],
-): boolean {
-  if (entries.length === 0) return false;
-  for (const entry of entries) {
-    const mime = entry.mimeType;
-    if (mime === undefined || mime === "") {
-      // Missing MIME — optimistic accept; the drop-time classifier
-      // makes the final image-vs-not call against the real File.type.
-      return true;
-    }
-    if (classifySourceMime(mime) !== "unsupported") return true;
-  }
-  return false;
-}
-
-/**
  * Mint a stable atom id for a freshly-dropped or freshly-pasted
  * file. UUIDs are the right shape (large keyspace, no coordination,
  * no collisions across cards or sessions). Defensive `??` covers
@@ -513,81 +504,67 @@ function mintAtomId(): string {
 
 /**
  * Per-file classification result. `kind === "skeleton-image"` means
- * the file is image-classifiable and will produce an atom + bytes
+ * the file has an image extension and will produce an atom + bytes
  * (after async downsample); the skeleton atom is inserted
- * synchronously and bytes land later. Non-image files never appear
- * in the output array — inline attachments on the Claude Agent SDK
- * user-message input pipeline are images-only, so the drop pipeline
- * rejects everything else.
+ * synchronously and bytes land later. `kind === "filename-text"`
+ * means the file is non-image and its basename will land as plain
+ * text in the same insertion transaction.
  */
-type ClassifiedDrop = {
-  kind: "skeleton-image";
-  file: File;
-  atom: AtomSegment;
-};
+type ClassifiedDrop =
+  | { kind: "skeleton-image"; file: File; atom: AtomSegment }
+  | { kind: "filename-text"; text: string };
 
 /**
- * Synchronously decide what each file should become. Returns a flat
- * array — image classifications mint atom ids and build the
- * skeleton atom right here so the caller can immediately insert
- * placeholders into the doc.
+ * Synchronously decide what each file should become. Image-extension
+ * files mint an atom id and build the skeleton atom here so the
+ * caller can insert it immediately; non-image files emit a text
+ * entry carrying the basename so the same insertion transaction can
+ * splice it into the doc verbatim.
  *
- * Two branches: image → silent-skip. In WKWebView all file drags
- * are cursor-accepted (WebKit redacts per-item MIME during drag —
- * see `dropHasSupportedFile`), so any unsupported file reaches
- * this classifier even for pure-unsupported drops. The drop
- * handler's call to `dropHasSupportedFile` refuses
- * pure-unsupported drops before this classifier runs; what reaches
- * here is either fully-image drops or mixed drops where some
- * subset is non-image. The classifier silently drops non-image
- * entries from the output — the image subset still processes.
- * No banner: the user already saw the copy cursor, so a banner on
- * top would be jarring; the missing chip is the signal.
- *
- * When Step 3.5.7's native bridge is active, cursor-level rejection
- * keeps pure-non-image drops from reaching this code path at all.
+ * Order is preserved — caller can flatten this list to mixed-item
+ * shape and feed it straight to {@link insertMixedAt}.
  */
 function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
   const out: ClassifiedDrop[] = [];
   for (const file of files) {
-    // Image MIMEs: png / jpeg / gif / webp / heic / heif / avif and
-    // svg via rasterization. Non-image files are silently dropped —
-    // see the docstring above.
-    if (classifySourceMime(file.type) === "unsupported") continue;
-    out.push({
-      kind: "skeleton-image",
-      file,
-      atom: {
-        kind: "atom",
-        type: "image",
-        label: file.name,
-        value: file.name,
-        id: mintAtomId(),
-      },
-    });
+    if (isImageFile(file)) {
+      out.push({
+        kind: "skeleton-image",
+        file,
+        atom: {
+          kind: "atom",
+          type: "image",
+          label: file.name,
+          value: file.name,
+          id: mintAtomId(),
+        },
+      });
+    } else {
+      out.push({ kind: "filename-text", text: file.name });
+    }
   }
   return out;
 }
 
 /**
- * Convert user-dropped or user-pasted files into atoms — instant
- * skeleton insertion at the drop position, then async byte-fill in
- * the background.
+ * Convert user-dropped or user-pasted files into atoms + filename
+ * text — instant skeleton insertion at the drop position, then async
+ * byte-fill in the background for the image entries.
  *
  * The synchronous half:
- *  1. Classify each file (image / reject). Non-image files are
- *     silently dropped per [D02] — the missing chip is the signal.
- *  2. Image branch mints UUIDs, builds skeleton atoms with the id
- *     set but NO bytes-store entry yet. The atom widget's `toDOM`
- *     queries the bytes-store via `atomBytesStoreFacet`, finds no
- *     entry, and renders in the pending appearance (dimmed +
- *     pulsing) — instant feedback at the drop point.
- *  3. `insertAtomsAt` dispatches all skeleton atoms in one
- *     transaction. The user sees them appear at the drop point
- *     synchronously.
+ *  1. Classify each file. Image extensions become skeleton-image
+ *     entries (mint id, build atom segment); everything else
+ *     becomes a filename-text entry carrying the basename.
+ *  2. Flatten to {@link DropMixedItem}s and dispatch one transaction
+ *     via {@link insertMixedAt}: each image takes one `U+FFFC`
+ *     paired with the skeleton atom; each non-image takes its
+ *     basename verbatim; consecutive items are joined with a single
+ *     space. The user sees the full mixed insertion at the drop
+ *     point synchronously.
  *
  * The asynchronous half runs in the background, one job per
- * skeleton atom:
+ * skeleton-image entry. Filename-text entries have no async work —
+ * they're plain prose in the doc once the transaction commits.
  *  - Image: `downsampleImage(file)` → on success, `bytesStore.put`
  *    populates the entry; the bytes-store's `subscribe` notification
  *    fires `syncPendingAttributes`, which mutates the atom widget's
@@ -615,20 +592,19 @@ export function processAttachmentFiles(
 ): void {
   if (files.length === 0) return;
 
-  // Step 1 — synchronous classification. Unsupported files have
-  // already been rejected at `dragover` (Step 3.5.2); only the
-  // mixed-drop case (supported + unsupported in one drag) might
-  // contain unsupported entries that the classifier silently
-  // drops. Either way, the returned list contains only skeleton
-  // entries.
-  const skeletons = classifyDroppedFiles(files);
-  if (skeletons.length === 0) return;
+  // Step 1 — synchronous classification. Image-extension files yield
+  // skeleton-image entries; everything else yields filename-text.
+  const classified = classifyDroppedFiles(files);
+  if (classified.length === 0) return;
 
-  // Step 2 — synchronous skeleton atom insertion. Atoms appear at
-  // the drop point immediately; the pending appearance signals
-  // that async byte-fill is still running.
-  const skeletonAtoms: AtomSegment[] = skeletons.map((s) => s.atom);
-  insertAtomsAt(view, insertPos, skeletonAtoms);
+  // Step 2 — flatten to mixed items + one-transaction insert. Atoms
+  // and text interleave in input order with single-space separators.
+  const items: DropMixedItem[] = classified.map((entry) =>
+    entry.kind === "skeleton-image"
+      ? { kind: "atom" as const, segment: entry.atom }
+      : { kind: "text" as const, text: entry.text },
+  );
+  insertMixedAt(view, insertPos, items);
 
   // Step 3.5.5 — fix for "skeleton sometimes fails to appear in a
   // brand-new empty editor". When the user drops a file before
@@ -650,10 +626,12 @@ export function processAttachmentFiles(
   view.focus();
   view.requestMeasure({ read: () => null });
 
-  // Step 3 — fire-and-forget async byte-fill, one job per skeleton.
-  // Each job is independent; failures don't poison siblings.
-  for (const skeleton of skeletons) {
-    void runAttachmentJob(view, skeleton, bytesStore, onError);
+  // Step 3 — fire-and-forget async byte-fill, one job per
+  // skeleton-image entry. Filename-text entries have no async work.
+  for (const entry of classified) {
+    if (entry.kind === "skeleton-image") {
+      void runAttachmentJob(view, entry, bytesStore, onError);
+    }
   }
 }
 
@@ -712,65 +690,25 @@ async function runAttachmentJob(
 // ---------------------------------------------------------------------------
 
 /**
- * Drop-active state. Three-valued, written to `data-drop-active`
- * on the host wrapper:
+ * Drop-active state. Two-valued, written to `data-drop-active` on
+ * the host wrapper:
  *
- *  - `null`    — no drag in progress; attribute absent.
- *  - `"accept"` — drag contains at least one supported item; the
- *                editor will accept the drop. Border ring paints in
- *                the standard drop color.
- *  - `"reject"` — drag is over the editor but contains no supported
- *                items (e.g., a PDF dragged from Finder). The
- *                editor refuses the drop; border ring paints in
- *                the danger color so the user sees the rejection
- *                visually in addition to the OS no-drop cursor.
+ *  - `null`     — no drag in progress; attribute absent.
+ *  - `"accept"` — drag is over the editor; the drop will be accepted.
+ *                Border ring paints in the standard drop color.
  *
- * Per Step 3.5.2 (and the post-3.5 cursor / border regression
- * fix). The "reject" variant was added because v1 silently hid the
- * border for unsupported drags, leaving the user with no signal
- * that their drag was even seen.
+ * The editor accepts every file drag — there is no cursor-level
+ * rejection. Image-extension files become atoms; everything else
+ * inserts as filename text. So the only state distinction during
+ * drag is "drag in progress" vs not, and `null` / `"accept"` is
+ * enough.
  */
-type DropActiveState = "accept" | "reject" | null;
-
-/**
- * Decide the drag outcome for the current `dragenter` / `dragover`
- * event by consulting the native bridge first, with the pre-3.5.7
- * accept-all behavior as the fallback when the bridge is absent,
- * empty, or has not yet posted its first snapshot.
- *
- * Returns `"accept"` when the bridge is absent (browser-only dev,
- * tests, or the first dragover frame before
- * `evaluateJavaScript("window.__tugActiveDrag = …")` has run on
- * the JS thread — see the bridge file's docstring for the timing
- * resolution). Returns `"accept"` when the bridge reports at least
- * one supported file. Returns `"accept"` when the bridge reports an
- * empty `files: []` array — the native side captures that shape only
- * when no file URLs were on the pasteboard at all (today it returns
- * null instead, but the JS reader is defensive in case a future
- * Swift-side change emits an empty array; treating it as accept
- * keeps the fallback identical to "no bridge data available" and
- * lets drop-time classification do the final filtering).
- *
- * Returns `"reject"` only when the bridge reports a non-empty list
- * of which *every* entry is known-unsupported — the cursor-level
- * rejection case that this step exists to enable.
- *
- * Exported for `__tests__/tug-text-editor-drop-bridge.test.ts` which
- * stubs `window.__tugActiveDrag` and asserts each branch.
- */
-export function dragOutcomeFromBridge(): "accept" | "reject" {
-  const files = getCurrentDragFiles();
-  if (files === null) return "accept";
-  if (files.length === 0) return "accept";
-  return nativeDragHasSupportedFile(files) ? "accept" : "reject";
-}
+type DropActiveState = "accept" | null;
 
 /**
  * Mark/clear the host's `data-drop-active` attribute. The CSS in
  * `tug-text-editor.css` keys the drop ring, caret-hide, and inactive-
- * selection-paint rules off this attribute presence; an additional
- * `[data-drop-active="reject"]` rule overrides the ring color for
- * the rejection variant.
+ * selection-paint rules off this attribute presence.
  *
  * Idempotent — checking before mutating avoids redundant attribute
  * writes that would re-trigger MutationObservers (none today, but
@@ -808,13 +746,14 @@ function setDropActive(host: HTMLElement | null, state: DropActiveState): void {
  * `getBytesStore` and `onAttachmentError` are the bytes-store-aware
  * additions (Step 2 of `roadmap/tide-atoms.md`). When `getBytesStore`
  * returns a live `AtomBytesStore`, the drop pipeline runs through
- * the async `processAttachmentFiles` path: image files are
+ * the async `processAttachmentFiles` path: image-extension files are
  * downsampled, given a stable UUID, and stashed in the store; the
- * resulting atoms carry the id. When `getBytesStore` returns `null`
- * (gallery cards, prompt-entry instances unrelated to a tide
- * session), the legacy synchronous `defaultFilesToAtoms` path runs
- * — image atoms come back with `value: filename` and no bytes,
- * exactly as before.
+ * resulting atoms carry the id. Non-image files insert their
+ * basename as plain text in the same transaction. When `getBytesStore`
+ * returns `null` (gallery cards, prompt-entry instances unrelated to
+ * a tide session), the synchronous `defaultFilesToMixedItems` path
+ * runs — image atoms come back with `value: filename` and no bytes;
+ * non-image entries still ride as filename text.
  *
  * `onAttachmentError(message)` publishes a downsample-rejection
  * message to the host's banner channel. Routes to
@@ -858,33 +797,24 @@ export function tugDropExtension(
         // would be redundant but defensive in case CM6's behavior
         // changes).
         event.preventDefault();
-        setDropActive(host, dragOutcomeFromBridge());
+        setDropActive(host, "accept");
         return true;
       },
       dragover(event, view) {
         if (!event.dataTransfer?.types.includes("Files")) return false;
         event.preventDefault();
-        const outcome = dragOutcomeFromBridge();
-        setDropActive(host, outcome);
+        setDropActive(host, "accept");
         try {
-          // `dropEffect = "none"` is the AppKit no-drop signal — the
-          // OS paints the standard refused-drag cursor (no green
-          // plus). `"copy"` is the accept cursor. WebKit honors
-          // both inside WKWebView; in browser-only dev paths where
-          // the bridge is absent, `outcome` defaults to `"accept"`
-          // and we set `"copy"` — same Path A behavior as before.
-          event.dataTransfer.dropEffect = outcome === "reject" ? "none" : "copy";
+          // `"copy"` is the standard accept cursor. The editor accepts
+          // every file drag — images become atoms, everything else
+          // inserts as filename text — so there is no reject branch
+          // here.
+          event.dataTransfer.dropEffect = "copy";
         } catch {
           // `dropEffect` is read-only in some environments.
         }
 
-        // Update the drop-caret StateField. Only show the caret on
-        // accept — a reject drag has no destination position to
-        // indicate, and showing a caret would suggest the drop
-        // would land somewhere.
-        const pos = outcome === "reject"
-          ? null
-          : dropOffsetAtCoords(view, event.clientX, event.clientY);
+        const pos = dropOffsetAtCoords(view, event.clientX, event.clientY);
         if (view.state.field(tugDropCaretField) !== pos) {
           view.dispatch({ effects: setTugDropCaretPos.of(pos) });
         }
@@ -926,22 +856,6 @@ export function tugDropExtension(
           return false;
         }
 
-        // At drop time `dataTransfer.files` is fully populated with
-        // real MIME info — this is the actual supportedness check
-        // (the dragenter/dragover check was binary "is a file drag"
-        // only, per WebKit's redaction). If every file in the drop
-        // is unsupported, refuse silently: the user already saw the
-        // copy cursor, so a banner on top would be jarring. The
-        // missing chip is the signal.
-        if (!dropHasSupportedFile(event.dataTransfer ?? null)) {
-          event.preventDefault();
-          setDropActive(host, null);
-          if (view.state.field(tugDropCaretField) !== null) {
-            view.dispatch({ effects: setTugDropCaretPos.of(null) });
-          }
-          return true;
-        }
-
         // Suppress the WebView's default file-URL navigation. Done
         // first so even an early `return` below leaves the page
         // intact.
@@ -977,23 +891,22 @@ export function tugDropExtension(
 
         const bytesStore = getBytesStore();
         if (bytesStore === null) {
-          // No bytes-store — fall back to the legacy synchronous
-          // default. Image atoms come back with no bytes; this
-          // matches the pre-Step-2 behavior for hosts that don't
-          // participate in attachment bytes (gallery card without
-          // a custom handler, future detached prompt-entries).
-          const atoms = defaultFilesToAtoms(files);
-          if (atoms.length === 0) return true;
-          insertAtomsAt(view, insertPos, atoms);
+          // No bytes-store — fall back to the synchronous default.
+          // Image atoms come back with no bytes; non-image files
+          // ride as plain filename text. Used by gallery cards and
+          // future detached prompt-entries that don't participate
+          // in attachment bytes.
+          const items = defaultFilesToMixedItems(files);
+          if (items.length === 0) return true;
+          insertMixedAt(view, insertPos, items);
           return true;
         }
 
         // Bytes-store-aware path: synchronously classifies files,
-        // inserts skeleton atoms at the drop point for image
-        // sources, and spawns fire-and-forget async byte-fill jobs.
-        // Non-image files (PDF / archive / audio / video / text /
-        // source code) are silently skipped — inline attachments on
-        // the Claude Agent SDK input pipeline are images-only.
+        // inserts skeleton atoms + filename text at the drop point,
+        // and spawns fire-and-forget async byte-fill jobs for the
+        // image entries. Non-image files arrive in the same
+        // transaction as plain filename prose.
         processAttachmentFiles(
           view,
           Array.from(files),

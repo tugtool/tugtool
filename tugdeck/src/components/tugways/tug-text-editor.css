@@ -15,7 +15,6 @@ body {
   --tug7-element-field-text-normal-plain-readonly    | --tug7-surface-field-primary-normal-plain-readonly | informational
   --tug7-element-global-fill-normal-accentCool-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational
   --tug7-element-highlight-stroke-normal-drop-rest   | --tug7-surface-field-primary-normal-plain-rest     | informational
-  --tug7-element-global-border-normal-danger-rest    | --tug7-surface-field-primary-normal-plain-rest     | informational
 } */
 
 /**
@@ -32,7 +31,6 @@ body {
  * | --tug7-element-field-text-normal-plain-readonly   | --tug7-surface-field-primary-normal-plain-readonly | informational | .cm-content (theme.ts, &.cm-readonly)                                |
  * | --tug7-element-global-fill-normal-accentCool-rest | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-text-editor[data-focus-style="ring"][data-focused] (outline / border)  |
  * | --tug7-element-highlight-stroke-normal-drop-rest  | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-text-editor[data-drop-active] (drop-ring outline / border)             |
- * | --tug7-element-global-border-normal-danger-rest   | --tug7-surface-field-primary-normal-plain-rest     | informational | .tug-text-editor[data-drop-active="reject"] (rejection ring outline / border) |
  *
  * Selection paint deliberately uses CSS system colors (`Highlight`,
  * `HighlightText`) for the active state — see `tug-text-editor/theme.ts`.
@@ -310,23 +308,6 @@ body {
 .tug-text-editor[data-focused][data-drop-active] {
   border-color: var(--tug7-element-highlight-stroke-normal-drop-rest);
   outline: 2px solid var(--tug7-element-highlight-stroke-normal-drop-rest);
-  outline-offset: -1px;
-}
-
-/* Reject variant — drag is over the editor but contains no
- * supported items (PDF / archive / audio / video). The editor
- * refuses the drop; the OS shows the no-drop cursor; the border
- * paints in the danger color so the user sees the rejection
- * before they release. The attribute selector `[data-drop-active=
- * "reject"]` overrides the accept-color border + outline set by
- * the rules above (matching specificity; later source order wins).
- * Per Step 3.5.6 in `roadmap/tide-atoms.md`. */
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
-.tug-text-editor[data-drop-active="reject"],
-.tug-text-editor[data-borderless][data-drop-active="reject"],
-.tug-text-editor[data-focused][data-drop-active="reject"] {
-  border-color: var(--tug7-element-global-border-normal-danger-rest);
-  outline: 2px solid var(--tug7-element-global-border-normal-danger-rest);
   outline-offset: -1px;
 }
 

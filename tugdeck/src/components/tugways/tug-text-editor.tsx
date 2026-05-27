@@ -524,10 +524,11 @@ export interface TugTextEditorProps
    * comes back with a UUID `id` paired with bytes in this store, and
    * the wire-flattening at submit (Step 3) packs them as Attachments.
    *
-   * Defaults to `undefined`, in which case drops use the legacy
-   * synchronous `defaultFilesToAtoms` (image atoms with no bytes) and
-   * image clipboard items fall through to the substrate's text-paste
-   * path. Gallery cards and stand-alone harnesses leave this absent;
+   * Defaults to `undefined`, in which case drops use the synchronous
+   * `defaultFilesToMixedItems` path (image atoms with no bytes,
+   * non-image filenames as plain text) and image clipboard items fall
+   * through to the substrate's text-paste path. Gallery cards and
+   * stand-alone harnesses leave this absent;
    * tide-card prompt-entry instances wire it through from their
    * `CodeSessionStore`. Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
    *

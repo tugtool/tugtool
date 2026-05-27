@@ -24,9 +24,6 @@
 		AA0000010000000000000012 /* NativeEventHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000012 /* NativeEventHandlers.swift */; };
 		AA0000010000000000000013 /* AppLifecycleHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000013 /* AppLifecycleHandlers.swift */; };
 		AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */; };
-		AA0000010000000000000015 /* PasteboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* PasteboardSnapshot.swift */; };
-		AA0000010000000000000016 /* TugDragDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000016 /* TugDragDestination.swift */; };
-		AA0000010000000000000017 /* TugWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000017 /* TugWebView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,9 +46,6 @@
 		AA0000020000000000000012 /* NativeEventHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEventHandlers.swift; sourceTree = "<group>"; };
 		AA0000020000000000000013 /* AppLifecycleHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleHandlers.swift; sourceTree = "<group>"; };
 		AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugcodeLifecycleHandlers.swift; sourceTree = "<group>"; };
-		AA0000020000000000000015 /* PasteboardSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteboardSnapshot.swift; sourceTree = "<group>"; };
-		AA0000020000000000000016 /* TugDragDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugDragDestination.swift; sourceTree = "<group>"; };
-		AA0000020000000000000017 /* TugWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugWebView.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -88,19 +82,8 @@
 				AA0000020000000000000008 /* TugConfig.swift */,
 				AA0000020000000000000009 /* ControlSocket.swift */,
 				AA0000060000000000000002 /* TestHarness */,
-				AA0000060000000000000003 /* Drag */,
 			);
 			path = Sources;
-			sourceTree = "<group>";
-		};
-		AA0000060000000000000003 /* Drag */ = {
-			isa = PBXGroup;
-			children = (
-				AA0000020000000000000015 /* PasteboardSnapshot.swift */,
-				AA0000020000000000000016 /* TugDragDestination.swift */,
-				AA0000020000000000000017 /* TugWebView.swift */,
-			);
-			path = Drag;
 			sourceTree = "<group>";
 		};
 		AA0000060000000000000002 /* TestHarness */ = {
@@ -208,9 +191,6 @@
 				AA0000010000000000000012 /* NativeEventHandlers.swift in Sources */,
 				AA0000010000000000000013 /* AppLifecycleHandlers.swift in Sources */,
 				AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */,
-				AA0000010000000000000015 /* PasteboardSnapshot.swift in Sources */,
-				AA0000010000000000000016 /* TugDragDestination.swift in Sources */,
-				AA0000010000000000000017 /* TugWebView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
