@@ -96,6 +96,9 @@ import {
   formatAtomTextForCopy,
 } from "@/components/tugways/cards/tug-atom-text-body";
 import { TugAttachmentStrip } from "@/components/tugways/cards/tug-attachment-strip";
+import { TideAttachmentPreview } from "@/components/tugways/cards/tide-attachment-preview";
+import { useTugSheet } from "@/components/tugways/tug-sheet";
+import type { AtomSegment } from "@/lib/tug-atom-img";
 import { TideZ1C } from "@/components/tugways/cards/tide-card-z1c";
 import {
   dispatch as dispatchRenderInput,
@@ -427,6 +430,28 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
     [atoms],
   );
   const bytesStore = codeSessionStore.getAtomBytesStore();
+  // Pane-modal preview sheet for clicked attachment thumbnails. Each
+  // user row hosts its own `useTugSheet` instance — TugSheet's portal
+  // is per-pane, so visually at most one preview shows at a time
+  // regardless of which row hosts the hook. The handler captures
+  // `bytesStore` so the preview component reads the current bytes
+  // entry at sheet-mount time.
+  const { showSheet, renderSheet } = useTugSheet();
+  const handleAttachmentClick = React.useCallback(
+    (atom: AtomSegment) => {
+      void showSheet({
+        title: atom.value,
+        content: (close) => (
+          <TideAttachmentPreview
+            atom={atom}
+            bytesStore={bytesStore}
+            onClose={() => close()}
+          />
+        ),
+      });
+    },
+    [showSheet, bytesStore],
+  );
   // User-row timestamp is the submit time, not the turn's end time —
   // the user's row "posts" the moment they hit submit, regardless of
   // whether the assistant has replied yet. Both committed and active
@@ -473,8 +498,10 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
                 messageNumber={index + 1}
                 atoms={imageAtoms}
                 bytesStore={bytesStore}
+                onAttachmentClick={handleAttachmentClick}
                 data-testid="tide-card-transcript-attachment-strip"
               />
+              {renderSheet()}
             </>
           }
           controls={
