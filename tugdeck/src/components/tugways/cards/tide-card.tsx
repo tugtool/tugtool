@@ -938,11 +938,19 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   // re-render into `TideRestoring`); only the implicit
   // `undefined` result and any other future cancel-class result
   // close the card.
+  //
+  // `CLOSE_TAB` (not `CLOSE`): a picker cancel has nothing to save —
+  // the card hasn't opened a session yet — so it must bypass Tide's
+  // `confirmClose: true` policy that `CLOSE` would trigger. The
+  // pane's `CLOSE_TAB` handler removes the card directly, and
+  // `_removeCard` cascades to `_closePane` when removing the last
+  // card.
   useSheetDelegate(cardId, {
     sheetDidReturnResult: (_id, result) => {
       if (result === "open" || result === "retry") return;
       manager?.sendToTarget(cardId, {
-        action: TUG_ACTIONS.CLOSE,
+        action: TUG_ACTIONS.CLOSE_TAB,
+        value: cardId,
         sender: senderId,
         phase: "discrete",
       });
