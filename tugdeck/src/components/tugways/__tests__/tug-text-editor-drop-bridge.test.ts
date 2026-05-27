@@ -60,14 +60,11 @@ describe("dragOutcomeFromBridge — supported types", () => {
     expect(dragOutcomeFromBridge()).toBe("accept");
   });
 
-  test("single plain-text file → accept", () => {
-    setSnapshot({
-      files: [{ name: "notes.txt", mimeType: "text/plain", size: 256 }],
-    });
-    expect(dragOutcomeFromBridge()).toBe("accept");
-  });
-
   test("missing mimeType → accept (optimistic; drop-time classifier decides)", () => {
+    // Some Finder file URLs arrive without a registered MIME. The
+    // bridge falls through to drop-time `File.type` classification
+    // rather than rejecting at the cursor and over-rejecting an
+    // image whose MIME the OS happened not to publish.
     setSnapshot({
       files: [{ name: "module.ts" }],
     });
@@ -90,11 +87,31 @@ describe("dragOutcomeFromBridge — rejection", () => {
     expect(dragOutcomeFromBridge()).toBe("reject");
   });
 
+  test("single plain-text file → reject (images-only)", () => {
+    // Per the Option A image-only narrowing (see roadmap [D02]):
+    // inline attachments are images only. A text/plain drag
+    // rejects at the cursor.
+    setSnapshot({
+      files: [{ name: "notes.txt", mimeType: "text/plain", size: 256 }],
+    });
+    expect(dragOutcomeFromBridge()).toBe("reject");
+  });
+
   test("two unsupported entries → reject", () => {
     setSnapshot({
       files: [
         { name: "a.zip", mimeType: "application/zip" },
         { name: "b.mp3", mimeType: "audio/mpeg" },
+      ],
+    });
+    expect(dragOutcomeFromBridge()).toBe("reject");
+  });
+
+  test("ZIP + text-plain → reject (both non-image)", () => {
+    setSnapshot({
+      files: [
+        { name: "archive.zip", mimeType: "application/zip" },
+        { name: "notes.txt", mimeType: "text/plain" },
       ],
     });
     expect(dragOutcomeFromBridge()).toBe("reject");
@@ -107,16 +124,6 @@ describe("dragOutcomeFromBridge — mixed", () => {
       files: [
         { name: "doc.pdf", mimeType: "application/pdf" },
         { name: "shot.png", mimeType: "image/png" },
-      ],
-    });
-    expect(dragOutcomeFromBridge()).toBe("accept");
-  });
-
-  test("ZIP + text-plain → accept (text is supported)", () => {
-    setSnapshot({
-      files: [
-        { name: "archive.zip", mimeType: "application/zip" },
-        { name: "notes.txt", mimeType: "text/plain" },
       ],
     });
     expect(dragOutcomeFromBridge()).toBe("accept");

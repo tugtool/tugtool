@@ -326,32 +326,34 @@ export function buildContentBlocksFromLegacyJournal(
   }
 
   for (const att of attachments) {
-    if (att.media_type.startsWith("image/")) {
-      // Validate media_type per PN-12.
-      if (!ALLOWED_IMAGE_TYPES.has(att.media_type)) {
-        throw new Error(
-          `Unsupported image type: ${att.media_type}. Supported: image/png, image/jpeg, image/gif, image/webp`
-        );
-      }
-      // Validate decoded size (~5MB limit). Base64 encodes 3 bytes as 4 chars.
-      const sizeBytes = Math.ceil((att.content.length * 3) / 4);
-      if (sizeBytes > MAX_IMAGE_SIZE_BYTES) {
-        throw new Error(
-          `Image exceeds ~5MB limit: ${att.filename} (${Math.round(sizeBytes / 1024 / 1024)}MB)`
-        );
-      }
-      blocks.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: att.media_type,
-          data: att.content,
-        },
-      });
-    } else {
-      // Text attachment.
-      blocks.push({ type: "text", text: att.content });
+    // Inline attachments are images-only — the Claude Agent SDK's
+    // user-message input pipeline accepts text + image content
+    // blocks only. Any non-image attachment in a legacy journal row
+    // is silently dropped (an artifact of an older drop pipeline
+    // that briefly supported text-file attachments; no new
+    // submissions write them).
+    if (!att.media_type.startsWith("image/")) continue;
+    // Validate media_type per PN-12.
+    if (!ALLOWED_IMAGE_TYPES.has(att.media_type)) {
+      throw new Error(
+        `Unsupported image type: ${att.media_type}. Supported: image/png, image/jpeg, image/gif, image/webp`
+      );
     }
+    // Validate decoded size (~5MB limit). Base64 encodes 3 bytes as 4 chars.
+    const sizeBytes = Math.ceil((att.content.length * 3) / 4);
+    if (sizeBytes > MAX_IMAGE_SIZE_BYTES) {
+      throw new Error(
+        `Image exceeds ~5MB limit: ${att.filename} (${Math.round(sizeBytes / 1024 / 1024)}MB)`
+      );
+    }
+    blocks.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: att.media_type,
+        data: att.content,
+      },
+    });
   }
 
   // Ensure at least one block (fallback for empty text + no attachments).

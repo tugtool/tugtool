@@ -21,11 +21,15 @@
  *
  *   3. **`drop` insertion.** `preventDefault()` to suppress the
  *      WebView's default navigate-to-file-URL behavior, then a
- *      single transaction inserts each dropped file as an atom at
- *      the (bias-adjusted) drop offset. File → atom conversion
- *      defers to a host-supplied `DropHandler` thunk; without one
- *      an extension-based default classifies known image formats
- *      as `image` and everything else as `file`.
+ *      single transaction inserts each dropped image as an atom at
+ *      the (bias-adjusted) drop offset. Non-image files are
+ *      silently dropped — the Claude Agent SDK's user-message
+ *      input pipeline only accepts text + image content blocks, so
+ *      inline attachments are images-only. (Workspace files are
+ *      handled via `@`-mention typeahead instead.) File → atom
+ *      conversion defers to a host-supplied `DropHandler` thunk;
+ *      without one an extension-based default routes image files
+ *      through the downsample pipeline and rejects everything else.
  *
  * The caret is implemented with CM6's standard StateField +
  * ViewPlugin + `requestMeasure` pattern — same shape as CM6's
@@ -74,12 +78,6 @@ import {
   downsampleImage,
   type DownsampleError,
 } from "@/lib/image-downsample";
-import {
-  describeTextAttachmentError,
-  isTextMimeType,
-  isTextSource,
-  readTextAttachment,
-} from "@/lib/text-attachment";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 import {
   getCurrentDragFiles,
@@ -125,21 +123,26 @@ const DROP_CARET_CLASS = "cm-tug-drop-caret";
 
 /**
  * Convert a `FileList` into atom segments using only the file name.
+ * Image-extension files land as `type: "image"` so the atom renders
+ * with the image-kind treatment from `tug-atom-img`; non-image
+ * files are silently dropped — inline attachments are images-only
+ * per Anthropic Agent SDK's input shape. The label and value are
+ * both the bare filename — callers that need real paths (or
+ * content hashes, or server-side URLs) supply their own
+ * `DropHandler` and the default is bypassed entirely.
  *
- * Image extensions land as `type: "image"` so the atom renders with
- * the image-kind treatment from `tug-atom-img`; everything else
- * lands as `type: "file"`. The label and value are both the bare
- * filename — callers that need real paths (or content hashes, or
- * server-side URLs) supply their own `DropHandler` and the default
- * is bypassed entirely.
+ * This is the no-bytes-store fallback path (gallery / standalone
+ * harness). The bytes-store-aware path (the live editor) routes
+ * through `processAttachmentFiles` instead and applies the same
+ * image-only filter via `classifySourceMime`.
  */
 function defaultFilesToAtoms(files: FileList): AtomSegment[] {
   const out: AtomSegment[] = [];
   for (let i = 0; i < files.length; i++) {
     const f = files[i]!;
     const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
-    const type = IMG_EXTS.has(ext) ? "image" : "file";
-    out.push({ kind: "atom", type, label: f.name, value: f.name });
+    if (!IMG_EXTS.has(ext)) continue;
+    out.push({ kind: "atom", type: "image", label: f.name, value: f.name });
   }
   return out;
 }
@@ -429,17 +432,16 @@ export function describeDownsampleError(
  * fires (unlike at `dragenter` / `dragover`, where WebKit redacts
  * per-item MIME info entirely — `dataTransfer.items.length === 0`
  * for cross-origin file drags from Finder). Returns `true` if any
- * file is an image (per `classifySourceMime`) or a text source
- * (per `isTextMimeType`, with empty MIME treated as potentially
- * text by extension — the drop pipeline's full `isTextSource`
- * does the filename fallback).
+ * file is an image (per `classifySourceMime`).
  *
  * Used by the `drop` handler to silently refuse drops whose every
- * file is known-unsupported (PDF, archive, audio, video, etc.). The
- * user sees no atom and no banner; the OS already gave them a
- * "copy" cursor during drag (WebKit gave us no way to refuse it at
- * the cursor — see Step 3.5.7's native-bridge work for the cursor-
- * level rejection path), so the empty result is the only signal.
+ * file is non-image (PDF, archive, audio, video, text, source code,
+ * etc.). The user sees no atom and no banner; the missing chip is
+ * the signal. Inline attachments are limited to images per Anthropic
+ * Agent SDK's input shape — text and document content blocks are
+ * not accepted on the user-message input pipeline. For workspace
+ * files, the canonical path is `@`-mention (the model uses the Read
+ * tool).
  *
  * WebKit reference: bug #223517 (DataTransferItemList is empty
  * during dragenter/dragover events when dragging files) —
@@ -455,13 +457,7 @@ function dropHasSupportedFile(dataTransfer: DataTransfer | null): boolean {
   if (!files || files.length === 0) return false;
   for (let i = 0; i < files.length; i += 1) {
     const file = files[i]!;
-    const mime = file.type;
-    // Empty MIME — could still be text by extension (e.g., `.ts`
-    // from Finder). Optimistic accept; the drop pipeline runs
-    // `isTextSource` which does the extension classification.
-    if (mime === "") return true;
-    if (classifySourceMime(mime) !== "unsupported") return true;
-    if (isTextMimeType(mime)) return true;
+    if (classifySourceMime(file.type) !== "unsupported") return true;
   }
   return false;
 }
@@ -471,17 +467,17 @@ function dropHasSupportedFile(dataTransfer: DataTransfer | null): boolean {
  * `PasteboardSnapshot` pushed in by the Swift host
  * (`tugapp/Sources/Drag/TugDragDestination.swift`) at every
  * `draggingEntered:` / `draggingUpdated:`. Mirrors the drop-time
- * `dropHasSupportedFile` logic — any image-classifiable MIME or text-
- * classifiable MIME makes the drag acceptable. An entry whose
- * `mimeType` is absent is treated optimistically (true): the final
- * classification at drop time runs `isTextSource` which does the
- * filename-extension fallback, and refusing at the cursor based on
- * missing MIME would over-reject (e.g. `.ts` files from Finder
- * sometimes arrive without a registered MIME).
+ * `dropHasSupportedFile` logic — only an image-classifiable MIME
+ * makes the drag acceptable. An entry whose `mimeType` is absent
+ * is treated optimistically (true) since some Finder file URLs
+ * arrive without a registered MIME and the drop-time classifier
+ * does the final filtering (refusing at the cursor based on
+ * missing MIME would over-reject otherwise-supported images).
  *
- * Returns `true` if at least one entry is supported; `false` only
- * when *every* entry is known-unsupported (e.g. a PDF-only drag).
- * The drop extension uses the boolean to drive the three-state
+ * Returns `true` if at least one entry is image-classifiable;
+ * `false` only when *every* entry is known-unsupported (a PDF-only
+ * drag, a `.txt` drag, an audio/video drag, etc.). The drop
+ * extension uses the boolean to drive the three-state
  * `setDropActive` accept / reject ring during drag — the first
  * branch the JS world has ever had into per-item MIME during drag
  * inside WKWebView. See `tugapp/Sources/Drag/PasteboardSnapshot.swift`.
@@ -493,12 +489,11 @@ function nativeDragHasSupportedFile(
   for (const entry of entries) {
     const mime = entry.mimeType;
     if (mime === undefined || mime === "") {
-      // Missing MIME — could still be text by extension. Optimistic
-      // accept; drop-time classifier does the final filtering.
+      // Missing MIME — optimistic accept; the drop-time classifier
+      // makes the final image-vs-not call against the real File.type.
       return true;
     }
     if (classifySourceMime(mime) !== "unsupported") return true;
-    if (isTextMimeType(mime)) return true;
   }
   return false;
 }
@@ -517,87 +512,59 @@ function mintAtomId(): string {
 }
 
 /**
- * Per-file classification result. `kind === "skeleton"` means the
- * file can produce an atom + bytes (after async processing); the
- * skeleton atom is inserted synchronously and bytes land later.
- * Unsupported files don't reach this classifier in pure-unsupported
- * drags (rejected at `dragover` per Step 3.5.2) and are silently
- * skipped in mixed drops — they never appear in the output array.
+ * Per-file classification result. `kind === "skeleton-image"` means
+ * the file is image-classifiable and will produce an atom + bytes
+ * (after async downsample); the skeleton atom is inserted
+ * synchronously and bytes land later. Non-image files never appear
+ * in the output array — inline attachments on the Claude Agent SDK
+ * user-message input pipeline are images-only, so the drop pipeline
+ * rejects everything else.
  */
-type ClassifiedDrop =
-  | {
-      kind: "skeleton-image";
-      file: File;
-      atom: AtomSegment;
-    }
-  | {
-      kind: "skeleton-text";
-      file: File;
-      atom: AtomSegment;
-    };
+type ClassifiedDrop = {
+  kind: "skeleton-image";
+  file: File;
+  atom: AtomSegment;
+};
 
 /**
  * Synchronously decide what each file should become. Returns a flat
- * array — image / text classifications mint atom ids and build the
+ * array — image classifications mint atom ids and build the
  * skeleton atom right here so the caller can immediately insert
  * placeholders into the doc.
  *
- * The classification has three branches: image → text → silent-skip.
- * In WKWebView all file drags are cursor-accepted (WebKit redacts
- * per-item MIME during drag — see `dropHasSupportedFile`), so any
- * unsupported file reaches this classifier even for pure-unsupported
- * drops. The drop handler's call to `dropHasSupportedFile` refuses
+ * Two branches: image → silent-skip. In WKWebView all file drags
+ * are cursor-accepted (WebKit redacts per-item MIME during drag —
+ * see `dropHasSupportedFile`), so any unsupported file reaches
+ * this classifier even for pure-unsupported drops. The drop
+ * handler's call to `dropHasSupportedFile` refuses
  * pure-unsupported drops before this classifier runs; what reaches
- * here is either fully-supported drops or mixed drops where some
- * subset is unsupported. The classifier silently drops unsupported
- * entries from the output — the supported subset still processes.
+ * here is either fully-image drops or mixed drops where some
+ * subset is non-image. The classifier silently drops non-image
+ * entries from the output — the image subset still processes.
  * No banner: the user already saw the copy cursor, so a banner on
  * top would be jarring; the missing chip is the signal.
  *
- * When Step 3.5.7's native bridge lands, cursor-level rejection
- * comes back and pure-unsupported drops never reach this code path.
+ * When Step 3.5.7's native bridge is active, cursor-level rejection
+ * keeps pure-non-image drops from reaching this code path at all.
  */
 function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
   const out: ClassifiedDrop[] = [];
   for (const file of files) {
-    // Branch 1: image (png / jpeg / gif / webp / heic / heif / avif
-    // and svg via rasterization).
-    const cls = classifySourceMime(file.type);
-    if (cls !== "unsupported") {
-      out.push({
-        kind: "skeleton-image",
-        file,
-        atom: {
-          kind: "atom",
-          type: "image",
-          label: file.name,
-          value: file.name,
-          id: mintAtomId(),
-        },
-      });
-      continue;
-    }
-    // Branch 2: text — `text/*`, known `application/*` text MIMEs,
-    // or empty MIME with a text-allowlisted extension.
-    if (isTextSource(file)) {
-      out.push({
-        kind: "skeleton-text",
-        file,
-        atom: {
-          kind: "atom",
-          type: "file",
-          label: file.name,
-          value: file.name,
-          id: mintAtomId(),
-        },
-      });
-      continue;
-    }
-    // Branch 3: unsupported. Silently drop — the dragover gate
-    // already refused all-unsupported drags; this branch only
-    // matters for mixed drops where the supported subset still
-    // processes. Per [D02](roadmap/tide-atoms.md#d02-image-attach-text-rest)
-    // and Step 3.5.2.
+    // Image MIMEs: png / jpeg / gif / webp / heic / heif / avif and
+    // svg via rasterization. Non-image files are silently dropped —
+    // see the docstring above.
+    if (classifySourceMime(file.type) === "unsupported") continue;
+    out.push({
+      kind: "skeleton-image",
+      file,
+      atom: {
+        kind: "atom",
+        type: "image",
+        label: file.name,
+        value: file.name,
+        id: mintAtomId(),
+      },
+    });
   }
   return out;
 }
@@ -608,15 +575,14 @@ function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
  * the background.
  *
  * The synchronous half:
- *  1. Classify each file (image / text / reject).
- *  2. Reject branch immediately publishes its banner message; no
- *     atom is inserted (per [D02]).
- *  3. Image / text branches mint UUIDs, build skeleton atoms with
- *     the id set but NO bytes-store entry yet. The atom widget's
- *     `toDOM` queries the bytes-store via `atomBytesStoreFacet`,
- *     finds no entry, and renders in the pending appearance
- *     (dimmed + pulsing) — instant feedback at the drop point.
- *  4. `insertAtomsAt` dispatches all skeleton atoms in one
+ *  1. Classify each file (image / reject). Non-image files are
+ *     silently dropped per [D02] — the missing chip is the signal.
+ *  2. Image branch mints UUIDs, builds skeleton atoms with the id
+ *     set but NO bytes-store entry yet. The atom widget's `toDOM`
+ *     queries the bytes-store via `atomBytesStoreFacet`, finds no
+ *     entry, and renders in the pending appearance (dimmed +
+ *     pulsing) — instant feedback at the drop point.
+ *  3. `insertAtomsAt` dispatches all skeleton atoms in one
  *     transaction. The user sees them appear at the drop point
  *     synchronously.
  *
@@ -628,7 +594,6 @@ function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
  *    `data-pending` attribute off via direct DOM. On failure,
  *    `removeAtomById` deletes the skeleton atom and the error
  *    surfaces via `onError`.
- *  - Text: same shape with `readTextAttachment`.
  *
  * The view's liveness is checked through `view.dom.isConnected`
  * before dispatching the failure-path deletion — if the editor
@@ -693,22 +658,20 @@ export function processAttachmentFiles(
 }
 
 /**
- * Run the async half of a single attachment job. Populates the
- * bytes-store on success (which notifies the pending-sync plugin
- * → the atom widget transitions out of pending appearance), or
- * removes the skeleton atom on failure (which surfaces via
- * `onError` in the same call).
+ * Run the async half of a single attachment job. Downsamples the
+ * image and populates the bytes-store on success (which notifies
+ * the pending-sync plugin → the atom widget transitions out of
+ * pending appearance), or removes the skeleton atom on failure
+ * (which surfaces via `onError` in the same call).
  *
  * Defensive try / catch around the await: a synchronous throw from
- * `downsampleImage` / `readTextAttachment` would otherwise reject
- * the spawning Promise unhandled. Wrap so the user gets a clean
- * banner message and the skeleton atom is cleaned up.
+ * `downsampleImage` would otherwise reject the spawning Promise
+ * unhandled. Wrap so the user gets a clean banner message and the
+ * skeleton atom is cleaned up.
  */
 async function runAttachmentJob(
   view: EditorView,
-  job:
-    | { kind: "skeleton-image"; file: File; atom: AtomSegment }
-    | { kind: "skeleton-text"; file: File; atom: AtomSegment },
+  job: { kind: "skeleton-image"; file: File; atom: AtomSegment },
   bytesStore: AtomBytesStore,
   onError: (message: string) => void,
 ): Promise<void> {
@@ -719,36 +682,22 @@ async function runAttachmentJob(
   if (id === undefined) return;
 
   try {
-    if (job.kind === "skeleton-image") {
-      const outcome = await downsampleImage(job.file);
-      if (!outcome.ok) {
-        // Remove skeleton, surface error.
-        if (view.dom.isConnected) removeAtomById(view, id);
-        onError(describeDownsampleError(outcome.error, job.file.name));
-        return;
-      }
-      bytesStore.put(id, {
-        content: outcome.result.content,
-        mediaType: outcome.result.mediaType,
-        // Carry the downsample pipeline's already-baked thumbnail
-        // through to the bytes-store so the post-submit synthesizer
-        // sees a fully-populated entry and doesn't re-bake. Per
-        // [Step 5c](roadmap/tide-atoms.md#step-5c) — Step 6's strip
-        // renderer reads `thumbnailDataUrl` unconditionally.
-        thumbnailDataUrl: outcome.result.thumbnailDataUrl,
-      });
-      return;
-    }
-    // job.kind === "skeleton-text"
-    const outcome = await readTextAttachment(job.file);
+    const outcome = await downsampleImage(job.file);
     if (!outcome.ok) {
+      // Remove skeleton, surface error.
       if (view.dom.isConnected) removeAtomById(view, id);
-      onError(describeTextAttachmentError(outcome.error, job.file.name));
+      onError(describeDownsampleError(outcome.error, job.file.name));
       return;
     }
     bytesStore.put(id, {
       content: outcome.result.content,
       mediaType: outcome.result.mediaType,
+      // Carry the downsample pipeline's already-baked thumbnail
+      // through to the bytes-store so the post-submit synthesizer
+      // sees a fully-populated entry and doesn't re-bake. Per
+      // [Step 5c](roadmap/tide-atoms.md#step-5c) — Step 6's strip
+      // renderer reads `thumbnailDataUrl` unconditionally.
+      thumbnailDataUrl: outcome.result.thumbnailDataUrl,
     });
   } catch (err) {
     // Pipeline threw — surface generically, remove the skeleton.
@@ -1040,10 +989,11 @@ export function tugDropExtension(
         }
 
         // Bytes-store-aware path: synchronously classifies files,
-        // inserts skeleton atoms at the drop point for image / text
+        // inserts skeleton atoms at the drop point for image
         // sources, and spawns fire-and-forget async byte-fill jobs.
-        // Unsupported files (PDF / archive / audio / video) surface
-        // via `onAttachmentError` instead of inserting a chip.
+        // Non-image files (PDF / archive / audio / video / text /
+        // source code) are silently skipped — inline attachments on
+        // the Claude Agent SDK input pipeline are images-only.
         processAttachmentFiles(
           view,
           Array.from(files),

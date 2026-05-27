@@ -415,9 +415,12 @@ describe("runReplay — pending-row injection", () => {
     // matches the JSONL-replay path's shape (modulo the lossy
     // text-first interleaving that the journal's flat columns can't
     // preserve).
+    //
+    // Inline attachments are images-only per the Claude Agent SDK's
+    // user-message input pipeline; this test uses an image attachment.
     const fx = freshFixture();
     const attachments = [
-      { filename: "f.txt", content: "body", media_type: "text/plain" },
+      { filename: "f.png", content: "aGVsbG8=", media_type: "image/png" },
     ];
     seedJournal(fx.sessionsDbPath, [
       {

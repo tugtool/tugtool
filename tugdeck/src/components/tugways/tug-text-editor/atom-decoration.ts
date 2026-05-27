@@ -440,10 +440,10 @@ export const atomInvertedEffects: Extension = invertedEffects.of((tr) => {
  * fill completed.
  *
  * Used by the drop / paste pipeline's failure path: when
- * `downsampleImage` or `readTextAttachment` rejects a file, we look
- * up the skeleton atom by id and dispatch a deletion. Cheap O(N)
- * walk over the decoration set — N is small (atoms in a single
- * prompt) so no index needed.
+ * `downsampleImage` rejects an image, we look up the skeleton atom
+ * by id and dispatch a deletion. Cheap O(N) walk over the
+ * decoration set — N is small (atoms in a single prompt) so no
+ * index needed.
  */
 export function findAtomPositionById(
   state: EditorState,

@@ -1502,15 +1502,18 @@ describe("buildContentBlocksFromLegacyJournal", () => {
     expect(blocks[0].text).toBe("hello world");
   });
 
-  test("text attachment produces text content block", () => {
+  test("non-image attachment is silently dropped (images-only contract)", () => {
+    // Inline attachments are images-only per the Claude Agent SDK's
+    // user-message input pipeline. A legacy journal row carrying a
+    // text-typed attachment (an artifact of an older drop pipeline
+    // that briefly supported text-file attachments) is skipped — the
+    // text block of the prompt itself still rides.
     const blocks = buildContentBlocksFromLegacyJournal("intro", [
       { filename: "file.txt", content: "file contents", media_type: "text/plain" },
     ]);
-    expect(blocks).toHaveLength(2);
+    expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("text");
     expect(blocks[0].text).toBe("intro");
-    expect(blocks[1].type).toBe("text");
-    expect(blocks[1].text).toBe("file contents");
   });
 
   test("image attachment produces image content block with base64 source", () => {
@@ -4284,19 +4287,18 @@ describe("emitInflightTurnFromActiveTurn", () => {
     // overrides so existing test bodies don't need rewriting. Flat
     // shape — interleaving was already lost by the old setup helper
     // since it took separate text + attachments parameters.
+    // Non-image attachments are silently dropped per the images-only
+    // inline-attachment contract.
     const content: Array<unknown> = [];
     if ((overrides.userText ?? "").length > 0) {
       content.push({ type: "text", text: overrides.userText });
     }
     for (const att of overrides.userAttachments ?? []) {
-      if (att.media_type.startsWith("image/")) {
-        content.push({
-          type: "image",
-          source: { type: "base64", media_type: att.media_type, data: att.content },
-        });
-      } else {
-        content.push({ type: "text", text: att.content });
-      }
+      if (!att.media_type.startsWith("image/")) continue;
+      content.push({
+        type: "image",
+        source: { type: "base64", media_type: att.media_type, data: att.content },
+      });
     }
     if (content.length === 0) content.push({ type: "text", text: "" });
     const turn = new ActiveTurn(100, content as ReadonlyArray<never>);
@@ -4342,21 +4344,25 @@ describe("emitInflightTurnFromActiveTurn", () => {
   });
 
   test("content blocks pass through add_user_message verbatim", async () => {
+    const fakeBase64 = "aGVsbG8=";
     const { manager, turn } = setupTurn({
       msgId: "msg_att",
       userText: "see",
-      userAttachments: [{ filename: "f.txt", content: "contents", media_type: "text/plain" }],
+      userAttachments: [{ filename: "f.png", content: fakeBase64, media_type: "image/png" }],
       textBlock: "ok",
     });
     const ipc = await captureIpcOutput(async () => {
       (manager as any).emitInflightTurnFromActiveTurn(turn);
     });
     const userReplay = ipc.find((m: any) => m.type === "add_user_message") as any;
-    // Setup helper produced two text blocks: the prompt + the
-    // text-file attachment's contents. Verbatim pass-through.
+    // Setup helper produced a text block (the prompt) + an image
+    // block (the attachment). Verbatim pass-through.
     expect(userReplay.content).toEqual([
       { type: "text", text: "see" },
-      { type: "text", text: "contents" },
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: fakeBase64 },
+      },
     ]);
   });
 
