@@ -1,0 +1,168 @@
+/**
+ * tug-attachment-strip.css — layout and appearance for the per-message
+ * image-thumbnail strip mounted below the user-row body.
+ *
+ * Layout: a single horizontal row of fixed-aspect tiles separated by
+ * a fixed gap. The row wraps to multiple lines when the tile count
+ * exceeds the row's available width — this is intentional; long
+ * image-bearing submissions render as a tidy grid rather than
+ * scrolling horizontally (no horizontal scroll on body content; the
+ * transcript's vertical scroll is the only scroll surface).
+ *
+ * The tile is a 64×64 thumbnail (per [Spec S06] — "fixed-aspect 64×64
+ * tile") with a small caption beneath. The thumbnail itself fits
+ * within the tile via `object-fit: cover` so the inscribed image
+ * fills the square; the underlying data URL is at most 256 px max
+ * edge (per [Spec S04]), so the browser downscales further into the
+ * 64-px tile.
+ *
+ * Atom-position labels (`#NNNN-image-N`) are intentionally monospaced
+ * (matching the inline chip's label font) so a reader pairing a chip
+ * with its strip thumbnail can match by digit-aligned eye-scan.
+ *
+ * Laws:
+ *  - [L06] all appearance flows from CSS cascaded from `data-slot`
+ *    selectors; no React state controls visual state.
+ *  - [L19] component-CSS pair; selectors are scoped to the
+ *    component's own `data-slot` so the rules don't leak.
+ *  - [L20] one component-token slot family declared here
+ *    (`--tugx-attachment-strip-*`); no global tokens overridden.
+ */
+
+[data-slot="tug-attachment-strip"] {
+  /* Layout: horizontal flex with wrap; the gap separates tiles in
+     both axes so a multi-row wrap reads as a grid. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tugx-attachment-strip-gap, 8px);
+  /* Sit a comfortable distance below the body. The body's
+     transcript-user-body class has its own bottom margin; this top
+     margin reads as additional separation specifically for the
+     strip. */
+  margin-top: var(--tugx-attachment-strip-margin-top, 8px);
+  /* Keep the strip's intrinsic width to the row — wrap rather than
+     pushing the row wider on overflow. */
+  align-items: flex-start;
+}
+
+.tug-attachment-strip__tile {
+  /* Button reset: strip default browser button chrome so the tile
+     reads purely as the thumbnail + caption. The click affordance
+     is provided by hover / focus styling on the tile itself. */
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  /* Stack thumbnail + caption vertically. */
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* Fixed tile width — the thumbnail's intrinsic 64px, plus the
+     caption sits beneath at the same width (the caption may
+     ellipsize if the `#NNNN-image-N` label ever grows past the
+     tile's width, which doesn't happen at the planned ≤9999
+     message-number range with 1-digit per-message image counts).
+     This keeps the strip's tile grid uniform. */
+  width: var(--tugx-attachment-strip-tile-size, 64px);
+  /* Spacing between tiles is handled by the parent's `gap` — keep
+     the tile itself flush. */
+  /* Subtle focus ring for keyboard navigation; reuses the platform
+     focus ring slot if available. */
+  border-radius: var(--tugx-attachment-strip-tile-radius, 4px);
+  /* Don't shrink below the intrinsic tile width when the parent
+     flex tries to pack tiles tighter than the grid allows; the
+     wrap fires instead. */
+  flex: 0 0 auto;
+}
+
+.tug-attachment-strip__tile:focus-visible {
+  outline: 2px solid var(--tugx-attachment-strip-focus-outline,
+    var(--tug7-element-button-tone-attention-text-rest, currentColor));
+  outline-offset: 2px;
+}
+
+.tug-attachment-strip__thumb {
+  /* Inscribed thumbnail container. Square aspect (1:1) so the tile
+     reads as a uniform grid regardless of source image proportions. */
+  display: block;
+  width: var(--tugx-attachment-strip-tile-size, 64px);
+  height: var(--tugx-attachment-strip-tile-size, 64px);
+  border-radius: var(--tugx-attachment-strip-tile-radius, 4px);
+  /* Background slot for the placeholder + a subtle frame around the
+     thumbnail when it lands. The token follows the existing
+     element-field-fill convention; falls back to a neutral surface. */
+  background: var(--tugx-attachment-strip-thumb-bg,
+    var(--tug7-element-field-fill-rest,
+    var(--tug-color-surface-2, #1d1d1d)));
+  overflow: hidden;
+}
+
+.tug-attachment-strip__thumb-img {
+  /* `object-fit: cover` so the source image fills the square tile
+     without distortion. The source is already ≤256 px max edge per
+     `bakeThumbnail`'s contract, so the browser downscale here is
+     cheap. */
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Keep the image inside the tile's border-radius even though the
+     parent already clips via overflow:hidden — defends against
+     subpixel rendering nits on retina displays. */
+  border-radius: inherit;
+}
+
+.tug-attachment-strip__placeholder {
+  /* Soft, pulsing-free placeholder for the brief window between
+     synthesizer-puts (which mints the bytes-store entry) and the
+     thumbnail-bake completion. The bake is fire-and-forget on the
+     replay path; a brief flash of blank tile is acceptable
+     (typically <100ms). No pulse animation — a busy loading-state
+     pulse would distract from transcript reading. */
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--tugx-attachment-strip-placeholder-bg,
+    var(--tug7-element-field-fill-rest, #2a2a2a));
+}
+
+.tug-attachment-strip__caption {
+  /* The `#NNNN-image-N` label beneath the thumbnail. Laid out as
+     two tightly-stacked centred lines (Finder-style filename wrap):
+     prefix (`#NNNN-`) on line 1, suffix (`image-N`) on line 2. The
+     trailing hyphen stays attached to line 1, mirroring how Finder
+     keeps the wrap-trigger glyph with the breaking line. Monospaced
+     to match the inline chip's label rendering — readers pair chips
+     with strip thumbnails by label match, so digit alignment helps. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Sit a comfortable distance below the thumbnail. */
+  margin-top: var(--tugx-attachment-strip-caption-gap, 4px);
+  font-family: var(--tugx-attachment-strip-caption-font,
+    ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--tugx-attachment-strip-caption-size, 0.7rem);
+  /* Tight line-height keeps the two lines visually paired. */
+  line-height: 1.2;
+  color: var(--tugx-attachment-strip-caption-color,
+    var(--tug7-element-field-text-normal-label-rest, currentColor));
+}
+
+.tug-attachment-strip__caption-line {
+  /* Each caption line is its own centred block. The tile's parent
+     width (`--tugx-attachment-strip-tile-size`) gives the bounding
+     box; the line auto-centers within it. */
+  display: block;
+  text-align: center;
+  /* Don't allow any single line to overflow the tile width — at the
+     planned `messageNumber` and `image-N` ranges (≤9999, ≤99), the
+     monospace widths fit comfortably inside a 64-px tile. The
+     `overflow-wrap` here is defensive against a future label growth
+     past the tile width: rather than truncating, the line would
+     wrap at any character, which is uglier than the budgeted layout
+     but still readable. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

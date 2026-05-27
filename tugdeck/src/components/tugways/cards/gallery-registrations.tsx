@@ -72,6 +72,7 @@ import { GalleryListViewHeaders } from "./gallery-list-view-headers";
 import { GalleryTugListRow } from "./gallery-tug-list-row";
 import { GalleryTranscriptEntry } from "./gallery-transcript-entry";
 import { GalleryAtom } from "./gallery-atom";
+import { GalleryAttachmentStrip } from "./gallery-attachment-strip";
 import { GalleryPromptEntry } from "./gallery-prompt-entry";
 import { GalleryTextEditor } from "./gallery-text-editor";
 import { GallerySplitPane } from "./gallery-split-pane";
@@ -998,6 +999,16 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-attachment-strip",
+    contentFactory: (_cardId) => <GalleryAttachmentStrip />,
+    defaultMeta: { title: "TugAttachmentStrip", icon: "Image", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.layout,
   });
 

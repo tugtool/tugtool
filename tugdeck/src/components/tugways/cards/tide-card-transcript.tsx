@@ -95,6 +95,7 @@ import {
   TugAtomTextBody,
   formatAtomTextForCopy,
 } from "@/components/tugways/cards/tug-atom-text-body";
+import { TugAttachmentStrip } from "@/components/tugways/cards/tug-attachment-strip";
 import { TideZ1C } from "@/components/tugways/cards/tide-card-z1c";
 import {
   dispatch as dispatchRenderInput,
@@ -370,12 +371,14 @@ const USER_IDENTIFIER = "You";
 
 interface UserMessageCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   renderTurnTrailing?: TurnTrailingRenderer;
+  codeSessionStore: CodeSessionStore;
 }
 
 const UserMessageCell: React.FC<UserMessageCellProps> = ({
   index,
   dataSource,
   renderTurnTrailing,
+  codeSessionStore,
 }) => {
   const row = dataSource.rowAt(index);
   // Read the user submission from the `user_message` Message at the
@@ -400,6 +403,16 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
   // the two surfaces walk the same substrate via the same helper, so
   // they can't disagree on what's there.
   const copyText = formatAtomTextForCopy(text, atoms);
+  // Per-message thumbnail strip ([Step 6]). Image atoms only; the
+  // strip itself filters to images-only by contract, but doing the
+  // filter here keeps the prop shape tight and the reference stable
+  // when the substrate has no image atoms (the strip then short-
+  // circuits to null and consumes no row height).
+  const imageAtoms = React.useMemo(
+    () => atoms.filter((a) => a.type === "image"),
+    [atoms],
+  );
+  const bytesStore = codeSessionStore.getAtomBytesStore();
   // User-row timestamp is the submit time, not the turn's end time —
   // the user's row "posts" the moment they hit submit, regardless of
   // whether the assistant has replied yet. Both committed and active
@@ -433,14 +446,22 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
           timestamp={timestamp === "" ? undefined : timestamp}
           sequenceNumber={index + 1}
           body={
-            <TugAtomTextBody
-              ref={(el) => { bodyRef.current = el; }}
-              className="tide-card-transcript-user-body"
-              data-testid="tide-card-transcript-user-body"
-              text={text}
-              atoms={atoms}
-              messageNumber={index + 1}
-            />
+            <>
+              <TugAtomTextBody
+                ref={(el) => { bodyRef.current = el; }}
+                className="tide-card-transcript-user-body"
+                data-testid="tide-card-transcript-user-body"
+                text={text}
+                atoms={atoms}
+                messageNumber={index + 1}
+              />
+              <TugAttachmentStrip
+                messageNumber={index + 1}
+                atoms={imageAtoms}
+                bytesStore={bytesStore}
+                data-testid="tide-card-transcript-attachment-strip"
+              />
+            </>
           }
           controls={
             (() => {
@@ -1075,8 +1096,14 @@ export const TideTranscriptHost = forwardRef<
   const userRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
   >(
-    (p) => <UserMessageCell {...p} renderTurnTrailing={renderTurnTrailing} />,
-    [renderTurnTrailing],
+    (p) => (
+      <UserMessageCell
+        {...p}
+        renderTurnTrailing={renderTurnTrailing}
+        codeSessionStore={codeSessionStore}
+      />
+    ),
+    [codeSessionStore, renderTurnTrailing],
   );
   // `codeSessionStore` is stable for the card's lifetime (same as the
   // `assistantRenderer` deps note above), so `ghostRenderer` stays a stable

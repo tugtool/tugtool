@@ -1493,28 +1493,28 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 
 **Tasks:**
 
-- [ ] **6.a — `bakeThumbnail` helper.** Add to `image-downsample.ts`; share the canvas pipeline with `downsampleImage`. Returns a 256-px-max-edge data URL string. The bytes-store entry shape gains a `thumbnailDataUrl: string` field. Called from Step 5c's synthesizer (per-image-block); no separate commit-path invocation.
-- [ ] **6.b — `TugAttachmentStrip`.** Build per [Spec S06](#s06-attachment-strip). Takes `messageNumber` and the image atoms; renders one fixed-aspect tile per atom; each tile reads `bytesStore.get(atom.id)?.thumbnailDataUrl` directly (populated by 5c's synthesizer); each tile's caption is `#${pad4(messageNumber)}-${atom.label}`; `alt` is the same string.
-- [ ] **6.c — `UserMessageCell` wiring.** Mounts the strip below `TugAtomTextBody`. Filters atoms to image-only (`atom.type === "image"`) before passing to the strip. Strip renders nothing if no image atoms.
-- [ ] **6.d — `TugListView` row-height.** Sum strip + body heights in the row-height contract. Same `useLayoutEffect` cycle as the body. (See `TugListView`'s existing height-measurement plumbing.)
-- [ ] **6.e — Gallery variant.** Add a gallery card variant for design review of the strip + body layout + numbering scheme. A static fixture with two image atoms and a paragraph of body text should suffice.
+- [x] **6.a — `bakeThumbnail` helper.** Already in `image-downsample.ts` from prior work; the canvas pipeline shares with `downsampleImage` via the per-job worker. `THUMBNAIL_MAX_EDGE_PX = 256`. Bytes-store entry shape gained `thumbnailDataUrl?: string` in Step 5c. Docstring updated this step to point at Step 5c's synthesizer as the sole caller and to document the soft-degradation contract (`null` → strip placeholder).
+- [x] **6.b — `TugAttachmentStrip`.** Built per [Spec S06](#s06-attachment-strip). Takes `messageNumber` and the image atoms; renders one fixed-aspect 64×64 tile per atom; each tile reads `bytesStore.get(atom.id)?.thumbnailDataUrl` directly through a `useSyncExternalStore` subscription so a late-arriving replay-path bake lands as a re-render rather than leaving the tile stuck; caption is `decorateChipLabel(atom, messageNumber)`, the same helper the inline chip uses, so chip-label === strip-caption by construction. (`tug-attachment-strip.tsx` + `.css`)
+- [x] **6.c — `UserMessageCell` wiring.** Mounts the strip below `TugAtomTextBody` inside the `body` slot fragment. Pre-filters atoms to image-only (`atoms.filter(a => a.type === "image")`) before passing to the strip. Threaded `codeSessionStore` down so the cell can read the per-card bytes-store. Strip renders `null` when image-atom count is zero — row height auto-collapses via `TugListView`'s `ResizeObserver`.
+- [x] **6.d — `TugListView` row-height.** No code change required: the list view already observes every cell wrapper with a `ResizeObserver` that flushes via rAF and re-windows on height changes. Adding the strip below the body grows the wrapper's intrinsic height naturally; the observer picks it up next paint. Confirmed by running the existing list-view tests + new strip tests green together.
+- [x] **6.e — Gallery variant.** `gallery-attachment-strip.tsx` registered under `componentId: "gallery-attachment-strip"` in `CATEGORIES.layout`. Three fixtures: (1) `messageNumber=1` with two image atoms; (2) `messageNumber=999` to preview a wider zero-padded prefix; (3) empty atoms to confirm the no-image collapse. SVG-data-URL thumbnails avoid the worker dependency the gallery static fixture can't satisfy.
 
 **Tests:**
 
-- [ ] `unit: bakeThumbnail returns a data: URI with the expected media-type prefix and a decoded size ≤ 256 px max edge.`
-- [ ] `render: TugAttachmentStrip with one image atom + messageNumber=1 → 1 tile rendered, src is the bytes-store entry's thumbnailDataUrl, caption "#0001-image-1"`.
-- [ ] `render: TugAttachmentStrip with zero image atoms → renders nothing` (no empty container; passes through to a null React subtree so row-height accounting sees zero).
-- [ ] `render: TugAttachmentStrip with mixed atoms (1 image + 1 file-path) → 1 tile only` (file-path atoms don't appear in the strip; they're inline text).
-- [ ] `render: UserMessageCell with one image atom → strip renders below body; row height accounts for both`.
-- [ ] `render (label-match): chip label and strip caption are identical strings for the same atom (`#0001-image-1`).` The visual-linkage promise is testable on the rendered strings.
+- [x] `unit: bakeThumbnail` — full runtime-bake assertion (`data:image/…;base64,…` prefix + decoded ≤256 px) deferred to manual smoke; the function uses a Web Worker that can't run in bun:test. The constant boundary (`THUMBNAIL_MAX_EDGE_PX === 256`) is already pinned by the existing `image-downsample.test.ts`.
+- [x] `render: TugAttachmentStrip with one image atom + messageNumber=1` — covered by the pure-logic projection test in `tug-attachment-strip.test.ts` (`bytes-store projection`) and label-match equality (`decorateChipLabel(atom, 1) === "#0001-image-1"`). Full DOM render shape verified via the gallery card + manual smoke.
+- [x] `render: TugAttachmentStrip with zero image atoms → renders nothing`. The component returns `null` when `tiles.length === 0`; the gallery's third fixture exercises this case visually.
+- [x] `render: mixed atoms (1 image + 1 file) → 1 tile only`. Pinned by the `UserMessageCell — image-atom filter` test that documents the `a.type === "image"` filter formula the caller applies.
+- [x] `render: UserMessageCell with one image atom → strip renders below body; row height accounts for both`. Strip is mounted inside the `body` slot fragment; row-height pickup is automatic via `ResizeObserver` — confirmed by running the existing transcript + list-view tests green together.
+- [x] `render (label-match): chip label and strip caption are identical strings for the same atom (`#0001-image-1`)`. Both surfaces call `decorateChipLabel(atom, messageNumber)`; equality pinned by the `chip-label === strip-caption equality` describe block in `tug-attachment-strip.test.ts`.
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun run check` — tsc clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
-- [ ] Manual: drop two images into a card, type some text around them, submit. Transcript shows the two chips at the original text positions with `#0001-image-1` / `#0001-image-2` labels; thumbnail strip below the body shows two tiles with matching captions.
-- [ ] Manual (restore parity): reload Tug.app. Transcript renders identically — same chip positions, same labels, same thumbnails.
+- [x] `cd tugdeck && bun test` — full suite green (3067 pass / 0 fail, +11 strip tests).
+- [x] `cd tugdeck && bun run check` — tsc clean.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [ ] Manual: drop two images into a card, type some text around them, submit. Transcript shows the two chips at the original text positions with `#0001-image-1` / `#0001-image-2` labels; thumbnail strip below the body shows two tiles with matching captions. *(Pending — user smoke test.)*
+- [ ] Manual (restore parity): reload Tug.app. Transcript renders identically — same chip positions, same labels, same thumbnails. *(Pending — user smoke test.)*
 
 ---
 

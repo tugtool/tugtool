@@ -518,14 +518,21 @@ export async function downsampleImage(
 
 /**
  * Bake a thumbnail data URL for an already-API-compliant image
- * source. Used by the reducer commit path (replay attachments need
- * a thumbnail even though they skipped the full downsample pipeline
- * at submit time).
+ * source. Returns a `data:image/<mime>;base64,…` URL whose decoded
+ * image has a max edge of 256 px (the canvas worker's
+ * `THUMBNAIL_MAX_EDGE_PX` constant). The output mediaType matches
+ * the worker's bake — JPEG for opaque sources, PNG for transparent.
+ *
+ * Called by `synthesizeUserMessageFromBlocks` ([Step 5c](roadmap/tide-atoms.md#step-5c))
+ * per image content block to populate the bytes-store entry's
+ * `thumbnailDataUrl`. The synthesizer fires the bake fire-and-forget;
+ * the per-message attachment strip ([Step 6](roadmap/tide-atoms.md#step-6))
+ * re-renders when the bytes-store's subscriber pushes the update.
  *
  * Returns `null` on decode failure rather than the discriminated-
  * error shape — the caller has already committed to using the
- * bytes; a missing thumbnail is a soft degradation, not a
- * submission-blocking failure.
+ * bytes; a missing thumbnail is a soft degradation (Step 6's strip
+ * renders a placeholder tile), not a submission-blocking failure.
  */
 export async function bakeThumbnail(
   source: Blob | File,
