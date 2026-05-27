@@ -1023,9 +1023,128 @@ The existing `[D09]` "retarget the bootstrap to a new root" semantics that lives
 
 ---
 
+#### Step pre-5: Participant / row-cell rename — `code` → `assistant` {#step-pre-5}
+
+**Depends on:** (none — independent refactor)
+
+**Blocks:** [Step 5](#step-5) (Step 5 modifies a cell that gets renamed here; doing the rename first means Step 5's transcript-atom work targets the post-rename names from the outset).
+
+**Commit:** `refactor(tugdeck): code → assistant in participant/row/cell layer`
+
+**References:** [`tugdeck/src/lib/code-session-store/types.ts:104`](../tugdeck/src/lib/code-session-store/types.ts) (`MessageKind` — the substrate's message-forward source of truth), [`tugdeck/src/components/tugways/tug-transcript-entry.tsx:75`](../tugdeck/src/components/tugways/tug-transcript-entry.tsx) (`Participant` type), [`tugdeck/src/lib/tide-transcript-data-source.ts:123`](../tugdeck/src/lib/tide-transcript-data-source.ts) (`TideTranscriptCellKind`).
+
+#### The inconsistency, in one sentence {#step-pre-5-inconsistency}
+
+The substrate's `MessageKind` (`user_message | assistant_text | assistant_thinking | tool_use | system_note`) is message-forward and uses `assistant_*` for Claude's contributions, but the participant / row / cell layer above it still calls Claude's side `code` — `Participant = "user" | "code" | "shell"`, `TideTranscriptCellKind = "user" | "code" | "ghost"`, `CodeRowCell`, `participant="code"` JSX, `[data-participant="code"]` CSS. The migration is partly done — newer code (`half: "user" | "assistant"` types in `tide-card-transcript.tsx:937` and `tide-card.tsx:305`, `tide-assistant-renderer-dispatch.ts` filename) uses `assistant`, the legacy participant/row layer hasn't followed.
+
+#### Strategy {#step-pre-5-strategy}
+
+The rename is mechanical and lockstep — every `code` literal in the *participant / row / cell* layer becomes `assistant`. The user side gets a complementary rename to make the *pair* coherent: `UserRowCell` → `UserMessageCell` to mirror the fact that the user row carries exactly one `user_message`, while the assistant row aggregates a turn's worth of `assistant_*` + `tool_use` + `system_note` messages. The asymmetry is real in the data (one message vs. many) and should be visible in the names.
+
+**Order of operations:** rename the *type literals* first (`Participant`, `TideTranscriptCellKind`, `TideZ1BParticipant`). Because they're typed string unions, tsc surfaces every legacy `"code"` consumer as a compile error — the typed substrate becomes the rename's enforcement gate. Sweeping CSS / data-attribute / doc-comment / test-fixture sites after that is grep work, but the type-error frontier guarantees no source consumer is missed.
+
+**Distinct concepts that share the word `code` for unrelated reasons are LEFT ALONE:**
+
+| Concept | Layer | Decision |
+|---|---|---|
+| `CodeSessionStore`, `code-session-store/` | Session class hosting Claude in coding mode | **Stays `code`** — session/card layer, not participant. |
+| "Code card" | Tide card type | **Stays `code`** — card mode, not message participant. |
+| `data-route="code"` (tide-route-indicator-badge) | Routing prefix `>` destination | **Stays `code`** — route name (where input is going), not speaker name. |
+| Markdown ``` ``` block parsing | Programming-code rendering | **Stays `code`** — unrelated meaning of the word. |
+
+**Renamed to `assistant`** — every site where `code` denotes "the AI participant in the transcript" (the speaker, not the card mode):
+
+- `Participant = "user" | "code" | "shell"` → `"user" | "assistant" | "shell"` ([`tug-transcript-entry.tsx:75`](../tugdeck/src/components/tugways/tug-transcript-entry.tsx)).
+- `TideTranscriptCellKind = "user" | "code" | "ghost"` → `"user" | "assistant" | "ghost"` ([`tide-transcript-data-source.ts:123`](../tugdeck/src/lib/tide-transcript-data-source.ts)).
+- `TideZ1BParticipant = "user" | "code"` → `"user" | "assistant"` ([`tide-card-z1b.tsx:109`](../tugdeck/src/components/tugways/cards/tide-card-z1b.tsx)).
+- `UserRowCell` → `UserMessageCell` (renders one `user_message`).
+- `CodeRowCell` → `AssistantTurnCell` (aggregates the assistant's whole turn).
+- `UserRowCellProps` / `CodeRowCellProps` → `UserMessageCellProps` / `AssistantTurnCellProps`.
+- `CODE_DEFAULT_IDENTIFIER` → `ASSISTANT_DEFAULT_IDENTIFIER`; `ESTIMATED_HEIGHT_CODE` → `ESTIMATED_HEIGHT_ASSISTANT`; `isCodeRow` → `isAssistantRow` (cell-local helpers).
+- Every `"code"` literal site that flows from the renamed types: `kind: "code"`, `kind === "code"`, ternary results, renderer-map keys, JSX `participant="code"` props.
+- `[data-participant="code"]` CSS selectors. The DOM `data-participant` attribute the component emits rides on the typed `Participant`, so it flips automatically when the type literal flips.
+- All in-file doc-block / tuglaws-reference comments that mention `CodeRowCell` / `UserRowCell` / `participant="code"`.
+
+#### Artifacts {#step-pre-5-artifacts}
+
+No new files, no file renames. Modifications, grouped by layer:
+
+**Substrate types (force the tsc-error frontier):**
+
+- [`tugdeck/src/components/tugways/tug-transcript-entry.tsx`](../tugdeck/src/components/tugways/tug-transcript-entry.tsx) — `Participant` type literal; header docstring.
+- [`tugdeck/src/lib/tide-transcript-data-source.ts`](../tugdeck/src/lib/tide-transcript-data-source.ts) — `TideTranscriptCellKind` literal; ~12 internal string-literal sites (`return "code"`, `kind: "code"`, `isCodeRow` ternaries); `kindForIndex` doc; module-header doc.
+- [`tugdeck/src/components/tugways/cards/tide-card-z1b.tsx`](../tugdeck/src/components/tugways/cards/tide-card-z1b.tsx) — `TideZ1BParticipant` literal; ~4 `participant === "code"` checks; module-header doc-block.
+
+**Cell components + their callers:**
+
+- [`tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`](../tugdeck/src/components/tugways/cards/tide-card-transcript.tsx) — `UserRowCell` → `UserMessageCell`; `CodeRowCell` → `AssistantTurnCell` (+ `*Props` interfaces); `participant="code"` JSX (×2 sites); renderer-map key `"code": codeRenderer` → `"assistant": assistantRenderer`; `kind === "code"` reads; `ESTIMATED_HEIGHT_CODE` / `CODE_DEFAULT_IDENTIFIER` / `isCodeRow` helper renames; module-header doc-block + tuglaws comments.
+
+**DOM / CSS:**
+
+- [`tugdeck/src/components/tugways/tug-transcript-entry.css`](../tugdeck/src/components/tugways/tug-transcript-entry.css) — `[data-participant="code"]` selector (one site).
+- [`tugdeck/src/components/tugways/cards/tide-card-z1b.css`](../tugdeck/src/components/tugways/cards/tide-card-z1b.css) — comment reference.
+
+**Galleries (development-only screens; still load at startup):**
+
+- [`tugdeck/src/components/tugways/cards/gallery-transcript-entry.tsx`](../tugdeck/src/components/tugways/cards/gallery-transcript-entry.tsx) — `participant="code"` → `"assistant"`.
+
+**Tests:**
+
+- [`tugdeck/src/lib/__tests__/tide-transcript-data-source.test.ts`](../tugdeck/src/lib/__tests__/tide-transcript-data-source.test.ts) — test literals matching the renamed `kind` values.
+- [`tugdeck/src/components/tugways/cards/__tests__/tide-card-z1c.test.ts`](../tugdeck/src/components/tugways/cards/__tests__/tide-card-z1c.test.ts) — references to `UserRowCell` / `CodeRowCell` / participant strings.
+
+**Stale comment references (touch-and-go):**
+
+- [`tugdeck/src/lib/code-session-store.ts:279`](../tugdeck/src/lib/code-session-store.ts) — one comment line mentioning `CodeRowCell`.
+
+**Best-effort enumeration only.** The list above is what the audit surfaced; the typed `Participant` / `TideTranscriptCellKind` / `TideZ1BParticipant` rename forces tsc to expose any other consumer. Task pre-5.g closes the loop with an explicit final grep for surviving hits.
+
+#### Files explicitly NOT touched {#step-pre-5-exempt}
+
+- [`tugdeck/src/lib/code-session-store/`](../tugdeck/src/lib/code-session-store) — session class, not participant. `CodeSessionStore` stays.
+- [`tugdeck/src/components/tugways/chrome/tide-route-indicator-badge.{tsx,css}`](../tugdeck/src/components/tugways/chrome) — `data-route="code"` is the route-prefix destination, not the participant.
+- [`tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts`](../tugdeck/src/lib/markdown/parse-markdown-to-sanitized-blocks.ts) — markdown ``` ``` block parsing; "code" here is programming-code, not participant.
+
+#### Tasks {#step-pre-5-tasks}
+
+- [ ] **pre-5.a — Type literals.** Rewrite `Participant`, `TideTranscriptCellKind`, `TideZ1BParticipant` literal unions to use `"assistant"` instead of `"code"`. After this single change, `bun run check` should surface every legacy `"code"` consumer as a tsc error. Use that error list to drive the rest of the pass.
+- [ ] **pre-5.b — Cell components.** Rename `UserRowCell` → `UserMessageCell` and `CodeRowCell` → `AssistantTurnCell` (including their `*Props` interfaces, all internal references, and the `cellRenderers` map registration at `tide-card-transcript.tsx:~1057,1075`).
+- [ ] **pre-5.c — Cell-local helpers.** Rename `CODE_DEFAULT_IDENTIFIER` → `ASSISTANT_DEFAULT_IDENTIFIER`; `ESTIMATED_HEIGHT_CODE` → `ESTIMATED_HEIGHT_ASSISTANT`; `isCodeRow` → `isAssistantRow`.
+- [ ] **pre-5.d — Literal-site sweep.** Rewrite every `"code"` string in the touched files that the type-rename surfaced: ternary results, renderer-map keys, JSX `participant="code"` props, `kind === "code"` reads, etc. Verify by tsc green.
+- [ ] **pre-5.e — DOM + CSS.** Update `[data-participant="code"]` selector in `tug-transcript-entry.css` to `"assistant"`. Confirm the DOM `data-participant` attribute the JSX emits flips to `"assistant"` (it should ride on the renamed `Participant` type — verify by inspecting a rendered card in the browser).
+- [ ] **pre-5.f — Doc-blocks + comments.** Update module-header docstrings and in-file tuglaws comments in the touched files; sweep `CodeRowCell` / `UserRowCell` / `participant="code"` mentions in comments. Includes the stray `code-session-store.ts:279` comment.
+- [ ] **pre-5.g — Test sweep.** Update `tide-card-z1c.test.ts` and `tide-transcript-data-source.test.ts` to the renamed identifiers and `kind` literals. Run the affected suites to confirm green.
+- [ ] **pre-5.h — Final audit grep.** Run `grep -rn '"code"\|UserRowCell\|CodeRowCell\|CODE_DEFAULT_IDENTIFIER\|ESTIMATED_HEIGHT_CODE\|isCodeRow' tugdeck/src/components/tugways tugdeck/src/lib/tide-transcript-data-source.ts tugdeck/src/lib/__tests__`. Every surviving hit must be one of the explicitly-exempt non-participant survivors (see "Files explicitly NOT touched" above); document each survivor inline in the commit so a reader can verify nothing was missed.
+
+#### Tests {#step-pre-5-tests}
+
+Pure rename — no new behaviour. The gates are existence-and-green:
+
+- [ ] `tide-transcript-data-source.test.ts` green after the renamed `kind` literals propagate.
+- [ ] `tide-card-z1c.test.ts` green after renamed cell identifiers propagate.
+- [ ] Full `bun test` green (3009 / 3009 expected). Any test regression outside the touched files indicates a missed rename ripple.
+
+#### Checkpoint {#step-pre-5-checkpoint}
+
+- [ ] `cd tugdeck && bun test` — full suite green.
+- [ ] `cd tugdeck && bun run check` — tsc clean (the typed literal rename is the enforcement frontier; clean tsc means every typed consumer was updated).
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [ ] Final audit grep (task pre-5.h above) returns only the explicitly-exempt survivors.
+- [ ] Manual: open Tug.app — transcript still renders user + Claude rows correctly; Z1B end-state row shows correct styling under its renamed `participant="assistant"` attribute; no visual regression.
+
+#### Out of scope {#step-pre-5-out-of-scope}
+
+- **`CodeSessionStore` / `code-session-store/` rename.** Different concept (session class hosting Claude in coding mode). If "code card / code session" naming is itself due for a revisit, that's a separate plan that should also consider what "shell card / shell session" looks like once shell-routed cards exist.
+- **Route-indicator badge naming (`data-route="code"`).** Whether route names should follow participant names is a Tide-wide consistency question, not a transcript-rendering question.
+- **`shell` participant rename.** This step leaves `shell` untouched. If/when shell-output rendering lands, the symmetric question (`ShellOutputCell`? `ShellTurnCell`?) gets answered in that step.
+- **DOM attribute name (`data-participant` itself).** Whether to call it `data-speaker` / `data-role` / `data-author` is a styling-convention discussion, not a scope of this rename. The attribute *value* is what flips here; the attribute *name* stays.
+- **Step 5 body rewrite.** [Step 5](#step-5)'s artifact list and tasks still reference `UserRowCell` and the wider "extract `AtomChip`" scope. After this rename lands, Step 5's body will be revised in its own plan-touch to (a) target the renamed `UserMessageCell` and (b) reflect the smaller scope agreed in conversation (transcript-only atom rendering, no editor refactor, no `AtomChip` primitive, no gallery card). That revision is deferred so this commit stays purely a rename.
+
+---
+
 #### Step 5: `AtomChip` primitive + user-row atom rendering {#step-5}
 
-**Depends on:** #step-3
+**Depends on:** #step-3, #step-pre-5
 
 **Commit:** `feat(tugdeck): AtomChip primitive + transcript user-row atom rendering`
 
