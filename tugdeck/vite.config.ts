@@ -132,6 +132,11 @@ function themeLoaderPlugin(): VitePlugin {
  * into tug-active-theme.css so the app receives standard CSS HMR updates.
  *
  * Watches styles/themes/*.css (all themes including brio).
+ *
+ * Also broadcasts a `tug:theme-changed` custom HMR event to the client
+ * so the `installHmrBridge` consumer can skip per-card state-preservation
+ * flush on the incoming CSS-only update — see `hmr-bridge.ts` for the
+ * skip protocol.
  */
 function controlTokenHotReload(): VitePlugin {
   function reloadActiveTheme() {
@@ -141,9 +146,15 @@ function controlTokenHotReload(): VitePlugin {
 
   return {
     name: "control-token-hot-reload",
-    handleHotUpdate({ file }) {
+    handleHotUpdate({ file, server }) {
       if (file.startsWith(SHIPPED_THEMES_CSS_DIR) && file.endsWith(".css")) {
         reloadActiveTheme();
+        // Fire BEFORE returning so the client receives the custom
+        // event ahead of the HMR payload Vite emits for the
+        // resulting tug-active-theme.css change. WebSocket messages
+        // are TCP-ordered; chokidar detects the file change after
+        // this send call, so the event lands first.
+        server.ws.send({ type: "custom", event: "tug:theme-changed" });
         return [];
       }
     },
@@ -301,6 +312,16 @@ function themeSaveLoadPlugin(): VitePlugin {
                 return;
               }
               handleThemesActivate(body, SHIPPED_THEMES_CSS_DIR, THEME_ACTIVE_CSS).then((result) => {
+                if (result.status === 200) {
+                  // Tell the client a theme change is coming via the
+                  // forthcoming `vite:beforeUpdate`. The `hmr-bridge`
+                  // consumes this to skip the per-card state-preservation
+                  // flush on the CSS-only update. WS messages are
+                  // TCP-ordered; this send precedes Vite's automatic
+                  // file-watcher-triggered HMR payload, so the client
+                  // sees it first.
+                  server.ws.send({ type: "custom", event: "tug:theme-changed" });
+                }
                 res.writeHead(result.status, { "Content-Type": "application/json" });
                 res.end(result.body);
               }).catch((err) => {

@@ -36,6 +36,27 @@
  * transition that signals a content-factory remount and replays the
  * bag through the existing `onRestore` path.
  *
+ * # Theme-only update fast path
+ *
+ * Theme switches (the user clicks a theme, or edits a token value in
+ * `styles/themes/*.css`) only mutate CSS — no React-side state
+ * depends on the outgoing theme. Running `captureAllForTeardown` for
+ * those HMR passes is wasted work that scales with per-card bag size
+ * (e.g. the prompt-entry's bytes-store of inline image attachments).
+ *
+ * The dev server's `themeSaveLoadPlugin` and `controlTokenHotReload`
+ * broadcast a `tug:theme-changed` custom HMR event immediately after
+ * writing `tug-active-theme.css`. WebSocket order is TCP-preserved,
+ * and the subsequent file-watcher-driven `vite:beforeUpdate` is
+ * processed milliseconds later — so the client always sees the
+ * custom event first. We use that as a reliable discriminator
+ * because the path-suffix approach doesn't work (Vite reports the
+ * JS-graph accept boundary, not the file that actually changed).
+ *
+ * The arming is time-bounded so a stale arming (the rare case where
+ * a theme event fires but the matching `vite:beforeUpdate` never
+ * does) can't suppress capture on a later unrelated HMR pass.
+ *
  * # Why a bridge module rather than inline in main.tsx
  *
  * Keeping the Vite-specific surface (`import.meta.hot.*`) in a
@@ -87,6 +108,24 @@
 import type { DeckManager } from "./deck-manager";
 
 /**
+ * One-shot arming window for the `tug:theme-changed` HMR signal.
+ * See module docstring for the handshake rationale.
+ */
+const THEME_ARMED_WINDOW_MS = 2_000;
+let _themeArmedAt: number | null = null;
+
+function armThemeSkip(): void {
+  _themeArmedAt = performance.now();
+}
+
+function consumeThemeSkip(): boolean {
+  if (_themeArmedAt === null) return false;
+  const age = performance.now() - _themeArmedAt;
+  _themeArmedAt = null;
+  return age <= THEME_ARMED_WINDOW_MS;
+}
+
+/**
  * Wire HMR pre-update events into the deck-manager save pipeline.
  *
  * Called once at app startup, immediately after the `DeckManager`
@@ -104,6 +143,16 @@ export function installHmrBridge(deck: DeckManager): void {
   const hot = import.meta.hot;
   if (!hot) return;
 
+  // Theme-only updates are pre-signalled by the dev server's plugins
+  // (POST `/__themes/activate` and `controlTokenHotReload`) via a
+  // `tug:theme-changed` custom HMR event. Arm the one-shot skip so
+  // the subsequent `vite:beforeUpdate` bypasses
+  // `captureAllForTeardown` — theme switches only mutate CSS and
+  // don't need React-side state preservation to fire.
+  hot.on("tug:theme-changed", () => {
+    armThemeSkip();
+  });
+
   // `vite:beforeUpdate` fires synchronously before any HMR module
   // update applies. Triggering the save pass here means the bag is
   // in deck-manager's cache by the time React Fast Refresh starts
@@ -111,6 +160,7 @@ export function installHmrBridge(deck: DeckManager): void {
   // `handleBeforeUnload` because `captureAllForTeardown` is the
   // shared implementation; the only difference is the trace tag.
   hot.on("vite:beforeUpdate", () => {
+    if (consumeThemeSkip()) return;
     deck.captureAllForTeardown("hmr");
   });
 
