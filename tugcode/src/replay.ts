@@ -414,6 +414,20 @@ function mintOpenerId(ctx: TranslateContext, prefix: "u" | "w"): string {
 }
 
 /**
+ * Parse a JSONL entry's `timestamp` (ISO 8601 string Claude Code writes
+ * on every entry) into epoch milliseconds. Returns `undefined` when the
+ * field is absent or unparseable so callers can omit the field from the
+ * emitted frame on the live path (where the JSONL is never sourced) and
+ * fall back to `Date.now()` in the reducer.
+ */
+function parseEntryTimestamp(entry: JsonlEntry): number | undefined {
+  const t = entry.timestamp;
+  if (typeof t !== "string" || t.length === 0) return undefined;
+  const ms = Date.parse(t);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+/**
  * Emit `turn_complete{msg_id: openTurnMsgId, result: "interrupted"}`
  * when a turn is open at an orphan-synthesis trigger point — a new
  * opener arriving (closing the prior turn) or EOF on a cold resume.
@@ -434,14 +448,20 @@ function mintOpenerId(ctx: TranslateContext, prefix: "u" | "w"): string {
  * Idempotent on no open turn — returns `[]` if `openTurnMsgId` is
  * null, so callers can invoke unconditionally before any new opener.
  */
-function emitOrphanIfOpen(ctx: TranslateContext): OutboundMessage[] {
+function emitOrphanIfOpen(
+  ctx: TranslateContext,
+  closingEntry?: JsonlEntry,
+): OutboundMessage[] {
   if (ctx.openTurnMsgId === null) return [];
   const msgId = ctx.openTurnMsgId;
+  const timestamp =
+    closingEntry !== undefined ? parseEntryTimestamp(closingEntry) : undefined;
   const turnComplete: TurnComplete = {
     type: "turn_complete",
     msg_id: msgId,
     seq: ctx.globalSeq++,
     result: "interrupted",
+    timestamp,
     ipc_version: IPC_VERSION,
   };
   ctx.openTurnMsgId = null;
@@ -849,7 +869,7 @@ function handleUserEntry(
       // (`wake_started` carries no `msg_id` on the wire); it reaches
       // the wire only via the orphan-synthesis `turn_complete` AND
       // only when no content event arrives to swap it.
-      out.push(...emitOrphanIfOpen(ctx));
+      out.push(...emitOrphanIfOpen(ctx, entry));
       out.push({
         type: "wake_started",
         session_id: "",
@@ -1001,10 +1021,11 @@ function handleUserEntry(
   // Post-Step-5c: emit the interleaved content blocks verbatim from
   // JSONL; tugdeck's wrapper walks them through
   // `synthesizeUserMessageFromBlocks` to produce the substrate.
-  out.push(...emitOrphanIfOpen(ctx));
+  out.push(...emitOrphanIfOpen(ctx, entry));
   out.push({
     type: "add_user_message",
     content: submittedContent,
+    timestamp: parseEntryTimestamp(entry),
     ipc_version: IPC_VERSION,
   });
   ctx.openTurnMsgId = mintOpenerId(ctx, "u");
@@ -1119,6 +1140,7 @@ function handleAssistantEntry(
     const synthOpener: AddUserMessage = {
       type: "add_user_message",
       content: [],
+      timestamp: parseEntryTimestamp(entry),
       ipc_version: IPC_VERSION,
     };
     out.push(synthOpener);
@@ -1329,6 +1351,7 @@ function handleAssistantEntry(
       msg_id: entryMsgId,
       seq: ctx.globalSeq++,
       result: "success",
+      timestamp: parseEntryTimestamp(entry),
       ipc_version: IPC_VERSION,
     };
     out.push(turnComplete);

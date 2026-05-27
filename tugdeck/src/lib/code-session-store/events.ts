@@ -209,6 +209,14 @@ export interface TurnCompleteEvent {
   result: "success" | "error" | "interrupted";
   tug_session_id?: string;
   telemetry?: import("./telemetry").TurnTelemetry;
+  /**
+   * Optional original wall-clock timestamp (epoch ms) of the terminal
+   * assistant JSONL entry that closes this turn. Set only on the replay
+   * path so the reducer stamps the committed `TurnEntry.endedAt` with
+   * the original completion time. Live `turn_complete` frames omit it
+   * and the reducer falls back to `Date.now()`.
+   */
+  timestamp?: number;
   [key: string]: unknown;
 }
 
@@ -565,6 +573,14 @@ export interface AddUserMessageEvent {
    * — keeps the reducer pure.
    */
   turnKey: string;
+  /**
+   * Optional original wall-clock timestamp (epoch ms) of the user JSONL
+   * entry that produced this opener. Set only on the replay path so the
+   * reducer stamps the synthesized `UserMessage.submitAt` with the
+   * original submission time. Live `add_user_message` frames omit it
+   * and the reducer falls back to `Date.now()`.
+   */
+  timestamp?: number;
   [key: string]: unknown;
 }
 

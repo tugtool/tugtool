@@ -945,6 +945,10 @@ export class CodeSessionStore {
             ? ev.tug_session_id
             : undefined,
           turnKey: mintTurnKey(),
+          timestamp:
+            typeof ev.timestamp === "number" && Number.isFinite(ev.timestamp)
+              ? ev.timestamp
+              : undefined,
         } as unknown as CodeSessionEvent;
       }
       if (ev.type === "wake_started") {

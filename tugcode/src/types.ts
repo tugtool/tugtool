@@ -272,6 +272,16 @@ export interface TurnComplete {
    * plan `#step-20-3-3` / `#step-20-3-4`.
    */
   telemetry?: TurnTelemetry;
+  /**
+   * Optional original wall-clock timestamp (epoch milliseconds) of
+   * the terminal assistant JSONL entry that closes this turn. Set
+   * only on the replay path so the reducer can stamp the committed
+   * `TurnEntry.endedAt` with the original completion time instead of
+   * `Date.now()` (the replay-emission time). Live `turn_complete`
+   * frames omit it — the reducer falls back to `Date.now()` for live
+   * turns.
+   */
+  timestamp?: number;
   ipc_version: number;
 }
 
@@ -643,6 +653,15 @@ export interface AddUserMessage {
    * gap-bridge, not the primary restore path.
    */
   content: ContentBlock[];
+  /**
+   * Optional original wall-clock timestamp (epoch milliseconds) of
+   * the user JSONL entry that produced this opener. Set only on the
+   * replay path so the reducer can stamp the synthesized `UserMessage`
+   * with the original submission time instead of `Date.now()` (the
+   * replay-emission time). Live `add_user_message` frames omit it —
+   * the reducer falls back to `Date.now()` for live submissions.
+   */
+  timestamp?: number;
   ipc_version: number;
 }
 

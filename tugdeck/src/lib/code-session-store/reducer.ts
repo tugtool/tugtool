@@ -2091,7 +2091,11 @@ function handleTurnComplete(
   // attached a persisted telemetry block (replay path), buildTurnEntry
   // adopts it via `mergeTurnTelemetry`; when it's undefined (live
   // path), buildTurnEntry derives the block from reducer state.
-  const endedAt = Date.now();
+  // `event.timestamp` (replay path) carries the original JSONL terminal
+  // assistant entry's wall-clock time; without it, `endedAt` would
+  // reset to the replay-emission time and the Z1 transcript timestamp
+  // would re-stamp on every session restore.
+  const endedAt = event.timestamp ?? Date.now();
   const entry: TurnEntry = buildTurnEntry(
     state,
     msgId,
@@ -3328,7 +3332,11 @@ function handleAddUserMessage(
   // through `synthesizeUserMessageFromBlocks` and dispatches the
   // substrate `(text, atoms)` pair on the event. The reducer trusts
   // the contract — no shape check, no fallback path. Per [Step 5c].
-  const now = Date.now();
+  // `event.timestamp` (replay path) carries the original JSONL entry's
+  // wall-clock submission time; without it, `submitAt` would reset to
+  // the replay-emission time and the Z1 transcript timestamp would
+  // re-stamp on every session restore.
+  const now = event.timestamp ?? Date.now();
   const userMessage: UserMessage = {
     kind: "user_message",
     messageKey: userMessageKey(event.turnKey),
