@@ -36,7 +36,7 @@ Two scope additions over earlier drafts: **image downsampling at insert time** (
 - **Browser-side normalization.** Image bytes are decoded, resized, re-encoded, and size-checked at insert time (drop / paste). The bytes that reach the bytes-store, the wire, the journal, and JSONL are always API-compliant. tugcode never sees an oversized image.
 - **Filter at completion-time, not submit-time.** Secret files (`.env`, `*.pem`, `id_rsa*`, etc.) never appear in the `@`-popup. Users who type the path manually still send it — same model as Claude Code.
 - **One commit per step.** Build green at every commit (`-D warnings`, `bun run check`, `bun test`, `cargo nextest run --workspace` all clean).
-- **AtomChip is a single primitive.** Editor + transcript user-row + assistant tool-blocks all render through the same component. Visual rhyme across the surface; no chance of style drift.
+- **Single SVG chip builder.** Every chip surface (editor's CM6 widget, transcript user-row, assistant tool-block path) renders through the same `buildAtomSVGDataUri` helper extracted from `createAtomImgElement`. Visual rhyme across the surfaces; no chance of style drift. (Earlier drafts proposed a shared React `AtomChip` primitive — superseded; see [Step 5's scope decision](#step-5).)
 - **Tuglaws apply.** Touching prompt-entry's drop / paste extensions, the bytes-store, the wire-flattening logic, the new attachment-strip primitive, and the tool-block path renderers re-checks against `tuglaws/tuglaws.md`. The closing step records a walkthrough.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -49,7 +49,7 @@ Two scope additions over earlier drafts: **image downsampling at insert time** (
 **Transcript rendering:**
 - The transcript user row renders atom chips at `U+FFFC` positions for both in-flight and committed turns. (verification: render test in `tide-card-transcript.test.tsx` + manual against gallery card)
 - The transcript user row renders an image-thumbnail strip above the body when the turn has image attachments. (verification: same as above)
-- Read / Edit / Write / NotebookEdit tool blocks render their `file_path` (and `notebook_path`) as an `AtomChip`, identical to the user-side chip rendering. (verification: render test + manual)
+- Read / Edit / Write / NotebookEdit tool blocks render their `file_path` (and `notebook_path`) as a chip (`<img>` built via `buildAtomSVGDataUri`), identical to the user-side chip rendering. (verification: render test + manual)
 
 **Permission gating:**
 - A workspace with a `.env` file at the root never surfaces `.env` in the `@`-completion popup. (verification: integration test against the FileTreeStore + manual)
@@ -69,9 +69,9 @@ Two scope additions over earlier drafts: **image downsampling at insert time** (
 2. Browser bytes side-table + drop/paste capture with downsampling (Step 2) — atoms gain an optional `id`; drop and paste handlers stash downsampled bytes in the per-card store.
 3. Wire flattening at submit (Step 3) — pure `buildWirePayload(text, atoms, bytesStore)` substitutes `U+FFFC` placeholders and packs image attachments; reducer's `handleSend` and queued-flush consume it.
 4. Completion-time secret-file filter + `.tugattachignore` (Step 4) — filetree provider applies a built-in denylist and reads a workspace-root ignore file.
-5. AtomChip primitive + user-row atom rendering (Step 5) — extract a shared React component from `createAtomImgElement`; the transcript user row renders chips at substituted positions.
+5. Atom rendering in the transcript user-message row (Step 5) — extract `buildAtomSVGDataUri` as a pure helper; new `TugAtomTextBody` walks `(text, atoms)` and interleaves the same `<img>` the editor uses.
 6. Image attachment strip + thumbnail bake (Step 6) — `tug-attachment-strip.tsx` renders above the user body; `bakeThumbnail` shares the Step-1 pipeline at 256 px.
-7. Replay-side cleanup + assistant tool-block chips (Step 7) — fix the `handleAddUserMessage` type-cast; switch tool-block path renderers to `AtomChip`.
+7. Replay-side cleanup + assistant tool-block chips (Step 7) — fix the `handleAddUserMessage` type-cast; switch tool-block path renderers from monospace text to the shared SVG chip via `buildAtomSVGDataUri`.
 8. Integration checkpoint (Step 8) — verify end-to-end: drop → submit → thumbnail + chips → cold-restart → same view.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -335,22 +335,33 @@ Filtering is applied at suggestion time. Users never see these paths in the `@`-
 - No tugdeck-side changes; the popup just stops seeing these paths.
 - A manual-typed path still flows to claude; Claude's tool gates apply if `Read` is invoked.
 
-#### [D07] `AtomChip` is a shared React primitive (DECIDED) {#d07-atom-chip-primitive}
+#### [D07] Chip rendering shares an SVG builder, not a React primitive (REVISED) {#d07-atom-chip-primitive}
 
-**Decision:** Extract the chip rendering currently inside `createAtomImgElement` (`tug-atom-img.ts`) into a shared React component `AtomChip` consumed by three surfaces:
-- The CM6 atom decoration (current consumer; the imperative DOM widget is replaced with a React mount).
-- The transcript user-row body (via `TugAtomTextBody`).
-- Tool-block path renderings (`read-tool-block.tsx`, `edit-tool-block.tsx`, `write-tool-block.tsx`, `notebook-edit-tool-block.tsx`).
+> **Supersedes** an earlier draft that mandated a shared React `AtomChip` primitive consumed by the editor's CM6 widget, the transcript user-row body, and the tool-block path renderers. That earlier draft is preserved at the bottom of this section for historical record.
+
+**Decision:** Extract the SVG-data-URI builder from `createAtomImgElement` (`tug-atom-img.ts`) as a pure helper, `buildAtomSVGDataUri(type, label, value, options?)`. Three surfaces consume the helper, each in the way that fits its substrate:
+
+- The editor's CM6 atom decoration **does not change**. `createAtomImgElement` continues to be its entry point and renders the same `<img>` it does today — calling `buildAtomSVGDataUri` internally for the URI. Replaced-element semantics (caret motion, selection, clipboard, undo) ride on the `<img>` element type per HTML spec; rebuilding it as a React component would buy nothing the substrate doesn't already give us and would risk that carefully-engineered behaviour.
+- The transcript user-row body uses a new pure React walker, `TugAtomTextBody`, that splits the substrate text at `U+FFFC` and interleaves `<img src={buildAtomSVGDataUri(...).dataUri} ...>` per atom.
+- The tool-block path renderers render an inline `<img>` per `file_path` (and `notebook_path`) using the same helper. Single chip per tool block; no walker needed.
 
 **Rationale:**
-- Visual consistency between user input and claude's tool calls reinforces the substrate model — the path the user typed reappears as the same chip in claude's tool call.
-- A single primitive avoids divergent chip styles drifting over time.
-- React-component shape allows accessibility (`aria-label`, `role="button"` when interactive) without re-implementing in raw DOM.
+- Visual consistency comes from the shared SVG builder + theme-token reads, not from a shared React component.
+- The editor's atom-editing behaviour depends on the `<img>` being a replaced element. A React mount inside a CM6 widget adds a React-lifecycle surface for zero gain.
+- React-side accessibility (`aria-label`, `role="button"` when interactive) was the only reason to wrap a chip in React; the editor doesn't need it (clicks bubble via `ignoreEvent: false`); the transcript user row's chips aren't interactive in v1; tool-block chips aren't interactive in v1. Accessibility on a per-image basis is `alt={atom.label}` on the `<img>` itself.
 
 **Implications:**
-- New `tugdeck/src/components/tugways/tug-atom-chip.tsx` + CSS.
-- The CM6 atom decoration path mounts a `<AtomChip>` inside a CM6 widget (existing pattern; `tug-text-editor/atom-decoration.ts`).
-- Tool-block components update their path renders.
+- `tug-atom-img.ts` exports a new pure `buildAtomSVGDataUri` helper; `createAtomImgElement` keeps its current public shape and calls the helper internally.
+- New `TugAtomTextBody` (`tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx`) — pure React walker.
+- No new `tug-atom-chip.tsx`, no new CM6 widget changes, no `tuglaws/atom-chip.md`.
+- Tool-block components inline one `<img>` each. No new wrapper component.
+
+<details>
+<summary>Earlier draft (superseded)</summary>
+
+The earlier draft proposed extracting chip rendering into a shared React component `AtomChip` consumed by the CM6 atom decoration, the transcript user-row body (via `TugAtomTextBody`), and the four tool-block path renderers. Its rationale cited visual consistency, a single primitive avoiding style drift, and React-side accessibility. The current decision honours the consistency goal via a shared *SVG builder* rather than a shared *React component*, keeping the editor's replaced-element semantics untouched.
+
+</details>
 
 #### [D08] Assistant-side atoms only at tool-block surfaces (DECIDED) {#d08-tool-block-only}
 
@@ -362,7 +373,7 @@ Filtering is applied at suggestion time. Users never see these paths in the `@`-
 - The visual goal — user's chips reappearing in claude's response — is already met by tool-block chipping.
 
 **Implications:**
-- A small change in each of the four tool-block components to render the path through `AtomChip`.
+- A small change in each of the four tool-block components to render the path as an inline `<img>` chip via `buildAtomSVGDataUri` ([Spec S05](#s05-atom-chip)).
 - `notebook-edit-tool-block` extends similarly for `input.notebook_path`.
 - Free-prose detection lives in a future v2 plan; the `tug-markdown-block` integration point is documented but not built.
 
@@ -466,24 +477,49 @@ function isAnimatedGif(bytes: Uint8Array): boolean;
 
 Pipeline implements [D05](#d05-client-downsample). The function never throws; the discriminated result lets callers surface specific errors. `ImageBitmap` path is preferred; `HTMLImageElement` fallback is used when `createImageBitmap` is unavailable or fails. `isAnimatedGif` runs ahead of the canvas pipeline for `image/gif` inputs; animated → passthrough, static → canvas.
 
-#### Spec S05: `AtomChip` component contract {#s05-atom-chip}
+#### Spec S05: `buildAtomSVGDataUri` helper + `TugAtomTextBody` contract (REVISED) {#s05-atom-chip}
 
-`tugdeck/src/components/tugways/tug-atom-chip.tsx`:
+> **Supersedes** an earlier `AtomChip` React-primitive contract (see [D07](#d07-atom-chip-primitive) for the decision history).
+
+`tugdeck/src/lib/tug-atom-img.ts` exports a pure helper:
+
+```ts
+interface AtomSvgResult {
+  dataUri: string;        // data:image/svg+xml,...
+  width: number;          // px, ready to set on <img width=...>
+  height: number;         // px
+  baselineOffset: number; // px; set as verticalAlign so the chip aligns with text baseline
+}
+
+function buildAtomSVGDataUri(
+  type: string,                              // "file" | "command" | "doc" | "image" | "link"
+  label: string,
+  value: string,
+  options?: { maxLabelWidth?: number },
+): AtomSvgResult;
+```
+
+Pure: same inputs (including the currently-resolved theme tokens, which the helper reads from CSS variables via `getTokenValue` at call time) → same outputs. `createAtomImgElement` calls this internally and applies the result to an `<img>` it constructs; the editor's CM6 widget path is byte-for-byte unchanged.
+
+`tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx` exports a pure React walker:
 
 ```tsx
-interface AtomChipProps {
-  atom: AtomSegment;
-  /** Optional click handler; click is a no-op when undefined. */
-  onClick?: (atom: AtomSegment, event: React.MouseEvent) => void;
-  /** Override the default icon mapping; null forces no-icon. */
-  iconOverride?: React.ReactNode | null;
+interface TugAtomTextBodyProps {
+  text: string;                              // raw substrate text with U+FFFC at atom positions
+  atoms: ReadonlyArray<AtomSegment>;         // parallel atoms array
   className?: string;
 }
 
-function AtomChip(props: AtomChipProps): React.ReactElement;
+function TugAtomTextBody(props: TugAtomTextBodyProps): React.ReactElement;
 ```
 
-Renders the same chip widget the editor uses today, plus React-side accessibility (`aria-label={atom.label}`, `role="button"` when `onClick` is set). Theme tokens via `getTokenValue` (same as `createAtomImgElement`). Consumed by: editor's atom decoration, transcript `TugAtomTextBody`, tool-block path renderers.
+**Invariants:**
+- Pure render; no `useEffect`, no `useRef`, no React state.
+- Splits `text` at `U+FFFC` characters; emits text spans for the non-empty in-between slices and one `<img src={dataUri} width=... height=... alt={atom.label} style={{verticalAlign:`${baselineOffset}px`}}>` per atom position.
+- When `atoms.length < count(U+FFFC, text)`, extra `U+FFFC` characters render as visible characters — visible regression rather than crash, matching `buildWirePayload`'s defensive posture.
+- When `atoms` is empty, output is a single text span.
+
+Tool-block path renderers (`read-tool-block.tsx` and siblings) call `buildAtomSVGDataUri` directly and render one inline `<img>` per `file_path` / `notebook_path`. No walker needed for the tool-block single-path case.
 
 #### Spec S06: `TugAttachmentStrip` component contract {#s06-attachment-strip}
 
@@ -501,7 +537,7 @@ interface TugAttachmentStripProps {
 - Renders nothing when `attachments.length === 0`.
 - Image attachments → `<img src={thumbnailDataUrl} alt={filename}>` in a fixed-aspect 64×64 tile.
 - Non-image attachments (theoretical in v1; v2 might add doc chips) → reserved for future expansion.
-- Sits above the user-row body inside `UserRowCell`.
+- Sits above the user-row body inside `UserMessageCell`.
 
 ---
 
@@ -600,25 +636,22 @@ No failure is silent. No failure drops the user's submission without surfacing.
 | `tugdeck/src/lib/build-wire-payload.ts` | Pure atom → Attachment + text-substitution translator ([Spec S03](#s03-build-wire-payload)) |
 | `tugdeck/src/lib/image-downsample.ts` | Canvas-based image normalization pipeline ([Spec S04](#s04-image-downsample)) |
 | `tugdeck/src/lib/text-attachment.ts` | Text-source classifier (MIME + extension allowlist) and async reader with 1 MB cap; powers the Finder-text-drop branch of the drop pipeline per [D02](#d02-image-attach-text-rest) |
-| `tugdeck/src/components/tugways/tug-atom-chip.tsx` | Shared chip primitive ([Spec S05](#s05-atom-chip)) |
-| `tugdeck/src/components/tugways/tug-atom-chip.css` | Chip styling |
 | `tugdeck/src/components/tugways/cards/tug-attachment-strip.tsx` | Image thumbnail strip ([Spec S06](#s06-attachment-strip)) |
 | `tugdeck/src/components/tugways/cards/tug-attachment-strip.css` | Strip styling |
-| `tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx` | Walks `text` + `atoms`, interleaves `AtomChip` widgets |
+| `tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx` | Pure React walker — splits `text` at `U+FFFC`, interleaves `<img>` per atom via `buildAtomSVGDataUri` ([Spec S05](#s05-atom-chip)) |
 
 #### Files modified {#files-modified}
 
 | File | Change |
 |------|--------|
-| `tugdeck/src/lib/tug-atom-img.ts` | `AtomSegment.id?: string`; refactor `createAtomImgElement` to delegate to `AtomChip` |
+| `tugdeck/src/lib/tug-atom-img.ts` | `AtomSegment.id?: string`; extract `buildAtomSVGDataUri` as a pure helper; `createAtomImgElement` keeps current shape, calls the helper internally |
 | `tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts` | `await downsampleImage` for image files; mint atom-id; stash bytes |
 | `tugdeck/src/components/tugways/tug-text-editor/clipboard-filters.ts` | Paste handler for `image/*` `ClipboardItem`; same path as drop |
-| `tugdeck/src/components/tugways/tug-text-editor/atom-decoration.ts` | Render via `AtomChip` (existing CM6 widget mount pattern) |
 | `tugdeck/src/lib/code-session-store.ts` | Pass `bytesStore` ref into the reducer; expose via send wrapper |
 | `tugdeck/src/lib/code-session-store/reducer.ts` | `handleSend` and queued-flush use `buildWirePayload`; commit path bakes thumbnails; `handleAddUserMessage` converts attachments to atoms cleanly |
 | `tugdeck/src/lib/code-session-store/types.ts` | `AttachmentRecord` shape; `TurnEntry.userMessage.attachments` typed |
-| `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` | `UserRowCell` renders `TugAttachmentStrip` + `TugAtomTextBody` |
-| `tugdeck/src/components/tugways/cards/tool-blocks/read-tool-block.tsx` | Path rendered via `AtomChip` |
+| `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` | `UserMessageCell` renders `TugAttachmentStrip` + `TugAtomTextBody` |
+| `tugdeck/src/components/tugways/cards/tool-blocks/read-tool-block.tsx` | Path rendered as inline `<img>` via `buildAtomSVGDataUri` |
 | `tugdeck/src/components/tugways/cards/tool-blocks/edit-tool-block.tsx` | Same |
 | `tugdeck/src/components/tugways/cards/tool-blocks/write-tool-block.tsx` | Same |
 | `tugdeck/src/components/tugways/cards/tool-blocks/notebook-edit-tool-block.tsx` | Same, for both `file_path` and `notebook_path` |
@@ -636,8 +669,8 @@ No failure is silent. No failure drops the user's submission without surfacing.
 | `downsampleImage` | fn | `image-downsample.ts` | [Spec S04](#s04-image-downsample) |
 | `isAnimatedGif` | fn | `image-downsample.ts` | Pure GIF frame-count detector per [Q04](#q04-animated-gif) |
 | `bakeThumbnail` | fn | `image-downsample.ts` | Calls into the same canvas pipeline at 256 px target |
-| `AtomChip` | component | `tug-atom-chip.tsx` | [Spec S05](#s05-atom-chip) |
-| `TugAtomTextBody` | component | `tug-atom-text-body.tsx` | Walks `(text, atoms)` and interleaves `AtomChip` widgets |
+| `buildAtomSVGDataUri` | fn | `tug-atom-img.ts` | [Spec S05](#s05-atom-chip); pure SVG-data-URI helper extracted from `createAtomImgElement` |
+| `TugAtomTextBody` | component | `tug-atom-text-body.tsx` | [Spec S05](#s05-atom-chip); pure React walker — splits `(text, atoms)` at `U+FFFC`, interleaves `<img>` per atom |
 | `TugAttachmentStrip` | component | `tug-attachment-strip.tsx` | [Spec S06](#s06-attachment-strip) |
 | `AtomSegment.id` | field | `tug-atom-img.ts:24` | Optional; minted at drop / paste |
 | `SECRET_FILE_DENYLIST` | const | `filetree_provider.rs` | [List L01](#l01-secret-file-denylist) |
@@ -648,7 +681,6 @@ No failure is silent. No failure drops the user's submission without surfacing.
 ### Documentation Plan {#documentation-plan}
 
 - [ ] Update `roadmap/transport-exploration.md` §Test 23 with a note pointing at this plan as the v1 consumer of the image content-block path baseline.
-- [ ] Add a `tuglaws/atom-chip.md` (or fold into `tuglaws/component-authoring.md`) describing `AtomChip`'s contract for future consumers.
 - [ ] Update `tuglaws/tuglaws.md` if any new responder / state-preservation laws emerge from the bytes-store integration.
 - [ ] If the `.tugattachignore` feature accrues enough surface to warrant documentation, fold it into the appropriate `tuglaws/` entry rather than spawning a freestanding doc file.
 
@@ -663,7 +695,7 @@ No failure is silent. No failure drops the user's submission without surfacing.
 | **Unit (TS)** | Pure-function coverage | `build-wire-payload`, `atom-bytes-store`, `image-downsample` (with canvas mocks) |
 | **Unit (Rust)** | Filter provider coverage | `filetree_provider` built-in denylist, `.tugattachignore` parse |
 | **Integration (TS)** | Reducer + store + bytes-store wiring | `code-session-store/__tests__/reducer.test.ts` extensions for `handleSend` and `handleAddUserMessage` |
-| **Render** | Component renders correctly | `tug-atom-chip.test.tsx`, `tug-attachment-strip.test.tsx`, `tide-card-transcript.test.tsx` |
+| **Render** | Component renders correctly | `tug-atom-text-body.test.tsx`, `tug-attachment-strip.test.tsx`, `tide-card-transcript.test.tsx` |
 | **Golden / Catalog** | Existing fixture regression | `test-23-image-attachment.jsonl` byte-identical pre/post the wire-flattening landing |
 | **End-to-end (`just app-test`)** | Full submit → render → cold-restart loop | Step 8 integration check |
 | **Manual smoke** | UX regressions catchable only by eye | Drop a 4K PNG, paste a screenshot, `@`-mention `CLAUDE.md`, submit, observe |
@@ -1164,7 +1196,7 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 - No new `AtomChip` React component.
 - No changes to `atom-decoration.ts` or any CM6 widget code.
 - No gallery card variant. (Existing galleries already exercise the editor's atom rendering; the new `TugAtomTextBody` is a pure walker and is covered by the render tests below.)
-- No assistant-side tool-block atom rendering — that's still parked in [Step 7](#step-7) (whose body will be revisited when Step 7 is current; the AtomChip-based design captured there is superseded by the same scope decision recorded above).
+- No assistant-side tool-block atom rendering — that lands in [Step 7](#step-7), which uses the same `buildAtomSVGDataUri` helper extracted here (inline `<img>` per tool-block path field, no walker since paths are single strings).
 
 **Tasks:**
 
@@ -1202,7 +1234,7 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 - `tugdeck/src/components/tugways/cards/tug-attachment-strip.tsx` + CSS per [Spec S06](#s06-attachment-strip).
 - `code-session-store/types.ts` — `AttachmentRecord` typed; `TurnEntry.userMessage.attachments: ReadonlyArray<AttachmentRecord>` (replacing the current `ReadonlyArray<AtomSegment>` cast).
 - `reducer.ts` commit path bakes thumbnails for image attachments via `bakeThumbnail` from [Spec S04](#s04-image-downsample).
-- `UserRowCell` mounts `TugAttachmentStrip` above `TugAtomTextBody` when `attachments.length > 0`.
+- `UserMessageCell` mounts `TugAttachmentStrip` above `TugAtomTextBody` when `attachments.length > 0`.
 - `TugListView` row-height accounting includes the strip (measured on the same `useLayoutEffect` cycle as the body).
 - Click handler — v1 opens the source data URL via `window.open(content)` (lightbox is v1.1 polish).
 
@@ -1210,7 +1242,7 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 - [ ] Tighten `TurnEntry.userMessage.attachments` to `AttachmentRecord[]`.
 - [ ] Add `bakeThumbnail` to `image-downsample.ts` and call it from the commit path.
 - [ ] Build `TugAttachmentStrip` per [Spec S06](#s06-attachment-strip).
-- [ ] Wire the strip into `UserRowCell` above the body.
+- [ ] Wire the strip into `UserMessageCell` above the body.
 - [ ] Extend `TugListView` row-height contract to sum strip + body heights.
 - [ ] Add gallery variant for design review.
 
@@ -1218,7 +1250,7 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 - [ ] `render: TugAttachmentStrip with 1 image AttachmentRecord → 1 tile rendered with thumbnail data URL`
 - [ ] `render: TugAttachmentStrip with 0 attachments → renders nothing`
 - [ ] `integration: turn_complete commits an image-bearing turn → AttachmentRecord carries non-empty thumbnailDataUrl`
-- [ ] `render: UserRowCell with attachments → strip renders above body; row height accounts for both`
+- [ ] `render: UserMessageCell with attachments → strip renders above body; row height accounts for both`
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -1234,21 +1266,21 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 
 **Commit:** `feat(tugdeck): replay attachments + tool-block path chips`
 
-**References:** [D02](#d02-image-attach-text-rest), [D07](#d07-atom-chip-primitive), [D08](#d08-tool-block-only), [Table T02](#t02-persistence-tiers), (#replay-side-cleanup, #transcript-rendering)
+**References:** [D02](#d02-image-attach-text-rest), [D07](#d07-atom-chip-primitive) (revised — chip-via-SVG-builder), [D08](#d08-tool-block-only), [Spec S05](#s05-atom-chip) (`buildAtomSVGDataUri`), [Table T02](#t02-persistence-tiers), (#replay-side-cleanup, #transcript-rendering)
 
 **Artifacts:**
 - `reducer.ts:handleAddUserMessage` (`:3233-3273`) — replace the `event.attachments as ReadonlyArray<AtomSegment>` cast with an explicit conversion to `AttachmentRecord[]`. Bytes from `event.attachments[i].content` write into the per-card bytes-store keyed by a freshly-minted UUID; the same UUID lands on the `AttachmentRecord.id`. Thumbnails bake from the bytes on the spot.
-- `tool-blocks/read-tool-block.tsx`, `edit-tool-block.tsx`, `write-tool-block.tsx`, `notebook-edit-tool-block.tsx` — path renderings switch from monospace `<code>` to `<AtomChip>`.
+- `tool-blocks/read-tool-block.tsx`, `edit-tool-block.tsx`, `write-tool-block.tsx`, `notebook-edit-tool-block.tsx` — path renderings switch from monospace `<code>` to an inline `<img>` chip built via `buildAtomSVGDataUri("file", basename(path), path)` ([Spec S05](#s05-atom-chip)). Single chip per tool-block per path field; no walker needed (tool-block paths are single strings, not substrate text).
 
 **Tasks:**
 - [ ] Implement the `handleAddUserMessage` conversion. Bake thumbnails inline; populate the bytes-store.
-- [ ] Update each tool-block component to render `input.file_path` (and `input.notebook_path` for notebook-edit) via `<AtomChip>`.
+- [ ] Update each tool-block component to render `input.file_path` (and `input.notebook_path` for notebook-edit) as an inline `<img>` chip via `buildAtomSVGDataUri`.
 - [ ] Verify cold-mount of a session with an image-bearing turn renders both the user-row thumbnail and the body (manual + integration test).
 
 **Tests:**
 - [ ] `integration: handleAddUserMessage with 1 image attachment → AttachmentRecord on TurnEntry with populated thumbnailDataUrl; bytes-store has entry under same id`
-- [ ] `render: ReadToolBlock with input.file_path:"src/main.ts" → renders AtomChip, not monospace text`
-- [ ] `render: NotebookEditToolBlock with both file_path and notebook_path → both render as AtomChips`
+- [ ] `render: ReadToolBlock with input.file_path:"src/main.ts" → renders an <img> chip (data: SVG URI) instead of monospace text; alt text matches the basename`
+- [ ] `render: NotebookEditToolBlock with both file_path and notebook_path → both render as inline <img> chips`
 - [ ] `integration: cold-mount of a session with image-bearing JSONL → user-row thumbnail + chips appear correctly`
 
 **Checkpoint:**
@@ -1270,7 +1302,7 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 - [ ] Verify all artifacts from Steps 1-7 are complete and cooperate end-to-end.
 - [ ] Re-run `just capture-capabilities` against the current claude (`2.1.148` or later at exit time). `test-23-image-attachment.jsonl` byte-identical pre/post.
 - [ ] Heap-profile a 50-turn synthetic session with five 4 MB inline images per turn — resolve [Q01](#q01-replay-enlarge-bytes).
-- [ ] Walk the tuglaws checklist for new components: `tug-atom-chip.tsx`, `tug-attachment-strip.tsx`, `tug-atom-text-body.tsx`, the bytes-store, `image-downsample.ts`.
+- [ ] Walk the tuglaws checklist for new components: `tug-attachment-strip.tsx`, `tug-atom-text-body.tsx`, the bytes-store, `image-downsample.ts`.
 - [ ] Update [Q01](#q01-replay-enlarge-bytes) resolution in this plan based on profile data.
 
 **Tests:**
@@ -1324,7 +1356,7 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 | Bytes-store + drop/paste captures bytes | Step 2 integration tests + manual state-preservation round-trip |
 | Wire flattening replaces U+FFFC + ships Attachments | Step 3 reducer tests + manual claude-response verification |
 | Filetree denylist + .tugattachignore active | Step 4 integration test + manual `@.env` non-match |
-| AtomChip renders consistently in editor + transcript | Step 5 render tests + gallery card |
+| Chip renders consistently in editor + transcript (same SVG builder) | Step 5 render tests + manual eye-match |
 | Attachment strip + thumbnails | Step 6 render tests + manual drop-then-submit |
 | Replay round-trips + tool-block chips | Step 7 cold-mount test + manual tool-call verification |
 | End-to-end | Step 8 `just app-test` recipe + manual smoke |
