@@ -20,6 +20,7 @@ use tugcast_core::{FeedId, FileTreeSnapshot, Frame};
 
 use super::code::splice_workspace_key;
 use super::fuzzy_scorer::score_file_path;
+use super::secret_filter::{SecretFilter, TUGATTACHIGNORE_FILENAME};
 
 /// Maximum number of results returned per query.
 const MAX_RESULTS: usize = 8;
@@ -50,6 +51,13 @@ pub struct FileTreeFeed {
     /// Canonical workspace identifier, spliced as the first field of every
     /// emitted FILETREE frame.
     workspace_key: Arc<str>,
+    /// Secret-file matcher applied to the index at insertion time and to
+    /// off-board (`/...` / `~/...`) results per-entry. Built once at
+    /// `new` from the workspace root; rebuilt whenever a
+    /// `.tugattachignore` event arrives in the watcher batch (analogous
+    /// to the existing `.gitignore` re-walk). Per
+    /// `roadmap/tide-atoms.md#step-4` and [D06].
+    secret_filter: SecretFilter,
 }
 
 impl FileTreeFeed {
@@ -61,16 +69,36 @@ impl FileTreeFeed {
         query_rx: mpsc::Receiver<FileTreeQuery>,
         workspace_key: Arc<str>,
     ) -> Self {
+        // Build the secret-file matcher first so we can sweep the
+        // freshly-walked initial set through it. The `walk_directory`
+        // call upstream applied `.gitignore` — we apply the additive
+        // built-in denylist + optional `.tugattachignore` here. Both
+        // layers feed the same `BTreeSet<String>` invariant: every
+        // entry in `files` is something the user may legitimately see
+        // in `@`-completion.
+        let secret_filter = SecretFilter::new(&root);
+        let files = Self::sweep_secrets(initial_files, &secret_filter);
         Self {
             original_root: root.clone(),
             current_root: root,
-            files: initial_files,
+            files,
             truncated,
             watcher_aligned: true,
             event_tx,
             query_rx,
             workspace_key,
+            secret_filter,
         }
+    }
+
+    /// Drop entries from `files` that match the secret filter. Called
+    /// at construction time and after every walk-rebuild so the index
+    /// invariant ("nothing in `files` is denylisted") holds.
+    fn sweep_secrets(files: BTreeSet<String>, filter: &SecretFilter) -> BTreeSet<String> {
+        files
+            .into_iter()
+            .filter(|p| !filter.is_secret(p))
+            .collect()
     }
 
     /// Run the feed loop. Custom async task — not SnapshotFeed.
@@ -99,13 +127,27 @@ impl FileTreeFeed {
                     match result {
                         Ok(events) => {
                             self.apply_events(&events);
-                            // If a .gitignore changed, re-walk to reconcile
-                            // the BTreeSet with the new ignore rules.
-                            if events.iter().any(Self::is_gitignore_change) {
-                                info!("FileTreeFeed: .gitignore changed, re-walking");
+                            // A `.tugattachignore` edit must rebuild the
+                            // secret matcher before the re-walk so the
+                            // sweep below sees the updated patterns.
+                            // Checking first means a single batch that
+                            // touches both `.gitignore` and
+                            // `.tugattachignore` does only one re-walk.
+                            if events.iter().any(Self::is_tugattachignore_change) {
+                                info!("FileTreeFeed: .tugattachignore changed, rebuilding secret filter");
+                                self.secret_filter = SecretFilter::new(&self.current_root);
+                            }
+                            // If a .gitignore OR .tugattachignore changed,
+                            // re-walk to reconcile the BTreeSet with the
+                            // new ignore rules; the sweep keeps the
+                            // secret-filter invariant after the walk.
+                            if events.iter().any(Self::is_gitignore_change)
+                                || events.iter().any(Self::is_tugattachignore_change)
+                            {
+                                info!("FileTreeFeed: ignore rules changed, re-walking");
                                 let (fresh_files, truncated) =
                                     super::file_watcher::walk_directory(&self.current_root);
-                                self.files = fresh_files;
+                                self.files = Self::sweep_secrets(fresh_files, &self.secret_filter);
                                 self.truncated = truncated;
                             }
                         }
@@ -139,19 +181,41 @@ impl FileTreeFeed {
         path == ".gitignore" || path.ends_with("/.gitignore")
     }
 
-    /// Apply filesystem events to the BTreeSet.
+    /// Check if an FsEvent touches the workspace-root `.tugattachignore`.
+    /// Per [D06], only the root-level file is honored (no nested
+    /// support); a nested path like `subdir/.tugattachignore` is
+    /// ignored. Per Step 4 in `roadmap/tide-atoms.md`.
+    fn is_tugattachignore_change(event: &FsEvent) -> bool {
+        let path = match event {
+            FsEvent::Created { path } | FsEvent::Modified { path } | FsEvent::Removed { path } => {
+                path
+            }
+            FsEvent::Renamed { to, .. } => to,
+        };
+        path == TUGATTACHIGNORE_FILENAME
+    }
+
+    /// Apply filesystem events to the BTreeSet. Filtered through the
+    /// secret matcher on insertion paths (Create / Rename-to) so a
+    /// freshly-dropped `.env` never sneaks into the completion index.
+    /// Removal paths are unconditional — if a path was somehow in the
+    /// set, a remove event always evicts it.
     fn apply_events(&mut self, events: &[FsEvent]) {
         for event in events {
             match event {
                 FsEvent::Created { path } => {
-                    self.files.insert(path.clone());
+                    if !self.secret_filter.is_secret(path) {
+                        self.files.insert(path.clone());
+                    }
                 }
                 FsEvent::Removed { path } => {
                     self.files.remove(path);
                 }
                 FsEvent::Renamed { from, to } => {
                     self.files.remove(from);
-                    self.files.insert(to.clone());
+                    if !self.secret_filter.is_secret(to) {
+                        self.files.insert(to.clone());
+                    }
                 }
                 FsEvent::Modified { .. } => {
                     // File saves don't change the file list.
@@ -187,10 +251,14 @@ impl FileTreeFeed {
         self.scored_query(query)
     }
 
-    /// Retarget to a new root directory [D09].
+    /// Retarget to a new root directory [D09]. Rebuilds the secret
+    /// filter from the new root's `.tugattachignore` (or just the
+    /// built-in denylist if no file is present) before sweeping the
+    /// fresh walk through it.
     fn retarget(&mut self, new_root: &Path) {
         let (files, truncated) = super::file_watcher::walk_directory(new_root);
-        self.files = files;
+        self.secret_filter = SecretFilter::new(new_root);
+        self.files = Self::sweep_secrets(files, &self.secret_filter);
         self.truncated = truncated;
         self.current_root = new_root.to_path_buf();
         self.watcher_aligned = self.current_root == self.original_root;
@@ -234,6 +302,18 @@ impl FileTreeFeed {
             for entry in read_dir.flatten() {
                 if let Some(name) = entry.file_name().to_str() {
                     if name_prefix.is_empty() || name.to_lowercase().starts_with(&name_prefix) {
+                        // Off-board paths are outside the workspace
+                        // root, so we cannot evaluate them as
+                        // workspace-relative paths against the filter.
+                        // The denylist patterns are filename-shaped
+                        // (`.env`, `*.pem`, `id_rsa*`, etc.) — match
+                        // against the bare filename so a secret file
+                        // in `~/projects/other-repo/.env` doesn't leak
+                        // into completion. Per Step 4 in
+                        // `roadmap/tide-atoms.md`.
+                        if self.secret_filter.is_secret(name) {
+                            continue;
+                        }
                         let full_path = if parent_dir == "/" {
                             format!("/{name}")
                         } else {
@@ -432,6 +512,160 @@ mod tests {
             qrx,
             Arc::from("test-workspace"),
         )
+    }
+
+    // -----------------------------------------------------------------------
+    // Secret-file filtering (Step 4: roadmap/tide-atoms.md#step-4)
+    // -----------------------------------------------------------------------
+
+    /// Construct a feed rooted at `workspace_root` with `initial_files`
+    /// — exercises the real `SecretFilter` path that production uses.
+    fn test_feed_rooted(
+        workspace_root: PathBuf,
+        files: BTreeSet<String>,
+    ) -> FileTreeFeed {
+        let (tx, _) = broadcast::channel(16);
+        let (_qtx, qrx) = mpsc::channel(16);
+        FileTreeFeed::new(
+            workspace_root,
+            files,
+            false,
+            tx,
+            qrx,
+            Arc::from("test-workspace"),
+        )
+    }
+
+    #[test]
+    fn initial_files_sweep_drops_secrets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut files = BTreeSet::new();
+        files.insert("src/main.rs".to_string());
+        files.insert(".env".to_string());
+        files.insert(".env.local".to_string());
+        files.insert("README.md".to_string());
+        files.insert("server.pem".to_string());
+        files.insert("id_rsa".to_string());
+
+        let feed = test_feed_rooted(tmp.path().to_path_buf(), files);
+        // Empty query should return root-level non-secret files only.
+        let response = feed.empty_query();
+        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
+        assert!(paths.contains(&"README.md"));
+        assert!(!paths.contains(&".env"));
+        assert!(!paths.contains(&".env.local"));
+        assert!(!paths.contains(&"server.pem"));
+        assert!(!paths.contains(&"id_rsa"));
+    }
+
+    #[test]
+    fn scored_query_excludes_secret_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut files = BTreeSet::new();
+        files.insert(".env".to_string());
+        files.insert("envoy.yaml".to_string());
+        files.insert("environment.ts".to_string());
+
+        let feed = test_feed_rooted(tmp.path().to_path_buf(), files);
+        let response = feed.scored_query("env");
+        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
+        // `.env` is denylisted; `envoy.yaml` and `environment.ts` are ordinary.
+        assert!(!paths.contains(&".env"));
+        assert!(paths.contains(&"envoy.yaml"));
+        assert!(paths.contains(&"environment.ts"));
+    }
+
+    #[test]
+    fn tugattachignore_excludes_user_patterns_from_query() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join(".tugattachignore"),
+            "local-secrets/\n*.draft\n",
+        )
+        .unwrap();
+
+        let mut files = BTreeSet::new();
+        files.insert("src/main.rs".to_string());
+        files.insert("local-secrets/api.txt".to_string());
+        files.insert("notes.draft".to_string());
+        files.insert("notes.md".to_string());
+        files.insert(".env".to_string());
+
+        let feed = test_feed_rooted(tmp.path().to_path_buf(), files);
+        let response = feed.scored_query("notes");
+        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
+        assert!(paths.contains(&"notes.md"));
+        assert!(!paths.contains(&"notes.draft"));
+
+        // Built-in still fires alongside the user patterns.
+        let env_response = feed.scored_query("env");
+        let env_paths: Vec<&str> = env_response
+            .results
+            .iter()
+            .map(|r| r.path.as_str())
+            .collect();
+        assert!(!env_paths.contains(&".env"));
+
+        // User-pattern directory match excludes children.
+        let local_response = feed.scored_query("api");
+        let local_paths: Vec<&str> = local_response
+            .results
+            .iter()
+            .map(|r| r.path.as_str())
+            .collect();
+        assert!(!local_paths.contains(&"local-secrets/api.txt"));
+    }
+
+    #[test]
+    fn apply_events_skips_secret_creations() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut feed = test_feed_rooted(tmp.path().to_path_buf(), BTreeSet::new());
+        feed.apply_events(&[
+            FsEvent::Created {
+                path: "src/lib.rs".to_string(),
+            },
+            FsEvent::Created {
+                path: ".env".to_string(),
+            },
+            FsEvent::Created {
+                path: "config/api.pem".to_string(),
+            },
+        ]);
+        let response = feed.empty_query();
+        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
+        // Root-level lib.rs is not present (the only root-level file
+        // would have to lack `/`); `src/lib.rs` is nested. Confirm
+        // `.env` did NOT enter the set even though the create event
+        // was applied — by scoring with `env` we'd see it if it
+        // leaked.
+        assert!(!paths.contains(&".env"));
+        let scored = feed.scored_query("api");
+        let scored_paths: Vec<&str> = scored.results.iter().map(|r| r.path.as_str()).collect();
+        assert!(!scored_paths.contains(&"config/api.pem"));
+    }
+
+    #[test]
+    fn off_board_query_filters_secret_filenames() {
+        // Synthesize a temp dir containing one ordinary file and one
+        // denylisted file, then off-board-query its absolute path. The
+        // feed itself can be rooted anywhere — off-board reads bypass
+        // the workspace BTreeSet.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("ordinary.txt"), "").unwrap();
+        std::fs::write(tmp.path().join(".env"), "").unwrap();
+        std::fs::write(tmp.path().join("server.pem"), "").unwrap();
+
+        let feed = test_feed_rooted(tmp.path().to_path_buf(), BTreeSet::new());
+        let query = format!("{}/", tmp.path().display());
+        let response = feed.off_board_query(&query);
+        let names: Vec<&str> = response
+            .results
+            .iter()
+            .filter_map(|r| r.path.rsplit('/').next())
+            .collect();
+        assert!(names.contains(&"ordinary.txt"));
+        assert!(!names.contains(&".env"));
+        assert!(!names.contains(&"server.pem"));
     }
 
     /// W1: FileTreeFeed splices `workspace_key` as the first field of every

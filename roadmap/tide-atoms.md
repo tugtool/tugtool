@@ -936,23 +936,26 @@ Synchronous evaluateJavaScript is *not* used — it would block the AppKit drag 
 **References:** [D06](#d06-completion-time-filter), [List L01](#l01-secret-file-denylist), [Risk R04](#r04-manual-path-leak), [Risk R05](#r05-tugattachignore-parser), (#permission-gating)
 
 **Artifacts:**
-- `tugrust/crates/tugcast/src/feeds/filetree_provider.rs` — built-in denylist constant per [List L01](#l01-secret-file-denylist); `read_tugattachignore` reads workspace root file at provider startup; additive to existing `.gitignore` handling via the `ignore` crate.
+- `tugrust/crates/tugcast/src/feeds/secret_filter.rs` (new) — `SECRET_FILE_DENYLIST` constant per [List L01](#l01-secret-file-denylist); `SecretFilter::new(workspace_root)` builds an `ignore::Gitignore` matcher combining the built-in patterns with `<workspace>/.tugattachignore` (optional); `is_secret(relative_path)` uses `matched_path_or_any_parents` so directory patterns like `local-secrets/` exclude their children. Parse errors logged via `tracing::warn!`; surviving patterns still apply. Note: actual filename is `secret_filter.rs` (not `filetree_provider.rs` — the live file is `filetree.rs`, and the new code lands in a sibling module to keep the walker / matcher concerns separated).
+- `tugrust/crates/tugcast/src/feeds/filetree.rs` (modify) — `FileTreeFeed::new` builds the `SecretFilter` from `project_dir` and sweeps the freshly-walked `initial_files` through it (`Self::sweep_secrets`). `apply_events` skips secret-shape Create / Rename-to events so a freshly-dropped `.env` never enters the index. `off_board_query` filters per-entry against the bare filename (off-board paths sit outside the workspace, so we match against `name` not `relative_path`). The watcher batch handler detects both `.gitignore` and `.tugattachignore` changes — the latter rebuilds the matcher *before* the re-walk so the sweep sees current patterns. `retarget` rebuilds the matcher for the new root.
+- `tugrust/crates/tugcast/src/feeds/mod.rs` (modify) — register `pub mod secret_filter`.
+- `docs/tugattachignore.md` (new) — 38 lines documenting syntax, location, what's filtered (and what isn't), live-edit behavior, parse-error policy.
 
 **Tasks:**
-- [ ] Add `SECRET_FILE_DENYLIST` constant in `filetree_provider.rs` per [List L01](#l01-secret-file-denylist).
-- [ ] Implement `.tugattachignore` reader using the existing `ignore` crate; cache compiled patterns at provider start.
-- [ ] Plumb the combined matcher into the per-query filter path; surface a tugcast-telemetry `parse-error` event on malformed patterns per [Table T01](#t01-failure-modes).
-- [ ] Document the syntax in a fresh `docs/tugattachignore.md` (kept ≤ 50 lines).
+- [x] Add `SECRET_FILE_DENYLIST` constant in `secret_filter.rs` per [List L01](#l01-secret-file-denylist).
+- [x] Implement `.tugattachignore` reader using the existing `ignore` crate; cache compiled patterns at filter construction.
+- [x] Plumb the combined matcher into the per-query filter path (sweep at insertion + per-event filter + off-board per-entry); surface a tugcast-telemetry `parse-error` event on malformed patterns via `tracing::warn!` (the existing tugcast log channel) per [Table T01](#t01-failure-modes).
+- [x] Document the syntax in a fresh `docs/tugattachignore.md` (38 lines, under the ≤ 50 cap).
 
 **Tests:**
-- [ ] `unit (Rust): SECRET_FILE_DENYLIST matches .env, .env.local, foo.pem, id_rsa, etc.`
-- [ ] `unit (Rust): .tugattachignore patterns parsed via the ignore crate match expected paths`
-- [ ] `unit (Rust): combined match order — built-in denylist + .tugattachignore + .gitignore — produces deny-precedence`
-- [ ] `integration: live filetree query against a synthetic workspace containing .env + .tugattachignore (matching local-secrets/) → query results exclude both`
+- [x] `unit (Rust): SECRET_FILE_DENYLIST matches .env, .env.local, *.pem, id_rsa*, secrets.json, .aws/credentials, .ssh/**, etc.` — 7 cases in `secret_filter::tests`.
+- [x] `unit (Rust): .tugattachignore patterns parsed via the ignore crate match expected paths` — `tugattachignore_patterns_apply` + `missing_tugattachignore_is_not_an_error`.
+- [x] `unit (Rust): combined match order — built-in denylist + .tugattachignore produce deny-precedence; malformed patterns don't disable the rest` — `tugattachignore_combined_with_builtin_in_one_filter` + `malformed_tugattachignore_line_does_not_disable_filter`.
+- [x] `integration: FileTreeFeed against a synthetic workspace excludes secrets from empty/scored/off-board queries; apply_events skips secret creations` — five integration tests in `filetree::tests` covering initial-files sweep, scored query, .tugattachignore application, apply_events filtering, and off-board filtering.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast feeds::filetree_provider`
-- [ ] `cd tugrust && cargo build --tests` (warnings-as-errors clean)
+- [x] `cd tugrust && cargo nextest run -p tugcast` — 639 tests pass.
+- [x] `cd tugrust && cargo build --tests --workspace` — warnings-as-errors clean.
 - [ ] Manual: type `@.env` in the prompt-entry's `@`-popup in a workspace containing `.env` → no suggestion appears.
 
 ---

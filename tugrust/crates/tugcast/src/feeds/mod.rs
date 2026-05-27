@@ -14,6 +14,7 @@ pub mod fuzzy_scorer;
 pub mod git;
 pub mod path_resolver;
 pub mod payload_inspector;
+pub mod secret_filter;
 pub mod session_metadata;
 pub mod stats;
 pub mod terminal;
