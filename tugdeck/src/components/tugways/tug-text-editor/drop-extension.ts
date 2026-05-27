@@ -780,22 +780,33 @@ type DropActiveState = "accept" | "reject" | null;
 /**
  * Decide the drag outcome for the current `dragenter` / `dragover`
  * event by consulting the native bridge first, with the pre-3.5.7
- * accept-all behavior as the fallback when the bridge is absent or
- * has not yet posted its first snapshot.
+ * accept-all behavior as the fallback when the bridge is absent,
+ * empty, or has not yet posted its first snapshot.
  *
  * Returns `"accept"` when the bridge is absent (browser-only dev,
  * tests, or the first dragover frame before
  * `evaluateJavaScript("window.__tugActiveDrag = …")` has run on
  * the JS thread — see the bridge file's docstring for the timing
  * resolution). Returns `"accept"` when the bridge reports at least
- * one supported file. Returns `"reject"` only when the bridge
- * reports a non-empty list of which *every* entry is known-
- * unsupported — the cursor-level rejection case that this step
- * exists to enable.
+ * one supported file. Returns `"accept"` when the bridge reports an
+ * empty `files: []` array — the native side captures that shape only
+ * when no file URLs were on the pasteboard at all (today it returns
+ * null instead, but the JS reader is defensive in case a future
+ * Swift-side change emits an empty array; treating it as accept
+ * keeps the fallback identical to "no bridge data available" and
+ * lets drop-time classification do the final filtering).
+ *
+ * Returns `"reject"` only when the bridge reports a non-empty list
+ * of which *every* entry is known-unsupported — the cursor-level
+ * rejection case that this step exists to enable.
+ *
+ * Exported for `__tests__/tug-text-editor-drop-bridge.test.ts` which
+ * stubs `window.__tugActiveDrag` and asserts each branch.
  */
-function dragOutcomeFromBridge(): "accept" | "reject" {
+export function dragOutcomeFromBridge(): "accept" | "reject" {
   const files = getCurrentDragFiles();
   if (files === null) return "accept";
+  if (files.length === 0) return "accept";
   return nativeDragHasSupportedFile(files) ? "accept" : "reject";
 }
 
