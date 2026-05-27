@@ -975,14 +975,14 @@ The existing `[D09]` "retarget the bootstrap to a new root" semantics that lives
 - [x] `integration (Rust): route_filetree_query with a matching root sends to the card workspace and not the bootstrap.` `test_route_filetree_query_routes_to_registered_workspace`.
 - [x] `integration (Rust): route_filetree_query with an unknown root falls through to the bootstrap.` `test_route_filetree_query_falls_back_when_root_unknown`.
 - [x] `integration (Rust): route_filetree_query with root=None falls through to the bootstrap.` `test_route_filetree_query_falls_back_when_root_absent`.
-- [ ] Manual: open a card with project `/tmp/files` (containing `.env`, `.tugattachignore` (`.env`), `bar`, `foo`); type `@` → see `bar`, `foo`, `.tugattachignore`; type `@.env` → no suggestion appears. This is the [Step 4](#step-4) manual smoke that this step unblocks.
+- [x] Manual: open a card with project `/tmp/files` (containing `.env`, `.tugattachignore` (`.env`), `bar`, `foo`); type `@` → see `bar`, `foo`, `.tugattachignore`; type `@.env` → no suggestion appears. This is the [Step 4](#step-4) manual smoke that this step unblocks. Verified live in Tug.app.
 
 #### Checkpoint {#step-pre-4-checkpoint}
 
 - [x] `cd tugrust && cargo nextest run -p tugcast` — 645 / 645 pass (was 639; +6 new routing/lookup tests).
 - [x] `cd tugrust && cargo build --tests --workspace` — warnings-as-errors clean.
 - [x] `cd tugdeck && bun test && bun run check && bun run audit:tokens lint` — 3009 / 3009 pass; tsc clean; zero token violations.
-- [ ] Manual: the `/tmp/files` scenario above behaves correctly in Tug.app — this also closes the last open checkbox of [Step 4](#step-4)'s checkpoint.
+- [x] Manual: the `/tmp/files` scenario above behaves correctly in Tug.app — this also closes the last open checkbox of [Step 4](#step-4)'s checkpoint.
 
 #### Out of scope {#step-pre-4-out-of-scope}
 
@@ -1019,7 +1019,7 @@ The existing `[D09]` "retarget the bootstrap to a new root" semantics that lives
 **Checkpoint:**
 - [x] `cd tugrust && cargo nextest run -p tugcast` — 639 tests pass.
 - [x] `cd tugrust && cargo build --tests --workspace` — warnings-as-errors clean.
-- [ ] Manual: type `@.env` in the prompt-entry's `@`-popup in a workspace containing `.env` → no suggestion appears.
+- [x] Manual: type `@.env` in the prompt-entry's `@`-popup in a workspace containing `.env` → no suggestion appears. Verified live in Tug.app against `/tmp/files`.
 
 ---
 
