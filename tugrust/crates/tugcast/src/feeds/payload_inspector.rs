@@ -201,12 +201,10 @@ mod tests {
 
     #[test]
     fn derive_legacy_image_only() {
-        let blocks = vec![
-            serde_json::json!({
-                "type": "image",
-                "source": {"type": "base64", "media_type": "image/jpeg", "data": "AAA="},
-            }),
-        ];
+        let blocks = vec![serde_json::json!({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/jpeg", "data": "AAA="},
+        })];
         let (text, atts) = derive_legacy_journal_view(&blocks);
         assert_eq!(text, "");
         assert_eq!(atts.len(), 1);
