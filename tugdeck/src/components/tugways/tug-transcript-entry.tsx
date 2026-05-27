@@ -7,7 +7,7 @@
  * style — no per-row container, no chat bubbles, no left-vs-right
  * alignment by speaker.
  *
- * Three participants are supported: `user`, `code`, `shell`.
+ * Three participants are supported: `user`, `assistant`, `shell`.
  * Per-variant differences come exclusively from `[data-participant="..."]`
  * cascade onto `--tugx-transcript-*` tokens — adding a participant is a
  * token + a registry entry, never a primitive edit.
@@ -72,14 +72,14 @@ import { cn } from "@/lib/utils";
  * {@link PARTICIPANT_ICONS}, and (optionally) defining new
  * `--tugx-transcript-*-<participant>` flavor tokens. No primitive edit.
  */
-export type Participant = "user" | "code" | "shell";
+export type Participant = "user" | "assistant" | "shell";
 
 /**
  * Icon rendered in the gutter for each participant. Lucide glyphs picked
  * to read at a glance:
  *
  *   - `User` for `user` — the human in the session.
- *   - `Bot` for `code` — the assistant.
+ *   - `Bot` for `assistant` — Claude / the AI.
  *   - `Shell` for `shell` — shell command output.
  *
  * The route prefix character (`>` / `$`) lives alongside the typed
@@ -101,7 +101,7 @@ export type Participant = "user" | "code" | "shell";
 const ICON_PIXEL_SIZE = 20;
 const PARTICIPANT_ICONS: Record<Participant, React.ReactNode> = {
   user: <User size={ICON_PIXEL_SIZE} />,
-  code: <Bot size={ICON_PIXEL_SIZE} />,
+  assistant: <Bot size={ICON_PIXEL_SIZE} />,
   shell: <Shell size={ICON_PIXEL_SIZE} />,
 };
 

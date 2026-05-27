@@ -9,8 +9,8 @@
  *     plain `<span>` carrying `userMessage.text`. Per [D11], v1 user
  *     bodies are plain text; atom-aware rendering lands once the
  *     prompt-entry's atom flow reaches transcript form.
- *   - `code` — `TugTranscriptEntry participant="code"` rendered by a
- *     single `CodeRowCell` component for the assistant row's entire
+ *   - `assistant` — `TugTranscriptEntry participant="assistant"` rendered by a
+ *     single `AssistantTurnCell` component for the assistant row's entire
  *     life (both in-flight and committed). `TugMarkdownBlock` (and
  *     siblings `TideThinkingBlock` / `TranscriptToolCalls`) stay in
  *     streaming mode forever, observing per-turn PropertyStore paths
@@ -33,7 +33,7 @@
  * map structurally hold only one entry for the assistant row, so
  * the L26 violation that produced that bug cannot recur.
  *
- * Identifier resolution: the `code` row's identifier is the active
+ * Identifier resolution: the `assistant` row's identifier is the active
  * model name from `SessionMetadataStore` (e.g. `"claude-3.7-sonnet"`),
  * falling back to `"Code"` when the metadata store has no model field
  * set yet (cold-start, replay-only fixtures, etc.).
@@ -48,7 +48,7 @@
  * primitive's token surface stays untouched.
  *
  * Tuglaws:
- *  - [L02] `CodeRowCell` reads `pendingApproval` / `pendingQuestion`
+ *  - [L02] `AssistantTurnCell` reads `pendingApproval` / `pendingQuestion`
  *    via `useSyncExternalStore`; the host reads its lifecycle `state`
  *    via `useLifecycleState`.
  *  - [L06] the [DT10] transcript-replay paint gate suppresses the
@@ -356,16 +356,16 @@ function useTranscriptCellMenu(): {
  * available from `SessionMetadataStore`. Matches the placeholder the
  * picker shows before a session has reported metadata.
  */
-const CODE_DEFAULT_IDENTIFIER = "Code";
+const ASSISTANT_DEFAULT_IDENTIFIER = "Code";
 
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
 
-interface UserRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
+interface UserMessageCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   renderTurnTrailing?: TurnTrailingRenderer;
 }
 
-const UserRowCell: React.FC<UserRowCellProps> = ({
+const UserMessageCell: React.FC<UserMessageCellProps> = ({
   index,
   dataSource,
   renderTurnTrailing,
@@ -512,7 +512,7 @@ const GhostRowCell: React.FC<GhostRowCellProps> = ({
 };
 
 // ---------------------------------------------------------------------------
-// `CodeRowCell` — single renderer for the assistant row.
+// `AssistantTurnCell` — single renderer for the assistant row.
 //
 // Handles both the in-flight phase (data flowing from the live
 // `streamingDocument` / `pendingApproval` / `pendingQuestion`) AND
@@ -541,7 +541,7 @@ const GhostRowCell: React.FC<GhostRowCellProps> = ({
 // `CodeRowBody` — iterate the turn's Message sequence ([D07]).
 //
 // Renders each Message kind to its inline surface in arrival order.
-// Lives outside `CodeRowCell` so the component reference is stable
+// Lives outside `AssistantTurnCell` so the component reference is stable
 // across re-renders ([L26]) and the iteration logic stays close to
 // the dispatch.
 // ---------------------------------------------------------------------------
@@ -581,7 +581,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   const elements: React.ReactNode[] = [];
   for (const message of messages) {
     if (message.kind === "user_message") {
-      // Rendered separately by the user row — skip in the code body.
+      // Rendered separately by the user row — skip in the assistant body.
       continue;
     }
     if (message.kind === "system_note") {
@@ -628,9 +628,9 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   return <>{elements}</>;
 };
 
-interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
+interface AssistantTurnCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
   /**
-   * Per-card `SessionMetadataStore`. Each `CodeRowCell` subscribes
+   * Per-card `SessionMetadataStore`. Each `AssistantTurnCell` subscribes
    * to it directly via `useSessionModelName` rather than receiving
    * `modelName` as a prop. The subscription is per-cell because
    * threading `modelName` through the renderer lambda would tie the
@@ -647,7 +647,7 @@ interface CodeRowCellProps extends TugListViewCellProps<TideTranscriptDataSource
   renderTurnTrailing?: TurnTrailingRenderer;
 }
 
-const CodeRowCell: React.FC<CodeRowCellProps> = ({
+const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
   index,
   dataSource,
   sessionMetadataStore,
@@ -657,21 +657,21 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
 }) => {
   // Subscribe to the metadata store HERE in the cell — not at the
   // host — so the model-name read does not flow through the
-  // `codeRenderer` lambda's dependency array. The renderer stays
+  // `assistantRenderer` lambda's dependency array. The renderer stays
   // identity-stable across metadata updates, which keeps every
   // cell mounted across the (one-time at session-init, occasional
   // mid-session) `modelName` resolution. [L02] / [L26].
   const modelName = useSessionModelName(sessionMetadataStore);
   const row = dataSource.rowAt(index);
-  // `turnKey` is set for every code row by `rowAt`. The fallback
+  // `turnKey` is set for every assistant row by `rowAt`. The fallback
   // throws in dev (data-source contract violation) and falls back to
   // an index-scoped string in prod so different rows can't
   // cross-pollinate per-turn paths if the contract is silently
   // violated downstream.
   if (row.turnKey === undefined && process.env.NODE_ENV !== "production") {
     throw new Error(
-      `CodeRowCell: row.turnKey missing at index=${index}. ` +
-        `TideTranscriptDataSource.rowAt must set turnKey on every code row.`,
+      `AssistantTurnCell: row.turnKey missing at index=${index}. ` +
+        `TideTranscriptDataSource.rowAt must set turnKey on every assistant row.`,
     );
   }
   const turnKey = row.turnKey ?? `missing-${index}`;
@@ -771,8 +771,8 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
     <ResponderScope>
       <div {...cellProps}>
         <TugTranscriptEntry
-          participant="code"
-          identifier={modelName ?? CODE_DEFAULT_IDENTIFIER}
+          participant="assistant"
+          identifier={modelName ?? ASSISTANT_DEFAULT_IDENTIFIER}
           timestamp={
             timestamp === "" || timestamp === undefined ? undefined : timestamp
           }
@@ -823,7 +823,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
           }
           inflightFooter={
             // TideZ1C — in-flight indicator zone per [D19]. Mounted
-            // only on the in-flight code row (`!isCommitted`); every
+            // only on the in-flight assistant row (`!isCommitted`); every
             // other row passes `null` and the `inflightFooter` slot
             // doesn't render. The component subscribes via
             // `useSyncExternalStore` to phase + interruptInFlight;
@@ -861,7 +861,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
                 <>
                   {isCommitted ? (
                     <TideZ1B
-                      participant="code"
+                      participant="assistant"
                       turn={turn}
                       perTurnTokens={row.perTurnTokens}
                       bodyText={copyMarkdown}
@@ -891,7 +891,7 @@ const CodeRowCell: React.FC<CodeRowCellProps> = ({
  * as soon as a cell mounts and the observer fires.
  */
 const ESTIMATED_HEIGHT_USER = 56;
-const ESTIMATED_HEIGHT_CODE = 120;
+const ESTIMATED_HEIGHT_ASSISTANT = 120;
 
 export interface TideTranscriptHostProps {
   codeSessionStore: CodeSessionStore;
@@ -1006,7 +1006,7 @@ export const TideTranscriptHost = forwardRef<
   // One renderer per kind ([L26] — renderer reference is the third
   // identity input React reconciles against; distinct lambdas count
   // as distinct component types). With the data source unified to a
-  // single `"code"` kind for assistant rows (no separate
+  // single `"assistant"` kind for assistant rows (no separate
   // `"code-streaming"` / `"code-committed"`), this map structurally
   // cannot hold two entries for the same row — eliminating the
   // lambda-identity trap that would otherwise re-mount the cell
@@ -1014,7 +1014,7 @@ export const TideTranscriptHost = forwardRef<
   // jump. The `useCallback` is what keeps the reference stable
   // across re-renders of this component; rebuilding it inline in the
   // `cellRenderers` literal would defeat L26 just as surely as a
-  // second lambda for a second kind would. The `CodeRowCell`
+  // second lambda for a second kind would. The `AssistantTurnCell`
   // component branches internally on `row.turn !== undefined` for
   // the chrome differences that genuinely vary by phase (timestamp,
   // copy button, interrupted badge, permission-record vs
@@ -1035,13 +1035,13 @@ export const TideTranscriptHost = forwardRef<
   // a dep — flipped from `null` to the resolved value on `system_init`)
   // would remount every cell in the window on each churn, restarting
   // any in-flight `TugProgressIndicator` wave animation. Per-cell metadata
-  // reads happen INSIDE `CodeRowCell` via `useSessionModelName` so the
+  // reads happen INSIDE `AssistantTurnCell` via `useSessionModelName` so the
   // renderer lambda stays inert.
-  const codeRenderer = useCallback<
+  const assistantRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
   >(
     (p) => (
-      <CodeRowCell
+      <AssistantTurnCell
         {...p}
         sessionMetadataStore={sessionMetadataStore}
         codeSessionStore={codeSessionStore}
@@ -1054,11 +1054,11 @@ export const TideTranscriptHost = forwardRef<
   const userRenderer = useCallback<
     TugListViewCellRenderer<TideTranscriptDataSource>
   >(
-    (p) => <UserRowCell {...p} renderTurnTrailing={renderTurnTrailing} />,
+    (p) => <UserMessageCell {...p} renderTurnTrailing={renderTurnTrailing} />,
     [renderTurnTrailing],
   );
   // `codeSessionStore` is stable for the card's lifetime (same as the
-  // `codeRenderer` deps note above), so `ghostRenderer` stays a stable
+  // `assistantRenderer` deps note above), so `ghostRenderer` stays a stable
   // reference — the [L26] discipline the `user` / `code` renderers
   // follow.
   const ghostRenderer = useCallback<
@@ -1072,16 +1072,16 @@ export const TideTranscriptHost = forwardRef<
   >(
     () => ({
       "user": userRenderer,
-      "code": codeRenderer,
+      "assistant": assistantRenderer,
       "ghost": ghostRenderer,
     }),
-    [userRenderer, codeRenderer, ghostRenderer],
+    [userRenderer, assistantRenderer, ghostRenderer],
   );
 
   const delegate = useMemo<TugListViewDelegate>(
     () => ({
       estimatedHeightForKind: (kind: string) =>
-        kind === "code" ? ESTIMATED_HEIGHT_CODE : ESTIMATED_HEIGHT_USER,
+        kind === "assistant" ? ESTIMATED_HEIGHT_ASSISTANT : ESTIMATED_HEIGHT_USER,
     }),
     [],
   );

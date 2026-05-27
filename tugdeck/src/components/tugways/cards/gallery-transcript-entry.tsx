@@ -106,7 +106,7 @@ export function GalleryTranscriptEntry(): React.ReactElement {
         body="tell me a haiku"
       />
       <TugTranscriptEntry
-        participant="code"
+        participant="assistant"
         identifier={MOCK_MODEL_NAME}
         timestamp="2:14 PM"
         body={<CodeBody />}

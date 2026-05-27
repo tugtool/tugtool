@@ -1144,31 +1144,31 @@ No new files, no file renames. Modifications, grouped by layer:
 
 #### Tasks {#step-pre-5-tasks}
 
-- [ ] **pre-5.a — Type literals.** Rewrite `Participant`, `TideTranscriptCellKind`, `TideZ1BParticipant` literal unions to use `"assistant"` instead of `"code"`. After this single change, `bun run check` should surface every legacy `"code"` consumer as a tsc error. Use that error list to drive the rest of the pass.
-- [ ] **pre-5.b — Cell components.** Rename `UserRowCell` → `UserMessageCell` and `CodeRowCell` → `AssistantTurnCell` (including their `*Props` interfaces, all internal references, and the `cellRenderers` map registration at `tide-card-transcript.tsx:~1057,1075`).
-- [ ] **pre-5.c — Cell-local helpers.** Rename `CODE_DEFAULT_IDENTIFIER` → `ASSISTANT_DEFAULT_IDENTIFIER`; `ESTIMATED_HEIGHT_CODE` → `ESTIMATED_HEIGHT_ASSISTANT`; `isCodeRow` → `isAssistantRow`.
-- [ ] **pre-5.d — Literal-site sweep.** Rewrite every `"code"` string in the touched files that the type-rename surfaced: ternary results, renderer-map keys, JSX `participant="code"` props, `kind === "code"` reads, etc. Verify by tsc green.
-- [ ] **pre-5.e — DOM + CSS.** Update `[data-participant="code"]` selector in `tug-transcript-entry.css` to `"assistant"`. Confirm the DOM `data-participant` attribute the JSX emits flips to `"assistant"` (it should ride on the renamed `Participant` type — verify by inspecting a rendered card in the browser).
-- [ ] **pre-5.f — In-file doc-blocks + comments.** Update module-header docstrings and in-file tuglaws comments in the touched source files; sweep `CodeRowCell` / `UserRowCell` / `participant="code"` mentions in comments. Includes the stray `code-session-store.ts:279` comment.
-- [ ] **pre-5.g — Tuglaws documentation update.** Update the two `tuglaws/` markdown sites that reference `CodeRowCell` (state-preservation.md:19 canonical L23/L26 example; design-decisions.md:243 D96 render contract). Markdown isn't tsc-protected, so these would otherwise rot into dead-symbol documentation the moment the source rename lands.
-- [ ] **pre-5.h — Test sweep.** Update `tide-card-z1c.test.ts` and `tide-transcript-data-source.test.ts` to the renamed identifiers and `kind` literals. Run the affected suites to confirm green.
-- [ ] **pre-5.i — Final audit grep.** Run `grep -rn '"code"\|UserRowCell\|CodeRowCell\|CODE_DEFAULT_IDENTIFIER\|ESTIMATED_HEIGHT_CODE\|isCodeRow' tugdeck/src/components/tugways tugdeck/src/lib/tide-transcript-data-source.ts tugdeck/src/lib/__tests__ tuglaws/ docs/`. Every surviving hit must be one of the explicitly-exempt non-participant survivors (see "Files explicitly NOT touched" above); document each survivor inline in the commit so a reader can verify nothing was missed. Markdown surfaces (`tuglaws/`, `docs/`) are explicitly in scope because tsc doesn't cover them.
+- [x] **pre-5.a — Type literals.** Rewrote `Participant`, `TideTranscriptCellKind`, `TideZ1BParticipant` to `"...assistant..."`. tsc surfaced two test-file consumers in `tide-transcript-data-source.test.ts`; everything else flowed through types cleanly.
+- [x] **pre-5.b — Cell components.** Renamed `UserRowCell` → `UserMessageCell`, `CodeRowCell` → `AssistantTurnCell` (and their `*Props` interfaces, every internal reference, `cellRenderers` map key + lambda, error messages, dev-throw text).
+- [x] **pre-5.c — Cell-local helpers.** Renamed `CODE_DEFAULT_IDENTIFIER` → `ASSISTANT_DEFAULT_IDENTIFIER` (value `"Code"` kept — it's the brand-name placeholder for the card-mode layer); `ESTIMATED_HEIGHT_CODE` → `ESTIMATED_HEIGHT_ASSISTANT`; `isCodeRow` → `isAssistantRow`; `codeRenderer` → `assistantRenderer`.
+- [x] **pre-5.d — Literal-site sweep.** Every `"code"` string the type-rename surfaced has flipped: ternary results, renderer-map key, JSX `participant="code"` (×2), `kind === "code"` reads, `kind: "code"` writes, the React key suffix `-code` → `-assistant` in `idForIndex`. tsc green confirms completeness.
+- [x] **pre-5.e — DOM + CSS.** Updated `[data-participant="code"]` selector + the internal alias token `--tugx-transcript-icon-color-code` → `--tugx-transcript-icon-color-assistant` in `tug-transcript-entry.css`. The DOM `data-participant` attribute the JSX emits flips automatically with the renamed `Participant` type.
+- [x] **pre-5.f — In-file doc-blocks + comments.** Updated module-header docstrings in `tide-card-transcript.tsx`, `tide-transcript-data-source.ts`, `tide-card-z1b.tsx`, `tide-card-z1b.css`, `tug-transcript-entry.tsx`. Updated the stray `code-session-store.ts:279` comment. Historical references to past kinds (`"code-streaming"` / `"code-committed"`) left in place — they describe pre-unification state and are accurate as history.
+- [x] **pre-5.g — Tuglaws documentation update.** Updated `tuglaws/state-preservation.md:19` (canonical L23/L26 chain now ends at `AssistantTurnCell`) and `tuglaws/design-decisions.md:243` (D96 render-contract references `AssistantTurnCell`).
+- [x] **pre-5.h — Test sweep.** Updated `tide-transcript-data-source.test.ts` literals (`"code"` → `"assistant"`, key suffixes `-code` → `-assistant`, describe/test titles). Updated `tide-card-z1c.test.ts` docstring reference to `AssistantTurnCell`. Both suites green.
+- [x] **pre-5.i — Final audit grep.** Ran the full sweep across `tugdeck/src/components/tugways`, `tugdeck/src/lib/tide-transcript-data-source.ts`, `tugdeck/src/lib/__tests__`, `tuglaws/`, `docs/`. Surviving `"code"` hits are all explicitly exempt: `NotebookCellType = "code" | "markdown"` (programming-code), `PathIconKind = "code"` (file-icon kind), markdown-block type `"code"`, Zod error code field, route system (`data-route="code"`, `RouteLifecycle("code")`), filesystem directory fixture strings. No participant/row-cell hits.
 
 #### Tests {#step-pre-5-tests}
 
 Pure rename — no new behaviour. The gates are existence-and-green:
 
-- [ ] `tide-transcript-data-source.test.ts` green after the renamed `kind` literals propagate.
-- [ ] `tide-card-z1c.test.ts` green after renamed cell identifiers propagate.
-- [ ] Full `bun test` green (3009 / 3009 expected). Any test regression outside the touched files indicates a missed rename ripple.
+- [x] `tide-transcript-data-source.test.ts` green after the renamed `kind` literals propagate.
+- [x] `tide-card-z1c.test.ts` green after renamed cell identifiers propagate.
+- [x] Full `bun test` green — 3009 / 3009 pass, 9901 expect() calls, no regressions.
 
 #### Checkpoint {#step-pre-5-checkpoint}
 
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun run check` — tsc clean (the typed literal rename is the enforcement frontier; clean tsc means every typed consumer was updated).
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
-- [ ] Final audit grep (task pre-5.i above) returns only the explicitly-exempt survivors.
-- [ ] Manual: open Tug.app — transcript still renders user + Claude rows correctly; Z1B end-state row shows correct styling under its renamed `participant="assistant"` attribute; no visual regression.
+- [x] `cd tugdeck && bun test` — 3009 / 3009 pass.
+- [x] `cd tugdeck && bun run check` — tsc clean.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [x] Final audit grep (task pre-5.i above) returns only the explicitly-exempt survivors.
+- [x] Manual: open Tug.app — transcript still renders user + Claude rows correctly; Z1B end-state row shows correct styling under its renamed `participant="assistant"` attribute; no visual regression. Verified.
 
 #### Out of scope {#step-pre-5-out-of-scope}
 

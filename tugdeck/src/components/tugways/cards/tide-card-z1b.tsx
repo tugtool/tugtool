@@ -24,7 +24,7 @@
  *
  * **Participant variants.** The component dispatches on `participant`:
  *
- *  - **`participant="code"`** — asst-half. Renders
+ *  - **`participant="assistant"`** — asst-half. Renders
  *    `[badge • time • tokens] • [COPY]` only when `turn` is
  *    defined; renders nothing (an empty slot div) while in-flight
  *    (`turn === undefined`).
@@ -43,14 +43,14 @@
  *
  *  - user half → always end-state (submission completes the
  *    instant it posts; `turn` only adds the copy text once it lands).
- *  - code half, `turn !== undefined` → end-state.
- *  - code half, `turn === undefined` → no child (empty slot div).
+ *  - assistant half, `turn !== undefined` → end-state.
+ *  - assistant half, `turn === undefined` → no child (empty slot div).
  *
  * **Mount-identity discipline ([L26]).** Z1B is a single always-
  * mounted `<div data-slot="tide-z1b">` whose CHILD swaps exactly
  * once per row when `turn` lands. The slot div itself is never
  * unmounted at the turn boundary — so any focus / hover state the
- * row carries survives the swap. `CodeRowCell` / `UserRowCell` are
+ * row carries survives the swap. `AssistantTurnCell` / `UserMessageCell` are
  * keyed by stable `turnKey` (byte-identical pre/post commit), so
  * the cell wrappers survive the same transition; this component
  * inherits that contract.
@@ -106,7 +106,7 @@ import {
  * `data-participant` attribute and the per-variant content choices
  * (see module docstring).
  */
-export type TideZ1BParticipant = "user" | "code";
+export type TideZ1BParticipant = "user" | "assistant";
 
 export interface TideZ1BProps {
   /**
@@ -124,7 +124,7 @@ export interface TideZ1BProps {
    * the in-flight row (the single row the data source emits while
    * a turn is mid-stream); populated post-`turn_complete` for every
    * committed row. The presence of this field gates whether the
-   * code half renders its end-state.
+   * assistant half renders its end-state.
    */
   turn?: TurnEntry;
   /**
@@ -137,7 +137,7 @@ export interface TideZ1BProps {
   perTurnTokens?: number;
   /**
    * The markdown the copy-button affordance writes to the clipboard.
-   * The user half passes the submitted message text; the code half
+   * The user half passes the submitted message text; the assistant half
    * passes the full turn serialized by `turnEntryToMarkdown` (every
    * tool call's input/output plus the assistant prose). When non-
    * empty AND `turn` is defined, the row's trailing edge renders a
@@ -168,7 +168,7 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
   //
   //  - User half: submission completes the instant it posts; end-
   //    state is shown immediately, in-flight and committed alike.
-  //  - Code half: end-state shown only when `turn !== undefined`.
+  //  - Assistant half: end-state shown only when `turn !== undefined`.
   //    While in-flight the transcript-level `TideZ1C` carries the
   //    indicator; this slot renders nothing.
   const hasEndState = isUserHalf || turn !== undefined;
@@ -183,7 +183,7 @@ export const TideZ1B: React.FC<TideZ1BProps> = ({
   // Per-participant copy phrasing — the affordance itself is the
   // same `BlockCopyButton`; only the aria-label differs.
   const copyAriaLabel =
-    participant === "code" ? "Copy response" : "Copy message";
+    participant === "assistant" ? "Copy response" : "Copy message";
 
   return (
     <div
@@ -259,10 +259,10 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
  * Z1B end-state display. Two participant variants share a single
  * primitive:
  *
- *  - `participant="code"` → `[badge • time • tokens]`
+ *  - `participant="assistant"` → `[badge • time • tokens]`
  *  - `participant="user"` → `[badge]` only
  *
- * The badge is driven by the caller-supplied `reason`: the code
+ * The badge is driven by the caller-supplied `reason`: the assistant
  * half passes `turn.turnEndReason`; the user half passes a fixed
  * `complete` so its badge always reads "OK" — the user's
  * submission is done the instant it posts, independent of how the
@@ -304,7 +304,7 @@ function EndStateDisplay({
       >
         {badge.text}
       </TugBadge>
-      {participant === "code" && turn !== undefined ? (
+      {participant === "assistant" && turn !== undefined ? (
         <>
           <TugLabel size="xs" emphasis="calm" aria-hidden>
             •

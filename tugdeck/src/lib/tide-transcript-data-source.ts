@@ -8,7 +8,7 @@
  *               Carries the user submission's text + timestamp. Wake
  *               turns (which have no `user_message` Message at head)
  *               naturally produce no user row.
- *   - `code`  — emitted once per turn (committed or in-flight). The
+ *   - `assistant` — emitted once per turn (committed or in-flight). The
  *               renderer iterates `turn.messages` (or `activeTurn.messages`
  *               for in-flight) and dispatches each Message kind to
  *               its inline surface (`assistant_text` →
@@ -28,7 +28,7 @@
  *                        a normal turn.
  *   indices k+m..k+m+q-1 ghost rows.
  *
- * **Single `"code"` kind, zero remounts per turn.** Earlier revisions
+ * **Single `"assistant"` kind, zero remounts per turn.** Earlier revisions
  * split the assistant row into `"code-streaming"` and `"code-committed"`
  * with a corresponding two-entry `cellRenderers` map. That split
  * forced React to swap component types at every `turn_complete`,
@@ -61,8 +61,8 @@
  *    in-flight → committed boundary (in-session, [L26]) AND the
  *    cold-boot rehydration boundary (cross-session).
  *  - [L26] mount identity stable across the in-flight → committed
- *    transition: the React key (`${turnKey}-code`), the rendered
- *    component (`CodeRowCell`), and the renderer lambda in
+ *    transition: the React key (`${turnKey}-assistant`), the rendered
+ *    component (`AssistantTurnCell`), and the renderer lambda in
  *    `cellRenderers` are all byte-identical across the boundary.
  *    L23 falls out of L26 here — preserved mount identity is
  *    upstream of preserved state.
@@ -96,7 +96,7 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
  * `cellRenderers` map the Tide card registers.
  *
  * **One kind per row identity** ([L26]). The assistant row uses a
- * single `"code"` kind for its entire life — both while streaming and
+ * single `"assistant"` kind for its entire life — both while streaming and
  * after commit. Earlier revisions split the row into `"code-streaming"`
  * and `"code-committed"`, but that forced the `cellRenderers` map to
  * hold two separate entries for what is structurally one row. With two
@@ -115,24 +115,24 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
  * `"ghost"` is a third kind, and — unlike a `code-*` split — a sound
  * one: a ghost row is a *standalone* row (one queued send, no turn
  * pair), a genuinely distinct identity, not one row's life split in
- * two. It never morphs in place into a `user` / `code` row: when a
+ * two. It never morphs in place into a `user` / `assistant` row: when a
  * queued send flushes, its ghost row (keyed `${turnKey}-ghost`)
- * unmounts and the in-flight pair (keyed `${turnKey}-user` / `-code`)
+ * unmounts and the in-flight pair (keyed `${turnKey}-user` / `-assistant`)
  * mounts — a real queued -> sent transition, correctly a remount.
  */
-export type TideTranscriptCellKind = "user" | "code" | "ghost";
+export type TideTranscriptCellKind = "user" | "assistant" | "ghost";
 
 /**
  * Typed row descriptor returned by `rowAt(index)`. Cell renderers
  * narrow on `kind` and read the matching payload field — `turn` for
- * any committed row (`user` or `code`), `activeTurn` for any in-flight
- * row. The unified `"code"` kind covers both in-flight and committed
+ * any committed row (`user` or `assistant`), `activeTurn` for any in-flight
+ * row. The unified `"assistant"` kind covers both in-flight and committed
  * assistant rows; the renderer distinguishes the two by
  * `row.turn !== undefined`.
  */
 export interface TideRowDescriptor {
   kind: TideTranscriptCellKind;
-  /** Set for every committed row (`user` and `code`). */
+  /** Set for every committed row (`user` and `assistant`). */
   turn?: TurnEntry;
   /**
    * The committed turn's signed per-turn token count — `window(N) −
@@ -143,7 +143,7 @@ export interface TideRowDescriptor {
    */
   perTurnTokens?: number;
   /**
-   * Set for every in-flight row (`user` and `code`). Carries the
+   * Set for every in-flight row (`user` and `assistant`). Carries the
    * substrate's `ActiveTurnSnapshot` so the cell can read the live
    * Message sequence + the user submission (when present) without
    * a second snapshot read.
@@ -153,7 +153,7 @@ export interface TideRowDescriptor {
   queued?: QueuedSend;
   /**
    * Stable per-turn React-key seed. Present on every row (committed,
-   * in-flight, or ghost). The unified `CodeRowCell` derives its
+   * in-flight, or ghost). The unified `AssistantTurnCell` derives its
    * per-Message streaming paths from this key plus each Message's
    * `messageKey`. Crucially, the value is byte-identical across the
    * inflight → committed transition (the reducer copies it from
@@ -204,8 +204,8 @@ function readUserMessage(
  * so per-`rowAt` calls don't re-walk the transcript.
  *
  * Rows per turn:
- *  - Turn with a `user_message` head → 2 rows (user + code).
- *  - Turn without (wake) → 1 row (code only).
+ *  - Turn with a `user_message` head → 2 rows (user + assistant).
+ *  - Turn without (wake) → 1 row (assistant only).
  *  - Each queued send → 1 ghost row.
  */
 export interface RowLayout {
@@ -214,9 +214,9 @@ export interface RowLayout {
   /**
    * For each turnIndex, the flat row index where that turn's first
    * (and possibly only) row lives. For a normal turn, the user row is
-   * at `turnStartRow[turnIndex]` and the code row at
-   * `turnStartRow[turnIndex] + 1`. For a wake turn, the single code
-   * row is at `turnStartRow[turnIndex]`.
+   * at `turnStartRow[turnIndex]` and the assistant row at
+   * `turnStartRow[turnIndex] + 1`. For a wake turn, the single
+   * assistant row is at `turnStartRow[turnIndex]`.
    */
   turnStartRow: ReadonlyArray<number>;
   /**
@@ -297,7 +297,7 @@ export function userRowIndexForTurn(
 
 /**
  * List-view row index of committed turn `turnIndex`'s **assistant**
- * (`code`) row. For a normal turn this is the user row's immediate
+ * (`assistant`) row. For a normal turn this is the user row's immediate
  * successor (`turnStartRow + 1`); for a wake turn (no user row) this
  * IS the turn's only row (`turnStartRow`). Either way the assistant
  * row exists for every committed turn.
@@ -322,7 +322,7 @@ export function assistantRowIndexForTurn(
 function locateCommittedRow(
   index: number,
   layout: RowLayout,
-): { turnIndex: number; isCodeRow: boolean } {
+): { turnIndex: number; isAssistantRow: boolean } {
   // Binary search for the largest `turnIndex` with `turnStartRow[i]
   // <= index`. The arrays are short (one entry per turn — single-
   // digit-thousands at most), but binary search is O(log n) instead
@@ -341,12 +341,12 @@ function locateCommittedRow(
   }
   const turnIndex = lo;
   const hasUser = layout.turnHasUserPerTurn[turnIndex];
-  // Wake turn: the single row IS the code row. Normal turn: code
-  // row is offset+1.
-  const isCodeRow = hasUser
+  // Wake turn: the single row IS the assistant row. Normal turn:
+  // assistant row is offset+1.
+  const isAssistantRow = hasUser
     ? index > layout.turnStartRow[turnIndex]
     : true;
-  return { turnIndex, isCodeRow };
+  return { turnIndex, isAssistantRow };
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +420,7 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
   /**
    * Total number of rows the data source exposes for the current
    * snapshot. Variable per turn — wake turns occupy a single row
-   * (just the assistant `code` row, no user row), normal turns
+   * (just the `assistant` row, no user row), normal turns
    * occupy two. See {@link RowLayout} for the per-turn shape.
    */
   numberOfItems(): number {
@@ -431,8 +431,8 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
    * Stable React-key seed per the id-stability protocol:
    *
    *  - Normal committed pair: `${turnKey}-user` at the turn's first
-   *    row, `${turnKey}-code` at the next.
-   *  - Wake committed turn: `${turnKey}-code` at the turn's single
+   *    row, `${turnKey}-assistant` at the next.
+   *  - Wake committed turn: `${turnKey}-assistant` at the turn's single
    *    row. The `${turnKey}-user` key is **never minted** for a wake
    *    turn — there is no user row to key. Minting it anyway would
    *    leave the cell wrapper's React identity tied to a key with no
@@ -440,9 +440,9 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
    *    invariant for any future state where the wake's row position
    *    shifts (e.g., a new turn committing above it).
    *  - In-flight (normal): `${turnKey}-user` at `activeStartRow`,
-   *    `${turnKey}-code` at `activeStartRow + 1`.
-   *  - In-flight wake: `${turnKey}-code` at `activeStartRow` only.
-   *  - Ghost rows: `${turnKey}-ghost`, distinct from `-user`/`-code`
+   *    `${turnKey}-assistant` at `activeStartRow + 1`.
+   *  - In-flight wake: `${turnKey}-assistant` at `activeStartRow` only.
+   *  - Ghost rows: `${turnKey}-ghost`, distinct from `-user`/`-assistant`
    *    so a queued send flushing into an in-flight pair is a clean
    *    unmount + mount (a real transition, not the seamless
    *    inflight → committed one).
@@ -452,7 +452,7 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
    * so the in-flight pair's id is byte-identical to the committed
    * pair's id for the same turn. React sees the same key + the same
    * component type (the cellRenderers map holds one entry for the
-   * unified `"code"` kind), so the cell wrapper survives the
+   * unified `"assistant"` kind), so the cell wrapper survives the
    * inflight → committed transition with no unmount.
    *
    * `msgId` is the wire-correlation identifier and is intentionally
@@ -477,25 +477,25 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
     ) {
       const active = snap.activeTurn!;
       if (!layout.activeHasUser) {
-        // Wake in-flight: single `${turnKey}-code` row, no `-user` minted.
-        return `${active.turnKey}-code`;
+        // Wake in-flight: single `${turnKey}-assistant` row, no `-user` minted.
+        return `${active.turnKey}-assistant`;
       }
       return index === layout.activeStartRow
         ? `${active.turnKey}-user`
-        : `${active.turnKey}-code`;
+        : `${active.turnKey}-assistant`;
     }
 
     // Committed turn — find which turn this row belongs to.
-    const { turnIndex, isCodeRow } = locateCommittedRow(index, layout);
+    const { turnIndex, isAssistantRow } = locateCommittedRow(index, layout);
     const turn = snap.transcript[turnIndex];
-    return isCodeRow ? `${turn.turnKey}-code` : `${turn.turnKey}-user`;
+    return isAssistantRow ? `${turn.turnKey}-assistant` : `${turn.turnKey}-user`;
   }
 
   /**
    * Cell-renderer kind. Three values:
    *  - `"user"` for the user-half row of a normal committed/in-flight
    *    turn. Never returned for a wake turn (which has no user row).
-   *  - `"code"` for every assistant row, in-flight or committed,
+   *  - `"assistant"` for every assistant row, in-flight or committed,
    *    wake or normal. Unified kind across all assistant phases per
    *    [L26] (eliminates the lambda-identity trap that would otherwise
    *    re-mount the cell wrapper at `turn_complete`).
@@ -512,12 +512,12 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
       index >= layout.activeStartRow &&
       index < layout.ghostStartRow
     ) {
-      if (!layout.activeHasUser) return "code";
-      return index === layout.activeStartRow ? "user" : "code";
+      if (!layout.activeHasUser) return "assistant";
+      return index === layout.activeStartRow ? "user" : "assistant";
     }
 
-    const { isCodeRow } = locateCommittedRow(index, layout);
-    return isCodeRow ? "code" : "user";
+    const { isAssistantRow } = locateCommittedRow(index, layout);
+    return isAssistantRow ? "assistant" : "user";
   }
 
   /**
@@ -526,7 +526,7 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
    * the snapshot themselves so the adapter remains the single seam
    * between `CodeSessionStore` and the list view.
    *
-   * Wake turns produce a single `{kind:"code", turn, ...}` descriptor —
+   * Wake turns produce a single `{kind:"assistant", turn, ...}` descriptor —
    * no separate user-row descriptor exists.
    */
   rowAt(index: number): TideRowDescriptor {
@@ -548,22 +548,22 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
       const active = snap.activeTurn!;
       if (!layout.activeHasUser) {
         // Wake — single assistant row.
-        return { kind: "code", activeTurn: active, turnKey: active.turnKey };
+        return { kind: "assistant", activeTurn: active, turnKey: active.turnKey };
       }
       if (index === layout.activeStartRow) {
         return { kind: "user", activeTurn: active, turnKey: active.turnKey };
       }
-      return { kind: "code", activeTurn: active, turnKey: active.turnKey };
+      return { kind: "assistant", activeTurn: active, turnKey: active.turnKey };
     }
 
     // Committed turn.
-    const { turnIndex, isCodeRow } = locateCommittedRow(index, layout);
+    const { turnIndex, isAssistantRow } = locateCommittedRow(index, layout);
     const turn = snap.transcript[turnIndex];
     // Signed per-turn token delta from the transcript window-walk —
     // window(N) − window(N−1), carry-forward over any zero-usage turn.
     const windows = this.contextWindows(snap);
     return {
-      kind: isCodeRow ? "code" : "user",
+      kind: isAssistantRow ? "assistant" : "user",
       turn,
       perTurnTokens: windows[turnIndex]?.perTurn,
       turnKey: turn.turnKey,

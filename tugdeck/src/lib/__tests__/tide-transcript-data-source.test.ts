@@ -1,8 +1,8 @@
 /**
  * tide-transcript-data-source.test.ts — pin the invariants of the
  * substrate-aware row layout. Under [D07] the data source projects:
- *   - 1 row per wake turn (no `user_message` Message at head → code row only)
- *   - 2 rows per normal turn (user + code)
+ *   - 1 row per wake turn (no `user_message` Message at head → assistant row only)
+ *   - 2 rows per normal turn (user + assistant)
  *   - +1 row per in-flight turn (1 if wake, 2 if normal)
  *   - +1 row per queued send (ghost)
  *
@@ -187,35 +187,35 @@ describe("[D07] row layout: variable rows per turn driven by user_message presen
 // idForIndex stability across inflight → committed
 // ---------------------------------------------------------------------------
 
-describe("[L26] idForIndex stability: `${turnKey}-{user,code}` survives inflight → committed", () => {
+describe("[L26] idForIndex stability: `${turnKey}-{user,assistant}` survives inflight → committed", () => {
   test("normal turn: inflight ids match the committed pair's ids", () => {
     const liveSnap = snapshotWith({
       activeTurn: activeTurn({ turnKey: "T", isWake: false, withText: "hi" }),
     });
     const ds = new TideTranscriptDataSource(storeWith(liveSnap));
     expect(ds.idForIndex(0)).toBe("T-user");
-    expect(ds.idForIndex(1)).toBe("T-code");
+    expect(ds.idForIndex(1)).toBe("T-assistant");
 
     const committedSnap = snapshotWith({
       transcript: [normalTurn("T", "hi", "hello")],
     });
     const ds2 = new TideTranscriptDataSource(storeWith(committedSnap));
     expect(ds2.idForIndex(0)).toBe("T-user");
-    expect(ds2.idForIndex(1)).toBe("T-code");
+    expect(ds2.idForIndex(1)).toBe("T-assistant");
   });
 
-  test("wake turn: only `${turnKey}-code` is ever minted (no -user key)", () => {
+  test("wake turn: only `${turnKey}-assistant` is ever minted (no -user key)", () => {
     const liveSnap = snapshotWith({
       activeTurn: activeTurn({ turnKey: "W", isWake: true, withText: "wake" }),
     });
     const ds = new TideTranscriptDataSource(storeWith(liveSnap));
     expect(ds.numberOfItems()).toBe(1);
-    expect(ds.idForIndex(0)).toBe("W-code");
+    expect(ds.idForIndex(0)).toBe("W-assistant");
 
     const committedSnap = snapshotWith({ transcript: [wakeTurn("W", "wake")] });
     const ds2 = new TideTranscriptDataSource(storeWith(committedSnap));
     expect(ds2.numberOfItems()).toBe(1);
-    expect(ds2.idForIndex(0)).toBe("W-code");
+    expect(ds2.idForIndex(0)).toBe("W-assistant");
   });
 });
 
@@ -224,23 +224,23 @@ describe("[L26] idForIndex stability: `${turnKey}-{user,code}` survives inflight
 // ---------------------------------------------------------------------------
 
 describe("rowAt produces a descriptor consumers can narrow on", () => {
-  test("normal committed: row 0 is `user` with turn payload; row 1 is `code`", () => {
+  test("normal committed: row 0 is `user` with turn payload; row 1 is `assistant`", () => {
     const snap = snapshotWith({
       transcript: [normalTurn("T", "hello", "world")],
     });
     const ds = new TideTranscriptDataSource(storeWith(snap));
     expect(ds.kindForIndex(0)).toBe("user");
-    expect(ds.kindForIndex(1)).toBe("code");
+    expect(ds.kindForIndex(1)).toBe("assistant");
     expect(ds.rowAt(0).turn?.turnKey).toBe("T");
     expect(ds.rowAt(1).turn?.turnKey).toBe("T");
   });
 
-  test("in-flight normal: row 0 is `user` carrying activeTurn; row 1 is `code`", () => {
+  test("in-flight normal: row 0 is `user` carrying activeTurn; row 1 is `assistant`", () => {
     const active = activeTurn({ turnKey: "L", isWake: false, withText: "hi" });
     const snap = snapshotWith({ activeTurn: active });
     const ds = new TideTranscriptDataSource(storeWith(snap));
     expect(ds.kindForIndex(0)).toBe("user");
-    expect(ds.kindForIndex(1)).toBe("code");
+    expect(ds.kindForIndex(1)).toBe("assistant");
     expect(ds.rowAt(0).activeTurn).toBe(active);
     expect(ds.rowAt(1).activeTurn).toBe(active);
   });
@@ -263,7 +263,7 @@ describe("rowAt produces a descriptor consumers can narrow on", () => {
 // ---------------------------------------------------------------------------
 
 describe("userRowIndexForTurn / assistantRowIndexForTurn", () => {
-  test("normal-only transcript: alternating user/code row indices", () => {
+  test("normal-only transcript: alternating user/assistant row indices", () => {
     const transcript: TurnEntry[] = [
       normalTurn("t1", "a", "A"),
       normalTurn("t2", "b", "B"),

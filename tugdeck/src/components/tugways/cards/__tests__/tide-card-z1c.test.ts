@@ -10,7 +10,7 @@
  * paints the end-state; `idle` / `replaying` / `errored` because
  * there is no in-flight work to indicate).
  *
- * Visibility is gated structurally by the parent `CodeRowCell`
+ * Visibility is gated structurally by the parent `AssistantTurnCell`
  * (Z1C is mounted only when `!isCommitted` on the assistant row),
  * so there is no visibility helper to pin here.
  */

@@ -276,7 +276,7 @@ export class CodeSessionStore {
       schema: [],
       initialValues: {},
       // Per-turn paths (`turn.${turnKey}.{channel}`) are minted at
-      // `handleSend` and observed by `CodeRowCell` for the rest of
+      // `handleSend` and observed by `AssistantTurnCell` for the rest of
       // that turn's life — including after `turn_complete`, when
       // the path retains its final value forever. The set of paths
       // is unknowable at construction time; `dynamicPaths` lets

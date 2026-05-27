@@ -67,7 +67,7 @@ body {
 
   /* Per-participant icon flavors */
   --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-accent-rest);
-  --tugx-transcript-icon-color-code:    var(--tug7-element-tone-icon-normal-agent-rest);
+  --tugx-transcript-icon-color-assistant:    var(--tug7-element-tone-icon-normal-agent-rest);
   --tugx-transcript-icon-color-shell:   var(--tug7-element-tone-icon-normal-data-rest);
 }
 
@@ -125,8 +125,8 @@ body {
 .tug-transcript-entry[data-participant="user"] {
   --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-user);
 }
-.tug-transcript-entry[data-participant="code"] {
-  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-code);
+.tug-transcript-entry[data-participant="assistant"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-assistant);
 }
 .tug-transcript-entry[data-participant="shell"] {
   --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-shell);

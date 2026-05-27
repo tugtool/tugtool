@@ -1,6 +1,6 @@
 /**
  * tide-card-z1b.css — styling for the production Z1B status /
- * end-state row (both `participant="user"` and `"code"` variants).
+ * end-state row (both `participant="user"` and `"assistant"` variants).
  *
  * Layout responsibilities only — typography (font-size, font-weight,
  * color) is inherited from `TugTranscriptEntry`'s controls slot.
@@ -39,10 +39,10 @@
    unconditionally rendered across the in-flight ↔ committed
    transition so any focus / hover state survives the swap; only
    its child appears/disappears as `turn` lands. `data-participant`
-   selects the variant (user / code).
+   selects the variant (user / assistant).
 
    The user half is always end-state — its submission completes
-   the instant it posts. The code half renders its end-state once
+   the instant it posts. The assistant half renders its end-state once
    `turn` is defined; while in-flight, the slot is empty (TideZ1C
    carries the indicator).
    ========================================================================= */
@@ -69,7 +69,7 @@
 }
 
 /* Collapse the slot to zero when Z1B renders no end-state (in-flight
-   code row — TideZ1B's children are both `null` for that case). The
+   assistant row — TideZ1B's children are both `null` for that case). The
    `:empty` selector matches when the div has no child nodes; the
    primitive does not render the controls wrapper at all when the
    prop is `undefined`, but Z1B is always passed via the controls
@@ -148,7 +148,7 @@
    ============================================================================
    One tight inline row.
 
-     code variant: badge + `•` + time + `•` + tokens
+     assistant variant: badge + `•` + time + `•` + tokens
      user variant: badge only
 
    Center alignment + matching font-sizes across every child
