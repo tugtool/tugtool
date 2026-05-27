@@ -39,12 +39,14 @@ import * as React from "react";
 
 import {
   TUG_ATOM_CHAR,
+  atomHeightFor,
   buildAtomSVGDataUri,
+  chipFontSizeForMagnification,
   getAtomFontSnapshot,
-  getAtomHeightPx,
   subscribeAtomFont,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
+import { TranscriptMagnificationContext } from "@/lib/transcript-magnification-context";
 import { formatSequenceNumber } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
@@ -183,20 +185,30 @@ export const TugAtomTextBody = React.forwardRef<
   ref,
 ) {
   // [L02] Subscribe to atom-font state so chips re-bake when the user
-  // changes their editor font preference. The snapshot itself isn't
-  // read directly — `buildAtomSVGDataUri` reads module state inside
-  // the SVG bake — but the subscription forces this component to
-  // re-render when the font changes, which re-invokes the bake with
-  // the fresh module state.
-  React.useSyncExternalStore(subscribeAtomFont, getAtomFontSnapshot);
+  // changes their editor font preference. The family is forwarded
+  // to the chip bake below; the chip's pixel SIZE comes from the
+  // transcript's magnification (next line), not from the editor's
+  // font size — atoms in the transcript track the magnified
+  // transcript text, not the editor's font setting.
+  const fontSnapshot = React.useSyncExternalStore(
+    subscribeAtomFont,
+    getAtomFontSnapshot,
+  );
+  // Transcript magnification (default 1.0 outside a provider — e.g.,
+  // gallery design-review surfaces). The chip's pixel size is
+  // 12px × magnification, floored at 9px for legibility — see
+  // `chipFontSizeForMagnification`.
+  const magnification = React.useContext(TranscriptMagnificationContext);
+  const chipFontSize = chipFontSizeForMagnification(magnification);
   const segments = walkAtomText(text, atoms);
   // Publish the atom's pixel height as a component-scope CSS variable
   // so the stylesheet can floor `line-height: max(1lh, …)` to at
-  // least atom-tall. Read at render time from the shared substrate
-  // (`getAtomHeightPx()`), matching the editor's host-wrapper pattern
-  // for `--tug-text-editor-atom-height`.
+  // least atom-tall. Derived from `chipFontSize` (which already
+  // tracks the transcript magnification) so the floor matches the
+  // chip's actual rendered height — a magnified chip needs a taller
+  // line-box than the editor's atom height would give it.
   const hostStyle: React.CSSProperties = {
-    ["--tugx-atom-text-body-atom-height" as string]: `${getAtomHeightPx()}px`,
+    ["--tugx-atom-text-body-atom-height" as string]: `${atomHeightFor(chipFontSize)}px`,
   };
   return (
     <span
@@ -220,6 +232,10 @@ export const TugAtomTextBody = React.forwardRef<
           seg.atom.type,
           displayLabel,
           seg.atom.value,
+          {
+            fontFamily: fontSnapshot.family,
+            fontSize: chipFontSize,
+          },
         );
         // No inline `vertical-align` — the shared
         // `.tug-atom-chip { vertical-align: middle }` rule (in

@@ -131,7 +131,7 @@ This plan follows [`tuglaws/tugplan-skeleton.md`](../tuglaws/tugplan-skeleton.md
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Click-to-enlarge bytes for replayed images (OPEN) {#q01-replay-enlarge-bytes}
+#### [Q01] Click-to-enlarge bytes for replayed images (RESOLVED — option (a), with v1.1 revisit) {#q01-replay-enlarge-bytes}
 
 **Question:** When a card mounts cold and replays JSONL containing image attachments, bytes flow through `add_user_message.attachments[i].content` once. Should the bytes-store hold them indefinitely for click-to-enlarge, evict under an LRU budget, or fetch lazily from JSONL?
 
@@ -142,9 +142,10 @@ This plan follows [`tuglaws/tugplan-skeleton.md`](../tuglaws/tugplan-skeleton.md
 - (b) LRU eviction with a per-card budget (e.g., 100 MB). Predictable memory cap; users hit a "bytes evicted" surface if they enlarge an old image.
 - (c) Re-fetch from JSONL on each enlarge via a new tugcast `JSONL_READ_ATTACHMENT` verb. No memory budget; introduces new wire infrastructure.
 
-**Plan to resolve:** Land Steps 1-7. At Step 8 (integration), profile heap usage with a 50-turn synthetic session (Tug.app heap inspector). Pick (a), (b), or (c) based on data.
-
-**Resolution:** OPEN. Provisional: (a) holds bytes for card lifetime; revisit at integration checkpoint based on heap profile.
+**Resolution:** **Option (a) for v1.** The click-to-enlarge feature itself is deferred to v1.1 ([roadmap follow-ons](#roadmap)) — until that ships, the bytes-store's enlarge-retention role is dormant. The store still needs the bytes for two active concerns (the thumbnail bake at submit / replay, and the wire payload at submit), but both are short-lived; the bytes-store's per-card-lifetime hold is upper-bounded by the JSONL itself (i.e., the same data already exists on disk).
+- Three places hold the bytes already: in-memory bytes-store (per-card), tugcast journal (on-disk), JSONL (on-disk). Per [D04](#d04-no-bytes-on-snapshot) the React snapshot carries thumbnails only. The memory cost the question worries about is therefore the bytes-store's hold, *not* the snapshot's.
+- A formal heap profile against a 50-turn × 5-images-per-turn synthetic session was not run as part of Step 8 — that profile needs the Tug.app heap inspector and a real recorded session. The decision goes ahead on design grounds: (b)'s eviction creates UX cliffs the moment click-to-enlarge does ship; (c) requires new tugcast wire infrastructure that's not justified yet.
+- v1.1 revisit: when click-to-enlarge ships, re-evaluate against real usage data. If memory pressure surfaces, option (c) (lazy JSONL fetch) is the natural follow-up — option (b) is deliberately not chosen now to avoid the eviction UX cliff.
 
 #### [Q02] HEIC / AVIF source decoding (DECIDED) {#q02-heic-avif}
 

@@ -103,14 +103,62 @@ let _measureFamily = "system-ui, sans-serif";
  * visually match.
  */
 const ATOM_LABEL_SIZE_RATIO = 0.96;
-/** Atom layout dimensions, scaled from a given font size. */
-function atomHeightFor(size: number): number { return Math.round(size * 1.75); }
+/**
+ * Pixel height of an atom chip for a given font size — the formula
+ * is `round(size * 1.75)`. Exported because consumers that pixel-bake
+ * chips (the transcript walker `TugAtomTextBody`) need to publish a
+ * matching `line-height` floor so the chip never breaks out of its
+ * line-box. Pure — no module state, no DOM access.
+ */
+export function atomHeightFor(size: number): number { return Math.round(size * 1.75); }
 function iconSizeFor(size: number): number { return size; }
 /** Module-state versions used by the editor path. */
 function atomHeight(): number { return atomHeightFor(_fontSize); }
 function iconSize(): number { return iconSizeFor(_fontSize); }
 const PADDING = 6;
 const GAP = 4;
+
+// ---- Transcript-side chip sizing ----
+
+/**
+ * Base font size (in px) for transcript-side atom chips. Transcript
+ * chips don't track the user's editor font *size* — that's
+ * editor-surface coupling that surprised users (chips visibly
+ * shrinking/growing when they bumped their editor font for code
+ * legibility). They DO track the user's editor font *family* so the
+ * chip still reads as "code-like" alongside surrounding transcript
+ * prose. The size is anchored here at 12px and scaled by the
+ * transcript's own magnification slider via
+ * {@link chipFontSizeForMagnification} below.
+ */
+export const TRANSCRIPT_CHIP_BASE_FONT_SIZE = 12;
+/**
+ * Minimum px floor for transcript-side atom chips. Below this the
+ * label glyphs lose readable detail (anti-aliasing dominates) and
+ * the icon's stroke weight starts vanishing into the chip
+ * background. Reached at magnification 9/12 ≈ 0.75.
+ */
+export const TRANSCRIPT_CHIP_MIN_FONT_SIZE = 9;
+
+/**
+ * Compute the chip font size (px) for the transcript-side surfaces
+ * given the current transcript magnification value. Pure — no module
+ * state, no DOM access. The 12px base ({@link TRANSCRIPT_CHIP_BASE_FONT_SIZE})
+ * scales linearly with magnification, floored at the readability
+ * threshold ({@link TRANSCRIPT_CHIP_MIN_FONT_SIZE}). Rounded to the
+ * nearest pixel so the SVG rasterizes cleanly.
+ *
+ * Examples (with default 1.0 magnification):
+ *   chipFontSizeForMagnification(1.0)  → 12
+ *   chipFontSizeForMagnification(1.5)  → 18
+ *   chipFontSizeForMagnification(0.5)  → 9 (floor)
+ *   chipFontSizeForMagnification(0.75) → 9 (floor)
+ *   chipFontSizeForMagnification(0.8)  → 10
+ */
+export function chipFontSizeForMagnification(magnification: number): number {
+  const raw = TRANSCRIPT_CHIP_BASE_FONT_SIZE * magnification;
+  return Math.max(TRANSCRIPT_CHIP_MIN_FONT_SIZE, Math.round(raw));
+}
 
 /**
  * Current rendered height of an atom widget, in pixels. Derived from
@@ -384,15 +432,37 @@ export function buildAtomSVGDataUri(
   type: string,
   label: string,
   value: string,
-  options?: { maxLabelWidth?: number },
+  options?: {
+    maxLabelWidth?: number;
+    /**
+     * Override the font family used for SVG text rendering AND
+     * Canvas-side text measurement (the two must match or the chip's
+     * bounds won't fit the rendered label). When omitted, the chip
+     * uses the module-state `_measureFamily` last set via
+     * {@link setAtomFont} — which the editor settings store calls
+     * when the user's font preference changes.
+     */
+    fontFamily?: string;
+    /**
+     * Override the font size (in px) used for SVG text and Canvas
+     * measurement. When omitted, defaults to the module-state
+     * `_fontSize`. Transcript-side chips pass a 12px base scaled by
+     * the user's transcript magnification (`useChipFontSize`), so
+     * the chip stays proportional to the surrounding magnified
+     * transcript text without coupling to the editor's font size.
+     */
+    fontSize?: number;
+  },
 ): AtomSvgResult {
   // The `value` field is part of the public signature so future
   // theme variants can fork on it (e.g., a different icon for a path
   // pointing inside `node_modules`); today only `type` and `label`
   // drive the rendered output.
   void value;
+  const family = options?.fontFamily ?? _measureFamily;
+  const size = options?.fontSize ?? _fontSize;
   const displayLabel = options?.maxLabelWidth != null
-    ? truncateLabel(label, options.maxLabelWidth)
+    ? truncateLabel(label, options.maxLabelWidth, atomFontFor(family, size))
     : label;
 
   const bgColor = getTokenValue("--tug7-surface-atom-primary-normal-default-rest");
@@ -403,14 +473,14 @@ export function buildAtomSVGDataUri(
   const iconPath = ATOM_ICON_PATHS[type] ?? ATOM_ICON_PATHS.file;
   const { svg, width } = buildAtomSVG(
     iconPath, displayLabel, bgColor, borderColor, iconColor, textColor,
-    _measureFamily, _fontSize,
+    family, size,
   );
 
   return {
     dataUri: svgToDataURI(svg),
     width,
-    height: atomHeight(),
-    baselineOffset: atomBaselineOffset(),
+    height: atomHeightFor(size),
+    baselineOffset: atomBaselineOffsetFor(size),
   };
 }
 
@@ -552,19 +622,22 @@ export interface AtomChipImgProps {
  * `?.` to render nothing in that case.
  *
  * Reads the current atom-font module state via
- * {@link buildAtomSVGDataUri}, which means the chip's font tracks
- * whatever the editor settings store last applied via
- * {@link setAtomFont}. React surfaces that render via this helper
- * subscribe to {@link subscribeAtomFont} so they re-bake when the
- * user changes their editor font.
+ * {@link buildAtomSVGDataUri} unless `options` overrides it. React
+ * surfaces typically subscribe to {@link subscribeAtomFont} (for the
+ * editor font family) and pass {@link chipFontSizeForMagnification}
+ * (for the transcript's magnification-scaled size) — see
+ * `useAtomChipImgProps`.
  */
 export function composeAtomChipImgProps(
   type: string,
   path: string,
+  options?: { fontFamily?: string; fontSize?: number },
 ): AtomChipImgProps | null {
   if (path.length === 0) return null;
   const label = formatAtomLabel(path, "filename");
-  const { dataUri, width, height } = buildAtomSVGDataUri(type, label, path);
+  const { dataUri, width, height } = buildAtomSVGDataUri(
+    type, label, path, options,
+  );
   return {
     src: dataUri,
     alt: label,
