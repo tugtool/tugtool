@@ -5,10 +5,13 @@
  * Mounts a `TugListView` against a `TideTranscriptDataSource` and
  * registers two cell renderers, one per row kind:
  *
- *   - `user` — `TugTranscriptEntry participant="user"` whose body is a
- *     plain `<span>` carrying `userMessage.text`. Per [D11], v1 user
- *     bodies are plain text; atom-aware rendering lands once the
- *     prompt-entry's atom flow reaches transcript form.
+ *   - `user` — `TugTranscriptEntry participant="user"` whose body is
+ *     a `TugAtomTextBody` that walks `userMessage.text` against
+ *     `userMessage.attachments`, interleaving the same atom-chip
+ *     `<img>` the editor renders at each `U+FFFC` position (shared
+ *     SVG builder via `buildAtomSVGDataUri`). Per [D11], earlier
+ *     drafts shipped a plain `<span>` body; the walker landed once
+ *     the prompt-entry's atom flow reached the transcript.
  *   - `assistant` — `TugTranscriptEntry participant="assistant"` rendered by a
  *     single `AssistantTurnCell` component for the assistant row's entire
  *     life (both in-flight and committed). `TugMarkdownBlock` (and
@@ -88,6 +91,10 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { TideThinkingBlock } from "@/components/tugways/chrome/tide-thinking-block";
 import { TideZ1B } from "@/components/tugways/cards/tide-card-z1b";
+import {
+  TugAtomTextBody,
+  formatAtomTextForCopy,
+} from "@/components/tugways/cards/tug-atom-text-body";
 import { TideZ1C } from "@/components/tugways/cards/tide-card-z1c";
 import {
   dispatch as dispatchRenderInput,
@@ -380,6 +387,19 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
   const activeUser = row.activeTurn !== undefined ? readUserMessage(row.activeTurn.messages) : undefined;
   const rawText = committedUser?.text ?? activeUser?.text ?? "";
   const text = stripUserBodyPrefix(rawText);
+  // Parallel atoms array — N atoms in `attachments` pair with the
+  // N `U+FFFC` characters in `text`. `stripUserBodyPrefix` only
+  // strips the `>` route prefix; it never touches a `U+FFFC`, so
+  // index alignment between `text` and `atoms` is preserved.
+  const atoms = committedUser?.attachments ?? activeUser?.attachments ?? [];
+  // Clipboard text — atoms become `[label](value)` markdown links so
+  // the copied content carries an honest representation of each atom
+  // (pasting into a markdown surface renders as a link; pasting into
+  // plain text shows the link syntax, still legible). The body span
+  // renders the SAME atoms as `<img>` chips via `TugAtomTextBody`;
+  // the two surfaces walk the same substrate via the same helper, so
+  // they can't disagree on what's there.
+  const copyText = formatAtomTextForCopy(text, atoms);
   // User-row timestamp is the submit time, not the turn's end time —
   // the user's row "posts" the moment they hit submit, regardless of
   // whether the assistant has replied yet. Both committed and active
@@ -413,13 +433,13 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
           timestamp={timestamp === "" ? undefined : timestamp}
           sequenceNumber={index + 1}
           body={
-            <span
+            <TugAtomTextBody
               ref={(el) => { bodyRef.current = el; }}
               className="tide-card-transcript-user-body"
               data-testid="tide-card-transcript-user-body"
-            >
-              {text}
-            </span>
+              text={text}
+              atoms={atoms}
+            />
           }
           controls={
             (() => {
@@ -439,7 +459,7 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
                   <TideZ1B
                     participant="user"
                     turn={row.turn}
-                    bodyText={hasBody ? text : undefined}
+                    bodyText={hasBody ? copyText : undefined}
                   />
                   {hasTrailing ? trailing : null}
                 </>

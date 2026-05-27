@@ -1,0 +1,72 @@
+/**
+ * tug-atom-text-body.css — line-height floor + chip alignment for
+ * the transcript atom-text walker.
+ *
+ * Mirrors the editor's atom-aware layout in `tug-text-editor/theme.ts`:
+ * the line-box is floored to atom-height (so chips never clip) and
+ * the chip is centred within the line-box (so a line containing an
+ * atom is no taller than a line without one — no vertical "hop"
+ * between adjacent lines). Together this gives the user three things
+ * they asked for:
+ *
+ *   1. baselines of the atoms and surrounding text approximately
+ *      align (vertical-align: middle + the SVG's internal text
+ *      geometry come out close to the surrounding text baseline);
+ *   2. atoms always display fully — the line-box is at least
+ *      atom-tall, so the chip never gets clipped above or below;
+ *   3. atoms never change line height — the floor applies to every
+ *      line of the body, atom-bearing or not, so a line carries the
+ *      same height before and after an atom appears.
+ *
+ * Atom-height is published by `TugAtomTextBody` on the root span via
+ * `style={{ "--tugx-atom-text-body-atom-height": ... }}` from
+ * `getAtomHeightPx()`. The fallback `21px` matches the substrate's
+ * default atom height (12px label × 1.75 rounded) and only resolves
+ * if the component fails to publish the variable — a wiring bug, not
+ * a production state.
+ *
+ * Laws:
+ *  - [L06] all chip appearance and line-floor behaviour lives in CSS
+ *    cascaded from `data-slot` selectors; no React state controls it.
+ *  - [L19] component-CSS pair; selectors are scoped to the component's
+ *    own `data-slot` so the rules don't leak into other tugways.
+ *  - [L20] one component-token slot family declared here
+ *    (`--tugx-atom-text-body-*`); no global tokens overridden.
+ */
+
+[data-slot="tug-atom-text-body"] {
+  /* Floor every line to atom-height + 4px so the chip (rendered
+     `vertical-align: middle` below) fits the line-box with 2px of
+     breathing room above and below — even when the surrounding font's
+     ascent/descent ratio doesn't match the chip's internal SVG
+     geometry exactly. Without the breathing room, sub-pixel
+     differences between the inherited font's natural line-box and the
+     chip's pixel-rounded height cause the chip to extend ~0.5–1px
+     past the line-box, which a parent's `overflow` or the
+     browser's line-box rounding may clip.
+
+     `max(1lh, …)` defers to the inherited line-height when it already
+     exceeds the chip+room floor (large-font surfaces), and forces the
+     floor on small-font surfaces where `1lh` would clip. */
+  line-height: max(
+    1lh,
+    calc(var(--tugx-atom-text-body-atom-height, 21px) + 4px)
+  );
+}
+
+.tug-atom-text-body__chip {
+  /* Centre the chip within the line-box. Combined with the line-height
+     floor above, this is what prevents the line from growing taller
+     when an atom is present (the chip can't push the line larger
+     because it fits centred within the already-tall line) and
+     guarantees no clipping. Overrides the chip's intrinsic
+     vertical-align: <baselineOffset>px from `createAtomImgElement`,
+     which is calibrated for surfaces without the line-height floor
+     (e.g., flowing prose).
+
+     Explicit `display: inline-block` defends against any user-agent
+     quirk that would default `<img>` to a different display value. */
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 2px;
+}

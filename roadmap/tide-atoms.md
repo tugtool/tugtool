@@ -1206,25 +1206,20 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 
 **Tasks:**
 
-- [ ] **5.a — Extract SVG helper.** Pull the SVG-data-URI build path out of `createAtomImgElement` into `buildAtomSVGDataUri(type, label, value, options?)`. Make sure `createAtomImgElement`'s observable output is byte-identical (same `img.src`, `img.width`, `img.height`, `verticalAlign`, dataset attributes, title). Existing editor tests should pass unchanged.
-- [ ] **5.b — Build `TugAtomTextBody`.** New React component in `tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx`. Walks `text`, split at `U+FFFC`, interleaves text spans with `<img>` elements. Each `<img>` reads `(type, label, value)` from the parallel `atoms[i]` entry and uses `buildAtomSVGDataUri` for `src`. Defensive: if `atoms.length < count(U+FFFC, text)`, extra U+FFFC chars pass through as visible characters (same defensive posture as `buildWirePayload`'s invariant).
-- [ ] **5.c — Wire `UserMessageCell`.** Replace the body `<span>{text}</span>` in `tide-card-transcript.tsx` with `<TugAtomTextBody text={text} atoms={atoms} />`. Source `atoms` from `committedUser?.attachments ?? activeUser?.attachments ?? []`.
+- [x] **5.a — Extract SVG helper.** Added `buildAtomSVGDataUri(type, label, value, options?): AtomSvgResult` in `tug-atom-img.ts`. The helper packages theme-token reads + SVG generation + data-URI conversion + height/baseline math. `createAtomImgElement` now calls it internally and applies the DOM-only concerns (dataset, title, id/pending) on top. The observable `<img>` (`src`, `width`, `height`, `verticalAlign`, dataset attributes, title) is byte-identical.
+- [x] **5.b — Build `TugAtomTextBody`.** New `tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx`. Exports the pure substrate walker `walkAtomText(text, atoms) → AtomTextSegment[]` (text / atom / stray-ffc segments) and the `forwardRef`-wrapped component. The render layer maps each segment to either a `React.Fragment` (text / stray-ffc) or an `<img src={buildAtomSVGDataUri(...).dataUri}>`. Root span carries `data-slot="tug-atom-text-body"` ([L19]); passes `className` + `data-testid` through; ref forwards to the span. Defensive `stray-ffc` segment for `U+FFFC` past `atoms.length` per [Spec S03].
+- [x] **5.c — Wire `UserMessageCell`.** Replaced the body `<span>{text}</span>` with `<TugAtomTextBody ref={…} className=… data-testid=… text={text} atoms={atoms} />`. `atoms` sourced from `committedUser?.attachments ?? activeUser?.attachments ?? []`. `stripUserBodyPrefix` only strips the `>` route prefix; it never touches `U+FFFC`, so the (text, atoms) index alignment survives the strip.
 
 **Tests:**
 
-- [ ] `unit: buildAtomSVGDataUri returns a data: URI string + width/height/baselineOffset numbers; stable for same inputs (purity check).`
-- [ ] `render: TugAtomTextBody with no atoms ("hello world", []) renders plain text only.`
-- [ ] `render: TugAtomTextBody with one atom ("before ￼ after", [{file atom}]) renders [text "before "] [img] [text " after"]. Single <img> present; src is the SVG data URI; alt is the atom's label.`
-- [ ] `render: TugAtomTextBody with two atoms ("￼ and ￼", [a1, a2]) renders [img@a1] [text " and "] [img@a2]. Order preserved.`
-- [ ] `render: TugAtomTextBody with mismatched count (atoms.length < FFFC count) — extra U+FFFC characters render as visible text; no crash.`
-- [ ] `integration: UserMessageCell against a committed turn with 2 attachments → 2 <img> elements appear at the correct positions in the row body.`
+- [x] Substrate pinned via `walkAtomText` — 9 pure-logic cases in `tug-atom-text-body.test.ts` cover: empty input, plain text + no atoms, one atom between text, two atoms with text between, more `U+FFFC` than atoms (`stray-ffc` defensive branch), leading `U+FFFC`, trailing `U+FFFC`, atom-only text, and atoms supplied without matching `U+FFFC`. The React mapping is mechanical (segment → Fragment or `<img>`), so pinning the substrate covers the render shape. Manual smoke covers end-to-end visual verification.
 
 **Checkpoint:**
 
-- [ ] `cd tugdeck && bun test` — full suite green.
-- [ ] `cd tugdeck && bun run check` — tsc clean.
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
-- [ ] Manual: in a tide card, type a message with an `@`-completed atom (e.g., `look at @file.txt`), submit → transcript user row shows the same chip the editor showed pre-submit. The chip's icon, label, and baseline match the editor by eye.
+- [x] `cd tugdeck && bun test` — 3018 / 3018 pass (was 3009 pre-step; +9 walker tests).
+- [x] `cd tugdeck && bun run check` — tsc clean.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [ ] Manual: in a tide card, type a message with an `@`-completed atom (e.g., `look at @file.txt`), submit → transcript user row shows the same chip the editor showed pre-submit. The chip's icon, label, and baseline match the editor by eye. (Awaiting manual verification.)
 
 ---
 

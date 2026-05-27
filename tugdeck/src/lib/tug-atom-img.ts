@@ -252,13 +252,55 @@ function svgToDataURI(svg: string): string {
 
 // ---- Public API ----
 
-/** Create an atom <img> element with SVG data URI. */
-export function createAtomImgElement(
+/**
+ * Result of {@link buildAtomSVGDataUri}: a self-describing SVG chip
+ * the caller can apply to an `<img>` (the editor's CM6 widget) or
+ * a React-rendered `<img>` (the transcript walker), without either
+ * surface re-implementing the SVG / theme-token / baseline math.
+ *
+ * Pure data — no DOM references. Both numeric fields are in px.
+ */
+export interface AtomSvgResult {
+  /** `data:image/svg+xml,…` URI ready for `<img src=...>`. */
+  dataUri: string;
+  /** Chip width in px — set on `<img width=...>` for layout stability. */
+  width: number;
+  /** Chip height in px — set on `<img height=...>`. */
+  height: number;
+  /**
+   * Vertical-align offset in px (typically negative). Apply as
+   * `verticalAlign: \`${baselineOffset}px\`` so the chip's internal
+   * text baseline lines up with the surrounding line's baseline.
+   */
+  baselineOffset: number;
+}
+
+/**
+ * Build the SVG-chip data URI + geometry for an atom. Pure with
+ * respect to the inputs and the currently-resolved theme tokens —
+ * two calls in the same theme/font frame return byte-identical
+ * results. Both the editor's `createAtomImgElement` (imperative
+ * `<img>` for CM6 widgets) and the transcript's `TugAtomTextBody`
+ * (React `<img>` per `U+FFFC` position) call this single helper, so
+ * every surface that paints an atom chip paints the same pixels.
+ *
+ * Reads theme tokens via `getTokenValue` at call time, so theme
+ * switches are picked up on next render (per the [theme-tokens]
+ * cascade). The widget's regeneration counter ({@link AtomWidget}
+ * in `atom-decoration.ts`) takes care of busting CM6's reconciliation
+ * cache so the editor refreshes too.
+ */
+export function buildAtomSVGDataUri(
   type: string,
   label: string,
   value: string,
-  options?: AtomImgOptions,
-): HTMLImageElement {
+  options?: { maxLabelWidth?: number },
+): AtomSvgResult {
+  // The `value` field is part of the public signature so future
+  // theme variants can fork on it (e.g., a different icon for a path
+  // pointing inside `node_modules`); today only `type` and `label`
+  // drive the rendered output.
+  void value;
   const displayLabel = options?.maxLabelWidth != null ? truncateLabel(label, options.maxLabelWidth) : label;
 
   const bgColor = getTokenValue("--tug7-surface-atom-primary-normal-default-rest");
@@ -269,11 +311,33 @@ export function createAtomImgElement(
   const iconPath = ATOM_ICON_PATHS[type] ?? ATOM_ICON_PATHS.file;
   const { svg, width } = buildAtomSVG(iconPath, displayLabel, bgColor, borderColor, iconColor, textColor);
 
+  return {
+    dataUri: svgToDataURI(svg),
+    width,
+    height: atomHeight(),
+    baselineOffset: atomBaselineOffset(),
+  };
+}
+
+/** Create an atom <img> element with SVG data URI. */
+export function createAtomImgElement(
+  type: string,
+  label: string,
+  value: string,
+  options?: AtomImgOptions,
+): HTMLImageElement {
+  const { dataUri, width, height, baselineOffset } = buildAtomSVGDataUri(
+    type,
+    label,
+    value,
+    options?.maxLabelWidth !== undefined ? { maxLabelWidth: options.maxLabelWidth } : undefined,
+  );
+
   const img = document.createElement("img");
-  img.src = svgToDataURI(svg);
+  img.src = dataUri;
   img.width = width;
-  img.height = atomHeight();
-  img.style.verticalAlign = `${atomBaselineOffset()}px`;
+  img.height = height;
+  img.style.verticalAlign = `${baselineOffset}px`;
   img.style.margin = "0 2px";
   img.dataset.atomType = type;
   img.dataset.atomLabel = label;
