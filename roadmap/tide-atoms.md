@@ -1223,41 +1223,189 @@ The single mechanical refactor needed: extract the SVG-data-URI builder from `cr
 
 ---
 
-#### Step 6: Image attachment strip + thumbnail bake {#step-6}
+#### Step 5c: Content-block wire shape + JSONL-honest substrate synthesis {#step-5c}
 
-**Depends on:** #step-5
+**Depends on:** #step-3 (revises `buildWirePayload`'s contract), #step-5 (the renderer that consumes the synthesized substrate is in place).
 
-**Commit:** `feat(tugdeck): tug-attachment-strip + thumbnail bake on commit`
+**Blocks:** #step-6 (the per-message strip + numbered chips depend on the synthesized substrate this step produces).
+
+**Commit:** `feat(tugdeck+tugcode): content-block wire shape + JSONL-honest substrate synthesis`
+
+**References:** [Spec S01](#s01-attachment-wire-type) (the wire-shape `Attachment` type retires under this step), [Spec S03](#s03-build-wire-payload) (revised — `buildWirePayload` returns content blocks). Anthropic API messaging guide on interleaved `content` blocks.
+
+#### Motivation {#step-5c-motivation}
+
+[Step 5](#step-5)'s manual smoke checkbox stays open for a reason: cold-mount of a session with atom-bearing turns doesn't restore the inline chips. The substrate (`text` with `U+FFFC` + `AtomSegment[]` carrying labels) isn't in claude's JSONL — claude only sees the flat `wireText` (atom values substituted in) plus wire-shape image attachments. On reload, tugcode's replay path re-emits the wire shape, the reducer casts wire-shape attachments to `AtomSegment[]`, and the renderer paints plain text with no chips.
+
+We previously considered a tugcast session-ledger schema extension to journal the substrate alongside the wire. That approach worked but added a cross-process schema migration, new protocol fields, and reducer fallback paths for every code path that consumes attachments. The cost was significant and the gain was visual fidelity (filenames on restored chips), not information fidelity (the data was already in JSONL via the wire substitution).
+
+The simpler design — and the one this step ships — leans into JSONL. Anthropic's content-block array natively preserves the **position** of image content in the message stream; today's `buildWirePayload` flattens that information by emitting `[image, image, …, text]` rather than the interleaved `[text, image, text, image, text]` the user actually composed. If we emit interleaved blocks instead, the image-atom **position** survives JSONL round-trip for free. The chip's **label** (the original filename) doesn't survive — JSONL has no filename field on the `image` block — but we don't need it: we synthesize a deterministic label (`#0001-image-1`) at the submit / replay boundary and pair it with a thumbnail strip below the message. The numbering provides visual linkage between inline chip and strip thumbnail; the user can see what image goes where without a filename in the chip.
+
+The trade-off, accepted explicitly: **the live transcript shows the same numeric chip the restored transcript shows**, not the user's original filename. This is honest to what persists across reload. The editor (pre-submit) still shows filenames in chips — that's the drafting surface, before commit. The commit boundary is where the substrate switches from user-friendly labels to JSONL-honest synthesized labels. One consistent visual language in the transcript, live and restored, with no surprise at the reload boundary.
+
+#### Strategy {#step-5c-strategy}
+
+Five coordinated layers:
+
+1. **`buildWirePayload` returns content blocks, not flat `(wireText, attachments)`.** The walker over `(text, atoms)` emits an array of `{type: "text", text}` and `{type: "image", source}` blocks in document order. File-path atoms substitute their `value` into the surrounding text block; image atoms become standalone image blocks at their position.
+
+2. **Wire frame revision.** Tugdeck's `user_message` frame carries `content: ContentBlock[]` instead of `text: string, attachments: Attachment[]`. The frame body is Anthropic's content-block shape — same as what tugcode forwards to claude.
+
+3. **Tugcode pass-through.** Tugcode's `user_message` handler today builds Anthropic content blocks from the flat `text + attachments` shape. After this step it forwards `content` blocks directly — pass-through, no construction. Tugcode's JSONL-replay emit (`add_user_message`) emits `content: ContentBlock[]` (the JSONL message content array, unchanged from the recorded form).
+
+4. **Substrate synthesis (live + replay, single shared implementation).** Both `handleSend` (live submit) and `handleAddUserMessage` (JSONL replay) walk the content blocks and synthesize a `UserMessage` substrate identically:
+   - Walk blocks in order, maintaining a per-message image-counter and a text accumulator.
+   - For each `text` block: append `block.text` to the accumulator.
+   - For each `image` block: emit `U+FFFC` into the accumulator; mint an `AtomSegment` with `type: "image"`, `label: "image-N"` (where N is the 1-based per-message image counter — no `#NNNN-` prefix at this layer), `value: "image-N"`, `id: <fresh UUID>`; write the block's bytes to the per-card bytes-store under that id.
+   - Yield `{ text: accumulator, atoms: [...] }`.
+   - The synthesis is deterministic: same input blocks → byte-identical substrate.
+
+5. **Render-time label decoration.** `TugAtomTextBody` accepts an optional `messageNumber: number` prop. When set, each image atom's *displayed* chip label becomes `#${pad4(messageNumber)}-${atom.label}` (e.g., `#0001-image-1`). When unset, the atom's stored `label` is used as-is — leaving the editor's pre-submit chip rendering (which doesn't have a transcript position) unaffected. The 4-digit padding matches the existing transcript sequence-number convention (`#NNNN`).
+
+#### The submit boundary is real {#step-5c-submit-boundary}
+
+The editor's pre-submit chips show user-friendly labels (`raphael.jpeg`, `src/main.ts`) because the substrate still carries the filenames/paths the user typed. At submit, `handleSend` runs `buildWirePayload` and then re-synthesizes the substrate from the resulting blocks — the synthesized substrate has `image-N` labels, file-path atoms are gone (substituted into text). The transcript renders from the synthesized substrate.
+
+The crossing is deliberate. The editor is the drafting surface; the transcript is the JSONL-honest committed view. They have different visual languages because they represent different states. A reader who notices the change at submit (chip label flips from filename to numbered + path drops the chip wrapping for file atoms) is seeing the data layer revealing itself — what's editable vs. what's recorded.
+
+#### Artifacts {#step-5c-artifacts}
+
+**Tugdeck — wire generation:**
+
+- [`tugdeck/src/lib/build-wire-payload.ts`](../tugdeck/src/lib/build-wire-payload.ts) — `buildWirePayload` returns `{ content: ContentBlock[] }` (no `wireText`, no `attachments`). Walker over `(text, atoms)` emits interleaved blocks: text accumulates between `U+FFFC` positions; each image atom (with bytes in the store) becomes a standalone `image` block; each file-path atom substitutes `atom.value` into the current text block. Adjacent text segments coalesce into a single text block; an image at the start / end of text doesn't generate empty surrounding text blocks.
+- [`tugdeck/src/protocol.ts`](../tugdeck/src/protocol.ts) — `ContentBlock` union type matching Anthropic's API shape. `UserMessageWireFrame` revised: `{ type: "user_message", content: ContentBlock[] }` (drops `text` and `attachments`). Old `Attachment` interface deprecated and removed.
+
+**Tugdeck — reducer:**
+
+- [`tugdeck/src/lib/code-session-store/reducer.ts`](../tugdeck/src/lib/code-session-store/reducer.ts) — new shared `synthesizeUserMessageFromBlocks(blocks: ContentBlock[], bytesStore): { text: string; atoms: AtomSegment[] }` helper. `handleSend` runs `buildWirePayload`, sends the frame with `content`, then calls the synthesizer for the substrate it stores in `UserMessage`. `handleAddUserMessage` calls the same synthesizer on `event.content` — no fallback path, no cast.
+- [`tugdeck/src/lib/code-session-store/events.ts`](../tugdeck/src/lib/code-session-store/events.ts) — `AddUserMessageEvent` revised: `content: ContentBlock[]` (drops `text` and `attachments`). The wire wrapper that converts inbound frames to events already passes through unknown fields; the rewrite just retypes the field.
+
+**Tugcode — wire forwarding + replay:**
+
+- [`tugcode/src/types.ts`](../tugcode/src/types.ts) — `UserMessage` inbound IPC frame retyped to carry `content`. `AddUserMessage` outbound IPC frame likewise.
+- [`tugcode/src/session.ts`](../tugcode/src/session.ts) — `user_message` handler forwards `content` blocks directly to the Anthropic SDK (`messages.create({ messages: [{ role: "user", content }] })` — the inbound shape IS the API shape; no construction step).
+- [`tugcode/src/replay.ts`](../tugcode/src/replay.ts) — `handleUserEntry` reads `entry.message.content` (already content-block shape in JSONL) and emits `{ type: "add_user_message", content: <blocks>, ... }`. The current text-blocks-concatenation + image-extraction loop disappears.
+
+**Tugdeck — render-time decoration:**
+
+- [`tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx`](../tugdeck/src/components/tugways/cards/tug-atom-text-body.tsx) — `TugAtomTextBodyProps` gains optional `messageNumber?: number`. When set, the chip's displayed `alt` and the SVG label text use `#${pad4(messageNumber)}-${atom.label}` (the 4-digit padding helper is shared with the existing transcript sequence-number rendering — extract into a small `pad4` utility if not already shared).
+- [`tugdeck/src/components/tugways/cards/tide-card-transcript.tsx`](../tugdeck/src/components/tugways/cards/tide-card-transcript.tsx) — `UserMessageCell` passes `messageNumber={index + 1}` to `TugAtomTextBody`. (The sequence number in the entry header reads the same value via `sequenceNumber`.)
+
+#### Tasks {#step-5c-tasks}
+
+**Tugdeck wire generation:**
+
+- [ ] **5c.a — `ContentBlock` types.** Define `ContentBlock` union in `protocol.ts`; replace `Attachment` exports. Type-only change; consumers compile against the new shape.
+- [ ] **5c.b — `buildWirePayload` refactor.** Return `{ content: ContentBlock[] }`. Walker emits interleaved blocks; file atoms substitute, image atoms become blocks. Adjacent text coalesces. Update [Spec S03](#s03-build-wire-payload).
+- [ ] **5c.c — Wire frame retyping.** `UserMessageWireFrame` carries `content`. The frame builder in the WS-send wrapper passes `event.content` through.
+
+**Tugcode pass-through:**
+
+- [ ] **5c.d — IPC types.** `UserMessage` / `AddUserMessage` carry `content`.
+- [ ] **5c.e — `user_message` handler.** Pass `content` to the SDK directly; remove the text+attachments→content-blocks construction.
+- [ ] **5c.f — Replay emit.** `handleUserEntry` emits `{ content: blocks }`; remove the concat-text-extract-images loop. Empty-text / empty-attachments edge cases stay handled at the synthesizer layer downstream.
+
+**Tugdeck synthesis:**
+
+- [ ] **5c.g — `synthesizeUserMessageFromBlocks` helper.** Shared between live and replay. Pure (modulo bytes-store side effect for image content). Deterministic on its inputs.
+- [ ] **5c.h — `handleSend` integration.** Calls `buildWirePayload` → sends content; calls synthesizer → stores `UserMessage` with synthesized substrate.
+- [ ] **5c.i — `handleAddUserMessage` integration.** Calls synthesizer on `event.content`. Removes the loose `event.attachments as ReadonlyArray<AtomSegment>` cast outright. No fallback path.
+
+**Tugdeck render-time decoration:**
+
+- [ ] **5c.j — `messageNumber` prop on `TugAtomTextBody`.** Threads through to the chip label. Default behavior (no prop set) unchanged. Extract `pad4` if a shared helper isn't already present.
+- [ ] **5c.k — `UserMessageCell` wiring.** Passes `messageNumber={index + 1}` to `TugAtomTextBody`.
+
+#### Tests {#step-5c-tests}
+
+**Synthesizer (pure, bun:test):**
+
+- [ ] `synthesizeUserMessageFromBlocks([]) → { text: "", atoms: [] }`
+- [ ] `synthesizeUserMessageFromBlocks([{text: "hello"}]) → { text: "hello", atoms: [] }`
+- [ ] `synthesizeUserMessageFromBlocks([{text: "a "}, {image}, {text: " b"}]) → { text: "a ￼ b", atoms: [{label: "image-1", id: <uuid>, …}] }`. Bytes land in the per-call bytes-store under `id`.
+- [ ] `synthesizeUserMessageFromBlocks(consecutive images) → { text: "￼￼", atoms: [image-1, image-2] }`.
+- [ ] `synthesizeUserMessageFromBlocks(image-only) → { text: "￼", atoms: [image-1] }`.
+- [ ] `synthesizeUserMessageFromBlocks` is byte-identical on two calls with the same inputs (modulo the freshly minted UUIDs; the atom ids will differ, the rest is byte-identical).
+
+**`buildWirePayload` round-trip (pure, bun:test):**
+
+- [ ] `buildWirePayload(text="a￼b", atoms=[fileAtom]).content === [{text: "a/path/to/file.txtb"}]` — file atom substituted, single text block.
+- [ ] `buildWirePayload(text="a￼b", atoms=[imageAtom-with-bytes]).content === [{text: "a"}, {image: …}, {text: "b"}]` — image becomes its own block, surrounding text intact.
+- [ ] `buildWirePayload` over `(text, atoms)` → `synthesizeUserMessageFromBlocks(content)` → a substrate where image-atom positions are preserved and image-atom labels are `image-N`.
+
+**Render-time label (bun:test, pure-logic):**
+
+- [ ] `TugAtomTextBody` with `messageNumber={1}` and a single image atom labeled `image-1` → walks to a chip whose internal label/alt is `#0001-image-1`. Pin the substring on the rendered `<img alt>` and on the SVG text content.
+- [ ] `TugAtomTextBody` with `messageNumber` unset → chip label is the atom's stored `label` verbatim (no `#NNNN-` prefix). This is the editor-rendering case.
+
+**Integration (pure-logic over event/state, bun:test):**
+
+- [ ] `handleSend` with a substrate containing one image atom → `UserMessage` lands on `pendingTurn` with synthesized substrate (`label: "image-1"`); wire frame's `content` carries the interleaved blocks; bytes-store has the image entry.
+- [ ] `handleAddUserMessage` with an `add_user_message` event carrying content blocks → `UserMessage` substrate matches `handleSend`'s output for the same content (modulo UUID values).
+
+#### Checkpoint {#step-5c-checkpoint}
+
+- [ ] `cd tugdeck && bun test` — full suite green; new synthesizer + label-decoration tests pass.
+- [ ] `cd tugdeck && bun run check` — tsc clean. The retyped `Attachment` → `ContentBlock` migration surfaces every consumer that wasn't updated.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [ ] `cd tugcode && bun test` — pass-through handlers + replay emit green.
+- [ ] `cd tugrust && cargo nextest run --workspace` — no Rust changes expected, but verify tugcast's frame-forwarding sees no schema break.
+- [ ] `test-23-image-attachment.jsonl` — byte-identical pre/post (the wire shape claude sees is unchanged at the Anthropic API level — content blocks were always the API shape, we just stopped flattening them on our side).
+- [ ] Manual (Tug.app): drop a `raphael.jpeg`, type "describe", drop a `cat.png`, type "and this one", submit. Transcript shows: `describe #0001-image-1 and this one #0001-image-2` (chips at original positions). Reload the app. Transcript shows identical labels and chip positions, restored from JSONL.
+
+#### Out of scope {#step-5c-out-of-scope}
+
+- **Per-message thumbnail strip rendering** — that's [Step 6](#step-6), which depends on this step's synthesized substrate.
+- **Tool-block path chips on the assistant side** — [Step 7](#step-7), unchanged.
+- **Filename preservation in the transcript** — JSONL doesn't carry filenames; we deliberately drop them at the submit boundary in exchange for a single consistent rendering between live and restored. A future v1.x could revisit if user feedback warrants it (would require substrate-journal work we explicitly chose to defer).
+- **Backfilling synthesized substrate for pre-Step-5c sessions.** Out of scope per the project's "no migration" stance — new sessions only.
+
+---
+
+#### Step 6: Image attachment strip + per-message numbering {#step-6}
+
+**Depends on:** #step-5c (consumes the synthesized substrate `image-N` labels + bytes-store entries).
+
+**Commit:** `feat(tugdeck): tug-attachment-strip per-message + numbered chip↔thumbnail linkage`
 
 **References:** [D04](#d04-no-bytes-on-snapshot), [Spec S04](#s04-image-downsample) (`bakeThumbnail`), [Spec S06](#s06-attachment-strip), [Risk R03](#r03-bytes-store-memory), (#transcript-rendering)
 
+**Scope decision:** Step 6 renders the per-message thumbnail strip and provides the visual linkage between an inline `#NNNN-image-N` chip and its bytes via matching thumbnail labels. The strip is sourced from the synthesized substrate ([Step 5c](#step-5c)) — one tile per image atom in the message, labeled with the same `#NNNN-image-N` string the chip carries. Identical rendering live and restored. Earlier draft references a `TurnEntry.userMessage.attachments: ReadonlyArray<AttachmentRecord>` typed shape; under the post-5c design, the substrate already carries everything the strip needs (`AtomSegment[]` + bytes-store entries), so no parallel `AttachmentRecord` is required for this step. `AttachmentRecord` may still be introduced if downstream work (e.g., persistent attachment metadata beyond JSONL) needs it; deferred.
+
 **Artifacts:**
-- `tugdeck/src/components/tugways/cards/tug-attachment-strip.tsx` + CSS per [Spec S06](#s06-attachment-strip).
-- `code-session-store/types.ts` — `AttachmentRecord` typed; `TurnEntry.userMessage.attachments: ReadonlyArray<AttachmentRecord>` (replacing the current `ReadonlyArray<AtomSegment>` cast).
-- `reducer.ts` commit path bakes thumbnails for image attachments via `bakeThumbnail` from [Spec S04](#s04-image-downsample).
-- `UserMessageCell` mounts `TugAttachmentStrip` above `TugAtomTextBody` when `attachments.length > 0`.
-- `TugListView` row-height accounting includes the strip (measured on the same `useLayoutEffect` cycle as the body).
-- Click handler — v1 opens the source data URL via `window.open(content)` (lightbox is v1.1 polish).
+
+- `tugdeck/src/components/tugways/cards/tug-attachment-strip.tsx` + CSS per [Spec S06](#s06-attachment-strip). Source: the message's image atoms (read from the `UserMessage.attachments` substrate); each tile renders a `bakeThumbnail`-baked data URL from the bytes-store entry keyed by `atom.id`. Each tile's caption is the `#${pad4(messageNumber)}-${atom.label}` string — matching the inline chip's label exactly.
+- `tugdeck/src/lib/image-downsample.ts` (modify) — add `bakeThumbnail(bytes, mediaType, maxEdge=256): string` returning a 256-px-max-edge data URL. Shares the canvas pipeline with `downsampleImage`.
+- `tugdeck/src/lib/code-session-store/reducer.ts` (modify) — `handleTurnComplete` (or earlier, in `handleSend`'s commit path) bakes thumbnails for image atoms and stores them on the bytes-store entry alongside the original `content`. Two fields: `content` (the original byte payload, used on this-session click-to-enlarge), `thumbnailDataUrl` (baked at commit time, used by the strip).
+- `tugdeck/src/components/tugways/cards/tide-card-transcript.tsx` (modify) — `UserMessageCell` mounts `TugAttachmentStrip` below `TugAtomTextBody` when the user message has any image atom. The strip receives `messageNumber={index + 1}` so its tile labels match the inline chips.
+- `tugdeck/src/components/tugways/tug-list-view` — row-height contract extended to sum strip + body heights (measured on the same `useLayoutEffect` cycle).
+- Click handler — v1 opens the source image in a new tab via `window.open(bytesStore.get(id)?.content)`. Restored sessions whose bytes-store lookup misses (bytes not yet restored from JSONL into the in-memory store) gracefully no-op; v1.x could add bytes-from-JSONL rehydration at click time.
 
 **Tasks:**
-- [ ] Tighten `TurnEntry.userMessage.attachments` to `AttachmentRecord[]`.
-- [ ] Add `bakeThumbnail` to `image-downsample.ts` and call it from the commit path.
-- [ ] Build `TugAttachmentStrip` per [Spec S06](#s06-attachment-strip).
-- [ ] Wire the strip into `UserMessageCell` above the body.
-- [ ] Extend `TugListView` row-height contract to sum strip + body heights.
-- [ ] Add gallery variant for design review.
+
+- [ ] **6.a — `TugAttachmentStrip`.** Build per [Spec S06](#s06-attachment-strip). Takes `messageNumber` and the image atoms; renders one fixed-aspect tile per atom; each tile's caption is `#${pad4(messageNumber)}-${atom.label}`; `alt` is the same string.
+- [ ] **6.b — `bakeThumbnail`.** Add to `image-downsample.ts`; share the canvas pipeline with `downsampleImage`. Returns a 256-px-max-edge data URL string.
+- [ ] **6.c — Commit-path bake.** At `turn_complete` (or in `handleSend` immediately post-synthesis — pick whichever keeps the reducer flow tidy), bake thumbnails for image atoms and stash them on the bytes-store entry under `thumbnailDataUrl`. The bytes-store entry shape gains a `thumbnailDataUrl?: string` field.
+- [ ] **6.d — `UserMessageCell` wiring.** Mounts the strip below `TugAtomTextBody`. Filters atoms to image-only (`atom.type === "image"`) before passing to the strip. Strip renders nothing if no image atoms.
+- [ ] **6.e — `TugListView` row-height.** Sum strip + body heights in the row-height contract. Same `useLayoutEffect` cycle as the body. (See `TugListView`'s existing height-measurement plumbing.)
+- [ ] **6.f — Gallery variant.** Add a gallery card variant for design review of the strip + body layout + numbering scheme. A static fixture with two image atoms and a paragraph of body text should suffice.
 
 **Tests:**
-- [ ] `render: TugAttachmentStrip with 1 image AttachmentRecord → 1 tile rendered with thumbnail data URL`
-- [ ] `render: TugAttachmentStrip with 0 attachments → renders nothing`
-- [ ] `integration: turn_complete commits an image-bearing turn → AttachmentRecord carries non-empty thumbnailDataUrl`
-- [ ] `render: UserMessageCell with attachments → strip renders above body; row height accounts for both`
+
+- [ ] `render: TugAttachmentStrip with one image atom + messageNumber=1 → 1 tile rendered with thumbnail data URL and caption "#0001-image-1"`.
+- [ ] `render: TugAttachmentStrip with zero image atoms → renders nothing` (no empty container; passes through to a null React subtree so row-height accounting sees zero).
+- [ ] `render: TugAttachmentStrip with mixed atoms (1 image + 1 file-path) → 1 tile only` (file-path atoms don't appear in the strip; they're inline text).
+- [ ] `integration: turn_complete commits an image-bearing turn → bytes-store entry carries non-empty thumbnailDataUrl`.
+- [ ] `render: UserMessageCell with one image atom → strip renders below body; row height accounts for both`.
+- [ ] `render (label-match): chip label and strip caption are identical strings for the same atom (`#0001-image-1`).` The visual-linkage promise is testable on the rendered strings.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bun run audit:tokens lint`
-- [ ] Manual: drop image → submit → see thumbnail in the transcript user row above the body text.
+
+- [ ] `cd tugdeck && bun test` — full suite green.
+- [ ] `cd tugdeck && bun run check` — tsc clean.
+- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [ ] Manual: drop two images into a card, type some text around them, submit. Transcript shows the two chips at the original text positions with `#0001-image-1` / `#0001-image-2` labels; thumbnail strip below the body shows two tiles with matching captions.
+- [ ] Manual (restore parity): reload Tug.app. Transcript renders identically — same chip positions, same labels, same thumbnails.
 
 ---
 
