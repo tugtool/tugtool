@@ -382,11 +382,16 @@ describe("synthesizeUserMessageFromBlocks + buildWirePayload round-trip", () => 
     expect(store.get("editor-B")?.content).toBe("JPG-B");
   });
 
-  test("bytes-less editor atom is skipped on the wire; resolver doesn't count it as an image block", () => {
+  test("bytes-less editor atom rides as a mention chip; resolver indices still align with emitted image blocks", () => {
     const store = createAtomBytesStore();
     store.put("editor-good", { content: "PNG", mediaType: "image/png" });
-    // Two editor atoms; only one has bytes. The wire emits a single
-    // image block and the resolver pins it to the bytes-bearing id.
+    // Two editor atoms; only one has bytes. The bytes-less atom can't
+    // ride as an image block (no bytes), so it falls through to the
+    // non-image branch and substitutes as a backtick-`@` mention
+    // marker — preserving its position + label on the wire. The
+    // bytes-bearing atom emits a single image block; the resolver
+    // pins it to that block's index (still 0; the mention rides in
+    // the text block, not the image-block index).
     const editorText = `${C} ${C}`;
     const editorAtoms: AtomSegment[] = [
       { kind: "atom", type: "image", label: "missing.png", value: "missing.png", id: "editor-evicted" },
@@ -400,9 +405,105 @@ describe("synthesizeUserMessageFromBlocks + buildWirePayload round-trip", () => 
       bakeImage: stubBake,
     });
 
-    // Only one atom in the synthesized substrate; its id is the
-    // bytes-bearing editor id (no mismatch).
+    // Substrate has both atoms. The first is a mention chip (recovered
+    // from the marker, type "file" since the marker doesn't preserve
+    // the original "image" type); the second is the real image atom.
+    expect(synth.text).toBe(`${C} ${C}`);
+    expect(synth.atoms).toHaveLength(2);
+    expect(synth.atoms[0]).toMatchObject({
+      kind: "atom",
+      type: "file",
+      label: "missing.png",
+      value: "missing.png",
+    });
+    // Mention atoms have no id — they're recovered purely from the
+    // wire marker which doesn't carry one (matches `@`-completion
+    // atoms in the editor which also have no id).
+    expect(synth.atoms[0].id).toBeUndefined();
+    expect(synth.atoms[1]).toMatchObject({
+      kind: "atom",
+      type: "image",
+      label: "image-1",
+      id: "editor-good",
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Non-image atom round-trip via backtick-`@` mention marker
+  // ─────────────────────────────────────────────────────────────
+
+  test("non-image atom round-trip: file atom → wire marker → synth chip at original position", () => {
+    const store = createAtomBytesStore();
+    // Editor substrate: prose with one `@`-mention chip.
+    const editorText = `Read ${C} please.`;
+    const editorAtoms: AtomSegment[] = [
+      { kind: "atom", type: "file", label: "README.md", value: "README.md" },
+    ];
+
+    const wire = buildWirePayload(editorText, editorAtoms, store);
+    // Wire is a single text block with the marker wrapping the value.
+    expect(wire.content).toEqual([
+      { type: "text", text: "Read `@README.md` please." },
+    ]);
+
+    const synth = synthesizeUserMessageFromBlocks(wire.content, store, {
+      atomIdAt: wire.atomIdAt,
+      mintAtomId: makeCounter(),
+      bakeImage: stubBake,
+    });
+
+    // Substrate matches the editor's text + atoms — the chip is at
+    // the same `U+FFFC` position. The synthesized atom defaults to
+    // `type: "file"` (the marker doesn't preserve the original type).
+    expect(synth.text).toBe(`Read ${C} please.`);
     expect(synth.atoms).toHaveLength(1);
-    expect(synth.atoms[0].id).toBe("editor-good");
+    expect(synth.atoms[0]).toMatchObject({
+      kind: "atom",
+      type: "file",
+      label: "README.md",
+      value: "README.md",
+    });
+  });
+
+  test("non-image + image atoms interleaved round-trip cleanly", () => {
+    const store = createAtomBytesStore();
+    store.put("editor-img", { content: "PNG", mediaType: "image/png" });
+    // Two atoms: a file-mention, then an image.
+    const editorText = `Compare ${C} with ${C}`;
+    const editorAtoms: AtomSegment[] = [
+      { kind: "atom", type: "file", label: "main.ts", value: "main.ts" },
+      { kind: "atom", type: "image", label: "shot.png", value: "shot.png", id: "editor-img" },
+    ];
+
+    const wire = buildWirePayload(editorText, editorAtoms, store);
+    // Wire: one text block carrying the marker + the prose before the
+    // image, then the image block.
+    expect(wire.content).toHaveLength(2);
+    expect(wire.content[0]).toEqual({
+      type: "text",
+      text: "Compare `@main.ts` with ",
+    });
+    expect((wire.content[1] as { type: string }).type).toBe("image");
+
+    const synth = synthesizeUserMessageFromBlocks(wire.content, store, {
+      atomIdAt: wire.atomIdAt,
+      mintAtomId: makeCounter(),
+      bakeImage: stubBake,
+    });
+
+    expect(synth.text).toBe(`Compare ${C} with ${C}`);
+    expect(synth.atoms).toHaveLength(2);
+    expect(synth.atoms[0]).toMatchObject({
+      kind: "atom",
+      type: "file",
+      label: "main.ts",
+      value: "main.ts",
+    });
+    expect(synth.atoms[1]).toMatchObject({
+      kind: "atom",
+      type: "image",
+      label: "image-1",
+      id: "editor-img",
+    });
   });
 });

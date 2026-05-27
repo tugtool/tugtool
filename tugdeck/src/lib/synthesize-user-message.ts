@@ -16,13 +16,18 @@
  * what tugcode forwards live), this function produces:
  *
  *  - `text`: a substrate string with `U+FFFC` (object replacement)
- *    at every image-block position, and text-block contents copied
- *    verbatim. Adjacent text blocks coalesce in the output (the
- *    walker accumulates between `U+FFFC` insertions).
- *  - `atoms`: one `AtomSegment` per image block, in order, with
- *    `label: "image-N"` (N is the 1-based per-message image counter)
- *    and an `id` resolved via `options.atomIdAt` (live path) or
- *    minted fresh (replay path).
+ *    at every image-block position AND at every non-image atom
+ *    mention recovered from a text block via
+ *    {@link parseAtomMentionSegments}. Text-block contents otherwise
+ *    copy verbatim; adjacent text blocks coalesce in the output
+ *    (the walker accumulates between `U+FFFC` insertions).
+ *  - `atoms`: one `AtomSegment` per image block, plus one per
+ *    backtick-`@` mention span in any text block. Image atoms carry
+ *    `label: "image-N"` (1-based per-message image counter) and an
+ *    `id` resolved via `options.atomIdAt` (live path) or minted
+ *    fresh (replay path). Mention atoms default to `type: "file"`
+ *    (the wire marker doesn't preserve the original atom type) and
+ *    carry the mention's value as both label and value.
  *  - `thumbnailBake`: a promise that resolves when all newly-fired
  *    thumbnail bakes have settled. Production callers fire-and-forget;
  *    tests can await for deterministic ordering.
@@ -70,6 +75,7 @@ import type { ContentBlock } from "@/protocol";
 import type { AtomBytesEntry, AtomBytesStore } from "./atom-bytes-store";
 import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
 import { bakeThumbnail } from "./image-downsample";
+import { parseAtomMentionSegments } from "./atom-mention-marker";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -190,7 +196,31 @@ export function synthesizeUserMessageFromBlocks(
 
   for (const block of blocks) {
     if (block.type === "text") {
-      textBuf += block.text;
+      // Parse backtick-`@` mention markers out of the wire text and
+      // re-mint chips at the original positions. The submit-side
+      // `buildWirePayload` wraps non-image atom values as
+      // `` `@<value>` ``; the parser inverts the wrap. Plain text
+      // between (or surrounding) mentions concatenates verbatim. See
+      // `atom-mention-marker.ts` for the marker rationale + parse
+      // contract.
+      for (const seg of parseAtomMentionSegments(block.text)) {
+        if (seg.kind === "text") {
+          textBuf += seg.text;
+          continue;
+        }
+        // Mention atom — the original `type` (file / doc / link /
+        // command) is not preserved on the wire; we default to
+        // `"file"` since that's the overwhelmingly common case for
+        // `@`-mention completions and the chip's icon falls back
+        // gracefully if the value is actually a URL or command.
+        textBuf += TUG_ATOM_CHAR;
+        atoms.push({
+          kind: "atom",
+          type: "file",
+          label: seg.value,
+          value: seg.value,
+        });
+      }
       continue;
     }
     if (block.type === "image") {

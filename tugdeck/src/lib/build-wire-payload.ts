@@ -99,6 +99,7 @@
 import type { ContentBlock } from "@/protocol";
 import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
 import type { AtomBytesStore } from "./atom-bytes-store";
+import { wrapAtomMention } from "./atom-mention-marker";
 
 // ---------------------------------------------------------------------------
 // Public type
@@ -132,9 +133,11 @@ export interface WirePayload {
  * Walks `text` character-by-character. A `U+FFFC` consumes the next
  * atom; an image atom (id + bytes in the store) closes any pending
  * text block, emits an image block, and opens a fresh text
- * accumulator. A non-image (or bytes-less) atom appends its
- * `value` to the current text accumulator. Single pass, O(n) in
- * `text.length`.
+ * accumulator. A non-image (or bytes-less) atom appends its `value`
+ * wrapped as a backtick-`@` mention marker (`` `@<value>` `` — see
+ * {@link wrapAtomMention}) into the current text accumulator, so the
+ * atom's position and value round-trip through JSONL on replay.
+ * Single pass, O(n) in `text.length`.
  */
 export function buildWirePayload(
   text: string,
@@ -189,8 +192,13 @@ export function buildWirePayload(
       continue;
     }
     // Non-image, bytes-less, or otherwise not promoted to an image
-    // block — substitute the atom's value into the current text run.
-    textBuf += atom.value;
+    // block — substitute the atom's value into the current text run
+    // wrapped as a backtick-`@` mention marker so the atom's position
+    // and value round-trip through JSONL on replay. See
+    // {@link wrapAtomMention} for the marker syntax + rationale; the
+    // substrate synthesizer reverses this on the way back via
+    // {@link parseAtomMentionSegments}.
+    textBuf += wrapAtomMention(atom.value);
   }
   flushText();
 

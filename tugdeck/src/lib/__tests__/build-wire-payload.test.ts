@@ -77,14 +77,14 @@ describe("buildWirePayload — empty / trivial", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildWirePayload — non-image atom substitution", () => {
-  test("single file atom substitutes its value into the text block", () => {
+  test("single file atom substitutes its value wrapped as a backtick-`@` mention marker", () => {
     const store = createAtomBytesStore();
     const { content } = buildWirePayload(
       `Read ${C} please.`,
       [fileAtom("README.md")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "Read README.md please." }]);
+    expect(content).toEqual([{ type: "text", text: "Read `@README.md` please." }]);
   });
 
   test("multiple file atoms substitute in document order into one coalesced text block", () => {
@@ -94,7 +94,7 @@ describe("buildWirePayload — non-image atom substitution", () => {
       [fileAtom("a.ts"), fileAtom("b.ts")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "Compare a.ts and b.ts." }]);
+    expect(content).toEqual([{ type: "text", text: "Compare `@a.ts` and `@b.ts`." }]);
   });
 
   test("doc atom substitutes like a file atom", () => {
@@ -104,10 +104,10 @@ describe("buildWirePayload — non-image atom substitution", () => {
       [docAtom("docs/intro.md")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "Read docs/intro.md." }]);
+    expect(content).toEqual([{ type: "text", text: "Read `@docs/intro.md`." }]);
   });
 
-  test("link atom substitutes its URL", () => {
+  test("link atom substitutes its URL inside the marker", () => {
     const store = createAtomBytesStore();
     const { content } = buildWirePayload(
       `See ${C}.`,
@@ -115,18 +115,18 @@ describe("buildWirePayload — non-image atom substitution", () => {
       store,
     );
     expect(content).toEqual([
-      { type: "text", text: "See https://example.com/x." },
+      { type: "text", text: "See `@https://example.com/x`." },
     ]);
   });
 
-  test("command atom substitutes its name", () => {
+  test("command atom substitutes its name inside the marker", () => {
     const store = createAtomBytesStore();
     const { content } = buildWirePayload(
       `Run ${C}`,
       [commandAtom("/help")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "Run /help" }]);
+    expect(content).toEqual([{ type: "text", text: "Run `@/help`" }]);
   });
 
   test("atoms at boundaries (start, end) substitute correctly", () => {
@@ -136,7 +136,7 @@ describe("buildWirePayload — non-image atom substitution", () => {
       [fileAtom("a.ts"), fileAtom("b.ts")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "a.ts and b.ts" }]);
+    expect(content).toEqual([{ type: "text", text: "`@a.ts` and `@b.ts`" }]);
   });
 
   test("adjacent atoms with no intervening text", () => {
@@ -146,7 +146,22 @@ describe("buildWirePayload — non-image atom substitution", () => {
       [fileAtom("x"), fileAtom("y"), fileAtom("z")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "xyz" }]);
+    expect(content).toEqual([{ type: "text", text: "`@x``@y``@z`" }]);
+  });
+
+  test("backtick-in-value falls back to plain substitution (no broken marker)", () => {
+    // A file path containing a literal backtick can't ride inside
+    // a markdown-style marker; the wrap helper detects and falls
+    // back to the original behaviour for that one atom. Lossy
+    // round-trip (no chip on replay) but no broken span the parser
+    // would mis-identify.
+    const store = createAtomBytesStore();
+    const { content } = buildWirePayload(
+      `Got ${C}.`,
+      [fileAtom("weird`name")],
+      store,
+    );
+    expect(content).toEqual([{ type: "text", text: "Got weird`name." }]);
   });
 });
 
@@ -232,24 +247,27 @@ describe("buildWirePayload — image content blocks", () => {
     ]);
   });
 
-  test("image atom without an id substitutes its value as text only", () => {
+  test("image atom without an id substitutes as a mention marker (no bytes → non-image branch)", () => {
     const store = createAtomBytesStore();
     const { content } = buildWirePayload(
       `Decoration: ${C}`,
       [imageAtom("decor.png")], // no id
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "Decoration: decor.png" }]);
+    // Without an id the atom can't ride as an image block; it falls
+    // through to the non-image branch and substitutes as a backtick-`@`
+    // marker — preserving its label on replay (as a "file" chip).
+    expect(content).toEqual([{ type: "text", text: "Decoration: `@decor.png`" }]);
   });
 
-  test("image atom whose id is missing from the store substitutes as text only", () => {
+  test("image atom whose id is missing from the store substitutes as a mention marker", () => {
     const store = createAtomBytesStore();
     const { content } = buildWirePayload(
       `${C}`,
       [imageAtom("missing.png", "evicted-id")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "missing.png" }]);
+    expect(content).toEqual([{ type: "text", text: "`@missing.png`" }]);
   });
 });
 
@@ -325,7 +343,7 @@ describe("buildWirePayload — mixed atom sequences", () => {
         type: "image",
         source: { type: "base64", media_type: "image/png", data: "AAA=" },
       },
-      { type: "text", text: " README.md " },
+      { type: "text", text: " `@README.md` " },
       {
         type: "image",
         source: { type: "base64", media_type: "image/jpeg", data: "CCC=" },
@@ -366,7 +384,7 @@ describe("buildWirePayload — defensive count handling", () => {
     // First placeholder gets the atom; the next two pass through as
     // literal U+FFFC characters inside the same coalesced text block.
     expect(content).toEqual([
-      { type: "text", text: `only-one.ts ${C} ${C}` },
+      { type: "text", text: `\`@only-one.ts\` ${C} ${C}` },
     ]);
   });
 
@@ -377,7 +395,7 @@ describe("buildWirePayload — defensive count handling", () => {
       [fileAtom("a.ts"), fileAtom("b.ts"), fileAtom("c.ts")],
       store,
     );
-    expect(content).toEqual([{ type: "text", text: "Just a.ts." }]);
+    expect(content).toEqual([{ type: "text", text: "Just `@a.ts`." }]);
   });
 });
 
@@ -446,7 +464,7 @@ describe("buildWirePayload — output shape stability", () => {
       store,
     );
     expect(content).toEqual([
-      { type: "text", text: `🚀 a.ts — “quoted” b.ts.` },
+      { type: "text", text: `🚀 \`@a.ts\` — “quoted” \`@b.ts\`.` },
     ]);
   });
 });
