@@ -10,6 +10,8 @@ import {
   FeedIdValue,
   Frame,
   FrameFlags,
+  HEADER_SIZE,
+  MAX_PAYLOAD_SIZE,
   decodeFrame,
   encodeFrame,
   controlFrame,
@@ -85,6 +87,42 @@ const MAX_RETRY_DELAY_MS = 30000;
  */
 export class TugConnection {
   private ws: WebSocket | null = null;
+
+  /**
+   * Inbound byte buffer for binary frames. The tugcast → tugdeck WS
+   * path runs through Vite's `/ws` proxy (`http-proxy` under the
+   * hood), which does NOT preserve WebSocket message boundaries
+   * end-to-end for large messages: a single `Message::Binary` from
+   * tugcast can arrive at the browser as multiple `ws.onmessage`
+   * events (split), and back-to-back small frames can arrive
+   * coalesced into one (merged). The browser's WS contract atomizes
+   * per-frame on its end, but the proxy hands it bytes in chunks the
+   * proxy itself decided on.
+   *
+   * The robust fix is byte-level reassembly here: accumulate every
+   * inbound `ArrayBuffer` into a buffer, then peel off as many
+   * complete protocol frames as the buffer currently contains
+   * (header + length). One framing layer drives the reads; the WS
+   * message boundary is treated as an opaque chunk boundary. This
+   * is the same pattern tugcast's stdin parser uses on the Rust
+   * side (`BufReader::lines`) and the same pattern any TCP-style
+   * stream consumer uses.
+   *
+   * Defensive against:
+   *  - One big frame split across N ws.onmessage events (Vite's
+   *    proxy fragmenting a large payload — surfaced as "Unexpected
+   *    identifier" + base64-looking JSON parse errors when the
+   *    second chunk's bytes get treated as a new frame's header).
+   *  - Multiple small frames coalesced into one ws.onmessage (loses
+   *    every frame after the first under the old "one decode per
+   *    message" handler).
+   *  - The handshake phase: a binary frame arriving before the
+   *    handshake text reply (race-tolerant — the handshake branch
+   *    leaves this buffer untouched).
+   *
+   * Reset on `onclose` so a reconnect starts with an empty buffer.
+   */
+  private rxBuffer: Uint8Array = new Uint8Array(0);
   private callbacks: Map<number, FrameCallback[]> = new Map();
   private lastPayload: Map<number, Uint8Array> = new Map();
   private disconnectStateCallbacks: Array<DisconnectStateCallback> = [];
@@ -217,14 +255,13 @@ export class TugConnection {
       // arriving garbled is a separate problem).
       this.lastFrameAt = Date.now();
 
-      // Normal mode: binary frames
+      // Normal mode: binary frames. Accumulate bytes into `rxBuffer`
+      // and peel complete frames; see the `rxBuffer` docstring for
+      // why a stream-style reassembler is required even though
+      // WebSocket is in principle message-framed.
       if (event.data instanceof ArrayBuffer) {
-        try {
-          const frame = decodeFrame(event.data);
-          this.dispatch(frame.feedId, frame.payload);
-        } catch (error) {
-          console.error("tugdeck: failed to decode frame:", error);
-        }
+        this.absorbBytes(new Uint8Array(event.data));
+        this.drainFrames();
       }
     };
 
@@ -242,6 +279,10 @@ export class TugConnection {
       // frames, since the post-reconnect handshake will replay
       // whatever is current. See [D05].
       this.lastPayload.clear();
+      // Reset the inbound reassembly buffer — any partial frame held
+      // across the close belongs to the prior connection and must
+      // not bleed into post-reconnect parsing.
+      this.rxBuffer = new Uint8Array(0);
 
       // Store close info for banner display
       this.lastCloseCode = event.code;
@@ -442,6 +483,80 @@ export class TugConnection {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
+    }
+  }
+
+  /**
+   * Append `bytes` to the inbound reassembly buffer. Allocates a
+   * fresh Uint8Array (Uint8Array doesn't grow in place); the
+   * `rxBuffer` reference is replaced so the next call sees the
+   * concatenated view. Cheap in the typical case (small frame, no
+   * carryover) — one ~few-KB copy per ws.onmessage.
+   */
+  private absorbBytes(bytes: Uint8Array): void {
+    if (this.rxBuffer.length === 0) {
+      // Fast path: empty buffer, just hold the incoming view.
+      this.rxBuffer = bytes;
+      return;
+    }
+    const next = new Uint8Array(this.rxBuffer.length + bytes.length);
+    next.set(this.rxBuffer, 0);
+    next.set(bytes, this.rxBuffer.length);
+    this.rxBuffer = next;
+  }
+
+  /**
+   * Peel complete frames from `rxBuffer` and dispatch them. Stops at
+   * the first incomplete frame (header without enough payload, or
+   * buffer shorter than the header). Survives partial-header arrivals
+   * — `rxBuffer.length < HEADER_SIZE` exits the loop and the
+   * remaining bytes wait for the next ws.onmessage to complete the
+   * header.
+   *
+   * On a `PayloadTooLarge` (length field exceeds `MAX_PAYLOAD_SIZE`),
+   * the frame is unrecoverable — the buffer is desynced from the
+   * sender's frame stream. Log loudly and reset the buffer so the
+   * next legitimate frame arrives clean; the lost frame counts as a
+   * dropped wire event the same way a network packet drop would.
+   */
+  private drainFrames(): void {
+    while (this.rxBuffer.length >= HEADER_SIZE) {
+      // Read the length field (BE u32 at offset 2). Avoid the
+      // `decodeFrame` helper because it allocates a Frame object even
+      // when we just want to check if enough bytes are present.
+      const view = new DataView(
+        this.rxBuffer.buffer,
+        this.rxBuffer.byteOffset,
+        this.rxBuffer.byteLength,
+      );
+      const length = view.getUint32(2, false);
+      if (length > MAX_PAYLOAD_SIZE) {
+        console.error(
+          `tugdeck: frame header reports oversized payload (${length} > ${MAX_PAYLOAD_SIZE}); resetting buffer`,
+        );
+        this.rxBuffer = new Uint8Array(0);
+        return;
+      }
+      const frameSize = HEADER_SIZE + length;
+      if (this.rxBuffer.length < frameSize) {
+        // Wait for more bytes. The current rxBuffer holds a partial
+        // frame — leave it intact for the next ws.onmessage.
+        return;
+      }
+      // We have a complete frame. Slice it (copy) so the payload
+      // outlives subsequent buffer reallocations, then advance the
+      // buffer past the consumed bytes.
+      const frameBytes = this.rxBuffer.slice(0, frameSize);
+      this.rxBuffer = this.rxBuffer.slice(frameSize);
+      // The frame's underlying ArrayBuffer is the slice's own (slice
+      // copies), so decodeFrame's view is safe even after we mutate
+      // rxBuffer above.
+      try {
+        const frame = decodeFrame(frameBytes.buffer);
+        this.dispatch(frame.feedId, frame.payload);
+      } catch (error) {
+        console.error("tugdeck: failed to decode frame:", error);
+      }
     }
   }
 

@@ -152,6 +152,8 @@ async function captureStdout(
   }) as typeof Bun.write;
   try {
     await fn();
+    const { drainPendingWrites } = await import("../ipc.ts");
+    await drainPendingWrites();
   } finally {
     (Bun as unknown as { write: typeof Bun.write }).write = originalWrite;
   }

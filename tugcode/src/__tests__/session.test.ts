@@ -124,6 +124,11 @@ async function captureIpcOutput(fn: () => Promise<void>): Promise<unknown[]> {
 
   try {
     await fn();
+    // writeLine is serialized through a Promise chain in `ipc.ts`;
+    // drain it before restoring the mock so all queued writes have
+    // hit the capture above.
+    const { drainPendingWrites } = await import("../ipc.ts");
+    await drainPendingWrites();
   } finally {
     (Bun as any).write = originalWrite;
   }

@@ -167,13 +167,21 @@ async function main() {
     if (isProtocolInit(msg)) {
       // Protocol handshake
       if (msg.version !== 1) {
-        writeLine({
-          type: "error",
-          message: `Unsupported protocol version: ${msg.version}`,
-          recoverable: false,
-          ipc_version: 2,
-        });
-        process.exit(1);
+        // Use writeLineAndExit so the error frame is flushed to
+        // stdout before the process exits. With writeLine being
+        // serialized through a promise chain, a plain
+        // `writeLine(...); process.exit(1)` would race the queued
+        // microtask against the exit and silently drop the frame.
+        await writeLineAndExit(
+          {
+            type: "error",
+            message: `Unsupported protocol version: ${msg.version}`,
+            recoverable: false,
+            ipc_version: 2,
+          },
+          1,
+        );
+        return; // unreachable in production; guard for tests that stub process.exit
       }
 
       // Stub mode: synthesize the handshake from the replay engine
