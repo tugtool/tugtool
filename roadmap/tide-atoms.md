@@ -1129,7 +1129,12 @@ No new files, no file renames. Modifications, grouped by layer:
 
 - [`tugdeck/src/lib/code-session-store.ts:279`](../tugdeck/src/lib/code-session-store.ts) — one comment line mentioning `CodeRowCell`.
 
-**Best-effort enumeration only.** The list above is what the audit surfaced; the typed `Participant` / `TideTranscriptCellKind` / `TideZ1BParticipant` rename forces tsc to expose any other consumer. Task pre-5.g closes the loop with an explicit final grep for surviving hits.
+**Tuglaws documentation drift (markdown — not tsc-protected):**
+
+- [`tuglaws/state-preservation.md:19`](../tuglaws/state-preservation.md) — the canonical L23/L26 example narrates the chain `reducer → snapshot → TideTranscriptDataSource.rowAt → CodeRowCell`. The cell name in this load-bearing tuglaws example becomes `AssistantTurnCell` post-rename.
+- [`tuglaws/design-decisions.md:243`](../tuglaws/design-decisions.md) (D96) — references `CodeRowCell` in the post-unification render contract that ties per-turn-path seeding to the assistant row's observer pattern.
+
+**Best-effort enumeration only.** The list above is what the audit surfaced; the typed `Participant` / `TideTranscriptCellKind` / `TideZ1BParticipant` rename forces tsc to expose any other consumer. Task pre-5.i closes the loop with an explicit final grep for surviving hits — including against `tuglaws/` and `docs/`, neither of which gets compile-time coverage.
 
 #### Files explicitly NOT touched {#step-pre-5-exempt}
 
@@ -1144,9 +1149,10 @@ No new files, no file renames. Modifications, grouped by layer:
 - [ ] **pre-5.c — Cell-local helpers.** Rename `CODE_DEFAULT_IDENTIFIER` → `ASSISTANT_DEFAULT_IDENTIFIER`; `ESTIMATED_HEIGHT_CODE` → `ESTIMATED_HEIGHT_ASSISTANT`; `isCodeRow` → `isAssistantRow`.
 - [ ] **pre-5.d — Literal-site sweep.** Rewrite every `"code"` string in the touched files that the type-rename surfaced: ternary results, renderer-map keys, JSX `participant="code"` props, `kind === "code"` reads, etc. Verify by tsc green.
 - [ ] **pre-5.e — DOM + CSS.** Update `[data-participant="code"]` selector in `tug-transcript-entry.css` to `"assistant"`. Confirm the DOM `data-participant` attribute the JSX emits flips to `"assistant"` (it should ride on the renamed `Participant` type — verify by inspecting a rendered card in the browser).
-- [ ] **pre-5.f — Doc-blocks + comments.** Update module-header docstrings and in-file tuglaws comments in the touched files; sweep `CodeRowCell` / `UserRowCell` / `participant="code"` mentions in comments. Includes the stray `code-session-store.ts:279` comment.
-- [ ] **pre-5.g — Test sweep.** Update `tide-card-z1c.test.ts` and `tide-transcript-data-source.test.ts` to the renamed identifiers and `kind` literals. Run the affected suites to confirm green.
-- [ ] **pre-5.h — Final audit grep.** Run `grep -rn '"code"\|UserRowCell\|CodeRowCell\|CODE_DEFAULT_IDENTIFIER\|ESTIMATED_HEIGHT_CODE\|isCodeRow' tugdeck/src/components/tugways tugdeck/src/lib/tide-transcript-data-source.ts tugdeck/src/lib/__tests__`. Every surviving hit must be one of the explicitly-exempt non-participant survivors (see "Files explicitly NOT touched" above); document each survivor inline in the commit so a reader can verify nothing was missed.
+- [ ] **pre-5.f — In-file doc-blocks + comments.** Update module-header docstrings and in-file tuglaws comments in the touched source files; sweep `CodeRowCell` / `UserRowCell` / `participant="code"` mentions in comments. Includes the stray `code-session-store.ts:279` comment.
+- [ ] **pre-5.g — Tuglaws documentation update.** Update the two `tuglaws/` markdown sites that reference `CodeRowCell` (state-preservation.md:19 canonical L23/L26 example; design-decisions.md:243 D96 render contract). Markdown isn't tsc-protected, so these would otherwise rot into dead-symbol documentation the moment the source rename lands.
+- [ ] **pre-5.h — Test sweep.** Update `tide-card-z1c.test.ts` and `tide-transcript-data-source.test.ts` to the renamed identifiers and `kind` literals. Run the affected suites to confirm green.
+- [ ] **pre-5.i — Final audit grep.** Run `grep -rn '"code"\|UserRowCell\|CodeRowCell\|CODE_DEFAULT_IDENTIFIER\|ESTIMATED_HEIGHT_CODE\|isCodeRow' tugdeck/src/components/tugways tugdeck/src/lib/tide-transcript-data-source.ts tugdeck/src/lib/__tests__ tuglaws/ docs/`. Every surviving hit must be one of the explicitly-exempt non-participant survivors (see "Files explicitly NOT touched" above); document each survivor inline in the commit so a reader can verify nothing was missed. Markdown surfaces (`tuglaws/`, `docs/`) are explicitly in scope because tsc doesn't cover them.
 
 #### Tests {#step-pre-5-tests}
 
@@ -1161,7 +1167,7 @@ Pure rename — no new behaviour. The gates are existence-and-green:
 - [ ] `cd tugdeck && bun test` — full suite green.
 - [ ] `cd tugdeck && bun run check` — tsc clean (the typed literal rename is the enforcement frontier; clean tsc means every typed consumer was updated).
 - [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
-- [ ] Final audit grep (task pre-5.h above) returns only the explicitly-exempt survivors.
+- [ ] Final audit grep (task pre-5.i above) returns only the explicitly-exempt survivors.
 - [ ] Manual: open Tug.app — transcript still renders user + Claude rows correctly; Z1B end-state row shows correct styling under its renamed `participant="assistant"` attribute; no visual regression.
 
 #### Out of scope {#step-pre-5-out-of-scope}
