@@ -204,20 +204,40 @@ async fn main() {
     // to the feed tasks it spawns internally.
     let cancel = CancellationToken::new();
 
+    // Shared FILETREE-response broadcast channel. Every workspace's
+    // `FileTreeFeed` publishes responses here; the router subscribes
+    // once (below, via `add_broadcast_senders`) and fans out to every
+    // connected client. JS-side filtering by `workspace_key` routes the
+    // response to the right card. Buffer of 64 frames is comfortable
+    // for FILETREE traffic (one frame per typed character, deduplicated
+    // by JS) — a Lagged slow client drops some completions but doesn't
+    // crash. Per `roadmap/tide-atoms.md#step-pre-4`.
+    let (ft_response_tx, _) = broadcast::channel::<Frame>(64);
+
     // Create the bootstrap WorkspaceRegistry. In W1 this holds exactly one
     // entry (the startup `--source-tree`); W2 adds per-session `get_or_create`
     // calls from AgentSupervisor::spawn_session_worker. The registry owns
     // the FileWatcher, FilesystemFeed, FileTreeFeed, and GitFeed plus their
     // spawned tasks — see feeds/workspace_registry.rs and roadmap T3.0.W1.
-    let registry = Arc::new(WorkspaceRegistry::new());
+    let registry = Arc::new(WorkspaceRegistry::new(ft_response_tx.clone()));
     let bootstrap = registry
         .get_or_create(&watch_dir, cancel.clone())
         .expect("bootstrap workspace must be a valid directory");
 
     // Adapter: router sends raw Frames on FILETREE_QUERY; parse JSON into
     // FileTreeQuery and forward to the workspace's FileTreeFeed.
+    //
+    // Routing strategy (`roadmap/tide-atoms.md#step-pre-4`): if the JS payload
+    // carries a `root` field that resolves to a registered workspace, send
+    // to that workspace's `ft_query_tx`. Otherwise fall back to the
+    // bootstrap (the `--source-tree` workspace) — preserves single-workspace
+    // behavior for legacy callers and the dev-loop case where no per-card
+    // session has registered a project yet. A `root` that does not match
+    // any registered workspace falls through to bootstrap as a defensive
+    // default (the legacy `[D09]` retarget machinery still works there).
     let (ft_input_tx, mut ft_input_rx) = mpsc::channel::<Frame>(16);
-    let ft_adapter_tx = bootstrap.ft_query_tx.clone();
+    let ft_adapter_registry = Arc::clone(&registry);
+    let bootstrap_ft_query_tx = bootstrap.ft_query_tx.clone();
     tokio::spawn(async move {
         while let Some(frame) = ft_input_rx.recv().await {
             #[derive(serde::Deserialize)]
@@ -231,7 +251,9 @@ async fn main() {
                         query: raw.query,
                         root: raw.root.map(PathBuf::from),
                     };
-                    let _ = ft_adapter_tx.send(ftq).await;
+                    ft_adapter_registry
+                        .route_filetree_query(ftq, &bootstrap_ft_query_tx)
+                        .await;
                 }
                 Err(e) => {
                     warn!(
@@ -504,6 +526,27 @@ async fn main() {
 
     // Register snapshot watches. `stats_build_rx` is pushed only in debug
     // builds since BuildStatusCollector is gated out of release.
+    //
+    // `bootstrap.ft_watch_rx` is INCLUDED here even though FILETREE
+    // responses now flow primarily through the shared broadcast
+    // channel: the watch carries the bootstrap's initial empty
+    // `FileTreeSnapshot`, and the router's "deliver latest value on
+    // connect" pass for snapshot_watches is what causes the tide card
+    // to see *any* FILETREE frame before a query has been sent. The
+    // tide card gates rendering on `feedData.size > 0` across
+    // `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]`; without
+    // this initial empty frame, a brand-new card with no session
+    // bound hangs at "Loading..." indefinitely. The broadcast does
+    // not solve this on its own — broadcast carries no retained
+    // history, so clients connecting after the initial publish miss
+    // the empty snapshot.
+    //
+    // Bootstrap's *subsequent* responses (when a card is bound to the
+    // tugtool repo) are written to BOTH the watch and the broadcast,
+    // so JS receives them twice. Idempotent — the second parse
+    // produces the same snapshot. Per-card workspaces write only to
+    // the broadcast (their watches are never registered with the
+    // router), so they don't double-publish.
     #[allow(unused_mut)]
     let mut snapshot_watches = vec![
         bootstrap.fs_watch_rx.clone(),
@@ -520,6 +563,12 @@ async fn main() {
     }
     // SESSION_METADATA and session_init snapshots moved to supervisor (Step 8).
     feed_router.add_snapshot_watches(snapshot_watches);
+    // Multi-workspace FILETREE response stream — registered once. Every
+    // connected client subscribes its own broadcast receiver in
+    // `ClientState::Live` and forwards every frame to the socket. JS
+    // filters by `workspace_key` to dispatch responses to the right
+    // card. Per `roadmap/tide-atoms.md#step-pre-4`.
+    feed_router.add_broadcast_senders(vec![ft_response_tx]);
 
     // Filesystem, filetree, and git feed tasks are owned by the
     // WorkspaceRegistry's bootstrap entry — spawned inside

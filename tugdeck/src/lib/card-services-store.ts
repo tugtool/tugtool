@@ -248,7 +248,16 @@ class CardServicesStore {
       undefined,
       workspaceFilter,
     );
-    const fileTreeStore = new FileTreeStore(fileTreeFeedStore, FeedId.FILETREE);
+    // Pass the card's projectDir so FILETREE_QUERY frames carry `root`
+    // and tugcast routes them to this card's workspace feed (with its
+    // .tugattachignore + secret-file filter applied) rather than the
+    // bootstrap (tugtool repo) feed. See
+    // `roadmap/tide-atoms.md#step-pre-4`.
+    const fileTreeStore = new FileTreeStore(
+      fileTreeFeedStore,
+      FeedId.FILETREE,
+      binding.projectDir,
+    );
     const fileCompletionProvider = fileTreeStore.getFileCompletionProvider();
 
     // Bind success → prepend this card's project path to the tide

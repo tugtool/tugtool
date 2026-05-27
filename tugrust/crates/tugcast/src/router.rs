@@ -167,6 +167,15 @@ pub struct FeedRouter {
     input_sinks: HashMap<FeedId, mpsc::Sender<Frame>>,
     /// Snapshot watch receivers (delivered to every client on connect).
     snapshot_watches: Vec<watch::Receiver<Frame>>,
+    /// Multi-producer broadcast senders. Each client clones the FeedRouter
+    /// and at `ClientState::Live` calls `subscribe()` on every entry here
+    /// to get its own receiver, then spawns a forwarder that `recv()`s
+    /// frames and pushes them to the socket. Unlike `snapshot_watches`
+    /// (which carry "latest value" with collision risk under concurrent
+    /// producers), this list holds event streams safe to fan in from
+    /// many producers. Used by the FILETREE multi-workspace response
+    /// path per `roadmap/tide-atoms.md#step-pre-4`.
+    snapshot_broadcast_senders: Vec<broadcast::Sender<Frame>>,
 
     /// Tracks which client owns each `(input FeedId, tug_session_id?)` key
     /// (P5 single-writer guard, relaxed per [D08]).
@@ -205,6 +214,7 @@ impl FeedRouter {
             stream_outputs: HashMap::new(),
             input_sinks: HashMap::new(),
             snapshot_watches: Vec::new(),
+            snapshot_broadcast_senders: Vec::new(),
             input_ownership: Arc::new(Mutex::new(HashMap::new())),
             client_id_counter: Arc::new(AtomicU64::new(1)),
             supervisor: None,
@@ -242,6 +252,17 @@ impl FeedRouter {
     /// Add snapshot watches (delivered on connect + forwarded on change).
     pub(crate) fn add_snapshot_watches(&mut self, watches: Vec<watch::Receiver<Frame>>) {
         self.snapshot_watches.extend(watches);
+    }
+
+    /// Add multi-producer broadcast senders. Each connected client
+    /// subscribes a fresh receiver from every sender in this list and
+    /// spawns a forwarder task at `ClientState::Live`. Unlike
+    /// `add_snapshot_watches` there is no "deliver on connect" pass —
+    /// broadcast streams are event-only (no retained latest value), so
+    /// clients only see frames published *after* their forwarder
+    /// subscribes. Used for the FILETREE multi-workspace response fan-in.
+    pub(crate) fn add_broadcast_senders(&mut self, senders: Vec<broadcast::Sender<Frame>>) {
+        self.snapshot_broadcast_senders.extend(senders);
     }
 
     /// Assign a unique client ID.
@@ -740,6 +761,37 @@ async fn handle_client(mut socket: WebSocket, mut router: FeedRouter) {
                         }
                     });
                 }
+
+                // Broadcast streams: subscribe a fresh receiver per sender
+                // and forward into the same merged snapshot channel. No
+                // "initial value" delivery — broadcast carries only
+                // future frames. Lagged errors (slow client falling
+                // behind the buffer) log and continue.
+                let snapshot_broadcasts =
+                    std::mem::take(&mut router.snapshot_broadcast_senders);
+                for tx in snapshot_broadcasts {
+                    let mut bcast_rx = tx.subscribe();
+                    let snap_tx_clone = snap_tx.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            match bcast_rx.recv().await {
+                                Ok(frame) => {
+                                    if snap_tx_clone.send(frame).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                Err(broadcast::error::RecvError::Lagged(n)) => {
+                                    warn!(
+                                        skipped = n,
+                                        "broadcast snapshot stream lagged"
+                                    );
+                                }
+                                Err(broadcast::error::RecvError::Closed) => break,
+                            }
+                        }
+                    });
+                }
+
                 drop(snap_tx);
 
                 let mut heartbeat_interval = time::interval(HEARTBEAT_INTERVAL);
@@ -1471,7 +1523,7 @@ mod tests {
         let (control_tx, _) = broadcast::channel(16);
         let factory: SpawnerFactory = Arc::new(|| unreachable!("no spawner"));
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
-        let registry = Arc::new(WorkspaceRegistry::new());
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let router_cancel = CancellationToken::new();
         let (sup, register_rx) = AgentSupervisor::new(
             state_tx,

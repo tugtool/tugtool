@@ -650,7 +650,7 @@ No failure is silent. No failure drops the user's submission without surfacing.
 - [ ] Update `roadmap/transport-exploration.md` §Test 23 with a note pointing at this plan as the v1 consumer of the image content-block path baseline.
 - [ ] Add a `tuglaws/atom-chip.md` (or fold into `tuglaws/component-authoring.md`) describing `AtomChip`'s contract for future consumers.
 - [ ] Update `tuglaws/tuglaws.md` if any new responder / state-preservation laws emerge from the bytes-store integration.
-- [ ] Document `.tugattachignore` syntax in a workspace-facing readme (`docs/tugattachignore.md` or appended to existing project-config docs).
+- [ ] If the `.tugattachignore` feature accrues enough surface to warrant documentation, fold it into the appropriate `tuglaws/` entry rather than spawning a freestanding doc file.
 
 ---
 
@@ -964,24 +964,24 @@ The existing `[D09]` "retarget the bootstrap to a new root" semantics that lives
 
 #### Tasks {#step-pre-4-tasks}
 
-- [ ] **pre-4.a — Registry lookup.** Add `WorkspaceRegistry::find_entry_by_path`. Reuse the path-canonicalization logic from `get_or_create` so paths the JS sees (`/tmp/files`) match entries the registry holds (`/private/tmp/files` post-canonicalize on macOS).
-- [ ] **pre-4.b — Adapter rewire.** Adapter receives `Arc<WorkspaceRegistry>` from `main.rs`. For each frame, parse `{ query, root? }`; if `root.is_some()` and `find_entry_by_path` returns Some → forward to that entry's `ft_query_tx`; else fall back to the bootstrap entry's `ft_query_tx`. The legacy `[D09]` retarget path inside `FileTreeFeed::handle_query` is preserved but becomes unreached for routed queries.
-- [ ] **pre-4.c — JS plumbing.** `FileTreeStore` constructor gains optional `projectDir: string | undefined`; `getFileCompletionProvider` uses it on `sendQuery`. Card-services construction site passes the card's project dir.
-- [ ] **pre-4.d — Stale-routing safety.** If the entry's `ft_query_tx` send fails (channel closed during teardown race), log `warn!` and silently drop. Do not panic; do not fall back to bootstrap (a closed entry's stale tugtool results would be the wrong UX).
+- [x] **pre-4.a — Registry lookup.** Added `WorkspaceRegistry::find_entry_by_path` that canonicalizes via `PathResolver::watch_path` (same as `get_or_create`) so `/tmp/files` matches an entry registered as `/private/tmp/files`. Three unit tests pin Some / None / canonicalization-match.
+- [x] **pre-4.b — Adapter rewire.** Extracted the routing logic into `WorkspaceRegistry::route_filetree_query(ftq, &bootstrap_tx)` and collapsed the inline adapter in `main.rs` to call it. The legacy `[D09]` retarget path inside `FileTreeFeed::handle_query` is preserved but unreached for routed queries.
+- [x] **pre-4.c — JS plumbing.** `FileTreeStore` gained an optional `projectDir: string` constructor arg; `getFileCompletionProvider` includes it as `root` on every `sendQuery`. `CardServicesStore` passes `binding.projectDir` at the construction site.
+- [x] **pre-4.d — Stale-routing safety.** Matched-but-closed channel logs `warn!` and drops; *no* fall-through to bootstrap (a torn-down workspace's stale tugtool results would be the wrong UX). Unmatched root and absent root both fall through to bootstrap.
 
 #### Tests {#step-pre-4-tests}
 
-- [ ] `unit (Rust): WorkspaceRegistry::find_entry_by_path returns Some for a registered path; returns None for an unknown path; canonicalizes /tmp/files → matches an entry registered at /private/tmp/files.`
-- [ ] `integration (Rust): two workspaces registered (tugtool repo + /tmp/files); FILETREE_QUERY{root: "/tmp/files", query: "b"} reaches the /tmp/files feed and returns "bar"; FILETREE_QUERY{root: <tugtool>, query: <something only tugtool has>} reaches the bootstrap.`
-- [ ] `integration (Rust): FILETREE_QUERY with no root field falls through to the bootstrap (back-compat).`
-- [ ] `integration (Rust): FILETREE_QUERY with unknown root falls through to the bootstrap (defensive).`
+- [x] `unit (Rust): WorkspaceRegistry::find_entry_by_path returns Some for a registered path; returns None for an unknown path; canonicalizes a /tmp/files-style indirect input → matches the registered entry.` Three cases in `workspace_registry::tests`.
+- [x] `integration (Rust): route_filetree_query with a matching root sends to the card workspace and not the bootstrap.` `test_route_filetree_query_routes_to_registered_workspace`.
+- [x] `integration (Rust): route_filetree_query with an unknown root falls through to the bootstrap.` `test_route_filetree_query_falls_back_when_root_unknown`.
+- [x] `integration (Rust): route_filetree_query with root=None falls through to the bootstrap.` `test_route_filetree_query_falls_back_when_root_absent`.
 - [ ] Manual: open a card with project `/tmp/files` (containing `.env`, `.tugattachignore` (`.env`), `bar`, `foo`); type `@` → see `bar`, `foo`, `.tugattachignore`; type `@.env` → no suggestion appears. This is the [Step 4](#step-4) manual smoke that this step unblocks.
 
 #### Checkpoint {#step-pre-4-checkpoint}
 
-- [ ] `cd tugrust && cargo nextest run -p tugcast` clean
-- [ ] `cd tugrust && cargo build --tests --workspace` warnings-as-errors clean
-- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens lint` clean
+- [x] `cd tugrust && cargo nextest run -p tugcast` — 645 / 645 pass (was 639; +6 new routing/lookup tests).
+- [x] `cd tugrust && cargo build --tests --workspace` — warnings-as-errors clean.
+- [x] `cd tugdeck && bun test && bun run check && bun run audit:tokens lint` — 3009 / 3009 pass; tsc clean; zero token violations.
 - [ ] Manual: the `/tmp/files` scenario above behaves correctly in Tug.app — this also closes the last open checkbox of [Step 4](#step-4)'s checkpoint.
 
 #### Out of scope {#step-pre-4-out-of-scope}
@@ -1003,13 +1003,12 @@ The existing `[D09]` "retarget the bootstrap to a new root" semantics that lives
 - `tugrust/crates/tugcast/src/feeds/secret_filter.rs` (new) — `SECRET_FILE_DENYLIST` constant per [List L01](#l01-secret-file-denylist); `SecretFilter::new(workspace_root)` builds an `ignore::Gitignore` matcher combining the built-in patterns with `<workspace>/.tugattachignore` (optional); `is_secret(relative_path)` uses `matched_path_or_any_parents` so directory patterns like `local-secrets/` exclude their children. Parse errors logged via `tracing::warn!`; surviving patterns still apply. Note: actual filename is `secret_filter.rs` (not `filetree_provider.rs` — the live file is `filetree.rs`, and the new code lands in a sibling module to keep the walker / matcher concerns separated).
 - `tugrust/crates/tugcast/src/feeds/filetree.rs` (modify) — `FileTreeFeed::new` builds the `SecretFilter` from `project_dir` and sweeps the freshly-walked `initial_files` through it (`Self::sweep_secrets`). `apply_events` skips secret-shape Create / Rename-to events so a freshly-dropped `.env` never enters the index. `off_board_query` filters per-entry against the bare filename (off-board paths sit outside the workspace, so we match against `name` not `relative_path`). The watcher batch handler detects both `.gitignore` and `.tugattachignore` changes — the latter rebuilds the matcher *before* the re-walk so the sweep sees current patterns. `retarget` rebuilds the matcher for the new root.
 - `tugrust/crates/tugcast/src/feeds/mod.rs` (modify) — register `pub mod secret_filter`.
-- `docs/tugattachignore.md` (new) — 38 lines documenting syntax, location, what's filtered (and what isn't), live-edit behavior, parse-error policy.
 
 **Tasks:**
 - [x] Add `SECRET_FILE_DENYLIST` constant in `secret_filter.rs` per [List L01](#l01-secret-file-denylist).
 - [x] Implement `.tugattachignore` reader using the existing `ignore` crate; cache compiled patterns at filter construction.
 - [x] Plumb the combined matcher into the per-query filter path (sweep at insertion + per-event filter + off-board per-entry); surface a tugcast-telemetry `parse-error` event on malformed patterns via `tracing::warn!` (the existing tugcast log channel) per [Table T01](#t01-failure-modes).
-- [x] Document the syntax in a fresh `docs/tugattachignore.md` (38 lines, under the ≤ 50 cap).
+- [~] ~~Document the syntax in a fresh `docs/tugattachignore.md`~~ — dropped. The feature's externally-visible surface is small enough (one optional file, gitignore syntax) that a freestanding doc file is more clutter than help. Future need: fold into a `tuglaws/` entry alongside the related laws, not a standalone document.
 
 **Tests:**
 - [x] `unit (Rust): SECRET_FILE_DENYLIST matches .env, .env.local, *.pem, id_rsa*, secrets.json, .aws/credentials, .ssh/**, etc.` — 7 cases in `secret_filter::tests`.

@@ -67,9 +67,20 @@ export class FileTreeStore {
   private _unsubscribeFeed: (() => void) | null = null;
   private _lastPayloadRef: unknown = undefined;
   private _feedId: FeedIdValue;
+  /**
+   * Absolute path of the card's project directory. Tugcast's
+   * `FILETREE_QUERY` adapter uses this as the routing key into its
+   * per-workspace registry. When set, every query carries `root` and
+   * lands at the card's own filetree feed (with its `.tugattachignore`
+   * and built-in secret filter applied). When undefined, queries fall
+   * through to the bootstrap workspace (the tugtool repo, legacy
+   * behavior). Per `roadmap/tide-atoms.md#step-pre-4`.
+   */
+  private _projectDir: string | undefined;
 
-  constructor(feedStore: FeedStore, feedId: FeedIdValue) {
+  constructor(feedStore: FeedStore, feedId: FeedIdValue, projectDir?: string) {
     this._feedId = feedId;
+    this._projectDir = projectDir;
     this._unsubscribeFeed = feedStore.subscribe(() => {
       this._onFeedUpdate(feedStore);
     });
@@ -137,7 +148,11 @@ export class FileTreeStore {
       // Deduplication: only send when query changes.
       if (query !== lastSentQuery) {
         lastSentQuery = query;
-        this.sendQuery(query);
+        // Always include the card's projectDir (when known) as the
+        // `root` field so tugcast routes to the per-card workspace
+        // rather than the bootstrap (tugtool repo). When the field is
+        // undefined, the adapter falls back to the bootstrap.
+        this.sendQuery(query, this._projectDir);
       }
 
       // If the snapshot matches the current query, map fresh results.

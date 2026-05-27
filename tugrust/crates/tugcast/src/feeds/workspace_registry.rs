@@ -106,6 +106,15 @@ pub struct WorkspaceEntry {
     pub project_dir: PathBuf,
     /// Router watch receivers.
     pub fs_watch_rx: watch::Receiver<Frame>,
+    /// Bootstrap workspace's FILETREE response watch — kept on the
+    /// registered snapshot list in `main.rs` because its initial empty
+    /// `FileTreeSnapshot` is what unblocks a brand-new tide card's
+    /// `feedData.size > 0` gate (the broadcast channel carries no
+    /// retained history, so a client connecting after the initial
+    /// publish would otherwise see no FILETREE frame until a query
+    /// is sent). Per-card workspace entries also carry this field —
+    /// it's unread for them but cheap to keep symmetrical with the
+    /// bootstrap.
     pub ft_watch_rx: watch::Receiver<Frame>,
     pub git_watch_rx: watch::Receiver<Frame>,
     /// FILETREE_QUERY input for the adapter in main.rs.
@@ -154,6 +163,7 @@ impl WorkspaceEntry {
         project_dir: PathBuf,
         workspace_key: WorkspaceKey,
         parent_cancel: CancellationToken,
+        ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
     ) -> Arc<Self> {
         // Derive a per-entry child cancel token. Firing this child tears
         // down just this workspace's tasks; the parent (process-wide)
@@ -191,6 +201,7 @@ impl WorkspaceEntry {
             fs_broadcast_tx.clone(),
             ft_query_rx,
             workspace_key.arc(),
+            ft_response_tx,
         );
         let git_feed = GitFeed::new(project_dir.clone(), workspace_key.arc());
 
@@ -248,13 +259,33 @@ pub struct WorkspaceRegistry {
     /// set of spawned tasks. `WorkspaceEntry::new` is synchronous and
     /// never `.await`s while holding the lock.
     inner: Mutex<HashMap<WorkspaceKey, Arc<WorkspaceEntry>>>,
+    /// Shared FILETREE-response broadcast channel. Cloned into each
+    /// `WorkspaceEntry::new` call so every workspace's `FileTreeFeed`
+    /// publishes responses to one place. The router subscribes once
+    /// at the process level. Per `roadmap/tide-atoms.md#step-pre-4`.
+    ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
 }
 
 impl WorkspaceRegistry {
-    pub fn new() -> Self {
+    /// Construct a registry. `ft_response_tx` is the shared broadcast
+    /// channel into which every workspace's `FileTreeFeed` publishes
+    /// its responses; the router subscribes once at the process level
+    /// (see `main.rs`).
+    pub fn new(ft_response_tx: tokio::sync::broadcast::Sender<Frame>) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
+            ft_response_tx,
         }
+    }
+
+    /// Test-only constructor that creates its own throwaway broadcast
+    /// channel. Tests that don't exercise the response path (most of
+    /// them — they assert on watch_rx or on routing inputs) shouldn't
+    /// have to plumb one in.
+    #[cfg(test)]
+    pub fn new_for_test() -> Self {
+        let (ft_response_tx, _) = tokio::sync::broadcast::channel(16);
+        Self::new(ft_response_tx)
     }
 
     /// Look up or construct the workspace entry for `project_dir`.
@@ -309,9 +340,100 @@ impl WorkspaceRegistry {
             return Ok(Arc::clone(existing));
         }
 
-        let entry = WorkspaceEntry::new(project_dir.to_path_buf(), workspace_key.clone(), cancel);
+        let entry = WorkspaceEntry::new(
+            project_dir.to_path_buf(),
+            workspace_key.clone(),
+            cancel,
+            self.ft_response_tx.clone(),
+        );
         map.insert(workspace_key, Arc::clone(&entry));
         Ok(entry)
+    }
+
+    /// Look up the workspace entry whose canonical key matches `project_dir`,
+    /// without creating one if missing.
+    ///
+    /// Uses the same canonicalization step as `get_or_create`
+    /// ([`PathResolver::watch_path`]) so a textually-distinct input that
+    /// resolves to the same directory (`/tmp/files` ↔ `/private/tmp/files`
+    /// on macOS, symlinks, `..`-components) finds an existing entry. Does
+    /// not validate that `project_dir` exists — callers (the
+    /// `FILETREE_QUERY` adapter) pass paths the JS layer believes are
+    /// valid, and a missing-directory case should fall through to the
+    /// bootstrap fallback rather than synthesize a new registry entry.
+    ///
+    /// Returns `None` when no entry matches the canonical key — the
+    /// caller (`main.rs`'s adapter) treats this as "fall back to
+    /// bootstrap" so legacy single-workspace callers continue to work.
+    ///
+    /// Bumps no refcounts; the returned `Arc` carries its own reference
+    /// for the duration of the caller's use. Per
+    /// `roadmap/tide-atoms.md#step-pre-4` and the routing fix that
+    /// unblocks Step 4's manual smoke.
+    pub fn find_entry_by_path(&self, project_dir: &Path) -> Option<Arc<WorkspaceEntry>> {
+        let canonical: String = PathResolver::new(project_dir.to_path_buf())
+            .watch_path()
+            .to_string_lossy()
+            .into_owned();
+        let key = WorkspaceKey(Arc::from(canonical));
+        let map = self.inner.lock().expect("WorkspaceRegistry mutex poisoned");
+        map.get(&key).map(Arc::clone)
+    }
+
+    /// Route a single `FileTreeQuery` to the workspace whose canonical
+    /// key matches `ftq.root`, falling back to `bootstrap_tx` when the
+    /// root is unset or unknown. Per `roadmap/tide-atoms.md#step-pre-4`
+    /// — the FILETREE_QUERY adapter calls this once per inbound frame
+    /// after JSON parsing, so the routing decision lives in one
+    /// testable place rather than buried in `main.rs`'s spawned task.
+    ///
+    /// Behavior:
+    ///  - `ftq.root = Some(path)` and the registry has a matching
+    ///    entry → send to that entry's `ft_query_tx`. On send failure
+    ///    (channel closed — workspace torn down mid-flight), log a
+    ///    `warn!` and drop the query. Deliberately do *not* fall back
+    ///    to bootstrap in this case: a stale workspace's tugtool
+    ///    results would be the wrong UX for a card that's already
+    ///    been disposed.
+    ///  - `ftq.root = Some(path)` but no entry matches → fall through
+    ///    to `bootstrap_tx`. The legacy `[D09]` retarget machinery in
+    ///    `FileTreeFeed::handle_query` still runs there for callers
+    ///    that haven't been updated to use per-card routing.
+    ///  - `ftq.root = None` → fall through to `bootstrap_tx`. Single-
+    ///    workspace and dev-loop callers continue to work unchanged.
+    pub async fn route_filetree_query(
+        &self,
+        ftq: FileTreeQuery,
+        bootstrap_tx: &mpsc::Sender<FileTreeQuery>,
+    ) {
+        // Resolve the routing target first (returns an owned `Arc`, so
+        // it doesn't borrow from `ftq`). This frees `ftq` to be moved
+        // into the subsequent `send(...)` call without a borrow
+        // conflict against `ftq.root`.
+        let target = ftq
+            .root
+            .as_ref()
+            .and_then(|p| self.find_entry_by_path(p));
+        if let Some(entry) = target {
+            // Capture the root for the warn-log up front — `ftq` moves
+            // into `send`. `.unwrap_or_default()` is unreachable in
+            // practice (target is Some only when root is Some) but
+            // keeps the borrow checker happy without an unwrap.
+            let root_display = ftq
+                .root
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            if let Err(err) = entry.ft_query_tx.send(ftq).await {
+                tracing::warn!(
+                    root = %root_display,
+                    error = %err,
+                    "FILETREE_QUERY: matched workspace channel closed",
+                );
+            }
+            return;
+        }
+        let _ = bootstrap_tx.send(ftq).await;
     }
 
     /// Decrement the refcount for `key` and, if it reaches zero, fire
@@ -361,12 +483,6 @@ impl WorkspaceRegistry {
     }
 }
 
-impl Default for WorkspaceRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,7 +505,7 @@ mod tests {
         let dir = TempDir::new().expect("create tempdir");
         let cancel = CancellationToken::new();
 
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
         let entry = registry
             .get_or_create(dir.path(), cancel.clone())
             .expect("bootstrap tempdir is a valid workspace");
@@ -414,7 +530,7 @@ mod tests {
     async fn test_workspace_registry_deduplicates_canonical_paths() {
         let tmp = TempDir::new().expect("create tempdir");
         let cancel = CancellationToken::new();
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
 
         // Two textually-distinct inputs that canonicalize to the same directory.
         let first = registry
@@ -448,13 +564,172 @@ mod tests {
         drain_and_drop(registry, cancel).await;
     }
 
+    // ---- find_entry_by_path (Step pre-4 routing) ----
+
+    #[tokio::test]
+    async fn test_find_entry_by_path_returns_some_for_registered_path() {
+        let tmp = TempDir::new().expect("create tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+
+        let entry = registry
+            .get_or_create(tmp.path(), cancel.clone())
+            .expect("get_or_create");
+        let found = registry.find_entry_by_path(tmp.path()).expect("found");
+        assert!(
+            Arc::ptr_eq(&entry, &found),
+            "find_entry_by_path should return the same Arc as get_or_create",
+        );
+
+        drop(entry);
+        drop(found);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn test_find_entry_by_path_returns_none_for_unknown_path() {
+        let tmp = TempDir::new().expect("create tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let _entry = registry
+            .get_or_create(tmp.path(), cancel.clone())
+            .expect("get_or_create");
+
+        // A sibling tempdir that exists but is NOT registered.
+        let other = TempDir::new().expect("create sibling tempdir");
+        assert!(
+            registry.find_entry_by_path(other.path()).is_none(),
+            "unregistered path must miss the registry lookup",
+        );
+
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn test_find_entry_by_path_canonicalizes_input() {
+        // The key under which entries are stored is the
+        // PathResolver-canonicalized form. A textually-distinct input
+        // that canonicalizes to the same directory must still match —
+        // this is the macOS /tmp ↔ /private/tmp case that breaks
+        // `/tmp/files` lookups without canonicalization.
+        let tmp = TempDir::new().expect("create tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let entry = registry
+            .get_or_create(tmp.path(), cancel.clone())
+            .expect("get_or_create");
+
+        let indirect = tmp
+            .path()
+            .join("..")
+            .join(tmp.path().file_name().expect("tempdir has name"));
+        let found = registry
+            .find_entry_by_path(&indirect)
+            .expect("canonicalized lookup must hit");
+        assert!(Arc::ptr_eq(&entry, &found));
+
+        drop(entry);
+        drop(found);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    // ---- route_filetree_query (Step pre-4 routing) ----
+    //
+    // Verify each branch of the FILETREE_QUERY adapter logic:
+    //   - root matches a registered workspace → arrives at that entry's tx
+    //   - root unknown → falls through to bootstrap
+    //   - root absent → falls through to bootstrap
+
+    #[tokio::test]
+    async fn test_route_filetree_query_routes_to_registered_workspace() {
+        let card_dir = TempDir::new().expect("card tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let card_entry = registry
+            .get_or_create(card_dir.path(), cancel.clone())
+            .expect("card workspace");
+        // Drain the empty-initial-snapshot the FileTreeFeed sends before
+        // the test query so the assertion below sees only the routed
+        // query and nothing else queued on the channel.
+        // (No drain needed for the *tx* side — we're sending to the feed
+        // task's rx; the assertion uses a separate "bootstrap" channel
+        // that nobody is reading from.)
+
+        // Standalone bootstrap channel that nobody consumes — receives
+        // the fallback path's queries so we can assert it stayed empty.
+        let (bootstrap_tx, mut bootstrap_rx) = mpsc::channel::<FileTreeQuery>(8);
+
+        let ftq = FileTreeQuery {
+            query: "match-me".to_string(),
+            root: Some(card_dir.path().to_path_buf()),
+        };
+        registry.route_filetree_query(ftq, &bootstrap_tx).await;
+
+        // Bootstrap stayed empty.
+        assert!(
+            bootstrap_rx.try_recv().is_err(),
+            "matched-root query must NOT reach the bootstrap fallback",
+        );
+        // The card's feed received the query — its initial empty
+        // snapshot lives on the watch channel side; the query travels
+        // via `ft_query_tx` to its receiver inside the spawned feed
+        // task, which we can't directly inspect from here. We can still
+        // assert the absence-of-bootstrap-receipt above, which proves
+        // the routing decision branched correctly. (The actual feed-
+        // side query handling is covered by `filetree::tests`.)
+
+        drop(card_entry);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn test_route_filetree_query_falls_back_when_root_unknown() {
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let (bootstrap_tx, mut bootstrap_rx) = mpsc::channel::<FileTreeQuery>(8);
+
+        let ftq = FileTreeQuery {
+            query: "anywhere".to_string(),
+            root: Some(PathBuf::from("/nonexistent/path/xyz-123")),
+        };
+        registry.route_filetree_query(ftq, &bootstrap_tx).await;
+
+        let routed = bootstrap_rx
+            .try_recv()
+            .expect("unmatched root must fall through to bootstrap");
+        assert_eq!(routed.query, "anywhere");
+
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn test_route_filetree_query_falls_back_when_root_absent() {
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let (bootstrap_tx, mut bootstrap_rx) = mpsc::channel::<FileTreeQuery>(8);
+
+        let ftq = FileTreeQuery {
+            query: "bare-query".to_string(),
+            root: None,
+        };
+        registry.route_filetree_query(ftq, &bootstrap_tx).await;
+
+        let routed = bootstrap_rx
+            .try_recv()
+            .expect("root=None must fall through to bootstrap");
+        assert_eq!(routed.query, "bare-query");
+        assert!(routed.root.is_none());
+
+        drain_and_drop(registry, cancel).await;
+    }
+
     // ---- Refcount + release ----
 
     #[tokio::test]
     async fn test_get_or_create_bumps_existing_refcount() {
         let tmp = TempDir::new().expect("create tempdir");
         let cancel = CancellationToken::new();
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
 
         let first = registry
             .get_or_create(tmp.path(), cancel.clone())
@@ -479,7 +754,7 @@ mod tests {
     async fn test_release_decrements_refcount() {
         let tmp = TempDir::new().expect("create tempdir");
         let cancel = CancellationToken::new();
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
 
         let first = registry
             .get_or_create(tmp.path(), cancel.clone())
@@ -506,7 +781,7 @@ mod tests {
     async fn test_release_triggers_teardown_at_zero() {
         let tmp = TempDir::new().expect("create tempdir");
         let cancel = CancellationToken::new();
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
 
         let entry = registry
             .get_or_create(tmp.path(), cancel.clone())
@@ -536,7 +811,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_release_unknown_key_returns_error() {
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
         let bogus_key = WorkspaceKey(Arc::from("/nonexistent/canonical/path"));
         let err = registry.release(&bogus_key).unwrap_err();
         match err {
@@ -550,7 +825,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_or_create_rejects_nonexistent_path() {
         let cancel = CancellationToken::new();
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
         let result = registry.get_or_create(
             Path::new("/nonexistent/workspace-registry-test-xyz"),
             cancel.clone(),
@@ -576,7 +851,7 @@ mod tests {
         std::fs::write(&file_path, b"not a directory").expect("write file");
 
         let cancel = CancellationToken::new();
-        let registry = WorkspaceRegistry::new();
+        let registry = WorkspaceRegistry::new_for_test();
         let result = registry.get_or_create(&file_path, cancel.clone());
         match result {
             Ok(_) => panic!("expected InvalidProjectDir"),
@@ -596,7 +871,7 @@ mod tests {
         // refcount is 2.
         let tmp = TempDir::new().expect("create tempdir");
         let cancel = CancellationToken::new();
-        let registry = Arc::new(WorkspaceRegistry::new());
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
 
         let path_a = tmp.path().to_path_buf();
         let path_b = tmp.path().to_path_buf();

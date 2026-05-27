@@ -58,6 +58,19 @@ pub struct FileTreeFeed {
     /// to the existing `.gitignore` re-walk). Per
     /// `roadmap/tide-atoms.md#step-4` and [D06].
     secret_filter: SecretFilter,
+    /// Shared FILETREE-response broadcast channel. Every workspace's
+    /// `FileTreeFeed` publishes its response frames here; the router
+    /// subscribes once at the process level and forwards every frame to
+    /// every connected client. JS-side filtering by `workspace_key`
+    /// (spliced into each frame's JSON via `splice_workspace_key`)
+    /// routes the response to the right card.
+    ///
+    /// This is the multi-workspace response path. The per-workspace
+    /// `watch_tx` (the `watch_tx` argument to `run`) is still written
+    /// for back-compat / test introspection, but the router no longer
+    /// consumes it — see `main.rs`'s FILETREE wiring and
+    /// `roadmap/tide-atoms.md#step-pre-4`.
+    ft_response_tx: broadcast::Sender<Frame>,
 }
 
 impl FileTreeFeed {
@@ -68,6 +81,7 @@ impl FileTreeFeed {
         event_tx: broadcast::Sender<Vec<FsEvent>>,
         query_rx: mpsc::Receiver<FileTreeQuery>,
         workspace_key: Arc<str>,
+        ft_response_tx: broadcast::Sender<Frame>,
     ) -> Self {
         // Build the secret-file matcher first so we can sweep the
         // freshly-walked initial set through it. The `walk_directory`
@@ -88,6 +102,7 @@ impl FileTreeFeed {
             query_rx,
             workspace_key,
             secret_filter,
+            ft_response_tx,
         }
     }
 
@@ -394,11 +409,19 @@ impl FileTreeFeed {
         }
     }
 
-    /// Serialize and send a response frame.
+    /// Serialize and broadcast a response frame.
     ///
     /// Splices `workspace_key` as the first field of the serialized
-    /// `FileTreeSnapshot` payload, per [D03]. Must be a `&self` method (not
-    /// an associated function) so it can read `self.workspace_key`.
+    /// `FileTreeSnapshot` payload, per [D03]. Publishes to two places:
+    ///   - The shared `ft_response_tx` broadcast channel — the
+    ///     production path. The router subscribes once at the process
+    ///     level, fans out to every connected client; JS filters by
+    ///     `workspace_key`.
+    ///   - The per-workspace `watch_tx` argument — back-compat with the
+    ///     pre-multi-workspace test surface (`test_workspace_key_spliced_into_filetree_frame`
+    ///     inspects this watch). The router stopped reading per-workspace
+    ///     watches at Step pre-4; this write is now test-only and can
+    ///     be removed in a follow-on cleanup.
     fn send_response(
         &self,
         watch_tx: &watch::Sender<Frame>,
@@ -406,8 +429,17 @@ impl FileTreeFeed {
     ) -> Result<(), ()> {
         let json = serde_json::to_vec(snapshot).map_err(|_| ())?;
         let json = splice_workspace_key(&json, &self.workspace_key);
-        watch_tx.send_modify(|frame| {
-            *frame = Frame::new(FeedId::FILETREE, json.clone());
+        let frame = Frame::new(FeedId::FILETREE, json.clone());
+        // Broadcast first: this is the production path. Send errors
+        // (no active subscribers) are non-fatal — clients may not be
+        // connected yet (e.g., bootstrap publishes its empty initial
+        // snapshot before any client connects). Workspace responses
+        // arrive on demand, so missing-subscriber here is the same
+        // shape as before.
+        let _ = self.ft_response_tx.send(frame.clone());
+        // Vestigial: per-workspace watch. Kept for tests.
+        watch_tx.send_modify(|f| {
+            *f = frame;
         });
         Ok(())
     }
@@ -504,6 +536,7 @@ mod tests {
     fn test_feed(files: BTreeSet<String>) -> FileTreeFeed {
         let (tx, _) = broadcast::channel(16);
         let (_qtx, qrx) = mpsc::channel(16);
+        let (ft_response_tx, _) = broadcast::channel::<Frame>(16);
         FileTreeFeed::new(
             PathBuf::from("/unused-in-this-test"),
             files,
@@ -511,6 +544,7 @@ mod tests {
             tx,
             qrx,
             Arc::from("test-workspace"),
+            ft_response_tx,
         )
     }
 
@@ -526,6 +560,7 @@ mod tests {
     ) -> FileTreeFeed {
         let (tx, _) = broadcast::channel(16);
         let (_qtx, qrx) = mpsc::channel(16);
+        let (ft_response_tx, _) = broadcast::channel::<Frame>(16);
         FileTreeFeed::new(
             workspace_root,
             files,
@@ -533,6 +568,7 @@ mod tests {
             tx,
             qrx,
             Arc::from("test-workspace"),
+            ft_response_tx,
         )
     }
 
@@ -679,6 +715,7 @@ mod tests {
 
         let (event_tx, _) = broadcast::channel(16);
         let (_qtx, qrx) = mpsc::channel(16);
+        let (ft_response_tx, _) = broadcast::channel::<Frame>(16);
         let feed = FileTreeFeed::new(
             PathBuf::from("/unused-in-this-test"),
             BTreeSet::new(),
@@ -686,6 +723,7 @@ mod tests {
             event_tx,
             qrx,
             fixture_key.clone(),
+            ft_response_tx,
         );
 
         let (watch_tx, mut watch_rx) = watch::channel(Frame::new(FeedId::FILETREE, vec![]));

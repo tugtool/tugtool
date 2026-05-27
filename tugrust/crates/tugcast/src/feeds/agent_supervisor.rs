@@ -3687,7 +3687,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
     let factory: SpawnerFactory =
         Arc::new(|| Arc::new(MinimalStallSpawner) as Arc<dyn ChildSpawner>);
     let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
-    let registry = Arc::new(WorkspaceRegistry::new());
+    let registry = Arc::new(WorkspaceRegistry::new_for_test());
     let cancel = CancellationToken::new();
     let (sup, register_rx) = AgentSupervisor::new(
         state_tx,
@@ -3853,7 +3853,7 @@ mod tests {
         let (meta_tx, meta_rx) = broadcast::channel(32);
         let (code_tx, _code_rx) = broadcast::channel(32);
         let (control_tx, control_rx) = broadcast::channel(512);
-        let registry = Arc::new(WorkspaceRegistry::new());
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let cancel = CancellationToken::new();
         let recorder: Arc<dyn SessionsRecorder> = Arc::new(NoopSessionsRecorder);
         let (sup, register_rx) = AgentSupervisor::new(
@@ -6190,7 +6190,7 @@ mod tests {
         let (meta_tx, _meta_rx) = broadcast::channel(8);
         let (code_tx, _code_rx) = broadcast::channel(8);
         let (control_tx, _control_rx) = broadcast::channel(64);
-        let registry = Arc::new(WorkspaceRegistry::new());
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let cancel = CancellationToken::new();
         let (sup, mut register_rx) = AgentSupervisor::new(
             state_tx,
@@ -6268,7 +6268,7 @@ mod tests {
             Arc::clone(&ledger),
             control_tx.clone(),
         ));
-        let registry = Arc::new(WorkspaceRegistry::new());
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let cancel = CancellationToken::new();
         let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
             state_tx,
