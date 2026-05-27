@@ -1,0 +1,52 @@
+/**
+ * tug-atom-chip.css — shared rendering rules for the atom-chip `<img>`.
+ *
+ * Per [D07](roadmap/tide-atoms.md#d07-atom-chip-primitive), atom-chip
+ * rendering is shared via the {@link buildAtomSVGDataUri} helper rather
+ * than a React primitive. Each surface paints its own `<img>` using the
+ * same SVG data URI; the styling that aligns the chip with surrounding
+ * text is shared via the `.tug-atom-chip` class declared here.
+ *
+ * Three consumers today:
+ *  - `tug-atom-text-body.tsx` — the transcript user-row walker.
+ *  - `read-tool-block.tsx`, `edit-tool-block.tsx`,
+ *    `write-tool-block.tsx`, `notebook-edit-tool-block.tsx` — the
+ *    assistant-side tool-block path renderers per
+ *    [D08](roadmap/tide-atoms.md#d08-tool-block-only) and
+ *    [Step 7](roadmap/tide-atoms.md#step-7).
+ *
+ * The editor's CM6 widget DOES NOT use this class — it ships its own
+ * `verticalAlign: ${baselineOffset}px` inline style from
+ * `createAtomImgElement`, calibrated for flowing-prose surfaces
+ * without a line-height floor. The transcript and tool-block surfaces
+ * either floor their line-height (transcript body) or sit inside a
+ * single-line flex header (tool block); for both, `vertical-align:
+ * middle` is the right behaviour and the inline `verticalAlign`
+ * baseline-offset from `createAtomImgElement` is irrelevant.
+ *
+ * Laws:
+ *  - [L06] all chip appearance lives in CSS / the SVG data URI; no
+ *    React state for appearance.
+ *  - [L19] shared-utility CSS file (no `.tsx` pair) — same precedent
+ *    as `styles/tugx-block.css` for shared block-surface utilities.
+ *    The chip itself is not a React component per [D07].
+ *  - [L20] no `--tugx-*` slot declared here; the rule is a pure
+ *    layout utility.
+ */
+
+.tug-atom-chip {
+  /* Centre the chip within the line-box. Combined with the host
+     surface's own line-height treatment (the transcript walker's
+     line-height floor; a tool-block header's single-line flex
+     layout), this keeps the chip vertically centred without
+     enlarging the line it sits in. Overrides the chip's intrinsic
+     `vertical-align: <baselineOffset>px` from
+     `createAtomImgElement` — that offset is calibrated for flowing
+     prose without a line-height floor, not for these surfaces.
+
+     Explicit `display: inline-block` defends against any user-agent
+     quirk that would default `<img>` to a different display value. */
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 2px;
+}

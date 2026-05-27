@@ -4,11 +4,14 @@
  * Composes `ToolBlockChrome` (header / footer / status) around a
  * `FileBlock` body kind. Per [Spec S03] / [Table T02]:
  *
- *   - **Header:** file icon + tool name "Read" + the file path
- *     pulled from `input.file_path` (truncated with hover-expand via
- *     the chrome's args-summary CSS). When `input.offset` /
- *     `input.limit` set, an inline line-range badge surfaces the
- *     window the model asked for.
+ *   - **Header:** file icon + tool name "Read" + an atom-chip
+ *     showing the path's basename, built via the shared
+ *     `useAtomChipImgProps("file", input.file_path)` (per
+ *     [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
+ *     [Step 7](roadmap/tide-atoms.md#step-7)). Hovering shows the
+ *     full path via the `<img title=...>` tooltip. When
+ *     `input.offset` / `input.limit` set, an inline line-range
+ *     badge surfaces the window the model asked for.
  *   - **Body:** `FileBlock` in `embedded` mode, fed from
  *     `tool_use_structured.file`. The structured result carries
  *     `{ content, filePath, startLine, numLines, totalLines }`
@@ -66,6 +69,7 @@
  */
 
 import "./read-tool-block.css";
+import "@/lib/tug-atom-chip.css";
 
 import React from "react";
 import { AlignLeft, FileText } from "lucide-react";
@@ -75,8 +79,8 @@ import {
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 import { TugBadge } from "@/components/tugways/tug-badge";
+import { useAtomChipImgProps } from "@/lib/use-atom-chip-img-props";
 
-import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import {
   StreamingPlaceholder,
   ToolBlockChrome,
@@ -264,10 +268,15 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
     [fileData],
   );
 
+  const pathChipProps = useAtomChipImgProps("file", readInput.file_path);
   const argsSummary =
-    readInput.file_path !== undefined ? (
+    pathChipProps !== null ? (
       <span className="read-tool-block-args">
-        <MiddleEllipsisPath path={readInput.file_path} />
+        <img
+          {...pathChipProps}
+          data-slot="read-tool-block-path"
+          className="tug-atom-chip"
+        />
         {lineRange !== undefined ? (
           <TugBadge
             data-slot="read-tool-block-line-range"

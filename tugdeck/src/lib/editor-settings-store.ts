@@ -69,6 +69,21 @@ export class EditorSettingsStore {
     // React rendering occurs). Falls back to defaults if not yet stored.
     this._settings = this._readFromCache() ?? { ...DEFAULT_SETTINGS };
 
+    // Seed the atom-font module state synchronously, BEFORE any React
+    // chip render. Without this seed, the first React render of a
+    // transcript / tool-block chip would bake its SVG with the
+    // atom-img module's default `_measureFamily` (system-ui, sans-serif)
+    // and stick with that until something triggers a re-render. The
+    // editor's `bind()` later calls the same _applyAtomFont and busts
+    // CM6's widget cache via `_regenerateAtoms`, but React-side chips
+    // only refresh on subscription notify; getting the seed right at
+    // construction eliminates the cold-boot race entirely.
+    //
+    // The `_regenerateAtoms?.()` chain inside `_applyAtomFont` is a
+    // no-op here (no callback bound yet); `bind()` re-applies later
+    // and that pass actually triggers the editor's regenerate.
+    this._applyAtomFont();
+
     // Observe live changes from external processes.
     const client = getTugbankClient();
     if (client) {

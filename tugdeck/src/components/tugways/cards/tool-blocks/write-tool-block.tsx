@@ -9,14 +9,16 @@
  *
  * Composition (per [Spec S03] / [Table T02] / [#bk-conformance]):
  *
- *  - **Header:** file-plus icon + tool name + the file path (via the
- *    shared `MiddleEllipsisPath`, conformance item 8) + an inline
- *    `{N} lines` / `{B} bytes` size hint computed from the content,
- *    and a small `new` / `overwrite` chip that surfaces when the
- *    structured result carries a `created` boolean (Claude Code's
+ *  - **Header:** file-plus icon + tool name + an atom-chip showing
+ *    the file's basename (via the shared `useAtomChipImgProps`,
+ *    per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
+ *    [Step 7](roadmap/tide-atoms.md#step-7)) + an inline `{N} lines` /
+ *    `{B} bytes` size hint computed from the content, and a small
+ *    `new` / `overwrite` chip that surfaces when the structured
+ *    result carries a `created` boolean (Claude Code's
  *    `tool_use_structured.created` tells the wrapper which path the
- *    write took). When the chip can't be determined (drift or an
- *    older catalog), it is simply omitted.
+ *    write took). When the created chip can't be determined (drift or
+ *    an older catalog), it is simply omitted.
  *
  *  - **Body:** `FileBlock` composed `embedded={true}` — the wrapper
  *    chrome owns identity, so `FileBlock`'s own header is suppressed
@@ -66,6 +68,7 @@
  */
 
 import "./write-tool-block.css";
+import "@/lib/tug-atom-chip.css";
 
 import React from "react";
 import { AlignLeft, FilePlus, Replace, Sparkles } from "lucide-react";
@@ -76,8 +79,8 @@ import {
 } from "@/components/tugways/body-kinds/file-block";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
+import { useAtomChipImgProps } from "@/lib/use-atom-chip-img-props";
 
-import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import { ToolBlockPre } from "./body-bits";
 import {
   StreamingPlaceholder,
@@ -204,10 +207,15 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? writeInput.file_path;
+  const pathChipProps = useAtomChipImgProps("file", filePath);
   const argsSummary =
-    filePath !== undefined ? (
+    pathChipProps !== null ? (
       <span className="write-tool-block-args">
-        <MiddleEllipsisPath path={filePath} />
+        <img
+          {...pathChipProps}
+          data-slot="write-tool-block-path"
+          className="tug-atom-chip"
+        />
         {sizeLabel !== undefined ? (
           <TugBadge
             data-slot="write-tool-block-size"

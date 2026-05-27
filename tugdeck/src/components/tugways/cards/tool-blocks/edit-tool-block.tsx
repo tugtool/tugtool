@@ -4,12 +4,14 @@
  * Composes `ToolBlockChrome` (header / status / error band) around a
  * `DiffBlock` body kind. Per [Spec S03] / [Table T02] / [D05]:
  *
- *   - **Header:** file-pen icon + tool name + the file path (via the
- *     shared `MiddleEllipsisPath`, conformance item 8) + an inline
- *     `+N −M` change-count badge computed from the diff. `MultiEdit`
- *     resolves to this wrapper through the `multiedit → edit` alias
- *     ([D16]); the header shows whatever name the wire carried, so a
- *     MultiEdit call reads as "MultiEdit" — honest over relabelled.
+ *   - **Header:** file-pen icon + tool name + an atom-chip showing
+ *     the file's basename (via the shared `useAtomChipImgProps`,
+ *     per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
+ *     [Step 7](roadmap/tide-atoms.md#step-7)) + an inline `+N −M`
+ *     change-count badge computed from the diff. `MultiEdit` resolves
+ *     to this wrapper through the `multiedit → edit` alias ([D16]);
+ *     the header shows whatever name the wire carried, so a MultiEdit
+ *     call reads as "MultiEdit" — honest over relabelled.
  *   - **Body:** `DiffBlock` composed `embedded={true}` — the wrapper
  *     chrome owns identity, so `DiffBlock`'s own path/stats header is
  *     suppressed and its fold / view-toggle affordances portal into
@@ -76,6 +78,7 @@
  */
 
 import "./edit-tool-block.css";
+import "@/lib/tug-atom-chip.css";
 
 import React from "react";
 import { FilePenLine } from "lucide-react";
@@ -87,8 +90,8 @@ import {
   type DiffHunk,
   type DiffLine,
 } from "@/lib/diff/types";
+import { useAtomChipImgProps } from "@/lib/use-atom-chip-img-props";
 
-import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import {
   StreamingPlaceholder,
   ToolBlockChrome,
@@ -349,10 +352,15 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? editInput.file_path;
+  const pathChipProps = useAtomChipImgProps("file", filePath);
   const argsSummary =
-    filePath !== undefined ? (
+    pathChipProps !== null ? (
       <span className="edit-tool-block-args">
-        <MiddleEllipsisPath path={filePath} />
+        <img
+          {...pathChipProps}
+          data-slot="edit-tool-block-path"
+          className="tug-atom-chip"
+        />
         {changeCounts !== undefined ? (
           <span
             data-slot="edit-tool-block-stats"

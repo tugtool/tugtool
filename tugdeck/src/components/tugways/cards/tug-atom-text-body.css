@@ -26,8 +26,9 @@
  * a production state.
  *
  * Laws:
- *  - [L06] all chip appearance and line-floor behaviour lives in CSS
- *    cascaded from `data-slot` selectors; no React state controls it.
+ *  - [L06] all line-floor behaviour lives in CSS cascaded from the
+ *    `data-slot` selector; no React state controls it. The shared
+ *    chip-image styling lives in `lib/tug-atom-chip.css`.
  *  - [L19] component-CSS pair; selectors are scoped to the component's
  *    own `data-slot` so the rules don't leak into other tugways.
  *  - [L20] one component-token slot family declared here
@@ -36,7 +37,8 @@
 
 [data-slot="tug-atom-text-body"] {
   /* Floor every line to atom-height + 4px so the chip (rendered
-     `vertical-align: middle` below) fits the line-box with 2px of
+     `vertical-align: middle` via the shared `.tug-atom-chip` class
+     in `lib/tug-atom-chip.css`) fits the line-box with 2px of
      breathing room above and below — even when the surrounding font's
      ascent/descent ratio doesn't match the chip's internal SVG
      geometry exactly. Without the breathing room, sub-pixel
@@ -54,19 +56,8 @@
   );
 }
 
-.tug-atom-text-body__chip {
-  /* Centre the chip within the line-box. Combined with the line-height
-     floor above, this is what prevents the line from growing taller
-     when an atom is present (the chip can't push the line larger
-     because it fits centred within the already-tall line) and
-     guarantees no clipping. Overrides the chip's intrinsic
-     vertical-align: <baselineOffset>px from `createAtomImgElement`,
-     which is calibrated for surfaces without the line-height floor
-     (e.g., flowing prose).
-
-     Explicit `display: inline-block` defends against any user-agent
-     quirk that would default `<img>` to a different display value. */
-  display: inline-block;
-  vertical-align: middle;
-  margin: 0 2px;
-}
+/* Chip rendering rules live in `lib/tug-atom-chip.css` (shared with
+   the assistant-side tool-block path chips per
+   [D08](roadmap/tide-atoms.md#d08-tool-block-only)). The line-height
+   floor above and the chip's `vertical-align: middle` together keep
+   atoms from growing the line — see the file docstring above. */

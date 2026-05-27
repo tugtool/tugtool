@@ -1528,21 +1528,21 @@ The crossing is deliberate. The editor is the drafting surface; the transcript i
 **Scope note (post-5c):** The `handleAddUserMessage` cast cleanup and image-attachment thumbnail-bake-on-replay that earlier drafts of Step 7 owned are **done by Step 5c's synthesizer** — both code paths (live + replay) go through the same `synthesizeUserMessageFromBlocks` helper, which mints typed atoms and bakes thumbnails. Step 7 is therefore scoped purely to the assistant-side tool-block chip rendering.
 
 **Artifacts:**
-- `tool-blocks/read-tool-block.tsx`, `edit-tool-block.tsx`, `write-tool-block.tsx`, `notebook-edit-tool-block.tsx` — path renderings switch from monospace `<code>` to an inline `<img>` chip built via `buildAtomSVGDataUri("file", basename(path), path)` ([Spec S05](#s05-atom-chip)). Single chip per tool-block per path field; no walker needed (tool-block paths are single strings, not substrate text). CSS-side: the existing `.tug-atom-text-body__chip` rule (Step 5) handles the chip styling; tool-block path chips reuse the class so the visual treatment matches the user-row chips.
+- `tool-blocks/read-tool-block.tsx`, `edit-tool-block.tsx`, `write-tool-block.tsx`, `notebook-edit-tool-block.tsx` — path renderings switch from `MiddleEllipsisPath` (`<code>` with middle-ellipsis truncation) to an inline `<img>` chip built via the shared `composeAtomChipImgProps("file", path)` helper added to `tug-atom-img.ts` (which chains `formatAtomLabel(path, "filename")` + `buildAtomSVGDataUri`). Single chip per tool-block per path field; no walker needed (tool-block paths are single strings, not substrate text). The chip's basename rides as `alt`; the full path rides as the native `<img title=...>` tooltip. CSS-side: chip styling lifted from `tug-atom-text-body.css` into a new shared `lib/tug-atom-chip.css` declaring `.tug-atom-chip` (`display: inline-block; vertical-align: middle; margin: 0 2px`). Both the transcript walker and the four tool-block path renderers import that CSS and apply the class; the editor's CM6 widget keeps its own inline `verticalAlign: ${baselineOffset}px` calibrated for flowing prose without a line-height floor.
 
 **Tasks:**
-- [ ] Update each tool-block component to render `input.file_path` (and `input.notebook_path` for notebook-edit) as an inline `<img>` chip via `buildAtomSVGDataUri`. Apply the shared `.tug-atom-text-body__chip` class (or its equivalent — verify the class is reachable from this scope; if not, lift the CSS rule to a shared selector).
-- [ ] Verify cold-mount of a session with an image-bearing turn renders both the user-row thumbnail (5c+6) and the assistant tool-block chips (this step) — manual smoke covers the integrated path.
+- [x] Update each tool-block component to render `input.file_path` (and `input.notebook_path` for notebook-edit) as an inline `<img>` chip via `composeAtomChipImgProps` (which calls `buildAtomSVGDataUri` internally). Lifted the chip CSS rule from `tug-atom-text-body.css` to a shared `lib/tug-atom-chip.css` declaring `.tug-atom-chip` — both the transcript walker and the four tool-block path renderers consume it.
+- [ ] Verify cold-mount of a session with an image-bearing turn renders both the user-row thumbnail (5c+6) and the assistant tool-block chips (this step) — manual smoke covers the integrated path. *(Pending — user smoke test.)*
 
 **Tests:**
-- [ ] `render: ReadToolBlock with input.file_path:"src/main.ts" → renders an <img> chip (data: SVG URI) instead of monospace text; alt text matches the basename`
-- [ ] `render: NotebookEditToolBlock with both file_path and notebook_path → both render as inline <img> chips`
+- [x] `formatAtomLabel("/repo/src/main.ts", "filename") === "main.ts"` and the surrounding basename-extraction shapes (8 cases in `lib/__tests__/tug-atom-img.test.ts`). The full DOM-bound `buildAtomSVGDataUri` round-trip is covered by the real-app smoke per the project's no-fake-DOM testing convention.
+- [x] `composeAtomChipImgProps("file", "") === null` (defensive null branch).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
-- [ ] Manual: a turn where claude reads a workspace file → the tool block's path renders as a chip. Cold-restart the card → same view restored (substrate from JSONL via 5c's synthesizer; tool-block chips from this step).
+- [x] `cd tugdeck && bun test` — 3040 pass / 0 fail.
+- [x] `cd tugdeck && bun run check` — tsc clean.
+- [x] `cd tugdeck && bun run audit:tokens lint` — zero token violations.
+- [ ] Manual: a turn where claude reads a workspace file → the tool block's path renders as a chip. Cold-restart the card → same view restored (substrate from JSONL via 5c's synthesizer; tool-block chips from this step). *(Pending — user smoke test.)*
 
 ---
 

@@ -10,11 +10,13 @@
  *
  * Composition (per [Spec S03] / [Table T02] / [#bk-conformance]):
  *
- *  - **Header** — a `Notebook` icon + tool name + the notebook path
- *    (via `MiddleEllipsisPath`) + a `· cell {cellId}` segment when a
- *    cell id is known + a small `edit_mode` chip (`replace` / `insert`
- *    / `delete`) and a `cell_type` chip (`code` / `markdown`) when
- *    present.
+ *  - **Header** — a `Notebook` icon + tool name + an atom-chip showing
+ *    the notebook's basename (via the shared `useAtomChipImgProps`,
+ *    per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
+ *    [Step 7](roadmap/tide-atoms.md#step-7)) + a `· cell {cellId}`
+ *    segment when a cell id is known + a small `edit_mode` chip
+ *    (`replace` / `insert` / `delete`) and a `cell_type` chip (`code`
+ *    / `markdown`) when present.
  *
  *  - **Body** — for `replace`, embedded `DiffBlock` over the cell's
  *    before / after source (the `two-text` source per [Q01]'s generic
@@ -67,6 +69,7 @@
  */
 
 import "./notebook-edit-tool-block.css";
+import "@/lib/tug-atom-chip.css";
 
 import React from "react";
 import {
@@ -83,8 +86,8 @@ import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
+import { useAtomChipImgProps } from "@/lib/use-atom-chip-img-props";
 
-import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
 import {
   StreamingPlaceholder,
@@ -221,10 +224,15 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
   const newSource = structured.newSource ?? editInput.new_source;
   const oldSource = structured.oldSource;
 
+  const pathChipProps = useAtomChipImgProps("file", notebookPath);
   const argsSummary =
-    notebookPath !== undefined ? (
+    pathChipProps !== null ? (
       <span className="notebook-edit-tool-block-args">
-        <MiddleEllipsisPath path={notebookPath} />
+        <img
+          {...pathChipProps}
+          data-slot="notebook-edit-tool-block-path"
+          className="tug-atom-chip"
+        />
         {cellId !== undefined ? (
           <TugBadge
             data-slot="notebook-edit-tool-block-cell"

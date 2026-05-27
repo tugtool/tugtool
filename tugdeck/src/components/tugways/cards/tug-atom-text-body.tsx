@@ -33,13 +33,16 @@
  */
 
 import "./tug-atom-text-body.css";
+import "@/lib/tug-atom-chip.css";
 
 import * as React from "react";
 
 import {
   TUG_ATOM_CHAR,
   buildAtomSVGDataUri,
+  getAtomFontSnapshot,
   getAtomHeightPx,
+  subscribeAtomFont,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { formatSequenceNumber } from "../tug-transcript-entry";
@@ -179,6 +182,13 @@ export const TugAtomTextBody = React.forwardRef<
   { text, atoms, messageNumber, className, "data-testid": dataTestid },
   ref,
 ) {
+  // [L02] Subscribe to atom-font state so chips re-bake when the user
+  // changes their editor font preference. The snapshot itself isn't
+  // read directly — `buildAtomSVGDataUri` reads module state inside
+  // the SVG bake — but the subscription forces this component to
+  // re-render when the font changes, which re-invokes the bake with
+  // the fresh module state.
+  React.useSyncExternalStore(subscribeAtomFont, getAtomFontSnapshot);
   const segments = walkAtomText(text, atoms);
   // Publish the atom's pixel height as a component-scope CSS variable
   // so the stylesheet can floor `line-height: max(1lh, …)` to at
@@ -211,16 +221,17 @@ export const TugAtomTextBody = React.forwardRef<
           displayLabel,
           seg.atom.value,
         );
-        // No inline `vertical-align` — the stylesheet's
-        // `.tug-atom-text-body__chip { vertical-align: middle }` is
-        // load-bearing here: it centres the chip in a line-box that
-        // is at least atom-tall (via the `line-height` floor above),
-        // which is what prevents clipping AND prevents an atom from
-        // growing its line relative to neighbours.
+        // No inline `vertical-align` — the shared
+        // `.tug-atom-chip { vertical-align: middle }` rule (in
+        // `lib/tug-atom-chip.css`) is load-bearing here: it centres
+        // the chip in a line-box that is at least atom-tall (via the
+        // `line-height` floor above), which is what prevents
+        // clipping AND prevents an atom from growing its line
+        // relative to neighbours.
         return (
           <img
             key={`a-${i}`}
-            className="tug-atom-text-body__chip"
+            className="tug-atom-chip"
             src={dataUri}
             alt={displayLabel}
             width={width}
