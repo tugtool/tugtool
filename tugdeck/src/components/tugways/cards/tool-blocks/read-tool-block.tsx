@@ -6,10 +6,10 @@
  *
  *   - **Header:** file icon + tool name "Read" + an atom-chip
  *     showing the path's basename, built via the shared
- *     `useAtomChipImgProps("file", input.file_path)` (per
+ *     `<TugAtomChip>` primitive (per
  *     [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
  *     [Step 7](roadmap/tide-atoms.md#step-7)). Hovering shows the
- *     full path via the `<img title=...>` tooltip. When
+ *     full path via the chip's `<title>` tooltip. When
  *     `input.offset` / `input.limit` set, an inline line-range
  *     badge surfaces the window the model asked for.
  *   - **Body:** `FileBlock` in `embedded` mode, fed from
@@ -79,7 +79,8 @@ import {
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 import { TugBadge } from "@/components/tugways/tug-badge";
-import { useAtomChipImgProps } from "@/lib/use-atom-chip-img-props";
+import { TugAtomChip } from "@/lib/tug-atom-chip";
+import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import {
   StreamingPlaceholder,
@@ -268,12 +269,14 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
     [fileData],
   );
 
-  const pathChipProps = useAtomChipImgProps("file", readInput.file_path);
+  const filePath = readInput.file_path;
   const argsSummary =
-    pathChipProps !== null ? (
+    filePath !== undefined && filePath.length > 0 ? (
       <span className="read-tool-block-args">
-        <img
-          {...pathChipProps}
+        <TugAtomChip
+          type="file"
+          label={formatAtomLabel(filePath, "filename")}
+          value={filePath}
           data-slot="read-tool-block-path"
           className="tug-atom-chip"
         />

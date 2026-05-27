@@ -176,91 +176,26 @@ export function getAtomHeightPx(): number {
   return atomHeight();
 }
 
-// ---------------------------------------------------------------------------
-// L02 atom-font subscription
-// ---------------------------------------------------------------------------
-//
-// React surfaces that render atom chips via JSX (`<TugAtomTextBody>`,
-// the assistant-side tool-block path renderers) need to re-bake their
-// SVG when the user changes their editor font preference — otherwise
-// the chip is stuck on whatever font was active when the component
-// first rendered. The editor's CM6 widget has its own refresh path
-// (`regenerateAtoms()` busts the widget cache), but React-side `<img>`
-// elements just have a `src={dataUri}` prop that doesn't update when
-// module-state changes.
-//
-// This subscription makes the module-level font state L02-compliant:
-// {@link subscribeAtomFont} + {@link getAtomFontSnapshot} feed
-// `useSyncExternalStore` on React-side surfaces. {@link setAtomFont}
-// notifies subscribers after mutating the state. The snapshot is
-// reference-stable across calls until the state changes, so
-// `useSyncExternalStore` doesn't churn renders on no-op reads.
-
 /**
- * Read-only snapshot of the atom-font state, returned by
- * {@link getAtomFontSnapshot}. Reference-stable across calls until
- * {@link setAtomFont} fires (then a fresh object is minted). The
- * stability contract is load-bearing for `useSyncExternalStore`
- * consumers — without it, React would treat every getSnapshot call
- * as a new value and loop infinitely.
- */
-export interface AtomFontSnapshot {
-  /** Font family stack — last value passed to {@link setAtomFont}. */
-  family: string;
-  /** Atom label font size in px (scaled from the editor font size by
-   *  `ATOM_LABEL_SIZE_RATIO`). */
-  size: number;
-}
-
-let _atomFontSnapshot: AtomFontSnapshot = { family: _measureFamily, size: _fontSize };
-const _atomFontListeners: Set<() => void> = new Set();
-
-/**
- * Subscribe to atom-font changes. Returns an unsubscribe function.
- * React surfaces compose this with {@link getAtomFontSnapshot} via
- * `useSyncExternalStore` per [L02].
- */
-export function subscribeAtomFont(listener: () => void): () => void {
-  _atomFontListeners.add(listener);
-  return () => { _atomFontListeners.delete(listener); };
-}
-
-/**
- * Get the current atom-font snapshot. Reference-stable until
- * {@link setAtomFont} mutates state. Consumers pair this with
- * {@link subscribeAtomFont} in `useSyncExternalStore`.
- */
-export function getAtomFontSnapshot(): AtomFontSnapshot {
-  return _atomFontSnapshot;
-}
-
-/**
- * Set the font used for atom label rendering and measurement.
- * `family` is the full CSS font-family stack (e.g. `"Hack", monospace`).
- * The editor settings store calls this when the user's font preference
- * changes (and at cold-boot construction time so React surfaces don't
- * race against the first paint). All subscribers ({@link subscribeAtomFont})
- * are notified after the state mutation; the editor still calls
- * `regenerateAtoms()` separately to bust CM6's widget cache.
+ * Set the font used for the editor's atom-chip rendering AND
+ * measurement. `family` is the full CSS font-family stack
+ * (e.g. `"Hack", monospace`). The editor settings store calls this
+ * when the user's font preference changes (and at cold-boot
+ * construction time).
  *
- * A no-op call (same family and size) does not notify subscribers,
- * keeping React surfaces from re-rendering on idempotent applies.
+ * This drives the *editor*'s data-URI chip path only. React-side
+ * surfaces (`TugAtomChip`) intentionally do NOT track this — they
+ * use the surrounding transcript font instead, so chips read as
+ * part of the prose rather than as borrowed editor-surface text.
+ * The editor still calls `regenerateAtoms()` separately to bust
+ * CM6's widget cache.
  */
 export function setAtomFont(family: string, size?: number): void {
-  const nextFamily = family;
-  const nextEditorSize = size ?? _editorFontSize;
-  const nextSize = size !== undefined
+  _measureFamily = family;
+  _editorFontSize = size ?? _editorFontSize;
+  _fontSize = size !== undefined
     ? Math.round(size * ATOM_LABEL_SIZE_RATIO)
     : _fontSize;
-  if (nextFamily === _measureFamily && nextSize === _fontSize) {
-    // No-op apply — skip the notification so subscribers don't churn.
-    return;
-  }
-  _measureFamily = nextFamily;
-  _editorFontSize = nextEditorSize;
-  _fontSize = nextSize;
-  _atomFontSnapshot = { family: _measureFamily, size: _fontSize };
-  for (const listener of _atomFontListeners) listener();
 }
 
 /**
@@ -351,41 +286,91 @@ function pickGenericFallback(stack: string): string {
   return "";
 }
 
-/** Build the SVG data URI for an atom with a given icon path and display label.
- *  `family` + `size` are explicit so the editor path (using module state)
- *  and the React-side stable-font path (locked to `STABLE_REACT_CHIP_*`)
- *  share this code unchanged. */
-function buildAtomSVG(
-  iconPath: string,
-  displayLabel: string,
-  bgColor: string,
-  borderColor: string,
-  iconColor: string,
-  textColor: string,
-  family: string,
-  size: number,
-): { svg: string; width: number } {
+function svgToDataURI(svg: string): string {
+  return "data:image/svg+xml," + encodeURIComponent(svg);
+}
+
+// ---- Chip geometry (shared between data-URI and inline-SVG renderers) ----
+
+/**
+ * Pure layout description for an atom chip. Produced by
+ * {@link computeAtomChipGeometry}; consumed by both the editor's
+ * data-URI baker ({@link buildAtomSVGDataUri}) and the React-side
+ * inline-`<svg>` component (`TugAtomChip`). Carries everything a
+ * renderer needs to paint the chip *except* the four theme colors —
+ * those are baked as hex by the data-URI path (since CSS can't reach
+ * inside an `<img src="data:...">` document) and resolved as CSS
+ * variables by the inline-`<svg>` path (so a theme switch re-paints
+ * for free).
+ */
+export interface AtomChipGeometry {
+  /** Raw `<path>`/`<rect>`/`<circle>` SVG markup for the icon shape. */
+  iconPath: string;
+  /** Label after `maxLabelWidth` truncation (with `…` suffix if applied). */
+  displayLabel: string;
+  /** Chip width in px. */
+  width: number;
+  /** Chip height in px. */
+  height: number;
+  /** `transform` attribute for the icon `<g>` (translate + scale). */
+  iconTransform: string;
+  /** `x` for the `<text>` element. */
+  textX: number;
+  /** `y` for the `<text>` element (baseline). */
+  textY: number;
+  /** Effective font size in px. */
+  fontSize: number;
+  /** Resolved family for the SVG `<text>` element (may quote a custom
+   *  face followed by a generic fallback). */
+  svgFontFamily: string;
+  /** `@font-face` block to inline in `<defs><style>`. Empty when no
+   *  custom face needs embedding. */
+  fontFaceCSS: string;
+  /** Vertical-align offset (px) for `<img>`-based renderers — see
+   *  {@link atomBaselineOffsetFor}. Inline-`<svg>` renderers ignore
+   *  this and align via the shared `.tug-atom-chip` CSS rule. */
+  baselineOffset: number;
+}
+
+/**
+ * Compute the geometry for an atom chip. Pure on the inputs and the
+ * module-state `_measureFamily` / `_fontSize` defaults. Two calls in
+ * the same font frame return value-equal geometry.
+ */
+export function computeAtomChipGeometry(
+  type: string,
+  label: string,
+  options?: {
+    maxLabelWidth?: number;
+    fontFamily?: string;
+    fontSize?: number;
+  },
+): AtomChipGeometry {
+  const family = options?.fontFamily ?? _measureFamily;
+  const size = options?.fontSize ?? _fontSize;
   const font = atomFontFor(family, size);
+  const displayLabel = options?.maxLabelWidth != null
+    ? truncateLabel(label, options.maxLabelWidth, font)
+    : label;
   const textWidth = measureTextWidth(displayLabel, font);
   const icon_px = iconSizeFor(size);
   const height_px = atomHeightFor(size);
-  const w = PADDING + icon_px + GAP + Math.ceil(textWidth) + PADDING;
-  const icon = `<g transform="translate(${PADDING},${(height_px - icon_px) / 2}) scale(${icon_px / 24})" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</g>`;
-  const { fontFamily, fontFaceCSS } = resolveSvgFont(family, 400);
-  const defs = fontFaceCSS ? `<defs><style>${fontFaceCSS}</style></defs>` : "";
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${height_px}" viewBox="0 0 ${w} ${height_px}">`,
-    defs,
-    `<rect x="0.5" y="0.5" width="${w - 1}" height="${height_px - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
-    icon,
-    `<text x="${PADDING + icon_px + GAP}" y="${height_px / 2 + size * 0.32}" font-size="${size}" font-family="${fontFamily}" fill="${textColor}">${escapeSVG(displayLabel)}</text>`,
-    `</svg>`,
-  ].join("");
-  return { svg, width: w };
-}
-
-function svgToDataURI(svg: string): string {
-  return "data:image/svg+xml," + encodeURIComponent(svg);
+  const width = PADDING + icon_px + GAP + Math.ceil(textWidth) + PADDING;
+  const iconTransform = `translate(${PADDING},${(height_px - icon_px) / 2}) scale(${icon_px / 24})`;
+  const { fontFamily: svgFontFamily, fontFaceCSS } = resolveSvgFont(family, 400);
+  return {
+    iconPath: ATOM_ICON_PATHS[type] ?? ATOM_ICON_PATHS.file,
+    displayLabel,
+    width,
+    height: height_px,
+    iconTransform,
+    textX: PADDING + icon_px + GAP,
+    textY: height_px / 2 + size * 0.32,
+    fontSize: size,
+    svgFontFamily,
+    fontFaceCSS,
+    baselineOffset: atomBaselineOffsetFor(size),
+  };
 }
 
 // ---- Public API ----
@@ -414,19 +399,17 @@ export interface AtomSvgResult {
 }
 
 /**
- * Build the SVG-chip data URI + geometry for an atom. Pure with
- * respect to the inputs and the currently-resolved theme tokens —
- * two calls in the same theme/font frame return byte-identical
- * results. Both the editor's `createAtomImgElement` (imperative
- * `<img>` for CM6 widgets) and the transcript's `TugAtomTextBody`
- * (React `<img>` per `U+FFFC` position) call this single helper, so
- * every surface that paints an atom chip paints the same pixels.
+ * Build the SVG-chip data URI + geometry for an atom. Used by the
+ * editor's `createAtomImgElement` (imperative `<img>` for CM6 widgets)
+ * — colors are baked as hex into the SVG because the `<img src="data:…">`
+ * document is isolated from the host CSS cascade. React-side surfaces
+ * use `TugAtomChip` (inline `<svg>`) instead, which re-paints for free
+ * on theme switch via CSS-variable cascading.
  *
- * Reads theme tokens via `getTokenValue` at call time, so theme
- * switches are picked up on next render (per the [theme-tokens]
- * cascade). The widget's regeneration counter ({@link AtomWidget}
- * in `atom-decoration.ts`) takes care of busting CM6's reconciliation
- * cache so the editor refreshes too.
+ * Reads theme tokens via `getTokenValue` at call time. The CM6
+ * widget's regeneration counter ({@link AtomWidget} in
+ * `atom-decoration.ts`) busts the reconciliation cache so the editor
+ * refreshes after a theme switch.
  */
 export function buildAtomSVGDataUri(
   type: string,
@@ -446,10 +429,7 @@ export function buildAtomSVGDataUri(
     /**
      * Override the font size (in px) used for SVG text and Canvas
      * measurement. When omitted, defaults to the module-state
-     * `_fontSize`. Transcript-side chips pass a 12px base scaled by
-     * the user's transcript magnification (`useChipFontSize`), so
-     * the chip stays proportional to the surrounding magnified
-     * transcript text without coupling to the editor's font size.
+     * `_fontSize`.
      */
     fontSize?: number;
   },
@@ -459,28 +439,26 @@ export function buildAtomSVGDataUri(
   // pointing inside `node_modules`); today only `type` and `label`
   // drive the rendered output.
   void value;
-  const family = options?.fontFamily ?? _measureFamily;
-  const size = options?.fontSize ?? _fontSize;
-  const displayLabel = options?.maxLabelWidth != null
-    ? truncateLabel(label, options.maxLabelWidth, atomFontFor(family, size))
-    : label;
-
+  const g = computeAtomChipGeometry(type, label, options);
   const bgColor = getTokenValue("--tug7-surface-atom-primary-normal-default-rest");
   const borderColor = getTokenValue("--tug7-element-atom-border-normal-default-rest");
   const iconColor = getTokenValue("--tug7-element-atom-icon-normal-default-rest");
   const textColor = getTokenValue("--tug7-element-atom-text-normal-default-rest");
-
-  const iconPath = ATOM_ICON_PATHS[type] ?? ATOM_ICON_PATHS.file;
-  const { svg, width } = buildAtomSVG(
-    iconPath, displayLabel, bgColor, borderColor, iconColor, textColor,
-    family, size,
-  );
-
+  const defs = g.fontFaceCSS ? `<defs><style>${g.fontFaceCSS}</style></defs>` : "";
+  const icon = `<g transform="${g.iconTransform}" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${g.iconPath}</g>`;
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}" height="${g.height}" viewBox="0 0 ${g.width} ${g.height}">`,
+    defs,
+    `<rect x="0.5" y="0.5" width="${g.width - 1}" height="${g.height - 1}" rx="3" fill="${bgColor}" stroke="${borderColor}" stroke-width="1"/>`,
+    icon,
+    `<text x="${g.textX}" y="${g.textY}" font-size="${g.fontSize}" font-family="${g.svgFontFamily}" fill="${textColor}">${escapeSVG(g.displayLabel)}</text>`,
+    `</svg>`,
+  ].join("");
   return {
     dataUri: svgToDataURI(svg),
-    width,
-    height: atomHeightFor(size),
-    baselineOffset: atomBaselineOffsetFor(size),
+    width: g.width,
+    height: g.height,
+    baselineOffset: g.baselineOffset,
   };
 }
 
@@ -576,73 +554,3 @@ export function formatAtomLabel(value: string, mode: AtomLabelMode): string {
   return value.startsWith("/") ? value.slice(1) : value;
 }
 
-// ---- Path-chip props ----
-
-/**
- * Props ready to spread onto an `<img>` to render a path as an atom
- * chip. Returned by {@link composeAtomChipPropsForPath}.
- *
- * The shape pairs with the shared `.tug-atom-chip` CSS rule
- * (`lib/tug-atom-chip.css`). Callers add `className="tug-atom-chip"`
- * to the `<img>` to pick up the chip's vertical-align + margin
- * styling. The chip's *colour* + *icon* + *baseline* come from the
- * SVG data URI via {@link buildAtomSVGDataUri}.
- */
-export interface AtomChipImgProps {
-  /** `data:image/svg+xml,…` URI ready for `<img src=...>`. */
-  src: string;
-  /** Accessible label — the path's basename (e.g. `"main.ts"`). */
-  alt: string;
-  /** Native hover tooltip — the full path (e.g. `"src/main.ts"`). */
-  title: string;
-  /** Chip width in px. */
-  width: number;
-  /** Chip height in px. */
-  height: number;
-}
-
-/**
- * Compose the `<img>` props needed to render `path` as an atom chip.
- *
- * Pure — combines {@link formatAtomLabel} (basename extraction) with
- * {@link buildAtomSVGDataUri} (SVG + geometry) into the single shape
- * tool-block path renderers spread onto an `<img>`. The assistant
- * side ([Step 7](roadmap/tide-atoms.md#step-7)) consumes this from
- * each of the four file-bearing tool blocks (Read / Edit / Write /
- * NotebookEdit), so every assistant-rendered path chip paints with
- * the same SVG, basename, and tooltip semantics.
- *
- * The `type` parameter is forwarded to {@link buildAtomSVGDataUri};
- * `"file"` is the canonical type for filesystem paths and selects
- * the file icon from `ATOM_ICON_PATHS`. Other consumers may pass
- * different types (e.g., a future URL chip).
- *
- * Returns `null` only on an empty string — defensive against an
- * upstream narrower handing an empty `file_path`. Callers can use
- * `?.` to render nothing in that case.
- *
- * Reads the current atom-font module state via
- * {@link buildAtomSVGDataUri} unless `options` overrides it. React
- * surfaces typically subscribe to {@link subscribeAtomFont} (for the
- * editor font family) and pass {@link chipFontSizeForMagnification}
- * (for the transcript's magnification-scaled size) — see
- * `useAtomChipImgProps`.
- */
-export function composeAtomChipImgProps(
-  type: string,
-  path: string,
-  options?: { fontFamily?: string; fontSize?: number },
-): AtomChipImgProps | null {
-  if (path.length === 0) return null;
-  const label = formatAtomLabel(path, "filename");
-  const { dataUri, width, height } = buildAtomSVGDataUri(
-    type, label, path, options,
-  );
-  return {
-    src: dataUri,
-    alt: label,
-    title: path,
-    width,
-    height,
-  };
-}

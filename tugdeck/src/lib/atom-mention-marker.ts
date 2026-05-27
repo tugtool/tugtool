@@ -48,7 +48,6 @@
  * @module lib/atom-mention-marker
  */
 
-import { TUG_ATOM_CHAR, type AtomSegment } from "./tug-atom-img";
 
 // ---------------------------------------------------------------------------
 // Marker bracketing
@@ -137,94 +136,3 @@ export function parseAtomMentionSegments(text: string): AtomMentionSegment[] {
   return segments;
 }
 
-// ---------------------------------------------------------------------------
-// Verification — demote unverified mention atoms back to plain text
-// ---------------------------------------------------------------------------
-
-/**
- * Predicate the verification gate calls per recovered-mention atom.
- * Returns `true` when the mention's value is corroborated by a
- * same-turn assistant action (typically a `Read` / `Edit` / `Write` /
- * `NotebookEdit` tool_use whose `file_path` matches the mention).
- * Callers build this predicate from their turn-side view of tool
- * actions; see `UserMessageCell` in `tide-card-transcript.tsx`.
- */
-export type MentionVerifier = (value: string) => boolean;
-
-/**
- * Walk the substrate `(text, atoms)` and demote any recovered-mention
- * atom whose value fails the verifier — replacing the `U+FFFC` at
- * that position with `@${value}` (the user's literal `@`-prefixed
- * text) and removing the atom from the parallel array. Verified
- * mentions and real (id-bearing, e.g. image) atoms pass through
- * unchanged.
- *
- * **Why demote.** The submit-time marker (`` `@<value>` ``) round-
- * trips a chip's position + value through JSONL but can't distinguish
- * a real `@`-completion atom from a user who literally typed
- * backtick-`@`-text-backtick in their prose, nor from a user who
- * typed `@stable` and never engaged the completion popup. The wire
- * is symmetric in both cases. The render-time verifier — "did the
- * model actually engage with this file as a file?" — is the
- * tiebreaker. Unverified mentions render as plain `@value` text,
- * matching what the user saw before submit.
- *
- * **Which atoms count as "mentions".** A recovered-mention atom is
- * one synthesized by `synthesizeUserMessageFromBlocks` from a
- * `` `@<value>` `` marker: `type === "file"` AND `id === undefined`.
- * Real editor `@`-completion file atoms also look like this — they
- * don't carry an id either — and they correctly route through the
- * same verifier. Image atoms (with `type === "image"` and an `id`)
- * always pass through; they ride as separate image content blocks,
- * not through the marker.
- *
- * **Why `@`-prefix on demote.** The wire literal is
- * `` `@<value>` ``; the user typed `@<value>` (no backticks — those
- * were added by `wrapAtomMention` at submit). Rendering as `@value`
- * matches the user's input. Stripping the backticks too is correct;
- * if we left them, the demoted display would carry markup the user
- * never typed.
- *
- * Pure — no React, no DOM. Caller passes in the predicate.
- */
-export function demoteUnverifiedMentions(
-  text: string,
-  atoms: ReadonlyArray<AtomSegment>,
-  isVerified: MentionVerifier,
-): { text: string; atoms: AtomSegment[] } {
-  if (atoms.length === 0) return { text, atoms: [] };
-
-  let outText = "";
-  const outAtoms: AtomSegment[] = [];
-  let atomIdx = 0;
-  // `for…of` so we don't accidentally split a surrogate pair on a
-  // future emoji-bearing path. `U+FFFC` is BMP so the visit count is
-  // unchanged; this is the same defense as `buildWirePayload`'s walk.
-  for (const ch of text) {
-    if (ch !== TUG_ATOM_CHAR) {
-      outText += ch;
-      continue;
-    }
-    const atom = atoms[atomIdx];
-    if (atom === undefined) {
-      // Stray `U+FFFC` — pass through verbatim (matches `walkAtomText`'s
-      // defensive `stray-ffc` branch and `buildWirePayload`'s
-      // "atoms.length < count(U+FFFC)" handling).
-      outText += ch;
-      continue;
-    }
-    atomIdx += 1;
-    const isRecoveredMention = atom.type === "file" && atom.id === undefined;
-    if (isRecoveredMention && !isVerified(atom.value)) {
-      // Demote: write the user's original `@`-prefixed text in place
-      // of the chip placeholder; drop the atom.
-      outText += "@" + atom.value;
-      continue;
-    }
-    // Verified mention OR non-mention atom (image, etc.) — keep both
-    // the placeholder and the atom in alignment.
-    outText += ch;
-    outAtoms.push(atom);
-  }
-  return { text: outText, atoms: outAtoms };
-}

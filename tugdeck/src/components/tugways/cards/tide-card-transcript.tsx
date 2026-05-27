@@ -111,7 +111,6 @@ import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { Message } from "@/lib/code-session-store/types";
-import { demoteUnverifiedMentions } from "@/lib/atom-mention-marker";
 import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
@@ -189,88 +188,6 @@ function stripUserBodyPrefix(text: string): string {
   if (text.startsWith("> ")) return text.slice(2);
   if (text.startsWith(">")) return text.slice(1);
   return text;
-}
-
-/**
- * Tool names whose `input.file_path` (or `input.notebook_path`)
- * counts as the model "engaging with this file as a file" —
- * corroborating evidence that a recovered-mention chip in the user
- * message body is a real `@`-mention rather than a user who typed
- * backticks literally in their prose. The set is intentionally narrow:
- * Read, Edit, Write, NotebookEdit all take an explicit structured
- * path field. Bash takes a free-text command; a path appearing in a
- * Bash command tells us very little — see the screenshot case where
- * `ls foobar*` ran against a non-existent file but the path was in
- * the command anyway.
- *
- * Glob / Grep / WebFetch / etc. likewise either take patterns (not
- * specific paths) or don't engage with the workspace file. They're
- * excluded.
- */
-const FILE_PATH_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "Read",
-  "Edit",
-  "Write",
-  "NotebookEdit",
-]);
-
-/**
- * Walk a turn's messages and collect the set of file paths the
- * model engaged with via {@link FILE_PATH_TOOL_NAMES} tools. This
- * is the corroborating-evidence set the user-row body uses to
- * decide whether a recovered-mention chip survives the verifier
- * gate or demotes to plain `@`-prefixed text.
- *
- * The set holds the raw `file_path` / `notebook_path` strings as
- * they appear in the tool's `input`. The matcher (see
- * {@link isMentionActioned}) checks for full-string or suffix
- * matches against a mention's `value`, so an `@ga.txt` mention
- * matches a tool action on `/Users/.../ga.txt`.
- */
-function collectActionedFilePaths(
-  messages: ReadonlyArray<Message>,
-): ReadonlySet<string> {
-  const paths = new Set<string>();
-  for (const msg of messages) {
-    if (msg.kind !== "tool_use") continue;
-    if (!FILE_PATH_TOOL_NAMES.has(msg.toolName)) continue;
-    const input = msg.input;
-    if (input === null || typeof input !== "object") continue;
-    const candidates = input as Record<string, unknown>;
-    const fp = typeof candidates.file_path === "string"
-      ? candidates.file_path
-      : typeof candidates.notebook_path === "string"
-        ? candidates.notebook_path
-        : null;
-    if (fp !== null && fp.length > 0) paths.add(fp);
-  }
-  return paths;
-}
-
-/**
- * Decide whether a recovered-mention `value` is corroborated by the
- * given actioned-paths set. Match rules:
- *
- *   1. **Full string match** — atom value equals a tool path
- *      verbatim. Covers users who `@`-mention with the absolute
- *      path the model later operates on.
- *   2. **Path-suffix match** — a tool path ends with `/` + the
- *      atom's value. Covers `@ga.txt` matching
- *      `/Users/.../ga.txt`, and `@src/main.ts` matching
- *      `/Users/foo/project/src/main.ts`.
- *
- * Pure — no module state, no DOM. Tight loop; the actioned set is
- * tiny (one entry per tool call in the turn).
- */
-function isMentionActioned(
-  value: string,
-  actioned: ReadonlySet<string>,
-): boolean {
-  for (const p of actioned) {
-    if (p === value) return true;
-    if (p.endsWith("/" + value)) return true;
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -482,33 +399,16 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
   // preserved.
   const rawAtoms = committedUser?.attachments ?? activeUser?.attachments ?? [];
 
-  // Verification gate: a recovered-mention atom (parsed from a
-  // backtick-`@` marker in the wire text) renders as a chip only
-  // when the same turn's assistant tool actions corroborate that
-  // the model engaged with the file. A user who literally typed
-  // `` `@foobar` `` in their prose, or whose `@foobar` mention the
-  // model didn't open, demotes back to plain `@`-prefixed text via
-  // {@link demoteUnverifiedMentions}. See
-  // `lib/atom-mention-marker.ts` for the demotion contract.
-  //
-  // The actioned-paths set is built from the committed turn's
-  // messages when present, and falls back to the in-flight turn's
-  // messages when the row is still streaming. Both paths walk the
-  // same `Message[]` substrate, so the same matcher applies.
-  const turnMessages: ReadonlyArray<Message> =
-    row.turn?.messages ?? row.activeTurn?.messages ?? [];
-  const actionedPaths = React.useMemo(
-    () => collectActionedFilePaths(turnMessages),
-    [turnMessages],
-  );
-  const { text, atoms } = React.useMemo(
-    () => demoteUnverifiedMentions(
-      strippedText,
-      rawAtoms,
-      (value) => isMentionActioned(value, actionedPaths),
-    ),
-    [strippedText, rawAtoms, actionedPaths],
-  );
+  // Atoms in the substrate render as chips verbatim — every U+FFFC
+  // position pairs with its atom entry whether the assistant has
+  // acted on it yet or not. Earlier drafts ran the (text, atoms)
+  // pair through a `demoteUnverifiedMentions` gate that hid chips
+  // until a tool call corroborated the mention; that hid the user's
+  // own intentional chips for the entire in-flight window and added
+  // a flicker when the model didn't tool-action the path. Removed
+  // — the substrate is the authority.
+  const text = strippedText;
+  const atoms = rawAtoms;
   // Clipboard text — atoms become `[label](value)` markdown links so
   // the copied content carries an honest representation of each atom
   // (pasting into a markdown surface renders as a link; pasting into

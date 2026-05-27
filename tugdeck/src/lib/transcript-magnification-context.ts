@@ -13,11 +13,11 @@
  *
  * The transcript host subscribes to its `ResponseSettingsStore` via
  * `useSyncExternalStore` and provides the resulting magnification
- * through this context. Descendants (`TugAtomTextBody`,
- * `useAtomChipImgProps`) consume via `useContext` and re-render on
- * magnification change because React re-renders context consumers
- * whenever the provider's value changes — same load-bearing rule
- * `useSyncExternalStore` relies on.
+ * through this context. Descendants (`TugAtomTextBody`, `TugAtomChip`)
+ * consume via `useContext` and re-render on magnification change
+ * because React re-renders context consumers whenever the provider's
+ * value changes — same load-bearing rule `useSyncExternalStore`
+ * relies on.
  *
  * Surfaces without a provider (gallery design-review cards, future
  * unmagnified transcript renderers) get the default `1.0` and the
@@ -28,8 +28,8 @@
  *  - [L02] external state enters React via the host's
  *    `useSyncExternalStore` against `ResponseSettingsStore`; this
  *    context is the React-tree fanout of that subscription.
- *  - [L06] the value drives pixel sizing of an `<img>`'s baked SVG,
- *    which is appearance — never React state.
+ *  - [L06] the value drives the chip's pixel sizing, which is
+ *    appearance — never React state.
  *
  * @module lib/transcript-magnification-context
  */

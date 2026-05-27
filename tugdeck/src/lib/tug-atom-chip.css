@@ -1,35 +1,34 @@
 /**
- * tug-atom-chip.css — shared rendering rules for the atom-chip `<img>`.
+ * tug-atom-chip.css — shared layout rules for atom chips.
  *
- * Per [D07](roadmap/tide-atoms.md#d07-atom-chip-primitive), atom-chip
- * rendering is shared via the {@link buildAtomSVGDataUri} helper rather
- * than a React primitive. Each surface paints its own `<img>` using the
- * same SVG data URI; the styling that aligns the chip with surrounding
- * text is shared via the `.tug-atom-chip` class declared here.
+ * Two renderers paint atom chips:
+ *  - **Editor (CM6 widget)** — `createAtomImgElement` in `tug-atom-img.ts`
+ *    emits an `<img>` whose `src` is a `data:image/svg+xml,…` URI with
+ *    colors baked as hex. The editor doesn't use this class — it ships
+ *    its own `verticalAlign: ${baselineOffset}px` inline style calibrated
+ *    for flowing-prose surfaces without a line-height floor.
+ *  - **React-side surfaces** — `TugAtomChip` (in `tug-atom-chip.tsx`)
+ *    renders inline `<svg>` with CSS-variable `fill` / `stroke`. The
+ *    transcript walker (`TugAtomTextBody`) and the four tool-block path
+ *    renderers (read/edit/write/notebook-edit) consume it.
  *
- * Three consumers today:
- *  - `tug-atom-text-body.tsx` — the transcript user-row walker.
- *  - `read-tool-block.tsx`, `edit-tool-block.tsx`,
- *    `write-tool-block.tsx`, `notebook-edit-tool-block.tsx` — the
- *    assistant-side tool-block path renderers per
- *    [D08](roadmap/tide-atoms.md#d08-tool-block-only) and
- *    [Step 7](roadmap/tide-atoms.md#step-7).
+ * Putting colors on the inline `<svg>` via `var(--tug7-…)` references is
+ * the L06-pure path: a theme switch updates the CSS variables and the
+ * chip re-paints at the next browser frame, without any React re-render
+ * or SVG re-bake. The data-URI path can't do this because an
+ * `<img src="data:…">` document is isolated from the host CSS cascade.
  *
- * The editor's CM6 widget DOES NOT use this class — it ships its own
- * `verticalAlign: ${baselineOffset}px` inline style from
- * `createAtomImgElement`, calibrated for flowing-prose surfaces
- * without a line-height floor. The transcript and tool-block surfaces
- * either floor their line-height (transcript body) or sit inside a
- * single-line flex header (tool block); for both, `vertical-align:
- * middle` is the right behaviour and the inline `verticalAlign`
- * baseline-offset from `createAtomImgElement` is irrelevant.
+ * The class is a pure layout utility — it pins `vertical-align: middle`
+ * + uniform `margin` so chips align inside lines that either floor
+ * their line-height (transcript body) or sit in a single-line flex
+ * header (tool block).
  *
  * Laws:
- *  - [L06] all chip appearance lives in CSS / the SVG data URI; no
- *    React state for appearance.
- *  - [L19] shared-utility CSS file (no `.tsx` pair) — same precedent
- *    as `styles/tugx-block.css` for shared block-surface utilities.
- *    The chip itself is not a React component per [D07].
+ *  - [L06] all chip appearance lives in CSS / SVG attribute references;
+ *    React state never drives appearance.
+ *  - [L19] shared-utility CSS file. The class is a layout utility
+ *    consumed by both `TugAtomChip` and (transitively) any future
+ *    surface that needs a chip-aligned inline element.
  *  - [L20] no `--tugx-*` slot declared here; the rule is a pure
  *    layout utility.
  */

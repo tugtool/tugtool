@@ -5,7 +5,7 @@
  * `DiffBlock` body kind. Per [Spec S03] / [Table T02] / [D05]:
  *
  *   - **Header:** file-pen icon + tool name + an atom-chip showing
- *     the file's basename (via the shared `useAtomChipImgProps`,
+ *     the file's basename (via the shared `<TugAtomChip>` primitive,
  *     per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
  *     [Step 7](roadmap/tide-atoms.md#step-7)) + an inline `+N −M`
  *     change-count badge computed from the diff. `MultiEdit` resolves
@@ -90,7 +90,8 @@ import {
   type DiffHunk,
   type DiffLine,
 } from "@/lib/diff/types";
-import { useAtomChipImgProps } from "@/lib/use-atom-chip-img-props";
+import { TugAtomChip } from "@/lib/tug-atom-chip";
+import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import {
   StreamingPlaceholder,
@@ -352,12 +353,13 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? editInput.file_path;
-  const pathChipProps = useAtomChipImgProps("file", filePath);
   const argsSummary =
-    pathChipProps !== null ? (
+    filePath !== undefined && filePath.length > 0 ? (
       <span className="edit-tool-block-args">
-        <img
-          {...pathChipProps}
+        <TugAtomChip
+          type="file"
+          label={formatAtomLabel(filePath, "filename")}
+          value={filePath}
           data-slot="edit-tool-block-path"
           className="tug-atom-chip"
         />

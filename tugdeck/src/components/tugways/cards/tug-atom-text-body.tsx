@@ -33,19 +33,16 @@
  */
 
 import "./tug-atom-text-body.css";
-import "@/lib/tug-atom-chip.css";
 
 import * as React from "react";
 
 import {
   TUG_ATOM_CHAR,
   atomHeightFor,
-  buildAtomSVGDataUri,
   chipFontSizeForMagnification,
-  getAtomFontSnapshot,
-  subscribeAtomFont,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
+import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { TranscriptMagnificationContext } from "@/lib/transcript-magnification-context";
 import { formatSequenceNumber } from "../tug-transcript-entry";
 
@@ -184,20 +181,12 @@ export const TugAtomTextBody = React.forwardRef<
   { text, atoms, messageNumber, className, "data-testid": dataTestid },
   ref,
 ) {
-  // [L02] Subscribe to atom-font state so chips re-bake when the user
-  // changes their editor font preference. The family is forwarded
-  // to the chip bake below; the chip's pixel SIZE comes from the
-  // transcript's magnification (next line), not from the editor's
-  // font size — atoms in the transcript track the magnified
-  // transcript text, not the editor's font setting.
-  const fontSnapshot = React.useSyncExternalStore(
-    subscribeAtomFont,
-    getAtomFontSnapshot,
-  );
   // Transcript magnification (default 1.0 outside a provider — e.g.,
   // gallery design-review surfaces). The chip's pixel size is
   // 12px × magnification, floored at 9px for legibility — see
-  // `chipFontSizeForMagnification`.
+  // `chipFontSizeForMagnification`. Used here only to publish the
+  // line-height floor CSS variable; `TugAtomChip` reads the same
+  // context internally for its own size.
   const magnification = React.useContext(TranscriptMagnificationContext);
   const chipFontSize = chipFontSizeForMagnification(magnification);
   const segments = walkAtomText(text, atoms);
@@ -228,31 +217,16 @@ export const TugAtomTextBody = React.forwardRef<
           );
         }
         const displayLabel = decorateChipLabel(seg.atom, messageNumber);
-        const { dataUri, width, height } = buildAtomSVGDataUri(
-          seg.atom.type,
-          displayLabel,
-          seg.atom.value,
-          {
-            fontFamily: fontSnapshot.family,
-            fontSize: chipFontSize,
-          },
-        );
-        // No inline `vertical-align` — the shared
-        // `.tug-atom-chip { vertical-align: middle }` rule (in
-        // `lib/tug-atom-chip.css`) is load-bearing here: it centres
-        // the chip in a line-box that is at least atom-tall (via the
-        // `line-height` floor above), which is what prevents
-        // clipping AND prevents an atom from growing its line
-        // relative to neighbours.
+        // The shared `.tug-atom-chip { vertical-align: middle }`
+        // class centres the chip in the line-box; the line-height
+        // floor above guarantees the box is at least atom-tall.
         return (
-          <img
+          <TugAtomChip
             key={`a-${i}`}
             className="tug-atom-chip"
-            src={dataUri}
-            alt={displayLabel}
-            width={width}
-            height={height}
-            title={seg.atom.value}
+            type={seg.atom.type}
+            label={displayLabel}
+            value={seg.atom.value}
           />
         );
       })}

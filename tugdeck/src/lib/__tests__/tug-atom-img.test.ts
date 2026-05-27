@@ -3,20 +3,15 @@
  * the DOM. The full chip-builder (`buildAtomSVGDataUri`) is
  * DOM-dependent (it reads theme tokens via `getComputedStyle(document.body)`)
  * and is exercised through the real-app manual smoke; this file pins
- * the two pure pieces that the assistant-side tool-block path chips
- * rely on:
+ * the pure pieces consumers rely on:
  *
- *   1. {@link formatAtomLabel} — basename extraction. The tool-block
- *      side calls this with mode `"filename"` to derive the chip's
- *      label from the full path. The behaviour for absolute, relative,
- *      and edge-case paths is pinned here so a future refactor can't
- *      silently regress the chip's displayed label.
- *
- *   2. {@link composeAtomChipImgProps} — the null-on-empty-path
- *      defensive branch. The non-null branch transitively calls
- *      `buildAtomSVGDataUri` and is DOM-bound; tests there live in
- *      the real-app smoke. This file pins just the early-return so
- *      callers can rely on the `null` contract.
+ *   - {@link formatAtomLabel} — basename extraction. Tool-block path
+ *     chips call this with mode `"filename"` to derive the chip's
+ *     label from the full path.
+ *   - {@link chipFontSizeForMagnification} — transcript-side chip
+ *     size from the magnification slider.
+ *   - {@link atomHeightFor} — chip height formula used by the
+ *     transcript walker's `line-height` floor.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -26,7 +21,6 @@ import {
   TRANSCRIPT_CHIP_MIN_FONT_SIZE,
   atomHeightFor,
   chipFontSizeForMagnification,
-  composeAtomChipImgProps,
   formatAtomLabel,
 } from "../tug-atom-img";
 
@@ -72,18 +66,6 @@ describe("formatAtomLabel — `filename` mode (basename extraction)", () => {
       "https://example.com/",
     );
   });
-});
-
-describe("composeAtomChipImgProps — null-on-empty-path defensive branch", () => {
-  test("empty string returns null", () => {
-    expect(composeAtomChipImgProps("file", "")).toBeNull();
-  });
-
-  // Note: the non-empty branch transitively calls `buildAtomSVGDataUri`
-  // which reads theme tokens via `getComputedStyle(document.body)`. In
-  // a pure-logic Bun test environment `document` is undefined, so we
-  // can't exercise the happy path here. The real-app manual smoke
-  // covers it (Step 7 checkpoint).
 });
 
 describe("chipFontSizeForMagnification", () => {

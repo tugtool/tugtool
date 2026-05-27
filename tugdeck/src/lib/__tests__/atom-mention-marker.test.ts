@@ -18,25 +18,10 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  demoteUnverifiedMentions,
   parseAtomMentionSegments,
   wrapAtomMention,
   type AtomMentionSegment,
 } from "../atom-mention-marker";
-import { TUG_ATOM_CHAR, type AtomSegment } from "../tug-atom-img";
-
-const C = TUG_ATOM_CHAR;
-
-/** A recovered-mention atom looks like what `synthesizeUserMessageFromBlocks`
- *  emits from a wire marker: type `"file"`, no id. */
-function mentionAtom(value: string): AtomSegment {
-  return { kind: "atom", type: "file", label: value, value };
-}
-
-/** A real editor image atom — type `"image"`, has an id. */
-function imageAtom(value: string, id: string): AtomSegment {
-  return { kind: "atom", type: "image", label: value, value, id };
-}
 
 describe("wrapAtomMention — forward marker wrap", () => {
   test("plain filename wraps as `@filename`", () => {
@@ -230,120 +215,3 @@ describe("wrap + parse round-trip", () => {
   });
 });
 
-describe("demoteUnverifiedMentions", () => {
-  test("verified mention stays as a chip (text + atom preserved)", () => {
-    const result = demoteUnverifiedMentions(
-      `Read ${C} please`,
-      [mentionAtom("ga.txt")],
-      () => true,
-    );
-    expect(result.text).toBe(`Read ${C} please`);
-    expect(result.atoms).toEqual([mentionAtom("ga.txt")]);
-  });
-
-  test("unverified mention demotes to `@value` text", () => {
-    const result = demoteUnverifiedMentions(
-      `fake ${C}`,
-      [mentionAtom("foobar")],
-      () => false,
-    );
-    expect(result.text).toBe("fake @foobar");
-    expect(result.atoms).toEqual([]);
-  });
-
-  test("mixed: one verified, one unverified — only the unverified demotes", () => {
-    const verifier = (v: string) => v === "ga.txt";
-    const result = demoteUnverifiedMentions(
-      `Read ${C} and ${C} please`,
-      [mentionAtom("ga.txt"), mentionAtom("foobar")],
-      verifier,
-    );
-    expect(result.text).toBe(`Read ${C} and @foobar please`);
-    expect(result.atoms).toEqual([mentionAtom("ga.txt")]);
-  });
-
-  test("image atoms pass through unchanged regardless of verifier", () => {
-    // Image atoms carry an id and aren't recovered mentions; the
-    // verifier doesn't apply.
-    const verifier = () => false;
-    const result = demoteUnverifiedMentions(
-      `Look ${C}`,
-      [imageAtom("shot.png", "id-1")],
-      verifier,
-    );
-    expect(result.text).toBe(`Look ${C}`);
-    expect(result.atoms).toEqual([imageAtom("shot.png", "id-1")]);
-  });
-
-  test("empty atoms array returns input verbatim", () => {
-    const result = demoteUnverifiedMentions(
-      "no atoms here",
-      [],
-      () => false,
-    );
-    expect(result.text).toBe("no atoms here");
-    expect(result.atoms).toEqual([]);
-  });
-
-  test("text with no U+FFFC and atoms array passes through (defensive)", () => {
-    // Misaligned substrate — there are atoms in the array but no
-    // placeholders in the text. The walker doesn't consume any
-    // atoms; the input passes through verbatim.
-    const result = demoteUnverifiedMentions(
-      "just text",
-      [mentionAtom("foo")],
-      () => false,
-    );
-    expect(result.text).toBe("just text");
-    expect(result.atoms).toEqual([]);
-  });
-
-  test("stray U+FFFC with no paired atom passes through verbatim", () => {
-    // Mirrors `walkAtomText`'s defensive `stray-ffc` branch and
-    // `buildWirePayload`'s "atoms.length < count(U+FFFC)" handling.
-    const result = demoteUnverifiedMentions(
-      `text ${C}${C} more`,
-      [mentionAtom("foo")],
-      () => true,
-    );
-    // First U+FFFC consumes the atom (verified → kept); second
-    // U+FFFC is stray and passes through as the literal character.
-    expect(result.text).toBe(`text ${C}${C} more`);
-    expect(result.atoms).toEqual([mentionAtom("foo")]);
-  });
-
-  test("demoted mention preserves surrounding text exactly", () => {
-    // The replacement is exactly `@${value}` — no extra whitespace,
-    // no backticks. What the user typed.
-    const result = demoteUnverifiedMentions(
-      `before ${C} after`,
-      [mentionAtom("x")],
-      () => false,
-    );
-    expect(result.text).toBe("before @x after");
-    expect(result.atoms).toEqual([]);
-  });
-
-  test("multiple unverified mentions all demote, document order preserved", () => {
-    const result = demoteUnverifiedMentions(
-      `${C} ${C} ${C}`,
-      [mentionAtom("a"), mentionAtom("b"), mentionAtom("c")],
-      () => false,
-    );
-    expect(result.text).toBe("@a @b @c");
-    expect(result.atoms).toEqual([]);
-  });
-
-  test("verifier receives the atom's value (not the label) — same in our model but pin it", () => {
-    const seen: string[] = [];
-    demoteUnverifiedMentions(
-      `${C} ${C}`,
-      [mentionAtom("ga.txt"), mentionAtom("config.js")],
-      (value) => {
-        seen.push(value);
-        return true;
-      },
-    );
-    expect(seen).toEqual(["ga.txt", "config.js"]);
-  });
-});

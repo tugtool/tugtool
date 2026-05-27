@@ -10,7 +10,7 @@
  * Composition (per [Spec S03] / [Table T02] / [#bk-conformance]):
  *
  *  - **Header:** file-plus icon + tool name + an atom-chip showing
- *    the file's basename (via the shared `useAtomChipImgProps`,
+ *    the file's basename (via the shared `<TugAtomChip>` primitive,
  *    per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
  *    [Step 7](roadmap/tide-atoms.md#step-7)) + an inline `{N} lines` /
  *    `{B} bytes` size hint computed from the content, and a small
@@ -79,7 +79,8 @@ import {
 } from "@/components/tugways/body-kinds/file-block";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
-import { useAtomChipImgProps } from "@/lib/use-atom-chip-img-props";
+import { TugAtomChip } from "@/lib/tug-atom-chip";
+import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockPre } from "./body-bits";
 import {
@@ -207,12 +208,13 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? writeInput.file_path;
-  const pathChipProps = useAtomChipImgProps("file", filePath);
   const argsSummary =
-    pathChipProps !== null ? (
+    filePath !== undefined && filePath.length > 0 ? (
       <span className="write-tool-block-args">
-        <img
-          {...pathChipProps}
+        <TugAtomChip
+          type="file"
+          label={formatAtomLabel(filePath, "filename")}
+          value={filePath}
           data-slot="write-tool-block-path"
           className="tug-atom-chip"
         />
