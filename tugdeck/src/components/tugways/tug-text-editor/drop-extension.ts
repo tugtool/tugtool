@@ -81,6 +81,10 @@ import {
   readTextAttachment,
 } from "@/lib/text-attachment";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
+import {
+  getCurrentDragFiles,
+  type NativeDragFileEntry,
+} from "@/lib/native-drag-bridge";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -463,6 +467,43 @@ function dropHasSupportedFile(dataTransfer: DataTransfer | null): boolean {
 }
 
 /**
+ * Native-bridge supportedness check. Operates on the
+ * `PasteboardSnapshot` pushed in by the Swift host
+ * (`tugapp/Sources/Drag/TugDragDestination.swift`) at every
+ * `draggingEntered:` / `draggingUpdated:`. Mirrors the drop-time
+ * `dropHasSupportedFile` logic — any image-classifiable MIME or text-
+ * classifiable MIME makes the drag acceptable. An entry whose
+ * `mimeType` is absent is treated optimistically (true): the final
+ * classification at drop time runs `isTextSource` which does the
+ * filename-extension fallback, and refusing at the cursor based on
+ * missing MIME would over-reject (e.g. `.ts` files from Finder
+ * sometimes arrive without a registered MIME).
+ *
+ * Returns `true` if at least one entry is supported; `false` only
+ * when *every* entry is known-unsupported (e.g. a PDF-only drag).
+ * The drop extension uses the boolean to drive the three-state
+ * `setDropActive` accept / reject ring during drag — the first
+ * branch the JS world has ever had into per-item MIME during drag
+ * inside WKWebView. See `tugapp/Sources/Drag/PasteboardSnapshot.swift`.
+ */
+function nativeDragHasSupportedFile(
+  entries: readonly NativeDragFileEntry[],
+): boolean {
+  if (entries.length === 0) return false;
+  for (const entry of entries) {
+    const mime = entry.mimeType;
+    if (mime === undefined || mime === "") {
+      // Missing MIME — could still be text by extension. Optimistic
+      // accept; drop-time classifier does the final filtering.
+      return true;
+    }
+    if (classifySourceMime(mime) !== "unsupported") return true;
+    if (isTextMimeType(mime)) return true;
+  }
+  return false;
+}
+
+/**
  * Mint a stable atom id for a freshly-dropped or freshly-pasted
  * file. UUIDs are the right shape (large keyspace, no coordination,
  * no collisions across cards or sessions). Defensive `??` covers
@@ -737,6 +778,28 @@ async function runAttachmentJob(
 type DropActiveState = "accept" | "reject" | null;
 
 /**
+ * Decide the drag outcome for the current `dragenter` / `dragover`
+ * event by consulting the native bridge first, with the pre-3.5.7
+ * accept-all behavior as the fallback when the bridge is absent or
+ * has not yet posted its first snapshot.
+ *
+ * Returns `"accept"` when the bridge is absent (browser-only dev,
+ * tests, or the first dragover frame before
+ * `evaluateJavaScript("window.__tugActiveDrag = …")` has run on
+ * the JS thread — see the bridge file's docstring for the timing
+ * resolution). Returns `"accept"` when the bridge reports at least
+ * one supported file. Returns `"reject"` only when the bridge
+ * reports a non-empty list of which *every* entry is known-
+ * unsupported — the cursor-level rejection case that this step
+ * exists to enable.
+ */
+function dragOutcomeFromBridge(): "accept" | "reject" {
+  const files = getCurrentDragFiles();
+  if (files === null) return "accept";
+  return nativeDragHasSupportedFile(files) ? "accept" : "reject";
+}
+
+/**
  * Mark/clear the host's `data-drop-active` attribute. The CSS in
  * `tug-text-editor.css` keys the drop ring, caret-hide, and inactive-
  * selection-paint rules off this attribute presence; an additional
@@ -828,44 +891,34 @@ export function tugDropExtension(
         // also try to accept it with `dropEffect = "copy"` (which
         // would be redundant but defensive in case CM6's behavior
         // changes).
-        //
-        // WebKit/WKWebView does not expose per-item MIME info during
-        // `dragenter` / `dragover` (filed as WebKit bug #223517,
-        // unresolved as of Dec 2023). The only signal we have is
-        // `types.includes("Files")` — a binary "this is a file
-        // drag" yes/no. So we accept all file drags at the cursor
-        // level and classify at drop time, where
-        // `dataTransfer.files` is fully populated. The OS shows the
-        // green-plus accept cursor for any file drag — a PDF will
-        // appear acceptable during drag, then silently produce no
-        // atom on release (`processAttachmentFiles` classifies
-        // each file and skips unsupported ones).
-        //
-        // The three-state `setDropActive` infrastructure (with the
-        // `"reject"` CSS variant) is preserved for Step 3.5.7's
-        // native-bridge work, where Tug.app's Swift host reads
-        // `NSPasteboard` directly and posts the real MIME info to
-        // JS — giving us back the ability to reject at the cursor.
         event.preventDefault();
-        setDropActive(host, "accept");
+        setDropActive(host, dragOutcomeFromBridge());
         return true;
       },
       dragover(event, view) {
         if (!event.dataTransfer?.types.includes("Files")) return false;
-        // Same as `dragenter`: claim the event and accept (we can't
-        // classify in WKWebView until drop time). See the
-        // dragenter comment for the WebKit limitation.
         event.preventDefault();
+        const outcome = dragOutcomeFromBridge();
+        setDropActive(host, outcome);
         try {
-          event.dataTransfer.dropEffect = "copy";
+          // `dropEffect = "none"` is the AppKit no-drop signal — the
+          // OS paints the standard refused-drag cursor (no green
+          // plus). `"copy"` is the accept cursor. WebKit honors
+          // both inside WKWebView; in browser-only dev paths where
+          // the bridge is absent, `outcome` defaults to `"accept"`
+          // and we set `"copy"` — same Path A behavior as before.
+          event.dataTransfer.dropEffect = outcome === "reject" ? "none" : "copy";
         } catch {
           // `dropEffect` is read-only in some environments.
         }
-        setDropActive(host, "accept");
 
-        // Update the drop-caret StateField. The ViewPlugin will
-        // re-measure on the next update and reposition the caret.
-        const pos = dropOffsetAtCoords(view, event.clientX, event.clientY);
+        // Update the drop-caret StateField. Only show the caret on
+        // accept — a reject drag has no destination position to
+        // indicate, and showing a caret would suggest the drop
+        // would land somewhere.
+        const pos = outcome === "reject"
+          ? null
+          : dropOffsetAtCoords(view, event.clientX, event.clientY);
         if (view.state.field(tugDropCaretField) !== pos) {
           view.dispatch({ effects: setTugDropCaretPos.of(pos) });
         }

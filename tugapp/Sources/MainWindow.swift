@@ -78,7 +78,16 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         }
         #endif
 
-        webView = WKWebView(frame: .zero, configuration: config)
+        // Use `TugWebView` so the OS drag dispatch flows through our
+        // subclass — `TugDragDestination` snapshots the pasteboard on
+        // every dragenter/dragover and publishes the resolved file
+        // metadata to `window.__tugActiveDrag`. The JS-side drop
+        // extension reads from there to drive cursor-level accept /
+        // reject. WebKit's own drag handling still runs via super, so
+        // drops continue to arrive at the JS `drop` event with a fully
+        // populated `DataTransfer.files`. See
+        // `roadmap/tide-atoms.md#step-3-5-7`.
+        webView = TugWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
