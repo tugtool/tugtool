@@ -821,8 +821,17 @@ app-test *FILES:
 # Runtime ~20-30s (vs ~3min for the full sweep).
 app-test-smoke: (app-test "harness-smoke/smoke.test.ts" "harness-smoke/version-handshake.test.ts" "at0001-tab-switch-fc.test.ts")
 
-# Clean Rust targets and Mac app build artifacts
-clean:
+# Clean Debug xcodebuild artifacts (matches `app-dev`)
+clean-dev:
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
+
+# Clean Release xcodebuild artifacts (matches `app-prod`)
+clean-prod:
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
+
+# Clean the Rust workspace target dir (shared by dev + prod)
+clean-rust:
     cd tugrust && cargo clean
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
-    rm -rf tugapp/build
+
+# Wipe every build artifact: Debug + Release xcodebuild outputs and Rust target/
+clean-all: clean-dev clean-prod clean-rust
