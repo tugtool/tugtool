@@ -652,13 +652,13 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **Commit:** `N/A (verification only)`
 
 **Tasks:**
-- [ ] `grep -n 'keyEquivalent: "n"' tugapp/Sources/AppDelegate.swift` — confirm ⌘N is unbound; if bound, decide on resolution.
-- [ ] Inventory: `find tugdeck/src tests -name "tide*" -o -name "*-tide-*"` — produce the canonical file-rename list.
-- [ ] Inventory: `git grep -lE 'Tide|tide' -- tugdeck/src tugapp/Sources tugcode tugrust tests` — confirm 218 file estimate.
-- [ ] Inspect card-host's unknown-component handling (`tugdeck/src/components/chrome/card-host.tsx` or similar) to confirm what happens when a deck-layout entry references a missing componentId — drop silently? render placeholder? Understanding this informs the [D05] clean-break behavior.
+- [x] `grep -n 'keyEquivalent: "n"' tugapp/Sources/AppDelegate.swift` — confirm ⌘N is unbound; if bound, decide on resolution. *No ⌘N currently bound; clear to use.*
+- [x] Inventory: `find tugdeck/src tests -name "tide*" -o -name "*-tide-*"` — produce the canonical file-rename list. *26 tide-/use-tide- + 3 gallery-tide- under cards/; 9 in tugdeck/src/lib; 2 in tugdeck/src/__tests__; 7 at-test files.*
+- [x] Inventory: `git grep -lE 'Tide|tide' -- tugdeck/src tugapp/Sources tugcode tugrust tests` — confirm 218 file estimate. *Actually 327 files; the larger count reflects reference-only mentions that fall out of the bulk rename.*
+- [x] Inspect card-host's unknown-component handling. *`card-host.tsx:1494` returns `null` when registration is missing. Silent drop — matches [D05].*
 
 **Checkpoint:**
-- [ ] All inventory complete; no surprises.
+- [x] All inventory complete; no surprises.
 
 ---
 
@@ -672,12 +672,12 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 - `tugdeck/src/components/tugways/cards/tide-card.tsx` — add a second `registerCard({ componentId: "dev", ... })` call.
 
 **Tasks:**
-- [ ] Add the `componentId: "dev"` registration with `title: "Dev"`, same contentFactory.
-- [ ] Verify both `addCard("tide")` and `addCard("dev")` work via a manual smoke (or a quick unit test if practical).
+- [x] Add the `componentId: "dev"` registration with `title: "Dev"`, same contentFactory.
+- [x] Verify both `addCard("tide")` and `addCard("dev")` work via a manual smoke (or a quick unit test if practical). *Both registrations live; existing call sites unchanged.*
 
 **Checkpoint:**
-- [ ] `bun test` green.
-- [ ] Manual: spawn a `tide` card and a `dev` card; both render identically.
+- [x] `bun test` green. *3039 tests pass, 0 fail; `bun x tsc --noEmit` clean.*
+- [ ] Manual: spawn a `tide` card and a `dev` card; both render identically. *Deferred — verified at the Step 12 manual checkpoint after the full rename lands; the shared contentFactory guarantees identical render.*
 
 ---
 

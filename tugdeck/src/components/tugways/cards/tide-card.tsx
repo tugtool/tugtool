@@ -2756,16 +2756,22 @@ function SettingsSheetBody({
 // ---------------------------------------------------------------------------
 
 /**
- * Register the Tide card in the global card registry.
+ * Register the Dev card in the global card registry.
  *
- * Must be called before `DeckManager.addCard("tide")` is invoked.
- * Call from `main.tsx` alongside `registerGitCard()`.
+ * Per `roadmap/tide-to-dev-rename.md` [D08], during the Tide → Dev
+ * transition two `componentId` registrations are live: `"dev"` (the
+ * new canonical name, title "Dev") and `"tide"` (a back-compat alias
+ * that preserves existing call sites). Both registrations share the
+ * same `TideCardContent` component and lifecycle. Step 11 of the
+ * rename plan drops the `"tide"` alias once all consumers swap.
+ *
+ * Must be called before `DeckManager.addCard("dev")` (or the legacy
+ * `addCard("tide")`) is invoked. Call from `main.tsx` alongside
+ * `registerGitCard()`.
  */
 export function registerTideCard(): void {
-  registerCard({
-    componentId: "tide",
-    contentFactory: (cardId) => <TideCardContent cardId={cardId} />,
-    defaultMeta: { title: "Tide", icon: "MessageSquareText", closable: true, confirmClose: true },
+  const shared = {
+    contentFactory: (cardId: string) => <TideCardContent cardId={cardId} />,
     defaultFeedIds: [
       FeedId.CODE_INPUT,
       FeedId.CODE_OUTPUT,
@@ -2792,6 +2798,19 @@ export function registerTideCard(): void {
       // canvas * 0.9 instead of pushing past the viewport.
       preferred: { width: 900, height: 1200 },
     },
-    engineKind: "em",
+    engineKind: "em" as const,
+  };
+
+  registerCard({
+    componentId: "dev",
+    ...shared,
+    defaultMeta: { title: "Dev", icon: "MessageSquareText", closable: true, confirmClose: true },
+  });
+
+  // Back-compat alias per [D08]. Dropped in Step 11.
+  registerCard({
+    componentId: "tide",
+    ...shared,
+    defaultMeta: { title: "Tide", icon: "MessageSquareText", closable: true, confirmClose: true },
   });
 }
