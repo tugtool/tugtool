@@ -41,7 +41,7 @@ Empirical research into Apple's current signing flow (May 2026) surfaced four fi
 
 - **Bake identity at build time, not runtime.** Each `Tug.app` bundle carries `BUILD_PROFILE` (`production`/`development`), `BUILD_BRANCH` (git branch at build time, or `detached-<short-sha>` if HEAD was detached), and `BUILD_SOURCE_TREE` (development only) in its Info.plist. The running app reads its own bundle — no git lookup, no tugbank bootstrap, no shared lookup of any kind. HEAD can drift mid-session without affecting the running process. See [D01] [D02] [D03].
 - **Full per-instance state isolation.** Every long-lived resource gets a per-instance path or name: tugbank DB, session ledger, tmux session, log directory, tugbank-notify socket. The instance ID `<profile>-<branch-slug>` (e.g. `production-main`, `development-tide-wake-1`) is the namespacing key. See [D04] [D05].
-- **Hash-derived ports with walk-on-collision + registry file.** Tugcast and Vite ports are derived from a hash of the instance ID, walked on collision, and recorded in `$TMPDIR/tug-instances.json` so external tools (`tugutil tell`, `just logs`) can find a running instance. Stable across launches of the same identity; collision-tolerant when two different identities hash to the same offset. See [D08].
+- **Hash-derived ports with walk-on-collision + registry file.** Tugcast and Vite ports are derived from a hash of the instance ID, walked on collision, and recorded in `$TMPDIR/tug-instances.json` so external tools (`tugutil tell`, `just logs-dev`/`logs-prod`) can find a running instance. Stable across launches of the same identity; collision-tolerant when two different identities hash to the same offset. See [D08].
 - **No explicit single-instance enforcement.** Two instances of the same identity collide at `bind()`. The runtime detects EADDRINUSE-with-live-pid-match-in-registry, logs a clear message, and exits cleanly without a supervisor retry loop. Same-identity coexistence is structurally impossible by the identity scheme. See [D07] [D14].
 - **Per-identity Bundle IDs.** The distributed `(production, main)` keeps the canonical `dev.tugtool.app` so AX grants and codesign expectations survive. Everything else gets `dev.tugtool.app.<profile>-<branch-slug>`, with the common `(development, main)` case shortened to `dev.tugtool.app.dev` for ergonomics. Each branch's debug build is its own LaunchServices identity, its own dock icon, its own AX TCC entry. See [D10].
 - **Apple Developer ID + notarization folded in, with inside-out signing.** The local `Tug Dev` identity is retired. All builds (debug and release) sign with the Developer ID Application certificate, hardened runtime on (`--options runtime`), secure-timestamped (`--timestamp`). Per-binary entitlements: minimal for the outer Swift binary and the Rust helpers; permissive (bun-required JIT set) for the bun-compiled `tugcode` only. `codesign --deep` is replaced with explicit inside-out signing via a new `tugrust/scripts/sign-bundle.sh`. Release builds notarize via `notarytool submit --keychain-profile tug-notary --wait`; debug builds skip notarization. The existing DR drift detection becomes belt-and-suspenders. See [D11] [D16].
@@ -51,7 +51,7 @@ Empirical research into Apple's current signing flow (May 2026) surfaced four fi
 #### Success Criteria (Measurable) {#success-criteria}
 
 - A distributed `(production, main)` build and a development build of any branch run simultaneously on the same machine with independent dock icons, independent tugbank state (theme, layout, recents), independent claude session bindings, independent tmux sessions, independent ports, and independent log files. Measured by: launch both, change theme in one, verify the other is unaffected; run a claude session in one, verify the other's transcript is empty; tail both log files in parallel and confirm no interleaving.
-- A development build from `main` and a development build from a worktree branch run simultaneously. Same verification as above. Measured by: `git worktree add .tugtree/test-branch -b test-branch`, `just app` from the worktree, verify it coexists with the original `just app` from `main`.
+- A development build from `main` and a development build from a worktree branch run simultaneously. Same verification as above. Measured by: `git worktree add .tugtree/test-branch -b test-branch`, `just app-dev` from the worktree, verify it coexists with the original `just app-dev` from `main`.
 - A second launch of the same `(profile, branch)` identity exits cleanly with a single-line error in the log naming the live instance's PID. No blank window, no supervisor retry loop. Measured by: launch identity X, then attempt to launch identity X again; verify exit code non-zero, log message includes `another '<id>' instance is already running`, app does not present a window.
 - A `tugutil tell restart` invoked from a terminal cwd'd inside a development worktree hits *that worktree's* instance, not the production app or another running development instance. Measured by: launch two development instances on different worktrees; from each worktree cwd, `tugutil tell restart` and verify only the matching instance restarts.
 - Production releases sign with the Apple Developer ID Application cert and notarize successfully (`stapler validate` returns valid). Measured by: `just build-app` produces a `.app` that passes `codesign --verify --deep --strict` and `xcrun stapler validate`; Gatekeeper accepts the bundle on a clean Mac.
@@ -255,7 +255,7 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
 
 **Implications:**
 - A single .app bundle is one identity. Repointing a built bundle at a different worktree to "be" a different identity is not supported.
-- Switching branches in a worktree and wanting a Tug build for the new branch requires a rebuild (which is the natural workflow under `just app`).
+- Switching branches in a worktree and wanting a Tug build for the new branch requires a rebuild (which is the natural workflow under `just app-dev`).
 - The xcodebuild build-phase script that captures the values must run *every* build, not be cached, to keep `BUILD_BRANCH` current.
 
 #### [D02] Detached HEAD at build time becomes `detached-<short-sha>` (DECIDED) {#d02-detached-head}
@@ -280,7 +280,7 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
 
 **Implications:**
 - Moving a dev bundle after build (`mv build/Debug/Tug.app /elsewhere/`) leaves the baked-in source tree path stale. The bundle still launches; tugcast still has resources via `TUGCAST_RESOURCE_ROOT` (set by Swift); but anything that reads `BUILD_SOURCE_TREE` for file-watching, etc., will point at the original location.
-- The `just app` recipe is the canonical way to set up a dev bundle; it ensures the source tree path matches `$PWD`.
+- The `just app-dev` recipe is the canonical way to set up a dev bundle; xcodebuild captures `$SRCROOT/..` as `BuildSourceTree` per [D03] (replacing the old `tugbank write dev.tugexec.app source-tree-path "$(pwd)"` line).
 
 #### [D04] Full per-instance state isolation (DECIDED) {#d04-full-isolation}
 
@@ -319,7 +319,7 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
 - A copy is safer than a move. If the migration code has a bug, the legacy file is intact for recovery.
 
 **Implications:**
-- Users running `just app` from a dev build *before* ever launching the production app see an empty dev tugbank, which is expected. The legacy file is not migrated into dev instances.
+- Users running `just app-dev` from a dev build *before* ever launching the production app see an empty dev tugbank, which is expected. The legacy file is not migrated into dev instances.
 - A future `tugutil instance clone production-main development-main` could copy state from one to the other on demand; out of scope for Phase 1.
 
 #### [D07] No explicit single-instance enforcement; rely on port-bind failure (DECIDED) {#d07-no-enforcement}
@@ -481,6 +481,44 @@ Signing happens inside-out via a new `tugrust/scripts/sign-bundle.sh`: Rust help
 - The harness's `code-sign-fingerprint` drift detection (`Justfile:571`) keeps working because the outer app's DR is unchanged in shape; only the *identity* used for signing has shifted from `Tug Dev` to `Developer ID Application: <Name> (Z67582R5Y8)`. Step 3 regenerates the sentinel file.
 - Future binaries added to the bundle (Sparkle.framework for auto-updates, etc.) need explicit entries in `sign-bundle.sh`. The script is the single source of truth; adding a binary without updating it produces a notarization failure.
 - The `--entitlements` flag is per-`codesign`-invocation; there's no way to declare entitlements once and have them apply to all subsequent signings. The inside-out script enumerates explicitly.
+
+#### [D17] Justfile recipe surface uses the dev/prod axis (DECIDED) {#d17-recipe-surface}
+
+**Decision:** The Justfile recipes for build/launch/stop/logs use a `<verb>-<profile>` axis with profile values `dev` and `prod`, matching the canonical BUILD_PROFILE values (`development` / `production`), bundle-ID suffixes (`dev.tugtool.app.dev`, `dev.tugtool.app.development-<slug>`, `dev.tugtool.app.production-<slug>`), and instance-ID prefixes (`production-main`, `development-<slug>`). xcodebuild's `Debug` / `Release` configuration names are an implementation detail of `capture-build-info.sh` and do not appear in the user-facing recipe surface.
+
+The Phase-1 dev/prod recipe surface is exactly: `app-dev`, `app-prod`, `launch-dev`, `launch-prod`, `stop-dev`, `stop-prod`, `stop`, `instances`, `logs-dev`, `logs-prod`.
+
+Test-side recipes (`app-test`, `app-test-smoke`) and distribution recipes (`dmg`, future `release`/`notarize`) live outside this surface — they have a single profile binding by design (dev for tests per [D18]; prod for distribution) and don't take a `-dev`/`-prod` suffix.
+
+The legacy single-instance recipes `app`, `launch`, `logs`, `tail-tugcast` are retired. Step 15 deletes them; nothing in the new surface preserves their behavior because per-instance state isolation makes "the" Tug app ambiguous.
+
+**Rationale:**
+- The identity model already commits to a single canonical name per profile. Introducing `debug`/`release` at the Justfile layer would force the user to translate a third name when reading logs, inspecting Info.plist, or running `tugutil instance list`.
+- `dev` / `prod` is short enough that `app-dev`, `launch-prod`, `stop-dev` read cleanly without further abbreviation.
+- Retiring rather than aliasing `just app` is the right call: muscle memory will steer the user into running `app` from a worktree expecting "the" dev launch and getting whichever instance happens to be wired up. A clean break with a one-time "did you mean `app-dev`?" hint is cheaper than an alias that drifts in meaning.
+
+**Implications:**
+- `just app-prod` from a worktree branch produces `(production, <branch>)`, NOT `(production, main)`. The Release configuration follows the source tree, same as Debug. To reproduce the success-criteria coexistence verification (distributed prod + worktree dev), run `app-prod` from a main checkout and `app-dev` from the worktree.
+- `tugbank write dev.tugexec.app source-tree-path "$(pwd)"` (the line that's in both `just app` and `just launch` today) is gone from the new recipes — superseded by `BuildSourceTree` in Info.plist per [D03].
+- `pkill -x Tug` is gone from the new recipes — superseded by `tugutil instance stop` keyed on the cwd-derived instance ID per [D09].
+- The distribution recipes (`just dmg`, future `just release` / `just notarize`) are a separate surface; they operate on bundles, not instances, and are not part of this naming convention.
+
+#### [D18] App-tests are dev-only; harness mints synthetic instance IDs per launch (DECIDED) {#d18-app-test-dev-only}
+
+**Decision:** `just app-test` (and `app-test-smoke`) run exclusively against `(development, *)` bundles. There is no `app-test-prod` recipe. Per-launch test isolation is provided by the harness, which generates a fresh `TUG_INSTANCE_ID=apptest-<uuid>` for every `launchTugApp` call and passes it to the spawned bundle via `open --env`. The Justfile recipe does NOT set `TUG_INSTANCE_ID` — synthetic-ID ownership lives in the harness, not the build surface.
+
+**Rationale:**
+- **Dev iteration speed.** Debug rebuilds in seconds; Release takes ~30s+. The test sweep runs dozens of times a day during active development; a Release-based loop would tank the productivity case the harness exists to enable.
+- **TestHarness affordances are debug-scoped.** `TUGAPP_APP_TEST=1` gates a code path in `AppDelegate.loadPreferences`; the harness also opens an unauthenticated TCP control socket via `TestHarnessListener`. Both currently compile into Release builds but activate only under the env var. Treating them as dev-only by recipe policy preserves the option to compile them out of Release later (defense-in-depth) without disrupting the test infrastructure.
+- **Operational friction with Gatekeeper / notarization.** Rapid spawn/kill cycles, port reuse, and per-launch env injection conflict with the operational expectations of a notarized prod bundle (which is meant to be launched once, sandboxed-ish, by an end user). Running app-tests against prod would be a sustained low-grade fight against the platform.
+- **Harness-owned synthetic IDs are cleaner than recipe-owned.** A recipe-level `TUG_INSTANCE_ID=apptest-$$` would be shared across all launches in a sweep, so files would write to the same `<data-dir>/apptest-<id>/` tree and accumulate state across each other. Per-launch IDs minted by the harness give every `launchTugApp` call its own fresh data dir. Cold-boot tests that need cross-launch state continuity (e.g. `at0014-cold-boot-scroll`) continue to use their existing explicit overrides — `TUGBANK_PATH` for the tugbank DB, future `instanceId` option to `launchTugApp` for broader continuity.
+
+**Implications:**
+- App-test sweeps coexist with a developer's live `just app-dev` session in the same worktree: the dev session runs as `(development, <branch>)`, each test launch runs as `apptest-<uuid>`. Different instance IDs → different data dirs → different ports → different tmux sessions → zero interference.
+- Parallel `just app-test` invocations in different worktrees also coexist trivially.
+- Post-test debugging: `<data-dir>/apptest-<uuid>/` survives until the next sweep starts, so a failing test's tugbank DB / logs / session ledger are inspectable. The next sweep wipes all `apptest-*` dirs as a clean-slate gesture.
+- The `Tug Dev` re-sign hack in `just app-test` (~80 lines) goes away under Step 3's Developer ID signing. The recipe shrinks substantially.
+- The harness's `pkill -x Tug` cleanup (both in the recipe and in `spawnTugApp`'s `wrappedKill`) is too broad under multi-instance — it'd kill the developer's live `app-dev` session in another window. Replaced with targeted termination keyed on either the `apptest-<uuid>` registry entry or the spawned subprocess handle directly.
 
 ---
 
@@ -1260,29 +1298,91 @@ No new configuration files. All configuration is via:
 
 ---
 
-#### Step 15: Harness + Justfile updates {#step-15}
+#### Step 15: Retire `just app`/`launch`/`logs`; add dev/prod + harness recipe surface {#step-15}
 
 **Depends on:** #step-14
 
-**Commit:** `feat(multi-instance): harness and Justfile updates for instance-aware operations`
+**Commit:** `feat(multi-instance): retire just app/launch/logs; add dev/prod + harness recipe surface`
 
-**References:** [D04] [D09]
+**References:** [D03] [D04] [D05] [D09] [D17] [D18]
 
 **Artifacts:**
-- Updated `Justfile` recipes: `just app`, `just launch`, `just logs`, `just app-test`, `just tail-tugcast`, etc.
-- Updated `tests/app-test/_harness/index.ts` — sets TUG_INSTANCE_ID explicitly for test runs.
+- Retired Justfile recipes: `app`, `launch`, `logs`, `tail-tugcast`. (`tail-replay` either retires or gains the dev/prod suffix — decide at implementation time based on whether the filtered tail is still in active use.)
+- New Justfile recipes (the full Phase-1 dev/prod surface per [D17]):
+
+  | Recipe | Behavior |
+  |--------|----------|
+  | `app-dev` | xcodebuild Debug + relaunch the cwd-derived development instance. |
+  | `app-prod` | xcodebuild Release + relaunch the cwd-derived production instance. |
+  | `launch-dev` | Relaunch the cwd-derived dev instance — no build. |
+  | `launch-prod` | Relaunch the cwd-derived prod instance — no build. |
+  | `stop-dev` | `tugutil instance stop` on the cwd-derived dev instance. |
+  | `stop-prod` | `tugutil instance stop` on the cwd-derived prod instance. |
+  | `stop` | Terminate every instance returned by `tugutil instance list --json`. |
+  | `instances` | One-line wrapper around `tugutil instance list`. |
+  | `logs-dev` | `tail -F` the cwd-derived dev instance's `<data-dir>/<id>/Logs/tugcast.log.<date>`. |
+  | `logs-prod` | `tail -F` the cwd-derived prod instance's log. |
+
+- Modified Justfile recipes (kept, but rewritten):
+  - `app-test [FILES...]` — runs against the cwd-derived dev bundle; hard-fails if `just app-dev` hasn't run; depends on the harness for synthetic-instance ownership per [D18].
+  - `app-test-smoke` — unchanged shape; inherits `app-test`'s new behavior.
+- Modified harness sources:
+  - `tests/app-test/_harness/index.ts` — `launchTugApp` mints `TUG_INSTANCE_ID=apptest-<uuid>` per call and forwards via `open --env`; `wrappedKill` switches from `pkill -x Tug` to subprocess-handle / registry-keyed termination; optional `instanceId` launch option for tests that need cross-launch continuity.
 
 **Tasks:**
-- [ ] `just app` and `just launch`: replace `pkill -x Tug` patterns with `tugutil instance stop` keyed on the cwd-derived ID.
-- [ ] `just logs` / `just tail-tugcast` / `just tail-replay`: read log path from `<data-dir>/<id>/Logs/` based on cwd-derived ID.
-- [ ] Update `just app-test` recipe: set `TUG_INSTANCE_ID=apptest-<run-id>` so test runs don't collide with the developer's live dev instance.
-- [ ] Update `tests/app-test/_harness/index.ts` to pass `TUG_INSTANCE_ID` via `--env`.
+
+*Dev/prod recipe surface (per [D17]):*
+- [ ] Implement `app-dev` and `app-prod`. Each:
+  - Runs `xcodebuild -configuration {Debug,Release}` with the existing `-destination 'platform=macOS,arch=arm64'` flags.
+  - Locates the bundle via `xcodebuild -showBuildSettings | awk '/BUILT_PRODUCTS_DIR/'` (matches current pattern).
+  - Resolves the target instance ID via the same cwd-derived path that `tugutil instance current` uses (Step 14); prefixed with `development-` or `production-` per the recipe.
+  - If the target instance is running (per registry), calls `tugutil instance stop --instance <id>`, waits for the registry entry to clear, then `open <bundle>`.
+  - If the target instance is not running, just `open <bundle>`.
+  - Does NOT call `tugbank write dev.tugexec.app source-tree-path "$(pwd)"`. That line is dead post-Step 1.
+- [ ] Implement `launch-dev` / `launch-prod` as the same logic minus the xcodebuild step. Hard-fail with a clear message if the bundle doesn't exist yet.
+- [ ] Implement `stop-dev` / `stop-prod` as thin wrappers around `tugutil instance stop --instance <cwd-derived-id>`. Treat "not running" as success (exit 0) so the recipe is idempotent.
+- [ ] Implement `stop` as: for each entry in `tugutil instance list --json`, call `tugutil instance stop --instance <id>`. Exit 0 even when no instances are running.
+- [ ] Implement `instances` as `tugutil instance list "$@"` (passthrough so `--json` works).
+- [ ] Implement `logs-dev` / `logs-prod`. Compute log path as `<data-dir>/<id>/Logs/tugcast.log.<YYYY-MM-DD>`. Fail loudly if no log exists yet (with the message "no log for <id> at <path> — has the instance run today?").
+- [ ] Add a header comment block above the new recipes documenting: (a) the dev/prod axis per [D17]; (b) `app-prod` from a worktree branch produces `(production, <branch>)`, not `(production, main)`; (c) distribution-flow recipes (`dmg`, future `release`/`notarize`) live separately and operate on bundles, not instances.
+
+*App-test recipe (per [D18]):*
+- [ ] Delete the `Tug Dev` re-sign block (Justfile lines ~516-591) — Developer ID signing from Step 3 makes it obsolete. Also delete the `APP_TEST_SKIP_RESIGN` env var and the `code-sign-fingerprint` drift-warn block from this recipe (the sentinel itself stays for `build-app`'s belt-and-suspenders use per [D11]).
+- [ ] Update the bundle-missing error message from `"Run 'just build-app' first."` to `"Run 'just app-dev' first."`.
+- [ ] Wipe `<data-dir>/apptest-*` directories at sweep start (clean slate every run).
+- [ ] Replace the broad `pkill -x Tug` / `pkill -x tugcast` cleanup (before sweep, between files, in the `trap cleanup` handler) with a targeted teardown that stops only `apptest-*` instances — e.g. iterate `tugutil instance list --json | jq -r '.instances[] | select(.id | startswith("apptest-")) | .id'` and SIGTERM each via `tugutil instance stop`.
+- [ ] Drop the `TUGAPP_TUGCODE_BINARY` / `TUGAPP_TUGBANK_BINARY` env exports IF Step 7's per-instance binary discovery makes them redundant (re-check at implementation time; out of scope to assert now).
+- [ ] Update the recipe comments and prereq section: replace references to `just setup-dev-signing` + `just build-app` with `just app-dev`.
+
+*App-test harness (per [D18]):*
+- [ ] In `resolveLaunchOptions` (or `spawnTugApp`), mint a fresh `TUG_INSTANCE_ID=apptest-<randomUUID()>` per `launchTugApp` call. Add to the launch's env block alongside `TUGAPP_TEST_SOCKET`. Reuse the `randomUUID` already imported for socket-path generation.
+- [ ] Add an optional `instanceId` field to `LaunchTugAppOptions`. When set, the harness uses the caller-provided ID verbatim instead of minting one — this gives cold-boot tests (e.g. `at0014-cold-boot-scroll`) an opt-in path to share an instance ID across the Phase A / Phase B `launchTugApp` calls when they need broader-than-tugbank continuity. (Most cold-boot tests will keep using their existing `TUGBANK_PATH` override and ignore this.)
+- [ ] In `spawnTugApp`'s `wrappedKill`, replace `pkill -x Tug` / `pkill -x tugcast` with: SIGTERM via the existing `subprocess.kill()` handle (which signals the `open -W` wrapper), then `tugutil instance stop --instance apptest-<uuid>` as a backstop for the in-bundle tugcast. The `-x Tug` match is unsafe under multi-instance — would kill the developer's `app-dev` session.
+- [ ] Update `tests/app-test/_harness/index.ts` import block to include `randomUUID` once (already imported) and surface `instanceId` on the public `LaunchTugAppOptions` type.
+
+*Universal sweep:*
+- [ ] Grep for any remaining `pkill -x Tug`, `pkill -x tugcast`, `dev.tugexec.app/source-tree-path`, hardcoded `~/Library/Application Support/Tug/Logs/`, or retired-recipe references (`just app`, `just launch`, `just logs`, `just tail-tugcast` — with the regex anchored to NOT swallow surviving recipes like `app-test`, `app-dev`, `logs-dev`) and remove or update them. Both Justfile and harness sources.
 
 **Tests:**
-- [ ] `just app-test harness-smoke/smoke.test.ts` passes with a live development instance also running.
+
+*Dev/prod surface:*
+- [ ] `just app-dev` from a worktree branch + `just app-prod` from a separate main checkout — both bundles run concurrently; `just instances` shows two entries; dock shows two distinct icons.
+- [ ] `just stop-dev` from the worktree terminates only the worktree's dev instance; prod stays running.
+- [ ] `just stop` terminates both.
+- [ ] `just launch-dev` (no rebuild) relaunches the most recent build of the cwd-derived dev bundle.
+- [ ] `just logs-dev` and `just logs-prod` each tail their own instance's log; tailing both in parallel shows no interleaving.
+
+*App-test multi-instance behavior:*
+- [ ] `just app-test harness-smoke/smoke.test.ts` passes while a separate `just app-dev` is also running in the same worktree. Verify by tailing `just logs-dev` during the sweep — only the dev-session log gets entries; the `apptest-*` log dirs live in their own tree.
+- [ ] Two parallel `just app-test` invocations in two worktrees both pass. Confirm by checking `<data-dir>/` has two distinct `apptest-*` dir families and no collisions.
+- [ ] `at0014-cold-boot-scroll.test.ts` passes after the harness change. (This is the canonical cross-launch-state test; ensures the explicit `TUGBANK_PATH` override still beats the new per-launch instance-ID-derived default.)
+- [ ] Mid-sweep `app.close()` does NOT kill a separately-running `just app-dev` instance. Verify by launching `app-dev`, running a test file, checking `tugutil instance list` after the file completes — the dev session must still be there.
 
 **Checkpoint:**
-- [ ] Running `just app-test` while a development worktree's `just app` is also running does not interfere with either.
+- [ ] Three-way coexistence drill: `app-prod` from a main checkout, `app-dev` from worktree A, `app-dev` from worktree B. Result: three Tug bundles in the dock, three live entries in `just instances`, three TCC entries in System Settings → Privacy & Security → Accessibility.
+- [ ] `just stop-prod` from main terminates only the prod instance; both dev instances continue to run.
+- [ ] `just app-test` passes while all three coexisting bundles are running. The fourth `apptest-<uuid>` appears in `just instances` during the run and clears (or persists for post-mortem) afterward.
+- [ ] `git grep -nE 'pkill -x Tug|pkill -x tugcast|dev\.tugexec\.app/source-tree-path|just (app|launch|logs|tail-tugcast)([[:space:]]|$)'` returns zero hits in Justfile and harness sources (the retirement is total, not just additive). The trailing class is essential — bare `\b` matches `just app-test`/`just app-dev`/etc., which are surviving recipes.
 
 ---
 
@@ -1296,7 +1396,7 @@ No new configuration files. All configuration is via:
 
 **Tasks:**
 - [ ] Install `(production, main)` to `/Applications/Tug.app`; launch it.
-- [ ] From a development worktree on a non-main branch, `just app`; verify it launches alongside the production app.
+- [ ] From a development worktree on a non-main branch, `just app-dev`; verify it launches alongside the production app.
 - [ ] Change the theme in production; verify dev's theme is unchanged.
 - [ ] Open a card and run a claude session in production; verify dev's transcript is empty.
 - [ ] Tail both log files; verify no interleaving.
