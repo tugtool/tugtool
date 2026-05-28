@@ -1159,21 +1159,22 @@ pub async fn relay_session_io(
                     return RelayOutcome::Cancelled;
                 };
                 if let Some(json) = parse_code_input(&frame) {
-                    // Capture the first user-message text before forwarding
-                    // it to claude. Claude does not echo user inputs back
-                    // through stream-json (the assistant turn arrives
-                    // alone), so this branch is the only place the picker's
-                    // first-prompt snippet can be recorded. The ledger's
-                    // `record_first_prompt` is idempotent — only the first
-                    // user message survives across resumes.
+                    // Capture the most-recent user-message text before
+                    // forwarding it to claude. Claude does not echo user
+                    // inputs back through stream-json (the assistant turn
+                    // arrives alone), so this branch is the only place
+                    // the picker's prompt snippet can be recorded. The
+                    // ledger's `record_user_prompt` overwrites on every
+                    // call — the picker shows the latest prompt so the
+                    // user recognizes the most-recent thread.
                     if let Some(text) = parse_user_message_text(json.as_bytes()) {
                         let claude_id = {
                             let entry = ledger_entry.lock().await;
                             entry.claude_session_id.clone()
                         };
                         if let Some(id) = claude_id {
-                            let truncated = crate::session_ledger::truncate_first_prompt(&text);
-                            sessions_recorder.record_first_prompt(&id, &truncated);
+                            let truncated = crate::session_ledger::truncate_user_prompt(&text);
+                            sessions_recorder.record_user_prompt(&id, &truncated);
                         }
                     }
 
@@ -1345,13 +1346,25 @@ fn merge_and_persist_system_metadata(
 
 /// Extract the user's text from a CODE_INPUT frame's JSON payload, when
 /// it is a `user_message`. Returns `None` for any other inbound message
-/// shape (interrupt, tool_approval, etc.) so the ledger only sees the
-/// first prompt's actual content. The picker uses this snippet to label
-/// resume rows.
+/// shape (interrupt, tool_approval, etc.) so the ledger only sees actual
+/// user prompts. The picker uses this snippet to label resume rows.
+///
+/// Post-Step-5c, `user_message` carries an Anthropic-API `content` array
+/// of blocks; the text is the concatenation of every `text` block's
+/// `text` field (image blocks contribute nothing). A legacy top-level
+/// `text` field is honored as a fallback so pre-5c payloads still
+/// produce a snippet during transitional builds.
 fn parse_user_message_text(json: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(json).ok()?;
     if value.get("type").and_then(|v| v.as_str()) != Some("user_message") {
         return None;
+    }
+    if let Some(blocks) = value.get("content").and_then(|v| v.as_array()) {
+        let (text, _atts) =
+            crate::feeds::payload_inspector::derive_legacy_journal_view(blocks);
+        if !text.is_empty() {
+            return Some(text);
+        }
     }
     value
         .get("text")
@@ -1657,10 +1670,36 @@ mod tests {
     // ── parse_user_message_text ──────────────────────────────────────────────
 
     #[test]
-    fn parse_user_message_text_extracts_text_field() {
+    fn parse_user_message_text_extracts_legacy_text_field() {
         let json =
             br#"{"tug_session_id":"abc","type":"user_message","text":"hello","attachments":[]}"#;
         assert_eq!(parse_user_message_text(json), Some("hello".to_owned()));
+    }
+
+    #[test]
+    fn parse_user_message_text_concatenates_content_text_blocks() {
+        let json = br#"{
+            "tug_session_id":"abc",
+            "type":"user_message",
+            "content":[
+                {"type":"text","text":"hello "},
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"PNG"}},
+                {"type":"text","text":"world"}
+            ]
+        }"#;
+        assert_eq!(parse_user_message_text(json), Some("hello world".to_owned()));
+    }
+
+    #[test]
+    fn parse_user_message_text_returns_none_for_image_only_content() {
+        let json = br#"{
+            "tug_session_id":"abc",
+            "type":"user_message",
+            "content":[
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"PNG"}}
+            ]
+        }"#;
+        assert_eq!(parse_user_message_text(json), None);
     }
 
     #[test]

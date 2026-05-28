@@ -254,8 +254,8 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
   const isPendingForget = pendingForgetSessionId === row.session_id;
 
   const fullPrompt =
-    row.first_user_prompt !== null && row.first_user_prompt.length > 0
-      ? row.first_user_prompt
+    row.last_user_prompt !== null && row.last_user_prompt.length > 0
+      ? row.last_user_prompt
       : null;
   const snippet =
     fullPrompt !== null ? truncateForDisplay(fullPrompt, 64) : null;

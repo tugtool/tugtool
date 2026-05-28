@@ -88,7 +88,7 @@ export interface SessionRow {
   created_at: number;
   last_used_at: number;
   turn_count: number;
-  first_user_prompt: string | null;
+  last_user_prompt: string | null;
   state: "live" | "closed" | "failed";
   card_id: string | null;
 }

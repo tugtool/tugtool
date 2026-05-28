@@ -32,7 +32,7 @@ function makeRow(partial: Partial<SessionRow> & { session_id: string }): Session
     created_at: partial.created_at ?? 1,
     last_used_at: partial.last_used_at ?? 1,
     turn_count: partial.turn_count ?? 0,
-    first_user_prompt: partial.first_user_prompt ?? null,
+    last_user_prompt: partial.last_user_prompt ?? null,
     state: partial.state ?? "closed",
     card_id: partial.card_id ?? null,
   };

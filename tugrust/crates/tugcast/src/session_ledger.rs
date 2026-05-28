@@ -90,9 +90,9 @@ pub const TIDE_LEDGER_MAX_AGE_DAYS: i64 = 90;
 /// trash sweep removes it. Wired in step 8.
 pub const TIDE_TRASH_SWEEP_AGE_DAYS: i64 = 7;
 
-/// Maximum number of characters of the first user prompt the ledger stores.
-/// The picker truncates further at display time.
-pub const FIRST_USER_PROMPT_MAX_CHARS: usize = 256;
+/// Maximum number of characters of the most-recent user prompt the ledger
+/// stores. The picker truncates further at display time.
+pub const USER_PROMPT_MAX_CHARS: usize = 256;
 
 /// Errors emitted by ledger operations.
 #[derive(Debug, Error)]
@@ -154,7 +154,7 @@ pub struct SessionRow {
     pub created_at: i64,
     pub last_used_at: i64,
     pub turn_count: i64,
-    pub first_user_prompt: Option<String>,
+    pub last_user_prompt: Option<String>,
     pub state: SessionState,
     /// The card this session is bound to. Set on `record_spawn` and never
     /// cleared by lifecycle transitions; combined with `state` it answers
@@ -439,6 +439,7 @@ impl SessionLedger {
         // whose drift was observed — and a future change to another
         // typed table can opt in with one more call.
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
+        Self::migrate_sessions_first_to_last_user_prompt(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -448,7 +449,7 @@ impl SessionLedger {
                 created_at        INTEGER NOT NULL,
                 last_used_at      INTEGER NOT NULL,
                 turn_count        INTEGER NOT NULL DEFAULT 0,
-                first_user_prompt TEXT,
+                last_user_prompt  TEXT,
                 state             TEXT NOT NULL,
                 card_id           TEXT
             );
@@ -660,6 +661,27 @@ impl SessionLedger {
         Ok(columns)
     }
 
+    /// One-shot rename: the `sessions.first_user_prompt` column became
+    /// `last_user_prompt` when the picker switched from "first prompt
+    /// ever" to "most recent prompt" semantics. Existing values stay —
+    /// they become the most-recent prompt until the next user message
+    /// overwrites them. No-op when the table is absent (fresh DB) or
+    /// the rename has already run.
+    fn migrate_sessions_first_to_last_user_prompt(
+        conn: &Connection,
+    ) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "sessions")?;
+        let has_old = cols.iter().any(|(n, _)| n == "first_user_prompt");
+        let has_new = cols.iter().any(|(n, _)| n == "last_user_prompt");
+        if has_old && !has_new {
+            conn.execute(
+                "ALTER TABLE sessions RENAME COLUMN first_user_prompt TO last_user_prompt",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Drop `table` when its on-disk column set no longer matches
     /// `expected` — the [DM08] delete-and-recreate, made automatic.
     /// No-op when the table is absent (the `CREATE TABLE IF NOT EXISTS`
@@ -693,7 +715,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -715,7 +737,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -746,7 +768,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
@@ -763,7 +785,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, first_user_prompt, state, card_id
+                    turn_count, last_user_prompt, state, card_id
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -801,7 +823,7 @@ impl SessionLedger {
             "INSERT INTO sessions (
                 session_id, workspace_key, project_dir,
                 created_at, last_used_at, turn_count,
-                first_user_prompt, state, card_id
+                last_user_prompt, state, card_id
              ) VALUES (?1, ?2, ?3, ?4, ?5, 0, NULL, 'live', ?6)
              ON CONFLICT(session_id) DO UPDATE SET
                 workspace_key = excluded.workspace_key,
@@ -822,32 +844,21 @@ impl SessionLedger {
         Ok(())
     }
 
-    /// Set `first_user_prompt` if not already set. The caller is responsible
-    /// for truncation; the `truncate_first_prompt` helper is provided for
+    /// Set `last_user_prompt` to the supplied snippet, overwriting any
+    /// previous value. The picker shows this so the user recognizes
+    /// the most-recent thread of conversation. The caller is responsible
+    /// for truncation; the `truncate_user_prompt` helper is provided for
     /// consistency.
-    pub fn record_first_prompt(&self, session_id: &str, prompt: &str) -> Result<(), LedgerError> {
+    pub fn record_user_prompt(&self, session_id: &str, prompt: &str) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let affected = conn.execute(
             "UPDATE sessions
-             SET first_user_prompt = ?2
-             WHERE session_id = ?1 AND first_user_prompt IS NULL",
+             SET last_user_prompt = ?2
+             WHERE session_id = ?1",
             params![session_id, prompt],
         )?;
         if affected == 0 {
-            // Either the row doesn't exist, or first_user_prompt is already
-            // populated. Both are acceptable no-ops; the latter preserves
-            // the original conversation snippet across resumes.
-            let exists: bool = conn
-                .query_row(
-                    "SELECT 1 FROM sessions WHERE session_id = ?1",
-                    params![session_id],
-                    |_| Ok(true),
-                )
-                .optional()?
-                .unwrap_or(false);
-            if !exists {
-                return Err(LedgerError::NotFound(session_id.to_owned()));
-            }
+            return Err(LedgerError::NotFound(session_id.to_owned()));
         }
         Ok(())
     }
@@ -1516,7 +1527,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let created_at: i64 = row.get(3)?;
     let last_used_at: i64 = row.get(4)?;
     let turn_count: i64 = row.get(5)?;
-    let first_user_prompt: Option<String> = row.get(6)?;
+    let last_user_prompt: Option<String> = row.get(6)?;
     let state_str: String = row.get(7)?;
     let card_id: Option<String> = row.get(8)?;
     let state = match state_str.parse::<SessionState>() {
@@ -1530,7 +1541,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         created_at,
         last_used_at,
         turn_count,
-        first_user_prompt,
+        last_user_prompt,
         state,
         card_id,
     }))
@@ -1589,14 +1600,14 @@ fn turn_telemetry_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Tu
     })
 }
 
-/// Truncate a first-user-prompt to at most `FIRST_USER_PROMPT_MAX_CHARS`
-/// chars (Unicode-scalar count, not bytes). Cheap helper for callers that
-/// want to forward the user's first message into `record_first_prompt`.
-pub fn truncate_first_prompt(prompt: &str) -> String {
-    if prompt.chars().count() <= FIRST_USER_PROMPT_MAX_CHARS {
+/// Truncate a user-prompt to at most `USER_PROMPT_MAX_CHARS` chars
+/// (Unicode-scalar count, not bytes). Cheap helper for callers that
+/// want to forward the user's latest message into `record_user_prompt`.
+pub fn truncate_user_prompt(prompt: &str) -> String {
+    if prompt.chars().count() <= USER_PROMPT_MAX_CHARS {
         return prompt.to_owned();
     }
-    prompt.chars().take(FIRST_USER_PROMPT_MAX_CHARS).collect()
+    prompt.chars().take(USER_PROMPT_MAX_CHARS).collect()
 }
 
 /// Current wall-clock time in unix milliseconds. Returns 0 if the system
@@ -1777,30 +1788,30 @@ mod tests {
         assert_eq!(row.created_at, now);
         assert_eq!(row.last_used_at, now);
         assert_eq!(row.turn_count, 0);
-        assert_eq!(row.first_user_prompt, None);
+        assert_eq!(row.last_user_prompt, None);
         assert_eq!(row.state, SessionState::Live);
         assert_eq!(row.card_id.as_deref(), Some("card-1"));
     }
 
     #[test]
-    fn record_first_prompt_sets_only_when_null() {
+    fn record_user_prompt_overwrites_on_each_call() {
         let l = fresh();
         seed_live(&l, "s1", WS_A, "card-1", millis(0));
-        l.record_first_prompt("s1", "Hello, world").unwrap();
+        l.record_user_prompt("s1", "Hello, world").unwrap();
         let r = l.get("s1").unwrap().unwrap();
-        assert_eq!(r.first_user_prompt.as_deref(), Some("Hello, world"));
+        assert_eq!(r.last_user_prompt.as_deref(), Some("Hello, world"));
 
-        // Second call leaves the snippet untouched (we want the first prompt
-        // to survive resumes, not be overwritten by a later turn).
-        l.record_first_prompt("s1", "Different prompt").unwrap();
+        // Subsequent calls overwrite — the picker shows the most-recent
+        // prompt, so a later turn replaces the snippet.
+        l.record_user_prompt("s1", "Different prompt").unwrap();
         let r = l.get("s1").unwrap().unwrap();
-        assert_eq!(r.first_user_prompt.as_deref(), Some("Hello, world"));
+        assert_eq!(r.last_user_prompt.as_deref(), Some("Different prompt"));
     }
 
     #[test]
-    fn record_first_prompt_missing_session_errors() {
+    fn record_user_prompt_missing_session_errors() {
         let l = fresh();
-        let err = l.record_first_prompt("nope", "Hi").unwrap_err();
+        let err = l.record_user_prompt("nope", "Hi").unwrap_err();
         assert!(matches!(err, LedgerError::NotFound(ref id) if id == "nope"));
     }
 
@@ -1918,7 +1929,7 @@ mod tests {
         conn.execute(
             "INSERT INTO sessions (session_id, workspace_key, project_dir,
                                    created_at, last_used_at, turn_count,
-                                   first_user_prompt, state, card_id)
+                                   last_user_prompt, state, card_id)
              VALUES (?1, ?2, ?3, ?4, ?5, 1, NULL, 'live', NULL)",
             params!["headless", WS_A, "/proj", millis(0), millis(0)],
         )
@@ -2280,19 +2291,19 @@ mod tests {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     #[test]
-    fn truncate_first_prompt_truncates_at_char_count_not_bytes() {
+    fn truncate_user_prompt_truncates_at_char_count_not_bytes() {
         // A multi-byte char repeated past the limit must not be sliced
         // mid-codepoint (`String::truncate` would panic; chars().take is
         // safe).
-        let s: String = "🌊".repeat(FIRST_USER_PROMPT_MAX_CHARS + 5);
-        let out = truncate_first_prompt(&s);
-        assert_eq!(out.chars().count(), FIRST_USER_PROMPT_MAX_CHARS);
+        let s: String = "🌊".repeat(USER_PROMPT_MAX_CHARS + 5);
+        let out = truncate_user_prompt(&s);
+        assert_eq!(out.chars().count(), USER_PROMPT_MAX_CHARS);
     }
 
     #[test]
-    fn truncate_first_prompt_returns_short_inputs_unchanged() {
+    fn truncate_user_prompt_returns_short_inputs_unchanged() {
         let s = "Hello, world";
-        assert_eq!(truncate_first_prompt(s), s);
+        assert_eq!(truncate_user_prompt(s), s);
     }
 
     #[test]

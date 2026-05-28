@@ -85,7 +85,7 @@ function seedJournal(
       created_at        INTEGER NOT NULL,
       last_used_at      INTEGER NOT NULL,
       turn_count        INTEGER NOT NULL DEFAULT 0,
-      first_user_prompt TEXT,
+      last_user_prompt  TEXT,
       state             TEXT NOT NULL,
       card_id           TEXT
     );

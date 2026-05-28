@@ -1279,7 +1279,7 @@ function TideProjectPickerForm({
   }, []);
 
   // Compose the popover's confirm message from the pending row's
-  // first-user-prompt snippet so the user sees what they're about to
+  // most-recent prompt snippet so the user sees what they're about to
   // forget. Falls back to a generic prompt when no snippet is
   // available.
   const pendingForgetMessage = useMemo<string>(() => {
@@ -1287,7 +1287,7 @@ function TideProjectPickerForm({
     const row = ledgerRows.find(
       (r) => r.session_id === pendingForgetSessionId,
     );
-    const prompt = row?.first_user_prompt ?? null;
+    const prompt = row?.last_user_prompt ?? null;
     if (prompt !== null && prompt.length > 0) {
       const truncated = truncateForDisplay(prompt, 64);
       return `Forget "${truncated}"?`;
