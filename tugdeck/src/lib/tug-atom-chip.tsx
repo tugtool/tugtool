@@ -54,10 +54,9 @@ import "./tug-atom-chip.css";
 import * as React from "react";
 
 import {
-  chipFontSizeForMagnification,
+  TRANSCRIPT_CHIP_BASE_FONT_SIZE,
   computeAtomChipGeometry,
 } from "./tug-atom-img";
-import { TranscriptMagnificationContext } from "./transcript-magnification-context";
 
 /**
  * Lazy-resolved transcript chip font family.
@@ -99,11 +98,10 @@ export interface TugAtomChipProps {
   /** Optional max width in px — labels longer than this truncate with `…`. */
   maxLabelWidth?: number;
   /**
-   * Override the chip's pixel font size. When omitted, the size scales
-   * from the surrounding {@link TranscriptMagnificationContext}
-   * (12px × magnification, floored at 9px). Callers outside the
-   * transcript surface don't need to pass anything — the default
-   * 1.0 magnification yields a 12px chip.
+   * Override the chip's pixel font size. Defaults to
+   * {@link TRANSCRIPT_CHIP_BASE_FONT_SIZE} (12px); the Swift host's
+   * `WKWebView.pageZoom` scales the SVG uniformly with the rest of
+   * the page, so the baked size stays fixed.
    */
   fontSize?: number;
   className?: string;
@@ -127,11 +125,7 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
       "data-slot": dataSlot,
       "data-testid": dataTestid,
     } = props;
-    // Default 1.0 outside a provider — gallery surfaces and other
-    // unmagnified renderers get a 12px chip.
-    const magnification = React.useContext(TranscriptMagnificationContext);
-    const fontSize =
-      fontSizeOverride ?? chipFontSizeForMagnification(magnification);
+    const fontSize = fontSizeOverride ?? TRANSCRIPT_CHIP_BASE_FONT_SIZE;
     const chipFontFamily = getChipFontFamily();
     const geom = React.useMemo(
       () =>

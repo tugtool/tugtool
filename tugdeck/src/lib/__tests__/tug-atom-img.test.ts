@@ -8,8 +8,6 @@
  *   - {@link formatAtomLabel} — basename extraction. Tool-block path
  *     chips call this with mode `"filename"` to derive the chip's
  *     label from the full path.
- *   - {@link chipFontSizeForMagnification} — transcript-side chip
- *     size from the magnification slider.
  *   - {@link atomHeightFor} — chip height formula used by the
  *     transcript walker's `line-height` floor.
  */
@@ -17,10 +15,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  TRANSCRIPT_CHIP_BASE_FONT_SIZE,
-  TRANSCRIPT_CHIP_MIN_FONT_SIZE,
   atomHeightFor,
-  chipFontSizeForMagnification,
   formatAtomLabel,
 } from "../tug-atom-img";
 
@@ -65,38 +60,6 @@ describe("formatAtomLabel — `filename` mode (basename extraction)", () => {
     expect(formatAtomLabel("https://example.com/", "filename")).toBe(
       "https://example.com/",
     );
-  });
-});
-
-describe("chipFontSizeForMagnification", () => {
-  test("identity at default magnification 1.0 → base font size 12", () => {
-    expect(chipFontSizeForMagnification(1.0)).toBe(TRANSCRIPT_CHIP_BASE_FONT_SIZE);
-    expect(chipFontSizeForMagnification(1.0)).toBe(12);
-  });
-
-  test("scales linearly with magnification", () => {
-    expect(chipFontSizeForMagnification(1.5)).toBe(18); // 12 * 1.5
-    expect(chipFontSizeForMagnification(1.25)).toBe(15); // 12 * 1.25
-  });
-
-  test("rounds to the nearest whole pixel (SVG raster cleanliness)", () => {
-    // 12 * 0.84 = 10.08 → 10
-    expect(chipFontSizeForMagnification(0.84)).toBe(10);
-    // 12 * 0.96 = 11.52 → 12 (banker's round-up)
-    expect(chipFontSizeForMagnification(0.96)).toBe(12);
-  });
-
-  test("floors at TRANSCRIPT_CHIP_MIN_FONT_SIZE for legibility", () => {
-    // 12 * 0.5 = 6, below the 9px floor → clamps to 9
-    expect(chipFontSizeForMagnification(0.5)).toBe(TRANSCRIPT_CHIP_MIN_FONT_SIZE);
-    expect(chipFontSizeForMagnification(0.5)).toBe(9);
-  });
-
-  test("the 9/12 boundary is where the floor kicks in", () => {
-    // Anything ≤ 9/12 (0.75) lands on the floor; just above floats free.
-    expect(chipFontSizeForMagnification(0.75)).toBe(9); // 12 * 0.75 = 9 exactly
-    expect(chipFontSizeForMagnification(0.7)).toBe(9);  // 12 * 0.7 = 8.4 → floored
-    expect(chipFontSizeForMagnification(0.8)).toBe(10); // 12 * 0.8 = 9.6 → 10
   });
 });
 

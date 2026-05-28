@@ -38,8 +38,8 @@
  * sticky header in the body can stack underneath without each consumer
  * needing to query the entry's geometry. The observer disconnect lives
  * in the effect cleanup; height changes (timestamp re-render,
- * identifier swap, font-size change from `--tugx-tide-magnification`)
- * re-fire the observer and the variable stays accurate.
+ * identifier swap, WKWebView pageZoom shift) re-fire the observer
+ * and the variable stays accurate.
  *
  * Laws:
  *  - [L03] the ResizeObserver registration runs in `useLayoutEffect`
@@ -208,12 +208,12 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
     // `top: var(--tugx-pin-stack-top, 0)` — i.e. the chrome's TOP
     // edge lands at the entry header's BOTTOM edge. With sub-pixel
     // header heights (font line-height + padding rarely lands on an
-    // integer pixel boundary, especially under `--tugx-tide-
-    // magnification`), `offsetHeight` rounds down, so a strict
-    // `top = offsetHeight` leaves the chrome overlapping the entry
-    // by < 1px. Adding a small tier-gap (and using `Math.ceil` on
-    // the float-precise measurement) guarantees the chrome sits a
-    // few px below the entry header rather than slipping under it.
+    // integer pixel boundary, especially under WKWebView pageZoom),
+    // `offsetHeight` rounds down, so a strict `top = offsetHeight`
+    // leaves the chrome overlapping the entry by < 1px. Adding a
+    // small tier-gap (and using `Math.ceil` on the float-precise
+    // measurement) guarantees the chrome sits a few px below the
+    // entry header rather than slipping under it.
     const TIER_GAP_PX = 4;
     const write = (px: number): void => {
       root.style.setProperty(

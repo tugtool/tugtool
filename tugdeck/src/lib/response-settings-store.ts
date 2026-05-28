@@ -2,21 +2,21 @@
  * ResponseSettingsStore — subscribable store for the Tide transcript's
  * presentation knobs.
  *
- * Two settings only:
+ * One setting today:
  *
- *   - `magnification` (0.5 – 1.5, default 1.0): scales the entire
- *     transcript view — text, headings, icons, controls — by treating
- *     it as a font-size multiplier on `.tide-card-transcript` and
- *     letting `em`-relative descendants scale by cascade. Pixel-baked
- *     icons and identifiers get explicit `em` overrides in
- *     `tide-card.css` so they track the multiplier too.
  *   - `entryMargin` (px): inter-entry vertical gap, written through to
  *     `--tugx-list-view-row-gap` via the cascade variable
  *     `--tugx-tide-entry-margin`.
  *
- * The store applies both as CSS custom properties on the bound
- * transcript root, so the transcript pane reads exactly the user's
- * choices and no other markdown surface in the deck is affected.
+ * Magnification was previously a second field here; it was retired
+ * when the magnification control moved to the macOS app's View menu.
+ * The Swift host now scales the entire WebView uniformly via
+ * `WKWebView.pageZoom`, so the web frontend has no parallel
+ * magnification state to manage.
+ *
+ * The store applies `entryMargin` as a CSS custom property on the
+ * bound transcript root, so the transcript pane reads exactly the
+ * user's choice and no other markdown surface in the deck is affected.
  *
  * Reads initial state synchronously from the TugbankClient cache
  * (no async load, no placeholder flash). Observes `onDomainChanged`
@@ -39,15 +39,7 @@ import type { ResponseSettings } from "@/settings-api";
 const DOMAIN = "dev.tugtool.tide.response";
 const KEY = "settings";
 
-/** Lower bound on the magnification slider. Below 0.5x the icon
- *  gutter starts colliding with body text on small panes. */
-export const MIN_MAGNIFICATION = 0.5;
-/** Upper bound. Past 1.5x a single line of body text begins to
- *  overflow at default pane widths. */
-export const MAX_MAGNIFICATION = 1.5;
-
 export const DEFAULT_RESPONSE_SETTINGS: ResponseSettings = {
-  magnification: 1.0,
   entryMargin: 16,
 };
 
@@ -73,14 +65,21 @@ export class ResponseSettingsStore {
   }
 
   /** Read settings from the TugbankClient cache. Returns null if not stored.
-   *  Persisted snapshots from earlier versions may be missing newer fields;
-   *  fill with defaults so the store always sees a complete shape. */
+   *  Persisted snapshots from earlier versions may be missing newer fields
+   *  or carry retired fields (e.g. `magnification`, which moved to the
+   *  Swift host's WKWebView.pageZoom). We pick out the keys we still
+   *  consume and ignore the rest, so the next write doesn't perpetuate
+   *  the stale shape. */
   private _readFromCache(): ResponseSettings | null {
     const client = getTugbankClient();
     if (!client) return null;
     const entry = client.get(DOMAIN, KEY);
     if (entry && entry.kind === "json" && entry.value !== undefined) {
-      return { ...DEFAULT_RESPONSE_SETTINGS, ...(entry.value as Partial<ResponseSettings>) };
+      const raw = entry.value as Partial<ResponseSettings>;
+      return {
+        ...DEFAULT_RESPONSE_SETTINGS,
+        ...(typeof raw.entryMargin === "number" ? { entryMargin: raw.entryMargin } : {}),
+      };
     }
     return null;
   }
@@ -128,13 +127,6 @@ export class ResponseSettingsStore {
   // ── Internal ────────────────────────────────────────────────────────────
 
   private _applySettings(next: ResponseSettings, persist: boolean): void {
-    // Clamp out-of-range values from a stale persisted shape so the
-    // slider never lands on an invalid position on a fresh load.
-    next.magnification = Math.max(
-      MIN_MAGNIFICATION,
-      Math.min(MAX_MAGNIFICATION, next.magnification),
-    );
-
     this._settings = next;
 
     this._applyCSSProperties();
@@ -148,7 +140,6 @@ export class ResponseSettingsStore {
     const el = this._targetEl;
     if (!el) return;
     const s = this._settings;
-    el.style.setProperty("--tugx-tide-magnification", String(s.magnification));
     el.style.setProperty("--tugx-tide-entry-margin", `${s.entryMargin}px`);
   }
 }

@@ -568,6 +568,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("arrange-cards", params: ["mode": "tile"])
     }
 
+    @objc private func actualSize(_ sender: Any?) {
+        window.actualSize()
+    }
+
+    @objc private func zoomIn(_ sender: Any?) {
+        window.zoomIn()
+    }
+
+    @objc private func zoomOut(_ sender: Any?) {
+        window.zoomOut()
+    }
+
     @objc private func focusPaneFromMenu(_ sender: NSMenuItem) {
         guard let paneId = sender.representedObject as? String else { return }
         sendControl("focus-pane", params: ["paneId": paneId])
@@ -949,13 +961,47 @@ extension AppDelegate: NSMenuDelegate {
         menu.addItem(nextItem)
     }
 
-    /// Rebuild the View menu with arrangement commands, card list, and dev-mode items.
+    /// Rebuild the View menu with arrangement commands, zoom commands,
+    /// card list, and dev-mode items.
     private func rebuildViewMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
         // Arrangement commands
         menu.addItem(NSMenuItem(title: "Cascade", action: #selector(cascadeCards(_:)), keyEquivalent: "c", modifierMask: [.control, .option]))
         menu.addItem(NSMenuItem(title: "Tile", action: #selector(tileCards(_:)), keyEquivalent: "t", modifierMask: [.control, .option]))
+
+        // Zoom commands — Safari-style. Drive `webView.pageZoom` so the
+        // entire page scales uniformly. `Actual Size` (⌘0) returns to
+        // 100%; `Zoom In` (⌘+) / `Zoom Out` (⌘-) step in 10%
+        // increments bounded at 50%–200%. The hidden ⌘= alias mirrors
+        // Safari's ergonomic shortcut so users don't have to hold
+        // Shift to zoom in.
+        menu.addItem(NSMenuItem.separator())
+        let zoom = window.currentPageZoom
+        // Floating-point tolerance — stepping by 0.1 accumulates IEEE
+        // rounding error (0.6000000000000001 etc.), so menu-enablement
+        // comparisons use a small epsilon to avoid spurious disables
+        // right at the bounds.
+        let epsilon: CGFloat = 0.005
+        let actualSizeItem = NSMenuItem(title: "Actual Size", action: #selector(actualSize(_:)), keyEquivalent: "0")
+        actualSizeItem.isEnabled = abs(zoom - MainWindow.defaultPageZoom) > epsilon
+        menu.addItem(actualSizeItem)
+        let zoomInItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "+")
+        zoomInItem.isEnabled = zoom < MainWindow.maxPageZoom - epsilon
+        menu.addItem(zoomInItem)
+        // ⌘= alias for Zoom In — visible item displays ⌘+, this hidden
+        // sibling accepts ⌘= (no-shift) for ergonomic parity with
+        // Safari. `allowsKeyEquivalentWhenHidden` keeps the shortcut
+        // live even though the item is suppressed from the visible
+        // menu. Both fire the same action.
+        let zoomInAliasItem = NSMenuItem(title: "Zoom In", action: #selector(zoomIn(_:)), keyEquivalent: "=")
+        zoomInAliasItem.isEnabled = zoomInItem.isEnabled
+        zoomInAliasItem.isHidden = true
+        zoomInAliasItem.allowsKeyEquivalentWhenHidden = true
+        menu.addItem(zoomInAliasItem)
+        let zoomOutItem = NSMenuItem(title: "Zoom Out", action: #selector(zoomOut(_:)), keyEquivalent: "-")
+        zoomOutItem.isEnabled = zoom > MainWindow.minPageZoom + epsilon
+        menu.addItem(zoomOutItem)
 
         // Card list section (from cached card list pushed by the frontend)
         if !cachedCardList.isEmpty {

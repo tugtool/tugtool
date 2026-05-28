@@ -230,17 +230,15 @@
      element; descendants consume them via the cascade rules below.
      Defaults mirror `DEFAULT_RESPONSE_SETTINGS` in
      `lib/response-settings-store.ts`. [L06 / L24] */
-  --tugx-tide-magnification: 1;
   --tugx-tide-entry-margin: 16px;
 
-  /* Magnified root font-size. The transcript's nominal body size is
-     14px; multiplying by the magnification lets every `em`-relative
-     descendant (markdown body, paragraph margins, heading rhythm,
-     icon overrides below) scale by the same factor without each
-     surface having to read the magnification token directly. The
-     `…` settings sheet's slider drives `--tugx-tide-magnification`
-     between 0.5 and 1.5, so the font-size sweeps 7px through 21px. */
-  font-size: calc(14px * var(--tugx-tide-magnification));
+  /* Transcript root font-size. Em-relative descendants (markdown
+     body, paragraph margins, heading rhythm, icon overrides below)
+     anchor to this nominal 14px. The Swift host's
+     `WKWebView.pageZoom` (driven by View > Zoom In / Zoom Out)
+     scales the whole page uniformly — no parallel per-element
+     scaling lives in the web frontend anymore. */
+  font-size: 14px;
 }
 
 /* [DT10] transcript-replay paint gate. While the card's lifecycle
@@ -301,8 +299,7 @@
   --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
 }
 
-/* Identifier + timestamp + sequence-badge scale via `em` so the
-   magnification root font-size pulls them with it. Anchored to the
+/* Identifier + timestamp + sequence-badge sized in `em` against the
    `.tide-card-transcript` nominal 14px root:
      - identifier 0.95em ≈ 13.3px — a small bump above the
        original 0.875em ≈ 12.25px (which sat *below* body) and a
@@ -340,10 +337,10 @@
 
 /* Gutter icons (User / Bot / Shell / Command). Lucide renders SVGs
    with width / height pixel attributes — override via CSS so the
-   icon column scales with magnification AND sits slightly above
-   the identifier. 1.2em ≈ 16.8px at the 14px root.
-   `margin-block-start: 0` overrides the primitive's 0.125em
-   baseline-correction nudge — that nudge was sized for the
+   icon sits at an em-relative size against the transcript root
+   (1.2em ≈ 16.8px at the 14px root) AND slightly above the
+   identifier. `margin-block-start: 0` overrides the primitive's
+   0.125em baseline-correction nudge — that nudge was sized for the
    original 1em icon paired with smaller body text. With the icon
    now bigger and the identifier slightly smaller, the nudge
    pushes the glyph visibly below the text baseline; setting it to
@@ -360,8 +357,7 @@
    * shift. Was 0 (which left the icon a hair too high), originally
    * 0.125em (left it a hair too low). 1px is a fixed pixel rather
    * than em because the nudge is a baseline-correction artifact of
-   * the font/icon rendering, not a content-scaled offset; it's the
-   * same 1px regardless of magnification. */
+   * the font/icon rendering, not a content-scaled offset. */
   margin-block-start: 1px;
 }
 
@@ -375,7 +371,7 @@
 
 /* User-row body — plain text per [D11]. Wraps long lines, preserves
    user-typed whitespace inside the prompt verbatim. `1em` font-size
-   anchors to the magnified root. */
+   anchors to the transcript root. */
 .tide-card-transcript-user-body {
   display: block;
   white-space: pre-wrap;
@@ -403,12 +399,11 @@
   --tugx-md-block-padding-x: 0;
 }
 
-/* Apply magnification to markdown content. Body text uses 1em so it
-   scales with the transcript root. Heading sizes are overridden in
-   em units (matching the `--tug-font-size-*` ratios at a 14px root)
-   so they magnify together. [L20] cascade-scoped overrides — the
-   primitive's tokens are read globally, and we redeclare them only
-   inside the transcript. */
+/* Markdown content typography. Body text uses 1em so it anchors to
+   the transcript root. Heading sizes are overridden in em units
+   matching the `--tug-font-size-*` ratios at a 14px root. [L20]
+   cascade-scoped overrides — the primitive's tokens are read
+   globally, and we redeclare them only inside the transcript. */
 .tide-card-transcript-code-body .tugx-md-block {
   font-size: 1em;
   --tugx-md-h1-size: 1.5em;

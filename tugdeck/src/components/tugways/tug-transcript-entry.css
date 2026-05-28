@@ -35,12 +35,11 @@ body {
 
   --tugx-transcript-identifier-color:     var(--tug7-element-global-text-normal-default-rest);
   --tugx-transcript-identifier-weight:    600;
-  /* Identifier sits at `lg` (16px at default magnification — Tide's
-   * body is 14px). The 2px bump above body text reads as a clear
-   * "this is a section header" landmark when scanning a dense
-   * transcript. The icon's pixel size (in the .tsx pair) tracks
-   * this bump in lockstep so the header reads as a single
-   * proportional unit. */
+  /* Identifier sits at `lg` (16px against Tide's 14px body). The
+   * 2px bump above body text reads as a clear "this is a section
+   * header" landmark when scanning a dense transcript. The icon's
+   * pixel size (in the .tsx pair) tracks this bump in lockstep so
+   * the header reads as a single proportional unit. */
   --tugx-transcript-identifier-font-size: var(--tug-font-size-lg);
   --tugx-transcript-timestamp-color:      var(--tug7-element-global-text-normal-muted-rest);
   --tugx-transcript-timestamp-font-size:  var(--tug-font-size-xs);
@@ -113,7 +112,7 @@ body {
  * the header text's top. Pushing the SVG down by ~0.125em (one
  * eighth of the icon's em-sized box) brings their visual tops into
  * line at the nominal `1em` icon size used inside `tide-card-
- * transcript`, and scales correctly under `--tugx-tide-magnification`. */
+ * transcript`. */
 .tug-transcript-entry__icon > svg {
   margin-block-start: 0.125em;
 }

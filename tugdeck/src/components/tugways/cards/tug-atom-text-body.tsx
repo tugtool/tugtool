@@ -38,12 +38,11 @@ import * as React from "react";
 
 import {
   TUG_ATOM_CHAR,
+  TRANSCRIPT_CHIP_BASE_FONT_SIZE,
   atomHeightFor,
-  chipFontSizeForMagnification,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
-import { TranscriptMagnificationContext } from "@/lib/transcript-magnification-context";
 import { formatSequenceNumber } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
@@ -181,23 +180,15 @@ export const TugAtomTextBody = React.forwardRef<
   { text, atoms, messageNumber, className, "data-testid": dataTestid },
   ref,
 ) {
-  // Transcript magnification (default 1.0 outside a provider — e.g.,
-  // gallery design-review surfaces). The chip's pixel size is
-  // 12px × magnification, floored at 9px for legibility — see
-  // `chipFontSizeForMagnification`. Used here only to publish the
-  // line-height floor CSS variable; `TugAtomChip` reads the same
-  // context internally for its own size.
-  const magnification = React.useContext(TranscriptMagnificationContext);
-  const chipFontSize = chipFontSizeForMagnification(magnification);
   const segments = walkAtomText(text, atoms);
   // Publish the atom's pixel height as a component-scope CSS variable
   // so the stylesheet can floor `line-height: max(1lh, …)` to at
-  // least atom-tall. Derived from `chipFontSize` (which already
-  // tracks the transcript magnification) so the floor matches the
-  // chip's actual rendered height — a magnified chip needs a taller
-  // line-box than the editor's atom height would give it.
+  // least atom-tall. Derived from the chip's bake size
+  // ({@link TRANSCRIPT_CHIP_BASE_FONT_SIZE}); the Swift host's
+  // `WKWebView.pageZoom` scales the line-height floor uniformly with
+  // the chip itself, so no per-chip magnification handling is needed.
   const hostStyle: React.CSSProperties = {
-    ["--tugx-atom-text-body-atom-height" as string]: `${atomHeightFor(chipFontSize)}px`,
+    ["--tugx-atom-text-body-atom-height" as string]: `${atomHeightFor(TRANSCRIPT_CHIP_BASE_FONT_SIZE)}px`,
   };
   return (
     <span

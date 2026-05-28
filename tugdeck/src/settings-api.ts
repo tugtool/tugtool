@@ -249,17 +249,21 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
 // ── Response (transcript) settings ──────────────────────────────────────────
 
 /**
- * Response-settings shape stored in tugbank. Two presentation knobs
- * for the Tide card's transcript pane (top pane, distinct from the
- * editor pane below it):
+ * Response-settings shape stored in tugbank. One presentation knob for
+ * the Tide card's transcript pane (top pane, distinct from the editor
+ * pane below it):
  *
- *   - `magnification`: scale factor for the entire transcript view —
- *     text, headings, icons, controls. 1.0 = default; sliders typically
- *     range 0.5..1.5.
  *   - `entryMargin`: inter-entry vertical gap in CSS pixels.
+ *
+ * The former `magnification` field was retired when the magnification
+ * slider moved to the macOS app's View menu (Actual Size / Zoom In /
+ * Zoom Out). The Swift host now scales the entire WebView uniformly
+ * via `WKWebView.pageZoom`, persisted in `NSUserDefaults` — no
+ * tugbank-side participation required. Older persisted records may
+ * still carry a `magnification` key; the cache reader passes it
+ * through harmlessly as an unconsumed extra field.
  */
 export interface ResponseSettings {
-  magnification: number;
   entryMargin: number;
 }
 

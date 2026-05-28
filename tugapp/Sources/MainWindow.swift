@@ -32,6 +32,21 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     weak var bridgeDelegate: BridgeDelegate?
     private var bridgeCleaned = false
 
+    // MARK: - Page zoom (View > Actual Size / Zoom In / Zoom Out)
+    //
+    // The View menu's zoom commands drive `webView.pageZoom` directly —
+    // the same machinery Safari's View > Zoom uses. Setting `pageZoom`
+    // scales the entire page uniformly (layout, text, images, SVG) so
+    // the web frontend doesn't need a parallel scaling system. The
+    // user's chosen zoom persists to `UserDefaults` and is reapplied on
+    // launch in `init`. Bounds and step match the menu's expectations:
+    // 50%–200% in 10% increments.
+    private static let pageZoomDefaultsKey = "WebViewPageZoom"
+    static let minPageZoom: CGFloat = 0.5
+    static let maxPageZoom: CGFloat = 2.0
+    static let pageZoomStep: CGFloat = 0.1
+    static let defaultPageZoom: CGFloat = 1.0
+
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
@@ -90,6 +105,17 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         // hidden and is revealed by frontendReady after JS applies the theme.
         webView.setValue(false, forKey: "drawsBackground")
         webView.isHidden = true
+
+        // Restore the user's last page-zoom selection from UserDefaults.
+        // `object(forKey:)` returns nil for an unset key (first launch);
+        // we leave `webView.pageZoom` at its default 1.0 in that case.
+        // A persisted value outside the bounds (e.g. from a future range
+        // change) is clamped, not discarded — the next zoom action
+        // re-writes the clamped value back to defaults.
+        if let saved = UserDefaults.standard.object(forKey: MainWindow.pageZoomDefaultsKey) as? Double {
+            let clamped = max(MainWindow.minPageZoom, min(MainWindow.maxPageZoom, CGFloat(saved)))
+            webView.pageZoom = clamped
+        }
 
         // Container view holds both the WebView and any snapshot overlays.
         // The snapshot overlay is a sibling of the WebView (not a child) so
@@ -161,6 +187,36 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// Evaluate JavaScript in the current page context.
     func evaluateJavaScript(_ script: String, completionHandler: ((Any?, Error?) -> Void)? = nil) {
         webView.evaluateJavaScript(script, completionHandler: completionHandler)
+    }
+
+    // MARK: - Page zoom API
+
+    /// Current zoom factor (1.0 == actual size).
+    var currentPageZoom: CGFloat {
+        return webView.pageZoom
+    }
+
+    /// Set page zoom to an exact value, clamped to [minPageZoom, maxPageZoom],
+    /// and persist to UserDefaults so the choice survives across launches.
+    func setPageZoom(_ zoom: CGFloat) {
+        let clamped = max(MainWindow.minPageZoom, min(MainWindow.maxPageZoom, zoom))
+        webView.pageZoom = clamped
+        UserDefaults.standard.set(Double(clamped), forKey: MainWindow.pageZoomDefaultsKey)
+    }
+
+    /// Reset to 100%.
+    func actualSize() {
+        setPageZoom(MainWindow.defaultPageZoom)
+    }
+
+    /// Step up by one increment, capped at `maxPageZoom`.
+    func zoomIn() {
+        setPageZoom(currentPageZoom + MainWindow.pageZoomStep)
+    }
+
+    /// Step down by one increment, floored at `minPageZoom`.
+    func zoomOut() {
+        setPageZoom(currentPageZoom - MainWindow.pageZoomStep)
     }
 
 

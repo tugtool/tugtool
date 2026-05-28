@@ -128,8 +128,6 @@ import {
   type PickerSelection,
 } from "./tide-picker-cells";
 import { truncateForDisplay } from "./tide-picker-format";
-import { createNumberFormatter } from "@/lib/tug-format";
-
 import "./tide-card.css";
 
 // ---------------------------------------------------------------------------
@@ -203,14 +201,6 @@ const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.7, label: "1.7" },
   { action: TUG_ACTIONS.SET_VALUE, value: 1.8, label: "1.8" },
 ];
-
-/**
- * Two-decimal formatter for the magnification slider's value input.
- * `0.5` → `"0.50"`, `1` → `"1.00"`, `1.5` → `"1.50"`. Module-scope so
- * the formatter object identity stays stable across renders — no
- * useMemo needed at the call site.
- */
-const MAGNIFICATION_FORMATTER = createNumberFormatter({ decimals: 2 });
 
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
@@ -2241,7 +2231,6 @@ export function TideCardBody({
   const lineWrapId = useId();
   const lineNumbersId = useId();
   const activeLineGutterId = useId();
-  const responseMagnificationSliderId = useId();
   const responseEntryMarginSliderId = useId();
 
   // --- Card settings (title-bar `…` button). ---
@@ -2266,7 +2255,6 @@ export function TideCardBody({
         lineWrapId={lineWrapId}
         lineNumbersId={lineNumbersId}
         activeLineGutterId={activeLineGutterId}
-        responseMagnificationSliderId={responseMagnificationSliderId}
         responseEntryMarginSliderId={responseEntryMarginSliderId}
         onClose={close}
       />
@@ -2307,8 +2295,6 @@ export function TideCardBody({
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
       [letterSpacingPopupId]: (v: number) => editorStore.set({ letterSpacing: v }),
       [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
-      [responseMagnificationSliderId]: (v: number) =>
-        responseStore.set({ magnification: v }),
       [responseEntryMarginSliderId]: (v: number) =>
         responseStore.set({ entryMargin: v }),
     },
@@ -2587,7 +2573,6 @@ interface SettingsSheetBodyProps {
   lineWrapId: string;
   lineNumbersId: string;
   activeLineGutterId: string;
-  responseMagnificationSliderId: string;
   responseEntryMarginSliderId: string;
   /** Dismiss callback supplied by `useTugSheet`'s render closure. */
   onClose: () => void;
@@ -2603,8 +2588,9 @@ function letterSpacingLabel(value: number): string {
  * button in the Tide card's title bar.
  *
  * Two stacked sections:
- *   1. **Response** — magnification (scales the entire transcript view
- *      including icons and headings) plus the inter-entry vertical gap.
+ *   1. **Response** — the inter-entry vertical gap. Magnification
+ *      moved to the macOS app's View menu so it scales the entire
+ *      WebView uniformly via `WKWebView.pageZoom`.
  *   2. **Editor** — typography and view toggles for the prompt editor
  *      (the bottom pane).
  */
@@ -2618,7 +2604,6 @@ function SettingsSheetBody({
   lineWrapId,
   lineNumbersId,
   activeLineGutterId,
-  responseMagnificationSliderId,
   responseEntryMarginSliderId,
   onClose,
 }: SettingsSheetBodyProps) {
@@ -2639,23 +2624,13 @@ function SettingsSheetBody({
         variant="bordered"
         className="tide-card-settings-group"
       >
-        {/* 2-column grid (label / slider) so both rows share a
-            single label column auto-sized to the longest entry,
-            keeping labels close to their slider track. Both sliders
-            share `valueWidth` so their value columns also align. */}
+        {/* 2-column grid (label / slider). Magnification moved to the
+            macOS app's View menu (Actual Size / Zoom In / Zoom Out)
+            so it scales the entire app uniformly via
+            `WKWebView.pageZoom`; Entry Gap remains a per-card
+            response-pane control. The grid shape is preserved so a
+            future second-row response setting drops in cleanly. */}
         <div className="tide-card-settings-slider-grid">
-          <span className="tide-card-settings-slider-label">Magnification</span>
-          <TugSlider
-            className="tide-card-settings-slider"
-            value={responseSettings.magnification}
-            min={0.5}
-            max={1.5}
-            step={0.05}
-            senderId={responseMagnificationSliderId}
-            size="md"
-            valueWidth="3.5rem"
-            formatter={MAGNIFICATION_FORMATTER}
-          />
           <span className="tide-card-settings-slider-label">Entry Gap</span>
           <TugSlider
             className="tide-card-settings-slider"

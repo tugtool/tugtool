@@ -127,38 +127,11 @@ const GAP = 4;
  * shrinking/growing when they bumped their editor font for code
  * legibility). They DO track the user's editor font *family* so the
  * chip still reads as "code-like" alongside surrounding transcript
- * prose. The size is anchored here at 12px and scaled by the
- * transcript's own magnification slider via
- * {@link chipFontSizeForMagnification} below.
+ * prose. The size is anchored here at 12px; the Swift host's
+ * `WKWebView.pageZoom` scales the rendered chip uniformly with the
+ * rest of the page, so the bake size stays fixed.
  */
 export const TRANSCRIPT_CHIP_BASE_FONT_SIZE = 12;
-/**
- * Minimum px floor for transcript-side atom chips. Below this the
- * label glyphs lose readable detail (anti-aliasing dominates) and
- * the icon's stroke weight starts vanishing into the chip
- * background. Reached at magnification 9/12 ≈ 0.75.
- */
-export const TRANSCRIPT_CHIP_MIN_FONT_SIZE = 9;
-
-/**
- * Compute the chip font size (px) for the transcript-side surfaces
- * given the current transcript magnification value. Pure — no module
- * state, no DOM access. The 12px base ({@link TRANSCRIPT_CHIP_BASE_FONT_SIZE})
- * scales linearly with magnification, floored at the readability
- * threshold ({@link TRANSCRIPT_CHIP_MIN_FONT_SIZE}). Rounded to the
- * nearest pixel so the SVG rasterizes cleanly.
- *
- * Examples (with default 1.0 magnification):
- *   chipFontSizeForMagnification(1.0)  → 12
- *   chipFontSizeForMagnification(1.5)  → 18
- *   chipFontSizeForMagnification(0.5)  → 9 (floor)
- *   chipFontSizeForMagnification(0.75) → 9 (floor)
- *   chipFontSizeForMagnification(0.8)  → 10
- */
-export function chipFontSizeForMagnification(magnification: number): number {
-  const raw = TRANSCRIPT_CHIP_BASE_FONT_SIZE * magnification;
-  return Math.max(TRANSCRIPT_CHIP_MIN_FONT_SIZE, Math.round(raw));
-}
 
 /**
  * Current rendered height of an atom widget, in pixels. Derived from

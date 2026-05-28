@@ -117,7 +117,6 @@ import type { Message } from "@/lib/code-session-store/types";
 import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
-import { TranscriptMagnificationContext } from "@/lib/transcript-magnification-context";
 import {
   TideTranscriptDataSource,
   readUserMessage,
@@ -1188,21 +1187,6 @@ export const TideTranscriptHost = forwardRef<
     return () => responseStore.unbind();
   }, [responseStore]);
 
-  // [L02] Subscribe to the response-settings snapshot so atom chips
-  // (transcript user-row body chips + assistant tool-block path
-  // chips) can re-bake their pixel-sized SVG when the user adjusts
-  // the magnification slider. Em-relative text rides the CSS cascade
-  // from `--tugx-tide-magnification` on the transcript root; chips
-  // are pixel-baked and have to consume the value directly. The
-  // {@link TranscriptMagnificationContext} provider below fans the
-  // snapshot's `magnification` field to every chip-rendering
-  // descendant. See `lib/transcript-magnification-context.ts`.
-  const responseSettings = useSyncExternalStore(
-    responseStore.subscribe,
-    responseStore.getSnapshot,
-  );
-  const magnification = responseSettings.magnification;
-
   // Inner `TugListView` handle — the parent reaches `scrollToBottom`
   // through the `TideTranscriptHandle` exposed below.
   const listViewRef = useRef<TugListViewHandle | null>(null);
@@ -1240,27 +1224,25 @@ export const TideTranscriptHost = forwardRef<
   }, []);
 
   return (
-    <TranscriptMagnificationContext.Provider value={magnification}>
-      <div
-        ref={rootRef}
-        className="tide-card-transcript"
-        data-slot="tide-card-transcript"
-        data-testid="tide-card-transcript"
-        data-replaying={isReplaying || undefined}
-      >
-        <TugListView
-          ref={listViewRef}
-          dataSource={dataSource}
-          delegate={delegate}
-          cellRenderers={cellRenderers}
-          scrollKey="tide-card-transcript"
-          followBottom
-          onFollowBottomChange={handleFollowBottomChange}
-          inline
-          pageByEntry
-        />
-        <TideJumpToBottomButton ref={jumpButtonRef} onClick={handleJumpToBottom} />
-      </div>
-    </TranscriptMagnificationContext.Provider>
+    <div
+      ref={rootRef}
+      className="tide-card-transcript"
+      data-slot="tide-card-transcript"
+      data-testid="tide-card-transcript"
+      data-replaying={isReplaying || undefined}
+    >
+      <TugListView
+        ref={listViewRef}
+        dataSource={dataSource}
+        delegate={delegate}
+        cellRenderers={cellRenderers}
+        scrollKey="tide-card-transcript"
+        followBottom
+        onFollowBottomChange={handleFollowBottomChange}
+        inline
+        pageByEntry
+      />
+      <TideJumpToBottomButton ref={jumpButtonRef} onClick={handleJumpToBottom} />
+    </div>
   );
 });
