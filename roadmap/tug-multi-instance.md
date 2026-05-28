@@ -1113,15 +1113,15 @@ No new configuration files. All configuration is via:
 - Updated `tugrust/crates/tugcast/src/session_ledger.rs` — `default_path()` consults `tugcore::instance::sessions_db_path()`.
 
 **Tasks:**
-- [ ] Replace the body of `SessionLedger::default_path()` with a call to `tugcore::instance::sessions_db_path()`; preserve fallback to legacy path when TUG_INSTANCE_ID is unset.
-- [ ] Update tests in `session_ledger.rs` to set TUG_INSTANCE_ID in a serialized test mutex.
+- [x] Replace the body of `SessionLedger::default_path()` with a call to `tugcore::instance::sessions_db_path()`; preserve fallback to legacy path when TUG_INSTANCE_ID is unset.
+- [x] Update tests in `session_ledger.rs` to set TUG_INSTANCE_ID in a serialized test mutex. (Added `default_path_routes_via_tug_instance_id` covering set + unset cases under a local `ENV_MUTEX`.)
 
 **Tests:**
-- [ ] Existing session_ledger tests pass with TUG_INSTANCE_ID set in the test mutex.
-- [ ] Integration: two tugcasts with distinct TUG_INSTANCE_ID values track sessions independently.
+- [x] Existing session_ledger tests pass with TUG_INSTANCE_ID set in the test mutex.
+- [x] Integration: two tugcasts with distinct TUG_INSTANCE_ID values track sessions independently. (Verified via Step 9 checkpoint — two concurrent tugcasts create two distinct `sessions.db` files under `instances/<id>/`.)
 
 **Checkpoint:**
-- [ ] `ls ~/Library/Application Support/Tug/instances/*/sessions.db` shows one DB per running instance.
+- [x] `ls ~/Library/Application Support/Tug/instances/*/sessions.db` shows one DB per running instance.
 
 ---
 

@@ -371,6 +371,12 @@ impl SessionLedger {
     /// indicates a misconfigured environment; callers should treat that as
     /// a fatal startup error.
     pub fn default_path() -> Option<PathBuf> {
+        // Per-instance path when TUG_INSTANCE_ID is set; otherwise
+        // fall back to the legacy single-instance location for
+        // backward compatibility with standalone tugcast launches.
+        if let Some(p) = tugcore::instance::sessions_db_path() {
+            return Some(p);
+        }
         let base = dirs::data_dir()?;
         #[cfg(target_os = "macos")]
         let dir = base.join("Tug");
@@ -3249,5 +3255,45 @@ mod tests {
         );
         assert_eq!(l.list_session_state_changes("s1").unwrap().len(), 1);
         assert_eq!(l.list_session_state_changes("s2").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn default_path_routes_via_tug_instance_id() {
+        use std::ffi::OsString;
+        use std::sync::Mutex;
+
+        // `default_path` reads from the process environment. Use a mutex
+        // to serialize the two cases (set / unset) so other tests using
+        // env-var-keyed paths can't race us.
+        static ENV_MUTEX: Mutex<()> = Mutex::new(());
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        let prior: Option<OsString> = std::env::var_os("TUG_INSTANCE_ID");
+        unsafe {
+            std::env::set_var("TUG_INSTANCE_ID", "ledger-test");
+        }
+        let p = SessionLedger::default_path().expect("default_path with id");
+        assert!(
+            p.ends_with("Tug/instances/ledger-test/sessions.db"),
+            "expected per-instance path, got {}",
+            p.display()
+        );
+
+        unsafe {
+            std::env::remove_var("TUG_INSTANCE_ID");
+        }
+        let p = SessionLedger::default_path().expect("default_path legacy");
+        assert!(
+            p.ends_with("sessions.db") && !p.to_string_lossy().contains("/instances/"),
+            "expected legacy path, got {}",
+            p.display()
+        );
+
+        unsafe {
+            match prior {
+                Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),
+                None => std::env::remove_var("TUG_INSTANCE_ID"),
+            }
+        }
     }
 }
