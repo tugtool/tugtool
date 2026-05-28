@@ -243,13 +243,16 @@ The original question about model-scope (card vs session) is consequently moot �
   - Test the post-mount frame for layout movement via the placement-experiment harness.
 - **Residual risk:** Permission mode and model are stable lengths; rate-limit chip varies ("5h", "59m", "rate-limited"). Width-stabilize against the widest realistic state.
 
-**Risk R03: `/rewind` shape divergence from terminal** {#r03-rewind-divergence}
+**Risk R03: `/rewind` shape divergence from terminal AND mount-identity loss on truncation** {#r03-rewind-divergence}
 
-- **Risk:** Per [D10], the dev-card's `/rewind` must reproduce the same wire / state mutations as the terminal. If [#step-7a]'s empirical capture misses an edge case (e.g. how the terminal handles forking from a turn that's mid-thinking), the dev-card flow diverges.
+- **Risk (two parts):**
+  - **Wire divergence:** Per [D10], the dev-card's `/rewind` must reproduce the same wire / state mutations as the terminal. If [#step-7a]'s empirical capture misses an edge case (e.g. how the terminal handles forking from a turn that's mid-thinking), the dev-card flow diverges.
+  - **Mount-identity loss on truncation:** When the fork removes turns after `msg_id`, the transcript's remaining turns (those BEFORE `msg_id`) must keep their React reconciliation identity per [L26]. If the implementer remounts the transcript wholesale on truncation — by swapping the transcript-data-source reference, by using a phase-encoded list key, or by routing pre/post-fork rows through different cell renderers — the user loses scroll position, selection, and any in-flight DOM state in the surviving rows. This is the [L23] failure mode "internal ops never lose user-visible state."
 - **Mitigation:**
   - [#step-7a]'s probe drives `/rewind` end-to-end in a real session and pins the canonical event sequence.
   - Re-run the probe after any tugcode / claude version bump that touches session-command handling.
-  - Drift regression catches deviations between captures.
+  - Drift regression catches wire deviations between captures.
+  - [#step-7]'s task list pins the three [L26] identity inputs (key, component type, renderer reference) verbatim; the L26 real-app pin in tests asserts scroll position and selection survive the fork.
 - **Residual risk:** A future claude version may change `/rewind` behavior, requiring a re-capture and dev-card update — but the same is true for any terminal-modeled flow.
 
 ---
@@ -421,19 +424,22 @@ The original question about model-scope (card vs session) is consequently moot �
 - The allowlist source is a single constant; the docs reference the same constant.
 - Typed `/vim` (etc.) produces no behavior — silent drop, not even a no-op message.
 
-#### [D15] Pane sheets are overlays, not split-pane right halves (DECIDED) {#d15-pane-sheets-are-overlays}
+#### [D15] Pane sheets are card-scoped overlays, not split-pane right halves (DECIDED) {#d15-pane-sheets-are-overlays}
 
-**Decision:** All pane sheets (`/rewind`, `/resume`, `/permissions` rules editor, `/diff`, `/memory`, `/agents`, `/hooks`, `/help`) mount as overlays on top of the transcript / prompt area. The horizontal split-pane in `dev-card.tsx:2425` stays reserved for its existing top-pane / bottom-pane layout. Resolves [#q10-pane-sheet-anchor], modifies [#d05-session-picker-sheet].
+**Decision:** All pane sheets (`/rewind`, `/resume`, `/permissions` rules editor, `/diff`, `/memory`, `/agents`, `/hooks`, `/help`) mount as **card-scoped overlays** — they cover only the card's content region, dim only within the card, and trap focus only within the card. They do NOT escape the card to cover the deck, the viewport, or other panes. The horizontal split-pane in `dev-card.tsx:2425` stays reserved for its existing top-pane / bottom-pane layout. Resolves [#q10-pane-sheet-anchor], modifies [#d05-session-picker-sheet].
 
 **Rationale:**
 - Keeps the dev-card's primary layout (transcript on top, prompt on bottom) intact.
 - Overlays allow richer animation and a clearer "modal in front of work" mental model.
 - Avoids tangling pane-sash logic with sheet lifecycle.
+- **Card-scoping respects [L09]** — the card never sets position / size / z-order outside its own boundary. A sheet that portals to `body` or to a deck-level layer would be the card reaching into Pane geometry, which the Pane owns.
 
 **Implications:**
-- [#step-6] `SessionPickerSheet` mounts as an overlay (`position: fixed` or a portal target), not as the split-pane right-half.
+- [#step-6] `SessionPickerSheet` mounts within the card root (e.g. `position: absolute` against a card-relative ancestor), NOT via a `body`-portal and NOT as a fixed-position viewport overlay.
+- The dimming backdrop fills the card's content region; the rest of the deck (other panes, title bar, etc.) is unaffected.
 - The split-pane in `dev-card.tsx:2425` keeps its current top/bottom semantics.
-- Overlay close-button + ESC + clicking outside all dismiss; focus restores to the prompt entry.
+- Overlay close-button + ESC + clicking on the backdrop within the card all dismiss; focus restores to the prompt entry.
+- Multi-card decks: opening a sheet in card A does not dim or affect card B.
 
 #### [D16] `/clear` supported; `/help` is a tabbed sheet (DECIDED) {#d16-clear-help-supported}
 
@@ -608,7 +614,60 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 - All Z4B chip data flows from `SessionMetadataStore.getSnapshot()` via `useSyncExternalStore` (L02-compliant).
 - Mutations (permission mode, model) round-trip via tugcode ([#d03-roundtrip-mutations]); chip updates from post-mutation `system_metadata`.
 - `SessionPickerSheet` consumes a `dataSource` prop; `/rewind` and `/resume` differ only in the source.
-- Pane sheets close on ESC, on clicking outside, and on cycling the split-pane back.
+- Pane sheets close on ESC and on clicking the card-scoped backdrop ([D15]).
+- Tick-driven displays (rate-limit countdown, api_retry countdown) use [L22] direct-DOM mutation for the tick text — never `useSyncExternalStore` for the per-second value. See [#step-3] and [#step-16].
+
+#### State zone mapping {#state-zones}
+
+> Per [L24], every piece of state belongs to exactly one zone. The mechanism follows the zone. This table maps every new state slot in this plan to its zone so the implementer doesn't choose the wrong mechanism by default.
+
+**Table T01: State zone for each new field** {#t01-state-zones}
+
+| Component / field | Zone | Mechanism | Notes / law citations |
+|---|---|---|---|
+| `PermissionModeChip` — current mode label | Structure | `useSyncExternalStore(SessionMetadataStore)` | [L02]; reads `permissionMode` |
+| `PermissionModeChip` — hover / focus / active visuals | Appearance | CSS via `data-state` attribute | [L06]; no React state for visuals |
+| `PermissionModeChip` — persisted mode for restore | Structure | tugbank `dev.permission-mode.<cardId>` | [D07]; written by Shift+Tab handler, read on card mount |
+| `Shift+Tab` substrate responder registration | Structure | `useLayoutEffect` at card mount | [L03]; per `feedback_substrate_responder` memory |
+| `Shift+Tab` cycle-next computation | Local data | Pure function of current mode | No state owned by the handler |
+| `ModelChip` — current model label | Structure | `useSyncExternalStore(SessionMetadataStore)` | [L02]; reads `model` |
+| `ModelChip` — hover / focus visuals | Appearance | CSS | [L06] |
+| `RateLimitChip` — structural state (`status`, `resetsAt`, `isUsingOverage`) | Structure | `useSyncExternalStore(SessionMetadataStore)` | [L02]; triggers React commit on shape change |
+| `RateLimitChip` — visibility predicate result | Local data | Derived from structural state via memo | Pure derivation |
+| `RateLimitChip` — color / overage indication | Appearance | CSS via `data-status` / `data-overage` attributes | [L06]; no React state |
+| `RateLimitChip` — countdown text per tick | Appearance via store→DOM | `useLayoutEffect` + `setInterval` writes `textContent` directly | [L22]; structural data drives shell, DOM mutation drives tick |
+| `SessionMetadataSnapshot.rateLimit` | Structure | Extension of `SessionMetadataStore` | [D04], [Q02]; single source of truth |
+| `SessionPickerSheet` — open/closed | Local data | `useState` in card | Sheet is card-local, no cross-card coordination |
+| `SessionPickerSheet` — current selection index | Local data | `useState` in sheet | Internal navigation state |
+| `SessionPickerSheet` — scroll position on dismiss | Structure | tugbank `dev.session-picker-sheet.<cardId>.<sheetKind>` | [L23]; survives card relaunch |
+| `SessionPickerSheet` — backdrop / focus-trap visuals | Appearance | CSS within card root, scoped per [D15] | [L06], [L09] |
+| `RewindSheetDataSource` — row projection | Structure | Pure projection over `code-session-store.transcript` | Source-of-truth lives in code-session-store |
+| Transcript row mount identity across `/rewind` fork | Structure (mount invariant) | Stable key + component type + renderer ref | [L26]; pinned in [#step-7] |
+| `ModelPickerSheet` — selected model index | Local data | `useState` in sheet | Internal navigation state |
+| `PermissionRulesEditor` — draft rule list | Local data | `useState` in editor | Each rule commit is atomic; no draft-vs-commit (not L08 mutation tx) |
+| `PermissionRulesEditor` — backdrop visuals | Appearance | CSS within card root | [L06], [D15] |
+| `DiffSheet` — fetched diff payload | Local data | `useState` in sheet, populated by `git_diff_request` response | Single-shot per [D21]; not a continuous feed |
+| `DiffSheet` — file list scroll / hunk fold state | Appearance + Local data | CSS for fold visuals; local state for fold toggle map | [L06] for visuals; local for which-files-folded |
+| `ContextHud` — current usage / context_window | Structure | `useSyncExternalStore(CodeSessionStore)` reading `cost_update.usage` | [L02] |
+| `ContextHud` — arc-gauge fill | Appearance | CSS variable bound to derived ratio | [L06], [D22]; gauge visual driven by `--tug-gauge-ratio` |
+| `MemorySheet` / `AgentsSheet` / `HooksSheet` — list data | Structure | `useSyncExternalStore(SessionMetadataStore)` for the source arrays | [L02], [D04] |
+| `HelpTabbedSheet` — current tab | Local data | `useState` in sheet | Internal navigation state |
+| `HelpTabbedSheet` — command list source | Structure | `SessionMetadataStore.slashCommands` filtered through allowlist | [L02], [D14] |
+| `ToolApprovalModal` — current `control_request_forward` payload | Structure | `useSyncExternalStore` of pending-request store | [L02]; modal mounts on arrival, dismisses on response |
+| `ToolApprovalModal` — input-preview expand/collapse | Appearance + Local data | CSS for visuals; `useState` for collapsed flag | [L06]; expand is a single-shot UX state |
+| `ApiRetryIndicator` — structural state (attempt, max, error) | Structure | `useSyncExternalStore` of api_retry store | [L02] |
+| `ApiRetryIndicator` — countdown text per tick | Appearance via store→DOM | `useLayoutEffect` + `setInterval` writes `textContent` directly | [L22]; same pattern as RateLimitChip |
+| Thinking collapsible — expand/collapse | Appearance + Local data | CSS for visuals; `useState` for expanded flag | [L06] |
+| `@`-file completion — popup open / selection | Local data | `useState` in completion provider | Existing completion infrastructure |
+| `@`-file completion — file list source | Structure | FILESYSTEM snapshot feed (0x10) | [L02] |
+| Image-attachment thumbnail strip — pending attachments | Local data | `useState` in prompt entry | Cleared on send |
+| Image-attachment downsample / encode | Local data | Pure async pipeline; result attached to send | Existing `image-downsample.ts` |
+| Interrupt-intent per-turn flag | Structure | Stored on active turn record in code-session-store | [L23]; survives until `turn_complete` |
+| `CompactBoundaryDivider` — render | Structure | Driven by `compact_boundary` event presence in transcript | Stateless from divider's POV |
+| `UnknownEventBanner` — current unknown events | Structure | `useSyncExternalStore` of unknown-event store | [L02]; dismissible per banner |
+| `UnknownEventBanner` — dismissed event IDs | Local data | In-memory set; reset on card relaunch | Not worth persisting |
+
+**Rule of thumb if a field is absent from the table:** structural data that drives renderable visuals is `useSyncExternalStore`; data that drives DOM mutations only is store-observer + direct DOM (per [L22]); data scoped to a single component instance that no other code reads is `useState`; anything that's pure visual feedback to a gesture is CSS via attribute toggles.
 
 ---
 
@@ -790,7 +849,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 **Commit:** `feat(dev-card): rate-limit chip surfaces subscription-quota state in Z4B`
 
-**References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, [D06] protocol baseline, [Q02] rate-limit store shape, [Q13] RateLimitEvent strictness, Risk R04, (#z4b-chrome-layout)
+**References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, [D06] protocol baseline, [Q02] rate-limit store shape, [Q13] RateLimitEvent strictness, Risk R04, [L22] store→DOM observers, [L06] appearance via CSS/DOM, (#z4b-chrome-layout)
 
 **Artifacts:**
 - New: `rate-limit-chip.tsx`
@@ -800,12 +859,16 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 **Tasks:**
 - [ ] Extend `SessionMetadataSnapshot` with `rateLimit`.
 - [ ] Add `RateLimitEvent` parser; integrate with `FeedStore` subscription on the metadata feed.
-- [ ] Implement `RateLimitChip`: hidden when `status === "allowed"` and `resetsAt > 60min`; visible otherwise; flips to red on `status !== "allowed"`; orange "overage" annotation on `isUsingOverage`.
-- [ ] Format `resetsAt` (Unix seconds) into `5h 23m` countdown; tick visibly every 60 s.
+- [ ] Implement `RateLimitChip` reading `rateLimit` via `useSyncExternalStore` per [L02] — structural data (status, resetsAt, isUsingOverage) drives React rendering.
+- [ ] Visibility predicate: hidden when `status === "allowed"` and `resetsAt > 60min`; visible otherwise. Render once on structural change, not every tick.
+- [ ] Color / overage state via `data-status` and `data-overage` attributes on the chip root; CSS owns the color transitions per [L06]. No React state for color.
+- [ ] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state. Implementation: `useLayoutEffect` mounts a `setInterval(60_000)` that reads the current `resetsAt` from a ref and writes `textContent` of the countdown `<span>` directly. The store subscription provides resetsAt as stable structural data; the tick-text update never re-enters React's render cycle. Cleanup the interval on unmount or when the chip becomes hidden.
+- [ ] Format helper `formatResetCountdown(resetsAt, now)` returns the text the DOM mutation writes (e.g. `"5h 23m"`); pure function, no side effects.
 
 **Tests:**
 - [ ] Pure-logic: `formatResetCountdown(resetsAt, now)` for various offsets; visibility predicate for combinations.
 - [ ] Real-app: replay a fixture frame with `status: "warning"`, assert chip mounts; replay `status: "allowed"` with `resetsAt > 60min`, assert chip unmounts.
+- [ ] Real-app: verify the chip does NOT re-render through React on tick — measure React's commit count over a 5-minute window; expect commits only on structural state changes, not on each minute boundary.
 
 **Checkpoint:**
 - [ ] `just app-test rate-limit-chip`
@@ -881,14 +944,16 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 **Tasks:**
 - [ ] Implement generic `SessionPickerSheet<TRow>` taking `dataSource: DataSource<TRow>`, `renderRow: (row) => ReactNode`, `onSelect: (row) => void`, `onCancel: () => void`.
 - [ ] Sheet uses `TugListView` for virtualized rows, `gallery-pinned-headers` for time-bucket headers.
-- [ ] Mount as overlay per [D15] — does NOT split the dev-card; sits above transcript / prompt area. Backdrop dims the underlying content.
-- [ ] Keyboard: arrow keys navigate, Enter selects, Cmd+Enter "select-and-card", ESC dismisses, click-outside dismisses.
+- [ ] Mount as **card-scoped overlay** per [D15]: `position: absolute` within the card root (NOT `position: fixed`, NOT a `body`-portal). Backdrop dims the card's content region only. Other panes / cards in the deck are unaffected.
+- [ ] Keyboard: arrow keys navigate, Enter selects, Cmd+Enter "select-and-card", ESC dismisses, click on backdrop-within-card dismisses.
+- [ ] Focus trap is scoped to the card — focus cannot tab outside the card while the sheet is open.
 - [ ] Focus restores to the prompt entry on dismiss.
 - [ ] Per-card scroll/selection memory via tugbank `dev.session-picker-sheet.<cardId>.<sheetKind>`.
 
 **Tests:**
 - [ ] Pure-logic: data-source iteration, row selection state.
-- [ ] Real-app: mount sheet with a synthetic data source; verify overlay shape (no horizontal split), keyboard navigation, focus return on dismiss.
+- [ ] Real-app: mount sheet with a synthetic data source; verify overlay shape (no horizontal split, no escape from card boundary), keyboard navigation, focus return on dismiss.
+- [ ] Real-app multi-card: open a sheet in card A in a two-card deck; verify card B remains undimmed and interactable.
 
 **Checkpoint:**
 - [ ] `just app-test session-picker-sheet`
@@ -930,28 +995,37 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 **Commit:** `feat(dev-card): /rewind overlay sheet`
 
-**References:** [D05] SessionPickerSheet, [D06] protocol baseline, [D10] rewind matches terminal, [D15] overlays, Risk R03, Spec S01, (#rewind-flow)
+**References:** [D05] SessionPickerSheet, [D06] protocol baseline, [D10] rewind matches terminal, [D15] overlays, [L23] preserve user-visible state, [L26] stable mount identity, Risk R03, Spec S01, (#rewind-flow)
 
 **Artifacts:**
 - New: `rewind-sheet-data-source.ts`
 - New (driven by [#step-7a] findings): whatever IPC types / methods the empirical capture revealed — could be a new inbound type, an extension to `session_command`, or a client-side replay flow
 - Modified: slash-command popup routing — typed `/rewind` opens the sheet (in addition to slash menu)
 - Modified: `protocol.ts` adds the IPC type if a new one is needed
+- Modified: `code-session-store/` reducer if transcript truncation requires it; surgery scoped to preserve mount identity per [L26]
 
 **Tasks:**
 - [ ] Implement `RewindSheetDataSource` over `code-session-store.transcript`. Rows include msg_id, userText preview, timestamp, cost annotation.
-- [ ] Wire `/rewind` slash command + typed entry to mount the sheet via `SessionPickerSheet` (overlay per [D15]).
+- [ ] Wire `/rewind` slash command + typed entry to mount the sheet via `SessionPickerSheet` (card-scoped overlay per [D15]).
 - [ ] Implement the wire shape that [#step-7a] empirically determined the terminal uses.
 - [ ] Side preview region shows the selected turn's full content + claude response (within the overlay).
 - [ ] Empty-state: 0- or 1-turn session does not surface `/rewind` in popup.
+- [ ] **Transcript truncation preserves mount identity per [L26]**: when the fork removes turns after `msg_id`, the remaining turns (the ones BEFORE `msg_id`) must keep their existing React reconciliation identity. Three pins, per [L26]'s three-input rule:
+  - **Keys** derive from `turnKey` / `msg_id`, which survive the fork unchanged — never from a phase-encoded value.
+  - **Component type**: one transcript-row component branches internally on phase; do NOT swap between two row-component types based on "pre-fork" vs "post-fork".
+  - **Renderer reference**: the cell-renderer lambda passed to the transcript view is `useCallback`-stable across the fork; do NOT inline a new lambda per render.
+  - The turns AFTER `msg_id` unmount (correct — they're gone). The turns BEFORE `msg_id` keep scroll position, selection, in-flight observable subscriptions, and any DOM-resident state.
 
 **Tests:**
 - [ ] Pure-logic: data-source projection from transcript; row count, ordering.
+- [ ] Pure-logic: reducer truncation preserves pre-fork row keys verbatim.
 - [ ] Real-claude: send `/rewind` selection, assert wire shape matches the [#step-7a] fixture and new turn references forked-from msg_id.
 - [ ] Real-app: end-to-end keyboard select + Enter + new card-state reflects fork.
+- [ ] **Real-app L26 pin**: scroll the transcript to a turn before the fork point, open `/rewind`, fork from a later turn; assert the transcript's scroll position is preserved (no remount) and that the user's selection inside a pre-fork row survives.
 
 **Checkpoint:**
 - [ ] `just app-test rewind-sheet`
+- [ ] `just app-test rewind-mount-identity`
 - [ ] `just capture-capabilities` (drift clean)
 
 ---
@@ -1114,26 +1188,40 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 - Wiring: typed-shortcut handlers for `/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/bug`, `/btw`
 
 **Tasks:**
+
+*Slash-popup filtering:*
 - [ ] Define `GRAPHICAL_SUPPORTED_COMMANDS` allowlist in `slash-supported.ts`.
 - [ ] Filter popup output — unsupported commands hidden from popup per [D14].
-- [ ] Author `dev-card-unsupported-slash-commands.md` listing every unsupported command + why.
-- [ ] Map `/clear` → existing transcript-clear / new-session affordance per [D16].
-- [ ] Implement `/help` as a tabbed sheet (overlay) per [D16] with categorized command list, key shortcuts, and links to docs. Tabs modeled on terminal `/help`.
+- [ ] Author `dev-card-unsupported-slash-commands.md` listing every unsupported command + why. Link the doc from the slash popup's "?" help affordance and from `/help`.
+
+*`/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/bug` mappings:*
+- [ ] Map `/clear` → existing transcript-clear / new-session affordance per [D16]. Verify the affordance exists; if not, scope the missing piece as a sub-task.
+- [ ] Implement `/help` as a tabbed sheet (card-scoped overlay per [D15]) per [D16] with categorized command list, key shortcuts, and links to docs. Tabs modeled on terminal `/help`. Source of command list: `SessionMetadataStore.slashCommands` filtered through the allowlist + a curated docs section.
 - [ ] `/export`: open save dialog with format picker (JSONL / markdown).
 - [ ] `/copy`: copy last assistant_text accumulation; bind Cmd+Shift+C.
 - [ ] `/add-dir`: directory picker → control message (or punt if no IPC support yet — flag).
 - [ ] `/bug`: open `https://github.com/anthropics/claude-code/issues/new` in host browser.
-- [ ] `/btw` empirical sub-investigation per [D11]: probe claude 2.1.154 to see whether it honors `metadata.exclude_from_history: true`. If yes, send the flag on user_message. If no, tugbank-side filtering of journal entries with that flag.
-- [ ] `/btw` implementation: typed `/btw <text>` strips the prefix and sends `user_message` with the exclude flag.
+
+*`/btw` exclude-from-history flow (substeps in execution order, per [D11]):*
+- [ ] **13.btw.1 — Probe claude 2.1.154 support for the metadata flag.** Add a real-claude probe that sends `user_message` with `metadata.exclude_from_history: true` and a marker text. After the turn completes, read the session JSONL and assert whether the marker text is present. Document the result in `transport-exploration.md` and decide the implementation path:
+  - **Path A (claude honors the flag)**: the flag alone suffices; no journal-side work.
+  - **Path B (claude does NOT honor)**: tugbank carries the exclusion via journal-side filtering.
+- [ ] **13.btw.2 — Extend `UserMessage` type with optional metadata.** Add `metadata?: { exclude_from_history?: boolean }` to `tugcode/src/types.ts:UserMessage` and the parallel `tugdeck/src/protocol.ts` shape. Pre-Step-5c-style discipline: optional field, additive, type-pin tests in both projects. Tugcast `payload_inspector.rs` ignores unknown `metadata` shapes.
+- [ ] **13.btw.3 — Tugbank journal filtering (Path B fallback or default).** If the probe in 13.btw.1 returned Path A, this substep is a no-op stub for forward-compat. If Path B: tugbank's journal-write skips entries whose user_message carries `metadata.exclude_from_history: true`. Drift-pin the filter behavior in a unit test.
+- [ ] **13.btw.4 — Transcript renderer hides exclude-flagged turns by default.** The dev-card's transcript filters out turns where `metadata.exclude_from_history: true`. Toggle (out of scope here; future addition) would let the user surface them. For this step, they're invisible by default — matching `/btw`'s terminal mental model of "ephemeral, no scrollback trace."
+- [ ] **13.btw.5 — Typed `/btw <text>` handler.** Strips the prefix and sends `user_message` with `metadata.exclude_from_history: true` and the content blocks for `<text>`.
 
 **Tests:**
-- [ ] Pure-logic: allowlist filter; copy formatter; `/btw` flag serialization.
+- [ ] Pure-logic: allowlist filter; copy formatter; `/btw` metadata flag serialization.
+- [ ] Pure-logic: tugbank journal-write filter respects `exclude_from_history` (whether or not claude honors it).
+- [ ] Pure-logic: transcript projection skips exclude-flagged turns.
 - [ ] Real-app: each typed shortcut performs the expected UI action; `/help` sheet renders with tabs.
-- [ ] Real-claude probe for `/btw`: send the message with the flag; observe whether claude omits it from session JSONL.
+- [ ] Real-claude probe for `/btw` (13.btw.1): assert whether the marker text appears in the session JSONL after a turn with the flag.
 
 **Checkpoint:**
 - [ ] `just app-test slash-mappings`
 - [ ] `just app-test help-tabbed-sheet`
+- [ ] `just app-test btw-exclude-from-history`
 
 ---
 
@@ -1195,20 +1283,23 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 **Commit:** `feat(dev-card): api_retry indicator during retryable failures`
 
-**References:** [D06] protocol baseline, (#z4b-chrome-layout)
+**References:** [D06] protocol baseline, [L22] store→DOM observers, [L06] appearance via CSS/DOM, (#z4b-chrome-layout)
 
 **Artifacts:**
-- New: `api-retry-indicator.tsx`
-- Modified: Z4 footer slot or transient toast region
+- New: `api-retry-indicator.tsx` — mounts in Z4 footer (consistent placement with the rate-limit chip's Z4B-adjacent footer surface; chosen to disambiguate Step 3's open "Z4 or toast" wording)
+- Modified: Z4 footer slot to host the indicator
 
 **Tasks:**
-- [ ] Subscribe to `api_retry` events (already plumbed through tugcode).
-- [ ] Render `attempt n/max in Xs — error_label` indicator.
-- [ ] Countdown ticks; indicator clears on `cost_update` or `turn_complete`.
+- [ ] Subscribe to `api_retry` events via `useSyncExternalStore` per [L02] — structural data (attempt, max_retries, retry_delay_ms, error) drives React rendering. Render the indicator shell on `api_retry` arrival; unmount on `cost_update` or `turn_complete`.
+- [ ] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state. Implementation mirrors the rate-limit chip's pattern: `useLayoutEffect` mounts a `setInterval(1_000)` (or similar resolution) that reads the current deadline from a ref and writes `textContent` of the countdown `<span>` directly. The store subscription provides retry_delay_ms as stable structural data; the tick-text update never re-enters React's render cycle.
+- [ ] Render shell: `attempt n/max in <span class="countdown">Xs</span> — error_label`.
+- [ ] Cleanup the interval on unmount or on clear-event (`cost_update` / `turn_complete`).
+- [ ] Pure-logic countdown helper `formatRetryCountdown(deadline, now)` returns the text the DOM mutation writes.
 
 **Tests:**
 - [ ] Pure-logic: countdown function; clear-on-event logic.
-- [ ] Real-app: inject `api_retry` via probe; observe indicator.
+- [ ] Real-app: inject `api_retry` via probe; observe indicator shell mounts, ticks via DOM, clears on `cost_update`.
+- [ ] Real-app: verify React's commit count over the retry window — expect commits only on api_retry arrival and on clear, not per tick.
 
 **Checkpoint:**
 - [ ] `just app-test api-retry-indicator`
