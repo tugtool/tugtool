@@ -81,7 +81,7 @@ import { CONTROL_ACTION_LIST_CARD_BINDINGS, FeedId } from "../protocol";
 import type { CardBinding } from "../protocol";
 
 /** Component id for tide cards. Matches `registerDevCard`'s registration. */
-const TIDE_COMPONENT_ID = "tide";
+const DEV_COMPONENT_ID = "tide";
 
 /**
  * Per-card restore timeout. Long enough to survive a slow subprocess
@@ -395,7 +395,7 @@ export function restoreDevSessions(
   const tideCardIds = new Set(
     deck
       .getSnapshot()
-      .cards.filter((c) => c.componentId === TIDE_COMPONENT_ID)
+      .cards.filter((c) => c.componentId === DEV_COMPONENT_ID)
       .map((c) => c.id),
   );
   if (tideCardIds.size === 0) {

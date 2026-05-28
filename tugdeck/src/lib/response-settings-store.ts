@@ -36,7 +36,7 @@ import type { ResponseSettings } from "@/settings-api";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const DOMAIN = "dev.tugtool.tide.response";
+const DOMAIN = "dev.tugtool.dev.response";
 const KEY = "settings";
 
 export const DEFAULT_RESPONSE_SETTINGS: ResponseSettings = {

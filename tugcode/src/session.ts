@@ -92,7 +92,7 @@ export const REPLAY_HARD_TIMEOUT_MS = 10_000;
  * exists so a runaway claude can't exhaust the OS pipe buffer or
  * tugcode's heap during a slow replay. On overflow, further bytes are
  * still consumed (so claude stays unblocked) but discarded; a single
- * `tide::replay::live_buffer_overflow` warn line marks the event.
+ * `dev::replay::live_buffer_overflow` warn line marks the event.
  */
 export const REPLAY_LIVE_BUFFER_MAX = 1024;
 
@@ -272,7 +272,7 @@ function logReplay(event: string, fields: Record<string, unknown>): void {
     if (v === undefined) continue;
     parts.push(`${k}=${formatReplayValue(v)}`);
   }
-  console.log(`[tide::replay::${event}] ${parts.join(" ")}`);
+  console.log(`[dev::replay::${event}] ${parts.join(" ")}`);
 }
 
 function formatReplayValue(v: unknown): string {
@@ -397,7 +397,7 @@ export interface ClaudeSpawnConfig {
  * nudge reduces the volume of restatement that makes hiding feel
  * necessary in the first place. Tackling redundancy from both ends.
  */
-const TIDE_SYSTEM_PROMPT_NUDGE =
+const DEV_SYSTEM_PROMPT_NUDGE =
   "The user is reading this conversation in Dev, which renders each " +
   "tool call as a structured visual block — icon, verb-qualified header, " +
   "and per-tool body showing inputs and results. The block is the user's " +
@@ -442,7 +442,7 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
     "--replay-user-messages",
     "--plugin-dir", config.pluginDir,
     "--permission-mode", config.permissionMode,
-    "--append-system-prompt", TIDE_SYSTEM_PROMPT_NUDGE,
+    "--append-system-prompt", DEV_SYSTEM_PROMPT_NUDGE,
   ];
 
   if (config.model) {
@@ -4273,7 +4273,7 @@ export class SessionManager {
   }
 
   /**
-   * Upsert the record for this session into `dev.tugtool.tide /
+   * Upsert the record for this session into `dev.tugtool.dev /
    * sessions`. Keyed by the session id (which claude uses as its own
    * session id and tugcast uses for feed routing — a single identifier
    * across the stack). Value shape:

@@ -503,7 +503,7 @@ impl LedgerSessionsRecorder {
                 for id in &evicted {
                     self.broadcast_removed(id);
                     tracing::info!(
-                        target: "tide::session-lifecycle",
+                        target: "dev::session-lifecycle",
                         event = "ledger.evict_cap",
                         session_id = id.as_str(),
                         workspace_key,
@@ -524,7 +524,7 @@ impl LedgerSessionsRecorder {
                 for id in &swept {
                     self.broadcast_removed(id);
                     tracing::info!(
-                        target: "tide::session-lifecycle",
+                        target: "dev::session-lifecycle",
                         event = "ledger.evict_age",
                         session_id = id.as_str(),
                     );
@@ -544,7 +544,7 @@ impl LedgerSessionsRecorder {
                 for id in &dropped {
                     self.broadcast_removed(id);
                     tracing::info!(
-                        target: "tide::session-lifecycle",
+                        target: "dev::session-lifecycle",
                         event = "ledger.trash_project_dir",
                         session_id = id.as_str(),
                         project_dir,
@@ -574,7 +574,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             return;
         }
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "ledger.record_spawn",
             session_id = record.session_id,
             workspace_key = record.workspace_key,
@@ -591,7 +591,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             return;
         }
         tracing::debug!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "ledger.record_turn",
             session_id,
         );
@@ -610,7 +610,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             return;
         }
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "ledger.record_user_prompt",
             session_id,
             len = prompt.chars().count(),
@@ -624,7 +624,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             return;
         }
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "ledger.mark_closed",
             session_id,
         );
@@ -637,7 +637,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             return;
         }
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "ledger.mark_failed",
             session_id,
         );
@@ -648,7 +648,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
         match self.ledger.trash(session_id) {
             Ok(_) => {
                 tracing::info!(
-                    target: "tide::session-lifecycle",
+                    target: "dev::session-lifecycle",
                     event = "ledger.remove",
                     session_id,
                 );
@@ -678,7 +678,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             now,
         )?;
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "ledger.insert_pending_turn",
             session_id,
             journal_id,
@@ -693,7 +693,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
         let popped = self.ledger.delete_oldest_pending_for_session(session_id)?;
         if let Some(row) = popped.as_ref() {
             tracing::info!(
-                target: "tide::ledger",
+                target: "dev::ledger",
                 event = "turn_seen_journal_row_deleted",
                 session_id,
                 journal_id = %row.journal_id,
@@ -1681,7 +1681,7 @@ impl AgentSupervisor {
     ) -> Result<(), ControlError> {
         let project_dir = PathBuf::from(&project_dir_str);
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "spawn.supervisor_recv",
             card_id = card_id,
             tug_session_id = %tug_session_id,
@@ -1823,7 +1823,7 @@ impl AgentSupervisor {
             entry.session_mode
         };
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "spawn.effective_mode",
             card_id = card_id,
             tug_session_id = %tug_session_id,
@@ -1978,7 +1978,7 @@ impl AgentSupervisor {
         };
         if should_spawn {
             tracing::info!(
-                target: "tide::session-lifecycle",
+                target: "dev::session-lifecycle",
                 event = "supervisor.eager_spawn",
                 tug_session_id = %tug_session_id,
                 card_id = card_id,
@@ -2321,7 +2321,7 @@ impl AgentSupervisor {
                 Some(e) => e.clone(),
                 None => {
                     tracing::info!(
-                        target: "tide::session-lifecycle",
+                        target: "dev::session-lifecycle",
                         event = "request_replay.skipped",
                         tug_session_id = %tug_session_id,
                         reason = "unknown",
@@ -2357,7 +2357,7 @@ impl AgentSupervisor {
                         // empty until the next dispatch (e.g. a
                         // subsequent reload).
                         tracing::warn!(
-                            target: "tide::session-lifecycle",
+                            target: "dev::session-lifecycle",
                             event = "request_replay.skipped",
                             tug_session_id = %tug_session_id,
                             reason = "spawning_queue_overflow",
@@ -2365,7 +2365,7 @@ impl AgentSupervisor {
                         return;
                     }
                     tracing::info!(
-                        target: "tide::session-lifecycle",
+                        target: "dev::session-lifecycle",
                         event = "request_replay.queued",
                         tug_session_id = %tug_session_id,
                         reason = "spawning_window",
@@ -2381,7 +2381,7 @@ impl AgentSupervisor {
                         _ => unreachable!(),
                     };
                     tracing::info!(
-                        target: "tide::session-lifecycle",
+                        target: "dev::session-lifecycle",
                         event = "request_replay.skipped",
                         tug_session_id = %tug_session_id,
                         reason = reason,
@@ -2401,7 +2401,7 @@ impl AgentSupervisor {
         // condition surfaces in tracing.
         let Some(tx) = snapshot else {
             tracing::warn!(
-                target: "tide::session-lifecycle",
+                target: "dev::session-lifecycle",
                 event = "request_replay.skipped",
                 tug_session_id = %tug_session_id,
                 reason = "no_input_tx",
@@ -2418,7 +2418,7 @@ impl AgentSupervisor {
             return;
         }
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "request_replay.dispatched",
             tug_session_id = %tug_session_id,
         );
@@ -2462,7 +2462,7 @@ impl AgentSupervisor {
             let outer = self.ledger.lock().await;
             let Some(entry_arc) = outer.get(&parsed.tug_session_id) else {
                 tracing::warn!(
-                    target: "tide::telemetry",
+                    target: "dev::telemetry",
                     event = "record_turn_telemetry.skipped",
                     tug_session_id = %parsed.tug_session_id,
                     msg_id = %parsed.msg_id,
@@ -2475,7 +2475,7 @@ impl AgentSupervisor {
         };
         let Some(claude_id) = claude_id else {
             tracing::warn!(
-                target: "tide::telemetry",
+                target: "dev::telemetry",
                 event = "record_turn_telemetry.skipped",
                 tug_session_id = %parsed.tug_session_id,
                 msg_id = %parsed.msg_id,
@@ -2504,7 +2504,7 @@ impl AgentSupervisor {
         };
         if let Err(err) = ledger.record_turn_telemetry(&row) {
             tracing::warn!(
-                target: "tide::telemetry",
+                target: "dev::telemetry",
                 error = %err,
                 session_id = %row.session_id,
                 msg_id = %row.msg_id,
@@ -2528,7 +2528,7 @@ impl AgentSupervisor {
             let outer = self.ledger.lock().await;
             let Some(entry_arc) = outer.get(&parsed.tug_session_id) else {
                 tracing::warn!(
-                    target: "tide::telemetry",
+                    target: "dev::telemetry",
                     event = "record_context_breakdown.skipped",
                     tug_session_id = %parsed.tug_session_id,
                     reason = "session_not_found",
@@ -2540,7 +2540,7 @@ impl AgentSupervisor {
         };
         let Some(claude_id) = claude_id else {
             tracing::warn!(
-                target: "tide::telemetry",
+                target: "dev::telemetry",
                 event = "record_context_breakdown.skipped",
                 tug_session_id = %parsed.tug_session_id,
                 reason = "no_claude_session_id",
@@ -2551,7 +2551,7 @@ impl AgentSupervisor {
             ledger.record_context_breakdown(&claude_id, &parsed.payload_bytes, parsed.captured_at)
         {
             tracing::warn!(
-                target: "tide::telemetry",
+                target: "dev::telemetry",
                 error = %err,
                 session_id = %claude_id,
                 "record_context_breakdown ledger write failed",
@@ -2581,7 +2581,7 @@ impl AgentSupervisor {
             let outer = self.ledger.lock().await;
             let Some(entry_arc) = outer.get(&parsed.tug_session_id) else {
                 tracing::warn!(
-                    target: "tide::telemetry",
+                    target: "dev::telemetry",
                     event = "record_session_state_change.skipped",
                     tug_session_id = %parsed.tug_session_id,
                     reason = "session_not_found",
@@ -2593,7 +2593,7 @@ impl AgentSupervisor {
         };
         let Some(claude_id) = claude_id else {
             tracing::warn!(
-                target: "tide::telemetry",
+                target: "dev::telemetry",
                 event = "record_session_state_change.skipped",
                 tug_session_id = %parsed.tug_session_id,
                 reason = "no_claude_session_id",
@@ -2608,7 +2608,7 @@ impl AgentSupervisor {
             parsed.interrupt_in_flight,
         ) {
             tracing::warn!(
-                target: "tide::telemetry",
+                target: "dev::telemetry",
                 error = %err,
                 session_id = %claude_id,
                 "record_session_state_change ledger write failed",
@@ -2893,7 +2893,7 @@ impl AgentSupervisor {
         }
 
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "reset_session.cleared",
             card_id = card_id,
             tug_session_id = %tug_session_id,
@@ -3055,7 +3055,7 @@ impl AgentSupervisor {
             Decision::Backpressure => "backpressure",
         };
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "supervisor.dispatch_decision",
             tug_session_id = %tug_session_id,
             decision = decision_label,
@@ -3114,7 +3114,7 @@ impl AgentSupervisor {
                 {
                     Ok(Some(row)) => {
                         tracing::debug!(
-                            target: "tide::ledger",
+                            target: "dev::ledger",
                             event = "merger.journal_row_deleted",
                             session_id = %session_id,
                             kind,
@@ -3123,7 +3123,7 @@ impl AgentSupervisor {
                     }
                     Ok(None) => {
                         warn!(
-                            target: "tide::ledger",
+                            target: "dev::ledger",
                             event = "turn_complete_no_pending_journal_row",
                             session_id = %session_id,
                             kind,
@@ -3293,7 +3293,7 @@ impl AgentSupervisor {
                 let mut entry = entry_arc.lock().await;
                 entry.replay_brackets_open = entry.replay_brackets_open.saturating_add(1);
                 tracing::debug!(
-                    target: "tide::ledger",
+                    target: "dev::ledger",
                     event = "merger.replay_bracket_open",
                     session_id = %session_id,
                     depth = entry.replay_brackets_open,
@@ -3303,7 +3303,7 @@ impl AgentSupervisor {
                 let mut entry = entry_arc.lock().await;
                 entry.replay_brackets_open = entry.replay_brackets_open.saturating_sub(1);
                 tracing::debug!(
-                    target: "tide::ledger",
+                    target: "dev::ledger",
                     event = "merger.replay_bracket_close",
                     session_id = %session_id,
                     depth = entry.replay_brackets_open,
@@ -3316,7 +3316,7 @@ impl AgentSupervisor {
                 };
                 if in_replay {
                     tracing::debug!(
-                        target: "tide::ledger",
+                        target: "dev::ledger",
                         event = "merger.intercept_skipped_in_replay_bracket",
                         session_id = %session_id,
                         kind = msg_type.unwrap_or(""),
@@ -3368,7 +3368,7 @@ impl AgentSupervisor {
     /// before any visible ledger state is mutated.
     pub async fn spawn_session_worker(&self, tug_session_id: &TugSessionId) {
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "supervisor.spawn_worker_start",
             tug_session_id = %tug_session_id,
         );
@@ -3599,7 +3599,7 @@ impl AgentSupervisor {
             // correctly on a cross-card resume request after rebind.
             entry.card_id = Some(card_id.clone());
             tracing::info!(
-                target: "tide::session-lifecycle",
+                target: "dev::session-lifecycle",
                 event = "rebind.entry",
                 card_id = card_id.as_str(),
                 tug_session_id = %tug_session_id,

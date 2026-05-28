@@ -10,7 +10,7 @@
  * runs fire-and-forget after the local cache update.
  *
  * Tugbank coordinates:
- *  - domain: `dev.tugtool.tide.diff-view` (matches the
+ *  - domain: `dev.tugtool.dev.diff-view` (matches the
  *    `dev.tugtool.<area>` naming used by sibling preferences in
  *    `settings-api.ts`).
  *  - key:    `<cardId>` (per-card; same scoping convention as
@@ -27,7 +27,7 @@ import { getTugbankClient } from "@/lib/tugbank-singleton";
 export type DiffViewMode = "inline" | "side-by-side";
 
 /** Tugbank domain that holds per-card diff-view preferences. */
-export const DIFF_VIEW_DOMAIN = "dev.tugtool.tide.diff-view";
+export const DIFF_VIEW_DOMAIN = "dev.tugtool.dev.diff-view";
 
 /**
  * Subscribe to tugbank changes for the diff-view domain. The callback

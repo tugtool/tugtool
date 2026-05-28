@@ -44,7 +44,7 @@ import {
 import {
   tideSessionPhaseKey,
   tideSessionPhaseVisual,
-  TIDE_SESSION_PHASE_LABELS,
+  DEV_SESSION_PHASE_LABELS,
   type DevSessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -459,7 +459,7 @@ const DevTelemetryEndcapRuleLabel: React.FC<{
  *
  * The STATE cell mirrors the other three: an endcap-rule legend
  * above a value. The value is the human-readable phase title from
- * `TIDE_SESSION_PHASE_LABELS`: "Idle", "Running tools", "Awaiting first
+ * `DEV_SESSION_PHASE_LABELS`: "Idle", "Running tools", "Awaiting first
  * response". Flanking the value, pinned to either end of the value
  * area, are two label-less `TugProgressIndicator` pulsing-dot glyphs
  * — their dot + pulsing ring read
@@ -592,7 +592,7 @@ export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
   // STATE cell value — the human-readable phase title. The two
   // flanking indicators take the same phase key and derive their
   // own role + state via tideSessionPhaseVisual.
-  const stateLabelText = TIDE_SESSION_PHASE_LABELS[statePhaseKey];
+  const stateLabelText = DEV_SESSION_PHASE_LABELS[statePhaseKey];
 
   // TASKS cell — assembled from the Task* event stream ([D100]).
   // The cell is a single `TugProgressIndicator` (pulsing-dot variant)

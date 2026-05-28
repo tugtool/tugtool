@@ -7,7 +7,7 @@
  * `transportState`, `interruptInFlight` — but a UI indicator only
  * needs one identifier per render. {@link tideSessionPhaseKey}
  * flattens the triple into a stable string key; {@link
- * TIDE_SESSION_PHASE_LABELS} maps every key to its human-readable
+ * DEV_SESSION_PHASE_LABELS} maps every key to its human-readable
  * title (used for the indicator's visible label and tooltip); and
  * {@link tideSessionPhaseVisual} maps every key to a partial
  * `{ role, state }` for the indicator's visual treatment.
@@ -81,7 +81,7 @@ export function tideSessionPhaseKey(input: DevSessionPhaseInput): DevSessionPhas
  * indistinguishable to the user from a normal stream; the distinction
  * is internal lifecycle bookkeeping.
  */
-export const TIDE_SESSION_PHASE_LABELS: Record<DevSessionPhaseKey, string> = {
+export const DEV_SESSION_PHASE_LABELS: Record<DevSessionPhaseKey, string> = {
   offline: "Disconnected",
   restoring: "Reconnecting",
   interrupting: "Interrupting",

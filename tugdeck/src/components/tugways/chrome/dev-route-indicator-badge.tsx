@@ -104,7 +104,7 @@ const ROUTE_SHELL = "$";
  * session. The badge falls back to it before the live session's
  * `system_metadata` lands, so a version number shows immediately.
  */
-const CC_VERSION_DOMAIN = "dev.tugtool.tide";
+const CC_VERSION_DOMAIN = "dev.tugtool.dev";
 const CC_VERSION_KEY = "ccVersion";
 
 /** Read the persisted last-known version from its tugbank tagged value. */

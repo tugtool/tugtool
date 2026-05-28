@@ -5,7 +5,7 @@
  * Each scenario drives the data-and-wire flow that a real picker →
  * spawn → bridge → card cycle would produce, asserts on user-visible
  * state (binding, picker notice, prompt-history persistence), AND
- * asserts on the `[tide::session-lifecycle]` log shape so future
+ * asserts on the `[dev::session-lifecycle]` log shape so future
  * regressions show up as log-shape diffs.
  *
  * The contract these tests pin: tugdeck operates on a single session
@@ -45,7 +45,7 @@ interface LifecycleLine {
   raw: string;
 }
 
-const LIFECYCLE_PREFIX = "[tide::session-lifecycle] ";
+const LIFECYCLE_PREFIX = "[dev::session-lifecycle] ";
 
 function parseLifecycleLine(raw: string): LifecycleLine | null {
   if (!raw.startsWith(LIFECYCLE_PREFIX)) return null;

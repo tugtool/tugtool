@@ -120,7 +120,7 @@ export const EMPTY_PLACEMENT_MAP: PlacementMap = Object.freeze({
 });
 
 export const PLACEMENT_EXPERIMENT_DOMAIN =
-  "dev.tugtool.tide.placement-experiment";
+  "dev.tugtool.dev.placement-experiment";
 export const PLACEMENT_EXPERIMENT_KEY = "mapping";
 
 // ---------------------------------------------------------------------------

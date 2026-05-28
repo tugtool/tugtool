@@ -208,7 +208,7 @@ impl TestTugcast {
         // the downstream tugcode subprocess both point at the per-test
         // bank file. Without the env var tugcode's tugbank singleton
         // defaults to `~/.tugbank.db` and reads the developer's real
-        // persisted session-id map (`dev.tugtool.tide /
+        // persisted session-id map (`dev.tugtool.dev /
         // session-id-by-workspace` post-4i; previously a single global
         // `(dev.tugtool.app, session-id)` key) — which makes tugcode
         // boot with `--resume <stale-uuid>`, which claude rejects,

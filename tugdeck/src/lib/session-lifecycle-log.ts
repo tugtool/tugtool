@@ -3,12 +3,12 @@
  * session-id chain.
  *
  * Every handoff in the spawn / resume / history flow emits one line
- * tagged `[tide::session-lifecycle]` with `key=value` fields. Grepping
+ * tagged `[dev::session-lifecycle]` with `key=value` fields. Grepping
  * a single run's output (browser console + tugcast log) for that tag
  * answers "which id won, and where?" for any session.
  *
  * Format mirrors the Rust side, which uses
- * `tracing::info!(target: "tide::session-lifecycle", ...)` so the same
+ * `tracing::info!(target: "dev::session-lifecycle", ...)` so the same
  * grep surfaces both. Tugcode emits the same shape via its own copy of
  * this helper; tugcast forwards tugcode's stderr lines into its log,
  * so the three sources land in one stream.
@@ -25,7 +25,7 @@ export function logSessionLifecycle(
     if (v === undefined) continue;
     parts.push(`${k}=${formatValue(v)}`);
   }
-  console.log(`[tide::session-lifecycle] ${parts.join(" ")}`);
+  console.log(`[dev::session-lifecycle] ${parts.join(" ")}`);
 }
 
 function formatValue(v: unknown): string {

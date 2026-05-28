@@ -343,7 +343,7 @@ async function main() {
       // (a user_message that lands during replay would queue behind
       // the replay tail).
       if (sessionManager) {
-        console.log(`[tide::replay::request] session_id=${sessionId}`);
+        console.log(`[dev::replay::request] session_id=${sessionId}`);
         sessionManager.runReplay().catch((err) => {
           console.error("request_replay failed:", err);
         });

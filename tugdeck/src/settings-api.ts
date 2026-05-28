@@ -271,7 +271,7 @@ export interface ResponseSettings {
  * Read response settings from the TugbankClient cache.
  */
 export function readResponseSettings(client: TugbankClient): ResponseSettings | null {
-  const entry = client.get("dev.tugtool.tide.response", "settings");
+  const entry = client.get("dev.tugtool.dev.response", "settings");
   if (entry && entry.kind === "json" && entry.value !== undefined) {
     return entry.value as ResponseSettings;
   }
@@ -282,7 +282,7 @@ export function readResponseSettings(client: TugbankClient): ResponseSettings | 
  * PUT response settings to tugbank (fire-and-forget).
  */
 export function putResponseSettings(settings: ResponseSettings): void {
-  fetch("/api/defaults/dev.tugtool.tide.response/settings", {
+  fetch("/api/defaults/dev.tugtool.dev.response/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: settings }),
@@ -390,12 +390,12 @@ export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout):
 // ── Dev recent projects ────────────────────────────────────────────────────
 
 /** Maximum number of recent-project paths retained in the quick-pick list. */
-export const TIDE_RECENT_PROJECTS_MAX = 5;
+export const DEV_RECENT_PROJECTS_MAX = 5;
 
 /**
  * Read the dev-card recent-projects list from the TugbankClient cache.
  *
- * Domain: `dev.tugtool.tide`, key: `recent-projects`.
+ * Domain: `dev.tugtool.dev`, key: `recent-projects`.
  * Value shape: `{ paths: string[] }`. Returns `[]` if unset or malformed.
  *
  * The list is keyed by the user-typed project path — the same identifier
@@ -405,7 +405,7 @@ export const TIDE_RECENT_PROJECTS_MAX = 5;
  * payload, tugcode's persistence) reads and writes the same string.
  */
 export function readDevRecentProjects(client: TugbankClient): string[] {
-  const entry = client.get("dev.tugtool.tide", "recent-projects");
+  const entry = client.get("dev.tugtool.dev", "recent-projects");
   if (!entry || entry.kind !== "json" || entry.value === undefined) {
     return [];
   }
@@ -422,7 +422,7 @@ export function readDevRecentProjects(client: TugbankClient): string[] {
  * verbatim.
  */
 export function putDevRecentProjects(paths: string[]): void {
-  fetch("/api/defaults/dev.tugtool.tide/recent-projects", {
+  fetch("/api/defaults/dev.tugtool.dev/recent-projects", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: { paths } }),
@@ -433,12 +433,12 @@ export function putDevRecentProjects(paths: string[]): void {
 
 /**
  * Prepend `projectDir` onto `existing`, dedup case-sensitively, and cap at
- * `TIDE_RECENT_PROJECTS_MAX`. Pure helper so callers can compose the new
+ * `DEV_RECENT_PROJECTS_MAX`. Pure helper so callers can compose the new
  * list before handing it to `putDevRecentProjects`.
  */
 export function insertDevRecentProject(existing: string[], projectDir: string): string[] {
   const next = [projectDir, ...existing.filter((p) => p !== projectDir)];
-  return next.slice(0, TIDE_RECENT_PROJECTS_MAX);
+  return next.slice(0, DEV_RECENT_PROJECTS_MAX);
 }
 
 /**

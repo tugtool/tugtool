@@ -18,7 +18,7 @@ const message = Bun.argv[2] || "/cost";
 let sessionId: string | null = null;
 try {
   const client = new TugbankClient();
-  const value = client.get("dev.tugtool.tide", "session-id-by-workspace");
+  const value = client.get("dev.tugtool.dev", "session-id-by-workspace");
   client.close();
   if (typeof value === "string" && value.length > 0) {
     const map = JSON.parse(value) as Record<string, string>;

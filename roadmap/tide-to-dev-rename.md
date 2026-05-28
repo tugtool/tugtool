@@ -760,13 +760,15 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D02]
 
 **Tasks:**
-- [ ] `[tide::replay::*]` → `[dev::replay::*]` (8 distinct tag names per the Symbol Inventory).
-- [ ] `[tide::session-lifecycle ...]` → `[dev::session-lifecycle ...]`.
-- [ ] Any other `tide::` prefix.
+- [x] `[tide::replay::*]` → `[dev::replay::*]` (8 distinct tag names per the Symbol Inventory). *Swept via `sed s/tide::/dev::/g` across all 8 files containing `tide::` references (5 in tugcode/src, 3 in tugrust/crates/tugcast/src — agent_bridge, agent_supervisor, session_ledger).*
+- [x] `[tide::session-lifecycle ...]` → `[dev::session-lifecycle ...]`. *Same sed pass.*
+- [x] Any other `tide::` prefix. *Same sed pass.*
+- [x] Bundled into the same commit: `TIDE_SYSTEM_PROMPT_NUDGE` constant in `tugcode/src/session.ts` → `DEV_SYSTEM_PROMPT_NUDGE` (the constant carries the system-prompt nudge text describing how tool calls render in the card; renaming for [D01] consistency).
+- [x] Bundled into the same commit: tugbank key `"dev.tugtool.tide"` (7 hits across tugcode probe, tugdeck dev-card, dev-route-indicator-badge, settings-api, and settings-api test) → `"dev.tugtool.dev"`. Clean break per [D05]: any existing user state under `dev.tugtool.tide` becomes orphaned; the new Dev card writes to `dev.tugtool.dev`.
 
 **Checkpoint:**
-- [ ] `bun test` (tugcode side, if any) green.
-- [ ] Manual: launch a Dev card, trigger a replay, confirm log lines say `[dev::replay::*]`.
+- [x] `bun test` (tugcode side) green. *3039 tests pass; tsc clean; cargo build + cargo nextest 1312 tests pass.*
+- [ ] Manual: launch a Dev card, trigger a replay, confirm log lines say `[dev::replay::*]`. *Deferred to Step 12 manual verification.*
 
 ---
 

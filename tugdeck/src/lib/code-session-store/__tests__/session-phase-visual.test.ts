@@ -11,7 +11,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  TIDE_SESSION_PHASE_LABELS,
+  DEV_SESSION_PHASE_LABELS,
   tideSessionPhaseKey,
   tideSessionPhaseVisual,
   type DevSessionPhaseInput,
@@ -160,7 +160,7 @@ describe("tideSessionPhaseVisual — role/state mapping", () => {
   });
 });
 
-describe("TIDE_SESSION_PHASE_LABELS — human-readable labels", () => {
+describe("DEV_SESSION_PHASE_LABELS — human-readable labels", () => {
   test.each([
     ["idle", "Idle"],
     ["submitting", "Sending"],
@@ -175,6 +175,6 @@ describe("TIDE_SESSION_PHASE_LABELS — human-readable labels", () => {
     ["restoring", "Reconnecting"],
     ["interrupting", "Interrupting"],
   ] as const)("key %s resolves to %s", (key, expected) => {
-    expect(TIDE_SESSION_PHASE_LABELS[key]).toBe(expected);
+    expect(DEV_SESSION_PHASE_LABELS[key]).toBe(expected);
   });
 });

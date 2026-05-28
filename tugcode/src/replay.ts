@@ -118,7 +118,7 @@ export interface JsonlContentBlock {
  * loosely typed because Claude's per-session JSONL is an internal
  * persistence format whose shape evolves across releases. The
  * translator handles the surveyed cases explicitly and dispatches
- * unknown shapes to the `tide::replay::unknown_shape`
+ * unknown shapes to the `dev::replay::unknown_shape`
  * skip-with-telemetry path.
  *
  * Top-level `type` values seen across surveyed JSONLs:
@@ -228,7 +228,7 @@ export interface ReplayTelemetry {
   unknownShape(detail: { kind: "top_level" | "content_block"; type: string }): void;
   /** A JSONL line failed `JSON.parse`. Skipped; surrounding turns
    * still commit. Translator emits the warn so an operator can
-   * grep for `tide::replay::malformed` in production. */
+   * grep for `dev::replay::malformed` in production. */
   malformedLine(detail: { reason: string; preview: string }): void;
 }
 
@@ -240,12 +240,12 @@ const NOOP_TELEMETRY: ReplayTelemetry = {
 const DEFAULT_TELEMETRY: ReplayTelemetry = {
   unknownShape(detail) {
     console.error(
-      `[tide::replay::unknown_shape] kind=${detail.kind} type=${detail.type}`,
+      `[dev::replay::unknown_shape] kind=${detail.kind} type=${detail.type}`,
     );
   },
   malformedLine(detail) {
     console.error(
-      `[tide::replay::malformed] reason=${detail.reason} preview=${JSON.stringify(detail.preview)}`,
+      `[dev::replay::malformed] reason=${detail.reason} preview=${JSON.stringify(detail.preview)}`,
     );
   },
 };

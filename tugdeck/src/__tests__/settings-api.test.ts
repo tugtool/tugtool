@@ -20,7 +20,7 @@ import {
   getPromptHistory,
   readDevRecentProjects,
   insertDevRecentProject,
-  TIDE_RECENT_PROJECTS_MAX,
+  DEV_RECENT_PROJECTS_MAX,
 } from "../settings-api";
 import type { CardStateBag } from "../layout-tree";
 import type { TugbankClient, TaggedValue } from "../lib/tugbank-client";
@@ -336,10 +336,10 @@ describe("insertDevRecentProject", () => {
     ]);
   });
 
-  test("caps the list at TIDE_RECENT_PROJECTS_MAX", () => {
+  test("caps the list at DEV_RECENT_PROJECTS_MAX", () => {
     const over = ["/a", "/b", "/c", "/d", "/e"];
     const next = insertDevRecentProject(over, "/f");
-    expect(next.length).toBe(TIDE_RECENT_PROJECTS_MAX);
+    expect(next.length).toBe(DEV_RECENT_PROJECTS_MAX);
     expect(next[0]).toBe("/f");
     // Oldest entry drops off.
     expect(next).not.toContain("/e");
@@ -354,7 +354,7 @@ describe("readDevRecentProjects", () => {
 
   test("returns the paths array from a json-tagged value", () => {
     const client = makeMockClient({
-      "dev.tugtool.tide": {
+      "dev.tugtool.dev": {
         "recent-projects": {
           kind: "json",
           value: { paths: ["/a", "/b"] },
@@ -366,7 +366,7 @@ describe("readDevRecentProjects", () => {
 
   test("drops non-string entries defensively", () => {
     const client = makeMockClient({
-      "dev.tugtool.tide": {
+      "dev.tugtool.dev": {
         "recent-projects": {
           kind: "json",
           value: { paths: ["/a", 42, null, "", "/b"] },
@@ -378,7 +378,7 @@ describe("readDevRecentProjects", () => {
 
   test("returns [] when the value shape is wrong", () => {
     const client = makeMockClient({
-      "dev.tugtool.tide": {
+      "dev.tugtool.dev": {
         "recent-projects": { kind: "json", value: "not-an-object" } as TaggedValue,
       },
     });

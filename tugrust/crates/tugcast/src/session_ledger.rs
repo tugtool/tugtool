@@ -24,10 +24,10 @@
 //!
 //! # Eviction
 //!
-//! - **Cap per workspace** — `TIDE_LEDGER_MAX_PER_WORKSPACE` (20). On
+//! - **Cap per workspace** — `DEV_LEDGER_MAX_PER_WORKSPACE` (20). On
 //!   `record_spawn`, the oldest non-live row by `last_used_at` is evicted if
 //!   the workspace already holds the cap.
-//! - **Age expiry** — `TIDE_LEDGER_MAX_AGE_DAYS` (90). Tugcast startup sweeps
+//! - **Age expiry** — `DEV_LEDGER_MAX_AGE_DAYS` (90). Tugcast startup sweeps
 //!   any non-live row whose `last_used_at` is older than the cap.
 //!
 //! Live rows are never evicted by either policy. A long-pinned card keeps its
@@ -80,15 +80,15 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Maximum non-live rows per workspace before cap eviction kicks in on spawn.
-pub const TIDE_LEDGER_MAX_PER_WORKSPACE: usize = 20;
+pub const DEV_LEDGER_MAX_PER_WORKSPACE: usize = 20;
 
 /// Days since `last_used_at` after which a non-live row is age-evicted on
 /// startup sweep.
-pub const TIDE_LEDGER_MAX_AGE_DAYS: i64 = 90;
+pub const DEV_LEDGER_MAX_AGE_DAYS: i64 = 90;
 
 /// Days a `.tug-trash/<deletedAt>/` directory survives before the startup
 /// trash sweep removes it. Wired in step 8.
-pub const TIDE_TRASH_SWEEP_AGE_DAYS: i64 = 7;
+pub const DEV_TRASH_SWEEP_AGE_DAYS: i64 = 7;
 
 /// Maximum number of characters of the most-recent user prompt the ledger
 /// stores. The picker truncates further at display time.
@@ -1691,7 +1691,7 @@ fn move_jsonl_to_trash(
         return None;
     }
     tracing::info!(
-        target: "tide::session-lifecycle",
+        target: "dev::session-lifecycle",
         event = "ledger.trash_jsonl",
         session_id,
         project_dir,
@@ -1745,7 +1745,7 @@ fn sweep_trash_dir(trash_root: &Path, cutoff: i64) -> usize {
         }
         count += 1;
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "ledger.trash_swept",
             path = %path.display(),
             stamp_ms = stamp,
@@ -2072,7 +2072,7 @@ mod tests {
         assert_eq!(l.list_for_workspace(WS_A).unwrap().len(), 21);
 
         let evicted = l
-            .evict_oldest_closed(WS_A, TIDE_LEDGER_MAX_PER_WORKSPACE)
+            .evict_oldest_closed(WS_A, DEV_LEDGER_MAX_PER_WORKSPACE)
             .unwrap();
         assert_eq!(evicted, vec!["s0".to_owned()]);
         // s0 was oldest; should be gone.
@@ -2096,7 +2096,7 @@ mod tests {
         assert_eq!(l.list_for_workspace(WS_A).unwrap().len(), 21);
 
         let evicted = l
-            .evict_oldest_closed(WS_A, TIDE_LEDGER_MAX_PER_WORKSPACE)
+            .evict_oldest_closed(WS_A, DEV_LEDGER_MAX_PER_WORKSPACE)
             .unwrap();
         // Only the non-live count crossed the cap (2 non-live > 20 cap is
         // false, so eviction is a no-op). The plan's intent is "cap on
@@ -2121,7 +2121,7 @@ mod tests {
         }
 
         let evicted = l
-            .evict_oldest_closed(WS_A, TIDE_LEDGER_MAX_PER_WORKSPACE)
+            .evict_oldest_closed(WS_A, DEV_LEDGER_MAX_PER_WORKSPACE)
             .unwrap();
         assert_eq!(evicted, vec!["c0".to_owned()]);
         assert!(l.get("c0").unwrap().is_none(), "oldest closed evicted");
@@ -2139,7 +2139,7 @@ mod tests {
     fn sweep_expired_removes_stale_non_live_rows() {
         let l = fresh();
         let now = millis(0);
-        let max_age_ms = TIDE_LEDGER_MAX_AGE_DAYS * 86_400_000;
+        let max_age_ms = DEV_LEDGER_MAX_AGE_DAYS * 86_400_000;
 
         // 91-day-old closed row — should be swept.
         seed_live(&l, "old", WS_A, "c", millis(91));
@@ -2158,7 +2158,7 @@ mod tests {
     fn sweep_expired_leaves_live_rows_untouched() {
         let l = fresh();
         let now = millis(0);
-        let max_age_ms = TIDE_LEDGER_MAX_AGE_DAYS * 86_400_000;
+        let max_age_ms = DEV_LEDGER_MAX_AGE_DAYS * 86_400_000;
 
         // Live row with a stale `last_used_at` (e.g., a card pinned open for
         // months). Sweep must not touch it.
@@ -2173,7 +2173,7 @@ mod tests {
     fn sweep_expired_removes_failed_rows_too() {
         let l = fresh();
         let now = millis(0);
-        let max_age_ms = TIDE_LEDGER_MAX_AGE_DAYS * 86_400_000;
+        let max_age_ms = DEV_LEDGER_MAX_AGE_DAYS * 86_400_000;
 
         seed_live(&l, "stale", WS_A, "c", millis(120));
         l.mark_failed("stale").unwrap();

@@ -1082,7 +1082,7 @@ describe("Phase A-R1 — runReplay sequential and re-entrant calls", () => {
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
       const joined = args.map(String).join(" ");
-      if (joined.includes("tide::replay::request_dropped")) {
+      if (joined.includes("dev::replay::request_dropped")) {
         droppedLogs.push(joined);
       }
     };
@@ -1115,7 +1115,7 @@ describe("Phase A-R1 — runReplay sequential and re-entrant calls", () => {
 
     // The dropped second call emitted its telemetry line.
     expect(droppedLogs).toHaveLength(1);
-    expect(droppedLogs[0]).toContain("tide::replay::request_dropped");
+    expect(droppedLogs[0]).toContain("dev::replay::request_dropped");
     expect(droppedLogs[0]).toContain("reason=replay_in_flight");
   });
 

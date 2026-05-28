@@ -2,10 +2,10 @@
 // session-id chain.
 //
 // Mirrors `tugdeck/src/lib/session-lifecycle-log.ts` and the Rust
-// `target: "tide::session-lifecycle"` traces. tugcode redirects all
+// `target: "dev::session-lifecycle"` traces. tugcode redirects all
 // console output to stderr (see main.ts), and tugcast forwards
 // subprocess stderr into its tracing log under `tugcast::tugcode_stderr`,
-// so these lines land in the same log a `[tide::session-lifecycle]`
+// so these lines land in the same log a `[dev::session-lifecycle]`
 // grep already covers.
 //
 // No behavior change — pure observability.
@@ -19,7 +19,7 @@ export function logSessionLifecycle(
     if (v === undefined) continue;
     parts.push(`${k}=${formatValue(v)}`);
   }
-  console.log(`[tide::session-lifecycle] ${parts.join(" ")}`);
+  console.log(`[dev::session-lifecycle] ${parts.join(" ")}`);
 }
 
 function formatValue(v: unknown): string {

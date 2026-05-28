@@ -184,7 +184,7 @@ const SHEET_EXIT_ANIMATION_MS = 220;
  * placeholder for any unlisted route. Dev-specific — the gallery
  * prompt-entry passes nothing.
  */
-const TIDE_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
+const DEV_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
   "❯": "Ask Claude to build, fix, or explain",
   "$": "Run a shell command",
 };
@@ -1046,7 +1046,7 @@ interface SessionRecord {
 }
 
 /**
- * Pure parser for the `dev.tugtool.tide / recent-projects` tagged-value
+ * Pure parser for the `dev.tugtool.dev / recent-projects` tagged-value
  * entry. Mirrors `readDevRecentProjects` in shape — split out so the
  * picker can subscribe to live updates via `useTugbankValue` instead of
  * reading once into `useState` (an L02 violation when external state
@@ -1114,7 +1114,7 @@ function DevProjectPickerForm({
   // ride on tugbank; sessions flow through the tugcast-side
   // `DevSessionLedgerStore` keyed on the user-typed path.
   const recents = useTugbankValue(
-    "dev.tugtool.tide",
+    "dev.tugtool.dev",
     "recent-projects",
     parseRecents,
     EMPTY_STRING_ARRAY as string[],
@@ -2551,7 +2551,7 @@ export function DevCardBody({
                 highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
                 maximized={maximized}
                 onMaximizeChange={setMaximized}
-                placeholderByRoute={TIDE_PROMPT_PLACEHOLDER_BY_ROUTE}
+                placeholderByRoute={DEV_PROMPT_PLACEHOLDER_BY_ROUTE}
               />
             </TugBox>
             {renderSheet()}

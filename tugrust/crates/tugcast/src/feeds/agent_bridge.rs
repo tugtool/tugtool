@@ -318,7 +318,7 @@ impl ChildSpawner for TugcodeSpawner {
                 resume_claude_session_id.as_deref(),
             );
             tracing::info!(
-                target: "tide::session-lifecycle",
+                target: "dev::session-lifecycle",
                 event = "bridge.tugcode_spawn",
                 tug_session_id = %session_id,
                 session_mode = session_mode.as_wire_str(),
@@ -519,7 +519,7 @@ pub async fn run_session_bridge(
         // Spawn subprocess — interruptible by cancel so
         // `close_session` can tear down a stalled spawner.
         tracing::info!(
-            target: "tide::session-lifecycle",
+            target: "dev::session-lifecycle",
             event = "spawn.child_invoke",
             tug_session_id = %tug_session_id,
             session_mode = session_mode.as_wire_str(),
@@ -571,7 +571,7 @@ pub async fn run_session_bridge(
         match outcome {
             RelayOutcome::Cancelled => {
                 tracing::info!(
-                    target: "tide::session-lifecycle",
+                    target: "dev::session-lifecycle",
                     event = "bridge.relay_outcome",
                     tug_session_id = %tug_session_id,
                     outcome = "cancelled",
@@ -580,7 +580,7 @@ pub async fn run_session_bridge(
             }
             RelayOutcome::Crashed => {
                 tracing::info!(
-                    target: "tide::session-lifecycle",
+                    target: "dev::session-lifecycle",
                     event = "bridge.relay_outcome",
                     tug_session_id = %tug_session_id,
                     outcome = "crashed",
@@ -597,7 +597,7 @@ pub async fn run_session_bridge(
                 reason,
             } => {
                 tracing::info!(
-                    target: "tide::session-lifecycle",
+                    target: "dev::session-lifecycle",
                     event = "bridge.relay_outcome",
                     tug_session_id = %tug_session_id,
                     outcome = "resume_failed",
@@ -760,7 +760,7 @@ pub async fn relay_session_io(
                         if line.contains("\"type\":\"session_init\"") {
                             let claude_id = parse_claude_session_id(line.as_bytes());
                             tracing::info!(
-                                target: "tide::session-lifecycle",
+                                target: "dev::session-lifecycle",
                                 event = "session_init.parse",
                                 tug_session_id = %tug_session_id,
                                 claude_session_id = claude_id.as_deref().unwrap_or(""),
@@ -853,7 +853,7 @@ pub async fn relay_session_io(
                             // never the just-spawned (live) row.
                             sessions_recorder.evict_for_workspace(
                                 &workspace_key,
-                                crate::session_ledger::TIDE_LEDGER_MAX_PER_WORKSPACE,
+                                crate::session_ledger::DEV_LEDGER_MAX_PER_WORKSPACE,
                             );
                         }
 
@@ -1102,7 +1102,7 @@ pub async fn relay_session_io(
                                 .unwrap_or_else(|| "resume failed".to_string());
                             if let Some(stale) = parse_resume_failed_id(line.as_bytes()) {
                                 tracing::info!(
-                                    target: "tide::session-lifecycle",
+                                    target: "dev::session-lifecycle",
                                     event = "bridge.resume_failed_recv",
                                     tug_session_id = %tug_session_id,
                                     stale_session_id = stale.as_str(),
