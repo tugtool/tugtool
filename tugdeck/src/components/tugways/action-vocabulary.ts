@@ -342,22 +342,22 @@ export const TUG_ACTIONS = {
 
   // ---- Tide session management ----
   //
-  // REQUEST_FORGET_SESSION: payload — `{ sessionId: string }`. Dispatched
+  // REQUEST_TRASH_SESSION:  payload — `{ sessionId: string }`. Dispatched
   //                         by the trash icon on a `session-resume` row
   //                         in the Tide picker; handled by the picker
   //                         form responder, which sets a pending-id state
   //                         that drives a single anchored `TugConfirmPopover`.
-  //                         The actual deletion runs in the form's
+  //                         The actual move-to-trash runs in the form's
   //                         `onConfirm` callback after the user confirms.
   //                         The "request" verb signals the action does
-  //                         NOT delete on its own — the responder owns
+  //                         NOT trash on its own — the responder owns
   //                         the confirmation UI.
   //                         sender — auto-derived stable id from the
   //                         emitting `TugIconButton`; rarely matters
   //                         because the `sessionId` payload disambiguates.
   //                         See [tugplan-tide-picker-redesign §D14](
   //                         ../../../roadmap/tugplan-tide-picker-redesign.md#d14-no-per-cell-popovers).
-  REQUEST_FORGET_SESSION: "request-forget-session",
+  REQUEST_TRASH_SESSION: "request-trash-session",
 
   // ---- Meta ----
   //

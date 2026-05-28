@@ -17,8 +17,8 @@ import {
 } from "@/lib/tide-session-ledger-store";
 import {
   _resetTideSessionLedgerEventsForTest,
-  publishForgetSessionErr,
-  publishForgetSessionOk,
+  publishTrashSessionErr,
+  publishTrashSessionOk,
   publishListSessionsErr,
   publishListSessionsOk,
   publishSessionUpdated,
@@ -201,29 +201,29 @@ describe("TideSessionLedgerStore", () => {
     store.dispose();
   });
 
-  it("forgetSession resolves with the CONTROL ack", async () => {
+  it("trashSession resolves with the CONTROL ack", async () => {
     const { store, conn } = newStore();
-    const promise = store.forgetSession("s1");
+    const promise = store.trashSession("s1");
 
-    // The store must have emitted a forget_session frame.
+    // The store must have emitted a trash_session frame.
     const frames = conn.recordedFrames.filter((f) => f.feedId === FeedId.CONTROL);
     expect(frames.length).toBe(1);
     const decoded = JSON.parse(
       new TextDecoder().decode(frames[0].decoded as Uint8Array),
     );
-    expect(decoded).toEqual({ action: "forget_session", session_id: "s1" });
+    expect(decoded).toEqual({ action: "trash_session", session_id: "s1" });
 
     // Simulate the server's ack.
-    publishForgetSessionOk({ session_id: "s1" });
+    publishTrashSessionOk({ session_id: "s1" });
     const result = await promise;
     expect(result).toEqual({ ok: true });
     store.dispose();
   });
 
-  it("forgetSession resolves with error on _err", async () => {
+  it("trashSession resolves with error on _err", async () => {
     const { store } = newStore();
-    const promise = store.forgetSession("live1");
-    publishForgetSessionErr({ session_id: "live1", reason: "session_is_live" });
+    const promise = store.trashSession("live1");
+    publishTrashSessionErr({ session_id: "live1", reason: "session_is_live" });
     const result = await promise;
     expect(result).toEqual({ error: { reason: "session_is_live" } });
     store.dispose();

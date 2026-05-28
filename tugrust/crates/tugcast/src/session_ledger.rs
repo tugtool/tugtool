@@ -14,7 +14,7 @@
 //! - `INSERT  state="live", card_id=<card_id>` on `spawn_session_ok`.
 //! - `UPDATE  state="closed"`                  on `close_session` or tugcode exit.
 //! - `UPDATE  state="failed"`                  on `resume_failed` (replaces the previous row-removal).
-//! - `DELETE` on cap/age eviction or explicit forget.
+//! - `DELETE` on cap/age eviction or explicit trash.
 //!
 //! `card_id` is set when the session first binds to a card and is preserved
 //! across the row's lifetime — `mark_closed` and `mark_failed` retain it as
@@ -44,7 +44,7 @@
 //! dispatch time, before claude emits `session_init` and before the
 //! bridge populates the `sessions` row, so an `INSERT`-time FK check
 //! would chicken-and-egg. The trigger preserves the user-visible
-//! "Forget cascades to journal" contract without coupling INSERT
+//! "Trash cascades to journal" contract without coupling INSERT
 //! ordering across the dispatch and bridge code paths.
 //!
 //! Bootstrap creates both tables and the cascade trigger via
@@ -306,12 +306,13 @@ pub struct SessionStateChangeRow {
     pub interrupt_in_flight: bool,
 }
 
-/// Result of a successful `forget` call.
+/// Result of a successful `trash` call.
 ///
-/// `jsonl_moved_to` is `None` until step 8 wires the trash move. Until then
-/// `forget` only deletes the ledger row.
+/// `jsonl_moved_to` is `None` when the JSONL file is missing or the
+/// trash directory cannot be created; in that case the ledger row is
+/// still deleted.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ForgetOutcome {
+pub struct TrashOutcome {
     pub session_id: String,
     pub jsonl_moved_to: Option<PathBuf>,
 }
@@ -868,7 +869,7 @@ impl SessionLedger {
     }
 
     /// Increment `turn_count` and bump `last_used_at`. No-op if the row is
-    /// not in `live` state — see the `forget` race-mitigation note in the
+    /// not in `live` state — see the `trash` race-mitigation note in the
     /// plan's risk table.
     pub fn record_turn(&self, session_id: &str, now: i64) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
@@ -922,7 +923,7 @@ impl SessionLedger {
     /// trash directory cannot be created, the row deletion still
     /// succeeds; `jsonl_moved_to` is `None` in that case and the caller
     /// can read tracing logs to understand why.
-    pub fn forget(&self, session_id: &str) -> Result<ForgetOutcome, LedgerError> {
+    pub fn trash(&self, session_id: &str) -> Result<TrashOutcome, LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         // Read state + project_dir under the same lock so the JSONL move
@@ -938,7 +939,7 @@ impl SessionLedger {
             None => return Err(LedgerError::NotFound(session_id.to_owned())),
             Some((state, _)) if state == "live" => {
                 return Err(LedgerError::InvalidState(
-                    "cannot forget a live session".to_owned(),
+                    "cannot trash a live session".to_owned(),
                 ));
             }
             Some((_, pd)) => pd,
@@ -956,7 +957,7 @@ impl SessionLedger {
             session_id,
             now_millis(),
         );
-        Ok(ForgetOutcome {
+        Ok(TrashOutcome {
             session_id: session_id.to_owned(),
             jsonl_moved_to: trash_path,
         })
@@ -970,7 +971,7 @@ impl SessionLedger {
     /// ledger rows are dropped in lockstep so the picker doesn't surface
     /// sessions for a path the user no longer recognizes. The JSONLs go to
     /// trash so the user can `mv` them back if they recognize the loss.
-    pub fn forget_for_project_dir(&self, project_dir: &str) -> Result<Vec<String>, LedgerError> {
+    pub fn trash_for_project_dir(&self, project_dir: &str) -> Result<Vec<String>, LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let doomed: Vec<String> = {
@@ -2014,33 +2015,33 @@ mod tests {
         assert_eq!(ids, vec!["s2", "s3", "s1"]);
     }
 
-    // ── forget ───────────────────────────────────────────────────────────────
+    // ── trash ───────────────────────────────────────────────────────────────
 
     #[test]
-    fn forget_removes_closed_row() {
+    fn trash_removes_closed_row() {
         let l = fresh();
         seed_live(&l, "s1", WS_A, "c1", millis(0));
         l.mark_closed("s1").unwrap();
 
-        let outcome = l.forget("s1").unwrap();
+        let outcome = l.trash("s1").unwrap();
         assert_eq!(outcome.session_id, "s1");
         assert_eq!(outcome.jsonl_moved_to, None);
         assert!(l.get("s1").unwrap().is_none());
     }
 
     #[test]
-    fn forget_refuses_live_row() {
+    fn trash_refuses_live_row() {
         let l = fresh();
         seed_live(&l, "s1", WS_A, "c1", millis(0));
-        let err = l.forget("s1").unwrap_err();
+        let err = l.trash("s1").unwrap_err();
         assert!(matches!(err, LedgerError::InvalidState(_)));
         assert!(l.get("s1").unwrap().is_some(), "row must remain");
     }
 
     #[test]
-    fn forget_missing_session_errors() {
+    fn trash_missing_session_errors() {
         let l = fresh();
-        let err = l.forget("nope").unwrap_err();
+        let err = l.trash("nope").unwrap_err();
         assert!(matches!(err, LedgerError::NotFound(ref id) if id == "nope"));
     }
 
@@ -2182,10 +2183,10 @@ mod tests {
         assert!(l.get("stale").unwrap().is_none());
     }
 
-    // ── forget_for_project_dir ───────────────────────────────────────────────
+    // ── trash_for_project_dir ───────────────────────────────────────────────
 
     #[test]
-    fn forget_for_project_dir_drops_matching_rows_only() {
+    fn trash_for_project_dir_drops_matching_rows_only() {
         let l = fresh();
         seed_live(&l, "matched-1", WS_A, "c", millis(0));
         l.mark_closed("matched-1").unwrap();
@@ -2197,7 +2198,7 @@ mod tests {
         ledger_helper_record(&l, "other", WS_A, "/other/path", "c", millis(0));
         l.mark_closed("other").unwrap();
 
-        let dropped = l.forget_for_project_dir("/proj").unwrap();
+        let dropped = l.trash_for_project_dir("/proj").unwrap();
         let mut sorted = dropped.clone();
         sorted.sort();
         assert_eq!(sorted, vec!["matched-1".to_owned(), "matched-2".to_owned()]);
@@ -2347,7 +2348,7 @@ mod tests {
     }
 
     #[test]
-    fn forget_moves_jsonl_to_trash() {
+    fn trash_moves_jsonl_to_trash() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let l = fresh_ledger_with_root(tmp.path());
         write_jsonl(tmp.path(), "/proj/x", "sess-doomed");
@@ -2356,7 +2357,7 @@ mod tests {
             .unwrap();
         l.mark_closed("sess-doomed").unwrap();
 
-        let outcome = l.forget("sess-doomed").unwrap();
+        let outcome = l.trash("sess-doomed").unwrap();
         let dest = outcome.jsonl_moved_to.expect("moved to trash");
         assert!(dest.exists(), "trashed jsonl should exist at {dest:?}");
         // Source must be gone.
@@ -2370,7 +2371,7 @@ mod tests {
     }
 
     #[test]
-    fn forget_succeeds_even_when_jsonl_is_missing() {
+    fn trash_succeeds_even_when_jsonl_is_missing() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let l = fresh_ledger_with_root(tmp.path());
         // No JSONL on disk — only the ledger row.
@@ -2378,7 +2379,7 @@ mod tests {
             .unwrap();
         l.mark_closed("ghost").unwrap();
 
-        let outcome = l.forget("ghost").unwrap();
+        let outcome = l.trash("ghost").unwrap();
         assert!(outcome.jsonl_moved_to.is_none());
         // Row deletion still committed.
         assert!(l.get("ghost").unwrap().is_none());
@@ -2437,7 +2438,7 @@ mod tests {
 
     /// Regression: A4 from the post-ship audit. Trash subdirs must be
     /// swept even when the ledger has no rows referencing the project_dir
-    /// — the very path that creates the orphan (Forget every row for a
+    /// — the very path that creates the orphan (Trash every row for a
     /// project) leaves no ledger trace pointing back at the trash dir.
     #[test]
     fn sweep_trash_recovers_orphaned_project_dirs() {
@@ -2445,7 +2446,7 @@ mod tests {
         let l = fresh_ledger_with_root(tmp.path());
 
         // Build a trash subdir under a project_dir that the ledger has
-        // NO rows for — simulating the post-Forget-everything state.
+        // NO rows for — simulating the post-Trash-everything state.
         let orphan_root = tmp
             .path()
             .join(encode_claude_project_name("/proj/orphan"))
@@ -2653,7 +2654,7 @@ mod tests {
 
     #[test]
     fn cascade_delete_removes_journal_when_session_deleted() {
-        // Pin the `turns_cascade_delete_on_session` trigger: forgetting
+        // Pin the `turns_cascade_delete_on_session` trigger: trashing
         // a session also removes its journal rows.
         let l = fresh();
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -2662,7 +2663,7 @@ mod tests {
             .unwrap();
         assert_eq!(l.list_pending_turns_for_session("s1").unwrap().len(), 1,);
 
-        l.forget("s1").unwrap();
+        l.trash("s1").unwrap();
 
         assert_eq!(
             l.list_pending_turns_for_session("s1").unwrap().len(),
@@ -2860,8 +2861,8 @@ mod tests {
     #[test]
     fn cascade_delete_removes_turn_telemetry_when_session_deleted() {
         // Pin the `turn_telemetry_cascade_delete_on_session` trigger:
-        // forgetting a session also removes its telemetry rows. The
-        // user-visible "forget cascades" contract extends to telemetry.
+        // trashing a session also removes its telemetry rows. The
+        // user-visible "trash cascades" contract extends to telemetry.
         let l = fresh();
         seed_live(&l, "s1", "ws", "card-1", millis(0));
         l.mark_closed("s1").unwrap();
@@ -2871,7 +2872,7 @@ mod tests {
             .unwrap();
         assert_eq!(l.list_turn_telemetry("s1").unwrap().len(), 2);
 
-        l.forget("s1").unwrap();
+        l.trash("s1").unwrap();
 
         assert_eq!(
             l.list_turn_telemetry("s1").unwrap().len(),
@@ -2957,7 +2958,7 @@ mod tests {
     #[test]
     fn cascade_delete_removes_session_metadata_when_session_deleted() {
         // Pin the `session_metadata_cascade_delete_on_session` trigger:
-        // forgetting a session also removes its metadata row. Mirrors
+        // trashing a session also removes its metadata row. Mirrors
         // the `turn_telemetry` cascade contract.
         let l = fresh();
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -2966,7 +2967,7 @@ mod tests {
             .unwrap();
         assert!(l.get_session_metadata("s1").unwrap().is_some());
 
-        l.forget("s1").unwrap();
+        l.trash("s1").unwrap();
 
         assert!(
             l.get_session_metadata("s1").unwrap().is_none(),
@@ -3074,8 +3075,8 @@ mod tests {
     #[test]
     fn cascade_delete_removes_context_breakdown_when_session_deleted() {
         // Pin the `context_breakdown_latest_cascade_delete_on_session`
-        // trigger: forgetting a session also removes its breakdown row.
-        // The user-visible "forget cascades" contract extends to the
+        // trigger: trashing a session also removes its breakdown row.
+        // The user-visible "trash cascades" contract extends to the
         // context breakdown.
         let l = fresh();
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -3084,7 +3085,7 @@ mod tests {
             .unwrap();
         assert!(l.get_context_breakdown("s1").unwrap().is_some());
 
-        l.forget("s1").unwrap();
+        l.trash("s1").unwrap();
 
         assert!(
             l.get_context_breakdown("s1").unwrap().is_none(),
@@ -3216,8 +3217,8 @@ mod tests {
     #[test]
     fn cascade_delete_removes_session_state_changes_when_session_deleted() {
         // Pin the `session_state_changes_cascade_delete_on_session`
-        // trigger: forgetting a session must take its state-change log
-        // with it. Same "forget cascades" contract as the other
+        // trigger: trashing a session must take its state-change log
+        // with it. Same "trash cascades" contract as the other
         // session-scoped tables in this file.
         let l = fresh();
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -3228,7 +3229,7 @@ mod tests {
         l.mark_closed("s1").unwrap();
         assert_eq!(l.list_session_state_changes("s1").unwrap().len(), 2);
 
-        l.forget("s1").unwrap();
+        l.trash("s1").unwrap();
 
         assert_eq!(
             l.list_session_state_changes("s1").unwrap().len(),

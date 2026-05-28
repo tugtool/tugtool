@@ -239,13 +239,13 @@ describe("session ledger CONTROL encoders / decoders", () => {
     });
   });
 
-  test("encodeForgetSession produces a CONTROL frame with session_id", async () => {
-    const { encodeForgetSession } = await import("../protocol");
-    const frame = encodeForgetSession("sess-abc");
+  test("encodeTrashSession produces a CONTROL frame with session_id", async () => {
+    const { encodeTrashSession } = await import("../protocol");
+    const frame = encodeTrashSession("sess-abc");
     expect(frame.feedId).toBe(FeedId.CONTROL);
     const payload = parsePayload(frame);
     expect(payload).toEqual({
-      action: "forget_session",
+      action: "trash_session",
       session_id: "sess-abc",
     });
   });

@@ -62,8 +62,8 @@ export const CONTROL_ACTION_CLOSE_SESSION = "close_session";
 export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
 export const CONTROL_ACTION_LIST_CARD_BINDINGS = "list_card_bindings";
-export const CONTROL_ACTION_FORGET_SESSION = "forget_session";
-export const CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS = "forget_project_dir_sessions";
+export const CONTROL_ACTION_TRASH_SESSION = "trash_session";
+export const CONTROL_ACTION_TRASH_PROJECT_DIR_SESSIONS = "trash_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
 export const CONTROL_ACTION_RECORD_TURN_TELEMETRY = "record_turn_telemetry";
 export const CONTROL_ACTION_RECORD_CONTEXT_BREAKDOWN = "record_context_breakdown";
@@ -456,30 +456,32 @@ export function encodeListSessions(projectDir: string): Frame {
 
 
 /**
- * Build a `forget_session` CONTROL request frame.
+ * Build a `trash_session` CONTROL request frame.
  *
- * The supervisor deletes the matching ledger row, broadcasts a
- * `session_updated { removed: true }` push, and emits a
- * `forget_session_ok` (or `_err`) ack. Refused for `state="live"` rows —
+ * The supervisor deletes the matching ledger row, moves the session's
+ * Claude Code JSONL to in-place trash (recoverable for 7 days),
+ * broadcasts a `session_updated { removed: true }` push, and emits a
+ * `trash_session_ok` (or `_err`) ack. Refused for `state="live"` rows —
  * the user must close the card first.
  */
-export function encodeForgetSession(sessionId: string): Frame {
-  return controlFrame(CONTROL_ACTION_FORGET_SESSION, {
+export function encodeTrashSession(sessionId: string): Frame {
+  return controlFrame(CONTROL_ACTION_TRASH_SESSION, {
     session_id: sessionId,
   });
 }
 
 /**
- * Build a `forget_project_dir_sessions` CONTROL request frame.
+ * Build a `trash_project_dir_sessions` CONTROL request frame.
  *
- * Drops every non-live row whose `project_dir` matches the given path.
- * Used by the recents-eviction → ledger-eviction coupling: when a
- * tide recent-projects entry ages out, the matching ledger rows go too.
- * Emits one `session_updated { removed: true }` per dropped row plus
- * `forget_project_dir_sessions_ok { project_dir, count }` on success.
+ * Drops every non-live row whose `project_dir` matches the given path
+ * and moves each row's JSONL to in-place trash. Used by the recents-
+ * eviction → ledger-eviction coupling: when a tide recent-projects
+ * entry ages out, the matching ledger rows go too. Emits one
+ * `session_updated { removed: true }` per dropped row plus
+ * `trash_project_dir_sessions_ok { project_dir, count }` on success.
  */
-export function encodeForgetProjectDirSessions(projectDir: string): Frame {
-  return controlFrame(CONTROL_ACTION_FORGET_PROJECT_DIR_SESSIONS, {
+export function encodeTrashProjectDirSessions(projectDir: string): Frame {
+  return controlFrame(CONTROL_ACTION_TRASH_PROJECT_DIR_SESSIONS, {
     project_dir: projectDir,
   });
 }

@@ -630,29 +630,29 @@
 }
 
 /* Rich resume row: snippet title + subtitle take the leading edge,
-   the Forget icon button (or state pill) anchors to the trailing
+   the Trash icon button (or state pill) anchors to the trailing
    edge. The trash control is a TugIconButton, which owns its hit
    target, border, hover/focus token treatment, and focus refusal —
    see [tugplan-tide-picker-redesign §D16]. This rule only adds
    layout (trailing-edge alignment) and the hover-reveal opacity
    pattern; visual chrome is delegated to tug-button.css. */
-.tide-card-picker-session-forget {
+.tide-card-picker-session-trash {
   margin-inline-start: auto;
   /* Hidden by default so closed-state rows read as clean snippets;
      surfaced on row hover/focus-within and on direct icon focus. */
   opacity: 0;
 }
 
-/* Reveal Forget on row hover or focus-within. The form-owned popover
+/* Reveal Trash on row hover or focus-within. The form-owned popover
    does not need a CSS hook here: while the popover is open the user's
    pointer is on the popover itself (portaled outside the row), but
    the trash icon is already visible from the originating click and
    the popover sits directly to its left (`side="left"`). */
-.tide-card-picker-form [role="radio"]:hover .tide-card-picker-session-forget,
-.tide-card-picker-form [role="radio"]:focus-within .tide-card-picker-session-forget,
-.tide-card-picker-session-forget:focus,
-.tide-card-picker-session-forget:focus-within,
-.tide-card-picker-session-forget:hover {
+.tide-card-picker-form [role="radio"]:hover .tide-card-picker-session-trash,
+.tide-card-picker-form [role="radio"]:focus-within .tide-card-picker-session-trash,
+.tide-card-picker-session-trash:focus,
+.tide-card-picker-session-trash:focus-within,
+.tide-card-picker-session-trash:hover {
   opacity: 1;
 }
 
@@ -687,7 +687,7 @@
    content exceeds the host's height. */
 /* @tug-renders-on: surface.global.neutral.default */
 .tide-card-picker-recents-host {
-  height: 10rem;
+  height: 7.5rem;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -698,7 +698,7 @@
 
 /* @tug-renders-on: surface.global.neutral.default */
 .tide-card-picker-sessions-host {
-  height: 17.5rem;
+  height: 14.5rem;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -795,7 +795,7 @@
 }
 
 /* session-new / session-resume — detail rows. Horizontal layout:
-   text column on the leading edge, trailing affordance (forget
+   text column on the leading edge, trailing affordance (trash
    icon, live/failed badge) on the trailing edge. Same font-smoothing
    pin as path-recent so text doesn't subpixel-shift when the row's
    background changes between selected and not-selected. */
@@ -868,29 +868,29 @@
   cursor: not-allowed;
 }
 
-/* Trailing affordance — forget icon button or state badge. Anchored
+/* Trailing affordance — trash icon button or state badge. Anchored
    to the trailing edge by the `flex: 1` text column above. The
    icon hides until row hover / focus-within so closed-state rows
    read clean. The TugIconButton owns its visual chrome (border,
    hit target, hover/active token treatment); this scope only adds
    `flex-shrink: 0` and the hover-reveal opacity gate. */
-.tide-card-picker-sessions-list .tide-card-picker-session-forget {
+.tide-card-picker-sessions-list .tide-card-picker-session-trash {
   flex-shrink: 0;
   opacity: 0;
 }
 
 .tide-card-picker-sessions-list
   .tide-card-picker-session-option:hover
-  .tide-card-picker-session-forget,
+  .tide-card-picker-session-trash,
 .tide-card-picker-sessions-list
   .tide-card-picker-session-option:focus-within
-  .tide-card-picker-session-forget,
+  .tide-card-picker-session-trash,
 .tide-card-picker-sessions-list
-  .tide-card-picker-session-option[data-pending-forget="true"]
-  .tide-card-picker-session-forget,
-.tide-card-picker-sessions-list .tide-card-picker-session-forget:focus,
-.tide-card-picker-sessions-list .tide-card-picker-session-forget:focus-within,
-.tide-card-picker-sessions-list .tide-card-picker-session-forget:hover {
+  .tide-card-picker-session-option[data-pending-trash="true"]
+  .tide-card-picker-session-trash,
+.tide-card-picker-sessions-list .tide-card-picker-session-trash:focus,
+.tide-card-picker-sessions-list .tide-card-picker-session-trash:focus-within,
+.tide-card-picker-sessions-list .tide-card-picker-session-trash:hover {
   opacity: 1;
 }
 
@@ -900,21 +900,21 @@
    open." The button stays at full opacity (above) and gets the
    active visual treatment regardless of cursor position — even
    when the cursor moves off onto the popover. TugIconButton
-   composes `.tide-card-picker-session-forget` directly onto the
+   composes `.tide-card-picker-session-trash` directly onto the
    `<button>` element (no inner wrapper), so the selector targets
    the button itself; the active-token overrides apply on top of
    TugButton's `.tug-button-ghost-danger` rest classes. */
 /* @tug-renders-on: --tug7-surface-control-primary-ghost-danger-active */
 .tide-card-picker-sessions-list
-  .tide-card-picker-session-option[data-pending-forget="true"]
-  .tide-card-picker-session-forget {
+  .tide-card-picker-session-option[data-pending-trash="true"]
+  .tide-card-picker-session-trash {
   background-color: var(--tug7-surface-control-primary-ghost-danger-active);
   border-color: var(--tug7-element-control-border-ghost-danger-active);
   color: var(--tug7-element-control-text-ghost-danger-active);
 }
 .tide-card-picker-sessions-list
-  .tide-card-picker-session-option[data-pending-forget="true"]
-  .tide-card-picker-session-forget svg {
+  .tide-card-picker-session-option[data-pending-trash="true"]
+  .tide-card-picker-session-trash svg {
   color: var(--tug7-element-control-icon-ghost-danger-active);
 }
 
@@ -923,16 +923,25 @@
   flex-shrink: 0;
 }
 
-/* Forget-all button container — centered below the Sessions box.
+/* Trash-all button container — centered below the Sessions box.
    The button is always rendered (disabled when there's nothing to
-   forget) so the box's height stays stable as ledger ticks bring
+   trash) so the box's height stays stable as ledger ticks bring
    the non-live count above and below zero. Generous top margin
    separates it from the dense list above. */
-.tide-card-picker-forget-all {
+.tide-card-picker-trash-all {
   display: flex;
   justify-content: center;
-  padding: var(--tug-space-lg, 16px) var(--tug-space-md, 12px)
-    var(--tug-space-md, 12px);
+  padding: var(--tug-space-lg, 16px) var(--tug-space-md, 12px) 0;
+}
+
+/* Tighten the gap between the Sessions section (which carries the
+   Trash-all button at its bottom edge) and the Cancel/Open action
+   row. The form's 24px inter-section gap is right above the section
+   boundaries elsewhere; here it stacks on the button's empty bottom
+   and reads as too much air. A negative margin-top on the actions
+   row brings the effective gap to ~12px. */
+.tide-card-picker-form > .tug-sheet-actions {
+  margin-top: calc(0px - var(--tug-space-md, 12px));
 }
 
 /* ----------------------------------------------------------------------------

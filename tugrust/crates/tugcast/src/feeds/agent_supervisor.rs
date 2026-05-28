@@ -354,7 +354,7 @@ pub struct SessionRecord<'a> {
 /// trait now expresses the full lifecycle: `record` (insert/promote to
 /// live), `record_turn` (assistant turn complete), `mark_closed`
 /// (close_session / clean exit), `mark_failed` (resume_failed / crash
-/// budget exhausted), and `remove` (Forget UX in step 6).
+/// budget exhausted), and `remove` (Trash UX in step 6).
 ///
 /// No method has a default impl. Adding a method to this trait must force
 /// every implementor to opt in explicitly — silently inheriting an old
@@ -366,7 +366,7 @@ pub trait SessionsRecorder: Send + Sync {
     fn record(&self, record: SessionRecord<'_>);
 
     /// Increment turn count and bump `last_used_at`. No-op if the row is
-    /// missing or not in `live` state — see the forget-vs-late-turn race
+    /// missing or not in `live` state — see the trash-vs-late-turn race
     /// note in the plan's risk table.
     fn record_turn(&self, session_id: &str);
 
@@ -384,10 +384,10 @@ pub trait SessionsRecorder: Send + Sync {
     /// Transition the row to `failed` and clear the live-card binding.
     /// Called on `resume_failed` and crash-budget exhaustion. Replaces the
     /// pre-ledger semantic of removing the row entirely; the row survives
-    /// as a diagnostic crumb until age eviction or explicit Forget.
+    /// as a diagnostic crumb until age eviction or explicit Trash.
     fn mark_failed(&self, session_id: &str);
 
-    /// Delete the row for `session_id`. Used by the Forget UX (step 6).
+    /// Delete the row for `session_id`. Used by the Trash UX (step 6).
     /// The bridge does not call this; lifecycle endings use `mark_closed` or
     /// `mark_failed` instead.
     fn remove(&self, session_id: &str);
@@ -538,14 +538,14 @@ impl LedgerSessionsRecorder {
     /// Used by the recents-eviction → ledger-eviction coupling: when a
     /// path falls off the tide recent-projects tail, the matching ledger
     /// rows go too. Broadcasts a removed push per dropped id.
-    pub fn forget_for_project_dir(&self, project_dir: &str) -> usize {
-        match self.ledger.forget_for_project_dir(project_dir) {
+    pub fn trash_for_project_dir(&self, project_dir: &str) -> usize {
+        match self.ledger.trash_for_project_dir(project_dir) {
             Ok(dropped) => {
                 for id in &dropped {
                     self.broadcast_removed(id);
                     tracing::info!(
                         target: "tide::session-lifecycle",
-                        event = "ledger.forget_project_dir",
+                        event = "ledger.trash_project_dir",
                         session_id = id.as_str(),
                         project_dir,
                     );
@@ -553,7 +553,7 @@ impl LedgerSessionsRecorder {
                 dropped.len()
             }
             Err(err) => {
-                warn!(error = %err, project_dir, "ledger forget_for_project_dir failed");
+                warn!(error = %err, project_dir, "ledger trash_for_project_dir failed");
                 0
             }
         }
@@ -645,7 +645,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
     }
 
     fn remove(&self, session_id: &str) {
-        match self.ledger.forget(session_id) {
+        match self.ledger.trash(session_id) {
             Ok(_) => {
                 tracing::info!(
                     target: "tide::session-lifecycle",
@@ -654,7 +654,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
                 );
                 self.broadcast_removed(session_id);
             }
-            Err(err) => warn!(error = %err, session_id, "ledger forget failed"),
+            Err(err) => warn!(error = %err, session_id, "ledger trash failed"),
         }
     }
 
@@ -704,7 +704,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
 }
 
 /// Build the `session_updated` push payload for a row's current state.
-/// Public so the `do_forget_session` / `do_forget_project_dir_sessions`
+/// Public so the `do_trash_session` / `do_trash_project_dir_sessions`
 /// handlers can emit the matching frame after their batch writes.
 pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> Frame {
     let body = serde_json::json!({
@@ -926,7 +926,7 @@ pub struct AgentSupervisor {
     /// Writer for the per-session ledger. The bridge calls `record` on
     /// `session_init`, `record_turn` on each tugcode `result` event, and
     /// `mark_failed` on `resume_failed` / crash exhaustion. The supervisor
-    /// calls `mark_closed` on `do_close_session`. The Forget UX (step 6)
+    /// calls `mark_closed` on `do_close_session`. The Trash UX (step 6)
     /// uses `remove`. The live-elsewhere check during spawn reads the
     /// in-memory `LedgerEntry::card_id` and gates on `spawn_state`; the
     /// ledger row's `card_id` mirrors the in-memory value so the
@@ -935,7 +935,7 @@ pub struct AgentSupervisor {
     pub sessions_recorder: Arc<dyn SessionsRecorder>,
     /// Read handle to the same [`SessionLedger`] the recorder writes to.
     /// Used for the read-side CONTROL ops (`list_sessions`, the picker's
-    /// query path) and the batch Forget paths. Named `session_ledger` to
+    /// query path) and the batch Trash paths. Named `session_ledger` to
     /// avoid colliding with the in-memory `ledger` field above. Optional
     /// so unit tests that pass a `NoopSessionsRecorder` aren't forced to
     /// wire a ledger they won't read from. `None` makes the new ledger
@@ -1503,9 +1503,9 @@ impl AgentSupervisor {
     ///   re-arm the entry for a fresh spawn, preserving the workspace.
     ///   Payload: `{card_id, tug_session_id}`.
     /// * `list_sessions` — picker query. Payload: `{project_dir}`.
-    /// * `forget_session` — drop a non-live persisted record.
+    /// * `trash_session` — drop a non-live persisted record.
     ///   Payload: `{session_id}`.
-    /// * `forget_project_dir_sessions` — drop every non-live record
+    /// * `trash_project_dir_sessions` — drop every non-live record
     ///   under a workspace. Payload: `{project_dir}`.
     /// * `request_replay` — recovery verb per [D12]. Forward
     ///   `{"type":"request_replay"}` to the live tugcode subprocess so
@@ -1591,16 +1591,16 @@ impl AgentSupervisor {
                 self.do_list_card_bindings().await;
                 Ok(())
             }
-            "forget_session" => match parse_session_id_payload(payload) {
+            "trash_session" => match parse_session_id_payload(payload) {
                 Ok(session_id) => {
-                    self.do_forget_session(&session_id).await;
+                    self.do_trash_session(&session_id).await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
             },
-            "forget_project_dir_sessions" => match parse_project_dir_payload(payload) {
+            "trash_project_dir_sessions" => match parse_project_dir_payload(payload) {
                 Ok(project_dir) => {
-                    self.do_forget_project_dir_sessions(&project_dir).await;
+                    self.do_trash_project_dir_sessions(&project_dir).await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -2424,10 +2424,10 @@ impl AgentSupervisor {
         );
     }
 
-    /// Handle a `forget_session` CONTROL request. Refuses if the row is
+    /// Handle a `trash_session` CONTROL request. Refuses if the row is
     /// currently live (per [D03] / picker UX). Emits `session_updated
     /// { removed: true }` on success — the recorder broadcasts that frame
-    /// internally; this handler emits the matching `forget_session_ok`
+    /// internally; this handler emits the matching `trash_session_ok`
     /// response so the requesting client can resolve its pending action.
     /// Persist a per-turn telemetry block. Tugdeck → tugcast inbound
     /// CONTROL action driven by the reducer's `handleTurnComplete`
@@ -2711,113 +2711,113 @@ impl AgentSupervisor {
         ));
     }
 
-    async fn do_forget_session(&self, session_id: &str) {
+    async fn do_trash_session(&self, session_id: &str) {
         let Some(ledger) = self.session_ledger.as_ref() else {
             let body = serde_json::json!({
-                "action": "forget_session_err",
+                "action": "trash_session_err",
                 "session_id": session_id,
                 "reason": "no_ledger",
             });
             let _ = self.control_tx.send(Frame::new(
                 FeedId::CONTROL,
-                serde_json::to_vec(&body).expect("forget_session_err serializes"),
+                serde_json::to_vec(&body).expect("trash_session_err serializes"),
             ));
             return;
         };
-        match ledger.forget(session_id) {
+        match ledger.trash(session_id) {
             Ok(_) => {
                 let _ = self
                     .control_tx
                     .send(build_session_removed_frame(session_id));
                 let body = serde_json::json!({
-                    "action": "forget_session_ok",
+                    "action": "trash_session_ok",
                     "session_id": session_id,
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("forget_session_ok serializes"),
+                    serde_json::to_vec(&body).expect("trash_session_ok serializes"),
                 ));
             }
             Err(crate::session_ledger::LedgerError::InvalidState(_)) => {
                 let body = serde_json::json!({
-                    "action": "forget_session_err",
+                    "action": "trash_session_err",
                     "session_id": session_id,
                     "reason": "session_is_live",
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("forget_session_err serializes"),
+                    serde_json::to_vec(&body).expect("trash_session_err serializes"),
                 ));
             }
             Err(crate::session_ledger::LedgerError::NotFound(_)) => {
                 let body = serde_json::json!({
-                    "action": "forget_session_err",
+                    "action": "trash_session_err",
                     "session_id": session_id,
                     "reason": "not_found",
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("forget_session_err serializes"),
+                    serde_json::to_vec(&body).expect("trash_session_err serializes"),
                 ));
             }
             Err(err) => {
-                warn!(error = %err, session_id, "forget_session ledger error");
+                warn!(error = %err, session_id, "trash_session ledger error");
                 let body = serde_json::json!({
-                    "action": "forget_session_err",
+                    "action": "trash_session_err",
                     "session_id": session_id,
                     "reason": "ledger_write_failed",
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("forget_session_err serializes"),
+                    serde_json::to_vec(&body).expect("trash_session_err serializes"),
                 ));
             }
         }
     }
 
-    /// Handle a `forget_project_dir_sessions` CONTROL request. Drops every
+    /// Handle a `trash_project_dir_sessions` CONTROL request. Drops every
     /// non-live row whose `project_dir` matches the request, broadcasts a
     /// `session_updated { removed: true }` per dropped id, and returns a
-    /// count via `forget_project_dir_sessions_ok`. Used by the recents-
+    /// count via `trash_project_dir_sessions_ok`. Used by the recents-
     /// eviction → ledger-eviction coupling.
-    async fn do_forget_project_dir_sessions(&self, project_dir: &str) {
+    async fn do_trash_project_dir_sessions(&self, project_dir: &str) {
         let Some(ledger) = self.session_ledger.as_ref() else {
             let body = serde_json::json!({
-                "action": "forget_project_dir_sessions_err",
+                "action": "trash_project_dir_sessions_err",
                 "project_dir": project_dir,
                 "reason": "no_ledger",
             });
             let _ = self.control_tx.send(Frame::new(
                 FeedId::CONTROL,
-                serde_json::to_vec(&body).expect("forget_project_dir_sessions_err serializes"),
+                serde_json::to_vec(&body).expect("trash_project_dir_sessions_err serializes"),
             ));
             return;
         };
-        match ledger.forget_for_project_dir(project_dir) {
+        match ledger.trash_for_project_dir(project_dir) {
             Ok(dropped) => {
                 for id in &dropped {
                     let _ = self.control_tx.send(build_session_removed_frame(id));
                 }
                 let body = serde_json::json!({
-                    "action": "forget_project_dir_sessions_ok",
+                    "action": "trash_project_dir_sessions_ok",
                     "project_dir": project_dir,
                     "count": dropped.len(),
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("forget_project_dir_sessions_ok serializes"),
+                    serde_json::to_vec(&body).expect("trash_project_dir_sessions_ok serializes"),
                 ));
             }
             Err(err) => {
-                warn!(error = %err, project_dir, "forget_for_project_dir failed");
+                warn!(error = %err, project_dir, "trash_for_project_dir failed");
                 let body = serde_json::json!({
-                    "action": "forget_project_dir_sessions_err",
+                    "action": "trash_project_dir_sessions_err",
                     "project_dir": project_dir,
                     "reason": "ledger_write_failed",
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("forget_project_dir_sessions_err serializes"),
+                    serde_json::to_vec(&body).expect("trash_project_dir_sessions_err serializes"),
                 ));
             }
         }
@@ -6244,8 +6244,8 @@ mod tests {
 
     // ── CONTROL ledger ops ───────────────────────────────────────────────────
     //
-    // These tests exercise the new `list_sessions`, `forget_session`, and
-    // `forget_workspace_sessions` actions end-to-end through the supervisor's
+    // These tests exercise the new `list_sessions`, `trash_session`, and
+    // `trash_workspace_sessions` actions end-to-end through the supervisor's
     // `handle_control` path. The supervisor is built with a real
     // `SessionLedger` in scope; the tests assert the broadcast frames the
     // CONTROL feed emits and the ledger row state after each action.
@@ -6482,7 +6482,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forget_session_drops_row_and_broadcasts_removed() {
+    async fn trash_session_drops_row_and_broadcasts_removed() {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
@@ -6493,28 +6493,28 @@ mod tests {
         while rx.try_recv().is_ok() {}
 
         let payload = serde_json::to_vec(&serde_json::json!({
-            "action": "forget_session",
+            "action": "trash_session",
             "session_id": "s1",
         }))
         .unwrap();
-        sup.handle_control("forget_session", &payload, 10)
+        sup.handle_control("trash_session", &payload, 10)
             .await
             .expect_handled();
 
-        // session_updated push first, then forget_session_ok ack.
+        // session_updated push first, then trash_session_ok ack.
         let push = drain_until_action(&mut rx, "session_updated");
         assert_eq!(push["session_id"], "s1");
         assert_eq!(push["removed"], true);
 
         // The receiver was reset by drain_until_action consuming the push;
         // re-drain to find the ok frame.
-        let ack = drain_until_action(&mut rx, "forget_session_ok");
+        let ack = drain_until_action(&mut rx, "trash_session_ok");
         assert_eq!(ack["session_id"], "s1");
         assert!(ledger.get("s1").unwrap().is_none());
     }
 
     #[tokio::test]
-    async fn forget_session_on_live_row_returns_error() {
+    async fn trash_session_on_live_row_returns_error() {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
         ledger
             .record_spawn("live1", "ws-1", "/p", "c1", 1_000)
@@ -6522,15 +6522,15 @@ mod tests {
         while rx.try_recv().is_ok() {}
 
         let payload = serde_json::to_vec(&serde_json::json!({
-            "action": "forget_session",
+            "action": "trash_session",
             "session_id": "live1",
         }))
         .unwrap();
-        sup.handle_control("forget_session", &payload, 10)
+        sup.handle_control("trash_session", &payload, 10)
             .await
             .expect_handled();
 
-        let err = drain_until_action(&mut rx, "forget_session_err");
+        let err = drain_until_action(&mut rx, "trash_session_err");
         assert_eq!(err["session_id"], "live1");
         assert_eq!(err["reason"], "session_is_live");
         assert!(ledger.get("live1").unwrap().is_some(), "row retained");
@@ -6594,7 +6594,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forget_project_dir_sessions_drops_matching_only() {
+    async fn trash_project_dir_sessions_drops_matching_only() {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
@@ -6613,15 +6613,15 @@ mod tests {
         while rx.try_recv().is_ok() {}
 
         let payload = serde_json::to_vec(&serde_json::json!({
-            "action": "forget_project_dir_sessions",
+            "action": "trash_project_dir_sessions",
             "project_dir": "/proj/x",
         }))
         .unwrap();
-        sup.handle_control("forget_project_dir_sessions", &payload, 10)
+        sup.handle_control("trash_project_dir_sessions", &payload, 10)
             .await
             .expect_handled();
 
-        let ack = drain_until_action(&mut rx, "forget_project_dir_sessions_ok");
+        let ack = drain_until_action(&mut rx, "trash_project_dir_sessions_ok");
         assert_eq!(ack["project_dir"], "/proj/x");
         assert_eq!(ack["count"], 2);
 
@@ -6845,20 +6845,20 @@ mod tests {
 
     #[tokio::test]
     async fn cascade_trigger_purges_journal_when_session_forgotten() {
-        // Pending row outlives session: insert journal row, then forget
+        // Pending row outlives session: insert journal row, then trash
         // the session. The cascade trigger purges the journal row.
         let (_sup, ledger, _rx) = make_supervisor_with_ledger();
         let session_id = "sess-cascade";
         seed_session_for_journal_test(&ledger, session_id);
 
-        // Mark closed first (forget refuses live rows by design).
+        // Mark closed first (trash refuses live rows by design).
         ledger.mark_closed(session_id).unwrap();
         ledger
             .insert_pending_turn(session_id, "j_orphan", "outlives session", &[], 1_000)
             .unwrap();
         assert_eq!(count_pending_for_session(&ledger, session_id), 1);
 
-        ledger.forget(session_id).unwrap();
+        ledger.trash(session_id).unwrap();
 
         assert_eq!(
             count_pending_for_session(&ledger, session_id),

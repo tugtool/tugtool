@@ -9,7 +9,7 @@
  *     keeps showing its caret across icon clicks to make the invariant
  *     visible.
  *  2. Chain-action mode: the demo shows a row of trash icons that each
- *     dispatch a `forget-mock-row` action with a `{rowId}` payload. A
+ *     dispatch a `trash-mock-row` action with a `{rowId}` payload. A
  *     tiny in-card responder logs the most recent dispatch.
  *  3. Direct-action mode: a parallel row of icons calls a local
  *     `useState` setter via `onClick` for non-chain side effects.
@@ -33,7 +33,7 @@ import type { TugAction } from "@/components/tugways/action-vocabulary";
 // Synthetic action for the chain-mode demo. Cast keeps the gallery card
 // independent of the production action-vocabulary table; this name only
 // exists inside this card and inside the in-card responder below.
-const FORGET_MOCK_ROW = "forget-mock-row" as unknown as TugAction;
+const TRASH_MOCK_ROW = "trash-mock-row" as unknown as TugAction;
 
 const sectionStyle: React.CSSProperties = {
   display: "flex",
@@ -96,14 +96,14 @@ export function GalleryIconButton() {
   // visible local effect.
   const [starredId, setStarredId] = React.useState<string | null>(null);
 
-  // Register an in-card responder that handles forget-mock-row. The
+  // Register an in-card responder that handles trash-mock-row. The
   // responder's id is local to this card; nothing outside the gallery
   // routes to it.
   const responderId = React.useId();
   const { ResponderScope, responderRef } = useResponder({
     id: responderId,
     actions: {
-      [FORGET_MOCK_ROW]: (event: ActionEvent) => {
+      [TRASH_MOCK_ROW]: (event: ActionEvent) => {
         const value = event.value;
         if (
           value !== null &&
@@ -111,7 +111,7 @@ export function GalleryIconButton() {
           "rowId" in value &&
           typeof (value as { rowId: unknown }).rowId === "string"
         ) {
-          setChainEcho(`forget-mock-row → ${(value as { rowId: string }).rowId}`);
+          setChainEcho(`trash-mock-row → ${(value as { rowId: string }).rowId}`);
         }
       },
     },
@@ -143,7 +143,7 @@ export function GalleryIconButton() {
         <div className="cg-section" style={sectionStyle}>
           <TugLabel className="cg-section-title">Chain-action mode</TugLabel>
           <div style={labelStyle}>
-            Each trash icon dispatches <code>forget-mock-row</code> with a
+            Each trash icon dispatches <code>trash-mock-row</code> with a
             <code>{"{rowId}"}</code> payload via <code>useControlDispatch()</code>.
             The card's responder logs the most recent dispatch below.
           </div>
@@ -153,11 +153,11 @@ export function GalleryIconButton() {
                 <span style={{ flex: 1 }}>{row.title}</span>
                 <TugIconButton
                   icon={<Trash2 size={14} aria-hidden="true" />}
-                  aria-label={`Forget ${row.title}`}
-                  title={`Forget ${row.title}`}
+                  aria-label={`Trash ${row.title}`}
+                  title={`Trash ${row.title}`}
                   tone="danger"
                   dispatch={{
-                    action: FORGET_MOCK_ROW,
+                    action: TRASH_MOCK_ROW,
                     value: { rowId: row.id },
                     phase: "discrete",
                   }}
@@ -215,7 +215,7 @@ export function GalleryIconButton() {
             <TugIconButton icon={<Info size={14} />} aria-label="Info" />
             <TugIconButton icon={<X size={14} />} aria-label="Dismiss" />
             <span style={labelStyle}>sm / danger</span>
-            <TugIconButton icon={<Trash2 size={14} />} aria-label="Forget" tone="danger" />
+            <TugIconButton icon={<Trash2 size={14} />} aria-label="Trash" tone="danger" />
             <TugIconButton icon={<X size={14} />} aria-label="Remove" tone="danger" />
           </div>
 
@@ -225,14 +225,14 @@ export function GalleryIconButton() {
             <TugIconButton icon={<Info size={16} />} aria-label="Info" size="md" />
             <TugIconButton icon={<X size={16} />} aria-label="Dismiss" size="md" />
             <span style={labelStyle}>md / danger</span>
-            <TugIconButton icon={<Trash2 size={16} />} aria-label="Forget" tone="danger" size="md" />
+            <TugIconButton icon={<Trash2 size={16} />} aria-label="Trash" tone="danger" size="md" />
             <TugIconButton icon={<X size={16} />} aria-label="Remove" tone="danger" size="md" />
           </div>
 
           <div style={swatchRowStyle}>
             <span style={labelStyle}>disabled</span>
             <TugIconButton icon={<Edit size={14} />} aria-label="Edit" disabled />
-            <TugIconButton icon={<Trash2 size={14} />} aria-label="Forget" tone="danger" disabled />
+            <TugIconButton icon={<Trash2 size={14} />} aria-label="Trash" tone="danger" disabled />
           </div>
         </div>
       </div>

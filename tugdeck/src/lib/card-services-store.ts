@@ -40,7 +40,7 @@ import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
-import { encodeForgetProjectDirSessions } from "../protocol";
+import { encodeTrashProjectDirSessions } from "../protocol";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
@@ -279,7 +279,7 @@ class CardServicesStore {
         const updatedSet = new Set(updated);
         const evicted = current.filter((p) => !updatedSet.has(p));
         if (evicted.length > 0) {
-          forgetLedgerForEvictedRecents(evicted);
+          trashLedgerForEvictedRecents(evicted);
         }
       }
     }
@@ -419,7 +419,7 @@ class CardServicesStore {
 export const cardServicesStore = new CardServicesStore();
 
 /**
- * Send `forget_project_dir_sessions` for each path that fell off the
+ * Send `trash_project_dir_sessions` for each path that fell off the
  * recents tail. The supervisor matches by `project_dir` (literal user
  * path) and broadcasts a `session_updated { removed: true }` for each
  * dropped row. The store cache then patches itself.
@@ -428,16 +428,16 @@ export const cardServicesStore = new CardServicesStore();
  * action (the user is just spawning a fresh card; the recents-cap
  * eviction is invisible). Errors are warnings, not blockers.
  */
-function forgetLedgerForEvictedRecents(paths: ReadonlyArray<string>): void {
+function trashLedgerForEvictedRecents(paths: ReadonlyArray<string>): void {
   const connection = getConnection();
   if (!connection) return;
   for (const path of paths) {
-    const frame = encodeForgetProjectDirSessions(path);
+    const frame = encodeTrashProjectDirSessions(path);
     try {
       connection.send(frame.feedId, frame.payload);
     } catch (err) {
       console.warn(
-        `[recents-eviction] forget_project_dir_sessions for ${path} failed:`,
+        `[recents-eviction] trash_project_dir_sessions for ${path} failed:`,
         err,
       );
     }

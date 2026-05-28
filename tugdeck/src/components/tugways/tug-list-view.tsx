@@ -2087,7 +2087,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // dividers — clicking them must NOT promote them to first-
         // responder-style selection. The cell renderer may still
         // attach its own `onClick` for action-bearing
-        // headers/footers (e.g. a "Forget all" footer); that
+        // headers/footers (e.g. a "Trash all" footer); that
         // listener fires before this wrapper-level handler runs.
         const role =
           dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;

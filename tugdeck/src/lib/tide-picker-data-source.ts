@@ -22,7 +22,7 @@
  *    `session-resume` per ledger row, in newest-first order. When
  *    the path is empty, or the ledger is pending / idle / errored,
  *    the data source emits zero rows; the picker form renders a
- *    placeholder div in the empty state. The Forget-all button
+ *    placeholder div in the empty state. The Trash-all button
  *    (visibility gated on `nonLiveCount() > 0`) is rendered by the
  *    picker form OUTSIDE the list view.
  *
@@ -215,7 +215,7 @@ interface SessionsInputs {
  *    select a project path" placeholder.
  *  - Path + ledger pending → one `loading` row.
  *  - Path + ledger ready → `session-new` + one `session-resume` per
- *    ledger row in newest-first order. The Forget-all button
+ *    ledger row in newest-first order. The Trash-all button
  *    (rendered by the picker form below the list view) reads
  *    `nonLiveCount()` to decide visibility.
  *  - Path + ledger idle / error → zero rows. The notice banner
@@ -271,7 +271,7 @@ export class TideSessionsDataSource implements TugListViewDataSource {
   /**
    * Count of non-live ledger rows that are visible in the picker
    * (turn_count > 0). Used by the picker form to gate the visibility
-   * of the Forget-all button. Returns 0 when the ledger is not in
+   * of the Trash-all button. Returns 0 when the ledger is not in
    * `ready` status. Mirrors the `recompute` filter so the count
    * agrees with what the user sees in the SESSIONS list.
    */

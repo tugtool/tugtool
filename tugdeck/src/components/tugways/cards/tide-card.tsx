@@ -127,7 +127,6 @@ import {
   SESSIONS_CELL_RENDERERS,
   type PickerSelection,
 } from "./tide-picker-cells";
-import { truncateForDisplay } from "./tide-picker-format";
 import "./tide-card.css";
 
 // ---------------------------------------------------------------------------
@@ -1095,7 +1094,7 @@ function TideProjectPickerForm({
 }: TideProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Form's outer DOM node — used to scope the anchor querySelector for
-  // the form-owned forget-confirmation popover so the lookup never
+  // the form-owned trash-confirmation popover so the lookup never
   // walks outside the picker form's own subtree.
   const formRootRef = useRef<HTMLDivElement | null>(null);
   const formResponderId = useId();
@@ -1151,27 +1150,28 @@ function TideProjectPickerForm({
     }
   }, [sessionsReady, ledgerRows, selection]);
 
-  // Forget actions — the picker form owns the confirmation flow per
+  // Trash actions — the picker form owns the confirmation flow per
   // [tugplan-tide-picker-redesign §D14] (no per-cell popovers).
   //
-  // Per-row forget: the trash `TugIconButton` in `SessionResumeCell`
-  // dispatches `request-forget-session` with `{ sessionId }` payload.
-  // The chain handler below populates `pendingForgetSessionId`. A
+  // Per-row trash: the trash `TugIconButton` in `SessionResumeCell`
+  // dispatches `request-trash-session` with `{ sessionId }` payload.
+  // The chain handler below populates `pendingTrashSessionId`. A
   // single anchored `TugConfirmPopover` rendered at the form level
-  // confirms, and its `onConfirm` callback unconditionally deletes.
+  // confirms, and its `onConfirm` callback unconditionally moves the
+  // session to trash.
   //
-  // Forget-all: the picker-level button uses the imperative-mode
+  // Trash-all: the picker-level button uses the imperative-mode
   // `TugConfirmPopover` API (legacy). It does not need the chain-
   // dispatch path because the button is always visible at a fixed
   // location, not anchored to a specific row.
 
-  const forgetSession = useCallback(
+  const trashSession = useCallback(
     (sessionId: string): void => {
       const store = getTideSessionLedgerStore();
       if (store === null) return;
       const row = ledgerRows.find((r) => r.session_id === sessionId);
       if (row === undefined || row.state === "live") return;
-      void store.forgetSession(sessionId);
+      void store.trashSession(sessionId);
       setSelection((prev) =>
         prev?.kind === "session-resume" && prev.sessionId === sessionId
           ? { kind: "session-new" }
@@ -1181,45 +1181,45 @@ function TideProjectPickerForm({
     [ledgerRows],
   );
 
-  // ---- Form-owned forget confirmation ----
+  // ---- Form-owned trash confirmation ----
   //
-  // `pendingForgetSessionId` is `null` when no forget is in flight.
-  // The chain handler for `request-forget-session` (registered below)
+  // `pendingTrashSessionId` is `null` when no trash is in flight.
+  // The chain handler for `request-trash-session` (registered below)
   // sets it; the popover's `onConfirm` and `onCancel` both clear it.
   // The anchor is resolved in a layout effect by querying the trash
   // icon's DOM node within this form's own subtree — the cell's
   // `data-session-id="<id>"` attribute on the row + the
   // `data-slot="tug-icon-button"` on the trash button form a stable
   // selector that survives row reordering and virtualization recycle.
-  const [pendingForgetSessionId, setPendingForgetSessionId] = useState<
+  const [pendingTrashSessionId, setPendingTrashSessionId] = useState<
     string | null
   >(null);
-  const [pendingForgetAnchorEl, setPendingForgetAnchorEl] =
+  const [pendingTrashAnchorEl, setPendingTrashAnchorEl] =
     useState<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
-    if (pendingForgetSessionId === null) {
-      setPendingForgetAnchorEl(null);
+    if (pendingTrashSessionId === null) {
+      setPendingTrashAnchorEl(null);
       return;
     }
     const root = formRootRef.current;
     if (root === null) return;
     const escaped =
       typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(pendingForgetSessionId)
-        : pendingForgetSessionId;
+        ? CSS.escape(pendingTrashSessionId)
+        : pendingTrashSessionId;
     const selector =
       `[data-session-id="${escaped}"] [data-slot="tug-icon-button"]`;
     const el = root.querySelector<HTMLElement>(selector);
-    setPendingForgetAnchorEl(el ?? null);
-  }, [pendingForgetSessionId]);
+    setPendingTrashAnchorEl(el ?? null);
+  }, [pendingTrashSessionId]);
 
-  // Chain handler for `request-forget-session` dispatched by the per-
+  // Chain handler for `request-trash-session` dispatched by the per-
   // row trash button. The cell carries the sessionId on the event's
   // `value`; we narrow defensively per [L07] and ignore malformed
-  // payloads. Setting `pendingForgetSessionId` triggers the layout
+  // payloads. Setting `pendingTrashSessionId` triggers the layout
   // effect above (anchor resolution) and the popover render below.
-  const handleRequestForgetSession = useCallback((event: ActionEvent) => {
+  const handleRequestTrashSession = useCallback((event: ActionEvent) => {
     const v = event.value;
     if (
       v !== null &&
@@ -1227,7 +1227,7 @@ function TideProjectPickerForm({
       "sessionId" in v &&
       typeof (v as { sessionId: unknown }).sessionId === "string"
     ) {
-      setPendingForgetSessionId((v as { sessionId: string }).sessionId);
+      setPendingTrashSessionId((v as { sessionId: string }).sessionId);
     }
   }, []);
 
@@ -1235,7 +1235,7 @@ function TideProjectPickerForm({
     useResponder({
       id: formResponderId,
       actions: {
-        [TUG_ACTIONS.REQUEST_FORGET_SESSION]: handleRequestForgetSession,
+        [TUG_ACTIONS.REQUEST_TRASH_SESSION]: handleRequestTrashSession,
       },
     });
 
@@ -1254,57 +1254,45 @@ function TideProjectPickerForm({
   );
 
   // Confirm / cancel callbacks for the form-owned popover. Both
-  // unconditionally clear `pendingForgetSessionId`, which flips the
+  // unconditionally clear `pendingTrashSessionId`, which flips the
   // popover's controlled `open` to `false`. Confirm additionally runs
-  // the deletion via the existing `forgetSession` helper.
-  const handleConfirmForget = useCallback(() => {
-    if (pendingForgetSessionId !== null) {
-      forgetSession(pendingForgetSessionId);
+  // the move-to-trash via the existing `trashSession` helper.
+  const handleConfirmTrash = useCallback(() => {
+    if (pendingTrashSessionId !== null) {
+      trashSession(pendingTrashSessionId);
     }
-    setPendingForgetSessionId(null);
-  }, [pendingForgetSessionId, forgetSession]);
+    setPendingTrashSessionId(null);
+  }, [pendingTrashSessionId, trashSession]);
 
-  const handleCancelForget = useCallback(() => {
-    setPendingForgetSessionId(null);
+  const handleCancelTrash = useCallback(() => {
+    setPendingTrashSessionId(null);
   }, []);
 
-  // Compose the popover's confirm message from the pending row's
-  // most-recent prompt snippet so the user sees what they're about to
-  // forget. Falls back to a generic prompt when no snippet is
-  // available.
-  const pendingForgetMessage = useMemo<string>(() => {
-    if (pendingForgetSessionId === null) return "Forget this session?";
-    const row = ledgerRows.find(
-      (r) => r.session_id === pendingForgetSessionId,
-    );
-    const prompt = row?.last_user_prompt ?? null;
-    if (prompt !== null && prompt.length > 0) {
-      const truncated = truncateForDisplay(prompt, 64);
-      return `Forget "${truncated}"?`;
-    }
-    return "Forget this session?";
-  }, [pendingForgetSessionId, ledgerRows]);
+  // The pending row's prompt would compose a richer message here, but
+  // the picker UX uses the short, generic prompt "Move to Trash?" for
+  // both single-row and bottom-button paths.
+  const pendingTrashMessage = "Move to Trash?";
 
-  const forgetAll = useCallback((): void => {
+  const trashAll = useCallback((): void => {
     const store = getTideSessionLedgerStore();
     if (store === null) return;
     let any = false;
     for (const row of ledgerRows) {
       if (row.state === "live") continue;
-      void store.forgetSession(row.session_id);
+      void store.trashSession(row.session_id);
       any = true;
     }
     if (any) setSelection({ kind: "session-new" });
   }, [ledgerRows]);
 
-  // Imperative handle for the forget-all confirm popover anchored to
-  // the FORGET ALL button. Click flow: open popover → await
-  // confirmation → run `forgetAll`.
-  const forgetAllConfirmRef = useRef<TugConfirmPopoverHandle>(null);
-  const handleForgetAllClick = useCallback(async (): Promise<void> => {
-    const ok = await forgetAllConfirmRef.current?.confirm();
-    if (ok === true) forgetAll();
-  }, [forgetAll]);
+  // Imperative handle for the trash-all confirm popover anchored to
+  // the Move-all-to-Trash button. Click flow: open popover → await
+  // confirmation → run `trashAll`.
+  const trashAllConfirmRef = useRef<TugConfirmPopoverHandle>(null);
+  const handleTrashAllClick = useCallback(async (): Promise<void> => {
+    const ok = await trashAllConfirmRef.current?.confirm();
+    if (ok === true) trashAll();
+  }, [trashAll]);
 
   // Submit per [Spec S02] — resolves `(mode, sessionId)` from the
   // effective selection. The override parameter lets the form-level
@@ -1465,7 +1453,7 @@ function TideProjectPickerForm({
   // — the Open button registers itself as the default button (via
   // `emphasis="filled" role="action"` on `TugPushButton`), and the
   // chain's bubble-phase Stage-2 listener clicks it for any Enter
-  // pressed outside an editable. Forget is mouse-driven via the
+  // pressed outside an editable. Trash is mouse-driven via the
   // per-row trash button + confirm popover.
   const handleFormKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -1486,23 +1474,23 @@ function TideProjectPickerForm({
 
   // Cell-context value — `currentPath` drives path-recent's
   // `data-selected`; `selection` drives session cells' selection
-  // state; `pendingForgetSessionId` drives the matching row's
-  // `data-pending-forget="true"` marker so its trash icon stays
+  // state; `pendingTrashSessionId` drives the matching row's
+  // `data-pending-trash="true"` marker so its trash icon stays
   // visible + highlighted while the form-owned confirm popover is
-  // up. The per-row forget flow does NOT pass a callback through
-  // context; the trash button dispatches `request-forget-session`
+  // up. The per-row trash flow does NOT pass a callback through
+  // context; the trash button dispatches `request-trash-session`
   // through the chain, and the form's chain handler above owns the
   // response.
   const cellContextValue = useMemo(
     () => ({
       selection,
-      pendingForgetSessionId,
+      pendingTrashSessionId,
     }),
-    [selection, pendingForgetSessionId],
+    [selection, pendingTrashSessionId],
   );
 
   // Master/detail layout: project-path input → Recents list →
-  // Sessions list (+ Forget-all button) → Cancel/Open.
+  // Sessions list (+ Move-all-to-Trash button) → Cancel/Open.
   const sessionsPending = sessionsDataSource.isPending();
   const nonLiveCount = sessionsDataSource.nonLiveCount();
   // The `list_sessions` round-trip carries a filesystem existence check
@@ -1613,28 +1601,28 @@ function TideProjectPickerForm({
               </div>
             )}
           </div>
-          <div className="tide-card-picker-forget-all">
+          <div className="tide-card-picker-trash-all">
             <TugConfirmPopover
-              ref={forgetAllConfirmRef}
+              ref={trashAllConfirmRef}
               message={
                 nonLiveCount > 1
-                  ? `Forget all ${nonLiveCount} sessions for this path?`
-                  : "Forget this session?"
+                  ? `Move all ${nonLiveCount} sessions to Trash?`
+                  : "Move to Trash?"
               }
-              confirmLabel="Forget"
+              confirmLabel="Trash"
               confirmRole="danger"
               side="top"
             >
               <TugPushButton
                 emphasis="ghost"
                 role="action"
-                onClick={handleForgetAllClick}
+                onClick={handleTrashAllClick}
                 disabled={nonLiveCount === 0}
-                data-testid="tide-card-picker-forget-all"
+                data-testid="tide-card-picker-trash-all"
               >
                 {nonLiveCount > 1
-                  ? `Forget all sessions for this path (${nonLiveCount})`
-                  : "Forget all sessions for this path"}
+                  ? `Move all sessions to Trash for this path (${nonLiveCount})`
+                  : "Move all sessions to Trash for this path"}
               </TugPushButton>
             </TugConfirmPopover>
           </div>
@@ -1663,21 +1651,21 @@ function TideProjectPickerForm({
         </TugPushButton>
       </div>
       {/*
-        Form-owned forget-session confirmation popover. Driven by
-        `pendingForgetSessionId` state set by the chain handler on
-        `request-forget-session`. Anchored to the requesting row's
+        Form-owned trash-session confirmation popover. Driven by
+        `pendingTrashSessionId` state set by the chain handler on
+        `request-trash-session`. Anchored to the requesting row's
         trash icon via a virtualRef populated in the layout effect.
         One instance, N anchor targets — see [D14] / [D15].
       */}
       <TugConfirmPopover
-        open={pendingForgetSessionId !== null}
-        anchorEl={pendingForgetAnchorEl}
-        message={pendingForgetMessage}
-        confirmLabel="Forget"
+        open={pendingTrashSessionId !== null}
+        anchorEl={pendingTrashAnchorEl}
+        message={pendingTrashMessage}
+        confirmLabel="Trash"
         confirmRole="danger"
         side="left"
-        onConfirm={handleConfirmForget}
-        onCancel={handleCancelForget}
+        onConfirm={handleConfirmTrash}
+        onCancel={handleCancelTrash}
       />
       </div>
     </PickerFormResponderScope>

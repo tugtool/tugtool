@@ -33,7 +33,7 @@
  *    trailing trash `TugIconButton` (non-live) or live/failed
  *    badge. The row carries `data-session-id={session_id}` so the
  *    form's anchor-resolution layout effect can find this row's
- *    trash icon when the user requests a forget on it.
+ *    trash icon when the user requests to trash it.
  *  - `loading` — "checking…" placeholder. Inert.
  *
  * Click semantics:
@@ -42,7 +42,7 @@
  *    for path-recent, selection update for session-* per [D03],
  *    [D04]).
  *  - The trash control is a focus-refusing `TugIconButton` per
- *    [D16]. Its click dispatches `request-forget-session` with
+ *    [D16]. Its click dispatches `request-trash-session` with
  *    `{ sessionId }` payload via `useControlDispatch()` to the form
  *    responder. The form sets pending-id state which drives a single
  *    anchored `TugConfirmPopover`. The cell knows nothing about the
@@ -112,18 +112,18 @@ interface PickerCellContextValue {
   /** Current session selection. `null` when no session row is selected. */
   readonly selection: PickerSelection | null;
   /**
-   * Session id whose forget-confirmation popover is currently open
-   * (driven by the form's `pendingForgetSessionId` state). The
-   * matching row marks itself with `data-pending-forget="true"` so
+   * Session id whose trash-confirmation popover is currently open
+   * (driven by the form's `pendingTrashSessionId` state). The
+   * matching row marks itself with `data-pending-trash="true"` so
    * its trash icon stays visible AND highlighted while the popover
-   * is up — Mac-menu-open style. `null` when no forget is pending.
+   * is up — Mac-menu-open style. `null` when no trash is pending.
    */
-  readonly pendingForgetSessionId: string | null;
+  readonly pendingTrashSessionId: string | null;
 }
 
 const NULL_CONTEXT: PickerCellContextValue = {
   selection: null,
-  pendingForgetSessionId: null,
+  pendingTrashSessionId: null,
 };
 
 const PickerCellContext = createContext<PickerCellContextValue>(NULL_CONTEXT);
@@ -236,7 +236,7 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
   index,
   dataSource,
 }: TugListViewCellProps<TideSessionsDataSource>) => {
-  const { selection, pendingForgetSessionId } = usePickerCellContext();
+  const { selection, pendingTrashSessionId } = usePickerCellContext();
   const data = dataSource.rowAt(index) as Extract<
     SessionsRow,
     { kind: "session-resume" }
@@ -247,11 +247,11 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
   const isSelected =
     selection?.kind === "session-resume" &&
     selection.sessionId === row.session_id;
-  // While a forget-confirmation popover is pending FOR THIS ROW, the
+  // While a trash-confirmation popover is pending FOR THIS ROW, the
   // row marks itself so CSS can keep the trash icon visible AND
   // highlighted (Mac-menu-open style). Pure render derivation from
   // the context value — no per-cell state.
-  const isPendingForget = pendingForgetSessionId === row.session_id;
+  const isPendingTrash = pendingTrashSessionId === row.session_id;
 
   const fullPrompt =
     row.last_user_prompt !== null && row.last_user_prompt.length > 0
@@ -270,8 +270,8 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
 
   // The row carries `data-session-id` so the form's anchor-resolution
   // layout effect can locate this row's trash button when the user
-  // dispatches `request-forget-session` for this session — see
-  // `tide-card.tsx` `pendingForgetAnchorEl` resolution.
+  // dispatches `request-trash-session` for this session — see
+  // `tide-card.tsx` `pendingTrashAnchorEl` resolution.
   return (
     <div
       className="tide-card-picker-session-option"
@@ -280,7 +280,7 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
       data-selected={isSelected ? "true" : undefined}
       data-disabled={isLive ? "true" : undefined}
       data-session-id={row.session_id}
-      data-pending-forget={isPendingForget ? "true" : undefined}
+      data-pending-trash={isPendingTrash ? "true" : undefined}
     >
       <div className="tide-card-picker-session-option-text">
         <span
@@ -300,12 +300,12 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
       {!isLive && (
         <TugIconButton
           icon={<Trash2 size={14} aria-hidden="true" />}
-          aria-label={`Forget session ${idShort}`}
-          title={`Forget session ${idShort}`}
+          aria-label={`Move session ${idShort} to Trash`}
+          title={`Move session ${idShort} to Trash`}
           tone="danger"
-          className="tide-card-picker-session-forget"
+          className="tide-card-picker-session-trash"
           dispatch={{
-            action: TUG_ACTIONS.REQUEST_FORGET_SESSION,
+            action: TUG_ACTIONS.REQUEST_TRASH_SESSION,
             value: { sessionId: row.session_id },
             phase: "discrete",
           }}

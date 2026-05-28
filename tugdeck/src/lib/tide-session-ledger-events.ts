@@ -6,10 +6,10 @@
  *     each successful ledger write.
  *   - `list_sessions_ok { workspace_key, sessions }` ack frames in response
  *     to a `list_sessions` CONTROL request.
- *   - `forget_session_ok { session_id }` / `forget_session_err { reason }`
- *     ack frames in response to a `forget_session` request.
- *   - `forget_workspace_sessions_ok { workspace_key, count }` /
- *     `forget_workspace_sessions_err { reason }` ack frames.
+ *   - `trash_session_ok { session_id }` / `trash_session_err { reason }`
+ *     ack frames in response to a `trash_session` request.
+ *   - `trash_workspace_sessions_ok { workspace_key, count }` /
+ *     `trash_workspace_sessions_err { reason }` ack frames.
  *   - `list_session_state_changes_ok { tug_session_id, rows }` /
  *     `list_session_state_changes_err { tug_session_id, reason }`
  *     ack frames in response to a `list_session_state_changes` request.
@@ -66,10 +66,10 @@ const listSessionsOkBus = makeBus<{
 const listSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 const listCardBindingsOkBus = makeBus<{ bindings: CardBinding[] }>();
 const listCardBindingsErrBus = makeBus<{ reason: string }>();
-const forgetSessionOkBus = makeBus<{ session_id: string }>();
-const forgetSessionErrBus = makeBus<{ session_id: string; reason: string }>();
-const forgetProjectDirSessionsOkBus = makeBus<{ project_dir: string; count: number }>();
-const forgetProjectDirSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
+const trashSessionOkBus = makeBus<{ session_id: string }>();
+const trashSessionErrBus = makeBus<{ session_id: string; reason: string }>();
+const trashProjectDirSessionsOkBus = makeBus<{ project_dir: string; count: number }>();
+const trashProjectDirSessionsErrBus = makeBus<{ project_dir: string; reason: string }>();
 const listSessionStateChangesOkBus = makeBus<ListSessionStateChangesOk>();
 const listSessionStateChangesErrBus = makeBus<ListSessionStateChangesErr>();
 
@@ -88,17 +88,17 @@ export const publishListCardBindingsOk = listCardBindingsOkBus.publish;
 export const subscribeToListCardBindingsErr = listCardBindingsErrBus.subscribe;
 export const publishListCardBindingsErr = listCardBindingsErrBus.publish;
 
-export const subscribeToForgetSessionOk = forgetSessionOkBus.subscribe;
-export const publishForgetSessionOk = forgetSessionOkBus.publish;
+export const subscribeToTrashSessionOk = trashSessionOkBus.subscribe;
+export const publishTrashSessionOk = trashSessionOkBus.publish;
 
-export const subscribeToForgetSessionErr = forgetSessionErrBus.subscribe;
-export const publishForgetSessionErr = forgetSessionErrBus.publish;
+export const subscribeToTrashSessionErr = trashSessionErrBus.subscribe;
+export const publishTrashSessionErr = trashSessionErrBus.publish;
 
-export const subscribeToForgetProjectDirSessionsOk = forgetProjectDirSessionsOkBus.subscribe;
-export const publishForgetProjectDirSessionsOk = forgetProjectDirSessionsOkBus.publish;
+export const subscribeToTrashProjectDirSessionsOk = trashProjectDirSessionsOkBus.subscribe;
+export const publishTrashProjectDirSessionsOk = trashProjectDirSessionsOkBus.publish;
 
-export const subscribeToForgetProjectDirSessionsErr = forgetProjectDirSessionsErrBus.subscribe;
-export const publishForgetProjectDirSessionsErr = forgetProjectDirSessionsErrBus.publish;
+export const subscribeToTrashProjectDirSessionsErr = trashProjectDirSessionsErrBus.subscribe;
+export const publishTrashProjectDirSessionsErr = trashProjectDirSessionsErrBus.publish;
 
 export const subscribeToListSessionStateChangesOk = listSessionStateChangesOkBus.subscribe;
 export const publishListSessionStateChangesOk = listSessionStateChangesOkBus.publish;
@@ -112,10 +112,10 @@ export function _resetTideSessionLedgerEventsForTest(): void {
   listSessionsErrBus.reset();
   listCardBindingsOkBus.reset();
   listCardBindingsErrBus.reset();
-  forgetSessionOkBus.reset();
-  forgetSessionErrBus.reset();
-  forgetProjectDirSessionsOkBus.reset();
-  forgetProjectDirSessionsErrBus.reset();
+  trashSessionOkBus.reset();
+  trashSessionErrBus.reset();
+  trashProjectDirSessionsOkBus.reset();
+  trashProjectDirSessionsErrBus.reset();
   listSessionStateChangesOkBus.reset();
   listSessionStateChangesErrBus.reset();
 }

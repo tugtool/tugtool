@@ -492,13 +492,18 @@ export default (defineConfig as any)(() => {
         // artifacts; new crates need no edit here.
         ignored: ["**/palette-engine.ts", "**/tugdeck/crates/*/pkg/**"],
       },
-      // No explicit `hmr` block: Vite defaults to HMR on the same
-      // host:port the dev server is listening on. Under multi-
-      // instance the dev server port is per-instance (derived from
-      // TUG_INSTANCE_ID via tugcore::ports::vite_port_default), so
-      // pinning HMR to a hardcoded port would point the client at a
-      // closed socket on every instance other than the legacy
-      // production-main one. Trust the default.
+      // Pin the HMR host/protocol explicitly. Vite would otherwise
+      // infer them from the loaded page's URL — under WKWebView the
+      // inference has historically been flaky enough to silently
+      // break CSS hot updates without any visible error. `port` is
+      // omitted on purpose: Vite mirrors it from the dev server's
+      // own port, which is per-instance (derived from
+      // TUG_INSTANCE_ID via tugcore::ports::vite_port_default) and
+      // not known at config-load time.
+      hmr: {
+        host: "127.0.0.1",
+        protocol: "ws",
+      },
     },
     preview: {
       proxy: proxyConfig,

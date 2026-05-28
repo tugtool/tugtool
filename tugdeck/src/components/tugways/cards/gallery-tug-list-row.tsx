@@ -217,10 +217,10 @@ export function GalleryTugListRow(): React.ReactElement {
               trailing={
                 <TugIconButton
                   icon={<Trash2 size={14} aria-hidden="true" />}
-                  aria-label={`Forget ${path}`}
-                  title={`Forget ${path}`}
+                  aria-label={`Trash ${path}`}
+                  title={`Trash ${path}`}
                   tone="danger"
-                  onClick={() => setRevealResult(`Forget ${path}`)}
+                  onClick={() => setRevealResult(`Trash ${path}`)}
                 />
               }
             />

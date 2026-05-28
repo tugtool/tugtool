@@ -1,11 +1,10 @@
 /**
  * tide-picker-format — pure formatters for the Tide project picker.
  *
- * Used by the picker's session-resume cells and the inline forget-
- * confirm panel. No React, no JSX — pure string formatting,
- * unit-test-friendly. Lives in its own module so callers in
- * `tide-card.tsx` and `tide-picker-cells.tsx` can both import
- * without forming an import cycle.
+ * Used by the picker's session-resume cells. No React, no JSX —
+ * pure string formatting, unit-test-friendly. Lives in its own
+ * module so callers in `tide-card.tsx` and `tide-picker-cells.tsx`
+ * can both import without forming an import cycle.
  */
 
 import type { SessionRow } from "@/protocol";

@@ -30,12 +30,12 @@ import { useSyncExternalStore } from "react";
 import type { TugConnection } from "../connection";
 import type { SessionRow } from "../protocol";
 import {
-  encodeForgetSession,
+  encodeTrashSession,
   encodeListSessions,
 } from "../protocol";
 import {
-  subscribeToForgetSessionErr,
-  subscribeToForgetSessionOk,
+  subscribeToTrashSessionErr,
+  subscribeToTrashSessionOk,
   subscribeToListSessionsErr,
   subscribeToListSessionsOk,
   subscribeToSessionUpdated,
@@ -67,7 +67,7 @@ const PENDING_SNAPSHOT: WorkspaceSnapshot = Object.freeze({
   rows: EMPTY_ROWS,
 });
 
-type ForgetSessionResult = { ok: true } | { error: { reason: string } };
+type TrashSessionResult = { ok: true } | { error: { reason: string } };
 
 /**
  * Per-session-id index entry. Tracks which `projectDir` cache currently
@@ -85,8 +85,8 @@ export class TideSessionLedgerStore {
   private readonly rowLocations = new Map<string, RowLocation>();
   private readonly listeners = new Set<() => void>();
 
-  /** Resolves attached to in-flight `forget_session` calls, keyed by id. */
-  private readonly pendingForget = new Map<string, (r: ForgetSessionResult) => void>();
+  /** Resolves attached to in-flight `trash_session` calls, keyed by id. */
+  private readonly pendingTrash = new Map<string, (r: TrashSessionResult) => void>();
 
   private readonly disposers: Array<() => void> = [];
 
@@ -130,10 +130,10 @@ export class TideSessionLedgerStore {
     return PENDING_SNAPSHOT;
   };
 
-  forgetSession(sessionId: string): Promise<ForgetSessionResult> {
+  trashSession(sessionId: string): Promise<TrashSessionResult> {
     return new Promise((resolve) => {
-      this.pendingForget.set(sessionId, resolve);
-      const frame = encodeForgetSession(sessionId);
+      this.pendingTrash.set(sessionId, resolve);
+      const frame = encodeTrashSession(sessionId);
       this.conn.send(frame.feedId, frame.payload);
     });
   }
@@ -198,16 +198,16 @@ export class TideSessionLedgerStore {
           this.patchRow(push.session_id, push.fields);
         }
       }),
-      subscribeToForgetSessionOk(({ session_id }) => {
-        const resolve = this.pendingForget.get(session_id);
+      subscribeToTrashSessionOk(({ session_id }) => {
+        const resolve = this.pendingTrash.get(session_id);
         if (resolve === undefined) return;
-        this.pendingForget.delete(session_id);
+        this.pendingTrash.delete(session_id);
         resolve({ ok: true });
       }),
-      subscribeToForgetSessionErr(({ session_id, reason }) => {
-        const resolve = this.pendingForget.get(session_id);
+      subscribeToTrashSessionErr(({ session_id, reason }) => {
+        const resolve = this.pendingTrash.get(session_id);
         if (resolve === undefined) return;
-        this.pendingForget.delete(session_id);
+        this.pendingTrash.delete(session_id);
         resolve({ error: { reason } });
       }),
     );

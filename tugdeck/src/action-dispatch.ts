@@ -61,10 +61,10 @@ import {
   publishListSessionsErr,
   publishListCardBindingsOk,
   publishListCardBindingsErr,
-  publishForgetSessionOk,
-  publishForgetSessionErr,
-  publishForgetProjectDirSessionsOk,
-  publishForgetProjectDirSessionsErr,
+  publishTrashSessionOk,
+  publishTrashSessionErr,
+  publishTrashProjectDirSessionsOk,
+  publishTrashProjectDirSessionsErr,
   publishListSessionStateChangesOk,
   publishListSessionStateChangesErr,
 } from "./lib/tide-session-ledger-events";
@@ -507,7 +507,7 @@ export function initActionDispatch(
 
   // session_updated: tugcast supervisor broadcasts these on every
   // ledger write (`record_spawn`, `record_turn`, `mark_closed`,
-  // `mark_failed`, `forget`). Routed through the
+  // `mark_failed`, `trash`). Routed through the
   // `tide-session-ledger-events` bus so the picker's session-ledger
   // store (step 4) can patch its in-memory cache without re-fetching.
   registerAction("session_updated", (payload) => {
@@ -591,46 +591,46 @@ export function initActionDispatch(
     publishListCardBindingsErr({ reason });
   });
 
-  // forget_session_ok / _err
-  registerAction("forget_session_ok", (payload) => {
+  // trash_session_ok / _err
+  registerAction("trash_session_ok", (payload) => {
     const sessionId = payload.session_id;
     if (typeof sessionId !== "string") {
-      console.warn("forget_session_ok: missing session_id", payload);
+      console.warn("trash_session_ok: missing session_id", payload);
       return;
     }
-    publishForgetSessionOk({ session_id: sessionId });
+    publishTrashSessionOk({ session_id: sessionId });
   });
-  registerAction("forget_session_err", (payload) => {
+  registerAction("trash_session_err", (payload) => {
     const sessionId = payload.session_id;
     const reason = payload.reason;
     if (typeof sessionId !== "string" || typeof reason !== "string") {
-      console.warn("forget_session_err: missing or invalid fields", payload);
+      console.warn("trash_session_err: missing or invalid fields", payload);
       return;
     }
-    publishForgetSessionErr({ session_id: sessionId, reason });
+    publishTrashSessionErr({ session_id: sessionId, reason });
   });
 
-  // forget_project_dir_sessions_ok / _err: response to a recents-eviction
+  // trash_project_dir_sessions_ok / _err: response to a recents-eviction
   // → ledger-eviction dispatch from `card-services-store.ts`. The caller
   // is fire-and-forget (no UX surface waits on the ack), but registering
   // the handlers keeps the unknown-action warning out of the console.
-  registerAction("forget_project_dir_sessions_ok", (payload) => {
+  registerAction("trash_project_dir_sessions_ok", (payload) => {
     const projectDir = payload.project_dir;
     const count = payload.count;
     if (typeof projectDir !== "string" || typeof count !== "number") {
-      console.warn("forget_project_dir_sessions_ok: missing or invalid fields", payload);
+      console.warn("trash_project_dir_sessions_ok: missing or invalid fields", payload);
       return;
     }
-    publishForgetProjectDirSessionsOk({ project_dir: projectDir, count });
+    publishTrashProjectDirSessionsOk({ project_dir: projectDir, count });
   });
-  registerAction("forget_project_dir_sessions_err", (payload) => {
+  registerAction("trash_project_dir_sessions_err", (payload) => {
     const projectDir = payload.project_dir;
     const reason = payload.reason;
     if (typeof projectDir !== "string" || typeof reason !== "string") {
-      console.warn("forget_project_dir_sessions_err: missing or invalid fields", payload);
+      console.warn("trash_project_dir_sessions_err: missing or invalid fields", payload);
       return;
     }
-    publishForgetProjectDirSessionsErr({ project_dir: projectDir, reason });
+    publishTrashProjectDirSessionsErr({ project_dir: projectDir, reason });
   });
 
   // list_session_state_changes_ok / _err: response to a
