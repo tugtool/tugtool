@@ -36,7 +36,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   letterSpacing: 0,
   // Matches the historical CSS default in tug-prompt-input.css.
   lineHeight: 1.7,
-  lineWrap: false,
+  lineWrap: true,
   lineNumbers: false,
   highlightActiveLineGutter: false,
 };

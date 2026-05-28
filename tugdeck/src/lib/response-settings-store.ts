@@ -40,7 +40,7 @@ const DOMAIN = "dev.tugtool.tide.response";
 const KEY = "settings";
 
 export const DEFAULT_RESPONSE_SETTINGS: ResponseSettings = {
-  entryMargin: 16,
+  entryMargin: 24,
 };
 
 // ── Store ───────────────────────────────────────────────────────────────────
