@@ -1,0 +1,1456 @@
+<!-- tugplan-skeleton v2 -->
+
+## Dev-Card / Claude Code Parity {#dev-card-claude-code-parity}
+
+**Purpose:** Close the experience gap between Claude Code's terminal TUI and the dev-card by landing the chrome (permission-mode / model / rate-limit / session badges in Z4B with `Shift+Tab` cycling), reimplementing the slash commands the terminal renders locally (`/rewind`, `/resume`, `/diff`, `/permissions` rules editor, `/context` HUD, `/memory`, `/agents`, `/mcp`, `/hooks`), and polishing the streaming + approval surface (`control_request_forward` UI, `api_retry`, `thinking_text` empty-state, `@`-file completion, image drag/paste).
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Ken Kocienda |
+| Status | draft |
+| Target branch | main |
+| Last updated | 2026-05-28 |
+
+---
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+The dev-card has been a faithful streaming-conversation surface for months — user types, claude streams back, tool calls render as structured blocks — but it stops at "transcript." Everything around the transcript that makes Claude Code feel like a tool you *control* (permission mode, session lifecycle, plan-mode workflow, slash commands that produce zero stream-json events) is either missing or hardcoded. The 35-probe transport-exploration catalog ([transport-exploration.md](transport-exploration.md)) and the freshly-landed v2.1.154 golden baseline (commit `3b925484`) give us complete coverage of what events flow and what's terminal-rendered-locally; this plan turns that knowledge into a phased build-out.
+
+Three things changed recently that make this the moment to close the gap. First, the stream-json baseline is fresh — we know exactly what 2.1.154 emits, what's new (`rate_limit_event`, new tools surfaced in `system/init`, `claude-opus-4-8[1m]` model identifier), and where the differ tolerates variance. Second, tugcode now forwards new event types we can build chrome on — commit `9af307fe` added `RateLimitEvent` passthrough, the per-turn subscription-quota broadcast we lacked plumbing for. Third, the Z4B prompt-indicator slot is wired (`dev-card.tsx:2391-2401`) and sitting empty in most cards — waiting for the permission-mode badge, the model badge, the rate-limit countdown, and the session-state chip.
+
+#### Strategy {#strategy}
+
+- **Foundations first** ([#step-1] through [#step-5]): land the Z4B chrome as INDICATORS only per [#d13-z4b-indicator-only] (permission-mode, model, rate-limit, session-state). All four read from `SessionMetadataStore` via the same `useSyncExternalStore` pattern — doing them together amortizes the plumbing and the placement-experiment harness churn.
+- **`Shift+Tab` cycle matches terminal exactly** ([#d02-cycle-order]) — `default → acceptEdits → plan → auto`. Preserves muscle memory for users migrating from the terminal.
+- **Slash commands split by category** ([#l01-slash-cmd-inventory]): skill-backed (no work, they already produce real event streams), terminal-rendered-locally (reimplement as graphical surfaces — the meat of this plan), unsupported (hidden from popup per [#d14-slash-unsupported-list]; documented in a canonical list).
+- **`/rewind` matches the terminal empirically** ([#d10-rewind-matches-terminal]) — run a probe to capture what the terminal does, then design the dev-card flow to produce the same mutations. No protocol speculation.
+- **`/rewind` is the canonical pane-sheet command** — designing it forces a reusable `SessionPickerSheet` primitive ([#d05-session-picker-sheet]) that `/resume` and future session-pickers consume. Built as an overlay per [#d15-pane-sheets-are-overlays].
+- **Stream-side polish is cheap and high-impact** ([#step-15] through [#step-22]): `control_request_forward` UI, `api_retry` indicator, `thinking_text` empty-state, `@`-file completion, image drag/paste, `unknown_event` IPC frame. Each is a small targeted change against a stable IPC contract.
+- **Round-trip mutations via tugcode** ([#d03-roundtrip-mutations]) — the badge updates from the post-mutation `system_metadata` refresh, not from the keypress directly. Keeps state truthful even if a mode change races a concurrent turn.
+- **Phase boundaries are shippable.** Phase A unlocks the chrome story; Phase B unlocks "I can do what I do in the terminal"; Phase C polishes the streaming / approval surface that's been getting by on minimums. Each phase ships independently.
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+- The Z4B indicator cluster on a freshly-mounted dev-card shows a permission-mode chip with the current mode label within 200 ms of session ready — verify by mounting a card with [session-metadata-feed.md](session-metadata-feed.md)'s snapshot feed and observing the chip text before the first turn fires.
+- `Shift+Tab` in a focused dev-card cycles the permission mode through `default → acceptEdits → plan → auto → default` in order — verify with a real-claude round-trip test that asserts the chip label flips after each press and that `system_metadata.permissionMode` confirms.
+- The model badge shows the active model (e.g. `Opus 4.8 · 1M`) sourced from `system_metadata.model` — verify the badge updates after a `model_change` round-trip.
+- A `rate_limit_event` with `status: "allowed"` and `resetsAt` > 1 hour away does NOT render a chip; status `≠ "allowed"` or `resetsAt` within 60 min DOES render the chip — verify with mocked `RateLimitEvent` payloads via a tugcode probe.
+- Typing `/rewind` in the prompt entry opens a pane-sheet listing the current session's committed turns, ordered most-recent first, with timestamps and previews — verify by sending `user_message{content: [{type:"text",text:"/rewind"}]}` and asserting the sheet mounts before any IPC round-trip.
+- Picking a turn in the rewind sheet and pressing Enter sends a `session_rewind` (or `session_command` per [#q04-rewind-protocol]) inbound and the new card-state reflects forking from that turn — verify end-to-end with a real-claude test that asserts the new session's first turn references the forked-from message id.
+- A permission denial (`control_request_forward` with `is_question: false`) opens a modal popover anchored to the in-flight tool block with the tool name, input preview, decision reason, allow/deny buttons, and any `permission_suggestions[]` rules as one-click options — verify with the test-08 / test-11 probe shapes.
+- `api_retry` events render a transient indicator with `attempt n/max`, `retry_delay_ms` countdown, and `error` label — verify by replaying a probe with an injected `api_retry` event and asserting the indicator mounts, ticks down, and clears on `turn_complete` or `cost_update`.
+- The drift regression (`stream_json_catalog_drift_regression`) stays clean across the work — verify after each step's commit lands.
+- All four phases ship as separable PRs. Phase A is mergable without B or C; B without C; C standalone. Verify by reviewing the [#deliverables] checkpoint table per phase.
+
+#### Scope {#scope}
+
+1. Z4B chrome (indicators only per [#d13-z4b-indicator-only]): permission-mode chip (display only; cycle via `Shift+Tab`), model chip (display only; change via `/model`), rate-limit chip, session-state chip refinement.
+2. Locally-rendered slash command reimplementation: `/rewind` (empirically modeled on terminal — see [#d10-rewind-matches-terminal]), `/resume`, `/permissions` rules editor, `/model` picker, `/diff` sheet, `/context` HUD, `/memory` / `/agents` / `/hooks` listing sheets, `/help` tabbed sheet, `/btw` exclude-from-history flow, `/clear`.
+3. Stream-side polish: `control_request_forward` UI for tool approval and AskUserQuestion, `api_retry` indicator, `thinking_text` empty-state (omit per [#d12-thinking-empty-state]→[#q12-thinking-empty-state]), `@`-file completion, image drag/paste, interrupt visibility, `compact_boundary` divider, `unknown_event` IPC frame + frontend banner.
+4. Slash-command popup filtering: unsupported commands hidden from the popup per [#d14-slash-unsupported-list]; canonical list of unsupported commands lives in repo docs.
+5. Reusable primitives: `SessionPickerSheet` primitive (overlay per [#d15-pane-sheets-are-overlays]) consumed by `/rewind` and `/resume`.
+6. Tugcast `git_diff_request` / `git_diff_response` control commands for `/diff` per [#d21-diff-dedicated-command].
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- Multi-card multi-instance coordination of tugcode processes — covered by [tug-multi-instance.md](tug-multi-instance.md).
+- Tug-feed structured-progress reporting — covered by [tug-feed.md](tug-feed.md).
+- Browser-frontend vs Tug.app-host division-of-labor: this plan describes *what* the dev-card shows; *where* the dev-card runs stays the host's concern.
+- Settings / config UI for hooks, theme tokens — these belong to the host-app settings surface (Tug.app), not the dev-card.
+- Subagent-tree visualization, turn-level cost breakdown chips, inline tool-result panes, plan-mode card-style workflow, skill-output trees — listed as [#roadmap] follow-ons but explicitly out of scope here.
+- **MCP in any form.** `/mcp` slash command, MCP listing sheet, MCP auth UI — all dropped (per [#q06-mcp-auth-ownership]). Picked up in a future MCP-focused plan.
+- The hunk-level "stage" affordance on `/diff` — tugcast doesn't have a `stage hunk` command yet; tracked as a future ask.
+- Z4B chip click-to-open behaviors — Z4B is indicator-only per [#d13-z4b-indicator-only]. No model picker on chip click; no permission-mode popover on chip click.
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- v2.1.154 golden catalog (committed in `3b925484`) — the protocol baseline this plan is anchored against per [D06].
+- `rate_limit_event` IPC passthrough (committed in `9af307fe`) — the chrome consumer this plan builds on.
+- [session-metadata-feed.md](session-metadata-feed.md) snapshot-feed proposal — recommended (not required) for the Z4B chips to populate before the first turn; without it, chips show a transient `"…"` state. With [D07]'s per-card persistence, the chip can pre-populate from tugbank as soon as the card mounts, before metadata round-trips.
+- `SessionMetadataStore` (`tugdeck/src/lib/session-metadata-store.ts`) — the store every Z4B chip reads.
+- `code-session-store` / `code-session-store.ts` and the `code-session-store/` reducer — owns transcript state for `/rewind` to read.
+- `routeTopLevelEvent` in `tugcode/src/session.ts:612` — where new IPC translations land (rewind shape per [D10] / [#step-7a], unknown_event per [D19] / [#step-22]).
+- `gallery-sheet.tsx`, `gallery-tooltip.tsx`, `gallery-radio-group.tsx`, `gallery-list-view.tsx`, `tug-arc-gauge.tsx` (reused by the `/context` HUD per [D22]) — existing gallery primitives consumed throughout.
+- `feeds/FILESYSTEM 0x10` snapshot feed — the data source for `@`-file completion ([#step-18]).
+- Tugbank `dev.permission-mode.<cardId>` namespace — for per-card mode persistence per [D07].
+
+#### Constraints {#constraints}
+
+- **Tuglaws compliance.** All React/DOM work must honor [tuglaws.md](../tuglaws/tuglaws.md). Specifically: external state enters React through `useSyncExternalStore` only ([L02]); registrations that events depend on use `useLayoutEffect` ([L03]); appearance changes go through CSS/DOM, never React state ([L06]). Z4B badges are `useSyncExternalStore` consumers of `SessionMetadataStore`.
+- **AskUserQuestion ≤4-option cap.** Per [CLAUDE.md](../CLAUDE.md), AskUserQuestion is Zod-capped at 4 options per question. The `control_request_forward` polish in [#step-15] must honor this; renderer must salvage gracefully when an agent exceeds it.
+- **Single text-entry destination.** Per `feedback_persistent_text_entry` memory, one *saved/restored* focus destination per card. The slash-command modal pane sheets must not steal that destination; transient modals carry their own text inputs but yield focus back on dismiss.
+- **Substrate responder registration.** Per `feedback_substrate_responder` memory, any document-level capture-phase keyboard interception must register as a substrate responder. The `Shift+Tab` cycle handler in [#step-1] is a substrate responder.
+- **Fixed-width state-dependent buttons.** Per `feedback_fixed_width_buttons` memory, buttons whose content varies by state must reserve the widest state's width. The permission-mode badge uses `widthStabilize` so cycling doesn't shift Z4B layout.
+- **No localStorage.** Per `feedback_no_localstorage` memory, persistent state flows through `tugbank /api/defaults/<domain>/<key>`. Per-card permission-mode persistence ([#q01-mode-persistence]) uses tugbank.
+- **HMR is always running.** Per `feedback_hmr` memory, no manual `bun run build` for tugdeck. Tugcode changes require recompile (per `feedback_tugcode_compile`).
+- **Tests use real engine / real claude.** Per `feedback_test_reality`, `feedback_no_mock_store_tests`, `feedback_no_happy_dom_tests`. Phase A / B / C tests are `bun:test` pure-logic + real-app `just app-test` per `feedback_just_app_test`.
+
+#### Assumptions {#assumptions}
+
+- Claude Code 2.1.x retains the `system/init` shape with `claude_code_version`, `model`, `permissionMode`, `slash_commands`, `agents`, `skills`, `plugins`, `mcp_servers`, `memory_paths` for the duration of this plan. The drift regression will catch deviation.
+- Tugcode's `permission_mode`, `model_change`, `session_command`, `tool_approval`, `question_answer`, and `interrupt` inbound types are stable. No protocol changes required for Phase A or C; only [#q04-rewind-protocol] in Phase B may add `session_rewind`.
+- The `FILESYSTEM` snapshot feed's content shape is suitable for `@`-file completion without modification.
+- `rate_limit_event` shape stays as captured in v2.1.154 (`{status, resetsAt, rateLimitType, overageStatus, overageDisabledReason?, isUsingOverage}`); strict-typed receiver in tugcode catches shape drift.
+- Image drag/paste already-shipped `image-downsample.ts`, `atom-bytes-store.ts`, `synthesize-user-message.ts` continue to work post Step-5c.
+
+---
+
+### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
+
+This plan format relies on **explicit, named anchors** and **rich `References:` lines** in execution steps. Conventions follow [tugplan-skeleton v2](../tuglaws/tugplan-skeleton.md):
+
+- Anchors are explicit `{#anchor-name}` suffixes on headings, lowercase kebab-case, semantic and renumber-stable.
+- Stable IDs: decisions `[D01]`, open questions `[Q01]`, specs `S01`, tables `T01`, lists `L01`, risks `R01`, milestones `M01` (two-digit, no reuse).
+- Execution-step dependencies use `**Depends on:** #step-N` anchor references, never titles or line numbers.
+- Execution-step references cite by ID and anchor (e.g. `[D02] cycle order, Spec S03, (#strategy)`).
+
+---
+
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
+
+> Each question is described enough that a "yes/no" or "choose option X" lands without follow-up. The user marks `OPEN → DECIDED` in review.
+
+#### [Q01] Per-card vs per-session permission-mode persistence (DECIDED) {#q01-mode-persistence}
+
+**Question:** When the user cycles the permission mode in card A and quits, should a freshly-opened card A reload in the same mode (per-card persistence in tugbank) or in `default` (per-session reset, matching the terminal)?
+
+**Resolution:** DECIDED → **per-card persistence via tugbank `dev.permission-mode.<cardId>`.** Survives card relaunch. See [#d07-per-card-mode-persistence].
+
+#### [Q02] `rate_limit_info` — own store or extend SessionMetadataStore (DECIDED) {#q02-rate-limit-store}
+
+**Question:** Add a `rateLimit` field to `SessionMetadataSnapshot` or stand up a parallel `RateLimitStore`?
+
+**Resolution:** DECIDED → **extend `SessionMetadataSnapshot.rateLimit: RateLimitInfo | null`.** Single source of truth, single subscription pattern. See [#d04-session-metadata-hub].
+
+#### [Q03] Model-change synthetic confirmation — transcript or banner (DECIDED) {#q03-model-confirm}
+
+**Question:** Tugcode emits a synthetic `assistant_text` "Set model to claude-…" after `model_change`. Render it in the transcript (audit trail, matches terminal) or as a transient banner that fades (cleaner history)?
+
+**Resolution:** DECIDED → **render in the transcript. Match the terminal.** Audit trail preserved; no banner. See [#d09-model-confirm-in-transcript].
+
+#### [Q04] `/rewind` protocol shape (DECIDED) {#q04-rewind-protocol}
+
+**Question:** How does the dev-card tell tugcode "fork from message X"?
+
+**Resolution:** DECIDED → **match the Claude Code terminal empirically.** Run a capture probe that drives `/rewind` in the terminal, observe what flows on the wire / what claude / harness state mutates, and design the dev-card flow to produce the same mutations. This becomes a prerequisite investigation step before [#step-7] designs the sheet. See [#d10-rewind-matches-terminal] and [#step-7] artifacts.
+
+#### [Q05] `/btw` out-of-history turn shape (DECIDED) {#q05-btw-shape}
+
+**Question:** Terminal `/btw` runs a turn that doesn't persist to session history. Does our journal need an `exclude_from_history` flag, do we synthesize a separate ephemeral session, or do we write to history with a hint?
+
+**Resolution:** DECIDED → **exclude flag**. Add `metadata.exclude_from_history: true` on the `user_message`. **Sub-investigation required**: probe claude 2.1.154 to see whether it honors the flag natively; if absent, tugbank-only filtering carries the exclusion. See [#d11-btw-exclude-flag] and [#step-13] task list.
+
+#### [Q06] MCP auth flow ownership (DECIDED) {#q06-mcp-auth-ownership}
+
+**Question:** When the user clicks "Authenticate" on an MCP row in the `/mcp` sheet, where does the OAuth webview live — in-card iframe or host-app surface?
+
+**Resolution:** DECIDED → **MCP is fully out of scope.** No `/mcp` sheet in this plan; no auth flow design. `/mcp` is dropped from [#l01-slash-cmd-inventory] and from [#step-12] scope. Surface returns when MCP is addressed in a future plan. See [#non-goals].
+
+#### [Q07] `bypassPermissions` in the `Shift+Tab` cycle (DECIDED) {#q07-bypass-in-cycle}
+
+**Question:** The terminal's `Shift+Tab` cycle is 4-way and excludes `bypassPermissions` / `dontAsk`. Match exactly?
+
+**Resolution:** DECIDED → **4-way cycle matching the terminal exactly.** `bypassPermissions` not in cycle, not surfaced in dev-card (no popover access path either — see [#q08-model-scope] precedent: Z4B is indicator-only). See [#d02-cycle-order].
+
+#### [Q08] Z4B-as-picker vs Z4B-as-indicator (DECIDED) {#q08-model-scope}
+
+**Question (clarified during review):** Is Z4B a picker surface where the user can switch model directly, or strictly an indicator that displays the current model?
+
+**Resolution:** DECIDED → **Z4B is INDICATOR-ONLY**, not a picker. Model is switched only via the `/model` slash command, which opens its own picker sheet. The Z4B model chip displays the active model and that's all. Same policy applies to the permission-mode chip: the chip displays mode; mode changes go through `Shift+Tab` (cycle) or `/permissions` (popover). No click-to-change on any Z4B chip. See [#d13-z4b-indicator-only] and [#step-2].
+
+The original question about model-scope (card vs session) is consequently moot — there's no card-scoped picker to scope. Model changes via `/model` route to `model_change` IPC which is session-scoped per the existing protocol.
+
+#### [Q09] Slash-popup filtering policy (DECIDED) {#q09-slash-popup-filter}
+
+**Question:** `SessionMetadataStore.getCommandCompletionProvider()` exposes every command claude reports. Some have no graphical analog. Hide, grey, or include?
+
+**Resolution:** DECIDED → **Hide unsupported commands from the popup; maintain a list of unsupported commands in repo docs.** The dev-card slash popup shows only commands with a working graphical surface. Unsupported commands (e.g. `/vim`, `/theme`, `/color`) are absent from the popup and produce no behavior if typed verbatim. The canonical list of unsupported commands lives in a new docs section so users can find it. See [#d14-slash-unsupported-list] and [#documentation-plan].
+
+#### [Q10] Pane-sheet anchor — split-pane right half or overlay (DECIDED) {#q10-pane-sheet-anchor}
+
+**Question:** Does the right-half of the dev-card's existing horizontal split-pane (`dev-card.tsx:2425`) become the sheet surface, or do we add a separate sheet abstraction that overlays?
+
+**Resolution:** DECIDED → **Overlay**. Pane sheets do NOT split the dev-card horizontally. Sheets mount as overlays on top of the transcript / prompt area. The existing horizontal split (`dev-card.tsx:2425`) stays untouched and is reserved for its current use (top transcript pane / bottom prompt entry). See [#d05-session-picker-sheet] (updated) and [#d15-pane-sheets-are-overlays].
+
+#### [Q11] Drop list for terminal-only commands (DECIDED) {#q11-drop-list}
+
+**Question:** Beyond `/vim`, `/theme`, `/color`, should `/clear`, `/quit`, `/help` also be hidden from the popup?
+
+**Resolution:** DECIDED → **`/clear` supported.** **`/help` supported as a tabbed sheet** similar in content to what Claude Code offers (categorized command list, key shortcuts, links to docs). `/quit` not in scope here (close-card is the affordance; revisit if needed). `/vim`, `/theme`, `/color` dropped per [#q09-slash-popup-filter]. See [#d16-clear-help-supported] and [#step-13].
+
+#### [Q12] `thinking_text` empty-state policy (DECIDED) {#q12-thinking-empty-state}
+
+**Question:** When a turn produces no thinking, render an empty collapsible header or omit entirely?
+
+**Resolution:** DECIDED → **Omit**. No empty header. The thinking collapsible exists when thinking deltas arrived; absent otherwise. See [#step-17].
+
+#### [Q13] `RateLimitEvent` shape strictness vs forward-compat (DECIDED) {#q13-rate-limit-strictness}
+
+**Question:** Strict-typed shape or loose pass-through?
+
+**Resolution:** DECIDED → **Keep strict.** Quality gate; capture-capabilities runbook catches drift. See [#d18-rate-limit-strict-shape].
+
+#### [Q14] Unknown-event-type IPC frame for forward-compat (DECIDED) {#q14-unknown-event-ipc}
+
+**Question:** Add an `unknown_event` IPC frame for the default branch of `routeTopLevelEvent`?
+
+**Resolution:** DECIDED → **Add the frame.** Replace the silent log-and-drop with an `unknown_event` IPC carrying `original_type` and a hex preview. Frontend surfaces a soft warn banner. See [#d19-unknown-event-frame] and [#step-22].
+
+#### [Q15] Multi-card-same-session story scope (DECIDED) {#q15-multi-card-session}
+
+**Question:** When two cards bind to the same session, who owns the send button, the interrupt button, the prompt entry, and the keyboard focus?
+
+**Resolution:** DECIDED → **Two cards cannot connect to the same session.** Session binding is 1:1 with card. The question is structurally impossible and therefore non-existent. Reference removed from [#non-goals]; the design constraint surfaces here in [#d20-one-card-per-session]. Related Q08 simplification also holds — model is session-scoped, session is card-scoped, model is therefore card-scoped by transitivity.
+
+#### [Q16] `/diff` viewer source-of-truth (DECIDED) {#q16-diff-source}
+
+**Question:** Does the sheet read from the GIT feed, or fire a dedicated command?
+
+**Resolution:** DECIDED → **Dedicated `git_diff_request` command, single-shot response.** The GIT feed is a separate consumer with its own lifecycle; the dev-card must own its `/diff` content rather than ride on a shared feed. The command and response shape are new; tugcast adds the request handler and a typed response. See [#d21-diff-dedicated-command] and [#step-10].
+
+#### [Q17] `/context` HUD shape — gauge or popover (DECIDED) {#q17-context-hud-shape}
+
+**Question:** Linear gauge in Z4, arc gauge as a chip, or popover-on-hover?
+
+**Resolution:** DECIDED → **Reuse the arc gauge from the status-bar popover.** The status bar's existing arc-gauge component already looks great and renders the same shape of data (used/total). The `/context` HUD adopts the same arc-gauge atom. See [#d22-context-arc-gauge] and [#step-11].
+
+---
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| [R01] Z4B layout shift when chips populate late | med | med | Width-stabilize all chips; reserve max-width slots even when empty | Visual diff on placement-experiment shows post-mount jump |
+| [R02] `Shift+Tab` clashes with browser/IDE chord | med | low | Substrate responder consumes the event only when card is focused; bubbles otherwise | Bug report or focus-trap regression test fails |
+| [R03] `/rewind` shape divergence from terminal | high | low | Capture probe in [#step-7a] before [#step-7] designs the sheet, per [D10]. The probe's findings ARE the spec | Drift between dev-card `/rewind` flow and terminal behavior surfaces |
+| [R04] Claude 2.1.155+ reshapes `rate_limit_event` | low | med | Strict typing + capture-capabilities catches drift; doc warns the runbook | Drift regression FAILs on `rate_limit_event` shape |
+| [R05] AskUserQuestion >4-option regression in dev-card surface | low | low | Reuse existing salvage path from Tide; renderer caps at 4 + Other | New AskUserQuestion call with 5+ options surfaces |
+| [R06] Image-attach regression after Step-5c | med | low | Wire-shape pin tests exist (`replay-pending-row-injection.test.ts`); add a real-app `just app-test` case for drag-drop | Image probe test-23 starts failing |
+
+**Risk R01: Z4B layout shift when chips populate late** {#r01-z4b-layout-shift}
+
+- **Risk:** Permission-mode, model, and rate-limit chips arrive at slightly different times. If they don't reserve their max-width slot from mount, the Z4B cluster will shift visibly as each populates.
+- **Mitigation:**
+  - Width-stabilize each chip via `widthStabilize` (per `feedback_fixed_width_buttons` memory).
+  - Reserve slot widths via CSS placeholders mounted at first render.
+  - Test the post-mount frame for layout movement via the placement-experiment harness.
+- **Residual risk:** Permission mode and model are stable lengths; rate-limit chip varies ("5h", "59m", "rate-limited"). Width-stabilize against the widest realistic state.
+
+**Risk R03: `/rewind` shape divergence from terminal** {#r03-rewind-divergence}
+
+- **Risk:** Per [D10], the dev-card's `/rewind` must reproduce the same wire / state mutations as the terminal. If [#step-7a]'s empirical capture misses an edge case (e.g. how the terminal handles forking from a turn that's mid-thinking), the dev-card flow diverges.
+- **Mitigation:**
+  - [#step-7a]'s probe drives `/rewind` end-to-end in a real session and pins the canonical event sequence.
+  - Re-run the probe after any tugcode / claude version bump that touches session-command handling.
+  - Drift regression catches deviations between captures.
+- **Residual risk:** A future claude version may change `/rewind` behavior, requiring a re-capture and dev-card update — but the same is true for any terminal-modeled flow.
+
+---
+
+### Design Decisions {#design-decisions}
+
+> Each decision is firm absent reviewer override.
+
+#### [D01] Z4B is the chrome anchor for ambient session state (DECIDED) {#d01-z4b-chrome-anchor}
+
+**Decision:** Permission-mode, model, rate-limit, and session-state chips all live in the Z4B prompt-indicator cluster (`dev-card.tsx:2391-2401`). All chips are display-only indicators per [D13].
+
+**Rationale:**
+- Z4B already exists; the placement-experiment harness already maps content into it.
+- Bottom-of-prompt-entry placement preserves screen real estate for the transcript while keeping ambient state always-visible at the point of input.
+- Adjacent chips share the same `useSyncExternalStore` source ([#d04-session-metadata-hub]), amortizing plumbing.
+
+**Implications:**
+- No new top-level dev-card slots required.
+- Width-stabilization is mandatory ([#r01-z4b-layout-shift]).
+- Z4B cluster order: `permission-mode | model | rate-limit | project-path | session-state`. Z3 stays for placement-experiment overrides per `dev-card.tsx:2400`.
+- No chip-click affordance per [D13] — mutations go through slash commands or `Shift+Tab`.
+
+#### [D02] `Shift+Tab` cycle matches the terminal exactly (DECIDED) {#d02-cycle-order}
+
+**Decision:** The `Shift+Tab` cycle is 4-way: `default → acceptEdits → plan → auto → default`. `bypassPermissions` and `dontAsk` are reachable only via the badge popover, not via cycling.
+
+**Rationale:**
+- Preserves muscle memory for users migrating from the terminal.
+- `bypassPermissions` is genuinely dangerous to cycle into accidentally; popover-only access is intentional friction.
+- Matches Anthropic's stated UX for the cycle.
+
+**Implications:**
+- Substrate responder enforces 4-mode set.
+- Popover lists all 6 modes for explicit selection.
+- The badge popover is the only graphical surface for the 5th and 6th modes (matches `/permissions`).
+
+#### [D03] Mode-change mutations round-trip via tugcode (DECIDED) {#d03-roundtrip-mutations}
+
+**Decision:** Chip state updates from the post-mutation `system_metadata` refresh, not from the keypress directly. The dev-card sends `{type: "permission_mode", mode: "<name>"}` and waits for the next `system_metadata` to confirm.
+
+**Rationale:**
+- Keeps the badge truthful even if a mode change races a concurrent turn.
+- Single source of truth: `SessionMetadataStore.getSnapshot().permissionMode`.
+- Matches the model-change pattern already in place.
+
+**Implications:**
+- Brief flicker as the round-trip completes — acceptable, typical < 50 ms.
+- An optimistic-update mode could be added later if the flicker is too noticeable; not in scope.
+
+#### [D04] `SessionMetadataStore` is the data hub for Phase A (DECIDED) {#d04-session-metadata-hub}
+
+**Decision:** All four Z4B chips read from `SessionMetadataStore` via `useSyncExternalStore`. Rate-limit info extends `SessionMetadataSnapshot` per [#q02-rate-limit-store]'s recommendation.
+
+**Rationale:**
+- Single store, single subscription pattern, single set of [L02] tests.
+- Adjacent chip rerender churn is acceptable — the snapshot only changes on `system_metadata` events (~once per turn).
+
+**Implications:**
+- `SessionMetadataSnapshot` grows a `rateLimit: RateLimitInfo | null` field.
+- The `SessionMetadataFeed` proposed in [session-metadata-feed.md](session-metadata-feed.md) becomes the snapshot-feed source; without it, Z4B chips show transient `"…"` until first turn.
+
+#### [D05] `SessionPickerSheet` is a reusable primitive (DECIDED) {#d05-session-picker-sheet}
+
+**Decision:** `/rewind`, `/resume`, and future session-pickers share a generic `SessionPickerSheet` component with a swappable data source. Sheets mount as **overlays** per [D15] (resolves [#q10-pane-sheet-anchor]).
+
+**Rationale:**
+- Two known use-cases up front; more likely in Phase D.
+- Shared primitive forces consistent UX (keyboard, scroll, dismiss, focus restore).
+- Overlay pattern keeps the dev-card's primary layout intact ([D15]).
+
+**Implications:**
+- `SessionPickerSheet` is the first deliverable of Phase B ([#step-6]); `/rewind`, `/resume`, `/model` picker, and others consume it.
+- The horizontal split-pane in `dev-card.tsx:2425` stays reserved for its existing top-pane / bottom-pane layout — NOT used for sheet hosting.
+
+#### [D06] v2.1.154 is the protocol baseline (DECIDED) {#d06-protocol-baseline}
+
+**Decision:** Every event-shape reference in this plan resolves against `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.154/`. The drift regression must stay clean across the work.
+
+**Rationale:**
+- Anchors implementation against an empirically-verified shape.
+- New event types this plan reads (`rate_limit_event`, `compact_boundary`) are present in v2.1.154 fixtures.
+- A future version bump triggers the version-bump runbook ([fixtures README](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md)) before this plan's consumers can drift.
+
+**Implications:**
+- Any step that adds a new IPC event-shape reader pins it via a fixture-derived test.
+- A protocol regression caught by drift between steps blocks the next step until reconciled.
+
+#### [D07] Per-card permission-mode persistence (DECIDED) {#d07-per-card-mode-persistence}
+
+**Decision:** Permission mode is per-card and persists across card relaunches via tugbank `dev.permission-mode.<cardId>` (resolves [#q01-mode-persistence]).
+
+**Rationale:**
+- The terminal resets because terminals are stateless; the dev-card isn't.
+- Card identity is stable across relaunch (the ledger restore matches on it).
+- Aligns with the broader dev-card-per-card-state pattern (split-pane sash position uses the same key shape).
+
+**Implications:**
+- A freshly relaunched card carries forward its prior mode.
+- A `permission_mode` IPC mutation persists at the card scope; the next mode flip writes through tugbank.
+- The terminal-parity user experience is "mostly the terminal, but stickier when you come back."
+
+#### [D09] Model-change confirmation in transcript (DECIDED) {#d09-model-confirm-in-transcript}
+
+**Decision:** Synthetic `assistant_text` confirmations from `model_change` render in the transcript exactly as the terminal does (resolves [#q03-model-confirm]). No banner alternative.
+
+**Rationale:**
+- Matches the terminal's audit-trail behavior.
+- The terminal's "Set model to claude-sonnet-4-6" line is informational and historically welcome — model changes are deliberate user actions worth pinning in scrollback.
+
+**Implications:**
+- No suppression in the transcript renderer.
+- No banner component needed.
+- [#step-2] task list does NOT include banner work.
+
+#### [D10] `/rewind` matches the Claude Code terminal empirically (DECIDED) {#d10-rewind-matches-terminal}
+
+**Decision:** The `/rewind` flow is designed by first observing what Claude Code's terminal does on the wire — what events claude/the harness emit, what state mutates, what session is created — and then matching the dev-card's IPC and UI to reproduce the exact same mutations (resolves [#q04-rewind-protocol]).
+
+**Rationale:**
+- Eliminates protocol-design speculation; the source of truth is the existing terminal behavior.
+- Avoids accidentally diverging semantics (e.g. "fork-from" vs "truncate-and-resume" vs "client-side replay") from what users already know.
+- The capture-capabilities probe harness is the right tool for this empirical study.
+
+**Implications:**
+- A new capture probe (`test-N-slash-rewind`) drives `/rewind` end-to-end in a real-claude session and pins the canonical event sequence in the golden catalog.
+- [#step-7] gains a prerequisite empirical step that runs the probe before sheet design.
+- The eventual dev-card IPC matches whatever shape the probe reveals — could be `session_command` extension, a new inbound type, or a client-driven replay. We do not pre-commit.
+
+#### [D11] `/btw` uses the exclude-from-history flag (DECIDED) {#d11-btw-exclude-flag}
+
+**Decision:** Out-of-history turns set `metadata.exclude_from_history: true` on the `user_message`. Claude 2.1.154 support is investigated as a sub-step; if absent, tugbank carries the exclusion via journal-side filtering (resolves [#q05-btw-shape]).
+
+**Rationale:**
+- Preserves the "doesn't pollute history" intent users expect from `/btw`.
+- Tugbank-side filtering is a known-good fallback even if claude doesn't honor the flag.
+- Minimal additional shape; one optional field on user_message.
+
+**Implications:**
+- Pre-implementation probe in [#step-13] confirms claude support.
+- Tugbank journal reader respects the flag whether or not claude does.
+- Transcript renderer hides `exclude_from_history: true` rows under a "show side questions" toggle (out of scope as a feature; the rows are absent by default).
+
+#### [D13] Z4B chips are INDICATORS, not pickers (DECIDED) {#d13-z4b-indicator-only}
+
+**Decision:** Every Z4B chip is purely an indicator displaying current state. Z4B chips do NOT open pickers or popovers on click. Mode changes go through `Shift+Tab` (cycle) or the `/permissions` slash command. Model changes go through the `/model` slash command, which opens its own picker sheet. Resolves [#q08-model-scope] by reshaping the question.
+
+**Rationale:**
+- Keeps the chrome small and visually consistent — chips show state; commands change state.
+- Reduces accidental modal stacking from misclicked chips.
+- Slash commands are the canonical user-action surface; reinforces that pattern.
+
+**Implications:**
+- [#step-1] permission-mode badge has NO click-to-popover affordance.
+- [#step-2] model badge has NO click-to-picker affordance.
+- A new step is required: `/model` slash command opens the model picker (was previously baked into Step 2).
+- `/permissions` slash command's badge popover behavior is replaced with the slash-command-only entry point.
+
+#### [D14] Slash popup excludes unsupported commands (DECIDED) {#d14-slash-unsupported-list}
+
+**Decision:** The slash popup shows only commands with a working graphical surface. Unsupported commands are hidden. The canonical list of unsupported commands lives in a docs file (`tuglaws/dev-card-unsupported-slash-commands.md` or in this plan's [#documentation-plan]). Resolves [#q09-slash-popup-filter].
+
+**Rationale:**
+- Hiding is cleaner than greying-out for muscle-memory consistency.
+- The doc list keeps the policy discoverable for users wondering "why isn't `/vim` here?"
+
+**Implications:**
+- `SessionMetadataStore.getCommandCompletionProvider()` applies the allowlist before returning completions.
+- The allowlist source is a single constant; the docs reference the same constant.
+- Typed `/vim` (etc.) produces no behavior — silent drop, not even a no-op message.
+
+#### [D15] Pane sheets are overlays, not split-pane right halves (DECIDED) {#d15-pane-sheets-are-overlays}
+
+**Decision:** All pane sheets (`/rewind`, `/resume`, `/permissions` rules editor, `/diff`, `/memory`, `/agents`, `/hooks`, `/help`) mount as overlays on top of the transcript / prompt area. The horizontal split-pane in `dev-card.tsx:2425` stays reserved for its existing top-pane / bottom-pane layout. Resolves [#q10-pane-sheet-anchor], modifies [#d05-session-picker-sheet].
+
+**Rationale:**
+- Keeps the dev-card's primary layout (transcript on top, prompt on bottom) intact.
+- Overlays allow richer animation and a clearer "modal in front of work" mental model.
+- Avoids tangling pane-sash logic with sheet lifecycle.
+
+**Implications:**
+- [#step-6] `SessionPickerSheet` mounts as an overlay (`position: fixed` or a portal target), not as the split-pane right-half.
+- The split-pane in `dev-card.tsx:2425` keeps its current top/bottom semantics.
+- Overlay close-button + ESC + clicking outside all dismiss; focus restores to the prompt entry.
+
+#### [D16] `/clear` supported; `/help` is a tabbed sheet (DECIDED) {#d16-clear-help-supported}
+
+**Decision:** `/clear` is supported and maps to the existing transcript-clear / new-session affordance. `/help` opens a tabbed sheet with content modeled on what the Claude Code terminal's `/help` offers — categorized command list, key shortcuts, links to docs (resolves [#q11-drop-list]).
+
+**Rationale:**
+- `/clear` is a high-value muscle-memory command users will type.
+- `/help` as a tabbed sheet is a richer presentation than the terminal can offer and is straightforward to scaffold.
+
+**Implications:**
+- [#step-13] adds `/clear` → transcript-clear, `/help` → tabbed sheet.
+- New file `help-tabbed-sheet.tsx` in [#symbol-inventory].
+- `/quit` not included; close-card is the affordance.
+
+#### [D18] `RateLimitEvent` strict-typed (DECIDED) {#d18-rate-limit-strict-shape}
+
+**Decision:** Tugcode's `RateLimitEvent` IPC translation stays strict-typed per commit `9af307fe`. New fields claude adds are dropped silently (forward-compat); shape drift is caught by the capture-capabilities runbook (resolves [#q13-rate-limit-strictness]).
+
+**Rationale:**
+- Strict types are a quality gate.
+- The drift regression catches removed-field drift before it lands in production.
+
+**Implications:**
+- No type changes to `tugcode/src/types.ts:RateLimitInfo` in this plan.
+- A future claude shape change triggers the version-bump runbook; no in-plan accommodation.
+
+#### [D19] `unknown_event` IPC frame added (DECIDED) {#d19-unknown-event-frame}
+
+**Decision:** `routeTopLevelEvent`'s default branch (`tugcode/src/session.ts:1031`) emits an `unknown_event` IPC frame instead of silently dropping (resolves [#q14-unknown-event-ipc]). Frame carries `original_type` and a hex preview of the payload.
+
+**Rationale:**
+- Forward-compat catch-all without modifying the consumer schema.
+- Frontend can surface a soft banner so users know when claude has emitted something this version doesn't understand.
+
+**Implications:**
+- New `UnknownEvent` IPC type in `tugcode/src/types.ts`.
+- New banner component on the frontend ([#step-22]).
+- The default-branch console log stays for operator visibility.
+
+#### [D20] One card per session (DECIDED) {#d20-one-card-per-session}
+
+**Decision:** Session-to-card binding is strictly 1:1. Two dev-cards cannot connect to the same tugcode session (resolves [#q15-multi-card-session] by recognizing the structural impossibility).
+
+**Rationale:**
+- The tugcode session manager owns a single stdin/stdout pipe to claude; two cards would race on it.
+- Card lifecycle and session lifecycle are co-owned; multi-card-same-session would require disentangling them.
+
+**Implications:**
+- No work needed to coordinate multi-card sessions — the system enforces 1:1.
+- `/rewind`'s "fork-and-card" action ([#step-7]) creates a NEW session for the new card; it does not bind the new card to the existing session.
+
+#### [D21] `/diff` fires a dedicated `git_diff_request` command (DECIDED) {#d21-diff-dedicated-command}
+
+**Decision:** The `/diff` sheet fires a dedicated `git_diff_request` command to tugcast and receives a single-shot typed response. The sheet does NOT read from the GIT feed (resolves [#q16-diff-source]).
+
+**Rationale:**
+- The GIT feed is a separate consumer with its own lifecycle; the dev-card must own its `/diff` content rather than ride on a shared feed.
+- A single-shot request matches the sheet's lifecycle (open → fetch → display → close); the feed's continuous-update semantics aren't needed here.
+
+**Implications:**
+- New `git_diff_request` and `git_diff_response` types in the tugcast control protocol.
+- Tugcast handler reads `git diff` from the project root and serializes the response.
+- [#step-10] adds the tugcast side alongside the dev-card sheet.
+
+#### [D22] `/context` HUD reuses the status-bar arc gauge (DECIDED) {#d22-context-arc-gauge}
+
+**Decision:** The persistent context-usage HUD reuses the arc-gauge atom from the status-bar popover (resolves [#q17-context-hud-shape]).
+
+**Rationale:**
+- The arc gauge already exists, already renders the right shape of data, and already has battle-tested visual polish.
+- Consistent atom across HUD and status-bar means consistent affordance.
+
+**Implications:**
+- [#step-11] mounts the existing `tug-arc-gauge.tsx` atom in Z4.
+- No new gauge primitive needed.
+- The expand-on-`/context` interaction shows the status-bar popover content directly (or a copy of it).
+
+---
+
+### Deep Dives (Optional) {#deep-dives}
+
+#### Slash Command Inventory {#slash-cmd-inventory}
+
+**List L01: Claude Code slash commands — treatment in dev-card** {#l01-slash-cmd-inventory}
+
+| Command | Terminal behavior | Bucket | Treatment | Step |
+|---|---|---|---|---|
+| `/cost` | Skill-backed, formatted cost table | 1 | Already works as skill turn; also surface as HUD ([#step-11]) | — |
+| `/compact` | Skill-backed, compaction | 1 | Already works; `compact_boundary` divider in [#step-21] | — |
+| `/commit`, `/review`, `/security-review`, `/code-review`, `/init`, `/clear` (skill) | Skill-backed | 1 | Already works | — |
+| `/deep-research`, `/run-skill-generator`, `/loop`, `/schedule`, `/batch`, `/debug`, `/simplify`, `/verify`, `/run` | Skill-backed | 1 | Already works | — |
+| `/claude-api`, `/fewer-permission-prompts`, `/update-config` | Skill-backed | 1 | Already works | — |
+| `/tugplug:dash`, `/tugplug:plan`, `/tugplug:implement`, `/tugplug:merge` | Tugplug orchestrator skills | 1 | Already works with correct `--plugin-dir` | — |
+| `/rewind` | Pick a checkpoint to fork from | 2 | **Overlay pane sheet**, terminal-empirically-modeled ([#d10-rewind-matches-terminal]) | 7 |
+| `/resume` | Pick a prior session | 2 | **Overlay pane sheet** ([#step-8]) | 8 |
+| `/status` | Print model/cwd/mode/session | 2 | **Already in Z4B chrome** via [#step-1]-[#step-4]; typed `/status` no-op (chrome is the surface) | 4 |
+| `/model` | Interactive model picker | 2 | **Model picker sheet** ([#step-2b]) — Z4B chip is indicator-only per [#d13-z4b-indicator-only] | 2b |
+| `/permissions` | Mode picker + rule editor | 2 | **Permission picker + rules editor sheet** ([#step-9]) — Z4B chip is indicator-only | 1, 9 |
+| `/diff` | `git diff` in pager | 2 | **Diff sheet** over `git_diff_request` command ([#d21-diff-dedicated-command]) | 10 |
+| `/context` | One-shot context snapshot | 2 | **Persistent HUD** reusing status-bar arc gauge ([#d22-context-arc-gauge]) | 11 |
+| `/memory` | List/edit memory files | 2 | **Sheet** ([#step-12]) | 12 |
+| `/agents` | List/edit agents | 2 | **Sheet** ([#step-12]) | 12 |
+| `/mcp` | List MCP servers + auth | OUT | **Out of scope** ([#q06-mcp-auth-ownership]) — hidden from popup, no sheet | — |
+| `/hooks` | List active hooks | 2 | **Sheet** ([#step-12]) | 12 |
+| `/clear` | Clear transcript / new session | 2 | **Maps to existing transcript-clear** ([#d16-clear-help-supported]) | 13 |
+| `/help` | Command help | 2 | **Tabbed sheet** modeled on terminal `/help` ([#d16-clear-help-supported]) | 13 |
+| `/quit` | Quit | UNSUPPORTED | **Hidden** — close-card is the affordance | — |
+| `/export` | Save conversation | 2 | **Save dialog** | 13 |
+| `/copy` | Copy last response | 2 | **Inline button + Cmd+Shift+C** | 13 |
+| `/btw` | Out-of-history side question | 2 | **Exclude-from-history flag** per [#d11-btw-exclude-flag] | 13 |
+| `/add-dir` | Add working root | 2 | **Directory picker dialog** | 13 |
+| `/bug` | File a bug report | 2 | **External link** to GitHub issues | 13 |
+| `/login`, `/logout` | Auth | UNSUPPORTED | **Host-app surface** — hidden from popup | — |
+| `/vim`, `/theme`, `/color` | Terminal-only UI flags | UNSUPPORTED | **Hidden from popup** ([#d14-slash-unsupported-list]) | 13 |
+| `/usage`, `/insights`, `/goal`, `/team-onboarding`, `/usage-credits`, `/extra-usage`, `/heapdump`, `/reload-skills` | Subscription/admin/dev | UNSUPPORTED | **Hidden from popup; case-by-case external link in docs** | — |
+
+#### Z4B chrome cluster layout {#z4b-chrome-layout}
+
+Z4B cluster, left-to-right when all chips are populated. **All chips are display-only indicators ([#d13-z4b-indicator-only]).** No click-to-popover, no click-to-picker.
+
+```
+[permission-mode] [model] [rate-limit?] [project-path] [session-state]
+```
+
+- `permission-mode`: fixed-width chip, shortest label drives width. Display-only. Mode changes via `Shift+Tab` or `/permissions`.
+- `model`: format `Opus 4.8 · 1M`. Display-only. Model changes via `/model` slash command.
+- `rate-limit`: appears only when `status !== "allowed"` or `resetsAt < 60min`; otherwise reserves zero-width slot. Display-only.
+- `project-path`: existing chip (untouched).
+- `session-state`: existing chip; refinement in [#step-4].
+
+#### `/rewind` interaction flow {#rewind-flow}
+
+**Spec S01: `/rewind` interaction flow** {#s01-rewind-flow}
+
+1. User types `/rewind` in prompt entry, or invokes via slash popup.
+2. Sheet mounts in split-pane right-half ([#d05-session-picker-sheet]), prompt entry collapses to half-width.
+3. Sheet loads `code-session-store.transcript` — committed turns only, most-recent first. Each row: timestamp, preview (first 100 chars of `userText`), per-row token-cost annotation, msg_id.
+4. User navigates with arrow keys (or mouse). Selection highlights the row.
+5. Selection populates the side preview pane with the full message + claude's response.
+6. **Primary action** (Enter): sends `{type: "session_rewind", msg_id: "<selected>"}` (assuming [#q04-rewind-protocol] → option b). Sheet dismisses; transcript reflects the new session (turns after `msg_id` removed).
+7. **Secondary action** (Cmd+Enter): sends the same, but tugcode handles by opening a new card bound to the forked session ("fork-and-card").
+8. ESC dismisses without action.
+9. Empty-state: session with one or zero turns does not show `/rewind` in the slash popup.
+
+---
+
+### Specification {#specification}
+
+#### Inputs and Outputs {#inputs-outputs}
+
+**Inbound IPC types added in this plan:**
+
+- `session_rewind` (Phase B, [#step-7]) — `{type: "session_rewind", msg_id: string}`. Tugcode respawns claude resumed from the session, truncating turns after `msg_id`.
+
+**Outbound IPC types added in this plan:**
+
+- `unknown_event` (optional per [#q14-unknown-event-ipc]) — `{type: "unknown_event", original_type: string, payload_hex_preview: string, ipc_version: number}`. Default-branch catch-all for forward-compat.
+
+**Existing IPC types this plan consumes (no changes):**
+
+- Outbound: `system_metadata`, `rate_limit_event`, `assistant_text`, `tool_use`, `tool_result`, `tool_use_structured`, `control_request_forward`, `api_retry`, `cost_update`, `turn_complete`, `compact_boundary`.
+- Inbound: `permission_mode`, `model_change`, `session_command`, `tool_approval`, `question_answer`, `interrupt`, `user_message`.
+
+#### Modes / Policies {#modes-policies}
+
+- Permission modes cycle (per [#d02-cycle-order]): `default → acceptEdits → plan → auto → default`. `bypassPermissions` and `dontAsk` reachable only via badge popover.
+- Rate-limit chip visibility (per [#step-3] / [#q02-rate-limit-store]): hidden when `status === "allowed"` && `resetsAt > 60min`; visible otherwise.
+- Slash-popup filter (per [#q09-slash-popup-filter]): graphical-supported allowlist; dev-flag shows full list.
+
+#### Semantics {#semantics}
+
+- All Z4B chip data flows from `SessionMetadataStore.getSnapshot()` via `useSyncExternalStore` (L02-compliant).
+- Mutations (permission mode, model) round-trip via tugcode ([#d03-roundtrip-mutations]); chip updates from post-mutation `system_metadata`.
+- `SessionPickerSheet` consumes a `dataSource` prop; `/rewind` and `/resume` differ only in the source.
+- Pane sheets close on ESC, on clicking outside, and on cycling the split-pane back.
+
+---
+
+### Definitive Symbol Inventory {#symbol-inventory}
+
+#### New files {#new-files}
+
+| File | Purpose |
+|---|---|
+| `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` | Z4B permission-mode indicator chip ([#step-1]) — display-only per [D13] |
+| `tugdeck/src/components/tugways/cards/permission-mode-chip.css` | Styles + width stabilization |
+| `tugdeck/src/components/tugways/cards/model-chip.tsx` | Z4B model indicator chip ([#step-2]) — display-only per [D13] |
+| `tugdeck/src/components/tugways/cards/model-picker-sheet.tsx` | `/model` picker overlay sheet ([#step-2b]) |
+| `tugdeck/src/components/tugways/cards/rate-limit-chip.tsx` | Z4B rate-limit countdown ([#step-3]) |
+| `tugdeck/src/components/tugways/cards/session-picker-sheet.tsx` | Reusable overlay session-picker primitive ([#step-6]) |
+| `tugdeck/src/components/tugways/cards/session-picker-sheet.css` | Sheet layout (overlay) |
+| `tugdeck/src/components/tugways/cards/rewind-sheet-data-source.ts` | `/rewind` data source over `code-session-store.transcript` ([#step-7]) |
+| `tugdeck/src/components/tugways/cards/resume-sheet-data-source.ts` | `/resume` data source over tugbank session journal ([#step-8]) |
+| `tugdeck/src/components/tugways/cards/permission-rules-editor.tsx` | `/permissions` picker + rules editor sheet ([#step-9]) |
+| `tugdeck/src/components/tugways/cards/diff-sheet.tsx` | `/diff` overlay sheet ([#step-10]) |
+| `tugdeck/src/components/tugways/cards/context-hud.tsx` | Persistent context-usage HUD reusing status-bar arc gauge ([#step-11]) |
+| `tugdeck/src/components/tugways/cards/memory-sheet.tsx` | `/memory` file listing + editor launcher ([#step-12]) |
+| `tugdeck/src/components/tugways/cards/agents-sheet.tsx` | `/agents` listing ([#step-12]) |
+| `tugdeck/src/components/tugways/cards/hooks-sheet.tsx` | `/hooks` listing ([#step-12]) |
+| `tugdeck/src/components/tugways/cards/help-tabbed-sheet.tsx` | `/help` tabbed sheet ([#step-13]) per [D16] |
+| `tugdeck/src/lib/slash-supported.ts` | Canonical `GRAPHICAL_SUPPORTED_COMMANDS` allowlist per [D14] |
+| `tugdeck/docs/dev-card-unsupported-slash-commands.md` | Discoverable list of unsupported commands per [D14] |
+| `tugdeck/src/components/tugways/cards/tool-approval-modal.tsx` | `control_request_forward` (`is_question: false`) modal ([#step-15]) |
+| `tugdeck/src/components/tugways/cards/api-retry-indicator.tsx` | `api_retry` indicator ([#step-16]) |
+| `tugdeck/src/components/tugways/cards/at-file-completer.ts` | `@`-file completion provider ([#step-18]) |
+| `tugdeck/src/components/tugways/cards/compact-boundary-divider.tsx` | Transcript divider on `compact_boundary` ([#step-21]) |
+| `tugdeck/src/components/tugways/cards/unknown-event-banner.tsx` | Soft warn banner for `unknown_event` IPC frames per [D19] ([#step-22]) |
+
+#### Symbols to add / modify {#symbols}
+
+| Symbol | Kind | Location | Notes |
+|---|---|---|---|
+| `SessionMetadataSnapshot.rateLimit` | field | `tugdeck/src/lib/session-metadata-store.ts` | New optional field `RateLimitInfo \| null`; parsed from `rate_limit_event` payload per [D02→Q02] |
+| `SessionMetadataStore._onRateLimitUpdate` | method | same | Reads the most-recent `rate_limit_event` |
+| `UnknownEvent` | type | `tugcode/src/types.ts` | Added per [D19] — `{type:"unknown_event", original_type, payload_hex_preview, ipc_version}` |
+| `routeTopLevelEvent` default branch | branch | `tugcode/src/session.ts:1031` | Emits `unknown_event` IPC frame per [D19] (in addition to existing console log) |
+| `SHIFT_TAB_RESPONDER` | constant | `tugdeck/src/lib/substrate-responders.ts` (new or existing module) | Substrate responder for the Z4B cycle |
+| `GRAPHICAL_SUPPORTED_COMMANDS` | constant | `tugdeck/src/lib/slash-supported.ts` | Per [D14] |
+| `useSessionMetadata.permissionMode` selector | hook | `tugdeck/src/components/tugways/cards/use-dev-card-observer.ts` | Wraps `useSyncExternalStore` |
+| `SessionPickerSheet<TRow>` | component | new file | Generic over data-source row type; overlay per [D15] |
+| Tugcast `git_diff_request` / `git_diff_response` | control protocol | tugcast control module | New typed request/response per [D21] for `/diff` |
+| `/rewind` IPC types | TBD | `tugcode/src/types.ts` and tugdeck `protocol.ts` | Shape determined empirically by [#step-7a] per [D10] |
+
+---
+
+### Documentation Plan {#documentation-plan}
+
+- [ ] Update [transport-exploration.md](transport-exploration.md) "Terminal-Only Features" section to mark resolved rows with their dev-card landing-step (e.g. "`/rewind` — Overlay sheet ([dev-card-claude-code-parity.md#step-7])"). Add the empirical `/rewind` findings from [#step-7a].
+- [ ] Author `tugdeck/docs/dev-card-unsupported-slash-commands.md` per [D14] — every command the popup hides, with a brief reason. Linked from the slash popup's "?" help affordance and from `/help`.
+- [ ] Update [transport-exploration.md](transport-exploration.md) IPC inbound table with whatever shape `/rewind` adopts after the empirical study (could be a new type, an extension, or a client-driven flow).
+- [ ] Add a Z4B chrome diagram to [tuglaws/pane-model.md](../tuglaws/pane-model.md) — Z4B was undocumented as a chrome surface; this plan makes it canonical. Annotate chips as indicator-only per [D13].
+- [ ] Add a `SessionPickerSheet` doc note in [tuglaws/component-authoring.md](../tuglaws/component-authoring.md) if the primitive becomes a tuglaw fixture (overlay pattern per [D15]).
+- [ ] Update the dev-card chrome docstring in `dev-card.tsx` near `Z4B — prompt-entry indicator slot` comment to reference the chip-cluster order and the indicator-only policy.
+- [ ] Document the tugcast `git_diff_request` / `git_diff_response` control commands in the tugcast control-protocol docs.
+
+---
+
+### Test Plan Concepts {#test-plan-concepts}
+
+#### Test Categories {#test-categories}
+
+| Category | Purpose | When to use |
+|---|---|---|
+| **Pure-logic (`bun:test`)** | Reducer transitions, store updates, type guards, completion-provider behavior | All non-DOM logic; per `feedback_no_happy_dom_tests`, no jsdom |
+| **Real-app (`just app-test`)** | End-to-end mount, focus, keyboard, badge text-content verification | Per `feedback_just_app_test`; every chrome chip and pane sheet gets at least one |
+| **Probe / real-claude** | Round-trip behavior against live claude | When a new inbound IPC type is added (e.g. `session_rewind`); when control_request_forward UI lands |
+| **Drift regression** | Pin the stream-json contract | Run after each step that touches event-shape reading; `just capture-capabilities` after `tugcode` IPC changes |
+
+#### What stays out of tests {#test-exclusions}
+
+- Mock-store unit tests of stores (per `feedback_no_mock_store_tests`) — use real `SessionMetadataStore` against fixture payloads instead.
+- jsdom RTL tests (per `feedback_no_happy_dom_tests`).
+- Time-budget assertions (per `feedback_no_time_budgets`).
+
+---
+
+### Execution Steps {#execution-steps}
+
+> Every step has explicit `**Depends on:**` and `**References:**` lines. Phase A is [#step-1] through [#step-5]; Phase B is [#step-6] through [#step-14] (includes [#step-2b] `/model` picker and [#step-7a] empirical capture); Phase C is [#step-15] through [#step-22]; the final integration checkpoint is [#step-23].
+
+#### Step 1: Permission-mode indicator + `Shift+Tab` cycle in Z4B {#step-1}
+
+**Commit:** `feat(dev-card): permission-mode indicator in Z4B with shift+tab cycle`
+
+**References:** [D01] Z4B chrome anchor, [D02] cycle order matches terminal, [D03] round-trip via tugcode, [D04] SessionMetadataStore data hub, [D07] per-card mode persistence, [D13] Z4B indicator-only, Risk R02, (#z4b-chrome-layout, #constraints, #strategy)
+
+**Artifacts:**
+- New: `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx`, `permission-mode-chip.css`
+- New: `tugdeck/src/lib/substrate-responders.ts` (or extension) with `SHIFT_TAB_RESPONDER`
+- Modified: `tugdeck/src/components/tugways/cards/dev-card-placement-experiment.tsx` to map the chip into Z4B
+- Modified: `tugdeck/src/lib/session-metadata-store.ts` to expose `permissionMode` (already there, verify)
+- New: tugbank key `dev.permission-mode.<cardId>` for per-card persistence per [D07].
+
+**Tasks:**
+- [ ] Implement `PermissionModeChip` reading `SessionMetadataStore` via `useSyncExternalStore`. Display-only per [D13] — no click affordance.
+- [ ] Width-stabilize the chip against the widest 4-mode label.
+- [ ] Register `Shift+Tab` substrate responder; cycle 4-mode per [D02] (`default → acceptEdits → plan → auto → default`).
+- [ ] Persist mode per-card via tugbank `dev.permission-mode.<cardId>` per [D07]; restore on card mount and send `permission_mode` IPC immediately to align the live session.
+- [ ] Mount chip into Z4B at leftmost position via placement-experiment mapping.
+
+**Tests:**
+- [ ] Pure-logic: chip snapshot reads from store under stable + transitioning states.
+- [ ] Pure-logic: cycle function `cycle(current) → next` for all 4 modes.
+- [ ] Pure-logic: tugbank persistence round-trip per cardId.
+- [ ] Real-app: `just app-test` mount a card, observe chip text, send `Shift+Tab`, assert label flips.
+- [ ] Real-app: cycle mode, close card, reopen; assert chip restores to prior mode.
+- [ ] Real-claude: round-trip `permission_mode` mutation; assert `system_metadata.permissionMode` confirms.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` (warnings-as-errors)
+- [ ] `cd tugcode && bun test`
+- [ ] `cd tugdeck && bun test`
+- [ ] `just app-test permission-mode-chip`
+
+---
+
+#### Step 2: Model indicator chip in Z4B {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(dev-card): model indicator chip in Z4B (display-only)`
+
+**References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, [D09] model-confirm in transcript, [D13] Z4B indicator-only, (#z4b-chrome-layout)
+
+**Artifacts:**
+- New: `model-chip.tsx`
+- Modified: placement-experiment to mount model chip in Z4B
+
+**Tasks:**
+- [ ] Implement `ModelChip` reading `model` from `SessionMetadataStore`. Display-only per [D13] — no click affordance.
+- [ ] Format display: `Opus 4.8 · 1M` from raw `claude-opus-4-8[1m]`.
+- [ ] Width-stabilize against widest model label.
+- [ ] Synthetic `assistant_text` confirmation from `model_change` continues to render in the transcript per [D09] — no suppression, no banner.
+
+**Tests:**
+- [ ] Pure-logic: format function `formatModelLabel("claude-opus-4-8[1m]") === "Opus 4.8 · 1M"` for each model.
+- [ ] Real-app: chip text matches `system_metadata.model` on mount and after `model_change` round-trip.
+
+**Checkpoint:**
+- [ ] `just app-test model-chip`
+
+---
+
+#### Step 2b: `/model` slash command opens picker sheet {#step-2b}
+
+**Depends on:** #step-6
+
+**Commit:** `feat(dev-card): /model slash command opens model picker sheet`
+
+**References:** [D13] Z4B indicator-only, [D15] pane sheets are overlays, (#slash-cmd-inventory)
+
+**Artifacts:**
+- New: `model-picker-sheet.tsx`
+- Modified: slash-command popup routing — typed `/model` opens the sheet
+
+**Tasks:**
+- [ ] Implement `ModelPickerSheet` as an overlay per [D15], listing available models (Opus 4.8, Sonnet 4.6, Haiku 4.5, Haiku fast-mode).
+- [ ] Highlight current model from `SessionMetadataStore.getSnapshot().model`.
+- [ ] Selection sends `{type: "model_change", model}`; sheet dismisses on confirmation.
+- [ ] Keyboard: arrow keys navigate, Enter selects, ESC dismisses.
+
+**Tests:**
+- [ ] Pure-logic: highlight predicate; selection serialization.
+- [ ] Real-app: type `/model`, observe sheet; pick a model; assert `model_change` IPC outbound + chip updates after `system_metadata`; assert synthetic confirmation lands in transcript per [D09].
+
+**Checkpoint:**
+- [ ] `just app-test model-picker-sheet`
+
+---
+
+#### Step 3: Rate-limit chip in Z4B {#step-3}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(dev-card): rate-limit chip surfaces subscription-quota state in Z4B`
+
+**References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, [D06] protocol baseline, [Q02] rate-limit store shape, [Q13] RateLimitEvent strictness, Risk R04, (#z4b-chrome-layout)
+
+**Artifacts:**
+- New: `rate-limit-chip.tsx`
+- Modified: `session-metadata-store.ts` adds `rateLimit: RateLimitInfo | null` field, `_onRateLimitUpdate` reading the most-recent `rate_limit_event` payload from the feed
+- Modified: `protocol.ts` for `RateLimitEvent` outbound IPC type (mirror tugcode's `RateLimitEvent`)
+
+**Tasks:**
+- [ ] Extend `SessionMetadataSnapshot` with `rateLimit`.
+- [ ] Add `RateLimitEvent` parser; integrate with `FeedStore` subscription on the metadata feed.
+- [ ] Implement `RateLimitChip`: hidden when `status === "allowed"` and `resetsAt > 60min`; visible otherwise; flips to red on `status !== "allowed"`; orange "overage" annotation on `isUsingOverage`.
+- [ ] Format `resetsAt` (Unix seconds) into `5h 23m` countdown; tick visibly every 60 s.
+
+**Tests:**
+- [ ] Pure-logic: `formatResetCountdown(resetsAt, now)` for various offsets; visibility predicate for combinations.
+- [ ] Real-app: replay a fixture frame with `status: "warning"`, assert chip mounts; replay `status: "allowed"` with `resetsAt > 60min`, assert chip unmounts.
+
+**Checkpoint:**
+- [ ] `just app-test rate-limit-chip`
+
+---
+
+#### Step 4: Session-state chip refinement {#step-4}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(dev-card): session-state chip surfaces lifecycle states in Z4B`
+
+**References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, (#z4b-chrome-layout)
+
+**Artifacts:**
+- Modified: existing Z4B session chip to read more lifecycle states (`new`, `continued`, `forked`, `resuming`, `ready`, `streaming`, `awaiting-approval`, `interrupted`, `error`)
+- Modified: `card-services-store.ts` or `session-lifecycle.ts` if any state names need to flow
+
+**Tasks:**
+- [ ] Enumerate the lifecycle states the chip should render.
+- [ ] Confirm each maps to existing reducer state; add missing states if any.
+- [ ] Pick chip colors per state.
+- [ ] Update placement-experiment Z3/Z4B mapping if the chip moves position.
+
+**Tests:**
+- [ ] Pure-logic: state → label / color mapping table.
+- [ ] Real-app: drive lifecycle transitions, assert chip label/color flips.
+
+**Checkpoint:**
+- [ ] `just app-test session-state-chip`
+
+---
+
+#### Step 5: Phase A Integration Checkpoint {#step-5}
+
+**Depends on:** #step-1, #step-2, #step-3, #step-4
+
+**Commit:** `N/A (verification only)`
+
+**References:** [D01], [D04], [D13] Z4B indicator-only, (#success-criteria, #z4b-chrome-layout)
+
+**Tasks:**
+- [ ] Mount a freshly-created card; verify all 4 chips populate within 200 ms of session-ready.
+- [ ] Verify width-stabilization: no horizontal shift visible across chip state changes.
+- [ ] Cycle permission mode via `Shift+Tab` 4 times; verify all 4 modes are reachable and the chip updates each time.
+- [ ] Verify model chip updates after a `model_change` IPC round-trip (driven via probe; the `/model` picker doesn't exist yet — it lands in [#step-2b]).
+- [ ] Verify Z4B chips are indicator-only per [D13]: clicking any chip produces no popover or picker.
+- [ ] Drive a rate-limit warning via tugcode probe; verify chip appears.
+- [ ] Verify per-card mode persistence per [D07]: cycle mode, close card, reopen; assert chip restores.
+- [ ] Run drift regression — must stay clean.
+
+**Tests:**
+- [ ] Real-app: end-to-end Z4B mount + interaction.
+
+**Checkpoint:**
+- [ ] `just app-test z4b-phase-a-integration`
+- [ ] `just capture-capabilities` (drift clean)
+
+---
+
+#### Step 6: `SessionPickerSheet` overlay primitive {#step-6}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(dev-card): SessionPickerSheet overlay primitive`
+
+**References:** [D05] SessionPickerSheet, [D15] pane sheets are overlays, (#rewind-flow)
+
+**Artifacts:**
+- New: `session-picker-sheet.tsx`, `session-picker-sheet.css`
+- New: portal target / overlay layer in `dev-card.tsx` for hosted overlays (or extend existing overlay infrastructure if present)
+
+**Tasks:**
+- [ ] Implement generic `SessionPickerSheet<TRow>` taking `dataSource: DataSource<TRow>`, `renderRow: (row) => ReactNode`, `onSelect: (row) => void`, `onCancel: () => void`.
+- [ ] Sheet uses `TugListView` for virtualized rows, `gallery-pinned-headers` for time-bucket headers.
+- [ ] Mount as overlay per [D15] — does NOT split the dev-card; sits above transcript / prompt area. Backdrop dims the underlying content.
+- [ ] Keyboard: arrow keys navigate, Enter selects, Cmd+Enter "select-and-card", ESC dismisses, click-outside dismisses.
+- [ ] Focus restores to the prompt entry on dismiss.
+- [ ] Per-card scroll/selection memory via tugbank `dev.session-picker-sheet.<cardId>.<sheetKind>`.
+
+**Tests:**
+- [ ] Pure-logic: data-source iteration, row selection state.
+- [ ] Real-app: mount sheet with a synthetic data source; verify overlay shape (no horizontal split), keyboard navigation, focus return on dismiss.
+
+**Checkpoint:**
+- [ ] `just app-test session-picker-sheet`
+
+---
+
+#### Step 7a: Empirical capture of terminal `/rewind` behavior {#step-7a}
+
+**Depends on:** #step-5
+
+**Commit:** `test(tugcast): probe terminal /rewind wire shape against claude 2.1.154`
+
+**References:** [D06] protocol baseline, [D10] rewind matches terminal, Risk R03, (#rewind-flow)
+
+**Artifacts:**
+- New: probe `test-N-slash-rewind` in `tugrust/crates/tugcast/tests/common/probes.rs` driving `/rewind` end-to-end in a real-claude session
+- New: golden fixture entry under `v2.1.154/` (or whatever current version is when this step lands) pinning the canonical event sequence
+- Updated: `roadmap/transport-exploration.md` adds the empirical findings of what terminal `/rewind` actually does on the wire
+
+**Tasks:**
+- [ ] Run `/rewind` in the Claude Code terminal with a multi-turn session; capture the stream-json output.
+- [ ] Identify what the terminal sends (any new inbound shapes), what the harness mutates (session-id derivation, JSONL handling), what claude emits (new event types or just a replay).
+- [ ] Add `test-N-slash-rewind` to the probe table with the canonical input + expected event sequence.
+- [ ] Run `just capture-capabilities` to bake the fixture.
+- [ ] Document the findings in `transport-exploration.md` for future reference.
+
+**Tests:**
+- [ ] Real-claude probe via `cargo nextest run -p tugcast --features real-claude-tests capture_all_probes`.
+- [ ] Drift regression stays clean against the new fixture.
+
+**Checkpoint:**
+- [ ] `just capture-capabilities` (drift clean; new probe present in v<version>/)
+
+---
+
+#### Step 7b: `/rewind` on top of `SessionPickerSheet` {#step-7}
+
+**Depends on:** #step-6, #step-7a
+
+**Commit:** `feat(dev-card): /rewind overlay sheet`
+
+**References:** [D05] SessionPickerSheet, [D06] protocol baseline, [D10] rewind matches terminal, [D15] overlays, Risk R03, Spec S01, (#rewind-flow)
+
+**Artifacts:**
+- New: `rewind-sheet-data-source.ts`
+- New (driven by [#step-7a] findings): whatever IPC types / methods the empirical capture revealed — could be a new inbound type, an extension to `session_command`, or a client-side replay flow
+- Modified: slash-command popup routing — typed `/rewind` opens the sheet (in addition to slash menu)
+- Modified: `protocol.ts` adds the IPC type if a new one is needed
+
+**Tasks:**
+- [ ] Implement `RewindSheetDataSource` over `code-session-store.transcript`. Rows include msg_id, userText preview, timestamp, cost annotation.
+- [ ] Wire `/rewind` slash command + typed entry to mount the sheet via `SessionPickerSheet` (overlay per [D15]).
+- [ ] Implement the wire shape that [#step-7a] empirically determined the terminal uses.
+- [ ] Side preview region shows the selected turn's full content + claude response (within the overlay).
+- [ ] Empty-state: 0- or 1-turn session does not surface `/rewind` in popup.
+
+**Tests:**
+- [ ] Pure-logic: data-source projection from transcript; row count, ordering.
+- [ ] Real-claude: send `/rewind` selection, assert wire shape matches the [#step-7a] fixture and new turn references forked-from msg_id.
+- [ ] Real-app: end-to-end keyboard select + Enter + new card-state reflects fork.
+
+**Checkpoint:**
+- [ ] `just app-test rewind-sheet`
+- [ ] `just capture-capabilities` (drift clean)
+
+---
+
+#### Step 8: `/resume` on top of `SessionPickerSheet` {#step-8}
+
+**Depends on:** #step-6
+
+**Commit:** `feat(dev-card): /resume sheet — pick a prior session to continue`
+
+**References:** [D05] SessionPickerSheet, (#rewind-flow)
+
+**Artifacts:**
+- New: `resume-sheet-data-source.ts`
+- Modified: slash-command popup routing for `/resume`
+
+**Tasks:**
+- [ ] Implement `ResumeSheetDataSource` over the tugbank session journal — list prior sessions with first-message preview, timestamp, turn count, cost.
+- [ ] Selection sends `session_command: "continue"` with the picked session id.
+- [ ] Handle the readiness gap for `continue` (per transport-exploration test-17): `session_init` arrives immediate with `"pending-cont…"`; UI proceeds.
+
+**Tests:**
+- [ ] Pure-logic: session-journal projection.
+- [ ] Real-app: pick a session, assert continue inbound + transcript loads.
+
+**Checkpoint:**
+- [ ] `just app-test resume-sheet`
+
+---
+
+#### Step 9: `/permissions` picker + rules editor sheet {#step-9}
+
+**Depends on:** #step-6
+
+**Commit:** `feat(dev-card): /permissions picker + rules editor overlay sheet`
+
+**References:** [D02] cycle order, [D13] Z4B indicator-only, [D15] overlays, (#slash-cmd-inventory)
+
+**Artifacts:**
+- New: `permission-rules-editor.tsx` (overlay sheet per [D15])
+- Modified: slash-command popup routing — typed `/permissions` opens the sheet
+
+**Tasks:**
+- [ ] Build the sheet with two regions: (a) mode picker (all 6 modes) — selection sends `{type: "permission_mode", mode}`; (b) rule editor for additive session-scoped rules.
+- [ ] List current `permission_suggestions[]`-style rules; allow rule add/remove/edit; serialize as the same shape the `control_request_forward` flow accepts.
+- [ ] Mount as overlay; ESC / click-outside dismisses.
+
+**Tests:**
+- [ ] Pure-logic: rule serialization; mode-selection routing.
+- [ ] Real-app: open via `/permissions`, change mode, dismiss; assert mode change confirmed in Z4B chip and via `system_metadata`.
+- [ ] Real-app: open editor, add a rule, dismiss; assert rule shape on outbound.
+
+**Checkpoint:**
+- [ ] `just app-test permission-rules-editor`
+
+---
+
+#### Step 10: `/diff` sheet via dedicated `git_diff_request` command {#step-10}
+
+**Depends on:** #step-6
+
+**Commit:** `feat(dev-card+tugcast): /diff overlay sheet via git_diff_request command`
+
+**References:** [D15] overlays, [D21] diff dedicated command, (#slash-cmd-inventory)
+
+**Artifacts:**
+- New: `diff-sheet.tsx` (overlay sheet per [D15])
+- New: tugcast `git_diff_request` / `git_diff_response` control commands and handler
+- Modified: tugcast control-protocol types to add the new request/response shapes
+
+**Tasks:**
+- [ ] On the tugcast side: implement the `git_diff_request` handler that runs `git diff` from the project root and serializes the response (file list + per-file hunks).
+- [ ] On the dev-card side: implement `DiffSheet` two-pane (left file list, right hunks).
+- [ ] Sheet fires `git_diff_request` on mount; receives single-shot `git_diff_response`; renders via `tugdeck/src/lib/diff/`.
+- [ ] Mount as overlay per [D15].
+- [ ] Refresh on user action (button / re-mount); no continuous feed subscription.
+
+**Tests:**
+- [ ] Pure-logic: file list ordering, hunk rendering, request/response shape.
+- [ ] Rust unit: tugcast handler against a fixture git workspace.
+- [ ] Real-app: mount sheet against a dirty working tree, assert correct file count.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast`
+- [ ] `just app-test diff-sheet`
+
+---
+
+#### Step 11: `/context` HUD via status-bar arc gauge {#step-11}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(dev-card): /context HUD reuses status-bar arc gauge`
+
+**References:** [D22] context arc gauge, (#z4b-chrome-layout)
+
+**Artifacts:**
+- New: `context-hud.tsx`
+- Reused: `tug-arc-gauge.tsx` atom (already exists in the status-bar popover; no new gauge primitive)
+- Modified: Z4 footer slot to host the HUD
+
+**Tasks:**
+- [ ] Mount the existing `tug-arc-gauge.tsx` atom in Z4 with `usage / context_window` ratio sourced from the most-recent `cost_update.usage` and `context_breakdown`.
+- [ ] Visual treatment matches the status-bar popover for consistency.
+- [ ] Typed `/context` expands into the same status-bar popover content (or a copy of it) showing the full token-category breakdown.
+- [ ] Tick refresh on each `cost_update` and `context_breakdown` event.
+
+**Tests:**
+- [ ] Pure-logic: gauge ratio computation from `usage` fields.
+- [ ] Real-app: drive a turn, assert gauge advances; type `/context`, assert popover opens with breakdown.
+
+**Checkpoint:**
+- [ ] `just app-test context-hud`
+
+---
+
+#### Step 12: Listing sheets — `/memory`, `/agents`, `/hooks` {#step-12}
+
+**Depends on:** #step-6
+
+**Commit:** `feat(dev-card): memory/agents/hooks listing overlay sheets`
+
+**References:** [D04] SessionMetadataStore hub, [D15] overlays, (#slash-cmd-inventory)
+
+**Artifacts:**
+- New: `memory-sheet.tsx`, `agents-sheet.tsx`, `hooks-sheet.tsx` (overlays per [D15])
+- Modified: slash-command popup routing for these 3 commands
+
+**Tasks:**
+- [ ] `MemorySheet`: list files in `system_metadata.memory_paths.auto`; row-click opens file in embedded `gallery-text-editor.tsx`.
+- [ ] `AgentsSheet`: list `system_metadata.agents`; row-click opens the agent's `.md` file in embedded editor.
+- [ ] `HooksSheet`: list hooks from settings.json (via host-app or tugbank).
+- [ ] All three mount as overlays; ESC / click-outside dismiss; focus restores to prompt entry.
+
+**Tests:**
+- [ ] Pure-logic: list projection from `system_metadata`.
+- [ ] Real-app: open each sheet, assert correct counts against a fixture session.
+
+**Checkpoint:**
+- [ ] `just app-test listing-sheets`
+
+> Note: `/mcp` was previously in this step but is now out of scope per [D14] / [Q06]. Hidden from slash popup.
+
+---
+
+#### Step 13: Slash-popup filtering + `/clear`, `/help`, `/export`, `/copy`, `/btw`, `/add-dir`, `/bug` mapping {#step-13}
+
+**Depends on:** #step-5, #step-6
+
+**Commit:** `feat(dev-card): slash-popup filtering + map UI-affordance slash commands`
+
+**References:** [D11] btw exclude flag, [D14] unsupported-list, [D16] clear+help supported, [D15] overlays, (#slash-cmd-inventory)
+
+**Artifacts:**
+- New: `tugdeck/src/lib/slash-supported.ts` — canonical allowlist constant
+- New: `tugdeck/docs/dev-card-unsupported-slash-commands.md` (or under `tuglaws/`) — discoverable list of unsupported commands
+- New: `help-tabbed-sheet.tsx` (overlay per [D15])
+- Modified: `session-metadata-store.ts` `getCommandCompletionProvider` applies the allowlist
+- Modified: slash-command popup component to filter
+- Wiring: typed-shortcut handlers for `/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/bug`, `/btw`
+
+**Tasks:**
+- [ ] Define `GRAPHICAL_SUPPORTED_COMMANDS` allowlist in `slash-supported.ts`.
+- [ ] Filter popup output — unsupported commands hidden from popup per [D14].
+- [ ] Author `dev-card-unsupported-slash-commands.md` listing every unsupported command + why.
+- [ ] Map `/clear` → existing transcript-clear / new-session affordance per [D16].
+- [ ] Implement `/help` as a tabbed sheet (overlay) per [D16] with categorized command list, key shortcuts, and links to docs. Tabs modeled on terminal `/help`.
+- [ ] `/export`: open save dialog with format picker (JSONL / markdown).
+- [ ] `/copy`: copy last assistant_text accumulation; bind Cmd+Shift+C.
+- [ ] `/add-dir`: directory picker → control message (or punt if no IPC support yet — flag).
+- [ ] `/bug`: open `https://github.com/anthropics/claude-code/issues/new` in host browser.
+- [ ] `/btw` empirical sub-investigation per [D11]: probe claude 2.1.154 to see whether it honors `metadata.exclude_from_history: true`. If yes, send the flag on user_message. If no, tugbank-side filtering of journal entries with that flag.
+- [ ] `/btw` implementation: typed `/btw <text>` strips the prefix and sends `user_message` with the exclude flag.
+
+**Tests:**
+- [ ] Pure-logic: allowlist filter; copy formatter; `/btw` flag serialization.
+- [ ] Real-app: each typed shortcut performs the expected UI action; `/help` sheet renders with tabs.
+- [ ] Real-claude probe for `/btw`: send the message with the flag; observe whether claude omits it from session JSONL.
+
+**Checkpoint:**
+- [ ] `just app-test slash-mappings`
+- [ ] `just app-test help-tabbed-sheet`
+
+---
+
+#### Step 14: Phase B Integration Checkpoint {#step-14}
+
+**Depends on:** #step-2b, #step-7, #step-8, #step-9, #step-10, #step-11, #step-12, #step-13
+
+**Commit:** `N/A (verification only)`
+
+**References:** [D05] SessionPickerSheet, [D13] Z4B indicator-only, [D14] unsupported list, [D15] overlays, [D16] clear+help, (#success-criteria, #slash-cmd-inventory)
+
+**Tasks:**
+- [ ] Open `/rewind`, navigate, fork. Open `/resume`, continue a session. Open `/permissions` picker + editor. Open `/model` picker. Open `/diff` against a dirty tree (verify uses `git_diff_request`). View `/context` HUD; expand it. Open each of `/memory`, `/agents`, `/hooks`. Verify `/help` tabbed sheet renders. Verify `/clear` clears transcript. Verify `/btw` honors exclude-from-history flag.
+- [ ] Verify all slash filtering correct: `/vim`, `/theme`, `/color`, `/mcp`, `/login`, `/logout`, `/quit`, `/usage`, `/insights`, etc. are absent from popup. Verify `tugdeck/docs/dev-card-unsupported-slash-commands.md` lists each.
+- [ ] Verify all overlay sheets mount as overlays (no horizontal split of the dev-card); ESC / click-outside dismisses; focus restores to prompt entry.
+- [ ] Verify Z4B chips remain display-only (no popover on click anywhere).
+- [ ] Run drift regression — clean.
+
+**Tests:**
+- [ ] Real-app: integration walk-through.
+
+**Checkpoint:**
+- [ ] `just app-test phase-b-integration`
+- [ ] `just capture-capabilities` (drift clean)
+
+---
+
+#### Step 15: `control_request_forward` UI polish {#step-15}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(dev-card): tool-approval modal + AskUserQuestion polish`
+
+**References:** [D06] protocol baseline, Risk R05, (#constraints)
+
+**Artifacts:**
+- New: `tool-approval-modal.tsx`
+- Modified: existing AskUserQuestion renderer to polish 4-option layout + salvage path
+
+**Tasks:**
+- [ ] Implement `ToolApprovalModal` mounted near the in-flight tool block on `control_request_forward` with `is_question: false`.
+- [ ] Modal shows tool_name, input (truncated, expand-on-click), decision_reason, permission_suggestions as one-click "Always allow" rules, allow/deny buttons.
+- [ ] AskUserQuestion: per-question radio (single-select) or checkbox (multiSelect); honor 4-option cap; "Other" with freeform text-input below.
+- [ ] Both flows respond via `tool_approval` or `question_answer` IPC.
+
+**Tests:**
+- [ ] Pure-logic: input-truncation, permission-suggestion serialization.
+- [ ] Real-app: drive permission deny in a probe; observe modal; click allow; assert outbound IPC.
+
+**Checkpoint:**
+- [ ] `just app-test tool-approval-modal`
+- [ ] `just app-test askuserquestion-flow`
+
+---
+
+#### Step 16: `api_retry` indicator {#step-16}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(dev-card): api_retry indicator during retryable failures`
+
+**References:** [D06] protocol baseline, (#z4b-chrome-layout)
+
+**Artifacts:**
+- New: `api-retry-indicator.tsx`
+- Modified: Z4 footer slot or transient toast region
+
+**Tasks:**
+- [ ] Subscribe to `api_retry` events (already plumbed through tugcode).
+- [ ] Render `attempt n/max in Xs — error_label` indicator.
+- [ ] Countdown ticks; indicator clears on `cost_update` or `turn_complete`.
+
+**Tests:**
+- [ ] Pure-logic: countdown function; clear-on-event logic.
+- [ ] Real-app: inject `api_retry` via probe; observe indicator.
+
+**Checkpoint:**
+- [ ] `just app-test api-retry-indicator`
+
+---
+
+#### Step 17: `thinking_text` empty-state {#step-17}
+
+**Depends on:** #step-5
+
+**Commit:** `fix(dev-card): thinking_text empty-state — omit when absent`
+
+**References:** [Q12] thinking empty-state, (#test-categories)
+
+**Artifacts:**
+- Modified: `gallery-dev-thinking.tsx` to honor [Q12]'s decision
+
+**Tasks:**
+- [ ] Per [Q12] DECIDED → omit header entirely on absence.
+- [ ] Verify the thinking collapsible mounts on `thinking_text` partials and renders correctly.
+- [ ] Confirm against v2.1.154 stream shape (`stream_event/thinking_delta`).
+
+**Tests:**
+- [ ] Pure-logic: thinking-block presence predicate.
+- [ ] Real-app: turn with thinking, assert visible; turn without, assert no header.
+
+**Checkpoint:**
+- [ ] `just app-test thinking-empty-state`
+
+---
+
+#### Step 18: `@`-file completion in prompt entry {#step-18}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(dev-card): @-file completion in prompt entry`
+
+**References:** [D06] protocol baseline, (#dependencies)
+
+**Artifacts:**
+- New: `at-file-completer.ts`
+- Modified: prompt-entry to register `@` trigger via existing `CompletionProvider` interface
+
+**Tasks:**
+- [ ] Add `@` trigger to the prompt entry's completion infrastructure.
+- [ ] Implement `AtFileCompleter` reading the FILESYSTEM snapshot feed (0x10).
+- [ ] Fuzzy match; popup anchored under cursor.
+- [ ] Selection: text file → injects content as a text content block referencing the path; image file → injects as image content block per `tugcode/src/types.ts:ContentBlockImage`.
+
+**Tests:**
+- [ ] Pure-logic: fuzzy-match scoring.
+- [ ] Real-app: type `@CLAUDE`, observe completion popup; pick file; assert content block on send.
+
+**Checkpoint:**
+- [ ] `just app-test at-file-completion`
+
+---
+
+#### Step 19: Image drag/paste in prompt entry {#step-19}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(dev-card): image drag/paste in prompt entry`
+
+**References:** [D06] protocol baseline, Risk R06, (#dependencies)
+
+**Artifacts:**
+- Modified: prompt-entry to handle drop / paste events for image data
+- Modified: `gallery-attachment-strip.tsx` to render thumbnails
+
+**Tasks:**
+- [ ] Detect image data on drop/paste; reject non-image text (per `feedback_persistent_text_entry`).
+- [ ] Downsample via `image-downsample.ts`.
+- [ ] Show thumbnail in attachment strip.
+- [ ] On send, attach as `image` content block per `ContentBlockImage`.
+
+**Tests:**
+- [ ] Pure-logic: image-type detection, downsample call.
+- [ ] Real-app: drop a PNG, send, observe message with image attached.
+
+**Checkpoint:**
+- [ ] `just app-test image-drag-paste`
+
+---
+
+#### Step 20: Interrupt visibility refinement {#step-20}
+
+**Depends on:** #step-5
+
+**Commit:** `fix(dev-card): interrupt produces "stopped" label, not generic error`
+
+**References:** [D06] protocol baseline, (#test-categories)
+
+**Artifacts:**
+- Modified: turn-completion renderer to distinguish interrupt-driven `result: "error"` from genuine errors
+
+**Tasks:**
+- [ ] Track interrupt intent locally (the interrupt button click sets a per-turn flag).
+- [ ] When `turn_complete` arrives with `result: "error"` AND the flag is set, label as "stopped by user".
+- [ ] Otherwise: generic error banner.
+
+**Tests:**
+- [ ] Real-app: send a long prompt, click interrupt mid-stream, assert "stopped by user" label.
+
+**Checkpoint:**
+- [ ] `just app-test interrupt-stopped-label`
+
+---
+
+#### Step 21: `compact_boundary` divider {#step-21}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(dev-card): compact_boundary divider in transcript`
+
+**References:** [D06] protocol baseline, (#test-categories)
+
+**Artifacts:**
+- New: `compact-boundary-divider.tsx`
+- Modified: transcript renderer to insert divider at the boundary
+
+**Tasks:**
+- [ ] Subscribe to `compact_boundary` events.
+- [ ] Render an in-transcript divider: "Conversation compacted at <time>. <N> tokens summarized."
+- [ ] Style as a soft separator, not an error.
+
+**Tests:**
+- [ ] Pure-logic: divider props from `compact_boundary` payload.
+- [ ] Real-app: drive `/compact`, observe divider in transcript.
+
+**Checkpoint:**
+- [ ] `just app-test compact-boundary-divider`
+
+---
+
+#### Step 22: `unknown_event` IPC frame for forward-compat {#step-22}
+
+**Depends on:** #step-5
+
+**Commit:** `feat(tugcode): unknown_event IPC frame for forward-compat`
+
+**References:** [D19] unknown-event frame, Risk R04, (#inputs-outputs)
+
+**Artifacts:**
+- Modified: `tugcode/src/session.ts:1031` default branch emits `unknown_event` frame (in addition to the existing console log, kept for operator visibility)
+- Modified: `tugcode/src/types.ts` adds `UnknownEvent` type + adds it to `OutboundMessage` union
+- Modified: `tugdeck/src/protocol.ts` adds inbound `UnknownEvent` reader
+- New: frontend banner component for the soft-warn surface
+
+**Tasks:**
+- [ ] Add `UnknownEvent` type to `tugcode/src/types.ts` with fields `type: "unknown_event"`, `original_type: string`, `payload_hex_preview: string`, `ipc_version: number`.
+- [ ] Replace the silent log-and-drop default branch in `routeTopLevelEvent`: emit `messages.push({type:"unknown_event", original_type, payload_hex_preview, ipc_version: 2})` and keep the `console.log` for operator visibility.
+- [ ] Hex preview: first 64 bytes of the raw payload, hex-encoded.
+- [ ] Frontend reads and surfaces as a soft warn banner: "dev-card doesn't understand event 'X' yet."
+
+**Tests:**
+- [ ] Pure-logic: hex preview truncation.
+- [ ] Unit test in `tugcode/__tests__/session.test.ts`: inject an unknown event via the route function, assert `unknown_event` IPC frame in output.
+- [ ] Real-app: inject an unknown event via probe, assert banner appears.
+
+**Checkpoint:**
+- [ ] `just app-test unknown-event-banner`
+
+---
+
+#### Step 23: Phase C Integration Checkpoint {#step-23}
+
+**Depends on:** #step-15, #step-16, #step-17, #step-18, #step-19, #step-20, #step-21, #step-22
+
+**Commit:** `N/A (verification only)`
+
+**References:** [D06] protocol baseline, (#success-criteria)
+
+**Tasks:**
+- [ ] Drive a permission denial; verify modal. Drive AskUserQuestion; verify polish. Trigger api_retry; verify indicator. Confirm thinking empty-state. Test @-file completion. Drag-drop an image. Interrupt a turn; verify "stopped" label. Trigger /compact; verify divider. If [Q14] DECIDED, inject unknown event; verify banner.
+- [ ] Run drift regression — must stay clean.
+
+**Tests:**
+- [ ] Real-app: integration walk-through.
+
+**Checkpoint:**
+- [ ] `just app-test phase-c-integration`
+- [ ] `just capture-capabilities` (drift clean)
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** The dev-card surfaces every piece of ambient session state the terminal does (mode, model, rate-limit, lifecycle), provides graphical equivalents for every locally-rendered terminal slash command, and polishes the streaming + approval surface to first-class fidelity. Drift regression stays clean across the work.
+
+#### Phase Exit Criteria ("Done means…") {#exit-criteria}
+
+- [ ] Z4B chrome shows all 4 chips as INDICATORS on every dev-card mount (display-only per [D13]; no click-to-popover on any chip). `Shift+Tab` cycles permission mode; rate-limit chip appears when status ≠ allowed; session-state reflects lifecycle.
+- [ ] Permission mode persists per-card via tugbank per [D07] — relaunching a card restores its prior mode.
+- [ ] Typed `/rewind`, `/resume`, `/permissions`, `/model`, `/diff`, `/context`, `/memory`, `/agents`, `/hooks`, `/help` each produce the documented graphical surface (all overlay sheets per [D15]).
+- [ ] `/vim`, `/theme`, `/color`, `/mcp`, `/login`, `/logout`, `/quit`, `/usage`, `/insights`, `/goal`, `/team-onboarding`, `/usage-credits`, `/extra-usage`, `/heapdump`, `/reload-skills` are absent from the slash popup.
+- [ ] `tugdeck/docs/dev-card-unsupported-slash-commands.md` exists and lists every hidden command.
+- [ ] `/clear`, `/export`, `/copy`, `/btw`, `/add-dir`, `/bug` each map to the documented UI action. `/btw` honors exclude-from-history per [D11].
+- [ ] `/diff` uses a dedicated `git_diff_request` command per [D21], not the GIT feed.
+- [ ] `/context` HUD uses the status-bar arc gauge per [D22].
+- [ ] `/rewind` flow matches the terminal empirically per [D10]; canonical event sequence pinned in the golden catalog from [#step-7a].
+- [ ] Permission denials show a modal; AskUserQuestion polished with salvage path; api_retry surfaces an indicator; thinking_text omits cleanly on absence per [Q12]; @-file completion works; image drag/paste works; interrupt labels as "stopped"; compact_boundary renders a divider; `unknown_event` IPC frame emits per [D19] with frontend banner.
+- [ ] Model-change confirmation renders in the transcript per [D09].
+- [ ] Drift regression clean after each step; v2.1.154 baseline unchanged (or advanced if a version bump lands mid-plan).
+
+**Acceptance tests:**
+- [ ] `just app-test z4b-phase-a-integration`
+- [ ] `just app-test phase-b-integration`
+- [ ] `just app-test phase-c-integration`
+- [ ] `just capture-capabilities` (clean after each integration step)
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+- [ ] Multi-card multi-session keyboard / send-button arbitration ([#q15-multi-card-session]).
+- [ ] Plan-mode workflow card with Approve+Auto / Approve+AcceptEdits / Approve+Manual / Keep Planning actions.
+- [ ] Subagent-tree visualization (collapsible per-Agent-call tree in the parent turn).
+- [ ] Turn-level cost-breakdown chips per turn.
+- [ ] Inline tool-result pane (Read block click expands into a side-by-side file viewer).
+- [ ] Skill-output tree (group orchestrator skill events under a "Skill: dash" collapsible).
+- [ ] Hunk-level stage affordance on `/diff` (requires `stage hunk` command in tugcast).
+- [ ] MCP OAuth webview (requires host-app participation per [#q06-mcp-auth-ownership]).
+
+| Checkpoint | Verification |
+|---|---|
+| Phase A complete | All 4 Z4B chips populate on mount; `Shift+Tab` cycles; model picker works; rate-limit chip appears on demand. `just app-test z4b-phase-a-integration` + `just capture-capabilities` |
+| Phase B complete | All 9 locally-rendered slash commands have graphical equivalents; popup filtering correct. `just app-test phase-b-integration` + `just capture-capabilities` |
+| Phase C complete | Approval UI / api_retry / thinking / @-file / image / interrupt / compact polished. `just app-test phase-c-integration` + `just capture-capabilities` |
+| Drift baseline | v2.1.154 catalog still clean — `cargo nextest run -p tugcast` and `stream_json_catalog_drift_regression` |
+
+---
+
+### Cross-references {#cross-references}
+
+- [transport-exploration.md](transport-exploration.md) — 35-probe stream-json catalog with full event-type catalog.
+- [session-metadata-feed.md](session-metadata-feed.md) — snapshot-feed proposal for late-subscriber metadata.
+- [tug-feed.md](tug-feed.md) — structured progress reporting; intersects with Phase D follow-ons.
+- [ws-verification.md](ws-verification.md) — WebSocket round-trip baseline.
+- [tug-multi-instance.md](tug-multi-instance.md) — multi-instance coordination story.
+- `tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v2.1.154/` — freshly-landed golden catalog ([#d06-protocol-baseline]).
+- `capabilities/2.1.154/system-metadata.jsonl` — slash-command, agent, skill, tool inventory.
+- `tugdeck/src/components/tugways/cards/dev-card.tsx` — where most surface work lands.
+- `tugdeck/src/lib/session-metadata-store.ts` — store every Phase A chip reads ([#d04-session-metadata-hub]).
+- `tugcode/src/session.ts:612` (`routeTopLevelEvent`) — where new IPC translations land.
+- [tuglaws/tugplan-skeleton.md](../tuglaws/tugplan-skeleton.md) — this plan's format.
+- [tuglaws/tuglaws.md](../tuglaws/tuglaws.md) — L02, L03, L06 compliance constraints.
