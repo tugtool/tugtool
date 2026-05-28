@@ -1,16 +1,26 @@
-//! One-time migration from the legacy flat-file settings backend to tugbank.
+//! One-time migrations executed at tugcast startup.
 //!
-//! Reads `.tugtool/deck-settings.json` from the source tree root, writes the
-//! `layout` and `theme` fields into the appropriate tugbank domains, and then
-//! deletes the flat file so the migration never re-runs.
+//! Two unrelated migrations live here for proximity, gated separately:
 //!
-//! The migration is idempotent via file-existence guard: if the flat file is
-//! absent, this function is a no-op. See [D01] in the plan for the full
-//! rationale.
+//! 1. `migrate_settings_to_tugbank` (debug builds only): reads
+//!    `.tugtool/deck-settings.json` from the source tree, writes the
+//!    `layout` and `theme` fields into the appropriate tugbank
+//!    domains, and deletes the flat file. This migration only
+//!    matters on developer machines that predate the tugbank
+//!    transition; production has never seen a `deck-settings.json`.
+//!
+//! 2. `migrate_legacy_tugbank` (all builds): per [D06], on the first
+//!    launch of `(production, main)`, copies the legacy
+//!    `~/.tugbank.db` into `<data-dir>/tugbank.db`. The legacy file
+//!    is never written to, moved, or deleted by Tug code — it stays
+//!    as a backup. A marker file `.migrated-from-legacy` inside the
+//!    data dir guarantees the copy runs at most once. Skipped
+//!    silently for non-`production-main` instances.
 
 use std::path::Path;
 
 use tracing::{info, warn};
+#[cfg(any(debug_assertions, test))]
 use tugbank_core::{TugbankClient, Value};
 
 /// Migrate legacy deck-settings.json to tugbank domains.
@@ -29,6 +39,7 @@ use tugbank_core::{TugbankClient, Value};
 ///   6. Log migration result at info level
 ///
 /// If the file does not exist, this function is a no-op.
+#[cfg(any(debug_assertions, test))]
 pub(crate) fn migrate_settings_to_tugbank(
     source_tree: &Path,
     client: &TugbankClient,
@@ -106,6 +117,111 @@ pub(crate) fn migrate_settings_to_tugbank(
     );
 
     Ok(())
+}
+
+/// Marker filename written inside the per-instance data dir after a
+/// successful legacy tugbank migration. Its presence is the
+/// idempotence guard — once written, the migration never re-runs.
+pub(crate) const LEGACY_MIGRATION_MARKER: &str = ".migrated-from-legacy";
+
+/// Outcome of [`migrate_legacy_tugbank`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LegacyMigration {
+    /// Migration was performed: the legacy DB was copied into the
+    /// per-instance data dir and the marker was written.
+    Migrated,
+    /// The marker already existed (this is a repeat launch). No work
+    /// performed; legacy DB untouched.
+    AlreadyMigrated,
+    /// The legacy DB does not exist. Nothing to migrate; marker is
+    /// written anyway so future legacy DBs aren't accidentally
+    /// pulled in.
+    NoLegacyDb,
+    /// This instance is not `production-main`. Migration is silently
+    /// skipped per [D06].
+    SkippedNotProductionMain,
+}
+
+/// Copy the legacy `~/.tugbank.db` into the per-instance tugbank for
+/// `(production, main)` on first launch, per [D06].
+///
+/// Idempotence: a sentinel file at
+/// `<data-dir>/.migrated-from-legacy` is written after the copy
+/// finishes. Subsequent launches see the marker and return
+/// [`LegacyMigration::AlreadyMigrated`].
+///
+/// Crash safety: the legacy DB is copied to `<data-dir>/tugbank.db.tmp`,
+/// fsynced, then atomically renamed over `<data-dir>/tugbank.db`.
+/// The marker is written *after* the rename succeeds, so an interrupted
+/// migration leaves nothing claiming "done" yet still has the original
+/// legacy file intact (Tug code never modifies it).
+///
+/// `instance_id` is the value of `TUG_INSTANCE_ID`; migration is a
+/// no-op when it isn't `"production-main"`.
+pub(crate) fn migrate_legacy_tugbank(
+    instance_id: Option<&str>,
+    legacy_path: &Path,
+    per_instance_dir: &Path,
+) -> std::io::Result<LegacyMigration> {
+    if instance_id != Some("production-main") {
+        return Ok(LegacyMigration::SkippedNotProductionMain);
+    }
+
+    let marker = per_instance_dir.join(LEGACY_MIGRATION_MARKER);
+    if marker.exists() {
+        return Ok(LegacyMigration::AlreadyMigrated);
+    }
+
+    std::fs::create_dir_all(per_instance_dir)?;
+
+    if !legacy_path.exists() {
+        // No legacy DB to copy. Write the marker so a future copy of
+        // the legacy file (e.g. a backup the user drops in by hand)
+        // doesn't get silently migrated on the next launch.
+        write_marker_atomically(&marker)?;
+        info!(
+            legacy = %legacy_path.display(),
+            marker = %marker.display(),
+            "no legacy ~/.tugbank.db found; marking production-main as migrated"
+        );
+        return Ok(LegacyMigration::NoLegacyDb);
+    }
+
+    let dest = per_instance_dir.join("tugbank.db");
+    let tmp = per_instance_dir.join("tugbank.db.tmp");
+
+    // Copy + fsync + rename. `std::fs::copy` writes file contents and
+    // sets permissions but does not fsync; we open the destination
+    // again to sync its contents and metadata before the rename.
+    std::fs::copy(legacy_path, &tmp)?;
+    let f = std::fs::File::open(&tmp)?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, &dest)?;
+
+    write_marker_atomically(&marker)?;
+
+    info!(
+        legacy = %legacy_path.display(),
+        dest = %dest.display(),
+        marker = %marker.display(),
+        "migrated legacy ~/.tugbank.db into production-main"
+    );
+    Ok(LegacyMigration::Migrated)
+}
+
+/// Write the migration marker atomically. The marker is a small
+/// timestamped text file — the content is informational; what
+/// matters is the file's *existence*.
+fn write_marker_atomically(marker: &Path) -> std::io::Result<()> {
+    let tmp = marker.with_extension("tmp");
+    std::fs::write(
+        &tmp,
+        chrono::Utc::now()
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            .as_bytes(),
+    )?;
+    std::fs::rename(&tmp, marker)
 }
 
 #[cfg(test)]
@@ -246,5 +362,95 @@ mod tests {
         );
         assert_eq!(client.get("dev.tugtool.app", "theme").unwrap(), None);
         assert!(!settings_file_path(tmp.path()).exists());
+    }
+
+    // ── Legacy tugbank migration tests ─────────────────────────────
+
+    fn write_legacy_db(path: &Path, contents: &[u8]) {
+        std::fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn legacy_migration_runs_on_production_main_when_legacy_present() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join("legacy.db");
+        let per_instance = tmp.path().join("instances/production-main");
+        write_legacy_db(&legacy, b"LEGACY-CONTENT");
+
+        let result =
+            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap();
+        assert_eq!(result, LegacyMigration::Migrated);
+
+        let dest = per_instance.join("tugbank.db");
+        assert!(dest.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"LEGACY-CONTENT");
+        assert!(per_instance.join(LEGACY_MIGRATION_MARKER).exists());
+        // Legacy unchanged.
+        assert_eq!(std::fs::read(&legacy).unwrap(), b"LEGACY-CONTENT");
+        // Temp file gone.
+        assert!(!per_instance.join("tugbank.db.tmp").exists());
+    }
+
+    #[test]
+    fn legacy_migration_is_noop_after_first_run() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join("legacy.db");
+        let per_instance = tmp.path().join("instances/production-main");
+        write_legacy_db(&legacy, b"v1");
+
+        assert_eq!(
+            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap(),
+            LegacyMigration::Migrated
+        );
+
+        // Simulate post-migration drift in the legacy file; the
+        // second run must NOT touch the per-instance copy.
+        std::fs::write(&legacy, b"v2-DO-NOT-MIGRATE").unwrap();
+        assert_eq!(
+            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap(),
+            LegacyMigration::AlreadyMigrated
+        );
+        assert_eq!(
+            std::fs::read(per_instance.join("tugbank.db")).unwrap(),
+            b"v1"
+        );
+    }
+
+    #[test]
+    fn legacy_migration_skipped_for_non_production_main() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join("legacy.db");
+        let per_instance = tmp.path().join("instances/development-foo");
+        write_legacy_db(&legacy, b"legacy");
+
+        let result =
+            migrate_legacy_tugbank(Some("development-foo"), &legacy, &per_instance).unwrap();
+        assert_eq!(result, LegacyMigration::SkippedNotProductionMain);
+        assert!(!per_instance.join("tugbank.db").exists());
+        assert!(!per_instance.join(LEGACY_MIGRATION_MARKER).exists());
+    }
+
+    #[test]
+    fn legacy_migration_skipped_when_no_instance_id() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join("legacy.db");
+        let per_instance = tmp.path().join("instances/none");
+        write_legacy_db(&legacy, b"legacy");
+
+        let result = migrate_legacy_tugbank(None, &legacy, &per_instance).unwrap();
+        assert_eq!(result, LegacyMigration::SkippedNotProductionMain);
+    }
+
+    #[test]
+    fn legacy_migration_marks_done_even_without_legacy_db() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join("legacy.db"); // does not exist
+        let per_instance = tmp.path().join("instances/production-main");
+
+        let result =
+            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap();
+        assert_eq!(result, LegacyMigration::NoLegacyDb);
+        assert!(per_instance.join(LEGACY_MIGRATION_MARKER).exists());
+        assert!(!per_instance.join("tugbank.db").exists());
     }
 }

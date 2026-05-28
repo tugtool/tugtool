@@ -6,7 +6,6 @@ mod defaults;
 mod dev;
 mod feeds;
 mod host;
-#[cfg(any(debug_assertions, test))]
 mod migration;
 mod resources;
 mod router;
@@ -206,6 +205,26 @@ async fn main() {
             error = %e,
             "failed to create tugbank parent directory (continuing)"
         );
+    }
+
+    // One-time legacy ~/.tugbank.db migration into production-main.
+    // Runs before TugbankClient::open so the copied DB is the one
+    // opened. Skipped silently for non-production-main instances or
+    // when the legacy file is absent. Errors are non-fatal — tugcast
+    // continues with an empty per-instance DB on failure.
+    if let Some(id) = tug_instance::instance_id()
+        && let Some(parent) = bank_path.parent()
+    {
+        let legacy_path = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()))
+            .join(".tugbank.db");
+        match migration::migrate_legacy_tugbank(Some(&id), &legacy_path, parent) {
+            Ok(migration::LegacyMigration::Migrated) => {
+                info!(legacy = %legacy_path.display(), "copied legacy ~/.tugbank.db into production-main")
+            }
+            Ok(_) => {}
+            Err(e) => warn!(error = %e, "legacy tugbank migration failed (non-fatal)"),
+        }
     }
 
     info!(
