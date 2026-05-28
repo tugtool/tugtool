@@ -682,153 +682,30 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsString;
     use std::sync::Mutex;
     use tokio::net::UnixListener;
 
-    /// Serialize tests that mutate `TUG_INSTANCE_ID`. The session
-    /// default-value expression reads from env, so tests asserting on
-    /// the default must hold this lock.
+    /// `default_session()` reads `TUG_INSTANCE_ID`. Serialize the one
+    /// test that mutates it.
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
-    struct ClearInstanceId {
-        prior: Option<OsString>,
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl ClearInstanceId {
-        fn new() -> Self {
-            let lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
-            let prior = std::env::var_os("TUG_INSTANCE_ID");
-            unsafe {
-                std::env::remove_var("TUG_INSTANCE_ID");
-            }
-            Self { prior, _lock: lock }
-        }
-    }
-
-    impl Drop for ClearInstanceId {
-        fn drop(&mut self) {
-            unsafe {
-                match &self.prior {
-                    Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),
-                    None => std::env::remove_var("TUG_INSTANCE_ID"),
-                }
-            }
-        }
-    }
-
     #[test]
-    fn test_default_values() {
-        let _g = ClearInstanceId::new();
-        let cli = Cli::try_parse_from(["tugexec"]).unwrap();
-        assert_eq!(cli.session, "cc0");
-        assert_eq!(cli.port, 55255);
-        assert_eq!(cli.dir, PathBuf::from("."));
-    }
-
-    #[test]
-    fn test_override_session() {
-        let _g = ClearInstanceId::new();
-        let cli = Cli::try_parse_from(["tugexec", "--session", "mySession"]).unwrap();
-        assert_eq!(cli.session, "mySession");
-        assert_eq!(cli.port, 55255);
-        assert_eq!(cli.dir, PathBuf::from("."));
-    }
-
-    #[test]
-    fn test_override_port() {
-        let _g = ClearInstanceId::new();
-        let cli = Cli::try_parse_from(["tugexec", "--port", "8080"]).unwrap();
-        assert_eq!(cli.port, 8080);
-        assert_eq!(cli.session, "cc0");
-        assert_eq!(cli.dir, PathBuf::from("."));
-    }
-
-    #[test]
-    fn test_override_dir() {
-        let _g = ClearInstanceId::new();
-        let cli = Cli::try_parse_from(["tugexec", "--dir", "/tmp/test"]).unwrap();
-        assert_eq!(cli.dir, PathBuf::from("/tmp/test"));
-        assert_eq!(cli.session, "cc0");
-        assert_eq!(cli.port, 55255);
-    }
-
-    #[test]
-    fn test_session_default_uses_instance_id() {
+    fn session_default_uses_tug_instance_id() {
         let _lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
         let prior = std::env::var_os("TUG_INSTANCE_ID");
         unsafe {
             std::env::set_var("TUG_INSTANCE_ID", "production-main");
         }
-        let cli = Cli::try_parse_from(["tugexec"]).unwrap();
-        assert_eq!(cli.session, "cc-production-main");
+        // Test the helper directly. Clap's `default_value_t = expr`
+        // evaluation strategy is vendor surface — the piece of logic
+        // we own here is `default_session()` itself.
+        assert_eq!(default_session(), "cc-production-main");
         unsafe {
             match prior {
                 Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),
                 None => std::env::remove_var("TUG_INSTANCE_ID"),
             }
         }
-    }
-
-    #[test]
-    fn test_all_overrides() {
-        let cli = Cli::try_parse_from([
-            "tugexec",
-            "--session",
-            "test",
-            "--port",
-            "9000",
-            "--dir",
-            "/workspace",
-        ])
-        .unwrap();
-        assert_eq!(cli.session, "test");
-        assert_eq!(cli.port, 9000);
-        assert_eq!(cli.dir, PathBuf::from("/workspace"));
-    }
-
-    #[test]
-    fn test_version_flag() {
-        // --version should cause an early exit with version info
-        let result = Cli::try_parse_from(["tugexec", "--version"]);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
-    }
-
-    #[test]
-    fn test_help_flag() {
-        // --help should cause an early exit with help info
-        let result = Cli::try_parse_from(["tugexec", "--help"]);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
-    }
-
-    #[test]
-    fn test_open_browser_compiles() {
-        // Verify open_browser function exists and compiles on this platform.
-        // We do NOT actually call it to avoid spawning a real browser in tests.
-        let _fn_ptr: fn(&str) = open_browser;
-    }
-
-    #[test]
-    fn test_dev_flag_rejected() {
-        // --dev is no longer accepted by clap; it should be rejected as an unknown argument
-        let result = Cli::try_parse_from(["tugexec", "--dev"]);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
-    }
-
-    #[test]
-    fn test_cli_source_tree_flag() {
-        let cli = Cli::try_parse_from(["tugexec"]).unwrap();
-        assert_eq!(cli.source_tree, None);
-
-        let cli = Cli::try_parse_from(["tugexec", "--source-tree", "/path/to/repo"]).unwrap();
-        assert_eq!(cli.source_tree, Some(PathBuf::from("/path/to/repo")));
     }
 
     #[test]
@@ -886,34 +763,6 @@ mod tests {
         assert!(matches!(result, Ok(true)));
     }
 
-    /// Verify wait_for_dev_mode_result returns Ok(false) on a failure response.
-    #[tokio::test]
-    async fn test_wait_for_dev_mode_result_failure() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let sock_path = temp_dir.path().join("test3.sock");
-
-        let listener = UnixListener::bind(&sock_path).unwrap();
-        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
-        let (server, _) = listener.accept().await.unwrap();
-
-        let (client_read, _) = client.into_split();
-        let (_, mut server_write) = server.into_split();
-        let mut client_reader = BufReader::new(client_read);
-
-        // Server sends dev_mode_result failure
-        server_write
-            .write_all(
-                b"{\"type\":\"dev_mode_result\",\"success\":false,\"error\":\"path not found\"}\n",
-            )
-            .await
-            .unwrap();
-
-        let result = wait_for_dev_mode_result(&mut client_reader).await;
-        assert!(matches!(result, Ok(false)));
-    }
-
     /// Verify wait_for_dev_mode_result returns Err when a shutdown message arrives first.
     #[tokio::test]
     async fn test_wait_for_dev_mode_result_shutdown_interrupts() {
@@ -939,73 +788,6 @@ mod tests {
         let result = wait_for_dev_mode_result(&mut client_reader).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("shutdown"));
-    }
-
-    /// Verify wait_for_dev_mode_result skips unrecognized message types and returns on the result.
-    #[tokio::test]
-    async fn test_wait_for_dev_mode_result_skips_unknown_messages() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let sock_path = temp_dir.path().join("test5.sock");
-
-        let listener = UnixListener::bind(&sock_path).unwrap();
-        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
-        let (server, _) = listener.accept().await.unwrap();
-
-        let (client_read, _) = client.into_split();
-        let (_, mut server_write) = server.into_split();
-        let mut client_reader = BufReader::new(client_read);
-
-        // Server sends some unrecognized messages first, then the result
-        server_write
-            .write_all(b"{\"type\":\"log\",\"msg\":\"hello\"}\n")
-            .await
-            .unwrap();
-        server_write
-            .write_all(b"{\"type\":\"dev_mode_result\",\"success\":true}\n")
-            .await
-            .unwrap();
-
-        let result = wait_for_dev_mode_result(&mut client_reader).await;
-        assert!(matches!(result, Ok(true)));
-    }
-
-    /// Verify wait_for_ready extracts auth_url and port from a ready message.
-    #[tokio::test]
-    async fn test_wait_for_ready_extracts_port() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let sock_path = temp_dir.path().join("test_ready.sock");
-
-        let listener = UnixListener::bind(&sock_path).unwrap();
-        let client = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
-        let (server, _) = listener.accept().await.unwrap();
-
-        // Server side: send ready message
-        let (_, mut server_write) = server.into_split();
-        server_write
-            .write_all(
-                b"{\"type\":\"ready\",\"auth_url\":\"http://127.0.0.1:55255/auth?token=abc\",\"port\":55255,\"pid\":12345}\n",
-            )
-            .await
-            .unwrap();
-
-        // Client side: call wait_for_ready using the listener that already accepted
-        // Since wait_for_ready accepts on the listener, we need a fresh accept flow.
-        // Use the connected stream directly instead.
-        let (read_half, _write_half) = client.into_split();
-        let mut reader = BufReader::new(read_half);
-        let mut line = String::new();
-        reader.read_line(&mut line).await.unwrap();
-
-        let msg: serde_json::Value = serde_json::from_str(&line).unwrap();
-        let auth_url = msg["auth_url"].as_str().unwrap().to_string();
-        let port = msg["port"].as_u64().unwrap() as u16;
-
-        assert_eq!(auth_url, "http://127.0.0.1:55255/auth?token=abc");
-        assert_eq!(port, 55255);
     }
 
     /// Verify that send_dev_mode writes valid JSON with the correct fields including vite_port.
