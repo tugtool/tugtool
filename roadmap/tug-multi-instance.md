@@ -963,52 +963,21 @@ No new configuration files. All configuration is via:
 - `Justfile` — optional new `notarize` recipe; the default `build-app` does NOT notarize (debug iteration speed); explicit `just notarize` or `build-app.sh --notarize` opts in.
 
 **Tasks:**
-- [ ] Write `tugrust/scripts/notarize.sh`. Shape:
-      ```bash
-      #!/usr/bin/env bash
-      set -euo pipefail
-      APP="$1"
-      ZIP="${APP%.app}.zip"
-      ditto -c -k --keepParent "$APP" "$ZIP"
-      echo "==> Submitting to Apple notary service (this can take 5-30 min)..."
-      SUBMIT_LOG="$(mktemp)"
-      if ! xcrun notarytool submit "$ZIP" \
-              --keychain-profile tug-notary \
-              --wait \
-              --timeout 30m 2>&1 | tee "$SUBMIT_LOG"; then
-          echo "==> Notarization FAILED. Submission log:"
-          UUID="$(grep -oE 'id: [a-f0-9-]+' "$SUBMIT_LOG" | head -1 | cut -d' ' -f2)"
-          if [[ -n "$UUID" ]]; then
-              xcrun notarytool log "$UUID" --keychain-profile tug-notary
-          fi
-          rm -f "$ZIP" "$SUBMIT_LOG"
-          exit 1
-      fi
-      rm -f "$SUBMIT_LOG"
-      echo "==> Stapling ticket to $APP..."
-      xcrun stapler staple "$APP"
-      echo "==> Validating staple..."
-      xcrun stapler validate "$APP"
-      echo "==> Verifying Gatekeeper acceptance..."
-      spctl --assess --type execute --verbose "$APP"
-      # Re-zip with stapled bundle (the original submission zip is not stapled).
-      rm -f "$ZIP"
-      ditto -c -k --keepParent "$APP" "$ZIP"
-      echo "==> Notarized + stapled: $APP (distribution zip at $ZIP)"
-      ```
-- [ ] Update `tugrust/scripts/build-app.sh`: delete the env-var-auth notarization block (lines 154-175) and replace with `[ "$SKIP_NOTARIZE" = false ] && bash "$SCRIPT_DIR/notarize.sh" "$STAGING_APP"`. The `--skip-notarize` flag remains as a debug-iteration escape hatch.
-- [ ] Document the 30-min `--timeout` ceiling and the recovery path (`xcrun notarytool log <uuid> --keychain-profile tug-notary`) in the script's error output. Already in the `notarize.sh` shape above.
-- [ ] Document the Gatekeeper quarantine test: copy the notarized bundle to a fresh location, run `xattr -w com.apple.quarantine '0181;00000000;;' <copy>`, then `open <copy>`. macOS should accept the bundle without "downloaded from internet, can't verify" dialog. This is the canonical "would a real user be able to launch this from a downloaded DMG" test.
+- [x] Write `tugrust/scripts/notarize.sh`. Implementation follows the plan's reference shape, with three refinements: (a) a pre-submission `notarytool history` probe catches a missing/invalid keychain profile before burning notary rate-limit on a misconfigured run; (b) the UUID extractor uses `awk` instead of `grep -oE`+`cut` for robustness against future notarytool output shape changes; (c) `trap cleanup EXIT INT TERM` removes the tee log on every exit path.
+- [x] Update `tugrust/scripts/build-app.sh`: deleted the env-var-auth notarization block (was lines 174-195) and replaced with `bash "$SCRIPT_DIR/notarize.sh" "$STAGING_APP"`. The `--skip-notarize` flag remains; `APPLE_ID`/`TEAM_ID`/`NOTARY_PASSWORD` env vars are gone in favor of the `tug-notary` keychain profile.
+- [x] Document the 30-min `--timeout` ceiling and the recovery path (`xcrun notarytool log <uuid> --keychain-profile tug-notary`) in the script's error output. Embedded in `notarize.sh`'s error branch + in `tuglaws/code-signing-mac.md` § Failure modes.
+- [x] Document the Gatekeeper quarantine test in `tuglaws/code-signing-mac.md` § "Gatekeeper quarantine test (canonical end-user verification)" — copy bundle out, `xattr -w com.apple.quarantine '0181;00000000;;'`, `open`, observe no security dialog.
+- [x] Add `just notarize` recipe that calls `build-app.sh` with no flags (full signed + notarized DMG); `just dmg` keeps its existing unsigned-fast behavior.
 
 **Tests:**
-- [ ] `xcrun stapler validate Tug.app` returns valid after notarization.
-- [ ] `spctl --assess --type execute --verbose Tug.app` shows `accepted` and `source=Notarized Developer ID`.
-- [ ] Quarantine launch test (above) succeeds.
+- [x] `xcrun stapler validate Tug.app` returns valid after notarization. *Verified — "The validate action worked!"*
+- [x] `spctl --assess --type execute --verbose Tug.app` shows `accepted` and `source=Notarized Developer ID`. *Verified.*
+- [x] Quarantine launch test (above) succeeds. *Verified — copied Tug.app out of `Tug.dmg` via `hdiutil attach`, applied `com.apple.quarantine` xattr, opened. `stapler validate` passed, `spctl --assess` reported `source=Notarized Developer ID`, and the bundle launched cleanly without any security dialog.*
 
 **Checkpoint:**
-- [ ] A release build of `(production, main)` passes notarization end-to-end on a real network.
-- [ ] The notarization round-trip completes within the 30-min `--timeout` ceiling (typically 5-15 min).
-- [ ] A quarantined copy of the notarized bundle launches cleanly on the user's own Mac without security dialogs.
+- [x] A release build of `(production, main)` passes notarization end-to-end on a real network. *Submission UUID `68fca016-903a-4a22-9a3f-1c44c94def52`; status: Accepted. Distribution artifact: `Tug.dmg` (90MB).*
+- [x] The notarization round-trip completes within the 30-min `--timeout` ceiling (typically 5-15 min). *Verified — Apple's notary accepted in ~4-5 minutes (10 polling rounds at ~30s each).*
+- [x] A quarantined copy of the notarized bundle launches cleanly on the user's own Mac without security dialogs. *Verified above.*
 
 ---
 

@@ -51,3 +51,10 @@ tugdeck/dist/
 
 # Generated theme override (written by Vite plugin, never checked in)
 tugdeck/styles/tug-theme-override.css
+
+# Distribution artifacts produced by tugrust/scripts/build-app.sh.
+# Notarized DMGs (and nightly variant) live at the repo root after a
+# release build — checked in would be ~90MB per build, useless in git.
+/Tug.dmg
+/TugNightly.dmg
+/build/

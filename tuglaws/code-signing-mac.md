@@ -236,9 +236,69 @@ The Xcode project keeps `CODE_SIGN_STYLE = Automatic` (which produces ad-hoc sig
 
 ---
 
+## Notarization (release builds only)
+
+Release builds destined for distribution must be **notarized** by Apple before macOS Gatekeeper will accept them on a clean machine. A notarized bundle has Apple's notary ticket stapled into it; first launch on the user's Mac doesn't need an internet round-trip to Apple's servers.
+
+The pipeline:
+
+```
+just notarize        →  build-app.sh           →  sign-bundle.sh    (inside-out signing)
+                                                 ↓
+                                                 notarize.sh       (submit + wait + staple)
+                                                 ↓
+                                                 hdiutil create    (DMG)
+```
+
+`tugrust/scripts/notarize.sh` is the canonical notarizer. It packs the bundle via `ditto -c -k --keepParent`, submits to Apple's notary service with `--wait --timeout 30m` (typical wait: 5-15 min; ceiling: 30 min), staples the ticket via `xcrun stapler staple`, validates via `xcrun stapler validate`, and confirms Gatekeeper acceptance via `spctl --assess --type execute --verbose`.
+
+Auth uses the `tug-notary` keychain profile (see [#apple-prereqs](../roadmap/tug-multi-instance.md#apple-prereqs) step 5), not inline `APPLE_ID` / `TEAM_ID` / `NOTARY_PASSWORD` env vars. The profile stores the credentials in the user's login keychain once; the script references it by name. Never put the app-specific password in command history, env files, or CI logs.
+
+### Failure modes
+
+On notary failure, `notarize.sh` extracts the submission UUID from `notarytool`'s tee log and surfaces an actionable hint:
+
+```
+xcrun notarytool log <UUID> --keychain-profile tug-notary
+```
+
+It also attempts to fetch the log inline (best effort — fails silently if notary never recorded the submission). The most common rejection causes:
+
+- **Missing hardened-runtime flag** on a nested binary. `sign-bundle.sh` always uses `--options runtime` so this shouldn't happen, but a regression there would surface as a notary rejection within a minute of submission.
+- **Missing secure timestamp**. `--timestamp` is required; same as above, `sign-bundle.sh` always sets it.
+- **Disallowed entitlement**. Apple's notary allows the five tugcode permissive entitlements ([D16]); future additions must be checked against Apple's hardened-runtime entitlement reference.
+
+### Gatekeeper quarantine test (canonical end-user verification)
+
+The most realistic test of "would a real user be able to launch this from a downloaded DMG?" is to apply the quarantine xattr to a fresh copy of the notarized bundle, then `open` it:
+
+```sh
+# Copy the notarized bundle to a clean location.
+cp -R build/staging/Tug.app /tmp/Tug-quarantine-test.app
+
+# Apply the quarantine xattr that Safari/Mail/AirDrop attach to
+# downloaded files. The exact value doesn't matter much; the
+# presence of the attribute triggers Gatekeeper's full assessment
+# on first launch.
+xattr -w com.apple.quarantine '0181;00000000;;' /tmp/Tug-quarantine-test.app
+
+# Launch. Gatekeeper should accept silently; macOS should NOT show
+# the "downloaded from internet, can't verify" dialog.
+open /tmp/Tug-quarantine-test.app
+```
+
+The launch is the test. If macOS shows a security dialog ("you can't open this app because the developer cannot be verified" or similar), notarization didn't take or the staple wasn't applied. Inspect via:
+
+```sh
+xcrun stapler validate /tmp/Tug-quarantine-test.app
+spctl --assess --type execute --verbose /tmp/Tug-quarantine-test.app
+```
+
+`spctl` should report `source=Notarized Developer ID` (NOT `source=Unnotarized Developer ID`).
+
 ## What we deliberately don't do (yet)
 
-- **No notarization on debug builds.** Notarization is release-only ([D11]); debug builds skip the 5-30 minute notary round-trip. `build-app.sh --notarize` opts in (release flow).
+- **No notarization on debug builds.** Notarization is release-only ([D11]); debug builds skip the 5-30 minute notary round-trip. `build-app.sh --skip-notarize` opts out for fast iteration.
 - **No App Sandbox.** Tug doesn't enable `com.apple.security.app-sandbox`. Required for Mac App Store distribution; optional for Developer ID. Out of scope; may be revisited if/when MAS becomes interesting.
 - **No CI integration for app-test.** The AX grant requires an interactive macOS session; CI runners that don't have AX access can't run the AT-suite.
 - **No multi-user keychain coordination.** Single-user-per-machine assumption.
@@ -251,7 +311,8 @@ The Xcode project keeps `CODE_SIGN_STYLE = Automatic` (which produces ad-hoc sig
 |---|---|
 | `scripts/setup-dev-signing.sh` | Verifies the Developer ID cert is installed; prints install instructions if not. |
 | `tugrust/scripts/sign-bundle.sh` | Canonical inside-out signer. Single source of signing truth. |
-| `tugrust/scripts/build-app.sh` | Production / release build pipeline; calls `sign-bundle.sh`. |
+| `tugrust/scripts/notarize.sh` | Submits to Apple notary, staples ticket, verifies Gatekeeper. Release path only. |
+| `tugrust/scripts/build-app.sh` | Production / release build pipeline; calls `sign-bundle.sh` then `notarize.sh`. |
 | `Justfile` `build-app` recipe | Dev build pipeline; calls `sign-bundle.sh`; captures sentinel. |
 | `Justfile` `app-test` recipe | DR + sentinel comparison; defensive re-sign; `APP_TEST_SKIP_RESIGN=1` opt-out. |
 | `Justfile` `teardown-dev-signing` recipe | Clears the sentinel. |

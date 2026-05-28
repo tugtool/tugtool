@@ -172,24 +172,14 @@ else
 fi
 
 # Step 9: Notarization
+#
+# Delegates to notarize.sh, which uses the keychain profile
+# `tug-notary` (per #apple-prereqs step 5) instead of inline
+# APPLE_ID / TEAM_ID / NOTARY_PASSWORD env vars. The keychain
+# profile keeps the app-specific password out of command history,
+# env files, and CI logs.
 if [ "$SKIP_SIGN" = false ] && [ "$SKIP_NOTARIZE" = false ]; then
-    echo "==> Notarizing"
-    if [ -z "${APPLE_ID:-}" ] || [ -z "${TEAM_ID:-}" ] || [ -z "${NOTARY_PASSWORD:-}" ]; then
-        echo "Error: APPLE_ID, TEAM_ID, or NOTARY_PASSWORD environment variables not set"
-        exit 1
-    fi
-
-    # Create temporary zip for notarization
-    NOTARY_ZIP="$BUILD_DIR/notary.zip"
-    ditto -c -k --keepParent "$STAGING_APP" "$NOTARY_ZIP"
-
-    xcrun notarytool submit "$NOTARY_ZIP" \
-        --apple-id "$APPLE_ID" \
-        --team-id "$TEAM_ID" \
-        --password "$NOTARY_PASSWORD" \
-        --wait
-
-    xcrun stapler staple "$STAGING_APP"
+    bash "$SCRIPT_DIR/notarize.sh" "$STAGING_APP"
 else
     echo "==> Skipping notarization"
 fi

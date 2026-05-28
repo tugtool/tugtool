@@ -304,9 +304,28 @@ zombie-cleanup:
     fi
     echo "done"
 
-# Build unsigned DMG
+# Build unsigned DMG (no Developer ID, no notarization). Fastest
+# distribution-shape artifact; suitable for sharing a build locally
+# (e.g., to a tester on the same Mac) but Gatekeeper will reject it
+# on a clean machine.
 dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
+
+# Build a signed + notarized DMG. Submits to Apple's notary service
+# and waits for the ticket (typically 5-15 min, ceiling 30 min via
+# notarytool --timeout). Requires the `tug-notary` keychain profile
+# from #apple-prereqs and an active network connection.
+#
+# Prereqs (one-time per machine):
+#   just setup-dev-signing                 # verifies Developer ID cert
+#   # plus #apple-prereqs step 5:
+#   #   xcrun notarytool store-credentials tug-notary \
+#   #       --apple-id <apple-id> --team-id <team-id> --password <app-password>
+#
+# This is the canonical distribution build. Use `just dmg` for the
+# fast unsigned variant.
+notarize:
+    tugrust/scripts/build-app.sh
 
 # One-time per-machine signing check. Verifies that an Apple
 # Developer ID Application certificate is installed in the login
