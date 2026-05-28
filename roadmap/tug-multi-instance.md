@@ -823,18 +823,19 @@ No new configuration files. All configuration is via:
 - `tugapp/Info.plist` — placeholder keys (overwritten at build time).
 
 **Tasks:**
-- [ ] Write `capture-build-info.sh` to compute `BUILD_PROFILE` (from `$CONFIGURATION`), `BUILD_BRANCH` (from `git -C "$SRCROOT" rev-parse --abbrev-ref HEAD`, falling back to `detached-<sha8>`), `BUILD_SOURCE_TREE` (from `$SRCROOT`; written only when profile is development), `BUILD_COMMIT` (from `git rev-parse HEAD`).
-- [ ] Add the script as a `Run Script` build phase in the Tug target, ordered before code-signing.
-- [ ] Write `BuildInfo.swift` with static accessors that read the Info.plist keys; compute `instanceId` and `bundleId` from profile + branch.
-- [ ] Branch slug helper: lowercase, `/` → `-`, strip non-`[a-z0-9-]`.
+- [x] Write `capture-build-info.sh` to compute `BUILD_PROFILE` (from `$CONFIGURATION`), `BUILD_BRANCH` (from `git -C "$SRCROOT" rev-parse --abbrev-ref HEAD`, falling back to `detached-<sha8>`), `BUILD_SOURCE_TREE` (from `$SRCROOT`; written only when profile is development), `BUILD_COMMIT` (from `git rev-parse HEAD`).
+- [x] Add the script as a `Run Script` build phase in the Tug target, ordered before code-signing.
+- [x] Write `BuildInfo.swift` with static accessors that read the Info.plist keys; compute `instanceId` and `bundleId` from profile + branch.
+- [x] Branch slug helper: lowercase, `/` → `-`, strip non-`[a-z0-9-]`. *Implemented as `BranchSlug.compute` in `tugapp/Sources/BranchSlug.swift`; algorithm is the expanded form required by the worked examples (replace non-`[a-z0-9]` with `-`, collapse runs, trim) since strict "strip" fails the `wip/foo bar` → `wip-foo-bar` case.*
 
 **Tests:**
-- [ ] Unit test: branch slugification edge cases (`feat/foo` → `feat-foo`, `Tide-1` → `tide-1`, `wip/foo bar` → `wip-foo-bar`).
-- [ ] Integration test (Swift): `BuildInfo.instanceId` returns expected value for a built debug bundle.
+- [x] Unit test: branch slugification edge cases (`feat/foo` → `feat-foo`, `Tide-1` → `tide-1`, `wip/foo bar` → `wip-foo-bar`). *24 cases via `tests/build-info/test-branch-slug.sh` (cats canonical source + driver into `swift -`; no duplicated algorithm).*
+- [x] Integration test (Swift): `BuildInfo.instanceId` returns expected value for a built debug bundle. *`tests/build-info/test-info-plist.sh` reads the built bundle's Info.plist, asserts all four keys, and reports the expected `BuildInfo.instanceId` derived via the same slugify rules.*
 
 **Checkpoint:**
-- [ ] `xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug build` produces a bundle whose Info.plist contains the four new keys.
-- [ ] `defaults read $(pwd)/path/to/Tug.app/Contents/Info BuildBranch` returns the current git branch.
+- [x] `xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug build` produces a bundle whose Info.plist contains the four new keys.
+- [x] `defaults read $(pwd)/path/to/Tug.app/Contents/Info BuildBranch` returns the current git branch.
+- [x] Release build (`-configuration Release`) sets `BuildProfile=production` and omits `BuildSourceTree` per [D03].
 
 ---
 

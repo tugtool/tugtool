@@ -46,5 +46,11 @@
 	</dict>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Ken Kocienda</string>
+	<key>BuildProfile</key>
+	<string>UNSET-AT-BUILD-TIME</string>
+	<key>BuildBranch</key>
+	<string>UNSET-AT-BUILD-TIME</string>
+	<key>BuildCommit</key>
+	<string>UNSET-AT-BUILD-TIME</string>
 </dict>
 </plist>

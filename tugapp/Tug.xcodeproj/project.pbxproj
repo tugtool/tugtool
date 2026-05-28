@@ -24,6 +24,8 @@
 		AA0000010000000000000012 /* NativeEventHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000012 /* NativeEventHandlers.swift */; };
 		AA0000010000000000000013 /* AppLifecycleHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000013 /* AppLifecycleHandlers.swift */; };
 		AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */; };
+		AA0000010000000000000015 /* BranchSlug.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* BranchSlug.swift */; };
+		AA0000010000000000000016 /* BuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000016 /* BuildInfo.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +48,8 @@
 		AA0000020000000000000012 /* NativeEventHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEventHandlers.swift; sourceTree = "<group>"; };
 		AA0000020000000000000013 /* AppLifecycleHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleHandlers.swift; sourceTree = "<group>"; };
 		AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugcodeLifecycleHandlers.swift; sourceTree = "<group>"; };
+		AA0000020000000000000015 /* BranchSlug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchSlug.swift; sourceTree = "<group>"; };
+		AA0000020000000000000016 /* BuildInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -81,6 +85,8 @@
 				AA000002000000000000000A /* TugbankClient.swift */,
 				AA0000020000000000000008 /* TugConfig.swift */,
 				AA0000020000000000000009 /* ControlSocket.swift */,
+				AA0000020000000000000016 /* BuildInfo.swift */,
+				AA0000020000000000000015 /* BranchSlug.swift */,
 				AA0000060000000000000002 /* TestHarness */,
 			);
 			path = Sources;
@@ -121,6 +127,7 @@
 				AA0000040000000000000001 /* Frameworks */,
 				AA00000B0000000000000001 /* Resources */,
 				AA0000100000000000000001 /* Copy Rust binaries and tugdeck dist */,
+				AA0000110000000000000001 /* Capture build-time identity into Info.plist */,
 			);
 			buildRules = (
 			);
@@ -191,6 +198,8 @@
 				AA0000010000000000000012 /* NativeEventHandlers.swift in Sources */,
 				AA0000010000000000000013 /* AppLifecycleHandlers.swift in Sources */,
 				AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */,
+				AA0000010000000000000016 /* BuildInfo.swift in Sources */,
+				AA0000010000000000000015 /* BranchSlug.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -224,6 +233,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "set -euo pipefail\n\nSRC_BINS=\"$SRCROOT/../tugrust/target/$CONFIGURATION\"\nSRC_DIST=\"$SRCROOT/../tugdeck/dist\"\nSRC_CAPS=\"$SRCROOT/../capabilities\"\nDST_MACOS=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/MacOS\"\nDST_RES=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources\"\n\nmkdir -p \"$DST_MACOS\"\nmkdir -p \"$DST_RES\"\n\nfor bin in tugcast tugcode tugutil tugexec tugrelaunch; do\n  if [ -f \"$SRC_BINS/$bin\" ]; then\n    cp \"$SRC_BINS/$bin\" \"$DST_MACOS/$bin\"\n  else\n    echo \"error: $SRC_BINS/$bin not found -- run 'cargo build' first\" >&2\n    exit 1\n  fi\ndone\n\nif [ -d \"$SRC_DIST\" ]; then\n  rm -rf \"$DST_RES/tugdeck/dist\"\n  mkdir -p \"$DST_RES/tugdeck\"\n  cp -R \"$SRC_DIST\" \"$DST_RES/tugdeck/dist\"\nelse\n  echo \"error: $SRC_DIST not found -- run 'bun run build' in tugdeck first\" >&2\n  exit 1\nfi\n\nif [ -f \"$SRC_CAPS/LATEST\" ]; then\n  CAP_VER=\"$(tr -d '[:space:]' < \"$SRC_CAPS/LATEST\")\"\n  CAP_SRC=\"$SRC_CAPS/$CAP_VER/system-metadata.jsonl\"\n  if [ ! -f \"$CAP_SRC\" ]; then\n    echo \"error: $CAP_SRC not found -- capabilities/LATEST points at missing version $CAP_VER\" >&2\n    exit 1\n  fi\n  mkdir -p \"$DST_RES/capabilities\"\n  cp \"$CAP_SRC\" \"$DST_RES/capabilities/system-metadata.jsonl\"\nelse\n  echo \"error: $SRC_CAPS/LATEST not found -- capabilities snapshot is missing\" >&2\n  exit 1\nfi\n";
+		};
+		AA0000110000000000000001 /* Capture build-time identity into Info.plist */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Capture build-time identity into Info.plist";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "bash \"$SRCROOT/../tugrust/scripts/capture-build-info.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
