@@ -378,12 +378,12 @@ worktree-remove WORKTREE *FLAGS:
     git worktree remove --force "$WORKTREE"
     echo "==> Removed worktree $WORKTREE and its instance state ($INSTANCE_ID)."
 
-# Use this during smoke runs (see
-# `roadmap/tugplan-tide-transcript-resume-smoke.md`) so the relevant
-# `[tide::replay::started|progress|complete|error]` and
-# `[tide::session-lifecycle event=...]` lines stand out without the
-# full firehose. `--line-buffered` keeps grep's output flowing live
-# even when the pipe stage downstream block-buffers.
+# Use this during smoke runs (see archived
+# `roadmap/archive/tugplan-tide-transcript-resume-smoke.md`) so
+# the relevant `[dev::replay::started|progress|complete|error]`
+# and `[dev::session-lifecycle event=...]` lines stand out without
+# the full firehose. `--line-buffered` keeps grep's output flowing
+# live even when the pipe stage downstream block-buffers.
 # Tail tugcast log filtered to replay + lifecycle targets.
 tail-replay:
     #!/usr/bin/env bash
@@ -391,10 +391,10 @@ tail-replay:
     DATE="$(date +%Y-%m-%d)"
     LOG="$HOME/Library/Application Support/Tug/Logs/tugcast.log.$DATE"
     if [ ! -f "$LOG" ]; then
-        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app' first."
+        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app-debug' first."
         exit 1
     fi
-    tail -F "$LOG" | grep --line-buffered -E "tide::replay::|tide::session-lifecycle"
+    tail -F "$LOG" | grep --line-buffered -E "dev::replay::|dev::session-lifecycle"
 
 # List any tugcode / claude processes reparented to PID 1 — these
 # are zombies left behind by an ungraceful Tug.app exit (roadmap
