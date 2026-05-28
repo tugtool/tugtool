@@ -2320,6 +2320,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tugcast-core",
+ "tugcore",
  "tuglog",
 ]
 

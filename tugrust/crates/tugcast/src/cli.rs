@@ -3,17 +3,28 @@ use std::path::PathBuf;
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
 
+/// Default tmux session name. When `TUG_INSTANCE_ID` is set, the
+/// session is named `cc-<id>` so concurrent instances do not collide;
+/// otherwise the legacy `cc0` default applies.
+fn default_session() -> String {
+    match tugcore::instance::instance_id() {
+        Some(id) => format!("cc-{id}"),
+        None => "cc0".to_owned(),
+    }
+}
+
 /// tugcast: WebSocket multiplexer — bridges multiple backends to tugdeck via binary-framed feeds
 #[derive(Parser, Debug)]
 #[command(name = "tugcast")]
 #[command(version = VERSION)]
 #[command(
     about = "WebSocket multiplexer serving terminal, code, filesystem, git, and stats feeds to tugdeck",
-    long_about = "tugcast multiplexes multiple data feeds over a single WebSocket connection to\nthe tugdeck browser frontend. Feeds include: terminal I/O (via tmux), Claude Code\nevents (via tugcode bridge), filesystem watching, git status, system stats, and\ntugbank defaults. Each feed is identified by a FeedId byte in binary-framed messages.\n\nUsage:\n  tugcast                               Start with defaults (session: cc0, port: 55255)\n  tugcast --session dev --port 8080         Custom session and port\n  tugcast --source-tree /path/to/project    Watch a specific directory"
+    long_about = "tugcast multiplexes multiple data feeds over a single WebSocket connection to\nthe tugdeck browser frontend. Feeds include: terminal I/O (via tmux), Claude Code\nevents (via tugcode bridge), filesystem watching, git status, system stats, and\ntugbank defaults. Each feed is identified by a FeedId byte in binary-framed messages.\n\nUsage:\n  tugcast                               Start with defaults (session: cc-<TUG_INSTANCE_ID> or cc0, port: 55255)\n  tugcast --session dev --port 8080         Custom session and port\n  tugcast --source-tree /path/to/project    Watch a specific directory"
 )]
 pub struct Cli {
-    /// Tmux session name to attach to (created if it doesn't exist)
-    #[arg(long, default_value = "cc0")]
+    /// Tmux session name to attach to (created if it doesn't exist).
+    /// Default is `cc-<TUG_INSTANCE_ID>` when set, else `cc0`.
+    #[arg(long, default_value_t = default_session())]
     pub session: String,
 
     /// Port to bind the HTTP server to
@@ -60,9 +71,46 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
+    /// Serialize tests that mutate `TUG_INSTANCE_ID`. The default-value
+    /// expression reads the env, so any test asserting on the default
+    /// must hold this lock and restore the prior value on drop.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// RAII guard that clears `TUG_INSTANCE_ID` for the duration of a
+    /// test and restores the prior value on drop.
+    struct ClearInstanceId {
+        prior: Option<OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl ClearInstanceId {
+        fn new() -> Self {
+            let lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
+            let prior = std::env::var_os("TUG_INSTANCE_ID");
+            unsafe {
+                std::env::remove_var("TUG_INSTANCE_ID");
+            }
+            Self { prior, _lock: lock }
+        }
+    }
+
+    impl Drop for ClearInstanceId {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prior {
+                    Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),
+                    None => std::env::remove_var("TUG_INSTANCE_ID"),
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_default_values() {
+        let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugcast"]).unwrap();
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 55255);
@@ -71,6 +119,7 @@ mod tests {
 
     #[test]
     fn test_override_session() {
+        let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugcast", "--session", "mySession"]).unwrap();
         assert_eq!(cli.session, "mySession");
         assert_eq!(cli.port, 55255);
@@ -78,9 +127,27 @@ mod tests {
 
     #[test]
     fn test_override_port() {
+        let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugcast", "--port", "8080"]).unwrap();
         assert_eq!(cli.port, 8080);
         assert_eq!(cli.session, "cc0");
+    }
+
+    #[test]
+    fn test_session_default_uses_instance_id_when_set() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
+        let prior = std::env::var_os("TUG_INSTANCE_ID");
+        unsafe {
+            std::env::set_var("TUG_INSTANCE_ID", "development-foo");
+        }
+        let cli = Cli::try_parse_from(["tugcast"]).unwrap();
+        assert_eq!(cli.session, "cc-development-foo");
+        unsafe {
+            match prior {
+                Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),
+                None => std::env::remove_var("TUG_INSTANCE_ID"),
+            }
+        }
     }
 
     #[test]

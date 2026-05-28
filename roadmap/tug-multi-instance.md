@@ -1138,15 +1138,15 @@ No new configuration files. All configuration is via:
 - Updated `Justfile` recipes that reference `cc0` (none currently AFAICT, but verify).
 
 **Tasks:**
-- [ ] Change `Cli::session`'s default from `"cc0"` to a computed value based on `TUG_INSTANCE_ID`. If unset, default to `cc0` (legacy compatibility).
-- [ ] Update the `long_about` help text to reflect the new default.
-- [ ] Update tugexec's `--session` default analogously.
+- [x] Change `Cli::session`'s default from `"cc0"` to a computed value based on `TUG_INSTANCE_ID`. If unset, default to `cc0` (legacy compatibility). (Implemented as `default_value_t = default_session()` in `tugcast/src/cli.rs` and `tugexec/src/main.rs`.)
+- [x] Update the `long_about` help text to reflect the new default.
+- [x] Update tugexec's `--session` default analogously.
 
 **Tests:**
-- [ ] Integration: two tugcasts with distinct TUG_INSTANCE_ID attach to distinct tmux sessions; `tmux ls` shows both.
+- [x] Integration: two tugcasts with distinct TUG_INSTANCE_ID attach to distinct tmux sessions; `tmux ls` shows both. (Verified via Step 10 checkpoint and new unit tests `test_session_default_uses_instance_id*` in both cli.rs files under serialized env-mutation guards.)
 
 **Checkpoint:**
-- [ ] `tmux ls` after launching two instances shows `cc-production-main` and `cc-development-foo` as separate sessions.
+- [x] `tmux ls` after launching two instances shows `cc-<id>` per instance. (Verified with synthetic IDs `step10a-$$` and `step10b-$$`; both sessions appear in `tmux ls` after launch.)
 
 ---
 

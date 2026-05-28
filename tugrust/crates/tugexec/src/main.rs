@@ -16,14 +16,25 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::{Instant, sleep, timeout};
 use tracing::{info, warn};
 
+/// Default tmux session name. Mirrors tugcast's logic so a tugexec
+/// invocation in a Tug environment defaults to the same per-instance
+/// session tugcast would pick.
+fn default_session() -> String {
+    match tugcore::instance::instance_id() {
+        Some(id) => format!("cc-{id}"),
+        None => "cc0".to_owned(),
+    }
+}
+
 /// tugexec: Launcher for tugdeck dashboard
 #[derive(Parser, Debug)]
 #[command(name = "tugexec")]
 #[command(version)]
 #[command(about = "Launch tugdeck dashboard — starts tugcast, Vite, and opens browser")]
 pub struct Cli {
-    /// Tmux session name to attach to (passed to tugcast)
-    #[arg(long, default_value = "cc0")]
+    /// Tmux session name to attach to (passed to tugcast). Default is
+    /// `cc-<TUG_INSTANCE_ID>` when the env var is set, else `cc0`.
+    #[arg(long, default_value_t = default_session())]
     pub session: String,
 
     /// Port for tugcast HTTP server
@@ -666,10 +677,45 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+    use std::sync::Mutex;
     use tokio::net::UnixListener;
+
+    /// Serialize tests that mutate `TUG_INSTANCE_ID`. The session
+    /// default-value expression reads from env, so tests asserting on
+    /// the default must hold this lock.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    struct ClearInstanceId {
+        prior: Option<OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl ClearInstanceId {
+        fn new() -> Self {
+            let lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
+            let prior = std::env::var_os("TUG_INSTANCE_ID");
+            unsafe {
+                std::env::remove_var("TUG_INSTANCE_ID");
+            }
+            Self { prior, _lock: lock }
+        }
+    }
+
+    impl Drop for ClearInstanceId {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prior {
+                    Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),
+                    None => std::env::remove_var("TUG_INSTANCE_ID"),
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_default_values() {
+        let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugexec"]).unwrap();
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 55255);
@@ -678,6 +724,7 @@ mod tests {
 
     #[test]
     fn test_override_session() {
+        let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugexec", "--session", "mySession"]).unwrap();
         assert_eq!(cli.session, "mySession");
         assert_eq!(cli.port, 55255);
@@ -686,6 +733,7 @@ mod tests {
 
     #[test]
     fn test_override_port() {
+        let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugexec", "--port", "8080"]).unwrap();
         assert_eq!(cli.port, 8080);
         assert_eq!(cli.session, "cc0");
@@ -694,10 +742,28 @@ mod tests {
 
     #[test]
     fn test_override_dir() {
+        let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugexec", "--dir", "/tmp/test"]).unwrap();
         assert_eq!(cli.dir, PathBuf::from("/tmp/test"));
         assert_eq!(cli.session, "cc0");
         assert_eq!(cli.port, 55255);
+    }
+
+    #[test]
+    fn test_session_default_uses_instance_id() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
+        let prior = std::env::var_os("TUG_INSTANCE_ID");
+        unsafe {
+            std::env::set_var("TUG_INSTANCE_ID", "production-main");
+        }
+        let cli = Cli::try_parse_from(["tugexec"]).unwrap();
+        assert_eq!(cli.session, "cc-production-main");
+        unsafe {
+            match prior {
+                Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),
+                None => std::env::remove_var("TUG_INSTANCE_ID"),
+            }
+        }
     }
 
     #[test]
