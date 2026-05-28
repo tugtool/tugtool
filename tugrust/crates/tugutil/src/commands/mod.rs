@@ -5,6 +5,7 @@ pub mod commit;
 pub mod dash;
 pub mod doctor;
 pub mod init;
+pub mod instance;
 pub mod list;
 pub mod log;
 pub mod merge;
@@ -24,6 +25,7 @@ pub use dash::{
 };
 pub use doctor::run_doctor;
 pub use init::run_init;
+pub use instance::{InstanceCommands, run_instance};
 pub use list::run_list;
 pub use log::{LogCommands, run_log_prepend, run_log_rotate};
 pub use merge::run_merge;

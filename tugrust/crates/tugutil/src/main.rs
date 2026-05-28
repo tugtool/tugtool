@@ -164,8 +164,9 @@ fn main() -> ExitCode {
         Some(Commands::Tell {
             action,
             port,
+            instance,
             param,
-        }) => commands::run_tell(action, port, param, cli.json),
+        }) => commands::run_tell(action, port, instance, param, cli.json),
         Some(Commands::Color { color }) => commands::run_color(color, cli.json, cli.quiet),
         Some(Commands::Dash(dash_cmd)) => match dash_cmd {
             DashCommands::Create { name, description } => {
@@ -183,6 +184,7 @@ fn main() -> ExitCode {
                 commands::run_dash_show(name, all_rounds, cli.json, cli.quiet)
             }
         },
+        Some(Commands::Instance(cmd)) => commands::run_instance(cmd),
         None => {
             // No subcommand - show splash screen
             if !cli.quiet {

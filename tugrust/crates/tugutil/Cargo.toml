@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
@@ -19,6 +20,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 regex.workspace = true
 dirs.workspace = true
+tugcore.workspace = true
 tugutil-core.workspace = true
 ureq = { version = "3", features = ["json"] }
 

@@ -2,7 +2,9 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::commands::{DashCommands, LogCommands, StateCommands, WorktreeCommands};
+use crate::commands::{
+    DashCommands, InstanceCommands, LogCommands, StateCommands, WorktreeCommands,
+};
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
 
@@ -226,9 +228,14 @@ pub enum Commands {
         /// Action name (e.g., reload, show-card, set-dev-mode)
         action: String,
 
-        /// Tugcast server port
-        #[arg(long, default_value = "55255")]
-        port: u16,
+        /// Tugcast server port (overrides --instance and CLI discovery).
+        #[arg(long)]
+        port: Option<u16>,
+
+        /// Target a specific instance by ID (resolves to its
+        /// registered port via $TMPDIR/tug-instances.json).
+        #[arg(long, value_name = "ID")]
+        instance: Option<String>,
 
         /// Parameters as KEY=VALUE pairs (repeatable)
         #[arg(short = 'p', long = "param", value_name = "KEY=VALUE")]
@@ -254,6 +261,14 @@ pub enum Commands {
         long_about = "Dash commands for lightweight worktree-isolated work.\n\nProvides quick project workflows for:\n  - Bug fixes\n  - Spikes and experiments\n  - Small features\n  - Prototyping\n\nSubcommands:\n  create   Create dash worktree and branch\n  commit   Record round and commit changes\n  join     Squash-merge to base branch\n  release  Discard without merging\n  list     Show all dashes\n  show     Show dash details and rounds"
     )]
     Dash(DashCommands),
+
+    /// Per-instance discovery and lifecycle management.
+    ///
+    /// Backed by $TMPDIR/tug-instances.json and the per-instance
+    /// data dirs under ~/Library/Application Support/Tug/instances/.
+    /// Subcommands: list, stop, current, remove, prune.
+    #[command(subcommand)]
+    Instance(InstanceCommands),
 }
 
 /// Get the command args for use in the application
@@ -843,10 +858,12 @@ mod tests {
             Some(Commands::Tell {
                 action,
                 port,
+                instance,
                 param,
             }) => {
                 assert_eq!(action, "show-card");
-                assert_eq!(port, 55255); // default
+                assert_eq!(port, None); // resolved at runtime via registry
+                assert_eq!(instance, None);
                 assert_eq!(param, vec!["component=about"]);
             }
             _ => panic!("Expected Tell command"),
@@ -881,7 +898,7 @@ mod tests {
 
         match cli.command {
             Some(Commands::Tell { port, .. }) => {
-                assert_eq!(port, 8080);
+                assert_eq!(port, Some(8080));
             }
             _ => panic!("Expected Tell command"),
         }

@@ -1,0 +1,400 @@
+//! `tugutil instance` — per-instance discovery + lifecycle management.
+//!
+//! Backed by `tugcore::registry`, which `tugcast` writes when it
+//! binds. The subcommands here read that registry (plus the on-disk
+//! data dirs at `~/Library/Application Support/Tug/instances/`) so a
+//! user can answer questions like "which dev instances are running?"
+//! and "are there orphaned data dirs from worktrees I removed?".
+//!
+//! See the plan's Step 14 for the contract: list / stop / current /
+//! remove / prune. Cleanup primitives are conservative by default —
+//! `remove` and `prune` confirm before they delete unless `--yes` is
+//! passed.
+
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use clap::Subcommand;
+use tugcore::registry;
+
+#[derive(Subcommand, Debug)]
+pub enum InstanceCommands {
+    /// List every live Tug instance registered with this host.
+    List,
+
+    /// Send SIGTERM to a running instance and wait for it to exit.
+    ///
+    /// Looks the instance up in the registry, signals its PID, waits
+    /// up to `--timeout` seconds, and escalates to SIGKILL if the
+    /// process is still alive after the wait.
+    Stop {
+        /// Instance ID to stop (e.g. `production-main`,
+        /// `development-foo`).
+        instance_id: String,
+
+        /// Seconds to wait for graceful exit before escalating to SIGKILL.
+        #[arg(long, default_value_t = 5)]
+        timeout: u64,
+    },
+
+    /// Print the live instance whose bundle path covers the current
+    /// working directory. Exits non-zero if no match is found.
+    Current,
+
+    /// Surgically remove all on-disk state for one instance.
+    ///
+    /// 1. Stop the running process if any (`tugutil instance stop`).
+    /// 2. Resolve the bundle path via the per-instance
+    ///    `<data-dir>/bundle-path` marker.
+    /// 3. If the bundle exists: `lsregister -u <bundle>` then
+    ///    `rm -rf` the parent DerivedData directory and the bundle.
+    /// 4. `rm -rf <data-dir>/<id>`.
+    /// 5. With `--with-tcc`: `tccutil reset Accessibility <bundle-id>`.
+    Remove {
+        /// Instance ID to remove.
+        instance_id: String,
+
+        /// Also reset the TCC Accessibility entry for the bundle ID.
+        /// Off by default — orphaned TCC entries are inert without
+        /// the bundle they grant, and `tccutil` requires confirmation
+        /// in System Settings on some macOS versions.
+        #[arg(long)]
+        with_tcc: bool,
+
+        /// Skip the interactive confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+
+    /// Discover and (optionally) remove orphaned data dirs.
+    ///
+    /// Walks `~/Library/Application Support/Tug/instances/*/`; for
+    /// each, checks the bundle-path marker. If the recorded bundle
+    /// no longer exists on disk, the data dir is classified as an
+    /// orphan and offered up for removal.
+    Prune {
+        /// Skip the interactive confirmation prompt.
+        #[arg(long)]
+        yes: bool,
+
+        /// Also reset TCC entries for each orphan's bundle ID
+        /// (off by default; see `instance remove --with-tcc`).
+        #[arg(long)]
+        with_tcc: bool,
+
+        /// Emit the orphan list as JSON without removing anything.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// Entry point — dispatch to the right subcommand impl.
+pub fn run_instance(cmd: InstanceCommands) -> Result<i32, String> {
+    match cmd {
+        InstanceCommands::List => run_list(),
+        InstanceCommands::Stop {
+            instance_id,
+            timeout,
+        } => run_stop(&instance_id, timeout),
+        InstanceCommands::Current => run_current(),
+        InstanceCommands::Remove {
+            instance_id,
+            with_tcc,
+            yes,
+        } => run_remove(&instance_id, with_tcc, yes),
+        InstanceCommands::Prune {
+            yes,
+            with_tcc,
+            json,
+        } => run_prune(yes, with_tcc, json),
+    }
+}
+
+// ── list ─────────────────────────────────────────────────────────────────────
+
+fn run_list() -> Result<i32, String> {
+    let entries = registry::list_live().map_err(|e| format!("read registry: {e}"))?;
+    if entries.is_empty() {
+        println!("(no Tug instances running)");
+        return Ok(0);
+    }
+    println!("{:<32}  {:>7}  {:>7}  BUNDLE", "INSTANCE", "PID", "PORT");
+    for i in &entries {
+        println!(
+            "{:<32}  {:>7}  {:>7}  {}",
+            i.instance_id,
+            i.pid,
+            i.tugcast_port,
+            i.bundle_path.display()
+        );
+    }
+    Ok(0)
+}
+
+// ── stop ─────────────────────────────────────────────────────────────────────
+
+fn run_stop(instance_id: &str, timeout_secs: u64) -> Result<i32, String> {
+    let entry = registry::find_by_id(instance_id)
+        .map_err(|e| format!("read registry: {e}"))?
+        .ok_or_else(|| format!("no live instance '{instance_id}'"))?;
+    let pid = entry.pid;
+    println!("stopping {instance_id} (PID {pid}) — SIGTERM");
+    send_signal(pid, libc::SIGTERM);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(1));
+    while std::time::Instant::now() < deadline {
+        if !pid_alive(pid) {
+            println!("stopped cleanly");
+            return Ok(0);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    println!("still alive after {timeout_secs}s — escalating to SIGKILL");
+    send_signal(pid, libc::SIGKILL);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    if pid_alive(pid) {
+        Err(format!("PID {pid} still alive after SIGKILL"))
+    } else {
+        Ok(0)
+    }
+}
+
+// ── current ──────────────────────────────────────────────────────────────────
+
+fn run_current() -> Result<i32, String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("cwd: {e}"))?;
+    match registry::find_for_cwd(&cwd) {
+        Ok(Some(i)) => {
+            println!("{}", i.instance_id);
+            Ok(0)
+        }
+        Ok(None) => Err("no live Tug instance owns the current working directory".to_owned()),
+        Err(e) => Err(format!("read registry: {e}")),
+    }
+}
+
+// ── remove ───────────────────────────────────────────────────────────────────
+
+fn run_remove(instance_id: &str, with_tcc: bool, yes: bool) -> Result<i32, String> {
+    let data_dir = tugcore::instance_data_dir_for(instance_id);
+    let marker = data_dir.join(tugcore::instance::BUNDLE_PATH_MARKER);
+    let bundle_path = std::fs::read_to_string(&marker)
+        .ok()
+        .map(|s| PathBuf::from(s.trim()));
+
+    println!("removing instance '{instance_id}'");
+    println!("  data dir: {}", data_dir.display());
+    if let Some(bp) = &bundle_path {
+        println!("  bundle:   {} (from marker)", bp.display());
+    } else {
+        println!("  bundle:   (no marker; unable to clean LaunchServices entry)");
+    }
+    if with_tcc {
+        println!("  +tcc:     reset Accessibility entry");
+    }
+    if !yes && !confirm("Proceed?")? {
+        println!("aborted");
+        return Ok(0);
+    }
+
+    // 1. Stop if running. Ignore "not running" errors.
+    if let Ok(Some(entry)) = registry::find_by_id(instance_id) {
+        println!("stopping running PID {}", entry.pid);
+        let _ = run_stop(instance_id, 5);
+    }
+
+    // 2-4. Bundle + LaunchServices + data dir cleanup.
+    if let Some(bp) = &bundle_path
+        && bp.exists()
+    {
+        println!("unregistering bundle from LaunchServices: {}", bp.display());
+        let _ = std::process::Command::new(
+            "/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister",
+        )
+        .args(["-u"])
+        .arg(bp)
+        .status();
+        println!("removing bundle: {}", bp.display());
+        let _ = std::fs::remove_dir_all(bp);
+    }
+
+    if data_dir.exists() {
+        println!("removing data dir: {}", data_dir.display());
+        std::fs::remove_dir_all(&data_dir).map_err(|e| format!("rm data dir: {e}"))?;
+    }
+
+    // 5. TCC reset (optional).
+    if with_tcc {
+        if let Some(bp) = &bundle_path {
+            if let Some(bundle_id) = read_bundle_id_from_app(bp) {
+                println!("tccutil reset Accessibility {bundle_id}");
+                let _ = std::process::Command::new("tccutil")
+                    .args(["reset", "Accessibility"])
+                    .arg(&bundle_id)
+                    .status();
+            } else {
+                eprintln!("warning: could not read CFBundleIdentifier; skipping tccutil");
+            }
+        } else {
+            eprintln!("warning: no bundle marker; skipping tccutil");
+        }
+    }
+
+    println!("instance '{instance_id}' removed");
+    Ok(0)
+}
+
+// ── prune ────────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+struct OrphanReport<'a> {
+    instance_id: &'a str,
+    data_dir: &'a Path,
+    bundle_path: &'a Path,
+    last_modified_unix: Option<i64>,
+}
+
+fn run_prune(yes: bool, with_tcc: bool, json: bool) -> Result<i32, String> {
+    let base = tugcore::instances_root();
+    if !base.exists() {
+        if json {
+            println!("[]");
+        } else {
+            println!("no instances directory at {}", base.display());
+        }
+        return Ok(0);
+    }
+
+    let mut orphans: Vec<(String, PathBuf, PathBuf, Option<i64>)> = Vec::new();
+    for entry in std::fs::read_dir(&base).map_err(|e| format!("read {}: {e}", base.display()))? {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let id = entry.file_name().to_string_lossy().into_owned();
+        let marker = dir.join(tugcore::instance::BUNDLE_PATH_MARKER);
+        let Ok(bundle_path_str) = std::fs::read_to_string(&marker) else {
+            // No marker — predate Step 7, skip per Step 14 contract.
+            continue;
+        };
+        let bundle_path = PathBuf::from(bundle_path_str.trim());
+        if bundle_path.exists() {
+            continue;
+        }
+        let mtime = std::fs::metadata(&dir)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64);
+        orphans.push((id, dir, bundle_path, mtime));
+    }
+
+    if json {
+        let report: Vec<OrphanReport> = orphans
+            .iter()
+            .map(|(id, dd, bp, m)| OrphanReport {
+                instance_id: id,
+                data_dir: dd,
+                bundle_path: bp,
+                last_modified_unix: *m,
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+        );
+        return Ok(0);
+    }
+
+    if orphans.is_empty() {
+        println!("no orphaned data dirs");
+        return Ok(0);
+    }
+
+    println!("orphaned data dirs ({}):", orphans.len());
+    for (id, dd, bp, _) in &orphans {
+        println!("  {id}");
+        println!("    data dir: {}", dd.display());
+        println!("    bundle:   {} (missing)", bp.display());
+    }
+    if !yes && !confirm("Remove all of the above?")? {
+        println!("aborted");
+        return Ok(0);
+    }
+    for (id, _, _, _) in &orphans {
+        // `instance remove` already prints its own progress; pass
+        // `--yes` so we don't re-prompt for each orphan.
+        if let Err(e) = run_remove(id, with_tcc, true) {
+            eprintln!("warning: removing '{id}' failed: {e}");
+        }
+    }
+    Ok(0)
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+fn send_signal(pid: i32, sig: i32) {
+    unsafe {
+        let _ = libc::kill(pid as libc::pid_t, sig);
+    }
+}
+
+fn pid_alive(pid: i32) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    let ret = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    if ret == 0 {
+        return true;
+    }
+    let err = std::io::Error::last_os_error();
+    err.raw_os_error() == Some(libc::EPERM)
+}
+
+fn confirm(prompt: &str) -> Result<bool, String> {
+    print!("{prompt} [y/N]: ");
+    use std::io::Write;
+    std::io::stdout().flush().ok();
+    let mut buf = [0u8; 16];
+    let n = std::io::stdin()
+        .read(&mut buf)
+        .map_err(|e| format!("read stdin: {e}"))?;
+    let s = std::str::from_utf8(&buf[..n])
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    Ok(s == "y" || s == "yes")
+}
+
+fn read_bundle_id_from_app(bundle_path: &Path) -> Option<String> {
+    let plist = bundle_path.join("Contents/Info.plist");
+    let output = std::process::Command::new("/usr/libexec/PlistBuddy")
+        .args(["-c", "Print :CFBundleIdentifier"])
+        .arg(&plist)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pid_alive_recognises_init() {
+        assert!(pid_alive(1));
+    }
+
+    #[test]
+    fn pid_alive_rejects_zero_or_negative() {
+        assert!(!pid_alive(0));
+        assert!(!pid_alive(-1));
+    }
+}

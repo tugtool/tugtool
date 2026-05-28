@@ -76,13 +76,85 @@ fn parse_params(params: &[String]) -> Result<Vec<(String, Value)>, String> {
     Ok(result)
 }
 
+/// Resolve the tugcast port to talk to, per the [D09] CLI discovery
+/// order:
+/// 1. `--port <P>` (caller knows the exact port)
+/// 2. `--instance <id>` (registry lookup by ID)
+/// 3. `TUG_INSTANCE` env var (registry lookup by ID)
+/// 4. cwd-derived dev instance (registry's path-prefix match)
+/// 5. sole-running instance (registry has exactly one entry)
+/// 6. error with the list of running instances
+fn resolve_port(
+    explicit_port: Option<u16>,
+    explicit_instance: Option<String>,
+) -> Result<u16, String> {
+    if let Some(p) = explicit_port {
+        return Ok(p);
+    }
+    let id_from_arg = explicit_instance.filter(|s| !s.is_empty());
+    let id_from_env = std::env::var("TUG_INSTANCE").ok().filter(|s| !s.is_empty());
+    let target_id = id_from_arg.or(id_from_env);
+    if let Some(id) = target_id {
+        return match tugcore::registry::find_by_id(&id) {
+            Ok(Some(i)) => Ok(i.tugcast_port),
+            Ok(None) => Err(format!("no live instance '{id}' in registry")),
+            Err(e) => Err(format!("registry read failed: {e}")),
+        };
+    }
+    if let Ok(cwd) = std::env::current_dir()
+        && let Ok(Some(i)) = tugcore::registry::find_for_cwd(&cwd)
+    {
+        return Ok(i.tugcast_port);
+    }
+    match tugcore::registry::list_live() {
+        Ok(live) if live.len() == 1 => Ok(live[0].tugcast_port),
+        Ok(live) if live.is_empty() => {
+            Err("no Tug instances running; start one or pass --port/--instance".to_owned())
+        }
+        Ok(live) => {
+            let ids: Vec<String> = live.iter().map(|i| i.instance_id.clone()).collect();
+            Err(format!(
+                "multiple instances running ({}). Pass --instance <id> or set TUG_INSTANCE",
+                ids.join(", ")
+            ))
+        }
+        Err(e) => Err(format!("registry read failed: {e}")),
+    }
+}
+
 /// Run the tell command
 pub fn run_tell(
     action: String,
-    port: u16,
+    port: Option<u16>,
+    instance: Option<String>,
     params: Vec<String>,
     json_output: bool,
 ) -> Result<i32, String> {
+    let port = match resolve_port(port, instance) {
+        Ok(p) => p,
+        Err(e) => {
+            if json_output {
+                let response = JsonResponse::error(
+                    "tell",
+                    TellData {
+                        server_status: "error".to_string(),
+                    },
+                    vec![JsonIssue {
+                        code: "E099".to_string(),
+                        severity: "error".to_string(),
+                        message: e.clone(),
+                        file: None,
+                        line: None,
+                        anchor: None,
+                    }],
+                );
+                println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                return Ok(1);
+            } else {
+                return Err(e);
+            }
+        }
+    };
     // Parse parameters
     let parsed_params = match parse_params(&params) {
         Ok(p) => p,
@@ -292,5 +364,64 @@ mod tests {
         let result = parse_params(&params);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid parameter format"));
+    }
+
+    // ── Port resolution tests ───────────────────────────────────────
+    //
+    // Resolution branches 1+2 are pure-functional (no env/registry
+    // access on the explicit-port path; the explicit-instance path
+    // does hit the live registry which is shared across tests in this
+    // crate). The lower-priority branches (env, cwd, sole) all touch
+    // process-wide state and would conflict with a shared $TMPDIR
+    // registry — they are covered by the Step 14 integration script,
+    // not by these unit tests.
+
+    #[test]
+    fn resolve_port_explicit_port_wins() {
+        let r = resolve_port(Some(9999), Some("development-foo".to_owned()));
+        assert_eq!(r, Ok(9999));
+    }
+
+    #[test]
+    fn resolve_port_explicit_port_wins_even_with_env() {
+        let _g = ScopedEnv::set("TUG_INSTANCE", "anything");
+        let r = resolve_port(Some(8888), None);
+        assert_eq!(r, Ok(8888));
+    }
+
+    #[test]
+    fn resolve_port_unknown_instance_errors() {
+        let r = resolve_port(None, Some("does-not-exist-xyz-zzz".to_owned()));
+        match r {
+            Err(msg) => assert!(msg.contains("no live instance")),
+            Ok(_) => panic!("expected error for unknown instance"),
+        }
+    }
+
+    /// Tiny env-restore helper local to these tests.
+    struct ScopedEnv {
+        key: &'static str,
+        prior: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnv {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prior = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, prior }
+        }
+    }
+
+    impl Drop for ScopedEnv {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prior {
+                    Some(v) => std::env::set_var(self.key, v),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
     }
 }

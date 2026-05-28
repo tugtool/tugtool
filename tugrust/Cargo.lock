@@ -2356,6 +2356,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "libc",
  "regex",
  "serde",
  "serde_json",
@@ -2363,6 +2364,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml",
+ "tugcore",
  "tugutil-core",
  "ureq",
 ]
