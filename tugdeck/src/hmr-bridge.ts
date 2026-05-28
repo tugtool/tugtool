@@ -106,6 +106,10 @@
  */
 
 import type { DeckManager } from "./deck-manager";
+import {
+  readHostCanvasColorFromAppliedCss,
+  sendCanvasColor,
+} from "./contexts/theme-provider";
 
 /**
  * One-shot arming window for the `tug:theme-changed` HMR signal.
@@ -113,9 +117,17 @@ import type { DeckManager } from "./deck-manager";
  */
 const THEME_ARMED_WINDOW_MS = 2_000;
 let _themeArmedAt: number | null = null;
+/**
+ * Companion arm — flipped by `tug:theme-changed` and consumed by
+ * the next `vite:afterUpdate` so the Swift bridge can be re-fired
+ * with the new `--tugx-host-canvas-color` after the CSS update has
+ * actually landed (reading on `beforeUpdate` would see stale value).
+ */
+let _canvasRebridgeArmed = false;
 
 function armThemeSkip(): void {
   _themeArmedAt = performance.now();
+  _canvasRebridgeArmed = true;
 }
 
 function consumeThemeSkip(): boolean {
@@ -123,6 +135,12 @@ function consumeThemeSkip(): boolean {
   const age = performance.now() - _themeArmedAt;
   _themeArmedAt = null;
   return age <= THEME_ARMED_WINDOW_MS;
+}
+
+function consumeCanvasRebridge(): boolean {
+  const armed = _canvasRebridgeArmed;
+  _canvasRebridgeArmed = false;
+  return armed;
 }
 
 /**
@@ -180,6 +198,16 @@ export function installHmrBridge(deck: DeckManager): void {
   // through the WebView's didFinish navigation path on the native side
   // and are not reported here.
   hot.on("vite:afterUpdate", () => {
+    // If a theme-css edit just landed, re-read the active host canvas
+    // color from the updated stylesheet and re-fire the Swift bridge
+    // so the native window backdrop tracks the edit live. Reading on
+    // `beforeUpdate` would see the pre-edit value — the CSS swap has
+    // to land first.
+    if (consumeCanvasRebridge()) {
+      const hex = readHostCanvasColorFromAppliedCss();
+      if (hex) sendCanvasColor(hex);
+    }
+
     const handler = (
       window as unknown as {
         webkit?: {
