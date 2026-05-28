@@ -270,7 +270,7 @@ async fn test_heartbeat_survives_long_turn() {
         .expect(
             "long-streaming turn must complete; if this errors with \
              `Connection reset without closing handshake` at ~45 s the \
-             TestWs heartbeat task has regressed (see tide.md §T0.5 P19)",
+             TestWs heartbeat task has regressed (see dev.md §T0.5 P19)",
         );
     let elapsed = start.elapsed();
 
@@ -722,7 +722,7 @@ async fn test_send_interrupt_reaches_tugcode() {
     ws.send_code_input(
         tug_session_id,
         "Write a 500-word essay about the ocean. Include extensive detail about \
-         waves, tides, and marine life.",
+         waves, devs, and marine life.",
     )
     .await;
     ws.await_session_state(tug_session_id, "live", WIRE_TIMEOUT)

@@ -108,7 +108,7 @@ pub struct WorkspaceEntry {
     pub fs_watch_rx: watch::Receiver<Frame>,
     /// Bootstrap workspace's FILETREE response watch — kept on the
     /// registered snapshot list in `main.rs` because its initial empty
-    /// `FileTreeSnapshot` is what unblocks a brand-new tide card's
+    /// `FileTreeSnapshot` is what unblocks a brand-new dev card's
     /// `feedData.size > 0` gate (the broadcast channel carries no
     /// retained history, so a client connecting after the initial
     /// publish would otherwise see no FILETREE frame until a query

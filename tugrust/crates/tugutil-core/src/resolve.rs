@@ -394,13 +394,13 @@ mod tests {
     #[test]
     fn test_slug_resolves_from_roadmap() {
         let tmp = setup_project(&[]);
-        add_roadmap_plans(&tmp, &["tide"]);
+        add_roadmap_plans(&tmp, &["dev"]);
 
-        let result = resolve_plan("tide", tmp.path()).unwrap();
+        let result = resolve_plan("dev", tmp.path()).unwrap();
         match result {
             ResolveResult::Found { path, stage } => {
                 assert_eq!(stage, ResolveStage::Slug);
-                assert!(path.ends_with("roadmap/tugplan-tide.md"));
+                assert!(path.ends_with("roadmap/tugplan-dev.md"));
             }
             _ => panic!("Expected Found with Slug stage from roadmap/"),
         }
@@ -409,13 +409,13 @@ mod tests {
     #[test]
     fn test_bare_filename_resolves_from_roadmap() {
         let tmp = setup_project(&[]);
-        add_roadmap_plans(&tmp, &["tide"]);
+        add_roadmap_plans(&tmp, &["dev"]);
 
-        let result = resolve_plan("tugplan-tide", tmp.path()).unwrap();
+        let result = resolve_plan("tugplan-dev", tmp.path()).unwrap();
         match result {
             ResolveResult::Found { path, stage } => {
                 assert_eq!(stage, ResolveStage::Filename);
-                assert!(path.ends_with("roadmap/tugplan-tide.md"));
+                assert!(path.ends_with("roadmap/tugplan-dev.md"));
             }
             _ => panic!("Expected Found with Filename stage from roadmap/"),
         }

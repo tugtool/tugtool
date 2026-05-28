@@ -504,7 +504,7 @@ pub async fn execute_probe(
     project_dir: &std::path::Path,
 ) -> CapturedProbe {
     // Known-bug skip gate — probes with a `skip_reason` pointer at
-    // a tide.md §T0.5 follow-up bypass execution entirely. This is
+    // a dev.md §T0.5 follow-up bypass execution entirely. This is
     // how blocked-on-upstream-bug probes stay in the fixture catalog
     // (with an explicit `skipped` status + reason in manifest.json)
     // without corrupting the baseline with half-captured events.

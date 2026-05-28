@@ -209,7 +209,7 @@ export interface SeedDeckStateArgs {
 }
 
 /**
- * One step in driving a bound tide card's `CodeSessionStore` through
+ * One step in driving a bound dev card's `CodeSessionStore` through
  * the lifecycle matrix — consumed by {@link TugTestSurface.driveDevSession}.
  *
  *  - `send` — submit a user message (`store.send`); a mid-turn `send`
@@ -533,7 +533,7 @@ export interface TugTestSurface {
   isEngineReady(cardId: string): boolean;
 
   /**
-   * Bind a fake session for a tide card so it skips past the
+   * Bind a fake session for a dev card so it skips past the
    * project-picker UI and renders DevCardBody directly. Without a
    * binding, `useDevCardServices` returns `null` and dev-card
    * shows the picker; production sets the binding from a
@@ -549,7 +549,7 @@ export interface TugTestSurface {
    *
    * `tugSessionId` and `workspaceKey` default to deterministic
    * test-only sentinels so the same call shape works across every
-   * tide test. Pass overrides only when a test specifically needs
+   * dev test. Pass overrides only when a test specifically needs
    * a non-default value (e.g. testing workspace-key isolation
    * across sibling cards).
    *
@@ -578,13 +578,13 @@ export interface TugTestSurface {
   // ---- Dev lifecycle-matrix driving (SURFACE_VERSION 1.6.0) ----
 
   /**
-   * Drive a bound tide card's `CodeSessionStore` one step through the
+   * Drive a bound dev card's `CodeSessionStore` one step through the
    * lifecycle matrix. Resolves the card's services via
    * `cardServicesStore`; throws if the card is not bound (call
    * `bindDevSession` first). See {@link DevSessionDriveAction} for
    * the step vocabulary.
    *
-   * The app-test matrix-coordination test drives a tide card through
+   * The app-test matrix-coordination test drives a dev card through
    * every distinct matrix row with this and asserts the rendered
    * Z1 / Z2 / Z5 zones. Test-mode-only.
    */

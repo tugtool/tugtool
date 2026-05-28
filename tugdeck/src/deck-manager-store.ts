@@ -397,7 +397,7 @@ export interface IDeckManagerStore {
    * Registration bumps the deck-manager's `callbacksVersion` axis
    * so `CardHost`'s `useLayoutEffect` that depends on it re-fires —
    * this lets Step 4's `deferred-engine` retry settle when the
-   * engine mounts late (tide's transcript loads messages async after
+   * engine mounts late (dev's transcript loads messages async after
    * cold-boot; the editor that owns engine focus mounts at that
    * later point). Same axis the state-preservation callbacks use,
    * so the existing re-fire wiring covers this without a new
@@ -451,7 +451,7 @@ export interface IDeckManagerStore {
    *
    * `CardHost` uses this in a `useLayoutEffect` to drive the
    * `deferred-engine` retry path: when an engine mounts late
-   * (tide's editor renders after `feedsReady`), its
+   * (dev's editor renders after `feedsReady`), its
    * `registerEngineHooks` call fires the listener, which bumps
    * CardHost's `callbacksVersion`-equivalent dep and re-fires the
    * cold-boot RESTORE effect through `applyBagFocus`.

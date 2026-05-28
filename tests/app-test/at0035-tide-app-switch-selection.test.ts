@@ -24,7 +24,7 @@
  * tugcast/tugcode backend populated frames. In test mode
  * (`window.__tugTestMode === true`, set by the Swift host's
  * `WKUserScript` injection when the app is launched via
- * `TUGAPP_TEST_SOCKET`), CardHost bypasses the gate so tide
+ * `TUGAPP_TEST_SOCKET`), CardHost bypasses the gate so dev
  * mounts immediately with empty feed stores. The editor and the
  * focus / selection paths don't depend on feed data; the AI
  * streaming path does, but that's not what this test exercises.
@@ -50,7 +50,7 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const STRESS_ITERATIONS = 3;
 
-describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resign + become-active", () => {
+describe.skipIf(!SHOULD_RUN)("at0035-dev: dev-card selection survives app resign + become-active", () => {
   test("cmd-tab away + back preserves \"llo\" selection on dev-card", async () => {
     const app = await launchTugApp({ testName: "at0035-dev-app-switch" });
     let lastIteration = -1;
@@ -60,7 +60,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
       await app.seedDeckState({
         state: {
           cards: [
-            { id: "A", componentId: "tide", title: "Dev A", closable: true },
+            { id: "A", componentId: "dev", title: "Dev A", closable: true },
           ],
           panes: [
             {
@@ -89,7 +89,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
 
       await app.awaitEngineReady("A");
 
-      // Click into the tide editor; type "hello".
+      // Click into the dev editor; type "hello".
       await app.nativeClickAtElement(`[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}`);
       await app.waitForCondition<boolean>(
         `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(PROMPT_INPUT_SELECTOR)})`,
@@ -120,7 +120,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
             while (textNode && textNode.nodeType !== Node.TEXT_NODE) {
               textNode = textNode.firstChild;
             }
-            if (!textNode) throw new Error("[at0035-tide] no text node under .cm-content");
+            if (!textNode) throw new Error("[at0035-dev] no text node under .cm-content");
             var sel = window.getSelection();
             var range = document.createRange();
             range.setStart(textNode, 2);
@@ -156,7 +156,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
         // Brief blur dwell to give WKWebView's window.blur dispatch
         // time to settle. Pre-fix, longer dwells (~2s) were the
         // most reliable repro vector; once the fix landed (drop
-        // tide's `cardWillDeactivate → .blur()`), 300ms is enough
+        // dev's `cardWillDeactivate → .blur()`), 300ms is enough
         // to drive the pathway and keep the test cheap.
         await new Promise<void>((resolve) =>
           (
@@ -189,7 +189,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
         ) {
           // eslint-disable-next-line no-console
           console.error(
-            `[at0035-tide] iteration ${i + 1}/${STRESS_ITERATIONS} lost selection:`,
+            `[at0035-dev] iteration ${i + 1}/${STRESS_ITERATIONS} lost selection:`,
             JSON.stringify(postResign),
           );
         }
@@ -200,7 +200,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`[at0035-tide] failed at iteration ${lastIteration + 1}/${STRESS_ITERATIONS}`);
+      console.error(`[at0035-dev] failed at iteration ${lastIteration + 1}/${STRESS_ITERATIONS}`);
       throw err;
     } finally {
       await app.close();

@@ -4,7 +4,7 @@
  *
  * The outer scrollport is the scrollable ancestor whose `scrollTop`
  * adjustment compensates for height changes inside a body kind so the
- * click target stays under the user's cursor. For tide cards this is
+ * click target stays under the user's cursor. For dev cards this is
  * the transcript scrollport (`.tug-list-view`); for other surfaces it
  * may be a pane scrollport or an ad-hoc div. The provider is published
  * by whoever owns the actual scrollable element; consumers read it via

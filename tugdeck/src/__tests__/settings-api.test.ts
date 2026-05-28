@@ -320,7 +320,7 @@ describe("getPromptHistory", () => {
 });
 
 // ---------------------------------------------------------------------------
-// tide recent-projects (step 4m)
+// dev recent-projects (step 4m)
 // ---------------------------------------------------------------------------
 
 describe("insertDevRecentProject", () => {

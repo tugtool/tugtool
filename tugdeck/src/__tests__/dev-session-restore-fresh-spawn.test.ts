@@ -6,11 +6,11 @@
  * fresh `spawn_session(mode=new)` under the same project. The fresh
  * path mints a new session — there is nothing to "restore" — but the
  * card is still mid-bind: until `spawn_session_ok` lands, an unbound
- * tide card with no `tideRestoreRegistry` entry falls straight through
+ * dev card with no `devRestoreRegistry` entry falls straight through
  * to the project picker, flashing its `TugSheet` for the round-trip.
  *
  * These tests pin the production wire that closes that window: the
- * zero-turn branch arms a `tideRestoreRegistry` hold (so
+ * zero-turn branch arms a `devRestoreRegistry` hold (so
  * `DevCardContent` shows the quiet `DevRestoring` backdrop), and
  * `notifySpawnRejected` drops the hold when tugcast rejects the spawn
  * so the card can fall through to the picker + its error banner.
@@ -25,7 +25,7 @@ import type { TugConnection } from "@/connection";
 import {
   restoreDevSessions,
   notifySpawnRejected,
-  tideRestoreRegistry,
+  devRestoreRegistry,
 } from "@/lib/dev-session-restore";
 import { publishListCardBindingsOk } from "@/lib/dev-session-ledger-events";
 import type { CardBinding } from "@/protocol";
@@ -85,7 +85,7 @@ const TOUCHED_CARD_IDS = new Set<string>();
 
 function runRestore(cardId: string, projectDir: string): void {
   TOUCHED_CARD_IDS.add(cardId);
-  const deck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
+  const deck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
   restoreDevSessions(
     deck as unknown as Parameters<typeof restoreDevSessions>[0],
     fakeConnection,
@@ -96,7 +96,7 @@ function runRestore(cardId: string, projectDir: string): void {
 afterEach(() => {
   // Drop registry entries (and their armed timeout timers) so a
   // zero-turn hold from one test cannot leak into the next.
-  for (const id of TOUCHED_CARD_IDS) tideRestoreRegistry._clear(id);
+  for (const id of TOUCHED_CARD_IDS) devRestoreRegistry._clear(id);
   TOUCHED_CARD_IDS.clear();
 });
 
@@ -104,26 +104,26 @@ describe("dev-session-restore — zero-turn fresh-spawn hold", () => {
   it("arms a restore-registry hold for a zero-turn binding", () => {
     const cardId = "dev-fresh-card-1";
     const projectDir = "/work/fresh-spawn";
-    expect(tideRestoreRegistry.has(cardId)).toBe(false);
+    expect(devRestoreRegistry.has(cardId)).toBe(false);
 
     runRestore(cardId, projectDir);
 
     // Without the hold the card would fall through to the picker the
     // instant the pass gate settles; the entry keeps it on the quiet
     // `DevRestoring` backdrop until the bind lands.
-    expect(tideRestoreRegistry.has(cardId)).toBe(true);
-    expect(tideRestoreRegistry.get(cardId)?.projectDir).toBe(projectDir);
+    expect(devRestoreRegistry.has(cardId)).toBe(true);
+    expect(devRestoreRegistry.get(cardId)?.projectDir).toBe(projectDir);
   });
 
   it("notifySpawnRejected drops the hold so the picker can present", () => {
     const cardId = "dev-fresh-card-2";
     runRestore(cardId, "/work/missing-dir");
-    expect(tideRestoreRegistry.has(cardId)).toBe(true);
+    expect(devRestoreRegistry.has(cardId)).toBe(true);
 
     // tugcast rejected the spawn (e.g. the project directory is gone).
     notifySpawnRejected(cardId);
 
-    expect(tideRestoreRegistry.has(cardId)).toBe(false);
+    expect(devRestoreRegistry.has(cardId)).toBe(false);
   });
 
   it("notifySpawnRejected is a no-op for a card with no hold", () => {
@@ -141,7 +141,7 @@ describe("dev-session-restore — zero-turn fresh-spawn hold", () => {
     const projectDir = "/work/inflight";
     TOUCHED_CARD_IDS.add(cardId);
 
-    const deck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
+    const deck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
     restoreDevSessions(
       deck as unknown as Parameters<typeof restoreDevSessions>[0],
       fakeConnection,
@@ -153,8 +153,8 @@ describe("dev-session-restore — zero-turn fresh-spawn hold", () => {
     // Resume path arms the same hold as turn_count > 0; without the
     // hold the card would fall through to the picker before the bind
     // ack lands.
-    expect(tideRestoreRegistry.has(cardId)).toBe(true);
-    expect(tideRestoreRegistry.get(cardId)?.tugSessionId).toBe(
+    expect(devRestoreRegistry.has(cardId)).toBe(true);
+    expect(devRestoreRegistry.get(cardId)?.tugSessionId).toBe(
       `sess-${cardId}`,
     );
   });

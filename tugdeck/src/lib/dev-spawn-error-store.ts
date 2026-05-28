@@ -77,7 +77,7 @@ class DevSpawnErrorStore {
   }
 }
 
-export const tideSpawnErrorStore = new DevSpawnErrorStore();
+export const devSpawnErrorStore = new DevSpawnErrorStore();
 
 /**
  * Map a wire reason code to human-readable banner copy. Unknown codes
@@ -110,11 +110,11 @@ export function spawnErrorMessage(reason: string): string {
  */
 export function useSpawnError(cardId: string): SpawnError | null {
   const subscribe = useCallback(
-    (listener: () => void) => tideSpawnErrorStore.subscribe(cardId, listener),
+    (listener: () => void) => devSpawnErrorStore.subscribe(cardId, listener),
     [cardId],
   );
   const getSnapshot = useCallback(
-    () => tideSpawnErrorStore.get(cardId),
+    () => devSpawnErrorStore.get(cardId),
     [cardId],
   );
   return useSyncExternalStore(subscribe, getSnapshot);

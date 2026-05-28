@@ -91,7 +91,7 @@ import {
 import { sendSpawnSession } from "@/lib/session-lifecycle";
 import { TugProgressIndicator } from "../tug-progress-indicator";
 import {
-  tideRestoreRegistry,
+  devRestoreRegistry,
   cancelDevRestore,
   fireRestore,
   getRestoreStartedAt,
@@ -103,7 +103,7 @@ import { pickerNoticeStore, type PickerNotice } from "@/lib/picker-notice-store"
 import {
   useSpawnError,
   spawnErrorMessage,
-  tideSpawnErrorStore,
+  devSpawnErrorStore,
   type SpawnError,
 } from "@/lib/dev-spawn-error-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
@@ -311,12 +311,12 @@ export interface DevTurnTrailingContext {
  * runs on every `push()`. Cross-card-reuse of history for the same
  * project arrives once a stable per-workspace session id exists.
  */
-let _tidePromptHistoryStore: PromptHistoryStore | null = null;
+let _devPromptHistoryStore: PromptHistoryStore | null = null;
 function getDevPromptHistoryStore(): PromptHistoryStore {
-  if (_tidePromptHistoryStore === null) {
-    _tidePromptHistoryStore = new PromptHistoryStore();
+  if (_devPromptHistoryStore === null) {
+    _devPromptHistoryStore = new PromptHistoryStore();
   }
-  return _tidePromptHistoryStore;
+  return _devPromptHistoryStore;
 }
 
 // ---------------------------------------------------------------------------
@@ -422,8 +422,8 @@ export function DevCardContent({
   // entry cleared via the cardSessionBindingStore subscriber inside
   // `dev-session-restore`).
   const restoreMap = useSyncExternalStore(
-    tideRestoreRegistry.subscribe,
-    tideRestoreRegistry.getSnapshot,
+    devRestoreRegistry.subscribe,
+    devRestoreRegistry.getSnapshot,
   );
   // Has the startup restore pass settled? Until it has, an unbound
   // card cannot tell "fresh card" from "restore not yet registered"
@@ -777,14 +777,14 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
   }
 
   // Present the sheet only when this card becomes first responder.
-  // An unbound tide card that lives in an inactive tab must wait —
+  // An unbound dev card that lives in an inactive tab must wait —
   // otherwise its sheet drops on top of the sibling card the user is
   // actually looking at (reload symptom: restart with hello-world
-  // front and a sibling tide tab → tide's picker covers hello).
+  // front and a sibling dev tab → dev's picker covers hello).
   //
   // `observeCardDidActivate` fires an initial-sync synchronously at
   // subscribe time when the card is already the focused card — so a
-  // fresh `addCard("tide")` (tide IS the new FR) presents the sheet
+  // fresh `addCard("dev")` (dev IS the new FR) presents the sheet
   // on mount without waiting for a macrotask drain.
   const cardLifecycle = useCardLifecycle();
   const presentSheet = useCallback(() => {
@@ -948,7 +948,7 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
 
   // Spawn-rejection banner. When tugcast rejects this card's
   // `spawn_session` (e.g. the project directory no longer exists),
-  // `action-dispatch` records it in `tideSpawnErrorStore` keyed by
+  // `action-dispatch` records it in `devSpawnErrorStore` keyed by
   // `cardId`. The picker is already mounted and waiting, so the
   // `useSyncExternalStore` subscription re-renders it here — the card
   // has no `CodeSessionStore` yet (the session never came up), so this
@@ -962,12 +962,12 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
 
   // Drop the card's spawn-error when the picker unmounts (the card
   // bound or closed) so a later card reusing this id starts clean.
-  useEffect(() => () => tideSpawnErrorStore.clear(cardId), [cardId]);
+  useEffect(() => () => devSpawnErrorStore.clear(cardId), [cardId]);
 
   // Banner recovery: clear the error and re-present the picker sheet
   // so the user can choose a directory that exists.
   const handleSpawnErrorRetry = useCallback(() => {
-    tideSpawnErrorStore.clear(cardId);
+    devSpawnErrorStore.clear(cardId);
     shownRef.current = false;
     presentSheet();
   }, [cardId, presentSheet]);
@@ -1847,7 +1847,7 @@ export function DevCardBody({
   // never remounted across cross-pane moves ([L23] minimal mutation),
   // so empty-deps semantics correctly maps to "once per fresh
   // session bind."
-  const tideCardRootRef = useRef<HTMLDivElement | null>(null);
+  const devCardRootRef = useRef<HTMLDivElement | null>(null);
 
   const codeSnap = useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -2139,7 +2139,7 @@ export function DevCardBody({
   //
   // Mechanics: empty-deps `useLayoutEffect` runs exactly once when
   // this card first acquires services. It captures the root element
-  // via `tideCardRootRef.current`, sets opacity to "0" synchronously
+  // via `devCardRootRef.current`, sets opacity to "0" synchronously
   // (so the first paint after commit shows the start state without a
   // flash), then opens a TugAnimator group that animates opacity
   // 0 → 1 over `--tug-motion-duration-moderate` with `ease-out`. The
@@ -2174,7 +2174,7 @@ export function DevCardBody({
   // `InvalidStateError` thrown when the element is no longer
   // rendered, so the late `.finished` resolution is harmless.
   useLayoutEffect(() => {
-    const el = tideCardRootRef.current;
+    const el = devCardRootRef.current;
     if (el === null) return;
     // Set the start state inline so the first paint after commit
     // shows opacity:0 — WAAPI's pending-phase doesn't apply the
@@ -2237,7 +2237,7 @@ export function DevCardBody({
 
   // Card-content responder scope for key-card-routed keyboard
   // shortcuts. Registers a `kind: "card-content"` node under the
-  // tide card's body element; any keybinding with `scope: "key-card"`
+  // dev card's body element; any keybinding with `scope: "key-card"`
   // (declared in keybinding-map.ts) is dispatched here when this is
   // the active card. The chain walks UP from this node, so
   // unhandled actions fall through to the card-level responder,
@@ -2390,7 +2390,7 @@ export function DevCardBody({
           // Compose two ref consumers onto a single DOM node:
           //   - `cardContentResponderRef` registers this element as
           //     the card-content responder for chain dispatch.
-          //   - `tideCardRootRef` captures the same element for the
+          //   - `devCardRootRef` captures the same element for the
           //     first-mount fade-in `useLayoutEffect` declared above.
           // The composition is inline rather than `useCallback`-wrapped
           // because both consumers are reference-stable for this
@@ -2398,7 +2398,7 @@ export function DevCardBody({
           // (with the element) and on unmount (with `null`), and a
           // one-shot identity churn doesn't trigger any re-attach
           // observable from the consumers.
-          tideCardRootRef.current = (el as HTMLDivElement | null);
+          devCardRootRef.current = (el as HTMLDivElement | null);
           (cardContentResponderRef as (node: Element | null) => void)(el);
         }}
         className="dev-card"
@@ -2411,13 +2411,13 @@ export function DevCardBody({
         disabled={maximized}
         // Per-card storage key. The entry-pane sash position is a
         // per-card preference: a single shared key would let every
-        // tide card's mount-time layout write clobber every other
+        // dev card's mount-time layout write clobber every other
         // card's saved sash position, and on relaunch each card would
         // paint at whatever card last wrote the shared entry before
         // snapping to its own — a visible shift. `cardId` is stable
         // across relaunch (the ledger restore matches on it) and
         // across cross-pane moves, so the pref persists with the card.
-        storageKey={`tide.prompt-entry.${cardId}`}
+        storageKey={`dev.prompt-entry.${cardId}`}
       >
         {/*
           Top pane: multi-turn transcript. `DevTranscriptHost` mounts a
@@ -2758,20 +2758,14 @@ function SettingsSheetBody({
 /**
  * Register the Dev card in the global card registry.
  *
- * Per `roadmap/dev-to-dev-rename.md` [D08], during the Dev → Dev
- * transition two `componentId` registrations are live: `"dev"` (the
- * new canonical name, title "Dev") and `"tide"` (a back-compat alias
- * that preserves existing call sites). Both registrations share the
- * same `DevCardContent` component and lifecycle. Step 11 of the
- * rename plan drops the `"tide"` alias once all consumers swap.
- *
- * Must be called before `DeckManager.addCard("dev")` (or the legacy
- * `addCard("tide")`) is invoked. Call from `main.tsx` alongside
- * `registerGitCard()`.
+ * Must be called before `DeckManager.addCard("dev")` is invoked.
+ * Call from `main.tsx` alongside `registerGitCard()`.
  */
 export function registerDevCard(): void {
-  const shared = {
-    contentFactory: (cardId: string) => <DevCardContent cardId={cardId} />,
+  registerCard({
+    componentId: "dev",
+    contentFactory: (cardId) => <DevCardContent cardId={cardId} />,
+    defaultMeta: { title: "Dev", icon: "MessageSquareText", closable: true, confirmClose: true },
     defaultFeedIds: [
       FeedId.CODE_INPUT,
       FeedId.CODE_OUTPUT,
@@ -2798,19 +2792,6 @@ export function registerDevCard(): void {
       // canvas * 0.9 instead of pushing past the viewport.
       preferred: { width: 900, height: 1200 },
     },
-    engineKind: "em" as const,
-  };
-
-  registerCard({
-    componentId: "dev",
-    ...shared,
-    defaultMeta: { title: "Dev", icon: "MessageSquareText", closable: true, confirmClose: true },
-  });
-
-  // Back-compat alias per [D08]. Dropped in Step 11.
-  registerCard({
-    componentId: "tide",
-    ...shared,
-    defaultMeta: { title: "Dev", icon: "MessageSquareText", closable: true, confirmClose: true },
+    engineKind: "em",
   });
 }

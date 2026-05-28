@@ -1,5 +1,5 @@
 /**
- * Pub/sub bus for tide session-ledger CONTROL traffic.
+ * Pub/sub bus for dev session-ledger CONTROL traffic.
  *
  * Tugcast's supervisor broadcasts:
  *   - `session_updated { session_id, fields | removed }` push frames after

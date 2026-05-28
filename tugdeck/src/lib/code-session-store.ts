@@ -369,7 +369,7 @@ export class CodeSessionStore {
    * Test-only. Feed a wire frame into the store exactly as
    * `onFeedStoreChange` would for a real frame off the connection —
    * decode via `frameToEvent`, then `dispatch`. The app-test harness
-   * drives a tide card through the lifecycle matrix with this;
+   * drives a dev card through the lifecycle matrix with this;
    * production frames always arrive through the `FeedStore`
    * subscription, never here.
    *

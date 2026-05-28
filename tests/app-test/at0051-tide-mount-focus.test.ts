@@ -1,5 +1,5 @@
 /**
- * at0051-dev-mount-focus.test.ts — when a tide card mounts as the
+ * at0051-dev-mount-focus.test.ts — when a dev card mounts as the
  * focused card and its session binds, the prompt-entry editor
  * (CodeMirror's contentDOM) gains DOM focus AND the custom caret
  * layer renders, all without a user click.
@@ -41,7 +41,7 @@
  *     replay, stealing focus and producing a flicker. Fixed by
  *     the mode-gate on banner-spec branch 5.
  *
- * Test strategy: seed a tide card + bind a fake session, wait for
+ * Test strategy: seed a dev card + bind a fake session, wait for
  * the editor to mount, capture focus + caret + banner-mount state
  * at multiple timepoints. The harness skips the picker UI by
  * binding the session directly — the production picker has its
@@ -85,7 +85,7 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const TIDE_DECK_STATE = {
   cards: [
-    { id: "A", componentId: "tide", title: "Dev A", closable: true },
+    { id: "A", componentId: "dev", title: "Dev A", closable: true },
   ],
   panes: [
     {
@@ -253,7 +253,7 @@ async function waitForEditor(app: App, cardId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "at0051: tide card mount-time focus + caret claim",
+  "at0051: dev card mount-time focus + caret claim",
   () => {
     test(
       "after seed + bind: editor's contentDOM is activeElement, .cm-focused is set, exactly one caret renders",

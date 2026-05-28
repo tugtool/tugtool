@@ -19,12 +19,12 @@
  *
  * ## Shape
  *
- *   1. Seed a tide card; bind a fake session; await engine ready.
- *   2. Click into the tide editor's contenteditable; type "hello".
+ *   1. Seed a dev card; bind a fake session; await engine ready.
+ *   2. Click into the dev editor's contenteditable; type "hello".
  *   3. `simulateAppResign` → window-blur → save flushes the bag.
  *      The save site captures `bag.focus.kind === "engine"` (the
  *      engine's contenteditable was focused at save time).
- *   4. Brief blur dwell mirroring AT0035-tide.
+ *   4. Brief blur dwell mirroring AT0035-dev.
  *   5. `simulateAppBecomeActive` → `reactivateCurrentFocusDestination`
  *      → `applyBagFocus` → engine resolution → engine hook
  *      invocation → `paintMirrorAsActive(undefined)` →
@@ -64,7 +64,7 @@ describe.skipIf(!SHOULD_RUN)("AT0078: dev-card engine focus survives app-switch"
         await app.seedDeckState({
           state: {
             cards: [
-              { id: "A", componentId: "tide", title: "Dev A", closable: true },
+              { id: "A", componentId: "dev", title: "Dev A", closable: true },
             ],
             panes: [
               {
@@ -90,7 +90,7 @@ describe.skipIf(!SHOULD_RUN)("AT0078: dev-card engine focus survives app-switch"
         await app.bindDevSession("A");
         await app.awaitEngineReady("A");
 
-        // Click into the tide editor; focus lands on contenteditable.
+        // Click into the dev editor; focus lands on contenteditable.
         await app.nativeClickAtElement(`[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}`);
         await app.waitForCondition<boolean>(
           `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(PROMPT_INPUT_SELECTOR)})`,
@@ -117,7 +117,7 @@ describe.skipIf(!SHOULD_RUN)("AT0078: dev-card engine focus survives app-switch"
           { timeoutMs: 2000 },
         );
 
-        // Brief blur dwell mirroring AT0035-tide.
+        // Brief blur dwell mirroring AT0035-dev.
         await new Promise<void>((resolve) =>
           (
             globalThis as unknown as {

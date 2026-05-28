@@ -96,7 +96,7 @@ export interface SessionRow {
 /**
  * Wire shape for one row of `list_card_bindings_ok`. Each row is a
  * persisted (card_id → project_dir) binding the client uses on
- * startup/reconnect to put a tide card back into a usable state
+ * startup/reconnect to put a dev card back into a usable state
  * without showing the picker.
  *
  * The mode-selection gate is `turn_count > 0 || is_alive`:
@@ -475,7 +475,7 @@ export function encodeTrashSession(sessionId: string): Frame {
  *
  * Drops every non-live row whose `project_dir` matches the given path
  * and moves each row's JSONL to in-place trash. Used by the recents-
- * eviction → ledger-eviction coupling: when a tide recent-projects
+ * eviction → ledger-eviction coupling: when a dev recent-projects
  * entry ages out, the matching ledger rows go too. Emits one
  * `session_updated { removed: true }` per dropped row plus
  * `trash_project_dir_sessions_ok { project_dir, count }` on success.

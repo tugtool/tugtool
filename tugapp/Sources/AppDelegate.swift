@@ -661,7 +661,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showDevCard(_ sender: Any) {
-        sendControl("show-card", params: ["component": "tide"])
+        sendControl("show-card", params: ["component": "dev"])
     }
 
     @objc private func nextTheme(_ sender: Any) {

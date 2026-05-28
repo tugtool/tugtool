@@ -54,8 +54,8 @@ import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
 import type { TugArcGaugeSegment } from "@/components/tugways/tug-arc-gauge";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import {
-  tideSessionPhaseKey,
-  tideSessionPhaseVisual,
+  devSessionPhaseKey,
+  devSessionPhaseVisual,
   type DevSessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
 import {
@@ -103,7 +103,7 @@ import { formatTimeAlwaysHours, formatTokensCaps } from "./dev-card-telemetry-re
  * BOTH of its entries (user row + assistant row), each independently
  * clickable, so the handler is keyed by row rather than by turn. See
  * `userRowIndexForTurn` / `assistantRowIndexForTurn`. Supplied by the
- * tide card, which owns the transcript's imperative handle; omitted in
+ * dev card, which owns the transcript's imperative handle; omitted in
  * the gallery / fixtures, where the numbers render as inert text.
  */
 export type ScrollToRowHandler = (rowIndex: number) => void;
@@ -240,7 +240,7 @@ function PopoverRow({
  * that scrolls the transcript to that entry's row; otherwise it is
  * inert text (gallery / fixtures, with no transcript to drive). The
  * click is a control-style action — fire-and-forget to the handler
- * the tide card threaded down; no popover-local state.
+ * the dev card threaded down; no popover-local state.
  */
 function TurnNumberButton({
   rowIndex,
@@ -683,7 +683,7 @@ type StateChangeTone = "default" | "success" | "caution" | "danger";
  * indicator per row.
  */
 function stateChangeToneFor(input: DevSessionPhaseInput): StateChangeTone {
-  const visual = tideSessionPhaseVisual(tideSessionPhaseKey(input));
+  const visual = devSessionPhaseVisual(devSessionPhaseKey(input));
   if (visual.role === "danger") return "danger";
   if (visual.role === "caution") return "caution";
   if (visual.role === "success") return "success";

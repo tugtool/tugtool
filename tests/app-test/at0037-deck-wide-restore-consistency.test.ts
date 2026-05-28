@@ -39,14 +39,14 @@
  *   | Layout | Pane geometry | Active (deck FR) | Inactive |
  *   |--------|---------------|------------------|----------|
  *   | L1 | 1 pane, 2 cards (tabs) | gallery-prompt-entry #A | gallery-prompt-entry #B |
- *   | L2 | 1 pane, 2 cards (tabs) | gallery-prompt-entry | tide |
- *   | L3 | 1 pane, 2 cards (tabs) | tide | gallery-prompt-entry |
- *   | L4 | 2 panes, 1 card each | gallery-prompt-entry (in active pane) | tide (pane-active in non-active pane) |
+ *   | L2 | 1 pane, 2 cards (tabs) | gallery-prompt-entry | dev |
+ *   | L3 | 1 pane, 2 cards (tabs) | dev | gallery-prompt-entry |
+ *   | L4 | 2 panes, 1 card each | gallery-prompt-entry (in active pane) | dev (pane-active in non-active pane) |
  *
  * L4 is the load-bearing case for the "active = deck-level first
  * responder, NOT pane-active" precision ("Defining
  * 'active' precisely"). Dev is the active card of P2, but P2 is
- * not the active pane — so tide is NOT the deck-level first
+ * not the active pane — so dev is NOT the deck-level first
  * responder, and its selection routes through
  * `paintMirrorAsInactive`.
  *
@@ -122,7 +122,7 @@ function makeEngineState(suffix: string): EngineState {
 
 type PromptComponentId =
   | "gallery-prompt-entry"
-  | "tide";
+  | "dev";
 
 function makeContentBag(
   _componentId: PromptComponentId,
@@ -203,7 +203,7 @@ function makeLayout(id: LayoutId): Layout {
         id,
         cards: [
           { cardId: "A", componentId: "gallery-prompt-entry", suffix: "A" },
-          { cardId: "B", componentId: "tide", suffix: "B" },
+          { cardId: "B", componentId: "dev", suffix: "B" },
         ],
         panes: [{ id: "p1", cardIds: ["A", "B"], activeCardId: "A" }],
         activePaneId: "p1",
@@ -213,7 +213,7 @@ function makeLayout(id: LayoutId): Layout {
       return {
         id,
         cards: [
-          { cardId: "A", componentId: "tide", suffix: "A" },
+          { cardId: "A", componentId: "dev", suffix: "A" },
           { cardId: "B", componentId: "gallery-prompt-entry", suffix: "B" },
         ],
         panes: [{ id: "p1", cardIds: ["A", "B"], activeCardId: "A" }],
@@ -225,7 +225,7 @@ function makeLayout(id: LayoutId): Layout {
         id,
         cards: [
           { cardId: "A", componentId: "gallery-prompt-entry", suffix: "A" },
-          { cardId: "B", componentId: "tide", suffix: "B" },
+          { cardId: "B", componentId: "dev", suffix: "B" },
         ],
         panes: [
           { id: "p1", cardIds: ["A"], activeCardId: "A" },
@@ -259,9 +259,9 @@ async function setupPhaseA(app: App, layout: Layout): Promise<void> {
     focusCardId: layout.activeCardId,
   });
 
-  // Bind tide sessions (skip past the project picker).
+  // Bind dev sessions (skip past the project picker).
   for (const c of layout.cards) {
-    if (c.componentId === "tide") {
+    if (c.componentId === "dev") {
       await app.bindDevSession(c.cardId);
     }
   }
@@ -360,7 +360,7 @@ async function reseedFromDisk(
   });
 
   for (const c of layout.cards) {
-    if (c.componentId === "tide") {
+    if (c.componentId === "dev") {
       await app.bindDevSession(c.cardId);
     }
   }
@@ -656,32 +656,32 @@ describe.skipIf(!SHOULD_RUN)(
       TEST_TIMEOUT_MS,
     );
     test(
-      "L2 (1 pane: gallery-prompt-entry active + tide inactive) × appReload",
+      "L2 (1 pane: gallery-prompt-entry active + dev inactive) × appReload",
       () => runAppReloadScenario(makeLayout("L2")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L2 (1 pane: gallery-prompt-entry active + tide inactive) × relaunch",
+      "L2 (1 pane: gallery-prompt-entry active + dev inactive) × relaunch",
       () => runRelaunchScenario(makeLayout("L2")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L3 (1 pane: tide active + gallery-prompt-entry inactive) × appReload",
+      "L3 (1 pane: dev active + gallery-prompt-entry inactive) × appReload",
       () => runAppReloadScenario(makeLayout("L3")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L3 (1 pane: tide active + gallery-prompt-entry inactive) × relaunch",
+      "L3 (1 pane: dev active + gallery-prompt-entry inactive) × relaunch",
       () => runRelaunchScenario(makeLayout("L3")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L4 (2 panes: gallery-prompt-entry in active pane, tide pane-active in non-active pane) × appReload",
+      "L4 (2 panes: gallery-prompt-entry in active pane, dev pane-active in non-active pane) × appReload",
       () => runAppReloadScenario(makeLayout("L4")),
       TEST_TIMEOUT_MS,
     );
     test(
-      "L4 (2 panes: gallery-prompt-entry in active pane, tide pane-active in non-active pane) × relaunch",
+      "L4 (2 panes: gallery-prompt-entry in active pane, dev pane-active in non-active pane) × relaunch",
       () => runRelaunchScenario(makeLayout("L4")),
       TEST_TIMEOUT_MS,
     );

@@ -59,7 +59,7 @@
  *    engine for any file-based content (`tuglaws/component-authoring.md`
  *    §Text content); FileBlock composes the substrate, not bytes.
  *  - Implement its own find / Cmd-F bar. A card has at most one
- *    text-entry surface, and for a tide card that is the
+ *    text-entry surface, and for a dev card that is the
  *    `tug-prompt-entry` — never a per-block find widget. The
  *    `TugCodeView` substrate still carries the dormant
  *    `@codemirror/search` plumbing for the future Find redesign,

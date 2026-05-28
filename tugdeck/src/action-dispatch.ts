@@ -44,7 +44,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
-import { tideSpawnErrorStore } from "./lib/dev-spawn-error-store";
+import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
 import { notifySpawnRejected } from "./lib/dev-session-restore";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
@@ -552,11 +552,11 @@ export function initActionDispatch(
       return;
     }
     const detail = payload.detail;
-    tideSpawnErrorStore.set(cardId, {
+    devSpawnErrorStore.set(cardId, {
       reason: typeof detail === "string" ? detail : "unknown",
     });
     // A rejection during the startup restore pass leaves a
-    // `tideRestoreRegistry` hold in place — the zero-turn fresh-spawn
+    // `devRestoreRegistry` hold in place — the zero-turn fresh-spawn
     // path arms one so the card doesn't flash the picker mid-bind.
     // Drop it so the card falls through to the picker, where the
     // banner set above is shown.

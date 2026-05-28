@@ -36,7 +36,7 @@
 export interface CardStateBag {
   /** Scroll position of the card's host content element. */
   scroll?: { x: number; y: number };
-  /** Component-owned content payload (e.g. tide engine state). */
+  /** Component-owned content payload (e.g. dev engine state). */
   content?: unknown;
   /**
    * Snapshot of every `<input>` / `<textarea>` inside the card that carries
@@ -202,7 +202,7 @@ export interface DomSelectionSnapshot {
  *     menu trigger). Keyed lookup on restore.
  *   - `engine` — focus belongs to a content-owning engine that exposes
  *     a `paintMirrorAsActive` hook (CodeMirror-backed TugTextEditor,
- *     tide prompt-input contentEditable, etc.). The framework's
+ *     dev prompt-input contentEditable, etc.). The framework's
  *     single-channel dispatcher invokes `store.invokeEnginePaintMirrorAsActive(cardId)`
  *     to drive the claim; the engine no longer self-claims via
  *     `onCardActivated`. See `tuglaws/state-preservation.md`'s

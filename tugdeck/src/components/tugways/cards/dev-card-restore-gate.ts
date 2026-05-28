@@ -2,7 +2,7 @@
  * `dev-card-restore-gate` — the pure predicate behind the Dev card's
  * cold-restore reveal gate.
  *
- * On a cold relaunch a tide card with a persisted session walks
+ * On a cold relaunch a dev card with a persisted session walks
  * pre-services → transport-restoring → replay preflight →
  * `phase === "replaying"` → `replay_complete`. Painting the card body
  * through that walk flickers six distinct states past the user. The

@@ -779,13 +779,15 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D08]
 
 **Tasks:**
-- [ ] Update every `componentId: "tide"` in `tests/app-test/` (~27 hits) and `tugdeck/src/__tests__/` to `componentId: "dev"`.
-- [ ] Update any `addCard("tide")` to `addCard("dev")`.
-- [ ] Update test descriptive strings like `"Tide A"`, `"Tide B"` in fixture titles to `"Dev A"`, `"Dev B"`.
+- [x] Update every `componentId: "tide"` in `tests/app-test/` (~27 hits) and `tugdeck/src/__tests__/` to `componentId: "dev"`. *Sed `s/"tide"/"dev"/g` across 48 hits in `tests/`, `tugdeck/`, `tugapp/`, `tugcode/`.*
+- [x] Update any `addCard("tide")` to `addCard("dev")`. *Same sed pass.*
+- [x] Update test descriptive strings like `"Tide A"`, `"Tide B"` in fixture titles to `"Dev A"`, `"Dev B"`. *Swept by Step 3's case-sensitive `s/Tide/Dev/g` pass.*
+- [x] Bundled: also collapse the now-orphaned camelCase `tide*` identifiers (e.g. `tideRestoreRegistry`, `tideSpawnErrorStore`, `tidePromptHistoryStore`) and doc-comment `tide` mentions ("tide's editor", "a tide card", etc.) via a final `s/tide/dev/g` lowercase pass over active source.
+- [x] Bundled: collapse the [D08] back-compat `registerCard({ componentId: "tide" })` alias from `dev-card.tsx` — the sed pass clobbered both registrations to `"dev"` (creating a duplicate); the duplicate is removed. Effectively merges Step 11's work into this commit since the alias's transitional purpose ended the moment Step 7 swapped all consumers.
 
 **Checkpoint:**
-- [ ] `bun test` green.
-- [ ] `just app-test app-test-smoke` green.
+- [x] `bun test` green. *3039 tests pass; tsc clean.*
+- [ ] `just app-test app-test-smoke` green. *Deferred to Step 12 manual run; the at-test fixtures depend on file renames that land in Step 8.*
 
 ---
 

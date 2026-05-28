@@ -950,7 +950,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // The store registration notifies Phase E.11 Step 4's late-mount
     // subscriber chain (`subscribeEngineHooksChange`) so CardHost's
     // cold-boot RESTORE effect re-fires when a late-mounting engine
-    // (tide's editor after `feedsReady`) registers. This wiring
+    // (dev's editor after `feedsReady`) registers. This wiring
     // exists today but is dead at Step 2 (no consumer); Step 3 wires
     // the dispatcher to invoke through this channel.
     useLayoutEffect(() => {

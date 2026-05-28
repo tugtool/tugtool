@@ -143,7 +143,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "KeyT", meta: true, action: TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE },
   // Focus the key card's prompt input. `scope: "key-card"` routes the
   // dispatch to the `card-content` responder inside the active card;
-  // each card type that has a prompt (tide, future) registers a
+  // each card type that has a prompt (dev, future) registers a
   // FOCUS_PROMPT handler there. Non-prompt cards (gallery, git) don't
   // register; the dispatch is a silent no-op and
   // `preventDefaultOnMatch` suppresses the macOS beep regardless.

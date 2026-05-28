@@ -5,11 +5,11 @@
  *
  * The session-phase model has three orthogonal axes — `phase`,
  * `transportState`, `interruptInFlight` — but a UI indicator only
- * needs one identifier per render. {@link tideSessionPhaseKey}
+ * needs one identifier per render. {@link devSessionPhaseKey}
  * flattens the triple into a stable string key; {@link
  * DEV_SESSION_PHASE_LABELS} maps every key to its human-readable
  * title (used for the indicator's visible label and tooltip); and
- * {@link tideSessionPhaseVisual} maps every key to a partial
+ * {@link devSessionPhaseVisual} maps every key to a partial
  * `{ role, state }` for the indicator's visual treatment.
  *
  * Transport health dominates phase: an offline wire reads as
@@ -60,7 +60,7 @@ export type DevSessionPhaseKey =
  * flag take precedence over the reducer's phase; otherwise the phase
  * enum is the key.
  */
-export function tideSessionPhaseKey(input: DevSessionPhaseInput): DevSessionPhaseKey {
+export function devSessionPhaseKey(input: DevSessionPhaseInput): DevSessionPhaseKey {
   if (input.transportState === "offline") return "offline";
   if (input.transportState === "restoring") return "restoring";
   if (input.interruptInFlight) return "interrupting";
@@ -116,7 +116,7 @@ export const DEV_SESSION_PHASE_LABELS: Record<DevSessionPhaseKey, string> = {
  * (`state: completed`) — paired together they give a clear
  * blue-while-running → green-when-finished story.
  */
-export function tideSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPhaseVisual {
+export function devSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPhaseVisual {
   switch (phaseKey as DevSessionPhaseKey) {
     case "offline":
     case "errored":

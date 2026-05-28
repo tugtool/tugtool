@@ -34,7 +34,7 @@ const SHORT_ARGS_SHORT_RESULT: ToolBlockProps = {
   toolUseId: "skill-1",
   toolName: "Skill",
   seq: 0,
-  input: { skill: "commit", args: "feat(tide): land Step 24.3.2" },
+  input: { skill: "commit", args: "feat(dev): land Step 24.3.2" },
   textOutput: "done",
   isError: false,
   status: "ready",

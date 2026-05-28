@@ -1,6 +1,6 @@
 /**
  * dev-card-telemetry-renderers.tsx — small, focused React components
- * that render one datum each from the tide card's per-turn and
+ * that render one datum each from the dev card's per-turn and
  * session-cumulative telemetry surface.
  *
  * Each renderer is **placement-agnostic**: it takes the data it needs
@@ -42,8 +42,8 @@ import {
   type TugProgressIndicatorState,
 } from "@/components/tugways/tug-progress-indicator";
 import {
-  tideSessionPhaseKey,
-  tideSessionPhaseVisual,
+  devSessionPhaseKey,
+  devSessionPhaseVisual,
   DEV_SESSION_PHASE_LABELS,
   type DevSessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
@@ -241,7 +241,7 @@ export interface DevTelemetryProps {
 export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
   /**
    * Scrolls the transcript to a transcript row when the user clicks
-   * its `#NNNN` entry number in the Time / Tokens popover. The tide
+   * its `#NNNN` entry number in the Time / Tokens popover. The dev
    * card supplies it (it owns the transcript's imperative handle);
    * omitted in the gallery / fixtures, where the numbers render as
    * inert text.
@@ -464,7 +464,7 @@ const DevTelemetryEndcapRuleLabel: React.FC<{
  * area, are two label-less `TugProgressIndicator` pulsing-dot glyphs
  * — their dot + pulsing ring read
  * `phase × transportState × interruptInFlight` (resolved via
- * `tideSessionPhaseKey` + `tideSessionPhaseVisual`) and give the
+ * `devSessionPhaseKey` + `devSessionPhaseVisual`) and give the
  * cell the live motion a static figure cannot.
  *
  * The row renders four cells — STATE / TIME / TOKENS / CONTEXT.
@@ -588,10 +588,10 @@ export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
     transportState: snap.transportState,
     interruptInFlight: snap.interruptInFlight,
   };
-  const statePhaseKey = tideSessionPhaseKey(indicatorState);
+  const statePhaseKey = devSessionPhaseKey(indicatorState);
   // STATE cell value — the human-readable phase title. The two
   // flanking indicators take the same phase key and derive their
-  // own role + state via tideSessionPhaseVisual.
+  // own role + state via devSessionPhaseVisual.
   const stateLabelText = DEV_SESSION_PHASE_LABELS[statePhaseKey];
 
   // TASKS cell — assembled from the Task* event stream ([D100]).
@@ -689,7 +689,7 @@ export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
                 variant="pulsing-dot"
                 size={12}
                 phase={statePhaseKey}
-                phaseVisual={tideSessionPhaseVisual}
+                phaseVisual={devSessionPhaseVisual}
                 aria-hidden
               />
               <span className="dev-telemetry-status-value">
@@ -699,7 +699,7 @@ export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
                 variant="pulsing-dot"
                 size={12}
                 phase={statePhaseKey}
-                phaseVisual={tideSessionPhaseVisual}
+                phaseVisual={devSessionPhaseVisual}
                 aria-hidden
               />
             </span>

@@ -17,7 +17,7 @@
  * root.
  *
  * Step 23F added `engineKind: "em"` to the card registry shape;
- * `gallery-prompt-entry` and `tide` declare it. The resolver
+ * `gallery-prompt-entry` and `dev` declare it. The resolver
  * routes registry-tagged EM cards through the engine resolution
  * regardless of `bag.content` presence, so the engine's focus
  * claim fires for both saved and fresh EM cards uniformly.

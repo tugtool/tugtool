@@ -4,7 +4,7 @@
  * CardHost lives at the deck level in the React tree; its DOM output
  * portals into the host pane's content `<div>` via `CardPortal`, so
  * React-tree position (and therefore identity) stays stable across
- * cross-pane moves — the mechanism that preserves tide card sessions
+ * cross-pane moves — the mechanism that preserves dev card sessions
  * across detach / merge / pane-to-pane moves.
  *
  * Per-concern state is delegated to hooks under `tugways/hooks/`:
@@ -646,7 +646,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // fires (registration or unregistration of the engine's
   // `paintMirrorAsActive` / `paintMirrorAsInactive` hooks). Joins
   // the cold-boot RESTORE effect's dep array so a late-mounting
-  // engine (tide's editor after `feedsReady`) re-fires
+  // engine (dev's editor after `feedsReady`) re-fires
   // `applyBagFocus`, which now resolves `engine` (vs. the prior
   // `deferred-engine`) and invokes the hook. This is the one
   // late-mount FOCUS settle path that survives — there is no
@@ -949,7 +949,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     //     dispatcher yields (idempotency guard).
     //   - `engine` (engine hooks registered): invokes
     //     `store.invokeEnginePaintMirrorAsActive(cardId)`.
-    //   - `deferred-engine` (engine mounts late, e.g. tide's
+    //   - `deferred-engine` (engine mounts late, e.g. dev's
     //     editor after `feedsReady`): returns `"deferred"`. The
     //     `engineHooksVersion` axis (subscribed above) re-fires
     //     this effect when the engine registers; the re-run

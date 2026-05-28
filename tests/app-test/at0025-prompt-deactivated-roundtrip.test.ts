@@ -79,7 +79,7 @@ const TEST_TIMEOUT_MS = 90_000;
 
 type PromptComponentId =
   | "gallery-prompt-entry"
-  | "tide";
+  | "dev";
 
 const PROMPT_INPUT_SELECTOR =
   '[data-slot="tug-text-editor"] .cm-content';
@@ -213,7 +213,7 @@ async function setupPhaseA(
     focusCardId: "A",
   });
 
-  if (componentId === "tide") {
+  if (componentId === "dev") {
     await app.bindDevSession("A");
   }
 
@@ -376,7 +376,7 @@ async function reseedFromDiskAndReactivate(
     focusCardId: "B",
   });
 
-  if (componentId === "tide") {
+  if (componentId === "dev") {
     await app.bindDevSession("A");
   }
 
@@ -533,14 +533,14 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "tide × appReload",
-      () => runAppReloadScenario("tide"),
+      "dev × appReload",
+      () => runAppReloadScenario("dev"),
       TEST_TIMEOUT_MS,
     );
 
     test(
-      "tide × relaunch",
-      () => runRelaunchScenario("tide"),
+      "dev × relaunch",
+      () => runRelaunchScenario("dev"),
       TEST_TIMEOUT_MS,
     );
   },

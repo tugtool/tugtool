@@ -280,7 +280,7 @@ if (!container) {
     knownCardIdsForDevPanel = next;
   });
 
-  // Wire the tide session-ledger store to the connection. The store
+  // Wire the dev session-ledger store to the connection. The store
   // dispatches `list_sessions` requests on first observation, subscribes
   // to `session_updated` push frames, and invalidates on reconnect. The
   // picker reads via `useSessionLedger(workspaceKey)` (step 5).
@@ -295,7 +295,7 @@ if (!container) {
   // appends live triple transitions from the local pub/sub bus.
   attachSessionStateChangesStore(connection);
 
-  // Re-assert session bindings for tide cards that were alive before
+  // Re-assert session bindings for dev cards that were alive before
   // this page reload. The deck layout is materialized;
   // `restoreDevSessions` sends a `list_card_bindings` CONTROL request
   // (the server reads from its sqlite ledger) and emits

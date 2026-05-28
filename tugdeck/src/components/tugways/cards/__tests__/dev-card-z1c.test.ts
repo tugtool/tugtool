@@ -1,5 +1,5 @@
 /**
- * Pure-logic tests for the `tideZ1CContent` helper ([D19] /
+ * Pure-logic tests for the `devZ1CContent` helper ([D19] /
  * `#spec-z1c`).
  *
  * The helper resolves the per-phase indicator content for DevZ1C
@@ -17,60 +17,60 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { tideZ1CContent } from "../dev-card-z1c";
+import { devZ1CContent } from "../dev-card-z1c";
 import type { CodeSessionPhase } from "@/lib/code-session-store/types";
 
-describe("tideZ1CContent — active phases", () => {
+describe("devZ1CContent — active phases", () => {
   test("submitting → 'Submitting…'", () => {
-    expect(tideZ1CContent("submitting", false)).toEqual({
+    expect(devZ1CContent("submitting", false)).toEqual({
       label: "Submitting…",
     });
   });
 
   test("awaiting_first_token → 'Thinking…'", () => {
-    expect(tideZ1CContent("awaiting_first_token", false)).toEqual({
+    expect(devZ1CContent("awaiting_first_token", false)).toEqual({
       label: "Thinking…",
     });
   });
 
   test("streaming → 'Streaming…'", () => {
-    expect(tideZ1CContent("streaming", false)).toEqual({
+    expect(devZ1CContent("streaming", false)).toEqual({
       label: "Streaming…",
     });
   });
 
   test("tool_work → 'Tool work…'", () => {
-    expect(tideZ1CContent("tool_work", false)).toEqual({
+    expect(devZ1CContent("tool_work", false)).toEqual({
       label: "Tool work…",
     });
   });
 
   test("waking → 'Waking…'", () => {
-    expect(tideZ1CContent("waking", false)).toEqual({
+    expect(devZ1CContent("waking", false)).toEqual({
       label: "Waking…",
     });
   });
 });
 
-describe("tideZ1CContent — non-indicator phases (slot collapses)", () => {
+describe("devZ1CContent — non-indicator phases (slot collapses)", () => {
   test("awaiting_approval → null (the pending dialog is the affordance)", () => {
-    expect(tideZ1CContent("awaiting_approval", false)).toBeNull();
+    expect(devZ1CContent("awaiting_approval", false)).toBeNull();
   });
 
   test("idle → null", () => {
-    expect(tideZ1CContent("idle", false)).toBeNull();
+    expect(devZ1CContent("idle", false)).toBeNull();
   });
 
   test("replaying → null", () => {
-    expect(tideZ1CContent("replaying", false)).toBeNull();
+    expect(devZ1CContent("replaying", false)).toBeNull();
   });
 
   test("errored → null", () => {
-    expect(tideZ1CContent("errored", false)).toBeNull();
+    expect(devZ1CContent("errored", false)).toBeNull();
   });
 });
 
-describe("tideZ1CContent — interruptInFlight precedence", () => {
+describe("devZ1CContent — interruptInFlight precedence", () => {
   test("interruptInFlight=true overrides every phase to null (interrupt is instant; Z1B paints end-state)", () => {
     const phases: CodeSessionPhase[] = [
       "idle",
@@ -84,7 +84,7 @@ describe("tideZ1CContent — interruptInFlight precedence", () => {
       "errored",
     ];
     for (const phase of phases) {
-      expect(tideZ1CContent(phase, true)).toBeNull();
+      expect(devZ1CContent(phase, true)).toBeNull();
     }
   });
 });

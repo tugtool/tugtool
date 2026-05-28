@@ -1,66 +1,66 @@
 import { describe, it, expect } from "bun:test";
 
 import {
-  tideSpawnErrorStore,
+  devSpawnErrorStore,
   spawnErrorMessage,
 } from "../dev-spawn-error-store";
 
-describe("tideSpawnErrorStore", () => {
+describe("devSpawnErrorStore", () => {
   it("set then get returns the recorded error", () => {
-    tideSpawnErrorStore.set("card-set", { reason: "does_not_exist" });
-    expect(tideSpawnErrorStore.get("card-set")).toEqual({
+    devSpawnErrorStore.set("card-set", { reason: "does_not_exist" });
+    expect(devSpawnErrorStore.get("card-set")).toEqual({
       reason: "does_not_exist",
     });
-    tideSpawnErrorStore.clear("card-set");
+    devSpawnErrorStore.clear("card-set");
   });
 
   it("get returns null for an unknown card", () => {
-    expect(tideSpawnErrorStore.get("card-unknown")).toBeNull();
+    expect(devSpawnErrorStore.get("card-unknown")).toBeNull();
   });
 
   it("clear removes the recorded error", () => {
-    tideSpawnErrorStore.set("card-clear", { reason: "permission_denied" });
-    tideSpawnErrorStore.clear("card-clear");
-    expect(tideSpawnErrorStore.get("card-clear")).toBeNull();
+    devSpawnErrorStore.set("card-clear", { reason: "permission_denied" });
+    devSpawnErrorStore.clear("card-clear");
+    expect(devSpawnErrorStore.get("card-clear")).toBeNull();
   });
 
   it("notifies subscribers on set and clear, scoped per card", () => {
     let aTicks = 0;
     let bTicks = 0;
-    const unsubA = tideSpawnErrorStore.subscribe("card-a", () => {
+    const unsubA = devSpawnErrorStore.subscribe("card-a", () => {
       aTicks += 1;
     });
-    const unsubB = tideSpawnErrorStore.subscribe("card-b", () => {
+    const unsubB = devSpawnErrorStore.subscribe("card-b", () => {
       bTicks += 1;
     });
-    tideSpawnErrorStore.set("card-a", { reason: "does_not_exist" });
+    devSpawnErrorStore.set("card-a", { reason: "does_not_exist" });
     expect(aTicks).toBe(1);
     expect(bTicks).toBe(0); // scoped — card-b's subscriber is untouched
-    tideSpawnErrorStore.clear("card-a");
+    devSpawnErrorStore.clear("card-a");
     expect(aTicks).toBe(2);
     unsubA();
     unsubB();
-    tideSpawnErrorStore.set("card-a", { reason: "x" });
+    devSpawnErrorStore.set("card-a", { reason: "x" });
     expect(aTicks).toBe(2); // unsubscribed — no further ticks
-    tideSpawnErrorStore.clear("card-a");
+    devSpawnErrorStore.clear("card-a");
   });
 
   it("clear on a card with no recorded error does not notify", () => {
     let ticks = 0;
-    const unsub = tideSpawnErrorStore.subscribe("card-noop", () => {
+    const unsub = devSpawnErrorStore.subscribe("card-noop", () => {
       ticks += 1;
     });
-    tideSpawnErrorStore.clear("card-noop");
+    devSpawnErrorStore.clear("card-noop");
     expect(ticks).toBe(0);
     unsub();
   });
 
   it("get returns a stable reference between mutations", () => {
-    tideSpawnErrorStore.set("card-stable", { reason: "does_not_exist" });
-    expect(tideSpawnErrorStore.get("card-stable")).toBe(
-      tideSpawnErrorStore.get("card-stable"),
+    devSpawnErrorStore.set("card-stable", { reason: "does_not_exist" });
+    expect(devSpawnErrorStore.get("card-stable")).toBe(
+      devSpawnErrorStore.get("card-stable"),
     );
-    tideSpawnErrorStore.clear("card-stable");
+    devSpawnErrorStore.clear("card-stable");
   });
 });
 

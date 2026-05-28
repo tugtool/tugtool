@@ -28,7 +28,7 @@
  * boot.
  *
  * Why per-card and not per-session: a single Tug session can host
- * multiple cards (the tide card surface is the primary one but
+ * multiple cards (the dev card surface is the primary one but
  * future cards may attach the same session). Each card has its own
  * editor and drop / paste affordances, so each card's bytes are
  * scoped to its own store. This keeps cross-card paste of identities

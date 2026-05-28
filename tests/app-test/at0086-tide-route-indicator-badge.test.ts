@@ -61,7 +61,7 @@ const CODE_SEGMENT_SELECTOR =
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "tide", title: "Dev", closable: true },
+      { id: "A", componentId: "dev", title: "Dev", closable: true },
     ],
     panes: [
       {

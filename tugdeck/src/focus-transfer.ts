@@ -275,7 +275,7 @@ export type FocusTransferStore = Pick<
  *     framework-axis cards — a content-owning + engine card
  *     resolves to `engine` / `deferred-engine`, never here.
  *   - `deferred-engine` — bag names engine focus but no engine
- *     hooks are registered yet (engine mounts late, e.g. tide's
+ *     hooks are registered yet (engine mounts late, e.g. dev's
  *     editor after `feedsReady`). The dispatcher returns
  *     `"deferred"`; CardHost's `subscribeEngineHooksChange`
  *     listener re-fires `applyBagFocus` when the engine registers.
@@ -315,7 +315,7 @@ export function resolveBagFocus(
   if (focus === undefined || focus === null || focus.kind === "none") {
     // No saved focus. Default-focus walk inside the card root for
     // DOM-authority cards; engine resolution for engine-bearing
-    // cards — a content-owning + engine card (a tide card) has one
+    // cards — a content-owning + engine card (a dev card) has one
     // text-entry surface, so "no saved focus" still resolves to the
     // engine.
     const card = store.getSnapshot().cards.find((c) => c.id === cardId);

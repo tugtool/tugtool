@@ -260,7 +260,7 @@ class CardServicesStore {
     );
     const fileCompletionProvider = fileTreeStore.getFileCompletionProvider();
 
-    // Bind success → prepend this card's project path to the tide
+    // Bind success → prepend this card's project path to the dev
     // recent-projects list (dedup, cap). Done here rather than in a
     // React effect so the side effect is co-located with services
     // construction; running it on every dep change of a React effect

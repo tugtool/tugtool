@@ -1,6 +1,6 @@
 // tugcode/src/replay.ts
 //
-// JSONL → CODE_OUTPUT translator for tide transcript resume.
+// JSONL → CODE_OUTPUT translator for dev transcript resume.
 //
 // Reads claude's per-session JSONL archive
 // (`~/.claude/projects/<encoded-project-dir>/<claude_session_id>.jsonl`)

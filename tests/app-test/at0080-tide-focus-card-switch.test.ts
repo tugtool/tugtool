@@ -1,13 +1,13 @@
 /**
- * at0080-dev-focus-card-switch.test.ts — a tide card's activation
+ * at0080-dev-focus-card-switch.test.ts — a dev card's activation
  * focus lands on the prompt entry after a card-switch round-trip
  * [AT0080].
  *
  * ## Why this exists
  *
  * Phase E.12's rule: a card has at most one text-entry surface, and
- * for a tide card that surface is the `tug-prompt-entry`. So a
- * tide card's activation focus has exactly one destination — the
+ * for a dev card that surface is the `tug-prompt-entry`. So a
+ * dev card's activation focus has exactly one destination — the
  * engine's contenteditable — regardless of activation source.
  *
  * AT0080 gates the card-switch source. AT0078 gates app-switch;
@@ -16,7 +16,7 @@
  *
  * ## Shape
  *
- *   1. Seed two tide cards (A + B) in one pane; bind a fake
+ *   1. Seed two dev cards (A + B) in one pane; bind a fake
  *      session on each; await engine ready on each.
  *   2. Click into A's contenteditable; type "hello".
  *   3. Click B's tab — deactivating A captures A's focus on the
@@ -60,8 +60,8 @@ describe.skipIf(!SHOULD_RUN)(
           await app.seedDeckState({
             state: {
               cards: [
-                { id: "A", componentId: "tide", title: "Dev A", closable: true },
-                { id: "B", componentId: "tide", title: "Dev B", closable: true },
+                { id: "A", componentId: "dev", title: "Dev A", closable: true },
+                { id: "B", componentId: "dev", title: "Dev B", closable: true },
               ],
               panes: [
                 {

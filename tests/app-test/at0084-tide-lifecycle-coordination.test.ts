@@ -8,7 +8,7 @@
  * pure projection (`deriveLifecycleSnapshot`) is unit-tested
  * exhaustively elsewhere.
  * This test closes the loop: it drives a *real* `CodeSessionStore`
- * inside a *real* tide card through every distinct matrix row and
+ * inside a *real* dev card through every distinct matrix row and
  * asserts the rendered DOM — no mock store, no fake DOM.
  *
  * It drives the store through the `driveDevSession` harness verb:
@@ -44,7 +44,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 /**
- * `FeedId.CODE_OUTPUT` — the wire feed every tide stream frame
+ * `FeedId.CODE_OUTPUT` — the wire feed every dev stream frame
  * (`assistant_text` / `tool_use` / `turn_complete` / …) arrives on.
  * Hardcoded rather than imported: the app-test graph does not couple
  * to tugdeck's `protocol.ts`. See `tugdeck/src/protocol.ts`.
@@ -60,14 +60,14 @@ function sessionIdFor(cardId: CardId): string {
 }
 
 // ---------------------------------------------------------------------------
-// Deck seed — one tide card per pane so every card mounts at once.
+// Deck seed — one dev card per pane so every card mounts at once.
 // ---------------------------------------------------------------------------
 
 function deckShape() {
   return {
     cards: CARD_IDS.map((id) => ({
       id,
-      componentId: "tide",
+      componentId: "dev",
       title: `Dev ${id}`,
       closable: true,
     })),

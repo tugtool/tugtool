@@ -535,7 +535,7 @@ export class App {
   }
 
   /**
-   * Drive a bound tide card's `CodeSessionStore` one step through the
+   * Drive a bound dev card's `CodeSessionStore` one step through the
    * lifecycle matrix — `send` a user message, `ingestFrame` a decoded
    * wire frame, `interrupt`, or drive the transport overlay. The card
    * must be bound first (`bindDevSession`). Frames flow through the

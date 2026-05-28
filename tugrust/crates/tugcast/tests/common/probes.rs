@@ -48,7 +48,7 @@ pub struct ProbeRecord {
     pub timeout_secs: u64,
     /// If `Some`, the probe is unconditionally skipped at capture
     /// time with this reason. Used for probes blocked on a known
-    /// upstream bug that has a `tide.md §T0.5` follow-up pointer —
+    /// upstream bug that has a `dev.md §T0.5` follow-up pointer —
     /// the reason string should name the specific follow-up so the
     /// manifest.json tells a future reader where to look.
     ///
@@ -407,7 +407,7 @@ pub static PROBES: &[ProbeRecord] = &[
         skip_reason: None,
     },
     // --- Test 13: session_command new ---
-    // Blocked on tide.md §T0.5 P16 (session_command routing bug).
+    // Blocked on dev.md §T0.5 P16 (session_command routing bug).
     // The Step 4 canary confirmed test-13/17/20 all hit the same
     // 45s connection reset as test-10/25/35 — sibling symptom of
     // P19. Skipped until the supervisor is fixed.
@@ -433,7 +433,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[],
         timeout_secs: 45,
-        skip_reason: Some("blocked on tide.md §T0.5 P16 — session_command routing bug"),
+        skip_reason: Some("blocked on dev.md §T0.5 P16 — session_command routing bug"),
     },
     // --- Test 14: Message during active turn ---
     ProbeRecord {
@@ -504,7 +504,7 @@ pub static PROBES: &[ProbeRecord] = &[
         skip_reason: None,
     },
     // --- Test 17: session_command continue ---
-    // Blocked on tide.md §T0.5 P16 — multi-session router hangs on
+    // Blocked on dev.md §T0.5 P16 — multi-session router hangs on
     // continue's post-command probe turn. Canary also confirms
     // the 45s reset (P19 sibling). Skipped.
     ProbeRecord {
@@ -528,7 +528,7 @@ pub static PROBES: &[ProbeRecord] = &[
         optional_events: &["system_metadata", "cost_update", "thinking_text"],
         prerequisites: &[],
         timeout_secs: 60,
-        skip_reason: Some("blocked on tide.md §T0.5 P16 — session_command routing bug"),
+        skip_reason: Some("blocked on dev.md §T0.5 P16 — session_command routing bug"),
     },
     // --- Test 18: Message during turn (detailed variant of 14) ---
     // Test 14 and Test 18 probe the same behavior in transport-exploration.md;
@@ -578,7 +578,7 @@ pub static PROBES: &[ProbeRecord] = &[
         skip_reason: None,
     },
     // --- Test 20: session_command fork ---
-    // Blocked on tide.md §T0.5 P16 — same supervisor-routing class
+    // Blocked on dev.md §T0.5 P16 — same supervisor-routing class
     // as tests 13/17. Canary confirms 45s connection reset.
     ProbeRecord {
         name: "test-20-session-command-fork",
@@ -602,7 +602,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         prerequisites: &[],
         timeout_secs: 45,
-        skip_reason: Some("blocked on tide.md §T0.5 P16 — session_command routing bug"),
+        skip_reason: Some("blocked on dev.md §T0.5 P16 — session_command routing bug"),
     },
     // --- Test 21: Glob tool (auto-approved) ---
     ProbeRecord {

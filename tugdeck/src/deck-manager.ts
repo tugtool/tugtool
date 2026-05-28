@@ -1274,7 +1274,7 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Per-card engine-hook-change listeners. `CardHost` subscribes
    * here in a `useLayoutEffect` so its cold-boot RESTORE effect
-   * re-fires when an engine registers late (tide's editor mounts
+   * re-fires when an engine registers late (dev's editor mounts
    * after `feedsReady`). Last-registration-wins per (cardId,
    * listener) — the listener identity is what we key on internally,
    * via a Set per cardId.

@@ -676,9 +676,9 @@ async fn main() {
     // responses now flow primarily through the shared broadcast
     // channel: the watch carries the bootstrap's initial empty
     // `FileTreeSnapshot`, and the router's "deliver latest value on
-    // connect" pass for snapshot_watches is what causes the tide card
+    // connect" pass for snapshot_watches is what causes the dev card
     // to see *any* FILETREE frame before a query has been sent. The
-    // tide card gates rendering on `feedData.size > 0` across
+    // dev card gates rendering on `feedData.size > 0` across
     // `[CODE_INPUT, CODE_OUTPUT, SESSION_METADATA, FILETREE]`; without
     // this initial empty frame, a brand-new card with no session
     // bound hangs at "Loading..." indefinitely. The broadcast does

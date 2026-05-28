@@ -4,7 +4,7 @@
  *
  * Verifies the production wire: when a binding arrives in
  * `cardSessionBindingStore` for a card that's currently in the
- * `tideRestoreRegistry`, the binding subscriber dispatches
+ * `devRestoreRegistry`, the binding subscriber dispatches
  * `transport_settled` into that card's `CodeSessionStore` via
  * `cardServicesStore.getServices(cardId)?.codeSessionStore.notifyTransportSettled()`.
  *
@@ -49,7 +49,7 @@ mock.module("@/lib/connection-lifecycle", () => ({
   registerConnectionLifecycle: () => {},
 }));
 
-// Tugbank stub. `cardServicesStore._construct` reads tide recents on
+// Tugbank stub. `cardServicesStore._construct` reads dev recents on
 // every successful bind; the test doesn't care about that side effect,
 // so the read returns nothing and the writer is a no-op.
 const fakeTugbank = {
@@ -79,7 +79,7 @@ import {
 } from "@/lib/card-session-binding-store";
 import {
   restoreDevSessions,
-  tideRestoreRegistry,
+  devRestoreRegistry,
 } from "@/lib/dev-session-restore";
 
 interface FakeCard {
@@ -151,12 +151,12 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
     // Pre-arm the registry as if a `spawn_session(mode=resume)` were
     // in flight. Use a no-op timeout — the binding arriving below
     // clears the entry before the timer would fire.
-    tideRestoreRegistry._register(
+    devRestoreRegistry._register(
       cardId,
       { tugSessionId, projectDir },
       () => {},
     );
-    expect(tideRestoreRegistry.has(cardId)).toBe(true);
+    expect(devRestoreRegistry.has(cardId)).toBe(true);
 
     // First binding arrival constructs the store via cardServicesStore.
     bind(cardId, tugSessionId);
@@ -165,7 +165,7 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
     const store = services!.codeSessionStore;
 
     // The registry entry is cleared by the binding subscriber.
-    expect(tideRestoreRegistry.has(cardId)).toBe(false);
+    expect(devRestoreRegistry.has(cardId)).toBe(false);
 
     // Walk the store through the full transport-state lifecycle to
     // prove the wiring drives it home: drop the wire, reconnect,
@@ -192,7 +192,7 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
     // Re-arm the registry, then re-bind to drive the binding
     // subscriber again. The same store gets `notifyTransportSettled`
     // and flips back to `online`.
-    tideRestoreRegistry._register(
+    devRestoreRegistry._register(
       cardId,
       { tugSessionId, projectDir },
       () => {},

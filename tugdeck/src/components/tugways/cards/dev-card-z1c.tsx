@@ -38,7 +38,7 @@
  *  - [L06] visibility / vertical-space collapse flows through CSS
  *    (`:empty` on the wrapper), not React state.
  *  - [L19] file pair with `dev-card-z1c.css`; the pure-logic
- *    helper `tideZ1CContent` is the testable surface (exported
+ *    helper `devZ1CContent` is the testable surface (exported
  *    from this same file).
  *  - [L26] mount identity: the row's `inflightFooter` prop carries
  *    the same component reference across snapshot dispatches; React
@@ -80,7 +80,7 @@ export interface DevZ1CContent {
  * permission / question dialog is the affordance, the indicator
  * would be redundant.
  */
-export function tideZ1CContent(
+export function devZ1CContent(
   phase: CodeSessionPhase,
   interruptInFlight: boolean,
 ): DevZ1CContent | null {
@@ -150,7 +150,7 @@ export const DevZ1C: React.FC<DevZ1CProps> = ({ codeSessionStore }) => {
     getSelection,
   );
 
-  const content = tideZ1CContent(selection.phase, selection.interruptInFlight);
+  const content = devZ1CContent(selection.phase, selection.interruptInFlight);
   if (content === null) return null;
 
   return (

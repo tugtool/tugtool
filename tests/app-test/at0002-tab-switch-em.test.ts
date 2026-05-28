@@ -19,7 +19,7 @@
  *      surface was retired; only the wrapper remains as a gallery
  *      fixture.)
  *
- * dev-card itself is registered (`componentId: "tide"`) but
+ * dev-card itself is registered (`componentId: "dev"`) but
  * requires session-machinery setup (project-picker bind, code
  * feeds) that's outside this smoke's envelope. `gallery-prompt-entry`
  * is the practical proxy — same `TugPromptEntry`, same

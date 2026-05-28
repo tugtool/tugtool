@@ -36,7 +36,7 @@
  *   2 cards × 2 reload triggers = 4 test cases. Each case asserts
  *   four axes: text, atoms, selection, scrollTop. Cards are
  *   `gallery-prompt-entry` (`{ currentRoute, perRoute, maximized }`
- *   wrapper) and `tide` (production card; same wrapper as the
+ *   wrapper) and `dev` (production card; same wrapper as the
  *   entry, mounted after a fake-session bind via
  *   {@link App.bindDevSession}).
  *
@@ -120,7 +120,7 @@ const TEST_TIMEOUT_MS = 90_000;
 
 type PromptComponentId =
   | "gallery-prompt-entry"
-  | "tide";
+  | "dev";
 
 const PROMPT_INPUT_SELECTOR =
   '[data-slot="tug-text-editor"] .cm-content';
@@ -156,7 +156,7 @@ const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 /**
  * 50 short lines of text — enough to overflow the editor's content
  * box on every target card. The wrapper cards (`gallery-prompt-entry`,
- * `tide`) ride content-driven panel growth to a 90% pane max
+ * `dev`) ride content-driven panel growth to a 90% pane max
  * (~486px on a 540px card) but cap there. 50 lines × 24px = 1200px,
  * which overflows the ceiling comfortably, so `editor.scrollTop = 80`
  * always sticks.
@@ -228,7 +228,7 @@ const ACTIVE_ENGINE_STATE: EngineState = {
 
 /**
  * Build the `bag.content` payload for a given card. Both
- * `gallery-prompt-entry` and `tide` use the simplified
+ * `gallery-prompt-entry` and `dev` use the simplified
  * `{ route, draft, maximized? }` wrapper from Step 15 ([Q07]=a):
  * one active route, one draft snapshot.
  */
@@ -290,7 +290,7 @@ async function setupPhaseA(
     focusCardId: "A",
   });
 
-  if (componentId === "tide") {
+  if (componentId === "dev") {
     // Dev-card mounts its picker by default. Bind a fake session
     // so `DevCardBody` (which embeds `TugPromptEntry`) renders.
     await app.bindDevSession("A");
@@ -486,7 +486,7 @@ async function reseedFromDisk(
     focusCardId: "A",
   });
 
-  if (componentId === "tide") {
+  if (componentId === "dev") {
     await app.bindDevSession("A");
   }
 
@@ -737,14 +737,14 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "tide × appReload",
-      () => runAppReloadScenario("tide"),
+      "dev × appReload",
+      () => runAppReloadScenario("dev"),
       TEST_TIMEOUT_MS,
     );
 
     test(
-      "tide × relaunch",
-      () => runRelaunchScenario("tide"),
+      "dev × relaunch",
+      () => runRelaunchScenario("dev"),
       TEST_TIMEOUT_MS,
     );
   },

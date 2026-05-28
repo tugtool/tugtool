@@ -736,7 +736,7 @@ export function bindDevSession(
 }
 
 /**
- * One step in driving a bound tide card's `CodeSessionStore` through
+ * One step in driving a bound dev card's `CodeSessionStore` through
  * the lifecycle matrix — mirrors `DevSessionDriveAction` on the
  * `test-surface.ts` side (the two graphs are kept structurally
  * identical; the JSON wire is the contract).
@@ -758,7 +758,7 @@ export type DevSessionDriveAction =
   | { op: "transportReconnect" };
 
 /**
- * Drive a bound tide card's `CodeSessionStore` one step through the
+ * Drive a bound dev card's `CodeSessionStore` one step through the
  * lifecycle matrix via `window.__tug.driveDevSession`. The card must
  * already be bound (`bindDevSession`); the surface throws otherwise.
  */

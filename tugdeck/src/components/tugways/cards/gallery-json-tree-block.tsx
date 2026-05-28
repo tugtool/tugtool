@@ -63,7 +63,7 @@ const NESTED = {
     },
     body: {
       session: {
-        kind: "tide",
+        kind: "dev",
         options: { autoReconnect: true, backoffMs: [250, 500, 1000] },
       },
     },

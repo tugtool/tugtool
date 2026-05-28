@@ -10,7 +10,7 @@
  * Text always restores; selection is **intermittently** lost,
  * with the caret left blinking at the end of "hello". The
  * gallery-prompt-entry path doesn't reproduce the bug — only
- * tide does — but the underlying activation chain is shared
+ * dev does — but the underlying activation chain is shared
  * (TugPromptEntry registers `onCardActivated` for both), so the
  * gallery-prompt-entry path is a useful forward-regression gate
  * for any fix to the activation-time selection-restore behavior.
@@ -38,7 +38,7 @@
  * Dev itself can't run in the in-app sweep because
  * its content factory gates on `feedsReady`, which depends on a
  * live tugcast/Claude Code stream — manual user verification
- * gates the tide path.
+ * gates the dev path.
  *
  * ## Stress note
  *

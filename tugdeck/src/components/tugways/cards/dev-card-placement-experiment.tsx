@@ -1,6 +1,6 @@
 /**
  * dev-card-placement-experiment.tsx — dev-only A/B harness for the
- * tide card's display-only placement zones (Z0, Z1-assistant, Z2, Z3,
+ * dev card's display-only placement zones (Z0, Z1-assistant, Z2, Z3,
  * Z4B). Lets us answer "which datum reads best in which zone" without
  * an HMR loop per swap.
  *
@@ -201,7 +201,7 @@ export interface UseDevPlacementSlotsInput {
   /**
    * Forwarded to {@link DevTelemetryStatusRow} when it occupies Z2 —
    * lets the status row's Time / Tokens popovers scroll the transcript
-   * on a `#NNNN` entry-number click. The tide card supplies it from
+   * on a `#NNNN` entry-number click. The dev card supplies it from
    * the transcript's imperative handle.
    */
   onScrollToRow?: ScrollToRowHandler;
@@ -209,7 +209,7 @@ export interface UseDevPlacementSlotsInput {
 
 /**
  * Resolve the current placement mapping into ReactNode slots for the
- * tide card. Returns empty slots in production builds (or whenever
+ * dev card. Returns empty slots in production builds (or whenever
  * the mapping is empty in dev).
  *
  * Z0 is reserved by the placement contract — even when set in the

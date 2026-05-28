@@ -4,7 +4,7 @@
  * Used as a bridge so card content rendered via portal at the deck level
  * can re-provide `TugPanePortalContext` pointing at its host pane's root.
  *
- * Without this bridge, card content (e.g., tide's project picker) that
+ * Without this bridge, card content (e.g., dev's project picker) that
  * relies on portaling sheets or tooltips into the window root loses access
  * to that element when `CardHost` moves out of the pane's React
  * tree (Step 11.6.1a Piece 1.iii).

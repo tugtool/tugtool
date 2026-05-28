@@ -164,7 +164,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     const cardId = "r1c-card-resume";
     const tugSessionId = "sess-r1c-resume";
 
-    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
     cardServicesStore.attachDeckManager(
       fakeDeck as unknown as Parameters<
         typeof cardServicesStore.attachDeckManager
@@ -197,7 +197,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     const cardId = "r1c-card-new";
     const tugSessionId = "sess-r1c-new";
 
-    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
     cardServicesStore.attachDeckManager(
       fakeDeck as unknown as Parameters<
         typeof cardServicesStore.attachDeckManager
@@ -227,7 +227,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     const cardId = "r1c-card-rebind";
     const tugSessionId = "sess-r1c-rebind";
 
-    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
     cardServicesStore.attachDeckManager(
       fakeDeck as unknown as Parameters<
         typeof cardServicesStore.attachDeckManager
@@ -245,7 +245,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
 
     // Re-add and re-bind. The store reconstructs services and runs a
     // second dispatch.
-    fakeDeck.setCards([{ id: cardId, componentId: "tide" }]);
+    fakeDeck.setCards([{ id: cardId, componentId: "dev" }]);
     bindResume(cardId, tugSessionId);
     expect(cardServicesStore.getServices(cardId)).not.toBeNull();
 

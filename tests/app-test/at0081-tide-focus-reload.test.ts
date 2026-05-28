@@ -1,10 +1,10 @@
 /**
- * at0081-dev-focus-reload.test.ts — a tide card's activation focus
+ * at0081-dev-focus-reload.test.ts — a dev card's activation focus
  * lands on the prompt entry after Developer > Reload [AT0081].
  *
  * ## Why this exists
  *
- * Phase E.12's rule: a tide card has exactly one text-entry surface
+ * Phase E.12's rule: a dev card has exactly one text-entry surface
  * (`tug-prompt-entry`), so its activation focus has exactly one
  * destination. AT0081 gates the cold-boot source: a Developer >
  * Reload tears the DOM down and rebuilds it from the saved bag, and
@@ -12,7 +12,7 @@
  *
  * The cold-boot path exercises the `deferred-engine` settle: when
  * `seedDeckState` re-seeds the reloaded page, CardHost's RESTORE
- * effect runs `applyBagFocus` before the tide engine has registered
+ * effect runs `applyBagFocus` before the dev engine has registered
  * its hooks, so the resolver returns `deferred-engine`. Re-binding
  * the session and awaiting engine-ready bumps `engineHooksVersion`,
  * which re-fires the RESTORE effect — `applyBagFocus` now resolves
@@ -20,7 +20,7 @@
  * remaining late-mount focus path after Phase E.12 retired the
  * `deferred-dom` MutationObserver focus-retry branch.
  *
- * A content-owning tide card does not persist a `bag.focus` field —
+ * A content-owning dev card does not persist a `bag.focus` field —
  * `resolveBagFocus` infers the engine destination from the card's
  * engine-managed `componentId` when `bag.focus` is absent. So the
  * test does not assert anything about the on-disk `bag.focus`; the
@@ -29,7 +29,7 @@
  *
  * ## Shape
  *
- *   1. Seed a tide card; bind a fake session; await engine ready.
+ *   1. Seed a dev card; bind a fake session; await engine ready.
  *   2. Click into the contenteditable; type "hello".
  *   3. `appReload` — `prepareForReload` flushes the bag to tugbank.
  *   4. Re-seed the reloaded page with the persisted bag; re-bind
@@ -59,7 +59,7 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const SEED_STATE = {
   cards: [
-    { id: "A", componentId: "tide", title: "Dev A", closable: true },
+    { id: "A", componentId: "dev", title: "Dev A", closable: true },
   ],
   panes: [
     {
@@ -117,7 +117,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.appReload();
 
           // Read whatever the previous session persisted so the
-          // re-seed echoes the on-disk shape (a content-owning tide
+          // re-seed echoes the on-disk shape (a content-owning dev
           // card does not persist a `bag.focus` field — the resolver
           // infers the engine destination from the componentId).
           const onDiskBag = tugbankRead<Record<string, unknown>>(

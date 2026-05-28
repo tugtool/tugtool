@@ -434,7 +434,7 @@ export function hasBespokeWrapper(toolName: string): boolean {
  * "validated against" figure until the next capture. `system_metadata`
  * emits the bare version (`"2.1.147"`), so the constant carries no
  * `v` prefix. This is the render-time complement to
- * `tide.md#p15-stream-json-version-gate`'s server-side telemetry.
+ * `dev.md#p15-stream-json-version-gate`'s server-side telemetry.
  */
 export const VALIDATED_CC_VERSION = "2.1.147";
 
@@ -717,7 +717,7 @@ export function logDriftEvent(event: DriftEvent): void {
   const key = driftLogKey(event);
   if (loggedDriftKeys.has(key)) return;
   loggedDriftKeys.add(key);
-  console.warn("[tide drift] stream-json drift detected", {
+  console.warn("[dev drift] stream-json drift detected", {
     reason: event.caution.reason,
     toolName: event.toolName,
     version: event.version,

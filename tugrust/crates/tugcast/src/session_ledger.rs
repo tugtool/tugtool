@@ -755,7 +755,7 @@ impl SessionLedger {
 
     /// All non-failed rows that carry a `card_id`, ordered newest-first
     /// by `last_used_at`. The client-side restore consumes this through
-    /// the `list_card_bindings` CONTROL verb: for each tide card in the
+    /// the `list_card_bindings` CONTROL verb: for each dev card in the
     /// deck, the most recent matching row drives either
     /// `spawn_session(mode=resume)` (if `turn_count > 0`, i.e. claude
     /// has a JSONL on disk) or `spawn_session(mode=new)` with a fresh
@@ -766,7 +766,7 @@ impl SessionLedger {
     ///
     /// Filters:
     ///
-    /// - `card_id IS NOT NULL` — the row was spawned through a tide
+    /// - `card_id IS NOT NULL` — the row was spawned through a dev
     ///   card path (not a headless test).
     /// - `state != 'failed'` — failed rows are known-unrecoverable.
     pub fn list_with_card_id(&self) -> Result<Vec<SessionRow>, LedgerError> {
@@ -967,7 +967,7 @@ impl SessionLedger {
     /// literally and move each row's JSONL to trash. Returns the session
     /// ids of the dropped rows so the caller can broadcast `session_updated
     /// { removed: true }` pushes. Used by recents-eviction → ledger-eviction
-    /// coupling: when a tide recent-projects entry ages out, the matching
+    /// coupling: when a dev recent-projects entry ages out, the matching
     /// ledger rows are dropped in lockstep so the picker doesn't surface
     /// sessions for a path the user no longer recognizes. The JSONLs go to
     /// trash so the user can `mv` them back if they recognize the loss.

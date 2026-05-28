@@ -10,7 +10,7 @@
  *
  * ## What this gates
  *
- * Manual repro: user types enough content into tide /
+ * Manual repro: user types enough content into dev /
  * gallery-prompt-entry to make it scroll,
  * makes a selection, clicks any other card to deactivate. The
  * inactive-paint highlight ends up at the wrong text content — at
@@ -67,7 +67,7 @@ const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
 type PromptComponentId =
   | "gallery-prompt-entry"
-  | "tide";
+  | "dev";
 
 function tabSelectorFor(cardId: string): string {
   return `[data-testid="tug-tab-${cardId}"]`;
@@ -131,7 +131,7 @@ function makeContentBag(_componentId: PromptComponentId): Record<string, unknown
 }
 
 /**
- * Two-pane geometry — matches the user's repro: tide card and the
+ * Two-pane geometry — matches the user's repro: dev card and the
  * Component Gallery card live in separate panes; both are visible
  * simultaneously. Deactivation moves focus authority between panes
  * but doesn't hide either card. This is critical for reproducing
@@ -308,7 +308,7 @@ async function runLiveSelectionScenario(
     focusCardId: "A",
   });
 
-  if (componentId === "tide") {
+  if (componentId === "dev") {
     await app.bindDevSession("A");
   }
 
@@ -452,7 +452,7 @@ async function runDeactivationScenario(
     focusCardId: "A",
   });
 
-  if (componentId === "tide") {
+  if (componentId === "dev") {
     await app.bindDevSession("A");
   }
 
@@ -587,11 +587,11 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "tide — seeded selection survives deactivation at correct DOM position",
+      "dev — seeded selection survives deactivation at correct DOM position",
       async () => {
-        const app = await launchTugApp({ testName: "at0027-tide" });
+        const app = await launchTugApp({ testName: "at0027-dev" });
         try {
-          await runDeactivationScenario(app, "tide");
+          await runDeactivationScenario(app, "dev");
         } finally {
           await app.close();
         }
@@ -615,11 +615,11 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "tide — LIVE selection (set via DOM) survives deactivation",
+      "dev — LIVE selection (set via DOM) survives deactivation",
       async () => {
-        const app = await launchTugApp({ testName: "at0027-live-tide" });
+        const app = await launchTugApp({ testName: "at0027-live-dev" });
         try {
-          await runLiveSelectionScenario(app, "tide");
+          await runLiveSelectionScenario(app, "dev");
         } finally {
           await app.close();
         }

@@ -536,7 +536,7 @@ impl LedgerSessionsRecorder {
 
     /// Drop every non-live row whose `project_dir` matches the given path.
     /// Used by the recents-eviction → ledger-eviction coupling: when a
-    /// path falls off the tide recent-projects tail, the matching ledger
+    /// path falls off the dev recent-projects tail, the matching ledger
     /// rows go too. Broadcasts a removed push per dropped id.
     pub fn trash_for_project_dir(&self, project_dir: &str) -> usize {
         match self.ledger.trash_for_project_dir(project_dir) {
@@ -5074,7 +5074,7 @@ mod tests {
         // reconnect with mode=resume must NOT flip the entry's mode.
         sup.handle_control(
             "spawn_session",
-            &spawn_payload("card-tide", "sess-running"),
+            &spawn_payload("card-dev", "sess-running"),
             10,
         )
         .await
@@ -5100,7 +5100,7 @@ mod tests {
         // Idle.
         sup.handle_control(
             "spawn_session",
-            &resume_payload("card-tide", "sess-running"),
+            &resume_payload("card-dev", "sess-running"),
             11,
         )
         .await

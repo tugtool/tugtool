@@ -751,7 +751,7 @@ function setDropActive(host: HTMLElement | null, state: DropActiveState): void {
  * resulting atoms carry the id. Non-image files insert their
  * basename as plain text in the same transaction. When `getBytesStore`
  * returns `null` (gallery cards, prompt-entry instances unrelated to
- * a tide session), the synchronous `defaultFilesToMixedItems` path
+ * a dev session), the synchronous `defaultFilesToMixedItems` path
  * runs — image atoms come back with `value: filename` and no bytes;
  * non-image entries still ride as filename text.
  *
