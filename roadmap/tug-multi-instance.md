@@ -57,6 +57,7 @@ Empirical research into Apple's current signing flow (May 2026) surfaced four fi
 - Production releases sign with the Apple Developer ID Application cert and notarize successfully (`stapler validate` returns valid). Measured by: `just build-app` produces a `.app` that passes `codesign --verify --deep --strict` and `xcrun stapler validate`; Gatekeeper accepts the bundle on a clean Mac.
 - TCC Accessibility grants survive rebuilds of the same bundle ID. Measured by: grant AX to `dev.tugtool.app.dev`; rebuild and relaunch; CGEvent.post still works (no re-prompt). The harness's `code-sign-fingerprint` drift check passes with the Developer ID cert installed.
 - `cd tugrust && cargo nextest run` stays green across all commits. `cd tugdeck && bun x tsc --noEmit && bun test` stays green across all commits. The full `just app-test` sweep passes against the production-built bundle in the worktree it was built from.
+- **Worktree removal leaves no orphan state.** Measured by: create a worktree, `just app-dev` from it (granting AX), then `just worktree-remove <path>` — afterward `tugutil instance prune --check` reports zero orphans, the DerivedData dir for that worktree is gone, the bundle's LaunchServices entry is gone, and the per-instance data dir is gone. The dock recents list for the removed identity may take some minutes to settle but is left to macOS's normal LS-index churn.
 
 #### Scope {#scope}
 
@@ -176,15 +177,15 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
 
 **Resolution:** RESOLVED. Asset-catalog artwork in place; branch overlay deferred. See [D15] for the implementation shape.
 
-#### [Q03] What does `tugutil instance` look like beyond `list` / `stop`? (OPEN) {#q03-tugutil-instance}
+#### [Q03] What does `tugutil instance` look like beyond `list` / `stop`? (RESOLVED) {#q03-tugutil-instance}
 
-**Question:** `list` and `stop` are clearly in scope. What about `clone <src> <dst>`, `prune` (remove data dirs for identities with no current bundle on disk), `current` (print the identity of the cwd-derived instance), or `attach <id>` (open a terminal pointed at the right tmux session)?
+**Question:** `list` and `stop` are clearly in scope. What about `clone <src> <dst>`, `prune` (remove data dirs for identities with no current bundle on disk), `remove <id>` (surgical cleanup of one specific instance's state), `current` (print the identity of the cwd-derived instance), or `attach <id>` (open a terminal pointed at the right tmux session)?
 
 **Why it matters:** These are quality-of-life features that compound as the multi-instance story matures. Picking the wrong primitives in Phase 1 means churning the CLI later.
 
-**Plan to resolve:** Ship `list`, `stop`, `current` in Step 14. Defer `clone`, `prune`, `attach` to a follow-on plan; they're not blocking and the design will be clearer once people have used multi-instance for a while.
+**Resolution:** Ship `list`, `stop`, `current`, **`remove`, and `prune`** in Phase 1. The first three were obvious. `remove` and `prune` were originally deferred, but tracing the worktree lifecycle end-to-end made clear that they're not optional — every `git worktree remove` would otherwise leak nine categories of orphan state (DerivedData bundle, LaunchServices index entry, Dock recents, Spotlight index, TCC entries, per-instance data dir, tmux session, notify socket, and a registry entry until PID-prune). Without `remove` / `prune` as load-bearing primitives, the first ten worktrees become a bug report.
 
-**Resolution:** DEFERRED. `list`/`stop`/`current` in Phase 1; richer surface in a follow-on.
+`clone` and `attach` stay deferred — they're convenience features, not lifecycle-critical, and the design will be clearer once people have used multi-instance for a while.
 
 ---
 
@@ -724,10 +725,10 @@ Swift (`tugapp/Sources/`):
 - Updates to `TugbankClient.configure` to honor the per-instance DB path.
 
 Rust (`tugrust/crates/`):
-- New helper module `tugcore::instance` (or extension to `tuglog`) providing `instance_id() -> Option<String>`, `data_dir() -> Result<PathBuf>`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`. All read `TUG_INSTANCE_ID` from env.
+- New helper module `tugcore::instance` (or extension to `tuglog`) providing `instance_id() -> Option<String>`, `data_dir() -> Result<PathBuf>`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`, `bundle_path() -> Option<PathBuf>` (reads `<data-dir>/<id>/bundle-path` marker). All read `TUG_INSTANCE_ID` from env.
 - New helper module `tugcore::registry` providing `load() -> Result<Registry>`, `register(entry: InstanceEntry) -> Result<()>`, `find_by_id(id: &str) -> Option<InstanceEntry>`, `find_for_cwd() -> Option<InstanceEntry>`, `list_live() -> Vec<InstanceEntry>`.
-- Updates to `tugcast/src/main.rs` to read instance ID and call `register()` after port bind.
-- Updates to `tugutil/src/commands/tell.rs` (and new `tugutil/src/commands/instance.rs`) for the CLI discovery and `instance` subcommand.
+- Updates to `tugcast/src/main.rs` to read instance ID, write the `bundle-path` marker (from `TUG_BUNDLE_PATH` env), and call `register()` after port bind.
+- Updates to `tugutil/src/commands/tell.rs` (and new `tugutil/src/commands/instance.rs`) for the CLI discovery and `instance` subcommand. The `instance` subcommand surfaces `list`, `stop`, `current`, `remove`, `prune` per [Q03] resolution.
 
 Shell (`tugrust/scripts/`, `tugapp/Tug.xcodeproj`):
 - New build-phase scripts: one to capture build-time identity into Info.plist; one to set `CFBundleIdentifier`; one to select the app icon.
@@ -818,6 +819,9 @@ No new configuration files. All configuration is via:
 | `InstanceCommands::List` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance list`. |
 | `InstanceCommands::Stop` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance stop <id>`. |
 | `InstanceCommands::Current` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance current`. |
+| `InstanceCommands::Remove` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance remove <id>` — surgical cleanup per [Q03]. |
+| `InstanceCommands::Prune` | enum variant | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance prune` — orphan discovery + cleanup per [Q03]. |
+| `bundle_path` | fn | `tugrust/crates/tugcore/src/instance.rs` | Reads `<data-dir>/<id>/bundle-path` marker; returns `None` if missing or stale. |
 | `resolve_instance` | fn | `tugrust/crates/tugutil/src/commands/tell.rs` | CLI discovery order per [D09]. |
 
 ---
@@ -1053,17 +1057,19 @@ No new configuration files. All configuration is via:
 - Updated `tugrust/crates/tuglog/src/lib.rs` to route log_dir via TUG_INSTANCE_ID.
 
 **Tasks:**
-- [ ] Create `tugcore::instance` with `instance_id()`, `data_dir()`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`. All read `TUG_INSTANCE_ID` from env; return `None` / legacy path if unset.
+- [ ] Create `tugcore::instance` with `instance_id()`, `data_dir()`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`, `bundle_path()`. All read `TUG_INSTANCE_ID` from env; return `None` / legacy path if unset.
 - [ ] Create `InstanceConfig.swift` with mirror functions.
 - [ ] Update `ProcessManager.spawnTugcast` (and any other tugcast/tugcode/tugbank child-spawn site) to set `TUG_INSTANCE_ID=<id>` in child env.
 - [ ] Update `tuglog::init` to call the new `log_dir()` helper.
+- [ ] **Write the bundle-path marker on first launch.** Tugcast's startup (after creating the per-instance data dir but before any other work) writes the bundle's absolute path to `<data-dir>/bundle-path`. Swift passes the path via env (`TUG_BUNDLE_PATH`) when spawning tugcast — Swift knows it via `Bundle.main.bundlePath`. If the env is unset (e.g., tugcast launched standalone for testing), skip the write — preserve any existing marker. The marker is the anchor `tugutil instance prune` (Step 14) uses to detect orphans: data dir exists but the bundle at `cat <data-dir>/bundle-path` doesn't.
 
 **Tests:**
 - [ ] Unit (Rust): with `TUG_INSTANCE_ID=test-id` set, `data_dir()` returns `<base>/instances/test-id`; with unset, returns the legacy `Tug/` path.
 - [ ] Unit (Swift): `InstanceConfig.dataDir` mirrors the Rust behavior.
+- [ ] Integration: launching tugcast with `TUG_INSTANCE_ID=foo` + `TUG_BUNDLE_PATH=/some/path` writes `/some/path` to `<data-dir>/foo/bundle-path`. Second launch with the same env doesn't churn the file (no needless writes).
 
 **Checkpoint:**
-- [ ] Launching tugcast directly with `TUG_INSTANCE_ID=foo` produces a log file at `<base>/instances/foo/Logs/tugcast.log.<date>`.
+- [ ] Launching tugcast directly with `TUG_INSTANCE_ID=foo` produces a log file at `<base>/instances/foo/Logs/tugcast.log.<date>` and a `<base>/instances/foo/bundle-path` marker (when `TUG_BUNDLE_PATH` is set).
 
 ---
 
@@ -1227,11 +1233,11 @@ No new configuration files. All configuration is via:
 
 ---
 
-#### Step 14: CLI discovery + tugutil instance subcommand {#step-14}
+#### Step 14: CLI discovery + tugutil instance subcommand (list/stop/current/remove/prune) {#step-14}
 
 **Depends on:** #step-11
 
-**Commit:** `feat(multi-instance): CLI discovery + tugutil instance list/stop/current`
+**Commit:** `feat(multi-instance): CLI discovery + tugutil instance list/stop/current/remove/prune`
 
 **References:** [D09], [Q03], (#public-api)
 
@@ -1241,18 +1247,41 @@ No new configuration files. All configuration is via:
 - Updated `tugrust/crates/tugbank/src/main.rs` — `--instance` flag.
 
 **Tasks:**
+
+*Discovery + lifecycle (already in scope):*
 - [ ] Implement `tugutil instance list` (reads registry, prints live instances).
 - [ ] Implement `tugutil instance stop <id>` (looks up PID, sends SIGTERM, waits, escalates to SIGKILL if needed).
 - [ ] Implement `tugutil instance current` (cwd-derived; errors if not in a known dev worktree).
 - [ ] Implement `resolve_instance` in tell.rs per [D09]; thread `--instance` flag through.
 - [ ] Add `--instance` to `tugbank` CLI; resolve via the same helper.
 
+*Cleanup primitives (per [Q03] resolution — promoted from deferred into Phase 1):*
+- [ ] Implement `tugutil instance remove <id>` — surgical cleanup of one instance's state. Order matters; each step is idempotent:
+  1. `tugutil instance stop <id>` (no-op if not running).
+  2. Resolve the bundle path. Primary source: `<data-dir>/<id>/bundle-path` marker (Step 7). Fallback for legacy data dirs without a marker: walk `lsregister -dump` filtered to the instance's `(profile, branch)` → bundle ID via the same `[D10]` mapping the build-phase script uses.
+  3. If bundle exists: `lsregister -u <bundle-path>` (unregister from LaunchServices before the rm so the LS index doesn't lag).
+  4. If bundle exists: `rm -rf` the parent `Tug-<hash>` DerivedData dir (not just the bundle — Xcode keeps build intermediates that no longer matter once the bundle is gone).
+  5. `rm -rf <data-dir>/<id>` (tugbank, sessions, logs, marker).
+  6. If `--with-tcc` flag passed: `tccutil reset Accessibility <bundle-id>` (off by default — orphaned TCC entries are inert if the bundle is gone, and removing them requires confirming the destructive operation in the System Settings UI in some macOS versions).
+  - Default: ask confirmation listing what will be removed; bypass with `--yes`.
+- [ ] Implement `tugutil instance prune` — orphan discovery + bulk cleanup:
+  1. Walk `~/Library/Application Support/Tug/instances/*/` for data dirs.
+  2. For each, read `<data-dir>/<id>/bundle-path` marker (skip data dirs without a marker — those predate Step 7 and might be legitimately bundle-less).
+  3. Check `[ -d "$bundle_path" ]`. If missing, classify as orphan.
+  4. Print the orphan list with metadata (instance ID, last-modified date, recorded bundle path) and ask for confirmation.
+  5. On confirmation, run `tugutil instance remove <id>` for each orphan.
+  - Flags: `--json` for machine-readable orphan list; `--yes` to skip confirmation; `--with-tcc` propagates to `remove`.
+
 **Tests:**
 - [ ] Unit: resolution order tests (flag wins, env wins over cwd, cwd wins over sole, sole wins over error).
 - [ ] Integration: `tugutil instance list` shows running instances; `tugutil instance stop production-main` terminates the right process.
+- [ ] Integration: `tugutil instance remove <id>` on a fresh-built dev instance: data dir gone, DerivedData parent dir gone, `lsregister -dump` no longer lists the bundle ID, tugbank doesn't find the per-instance DB. Re-running the same `remove` is a clean no-op (idempotent).
+- [ ] Integration: create two dev instances, remove the worktree backing one of them, run `tugutil instance prune` — only the orphaned instance is in the candidate list; the still-live one is untouched.
+- [ ] Integration: `--with-tcc` invocation against a granted-AX instance removes the TCC entry (verify via `sqlite3 ~/Library/Application Support/com.apple.TCC/TCC.db "select * from access where client like 'dev.tugtool.app.%';"`).
 
 **Checkpoint:**
 - [ ] `tugutil instance list` from a shell with one instance running shows one entry; `tugutil tell restart` invoked from a worktree cwd targets the matching dev instance.
+- [ ] End-to-end orphan cycle: create worktree → `just app-dev` → `git worktree remove` (without cleanup) → `tugutil instance prune` cleanly reports + removes the orphan; nothing leaks.
 
 ---
 
@@ -1270,7 +1299,7 @@ No new configuration files. All configuration is via:
 
   | Recipe | Behavior |
   |--------|----------|
-  | `app-dev` | xcodebuild Debug + relaunch the cwd-derived development instance. |
+  | `app-dev` | xcodebuild Debug + relaunch the cwd-derived development instance. Emits a non-blocking orphan-detected warning if `tugutil instance prune --check` finds any. |
   | `app-prod` | xcodebuild Release + relaunch the cwd-derived production instance. |
   | `launch-dev` | Relaunch the cwd-derived dev instance — no build. |
   | `launch-prod` | Relaunch the cwd-derived prod instance — no build. |
@@ -1280,6 +1309,7 @@ No new configuration files. All configuration is via:
   | `instances` | One-line wrapper around `tugutil instance list`. |
   | `logs-dev` | `tail -F` the cwd-derived dev instance's `<data-dir>/<id>/Logs/tugcast.log.<date>`. |
   | `logs-prod` | `tail -F` the cwd-derived prod instance's log. |
+  | `worktree-remove <path>` | Tug-aware wrapper around `git worktree remove`. Resolves the worktree's `(profile, branch)` → instance ID, runs `tugutil instance remove <id>`, then `git worktree remove <path>`. The convenience layer that keeps the hygiene tidy by default — eliminates the easy-to-forget cleanup step before deleting a worktree. |
 
 - Modified Justfile recipes (kept, but rewritten):
   - `app-test [FILES...]` — runs against the cwd-derived dev bundle; hard-fails if `just app-dev` hasn't run; depends on the harness for synthetic-instance ownership per [D18].
@@ -1304,6 +1334,12 @@ No new configuration files. All configuration is via:
 - [ ] Implement `logs-dev` / `logs-prod`. Compute log path as `<data-dir>/<id>/Logs/tugcast.log.<YYYY-MM-DD>`. Fail loudly if no log exists yet (with the message "no log for <id> at <path> — has the instance run today?").
 - [ ] Add a header comment block above the new recipes documenting: (a) the dev/prod axis per [D17]; (b) `app-prod` from a worktree branch produces `(production, <branch>)`, not `(production, main)`; (c) distribution-flow recipes (`dmg`, future `release`/`notarize`) live separately and operate on bundles, not instances.
 
+*Worktree teardown + orphan hygiene (per [Q03] resolution):*
+- [ ] Implement `just worktree-remove <path>` per the [recipe template](#worktree-remove-template) below. Resolves the worktree's branch via `git -C <path> rev-parse --abbrev-ref HEAD`, slugifies via `tugrust/scripts/branch-slug.sh`, composes the instance ID, runs `tugutil instance remove <id>`, then `git worktree remove <path>`. The whole thing is one user action — no "did I forget to clean up first" failure mode.
+- [ ] Add an orphan-check preamble to `just app-dev`: a `tugutil instance prune --check` (a new dry-run flag — discovers orphans, prints the count + one-line list, exits 0 either way). Emit one of:
+  - 0 orphans: silent (no noise on the happy path).
+  - 1+ orphans: short stderr block (3-5 lines) listing the orphan IDs, a one-line reason ("source tree gone" / "bundle gone"), and the suggested `tugutil instance prune` command. Build continues regardless — non-blocking.
+
 *App-test recipe (per [D18]):*
 - [ ] Delete the `Tug Dev` re-sign block (Justfile lines ~516-591) — Developer ID signing from Step 3 makes it obsolete. Also delete the `APP_TEST_SKIP_RESIGN` env var and the `code-sign-fingerprint` drift-warn block from this recipe (the sentinel itself stays for `build-app`'s belt-and-suspenders use per [D11]).
 - [ ] Update the bundle-missing error message from `"Run 'just build-app' first."` to `"Run 'just app-dev' first."`.
@@ -1321,6 +1357,72 @@ No new configuration files. All configuration is via:
 *Universal sweep:*
 - [ ] Grep for any remaining `pkill -x Tug`, `pkill -x tugcast`, `dev.tugexec.app/source-tree-path`, hardcoded `~/Library/Application Support/Tug/Logs/`, or retired-recipe references (`just app`, `just launch`, `just logs`, `just tail-tugcast` — with the regex anchored to NOT swallow surviving recipes like `app-test`, `app-dev`, `logs-dev`) and remove or update them. Both Justfile and harness sources.
 
+##### `worktree-remove` recipe template {#worktree-remove-template}
+
+Implementation skeleton. Adjust messages + flags to match the surrounding Justfile style.
+
+```justfile
+# Tug-aware wrapper around `git worktree remove`. Cleans up the
+# worktree's instance state first (DerivedData bundle, LaunchServices
+# entry, per-instance data dir, optionally TCC), then removes the
+# worktree itself.
+#
+# Use this instead of bare `git worktree remove` when you're done with
+# a Tug worktree. Without it, every removed worktree leaks orphan
+# state per [Q03] / the [tugutil instance remove](#step-14) cleanup
+# inventory.
+#
+# Usage:
+#   just worktree-remove <path>           # e.g. .tugtree/tide-foo
+#   just worktree-remove <path> --force   # skip confirmation
+#   just worktree-remove <path> --with-tcc  # also clear AX grant
+worktree-remove WORKTREE *FLAGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WORKTREE="{{WORKTREE}}"
+    FLAGS="{{FLAGS}}"
+
+    if [ ! -d "$WORKTREE" ]; then
+        echo "error: $WORKTREE is not a directory" >&2
+        exit 1
+    fi
+    # Confirm it's actually a worktree git knows about.
+    if ! git worktree list | awk '{print $1}' | grep -qFx "$(cd "$WORKTREE" && pwd)"; then
+        echo "error: $WORKTREE is not a registered git worktree" >&2
+        echo "       run 'git worktree list' to see what's tracked" >&2
+        exit 1
+    fi
+
+    # Resolve the worktree's branch → instance ID.
+    BRANCH="$(git -C "$WORKTREE" rev-parse --abbrev-ref HEAD)"
+    if [ "$BRANCH" = "HEAD" ]; then
+        BRANCH="detached-$(git -C "$WORKTREE" rev-parse HEAD | cut -c1-8)"
+    fi
+    SLUG="$(bash tugrust/scripts/branch-slug.sh "$BRANCH")"
+    INSTANCE_ID="development-$SLUG"
+
+    echo "==> worktree-remove: $WORKTREE"
+    echo "    branch:      $BRANCH"
+    echo "    instance ID: $INSTANCE_ID"
+
+    # Clean up instance state. `tugutil instance remove` is idempotent —
+    # if the instance was never built, this is a no-op.
+    tugutil instance remove "$INSTANCE_ID" $FLAGS
+
+    # Remove the worktree. `--force` for the rare case where git
+    # worktree refuses (uncommitted changes); we already promised the
+    # user this is destructive cleanup, no point relitigating with
+    # git's own confirmation.
+    git worktree remove --force "$WORKTREE"
+
+    echo "==> Removed worktree $WORKTREE and its instance state ($INSTANCE_ID)."
+```
+
+Notes for implementation time:
+- `tugutil instance remove`'s confirmation prompt is what gates destruction by default; pass-through of `$FLAGS` lets the user opt into `--yes` (skip prompt) or `--with-tcc` (also clear AX grant).
+- `git worktree remove --force` is used because (a) the user has explicitly asked for the worktree to be gone via this command, (b) uncommitted changes in the worktree are an edge case that should be detected and stopped BEFORE this recipe runs (consider adding a `git -C "$WORKTREE" status --porcelain` check + abort if non-empty, behind an opt-out flag).
+- Detached-HEAD worktrees use the same `detached-<sha8>` instance-ID shape that the build phase produces, so the cleanup matches the build's view.
+
 **Tests:**
 
 *Dev/prod surface:*
@@ -1329,6 +1431,12 @@ No new configuration files. All configuration is via:
 - [ ] `just stop` terminates both.
 - [ ] `just launch-dev` (no rebuild) relaunches the most recent build of the cwd-derived dev bundle.
 - [ ] `just logs-dev` and `just logs-prod` each tail their own instance's log; tailing both in parallel shows no interleaving.
+
+*Worktree teardown + orphan hygiene:*
+- [ ] `just worktree-remove .tugtree/some-branch` removes both the worktree and its instance state in one shot; no `tugutil instance prune --check` reports orphans afterwards.
+- [ ] Detached-HEAD worktree teardown: same flow works against a `detached-<sha8>` instance ID.
+- [ ] Bare `git worktree remove` (without our wrapper) followed by `just app-dev` emits the orphan-detected warning; then `tugutil instance prune` cleans up; subsequent `just app-dev` is silent.
+- [ ] `just worktree-remove` against a path that isn't a git worktree fails fast with a clear error; doesn't touch any instance state.
 
 *App-test multi-instance behavior:*
 - [ ] `just app-test harness-smoke/smoke.test.ts` passes while a separate `just app-dev` is also running in the same worktree. Verify by tailing `just logs-dev` during the sweep — only the dev-session log gets entries; the `apptest-*` log dirs live in their own tree.
@@ -1340,6 +1448,7 @@ No new configuration files. All configuration is via:
 - [ ] Three-way coexistence drill: `app-prod` from a main checkout, `app-dev` from worktree A, `app-dev` from worktree B. Result: three Tug bundles in the dock, three live entries in `just instances`, three TCC entries in System Settings → Privacy & Security → Accessibility.
 - [ ] `just stop-prod` from main terminates only the prod instance; both dev instances continue to run.
 - [ ] `just app-test` passes while all three coexisting bundles are running. The fourth `apptest-<uuid>` appears in `just instances` during the run and clears (or persists for post-mortem) afterward.
+- [ ] **Full-lifecycle cleanup drill:** after the three-way coexistence test, `just worktree-remove` worktree A → no orphan reports, no stale DerivedData entry, no LaunchServices entry for the removed identity, no per-instance data dir for it. Production-main + the other worktree's dev instance are untouched. This is the load-bearing test that the multi-instance plan delivers an end-to-end workflow, not just the happy path.
 - [ ] `git grep -nE 'pkill -x Tug|pkill -x tugcast|dev\.tugexec\.app/source-tree-path|just (app|launch|logs|tail-tugcast)([[:space:]]|$)'` returns zero hits in Justfile and harness sources (the retirement is total, not just additive). The trailing class is essential — bare `\b` matches `just app-test`/`just app-dev`/etc., which are surviving recipes.
 
 ---
@@ -1380,24 +1489,28 @@ No new configuration files. All configuration is via:
 - [ ] All success criteria in #success-criteria pass.
 - [ ] No regression in `just app-test` sweep against the production build.
 - [ ] Documentation in `docs/` and `tests/app-test/README.md` reflects the new model.
+- [ ] **Worktree-removal lifecycle is closed.** `just worktree-remove` cleanly disposes of a worktree's full state stack (DerivedData bundle, LaunchServices entry, per-instance data dir, optionally TCC). `tugutil instance prune` rescues orphans left by bare `git worktree remove`. The workflow has no "orphan state accumulates silently" mode.
 
 **Acceptance tests:**
 - [ ] End-to-end: production-main + development-(worktree) coexist; state isolated; tools resolve cwd-correctly.
 - [ ] End-to-end: second launch of same identity exits cleanly with readable alert.
+- [ ] End-to-end: worktree create → use → `just worktree-remove` round-trip leaves zero detectable orphans (data dir, DerivedData, LaunchServices, registry).
 - [ ] Drift: legacy tugbank migration is idempotent and preserves the legacy file byte-for-byte.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Final app icon artwork ([Q02]).
-- [ ] `tugutil instance clone <src> <dst>`, `prune`, `attach` ([Q03]).
+- [ ] Final app icon artwork — superseded; artwork landed in `fca105f7` per [D15] / [Q02].
+- [ ] `tugutil instance clone <src> <dst>` and `attach` ([Q03] — `remove` and `prune` moved into Phase 1).
 - [ ] Linux/Windows port (separate plan).
 - [ ] `tugutil instance current --json` for shell-script consumption.
 - [ ] Distribution channel (DMG, Sparkle updates) leveraging the notarization infrastructure from Step 4.
+- [ ] Per-branch icon overlay for non-main dev builds — explicitly out of scope per [Q02]. If multi-worktree dock confusion turns out to bite, the path is a loose-`.icns` override that overrides the asset catalog on a per-bundle basis.
 
 | Checkpoint | Verification |
 |------------|--------------|
 | Build artifacts | `codesign --verify --deep --strict` + `stapler validate` (release) |
 | Runtime isolation | Manual: two instances, state diverges |
+| Worktree teardown | `just worktree-remove`; `tugutil instance prune --check` reports zero orphans afterwards |
 | CLI discovery | `tugutil tell restart` from worktree cwd → correct instance |
 | Migration safety | Legacy file SHA-256 unchanged after migration |
 | TCC stability | AX grant survives rebuild of the same bundle ID |
