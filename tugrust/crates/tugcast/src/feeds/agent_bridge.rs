@@ -1360,8 +1360,7 @@ fn parse_user_message_text(json: &[u8]) -> Option<String> {
         return None;
     }
     if let Some(blocks) = value.get("content").and_then(|v| v.as_array()) {
-        let (text, _atts) =
-            crate::feeds::payload_inspector::derive_legacy_journal_view(blocks);
+        let (text, _atts) = crate::feeds::payload_inspector::derive_legacy_journal_view(blocks);
         if !text.is_empty() {
             return Some(text);
         }
@@ -1687,7 +1686,10 @@ mod tests {
                 {"type":"text","text":"world"}
             ]
         }"#;
-        assert_eq!(parse_user_message_text(json), Some("hello world".to_owned()));
+        assert_eq!(
+            parse_user_message_text(json),
+            Some("hello world".to_owned())
+        );
     }
 
     #[test]

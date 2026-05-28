@@ -667,9 +667,7 @@ impl SessionLedger {
     /// they become the most-recent prompt until the next user message
     /// overwrites them. No-op when the table is absent (fresh DB) or
     /// the rename has already run.
-    fn migrate_sessions_first_to_last_user_prompt(
-        conn: &Connection,
-    ) -> Result<(), LedgerError> {
+    fn migrate_sessions_first_to_last_user_prompt(conn: &Connection) -> Result<(), LedgerError> {
         let cols = Self::table_columns(conn, "sessions")?;
         let has_old = cols.iter().any(|(n, _)| n == "first_user_prompt");
         let has_new = cols.iter().any(|(n, _)| n == "last_user_prompt");
