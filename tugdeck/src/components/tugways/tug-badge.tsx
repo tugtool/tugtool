@@ -5,7 +5,9 @@
  * Shares the emphasis x role axis system with TugButton.
  * Supports four emphases (filled, outlined, ghost, tinted) and seven roles.
  *
- * Laws: [L06] appearance via CSS, [L16] pairings declared, [L19] component authoring guide
+ * Laws: [L06] appearance via CSS, [L16] pairings declared, [L18] tokens from the
+ *       seven-slot system, [L19] component authoring guide, [L20] tokens scoped to
+ *       the component slot
  * Decisions: [D02] emphasis x role system
  */
 
@@ -55,6 +57,23 @@ export type TugBadgeRole =
 export type TugBadgeSize = "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
 
 /**
+ * TugBadge layout — single-line pill vs two-line label/content chip.
+ *
+ * - `single` — the default pill: one row, `children` only (icon + text inline).
+ * - `label-top` — two stacked rows with the letter-spaced `label` caption above
+ *   the `children` content line. Mirrors the dev-card status-bar legend
+ *   discipline so ambient chrome reads with one visual vocabulary.
+ * - `content-top` — the same two rows in reverse vertical order (content above
+ *   label) for the rarer case where the value reads first and the label is a
+ *   small caption beneath it.
+ *
+ * Both two-line layouts keep a stable DOM order (label first, content second);
+ * the visual stacking is driven entirely by CSS column direction, never by
+ * reordered children. The chip's width resolves to the wider of the two rows.
+ */
+export type TugBadgeLayout = "single" | "label-top" | "content-top";
+
+/**
  * TugBadge props interface.
  */
 export interface TugBadgeProps extends Omit<React.ComponentPropsWithoutRef<"span">, "role"> {
@@ -76,6 +95,20 @@ export interface TugBadgeProps extends Omit<React.ComponentPropsWithoutRef<"span
    * @default "sm"
    */
   size?: TugBadgeSize;
+  /**
+   * Layout arrangement. `single` is the one-row pill (default, non-breaking
+   * for every existing call site). `label-top` / `content-top` render the
+   * `label` caption and `children` content as two stacked rows.
+   * @selector .tug-badge-layout-single | .tug-badge-layout-label-top | .tug-badge-layout-content-top
+   * @default "single"
+   */
+  layout?: TugBadgeLayout;
+  /**
+   * Letter-spaced uppercase caption line for the two-line layouts. Only
+   * meaningful when `layout !== "single"`; ignored in single layout. The
+   * content line is always `children`.
+   */
+  label?: string;
   /** Badge label content (required). */
   children: React.ReactNode;
   /** Lucide icon node rendered before the label. */
@@ -98,6 +131,8 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     emphasis = "tinted",
     role = "action",
     size = "sm",
+    layout = "single",
+    label,
     children,
     icon,
     iconGap,
@@ -107,12 +142,17 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
   }: TugBadgeProps, ref) {
     const emphasisRoleClass = `tug-badge-${emphasis}-${role}`;
     const sizeClass = `tug-badge-size-${size}`;
+    const layoutClass = `tug-badge-layout-${layout}`;
+    const twoLine = layout !== "single";
     // `iconGap` overrides the size's natural gap (set by the
     // `.tug-badge-size-{sm,md,lg}` CSS rules). Inline style takes
     // precedence per CSS specificity. Caller's `style` wins last
-    // if the consumer wants the final say.
+    // if the consumer wants the final say. In a two-line layout the
+    // root's `gap` is the row gap between label and content, so the
+    // icon-gap override only applies to the single-line layout where
+    // the icon sits beside the text on the badge root.
     const mergedStyle: React.CSSProperties | undefined =
-      iconGap !== undefined
+      iconGap !== undefined && !twoLine
         ? { gap: `${iconGap}px`, ...style }
         : style;
 
@@ -138,13 +178,28 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
           // visible chrome doesn't reserve layout space for box
           // it never paints.
           data-emphasis={emphasis}
-          className={cn("tug-badge", sizeClass, emphasisRoleClass, className)}
+          className={cn("tug-badge", sizeClass, layoutClass, emphasisRoleClass, className)}
           style={mergedStyle}
           onContextMenu={copyable.handleContextMenu}
           {...rest}
         >
-          {icon && <span className="tug-badge-icon">{icon}</span>}
-          {children}
+          {twoLine ? (
+            // DOM order is stable — label first, content second — so the
+            // semantic reading order never moves. `content-top` flips only
+            // the visual stacking via `flex-direction: column-reverse`.
+            <>
+              <span className="tug-badge-label">{label}</span>
+              <span className="tug-badge-content">
+                {icon && <span className="tug-badge-icon">{icon}</span>}
+                {children}
+              </span>
+            </>
+          ) : (
+            <>
+              {icon && <span className="tug-badge-icon">{icon}</span>}
+              {children}
+            </>
+          )}
         </span>
         {copyable.contextMenu}
       </>

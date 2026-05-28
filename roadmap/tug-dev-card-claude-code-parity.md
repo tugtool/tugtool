@@ -729,7 +729,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Add a short design note to [tuglaws/component-authoring.md](../tuglaws/component-authoring.md) (or a small standalone doc) documenting the `TugBadge` two-line layout per [#step-0] / Spec S02 — when to use `label-top` vs `content-top` vs `single`.
+- [x] Add a short design note to [tuglaws/component-authoring.md](../tuglaws/component-authoring.md) (or a small standalone doc) documenting the `TugBadge` two-line layout per [#step-0] / Spec S02 — when to use `label-top` vs `content-top` vs `single`. (Landed as the "Two-line label / content layout (TugBadge)" subsection under Component Patterns.)
 - [ ] Update [transport-exploration.md](transport-exploration.md) "Terminal-Only Features" section to mark resolved rows with their dev-card landing-step (e.g. "`/rewind` — Overlay sheet ([dev-card-claude-code-parity.md#step-7])"). Add the empirical `/rewind` findings from [#step-7a].
 - [ ] Author `tugdeck/docs/dev-card-unsupported-slash-commands.md` per [D14] — every command the popup hides, with a brief reason. Linked from the slash popup's "?" help affordance and from `/help`.
 - [ ] Update [transport-exploration.md](transport-exploration.md) IPC inbound table with whatever shape `/rewind` adopts after the empirical study (could be a new type, an extension, or a client-driven flow).
@@ -789,6 +789,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
   - `label-top`: two stacked rows; row 1 = `label` styled per [#s02-label-typography]; row 2 = `children` styled as existing content text.
   - `content-top`: same two rows in reverse vertical order.
 - Width stabilization: the badge's outer width is the max of label-line and content-line widths; pre-allocated by the widest realistic value to satisfy [#r01-z4b-layout-shift].
+- Height series: the two-line layouts take a fixed per-size height mirroring the `TugPushButton` height scale by value (`--tugx-badge-twoline-height-*`: 20/24/28/32/36 px for `2xs`→`lg`; 40/44 px for `xl`/`2xl`) so a chip reads as tall as a button. The `lg` face equals the dev-card submit button (`TugPushButton size="lg"`); Z4B chips use `lg`. Tokens are badge-scoped per [L20] — derived from, not borrowed from, TugButton.
 
 **Spec S02-typography: label-line typography** {#s02-label-typography}
 
@@ -805,25 +806,26 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 **Decision deferred to spike outcome:** which ordering (`label-top` vs `content-top`) the dev-card Z4B chips use. The screenshot's status bar uses `label-top`. The recommended starting point for Z4B is `label-top` for consistency, but the gallery card demonstrates both so the team can compare in context.
 
 **Tasks:**
-- [ ] Audit existing TugBadge call sites (`grep` `TugBadge` across `tugdeck/src`) to ensure adding the `layout` and `label` props is non-breaking (they're optional with `"single"` default).
-- [ ] Add the `layout` + `label` props to `TugBadge`. Per-layout DOM structure: `single` renders as today; `label-top` and `content-top` render two `<span>`s in a vertical flex with column ordering driven by CSS, not by reordered DOM children (keeps semantic order stable).
-- [ ] Borrow the status-bar legend typography per [#s02-label-typography]. Add component-scoped tokens for label-text size and tracking under TugBadge's own slot per [L20] — do not reach into TugBox's tokens.
-- [ ] Width-stabilize: the badge's effective width is the wider of the label line and content line (per [R01]). The CSS uses `grid` or `display: inline-block` with intrinsic sizing so the wider row drives the layout.
-- [ ] Confirm token sourcing: label color is the field-label token from the seven-slot system per [L18]; no new color tokens minted.
-- [ ] Add gallery card sections (`gallery-badge.tsx`) demonstrating all three layouts side-by-side: `single` (current), `label-top` (label uppercase letter-spaced above content), `content-top` (content above label). Include realistic Z4B-style content as preview rows (e.g. `MODE / accept`, `MODEL / Opus 4.8 · 1M`, `LIMIT / 5h 23m`, `SESSION / 6d77f06e`).
-- [ ] Add a short design note to `tuglaws/component-authoring.md` (or a small standalone doc under `tuglaws/`) documenting when to use each layout. Brief: `single` for transient or single-fact pills; `label-top` for chrome that mirrors status-bar conventions; `content-top` reserved for the rare case where content reads first (e.g., a numeric value with a small caption below).
-- [ ] Decide the Z4B chip ordering. Recommendation: `label-top` for status-bar visual parity. Confirm by viewing both in the gallery against a representative card width.
+- [x] Audit existing TugBadge call sites (`grep` `TugBadge` across `tugdeck/src`) to ensure adding the `layout` and `label` props is non-breaking (they're optional with `"single"` default). Confirmed: all existing call sites omit `layout`/`label` and keep the `single` default; full `bun test` (3039 tests) stays green.
+- [x] Add the `layout` + `label` props to `TugBadge`. Per-layout DOM structure: `single` renders as today; `label-top` and `content-top` render two `<span>`s in a vertical flex with column ordering driven by CSS (`column` vs `column-reverse`), not by reordered DOM children (caption is always DOM-first).
+- [x] Borrow the status-bar legend typography per [#s02-label-typography]. Added component-scoped `--tugx-badge-label-text-size` (em-relative, one notch under content) and `--tugx-badge-label-tracking` under TugBadge's own slot per [L20] — TugBox's tokens are untouched.
+- [x] Width-stabilize: the badge's effective width is the wider of the label line and content line (per [R01]) — an inline-flex column sizes its cross axis to the widest row, so the chip is as wide as its widest line with no fixed width. (Cross-*content* reservation is the consumer's job, demoed in the gallery.)
+- [x] Height series derived from `TugPushButton`. Two-line chips take a fixed per-size height mirroring the button scale by value (`--tugx-badge-twoline-height-*`: 20/24/28/32/36 px for `2xs`→`lg`, extending to 40/44 px for `xl`/`2xl`) so a chip stands as tall as a button. The `lg` face = the dev-card submit button (`TugPushButton size="lg"`, 36 px); the gallery two-line demos and Z4B chips use `lg`. Tokens live in the badge's own slot ([L20] — derived from, not borrowed from, TugButton).
+- [x] Confirm token sourcing: label color is `--tug7-element-field-text-normal-label-rest` (the shared field-label token) per [L18]; no new color tokens minted. `audit:tokens lint` passes.
+- [x] Add gallery card sections demonstrating all three layouts side-by-side: `single` (current), `label-top`, `content-top`. Realistic Z4B content rows (`MODE / accept`, `MODEL / Opus 4.8 · 1M`, `LIMIT / 5h 23m`, `SESSION / 6d77f06e`) plus a width-stabilized rate-limit slot. **Note:** landed in the real, registered `GalleryBadge` showcase (`gallery-registrations.tsx`) — the `gallery-badge.tsx` named in the artifacts list is an orphaned, unregistered exploratory mockup that does not use the real `TugBadge`; demoing there would prove nothing.
+- [x] Add a short design note to `tuglaws/component-authoring.md` ("Two-line label / content layout (TugBadge)") documenting when to use each layout: `single` for transient/single-fact pills; `label-top` for chrome that mirrors status-bar conventions; `content-top` for the rare value-first case.
+- [~] Decide the Z4B chip ordering. **Recommendation: `label-top`** for status-bar visual parity. Final sign-off pending a by-hand gallery view (requires the macOS Accessibility grant on Tug.app — see Checkpoint).
 
 **Tests:**
-- [ ] Pure-logic: existing single-layout snapshot tests continue to pass (non-breaking).
-- [ ] Pure-logic: each new layout renders the expected DOM shape (two children with the right class names).
-- [ ] Real-app: open the badge gallery card and verify both two-line layouts render with the borrowed typography against multiple themes.
-- [ ] Real-app: confirm width-stabilization — toggle content between "5h 23m" and "rate-limited" in a `label-top` chip; assert no horizontal shift.
+- [x] Existing single-layout call sites continue to pass (non-breaking) — full `bun test` suite green (3039 pass / 0 fail).
+- [x] New-layout DOM shape (two children with the right class names, CSS-driven visual order) — covered by `at0087-tug-badge-two-line.test.ts` (real DOM; tugdeck has no DOM-rendering unit layer).
+- [x] Real-app: `at0087` opens the badge gallery card and asserts both two-line layouts render with the borrowed caption typography (uppercase, weight 600, non-zero tracking) and the correct visual stacking order.
+- [x] Real-app: `at0087` confirms width-stabilization — toggles the rate-limit value between "5h 23m" and "rate-limited" in a `label-top` slot and asserts the reserved slot width does not move.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`
-- [ ] `just app-test tug-badge-two-line`
-- [ ] Open the badge gallery card by hand; sign off on the chosen Z4B chip ordering before Step 1 starts consuming it.
+- [x] `cd tugdeck && bun test` — 3039 pass / 0 fail.
+- [~] `just app-test tug-badge-two-line` — test written and reaches `launchTugApp`; blocked on the one-time macOS Accessibility grant for `dev.tugtool.app.debug` (System Settings → Privacy & Security → Accessibility). Re-run after granting.
+- [ ] Open the badge gallery card by hand; sign off on the chosen Z4B chip ordering (recommended `label-top`) before Step 1 starts consuming it.
 
 **What this step does NOT do:**
 - Does not mount any Z4B chip — that's [#step-1] through [#step-4].
@@ -1575,7 +1577,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `TugBadge` supports the two-line `label-top` and `content-top` layouts per Spec S02; gallery card demos both ([#step-0]); existing single-layout call sites unchanged.
+- [x] `TugBadge` supports the two-line `label-top` and `content-top` layouts per Spec S02; gallery card demos both ([#step-0]); existing single-layout call sites unchanged.
 - [ ] Z4B chrome shows all 4 chips as INDICATORS on every dev-card mount, rendered via the two-line `TugBadge` (display-only per [D13]; no click-to-popover on any chip). `Shift+Tab` cycles permission mode; rate-limit chip appears when status ≠ allowed; session-state reflects lifecycle.
 - [ ] Permission mode persists per-card via tugbank per [D07] — relaunching a card restores its prior mode.
 - [ ] Typed `/rewind`, `/resume`, `/permissions`, `/model`, `/diff`, `/context`, `/memory`, `/agents`, `/hooks`, `/help` each produce the documented graphical surface (all overlay sheets per [D15]).

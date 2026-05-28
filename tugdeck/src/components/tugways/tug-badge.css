@@ -56,6 +56,7 @@
  * --tug7-element-badge-border-tinted-success-rest | --tug7-surface-badge-primary-tinted-success-rest | informational
  * --tug7-element-badge-text-tinted-caution-rest | --tug7-surface-badge-primary-tinted-caution-rest | informational
  * --tug7-element-badge-border-tinted-caution-rest | --tug7-surface-badge-primary-tinted-caution-rest | informational
+ * --tug7-element-field-text-normal-label-rest | --tug7-surface-global-primary-normal-default-rest | content
  * } */
 
 /**
@@ -118,7 +119,42 @@
  * | --tug7-element-badge-border-tinted-success-rest | --tug7-surface-badge-primary-tinted-success-rest | informational | .tug-badge-tinted-success (border-color) |
  * | --tug7-element-badge-text-tinted-caution-rest | --tug7-surface-badge-primary-tinted-caution-rest | informational | .tug-badge-tinted-caution (color)    |
  * | --tug7-element-badge-border-tinted-caution-rest | --tug7-surface-badge-primary-tinted-caution-rest | informational | .tug-badge-tinted-caution (border-color) |
+ * | --tug7-element-field-text-normal-label-rest | --tug7-surface-global-primary-normal-default-rest | content | .tug-badge-label (color) — two-line caption, shares the status-bar legend token |
  */
+
+/* ============================================================================
+   Component-scoped slots ([L20])
+
+   The two-line caption line borrows the dev-card status-bar legend
+   discipline (uppercase, 0.08em tracking, weight 600, the shared
+   field-label colour). Size and tracking live in the badge's own slot
+   so the caption tunes independently of TugBox's legend tokens — the
+   badge never reaches into another component's namespace. The size is
+   em-relative so one slot tracks every size variant, always landing one
+   notch under the content line.
+   ========================================================================= */
+
+body {
+  --tugx-badge-label-text-size: 0.8em;
+  --tugx-badge-label-tracking: 0.08em;
+
+  /* Two-line chip heights mirror the TugPushButton height scale
+     (`--tug-button-{size}-height`: 20 / 24 / 28 / 32 / 36 px) by value,
+     not by token — a two-line chip reads as tall and deliberate as a
+     button, and the `lg` face matches the dev-card submit button
+     (`TugPushButton size="lg"`). Owning these under the badge's own slot
+     keeps [L20] intact (no reach into TugButton's namespace); the badge's
+     own single-line `height` scale is unchanged. `xl` / `2xl` extend the
+     scale past the button's `lg` ceiling for the few chips that want more
+     presence. */
+  --tugx-badge-twoline-height-2xs: 1.25rem; /* 20px */
+  --tugx-badge-twoline-height-xs:  1.5rem;  /* 24px */
+  --tugx-badge-twoline-height-sm:  1.75rem; /* 28px */
+  --tugx-badge-twoline-height-md:  2rem;    /* 32px */
+  --tugx-badge-twoline-height-lg:  2.25rem; /* 36px — matches the submit button */
+  --tugx-badge-twoline-height-xl:  2.5rem;  /* 40px */
+  --tugx-badge-twoline-height-2xl: 2.75rem; /* 44px */
+}
 
 /* ============================================================================
    Base Badge
@@ -240,6 +276,87 @@
 .tug-badge-size-2xl .tug-badge-icon svg {
   width: 0.875rem;  /* 14px — matches font-size */
   height: 0.875rem;
+}
+
+/* ============================================================================
+   Two-line layouts (label / content)
+
+   `label-top` and `content-top` stack a letter-spaced caption row and the
+   content row inside the same pill. The root flips to a flex column;
+   `content-top` reverses the *visual* order via `column-reverse` while the
+   DOM order stays label-first (set in tug-badge.tsx) so the reading order
+   never moves.
+
+   Width resolves to the wider of the two rows for free: an inline-flex column
+   sizes its cross axis to its widest child, so the chip is exactly as wide as
+   its widest line with no fixed width — the intra-chip half of [R01]. A
+   consumer that must hold width across *content* changes reserves the slot
+   itself (per [R01]); the chip primitive does not.
+
+   Height comes from the TugPushButton-derived two-line scale (see the
+   `--tugx-badge-twoline-height-*` tokens) rather than the single-line size
+   `height`, so a two-line chip stands as tall as a button. The two rows
+   centre vertically inside that fixed box via `justify-content: center`. The
+   per-size height rules below combine the layout and size classes (specificity
+   0,2,0) so they win over the single-line size `height` (0,1,0) regardless of
+   source order.
+   ========================================================================= */
+
+.tug-badge-layout-label-top,
+.tug-badge-layout-content-top {
+  flex-direction: column;
+  align-items: center;
+  /* Centre the two rows as a pair, but separate them by an em-relative gap so
+     they neither touch (too scrunched) nor fling to the chip's edges (too
+     loose). At `lg` this lands the inter-row spacing and the top/bottom
+     margins about halfway between a flush centre and an even distribution. */
+  justify-content: center;
+  gap: 0.25em;
+  line-height: 1;
+}
+
+.tug-badge-layout-content-top {
+  flex-direction: column-reverse;
+}
+
+/* Two-line height scale — mirrors the TugPushButton heights by value. */
+.tug-badge-layout-label-top.tug-badge-size-2xs,
+.tug-badge-layout-content-top.tug-badge-size-2xs { height: var(--tugx-badge-twoline-height-2xs); }
+
+.tug-badge-layout-label-top.tug-badge-size-xs,
+.tug-badge-layout-content-top.tug-badge-size-xs { height: var(--tugx-badge-twoline-height-xs); }
+
+.tug-badge-layout-label-top.tug-badge-size-sm,
+.tug-badge-layout-content-top.tug-badge-size-sm { height: var(--tugx-badge-twoline-height-sm); }
+
+.tug-badge-layout-label-top.tug-badge-size-md,
+.tug-badge-layout-content-top.tug-badge-size-md { height: var(--tugx-badge-twoline-height-md); }
+
+.tug-badge-layout-label-top.tug-badge-size-lg,
+.tug-badge-layout-content-top.tug-badge-size-lg { height: var(--tugx-badge-twoline-height-lg); }
+
+.tug-badge-layout-label-top.tug-badge-size-xl,
+.tug-badge-layout-content-top.tug-badge-size-xl { height: var(--tugx-badge-twoline-height-xl); }
+
+.tug-badge-layout-label-top.tug-badge-size-2xl,
+.tug-badge-layout-content-top.tug-badge-size-2xl { height: var(--tugx-badge-twoline-height-2xl); }
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-badge-label {
+  font-size: var(--tugx-badge-label-text-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tugx-badge-label-tracking);
+  line-height: 1;
+  color: var(--tug7-element-field-text-normal-label-rest);
+}
+
+.tug-badge-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1875rem; /* 3px — keeps the optional icon snug against the value */
+  line-height: 1;
 }
 
 /* ============================================================================

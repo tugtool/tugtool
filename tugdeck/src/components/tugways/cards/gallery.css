@@ -10,6 +10,8 @@
  * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-section-title (color)            |
  * | --tug7-element-global-fill-normal-accentCool-rest (element-global-fill-normal-accentCool-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-mutation-box (border)            |
  * | --tug7-element-global-fill-normal-accent-rest (element-global-fill-normal-accent-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-cascade-source (color)           |
+ * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .cg-demo-button (color)              |
+ * | --tug7-element-global-text-normal-default-rest (element-global-text-normal-default-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | content      | .cg-demo-button:hover (color)        |
  */
 
 
@@ -509,4 +511,52 @@
 .gallery-md-view {
   height: 100%;
   width: 100%;
+}
+
+/* ============================================================================
+   TugBadge two-line demos (width-stabilized slot + toggle)
+   ========================================================================= */
+
+/*
+ * .cg-badge-stable-slot — inline grid that stacks the active chip and a
+ * hidden alternate in a single cell, so the slot reserves the wider of the
+ * two content faces. Cycling the value swaps which face is visible; the
+ * reserved width never moves. Mirrors the TugButton widthStabilize technique
+ * at the demo level and proves the [R01] reserved-slot pattern with no fixed
+ * pixel width.
+ */
+.cg-badge-stable-slot {
+  display: inline-grid;
+}
+
+.cg-badge-stable-slot > * {
+  grid-area: 1 / 1;
+}
+
+/* The alternate face holds its width but never paints. */
+.cg-badge-stable-ghost {
+  visibility: hidden;
+}
+
+/*
+ * .cg-demo-button — minimal inline toggle for gallery demos. Draws its
+ * outline in currentColor (no new colour pairing) and uses the muted text
+ * token for its label.
+ */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.cg-demo-button {
+  font: inherit;
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: var(--tug-radius-xs);
+  padding: 2px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.cg-demo-button:hover {
+  color: var(--tug7-element-global-text-normal-default-rest);
 }

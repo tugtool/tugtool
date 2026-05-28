@@ -190,6 +190,23 @@ const ALL_BADGE_SIZES: TugBadgeSize[] = ["2xs", "xs", "sm", "md", "lg", "xl", "2
 const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
 
 /**
+ * Realistic dev-card Z4B chrome faces for the two-line layout demos —
+ * the permission-mode / model / rate-limit / session indicators that
+ * later steps mount into the prompt-entry band. Each pairs a
+ * letter-spaced caption with the value the chip displays.
+ */
+const TWO_LINE_BADGE_CHIPS: { label: string; content: string; role: TugBadgeRole }[] = [
+  { label: "MODE", content: "accept", role: "action" },
+  { label: "MODEL", content: "Opus 4.8 · 1M", role: "agent" },
+  { label: "LIMIT", content: "5h 23m", role: "data" },
+  { label: "SESSION", content: "6d77f06e", role: "accent" },
+];
+
+/** The two rate-limit faces the width-stabilized slot cycles between. */
+const RATE_LIMIT_NARROW = "5h 23m";
+const RATE_LIMIT_WIDE = "rate-limited";
+
+/**
  * GalleryBadge -- TugBadge showcase gallery tab.
  *
  * A leading Sizes section ramps the full size scale at a single
@@ -207,6 +224,14 @@ const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
  * the inherit role in `tug-badge.tsx`.)
  */
 export function GalleryBadge() {
+  // The width-stabilized slot cycles the rate-limit value between a
+  // narrow and a wide face. Cycling the *content* is data, not
+  // appearance — the chip's painted geometry is owned entirely by CSS
+  // ([L06]); this state only chooses which string the chip renders.
+  const [rateLimit, setRateLimit] = useState<string>(RATE_LIMIT_NARROW);
+  const rateLimitAlternate =
+    rateLimit === RATE_LIMIT_NARROW ? RATE_LIMIT_WIDE : RATE_LIMIT_NARROW;
+
   return (
     <div className="cg-content" data-testid="gallery-badge">
 
@@ -283,6 +308,109 @@ export function GalleryBadge() {
           {emphasis !== ALL_BADGE_EMPHASES[ALL_BADGE_EMPHASES.length - 1] && <TugSeparator />}
         </React.Fragment>
       ))}
+
+      <TugSeparator />
+
+      {/* ---- Two-line layouts ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">TugBadge — Two-line layouts</TugLabel>
+        <div className="cg-matrix">
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">label-top — caption above value (status-bar parity)</TugLabel>
+            <div className="cg-variant-row" data-testid="badge-label-top-row">
+              {TWO_LINE_BADGE_CHIPS.map((chip) => (
+                <TugBadge
+                  key={chip.label}
+                  layout="label-top"
+                  label={chip.label}
+                  emphasis="tinted"
+                  role={chip.role}
+                  size="lg"
+                >
+                  {chip.content}
+                </TugBadge>
+              ))}
+            </div>
+          </div>
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">content-top — value above caption</TugLabel>
+            <div className="cg-variant-row" data-testid="badge-content-top-row">
+              {TWO_LINE_BADGE_CHIPS.map((chip) => (
+                <TugBadge
+                  key={chip.label}
+                  layout="content-top"
+                  label={chip.label}
+                  emphasis="tinted"
+                  role={chip.role}
+                  size="lg"
+                >
+                  {chip.content}
+                </TugBadge>
+              ))}
+            </div>
+          </div>
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">single — the one-row pill, unchanged</TugLabel>
+            <div className="cg-variant-row" data-testid="badge-single-row">
+              {TWO_LINE_BADGE_CHIPS.map((chip) => (
+                <TugBadge key={chip.label} emphasis="tinted" role={chip.role} size="md">
+                  {`${chip.label} ${chip.content}`}
+                </TugBadge>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Width-stabilized slot ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">TugBadge — Width-stabilized slot</TugLabel>
+        <TugLabel size="2xs" emphasis="calm">
+          A rate-limit chip reserves the wider of its two faces so cycling the value never shifts Z4B layout ([R01]).
+        </TugLabel>
+        <div className="cg-variant-row">
+          {/* The active chip and a hidden alternate stack in one grid cell, so
+              the slot is always as wide as the wider face. Toggling the value
+              swaps which face is visible; the reserved width never moves. */}
+          <span className="cg-badge-stable-slot" data-testid="badge-stable-slot">
+            <TugBadge
+              layout="label-top"
+              label="LIMIT"
+              emphasis="tinted"
+              role="data"
+              size="lg"
+              data-testid="badge-stable-active"
+            >
+              {rateLimit}
+            </TugBadge>
+            <TugBadge
+              layout="label-top"
+              label="LIMIT"
+              emphasis="tinted"
+              role="data"
+              size="lg"
+              className="cg-badge-stable-ghost"
+              aria-hidden
+            >
+              {rateLimitAlternate}
+            </TugBadge>
+          </span>
+          <button
+            type="button"
+            className="cg-demo-button"
+            data-testid="badge-stable-toggle"
+            onClick={() =>
+              setRateLimit((value) =>
+                value === RATE_LIMIT_NARROW ? RATE_LIMIT_WIDE : RATE_LIMIT_NARROW,
+              )
+            }
+          >
+            toggle value
+          </button>
+        </div>
+      </div>
 
     </div>
   );

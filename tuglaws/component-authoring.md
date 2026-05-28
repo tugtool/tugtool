@@ -944,6 +944,22 @@ For components with multiple visual emphases (filled, outlined, ghost) crossed w
 - CSS class: `.tug-{name}-{emphasis}-{role}`
 - Tokens: `--tug7-surface-control-primary-{emphasis}-{role}-{state}` for backgrounds, `--tug7-element-control-{constituent}-{emphasis}-{role}-{state}` for foregrounds
 
+### Two-line label / content layout (TugBadge)
+
+A chip that packs a letter-spaced caption above (or below) its value, borrowing the dev-card status-bar legend discipline so ambient chrome reads with one visual vocabulary. `TugBadge` exposes it via `layout` + `label`:
+
+- **`single`** (default) — the one-row pill. Use for transient or single-fact chips, counts, and status pills. Existing call sites pass only `children`; nothing changes for them.
+- **`label-top`** — the caption sits above the value. **This is the default for chrome that mirrors the status bar** (the Z4B permission-mode / model / rate-limit / session indicators). The caption is uppercase, weight 600, `0.08em` tracking — the same legend signature as `tug-box.css`'s `.tug-box-legend`.
+- **`content-top`** — the value sits above the caption. Reserve for the rare case where the value reads first and the label is a small caption beneath it (e.g. a numeric readout with a unit caption under it).
+
+**DOM order is stable; the stacking is CSS-driven.** Both two-line layouts render the caption first in the DOM and the content second. `content-top` only reverses the *visual* order via `flex-direction: column-reverse` — never by reordering children — so the reading order and any copy/selection behavior stay fixed.
+
+**Width is the wider of the two rows, intrinsically.** An inline-flex column sizes its cross axis to its widest child, so the chip is exactly as wide as its widest line with no fixed width. A consumer that must hold width across *content* changes (a rate-limit chip cycling "5h 23m" ↔ "rate-limited") reserves the slot itself — overlay the active and a hidden alternate in one grid cell, per [R01] — the chip primitive does not.
+
+**Height comes from the button scale, not the single-line scale.** A two-line chip stands as tall as a button: its per-size height mirrors the `TugPushButton` heights by value (`--tugx-badge-twoline-height-*`: 20 / 24 / 28 / 32 / 36 px for `2xs`→`lg`, extending to 40 / 44 px for `xl` / `2xl`). The `lg` face equals the dev-card submit button (`TugPushButton size="lg"`), which is the size the Z4B chips use so the chrome band reads as one row of equal-height controls. The two rows centre vertically inside that fixed box. These tokens live in the badge's own slot — the height is *derived from* the button scale, not borrowed from TugButton's tokens, so [L20] holds.
+
+**Caption tokens stay in the badge's own slot [L20].** The caption's size (`--tugx-badge-label-text-size`, em-relative so one slot tracks every size variant) and tracking (`--tugx-badge-label-tracking`) live under TugBadge's namespace — it never reaches into TugBox's legend tokens. Only the *colour* is shared: the caption uses the seven-slot `--tug7-element-field-text-normal-label-rest` field-label token [L18], the same token the status-bar legend paints, which is what makes the two surfaces read as one family.
+
 ### Role Color Injection
 
 For selection controls where a single structural design takes on different role colors via CSS custom property injection, without re-rendering.
