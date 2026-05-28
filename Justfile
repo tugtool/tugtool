@@ -180,9 +180,20 @@ wasm:
 # Build a Debug bundle and (re)launch the cwd-derived development
 # instance. Identity is computed from the current git branch and the
 # `development` profile.
+#
+# The quit-prior step is the FIRST thing the recipe does, before
+# cargo/wasm/xcodebuild/sign. sign-bundle.sh rewrites the bundle's
+# binaries in place; if the previous instance is still running, the
+# kernel notices the signature change under its live mmap'd code and
+# SIGKILLs tugcast — the WebView then flashes a disconnect banner
+# during what should be a smooth handoff. Quitting first avoids that.
 app-dev: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
+    echo "==> Quitting prior $INSTANCE_ID, if running"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     # Dev bundles serve the frontend via Vite HMR — no `bun run build`
     # is needed here. The xcodebuild build phase tolerates an empty
     # tugdeck/dist; production builds (`app-prod`) run the full vite
@@ -198,24 +209,24 @@ app-dev: build wasm
     if tugrust/target/debug/tugutil instance prune --json 2>/dev/null | grep -q instance_id; then
         echo "[warn] orphaned per-instance data dirs detected. Run 'tugutil instance prune' to clean up." >&2
     fi
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
     # Seed the per-instance source-tree-path so the first launch knows
     # where to find tugdeck/, tugcode, etc. AppDelegate also falls
     # back to BuildInfo.sourceTree (capture-build-info.sh writes
     # $SRCROOT into Info.plist), but writing it explicitly here keeps
     # the user's chosen tree wins over any stale build-time value.
     tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
-    echo "==> Quitting prior $INSTANCE_ID, if running"
-    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
     open "$APP_DIR"
 
 # Build a Release bundle and (re)launch the cwd-derived production
-# instance.
+# instance. Quit-prior runs first for the same reason as app-dev.
 app-prod: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
+    echo "==> Quitting prior $INSTANCE_ID, if running"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     echo "==> Building tugdeck static assets for the production bundle"
     (cd tugdeck && bun run build)
     find tugapp/Sources -name '*.swift' -exec touch {} +
@@ -223,16 +234,12 @@ app-prod: build wasm
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
     # Seed source-tree-path for the prod instance too. AppDelegate
     # falls back to BuildInfo.sourceTree if the tugbank value is
     # missing, but release builds intentionally omit BuildSourceTree
     # ([D03]), so this write is the only path for prod from a
     # developer checkout.
     tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
-    echo "==> Quitting prior $INSTANCE_ID, if running"
-    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
     open "$APP_DIR"
 
