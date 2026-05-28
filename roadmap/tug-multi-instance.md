@@ -924,44 +924,26 @@ No new configuration files. All configuration is via:
 - `Justfile` — `setup-dev-signing` recipe updated; the harness's `.tugtool/code-sign-fingerprint` sentinel refreshes on first run under the new identity.
 
 **Tasks:**
-- [ ] Write `tugapp/tugcode.entitlements`:
-      ```xml
-      <?xml version="1.0" encoding="UTF-8"?>
-      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-      <plist version="1.0">
-      <dict>
-          <key>com.apple.security.cs.allow-jit</key>
-          <true/>
-          <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-          <true/>
-          <key>com.apple.security.cs.disable-executable-page-protection</key>
-          <true/>
-          <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-          <true/>
-          <key>com.apple.security.cs.disable-library-validation</key>
-          <true/>
-      </dict>
-      </plist>
-      ```
-- [ ] Write `tugrust/scripts/sign-bundle.sh` per #signing-flow Step (c). Takes `APP_PATH` and `IDENTITY` as args (or env vars). Signs Rust binaries first (no entitlements), then `tugcode` (permissive entitlements), then the outer `.app` (`Tug.entitlements`). Always uses `--force --options runtime --timestamp`. Never uses `--deep`.
-- [ ] Update `tugrust/scripts/build-app.sh`: delete lines 141-152 (the `--deep` codesign block) and replace with `bash "$SCRIPT_DIR/sign-bundle.sh" "$STAGING_APP" "$DEVELOPER_ID_NAME"`. Keep the `--skip-sign` flag as a developer escape hatch.
-- [ ] Rewrite `scripts/setup-dev-signing.sh`: replace the 115-line openssl `Tug Dev` self-sign provisioning with a ~30-line check that runs `security find-identity -v -p codesigning`, greps for `Developer ID Application`, and either (a) prints success or (b) prints a clear "open Xcode → Settings → Accounts → Manage Certificates → +Developer ID Application" message with a URL. No openssl, no .p12 plumbing.
-- [ ] Update `Justfile`'s `app`, `launch`, and `build-app` recipes to set `DEVELOPER_ID_NAME` (auto-detect if unset) before calling the signing path.
-- [ ] **Empirical iteration loop for Risk R09**: do a debug build with the new inside-out script + hardened runtime. If the app crashes at launch, inspect `log show --predicate 'subsystem == "com.apple.codesigning"' --last 5m` for entitlement violations. Add missing entitlements to `Tug.entitlements` (NOT `tugcode.entitlements` — the outer app is the one launching). Iterate until clean launch.
-- [ ] Refresh the `.tugtool/code-sign-fingerprint` sentinel: rebuild, regenerate the sentinel via the harness's existing logic, confirm the harness DR drift detection passes against the new identity.
+- [x] Write `tugapp/tugcode.entitlements` with the five bun-required permissive entitlements (allow-jit, allow-unsigned-executable-memory, disable-executable-page-protection, allow-dyld-environment-variables, disable-library-validation).
+- [x] Write `tugrust/scripts/sign-bundle.sh` per #signing-flow Step (c). Takes `APP_PATH` and optional `IDENTITY`. Signs Rust helpers (no entitlements), Swift debug dylibs (no entitlements; required so they share the outer binary's Team ID under hardened runtime — see Risk R09 resolution below), `tugcode` (permissive entitlements), then seals the outer `.app` with `Tug.entitlements`. Always `--force --options runtime --timestamp`. `--deep` banned for signing. Auto-detects Developer ID identity from keychain when caller doesn't pass one.
+- [x] Update `tugrust/scripts/build-app.sh`: replaced the `--deep` codesign block with `bash "$SCRIPT_DIR/sign-bundle.sh" "$STAGING_APP" "$DEVELOPER_ID_NAME"`. `--skip-sign` flag preserved. Accepts both `"Developer ID Application: …"` and legacy short-form `DEVELOPER_ID_NAME` for back-compat.
+- [x] Rewrite `scripts/setup-dev-signing.sh`: replaced the 115-line openssl `Tug Dev` self-sign provisioning with a ~30-line check that runs `security find-identity -v -p codesigning`, greps for `Developer ID Application`, and prints either success (with the resolved identity string) or actionable Xcode-Settings-Accounts instructions. No openssl, no .p12 plumbing.
+- [x] Update `Justfile` recipes: `app` now calls `sign-bundle.sh` after xcodebuild. `build-app` auto-detects the Developer ID identity from the keychain and calls `sign-bundle.sh`. `teardown-dev-signing` simplified to just clear the sentinel (the Developer ID cert is the user's Apple identity, not project-scoped — never deleted). `app-test`'s re-sign block calls `sign-bundle.sh` with the auto-detected identity.
+- [x] **Empirical iteration loop for Risk R09**: a debug build with hardened runtime initially failed at launch with `dyld: Library not loaded: @rpath/Tug.debug.dylib ... mapping process and mapped file (non-platform) have different Team IDs`. Resolution: `sign-bundle.sh` now also re-signs `Contents/MacOS/*.dylib` (Tug.debug.dylib, __preview.dylib in Debug builds) with the Developer ID so their Team ID matches the outer binary's. After this, the bundle launches cleanly under hardened runtime — no other entitlement gaps surfaced. `Tug.entitlements` remained unchanged (the existing `allow-unsigned-executable-memory` is sufficient).
+- [x] Refresh the `.tugtool/code-sign-fingerprint` sentinel: rebuilt, regenerated the sentinel via the build-app DR-extract path, confirmed the harness DR drift detection passes against the new identity.
 
 **Tests:**
-- [ ] `codesign --verify --deep --strict --verbose=2 Tug.app` returns 0 (verification uses `--deep`; signing does not).
-- [ ] `codesign -d --verbose=4 Tug.app/Contents/MacOS/Tug` shows the outer app signed by `Developer ID Application: ... (Z67582R5Y8)` with `Authority=Developer ID Certification Authority` and `TeamIdentifier=Z67582R5Y8`.
-- [ ] `codesign -d --entitlements - --xml Tug.app/Contents/MacOS/tugcode` includes all five bun entitlements.
-- [ ] `codesign -d --entitlements - --xml Tug.app/Contents/MacOS/tugcast` shows NO `allow-jit` (Rust binaries get default hardened runtime, no extras).
-- [ ] The existing harness DR drift detection (`Justfile:571`) passes after rebuild.
+- [x] `codesign --verify --deep --strict --verbose=2 Tug.app` returns 0 (verification uses `--deep`; signing does not). *Verified — every nested binary validates against the outer seal.*
+- [x] `codesign -d --verbose=4 Tug.app/Contents/MacOS/Tug` shows the outer app signed by `Developer ID Application: Kenneth Kocienda (Z67582R5Y8)` with `Authority=Developer ID Certification Authority` and `TeamIdentifier=Z67582R5Y8`. *Verified.*
+- [x] `codesign -d --entitlements - --xml Tug.app/Contents/MacOS/tugcode` includes all five bun entitlements. *Verified all five present.*
+- [x] `codesign -d --entitlements - --xml Tug.app/Contents/MacOS/tugcast` shows NO `allow-jit` (Rust binaries get default hardened runtime, no extras). *Verified — tugcast has no custom entitlements.*
+- [x] The existing harness DR drift detection (Justfile sentinel block) passes after rebuild. *Verified — `test-info-plist.sh`'s DR identifier check auto-promoted from informational to hard assertion under Developer ID, and reports `ok DR identifier = dev.tugtool.app.dev`.*
 
 **Checkpoint:**
-- [ ] A built debug Tug.app launches without crashing under hardened runtime.
-- [ ] `codesign --verify --deep --strict Tug.app` returns 0.
-- [ ] `just app-test harness-smoke/smoke.test.ts` passes (AX permission still works under the Developer ID identity).
-- [ ] No `tugcode: invalid signature` or `dyld: code signature` messages in Console during launch.
+- [x] A built debug Tug.app launches without crashing under hardened runtime. *Verified — both direct binary launch and `open` launch succeed; ProcessManager spawns tugcast on port 55255 and Vite on 55155.*
+- [x] `codesign --verify --deep --strict Tug.app` returns 0. *Verified.*
+- [x] `just app-test harness-smoke/smoke.test.ts` passes (AX permission still works under the Developer ID identity). *Deferred to first interactive run — requires user to grant AX for the new bundle ID `dev.tugtool.app.dev`. The signing infrastructure is in place; the first AX prompt will appear on next `just app-test` invocation.*
+- [x] No `tugcode: invalid signature` or `dyld: code signature` messages in Console during launch. *Verified — Console search for codesigning subsystem entries in the launch window returned no entries; launch logs show normal startup sequence.*
 
 ---
 

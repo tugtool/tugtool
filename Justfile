@@ -154,7 +154,18 @@ ci: lint test
 wasm:
     scripts/build-wasm.sh
 
-# Build the Mac app (with all dependencies), and run/restart it
+# Build the Mac app (with all dependencies), and run/restart it.
+#
+# Signing: after xcodebuild's ad-hoc signing, the recipe re-signs via
+# tugrust/scripts/sign-bundle.sh — inside-out, per [D16] of
+# roadmap/tug-multi-instance.md. This gives the dev bundle a stable
+# designated requirement (signed by Apple Developer ID) so the AX
+# grant persists across rebuilds. Without it, every rebuild would
+# invalidate the grant.
+#
+# (Note: Step 15 of the multi-instance plan will retire this recipe
+# in favor of `just app-dev`. Until then, this is the canonical dev
+# loop.)
 app: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
@@ -165,6 +176,8 @@ app: build wasm
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     # tugcast/tugcode/tugutil/tugexec/tugrelaunch and tugdeck/dist are copied into
     # the bundle by the Tug target's shell script build phase (see project.pbxproj).
+    echo "==> Re-signing with Developer ID for stable AX grant"
+    bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     echo "==> Launching Tug.app"
     # Tell the app where the source tree is so tugcast can find tugcode, tugdeck, etc.
     tugbank write dev.tugexec.app source-tree-path "$(pwd)"
@@ -295,75 +308,73 @@ zombie-cleanup:
 dmg:
     tugrust/scripts/build-app.sh --skip-sign --skip-notarize
 
-# One-time per-machine setup: create the `Tug Dev` self-signed code-
-# signing identity in the login keychain. `build-app` re-signs
-# Tug.app with this identity after xcodebuild so the signature hash
-# stays stable across rebuilds — the Accessibility permission grant
-# persists across runs instead of being invalidated on every rebuild
-# (which is what ad-hoc signing does).
+# One-time per-machine signing check. Verifies that an Apple
+# Developer ID Application certificate is installed in the login
+# keychain (the identity every Tug build signs with per [D11]).
+# Prints actionable instructions if the cert is missing — the
+# install is a one-click flow via Xcode → Settings → Accounts.
 #
-# Idempotent: no-op if `Tug Dev` already exists.
+# Idempotent: prints success and exits 0 when the cert is present.
+#
+# Renamed-in-spirit: this used to provision a self-signed `Tug Dev`
+# cert via openssl. Real Developer ID certs have stable designated
+# requirements (signed by Apple), so TCC Accessibility grants
+# persist across rebuilds without a fragile self-signed shim.
 setup-dev-signing:
     scripts/setup-dev-signing.sh
 
-# Remove the local `Tug Dev` code-signing identity from the login
-# keychain and clear the build-time fingerprint sentinel. Use this
-# when decommissioning the project on a machine, debugging confused
-# signing state, or migrating to a different signing identity.
+# Clear the per-machine code-sign drift sentinel. Use this if the
+# `.tugtool/code-sign-fingerprint` file ever gets out of sync (e.g.
+# after manually re-issuing the Developer ID cert in Xcode).
 #
-# Idempotent: re-running after the cert is gone reports
-# "nothing to remove" and exits 0.
+# Does NOT touch the Developer ID cert in the login keychain — that's
+# the user's Apple-issued identity, not project-specific.
 #
-# After teardown, `just app-test` will hit the fail-loud path
-# (unless APP_TEST_SKIP_RESIGN=1 is set). Run `just setup-dev-signing`
-# + `just build-app` to restore working signing.
+# Idempotent: reports "nothing to remove" and exits 0 if the
+# sentinel doesn't exist.
 teardown-dev-signing:
     #!/usr/bin/env bash
     set -euo pipefail
-    if security find-identity -p codesigning 2>/dev/null | grep -q '"Tug Dev"'; then
-        echo "Removing 'Tug Dev' identity from login keychain..."
-        # delete-identity matches on the certificate common name (`-c`)
-        # and removes the cert + private key pair atomically.
-        security delete-identity -c "Tug Dev" >/dev/null
-        echo "✓ 'Tug Dev' identity removed."
-    else
-        echo "'Tug Dev' identity not found in login keychain; nothing to remove."
-    fi
     if [ -f .tugtool/code-sign-fingerprint ]; then
         rm -f .tugtool/code-sign-fingerprint
         echo "✓ Sentinel .tugtool/code-sign-fingerprint cleared."
+    else
+        echo ".tugtool/code-sign-fingerprint not present; nothing to remove."
     fi
     echo
-    echo "Done. To restore working signing, run:"
-    echo "  just setup-dev-signing && just build-app"
+    echo "Note: the Developer ID Application cert in the login keychain"
+    echo "      is intentionally preserved. To remove it, use Keychain"
+    echo "      Access manually (it's your Apple-issued identity, not a"
+    echo "      project-scoped self-signed cert)."
+    echo
+    echo "Next: 'just build-app' will rebuild the sentinel on first run."
 
 # Build Tug.app (Debug) end-to-end: Rust debug binaries, tugdeck deps
 # + production dist, app-test deps, xcodebuild, and a re-sign with the
-# local `Tug Dev` identity so the Accessibility grant persists across
-# rebuilds. After this finishes, run `just app-test` to run tests.
+# user's Developer ID Application identity (per [D11]) so the
+# designated requirement is stable across rebuilds and the
+# Accessibility grant persists. After this finishes, run `just
+# app-test` to run tests.
 #
 # Prereqs (one-time per machine):
-#   just setup-dev-signing                 # creates 'Tug Dev' identity
+#   just setup-dev-signing                 # verifies Developer ID cert
 build-app:
     #!/usr/bin/env bash
     set -euo pipefail
-    SIGNING_IDENTITY="Tug Dev"
 
-    # Verify the per-machine code-signing identity exists. Without it,
-    # xcodebuild falls back to ad-hoc signing and the Accessibility
-    # grant is invalidated on every rebuild (CGEvent.post silently
-    # no-ops without the grant).
-    #
-    # Note: `find-identity -p codesigning` WITHOUT `-v` — a self-
-    # signed identity registers as CSSMERR_TP_NOT_TRUSTED (no system
-    # root trust), which the `-v` filter hides. codesign doesn't
-    # care; setup-dev-signing.sh whitelists codesign via
-    # `-T /usr/bin/codesign` on import.
-    if ! security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
-        echo "error: '$SIGNING_IDENTITY' code-signing identity not found in login keychain." >&2
+    # Verify the Developer ID Application identity is present. Without
+    # it, the dev-loop AX grant story breaks (ad-hoc signing produces
+    # per-build cdhash DRs, invalidating the grant on every rebuild).
+    if ! security find-identity -v -p codesigning 2>/dev/null \
+            | grep -q "Developer ID Application:"; then
+        echo "error: Developer ID Application identity not found in login keychain." >&2
         echo "       Run: just setup-dev-signing" >&2
         exit 1
     fi
+    SIGNING_IDENTITY="$(
+        security find-identity -v -p codesigning 2>/dev/null \
+            | awk -F'"' '/Developer ID Application:/ {print $2; exit}'
+    )"
 
     echo "==> [1/5] Rust debug binaries"
     (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank)
@@ -402,61 +413,33 @@ build-app:
     APP_BIN="$APP_DIR/Contents/MacOS/Tug"
     [ -x "$APP_BIN" ] || { echo "Tug.app binary missing: $APP_BIN"; exit 1; }
 
-    # Re-sign with the stable local identity. `--force` replaces the
-    # ad-hoc signature; `--deep` covers nested frameworks;
-    # `--preserve-metadata=...` keeps entitlements + the designated
-    # requirement string intact.
-    #
-    # We capture codesign's combined output to a temp file and check
-    # the exit code explicitly. The previous shape
-    # (`codesign ... | grep -v ... || true`) swallowed codesign
-    # failures because the trailing `|| true` neutralized the pipe's
-    # non-zero exit (PIPESTATUS[0] under `set -o pipefail`).
-    echo "==> [5/5] Re-sign with '$SIGNING_IDENTITY' for stable AX grant"
-    CODESIGN_LOG="$(mktemp -t tugapp-codesign.XXXX.log)"
-    if ! codesign --sign "$SIGNING_IDENTITY" --force --deep \
-        --preserve-metadata=entitlements,requirements \
-        "$APP_DIR" > "$CODESIGN_LOG" 2>&1; then
-        echo "error: codesign --sign failed:" >&2
-        cat "$CODESIGN_LOG" >&2
-        rm -f "$CODESIGN_LOG"
-        exit 1
-    fi
-    # Filter the noise line ('replacing existing signature') but keep
-    # everything else — warnings about deprecated flags, etc., should
-    # surface even on success.
-    grep -v 'replacing existing signature' "$CODESIGN_LOG" || true
-    rm -f "$CODESIGN_LOG"
-
-    # Verify the bundle's signature is valid post re-sign. A botched
-    # signature would otherwise only surface as an opaque WebKit /
-    # AX failure when the test sweep runs.
-    if ! codesign --verify --strict "$APP_DIR" 2>&1; then
-        echo "error: codesign --verify --strict failed; bundle is invalid" >&2
-        exit 1
-    fi
+    # Re-sign inside-out with Developer ID per [D16]. The script
+    # walks the bundle, signs each Rust helper with default hardened
+    # runtime, signs tugcode with the bun-permissive entitlements,
+    # then seals the outer .app with Tug.entitlements. `--deep` is
+    # intentionally absent — see tugrust/scripts/sign-bundle.sh.
+    echo "==> [5/5] Re-sign inside-out with Developer ID"
+    bash tugrust/scripts/sign-bundle.sh "$APP_DIR" "$SIGNING_IDENTITY"
 
     # Capture the bundle's designated requirement (DR) into a
-    # sentinel so subsequent `app-test` runs can detect drift. The
-    # DR — not the bundle hash — is what TCC keys Accessibility
-    # grants on, so two builds signed by the same identity have
-    # identical fingerprints, while a fresh 'Tug Dev' cert with
-    # a different public key produces a different DR (and silently
-    # invalidates the AX grant).
+    # sentinel so subsequent `app-test` runs can detect drift. Under
+    # Developer ID signing the DR is stable across rebuilds (signed
+    # by an Apple intermediate), so this is now belt-and-suspenders
+    # rather than load-bearing — but the comparison still catches
+    # the case where someone replaces the Developer ID cert in the
+    # keychain and the new cert produces a different DR string.
     #
-    # `awk -F'=> '` splits on the literal '=> ' separator that
-    # codesign uses between 'designated' and the requirement string.
-    # `exit` after the first match keeps the value to a single line
-    # in case codesign emits multiple designated lines (it doesn't
-    # today, but defensive).
+    # `sed -nE 's/^#?[[:space:]]*designated[[:space:]]+=>[[:space:]]+(.*)$/\1/p'`
+    # tolerates both the `# designated => ...` form (ad-hoc) and the
+    # `designated => identifier "..." and anchor apple generic ...`
+    # form (Developer ID).
     SENTINEL_DIR=".tugtool"
     SENTINEL_FILE="${SENTINEL_DIR}/code-sign-fingerprint"
-    CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}')"
+    CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | sed -nE 's/^#?[[:space:]]*designated[[:space:]]+=>[[:space:]]+(.*)$/\1/p' | head -1)"
     if [ -z "$CURRENT_DR" ]; then
         echo "warn: could not extract designated requirement; skipping fingerprint capture" >&2
     else
         mkdir -p "$SENTINEL_DIR"
-        # Atomic write: temp file in the same dir, then mv.
         SENTINEL_TMP="$(mktemp "${SENTINEL_DIR}/code-sign-fp.XXXXXX")"
         printf '%s\n' "$CURRENT_DR" > "$SENTINEL_TMP"
         mv "$SENTINEL_TMP" "$SENTINEL_FILE"
@@ -518,7 +501,8 @@ app-test *FILES:
     # Both the early-skip optimization and the post-resign drift check
     # reuse them.
     SENTINEL_FILE=".tugtool/code-sign-fingerprint"
-    CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}')"
+    DR_EXTRACT='s/^#?[[:space:]]*designated[[:space:]]+=>[[:space:]]+(.*)$/\1/p'
+    CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | sed -nE "$DR_EXTRACT" | head -1)"
     SAVED_DR=""
     if [ -f "$SENTINEL_FILE" ]; then
         SAVED_DR="$(cat "$SENTINEL_FILE")"
@@ -526,59 +510,55 @@ app-test *FILES:
 
     # Optimization: if the bundle DR already matches the sentinel,
     # the bundle is signed with the same identity that's behind the
-    # AX grant — re-signing would be a no-op (worst case: re-sign
-    # with a re-created 'Tug Dev' cert that has a different leaf
-    # hash, which would silently invalidate the AX grant). Skip it.
+    # AX grant — re-signing would be a no-op. Skip it.
     #
     # Falls through to the re-sign branch when:
-    #   - DR extraction failed (CURRENT_DR is empty),
+    #   - DR extraction failed (CURRENT_DR is empty — happens for
+    #     pure ad-hoc bundles that haven't been Developer-ID-signed
+    #     yet, since `# designated => cdhash H"..."` is preserved
+    #     by the sed pattern but represents an ad-hoc cdhash that
+    #     won't match a real Developer ID DR string),
     #   - sentinel doesn't exist yet (first run after teardown +
     #     setup, or before first build-app),
     #   - DR mismatches sentinel (Xcode IDE Build between runs,
-    #     or cert re-created since last build-app).
+    #     or the user re-issued their Developer ID cert).
     if [ -n "$CURRENT_DR" ] && [ -n "$SAVED_DR" ] && [ "$CURRENT_DR" = "$SAVED_DR" ]; then
         echo "==> Re-sign skipped (bundle DR matches sentinel)"
     else
-        # Re-sign with the stable identity so the AX grant persists.
-        # Three branches:
-        #   - Identity present: re-sign; on failure, exit non-zero
-        #     with a diagnostic. Previously the trailing `|| true`
-        #     swallowed failures, making botched signatures look like
-        #     AX-grant issues downstream.
+        # Re-sign inside-out with Developer ID per [D16] so the DR
+        # matches what build-app produced. Three branches:
+        #   - Identity present: re-sign via sign-bundle.sh; on failure
+        #     exit non-zero with a diagnostic.
         #   - Identity missing AND APP_TEST_SKIP_RESIGN=1: print a
         #     notice and skip. Useful for first-time onboarding.
         #   - Identity missing without the opt-out: exit non-zero
-        #     with an actionable message naming
-        #     `just setup-dev-signing` and the env-var bypass.
-        if security find-identity -p codesigning 2>/dev/null | grep -q '"Tug Dev"'; then
-            if ! codesign --sign "Tug Dev" --force --deep \
-                --preserve-metadata=entitlements,requirements \
-                "$APP_DIR" >/dev/null 2>&1; then
-                echo "error: codesign re-sign failed during app-test setup" >&2
+        #     with an actionable message.
+        if security find-identity -v -p codesigning 2>/dev/null \
+                | grep -q "Developer ID Application:"; then
+            if ! bash tugrust/scripts/sign-bundle.sh "$APP_DIR" >/dev/null 2>&1; then
+                echo "error: sign-bundle.sh failed during app-test setup" >&2
+                bash tugrust/scripts/sign-bundle.sh "$APP_DIR" >&2 || true
                 exit 1
             fi
         elif [ "${APP_TEST_SKIP_RESIGN:-}" = "1" ]; then
-            echo "==> APP_TEST_SKIP_RESIGN=1: skipping re-sign ('Tug Dev' identity not found)"
+            echo "==> APP_TEST_SKIP_RESIGN=1: skipping re-sign (Developer ID identity not found)"
         else
-            echo "error: 'Tug Dev' code-signing identity missing." >&2
-            echo "       Run 'just setup-dev-signing' to install it," >&2
+            echo "error: Developer ID Application identity missing from login keychain." >&2
+            echo "       Run 'just setup-dev-signing' to verify install," >&2
             echo "       or set APP_TEST_SKIP_RESIGN=1 to bypass." >&2
             echo "       See tests/app-test/README.md → 'Accessibility grant" >&2
             echo "       failure modes' for diagnosis." >&2
             exit 1
         fi
 
-        # Drift detection: re-extract the post-resign DR (re-signing
-        # may have changed it if the cert was re-created since the
-        # last build-app) and compare against the sentinel. A
-        # mismatch here means the cert behind the saved fingerprint
-        # is no longer the cert signing the bundle. We warn but
-        # don't fatal — the user may have re-granted AX manually,
-        # in which case the sweep should still proceed; if AX is
-        # actually broken the harness's per-spawn preflight will
-        # throw AccessibilityPermissionMissingError with full
-        # context.
-        POST_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | awk -F'=> ' '/^designated/{print $2; exit}')"
+        # Drift detection: re-extract the post-resign DR and compare
+        # against the sentinel. A mismatch here means the saved DR
+        # references a cert different from the current one (cert
+        # re-issued). We warn but don't fatal — the user may have
+        # re-granted AX manually; if AX is actually broken the
+        # harness's per-spawn preflight will throw
+        # AccessibilityPermissionMissingError with full context.
+        POST_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | sed -nE "$DR_EXTRACT" | head -1)"
         if [ -z "$POST_DR" ]; then
             echo "[warn] code-sign: could not extract designated requirement from $APP_DIR" >&2
         elif [ -n "$SAVED_DR" ] && [ "$POST_DR" != "$SAVED_DR" ]; then

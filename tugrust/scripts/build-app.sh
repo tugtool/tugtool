@@ -138,15 +138,35 @@ if [ "$NIGHTLY" = true ]; then
 fi
 
 # Step 8: Code signing
+#
+# Inside-out signing with per-binary entitlements per [D16]. The
+# legacy `codesign --deep --force --sign` block here used to apply
+# the same entitlements to every nested binary — wrong for our
+# bundle shape (tugcode needs permissive JIT entitlements; the
+# Rust helpers and outer Swift binary do not). sign-bundle.sh
+# enumerates each binary explicitly and signs with the correct
+# entitlements per [D16].
+#
+# DEVELOPER_ID_NAME: passed through as a full codesign identity
+# string (e.g. "Developer ID Application: Jane Doe (TEAMID)"). If
+# unset, sign-bundle.sh auto-detects from the login keychain.
 if [ "$SKIP_SIGN" = false ]; then
-    echo "==> Code signing"
-    if [ -z "${DEVELOPER_ID_NAME:-}" ]; then
-        echo "Error: DEVELOPER_ID_NAME environment variable not set"
-        exit 1
+    echo "==> Code signing (inside-out, per [D16])"
+    SIGN_IDENTITY_ARG=()
+    if [ -n "${DEVELOPER_ID_NAME:-}" ]; then
+        # Support both "Developer ID Application: ..." (full identity
+        # string) and "Jane Doe (TEAMID)" (legacy short form) for
+        # backward compat with existing CI configs.
+        case "$DEVELOPER_ID_NAME" in
+            "Developer ID Application: "*)
+                SIGN_IDENTITY_ARG=("$DEVELOPER_ID_NAME")
+                ;;
+            *)
+                SIGN_IDENTITY_ARG=("Developer ID Application: $DEVELOPER_ID_NAME")
+                ;;
+        esac
     fi
-    codesign --deep --force --verify --verbose \
-        --sign "Developer ID Application: $DEVELOPER_ID_NAME" \
-        "$STAGING_APP"
+    bash "$SCRIPT_DIR/sign-bundle.sh" "$STAGING_APP" "${SIGN_IDENTITY_ARG[@]}"
 else
     echo "==> Skipping code signing (--skip-sign)"
 fi

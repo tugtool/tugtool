@@ -13,8 +13,9 @@ For the harness **architecture** — what it is, the trusted-event problem, life
   — canonical AT-tag catalog. Every `at{NNNN}-*.test.ts` filename
   prefix MUST match an entry there.
 - [`tuglaws/code-signing-mac.md`](../../tuglaws/code-signing-mac.md) —
-  the `Tug Dev` signing pipeline that keeps the macOS Accessibility
-  grant stable across rebuilds. Read this when AX is broken.
+  the Apple Developer ID signing pipeline that keeps the macOS
+  Accessibility grant stable across rebuilds. Read this when AX is
+  broken.
 - [`roadmap/tugplan-in-app-bridge.md`](../../roadmap/tugplan-in-app-bridge.md)
   — design rationale, decisions ([D01]–[D14]), and transport / boot
   choreography.
@@ -27,7 +28,8 @@ For the harness **architecture** — what it is, the trusted-event problem, life
 ## Running
 
 ```bash
-# 1. One-time per machine: install the 'Tug Dev' code-signing identity.
+# 1. One-time per machine: verify the Developer ID Application cert
+#    is installed (via Xcode → Settings → Accounts → Manage Certificates).
 just setup-dev-signing
 
 # 2. Build (and re-sign) Tug.app + Rust binaries + tugdeck dist.

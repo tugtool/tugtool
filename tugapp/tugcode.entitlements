@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 Entitlements applied only to the bun-compiled `tugcode` binary
+	 inside Tug.app/Contents/MacOS/. This is the permissive set
+	 required by a bun-compiled standalone binary because bun embeds a
+	 JavaScript runtime that needs JIT and self-modifying-memory
+	 affordances at runtime. Documented at:
+	   https://bun.sh/docs/bundler/executables#codesigning-on-macos
+
+	 Per [D16], these entitlements are SCOPED TO TUGCODE ONLY. The
+	 outer Tug.app binary (Swift) and the Rust helper binaries
+	 (tugcast, tugutil, tugexec, tugrelaunch, tugbank) sign without
+	 these — they get the default hardened-runtime restrictions,
+	 which is what we want for native code with no JIT.
+	-->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-executable-page-protection</key>
+	<true/>
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

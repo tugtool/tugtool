@@ -1,143 +1,70 @@
 #!/usr/bin/env bash
 #
-# setup-dev-signing.sh — Create the per-machine self-signed code-
-# signing identity used by `just build-app` to re-sign Tug.app
-# with a stable signature hash.
+# setup-dev-signing.sh — verify the per-machine Apple Developer ID
+# Application code-signing identity is installed in the login
+# keychain.
 #
-# ## Why this exists
+# Under the multi-instance signing model (see [D11] in
+# roadmap/tug-multi-instance.md), every Tug build signs with the
+# user's Apple Developer ID Application certificate. The cert has a
+# designated requirement that is stable across rebuilds — so TCC
+# Accessibility grants persist instead of being invalidated on every
+# `xcodebuild` pass (the old, ad-hoc-signed failure mode).
 #
-# macOS TCC (the Accessibility-permissions database) keys on the
-# binary's code-signature hash. Xcode Debug builds default to ad-hoc
-# signing, which produces a fresh random hash on every rebuild — so
-# the Accessibility grant gets invalidated on every `xcodebuild`
-# pass. The app-test harness's native-event verbs (CGEvent-backed
-# clicks, drags, key events) use `CGEvent.post`, which silently no-ops
-# without Accessibility permission. A stable signature hash is the
-# only tractable fix.
+# This script is verification, not provisioning. The certificate is
+# installed once via Xcode → Settings → Accounts → (team) → Manage
+# Certificates → "+" → "Developer ID Application", which generates
+# the CSR, uploads it, downloads the cert, and stashes the private
+# key in the login keychain — all in one click. There is no openssl,
+# no .p12 file, no manual CSR plumbing.
 #
-# Signing with a stable identity (self-signed is sufficient for
-# local dev) produces the same hash every build; the grant persists.
-# This script creates one named `Tug Dev` in the login keychain if
-# one doesn't exist.
-#
-# ## What gets created vs. shared
-#
-# Each dev gets their own private key (kept local, never checked in).
-# The shared piece across devs is the identity NAME (`Tug Dev`), so
-# `codesign --sign "Tug Dev"` in the Justfile works the same on every
-# machine. Each dev grants Accessibility permission once on their
-# own machine; grant persists forever for their builds.
-#
-# ## Idempotency
-#
-# Re-runs are safe. If `Tug Dev` already exists in the login keychain,
-# the script exits 0 immediately.
+# History: this script previously generated a self-signed `Tug Dev`
+# identity via openssl. That worked but had a brittleness: every
+# regeneration of the cert produced a new public key and therefore
+# a new designated requirement, silently invalidating any TCC grant
+# already tied to the prior cert. Real Developer ID certs are
+# signed by an Apple intermediate and have a DR that survives
+# rebuilds; this is the right shape for daily-iteration UX.
 
 set -euo pipefail
 
-IDENTITY_NAME="Tug Dev"
-LOGIN_KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
-VALIDITY_DAYS=3650  # ~10 years; long enough to outlast this project.
-
-# --- 1. Bail out if the identity already exists ------------------------------
-#
-# Note: we DON'T use `find-identity -v` (valid-only). A self-signed
-# cert registers as CSSMERR_TP_NOT_TRUSTED because its root isn't in
-# the system trust store; that's fine — we gave `codesign` direct
-# access to the private key via `-T /usr/bin/codesign` on import, so
-# codesign doesn't need root trust. The `-v` filter would hide our
-# identity and make the check fire re-create on every run.
-
-if security find-identity -p codesigning 2>/dev/null \
-    | grep -q "\"${IDENTITY_NAME}\""; then
-    echo "✓ '${IDENTITY_NAME}' already installed in login keychain."
+# Match the cert with a real (Apple-signed) chain via `-v`. Unlike
+# the prior self-signed flow, Developer ID certs DO chain to a
+# system-trusted root, so `-v` filters them in correctly.
+if security find-identity -v -p codesigning 2>/dev/null \
+    | grep -q "Developer ID Application:"; then
+    IDENTITY="$(
+        security find-identity -v -p codesigning 2>/dev/null \
+            | awk -F'"' '/Developer ID Application:/ {print $2; exit}'
+    )"
+    echo "✓ Developer ID Application identity installed in login keychain:"
+    echo "    $IDENTITY"
     exit 0
 fi
 
-# --- 2. Sanity-check prerequisites ------------------------------------------
+# Missing identity. The plan's #apple-prereqs section documents the
+# five-step Apple developer account setup; the message below covers
+# the user-action steps in the order they happen.
+cat >&2 <<'EOF'
 
-command -v openssl >/dev/null || {
-    echo "error: openssl not on PATH. Install via: brew install openssl" >&2
-    exit 1
-}
-command -v security >/dev/null || {
-    echo "error: security(1) not on PATH. This script requires macOS." >&2
-    exit 1
-}
-[ -f "${LOGIN_KEYCHAIN}" ] || {
-    echo "error: login keychain not found at ${LOGIN_KEYCHAIN}" >&2
-    exit 1
-}
+error: no Developer ID Application certificate found in the login keychain.
 
-# --- 3. Generate the cert + key in a scratch dir ----------------------------
+This is the one-time per-machine identity used to sign every Tug
+build. Set up via Xcode (no openssl, no manual CSR — one click):
 
-TMPDIR="$(mktemp -d)"
-trap 'rm -rf "${TMPDIR}"' EXIT
+  1. Open Xcode.
+  2. Xcode → Settings → Accounts.
+  3. Select your Apple ID; if it's not listed, add it.
+  4. Select your team (Z67582R5Y8 — Kenneth Kocienda).
+  5. Click "Manage Certificates...".
+  6. Click the "+" button → "Developer ID Application".
+  7. Xcode generates the CSR, uploads, downloads, and installs the
+     cert + private key in your login keychain.
 
-echo "Generating self-signed '${IDENTITY_NAME}' certificate..."
-openssl req -x509 -newkey rsa:2048 \
-    -keyout "${TMPDIR}/key.pem" \
-    -out "${TMPDIR}/cert.pem" \
-    -days "${VALIDITY_DAYS}" \
-    -nodes \
-    -subj "/CN=${IDENTITY_NAME}" \
-    -addext "keyUsage=critical,digitalSignature" \
-    -addext "extendedKeyUsage=critical,codeSigning" \
-    -addext "basicConstraints=critical,CA:FALSE" \
-    >/dev/null 2>&1
+Re-run this script to verify the install. If you still see this
+error, check Keychain Access — the cert may have landed in a
+non-login keychain, in which case drag it into 'login'.
 
-# Package as .p12 for `security import`.
-#
-# Two OpenSSL quirks forced by Apple's Security framework:
-#   1. `-legacy` — OpenSSL 3.x defaults to modern PKCS#12 MAC
-#      algorithms that macOS Security doesn't support. Without
-#      `-legacy` we'd get "MAC verification failed during PKCS12
-#      import" from `security import`.
-#   2. Non-empty password — Apple's `security import` rejects
-#      empty-password .p12 files ("MAC verification failed"). We
-#      use a throwaway password; the .p12 lives in a scratch dir
-#      for ~200ms and the login keychain itself already requires
-#      the user's keychain password to unlock on first use.
-openssl pkcs12 -export \
-    -out "${TMPDIR}/bundle.p12" \
-    -inkey "${TMPDIR}/key.pem" \
-    -in "${TMPDIR}/cert.pem" \
-    -password pass:tug-dev-p12 \
-    -legacy \
-    >/dev/null 2>&1
-
-# --- 4. Import into login keychain ------------------------------------------
-#
-# `-T /usr/bin/codesign` whitelists codesign to use the private key
-# without a keychain-access prompt on every build. Without this, the
-# first `just build-app` call would pop a keychain prompt.
-
-echo "Importing '${IDENTITY_NAME}' into login keychain..."
-security import "${TMPDIR}/bundle.p12" \
-    -k "${LOGIN_KEYCHAIN}" \
-    -P "tug-dev-p12" \
-    -T /usr/bin/codesign \
-    >/dev/null 2>&1
-
-# --- 5. Verify install ------------------------------------------------------
-
-if ! security find-identity -p codesigning 2>/dev/null \
-    | grep -q "\"${IDENTITY_NAME}\""; then
-    echo "error: '${IDENTITY_NAME}' import appeared to succeed but the" >&2
-    echo "       identity is not visible to codesign. Check Keychain Access;" >&2
-    echo "       the certificate may have landed in a non-login keychain." >&2
-    exit 1
-fi
-
-echo "✓ '${IDENTITY_NAME}' installed in login keychain."
-echo
-echo "Next steps:"
-echo "  1. Run 'just build-app' to build + sign Tug.app, then 'just"
-echo "     app-test' — first app-test run triggers the Accessibility-"
-echo "     permission system dialog."
-echo "  2. Grant permission to Tug.app when the dialog appears."
-echo "  3. Subsequent runs work without prompt; grant persists across"
-echo "     rebuilds because every build signs with the same '${IDENTITY_NAME}'"
-echo "     identity and produces the same signature hash."
-echo "  4. If AX ever breaks unexpectedly, see"
-echo "     tests/app-test/README.md → 'Accessibility grant failure modes'."
+Reference: https://developer.apple.com/help/account/create-certificates/create-developer-id-certificates
+EOF
+exit 1
