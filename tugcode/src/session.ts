@@ -657,6 +657,11 @@ export function routeTopLevelEvent(
           apiKeySource: event.apiKeySource,
         };
         // Emit SystemMetadata IPC so the frontend can populate settings and help panels.
+        const ccVersion =
+          typeof event.claude_code_version === "string" &&
+          event.claude_code_version.length > 0
+            ? event.claude_code_version
+            : undefined;
         const sysMsg: SystemMetadata = {
           type: "system_metadata",
           session_id: sid || "",
@@ -669,7 +674,13 @@ export function routeTopLevelEvent(
           agents: (event.agents as unknown[]) || [],
           skills: (event.skills as unknown[]) || [],
           mcp_servers: (event.mcp_servers as unknown[]) || [],
-          version: (event.claude_code_version as string) || "",
+          // Only include `version` when claude's init event actually
+          // carried `claude_code_version`. An empty string here would
+          // race the live init through the merge layer and mislead
+          // the frontend into showing "Claude Code " (empty) instead
+          // of letting its fallback chain fire — see the rename plan
+          // and the merge rules in `session_metadata_merge.rs`.
+          ...(ccVersion !== undefined ? { version: ccVersion } : {}),
           output_style: (event.output_style as string) || "",
           fast_mode_state: (event.fast_mode_state as string) || "",
           apiKeySource: (event.apiKeySource as string) || "",

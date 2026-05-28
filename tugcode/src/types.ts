@@ -387,6 +387,19 @@ export interface ControlRequestForward {
 
 /**
  * System init metadata forwarded to tugcast for UI population.
+ *
+ * `version` is optional and is included only when the source actually
+ * knows the running Claude Code version. The live init path
+ * (`session.ts` `case "system"` / `subtype === "init"`) reads
+ * `event.claude_code_version` from claude's own init event and
+ * includes it when present. The replay path
+ * (`replay.ts` synthesized `system_metadata` from JSONL) NEVER
+ * includes it — the JSONL doesn't carry the Claude Code version.
+ * Treating absence as "no signal" (instead of `""` as "empty
+ * signal") lets the downstream `session_metadata_merge` preserve
+ * whatever real version the ledger already has, and lets the
+ * frontend's `??` fallback chain fire correctly when the live init
+ * hasn't landed yet.
  */
 export interface SystemMetadata {
   type: "system_metadata";
@@ -400,7 +413,7 @@ export interface SystemMetadata {
   agents: unknown[];
   skills: unknown[];
   mcp_servers: unknown[];
-  version: string;
+  version?: string;
   output_style: string;
   fast_mode_state: string;
   apiKeySource: string;

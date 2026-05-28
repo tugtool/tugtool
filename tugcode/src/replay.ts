@@ -1609,6 +1609,17 @@ export async function* translateJsonlSession(
       typeof parsed.message?.model === "string" &&
       parsed.message.model.length > 0
     ) {
+      // Replay synthesizes a system_metadata IPC from a `message.model`
+      // it finds in the resumed-session JSONL — that's enough to paint
+      // the model badge before claude's live init lands. Every OTHER
+      // field is omitted (or empty) because the JSONL doesn't carry it;
+      // the wire-layer merge in `session_metadata_merge.rs` treats empty
+      // strings as "no signal" and preserves whatever the ledger
+      // already has. `version` in particular is OMITTED (not `""`) so
+      // it doesn't race the live init and trick the frontend into
+      // showing `Claude Code ` (empty) instead of `Claude Code ?` with
+      // its normal fallback chain. The live `system/init` is the only
+      // source that ever populates `version`.
       const sysMeta: SystemMetadata = {
         type: "system_metadata",
         session_id: claudeSessionId,
@@ -1621,7 +1632,6 @@ export async function* translateJsonlSession(
         agents: [],
         skills: [],
         mcp_servers: [],
-        version: "",
         output_style: "",
         fast_mode_state: "",
         apiKeySource: "",
