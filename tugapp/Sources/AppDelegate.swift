@@ -6,7 +6,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var devModeEnabled = false
     private var sourceTreePath: String?
     private var lastAuthURL: String?
-    private var vitePort: Int = TugConfig.defaultVitePort
+    private var vitePort: Int = InstanceConfig.vitePort
     private var initialLoadComplete = false
     private let appLaunchTime = Date()
     private var lastLoadTime = Date()

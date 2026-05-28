@@ -85,6 +85,48 @@ enum InstanceConfig {
         Bundle.main.bundlePath
     }
 
+    // MARK: - Port allocation
+
+    /// Tugcast HTTP port window base.
+    /// Mirrors `tugcore::ports::TUGCAST_PORT_BASE`.
+    static let tugcastPortBase: Int = 55300
+    /// Tugcast HTTP port window size.
+    static let tugcastPortWindow: Int = 100
+
+    /// Vite dev-server port window base.
+    /// Mirrors `tugcore::ports::VITE_PORT_BASE`.
+    static let vitePortBase: Int = 55200
+    /// Vite dev-server port window size.
+    static let vitePortWindow: Int = 100
+
+    /// Deterministic tugcast HTTP port for this instance.
+    /// Tugcast may still bind a different port if the derived one is
+    /// taken — consult the registry for the authoritative value.
+    static var tugcastPort: Int {
+        derivePort(base: tugcastPortBase, window: tugcastPortWindow)
+    }
+
+    /// Deterministic Vite dev-server port for this instance.
+    static var vitePort: Int {
+        derivePort(base: vitePortBase, window: vitePortWindow)
+    }
+
+    /// FNV-1a 32-bit hash mirroring `tugcore::ports::fnv1a_32`.
+    private static func fnv1a32(_ bytes: [UInt8]) -> UInt32 {
+        var hash: UInt32 = 0x811c_9dc5
+        for byte in bytes {
+            hash ^= UInt32(byte)
+            hash = hash &* 0x0100_0193
+        }
+        return hash
+    }
+
+    private static func derivePort(base: Int, window: Int) -> Int {
+        let bytes = Array(instanceId.utf8)
+        let offset = Int(fnv1a32(bytes) % UInt32(max(window, 1)))
+        return base + offset
+    }
+
     // MARK: - Internals
 
     private static var baseDataDir: URL {

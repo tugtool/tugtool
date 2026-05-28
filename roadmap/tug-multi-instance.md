@@ -1163,22 +1163,22 @@ No new configuration files. All configuration is via:
 - Updated `tugrust/crates/tugcast/src/main.rs` — `allocate_port()` helper; call `Registry::register()` after bind.
 
 **Tasks:**
-- [ ] Implement `Registry::load()`, `register()`, `find_by_id()`, `find_for_cwd()`, `list_live()` with flock + atomic rename.
-- [ ] Implement `allocate_port(instance_id, base, window)` with FNV-1a hash + walk-on-collision + ephemeral fallback.
-- [ ] Wire tugcast's main to call `allocate_port` for the HTTP port if `--port` is not explicitly passed; call `Registry::register` after successful bind.
-- [ ] Vite port allocation in `tugexec` and Swift `vitePort` resolution use the same scheme.
-- [ ] Ensure `Registry::register` removes any stale entry for the same instance ID (e.g., from a previous crash).
+- [x] Implement `Registry::load()`, `register()`, `find_by_id()`, `find_for_cwd()`, `list_live()` with flock + atomic rename. (Module: `tugcore::registry`. Free functions instead of a struct since each call acquires its own lock; `LockGuard` RAII handles unlock on early return.)
+- [x] Implement `allocate_port(instance_id, base, window)` with FNV-1a hash + walk-on-collision + ephemeral fallback. (Module: `tugcore::ports`. Returns `AllocatedPort::Window { port, walk_offset }` or `EphemeralFallback`.)
+- [x] Wire tugcast's main to call `allocate_port` for the HTTP port if `--port` is not explicitly passed; call `Registry::register` after successful bind. (cli.port is now `Option<u16>`; main resolves via cli flag, hash-derive, or ephemeral fallback. Listener bind moved before auth-state creation so the bound port flows through auth URL / ready message / registry consistently.)
+- [x] Vite port allocation in `tugexec` and Swift `vitePort` resolution use the same scheme. (tugexec consults `tugcore::ports::vite_port_default`; Swift `InstanceConfig.vitePort` mirrors the FNV-1a derivation in pure Swift so the two languages agree byte-for-byte.)
+- [x] Ensure `Registry::register` removes any stale entry for the same instance ID (e.g., from a previous crash). (`retain(|i| i.instance_id != new.instance_id && is_pid_live(i.pid))` plus an `unregister` called from tugcast's shutdown path.)
 
 **Tests:**
-- [ ] Unit: hash determinism (same input → same port).
-- [ ] Unit: walk-on-collision returns the next free port.
-- [ ] Unit: registry round-trip (write, read, find).
-- [ ] Unit: stale PID pruning.
-- [ ] Integration: two tugcasts launched in quick succession claim distinct ports and both register.
+- [x] Unit: hash determinism (same input → same port). (`derive_port_is_deterministic`.)
+- [x] Unit: walk-on-collision returns the next free port. (`allocate_port_walks_past_held_port`; `allocate_port_wraps_within_window` also verifies wrap.)
+- [x] Unit: registry round-trip (write, read, find). (`register_then_find`, `find_by_id_round_trip_in_tmpdir`.)
+- [x] Unit: stale PID pruning. (`load_prunes_dead_pids_in_memory`, `register_prunes_dead_predecessors`.)
+- [x] Integration: two tugcasts launched in quick succession claim distinct ports and both register. (Verified via Step 11 checkpoint: alpha and bravo each get a distinct port in [55300, 55400) and both appear in `tug-instances.json`.)
 
 **Checkpoint:**
-- [ ] `cat $TMPDIR/tug-instances.json` shows expected entries after two launches.
-- [ ] `lsof -i :55301-55399` shows distinct PIDs for distinct instances.
+- [x] `cat $TMPDIR/tug-instances.json` shows expected entries after two launches.
+- [x] `lsof -i :55300-55399` shows distinct PIDs for distinct instances.
 
 ---
 

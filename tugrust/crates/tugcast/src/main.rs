@@ -70,10 +70,62 @@ async fn main() {
     // Parse CLI arguments
     let cli = cli::Cli::parse();
 
+    // Resolve the port we *want* to bind. Three branches:
+    // - `--port <P>` explicit: use it (incl. 0 for OS-ephemeral)
+    // - No --port + TUG_INSTANCE_ID set: derive per-instance port
+    //   via FNV-1a hash, walk on collision, fall back to ephemeral
+    // - No --port + no identity: legacy single-instance default 55255
+    let requested_port: u16 = match cli.port {
+        Some(p) => p,
+        None => match tug_instance::instance_id() {
+            Some(id) => match tugcore::ports::allocate_port(
+                &id,
+                tugcore::ports::TUGCAST_PORT_BASE,
+                tugcore::ports::TUGCAST_PORT_WINDOW,
+                tcp_port_is_free,
+            ) {
+                tugcore::ports::AllocatedPort::Window { port, walk_offset } => {
+                    if walk_offset > 0 {
+                        info!(
+                            port,
+                            walk_offset, "derived tugcast port via walk-on-collision"
+                        );
+                    }
+                    port
+                }
+                tugcore::ports::AllocatedPort::EphemeralFallback => {
+                    warn!(
+                        "tugcast port window {}..{} exhausted; falling back to OS-ephemeral",
+                        tugcore::ports::TUGCAST_PORT_BASE,
+                        tugcore::ports::TUGCAST_PORT_BASE + tugcore::ports::TUGCAST_PORT_WINDOW
+                    );
+                    0
+                }
+            },
+            None => 55255,
+        },
+    };
+
     // --force: kill any existing process holding the TCP port before we try to bind.
     if cli.force {
-        force_kill_port_holder(cli.port);
+        force_kill_port_holder(requested_port);
     }
+
+    // Bind the listener *now*, before auth state is constructed, so
+    // we can use the actually-bound port (which may differ from the
+    // request when port==0) in the auth allowlist and ready message.
+    let listener = match TcpListener::bind(format!("127.0.0.1:{requested_port}")).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("tugcast: error: failed to bind to 127.0.0.1:{requested_port}: {e}");
+            std::process::exit(1);
+        }
+    };
+    let actual_port: u16 = listener
+        .local_addr()
+        .map(|a| a.port())
+        .unwrap_or(requested_port);
+    info!(port = actual_port, "tugcast server listening");
 
     // Resolve bank path: --bank-path flag > TUGBANK_PATH env var >
     // per-instance `tugcore::instance::tugbank_db_path()` (when
@@ -111,7 +163,7 @@ async fn main() {
 
     info!(
         session = %cli.session,
-        port = cli.port,
+        port = actual_port,
         source_tree = ?cli.source_tree,
         "tugcast starting"
     );
@@ -141,13 +193,13 @@ async fn main() {
     // work normally (so the app loads fine), but WebSocket validation is skipped
     // so external tools can connect without a session cookie.
     let auth = if cli.no_auth {
-        auth::new_shared_auth_state_no_auth(cli.port)
+        auth::new_shared_auth_state_no_auth(actual_port)
     } else {
-        new_shared_auth_state(cli.port)
+        new_shared_auth_state(actual_port)
     };
 
     let token = auth.lock().unwrap().token().unwrap().to_string();
-    let auth_url = format!("http://127.0.0.1:{}/auth?token={}", cli.port, token);
+    let auth_url = format!("http://127.0.0.1:{actual_port}/auth?token={token}");
     info!("Auth URL: {}", auth_url);
 
     // Connect to control socket if specified
@@ -622,23 +674,18 @@ async fn main() {
             .await;
     });
 
-    // Bind TCP listener
-    let listener = match TcpListener::bind(format!("127.0.0.1:{}", cli.port)).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!(
-                "tugcast: error: failed to bind to 127.0.0.1:{}: {}",
-                cli.port, e
-            );
-            std::process::exit(1);
-        }
-    };
-    info!(port = cli.port, "tugcast server listening");
+    // The TCP listener is already bound above (right after CLI parse)
+    // so the auth state and auth_url could use the actually-bound port.
+
+    // Register with the per-host instance registry. Best-effort: if the
+    // registry write fails we log and continue — `tugutil tell` will
+    // not find us, but the runtime is otherwise unaffected.
+    register_with_registry(actual_port, &cli.session);
 
     // Send ready message over control socket
     if let Some(ref mut writer) = control_writer {
         if let Err(e) = writer
-            .send_ready(&auth_url, cli.port, std::process::id())
+            .send_ready(&auth_url, actual_port, std::process::id())
             .await
         {
             eprintln!("tugcast: warning: failed to send ready message: {}", e);
@@ -753,6 +800,13 @@ async fn main() {
     // Signal shutdown for background tasks
     cancel.cancel();
 
+    // Remove our entry from the per-host instance registry. Best-effort.
+    if let Some(id) = tug_instance::instance_id()
+        && let Err(e) = tugcore::registry::unregister(&id)
+    {
+        warn!(error = %e, "failed to unregister from tug-instances.json");
+    }
+
     // Kill our entire process group (tugcast + tugcode + children).
     // `std::process::exit` doesn't run destructors, so `kill_on_drop`
     // and async cancellation can't be relied upon — sending SIGTERM
@@ -844,6 +898,55 @@ async fn run_notify_listener(path: PathBuf, client: Arc<TugbankClient>, cancel: 
             info!(domain = %domain, "tugbank domain changed — refreshing");
             client.refresh_domain(&domain);
         }
+    }
+}
+
+/// Probe whether `127.0.0.1:port` accepts an immediate bind.
+///
+/// Used as the `is_free` predicate for `tugcore::ports::allocate_port`.
+/// Synchronous `std::net::TcpListener` is enough — the probe happens
+/// once during startup before the tokio runtime claims the port. The
+/// listener drops immediately after the probe, releasing the port; a
+/// successful probe is *not* a reservation, so a tight race window
+/// remains between probe and the real bind. That race is acceptable
+/// at Step 11; Step 12 turns the post-bind EADDRINUSE into a clean
+/// exit with registry-derived diagnostics.
+fn tcp_port_is_free(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// Register the running tugcast instance with the per-host registry.
+///
+/// Best-effort: a write failure is logged but does not abort startup.
+/// The registry is read-only metadata for external tools — its
+/// absence is recoverable, its corruption never blocks tugcast.
+fn register_with_registry(actual_port: u16, tmux_session: &str) {
+    let Some(id) = tug_instance::instance_id() else {
+        return; // Standalone launch; no registry entry.
+    };
+    let bundle_path = tug_instance::bundle_path_from_env().unwrap_or_default();
+    // Best-effort split of `<profile>-<branch-slug>`.
+    let (profile, branch) = id
+        .split_once('-')
+        .map(|(p, b)| (p.to_owned(), b.to_owned()))
+        .unwrap_or_else(|| (id.clone(), String::new()));
+    let instance = tugcore::registry::Instance {
+        instance_id: id.clone(),
+        profile,
+        branch,
+        bundle_id: std::env::var("TUG_BUNDLE_ID").unwrap_or_default(),
+        bundle_path,
+        pid: std::process::id() as i32,
+        tugcast_port: actual_port,
+        vite_port: 0,
+        tmux_session: tmux_session.to_owned(),
+        data_dir: tug_instance::data_dir(),
+        started_at: tugcore::registry::now_rfc3339(),
+    };
+    if let Err(e) = tugcore::registry::register(instance) {
+        warn!(error = %e, "failed to register with tug-instances.json (continuing)");
+    } else {
+        info!(instance_id = %id, "registered with tug-instances.json");
     }
 }
 

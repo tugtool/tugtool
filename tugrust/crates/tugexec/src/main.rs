@@ -373,7 +373,12 @@ async fn supervisor_loop(
     let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
     let mut first_spawn = true;
     let mut backoff_secs: u64 = 0;
-    let vite_port = tugcast_core::DEFAULT_VITE_DEV_PORT;
+    // Vite port: per-instance derivation when TUG_INSTANCE_ID is set,
+    // legacy default otherwise.
+    let vite_port = match tugcore::instance::instance_id() {
+        Some(id) => tugcore::ports::vite_port_default(&id),
+        None => tugcast_core::DEFAULT_VITE_DEV_PORT,
+    };
 
     // Create UDS listener once -- persists across child restarts
     let (listener, socket_path) = match create_control_listener(cli.port) {

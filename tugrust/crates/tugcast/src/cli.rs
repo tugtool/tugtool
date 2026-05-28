@@ -27,9 +27,13 @@ pub struct Cli {
     #[arg(long, default_value_t = default_session())]
     pub session: String,
 
-    /// Port to bind the HTTP server to
-    #[arg(long, default_value_t = 55255)]
-    pub port: u16,
+    /// Port to bind the HTTP server to. When omitted, the port is
+    /// derived from the per-instance identifier via
+    /// `tugcore::ports::tugcast_port_default` (window 55300–55399),
+    /// walking forward on collision. Pass `0` to request an
+    /// OS-ephemeral port.
+    #[arg(long)]
+    pub port: Option<u16>,
 
     /// Workspace directory for the bootstrap file-tree/git feeds.
     /// Transitional: this flag will be removed in T3.4.c when the Tide
@@ -113,7 +117,7 @@ mod tests {
         let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugcast"]).unwrap();
         assert_eq!(cli.session, "cc0");
-        assert_eq!(cli.port, 55255);
+        assert_eq!(cli.port, None);
         assert_eq!(cli.source_tree, PathBuf::from("."));
     }
 
@@ -122,14 +126,14 @@ mod tests {
         let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugcast", "--session", "mySession"]).unwrap();
         assert_eq!(cli.session, "mySession");
-        assert_eq!(cli.port, 55255);
+        assert_eq!(cli.port, None);
     }
 
     #[test]
     fn test_override_port() {
         let _g = ClearInstanceId::new();
         let cli = Cli::try_parse_from(["tugcast", "--port", "8080"]).unwrap();
-        assert_eq!(cli.port, 8080);
+        assert_eq!(cli.port, Some(8080));
         assert_eq!(cli.session, "cc0");
     }
 
@@ -180,7 +184,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(cli.session, "test");
-        assert_eq!(cli.port, 9000);
+        assert_eq!(cli.port, Some(9000));
         assert_eq!(cli.source_tree, PathBuf::from("/workspace"));
     }
 
@@ -283,7 +287,7 @@ mod tests {
             "/tmp/ctl.sock",
         ])
         .unwrap();
-        assert_eq!(cli.port, 8080);
+        assert_eq!(cli.port, Some(8080));
         assert_eq!(cli.session, "dev");
         assert_eq!(cli.control_socket, Some(PathBuf::from("/tmp/ctl.sock")));
     }
