@@ -199,17 +199,16 @@ app-dev: build wasm
         echo "[warn] orphaned per-instance data dirs detected. Run 'tugutil instance prune' to clean up." >&2
     fi
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
     # Seed the per-instance source-tree-path so the first launch knows
     # where to find tugdeck/, tugcode, etc. AppDelegate also falls
     # back to BuildInfo.sourceTree (capture-build-info.sh writes
     # $SRCROOT into Info.plist), but writing it explicitly here keeps
     # the user's chosen tree wins over any stale build-time value.
     tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
+    echo "==> Quitting prior $INSTANCE_ID, if running"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
-    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
-        | grep -q "\"$INSTANCE_ID\""; then
-        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
-    fi
     open "$APP_DIR"
 
 # Build a Release bundle and (re)launch the cwd-derived production
@@ -225,17 +224,16 @@ app-prod: build wasm
     echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
     # Seed source-tree-path for the prod instance too. AppDelegate
     # falls back to BuildInfo.sourceTree if the tugbank value is
     # missing, but release builds intentionally omit BuildSourceTree
     # ([D03]), so this write is the only path for prod from a
     # developer checkout.
     tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
+    echo "==> Quitting prior $INSTANCE_ID, if running"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
-    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
-        | grep -q "\"$INSTANCE_ID\""; then
-        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
-    fi
     open "$APP_DIR"
 
 # Relaunch the cwd-derived dev instance without rebuilding.
@@ -249,10 +247,8 @@ launch-dev:
         exit 1
     fi
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
-    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
-        | grep -q "\"$INSTANCE_ID\""; then
-        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
-    fi
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     open "$APP_DIR"
 
 # Relaunch the cwd-derived prod instance without rebuilding.
@@ -266,34 +262,51 @@ launch-prod:
         exit 1
     fi
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
-    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
-        | grep -q "\"$INSTANCE_ID\""; then
-        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
-    fi
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     open "$APP_DIR"
 
-# Stop the cwd-derived dev instance (idempotent).
+# Stop the cwd-derived dev instance (idempotent). Quits the GUI app
+# AND the tugcast registry entry — `just app-dev` then re-launches
+# fresh, instead of LaunchServices bringing the previous (stale)
+# Tug.app to front.
 stop-dev:
     #!/usr/bin/env bash
     set -euo pipefail
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
-    tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
 
 # Stop the cwd-derived prod instance (idempotent).
 stop-prod:
     #!/usr/bin/env bash
     set -euo pipefail
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
-    tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
+    bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
 
 # Stop every live Tug instance.
 stop:
     #!/usr/bin/env bash
     set -uo pipefail
-    while read -r ID; do
+    while read -r LINE; do
+        ID="$(printf '%s' "$LINE" | awk '{print $1}')"
+        BUNDLE_PATH="$(printf '%s' "$LINE" | awk '{print $4}')"
         [ -n "$ID" ] || continue
-        tugrust/target/debug/tugutil instance stop "$ID" --timeout 5 || true
-    done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+        # Derive bundle ID from the bundle path's Info.plist when
+        # available — that's the source of truth for a running app.
+        # Fall back to plain `tugutil instance stop` if the plist
+        # can't be read (registry entry without a live bundle).
+        BUNDLE_ID=""
+        if [ -n "$BUNDLE_PATH" ] && [ -f "$BUNDLE_PATH/Contents/Info.plist" ]; then
+            BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$BUNDLE_PATH/Contents/Info.plist" 2>/dev/null || true)"
+        fi
+        if [ -n "$BUNDLE_ID" ]; then
+            bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$ID"
+        else
+            tugrust/target/debug/tugutil instance stop "$ID" --timeout 5 || true
+        fi
+    done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2)
 
 # One-line wrapper around `tugutil instance list`. Forwards any extra
 # args (e.g. `--json`).
