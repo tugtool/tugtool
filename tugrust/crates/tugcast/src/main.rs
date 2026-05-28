@@ -70,6 +70,31 @@ async fn main() {
     // Parse CLI arguments
     let cli = cli::Cli::parse();
 
+    // Duplicate-launch guard (per [D07]). When TUG_INSTANCE_ID is
+    // set and the registry already lists a live tugcast for this
+    // identity, bail out *before* binding any port. The walker in
+    // `allocate_port` would otherwise quietly step to the next free
+    // port and let a second tugcast cohabit, defeating the
+    // single-instance semantics LaunchServices provides for the GUI
+    // app. `--force` overrides the check — useful for harness rigs
+    // that kill the previous process first.
+    if !cli.force
+        && let Some(id) = tug_instance::instance_id()
+        && let Ok(Some(existing)) = tugcore::registry::find_by_id(&id)
+    {
+        eprintln!(
+            "tugcast: another '{id}' instance is already running (PID {})",
+            existing.pid
+        );
+        warn!(
+            instance_id = %id,
+            pid = existing.pid,
+            port = existing.tugcast_port,
+            "duplicate-launch refused; exiting EX_CANTCREAT (73)"
+        );
+        std::process::exit(73);
+    }
+
     // Resolve the port we *want* to bind. Three branches:
     // - `--port <P>` explicit: use it (incl. 0 for OS-ephemeral)
     // - No --port + TUG_INSTANCE_ID set: derive per-instance port
@@ -117,6 +142,28 @@ async fn main() {
     let listener = match TcpListener::bind(format!("127.0.0.1:{requested_port}")).await {
         Ok(l) => l,
         Err(e) => {
+            // On EADDRINUSE, consult the registry: if a live tugcast
+            // for the same instance ID is already registered, this is
+            // a duplicate-launch collision (per [D07]). Exit code 73
+            // (`EX_CANTCREAT`) signals "structurally cannot create"
+            // — the Swift supervisor recognizes it as a duplicate and
+            // does not retry the spawn.
+            if e.kind() == std::io::ErrorKind::AddrInUse
+                && let Some(id) = tug_instance::instance_id()
+                && let Ok(Some(existing)) = tugcore::registry::find_by_id(&id)
+            {
+                eprintln!(
+                    "tugcast: another '{id}' instance is already running (PID {})",
+                    existing.pid
+                );
+                warn!(
+                    instance_id = %id,
+                    pid = existing.pid,
+                    port = existing.tugcast_port,
+                    "duplicate-launch collision; exiting EX_CANTCREAT (73)"
+                );
+                std::process::exit(73);
+            }
             eprintln!("tugcast: error: failed to bind to 127.0.0.1:{requested_port}: {e}");
             std::process::exit(1);
         }

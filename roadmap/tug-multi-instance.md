@@ -1195,14 +1195,14 @@ No new configuration files. All configuration is via:
 - Updated `tugapp/Sources/ProcessManager.swift` — supervisor recognizes the exit code/pattern.
 
 **Tasks:**
-- [ ] In tugcast's `main()`, when the initial `TcpListener::bind()` returns `EADDRINUSE`, consult the registry; if a live PID with the same instance ID is registered, log `tugcast: another '<id>' instance is already running (PID <n>)` to stderr + tracing, then `std::process::exit(1)` with a distinguishable exit code (e.g., 73 = `EX_CANTCREAT`).
-- [ ] In Swift's `ProcessManager`, when tugcast exits with code 73 within 1s of launch, surface an `NSAlert` with the registry-derived running-instance info; do not call `startProcess()` again.
+- [x] In tugcast's `main()`, when the initial `TcpListener::bind()` returns `EADDRINUSE`, consult the registry; if a live PID with the same instance ID is registered, log `tugcast: another '<id>' instance is already running (PID <n>)` to stderr + tracing, then `std::process::exit(1)` with a distinguishable exit code (e.g., 73 = `EX_CANTCREAT`). (Hardened: the registry check moved *before* `allocate_port` so the walker doesn't quietly step past a duplicate-identity collision. The post-bind branch is retained as defence-in-depth for races between registry read and registry write.)
+- [x] In Swift's `ProcessManager`, when tugcast exits with code 73 within 1s of launch, surface an `NSAlert` with the registry-derived running-instance info; do not call `startProcess()` again.
 
 **Tests:**
-- [ ] Integration (Rust): launch two tugcasts with identical TUG_INSTANCE_ID in quick succession; second exits with code 73 + expected log line.
+- [x] Integration (Rust): launch two tugcasts with identical TUG_INSTANCE_ID in quick succession; second exits with code 73 + expected log line. (Verified via Step 12 checkpoint script: `second-exit=73` and `tugcast: another '<id>' instance is already running (PID <n>)`.)
 
 **Checkpoint:**
-- [ ] Launching `(development, foo)` twice in two terminals produces a clean alert + exit in the second; no supervisor retry loop.
+- [x] Launching the same identity twice produces a clean alert + exit in the second; no supervisor retry loop. (Rust side verified end-to-end; Swift alert verified by code inspection — the `exit == 73 && lifetime < 1.0` branch sets `restartDecision = .doNotRestart` before showing an `NSAlert.critical`.)
 
 ---
 

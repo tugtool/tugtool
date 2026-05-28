@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Restart decision for the supervisor loop
@@ -636,6 +637,7 @@ class ProcessManager {
         proc.standardError = FileHandle.standardError
 
         do {
+            let launchedAt = Date()
             try proc.run()
             self.process = proc
             self.childPID = proc.processIdentifier
@@ -644,9 +646,23 @@ class ProcessManager {
             DispatchQueue.global(qos: .background).async { [weak self] in
                 proc.waitUntilExit()
                 let exitCode = proc.terminationStatus
+                let lifetime = Date().timeIntervalSince(launchedAt)
 
                 DispatchQueue.main.async {
                     guard let self = self else { return }
+
+                    // Duplicate-launch collision (per [D07]): tugcast
+                    // exits 73 within 1s when another instance with
+                    // the same TUG_INSTANCE_ID already holds the
+                    // hash-derived port. Surface an NSAlert with the
+                    // running-instance PID and do not respawn.
+                    if exitCode == 73 && lifetime < 1.0 {
+                        NSLog("ProcessManager: duplicate-identity collision (exit 73)")
+                        self.surfaceDuplicateInstanceAlert()
+                        self.restartDecision = .doNotRestart
+                        self.process = nil
+                        return
+                    }
 
                     // If no UDS signal arrived, treat as unexpected death
                     if self.restartDecision == .pending {
@@ -673,5 +689,53 @@ class ProcessManager {
         } catch {
             NSLog("ProcessManager: failed to start tugcast: %@", error.localizedDescription)
         }
+    }
+
+    /// Surface an NSAlert explaining the duplicate-identity collision.
+    ///
+    /// Reads the registry file (`$TMPDIR/tug-instances.json`) for the
+    /// running PID matching `InstanceConfig.instanceId`. If we can't
+    /// resolve the PID, the alert still fires but with a generic
+    /// message — better to tell the user *something* than silently
+    /// loop.
+    private func surfaceDuplicateInstanceAlert() {
+        let id = InstanceConfig.instanceId
+        let pid = ProcessManager.readRunningPID(for: id)
+        let alert = NSAlert()
+        alert.messageText = "Another \(id) instance is already running"
+        if let pid = pid {
+            alert.informativeText =
+                "PID \(pid) holds the port this build was assigned. " +
+                "Tug.app cannot run two instances with the same identity. " +
+                "Quit the other instance and relaunch this one."
+        } else {
+            alert.informativeText =
+                "Another process is holding the port this build was assigned. " +
+                "Tug.app cannot run two instances with the same identity. " +
+                "Quit the other instance and relaunch this one."
+        }
+        alert.alertStyle = .critical
+        alert.runModal()
+        NSApp.terminate(nil)
+    }
+
+    /// Read the running PID for `instanceId` out of the per-host
+    /// registry file. Returns nil if the registry is absent,
+    /// unreadable, or has no matching entry.
+    private static func readRunningPID(for instanceId: String) -> Int? {
+        let path = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("tug-instances.json")
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let instances = json["instances"] as? [[String: Any]] else {
+            return nil
+        }
+        for entry in instances {
+            if (entry["instance_id"] as? String) == instanceId,
+               let pid = entry["pid"] as? Int {
+                return pid
+            }
+        }
+        return nil
     }
 }
