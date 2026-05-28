@@ -61,13 +61,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         lap("start")
 
+        // Per-instance tugbank DB at `InstanceConfig.tugbankDbPath`.
+        // TUGBANK_PATH still takes precedence as a harness override so
+        // app-tests can point at a temp DB without rebuilding.
         let dbPath: String
-        if let envPath = ProcessInfo.processInfo.environment["TUGBANK_PATH"] {
+        if let envPath = ProcessInfo.processInfo.environment["TUGBANK_PATH"],
+           !envPath.isEmpty {
             dbPath = envPath
         } else {
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            dbPath = (home as NSString).appendingPathComponent(".tugbank.db")
+            dbPath = InstanceConfig.tugbankDbPath.path
         }
+        // Ensure the parent directory exists. On first launch of a new
+        // identity the per-instance data dir doesn't yet exist; sqlite3
+        // open would otherwise fail with ENOENT.
+        try? FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: dbPath).deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         TugbankClient.configure(path: dbPath)
         lap("TugbankClient.configure")
 
@@ -898,24 +908,9 @@ extension AppDelegate: NSMenuDelegate {
 
         // Read active theme from tugbank if not yet known.
         if activeThemeName == nil {
-            if let tugbankPath = ProcessManager.which("tugbank") {
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: tugbankPath)
-                proc.arguments = ["read", "dev.tugtool.app", "theme"]
-                let pipe = Pipe()
-                proc.standardOutput = pipe
-                proc.standardError = FileHandle.nullDevice
-                try? proc.run()
-                proc.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !raw.isEmpty {
-                    activeThemeName = raw
-                }
-            }
-            if activeThemeName == nil {
-                activeThemeName = baseThemeName
-            }
+            activeThemeName =
+                ProcessManager.readTugbank(domain: "dev.tugtool.app", key: "theme")
+                ?? baseThemeName
         }
 
         // Read theme names directly from shipped CSS files on disk.

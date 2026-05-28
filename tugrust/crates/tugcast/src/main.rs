@@ -75,11 +75,11 @@ async fn main() {
         force_kill_port_holder(cli.port);
     }
 
-    // Resolve bank path: --bank-path flag > TUGBANK_PATH env var > ~/.tugbank.db.
-    // Mirrors the precedence the `tugbank` CLI uses (see tugrust/crates/tugbank/src/main.rs).
-    // Honoring the env var lets harness tests that set TUGBANK_PATH for Tug.app
-    // reach tugcast (spawned from Tug.app's env) without a code path to thread
-    // the flag through ProcessManager.
+    // Resolve bank path: --bank-path flag > TUGBANK_PATH env var >
+    // per-instance `tugcore::instance::tugbank_db_path()` (when
+    // TUG_INSTANCE_ID is set) > legacy `~/.tugbank.db`. Harness tests
+    // that set TUGBANK_PATH still take precedence over the per-instance
+    // path so a synthetic identity can be pointed at a temp DB.
     let bank_path: PathBuf = cli
         .bank_path
         .clone()
@@ -88,11 +88,26 @@ async fn main() {
                 .map(PathBuf::from)
                 .filter(|p| !p.as_os_str().is_empty())
         })
+        .or_else(tug_instance::tugbank_db_path)
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()))
                 .join(".tugbank.db")
         });
+
+    // Ensure the parent directory exists. The per-instance data dir
+    // (`~/Library/Application Support/Tug/instances/<id>/`) is not
+    // created until first launch — TugbankClient::open below would
+    // otherwise fail with ENOENT.
+    if let Some(parent) = bank_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        warn!(
+            path = %parent.display(),
+            error = %e,
+            "failed to create tugbank parent directory (continuing)"
+        );
+    }
 
     info!(
         session = %cli.session,

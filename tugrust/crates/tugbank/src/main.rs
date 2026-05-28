@@ -5,7 +5,13 @@
 //!
 //! # Database path resolution
 //!
-//! Precedence order: `--path` flag > `TUGBANK_PATH` env var > `~/.tugbank.db`.
+//! Precedence order:
+//! 1. `--path <P>` flag (explicit override)
+//! 2. `--instance <id>` flag (per-instance DB at
+//!    `<Application Support>/Tug/instances/<id>/tugbank.db`)
+//! 3. `TUGBANK_PATH` env var
+//! 4. `TUG_INSTANCE_ID` env var resolved via `tugcore::instance`
+//! 5. Legacy `~/.tugbank.db`
 //!
 //! # Output format
 //!
@@ -39,9 +45,18 @@ use tugbank_core::{DefaultsStore, Value};
 #[command(name = "tugbank", version)]
 struct Cli {
     /// Path to the tugbank database file.
-    /// Overrides TUGBANK_PATH env var and the default (~/.tugbank.db).
+    /// Overrides --instance, TUGBANK_PATH, TUG_INSTANCE_ID, and the
+    /// legacy default (~/.tugbank.db).
     #[arg(long, global = true)]
     path: Option<String>,
+
+    /// Per-instance identifier (e.g. `production-main`,
+    /// `development-foo`). Resolves the DB to
+    /// `<Application Support>/Tug/instances/<id>/tugbank.db`.
+    /// Overrides TUGBANK_PATH and TUG_INSTANCE_ID; ignored when --path
+    /// is also set.
+    #[arg(long, global = true, value_name = "ID")]
+    instance: Option<String>,
 
     /// Output machine-readable JSON instead of human-readable text.
     #[arg(long, global = true)]
@@ -131,24 +146,42 @@ enum ValueType {
 
 // ── Path resolution ───────────────────────────────────────────────────────────
 
-/// Resolve the database path: `--path` flag > `TUGBANK_PATH` env var > `~/.tugbank.db`.
+/// Resolve the database path.
 ///
-/// Returns `Err(String)` with a user-facing message if no path can be determined
-/// (home directory unavailable and no override provided).
-fn resolve_db_path(cli_path: Option<&str>) -> Result<PathBuf, String> {
+/// Precedence order: `--path` > `--instance` > `TUGBANK_PATH` > the
+/// per-instance helper (consults `TUG_INSTANCE_ID`) > legacy
+/// `~/.tugbank.db`. Returns `Err(String)` with a user-facing message
+/// if no path can be determined.
+fn resolve_db_path(cli_path: Option<&str>, cli_instance: Option<&str>) -> Result<PathBuf, String> {
     if let Some(p) = cli_path {
         return Ok(PathBuf::from(p));
     }
-    if let Ok(p) = std::env::var("TUGBANK_PATH") {
-        if !p.is_empty() {
-            return Ok(PathBuf::from(p));
+    if let Some(id) = cli_instance.filter(|s| !s.is_empty()) {
+        // Resolve `--instance <id>` by overriding TUG_INSTANCE_ID for
+        // this process — the helper reads from env. The override is
+        // process-local and not propagated to children of this CLI.
+        // SAFETY: tugbank is a CLI entry point; nothing else runs
+        // concurrently when we mutate the environment here.
+        unsafe {
+            std::env::set_var(tugcore::instance::ENV_INSTANCE_ID, id);
         }
+        if let Some(p) = tugcore::instance::tugbank_db_path() {
+            return Ok(p);
+        }
+    }
+    if let Ok(p) = std::env::var("TUGBANK_PATH")
+        && !p.is_empty()
+    {
+        return Ok(PathBuf::from(p));
+    }
+    if let Some(p) = tugcore::instance::tugbank_db_path() {
+        return Ok(p);
     }
     match dirs::home_dir() {
         Some(home) => Ok(home.join(".tugbank.db")),
         None => Err(
             "cannot determine database path: home directory is unavailable. \
-             Use --path or set TUGBANK_PATH."
+             Use --path, --instance, or set TUGBANK_PATH / TUG_INSTANCE_ID."
                 .to_owned(),
         ),
     }
@@ -282,7 +315,7 @@ fn main() {
     let pretty = cli.pretty;
 
     // Resolve database path.
-    let db_path = match resolve_db_path(cli.path.as_deref()) {
+    let db_path = match resolve_db_path(cli.path.as_deref(), cli.instance.as_deref()) {
         Ok(p) => p,
         Err(msg) => {
             if use_json {
@@ -293,6 +326,15 @@ fn main() {
             process::exit(4);
         }
     };
+
+    // Ensure the parent directory exists. The per-instance data dir
+    // is created lazily; tugbank invoked from a shell against a fresh
+    // identity would otherwise fail to open the SQLite file.
+    if let Some(parent) = db_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        let _ = std::fs::create_dir_all(parent);
+    }
 
     // Open the store.
     let store = match DefaultsStore::open(&db_path) {

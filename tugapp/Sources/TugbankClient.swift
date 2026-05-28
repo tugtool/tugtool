@@ -37,12 +37,14 @@ enum TugbankValue {
 
 /// Native SQLite client for the tugbank defaults store.
 ///
-/// Opens ~/.tugbank.db directly via the system libsqlite3. No Rust FFI,
-/// no external dependencies. Reads and writes use the same schema as
-/// tugbank-core (domains/entries tables, value_kind discriminator).
+/// Opens the per-instance tugbank DB (`InstanceConfig.tugbankDbPath`)
+/// directly via the system libsqlite3. No Rust FFI, no external
+/// dependencies. Reads and writes use the same schema as tugbank-core
+/// (domains/entries tables, value_kind discriminator).
 ///
-/// After a write, sends a datagram to the tugcast notification socket
-/// so other processes can react.
+/// After a write, sends a datagram to the per-instance tugcast
+/// notification socket (`InstanceConfig.notifySocketPath`) so other
+/// processes can react.
 final class TugbankClient {
 
     /// Shared singleton. Call `configure(path:)` once before accessing.
@@ -265,8 +267,7 @@ final class TugbankClient {
     // MARK: Private — notification
 
     private func broadcastDomainChanged(_ domain: String) {
-        let socketPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tugbank-notify.sock").path
+        let socketPath = InstanceConfig.notifySocketPath.path
 
         let fd = socket(AF_UNIX, SOCK_DGRAM, 0)
         guard fd >= 0 else { return }

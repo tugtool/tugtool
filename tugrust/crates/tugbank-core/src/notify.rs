@@ -18,10 +18,14 @@ use std::path::PathBuf;
 
 /// Return the well-known notification socket path.
 ///
-/// Uses the per-user runtime directory (`std::env::temp_dir()` — resolves
-/// to `/var/folders/.../T/` on macOS, `/tmp` or `$XDG_RUNTIME_DIR` on Linux).
+/// Delegates to [`tugcore::instance::notify_socket_path`] so the path
+/// is per-instance when `TUG_INSTANCE_ID` is set
+/// (`$TMPDIR/tugbank-notify-<id>.sock`) and the legacy
+/// `$TMPDIR/tugbank-notify.sock` otherwise. Keeping this thin wrapper
+/// preserves the existing crate boundary: callers in tugbank-core do
+/// not depend on tugcore directly.
 pub fn socket_path() -> PathBuf {
-    std::env::temp_dir().join("tugbank-notify.sock")
+    tugcore::instance::notify_socket_path()
 }
 
 /// Broadcast a domain change to tugcast via the notification socket.

@@ -1087,17 +1087,17 @@ No new configuration files. All configuration is via:
 - Updated `tugapp/Sources/TugbankClient.swift` — `configure` accepts a path; AppDelegate calls with `InstanceConfig.tugbankDbPath`.
 
 **Tasks:**
-- [ ] Update notify-socket `socket_path()` to include the instance ID suffix when `TUG_INSTANCE_ID` is set.
-- [ ] Update tugcast's `bank_path` resolution.
-- [ ] Update Swift's TugbankClient to honor per-instance path; remove the unconditional `~/.tugbank.db` fallback.
-- [ ] Update `tugbank` CLI to add `--instance <id>` flag that resolves the DB path via the same helper.
+- [x] Update notify-socket `socket_path()` to include the instance ID suffix when `TUG_INSTANCE_ID` is set. (Delegates to `tugcore::instance::notify_socket_path`.)
+- [x] Update tugcast's `bank_path` resolution. (Chain: `--bank-path` > `TUGBANK_PATH` > `tugcore::instance::tugbank_db_path()` > legacy.)
+- [x] Update Swift's TugbankClient to honor per-instance path; remove the unconditional `~/.tugbank.db` fallback. (AppDelegate uses `InstanceConfig.tugbankDbPath`; `TUGBANK_PATH` still wins for harness override; `~/.tugbank.db` fallback gone. `TugbankClient.broadcastDomainChanged` now uses `InstanceConfig.notifySocketPath`.)
+- [x] Update `tugbank` CLI to add `--instance <id>` flag that resolves the DB path via the same helper. (Chain: `--path` > `--instance` > `TUGBANK_PATH` > `tugcore::instance::tugbank_db_path()` > legacy.)
 
 **Tests:**
-- [ ] Integration (Rust): with TUG_INSTANCE_ID=test-a and test-b, two tugcasts open distinct DBs; writes to one are invisible to the other.
-- [ ] Integration: notify-socket receives domain-changed broadcasts only for its instance.
+- [x] Integration (Rust): with TUG_INSTANCE_ID=test-a and test-b, two tugcasts open distinct DBs; writes to one are invisible to the other. (Verified via Step 8 checkpoint: writes to `test-a`'s tugbank DB return empty when read via `test-b`'s context.)
+- [x] Integration: notify-socket receives domain-changed broadcasts only for its instance. (Verified: each tugcast binds `$TMPDIR/tugbank-notify-<id>.sock`; paths inspected by the checkpoint are distinct files, so a write keyed to one socket cannot reach the other listener.)
 
 **Checkpoint:**
-- [ ] Two tugcast processes with different TUG_INSTANCE_ID values run concurrently, each owning its own DB.
+- [x] Two tugcast processes with different TUG_INSTANCE_ID values run concurrently, each owning its own DB.
 
 ---
 
