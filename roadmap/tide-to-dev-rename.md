@@ -741,15 +741,15 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D01]
 
 **Tasks:**
-- [ ] `tide-card.tsx` (now `dev-card.tsx`) defaultMeta `title: "Tide"` → `"Dev"`.
-- [ ] `console.warn("TideProjectPicker: ...")` → `"DevProjectPicker: ..."`.
-- [ ] `gallery-registrations.tsx`: `title: "Tide Chrome ..."` → `"Dev Chrome ..."`; `title: "TideThinkingBlock"` → `"DevThinkingBlock"`.
-- [ ] `gallery-tug-dialog-button.tsx`: ~5 mentions of "Tide session", "Tide team", "Tide restarts", "Tide quits", "Tide-side annotation" → "Dev …".
-- [ ] Doc comments in `tugdeck/src/components/tugways/*.tsx` (~10 mentions) → "Dev …".
+- [x] `tide-card.tsx` (now `dev-card.tsx`) defaultMeta `title: "Tide"` → `"Dev"`. *Both registrations (the live `"dev"` componentId AND the back-compat `"tide"` alias) now render with title `"Dev"` — consistent with [D08]'s intent that the card is fundamentally a Dev card regardless of which componentId looked it up.*
+- [x] `console.warn("TideProjectPicker: ...")` → `"DevProjectPicker: ..."`. *Swept by Step 3.*
+- [x] `gallery-registrations.tsx`: `title: "Tide Chrome ..."` → `"Dev Chrome ..."`; `title: "TideThinkingBlock"` → `"DevThinkingBlock"`. *Swept by Step 3.*
+- [x] `gallery-tug-dialog-button.tsx`: 5 mentions of "Tide session/team/restarts/quits/-side annotation" → "Dev …". *Verified all 5 lines now read "Dev …".*
+- [x] Doc comments in `tugdeck/src/components/tugways/*.tsx` (~10 mentions) → "Dev …". *Swept by Step 3.*
 
 **Checkpoint:**
-- [ ] `bun test` green.
-- [ ] Manual: card title bar reads "Dev"; any dialog touching Tide-prose reads "Dev …".
+- [x] `bun test` green. *3039 tests pass; tsc clean.*
+- [ ] Manual: card title bar reads "Dev"; any dialog touching Tide-prose reads "Dev …". *Deferred to Step 12 manual verification.*
 
 ---
 
