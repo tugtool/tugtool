@@ -1,0 +1,18 @@
+[package]
+name = "tugcore"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Shared per-instance identity, path, and registry helpers for Tug binaries"
+
+[lib]
+name = "tugcore"
+path = "src/lib.rs"
+
+[dependencies]
+dirs = { workspace = true }
+
+[dev-dependencies]
+serial_test = "3"
+tempfile = { workspace = true }

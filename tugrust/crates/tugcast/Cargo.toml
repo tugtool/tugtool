@@ -19,6 +19,7 @@ pty-process = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
 tuglog = { workspace = true }
+tugcore = { workspace = true }
 serde = { workspace = true }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }

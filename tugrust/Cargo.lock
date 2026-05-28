@@ -2281,6 +2281,7 @@ dependencies = [
  "tracing",
  "tugbank-core",
  "tugcast-core",
+ "tugcore",
  "tuglog",
  "uuid",
 ]
@@ -2295,6 +2296,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "tugcore"
+version = "0.8.0"
+dependencies = [
+ "dirs",
+ "serial_test",
+ "tempfile",
 ]
 
 [[package]]
@@ -2315,10 +2325,10 @@ dependencies = [
 name = "tuglog"
 version = "0.8.0"
 dependencies = [
- "dirs",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "tugcore",
 ]
 
 [[package]]

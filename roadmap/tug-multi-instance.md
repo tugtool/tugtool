@@ -1057,19 +1057,19 @@ No new configuration files. All configuration is via:
 - Updated `tugrust/crates/tuglog/src/lib.rs` to route log_dir via TUG_INSTANCE_ID.
 
 **Tasks:**
-- [ ] Create `tugcore::instance` with `instance_id()`, `data_dir()`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`, `bundle_path()`. All read `TUG_INSTANCE_ID` from env; return `None` / legacy path if unset.
-- [ ] Create `InstanceConfig.swift` with mirror functions.
-- [ ] Update `ProcessManager.spawnTugcast` (and any other tugcast/tugcode/tugbank child-spawn site) to set `TUG_INSTANCE_ID=<id>` in child env.
-- [ ] Update `tuglog::init` to call the new `log_dir()` helper.
-- [ ] **Write the bundle-path marker on first launch.** Tugcast's startup (after creating the per-instance data dir but before any other work) writes the bundle's absolute path to `<data-dir>/bundle-path`. Swift passes the path via env (`TUG_BUNDLE_PATH`) when spawning tugcast — Swift knows it via `Bundle.main.bundlePath`. If the env is unset (e.g., tugcast launched standalone for testing), skip the write — preserve any existing marker. The marker is the anchor `tugutil instance prune` (Step 14) uses to detect orphans: data dir exists but the bundle at `cat <data-dir>/bundle-path` doesn't.
+- [x] Create `tugcore::instance` with `instance_id()`, `data_dir()`, `tugbank_db_path()`, `sessions_db_path()`, `notify_socket_path()`, `log_dir()`, `bundle_path()`. All read `TUG_INSTANCE_ID` from env; return `None` / legacy path if unset.
+- [x] Create `InstanceConfig.swift` with mirror functions.
+- [x] Update `ProcessManager.spawnTugcast` (and any other tugcast/tugcode/tugbank child-spawn site) to set `TUG_INSTANCE_ID=<id>` in child env.
+- [x] Update `tuglog::init` to call the new `log_dir()` helper.
+- [x] **Write the bundle-path marker on first launch.** Tugcast's startup (after creating the per-instance data dir but before any other work) writes the bundle's absolute path to `<data-dir>/bundle-path`. Swift passes the path via env (`TUG_BUNDLE_PATH`) when spawning tugcast — Swift knows it via `Bundle.main.bundlePath`. If the env is unset (e.g., tugcast launched standalone for testing), skip the write — preserve any existing marker. The marker is the anchor `tugutil instance prune` (Step 14) uses to detect orphans: data dir exists but the bundle at `cat <data-dir>/bundle-path` doesn't.
 
 **Tests:**
-- [ ] Unit (Rust): with `TUG_INSTANCE_ID=test-id` set, `data_dir()` returns `<base>/instances/test-id`; with unset, returns the legacy `Tug/` path.
-- [ ] Unit (Swift): `InstanceConfig.dataDir` mirrors the Rust behavior.
-- [ ] Integration: launching tugcast with `TUG_INSTANCE_ID=foo` + `TUG_BUNDLE_PATH=/some/path` writes `/some/path` to `<data-dir>/foo/bundle-path`. Second launch with the same env doesn't churn the file (no needless writes).
+- [x] Unit (Rust): with `TUG_INSTANCE_ID=test-id` set, `data_dir()` returns `<base>/instances/test-id`; with unset, returns the legacy `Tug/` path.
+- [x] Unit (Swift): `InstanceConfig.dataDir` mirrors the Rust behavior. (No standalone Swift test target exists in this project; verified by `xcodebuild build` + the cross-language checkpoint that exercises Rust `data_dir()` against the same `<base>/instances/<id>/` path Swift `InstanceConfig.dataDir` resolves.)
+- [x] Integration: launching tugcast with `TUG_INSTANCE_ID=foo` + `TUG_BUNDLE_PATH=/some/path` writes `/some/path` to `<data-dir>/foo/bundle-path`. Second launch with the same env doesn't churn the file (no needless writes). (Both verified via the Step 7 checkpoint scripts: marker content correct on first launch; mtime + content stable on second launch.)
 
 **Checkpoint:**
-- [ ] Launching tugcast directly with `TUG_INSTANCE_ID=foo` produces a log file at `<base>/instances/foo/Logs/tugcast.log.<date>` and a `<base>/instances/foo/bundle-path` marker (when `TUG_BUNDLE_PATH` is set).
+- [x] Launching tugcast directly with `TUG_INSTANCE_ID=foo` produces a log file at `<base>/instances/foo/Logs/tugcast.log.<date>` and a `<base>/instances/foo/bundle-path` marker (when `TUG_BUNDLE_PATH` is set).
 
 ---
 

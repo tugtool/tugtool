@@ -4,8 +4,14 @@
 //! startup. Tracing output is written to a rolling log file under:
 //!
 //! ```text
-//! ~/Library/Application Support/Tug/Logs/<name>.log
+//! ~/Library/Application Support/Tug/Logs/<name>.log            (legacy, single-instance)
+//! ~/Library/Application Support/Tug/instances/<id>/Logs/<name>.log   (multi-instance)
 //! ```
+//!
+//! The directory chosen depends on whether `TUG_INSTANCE_ID` is set in
+//! the process environment; resolution is delegated to
+//! [`tugcore::instance::log_dir`] so every Tug binary agrees on the
+//! location.
 //!
 //! Logs rotate daily. The `RUST_LOG` environment variable controls the filter
 //! level (default: `info`). A non-blocking writer is used so logging never
@@ -32,17 +38,16 @@ pub struct LogGuard {
     _inner: WorkerGuard,
 }
 
-/// Resolve the log directory: `~/Library/Application Support/Tug/Logs`.
+/// Resolve the log directory for this process.
 ///
-/// Creates the directory if it doesn't exist. Falls back to the system
-/// temp directory if the home directory can't be determined.
+/// Delegates to [`tugcore::instance::log_dir`] so the directory is
+/// per-instance when `TUG_INSTANCE_ID` is set and legacy
+/// `~/Library/Application Support/Tug/Logs/` otherwise. Creates the
+/// directory if it doesn't exist.
 fn log_dir() -> PathBuf {
-    let base = dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("Tug")
-        .join("Logs");
-    let _ = fs::create_dir_all(&base);
-    base
+    let dir = tugcore::instance::log_dir();
+    let _ = fs::create_dir_all(&dir);
+    dir
 }
 
 /// Initialize tracing for a Tug binary.
@@ -81,8 +86,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn log_dir_is_under_tug() {
+    fn log_dir_ends_with_logs() {
+        // Without TUG_INSTANCE_ID set the legacy path applies; with
+        // it set the per-instance path applies. Either way the leaf
+        // is `Logs`.
         let dir = log_dir();
-        assert!(dir.ends_with("Tug/Logs"));
+        assert_eq!(dir.file_name().and_then(|s| s.to_str()), Some("Logs"));
     }
 }

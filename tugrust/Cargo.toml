@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tugutil", "crates/tugutil-core", "crates/tugcast", "crates/tugcast-core", "crates/tugexec", "crates/tugrelaunch", "crates/tugbank-core", "crates/tugbank", "crates/tuglog"]
+members = ["crates/tugutil", "crates/tugutil-core", "crates/tugcast", "crates/tugcast-core", "crates/tugexec", "crates/tugrelaunch", "crates/tugbank-core", "crates/tugbank", "crates/tuglog", "crates/tugcore"]
 
 [workspace.package]
 version = "0.8.0"
@@ -45,6 +45,7 @@ base64 = "0.22"
 
 # Internal binary crates
 tugbank-core = { path = "crates/tugbank-core" }
+tugcore = { path = "crates/tugcore" }
 
 # State management
 rusqlite = { version = "0.33", features = ["bundled"] }

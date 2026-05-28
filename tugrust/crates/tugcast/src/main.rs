@@ -29,6 +29,7 @@ use tracing::{info, warn};
 use tugbank_core::TugbankClient;
 use tugbank_core::notify as tugbank_notify;
 use tugcast_core::{FeedId, Frame, StreamFeed};
+use tugcore::instance as tug_instance;
 
 use crate::auth::new_shared_auth_state;
 use crate::feeds::agent_supervisor::{
@@ -47,6 +48,17 @@ use crate::session_ledger::SessionLedger;
 #[tokio::main]
 async fn main() {
     let _log_guard = tuglog::init("tugcast");
+
+    // Write the per-instance bundle-path marker. When Swift launched
+    // us it passed TUG_INSTANCE_ID and TUG_BUNDLE_PATH; the marker
+    // anchors `tugutil instance prune` orphan detection. When either
+    // var is unset (standalone harness launches, dev iteration) the
+    // helper no-ops.
+    match tug_instance::write_bundle_path_marker() {
+        Ok(tug_instance::MarkerWrite::Written) => info!("bundle-path marker written"),
+        Ok(tug_instance::MarkerWrite::Unchanged | tug_instance::MarkerWrite::Skipped) => {}
+        Err(e) => warn!(error = %e, "failed to write bundle-path marker"),
+    }
 
     // Create own process group so the app can kill tugcast + all children
     // (tugcode, bun) with a single kill(-pgid, SIGTERM). Without this,

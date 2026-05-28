@@ -26,6 +26,7 @@
 		AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */; };
 		AA0000010000000000000015 /* BranchSlug.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* BranchSlug.swift */; };
 		AA0000010000000000000016 /* BuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000016 /* BuildInfo.swift */; };
+		AA0000010000000000000017 /* InstanceConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000017 /* InstanceConfig.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +51,7 @@
 		AA0000020000000000000014 /* TugcodeLifecycleHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TugcodeLifecycleHandlers.swift; sourceTree = "<group>"; };
 		AA0000020000000000000015 /* BranchSlug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchSlug.swift; sourceTree = "<group>"; };
 		AA0000020000000000000016 /* BuildInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.swift; sourceTree = "<group>"; };
+		AA0000020000000000000017 /* InstanceConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceConfig.swift; sourceTree = "<group>"; };
 		AA0000030000000000000001 /* Tug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -87,6 +89,7 @@
 				AA0000020000000000000009 /* ControlSocket.swift */,
 				AA0000020000000000000016 /* BuildInfo.swift */,
 				AA0000020000000000000015 /* BranchSlug.swift */,
+				AA0000020000000000000017 /* InstanceConfig.swift */,
 				AA0000060000000000000002 /* TestHarness */,
 			);
 			path = Sources;
@@ -201,6 +204,7 @@
 				AA0000010000000000000014 /* TugcodeLifecycleHandlers.swift in Sources */,
 				AA0000010000000000000016 /* BuildInfo.swift in Sources */,
 				AA0000010000000000000015 /* BranchSlug.swift in Sources */,
+				AA0000010000000000000017 /* InstanceConfig.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

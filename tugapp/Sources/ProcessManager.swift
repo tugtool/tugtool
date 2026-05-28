@@ -127,6 +127,7 @@ class ProcessManager {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: tugbankPath)
         proc.arguments = ["read", domain, key]
+        proc.environment = tugbankChildEnv()
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = Pipe()
@@ -163,6 +164,7 @@ class ProcessManager {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: tugbankPath)
         proc.arguments = ["write", domain, key, value]
+        proc.environment = tugbankChildEnv()
         proc.standardOutput = Pipe()
         proc.standardError = Pipe()
         do {
@@ -172,6 +174,17 @@ class ProcessManager {
         } catch {
             return false
         }
+    }
+
+    /// Build the environment for a `tugbank` CLI subprocess invoked
+    /// as a fallback when `TugbankClient.shared` is unavailable. The
+    /// child must see `TUG_INSTANCE_ID` so it opens the right
+    /// per-instance database (per [D12]). Inherits the parent
+    /// environment otherwise.
+    private static func tugbankChildEnv() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        env[InstanceConfig.envInstanceID] = InstanceConfig.instanceId
+        return env
     }
 
     /// Resolve tugcast binary path from bundle
@@ -566,6 +579,15 @@ class ProcessManager {
         // Mac apps inherit a minimal PATH that doesn't include Homebrew, nix, etc.
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = ProcessManager.shellPATH
+
+        // Per-instance identity (per [D12]). Swift owns the
+        // computation; every spawned child inherits these via the
+        // environment. Anyone honoring InstanceConfig — tuglog,
+        // tugbank-client, session-ledger, notify-socket — uses these
+        // to compute per-instance paths.
+        env[InstanceConfig.envInstanceID] = InstanceConfig.instanceId
+        env[InstanceConfig.envBundlePath] = InstanceConfig.bundlePath
+
         // tugcast::resources::source_tree() reads this to locate tugdeck/dist
         // and other bundle-relative resources. Debug and release share this
         // path. Only set when Bundle.main.resourcePath is non-nil — an empty
