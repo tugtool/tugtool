@@ -522,6 +522,26 @@ The legacy single-instance recipes `app`, `launch`, `logs`, `tail-tugcast` are r
 - The `Tug Dev` re-sign hack in `just app-test` (~80 lines) goes away under Step 3's Developer ID signing. The recipe shrinks substantially.
 - The harness's `pkill -x Tug` cleanup (both in the recipe and in `spawnTugApp`'s `wrappedKill`) is too broad under multi-instance — it'd kill the developer's live `app-dev` session in another window. Replaced with targeted termination keyed on either the `apptest-<uuid>` registry entry or the spawned subprocess handle directly.
 
+#### [D19] Build axis renamed dev/prod → debug/release; supersedes [D17] on profile-token naming (DECIDED) {#d19-debug-release-rename}
+
+**Decision:** The profile tokens used by the build axis are renamed from `development` / `production` to `debug` / `release` throughout. Affected surfaces: the `BUILD_PROFILE` value written into Info.plist (`debug` / `release`); the Justfile recipe suffixes (`app-debug` / `app-release`, `launch-debug` / `launch-release`, `stop-debug` / `stop-release`, `logs-debug` / `logs-release`, `clean-debug` / `clean-release`); the instance ID prefix (`debug-<slug>` / `release-main`); the `instance-id-from-cwd.sh` / `bundle-id-from-cwd.sh` profile arg; the bundle-ID assignment script's case branches and shorthand. The `(debug, main)` shorthand bundle ID moves from `dev.tugtool.app.dev` to `dev.tugtool.app.debug` — internal consistency wins; the one-time AX re-grant cost on `(debug, main)` is acceptable.
+
+One thing deliberately does NOT rename: the reverse-DNS bundle-ID prefix `dev.tugtool.app.*` is a developer-namespace convention (analogous to `com.apple.*`), not a profile token. The `(release, main)` distribution bundle ID stays at the canonical `dev.tugtool.app` — that's the special case for end-user distribution, unrelated to the profile token rename.
+
+**Rationale:**
+- Frees the word `dev` for a planned in-app card rename (the surface currently called "Tide" → "Dev"), tracked in a separate roadmap document to be written when this step lands.
+- Matches Rust's `target/debug` / `target/release` and Xcode's `Debug` / `Release` exactly — the toolchain this layer wraps already uses these names. Zero translation cost when reading a build script alongside the underlying compiler output.
+- Recipe surface stays equally short: `app-debug` / `app-release` are not meaningfully longer than `app-dev` / `app-prod`.
+- Universally understood; no doc gloss required.
+
+**Implications:**
+- [D17]'s Phase-1 recipe surface inventory still applies in shape (verb-suffix axis; what's in vs out of the surface) but reads `app-debug` / `app-release` wherever it currently reads `app-dev` / `app-prod`. The unsuffixed recipes (`stop`, `instances`, `worktree-remove`, `app-test`, `build-app`, `notarize`, `dmg`) are unaffected. `setup-dev-signing` / `teardown-dev-signing` also stay — `dev` there refers to "Apple Developer ID," not the build profile.
+- [D10]'s bundle-ID assignment is amended at the suffix layer: non-main builds become `dev.tugtool.app.debug-<slug>` / `dev.tugtool.app.release-<slug>`; the `(debug, main)` shorthand becomes `dev.tugtool.app.debug`. The `(release, main)` special case → `dev.tugtool.app` is preserved (distribution-stable).
+- The old `dev.tugtool.app.dev` bundle ID is no longer produced by any code path. Its AX TCC entry persists in the system database until the user manually clears it (`tccutil reset Accessibility dev.tugtool.app.dev`); leaving it is harmless. First launch of the new `(debug, main)` shorthand `dev.tugtool.app.debug` triggers a one-time AX re-prompt — the documented and accepted cost of the rename.
+- [D06]'s legacy tugbank migration gate changes from `production-main` to `release-main`. The marker file content and migration semantics are unchanged.
+- Clean-break for per-instance data directories: no migration code. The `instances/production-main/` and `instances/development-<slug>/` directories persist on disk as inert artifacts after the rename; the user can `rm -rf` them by hand if they care. First launch of `(release, main)` under the new code creates a fresh `instances/release-main/` and the `~/.tugbank.db` legacy migration ([D06], gated on the renamed constant) runs against it — so the new release-main starts from the pre-multi-instance tugbank snapshot rather than from whatever accumulated in `production-main/` since multi-instance landed. Acceptable because there are no users of this codebase beyond the project owner, who has explicitly authorized the clean break.
+- Plan-as-history convention: completed steps (#step-1 through #step-16) and their references to `development` / `production` are NOT edited. Step 17 is the point at which the rename takes effect; readers tracing identity through the historical record see the rename event explicitly rather than a silently revised history.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -1454,13 +1474,126 @@ The dev/prod surface, worktree teardown, and app-test multi-instance behavior ar
 
 ---
 
+#### Step 17: Rename build axis dev/prod → debug/release {#step-17}
+
+**Depends on:** #step-16 (multi-instance integration must be verified green before refactoring the naming axis on top of it)
+
+**Commit:** `refactor(multi-instance): rename build axis dev/prod → debug/release`
+
+**References:** [D19] (deciding), [D17] (shape preserved, profile tokens superseded), [D10] (suffix scheme amended), [D06] (migration gate renamed), [D01], (#terminology, #process-tree, #bundle-id-assignment)
+
+**Rationale (one-paragraph TL;DR):** Free the word `dev` for a planned in-app card rename. The rename swaps the profile tokens (`development` / `production` → `debug` / `release`) across the Justfile recipe surface, the `BUILD_PROFILE` value, the instance ID prefix, and the long-form bundle-ID suffixes. The reverse-DNS prefix `dev.tugtool.app.*` and the `(debug, main)` shorthand `dev.tugtool.app.dev` are preserved for AX-grant continuity — see [D19] for the full rationale.
+
+**Artifacts:**
+
+*Scripts (profile-token producers and consumers):*
+- `tugrust/scripts/capture-build-info.sh` — `Debug → debug`, `Release → release` mapping; header doc.
+- `tugrust/scripts/instance-id-from-cwd.sh` — accepts `debug` / `release` profile arg; header doc.
+- `tugrust/scripts/bundle-id-from-cwd.sh` — accepts `debug` / `release` profile arg; `debug-main` maps to the new shorthand `dev.tugtool.app.debug`; `release-main` keeps the canonical `dev.tugtool.app`; header doc.
+- `tugrust/scripts/assign-bundle-id.sh` — case branches become `release-main` → `dev.tugtool.app` (preserved canonical), `debug-main` → `dev.tugtool.app.debug` (renamed shorthand); slugified branches produce `dev.tugtool.app.${profile}-${slug}` with the new tokens; header doc.
+
+*Justfile (recipe surface):*
+- Renamed: `app-dev` → `app-debug`, `app-prod` → `app-release`, `launch-dev` → `launch-debug`, `launch-prod` → `launch-release`, `stop-dev` → `stop-debug`, `stop-prod` → `stop-release`, `logs-dev` → `logs-debug`, `logs-prod` → `logs-release`, `clean-dev` → `clean-debug`, `clean-prod` → `clean-release`.
+- Unchanged: `stop`, `instances`, `worktree-remove`, `app-test`, `app-test-smoke`, `build-app`, `notarize`, `dmg`, `setup-dev-signing` (Apple Developer ID, not a profile reference), `teardown-dev-signing`, `default`, `build`, `dev` (cargo-watch loop unrelated to the build axis), `dev-watch`.
+- Internal: every `bash tugrust/scripts/instance-id-from-cwd.sh development` call → `... debug`; every `... production` → `... release`. Same for `bundle-id-from-cwd.sh`.
+- Header comment block above the recipes is rewritten to describe the debug/release axis.
+
+*Rust (`tugrust/crates/`):*
+- `tugcast/src/migration.rs` — `instance_id != Some("production-main")` gate becomes `Some("release-main")`; log messages and unit-test fixtures swap `production-main` → `release-main`, `development-foo` → `debug-foo`.
+- `tugcore/src/instance.rs` — module-level doc-comment example (`production-main`, `development-tide-wake-1`) updated to `release-main` / `debug-tide-wake-1`; unit-test fixtures (`development-foo`, `production-bar`, etc.) swap to the new prefixes.
+- `tugcore/src/ports.rs` — unit-test literals (`development-foo`, `production-main`, `development-tide-wake-1`, `production-detached-deadbeef`, `development-{main,foo,bar,baz}`, `development-wrap`) swap to the new prefixes; the test-name semantics (determinism, collision walk, wrap) are preserved.
+- `tugcore/src/registry.rs` — test helper `profile: "development".to_owned()`, `trim_start_matches("development-")`, and literal `development-foo` fixtures swap to the new tokens.
+- `tugutil/src/commands/instance.rs` — `--help` doc strings referencing `production-main` / `development-foo` swap.
+- `tugutil/src/commands/tell.rs` — unit-test literal `development-foo` swaps.
+- `tugcast/src/cli.rs`, `tugcast/src/main.rs`, `tugbank/src/main.rs`, `tugexec/src/main.rs` — grep-sweep literal profile strings and doc comments; pick up any stragglers.
+
+*Swift (`tugapp/Sources/`):*
+- `BuildInfo.swift` — doc comment `"development" (Debug) or "production" (Release)` becomes `"debug" (Debug) or "release" (Release)`.
+- No identifier renames; profile is an opaque string at runtime.
+
+*Tests:*
+- `tests/build-info/test-info-plist.sh` — expected `BuildProfile` value (`development` → `debug`); expected instance ID prefix (`development-` → `debug-`); expected bundle ID for non-main dev branches (`dev.tugtool.app.development-<slug>` → `dev.tugtool.app.debug-<slug>`).
+- `tests/build-info/test-bundle-id-mapping.sh` — fixture table swaps `production` / `development` → `release` / `debug` and the expected bundle-ID strings accordingly, while preserving the two special cases (`release:main:dev.tugtool.app` and `debug:main:dev.tugtool.app.dev`).
+
+*Doc (this file):*
+- [D19] (added in the same edit that introduces this step) is the deciding force.
+- The text bodies of [D01], [D02], [D03], [D04], [D05], [D06], [D07], [D10], [D12], [D17], [D18], the Phase Overview, Success Criteria, Risks, the Deep Dives (`#process-tree`, `#bundle-id-assignment`, `#registry-format`, `#signing-flow`), `#terminology`, `#modes-policies`, `#public-api`, and `#symbol-inventory` mention `production` / `development` as profile tokens in body prose and code-block fixtures. Sed-pass these (carefully) per the doc-edit rules below.
+- Phase Exit Criteria: bump `All sixteen execution steps` → `All seventeen execution steps`.
+
+**Tasks:**
+
+*Cohesive script-then-recipe sequence (each compiles/runs before the next):*
+- [ ] Update `capture-build-info.sh` profile mapping + header doc.
+- [ ] Update `instance-id-from-cwd.sh` + `bundle-id-from-cwd.sh` to accept the new profile tokens; `bundle-id-from-cwd.sh`'s `debug-main` case returns `dev.tugtool.app.debug`.
+- [ ] Update `assign-bundle-id.sh` case branches: `release-main → dev.tugtool.app` (preserved canonical), `debug-main → dev.tugtool.app.debug` (renamed shorthand), other → `dev.tugtool.app.${profile}-${slug}`. Header doc records the rename and the one-time AX re-grant cost on `(debug, main)`.
+- [ ] Update `Justfile`: rename the ten paired recipes; rewrite internal script calls; refresh the header comment block above the recipes; verify `just --list` shows the new names and no orphans.
+
+*Rust + Swift sweep:*
+- [ ] Update `tugcast/src/migration.rs` migration gate, log messages, and tests.
+- [ ] Update `tugcore::instance` doc + tests; `tugcore::ports` tests; `tugcore::registry` tests + helpers.
+- [ ] Update `tugutil::commands::{instance,tell}` doc strings + tests.
+- [ ] Sweep `tugcast/src/{cli,main}.rs`, `tugbank/src/main.rs`, `tugexec/src/main.rs` for doc-comment and help-text profile mentions.
+- [ ] Update `BuildInfo.swift` doc comment.
+
+*Test artifacts:*
+- [ ] Update `tests/build-info/test-info-plist.sh` expected values.
+- [ ] Update `tests/build-info/test-bundle-id-mapping.sh` fixture table.
+
+*Data-dir handling (clean break — no migration code):*
+- [ ] No code is added to rename `instances/production-main/` → `instances/release-main/` or `instances/development-<slug>/` → `instances/debug-<slug>/`. Legacy dirs persist as inert artifacts; the user `rm -rf`'s them by hand post-rename if desired.
+- [ ] First launch of `(release, main)` under the new code creates an empty `instances/release-main/`. The `.migrated-from-legacy` marker is absent there, so the [D06] legacy `~/.tugbank.db` migration runs against the new dir on first launch — sourcing tugbank state from `~/.tugbank.db` rather than from the orphaned `instances/production-main/tugbank.db`. Any state accumulated in `production-main/` since multi-instance landed is intentionally dropped.
+
+*Doc sweep (this file) — careful sed with rules:*
+- [ ] Substitute `production` → `release` and `development` → `debug` ONLY where the words refer to the profile token (instance prefixes, BUILD_PROFILE values, recipe names, JSON `profile` fields).
+- [ ] Do NOT substitute in any of:
+  - `Apple Developer ID`, `Developer ID Application`, `developer.apple.com`, `Apple Developer Program` (Apple branding).
+  - `dev.tugtool.app` reverse-DNS prefix anywhere it appears.
+  - `dev.tugtool.app.dev` mentioned in historical step bodies and prose describing what the old bundle ID was — those are frozen records of the prior state, not live code references.
+  - "developer" as a generic noun ("the developer iterates locally", "developer-specific paths", "developer namespace convention").
+  - "production-grade", "production system", "in production" (generic English meaning).
+  - Historical commit-message text and the surrounding rationale paragraphs that quote them — those are frozen artifacts of when the work was done.
+  - Step bodies for #step-1 through #step-16 — the plan-as-history convention preserves them as records of what they did at the time. [D19]'s implication block already calls this out.
+- [ ] Cross-reference the doc edit against [D19]'s implications: the changes should match exactly the surfaces it names.
+
+*Phase Exit Criteria bump:*
+- [ ] Change `All sixteen execution steps' checkpoints pass.` → `All seventeen execution steps' checkpoints pass.` in the Phase Exit Criteria.
+
+**Tests:**
+
+- [ ] `cd tugrust && cargo nextest run` passes — all renamed test fixtures green; no `production-main` / `development-*` literals remain in code outside intentional historical comments and the documented back-compat shorthand.
+- [ ] `bash tugrust/scripts/instance-id-from-cwd.sh debug` from `main` returns `debug-main`; from a `feat/foo` branch returns `debug-feat-foo`.
+- [ ] `bash tugrust/scripts/instance-id-from-cwd.sh release` from `main` returns `release-main`.
+- [ ] `bash tugrust/scripts/bundle-id-from-cwd.sh debug` from `main` returns `dev.tugtool.app.dev` (preserved shorthand); from `feat/foo` returns `dev.tugtool.app.debug-feat-foo`.
+- [ ] `bash tugrust/scripts/bundle-id-from-cwd.sh release` from `main` returns `dev.tugtool.app`; from `feat/foo` returns `dev.tugtool.app.release-feat-foo`.
+- [ ] `bash tests/build-info/test-bundle-id-mapping.sh` passes against the renamed fixture table — production / development entries are gone; release / debug entries cover all four cardinal cases plus the edge-case rows.
+- [ ] `xcodebuild -configuration Debug build` produces an Info.plist with `BuildProfile = "debug"`; `-configuration Release` writes `"release"`.
+- [ ] `just app-debug` from `main` builds a Debug bundle, launches as instance `debug-main`, and `tugutil instance list` shows the new ID.
+- [ ] `just app-release` from `main` builds a Release bundle, launches as `release-main`, and the bundle ID is the unchanged `dev.tugtool.app`.
+- [ ] First launch of `(release, main)` under the renamed code creates `instances/release-main/` from scratch and the legacy `~/.tugbank.db` migration ([D06]) runs against it (marker absent → fresh copy from `~/.tugbank.db`).
+- [ ] The Step 16 integration smoke script passes against the renamed identifiers — the script itself is updated in the same commit to expect `debug-*` / `release-*` instance IDs.
+
+**Checkpoint:**
+
+- [ ] `just --list` shows the renamed recipes; old `app-dev` / `app-prod` / etc. no longer appear.
+- [ ] `tugutil instance list` after `just app-debug` shows `debug-main`; after `just app-release` shows `release-main`.
+- [ ] `~/Library/Application Support/Tug/instances/` contains fresh `debug-*` / `release-*` directories after first launch under the renamed code. Legacy `production-*` / `development-*` dirs may still be present as inert artifacts — the user clears them manually with `rm -rf` if desired.
+- [ ] First launch of `(debug, main)` under the renamed code triggers a one-time AX (Accessibility) TCC re-prompt for the new bundle ID `dev.tugtool.app.debug` — the documented and accepted cost. The old `dev.tugtool.app.dev` TCC entry persists as an inert artifact; user clears it manually via `tccutil reset Accessibility dev.tugtool.app.dev` if desired.
+- [ ] `(release, main)` bundle ID `dev.tugtool.app` is unchanged; its AX TCC grant survives the rename.
+- [ ] Grep sweep: `git grep -nE '\b(production|development)\b' tugrust Justfile tugapp/Sources tests/build-info` returns only:
+  - Historical commit-message references in completed step bodies (per the plan-as-history convention in [D19]).
+  - Generic English uses ("the developer iterates", "in production", etc.).
+- [ ] `cd tugrust && cargo nextest run` passes (test count unchanged ± fixture renames).
+- [ ] Step 16's integration smoke script continues to pass end-to-end against the new identifiers.
+
+---
+
 ### Deliverables and Checkpoints {#deliverables}
 
 **Deliverable:** Two or more Tug.app instances run concurrently on a single Mac with full state isolation, Apple Developer ID signing, and CLI discovery that finds the right instance from cwd.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] All sixteen execution steps' checkpoints pass.
+- [ ] All seventeen execution steps' checkpoints pass.
 - [ ] All success criteria in #success-criteria pass.
 - [ ] No regression in `just app-test` sweep against the production build.
 - [ ] Documentation in `docs/` and `tests/app-test/README.md` reflects the new model.
