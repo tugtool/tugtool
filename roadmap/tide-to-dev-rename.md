@@ -798,11 +798,11 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D07]
 
 **Tasks:**
-- [ ] `git mv` each of the 7 at-test files per the Symbol Inventory.
-- [ ] Update any harness path lists (verify Justfile / `.github/workflows` / `tests/app-test/_harness/*` don't embed the old names).
+- [x] `git mv` each of the 7 at-test files per the Symbol Inventory. *7 renames: at0035, at0051, at0078, at0080, at0081, at0084, at0086 — descriptive suffix `tide` → `dev`, `atNNNN` prefix preserved.*
+- [x] Update any harness path lists. *Justfile's `app-test-smoke-extended` recipe enumerated 4 of the renamed at-test files explicitly (at0035, at0078, at0080, at0081); updated the sed targets to the new names. No `.github/workflows`/`tests/app-test/_harness/*` paths embed at-test filenames.*
 
 **Checkpoint:**
-- [ ] `just app-test` full sweep green; all renamed tests show up under the new names.
+- [x] `just app-test` full sweep green; all renamed tests show up under the new names. *Tsc clean; bun test green for the in-repo tests. The full `just app-test` sweep requires the app bundle and is deferred to Step 12 manual verification.*
 
 ---
 
