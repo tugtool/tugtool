@@ -115,7 +115,7 @@ describe("dispatch → DefaultToolBlock", () => {
       detail: "ZzzUnknown",
     });
     // The caution is also threaded onto the wrapper's props so the
-    // chrome can paint the inline `TideCautionBadge`.
+    // chrome can paint the inline `DevCautionBadge`.
     expect(result.props.caution).toEqual({
       reason: "unknown_tool",
       detail: "ZzzUnknown",

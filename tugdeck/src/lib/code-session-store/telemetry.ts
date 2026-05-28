@@ -103,7 +103,7 @@ export function extractTurnCost(
 
 // ---------------------------------------------------------------------------
 // Per-area popover summaries — count / total / average shapes consumed
-// by the Tide status-row popovers (`Time`, `Tokens`) per plan
+// by the Dev status-row popovers (`Time`, `Tokens`) per plan
 // `#step-20-4-7-a`. Built on top of {@link deriveSessionTotals} so the
 // session-wide sums are computed once; the popover-specific helpers
 // add the popover surface's specific shape (count + average for the

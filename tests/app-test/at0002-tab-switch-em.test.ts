@@ -13,7 +13,7 @@
  *   - `gallery-prompt-entry` — TugPromptEntry wrapper. This is
  *      what dev-card uses internally. Bag.content shape is
  *      `{ currentRoute, perRoute, maximized }`. Real-world
- *      relevance: every Tide AI session card and every full-on
+ *      relevance: every Dev AI session card and every full-on
  *      dev-card mounts a TugPromptEntry as its primary editor.
  *      (The legacy `gallery-prompt-input` TugPromptInput-direct
  *      surface was retired; only the wrapper remains as a gallery

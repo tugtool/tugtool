@@ -11,7 +11,7 @@
  * inside a *real* tide card through every distinct matrix row and
  * asserts the rendered DOM — no mock store, no fake DOM.
  *
- * It drives the store through the `driveTideSession` harness verb:
+ * It drives the store through the `driveDevSession` harness verb:
  *   - `send` — a user submission (mid-turn `send` queues).
  *   - `ingestFrame` — a decoded `CODE_OUTPUT` frame fed through the
  *     store's real `frameToEvent` → `dispatch` path.
@@ -68,7 +68,7 @@ function deckShape() {
     cards: CARD_IDS.map((id) => ({
       id,
       componentId: "tide",
-      title: `Tide ${id}`,
+      title: `Dev ${id}`,
       closable: true,
     })),
     panes: CARD_IDS.map((id, i) => ({
@@ -264,9 +264,9 @@ async function mountAllCards(app: App): Promise<void> {
     await app.waitForCondition<boolean>(
       `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("${id}")`,
     );
-    await app.bindTideSession(id, { tugSessionId: sessionIdFor(id) });
+    await app.bindDevSession(id, { tugSessionId: sessionIdFor(id) });
   }
-  // Each card's Z2 status row paints once `TideCardBody` mounts.
+  // Each card's Z2 status row paints once `DevCardBody` mounts.
   for (const id of CARD_IDS) {
     await app.waitForCondition<boolean>(
       `document.querySelector(
@@ -305,13 +305,13 @@ describe.skipIf(!SHOULD_RUN)(
 
           // STREAMING — a submit plus two text deltas (the count ladder
           // `submitting → awaiting_first_token → streaming`).
-          await app.driveTideSession("A", { op: "send", text: "hello" });
-          await app.driveTideSession("A", {
+          await app.driveDevSession("A", { op: "send", text: "hello" });
+          await app.driveDevSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: assistantText("A", "msg-A", "Hel", 0),
           });
-          await app.driveTideSession("A", {
+          await app.driveDevSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: assistantText("A", "msg-A", "Hello", 1),
@@ -323,7 +323,7 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe("Streaming");
 
           // TOOL_WORK — a tool_use on the running turn.
-          await app.driveTideSession("A", {
+          await app.driveDevSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: toolUse("A", "msg-A", "Bash"),
@@ -342,7 +342,7 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe("stop");
 
           // COMPLETE — turn_complete(success) commits the turn.
-          await app.driveTideSession("A", {
+          await app.driveDevSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: turnCompleteSuccess("A", "msg-A"),
@@ -358,8 +358,8 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe(1);
 
           // --- Card B: AWAITING_USER --------------------------------
-          await app.driveTideSession("B", { op: "send", text: "run a tool" });
-          await app.driveTideSession("B", {
+          await app.driveDevSession("B", { op: "send", text: "run a tool" });
+          await app.driveDevSession("B", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: controlRequestForward("B"),
@@ -373,14 +373,14 @@ describe.skipIf(!SHOULD_RUN)(
           // --- Card C: QUEUED_NEXT_TURN + Stop-peel + C1 (✕) --------
           // A submit, one delta to reach a live phase, then two
           // mid-turn submits — each queues and paints a ghost row.
-          await app.driveTideSession("C", { op: "send", text: "first" });
-          await app.driveTideSession("C", {
+          await app.driveDevSession("C", { op: "send", text: "first" });
+          await app.driveDevSession("C", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: assistantText("C", "msg-C", "working", 0),
           });
-          await app.driveTideSession("C", { op: "send", text: "queued-1" });
-          await app.driveTideSession("C", { op: "send", text: "queued-2" });
+          await app.driveDevSession("C", { op: "send", text: "queued-1" });
+          await app.driveDevSession("C", { op: "send", text: "queued-2" });
           await waitForGhostRowCount(app, "C", 2);
           expect(
             await ghostRowCount(app, "C"),
@@ -419,7 +419,7 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe(0);
 
           // --- Card D: ERRORED --------------------------------------
-          await app.driveTideSession("D", {
+          await app.driveDevSession("D", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: wireError("D"),
@@ -438,7 +438,7 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe("submit");
 
           // --- Card E: REPLAYING ------------------------------------
-          await app.driveTideSession("E", {
+          await app.driveDevSession("E", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: replayStarted("E"),
@@ -452,15 +452,15 @@ describe.skipIf(!SHOULD_RUN)(
           // --- Card F: TRANSPORT_DOWN -------------------------------
           // The wire goes offline on an idle card: Z5 becomes the inert
           // Reconnecting mode, overriding the base state.
-          await app.driveTideSession("F", { op: "transportClose" });
+          await app.driveDevSession("F", { op: "transportClose" });
           await waitForSubmitMode(app, "F", "reconnecting");
 
           // --- Card G: C2 — CASE A pull-down ------------------------
           // A submit with no answer content yet; interrupt pulls it
           // back to idle with no committed turn — a clean un-send.
-          await app.driveTideSession("G", { op: "send", text: "pull me back" });
+          await app.driveDevSession("G", { op: "send", text: "pull me back" });
           await waitForSubmitMode(app, "G", "stop");
-          await app.driveTideSession("G", { op: "interrupt" });
+          await app.driveDevSession("G", { op: "interrupt" });
           await waitForSubmitMode(app, "G", "submit");
           expect(
             await stateCellLabel(app, "G"),
@@ -475,15 +475,15 @@ describe.skipIf(!SHOULD_RUN)(
           // A submit plus an answer-channel delta crosses into CASE B;
           // interrupt + the wire's turn_complete(error) commits one
           // interrupted turn.
-          await app.driveTideSession("H", { op: "send", text: "interrupt me" });
-          await app.driveTideSession("H", {
+          await app.driveDevSession("H", { op: "send", text: "interrupt me" });
+          await app.driveDevSession("H", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: assistantText("H", "msg-H", "partial", 0),
           });
           await waitForSubmitMode(app, "H", "stop");
-          await app.driveTideSession("H", { op: "interrupt" });
-          await app.driveTideSession("H", {
+          await app.driveDevSession("H", { op: "interrupt" });
+          await app.driveDevSession("H", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: turnCompleteError("H", "msg-H"),

@@ -24,7 +24,7 @@
  * Composition (Spec S03, [#bk-conformance]):
  *  - `ToolBlockChrome` owns the frame: a `Zap` icon + the composed
  *    tool-name (`Remote Trigger · <action>`), the status stripe,
- *    the inline `TideCautionBadge` (when the dispatch flagged
+ *    the inline `DevCautionBadge` (when the dispatch flagged
  *    drift), and the error band.
  *  - **Header** — verb-qualified tool name (`Remote Trigger ·
  *    create` etc.); the args slot carries `#<trigger_id>` when an

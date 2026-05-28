@@ -35,8 +35,8 @@
  *
  * Three drift signals are detected and surfaced as a `caution` —
  * inline at the offending event (the tool-block chrome paints a
- * `TideCautionBadge` from the threaded `caution` prop) and, in
- * aggregate, on the card chrome (`TideRouteIndicatorBadge` counts
+ * `DevCautionBadge` from the threaded `caution` prop) and, in
+ * aggregate, on the card chrome (`DevRouteIndicatorBadge` counts
  * `summarizeDrift`'s events):
  *
  *  - `unknown_tool` — a `tool_call` whose name is not in the registry
@@ -109,8 +109,8 @@ import { NotebookEditToolBlock } from "./tool-blocks/notebook-edit-tool-block";
 import { DefaultToolBlock } from "./tool-blocks/default-tool-block";
 import { PermissionDialog } from "@/components/tugways/chrome/dev-permission-dialog";
 import { QuestionDialog } from "@/components/tugways/chrome/dev-question-dialog";
-import { TideSessionInitBanner } from "@/components/tugways/chrome/dev-session-init-banner";
-import { TideErrorBlock } from "@/components/tugways/chrome/dev-error-block";
+import { DevSessionInitBanner } from "@/components/tugways/chrome/dev-session-init-banner";
+import { DevErrorBlock } from "@/components/tugways/chrome/dev-error-block";
 import {
   defaultIntentToolNames,
   hiddenToolNames,
@@ -421,9 +421,9 @@ export function hasBespokeWrapper(toolName: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The Claude Code stream-json version the Tide renderers were last
+ * The Claude Code stream-json version the Dev renderers were last
  * validated against — the most recent `just capture-capabilities`
- * baseline. `TideRouteIndicatorBadge` displays it as the "validated against"
+ * baseline. `DevRouteIndicatorBadge` displays it as the "validated against"
  * reference, and `versionDriftCaution` compares its `major.minor`
  * line against the running session's.
  *
@@ -624,7 +624,7 @@ export function detectToolCallDrift(
 
 /**
  * A single drift occurrence — the unit `logDriftEvent` logs for
- * triage and `TideDriftCaution` lists in its click-expand popover.
+ * triage and `DevDriftCaution` lists in its click-expand popover.
  */
 export interface DriftEvent {
   /** The drift caution — reason + human-readable detail. */
@@ -650,7 +650,7 @@ export interface DriftSummary {
 /**
  * Walk a session's tool calls plus its runtime version and collect
  * every drift event — the aggregate the card-chrome caution chip
- * (`TideDriftCaution`) surfaces. Pure over the static registry.
+ * (`DevDriftCaution`) surfaces. Pure over the static registry.
  *
  * `toolCalls` is the flat per-session tool-call list (every committed
  * turn's `toolCalls` concatenated, in transcript order); `version` is
@@ -830,10 +830,10 @@ export const KIND_RENDERERS: {
   // previousMetadata from the input and renders only when something
   // user-visible changed. Identical-shape metadata events render to
   // null without re-mounting.
-  system_metadata: TideSessionInitBanner,
+  system_metadata: DevSessionInitBanner,
   // ErrorBlock ([#step-29]) — recoverable / non-recoverable variants
   // surface with caution / danger tones and a Retry / Copy action.
-  error: TideErrorBlock,
+  error: DevErrorBlock,
 };
 
 // ---------------------------------------------------------------------------
@@ -971,7 +971,7 @@ export function dispatchToolCallState(
     // `structured_result` failed its shallow shape schema. Either way
     // the [D04] fallback is `DefaultToolBlock` (`JsonTreeBlock` over
     // the raw payload); the caution is threaded onto the props so the
-    // wrapper chrome paints the inline `TideCautionBadge`, and
+    // wrapper chrome paints the inline `DevCautionBadge`, and
     // returned on the result so the card-chrome aggregate counts it.
     return {
       Component: DefaultToolBlock,

@@ -1,5 +1,5 @@
 /**
- * dev-picker-cells.tsx — cell renderers for the Tide picker's two
+ * dev-picker-cells.tsx — cell renderers for the Dev picker's two
  * `TugListView` lists (Recents + Sessions).
  *
  * Each renderer is a `TugListViewCellRenderer<...>` that takes the
@@ -9,7 +9,7 @@
  * ../../../roadmap/tugplan-dev-picker-redesign.md#d17-pure-renderer-rule):
  * no `useState`, no `useRef`, no `useEffect` / `useLayoutEffect`, no
  * `useImperativeHandle`. Selection state, the live path, and the
- * confirmation flow all live above the list — in `TideProjectPickerForm`,
+ * confirmation flow all live above the list — in `DevProjectPickerForm`,
  * the chain responder. The cells read what they need through
  * `PickerCellContext`.
  *
@@ -85,8 +85,8 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 import type {
   SessionsRow,
-  TideRecentsDataSource,
-  TideSessionsDataSource,
+  DevRecentsDataSource,
+  DevSessionsDataSource,
 } from "@/lib/dev-picker-data-source";
 import {
   formatSessionRowSubtitle,
@@ -182,11 +182,11 @@ function renderHighlighted(
  * no selection itself. The form's `onSelectionChange` mirrors the
  * selected recent into the project-path input.
  */
-export const PathRecentCell: TugListViewCellRenderer<TideRecentsDataSource> = ({
+export const PathRecentCell: TugListViewCellRenderer<DevRecentsDataSource> = ({
   index,
   dataSource,
   selected,
-}: TugListViewCellProps<TideRecentsDataSource>) => {
+}: TugListViewCellProps<DevRecentsDataSource>) => {
   const row = dataSource.rowAt(index);
   return (
     <TugListRow selected={selected}>
@@ -204,7 +204,7 @@ export const PathRecentCell: TugListViewCellRenderer<TideRecentsDataSource> = ({
 
 export const RECENTS_CELL_RENDERERS: Record<
   string,
-  TugListViewCellRenderer<TideRecentsDataSource>
+  TugListViewCellRenderer<DevRecentsDataSource>
 > = {
   "path-recent": PathRecentCell,
 };
@@ -213,7 +213,7 @@ export const RECENTS_CELL_RENDERERS: Record<
 // Sessions cells — session-new, session-resume, loading
 // ---------------------------------------------------------------------------
 
-export const SessionNewCell: TugListViewCellRenderer<TideSessionsDataSource> =
+export const SessionNewCell: TugListViewCellRenderer<DevSessionsDataSource> =
   () => {
     const { selection } = usePickerCellContext();
     const isSelected = selection?.kind === "session-new";
@@ -232,10 +232,10 @@ export const SessionNewCell: TugListViewCellRenderer<TideSessionsDataSource> =
     );
   };
 
-export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> = ({
+export const SessionResumeCell: TugListViewCellRenderer<DevSessionsDataSource> = ({
   index,
   dataSource,
-}: TugListViewCellProps<TideSessionsDataSource>) => {
+}: TugListViewCellProps<DevSessionsDataSource>) => {
   const { selection, pendingTrashSessionId } = usePickerCellContext();
   const data = dataSource.rowAt(index) as Extract<
     SessionsRow,
@@ -325,7 +325,7 @@ export const SessionResumeCell: TugListViewCellRenderer<TideSessionsDataSource> 
   );
 };
 
-export const LoadingCell: TugListViewCellRenderer<TideSessionsDataSource> = () => (
+export const LoadingCell: TugListViewCellRenderer<DevSessionsDataSource> = () => (
   <div
     className="dev-card-picker-pending-placeholder"
     data-testid="dev-card-picker-pending-placeholder"
@@ -338,7 +338,7 @@ export const LoadingCell: TugListViewCellRenderer<TideSessionsDataSource> = () =
 
 export const SESSIONS_CELL_RENDERERS: Record<
   string,
-  TugListViewCellRenderer<TideSessionsDataSource>
+  TugListViewCellRenderer<DevSessionsDataSource>
 > = {
   "session-new": SessionNewCell,
   "session-resume": SessionResumeCell,

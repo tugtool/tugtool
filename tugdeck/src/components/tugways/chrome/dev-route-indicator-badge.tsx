@@ -1,6 +1,6 @@
 /**
- * `TideRouteIndicatorBadge` — the Z4B route-aware indicator badge for
- * the Tide prompt entry's toolbar.
+ * `DevRouteIndicatorBadge` — the Z4B route-aware indicator badge for
+ * the Dev prompt entry's toolbar.
  *
  * Names what the active route targets. One component, two branches
  * (Table T01 reduced to the two live routes after Command's retirement):
@@ -19,7 +19,7 @@
  * `Code`-route drift popover's open/closed state survives a flip-
  * away-and-back through Shell.
  *
- * **Code branch.** Identical to the prior `TideVersionBadge`: shows
+ * **Code branch.** Identical to the prior `DevVersionBadge`: shows
  * the running Claude Code stream-json version, escalates to `caution`
  * when the dispatch detected drift ([D04] / [Q03]). A click opens the
  * report popover listing running / validated versions and any drift
@@ -56,7 +56,7 @@
  *  - [L19] file pair (`.tsx` + `.css`); the report node carries
  *    `data-slot="dev-route-indicator-badge-report"`.
  *  - [L20] owns only the `--tugx-route-indicator-*` report-geometry
- *    slots; composes `TugBadge` (the chip) and `TideCautionBadge`
+ *    slots; composes `TugBadge` (the chip) and `DevCautionBadge`
  *    (the report rows), each of which keeps its own tokens.
  *  - [L26] one component-type at one React position; no per-route
  *    keying — mount identity is preserved across route flips.
@@ -88,7 +88,7 @@ import { useRoute } from "@/lib/route-lifecycle";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import type { TaggedValue } from "@/lib/tugbank-client";
 
-import { TideCautionBadge } from "./dev-caution-badge";
+import { DevCautionBadge } from "./dev-caution-badge";
 
 // ── Route values ───────────────────────────────────────────────────────────
 //
@@ -121,11 +121,11 @@ function persistLastKnownVersion(version: string): void {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "string", value: version }),
   }).catch((err) => {
-    console.warn("[TideRouteIndicatorBadge] persist version failed:", err);
+    console.warn("[DevRouteIndicatorBadge] persist version failed:", err);
   });
 }
 
-export interface TideRouteIndicatorBadgeProps {
+export interface DevRouteIndicatorBadgeProps {
   /**
    * Session store — its committed transcript is walked for tool-call
    * drift (unknown tool names, unknown structured-result shapes). Read
@@ -158,11 +158,11 @@ function eventCountLabel(count: number): string {
  * route→content table, mount-identity contract, and per-branch
  * behavior.
  */
-export function TideRouteIndicatorBadge({
+export function DevRouteIndicatorBadge({
   codeSessionStore,
   sessionMetadataStore,
   className,
-}: TideRouteIndicatorBadgeProps): React.ReactElement {
+}: DevRouteIndicatorBadgeProps): React.ReactElement {
   // Route from the per-prompt-entry `RouteLifecycle`. `null` outside a
   // provider; treated the same as the `Code` default below.
   const route = useRoute();
@@ -332,7 +332,7 @@ export function TideRouteIndicatorBadge({
                     key={driftEventKey(event)}
                     className="dev-route-indicator-badge-report-row"
                   >
-                    <TideCautionBadge caution={event.caution} />
+                    <DevCautionBadge caution={event.caution} />
                     <span className="dev-route-indicator-badge-report-detail">
                       {event.caution.detail ?? "—"}
                     </span>

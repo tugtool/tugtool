@@ -1,6 +1,6 @@
 /**
- * Unit tests for `deriveTideCardBannerSpec` — the pure precedence
- * helper that decides which banner kind the Tide card surfaces.
+ * Unit tests for `deriveDevCardBannerSpec` — the pure precedence
+ * helper that decides which banner kind the Dev card surfaces.
  *
  * The helper is pure and synchronous, so each test crafts a minimal
  * `CodeSessionSnapshot` and asserts the returned spec. No render, no
@@ -9,7 +9,7 @@
  * fall-through.
  *
  * The `replay-loading` kind was retired — the
- * cold-restore loading window is the `TideRestoring` placeholder, not
+ * cold-restore loading window is the `DevRestoring` placeholder, not
  * a banner, and this helper now runs only once the body is mounted.
  * The last describe block pins that retirement: a preflight-active or
  * `phase === "replaying"` snapshot no longer produces a banner.
@@ -18,8 +18,8 @@
 import { describe, it, expect } from "bun:test";
 
 import {
-  deriveTideCardBannerSpec,
-  type TideCardBannerSpec,
+  deriveDevCardBannerSpec,
+  type DevCardBannerSpec,
 } from "@/components/tugways/cards/dev-card-banner-spec";
 import type { CodeSessionSnapshot } from "@/lib/code-session-store";
 
@@ -62,15 +62,15 @@ function baseSnap(
   };
 }
 
-describe("deriveTideCardBannerSpec — precedence chain", () => {
+describe("deriveDevCardBannerSpec — precedence chain", () => {
   it("returns kind=none when nothing of interest is true", () => {
-    const spec = deriveTideCardBannerSpec(baseSnap(), { dismissedAt: null });
-    expect(spec).toEqual({ kind: "none" } satisfies TideCardBannerSpec);
+    const spec = deriveDevCardBannerSpec(baseSnap(), { dismissedAt: null });
+    expect(spec).toEqual({ kind: "none" } satisfies DevCardBannerSpec);
   });
 
   it("error wins when lastError is set with a banner-routable cause", () => {
     const at = 1_700_000_000_000;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         lastError: {
           cause: "session_state_errored",
@@ -90,7 +90,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
 
   it("error wins over transport-state when both are present", () => {
     const at = 1_700_000_000_000;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         lastError: {
           cause: "transport_closed",
@@ -106,7 +106,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
 
   it("dismissed error falls through; transport banner takes its place", () => {
     const at = 1_700_000_000_000;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         lastError: {
           cause: "session_state_errored",
@@ -122,7 +122,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
 
   it("dismissed error falls through to kind=none when no other condition fires", () => {
     const at = 1_700_000_000_000;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         lastError: {
           cause: "wire_error",
@@ -138,7 +138,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
   it("a fresh error (different at) re-raises after a dismiss", () => {
     const dismissedAt = 1_700_000_000_000;
     const newAt = dismissedAt + 1000;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         lastError: {
           cause: "wire_error",
@@ -163,7 +163,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
     // (the "card can't reach its session" alert with the unplug icon)
     // is suppressed by `sessionErrored` in `dev-card.tsx`.
     const at = 1_700_000_000_500;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         lastError: {
           cause: "attachment_rejected",
@@ -181,8 +181,8 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
     });
   });
 
-  it("resume_failed never surfaces (intercepted upstream by useTideCardObserver)", () => {
-    const spec = deriveTideCardBannerSpec(
+  it("resume_failed never surfaces (intercepted upstream by useDevCardObserver)", () => {
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         lastError: {
           cause: "resume_failed",
@@ -196,7 +196,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
   });
 
   it("transport offline surfaces the transport spec when no error is set", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ transportState: "offline" }),
       { dismissedAt: null },
     );
@@ -204,7 +204,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
   });
 
   it("transport restoring surfaces the transport spec when no error is set", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ transportState: "restoring" }),
       { dismissedAt: null },
     );
@@ -212,7 +212,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
   });
 
   it("replay-timeout surfaces while the dwell window is active", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ replayTimeoutDwellActive: true }),
       { dismissedAt: null },
     );
@@ -221,7 +221,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
 
   it("error outranks an active replay-timeout dwell", () => {
     const at = 1_700_000_000_000;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         replayTimeoutDwellActive: true,
         lastError: { cause: "wire_error", message: "boom", at },
@@ -232,7 +232,7 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
   });
 
   it("transport outranks an active replay-timeout dwell", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ replayTimeoutDwellActive: true, transportState: "offline" }),
       { dismissedAt: null },
     );
@@ -242,17 +242,17 @@ describe("deriveTideCardBannerSpec — precedence chain", () => {
 
 /**
  * The `replay-loading` banner kind was retired. The
- * cold-restore loading window is now held by the `TideRestoring`
- * placeholder, and `deriveTideCardBannerSpec` runs only once
- * `TideCardBody` is mounted — after the restore has resolved. These
+ * cold-restore loading window is now held by the `DevRestoring`
+ * placeholder, and `deriveDevCardBannerSpec` runs only once
+ * `DevCardBody` is mounted — after the restore has resolved. These
  * tests pin that the replay-window signals (`replayPreflightActive`,
  * `phase === "replaying"`) no longer produce a banner, and — the
  * inverse of the old precedence — no longer suppress an error or
  * transport banner either.
  */
-describe("deriveTideCardBannerSpec — replay-loading retired (D.2.A)", () => {
+describe("deriveDevCardBannerSpec — replay-loading retired (D.2.A)", () => {
   it("replayPreflightActive alone produces no banner", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ replayPreflightActive: true }),
       { dismissedAt: null },
     );
@@ -260,7 +260,7 @@ describe("deriveTideCardBannerSpec — replay-loading retired (D.2.A)", () => {
   });
 
   it("phase=replaying in resume mode produces no banner", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ phase: "replaying", sessionMode: "resume" }),
       { dismissedAt: null },
     );
@@ -268,7 +268,7 @@ describe("deriveTideCardBannerSpec — replay-loading retired (D.2.A)", () => {
   });
 
   it("phase=replaying in new mode produces no banner", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ phase: "replaying", sessionMode: "new" }),
       { dismissedAt: null },
     );
@@ -282,7 +282,7 @@ describe("deriveTideCardBannerSpec — replay-loading retired (D.2.A)", () => {
     // never runs during preflight; if it somehow does, the error is
     // shown rather than swallowed.
     const at = 1_700_000_000_000;
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({
         replayPreflightActive: true,
         lastError: { cause: "session_state_errored", message: "boom", at },
@@ -298,7 +298,7 @@ describe("deriveTideCardBannerSpec — replay-loading retired (D.2.A)", () => {
   });
 
   it("preflight no longer masks a transport blip — the transport banner surfaces", () => {
-    const spec = deriveTideCardBannerSpec(
+    const spec = deriveDevCardBannerSpec(
       baseSnap({ replayPreflightActive: true, transportState: "offline" }),
       { dismissedAt: null },
     );

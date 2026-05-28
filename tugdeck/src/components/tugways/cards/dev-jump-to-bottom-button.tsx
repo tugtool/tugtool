@@ -27,7 +27,7 @@ import { ArrowDown } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
-export interface TideJumpToBottomButtonProps {
+export interface DevJumpToBottomButtonProps {
   /**
    * Fired when the user clicks the button — the host jumps the
    * transcript to the latest content and re-engages follow-bottom.
@@ -41,10 +41,10 @@ export interface TideJumpToBottomButtonProps {
  * a thin, stateless affordance. The ref forwards to the underlying
  * `<button>` so the host can toggle that attribute imperatively.
  */
-export const TideJumpToBottomButton = React.forwardRef<
+export const DevJumpToBottomButton = React.forwardRef<
   HTMLButtonElement,
-  TideJumpToBottomButtonProps
->(function TideJumpToBottomButton({ onClick }, ref) {
+  DevJumpToBottomButtonProps
+>(function DevJumpToBottomButton({ onClick }, ref) {
   return (
     <TugPushButton
       ref={ref}

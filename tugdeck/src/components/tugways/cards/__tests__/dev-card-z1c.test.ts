@@ -2,7 +2,7 @@
  * Pure-logic tests for the `tideZ1CContent` helper ([D19] /
  * `#spec-z1c`).
  *
- * The helper resolves the per-phase indicator content for TideZ1C
+ * The helper resolves the per-phase indicator content for DevZ1C
  * — returns `{label}` for the five active phases and `null` for
  * the five non-indicator states (`awaiting_approval` because the
  * pending dialog is the affordance; `interruptInFlight === true`

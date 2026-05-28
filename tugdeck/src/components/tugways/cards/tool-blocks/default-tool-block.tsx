@@ -11,7 +11,7 @@
  *
  * Composition (Spec S03, [#bk-conformance]):
  *  - `ToolBlockChrome` owns the frame: a wrench icon + the tool
- *    name, the status stripe, the inline `TideCautionBadge` (when the
+ *    name, the status stripe, the inline `DevCautionBadge` (when the
  *    dispatch flagged drift), and the error band.
  *  - Body — two stacked, labelled sections:
  *      1. **input** — a `JsonTreeBlock` over `tool_use.input`,
@@ -52,7 +52,7 @@
  *    `data-slot="default-tool-block"` (delegated via the chrome's
  *    `rootSlot`).
  *  - [L20] reuses the chrome's `--tugx-toolblock-*`, the body kinds'
- *    `--tugx-json-*` / `--tugx-md-*`, and `TideCautionBadge`'s
+ *    `--tugx-json-*` / `--tugx-md-*`, and `DevCautionBadge`'s
  *    `--tugx-caut-*`; introduces no new tokens.
  *
  * Decisions:

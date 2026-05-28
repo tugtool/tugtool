@@ -46,7 +46,7 @@ import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 
-export interface TideAttachmentPreviewProps {
+export interface DevAttachmentPreviewProps {
   /**
    * The image atom whose bytes should render. The atom's `id` keys
    * into the bytes-store; an atom without an id (or whose entry has
@@ -90,11 +90,11 @@ function buildPreviewSnapshot(
   return `data:${entry.mediaType};base64,${entry.content}`;
 }
 
-export function TideAttachmentPreview({
+export function DevAttachmentPreview({
   atom,
   bytesStore,
   onClose,
-}: TideAttachmentPreviewProps): React.ReactElement {
+}: DevAttachmentPreviewProps): React.ReactElement {
   const subscribe = React.useCallback(
     (listener: () => void) => bytesStore.subscribe(listener),
     [bytesStore],

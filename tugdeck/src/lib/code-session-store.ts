@@ -1,5 +1,5 @@
 /**
- * CodeSessionStore — per-Tide-card L02 store that owns Claude Code turn
+ * CodeSessionStore — per-Dev-card L02 store that owns Claude Code turn
  * state for a single `tug_session_id`. It observes filtered
  * CODE_OUTPUT / SESSION_STATE frames through a real `FeedStore`,
  * dispatches CODE_INPUT messages via `encodeCodeInputPayload`, and
@@ -183,7 +183,7 @@ export interface CodeSessionStoreOptions {
    * The user's session-mode intent at card-open time, captured from
    * the per-card `CardSessionBinding`. Threaded onto
    * `CodeSessionSnapshot.sessionMode` so pure derivations (e.g.
-   * `deriveTideCardBannerSpec`) can branch on it without a second
+   * `deriveDevCardBannerSpec`) can branch on it without a second
    * subscription to `cardSessionBindingStore`. Required: every binding
    * carries a mode, so every store has one. Stable for the store's
    * lifetime — a re-bind constructs a fresh services bag with a
@@ -713,7 +713,7 @@ export class CodeSessionStore {
 
   /**
    * Pop the newest pending interactive — the unified Stop / Esc /
-   * Cancel gesture across the Tide interactive-dialog family.
+   * Cancel gesture across the Dev interactive-dialog family.
    *
    * Stack semantic. The "interactive stack" is the implicit LIFO
    * order of cancellable things attached to the current turn:
@@ -729,7 +729,7 @@ export class CodeSessionStore {
    *
    * A turn with N queued sends takes N + 1 pops to fully unwind.
    *
-   * What "interactive" means here. Every Tide UI surface that asks
+   * What "interactive" means here. Every Dev UI surface that asks
    * the user for input — the prompt entry, `QuestionDialog`, the
    * Stop button — funnels its walk-away gesture through this
    * method. Esc reaches it via the responder chain's

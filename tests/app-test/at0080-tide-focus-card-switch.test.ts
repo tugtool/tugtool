@@ -60,8 +60,8 @@ describe.skipIf(!SHOULD_RUN)(
           await app.seedDeckState({
             state: {
               cards: [
-                { id: "A", componentId: "tide", title: "Tide A", closable: true },
-                { id: "B", componentId: "tide", title: "Tide B", closable: true },
+                { id: "A", componentId: "tide", title: "Dev A", closable: true },
+                { id: "B", componentId: "tide", title: "Dev B", closable: true },
               ],
               panes: [
                 {
@@ -84,9 +84,9 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
           );
 
-          await app.bindTideSession("A");
+          await app.bindDevSession("A");
           await app.awaitEngineReady("A");
-          await app.bindTideSession("B");
+          await app.bindDevSession("B");
           await app.awaitEngineReady("B");
 
           // Click into A's contenteditable; type some text so the

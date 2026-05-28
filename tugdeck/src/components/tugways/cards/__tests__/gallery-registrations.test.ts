@@ -1,5 +1,5 @@
 /**
- * Pure-logic coverage for the Tide assistant-rendering gallery cards
+ * Pure-logic coverage for the Dev assistant-rendering gallery cards
  * shipped in batch 1 ([#step-14-5]).
  *
  * The cards themselves are static composition over module-scope mock
@@ -32,7 +32,7 @@ import { registerGalleryCards } from "../gallery-registrations";
 
 /** Component ids #step-14-5 adds, with the title each should carry. */
 const BATCH_1_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
-  { componentId: "gallery-dev-thinking", title: "TideThinkingBlock" },
+  { componentId: "gallery-dev-thinking", title: "DevThinkingBlock" },
   { componentId: "gallery-json-tree-block", title: "JsonTreeBlock" },
   { componentId: "gallery-tool-block-file", title: "File Tool Blocks" },
   { componentId: "gallery-tool-block-default", title: "DefaultToolBlock" },

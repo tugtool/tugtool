@@ -5,7 +5,7 @@
  * ## Why this is a `.ts`, not the `.tsx` Spec S06 describes
  *
  * Spec S06 ([#s06-fixture-replay]) was written when fake-DOM unit
- * tests were possible: it describes mounting a Tide card per fixture
+ * tests were possible: it describes mounting a Dev card per fixture
  * and asserting against the *rendered DOM* ("no `[object Object]`",
  * "no raw JSON bleed", "exactly one `-tool-block` element"). Since
  * then `happy-dom` was deleted and the project's testing policy is
@@ -220,7 +220,7 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
       detail: "ZzzSyntheticUnknownTool",
     });
     // The caution is threaded onto the wrapper props so the chrome
-    // paints the inline `TideCautionBadge`.
+    // paints the inline `DevCautionBadge`.
     expect(result.props.caution).toEqual(result.caution);
   });
 });

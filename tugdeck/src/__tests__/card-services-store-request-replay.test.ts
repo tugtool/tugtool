@@ -63,7 +63,7 @@ mock.module("@/lib/tugbank-singleton", () => ({
 import * as actualSettingsApi from "@/settings-api";
 mock.module("@/settings-api", () => ({
   ...actualSettingsApi,
-  putTideRecentProjects: (_paths: string[]) => {},
+  putDevRecentProjects: (_paths: string[]) => {},
 }));
 
 // Imports must come AFTER the mock.module calls so the modules pick

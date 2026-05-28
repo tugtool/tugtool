@@ -4,7 +4,7 @@
 
    No colour rules: every painted surface comes from `DefaultToolBlock`
    and its embedded body kinds. This file only constrains variant width
-   so each wrapper renders at a realistic Tide-card measure.
+   so each wrapper renders at a realistic Dev-card measure.
    ========================================================================= */
 
 .gallery-tool-block-default-variant {

@@ -15,11 +15,11 @@
  *     [body — per-half content]
  *     [Z1B — end-state + copy]               ← THIS COMPONENT
  *
- * **Committed-end-state only.** Per [D19], TideZ1B owns the
+ * **Committed-end-state only.** Per [D19], DevZ1B owns the
  * end-state aggregate (OK / interrupted / error badge, per-turn
  * time + tokens, whole-turn COPY). The transcript-level in-flight
- * indicator is `TideZ1C`'s job (chrome below `TugListView`, not a
- * list row). TideZ1B no longer multiplexes "indicator ↔
+ * indicator is `DevZ1C`'s job (chrome below `TugListView`, not a
+ * list row). DevZ1B no longer multiplexes "indicator ↔
  * end-state" — the live thinking indicator does not appear here.
  *
  * **Participant variants.** The component dispatches on `participant`:
@@ -106,19 +106,19 @@ import {
  * `data-participant` attribute and the per-variant content choices
  * (see module docstring).
  */
-export type TideZ1BParticipant = "user" | "assistant";
+export type DevZ1BParticipant = "user" | "assistant";
 
-export interface TideZ1BProps {
+export interface DevZ1BProps {
   /**
    * Which transcript half the Z1B sits on. The user variant
    * suppresses the time / tokens metrics (those are asst-side
    * data) and is always end-state (the submission completes the
    * instant it posts). The asst variant carries the full metrics
    * row, but only renders end-state once `turn` is defined; while
-   * in-flight, the transcript-level `TideZ1C` carries the
+   * in-flight, the transcript-level `DevZ1C` carries the
    * indicator (this slot is empty).
    */
-  participant: TideZ1BParticipant;
+  participant: DevZ1BParticipant;
   /**
    * The committed turn entry for this row, if any. `undefined` for
    * the in-flight row (the single row the data source emits while
@@ -156,20 +156,20 @@ export interface TideZ1BProps {
  * Z1B status / end-state row. See module docstring for layout,
  * mode dispatch, participant variants, and conformance notes.
  */
-export const TideZ1B: React.FC<TideZ1BProps> = ({
+export const DevZ1B: React.FC<DevZ1BProps> = ({
   participant,
   turn,
   perTurnTokens,
   bodyText,
 }) => {
   const isUserHalf = participant === "user";
-  // End-state presence — per [D19] TideZ1B is committed-end-state
+  // End-state presence — per [D19] DevZ1B is committed-end-state
   // only.
   //
   //  - User half: submission completes the instant it posts; end-
   //    state is shown immediately, in-flight and committed alike.
   //  - Assistant half: end-state shown only when `turn !== undefined`.
-  //    While in-flight the transcript-level `TideZ1C` carries the
+  //    While in-flight the transcript-level `DevZ1C` carries the
   //    indicator; this slot renders nothing.
   const hasEndState = isUserHalf || turn !== undefined;
   // End-state reason. The user half is pinned to `complete` — its
@@ -283,7 +283,7 @@ function EndStateDisplay({
   turn,
   perTurnTokens,
 }: {
-  participant: TideZ1BParticipant;
+  participant: DevZ1BParticipant;
   reason: TurnEndReason;
   turn: TurnEntry | undefined;
   perTurnTokens: number | undefined;

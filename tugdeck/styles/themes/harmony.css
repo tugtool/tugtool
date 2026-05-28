@@ -870,7 +870,7 @@ body {
   /* `--tugx-md-*` slots live in tug-markdown-view.css's body{} block per
    * tuglaws/token-naming.md. */
 
-  /* ---- Thinking block (TideThinkingBlock per Table T07) ----
+  /* ---- Thinking block (DevThinkingBlock per Table T07) ----
    * Light-theme counterpart to brio.css's declarations. Same token
    * vocabulary, theme-appropriate values (rgba directions inverted,
    * accent colors mapped to the harmony palette).

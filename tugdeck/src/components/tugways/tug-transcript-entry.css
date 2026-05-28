@@ -35,7 +35,7 @@ body {
 
   --tugx-transcript-identifier-color:     var(--tug7-element-global-text-normal-default-rest);
   --tugx-transcript-identifier-weight:    600;
-  /* Identifier sits at `lg` (16px against Tide's 14px body). The
+  /* Identifier sits at `lg` (16px against Dev's 14px body). The
    * 2px bump above body text reads as a clear "this is a section
    * header" landmark when scanning a dense transcript. The icon's
    * pixel size (in the .tsx pair) tracks this bump in lockstep so
@@ -256,7 +256,7 @@ body {
 }
 
 /* Collapse the slot to zero when its only React child is a component
- * whose render is currently `null` (e.g. `TideZ1C` returns `null` for
+ * whose render is currently `null` (e.g. `DevZ1C` returns `null` for
  * `awaiting_approval` / `interruptInFlight` / `idle` / `replaying` /
  * `errored`). The wrapper is in the DOM but has no child nodes, so
  * `:empty` matches and we zero the vertical rhythm. */

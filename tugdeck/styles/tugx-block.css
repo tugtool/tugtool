@@ -2,7 +2,7 @@
  * tugx-block.css — shared "block surface" utility token family.
  *
  * Captures the common visual scaffold used by FileBlock, DiffBlock,
- * TerminalBlock, ToolBlockChrome, TideThinkingBlock, and
+ * TerminalBlock, ToolBlockChrome, DevThinkingBlock, and
  * TugMarkdownView: an inset card-shaped frame with an optional raised
  * header strip, an optional matching footer strip, code-typography
  * defaults, and tone-tinted feedback bands.
@@ -33,7 +33,7 @@
  * ## Two frame variants
  *
  *  - `--tugx-block-bg` — body-kind variant. Inset surface. Used by
- *    FileBlock, DiffBlock, TerminalBlock, TideThinkingBlock, the markdown
+ *    FileBlock, DiffBlock, TerminalBlock, DevThinkingBlock, the markdown
  *    code-fence panel, etc.
  *  - `--tugx-block-chrome-bg` — chrome wrapper variant. Raised surface.
  *    Used by `ToolBlockChrome`, which sits *above* a body-kind and so

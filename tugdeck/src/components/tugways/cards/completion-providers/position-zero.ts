@@ -8,7 +8,7 @@
  *
  * Pure helper — depends only on the shared text-engine and prompt-entry
  * types; carries no build-time or capture-time dependencies. Used by the
- * Tide card's `/` slash-command provider and by the gallery card.
+ * Dev card's `/` slash-command provider and by the gallery card.
  */
 
 import type { CompletionProvider } from "@/lib/tug-text-types";

@@ -14,7 +14,7 @@
  * Composition (Spec S03, [#bk-conformance]):
  *  - `ToolBlockChrome` owns the frame: a `GitBranch` icon + a
  *    composed tool-name string (`Worktree · enter` / `Worktree ·
- *    exit`), the status stripe, the inline `TideCautionBadge` (when
+ *    exit`), the status stripe, the inline `DevCautionBadge` (when
  *    the dispatch flagged drift), and the error band.
  *  - **Header — `Worktree · enter <branch>` / `Worktree · exit
  *    <branch>`** — the verb (`enter` / `exit`) is derived from the

@@ -1,5 +1,5 @@
 /**
- * `dev-card-restore-gate` — the pure predicate behind the Tide card's
+ * `dev-card-restore-gate` — the pure predicate behind the Dev card's
  * cold-restore reveal gate.
  *
  * On a cold relaunch a tide card with a persisted session walks
@@ -7,12 +7,12 @@
  * `phase === "replaying"` → `replay_complete`. Painting the card body
  * through that walk flickers six distinct states past the user. The
  * gate collapses them: while `deriveColdRestoreActive` is true the
- * card shows the single `TideRestoring` placeholder; once it is false
+ * card shows the single `DevRestoring` placeholder; once it is false
  * the body mounts exactly once, against a fully-reconstructed
  * transcript, and reveals in one paint.
  *
  * `deriveColdRestoreActive` is the *snapshot-derivable* half of the
- * gate. The `TideCardServicesGate` component ANDs in a one-shot
+ * gate. The `DevCardServicesGate` component ANDs in a one-shot
  * `revealed` latch so that, once the body has mounted, a later
  * `phase === "replaying"` (a mid-session transport reconnect) does
  * NOT route back to the placeholder — that path stays on [DT10]'s
@@ -41,7 +41,7 @@ export interface ColdRestoreSignals {
 
 /**
  * True while a cold restore's replay window is still in progress —
- * the window the `TideRestoring` placeholder holds across.
+ * the window the `DevRestoring` placeholder holds across.
  *
  * It spans the cold-boot preflight beat (`replayPreflightActive`,
  * opened by `notifyResumeBindingLanded` and cleared by the first
@@ -50,7 +50,7 @@ export interface ColdRestoreSignals {
  * new-mode binding's brief JSONL-missing round-trip is not gated.
  *
  * A non-null `lastError` forces the predicate false: any error must
- * mount the body so its error banner shows and `useTideCardObserver`
+ * mount the body so its error banner shows and `useDevCardObserver`
  * can route a `resume_failed` back to the picker — the placeholder
  * never swallows a failure.
  */

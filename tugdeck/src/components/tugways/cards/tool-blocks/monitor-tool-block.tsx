@@ -12,7 +12,7 @@
  * Composition (Spec S03, [#bk-conformance]):
  *  - `ToolBlockChrome` owns the frame: a `Radar` icon + the tool
  *    name `Monitor` + an args summary that names what's being
- *    watched, the status stripe, the inline `TideCautionBadge`
+ *    watched, the status stripe, the inline `DevCautionBadge`
  *    (when the dispatch flagged drift), and the error band.
  *  - **Header — `Monitor · <command-excerpt>`** — the args summary
  *    is the command being monitored, truncated by the chrome's

@@ -33,7 +33,7 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 
 import {
   deriveLifecycleSnapshot,
-  type TideLifecycleSnapshot,
+  type DevLifecycleSnapshot,
 } from "../lifecycle-state";
 
 /**
@@ -45,7 +45,7 @@ import {
  */
 export function useLifecycleState(
   store: CodeSessionStore,
-): TideLifecycleSnapshot {
+): DevLifecycleSnapshot {
   const storeSnapshot = useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,
@@ -55,7 +55,7 @@ export function useLifecycleState(
   // ref during render is sound here: the value is a pure function of
   // the render's inputs, so a double-invoked render recomputes the
   // identical result.
-  const previousRef = useRef<TideLifecycleSnapshot | undefined>(undefined);
+  const previousRef = useRef<DevLifecycleSnapshot | undefined>(undefined);
   const snapshot = deriveLifecycleSnapshot(storeSnapshot, previousRef.current);
   previousRef.current = snapshot;
   return snapshot;

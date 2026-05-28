@@ -7,7 +7,7 @@
  *
  * The user-reported bug at the heart of [AT0035]
  * reproduces ONLY with dev-card; gallery-prompt-entry doesn't
- * exhibit the intermittent collapse. Tide-card has TWO redundant
+ * exhibit the intermittent collapse. Dev-card has TWO redundant
  * focus paths on activation — its own `useCardDelegate({
  * cardDidActivate })` legacy hook plus TugPromptEntry's
  * framework-driven `onCardActivated` — and the back-to-back focus
@@ -18,7 +18,7 @@
  *
  * ## Why the harness can render dev-card
  *
- * Tide-card's content factory gates on `feedsReady` — its
+ * Dev-card's content factory gates on `feedsReady` — its
  * `defaultFeedIds: [CODE_INPUT, CODE_OUTPUT, SESSION_METADATA,
  * FILETREE]` would otherwise block mount until a live
  * tugcast/tugcode backend populated frames. In test mode
@@ -60,7 +60,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
       await app.seedDeckState({
         state: {
           cards: [
-            { id: "A", componentId: "tide", title: "Tide A", closable: true },
+            { id: "A", componentId: "tide", title: "Dev A", closable: true },
           ],
           panes: [
             {
@@ -83,9 +83,9 @@ describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resig
         `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
       );
 
-      // Tide-card mounts its picker by default (no session bound).
-      // Bind a fake session so TideCardBody renders the editor.
-      await app.bindTideSession("A");
+      // Dev-card mounts its picker by default (no session bound).
+      // Bind a fake session so DevCardBody renders the editor.
+      await app.bindDevSession("A");
 
       await app.awaitEngineReady("A");
 

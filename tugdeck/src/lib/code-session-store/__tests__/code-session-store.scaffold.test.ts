@@ -106,7 +106,7 @@ describe("CodeSessionStore — Step 1 scaffold", () => {
 /**
  * `sessionMode` is captured from the per-card `CardSessionBinding` at
  * construction and threaded onto the snapshot so pure derivations (e.g.
- * `deriveTideCardBannerSpec`) can branch on the user's session-open
+ * `deriveDevCardBannerSpec`) can branch on the user's session-open
  * intent without a second subscription. The store itself does not act
  * on the value — the field is a passive carrier — so these tests only
  * verify the plumbing: ctor arg → snapshot field, both values

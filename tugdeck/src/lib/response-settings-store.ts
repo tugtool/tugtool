@@ -1,5 +1,5 @@
 /**
- * ResponseSettingsStore — subscribable store for the Tide transcript's
+ * ResponseSettingsStore — subscribable store for the Dev transcript's
  * presentation knobs.
  *
  * One setting today:

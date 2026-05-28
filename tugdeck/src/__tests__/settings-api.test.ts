@@ -18,8 +18,8 @@ import {
   readCardStates,
   putPromptHistory,
   getPromptHistory,
-  readTideRecentProjects,
-  insertTideRecentProject,
+  readDevRecentProjects,
+  insertDevRecentProject,
   TIDE_RECENT_PROJECTS_MAX,
 } from "../settings-api";
 import type { CardStateBag } from "../layout-tree";
@@ -323,13 +323,13 @@ describe("getPromptHistory", () => {
 // tide recent-projects (step 4m)
 // ---------------------------------------------------------------------------
 
-describe("insertTideRecentProject", () => {
+describe("insertDevRecentProject", () => {
   test("prepends a new path to an empty list", () => {
-    expect(insertTideRecentProject([], "/tmp")).toEqual(["/tmp"]);
+    expect(insertDevRecentProject([], "/tmp")).toEqual(["/tmp"]);
   });
 
   test("moves an existing path to the front (dedup)", () => {
-    expect(insertTideRecentProject(["/a", "/b", "/c"], "/b")).toEqual([
+    expect(insertDevRecentProject(["/a", "/b", "/c"], "/b")).toEqual([
       "/b",
       "/a",
       "/c",
@@ -338,7 +338,7 @@ describe("insertTideRecentProject", () => {
 
   test("caps the list at TIDE_RECENT_PROJECTS_MAX", () => {
     const over = ["/a", "/b", "/c", "/d", "/e"];
-    const next = insertTideRecentProject(over, "/f");
+    const next = insertDevRecentProject(over, "/f");
     expect(next.length).toBe(TIDE_RECENT_PROJECTS_MAX);
     expect(next[0]).toBe("/f");
     // Oldest entry drops off.
@@ -346,10 +346,10 @@ describe("insertTideRecentProject", () => {
   });
 });
 
-describe("readTideRecentProjects", () => {
+describe("readDevRecentProjects", () => {
   test("returns [] when the key is unset", () => {
     const client = makeMockClient({});
-    expect(readTideRecentProjects(client)).toEqual([]);
+    expect(readDevRecentProjects(client)).toEqual([]);
   });
 
   test("returns the paths array from a json-tagged value", () => {
@@ -361,7 +361,7 @@ describe("readTideRecentProjects", () => {
         } as TaggedValue,
       },
     });
-    expect(readTideRecentProjects(client)).toEqual(["/a", "/b"]);
+    expect(readDevRecentProjects(client)).toEqual(["/a", "/b"]);
   });
 
   test("drops non-string entries defensively", () => {
@@ -373,7 +373,7 @@ describe("readTideRecentProjects", () => {
         } as TaggedValue,
       },
     });
-    expect(readTideRecentProjects(client)).toEqual(["/a", "/b"]);
+    expect(readDevRecentProjects(client)).toEqual(["/a", "/b"]);
   });
 
   test("returns [] when the value shape is wrong", () => {
@@ -382,13 +382,13 @@ describe("readTideRecentProjects", () => {
         "recent-projects": { kind: "json", value: "not-an-object" } as TaggedValue,
       },
     });
-    expect(readTideRecentProjects(client)).toEqual([]);
+    expect(readDevRecentProjects(client)).toEqual([]);
   });
 });
 
-// PUT behavior for `putTideRecentProjects` is covered by T-TIDE-07 in
+// PUT behavior for `putDevRecentProjects` is covered by T-TIDE-07 in
 // dev-card.test.tsx (which asserts the bind effect fires it with the
 // right payload). Duplicating it here would require an unmocked
 // `fetch`, but dev-card.test.tsx process-globally replaces the
-// exported `putTideRecentProjects` with a recorder to keep dev-card's
+// exported `putDevRecentProjects` with a recorder to keep dev-card's
 // bind effect from racing with other test files' fetch stubs.

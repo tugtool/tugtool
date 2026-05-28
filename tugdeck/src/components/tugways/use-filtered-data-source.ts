@@ -70,7 +70,7 @@
  *    id / kind / role appears at its filtered position with no copy.
  *  - Adds `baseIndexFor(filteredIndex): number` for typed cell
  *    renderers that need to query the base data source's extension
- *    methods (e.g. `TideTranscriptDataSource.rowAt(baseIndex)`).
+ *    methods (e.g. `DevTranscriptDataSource.rowAt(baseIndex)`).
  *
  * ## `filterToken` discipline
  *

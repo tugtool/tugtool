@@ -1,7 +1,7 @@
 /**
- * gallery-dev-thinking.tsx — visual fixture for `TideThinkingBlock`.
+ * gallery-dev-thinking.tsx — visual fixture for `DevThinkingBlock`.
  *
- * `TideThinkingBlock` ([chrome/dev-thinking-block.tsx]) has two
+ * `DevThinkingBlock` ([chrome/dev-thinking-block.tsx]) has two
  * modes; this card mounts both with module-scope mock content so the
  * design surface is reviewable without a live `CodeSessionStore`:
  *
@@ -31,7 +31,7 @@ import "./gallery-dev-thinking.css";
 
 import React from "react";
 
-import { TideThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
+import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -40,7 +40,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 // Mock content
 // ---------------------------------------------------------------------------
 
-const STREAMING_THINKING = `The user wants the gallery card to mount TideThinkingBlock in its
+const STREAMING_THINKING = `The user wants the gallery card to mount DevThinkingBlock in its
 streaming mode. Let me work through what that needs.
 
 Streaming mode subscribes to a PropertyStore path — the default is
@@ -78,17 +78,17 @@ const STREAMING_STORE = new PropertyStore({
 });
 
 // ---------------------------------------------------------------------------
-// GalleryTideThinking
+// GalleryDevThinking
 // ---------------------------------------------------------------------------
 
-export function GalleryTideThinking(): React.ReactElement {
+export function GalleryDevThinking(): React.ReactElement {
   return (
     <div className="cg-content" data-testid="gallery-dev-thinking">
       <div className="cg-section gallery-dev-thinking-section">
         <TugLabel className="cg-section-title">
           Streaming — bound to a PropertyStore, default-expanded
         </TugLabel>
-        <TideThinkingBlock
+        <DevThinkingBlock
           streamingStore={STREAMING_STORE}
           streamingPath="inflight.thinking"
         />
@@ -100,7 +100,7 @@ export function GalleryTideThinking(): React.ReactElement {
         <TugLabel className="cg-section-title">
           Completed (long) — static, default-collapsed; click to expand
         </TugLabel>
-        <TideThinkingBlock initialText={COMPLETED_THINKING} />
+        <DevThinkingBlock initialText={COMPLETED_THINKING} />
       </div>
 
       <TugSeparator />
@@ -109,7 +109,7 @@ export function GalleryTideThinking(): React.ReactElement {
         <TugLabel className="cg-section-title">
           Completed (short) — preview shows the full line, no truncation
         </TugLabel>
-        <TideThinkingBlock initialText={COMPLETED_THINKING_SHORT} />
+        <DevThinkingBlock initialText={COMPLETED_THINKING_SHORT} />
       </div>
     </div>
   );

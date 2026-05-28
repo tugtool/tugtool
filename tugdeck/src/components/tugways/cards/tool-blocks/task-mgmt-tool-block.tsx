@@ -24,7 +24,7 @@
  *    composed tool-name string (`Background Task · list` /
  *    `Background Task · get` / `Background Task · output` /
  *    `Background Task · stop`), the status stripe, the inline
- *    `TideCautionBadge` (when the dispatch flagged drift), and
+ *    `DevCautionBadge` (when the dispatch flagged drift), and
  *    the error band.
  *  - **Header** — the verb-qualified name above; the chrome's args
  *    slot carries `#<taskId>` when an id is in the input (every

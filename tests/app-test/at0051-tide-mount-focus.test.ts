@@ -10,12 +10,12 @@
  *      `roadmap/tugplan-dev-session-init-orchestration.md`): every
  *      overlay that sets `inert` on `.tug-pane-body` MUST emit a
  *      per-card `xxxDidHide` lifecycle event after `inert` clears,
- *      and `TideCardBody` MUST subscribe with an idempotent focus
+ *      and `DevCardBody` MUST subscribe with an idempotent focus
  *      claim. The mechanism:
  *        - `tug-text-editor.tsx` `focus()` delegate routes through
  *          `manager.focusResponder(responderId)` → atomic chain
  *          promotion + DOM focus.
- *        - `cardDidActivate` in `TideCardBody` calls
+ *        - `cardDidActivate` in `DevCardBody` calls
  *          `entryDelegate.focus()` on initial-sync via
  *          `useCardDelegate`.
  *        - `sheetDidHide` / `bannerDidHide` lifecycle handlers
@@ -24,7 +24,7 @@
  *          hiding.
  *
  *   2. **No-banner contract for new-mode bindings** (Spec [S01]):
- *      `deriveTideCardBannerSpec` returns `kind: "none"` for the
+ *      `deriveDevCardBannerSpec` returns `kind: "none"` for the
  *      `phase === "replaying"` branch when `sessionMode === "new"`,
  *      so the JSONL-missing replay round-trip that fires for every
  *      binding land does not light up a "Loading session…" banner
@@ -35,7 +35,7 @@
  *   - Caret flashes and is stolen as a banner mounts (sets `inert`
  *     on `.tug-pane-body`, blurs the contentDOM), then the banner
  *     hides without anyone re-focusing the editor. Fixed by the
- *     lifecycle-event focus-claim handlers in `TideCardBody`.
+ *     lifecycle-event focus-claim handlers in `DevCardBody`.
  *   - "Loading session…" banner shows for ~700ms during a new
  *     session's bind window even though there's no JSONL to
  *     replay, stealing focus and producing a flicker. Fixed by
@@ -85,7 +85,7 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const TIDE_DECK_STATE = {
   cards: [
-    { id: "A", componentId: "tide", title: "Tide A", closable: true },
+    { id: "A", componentId: "tide", title: "Dev A", closable: true },
   ],
   panes: [
     {
@@ -228,7 +228,7 @@ async function readBannerWatch(
 
 async function waitForEditor(app: App, cardId: string): Promise<void> {
   // The 2-second waitForCondition cap is too short for the
-  // seedDeckState → mount → bindTideSession → engine-construct
+  // seedDeckState → mount → bindDevSession → engine-construct
   // pipeline. Longer dwells sidestep the cap; the production
   // contract is "settles within a second or so" (these dwells are
   // for headroom in the harness, not real production timing).
@@ -272,7 +272,7 @@ describe.skipIf(!SHOULD_RUN)(
             await app.enableDeckTrace(true);
             await app.seedDeckState({ state: TIDE_DECK_STATE, focusCardId: "A" });
             await new Promise<void>((r) => setTimeout(r, 1500));
-            await app.bindTideSession("A");
+            await app.bindDevSession("A");
             await waitForEditor(app, "A");
 
             // Probe focus state at multiple timepoints. Settling
@@ -319,7 +319,7 @@ describe.skipIf(!SHOULD_RUN)(
       "new-mode bind: no banner mounts during the bind window; caret stays focused",
       async () => {
         // Pins Spec [S01] from `tugplan-dev-session-init-orchestration.md`:
-        // for `sessionMode === "new"`, `deriveTideCardBannerSpec`
+        // for `sessionMode === "new"`, `deriveDevCardBannerSpec`
         // returns `kind: "none"` for the active-phase replay-loading
         // branch, so the JSONL-missing replay round-trip that fires
         // for every binding-land doesn't paint a "Loading session…"
@@ -363,7 +363,7 @@ describe.skipIf(!SHOULD_RUN)(
             // Explicit `sessionMode: "new"` documents the path. The
             // harness defaults to "new" anyway, but pinning it here
             // makes the test's intent unambiguous to a future reader.
-            await app.bindTideSession("A", { sessionMode: "new" });
+            await app.bindDevSession("A", { sessionMode: "new" });
             await waitForEditor(app, "A");
 
             // Settling window: catches any late banner activity

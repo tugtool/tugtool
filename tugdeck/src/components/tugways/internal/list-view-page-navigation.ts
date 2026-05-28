@@ -7,7 +7,7 @@
  * Each list-view cell is one navigable *entry*. When the consumer
  * opts in via `pageByEntry`, PageUp / PageDown — and the macOS
  * Opt+ArrowUp / Opt+ArrowDown aliases — step the scroller exactly one
- * entry at a time. In the Tide transcript both halves of a turn (the
+ * entry at a time. In the Dev transcript both halves of a turn (the
  * user message and the assistant response) are separate cells, so
  * paging visits every one of them.
  *

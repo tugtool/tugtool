@@ -116,7 +116,7 @@ const STATIC_1MB_CONTENT = generateMarkdown(1024 * 1024);
 const STATIC_FEATURES_CONTENT = `# Markdown extension surface
 
 This card's size buttons stream *generated* prose; this document
-instead exercises the parser extensions added in the Tide
+instead exercises the parser extensions added in the Dev
 typography pass.
 
 ## Smart punctuation

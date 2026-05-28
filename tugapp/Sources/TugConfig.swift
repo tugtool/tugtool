@@ -23,7 +23,7 @@ enum TugConfig {
     static let keySourceTreePath = "source-tree-path"
     static let keyDevModeEnabled = "dev-mode-enabled"
     static let keyWindowBackground = "window-background"
-    /// Suggested Project Path the Tide picker pre-fills when the user
+    /// Suggested Project Path the Dev picker pre-fills when the user
     /// has no Recent Project Paths yet. Refreshed by AppDelegate at
     /// every launch to track the current build profile.
     static let keyInitialProjectPath = "initial-project-path"

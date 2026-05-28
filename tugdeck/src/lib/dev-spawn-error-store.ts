@@ -3,10 +3,10 @@
  *
  * When tugcast rejects a `spawn_session` (e.g. the project directory
  * no longer exists), the router echoes a `spawn_session_error` CONTROL
- * frame carrying the originating `card_id`. The unbound Tide card has
+ * frame carrying the originating `card_id`. The unbound Dev card has
  * no `CodeSessionStore` yet — the session never came up — so the
  * failure has no per-session store to land in. It lands here instead,
- * keyed by `card_id`, and `TideProjectPicker` surfaces it through a
+ * keyed by `card_id`, and `DevProjectPicker` surfaces it through a
  * `<TugPaneBanner>`.
  *
  * Subscribable per-card so the already-mounted picker re-renders when
@@ -31,7 +31,7 @@ export interface SpawnError {
   reason: string;
 }
 
-class TideSpawnErrorStore {
+class DevSpawnErrorStore {
   private errors = new Map<string, SpawnError>();
   private listeners = new Map<string, Set<() => void>>();
 
@@ -77,7 +77,7 @@ class TideSpawnErrorStore {
   }
 }
 
-export const tideSpawnErrorStore = new TideSpawnErrorStore();
+export const tideSpawnErrorStore = new DevSpawnErrorStore();
 
 /**
  * Map a wire reason code to human-readable banner copy. Unknown codes

@@ -13,12 +13,12 @@
  * Control surface — a window-global exposed in dev builds only:
  *
  *   ```js
- *   window.tugTidePlacement.set({ Z2: "window", Z4B: "phase" })
- *   window.tugTidePlacement.set({ Z1: "perTurnDuration" })
- *   window.tugTidePlacement.clear()                  // wipe to empty defaults
- *   window.tugTidePlacement.get()                    // read current mapping
- *   window.tugTidePlacement.datums                   // list available datums
- *   window.tugTidePlacement.zones                    // list configurable zones
+ *   window.tugDevPlacement.set({ Z2: "window", Z4B: "phase" })
+ *   window.tugDevPlacement.set({ Z1: "perTurnDuration" })
+ *   window.tugDevPlacement.clear()                  // wipe to empty defaults
+ *   window.tugDevPlacement.get()                    // read current mapping
+ *   window.tugDevPlacement.datums                   // list available datums
+ *   window.tugDevPlacement.zones                    // list configurable zones
  *   ```
  *
  * The shim is gated by `import.meta.env.DEV`; production bundles
@@ -26,7 +26,7 @@
  * the global nor the harness ship.
  *
  * Conformance:
- *  - [L02] `useTidePlacementSlots` subscribes to the tugbank-backed
+ *  - [L02] `useDevPlacementSlots` subscribes to the tugbank-backed
  *    store via `useTugbankValue`; no React-state mirror.
  *  - [L06] Slot content is React nodes computed from the mapping. The
  *    renderer components themselves (in `dev-card-telemetry-renderers`)
@@ -45,19 +45,19 @@ import type { TaggedValue } from "@/lib/tugbank-client";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 
 import {
-  TideTelemetryCumulativeActiveMs,
-  TideTelemetryCumulativeTokens,
-  TideTelemetryPerTurnCost,
-  TideTelemetryPerTurnDuration,
-  TideTelemetryPerTurnTtft,
-  TideTelemetryPhase,
-  TideTelemetryStatusRow,
-  TideTelemetryWindowUtilization,
+  DevTelemetryCumulativeActiveMs,
+  DevTelemetryCumulativeTokens,
+  DevTelemetryPerTurnCost,
+  DevTelemetryPerTurnDuration,
+  DevTelemetryPerTurnTtft,
+  DevTelemetryPhase,
+  DevTelemetryStatusRow,
+  DevTelemetryWindowUtilization,
 } from "./dev-card-telemetry-renderers";
 import type { ScrollToRowHandler } from "./dev-card-telemetry-popovers";
 import type {
-  TideTurnTrailingContext,
-  TideTurnTrailingRenderer,
+  DevTurnTrailingContext,
+  DevTurnTrailingRenderer,
 } from "./dev-card";
 
 // ---------------------------------------------------------------------------
@@ -187,19 +187,19 @@ function readPlacementSync(): PlacementMap {
 // Slot resolution
 // ---------------------------------------------------------------------------
 
-export interface TideCardPlacementSlots {
+export interface DevCardPlacementSlots {
   headerContent?: React.ReactNode;
   statusBarContent?: React.ReactNode;
   promptStatusContent?: React.ReactNode;
   promptIndicatorsContent?: React.ReactNode;
-  renderTurnTrailing?: TideTurnTrailingRenderer;
+  renderTurnTrailing?: DevTurnTrailingRenderer;
 }
 
-export interface UseTidePlacementSlotsInput {
+export interface UseDevPlacementSlotsInput {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore: SessionMetadataStore;
   /**
-   * Forwarded to {@link TideTelemetryStatusRow} when it occupies Z2 —
+   * Forwarded to {@link DevTelemetryStatusRow} when it occupies Z2 —
    * lets the status row's Time / Tokens popovers scroll the transcript
    * on a `#NNNN` entry-number click. The tide card supplies it from
    * the transcript's imperative handle.
@@ -219,9 +219,9 @@ export interface UseTidePlacementSlotsInput {
  * the harness honors the mapping but the production default keeps
  * the slot quiet.
  */
-export function useTidePlacementSlots(
-  input: UseTidePlacementSlotsInput,
-): TideCardPlacementSlots {
+export function useDevPlacementSlots(
+  input: UseDevPlacementSlotsInput,
+): DevCardPlacementSlots {
   const mapping = useTugbankValue<PlacementMap>(
     PLACEMENT_EXPERIMENT_DOMAIN,
     PLACEMENT_EXPERIMENT_KEY,
@@ -244,28 +244,28 @@ export function useTidePlacementSlots(
       switch (datum) {
         case "window":
           return (
-            <TideTelemetryWindowUtilization
+            <DevTelemetryWindowUtilization
               codeSessionStore={codeSessionStore}
               sessionMetadataStore={sessionMetadataStore}
             />
           );
         case "tokens":
           return (
-            <TideTelemetryCumulativeTokens
+            <DevTelemetryCumulativeTokens
               codeSessionStore={codeSessionStore}
             />
           );
         case "active":
           return (
-            <TideTelemetryCumulativeActiveMs
+            <DevTelemetryCumulativeActiveMs
               codeSessionStore={codeSessionStore}
             />
           );
         case "phase":
-          return <TideTelemetryPhase codeSessionStore={codeSessionStore} />;
+          return <DevTelemetryPhase codeSessionStore={codeSessionStore} />;
         case "statusRow":
           return (
-            <TideTelemetryStatusRow
+            <DevTelemetryStatusRow
               codeSessionStore={codeSessionStore}
               sessionMetadataStore={sessionMetadataStore}
               onScrollToRow={onScrollToRow}
@@ -276,19 +276,19 @@ export function useTidePlacementSlots(
     [codeSessionStore, sessionMetadataStore, onScrollToRow],
   );
 
-  const renderTurnTrailing = useMemo<TideTurnTrailingRenderer | undefined>(
+  const renderTurnTrailing = useMemo<DevTurnTrailingRenderer | undefined>(
     () => {
       const datum = mapping.Z1;
       if (datum === null || datum === undefined) return undefined;
-      return (ctx: TideTurnTrailingContext): React.ReactNode => {
+      return (ctx: DevTurnTrailingContext): React.ReactNode => {
         if (ctx.half !== "assistant" || ctx.turn === undefined) return null;
         switch (datum) {
           case "perTurnDuration":
-            return <TideTelemetryPerTurnDuration turn={ctx.turn} />;
+            return <DevTelemetryPerTurnDuration turn={ctx.turn} />;
           case "perTurnCost":
-            return <TideTelemetryPerTurnCost turn={ctx.turn} />;
+            return <DevTelemetryPerTurnCost turn={ctx.turn} />;
           case "perTurnTtft":
-            return <TideTelemetryPerTurnTtft turn={ctx.turn} />;
+            return <DevTelemetryPerTurnTtft turn={ctx.turn} />;
         }
       };
     },
@@ -314,7 +314,7 @@ export function useTidePlacementSlots(
  * the entire installer through Vite's `import.meta.env.DEV` constant
  * folding so nothing related to it ships.
  */
-export interface TideTidePlacementGlobal {
+export interface DevDevPlacementGlobal {
   /** Read the current mapping (live snapshot, no subscription). */
   get(): PlacementMap;
   /** Merge a partial mapping into the current state. */
@@ -331,19 +331,19 @@ export interface TideTidePlacementGlobal {
 }
 
 interface WindowWithPlacement {
-  tugTidePlacement?: TideTidePlacementGlobal;
+  tugDevPlacement?: DevDevPlacementGlobal;
 }
 
 /**
- * Install the dev-only `window.tugTidePlacement` shim. Idempotent —
+ * Install the dev-only `window.tugDevPlacement` shim. Idempotent —
  * the second call no-ops. Call once from `main.tsx` inside an
  * `import.meta.env.DEV` guard.
  */
-export function installTidePlacementGlobal(): void {
+export function installDevPlacementGlobal(): void {
   if (typeof window === "undefined") return;
   const w = window as unknown as WindowWithPlacement;
-  if (w.tugTidePlacement !== undefined) return;
-  const api: TideTidePlacementGlobal = {
+  if (w.tugDevPlacement !== undefined) return;
+  const api: DevDevPlacementGlobal = {
     get(): PlacementMap {
       return readPlacementSync();
     },
@@ -360,5 +360,5 @@ export function installTidePlacementGlobal(): void {
     datums: { session: SESSION_DATUMS, turn: TURN_DATUMS },
     zones: ["Z0", "Z1", "Z2", "Z3", "Z4B"],
   };
-  w.tugTidePlacement = api;
+  w.tugDevPlacement = api;
 }

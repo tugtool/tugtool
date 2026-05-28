@@ -692,7 +692,7 @@ export async function awaitEngineReady(
 
 /**
  * Bind a fake session for a dev-card so its content factory skips
- * past the project-picker UI and renders TideCardBody directly.
+ * past the project-picker UI and renders DevCardBody directly.
  *
  * Production binds via a `spawn_session_ok` CONTROL ack from a live
  * tugcast/tugcode/Claude pipeline. In the in-app harness, that
@@ -714,7 +714,7 @@ export async function awaitEngineReady(
  *                    (cold-boot preflight, replay-loading banner)
  *                    pass `"resume"` explicitly.
  */
-export function bindTideSession(
+export function bindDevSession(
   caller: HarnessCaller,
   cardId: string,
   options?: {
@@ -730,14 +730,14 @@ export function bindTideSession(
       ? JSON.stringify(options)
       : "undefined";
   const script = callSurface(
-    `(window.__tug.bindTideSession(${lit(cardId)}, ${optsLit}), null)`,
+    `(window.__tug.bindDevSession(${lit(cardId)}, ${optsLit}), null)`,
   );
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
 
 /**
  * One step in driving a bound tide card's `CodeSessionStore` through
- * the lifecycle matrix — mirrors `TideSessionDriveAction` on the
+ * the lifecycle matrix — mirrors `DevSessionDriveAction` on the
  * `test-surface.ts` side (the two graphs are kept structurally
  * identical; the JSON wire is the contract).
  *
@@ -750,7 +750,7 @@ export function bindTideSession(
  *  - `transportClose` / `transportReconnect` — drive the transport
  *    overlay.
  */
-export type TideSessionDriveAction =
+export type DevSessionDriveAction =
   | { op: "send"; text: string; atoms?: unknown[] }
   | { op: "ingestFrame"; feedId: number; decoded: unknown }
   | { op: "interrupt" }
@@ -759,17 +759,17 @@ export type TideSessionDriveAction =
 
 /**
  * Drive a bound tide card's `CodeSessionStore` one step through the
- * lifecycle matrix via `window.__tug.driveTideSession`. The card must
- * already be bound (`bindTideSession`); the surface throws otherwise.
+ * lifecycle matrix via `window.__tug.driveDevSession`. The card must
+ * already be bound (`bindDevSession`); the surface throws otherwise.
  */
-export function driveTideSession(
+export function driveDevSession(
   caller: HarnessCaller,
   cardId: string,
-  action: TideSessionDriveAction,
+  action: DevSessionDriveAction,
   evalOpts?: EvalJsOptions,
 ): Promise<void> {
   const script = callSurface(
-    `(window.__tug.driveTideSession(${lit(cardId)}, ${lit(action)}), null)`,
+    `(window.__tug.driveDevSession(${lit(cardId)}, ${lit(action)}), null)`,
   );
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }

@@ -3,7 +3,7 @@
  * markdown document.
  *
  * The typography pass declares `--tugx-md-*` tokens for every
- * markdown element a Tide assistant turn might emit. This test
+ * markdown element a Dev assistant turn might emit. This test
  * confirms that the WASM markdown pipeline (pulldown-cmark →
  * DOMPurify) actually produces the corresponding sanitized HTML for
  * each element, so the typography rules in `tug-markdown-view.css`

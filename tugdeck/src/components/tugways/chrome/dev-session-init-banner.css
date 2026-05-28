@@ -1,14 +1,14 @@
 /* @tug-pairings:
    - --tugx-banner-bg / --tugx-banner-text-color
    - --tugx-banner-label-color / --tugx-banner-bg
-   `TideSessionInitBanner` paints a single-row chrome at the top of a
+   `DevSessionInitBanner` paints a single-row chrome at the top of a
    card with model / permissionMode / cwd field rows. The shared
    block-surface scaffold (`--tugx-block-*`) carries the frame; the
    banner-specific slots tune the inline-row metrics.
 */
 
 /**
- * dev-session-init-banner.css — `TideSessionInitBanner` chrome.
+ * dev-session-init-banner.css — `DevSessionInitBanner` chrome.
  *
  * Layout:
  *  - `.dev-session-init-banner` — one horizontal flex row, no wrap;

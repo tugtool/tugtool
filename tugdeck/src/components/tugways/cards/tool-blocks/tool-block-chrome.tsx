@@ -29,7 +29,7 @@
  *     an error stripe; consumers may also pass an
  *     `errorMessage` slot for inline detail.
  *
- * `caution` is rendered as an inline `TideCautionBadge` in the header
+ * `caution` is rendered as an inline `DevCautionBadge` in the header
  * per [D04] / [Q03] — three reasons surface: `unknown_tool`,
  * `unknown_shape`, `version_drift`. The chrome owns only the
  * placement; the chip is `chrome/dev-caution-badge.tsx`.
@@ -97,7 +97,7 @@ import "./tool-block-chrome.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
-import { TideCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
+import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import {
   BlockActionsCluster,
@@ -422,7 +422,7 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
           <span className="tool-block-chrome-args">{argsSummary}</span>
         ) : null}
         {caution !== undefined ? (
-          <TideCautionBadge caution={caution} />
+          <DevCautionBadge caution={caution} />
         ) : null}
         {/* Actions slot — see module docstring. A composed body kind
          * portals its resting affordances here when `embedded={true}`.

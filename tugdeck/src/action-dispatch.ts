@@ -573,7 +573,7 @@ export function initActionDispatch(
   });
 
   // list_card_bindings_ok / _err: response to a startup/reconnect
-  // request from `restoreTideSessions`.
+  // request from `restoreDevSessions`.
   registerAction("list_card_bindings_ok", (payload) => {
     const bindings = payload.bindings;
     if (!Array.isArray(bindings)) {

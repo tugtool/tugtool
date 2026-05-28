@@ -299,7 +299,7 @@ async fn main() {
     // Note: `cli.source_tree` is the transitional CLI flag name (formerly
     // `--dir`). Internally we still call the bootstrap-watched directory
     // `watch_dir` because that's what it is semantically — the Cargo walk
-    // at T3.0.W3.b deletes the bootstrap entirely when the Tide card lands
+    // at T3.0.W3.b deletes the bootstrap entirely when the Dev card lands
     // a per-card project picker.
     let watch_dir = if cli.source_tree.is_absolute() {
         cli.source_tree.clone()

@@ -15,7 +15,7 @@
  *     ack frames in response to a `list_session_state_changes` request.
  *
  * `action-dispatch.ts` decodes those frames and forwards them through this
- * module's `publish*` functions; the `TideSessionLedgerStore` (step 4)
+ * module's `publish*` functions; the `DevSessionLedgerStore` (step 4)
  * subscribes via `subscribeTo*` to populate its cache and resolve pending
  * promises.
  *
@@ -106,7 +106,7 @@ export const publishListSessionStateChangesOk = listSessionStateChangesOkBus.pub
 export const subscribeToListSessionStateChangesErr = listSessionStateChangesErrBus.subscribe;
 export const publishListSessionStateChangesErr = listSessionStateChangesErrBus.publish;
 
-export function _resetTideSessionLedgerEventsForTest(): void {
+export function _resetDevSessionLedgerEventsForTest(): void {
   sessionUpdatedBus.reset();
   listSessionsOkBus.reset();
   listSessionsErrBus.reset();

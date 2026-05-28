@@ -3,7 +3,7 @@
    input / result sections are standalone `JsonTreeBlock`s
    (`json-tree-block.css`) and a `TugMarkdownBlock`
    (`tug-markdown-block.css`), each owning its own surface; the
-   caution chip is `TideCautionBadge` (`dev-caution-badge.css`).
+   caution chip is `DevCautionBadge` (`dev-caution-badge.css`).
    This file holds only the section-stack layout.
 */
 

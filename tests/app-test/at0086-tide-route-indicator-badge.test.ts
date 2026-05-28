@@ -1,5 +1,5 @@
 /**
- * at0086-dev-route-indicator-badge.test.ts — `TideRouteIndicatorBadge`
+ * at0086-dev-route-indicator-badge.test.ts — `DevRouteIndicatorBadge`
  * repaints when the prompt-entry route flips, and keeps its mount
  * identity across the flip ([AT0086]).
  *
@@ -30,7 +30,7 @@
  *
  * ## Test matrix
  *
- *   One test, one Tide card:
+ *   One test, one Dev card:
  *
  *     1. Default route is Code → indicator text starts with
  *        `Claude Code`; capture the badge's DOM node.
@@ -61,7 +61,7 @@ const CODE_SEGMENT_SELECTOR =
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "tide", title: "Tide", closable: true },
+      { id: "A", componentId: "tide", title: "Dev", closable: true },
     ],
     panes: [
       {
@@ -115,7 +115,7 @@ async function badgeStillSamePinnedNode(app: App): Promise<boolean> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0086: TideRouteIndicatorBadge repaints on route flip with mount identity",
+  "AT0086: DevRouteIndicatorBadge repaints on route flip with mount identity",
   () => {
     test(
       "Code → Shell → Code: text follows the route; badge DOM node identity is preserved",
@@ -132,7 +132,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindTideSession("A");
+          await app.bindDevSession("A");
           await app.awaitEngineReady("A");
 
           // Default route is Code — the indicator shows the

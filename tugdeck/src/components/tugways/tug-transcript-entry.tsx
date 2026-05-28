@@ -67,7 +67,7 @@ import { cn } from "@/lib/utils";
 // ---------------------------------------------------------------------------
 
 /**
- * Speakers a Tide transcript can mix. The set is open by design — adding
+ * Speakers a Dev transcript can mix. The set is open by design — adding
  * a participant means extending this union, registering an icon in
  * {@link PARTICIPANT_ICONS}, and (optionally) defining new
  * `--tugx-transcript-*-<participant>` flavor tokens. No primitive edit.
@@ -137,7 +137,7 @@ export interface TugTranscriptEntryProps {
   /**
    * Optional in-flight indicator slot, sandwiched between the body and
    * the `controls` slot. Used by transcript hosts to mount per-row
-   * in-flight chrome (e.g. the Tide card's `TideZ1C` indicator) on the
+   * in-flight chrome (e.g. the Dev card's `DevZ1C` indicator) on the
    * row that is currently the in-flight tip; every other row passes
    * `undefined` / `null` and the slot consumes no vertical space.
    *

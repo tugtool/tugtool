@@ -91,7 +91,7 @@ export type {
   SelectionSnapshot,
   StartTugcodeOptions,
   StartTugcodeResult,
-  TideSessionDriveAction,
+  DevSessionDriveAction,
   TugcodeTranscript,
   TugcodeTranscriptTurn,
 } from "./client";
@@ -507,7 +507,7 @@ export class App {
 
   /**
    * Bind a fake session for a dev-card so its content factory
-   * renders TideCardBody (the editor) instead of the project-picker.
+   * renders DevCardBody (the editor) instead of the project-picker.
    * Production binds via `spawn_session_ok` from a live
    * tugcast/tugcode/Claude pipeline; the harness writes synthetic
    * values directly into the binding store. Use whenever a test
@@ -515,7 +515,7 @@ export class App {
    * typing) — the AI-facing stores stay empty, but the editor
    * mounts and accepts user-shaped gestures.
    */
-  bindTideSession(
+  bindDevSession(
     cardId: string,
     options?: {
       tugSessionId?: string;
@@ -531,21 +531,21 @@ export class App {
       sessionMode?: "new" | "resume";
     },
   ): Promise<void> {
-    return client.bindTideSession(this as HarnessCaller, cardId, options);
+    return client.bindDevSession(this as HarnessCaller, cardId, options);
   }
 
   /**
    * Drive a bound tide card's `CodeSessionStore` one step through the
    * lifecycle matrix — `send` a user message, `ingestFrame` a decoded
    * wire frame, `interrupt`, or drive the transport overlay. The card
-   * must be bound first (`bindTideSession`). Frames flow through the
+   * must be bound first (`bindDevSession`). Frames flow through the
    * store's real `frameToEvent` → `dispatch` path.
    */
-  driveTideSession(
+  driveDevSession(
     cardId: string,
-    action: client.TideSessionDriveAction,
+    action: client.DevSessionDriveAction,
   ): Promise<void> {
-    return client.driveTideSession(this as HarnessCaller, cardId, action);
+    return client.driveDevSession(this as HarnessCaller, cardId, action);
   }
 
   // -------------------------------------------------------------------

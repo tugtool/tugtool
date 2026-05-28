@@ -1,7 +1,7 @@
 # tugdiff-wasm
 
 `imara-diff` bindings compiled to WebAssembly for use in tugdeck. Powers the
-`DiffBlock` body kind in the Tide assistant renderer (see
+`DiffBlock` body kind in the Dev assistant renderer (see
 [D09](../../../roadmap/tide-assistant-rendering.md#d09-imara-diff-backbone)).
 
 ## Why a WASM crate?

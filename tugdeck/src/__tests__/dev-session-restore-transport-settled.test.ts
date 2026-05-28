@@ -62,12 +62,12 @@ mock.module("@/lib/tugbank-singleton", () => ({
   setTugbankClient: () => {},
 }));
 
-// `cardServicesStore._construct` calls `putTideRecentProjects` —
+// `cardServicesStore._construct` calls `putDevRecentProjects` —
 // stubbed here so it doesn't reach for `globalThis.fetch`.
 import * as actualSettingsApi from "@/settings-api";
 mock.module("@/settings-api", () => ({
   ...actualSettingsApi,
-  putTideRecentProjects: (_paths: string[]) => {},
+  putDevRecentProjects: (_paths: string[]) => {},
 }));
 
 // Imports must come AFTER the mock.module calls so the modules pick
@@ -78,7 +78,7 @@ import {
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import {
-  restoreTideSessions,
+  restoreDevSessions,
   tideRestoreRegistry,
 } from "@/lib/dev-session-restore";
 
@@ -143,8 +143,8 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
         typeof cardServicesStore.attachDeckManager
       >[0],
     );
-    restoreTideSessions(
-      fakeDeck as unknown as Parameters<typeof restoreTideSessions>[0],
+    restoreDevSessions(
+      fakeDeck as unknown as Parameters<typeof restoreDevSessions>[0],
       fakeConnection,
     );
 
@@ -224,8 +224,8 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
         typeof cardServicesStore.attachDeckManager
       >[0],
     );
-    restoreTideSessions(
-      fakeDeck as unknown as Parameters<typeof restoreTideSessions>[0],
+    restoreDevSessions(
+      fakeDeck as unknown as Parameters<typeof restoreDevSessions>[0],
       fakeConnection,
     );
 

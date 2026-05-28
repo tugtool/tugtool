@@ -5,7 +5,7 @@
  * from theme tokens (`--tug7-element-global-text-normal-link-*`)
  * via the local `--tugx-link-*` slot family. Replaces the browser-
  * default cobalt-blue + harsh underline that an unstyled `<a>`
- * produces — that treatment is unreadable on Tide's dark surfaces
+ * produces — that treatment is unreadable on Dev's dark surfaces
  * and inconsistent with how links read inside `TugMarkdownView`
  * (which uses the same underlying `--tug7-*` tokens).
  *

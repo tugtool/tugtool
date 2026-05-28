@@ -1,4 +1,4 @@
-// session-lifecycle-log — single greppable trace stream for the Tide
+// session-lifecycle-log — single greppable trace stream for the Dev
 // session-id chain.
 //
 // Mirrors `tugdeck/src/lib/session-lifecycle-log.ts` and the Rust

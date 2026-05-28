@@ -1,5 +1,5 @@
 /**
- * `TideSessionInitBanner` — top-of-card chrome that surfaces the
+ * `DevSessionInitBanner` — top-of-card chrome that surfaces the
  * session's runtime metadata on first observation and again on any
  * change.
  *
@@ -56,7 +56,7 @@ import "./dev-session-init-banner.css";
 import React from "react";
 import { Cpu } from "lucide-react";
 
-import { TideCautionBadge } from "./dev-caution-badge";
+import { DevCautionBadge } from "./dev-caution-badge";
 import type { CautionFlag } from "@/components/tugways/cards/tool-blocks/types";
 
 // ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ export function hasSessionMetadataChanged(
  * adapter. The discriminant + payload match the dispatch's
  * `RenderInput`.
  */
-export interface TideSessionInitBannerInputProps {
+export interface DevSessionInitBannerInputProps {
   kind: "system_metadata";
   metadata: unknown;
   previousMetadata?: unknown;
@@ -176,12 +176,12 @@ export interface TideSessionInitBannerInputProps {
  * `RenderInput` itself), `context` (the dispatch context), and the
  * dispatch-threaded `caution`.
  */
-export interface TideSessionInitBannerProps {
-  input: TideSessionInitBannerInputProps;
+export interface DevSessionInitBannerProps {
+  input: DevSessionInitBannerInputProps;
   caution?: CautionFlag;
 }
 
-export const TideSessionInitBanner: React.FC<TideSessionInitBannerProps> = ({
+export const DevSessionInitBanner: React.FC<DevSessionInitBannerProps> = ({
   input,
   caution,
 }) => {
@@ -240,7 +240,7 @@ export const TideSessionInitBanner: React.FC<TideSessionInitBannerProps> = ({
           </code>
         </span>
       ) : null}
-      {caution !== undefined ? <TideCautionBadge caution={caution} /> : null}
+      {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}
     </div>
   );
 };

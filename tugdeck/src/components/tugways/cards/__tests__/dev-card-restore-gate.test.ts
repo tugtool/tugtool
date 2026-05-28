@@ -2,8 +2,8 @@
  * Pure-logic tests for `deriveColdRestoreActive` — the snapshot-
  * derivable half of the cold-restore reveal gate.
  *
- * The predicate decides whether `TideCardServicesGate` holds the
- * `TideRestoring` placeholder (true) or mounts `TideCardBody` (false).
+ * The predicate decides whether `DevCardServicesGate` holds the
+ * `DevRestoring` placeholder (true) or mounts `DevCardBody` (false).
  * Each test supplies a `ColdRestoreSignals` literal — the narrow
  * matrix-relevant subset of `CodeSessionSnapshot` the predicate reads.
  * The `revealed` one-shot latch the gate ANDs in is component state,
@@ -73,7 +73,7 @@ describe("deriveColdRestoreActive", () => {
 
   it("a non-null lastError forces the predicate false (preflight)", () => {
     // Any error must mount the body so its banner shows and
-    // useTideCardObserver can route a resume failure to the picker —
+    // useDevCardObserver can route a resume failure to the picker —
     // the placeholder never swallows a failure.
     expect(
       deriveColdRestoreActive(

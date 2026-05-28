@@ -1,7 +1,7 @@
 /* ============================================================================
    dev-card.css
    ============================================================================
-   Tide card — the Unified Command Surface.
+   Dev card — the Unified Command Surface.
 
    Horizontal TugSplitPane. The top pane (transcript) absorbs height
    growth; the bottom pane (entry) is pinned to a pixel size — defaults
@@ -19,7 +19,7 @@
   height: 100%;
   /* No `min-width` here — a leaf cannot widen its container, it only
      overflows and clips. The card's width floor is declared as
-     `sizePolicy.min.width` in `registerTideCard`; the hosting pane's
+     `sizePolicy.min.width` in `registerDevCard`; the hosting pane's
      resize clamp honors it (aggregated across the stack by
      `getStackSizePolicy`), so the card box is always wide enough and
      this surface never needs to constrain its own width. */
@@ -186,7 +186,7 @@
    ----------------------------------------------------------------------------
    The transcript / prompt-entry sash reads as the same separator line
    as the Z2 status bar's `border-top`: 1px, in the same border color.
-   Scoped to the Tide card's split pane — other split panes keep the
+   Scoped to the Dev card's split pane — other split panes keep the
    TugSplitPane 3px default. [L20] — the consuming card overrides the
    primitive's own `--tug-split-*` slots. The hit area is left at the
    primitive's default so the thinner line stays easy to grab.
@@ -246,7 +246,7 @@
    `replay_started` / `replay_complete` — the reducer reconstructs the
    committed turns one `turn_complete` at a time. Painting each
    intermediate state makes the transcript visibly accumulate while
-   the viewport chases the live edge: the restore FOUC. `TideTranscript
+   the viewport chases the live edge: the restore FOUC. `DevTranscript
    Host` sets `data-replaying` for the duration of that window; this
    rule holds the pane's paint dark until it clears, so the transcript
    reveals exactly once — fully reconstructed, at the restored scroll
@@ -446,7 +446,7 @@
 /* ─── Restoring placeholder (dev-session-restore in-flight) ─── */
 
 /* Card-body-filling container that holds the restoring panel
-   centered. Rendered by `TideRestoring` while a persisted session is
+   centered. Rendered by `DevRestoring` while a persisted session is
    being re-asserted through `spawn_session(mode=resume)` — replaces
    the picker for cards with a pending restore so no half-dismissed
    sheet flashes when the ack arrives. */
@@ -466,7 +466,7 @@
    inline rather than modal. Max-width so it reads as a focused
    status rather than sprawling to fill large cards.
 
-   Delay-gated: `TideRestoring` mounts this panel
+   Delay-gated: `DevRestoring` mounts this panel
    only once the restore has run past `RESTORE_PLACEHOLDER_DELAY_MS`,
    so for a fast restore it never appears. When it does mount, this
    one-shot keyframe fades it in so the centered panel arrives as a

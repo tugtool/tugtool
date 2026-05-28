@@ -1,5 +1,5 @@
 /**
- * Pure derivation of the Tide card's `<TugPaneBanner>` spec from the
+ * Pure derivation of the Dev card's `<TugPaneBanner>` spec from the
  * `CodeSessionSnapshot` plus a small UI-local context (the dismissed
  * error timestamp). The body renders **one** banner whose props
  * are computed by mapping the spec's discriminated kind to
@@ -24,8 +24,8 @@
  * `replay-loading` kind — a "Loading session…" strip shown during the
  * cold-boot preflight beat and the `phase === "replaying"` window. It
  * is gone: the restore-reveal coordination of D.2.A routes the whole
- * cold-restore window to the centered `TideRestoring` placeholder and
- * holds `TideCardBody` unmounted until `replay_complete`, so a
+ * cold-restore window to the centered `DevRestoring` placeholder and
+ * holds `DevCardBody` unmounted until `replay_complete`, so a
  * replay-window banner had no surface to mount on and nothing left to
  * communicate. The placeholder, delay-gated, is the single loading
  * affordance. The `error` / `transport` / `replay-timeout` kinds stay
@@ -46,7 +46,7 @@ import type { CodeSessionSnapshot } from "@/lib/code-session-store";
 /**
  * Subset of `LastErrorCause` that the card banner-routes. The full
  * cause includes `resume_failed`, which is intercepted upstream by
- * `useTideCardObserver` (the binding is cleared and the picker
+ * `useDevCardObserver` (the binding is cleared and the picker
  * re-presents with notice), so the card never banners it.
  */
 export type BannerErrorCause = Exclude<
@@ -54,8 +54,8 @@ export type BannerErrorCause = Exclude<
   "resume_failed"
 >;
 
-/** Discriminated union returned by `deriveTideCardBannerSpec`. */
-export type TideCardBannerSpec =
+/** Discriminated union returned by `deriveDevCardBannerSpec`. */
+export type DevCardBannerSpec =
   | { kind: "none" }
   | {
       kind: "error";
@@ -81,7 +81,7 @@ export type TideCardBannerSpec =
  * error). Future fields stay in this object so the helper signature
  * doesn't churn each time we surface a new transient banner state.
  */
-export interface TideCardBannerCtx {
+export interface DevCardBannerCtx {
   dismissedAt: number | null;
 }
 
@@ -94,13 +94,13 @@ export interface TideCardBannerCtx {
  * - none otherwise
  *
  * The cold-restore loading window is NOT a banner — it is the
- * `TideRestoring` placeholder; this helper runs only once
- * `TideCardBody` is mounted, i.e. after the restore has resolved.
+ * `DevRestoring` placeholder; this helper runs only once
+ * `DevCardBody` is mounted, i.e. after the restore has resolved.
  */
-export function deriveTideCardBannerSpec(
+export function deriveDevCardBannerSpec(
   snap: CodeSessionSnapshot,
-  ctx: TideCardBannerCtx,
-): TideCardBannerSpec {
+  ctx: DevCardBannerCtx,
+): DevCardBannerSpec {
   if (
     snap.lastError !== null &&
     snap.lastError.cause !== "resume_failed" &&

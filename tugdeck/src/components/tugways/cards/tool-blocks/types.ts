@@ -1,5 +1,5 @@
 /**
- * Shared types for the Tide assistant-rendering tool-block layer.
+ * Shared types for the Dev assistant-rendering tool-block layer.
  *
  * These contracts are consumed by:
  *   - `dev-assistant-renderer-dispatch.ts` — the registry + dispatch logic

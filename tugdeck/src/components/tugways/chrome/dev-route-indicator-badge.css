@@ -3,13 +3,13 @@
      `color` alone and carry a `@tug-renders-on` annotation naming the
      popover surface. The badge itself is a composed `TugBadge` — it
      owns its surface and tokens; this file declares none for it.
-   `TideRouteIndicatorBadge` is the Z4B route-aware indicator badge
+   `DevRouteIndicatorBadge` is the Z4B route-aware indicator badge
    plus its click-expand report. The badge is a `TugBadge`; only the
    report geometry lives here, under `--tugx-route-indicator-*`.
 */
 
 /**
- * dev-route-indicator-badge.css — `TideRouteIndicatorBadge` report
+ * dev-route-indicator-badge.css — `DevRouteIndicatorBadge` report
  * styling. The badge is a composed `TugBadge`; only the popover
  * report is dressed here.
  *

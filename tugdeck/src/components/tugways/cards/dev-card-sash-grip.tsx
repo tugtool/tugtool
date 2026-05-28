@@ -1,7 +1,7 @@
 /**
  * dev-card-sash-grip.tsx — Z2 sash grip.
  *
- * A pointer drag-handle pinned to the leading end of the Tide card's
+ * A pointer drag-handle pinned to the leading end of the Dev card's
  * Z2 status bar. The status bar sits between the transcript and the
  * prompt entry, directly above the split-pane sash; with the bar
  * occupying that band, the sash's own thin hit line is easy to miss.
@@ -53,7 +53,7 @@ import { TugPushButton } from "../tug-push-button";
  */
 const DRAGGING_CLASS = "dev-card-sash-dragging";
 
-export interface TideCardSashGripProps {
+export interface DevCardSashGripProps {
   /**
    * Handle for the split pane's bottom (prompt-entry) panel. The grip
    * resizes this panel; the sash position follows from it.
@@ -84,11 +84,11 @@ interface DragState {
  * One end-of-status-bar sash grip. Render two — `side="start"` and
  * `side="end"` — flanking the Z2 status content.
  */
-export function TideCardSashGrip({
+export function DevCardSashGrip({
   entryPanelRef,
   side,
   disabled = false,
-}: TideCardSashGripProps): React.ReactElement {
+}: DevCardSashGripProps): React.ReactElement {
   const dragRef = useRef<DragState | null>(null);
 
   const handlePointerDown = useCallback(

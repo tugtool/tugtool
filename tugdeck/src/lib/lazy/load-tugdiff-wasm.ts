@@ -4,7 +4,7 @@
  * only the shape of the engine; the singleton-promise plumbing lives
  * in one place ([wasm-init.ts](./wasm-init.ts)).
  *
- * Per [D10] the diff engine is excluded from the boot bundle: a Tide
+ * Per [D10] the diff engine is excluded from the boot bundle: a Dev
  * card that never renders a `<DiffBlock>` pays no cost for it.
  *
  * @module lib/lazy/load-tugdiff-wasm

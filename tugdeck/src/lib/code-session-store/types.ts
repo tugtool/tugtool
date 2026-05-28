@@ -1,5 +1,5 @@
 /**
- * Public types for `CodeSessionStore` — the per-Tide-card L02 store that
+ * Public types for `CodeSessionStore` — the per-Dev-card L02 store that
  * owns Claude Code turn state.
  *
  * [D03] three-identifier model
@@ -451,7 +451,7 @@ export interface ContextBreakdownCategory {
 
 /**
  * Reducer projection of the most-recent `context_breakdown` wire
- * frame. Drives the Tide card's Context popover when present. The
+ * frame. Drives the Dev card's Context popover when present. The
  * popover paints the categories in array order; `contextMax` is the
  * model's context-window cap (so the renderer can compute the
  * free-space remainder).
@@ -540,7 +540,7 @@ export interface CodeSessionSnapshot {
    * and never changes thereafter; a re-bind (close + reopen) builds
    * a fresh services bag with a fresh store.
    *
-   * Consumed today by `deriveTideCardBannerSpec` to suppress the
+   * Consumed today by `deriveDevCardBannerSpec` to suppress the
    * "Loading session…" banner during the JSONL replay round-trip
    * for new sessions (where there is no JSONL to replay). Branch 1
    * (the cold-boot preflight beat) is gated upstream — only resume
@@ -576,7 +576,7 @@ export interface CodeSessionSnapshot {
    * matching `TurnEntry` commits to `transcript`
    * (`turn_complete(success)` / `turn_complete(error)` / interrupt).
    *
-   * Drives every in-flight row in the Tide card transcript: the data
+   * Drives every in-flight row in the Dev card transcript: the data
    * source iterates `activeTurn.messages` the same way it iterates
    * `turn.messages` for committed turns — one substrate, two lifecycle
    * slots ([D07]).
@@ -698,7 +698,7 @@ export interface CodeSessionSnapshot {
    * readers can distinguish a clean replay from each error variant by
    * `kind` alone.
    *
-   * The `TideRestoring` placeholder reads this for the timeout-state
+   * The `DevRestoring` placeholder reads this for the timeout-state
    * copy (`kind === "replay_timeout"`); cleared back to `null` on the
    * next `replay_started` so the field always reflects the most
    * recent window's outcome rather than accumulating history.

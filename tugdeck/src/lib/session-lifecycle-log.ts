@@ -1,5 +1,5 @@
 /**
- * session-lifecycle-log — single greppable trace stream for the Tide
+ * session-lifecycle-log — single greppable trace stream for the Dev
  * session-id chain.
  *
  * Every handoff in the spawn / resume / history flow emits one line

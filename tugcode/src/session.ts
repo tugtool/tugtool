@@ -379,9 +379,9 @@ export interface ClaudeSpawnConfig {
 }
 
 /**
- * Tide-side system-prompt nudge appended to every spawn.
+ * Dev-side system-prompt nudge appended to every spawn.
  *
- * Tide renders each tool call as a structured visual block (icon +
+ * Dev renders each tool call as a structured visual block (icon +
  * verb-qualified header + per-tool body), so the user sees the input
  * and result without the model needing to restate it in prose. Without
  * a nudge, Claude defaults to "tool result + prose summary" — which
@@ -398,7 +398,7 @@ export interface ClaudeSpawnConfig {
  * necessary in the first place. Tackling redundancy from both ends.
  */
 const TIDE_SYSTEM_PROMPT_NUDGE =
-  "The user is reading this conversation in Tide, which renders each " +
+  "The user is reading this conversation in Dev, which renders each " +
   "tool call as a structured visual block — icon, verb-qualified header, " +
   "and per-tool body showing inputs and results. The block is the user's " +
   "primary surface for what the tool did and what it returned. Do not " +

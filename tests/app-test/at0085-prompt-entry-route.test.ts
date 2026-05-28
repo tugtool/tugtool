@@ -24,7 +24,7 @@
  *
  * ## Test matrix
  *
- *   4 tests, one card (`gallery-prompt-entry` — the same wrapper Tide
+ *   4 tests, one card (`gallery-prompt-entry` — the same wrapper Dev
  *   uses, exercised by [AT0024]):
  *
  *   1. A non-default route (`$` Shell) survives `appReload` — Risk R02.

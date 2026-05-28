@@ -333,7 +333,7 @@ export const VIRTUALIZED_PADDING_PX = 6;
 /**
  * Viewport height (in lines) the virtualized scroll container caps
  * itself at. Beyond this the user scrolls. 24 lines × 20 px ≈ 480 px,
- * a comfortable inline height inside a Tide row.
+ * a comfortable inline height inside a Dev row.
  */
 export const VIRTUAL_VIEWPORT_LINES = 24;
 

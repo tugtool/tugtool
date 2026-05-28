@@ -71,13 +71,13 @@ const STACKED_ENTRIES: ReadonlyArray<StackedDemoEntry> = [
   // Short single-line description.
   {
     label: "Allow for this session",
-    description: "Permits this command for the current Tide session only.",
+    description: "Permits this command for the current Dev session only.",
   },
   // Medium description.
   {
     label: "Allow for this project",
     description:
-      "Adds a project-scoped rule. The setting persists for this project across Tide restarts but does not apply to other projects on this machine.",
+      "Adds a project-scoped rule. The setting persists for this project across Dev restarts but does not apply to other projects on this machine.",
   },
   // Long description that wraps multiple lines.
   {
@@ -112,7 +112,7 @@ const CHECK_CHOICES: ReadonlyArray<ChoiceEntry> = [
   {
     id: "telemetry",
     label: "Anonymous telemetry",
-    description: "Send anonymized usage metrics back to the Tide team.",
+    description: "Send anonymized usage metrics back to the Dev team.",
   },
   {
     id: "autosave",
@@ -125,7 +125,7 @@ const RADIO_CHOICES: ReadonlyArray<ChoiceEntry> = [
   {
     id: "allow-session",
     label: "Allow for this session",
-    description: "The rule lives in memory and clears when Tide quits.",
+    description: "The rule lives in memory and clears when Dev quits.",
   },
   {
     id: "allow-project",
@@ -340,8 +340,8 @@ export function GalleryTugDialogButton(): React.ReactElement {
             description={
               <>
                 Removes <code>~/Projects/tugtool</code> and all of its history
-                from Tide. The directory on disk is untouched, but you will
-                lose every Tide-side annotation, watch, and saved layout.
+                from Dev. The directory on disk is untouched, but you will
+                lose every Dev-side annotation, watch, and saved layout.
               </>
             }
             role="danger"

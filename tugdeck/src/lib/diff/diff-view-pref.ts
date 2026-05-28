@@ -79,7 +79,7 @@ function getDiffViewMode(cardId: string): DiffViewMode | null {
 export function useDiffViewMode(cardId: string | undefined): DiffViewMode | null {
   // `getSnapshot` must close over the current `cardId` so it tracks
   // re-renders if the consumer ever changes the cardId on the fly.
-  // For our canonical Tide-card consumer the cardId is stable for
+  // For our canonical Dev-card consumer the cardId is stable for
   // the component's lifetime, but the hook supports the general
   // case.
   const getSnapshot = React.useCallback((): DiffViewMode | null => {

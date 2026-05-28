@@ -1,6 +1,6 @@
 /**
  * picker-notice-store — one-shot per-card notices that survive the
- * unbind→remount cycle when the Tide picker re-presents itself.
+ * unbind→remount cycle when the Dev picker re-presents itself.
  *
  * On resume-failed, the card observer unbinds so the picker
  * re-presents instead of silently rebranding the session under a
@@ -12,13 +12,13 @@
  */
 
 /**
- * Notice categories surfaced by the Tide picker when it re-presents
+ * Notice categories surfaced by the Dev picker when it re-presents
  * itself after a failed, canceled, or timed-out restore.
  *
  * - `resume_failed` — tugcast emitted `SESSION_STATE: errored` for a
  *   restoring session, or the post-binding observer tripped on a
  *   resume failure.
- * - `restore_canceled` — user clicked Cancel in `TideRestoring`.
+ * - `restore_canceled` — user clicked Cancel in `DevRestoring`.
  * - `restore_timed_out` — restore-registry timeout elapsed without
  *   either a binding or an errored response.
  *

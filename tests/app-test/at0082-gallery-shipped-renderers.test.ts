@@ -1,11 +1,11 @@
 /**
  * at0082-gallery-shipped-renderers.test.ts — render-half verification
- * for the Tide assistant-rendering gallery cards (batch 1, [#step-14-5]).
+ * for the Dev assistant-rendering gallery cards (batch 1, [#step-14-5]).
  *
  * # What this proves
  *
  * [#step-14-5] ships gallery cards for the renderers landed through
- * [#step-13]: the `TideThinkingBlock` chrome, the `JsonTreeBlock` body
+ * [#step-13]: the `DevThinkingBlock` chrome, the `JsonTreeBlock` body
  * kind, the file tool wrappers (`ReadToolBlock` / `EditToolBlock`), and
  * the `DefaultToolWrapper` fallback. It also extends the pre-existing
  * `gallery-bash-tool-block` card.

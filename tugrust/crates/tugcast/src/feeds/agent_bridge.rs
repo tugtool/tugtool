@@ -214,7 +214,7 @@ pub trait ChildSpawner: Send + Sync + 'static {
     /// routing key, and that claude adopts as its own session id (via
     /// `--session-id` for new, `--resume` for resume).
     ///
-    /// `session_mode` is the user's new-vs-resume choice from the Tide
+    /// `session_mode` is the user's new-vs-resume choice from the Dev
     /// picker. Forwarded to tugcode as `--session-mode new|resume`.
     ///
     /// `resume_claude_session_id` is the persisted claude session id for

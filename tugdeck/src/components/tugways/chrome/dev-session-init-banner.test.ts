@@ -1,5 +1,5 @@
 /**
- * Pure-logic tests for `TideSessionInitBanner`'s wire narrowing and
+ * Pure-logic tests for `DevSessionInitBanner`'s wire narrowing and
  * the [D03] diff logic.
  *
  *  - `narrowSessionMetadata` — defensive narrowing of the wire
@@ -8,7 +8,7 @@
  *    (model, permissionMode, version, cwd) + deep on
  *    (tools, skills, agents).
  *  - The dispatch routes `system_metadata` to the real
- *    `TideSessionInitBanner` (via `KIND_RENDERERS.system_metadata`).
+ *    `DevSessionInitBanner` (via `KIND_RENDERERS.system_metadata`).
  *
  * No DOM: per the project's testing policy these are `bun:test`
  * pure-logic assertions, not fake-DOM render tests.
@@ -17,7 +17,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  TideSessionInitBanner,
+  DevSessionInitBanner,
   hasSessionMetadataChanged,
   narrowSessionMetadata,
 } from "./dev-session-init-banner";
@@ -155,7 +155,7 @@ describe("hasSessionMetadataChanged", () => {
 // ---------------------------------------------------------------------------
 
 describe("system_metadata dispatch wiring", () => {
-  test("KIND_RENDERERS.system_metadata is TideSessionInitBanner", () => {
-    expect(KIND_RENDERERS.system_metadata).toBe(TideSessionInitBanner);
+  test("KIND_RENDERERS.system_metadata is DevSessionInitBanner", () => {
+    expect(KIND_RENDERERS.system_metadata).toBe(DevSessionInitBanner);
   });
 });

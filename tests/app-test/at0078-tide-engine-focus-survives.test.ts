@@ -64,7 +64,7 @@ describe.skipIf(!SHOULD_RUN)("AT0078: dev-card engine focus survives app-switch"
         await app.seedDeckState({
           state: {
             cards: [
-              { id: "A", componentId: "tide", title: "Tide A", closable: true },
+              { id: "A", componentId: "tide", title: "Dev A", closable: true },
             ],
             panes: [
               {
@@ -87,7 +87,7 @@ describe.skipIf(!SHOULD_RUN)("AT0078: dev-card engine focus survives app-switch"
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
 
-        await app.bindTideSession("A");
+        await app.bindDevSession("A");
         await app.awaitEngineReady("A");
 
         // Click into the tide editor; focus lands on contenteditable.

@@ -2,7 +2,7 @@
    dev-card-sash-grip.css
    ============================================================================
    Z2 sash grip — a pointer drag-handle pinned to the leading end of the
-   Tide card's status bar. Drives the horizontal split-pane sash the
+   Dev card's status bar. Drives the horizontal split-pane sash the
    status bar sits on; see `dev-card-sash-grip.tsx`.
 
    The grip renders as a `TugPushButton` (icon subtype), so it is

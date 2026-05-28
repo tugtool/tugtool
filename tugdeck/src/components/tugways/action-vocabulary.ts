@@ -340,11 +340,11 @@ export const TUG_ACTIONS = {
   FIND_PREVIOUS:          "find-previous",
   TOGGLE_MAXIMIZE:        "toggle-maximize",
 
-  // ---- Tide session management ----
+  // ---- Dev session management ----
   //
   // REQUEST_TRASH_SESSION:  payload — `{ sessionId: string }`. Dispatched
   //                         by the trash icon on a `session-resume` row
-  //                         in the Tide picker; handled by the picker
+  //                         in the Dev picker; handled by the picker
   //                         form responder, which sets a pending-id state
   //                         that drives a single anchored `TugConfirmPopover`.
   //                         The actual move-to-trash runs in the form's

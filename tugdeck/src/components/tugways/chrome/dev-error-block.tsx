@@ -1,5 +1,5 @@
 /**
- * `TideErrorBlock` — inline chrome for an `error` event in the
+ * `DevErrorBlock` — inline chrome for an `error` event in the
  * transcript flow.
  *
  * The wire `error` event carries `{ message: string, recoverable:
@@ -47,14 +47,14 @@ import { AlertCircle, AlertTriangle, Copy, RotateCw } from "lucide-react";
  * shape so the dispatch can route to the component without an
  * adapter.
  */
-export interface TideErrorBlockInputProps {
+export interface DevErrorBlockInputProps {
   kind: "error";
   message: string;
   recoverable: boolean;
 }
 
-export interface TideErrorBlockProps {
-  input: TideErrorBlockInputProps;
+export interface DevErrorBlockProps {
+  input: DevErrorBlockInputProps;
   /**
    * Optional Retry callback. Only consulted when
    * `input.recoverable === true`. When omitted on a recoverable
@@ -69,7 +69,7 @@ export interface TideErrorBlockProps {
  */
 export const COPIED_FLASH_MS = 1200;
 
-export const TideErrorBlock: React.FC<TideErrorBlockProps> = ({
+export const DevErrorBlock: React.FC<DevErrorBlockProps> = ({
   input,
   onRetry,
 }) => {

@@ -575,7 +575,7 @@ describe("dispatch — shape drift routing", () => {
       detail: "Read: file: expected object, got number",
     });
     // The caution is threaded onto the props so the chrome paints the
-    // inline `TideCautionBadge`.
+    // inline `DevCautionBadge`.
     expect((result.props as { caution?: unknown }).caution).toEqual(
       result.caution,
     );

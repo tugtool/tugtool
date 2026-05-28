@@ -83,7 +83,7 @@ body {
      mode renders in fallback mode (see `#step-20-4-7-c`). Each tone
      maps to a `--tug7-surface-control-primary-filled-<role>-rest`
      token in the seven-role palette; the chosen role-to-tone mapping
-     is not arbitrary — it's the same color vocabulary Tide's
+     is not arbitrary — it's the same color vocabulary Dev's
      lifecycle indicator + status surfaces use, so the user's eye
      learns one palette across all per-area surfaces. "remainder" is
      a one-hop alias for the shared track color so the unused-

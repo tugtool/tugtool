@@ -48,7 +48,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     static let defaultPageZoom: CGFloat = 1.0
 
     /// Minimum content size the user can resize the window down to.
-    /// Tide + the canvas need this much room to lay out without
+    /// Dev + the canvas need this much room to lay out without
     /// clipping the prompt area or stat row.
     static let minWindowSize = NSSize(width: 1200, height: 1000)
 

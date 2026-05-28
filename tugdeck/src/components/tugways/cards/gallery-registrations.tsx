@@ -91,14 +91,14 @@ import { GalleryShareOnboardingGuideToolBlock } from "./gallery-share-onboarding
 import { GalleryRemoteTriggerToolBlock } from "./gallery-remote-trigger-tool-block";
 import { GalleryTaskInlineToolBlock } from "./gallery-task-inline-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
-import { GalleryTideThinking } from "./gallery-dev-thinking";
+import { GalleryDevThinking } from "./gallery-dev-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
 import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryToolBlockNetwork } from "./gallery-tool-block-network";
 import { GalleryToolBlockSearch } from "./gallery-tool-block-search";
 import { GalleryImageBlock } from "./gallery-image-block";
-import { GalleryTideChrome } from "./gallery-dev-chrome";
+import { GalleryDevChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
@@ -462,7 +462,7 @@ export function registerGalleryCards(): void {
   // ===========================================================================
   // Block Renderers
   //
-  // Tide assistant-rendering surfaces: the body kinds, tool blocks,
+  // Dev assistant-rendering surfaces: the body kinds, tool blocks,
   // and chrome that render a transcript's tool calls and reasoning.
   // ===========================================================================
 
@@ -644,13 +644,13 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.blockRenderers,
   });
 
-  // Tide chrome — SessionInitBanner ([#step-29]) + ErrorBlock
+  // Dev chrome — SessionInitBanner ([#step-29]) + ErrorBlock
   // ([#step-29]) + CautionBadge (pre-existing). One card hosts all
   // three so the per-card chrome surfaces co-locate visually.
   registerCard({
     componentId: "gallery-dev-chrome",
-    contentFactory: (_cardId) => <GalleryTideChrome />,
-    defaultMeta: { title: "Tide Chrome (banner / error / caution)", icon: "Layers", closable: true },
+    contentFactory: (_cardId) => <GalleryDevChrome />,
+    defaultMeta: { title: "Dev Chrome (banner / error / caution)", icon: "Layers", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
@@ -683,11 +683,11 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.blockRenderers,
   });
 
-  // TideThinkingBlock — the inline collapsible reasoning chrome.
+  // DevThinkingBlock — the inline collapsible reasoning chrome.
   registerCard({
     componentId: "gallery-dev-thinking",
-    contentFactory: (_cardId) => <GalleryTideThinking />,
-    defaultMeta: { title: "TideThinkingBlock", icon: "Brain", closable: true },
+    contentFactory: (_cardId) => <GalleryDevThinking />,
+    defaultMeta: { title: "DevThinkingBlock", icon: "Brain", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

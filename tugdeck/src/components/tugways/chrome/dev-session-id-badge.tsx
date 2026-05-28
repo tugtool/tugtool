@@ -1,5 +1,5 @@
 /**
- * `TideSessionIdBadge` — dev-only Z4B chip showing the truncated
+ * `DevSessionIdBadge` — dev-only Z4B chip showing the truncated
  * `tugSessionId` of the card's current binding.
  *
  * Purpose: surface "which session am I bound to right now?" inline so
@@ -24,7 +24,7 @@ import { TugBadge } from "@/components/tugways/tug-badge";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { isDevEnv } from "@/lib/dev-env";
 
-export interface TideSessionIdBadgeProps {
+export interface DevSessionIdBadgeProps {
   /** The card whose binding's session id to display. */
   cardId: string;
 }
@@ -33,9 +33,9 @@ export interface TideSessionIdBadgeProps {
  *  across cards, short enough to fit in the indicator strip. */
 const TRUNCATE_LENGTH = 8;
 
-export function TideSessionIdBadge({
+export function DevSessionIdBadge({
   cardId,
-}: TideSessionIdBadgeProps): React.ReactElement | null {
+}: DevSessionIdBadgeProps): React.ReactElement | null {
   const tugSessionId = React.useSyncExternalStore(
     cardSessionBindingStore.subscribe,
     React.useCallback(

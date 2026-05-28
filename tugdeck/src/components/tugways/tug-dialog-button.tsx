@@ -25,7 +25,7 @@
  *     +----------------------------------------+
  *     |  Allow for this session    [trailing]  |
  *     |  Permits this command for the          |
- *     |  duration of the current Tide session. |
+ *     |  duration of the current Dev session. |
  *     +----------------------------------------+
  *
  * Visual continuity with `TugPushButton`'s outlined-action variant —

@@ -61,7 +61,7 @@
  *
  * Decisions:
  *  - [D05] two-layer split: this body kind owns the list rendering;
- *    the pinned `Z2A` renderer (`TideCardPinnedTodo`) is its sole
+ *    the pinned `Z2A` renderer (`DevCardPinnedTodo`) is its sole
  *    consumer post-[D100].
  *  - [D100] pinned `Z2A` slot; standalone composition; per-row
  *    description in a tooltip.

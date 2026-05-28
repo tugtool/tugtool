@@ -210,7 +210,7 @@ export interface SeedDeckStateArgs {
 
 /**
  * One step in driving a bound tide card's `CodeSessionStore` through
- * the lifecycle matrix — consumed by {@link TugTestSurface.driveTideSession}.
+ * the lifecycle matrix — consumed by {@link TugTestSurface.driveDevSession}.
  *
  *  - `send` — submit a user message (`store.send`); a mid-turn `send`
  *    queues, exactly as the prompt-entry does.
@@ -223,7 +223,7 @@ export interface SeedDeckStateArgs {
  *  - `transportClose` / `transportReconnect` — drive the transport
  *    overlay without touching the real shared connection.
  */
-export type TideSessionDriveAction =
+export type DevSessionDriveAction =
   | { op: "send"; text: string; atoms?: AtomSegment[] }
   | { op: "ingestFrame"; feedId: number; decoded: unknown }
   | { op: "interrupt" }
@@ -534,8 +534,8 @@ export interface TugTestSurface {
 
   /**
    * Bind a fake session for a tide card so it skips past the
-   * project-picker UI and renders TideCardBody directly. Without a
-   * binding, `useTideCardServices` returns `null` and dev-card
+   * project-picker UI and renders DevCardBody directly. Without a
+   * binding, `useDevCardServices` returns `null` and dev-card
    * shows the picker; production sets the binding from a
    * `spawn_session_ok` CONTROL ack that requires a live tugcast +
    * tugcode + Claude pipeline. Tests that exercise dev-specific
@@ -555,7 +555,7 @@ export interface TugTestSurface {
    *
    * Test-mode-only. Available when `window.__tugTestMode === true`.
    */
-  bindTideSession(
+  bindDevSession(
     cardId: string,
     options?: {
       tugSessionId?: string;
@@ -565,7 +565,7 @@ export interface TugTestSurface {
        * `"new" | "resume"` — the user's session-mode intent at
        * card-open time. Threaded onto `CodeSessionSnapshot.sessionMode`
        * by `cardServicesStore` so pure derivations (e.g.
-       * `deriveTideCardBannerSpec`) can branch on it. Defaults to
+       * `deriveDevCardBannerSpec`) can branch on it. Defaults to
        * `"new"` so existing tests, which model the fresh-bind path,
        * keep their current semantics; tests that exercise resume
        * behavior (cold-boot preflight, replay-loading banner, etc.)
@@ -575,20 +575,20 @@ export interface TugTestSurface {
     },
   ): void;
 
-  // ---- Tide lifecycle-matrix driving (SURFACE_VERSION 1.6.0) ----
+  // ---- Dev lifecycle-matrix driving (SURFACE_VERSION 1.6.0) ----
 
   /**
    * Drive a bound tide card's `CodeSessionStore` one step through the
    * lifecycle matrix. Resolves the card's services via
    * `cardServicesStore`; throws if the card is not bound (call
-   * `bindTideSession` first). See {@link TideSessionDriveAction} for
+   * `bindDevSession` first). See {@link DevSessionDriveAction} for
    * the step vocabulary.
    *
    * The app-test matrix-coordination test drives a tide card through
    * every distinct matrix row with this and asserts the rendered
    * Z1 / Z2 / Z5 zones. Test-mode-only.
    */
-  driveTideSession(cardId: string, action: TideSessionDriveAction): void;
+  driveDevSession(cardId: string, action: DevSessionDriveAction): void;
 
   /**
    * Read the deck's current `hasFocus` state. The deck's
@@ -1338,7 +1338,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       return false;
     },
 
-    bindTideSession(
+    bindDevSession(
       cardId: string,
       options?: {
         tugSessionId?: string;
@@ -1355,12 +1355,12 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       });
     },
 
-    driveTideSession(cardId: string, action: TideSessionDriveAction): void {
+    driveDevSession(cardId: string, action: DevSessionDriveAction): void {
       const services = cardServicesStore.getServices(cardId);
       if (services === null) {
         throw new Error(
-          `driveTideSession: card "${cardId}" has no bound session — ` +
-            `call bindTideSession("${cardId}") first`,
+          `driveDevSession: card "${cardId}" has no bound session — ` +
+            `call bindDevSession("${cardId}") first`,
         );
       }
       const store = services.codeSessionStore;
@@ -1383,7 +1383,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         default: {
           const exhaustive: never = action;
           throw new Error(
-            `driveTideSession: unknown action ${JSON.stringify(exhaustive)}`,
+            `driveDevSession: unknown action ${JSON.stringify(exhaustive)}`,
           );
         }
       }

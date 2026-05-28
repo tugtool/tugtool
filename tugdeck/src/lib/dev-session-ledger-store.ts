@@ -1,5 +1,5 @@
 /**
- * TideSessionLedgerStore — tugdeck-side cache for the tugcast session ledger.
+ * DevSessionLedgerStore — tugdeck-side cache for the tugcast session ledger.
  *
  * Backs the picker's session list view. Cached by raw user-typed
  * `projectDir` — the server matches the request against the ledger's
@@ -78,7 +78,7 @@ interface RowLocation {
   projectDir: string;
 }
 
-export class TideSessionLedgerStore {
+export class DevSessionLedgerStore {
   private readonly conn: TugConnection;
   private readonly snapshots = new Map<string, WorkspaceSnapshot>();
   /** Reverse index from session_id → workspace, kept in lockstep with snapshots. */
@@ -289,15 +289,15 @@ export class TideSessionLedgerStore {
  * boot path (similar to `cardServicesStore.attachDeckManager`). `null`
  * before wire-up; tests construct their own instances.
  */
-let _activeStore: TideSessionLedgerStore | null = null;
+let _activeStore: DevSessionLedgerStore | null = null;
 
-export function attachTideSessionLedgerStore(conn: TugConnection): TideSessionLedgerStore {
+export function attachDevSessionLedgerStore(conn: TugConnection): DevSessionLedgerStore {
   if (_activeStore !== null) return _activeStore;
-  _activeStore = new TideSessionLedgerStore(conn);
+  _activeStore = new DevSessionLedgerStore(conn);
   return _activeStore;
 }
 
-export function getTideSessionLedgerStore(): TideSessionLedgerStore | null {
+export function getDevSessionLedgerStore(): DevSessionLedgerStore | null {
   return _activeStore;
 }
 
@@ -305,7 +305,7 @@ export function getTideSessionLedgerStore(): TideSessionLedgerStore | null {
  * Test-only: detach the singleton so each test can attach a fresh one
  * with its own mock connection.
  */
-export function _resetTideSessionLedgerStoreForTest(): void {
+export function _resetDevSessionLedgerStoreForTest(): void {
   _activeStore?.dispose();
   _activeStore = null;
 }

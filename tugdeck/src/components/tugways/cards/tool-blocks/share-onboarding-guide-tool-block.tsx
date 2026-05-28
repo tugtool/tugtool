@@ -16,7 +16,7 @@
  * Composition (Spec S03, [#bk-conformance]):
  *  - `ToolBlockChrome` owns the frame: a `BookOpen` icon + the
  *    composed tool-name string (`Share Onboarding Guide · <mode>`),
- *    the status stripe, the inline `TideCautionBadge` (when the
+ *    the status stripe, the inline `DevCautionBadge` (when the
  *    dispatch flagged drift), and the error band.
  *  - **Header** — the mode rides the args slot (`check` / `update`
  *    / `create` / `delete`); the `Share Onboarding Guide ·` prefix

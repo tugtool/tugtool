@@ -14,12 +14,12 @@ import {
   TIDE_SESSION_PHASE_LABELS,
   tideSessionPhaseKey,
   tideSessionPhaseVisual,
-  type TideSessionPhaseInput,
+  type DevSessionPhaseInput,
 } from "../session-phase-visual";
 
 function input(
-  overrides: Partial<TideSessionPhaseInput>,
-): TideSessionPhaseInput {
+  overrides: Partial<DevSessionPhaseInput>,
+): DevSessionPhaseInput {
   return {
     phase: "idle",
     transportState: "online",

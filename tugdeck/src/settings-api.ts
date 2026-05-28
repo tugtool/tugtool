@@ -250,7 +250,7 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
 
 /**
  * Response-settings shape stored in tugbank. One presentation knob for
- * the Tide card's transcript pane (top pane, distinct from the editor
+ * the Dev card's transcript pane (top pane, distinct from the editor
  * pane below it):
  *
  *   - `entryMargin`: inter-entry vertical gap in CSS pixels.
@@ -387,7 +387,7 @@ export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout):
   });
 }
 
-// ── Tide recent projects ────────────────────────────────────────────────────
+// ── Dev recent projects ────────────────────────────────────────────────────
 
 /** Maximum number of recent-project paths retained in the quick-pick list. */
 export const TIDE_RECENT_PROJECTS_MAX = 5;
@@ -404,7 +404,7 @@ export const TIDE_RECENT_PROJECTS_MAX = 5;
  * identifier so every consumer (recents, session-id map, bind
  * payload, tugcode's persistence) reads and writes the same string.
  */
-export function readTideRecentProjects(client: TugbankClient): string[] {
+export function readDevRecentProjects(client: TugbankClient): string[] {
   const entry = client.get("dev.tugtool.tide", "recent-projects");
   if (!entry || entry.kind !== "json" || entry.value === undefined) {
     return [];
@@ -421,7 +421,7 @@ export function readTideRecentProjects(client: TugbankClient): string[] {
  * Callers are responsible for dedup + capping; the helper writes the list
  * verbatim.
  */
-export function putTideRecentProjects(paths: string[]): void {
+export function putDevRecentProjects(paths: string[]): void {
   fetch("/api/defaults/dev.tugtool.tide/recent-projects", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -434,9 +434,9 @@ export function putTideRecentProjects(paths: string[]): void {
 /**
  * Prepend `projectDir` onto `existing`, dedup case-sensitively, and cap at
  * `TIDE_RECENT_PROJECTS_MAX`. Pure helper so callers can compose the new
- * list before handing it to `putTideRecentProjects`.
+ * list before handing it to `putDevRecentProjects`.
  */
-export function insertTideRecentProject(existing: string[], projectDir: string): string[] {
+export function insertDevRecentProject(existing: string[], projectDir: string): string[] {
   const next = [projectDir, ...existing.filter((p) => p !== projectDir)];
   return next.slice(0, TIDE_RECENT_PROJECTS_MAX);
 }

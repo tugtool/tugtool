@@ -1,5 +1,5 @@
 /**
- * R-CHAIN integration tests — end-to-end-ish coverage of the Tide
+ * R-CHAIN integration tests — end-to-end-ish coverage of the Dev
  * session-id chain at the tugdeck layer.
  *
  * Each scenario drives the data-and-wire flow that a real picker →
@@ -219,11 +219,11 @@ function makeStore(
 }
 
 /**
- * Hand-rolled mirror of `useTideCardObserver` (the React hook) so
+ * Hand-rolled mirror of `useDevCardObserver` (the React hook) so
  * scenario tests can attach the resume-failed unbind logic outside
  * the renderer. The single source of behavioral truth lives in the
  * production hook; this mirror exists because the tests exercise the
- * chain without rendering TideCardBody. If the hook body changes,
+ * chain without rendering DevCardBody. If the hook body changes,
  * update this mirror or migrate the test to RTL.
  */
 function installCardObserver(

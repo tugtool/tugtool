@@ -1,6 +1,6 @@
 /**
  * `tug-prompt-entry-submit-button` — the pure projection from a
- * `TideSubmitButtonMode` onto the prompt-entry submit / stop button's
+ * `DevSubmitButtonMode` onto the prompt-entry submit / stop button's
  * view.
  *
  * The submit button is a single `<button>` DOM node whose appearance
@@ -19,7 +19,7 @@
  * @module components/tugways/tug-prompt-entry-submit-button
  */
 
-import type { TideSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
+import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 
 /** The submit button's view for one `submitButtonMode` kind. */
 export interface SubmitButtonView {
@@ -59,7 +59,7 @@ export interface SubmitButtonView {
  * separate `+` button rather than changing this primary button.
  */
 export function resolveSubmitButtonView(
-  mode: TideSubmitButtonMode,
+  mode: DevSubmitButtonMode,
 ): SubmitButtonView {
   switch (mode.kind) {
     case "submit":

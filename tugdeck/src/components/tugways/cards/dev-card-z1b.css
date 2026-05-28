@@ -33,8 +33,8 @@
 /* ============================================================================
    Z1B slot div — always-mounted container ([L26])
    ============================================================================
-   Per [D19], TideZ1B owns committed-end-state only — the live
-   thinking indicator now lives in `TideZ1C` (transcript-level
+   Per [D19], DevZ1B owns committed-end-state only — the live
+   thinking indicator now lives in `DevZ1C` (transcript-level
    chrome below the list view, not a row). The slot div is still
    unconditionally rendered across the in-flight ↔ committed
    transition so any focus / hover state survives the swap; only
@@ -43,7 +43,7 @@
 
    The user half is always end-state — its submission completes
    the instant it posts. The assistant half renders its end-state once
-   `turn` is defined; while in-flight, the slot is empty (TideZ1C
+   `turn` is defined; while in-flight, the slot is empty (DevZ1C
    carries the indicator).
    ========================================================================= */
 
@@ -69,7 +69,7 @@
 }
 
 /* Collapse the slot to zero when Z1B renders no end-state (in-flight
-   assistant row — TideZ1B's children are both `null` for that case). The
+   assistant row — DevZ1B's children are both `null` for that case). The
    `:empty` selector matches when the div has no child nodes; the
    primitive does not render the controls wrapper at all when the
    prop is `undefined`, but Z1B is always passed via the controls

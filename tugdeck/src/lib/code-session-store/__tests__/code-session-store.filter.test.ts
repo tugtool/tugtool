@@ -10,7 +10,7 @@
  *
  * This is the [D11] filter-scope contract: tugdeck-side per-card
  * filters enforce multi-session isolation on the shared CODE_OUTPUT
- * replay buffer; without the predicate, opening two Tide cards against
+ * replay buffer; without the predicate, opening two Dev cards against
  * one backend would cross-wire their turn state machines.
  */
 

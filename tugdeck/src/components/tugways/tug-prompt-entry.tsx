@@ -482,7 +482,7 @@ export interface TugPromptEntryProps {
    * Optional caution content rendered on the trailing edge of the
    * status row, between the leading `statusContent` and the tools /
    * maximize toggles. Intended for a small caution affordance (e.g.
-   * the Tide card's aggregate drift-caution chip). The wrapper slot
+   * the Dev card's aggregate drift-caution chip). The wrapper slot
    * collapses to nothing when the content renders empty, so a
    * conditionally-visible chip leaves no gap when it has nothing to
    * show.
@@ -536,7 +536,7 @@ export interface TugPromptEntryProps {
    *
    * Numpad Enter is always "submit" inside `tug-prompt-entry` — the
    * underlying `TugTextEditor` keeps both options as a separate
-   * prop, but the entry pins it to the typical Tide use case.
+   * prop, but the entry pins it to the typical Dev use case.
    */
   returnAction?: "submit" | "newline";
   /**
@@ -551,7 +551,7 @@ export interface TugPromptEntryProps {
 }
 
 /**
- * Imperative handle exposed via `forwardRef`. Used by the Tide card
+ * Imperative handle exposed via `forwardRef`. Used by the Dev card
  * to drive focus from global keyboard shortcuts.
  *
  * Methods are thin pass-throughs to the composed `TugTextEditor`'s

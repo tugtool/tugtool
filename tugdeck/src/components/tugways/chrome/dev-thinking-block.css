@@ -1,7 +1,7 @@
 /* @tug-pairings:
    - --tugx-block-bg / --tugx-block-text-color-muted           (shared block frame; from tugx-block.css)
    - --tugx-block-row-hover-bg / --tugx-block-text-color       (shared hover overlay)
-   `TideThinkingBlock` paints a tinted strip under the assistant
+   `DevThinkingBlock` paints a tinted strip under the assistant
    reasoning preview. Foreground roles split between the strong
    "Thinking" label and the muted preview / body text. Hover paints a
    darker tint on the header to signal the toggle is interactive.
@@ -9,9 +9,9 @@
 */
 
 /**
- * dev-thinking-block.css — `TideThinkingBlock` chrome.
+ * dev-thinking-block.css — `DevThinkingBlock` chrome.
  *
- * Renders the thinking strip inline at the top of a Tide code row:
+ * Renders the thinking strip inline at the top of a Dev code row:
  * a tinted button-row (chevron + "Thinking" label + collapsed-state
  * preview) above a grid-animated body that holds the streaming
  * `TugMarkdownBlock`.

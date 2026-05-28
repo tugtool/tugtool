@@ -14,7 +14,7 @@
  *
  *  1. **Unknown + JSON result** — a truly unknown tool: the dispatch
  *     attaches an `unknown_tool` caution (the chrome paints the inline
- *     `TideCautionBadge`), the input renders depth-1, and an object
+ *     `DevCautionBadge`), the input renders depth-1, and an object
  *     `structured_result` smart-picks to a second `JsonTreeBlock`.
  *  2. **Unknown + text result** — same caution, but a plain-text
  *     `tool_result.output` smart-picks to `TugMarkdownBlock` instead.

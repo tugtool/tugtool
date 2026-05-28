@@ -309,7 +309,7 @@ async function runLiveSelectionScenario(
   });
 
   if (componentId === "tide") {
-    await app.bindTideSession("A");
+    await app.bindDevSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -453,7 +453,7 @@ async function runDeactivationScenario(
   });
 
   if (componentId === "tide") {
-    await app.bindTideSession("A");
+    await app.bindDevSession("A");
   }
 
   await app.waitForCondition<boolean>(

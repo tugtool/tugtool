@@ -4,11 +4,11 @@
  *
  * ## Why this exists
  *
- * The user-reported regression: a Tide card with multi-line text,
+ * The user-reported regression: a Dev card with multi-line text,
  * a non-collapsed selection, and an editor scroll position loses
  * those axes on `Developer > Reload` AND on quit + relaunch. The
  * gallery card `gallery-prompt-entry` exhibits the same shape
- * because it rides the same persistence pipeline as Tide.
+ * because it rides the same persistence pipeline as Dev.
  *
  * Two fault classes exist today:
  *
@@ -38,7 +38,7 @@
  *   `gallery-prompt-entry` (`{ currentRoute, perRoute, maximized }`
  *   wrapper) and `tide` (production card; same wrapper as the
  *   entry, mounted after a fake-session bind via
- *   {@link App.bindTideSession}).
+ *   {@link App.bindDevSession}).
  *
  *   Triggers are `app.appReload()` (Layer 1 primitive — same
  *   Tug.app + tugcast process, fresh WKWebView) and
@@ -291,9 +291,9 @@ async function setupPhaseA(
   });
 
   if (componentId === "tide") {
-    // Tide-card mounts its picker by default. Bind a fake session
-    // so `TideCardBody` (which embeds `TugPromptEntry`) renders.
-    await app.bindTideSession("A");
+    // Dev-card mounts its picker by default. Bind a fake session
+    // so `DevCardBody` (which embeds `TugPromptEntry`) renders.
+    await app.bindDevSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -487,7 +487,7 @@ async function reseedFromDisk(
   });
 
   if (componentId === "tide") {
-    await app.bindTideSession("A");
+    await app.bindDevSession("A");
   }
 
   await app.waitForCondition<boolean>(

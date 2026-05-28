@@ -59,7 +59,7 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const SEED_STATE = {
   cards: [
-    { id: "A", componentId: "tide", title: "Tide A", closable: true },
+    { id: "A", componentId: "tide", title: "Dev A", closable: true },
   ],
   panes: [
     {
@@ -100,7 +100,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindTideSession("A");
+          await app.bindDevSession("A");
           await app.awaitEngineReady("A");
 
           await app.nativeClickAtElement(`[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}`);
@@ -140,7 +140,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 8000 },
           );
-          await app.bindTideSession("A");
+          await app.bindDevSession("A");
           await app.awaitEngineReady("A");
 
           await app.waitForCondition<boolean>(

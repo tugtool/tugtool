@@ -298,7 +298,7 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // `inert` on `.tug-pane-body` while mounted, which strips DOM
     // focus from anything inside (including CodeMirror's
     // contentDOM). When the banner exits, the editor is reachable
-    // again but unfocused — the user sees no caret. `TideCardBody`
+    // again but unfocused — the user sees no caret. `DevCardBody`
     // subscribes to `bannerDidHide` and re-focuses the prompt-entry
     // editor here, gated on first-responder state. Per the contract
     // documented in `dev-card.tsx` (the focus-claim handlers

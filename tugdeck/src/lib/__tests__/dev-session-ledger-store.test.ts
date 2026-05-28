@@ -1,5 +1,5 @@
 /**
- * Unit tests for `TideSessionLedgerStore`.
+ * Unit tests for `DevSessionLedgerStore`.
  *
  * Drives the store directly: a `TestFrameChannel` stands in for the wire,
  * and the events bus (`dev-session-ledger-events`) is the channel through
@@ -13,10 +13,10 @@ import { FeedId } from "@/protocol";
 import type { SessionRow } from "@/protocol";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import {
-  TideSessionLedgerStore,
+  DevSessionLedgerStore,
 } from "@/lib/dev-session-ledger-store";
 import {
-  _resetTideSessionLedgerEventsForTest,
+  _resetDevSessionLedgerEventsForTest,
   publishTrashSessionErr,
   publishTrashSessionOk,
   publishListSessionsErr,
@@ -38,18 +38,18 @@ function makeRow(partial: Partial<SessionRow> & { session_id: string }): Session
   };
 }
 
-function newStore(): { store: TideSessionLedgerStore; conn: TestFrameChannel } {
+function newStore(): { store: DevSessionLedgerStore; conn: TestFrameChannel } {
   const conn = new TestFrameChannel();
-  const store = new TideSessionLedgerStore(conn as unknown as TugConnection);
+  const store = new DevSessionLedgerStore(conn as unknown as TugConnection);
   return { store, conn };
 }
 
-describe("TideSessionLedgerStore", () => {
+describe("DevSessionLedgerStore", () => {
   beforeEach(() => {
-    _resetTideSessionLedgerEventsForTest();
+    _resetDevSessionLedgerEventsForTest();
   });
   afterEach(() => {
-    _resetTideSessionLedgerEventsForTest();
+    _resetDevSessionLedgerEventsForTest();
   });
 
   it("first call returns pending and dispatches a list_sessions request", () => {

@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import {
-  _resetTideSessionLedgerEventsForTest,
+  _resetDevSessionLedgerEventsForTest,
   publishListSessionStateChangesErr,
   publishListSessionStateChangesOk,
 } from "@/lib/dev-session-ledger-events";
@@ -39,11 +39,11 @@ function decodeFrame(frame: RecordedFrame): { action: string; tug_session_id: st
 }
 
 beforeEach(() => {
-  _resetTideSessionLedgerEventsForTest();
+  _resetDevSessionLedgerEventsForTest();
 });
 
 afterEach(() => {
-  _resetTideSessionLedgerEventsForTest();
+  _resetDevSessionLedgerEventsForTest();
 });
 
 describe("loadSessionStateChanges", () => {

@@ -1,7 +1,7 @@
 /**
  * dev-session-restore — re-assert per-card session bindings after a
  * page reload, and track in-flight restore expectations so the tide
- * card body can render a `TideRestoring` placeholder instead of the
+ * card body can render a `DevRestoring` placeholder instead of the
  * project picker.
  *
  * Why it matters. `cardSessionBindingStore` is in-memory. On
@@ -23,7 +23,7 @@
  *     sessions survive a WS drop.
  *
  * Client-side flow:
- *   1. `restoreTideSessions` sends a `list_card_bindings` CONTROL
+ *   1. `restoreDevSessions` sends a `list_card_bindings` CONTROL
  *      request and waits for the `list_card_bindings_ok` response.
  *      Each binding is matched against the deck's tide cards by
  *      `card_id`. The match's `turn_count` and `is_alive` decide the
@@ -39,14 +39,14 @@
  *        with a fresh `session_id` but the same `project_dir`. The
  *        card opens to its bound project with a fresh claude session.
  *   2. The expectation is recorded in `tideRestoreRegistry` with a
- *      10-second timeout. `TideCardContent` subscribes to the
- *      registry and renders `TideRestoring` whenever a card has a
+ *      10-second timeout. `DevCardContent` subscribes to the
+ *      registry and renders `DevRestoring` whenever a card has a
  *      pending restore.
  *   3. Happy path — the server acks with `spawn_session_ok`, the
  *      existing action-dispatch handler writes the binding into
  *      `cardSessionBindingStore`, and the registry subscribes to that
- *      store, clears the entry, and `TideCardContent` flips to
- *      `TideCardBody`.
+ *      store, clears the entry, and `DevCardContent` flips to
+ *      `DevCardBody`.
  *   4. Server-error path — tugcast broadcasts `SESSION_STATE: errored`
  *      for the session. The module's `SESSION_STATE` subscriber picks
  *      it up, clears the registry entry, and sets a `resume_failed`
@@ -54,7 +54,7 @@
  *      the picker's Retry button can re-fire.
  *   5. Timeout path — no ack, no error within 10 seconds. Same shape
  *      as the error path but with a `restore_timed_out` notice.
- *   6. User-cancel path — `cancelTideRestore(cardId)` clears the
+ *   6. User-cancel path — `cancelDevRestore(cardId)` clears the
  *      registry entry and sets a `restore_canceled` notice. Per
  *      design choice: server state is preserved (no `close_session`
  *      fires), so next reload will retry the restore.
@@ -80,7 +80,7 @@ import { subscribeToListCardBindingsOk } from "./dev-session-ledger-events";
 import { CONTROL_ACTION_LIST_CARD_BINDINGS, FeedId } from "../protocol";
 import type { CardBinding } from "../protocol";
 
-/** Component id for tide cards. Matches `registerTideCard`'s registration. */
+/** Component id for tide cards. Matches `registerDevCard`'s registration. */
 const TIDE_COMPONENT_ID = "tide";
 
 /**
@@ -111,10 +111,10 @@ export interface RestoreExpectation {
 
 /**
  * Tracks in-flight restore expectations. Subscribable via
- * `useSyncExternalStore` so `TideCardContent` can render
- * `TideRestoring` reactively.
+ * `useSyncExternalStore` so `DevCardContent` can render
+ * `DevRestoring` reactively.
  */
-class TideRestoreRegistry {
+class DevRestoreRegistry {
   private entries: Map<string, RestoreExpectation> = new Map();
   private timeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private listeners: Array<() => void> = [];
@@ -171,7 +171,7 @@ class TideRestoreRegistry {
   }
 }
 
-export const tideRestoreRegistry = new TideRestoreRegistry();
+export const tideRestoreRegistry = new DevRestoreRegistry();
 
 // ---------------------------------------------------------------------------
 // Restore-start clock
@@ -181,20 +181,20 @@ export const tideRestoreRegistry = new TideRestoreRegistry();
  * Per-card `Date.now()` of when the current restore began — stamped by
  * `fireRestore` the moment `spawn_session(mode=resume)` is sent.
  *
- * The `TideRestoring` placeholder delay-gates its centered panel on
+ * The `DevRestoring` placeholder delay-gates its centered panel on
  * this: the panel appears only once the restore has run longer than
  * the budget, so a fast restore shows nothing and a slow one explains
  * itself. The stamp must outlive the `tideRestoreRegistry` entry —
  * that entry clears the instant the binding lands, well before the
  * post-services replay window finishes — and it must survive the
- * `TideRestoring` remount at the `services`-null boundary, so a
+ * `DevRestoring` remount at the `services`-null boundary, so a
  * component-local timer cannot hold it. A module-level map keyed by
  * `cardId` is the one reference both the pre-services and the
- * cold-restore-in-body renders of `TideRestoring` can read.
+ * cold-restore-in-body renders of `DevRestoring` can read.
  *
  * Lifecycle: stamped (and re-stamped) by every `fireRestore`; cleared
  * by `clearRestoreStartedAt` when the card body reveals. Every path
- * that shows `TideRestoring` is preceded by a `fireRestore`, so a
+ * that shows `DevRestoring` is preceded by a `fireRestore`, so a
  * missing stamp (`getRestoreStartedAt` → `undefined`) means "treat as
  * just started" — the safe fallback that arms the full budget.
  */
@@ -217,23 +217,23 @@ export function clearRestoreStartedAt(cardId: string): void {
 /**
  * Per-app gate: has the startup restore pass settled?
  *
- * `restoreTideSessions` sends `list_card_bindings` and only learns
+ * `restoreDevSessions` sends `list_card_bindings` and only learns
  * which cards have a session to restore when the response lands. In
  * the window before that, a tide card that mounts unbound has no
- * `tideRestoreRegistry` entry yet — and `TideCardContent` would fall
+ * `tideRestoreRegistry` entry yet — and `DevCardContent` would fall
  * through to the project picker, dropping its `TugSheet` for the
- * round-trip until `fireRestore` flips the card to `TideRestoring`.
+ * round-trip until `fireRestore` flips the card to `DevRestoring`.
  * That is the picker-sheet flash.
  *
- * This gate closes the window. `TideCardContent` holds an unbound
+ * This gate closes the window. `DevCardContent` holds an unbound
  * card on the restore placeholder until the gate is settled; only
  * then does an unbound card with no restore expectation fall through
  * to the picker — by which point it is genuinely a fresh card, not
  * one mid-restore.
  *
- * One-shot: `false` at boot, `true` once the first `restoreTideSessions`
+ * One-shot: `false` at boot, `true` once the first `restoreDevSessions`
  * pass resolves, never back. Settled on every exit path of
- * `restoreTideSessions` — the no-dev-cards early-out, the
+ * `restoreDevSessions` — the no-dev-cards early-out, the
  * `list_card_bindings_ok` handler, and a timeout backstop for a
  * response that never lands.
  *
@@ -271,7 +271,7 @@ export class RestorePassGate {
 export const restorePassGate = new RestorePassGate();
 
 // ---------------------------------------------------------------------------
-// Subscription wiring — installed once at startup by `restoreTideSessions`.
+// Subscription wiring — installed once at startup by `restoreDevSessions`.
 // ---------------------------------------------------------------------------
 
 let _subscriptionsInstalled = false;
@@ -360,7 +360,7 @@ function parseSessionStateFrame(payload: Uint8Array): SessionStateMessage | null
 // ---------------------------------------------------------------------------
 
 /**
- * Reason a `restoreTideSessions` call is happening. Surfaced on the
+ * Reason a `restoreDevSessions` call is happening. Surfaced on the
  * `restore.fired_resume_spawns` lifecycle log so traces distinguish the
  * one-time startup pass from reconnect-driven re-asserts.
  */
@@ -385,7 +385,7 @@ export interface RestoreOptions {
  * stale per-card timer before arming a new one, so a re-fire after a
  * previous restore is well-defined.
  */
-export function restoreTideSessions(
+export function restoreDevSessions(
   deck: DeckManager,
   connection: TugConnection,
   opts?: RestoreOptions,
@@ -501,7 +501,7 @@ function isCardBinding(value: unknown): value is CardBinding {
 
 /**
  * Spawn a fresh claude session under an existing card→project
- * binding. Used by `restoreTideSessions` for zero-turn rows: the
+ * binding. Used by `restoreDevSessions` for zero-turn rows: the
  * user's previous session never had any turns (so there's
  * no JSONL to resume), but the card was bound to a project — keep
  * that binding by spawning a new session under the same project.
@@ -514,7 +514,7 @@ function isCardBinding(value: unknown): value is CardBinding {
  * Without it, `restorePassGate` settles the instant this pass
  * resolves and the still-unbound card falls straight through to the
  * project picker — its `TugSheet` flashing for the `spawn_session`
- * round-trip. The hold keeps the card on the quiet `TideRestoring`
+ * round-trip. The hold keeps the card on the quiet `DevRestoring`
  * backdrop instead. It clears on binding arrival (success), on a
  * `spawn_session_error` via `notifySpawnRejected` (rejection), or on
  * the timeout backstop. A `new`-mode spawn has no JSONL to replay, so
@@ -530,7 +530,7 @@ function fireFreshSpawn(
   const tugSessionId = crypto.randomUUID();
   // Drop any prior in-flight restore timer before arming a new hold.
   tideRestoreRegistry._clear(cardId);
-  // Stamp the restore-start clock — the `TideRestoring` placeholder
+  // Stamp the restore-start clock — the `DevRestoring` placeholder
   // delay-gates its centered panel on this, so a fast fresh spawn
   // shows only the backdrop and a slow one explains itself.
   restoreStartedAt.set(cardId, Date.now());
@@ -568,7 +568,7 @@ export function fireRestore(
   // If a previous restore was in flight (Retry after cancel/timeout),
   // drop the old timer before arming a new one.
   tideRestoreRegistry._clear(cardId);
-  // Stamp the restore-start clock — the `TideRestoring` placeholder
+  // Stamp the restore-start clock — the `DevRestoring` placeholder
   // delay-gates its panel on this. Re-stamped on a Retry / reconnect
   // re-fire so the budget always runs from the live attempt.
   restoreStartedAt.set(cardId, Date.now());
@@ -597,12 +597,12 @@ export function fireRestore(
 }
 
 /**
- * User clicked Cancel in `TideRestoring`. Clear the in-flight
+ * User clicked Cancel in `DevRestoring`. Clear the in-flight
  * expectation and drop to the picker with a `restore_canceled`
  * notice. Per design: server state is preserved — no `close_session`
  * frame fires, so next reload will retry the restore from the ledger.
  */
-export function cancelTideRestore(cardId: string): void {
+export function cancelDevRestore(cardId: string): void {
   const expectation = tideRestoreRegistry.get(cardId);
   if (expectation === undefined) return;
   tideRestoreRegistry._clear(cardId);
@@ -623,8 +623,8 @@ export function cancelTideRestore(cardId: string): void {
  * rejected its `spawn_session` outright — a `spawn_session_error`
  * CONTROL frame, e.g. the project directory no longer exists.
  *
- * Clears the `tideRestoreRegistry` entry so `TideCardContent` falls
- * through from the `TideRestoring` placeholder to the project picker,
+ * Clears the `tideRestoreRegistry` entry so `DevCardContent` falls
+ * through from the `DevRestoring` placeholder to the project picker,
  * which surfaces the rejection through `tideSpawnErrorStore`'s banner.
  * No picker notice is set — the spawn-error banner is the notice.
  *

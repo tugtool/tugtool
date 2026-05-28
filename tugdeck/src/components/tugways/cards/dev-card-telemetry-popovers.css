@@ -8,7 +8,7 @@
  *     ├─ title (centered uppercase)
  *     ├─ rule (1px)
  *     └─ body slot
- *           ├─ TidePopoverRowGrid (Time / Tokens) — subgrid 3-col
+ *           ├─ DevPopoverRowGrid (Time / Tokens) — subgrid 3-col
  *           │   ├─ scroller (rows; subgrid)
  *           │   ├─ divider
  *           │   └─ summary rows (subgrid)

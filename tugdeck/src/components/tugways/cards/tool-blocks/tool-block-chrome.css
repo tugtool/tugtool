@@ -241,7 +241,7 @@ body {
   gap: var(--tugx-toolblock-actions-gap);
 }
 
-/* The inline caution chip is its own component — `TideCautionBadge`
+/* The inline caution chip is its own component — `DevCautionBadge`
  * (`chrome/dev-caution-badge.css`). The chrome only places it in the
  * header flow. The `--tugx-toolblock-caution-*` tokens above are
  * retained: they are the shared small-chip geometry that

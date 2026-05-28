@@ -1,8 +1,8 @@
 /**
- * dev-card-transcript.tsx — multi-turn transcript host for the Tide
+ * dev-card-transcript.tsx — multi-turn transcript host for the Dev
  * card top pane.
  *
- * Mounts a `TugListView` against a `TideTranscriptDataSource` and
+ * Mounts a `TugListView` against a `DevTranscriptDataSource` and
  * registers two cell renderers, one per row kind:
  *
  *   - `user` — `TugTranscriptEntry participant="user"` whose body is
@@ -15,7 +15,7 @@
  *   - `assistant` — `TugTranscriptEntry participant="assistant"` rendered by a
  *     single `AssistantTurnCell` component for the assistant row's entire
  *     life (both in-flight and committed). `TugMarkdownBlock` (and
- *     siblings `TideThinkingBlock` / `TranscriptToolCalls`) stay in
+ *     siblings `DevThinkingBlock` / `TranscriptToolCalls`) stay in
  *     streaming mode forever, observing per-turn PropertyStore paths
  *     derived from `row.turnKey`: `turn.${turnKey}.assistant` /
  *     `.thinking` / `.tools`. After `turn_complete` those paths
@@ -32,7 +32,7 @@
  * frame, and the browser silently clamped `scrollTop` to 0. The
  * user saw this as the transcript jumping to the top right when the
  * assistant's reply was committed. The single-kind data source
- * (see {@link TideTranscriptCellKind}) makes the `cellRenderers`
+ * (see {@link DevTranscriptCellKind}) makes the `cellRenderers`
  * map structurally hold only one entry for the assistant row, so
  * the L26 violation that produced that bug cannot recur.
  *
@@ -44,7 +44,7 @@
  * Persistence axis: the inner `TugListView` mounts with
  * `scrollKey="dev-card-transcript"` so the [A9] state-preservation
  * protocol picks the right slot in `bag.regionScroll[]`. The key is
- * unique within the Tide card's subtree per [L23] / [#public-api].
+ * unique within the Dev card's subtree per [L23] / [#public-api].
  *
  * Token sovereignty: `.dev-card-transcript .tug-list-view { ... }`
  * cascade-scoped overrides live in `dev-card.css` per [D12]. The
@@ -89,23 +89,23 @@ import {
   type TugListViewDelegate,
   type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
-import { TideThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
-import { TideZ1B } from "@/components/tugways/cards/dev-card-z1b";
+import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
+import { DevZ1B } from "@/components/tugways/cards/dev-card-z1b";
 import {
   TugAtomTextBody,
   formatAtomTextForCopy,
 } from "@/components/tugways/cards/tug-atom-text-body";
 import { TugAttachmentStrip } from "@/components/tugways/cards/tug-attachment-strip";
-import { TideAttachmentPreview } from "@/components/tugways/cards/dev-attachment-preview";
+import { DevAttachmentPreview } from "@/components/tugways/cards/dev-attachment-preview";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import type { AtomSegment } from "@/lib/tug-atom-img";
-import { TideZ1C } from "@/components/tugways/cards/dev-card-z1c";
+import { DevZ1C } from "@/components/tugways/cards/dev-card-z1c";
 import {
   dispatch as dispatchRenderInput,
   dispatchToolCallState,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
-import { TideJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
+import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
@@ -118,9 +118,9 @@ import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ResponseSettingsStore } from "@/lib/response-settings-store";
 import {
-  TideTranscriptDataSource,
+  DevTranscriptDataSource,
   readUserMessage,
-  useTideTranscriptDataSource,
+  useDevTranscriptDataSource,
 } from "@/lib/dev-transcript-data-source";
 import type { PropertyStore } from "@/components/tugways/property-store";
 
@@ -373,7 +373,7 @@ const ASSISTANT_DEFAULT_IDENTIFIER = "Code";
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
 
-interface UserMessageCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
+interface UserMessageCellProps extends TugListViewCellProps<DevTranscriptDataSource> {
   renderTurnTrailing?: TurnTrailingRenderer;
   codeSessionStore: CodeSessionStore;
 }
@@ -441,7 +441,7 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
       void showSheet({
         title: atom.value,
         content: (close) => (
-          <TideAttachmentPreview
+          <DevAttachmentPreview
             atom={atom}
             bytesStore={bytesStore}
             onClose={() => close()}
@@ -518,7 +518,7 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
               // user row.
               return (
                 <>
-                  <TideZ1B
+                  <DevZ1B
                     participant="user"
                     turn={row.turn}
                     bodyText={hasBody ? copyText : undefined}
@@ -544,11 +544,11 @@ const UserMessageCell: React.FC<UserMessageCellProps> = ({
 // targeted cancel, distinct from the Stop / Esc pop-interactive gesture.
 // When the queued send flushes, the reducer promotes it to the
 // in-flight pair and this ghost row unmounts — see
-// {@link TideTranscriptCellKind} for the key/kind transition.
+// {@link DevTranscriptCellKind} for the key/kind transition.
 // ---------------------------------------------------------------------------
 
 interface GhostRowCellProps
-  extends TugListViewCellProps<TideTranscriptDataSource> {
+  extends TugListViewCellProps<DevTranscriptDataSource> {
   codeSessionStore: CodeSessionStore;
 }
 
@@ -606,7 +606,7 @@ const GhostRowCell: React.FC<GhostRowCellProps> = ({
 // (`turn.${turnKey}.assistant` etc.), `scrollHeight` does not
 // collapse, and the browser has nothing to clamp.
 //
-// All streaming children (`TideThinkingBlock`,
+// All streaming children (`DevThinkingBlock`,
 // `TranscriptToolCalls`, `TugMarkdownBlock`) render in
 // streaming-mode regardless of phase, pointed at the turn's
 // per-turn paths. After commit, those paths retain their final
@@ -675,7 +675,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     if (message.kind === "assistant_thinking") {
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
       elements.push(
-        <TideThinkingBlock
+        <DevThinkingBlock
           key={message.messageKey}
           streamingStore={streamingStore}
           streamingPath={path}
@@ -710,7 +710,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   return <>{elements}</>;
 };
 
-interface AssistantTurnCellProps extends TugListViewCellProps<TideTranscriptDataSource> {
+interface AssistantTurnCellProps extends TugListViewCellProps<DevTranscriptDataSource> {
   /**
    * Per-card `SessionMetadataStore`. Each `AssistantTurnCell` subscribes
    * to it directly via `useSessionModelName` rather than receiving
@@ -753,7 +753,7 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
   if (row.turnKey === undefined && process.env.NODE_ENV !== "production") {
     throw new Error(
       `AssistantTurnCell: row.turnKey missing at index=${index}. ` +
-        `TideTranscriptDataSource.rowAt must set turnKey on every assistant row.`,
+        `DevTranscriptDataSource.rowAt must set turnKey on every assistant row.`,
     );
   }
   const turnKey = row.turnKey ?? `missing-${index}`;
@@ -865,7 +865,7 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
             // iterates `messages` (committed or in-flight) and
             // dispatches each kind to its inline surface:
             //
-            //   - `assistant_thinking` → `TideThinkingBlock`,
+            //   - `assistant_thinking` → `DevThinkingBlock`,
             //     subscribed to the Message's per-Message streaming
             //     path (`turn.${turnKey}.message.${messageKey}.text`).
             //   - `tool_use` (top-level only — subagent children are
@@ -904,7 +904,7 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
             </div>
           }
           inflightFooter={
-            // TideZ1C — in-flight indicator zone per [D19]. Mounted
+            // DevZ1C — in-flight indicator zone per [D19]. Mounted
             // only on the in-flight assistant row (`!isCommitted`); every
             // other row passes `null` and the `inflightFooter` slot
             // doesn't render. The component subscribes via
@@ -912,14 +912,14 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
             // only this one row holds that subscription so other
             // rows don't wake on each snapshot dispatch.
             !isCommitted ? (
-              <TideZ1C codeSessionStore={codeSessionStore} />
+              <DevZ1C codeSessionStore={codeSessionStore} />
             ) : null
           }
           controls={
             (() => {
               // Z1B — committed-end-state aggregate per [D19].
               // Rendered only when the turn has committed; the
-              // in-flight indicator (TideZ1C) lives in the
+              // in-flight indicator (DevZ1C) lives in the
               // `inflightFooter` slot above this one and has its
               // own lifecycle. Trailing chrome (placement-
               // experiment renderer) still renders alongside Z1B
@@ -942,7 +942,7 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
               return (
                 <>
                   {isCommitted ? (
-                    <TideZ1B
+                    <DevZ1B
                       participant="assistant"
                       turn={turn}
                       perTurnTokens={row.perTurnTokens}
@@ -975,7 +975,7 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
 const ESTIMATED_HEIGHT_USER = 56;
 const ESTIMATED_HEIGHT_ASSISTANT = 120;
 
-export interface TideTranscriptHostProps {
+export interface DevTranscriptHostProps {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore: SessionMetadataStore;
   /**
@@ -1028,7 +1028,7 @@ export interface TurnTrailingContext {
  * can't reach the inner list view; the parent threads the gesture
  * through this handle instead.
  */
-export interface TideTranscriptHandle {
+export interface DevTranscriptHandle {
   /**
    * Scroll the transcript to the bottom of content and re-engage
    * follow-bottom. Thin pass-through to the inner `TugListView`'s
@@ -1049,10 +1049,10 @@ export interface TideTranscriptHandle {
   ): void;
 }
 
-export const TideTranscriptHost = forwardRef<
-  TideTranscriptHandle,
-  TideTranscriptHostProps
->(function TideTranscriptHost(
+export const DevTranscriptHost = forwardRef<
+  DevTranscriptHandle,
+  DevTranscriptHostProps
+>(function DevTranscriptHost(
   {
     codeSessionStore,
     sessionMetadataStore,
@@ -1061,7 +1061,7 @@ export const TideTranscriptHost = forwardRef<
   },
   ref,
 ) {
-  const dataSource = useTideTranscriptDataSource(codeSessionStore);
+  const dataSource = useDevTranscriptDataSource(codeSessionStore);
   const streamingStore = codeSessionStore.streamingDocument;
 
   // [DT10] transcript-replay paint gate. While the card's lifecycle
@@ -1106,7 +1106,7 @@ export const TideTranscriptHost = forwardRef<
   // refs (`codeSessionStore`, `sessionMetadataStore`, `streamingStore`,
   // `renderTurnTrailing`) are all stable for the card's lifetime:
   //   - `codeSessionStore` / `sessionMetadataStore` come from
-  //     `useTideCardServices`, scoped to the card mount.
+  //     `useDevCardServices`, scoped to the card mount.
   //   - `streamingStore` is `codeSessionStore.streamingDocument`,
   //     `readonly` and assigned once in the store's constructor.
   //   - `renderTurnTrailing` is memoized by the placement-experiment
@@ -1120,7 +1120,7 @@ export const TideTranscriptHost = forwardRef<
   // reads happen INSIDE `AssistantTurnCell` via `useSessionModelName` so the
   // renderer lambda stays inert.
   const assistantRenderer = useCallback<
-    TugListViewCellRenderer<TideTranscriptDataSource>
+    TugListViewCellRenderer<DevTranscriptDataSource>
   >(
     (p) => (
       <AssistantTurnCell
@@ -1134,7 +1134,7 @@ export const TideTranscriptHost = forwardRef<
     [sessionMetadataStore, codeSessionStore, streamingStore, renderTurnTrailing],
   );
   const userRenderer = useCallback<
-    TugListViewCellRenderer<TideTranscriptDataSource>
+    TugListViewCellRenderer<DevTranscriptDataSource>
   >(
     (p) => (
       <UserMessageCell
@@ -1150,13 +1150,13 @@ export const TideTranscriptHost = forwardRef<
   // reference — the [L26] discipline the `user` / `code` renderers
   // follow.
   const ghostRenderer = useCallback<
-    TugListViewCellRenderer<TideTranscriptDataSource>
+    TugListViewCellRenderer<DevTranscriptDataSource>
   >(
     (p) => <GhostRowCell {...p} codeSessionStore={codeSessionStore} />,
     [codeSessionStore],
   );
   const cellRenderers = useMemo<
-    Record<string, TugListViewCellRenderer<TideTranscriptDataSource>>
+    Record<string, TugListViewCellRenderer<DevTranscriptDataSource>>
   >(
     () => ({
       "user": userRenderer,
@@ -1188,7 +1188,7 @@ export const TideTranscriptHost = forwardRef<
   }, [responseStore]);
 
   // Inner `TugListView` handle — the parent reaches `scrollToBottom`
-  // through the `TideTranscriptHandle` exposed below.
+  // through the `DevTranscriptHandle` exposed below.
   const listViewRef = useRef<TugListViewHandle | null>(null);
   useImperativeHandle(
     ref,
@@ -1242,7 +1242,7 @@ export const TideTranscriptHost = forwardRef<
         inline
         pageByEntry
       />
-      <TideJumpToBottomButton ref={jumpButtonRef} onClick={handleJumpToBottom} />
+      <DevJumpToBottomButton ref={jumpButtonRef} onClick={handleJumpToBottom} />
     </div>
   );
 });

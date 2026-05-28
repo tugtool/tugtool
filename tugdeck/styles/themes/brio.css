@@ -875,8 +875,8 @@ body {
   /* `--tugx-md-*` slots live in tug-markdown-view.css's body{} block per
    * tuglaws/token-naming.md. */
 
-  /* ---- Thinking block (TideThinkingBlock per Table T07) ----
-   * Inline collapsible chrome at the top of a Tide code row that
+  /* ---- Thinking block (DevThinkingBlock per Table T07) ----
+   * Inline collapsible chrome at the top of a Dev code row that
    * surfaces the assistant's reasoning stream. Tinted just enough
    * to read as a related-but-supplementary surface; muted prose
    * inside the body keeps the answer (rendered below) the visual

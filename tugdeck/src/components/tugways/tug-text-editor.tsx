@@ -544,7 +544,7 @@ export interface TugTextEditorProps
    * decode failure). The string is a user-facing message suitable
    * for a banner.
    *
-   * Defaults to a no-op. Tide-card prompt-entry passes
+   * Defaults to a no-op. Dev-card prompt-entry passes
    * `CodeSessionStore.publishAttachmentError`. Per
    * [Table T01](roadmap/dev-atoms.md#t01-failure-modes).
    */

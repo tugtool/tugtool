@@ -2,7 +2,7 @@
  * TugListView — windowed list primitive modeled on UIKit's `UITableView`.
  *
  * A framework-level primitive for any surface in tugdeck that renders a
- * list of items: the Tide multi-turn transcript (the first consumer), the
+ * list of items: the Dev multi-turn transcript (the first consumer), the
  * session picker (deferred migration), an eventual history panel, a
  * permission/audit log, and so on. The shape borrows directly from
  * UIKit's table-view decomposition — a *data source* enumerates items
@@ -170,7 +170,7 @@ export interface TugListViewDataSource {
    * If a data source has one logical row whose appearance evolves
    * over time, prefer a single kind whose renderer branches on the
    * row payload rather than two kinds with two renderers. (See the
-   * assistant row in `TideTranscriptDataSource` for the canonical
+   * assistant row in `DevTranscriptDataSource` for the canonical
    * example.)
    */
   kindForIndex(index: number): string;
@@ -277,7 +277,7 @@ export interface TugListViewDelegate {
  * given the index path and queries the data source for the row.
  *
  * The generic `DS` defaults to the base `TugListViewDataSource`. A
- * consumer with a typed adapter (e.g. `TideTranscriptDataSource`)
+ * consumer with a typed adapter (e.g. `DevTranscriptDataSource`)
  * narrows `DS` so its cell renderers can call adapter-specific methods
  * such as `rowAt(index)` without casting.
  */
@@ -486,7 +486,7 @@ export interface TugListViewProps<
    * user can interact and never reverts to estimates.
    *
    * Default `false` — windowing is the right choice for unbounded
-   * lists (gallery feeds, large logs). Tide's transcript opts in
+   * lists (gallery feeds, large logs). Dev's transcript opts in
    * with `inline` because turn counts are small and visual stability
    * matters more than DOM weight. The choice is per-instance, not
    * per-itemCount: a consumer that knows its data is bounded picks
@@ -538,7 +538,7 @@ export interface TugListViewProps<
    *    From mid-entry the first PageUp snaps the current entry's top
    *    up.
    *
-   * The Tide transcript opts in so the user can step through every
+   * The Dev transcript opts in so the user can step through every
    * row — both halves of each turn (the prompt and the response) are
    * separate cells, so navigation visits all of them. Omitted /
    * `false` ⇒ no handler is installed and PageUp / PageDown fall

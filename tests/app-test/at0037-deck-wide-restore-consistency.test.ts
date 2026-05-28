@@ -45,7 +45,7 @@
  *
  * L4 is the load-bearing case for the "active = deck-level first
  * responder, NOT pane-active" precision ("Defining
- * 'active' precisely"). Tide is the active card of P2, but P2 is
+ * 'active' precisely"). Dev is the active card of P2, but P2 is
  * not the active pane — so tide is NOT the deck-level first
  * responder, and its selection routes through
  * `paintMirrorAsInactive`.
@@ -262,7 +262,7 @@ async function setupPhaseA(app: App, layout: Layout): Promise<void> {
   // Bind tide sessions (skip past the project picker).
   for (const c of layout.cards) {
     if (c.componentId === "tide") {
-      await app.bindTideSession(c.cardId);
+      await app.bindDevSession(c.cardId);
     }
   }
 
@@ -361,7 +361,7 @@ async function reseedFromDisk(
 
   for (const c of layout.cards) {
     if (c.componentId === "tide") {
-      await app.bindTideSession(c.cardId);
+      await app.bindDevSession(c.cardId);
     }
   }
 

@@ -1,7 +1,7 @@
 /**
- * dev-card-z1c.tsx — `TideZ1C` per-row in-flight indicator zone.
+ * dev-card-z1c.tsx — `DevZ1C` per-row in-flight indicator zone.
  *
- * Per [D19] / `#spec-z1c`, TideZ1C is the in-flight indicator chrome
+ * Per [D19] / `#spec-z1c`, DevZ1C is the in-flight indicator chrome
  * for the assistant row. It attaches via `TugTranscriptEntry`'s
  * `inflightFooter` slot — every row carries the slot uniformly and
  * the slot collapses to zero height when its rendered output is
@@ -9,7 +9,7 @@
  * `tug-transcript-entry.css`).
  *
  * **Per-row mount discipline.** Only the **in-flight-tip row** mounts
- * `TideZ1C`; every other row passes `null` to `inflightFooter` and
+ * `DevZ1C`; every other row passes `null` to `inflightFooter` and
  * stays subscription-free. In Step 5.8 the in-flight tip is the
  * in-flight code row (`!isCommitted`); in Step 5.9 it is the row
  * carrying the Message flagged `isLastInflightMessage`. The
@@ -60,13 +60,13 @@ import type { CodeSessionPhase } from "@/lib/code-session-store/types";
 // ---------------------------------------------------------------------------
 
 /**
- * What TideZ1C should render. `null` means the slot collapses (no
+ * What DevZ1C should render. `null` means the slot collapses (no
  * indicator) — used for `awaiting_approval` (pending dialog is the
  * affordance), `interruptInFlight === true` (interrupt is instant
  * from the user's POV; Z1B paints the end-state once the turn
  * commits), and `idle` / `replaying` / `errored`.
  */
-export interface TideZ1CContent {
+export interface DevZ1CContent {
   label: string;
 }
 
@@ -83,7 +83,7 @@ export interface TideZ1CContent {
 export function tideZ1CContent(
   phase: CodeSessionPhase,
   interruptInFlight: boolean,
-): TideZ1CContent | null {
+): DevZ1CContent | null {
   if (interruptInFlight) return null;
   switch (phase) {
     case "submitting":
@@ -108,7 +108,7 @@ export function tideZ1CContent(
 // Component
 // ---------------------------------------------------------------------------
 
-export interface TideZ1CProps {
+export interface DevZ1CProps {
   /**
    * The per-card `CodeSessionStore` whose snapshot drives the
    * indicator's content. The component reads `phase` and
@@ -117,17 +117,17 @@ export interface TideZ1CProps {
   codeSessionStore: CodeSessionStore;
 }
 
-interface TideZ1CSelection {
+interface DevZ1CSelection {
   phase: CodeSessionPhase;
   interruptInFlight: boolean;
 }
 
-export const TideZ1C: React.FC<TideZ1CProps> = ({ codeSessionStore }) => {
+export const DevZ1C: React.FC<DevZ1CProps> = ({ codeSessionStore }) => {
   // Memoized narrowed selector — returns the SAME object reference
   // across snapshot dispatches that don't change `phase` or
   // `interruptInFlight`. See module docstring for rationale.
-  const lastSelectionRef = useRef<TideZ1CSelection | null>(null);
-  const getSelection = useCallback((): TideZ1CSelection => {
+  const lastSelectionRef = useRef<DevZ1CSelection | null>(null);
+  const getSelection = useCallback((): DevZ1CSelection => {
     const snap = codeSessionStore.getSnapshot();
     const prev = lastSelectionRef.current;
     if (
@@ -137,7 +137,7 @@ export const TideZ1C: React.FC<TideZ1CProps> = ({ codeSessionStore }) => {
     ) {
       return prev;
     }
-    const next: TideZ1CSelection = {
+    const next: DevZ1CSelection = {
       phase: snap.phase,
       interruptInFlight: snap.interruptInFlight,
     };

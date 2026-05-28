@@ -1,5 +1,5 @@
 /**
- * `TideCautionBadge` — small inline drift-caution chip.
+ * `DevCautionBadge` — small inline drift-caution chip.
  *
  * Surfaces a `CautionFlag` the dispatch raised on a transcript event:
  * an unknown tool name, an unknown `structured_result` shape, or a
@@ -44,7 +44,7 @@ const CAUTION_LABELS: Readonly<Record<CautionFlag["reason"], string>> = {
   version_drift: "version drift",
 };
 
-export interface TideCautionBadgeProps {
+export interface DevCautionBadgeProps {
   /** The drift caution to surface. */
   caution: CautionFlag;
   /** Forwarded class name for cascade-scoped customization. */
@@ -55,10 +55,10 @@ export interface TideCautionBadgeProps {
  * Render the inline caution chip. The `title` carries `label: detail`
  * when the dispatch supplied a detail string, else just the label.
  */
-export function TideCautionBadge({
+export function DevCautionBadge({
   caution,
   className,
-}: TideCautionBadgeProps): React.ReactElement {
+}: DevCautionBadgeProps): React.ReactElement {
   const label = CAUTION_LABELS[caution.reason];
   const title =
     caution.detail !== undefined ? `${label}: ${caution.detail}` : label;

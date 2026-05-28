@@ -1,5 +1,5 @@
 /**
- * dev-picker-format — pure formatters for the Tide project picker.
+ * dev-picker-format — pure formatters for the Dev project picker.
  *
  * Used by the picker's session-resume cells. No React, no JSX —
  * pure string formatting, unit-test-friendly. Lives in its own

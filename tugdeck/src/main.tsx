@@ -12,8 +12,8 @@ import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { cardServicesStore } from "./lib/card-services-store";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
-import { restoreTideSessions } from "./lib/dev-session-restore";
-import { attachTideSessionLedgerStore } from "./lib/dev-session-ledger-store";
+import { restoreDevSessions } from "./lib/dev-session-restore";
+import { attachDevSessionLedgerStore } from "./lib/dev-session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import {
@@ -30,10 +30,10 @@ import {
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerGitCard } from "./components/tugways/cards/git-card";
-import { registerTideCard } from "./components/tugways/cards/dev-card";
+import { registerDevCard } from "./components/tugways/cards/dev-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
-import { installTidePlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
+import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
@@ -179,7 +179,7 @@ if (!container) {
   // registered in Phase 9.
   registerHelloWorldCard();
   registerGitCard();
-  registerTideCard();
+  registerDevCard();
   registerGalleryCards();
   registerDevPanelInspectorTabs();
 
@@ -192,7 +192,7 @@ if (!container) {
   if (import.meta.env.DEV) {
     (window as unknown as { tugDevLog?: typeof tugDevLogStore }).tugDevLog =
       tugDevLogStore;
-    installTidePlacementGlobal();
+    installDevPlacementGlobal();
   }
 
   // Extract card IDs from the loaded layout and read per-card state bags
@@ -284,7 +284,7 @@ if (!container) {
   // dispatches `list_sessions` requests on first observation, subscribes
   // to `session_updated` push frames, and invalidates on reconnect. The
   // picker reads via `useSessionLedger(workspaceKey)` (step 5).
-  attachTideSessionLedgerStore(connection);
+  attachDevSessionLedgerStore(connection);
 
   // Wire the per-session state-change store to the connection. Without
   // this the singleton is never created — `useSessionStateChanges`
@@ -297,13 +297,13 @@ if (!container) {
 
   // Re-assert session bindings for tide cards that were alive before
   // this page reload. The deck layout is materialized;
-  // `restoreTideSessions` sends a `list_card_bindings` CONTROL request
+  // `restoreDevSessions` sends a `list_card_bindings` CONTROL request
   // (the server reads from its sqlite ledger) and emits
   // `spawn_session(mode=resume)` per matching card. The server's ack
   // populates `cardSessionBindingStore`, which flips each card from
   // picker to bound body before `cardDidActivate` fires for any of
   // them.
-  restoreTideSessions(deck, connection);
+  restoreDevSessions(deck, connection);
 
   // Reconnect path: every WebSocket recovery from a close re-runs the
   // restore loop so cards rebind without a page reload after a tugcast
@@ -318,7 +318,7 @@ if (!container) {
   // the close-then-open gating so this subscriber never has to.
   connectionLifecycle.observeConnectionDidReconnect(() => {
     cardSessionBindingStore.clearAll();
-    restoreTideSessions(deck, connection, {
+    restoreDevSessions(deck, connection, {
       reason: "reconnect",
     });
   });

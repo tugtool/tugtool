@@ -7,7 +7,7 @@
  * — as a will/did pair, and holds the current route as queryable state.
  *
  * One instance per `TugPromptEntry`; provided to that entry's subtree
- * through `RouteLifecycleContext`. It is not deck-level — each Tide card
+ * through `RouteLifecycleContext`. It is not deck-level — each Dev card
  * has its own route ([D01]).
  *
  * Two surfaces, one fire path ([D03]):

@@ -45,7 +45,7 @@ import {
   tideSessionPhaseKey,
   tideSessionPhaseVisual,
   TIDE_SESSION_PHASE_LABELS,
-  type TideSessionPhaseInput,
+  type DevSessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
@@ -228,17 +228,17 @@ function useLiveTick(): number {
 // Session-scoped renderers
 // ---------------------------------------------------------------------------
 
-export interface TideTelemetryProps {
+export interface DevTelemetryProps {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore?: SessionMetadataStore;
 }
 
 /**
- * Props for {@link TideTelemetryStatusRow} — the session telemetry
+ * Props for {@link DevTelemetryStatusRow} — the session telemetry
  * props plus the optional transcript-scroll handler the Time / Tokens
  * popovers thread onto their per-turn `#NNNN` entry numbers.
  */
-export interface TideTelemetryStatusRowProps extends TideTelemetryProps {
+export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
   /**
    * Scrolls the transcript to a transcript row when the user clicks
    * its `#NNNN` entry number in the Time / Tokens popover. The tide
@@ -259,7 +259,7 @@ export interface TideTelemetryStatusRowProps extends TideTelemetryProps {
  * Uses TugLinearGauge in `compact` density so the strip fits inside
  * a status-bar or prompt-entry footer without dominating layout.
  */
-export const TideTelemetryWindowUtilization: React.FC<TideTelemetryProps> = ({
+export const DevTelemetryWindowUtilization: React.FC<DevTelemetryProps> = ({
   codeSessionStore,
   sessionMetadataStore,
 }) => {
@@ -322,7 +322,7 @@ export const TideTelemetryWindowUtilization: React.FC<TideTelemetryProps> = ({
  * tokens. Sum across every committed turn — the lifetime tokens cost
  * of the session so far.
  */
-export const TideTelemetryCumulativeTokens: React.FC<TideTelemetryProps> = ({
+export const DevTelemetryCumulativeTokens: React.FC<DevTelemetryProps> = ({
   codeSessionStore,
 }) => {
   const snap = useSyncExternalStore(
@@ -353,7 +353,7 @@ export const TideTelemetryCumulativeTokens: React.FC<TideTelemetryProps> = ({
  * renderer. Subscribes to a 1Hz tick so any side-channel that flips
  * the committed sum mid-second still surfaces promptly.
  */
-export const TideTelemetryCumulativeActiveMs: React.FC<TideTelemetryProps> = ({
+export const DevTelemetryCumulativeActiveMs: React.FC<DevTelemetryProps> = ({
   codeSessionStore,
 }) => {
   const snap = useSyncExternalStore(
@@ -380,7 +380,7 @@ export const TideTelemetryCumulativeActiveMs: React.FC<TideTelemetryProps> = ({
  * coarse-grained `phase` enum. Useful in Z4 (prompt-entry footer)
  * during the HMR study to compare against ambient-light placements.
  */
-export const TideTelemetryPhase: React.FC<TideTelemetryProps> = ({
+export const DevTelemetryPhase: React.FC<DevTelemetryProps> = ({
   codeSessionStore,
 }) => {
   const phase = useSyncExternalStore(
@@ -404,12 +404,12 @@ export const TideTelemetryPhase: React.FC<TideTelemetryProps> = ({
  * next without explicit row dividers; the ticks point toward the
  * value (down when label is above, up when label is below).
  *
- * Internal component for `TideTelemetryStatusRow`. The apparatus
+ * Internal component for `DevTelemetryStatusRow`. The apparatus
  * width is fixed by the row (via the `--tugx-dev-status-cell-width`
  * CSS variable, which the STATE cell overrides wider), so this
  * component just fills whatever width its container provides.
  */
-const TideTelemetryEndcapRuleLabel: React.FC<{
+const DevTelemetryEndcapRuleLabel: React.FC<{
   label: string;
   /** Direction the endcap ticks extend (toward the value). */
   ticksDirection: "down" | "up";
@@ -477,7 +477,7 @@ const TideTelemetryEndcapRuleLabel: React.FC<{
  * transitions. Only the popovers' open/closed state and the cell
  * values change; the STATE indicators reconcile tone in place.
  */
-export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
+export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
   codeSessionStore,
   sessionMetadataStore,
   onScrollToRow,
@@ -583,7 +583,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
   const contextThreshold: "normal" | "caution" | "danger" =
     ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
 
-  const indicatorState: TideSessionPhaseInput = {
+  const indicatorState: DevSessionPhaseInput = {
     phase: snap.phase,
     transportState: snap.transportState,
     interruptInFlight: snap.interruptInFlight,
@@ -683,7 +683,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
             className="dev-telemetry-status-cell dev-telemetry-status-anchor"
             data-priority="state"
           >
-            <TideTelemetryEndcapRuleLabel label="STATE" ticksDirection="down" />
+            <DevTelemetryEndcapRuleLabel label="STATE" ticksDirection="down" />
             <span className="dev-telemetry-status-value-wrap">
               <TugProgressIndicator
                 variant="pulsing-dot"
@@ -715,7 +715,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
             className="dev-telemetry-status-cell dev-telemetry-status-anchor"
             data-priority="time"
           >
-            <TideTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
+            <DevTelemetryEndcapRuleLabel label="TIME" ticksDirection="down" />
             <span className="dev-telemetry-status-value-wrap">
               <span className="dev-telemetry-status-value">
                 {formatTimeMinutesSeconds(perTurnActiveMs)}
@@ -733,7 +733,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
             className="dev-telemetry-status-cell dev-telemetry-status-anchor"
             data-priority="tokens"
           >
-            <TideTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
+            <DevTelemetryEndcapRuleLabel label="TOKENS" ticksDirection="down" />
             <span className="dev-telemetry-status-value-wrap">
               <span className="dev-telemetry-status-value">
                 {formatTokensCaps(tokensCellValue)}
@@ -751,7 +751,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
             className="dev-telemetry-status-cell dev-telemetry-status-anchor"
             data-priority="context"
           >
-            <TideTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
+            <DevTelemetryEndcapRuleLabel label="CONTEXT" ticksDirection="down" />
             <span className="dev-telemetry-status-value-wrap">
               <span
                 className="dev-telemetry-status-value dev-telemetry-status-value-context"
@@ -777,7 +777,7 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
             className="dev-telemetry-status-cell dev-telemetry-status-anchor"
             data-priority="tasks"
           >
-            <TideTelemetryEndcapRuleLabel label="TASKS" ticksDirection="down" />
+            <DevTelemetryEndcapRuleLabel label="TASKS" ticksDirection="down" />
             <span
               className="dev-telemetry-status-value-wrap"
               data-empty={hasTasks ? undefined : "true"}
@@ -816,12 +816,12 @@ export const TideTelemetryStatusRow: React.FC<TideTelemetryStatusRowProps> = ({
 // Per-turn renderers (Z1)
 // ---------------------------------------------------------------------------
 
-export interface TideTurnTelemetryProps {
+export interface DevTurnTelemetryProps {
   turn: TurnEntry;
 }
 
 /** Per-turn Claude-active duration (committed turns only). */
-export const TideTelemetryPerTurnDuration: React.FC<TideTurnTelemetryProps> = ({
+export const DevTelemetryPerTurnDuration: React.FC<DevTurnTelemetryProps> = ({
   turn,
 }) => (
   <span
@@ -833,7 +833,7 @@ export const TideTelemetryPerTurnDuration: React.FC<TideTurnTelemetryProps> = ({
 );
 
 /** Per-turn cost in USD (committed turns only). */
-export const TideTelemetryPerTurnCost: React.FC<TideTurnTelemetryProps> = ({
+export const DevTelemetryPerTurnCost: React.FC<DevTurnTelemetryProps> = ({
   turn,
 }) => (
   <span
@@ -845,7 +845,7 @@ export const TideTelemetryPerTurnCost: React.FC<TideTurnTelemetryProps> = ({
 );
 
 /** Per-turn time-to-first-token (committed turns only). */
-export const TideTelemetryPerTurnTtft: React.FC<TideTurnTelemetryProps> = ({
+export const DevTelemetryPerTurnTtft: React.FC<DevTurnTelemetryProps> = ({
   turn,
 }) => (
   <span

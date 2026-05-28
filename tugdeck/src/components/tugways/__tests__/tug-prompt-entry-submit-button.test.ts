@@ -2,7 +2,7 @@
  * Pure-logic tests for `resolveSubmitButtonView` — the Z5 submit /
  * stop button's mode → view projection.
  *
- * One assertion per `TideSubmitButtonMode` kind: the `data-mode`
+ * One assertion per `DevSubmitButtonMode` kind: the `data-mode`
  * attribute, the `aria-label`, the `disabled` flag, the icon glyph,
  * and the danger-role flag must match the lifecycle matrix's Z5
  * column. The `disabled` field doubles as the keyboard-activation
@@ -20,11 +20,11 @@
 import { describe, it, expect } from "bun:test";
 
 import { resolveSubmitButtonView } from "@/components/tugways/tug-prompt-entry-submit-button";
-import type { TideSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
+import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 
 describe("resolveSubmitButtonView — Z5 mode → view", () => {
   it("submit — enabled, action role, send glyph", () => {
-    const mode: TideSubmitButtonMode = {
+    const mode: DevSubmitButtonMode = {
       kind: "submit",
       disabled: false,
     };
@@ -90,7 +90,7 @@ describe("resolveSubmitButtonView — Z5 mode → view", () => {
   it("exactly the four inert modes are disabled", () => {
     // The `disabled` field is also `performSubmit`'s Enter-gate:
     // submit / stop fire, the rest do not.
-    const fires = (m: TideSubmitButtonMode): boolean =>
+    const fires = (m: DevSubmitButtonMode): boolean =>
       !resolveSubmitButtonView(m).disabled;
     expect(fires({ kind: "submit", disabled: false })).toBe(true);
     expect(fires({ kind: "stop" })).toBe(true);

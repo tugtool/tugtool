@@ -36,7 +36,7 @@ pub struct Cli {
     pub port: Option<u16>,
 
     /// Workspace directory for the bootstrap file-tree/git feeds.
-    /// Transitional: this flag will be removed in T3.4.c when the Tide
+    /// Transitional: this flag will be removed in T3.4.c when the Dev
     /// card lands a real project picker at card-open time.
     #[arg(long, default_value = ".")]
     pub source_tree: PathBuf,

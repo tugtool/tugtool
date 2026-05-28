@@ -4,10 +4,10 @@
  *
  * ## The user-reported regression this gates
  *
- * Reproducer (paraphrased): open a Tide card with a sibling card in
- * the same pane. Type into Tide; make a selection. Click the sibling
- * card's tab to deactivate Tide. Reload (or quit + relaunch). Click
- * Tide's tab to reactivate. Result before this gate: selection lost.
+ * Reproducer (paraphrased): open a Dev card with a sibling card in
+ * the same pane. Type into Dev; make a selection. Click the sibling
+ * card's tab to deactivate Dev. Reload (or quit + relaunch). Click
+ * Dev's tab to reactivate. Result before this gate: selection lost.
  *
  * ## Root cause
  *
@@ -214,7 +214,7 @@ async function setupPhaseA(
   });
 
   if (componentId === "tide") {
-    await app.bindTideSession("A");
+    await app.bindDevSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -377,7 +377,7 @@ async function reseedFromDiskAndReactivate(
   });
 
   if (componentId === "tide") {
-    await app.bindTideSession("A");
+    await app.bindDevSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -386,7 +386,7 @@ async function reseedFromDiskAndReactivate(
 
   await app.awaitEngineReady("A");
 
-  // Reactivate A — the user's gesture on return (clicks Tide tab).
+  // Reactivate A — the user's gesture on return (clicks Dev tab).
   await app.nativeClickAtElement(tabSelectorFor("A"));
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "A")`,

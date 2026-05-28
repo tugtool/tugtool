@@ -1,11 +1,11 @@
 /* ============================================================================
    gallery-dev-thinking.css — layout-only scaffold for the
-   TideThinkingBlock gallery card.
+   DevThinkingBlock gallery card.
 
-   No colour rules: every painted surface comes from `TideThinkingBlock`
+   No colour rules: every painted surface comes from `DevThinkingBlock`
    itself (its `--tugx-thinking-*` / `--tugx-block-*` tokens). This file
    only constrains section width so the thinking strips render at a
-   realistic Tide-card measure rather than the full gallery width.
+   realistic Dev-card measure rather than the full gallery width.
    ========================================================================= */
 
 .gallery-dev-thinking-section {

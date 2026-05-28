@@ -38,7 +38,7 @@ import type { CodeSessionPhase, TransportState } from "./types";
  * legacy `TugStateIndicatorState`; renamed here to avoid implying any
  * coupling to a particular indicator component.
  */
-export interface TideSessionPhaseInput {
+export interface DevSessionPhaseInput {
   readonly phase: CodeSessionPhase;
   readonly transportState: TransportState;
   readonly interruptInFlight: boolean;
@@ -48,7 +48,7 @@ export interface TideSessionPhaseInput {
 // Phase key
 // ---------------------------------------------------------------------------
 
-export type TideSessionPhaseKey =
+export type DevSessionPhaseKey =
   | "offline"
   | "restoring"
   | "interrupting"
@@ -60,7 +60,7 @@ export type TideSessionPhaseKey =
  * flag take precedence over the reducer's phase; otherwise the phase
  * enum is the key.
  */
-export function tideSessionPhaseKey(input: TideSessionPhaseInput): TideSessionPhaseKey {
+export function tideSessionPhaseKey(input: DevSessionPhaseInput): DevSessionPhaseKey {
   if (input.transportState === "offline") return "offline";
   if (input.transportState === "restoring") return "restoring";
   if (input.interruptInFlight) return "interrupting";
@@ -81,7 +81,7 @@ export function tideSessionPhaseKey(input: TideSessionPhaseInput): TideSessionPh
  * indistinguishable to the user from a normal stream; the distinction
  * is internal lifecycle bookkeeping.
  */
-export const TIDE_SESSION_PHASE_LABELS: Record<TideSessionPhaseKey, string> = {
+export const TIDE_SESSION_PHASE_LABELS: Record<DevSessionPhaseKey, string> = {
   offline: "Disconnected",
   restoring: "Reconnecting",
   interrupting: "Interrupting",
@@ -117,7 +117,7 @@ export const TIDE_SESSION_PHASE_LABELS: Record<TideSessionPhaseKey, string> = {
  * blue-while-running → green-when-finished story.
  */
 export function tideSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPhaseVisual {
-  switch (phaseKey as TideSessionPhaseKey) {
+  switch (phaseKey as DevSessionPhaseKey) {
     case "offline":
     case "errored":
       return { role: "danger", state: "aborted" };

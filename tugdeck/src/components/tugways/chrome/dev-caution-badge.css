@@ -1,14 +1,14 @@
 /* @tug-pairings:
    - --tugx-block-tone-caution-bg / --tugx-block-tone-caution-color
      (shared caution tone; from tugx-block.css)
-   `TideCautionBadge` is a single inline chip. Its surface rides the
+   `DevCautionBadge` is a single inline chip. Its surface rides the
    shared `--tugx-block-tone-caution-*` tones (so the caution colour is
    uniform wherever a caution chip appears); its bespoke geometry
    (padding / radius / type scale) lives here under `--tugx-caut-*`.
 */
 
 /**
- * dev-caution-badge.css — `TideCautionBadge` chip.
+ * dev-caution-badge.css — `DevCautionBadge` chip.
  *
  * Tuglaw cross-check:
  *  - [L16] the chip rule sets both `background` and `color`, so it is

@@ -2,13 +2,13 @@
    - --tugx-err-caution-bg / --tugx-err-caution-color  (recoverable banner)
    - --tugx-err-danger-bg  / --tugx-err-danger-color   (non-recoverable banner)
    - --tugx-err-button-bg / --tugx-err-button-color    (action button)
-   `TideErrorBlock` paints an inline error banner with a recoverable
+   `DevErrorBlock` paints an inline error banner with a recoverable
    (caution-toned, with Retry) and non-recoverable (danger-toned,
    with Copy) variant.
 */
 
 /**
- * dev-error-block.css — `TideErrorBlock` inline-error chrome.
+ * dev-error-block.css — `DevErrorBlock` inline-error chrome.
  *
  * Token sources:
  *  - `--tugx-err-*` slots in the `body{}` block below alias the

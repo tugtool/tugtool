@@ -1,5 +1,5 @@
 /**
- * `TideTranscriptDataSource` — adapter that surfaces a `CodeSessionStore`
+ * `DevTranscriptDataSource` — adapter that surfaces a `CodeSessionStore`
  * snapshot as a `TugListViewDataSource`.
  *
  * Row contract — three cell kinds, variable rows per turn:
@@ -13,7 +13,7 @@
  *               for in-flight) and dispatches each Message kind to
  *               its inline surface (`assistant_text` →
  *               `TugMarkdownBlock`; `assistant_thinking` →
- *               `TideThinkingBlock`; `tool_use` → tool block;
+ *               `DevThinkingBlock`; `tool_use` → tool block;
  *               `system_note` → subdued note row when Step 8 lands).
  *   - `ghost` — one per `queuedSends` entry, painted at the foot for
  *               the QUEUED_NEXT_TURN overlay.
@@ -93,7 +93,7 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 
 /**
  * Kinds the transcript adapter emits, matched against the
- * `cellRenderers` map the Tide card registers.
+ * `cellRenderers` map the Dev card registers.
  *
  * **One kind per row identity** ([L26]). The assistant row uses a
  * single `"assistant"` kind for its entire life — both while streaming and
@@ -120,7 +120,7 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
  * unmounts and the in-flight pair (keyed `${turnKey}-user` / `-assistant`)
  * mounts — a real queued -> sent transition, correctly a remount.
  */
-export type TideTranscriptCellKind = "user" | "assistant" | "ghost";
+export type DevTranscriptCellKind = "user" | "assistant" | "ghost";
 
 /**
  * Typed row descriptor returned by `rowAt(index)`. Cell renderers
@@ -130,8 +130,8 @@ export type TideTranscriptCellKind = "user" | "assistant" | "ghost";
  * assistant rows; the renderer distinguishes the two by
  * `row.turn !== undefined`.
  */
-export interface TideRowDescriptor {
-  kind: TideTranscriptCellKind;
+export interface DevRowDescriptor {
+  kind: DevTranscriptCellKind;
   /** Set for every committed row (`user` and `assistant`). */
   turn?: TurnEntry;
   /**
@@ -200,7 +200,7 @@ function readUserMessage(
 
 /**
  * Precomputed row layout for one snapshot. The data source memoizes
- * this per snapshot identity ({@link TideTranscriptDataSource.layout})
+ * this per snapshot identity ({@link DevTranscriptDataSource.layout})
  * so per-`rowAt` calls don't re-walk the transcript.
  *
  * Rows per turn:
@@ -355,11 +355,11 @@ function locateCommittedRow(
 
 /**
  * Class-shaped adapter so consumers (and cell renderers) can narrow the
- * `TugListViewDataSource` generic parameter to `TideTranscriptDataSource`
+ * `TugListViewDataSource` generic parameter to `DevTranscriptDataSource`
  * and call `rowAt(index)` without casting — mirrors the gallery card's
  * pattern.
  */
-export class TideTranscriptDataSource implements TugListViewDataSource {
+export class DevTranscriptDataSource implements TugListViewDataSource {
   constructor(private readonly _codeSessionStore: CodeSessionStore) {}
 
   /**
@@ -501,7 +501,7 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
    *    re-mount the cell wrapper at `turn_complete`).
    *  - `"ghost"` for each queued-send row.
    */
-  kindForIndex(index: number): TideTranscriptCellKind {
+  kindForIndex(index: number): DevTranscriptCellKind {
     const snap = this._codeSessionStore.getSnapshot();
     const layout = this.layout(snap);
 
@@ -529,7 +529,7 @@ export class TideTranscriptDataSource implements TugListViewDataSource {
    * Wake turns produce a single `{kind:"assistant", turn, ...}` descriptor —
    * no separate user-row descriptor exists.
    */
-  rowAt(index: number): TideRowDescriptor {
+  rowAt(index: number): DevRowDescriptor {
     const snap = this._codeSessionStore.getSnapshot();
     const layout = this.layout(snap);
 
@@ -603,7 +603,7 @@ export { readUserMessage };
 // ---------------------------------------------------------------------------
 
 /**
- * Construct a `TideTranscriptDataSource` bound to `codeSessionStore` and
+ * Construct a `DevTranscriptDataSource` bound to `codeSessionStore` and
  * keep its identity stable across renders so React's `useSyncExternalStore`
  * machinery in the list view doesn't churn its subscription on every
  * parent rerender.
@@ -614,11 +614,11 @@ export { readUserMessage };
  * exactly one adapter per consumer mount, and a swap to a new store
  * yields a fresh adapter.
  */
-export function useTideTranscriptDataSource(
+export function useDevTranscriptDataSource(
   codeSessionStore: CodeSessionStore,
-): TideTranscriptDataSource {
+): DevTranscriptDataSource {
   const adapter = useMemo(
-    () => new TideTranscriptDataSource(codeSessionStore),
+    () => new DevTranscriptDataSource(codeSessionStore),
     [codeSessionStore],
   );
 

@@ -1,13 +1,13 @@
 /**
  * CardServicesStore — module-scope owner of per-card service bags.
  *
- * The Tide card needs a `CodeSessionStore`, an `EditorSettingsStore`,
+ * The Dev card needs a `CodeSessionStore`, an `EditorSettingsStore`,
  * and a couple of feed-store stacks. These have side effects on
  * construction (FeedStore subscribes to the wire, CodeSessionStore
  * registers an `onClose` on the connection). They cannot be created
  * during render and must outlive transient React effect re-runs.
  *
- * Earlier the lifecycle lived inside `useTideCardServices` as
+ * Earlier the lifecycle lived inside `useDevCardServices` as
  * `useState<services>` populated by a `useLayoutEffect` keyed on the
  * binding. That violated [L02] (no `useEffect` copying external state
  * into React state) and produced a class of bugs where services tore
@@ -49,9 +49,9 @@ import {
 } from "./card-session-binding-store";
 import { sendCloseSession, sendRequestReplay } from "./session-lifecycle";
 import {
-  readTideRecentProjects,
-  insertTideRecentProject,
-  putTideRecentProjects,
+  readDevRecentProjects,
+  insertDevRecentProject,
+  putDevRecentProjects,
 } from "../settings-api";
 import type { DeckManager } from "../deck-manager";
 import { logSessionLifecycle } from "./session-lifecycle-log";
@@ -212,7 +212,7 @@ class CardServicesStore {
       lifecycle,
       tugSessionId: binding.tugSessionId,
       // Thread the user's session-mode intent onto the store so
-      // pure derivations (notably `deriveTideCardBannerSpec`) can
+      // pure derivations (notably `deriveDevCardBannerSpec`) can
       // suppress the JSONL-replay banner for new bindings without
       // a second subscription to `cardSessionBindingStore`. Stable
       // for the store's lifetime — a re-bind builds a fresh services
@@ -267,10 +267,10 @@ class CardServicesStore {
     // would multiply-write the same path.
     const tugbank = getTugbankClient();
     if (tugbank) {
-      const current = readTideRecentProjects(tugbank);
-      const updated = insertTideRecentProject(current, binding.projectDir);
+      const current = readDevRecentProjects(tugbank);
+      const updated = insertDevRecentProject(current, binding.projectDir);
       if (updated[0] !== current[0] || updated.length !== current.length) {
-        putTideRecentProjects(updated);
+        putDevRecentProjects(updated);
         // Recents↔ledger coherence: any path that fell off the recents
         // tail also has its ledger rows dropped so the picker doesn't
         // surface sessions for a path the user no longer recognizes.
@@ -359,7 +359,7 @@ class CardServicesStore {
 
   /**
    * Subscribe to "any cardId's services entry changed" notifications.
-   * Used by `useSyncExternalStore` in `useTideCardServices`.
+   * Used by `useSyncExternalStore` in `useDevCardServices`.
    */
   subscribe = (listener: () => void): (() => void) => {
     this._ensureInitialized();

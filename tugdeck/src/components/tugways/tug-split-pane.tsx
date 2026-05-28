@@ -167,7 +167,7 @@ interface TugSplitPaneWriteContextValue {
    * Persist the group's current layout through the user-drag path —
    * the same code `onLayoutChanged` runs at the end of a native sash
    * drag. An external drag handle (a grip that lives outside the
-   * sash — e.g. the Tide card's Z2 status-bar grips) applies live
+   * sash — e.g. the Dev card's Z2 status-bar grips) applies live
    * sizes through `TugSplitPanelHandle.dragResizePixels` with the
    * gate held, so nothing is written mid-drag, then calls this once
    * on pointer release so the settled layout — flex-grow ratios and
@@ -590,7 +590,7 @@ export interface TugSplitPanelHandle {
   getSizePixels(): number;
   /**
    * Resize the panel to a pixel size as part of an external drag
-   * gesture — a drag handle that lives outside the sash (the Tide
+   * gesture — a drag handle that lives outside the sash (the Dev
    * card's Z2 status-bar grips).
    *
    * While `commit` is false (the default) the resize is visual-only:

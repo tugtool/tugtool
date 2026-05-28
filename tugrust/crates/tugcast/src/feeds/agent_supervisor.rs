@@ -2201,7 +2201,7 @@ impl AgentSupervisor {
     /// Handle a `list_card_bindings` CONTROL request. Reads every
     /// resumable ledger row (see `list_with_card_id` for the filter)
     /// and broadcasts a `list_card_bindings_ok` response. The
-    /// client-side `restoreTideSessions` consumes this on startup and
+    /// client-side `restoreDevSessions` consumes this on startup and
     /// reconnect to re-assert per-card bindings. Multiple rows can
     /// share a `card_id` (sequential sessions on that card); the
     /// client picks the newest per card.

@@ -1,7 +1,7 @@
 /**
- * dev-card-z1c.css — TideZ1C in-flight indicator visual chrome.
+ * dev-card-z1c.css — DevZ1C in-flight indicator visual chrome.
  *
- * Per [D19] / `#spec-z1c`, TideZ1C is rendered inside
+ * Per [D19] / `#spec-z1c`, DevZ1C is rendered inside
  * `TugTranscriptEntry`'s `inflightFooter` slot — the slot owns the
  * row-level layout (left edge, top margin, gap with neighbouring
  * footer chrome), so this file carries only the indicator's own

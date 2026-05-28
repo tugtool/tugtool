@@ -27,7 +27,7 @@ import {
   deriveLifecycleSnapshot,
   lifecycleSnapshotsEqual,
   type LifecycleStoreSignals,
-  type TideLifecycleSnapshot,
+  type DevLifecycleSnapshot,
 } from "../lifecycle-state";
 
 // ---------------------------------------------------------------------------
@@ -53,8 +53,8 @@ const ONE_TURN: ReadonlyArray<unknown> = [{}];
 
 function derive(
   s: LifecycleStoreSignals,
-  previous?: TideLifecycleSnapshot,
-): TideLifecycleSnapshot {
+  previous?: DevLifecycleSnapshot,
+): DevLifecycleSnapshot {
   return deriveLifecycleSnapshot(s, previous);
 }
 

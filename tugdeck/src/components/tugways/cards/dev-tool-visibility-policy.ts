@@ -1,7 +1,7 @@
 /**
  * dev-tool-visibility-policy.ts — the single editable source of truth
  * for how Claude Code tool names render (or do not render) in the
- * Tide transcript.
+ * Dev transcript.
  *
  * # The three buckets
  *

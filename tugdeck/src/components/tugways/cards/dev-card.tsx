@@ -1,8 +1,8 @@
 /**
- * dev-card.tsx — Tide card (Unified Command Surface).
+ * dev-card.tsx — Dev card (Unified Command Surface).
  *
  * Mounts `TugPromptEntry` inside a horizontal `TugSplitPane`. The top
- * pane (`TideTranscriptHost`) renders the multi-turn transcript and
+ * pane (`DevTranscriptHost`) renders the multi-turn transcript and
  * absorbs all height growth as the card grows. The bottom pane (the
  * prompt entry) is pinned to a pixel size — defaults to 240px, floored
  * at 180px, capped at 90% of the card — and uses
@@ -34,11 +34,11 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
-import { TideTranscriptHost, type TideTranscriptHandle } from "./dev-card-transcript";
-import { TideCardSashGrip } from "./dev-card-sash-grip";
-import { useTidePlacementSlots } from "./dev-card-placement-experiment";
-import { TideRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
-import { TideSessionIdBadge } from "../chrome/dev-session-id-badge";
+import { DevTranscriptHost, type DevTranscriptHandle } from "./dev-card-transcript";
+import { DevCardSashGrip } from "./dev-card-sash-grip";
+import { useDevPlacementSlots } from "./dev-card-placement-experiment";
+import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
+import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -73,7 +73,7 @@ import { useSheetDelegate } from "@/lib/sheet-lifecycle";
 import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
-import { deriveTideCardBannerSpec } from "./dev-card-banner-spec";
+import { deriveDevCardBannerSpec } from "./dev-card-banner-spec";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -92,7 +92,7 @@ import { sendSpawnSession } from "@/lib/session-lifecycle";
 import { TugProgressIndicator } from "../tug-progress-indicator";
 import {
   tideRestoreRegistry,
-  cancelTideRestore,
+  cancelDevRestore,
   fireRestore,
   getRestoreStartedAt,
   clearRestoreStartedAt,
@@ -107,19 +107,19 @@ import {
   type SpawnError,
 } from "@/lib/dev-spawn-error-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
-import { useTideCardObserver } from "./use-dev-card-observer";
+import { useDevCardObserver } from "./use-dev-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
   useSessionLedger,
-  getTideSessionLedgerStore,
+  getDevSessionLedgerStore,
 } from "@/lib/dev-session-ledger-store";
 import type { SessionRow } from "@/protocol";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 import {
-  useTideRecentsDataSource,
-  useTideSessionsDataSource,
+  useDevRecentsDataSource,
+  useDevSessionsDataSource,
 } from "@/lib/dev-picker-data-source";
 import {
   PickerCellProvider,
@@ -165,7 +165,7 @@ const ENTRY_PANEL_MAX_PCT = 90;
 
 /**
  * The picker sheet's exit animation duration, in milliseconds. Used
- * by the Open / Retry paths in `TideProjectPicker` to defer the
+ * by the Open / Retry paths in `DevProjectPicker` to defer the
  * binding-mutating wire frame until after the sheet has finished
  * animating out, so the resulting card-body flip doesn't unmount the
  * picker mid-animation.
@@ -181,7 +181,7 @@ const SHEET_EXIT_ANIMATION_MS = 220;
  * value (`❯` Code / `$` Shell — see `ROUTE_ITEMS` in
  * `tug-prompt-entry.tsx`). Forwarded as `placeholderByRoute`; the
  * entry shows the match for the active route and falls back to no
- * placeholder for any unlisted route. Tide-specific — the gallery
+ * placeholder for any unlisted route. Dev-specific — the gallery
  * prompt-entry passes nothing.
  */
 const TIDE_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
@@ -207,7 +207,7 @@ const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvide
 /**
  * Human-readable labels for the `lastError` causes the card surfaces as
  * an inline banner above the entry. `resume_failed` is intentionally
- * absent — that cause is intercepted by `useTideCardObserver`, which
+ * absent — that cause is intercepted by `useDevCardObserver`, which
  * clears the binding and routes the notice through the picker-sheet
  * instead.
  */
@@ -228,7 +228,7 @@ const CAUSE_LABELS: Record<BannerErrorCause, string> = {
 // Props
 // ---------------------------------------------------------------------------
 
-export interface TideCardContentProps {
+export interface DevCardContentProps {
   /**
    * Card instance id. Forwarded from the card registry's `contentFactory`
    * callback and used for per-card workspace binding (via
@@ -251,7 +251,7 @@ export interface TideCardContentProps {
    * Collapses to zero height when `undefined`. Layout shift on
    * telemetry update is contained (the row grows into space the
    * transcript ceded; no scroll repositioning). Per [D100] this slot
-   * houses `TideTelemetryStatusRow`, which carries a `TASKS` cell
+   * houses `DevTelemetryStatusRow`, which carries a `TASKS` cell
    * (TugProgressIndicator ring + `N/M`) and an associated popover —
    * superseding the prior Z2A/Z2B split.
    */
@@ -262,7 +262,7 @@ export interface TideCardContentProps {
    * button (currently empty by default); the assistant half wires
    * next to the assistant-row's copy button.
    */
-  renderTurnTrailing?: TideTurnTrailingRenderer;
+  renderTurnTrailing?: DevTurnTrailingRenderer;
   /**
    * Z4 — prompt-entry footer slot. Renders inside the prompt-entry
    * toolbar between the route choice group and the submit button.
@@ -277,8 +277,8 @@ export interface TideCardContentProps {
  * committed rows) so renderers can subscribe to the right per-turn
  * data without leaking the transcript's data-source contract.
  */
-export type TideTurnTrailingRenderer = (
-  context: TideTurnTrailingContext,
+export type DevTurnTrailingRenderer = (
+  context: DevTurnTrailingContext,
 ) => React.ReactNode;
 
 /**
@@ -287,7 +287,7 @@ export type TideTurnTrailingRenderer = (
  * on `half` to vary content. `turn` is `undefined` for in-flight rows
  * (no `TurnEntry` exists yet) and for the live user row.
  */
-export interface TideTurnTrailingContext {
+export interface DevTurnTrailingContext {
   /** Stable per-turn key — matches `row.turnKey` in the data source. */
   turnKey: string;
   /** Which half of the turn is asking for trailing content. */
@@ -301,7 +301,7 @@ export interface TideTurnTrailingContext {
 // ---------------------------------------------------------------------------
 
 /**
- * Module-scoped `PromptHistoryStore`. Shared across every Tide card,
+ * Module-scoped `PromptHistoryStore`. Shared across every Dev card,
  * constructed lazily on first access, never disposed — the singleton
  * outlives any individual card so history survives close + reopen.
  *
@@ -312,7 +312,7 @@ export interface TideTurnTrailingContext {
  * project arrives once a stable per-workspace session id exists.
  */
 let _tidePromptHistoryStore: PromptHistoryStore | null = null;
-function getTidePromptHistoryStore(): PromptHistoryStore {
+function getDevPromptHistoryStore(): PromptHistoryStore {
   if (_tidePromptHistoryStore === null) {
     _tidePromptHistoryStore = new PromptHistoryStore();
   }
@@ -320,17 +320,17 @@ function getTidePromptHistoryStore(): PromptHistoryStore {
 }
 
 // ---------------------------------------------------------------------------
-// useTideCardServices
+// useDevCardServices
 // ---------------------------------------------------------------------------
 
 /**
- * Per-card services consumed by `TideCardContent`. Constructed once a
+ * Per-card services consumed by `DevCardContent`. Constructed once a
  * binding for this card appears in `cardSessionBindingStore`, torn
  * down when the binding clears or the card unmounts. The hook
  * returns `null` while the card is unbound — the caller renders the
  * project-picker (arriving in sub-step 4c) in that state.
  */
-export interface TideCardServices {
+export interface DevCardServices {
   codeSessionStore: CodeSessionStore;
   sessionMetadataStore: SessionMetadataStore;
   historyStore: PromptHistoryStore;
@@ -346,7 +346,7 @@ export interface TideCardServices {
   entryDelegateRef: RefObject<TugPromptEntryDelegate | null>;
 }
 
-export function useTideCardServices(cardId: string): TideCardServices | null {
+export function useDevCardServices(cardId: string): DevCardServices | null {
   // Read services from the module-scope `cardServicesStore` via
   // `useSyncExternalStore` ([L02]). The store handles all lifecycle:
   // it subscribes to `cardSessionBindingStore` and constructs/disposes
@@ -390,12 +390,12 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
     [services],
   );
 
-  return useMemo<TideCardServices | null>(() => {
+  return useMemo<DevCardServices | null>(() => {
     if (services === null) return null;
     return {
       codeSessionStore: services.codeSessionStore,
       sessionMetadataStore: services.sessionMetadataStore,
-      historyStore: getTidePromptHistoryStore(),
+      historyStore: getDevPromptHistoryStore(),
       completionProviders,
       editorStore: services.editorStore,
       responseStore: services.responseStore,
@@ -405,19 +405,19 @@ export function useTideCardServices(cardId: string): TideCardServices | null {
 }
 
 // ---------------------------------------------------------------------------
-// TideCardContent
+// DevCardContent
 // ---------------------------------------------------------------------------
 
-export function TideCardContent({
+export function DevCardContent({
   cardId,
   headerContent,
   statusBarContent,
   renderTurnTrailing,
   footerContent,
-}: TideCardContentProps) {
-  const services = useTideCardServices(cardId);
-  // Subscribe to the restore registry so `TideRestoring` mounts as
-  // soon as `restoreTideSessions` fires a `spawn_session(resume)` for
+}: DevCardContentProps) {
+  const services = useDevCardServices(cardId);
+  // Subscribe to the restore registry so `DevRestoring` mounts as
+  // soon as `restoreDevSessions` fires a `spawn_session(resume)` for
   // this card, and unmounts the moment the binding lands (registry
   // entry cleared via the cardSessionBindingStore subscriber inside
   // `dev-session-restore`).
@@ -436,7 +436,7 @@ export function TideCardContent({
   );
   if (services !== null) {
     return (
-      <TideCardServicesGate
+      <DevCardServicesGate
         cardId={cardId}
         services={services}
         headerContent={headerContent}
@@ -449,7 +449,7 @@ export function TideCardContent({
   const expectation = restoreMap.get(cardId);
   if (expectation !== undefined) {
     return (
-      <TideRestoring
+      <DevRestoring
         variant="binding"
         cardId={cardId}
         projectDir={expectation.projectDir}
@@ -460,27 +460,27 @@ export function TideCardContent({
     // Restore pass still in flight — this unbound card may yet have a
     // ledger binding. Hold the quiet `pass-pending` placeholder
     // rather than flashing the picker; once the pass settles this
-    // re-renders to either `TideRestoring` (a registry entry landed)
+    // re-renders to either `DevRestoring` (a registry entry landed)
     // or the picker (genuinely a fresh card).
     return (
-      <TideRestoring
+      <DevRestoring
         variant="pass-pending"
         cardId={cardId}
         projectDir=""
       />
     );
   }
-  return <TideProjectPicker cardId={cardId} />;
+  return <DevProjectPicker cardId={cardId} />;
 }
 
 // ---------------------------------------------------------------------------
-// TideCardServicesGate — transportState routing
+// DevCardServicesGate — transportState routing
 // ---------------------------------------------------------------------------
 
 /**
- * Routes between `TideCardBody` and `TideRestoring`. The body renders
+ * Routes between `DevCardBody` and `DevRestoring`. The body renders
  * once the card is genuinely ready; until then the single
- * `TideRestoring` placeholder holds.
+ * `DevRestoring` placeholder holds.
  *
  * Two restore windows route to the placeholder:
  *
@@ -501,10 +501,10 @@ export function TideCardContent({
  * gate, body mounted. The latch flips the first render the cold
  * restore is no longer active and never flips back.
  *
- * Why a wrapper rather than an early return inside `TideCardBody`:
- * `TideCardBody` calls many hooks after the snapshot read; an early
+ * Why a wrapper rather than an early return inside `DevCardBody`:
+ * `DevCardBody` calls many hooks after the snapshot read; an early
  * return there would change hook order between renders. Localizing
- * the routing read in this thin gate keeps `TideCardBody`'s hook list
+ * the routing read in this thin gate keeps `DevCardBody`'s hook list
  * stable.
  *
  * The gate also reads `projectDir` reactively from the binding store
@@ -512,14 +512,14 @@ export function TideCardContent({
  * happens while transportState is in flight (rare; this is defensive
  * against the single notify per `setBinding`).
  */
-function TideCardServicesGate({
+function DevCardServicesGate({
   cardId,
   services,
   headerContent,
   statusBarContent,
   renderTurnTrailing,
   footerContent,
-}: TideCardBodyProps) {
+}: DevCardBodyProps) {
   // Two narrow selectors, not the whole snapshot: each returns a
   // primitive, so the gate re-renders only when the routing decision
   // could actually change — not on every `turn_complete` that ticks
@@ -560,7 +560,7 @@ function TideCardServicesGate({
   // the first reveal.
   if (transportState === "restoring" || (!revealed && coldRestoreActive)) {
     return (
-      <TideRestoring
+      <DevRestoring
         variant="binding"
         cardId={cardId}
         projectDir={projectDir}
@@ -569,7 +569,7 @@ function TideCardServicesGate({
   }
 
   return (
-    <TideCardBody
+    <DevCardBody
       cardId={cardId}
       services={services}
       headerContent={headerContent}
@@ -581,7 +581,7 @@ function TideCardServicesGate({
 }
 
 // ---------------------------------------------------------------------------
-// TideRestoring — in-flight restore placeholder
+// DevRestoring — in-flight restore placeholder
 // ---------------------------------------------------------------------------
 
 /**
@@ -603,7 +603,7 @@ function TideCardServicesGate({
  *
  * Restore is a hard-stop beat: the `binding` variant's panel carries
  * Cancel so a genuinely stuck restore can drop to the picker via
- * `cancelTideRestore`.
+ * `cancelDevRestore`.
  *
  * Two variants:
  *   - `binding` — a specific session is being restored (a registry
@@ -617,31 +617,31 @@ function TideCardServicesGate({
  * The discriminator drives `data-variant` so CSS and tests can target
  * each surface unambiguously.
  */
-type TideRestoringVariant = "binding" | "pass-pending";
+type DevRestoringVariant = "binding" | "pass-pending";
 
-interface TideRestoringProps {
-  variant: TideRestoringVariant;
-  /** The Cancel button calls `cancelTideRestore(cardId)`. */
+interface DevRestoringProps {
+  variant: DevRestoringVariant;
+  /** The Cancel button calls `cancelDevRestore(cardId)`. */
   cardId: string;
   /** Path label rendered under the title. */
   projectDir: string;
 }
 
 /**
- * Delay before `TideRestoring` reveals its centered panel — mirrors
+ * Delay before `DevRestoring` reveals its centered panel — mirrors
  * `REPLAY_SOFT_BUDGET_MS` so "the restore is taking long enough to
  * explain itself" is one threshold across the codebase. Under it, the
  * restore shows only the quiet backdrop.
  */
 const RESTORE_PLACEHOLDER_DELAY_MS = REPLAY_SOFT_BUDGET_MS;
 
-function TideRestoring({
+function DevRestoring({
   variant,
   cardId,
   projectDir,
-}: TideRestoringProps) {
+}: DevRestoringProps) {
   const handleCancel = useCallback(() => {
-    cancelTideRestore(cardId);
+    cancelDevRestore(cardId);
   }, [cardId]);
 
   // Delay gate. The restore-start stamp persists across this
@@ -732,10 +732,10 @@ function TideRestoring({
 }
 
 // ---------------------------------------------------------------------------
-// TideProjectPicker
+// DevProjectPicker
 // ---------------------------------------------------------------------------
 
-interface TideProjectPickerProps {
+interface DevProjectPickerProps {
   cardId: string;
 }
 
@@ -748,7 +748,7 @@ interface TideProjectPickerProps {
  *   - Open  → `spawn_session` frame is sent; the sheet closes. When
  *             `spawn_session_ok` arrives, `cardSessionBindingStore`
  *             populates the binding for `cardId` and
- *             `useTideCardServices` transitions from `null` to a ready
+ *             `useDevCardServices` transitions from `null` to a ready
  *             services bag, flipping the card into its split-pane body.
  *   - Cancel → sheet closes; the card closes too (dispatch `close`
  *             through the responder chain to the first card responder).
@@ -758,7 +758,7 @@ interface TideProjectPickerProps {
  * the card is simply empty (sheet already dismissed). The `lastError`
  * banner arrives in Step 6.
  */
-function TideProjectPicker({ cardId }: TideProjectPickerProps) {
+function DevProjectPicker({ cardId }: DevProjectPickerProps) {
   const { showSheet, renderSheet } = useTugSheet();
   const manager = useResponderChain();
   const senderId = useId();
@@ -795,7 +795,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
     // picker renders a Retry button that re-fires the restore and
     // closes the sheet; "retry" is treated like "open" in `onClosed`
     // below (no CLOSE dispatch — the card stays mounted so
-    // `TideCardContent` can flip to `TideRestoring`).
+    // `DevCardContent` can flip to `DevRestoring`).
     const noticeForRetry = noticeRef.current;
     const retryTugSessionId = noticeForRetry?.staleTugSessionId;
     const retryProjectDir = noticeForRetry?.staleProjectDir;
@@ -820,12 +820,12 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
       // `onClosed` below — that's what makes the dispatch robust.
       cascadeTargetId: cardId,
       content: (close) => (
-        <TideProjectPickerForm
+        <DevProjectPickerForm
           notice={noticeRef.current}
           onOpen={(projectDir, sessionMode, sessionId) => {
             const connection = getConnection();
             if (!connection) {
-              console.warn("TideProjectPicker: connection unavailable");
+              console.warn("DevProjectPicker: connection unavailable");
               return;
             }
             // Start the sheet's exit animation FIRST. Defer the wire
@@ -846,7 +846,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
                 // `session_live_elsewhere` when the session's ledger
                 // entry is still bound to another card). Route it
                 // through `fireRestore` so it registers a restore
-                // expectation: the card shows `TideRestoring` while
+                // expectation: the card shows `DevRestoring` while
                 // in flight, and a rejection (the `SESSION_STATE`
                 // errored frame) clears the registry and sets a
                 // picker notice — which re-presents the picker with
@@ -874,7 +874,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
                   const connection = getConnection();
                   if (!connection) {
                     console.warn(
-                      "TideProjectPicker: connection unavailable for retry",
+                      "DevProjectPicker: connection unavailable for retry",
                     );
                     return;
                   }
@@ -911,7 +911,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   // `useTugSheet().showSheet({ onClosed })` closure-callback to
   // the per-card `sheetDidReturnResult` lifecycle event so the
   // dispatch composes with other lifecycle subscribers (e.g.,
-  // `TideCardBody`'s `sheetDidHide` focus claim) on a single
+  // `DevCardBody`'s `sheetDidHide` focus claim) on a single
   // observable pipe.
   //
   // Cascade dispatch via `sendToTarget(cardId, …)` per [D02]:
@@ -924,12 +924,12 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   // `result === "open"` and `"retry"` leave the card mounted (the
   // binding subscription flips into the split-pane body when
   // `spawn_session_ok` arrives, or `fireRestore` triggers a
-  // re-render into `TideRestoring`); only the implicit
+  // re-render into `DevRestoring`); only the implicit
   // `undefined` result and any other future cancel-class result
   // close the card.
   //
   // `CLOSE_TAB` (not `CLOSE`): a picker cancel has nothing to save —
-  // the card hasn't opened a session yet — so it must bypass Tide's
+  // the card hasn't opened a session yet — so it must bypass Dev's
   // `confirmClose: true` policy that `CLOSE` would trigger. The
   // pane's `CLOSE_TAB` handler removes the card directly, and
   // `_removeCard` cascades to `_closePane` when removing the last
@@ -1005,7 +1005,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
         }
       >
         <p>
-          Tide couldn&apos;t start a session here. Choose a directory that
+          Dev couldn&apos;t start a session here. Choose a directory that
           exists and try again.
         </p>
       </TugPaneBanner>
@@ -1013,7 +1013,7 @@ function TideProjectPicker({ cardId }: TideProjectPickerProps) {
   );
 }
 
-interface TideProjectPickerFormProps {
+interface DevProjectPickerFormProps {
   /**
    * Notice surfaced above the form when the picker is re-presented
    * after a session failure (e.g. a resume that didn't take, a
@@ -1032,7 +1032,7 @@ interface TideProjectPickerFormProps {
    * Invoked when the user clicks Retry on a notice that carries
    * `staleTugSessionId` + `staleProjectDir`. Re-fires the restore via
    * `fireRestore` — the card flips from picker back to
-   * `TideRestoring` and the whole cycle runs again. `null` on a
+   * `DevRestoring` and the whole cycle runs again. `null` on a
    * fresh-picker notice that doesn't carry retry context.
    */
   onRetryRestore: (() => void) | null;
@@ -1047,7 +1047,7 @@ interface SessionRecord {
 
 /**
  * Pure parser for the `dev.tugtool.tide / recent-projects` tagged-value
- * entry. Mirrors `readTideRecentProjects` in shape — split out so the
+ * entry. Mirrors `readDevRecentProjects` in shape — split out so the
  * picker can subscribe to live updates via `useTugbankValue` instead of
  * reading once into `useState` (an L02 violation when external state
  * is copied into React state, even via a lazy initial value).
@@ -1097,12 +1097,12 @@ function noticeText(notice: PickerNotice): string {
   }
 }
 
-function TideProjectPickerForm({
+function DevProjectPickerForm({
   notice,
   onOpen,
   onCancel,
   onRetryRestore,
-}: TideProjectPickerFormProps) {
+}: DevProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Form's outer DOM node — used to scope the anchor querySelector for
   // the form-owned trash-confirmation popover so the lookup never
@@ -1112,7 +1112,7 @@ function TideProjectPickerForm({
 
   // External state via `useSyncExternalStore` per [L02]. Recents
   // ride on tugbank; sessions flow through the tugcast-side
-  // `TideSessionLedgerStore` keyed on the user-typed path.
+  // `DevSessionLedgerStore` keyed on the user-typed path.
   const recents = useTugbankValue(
     "dev.tugtool.tide",
     "recent-projects",
@@ -1157,8 +1157,8 @@ function TideProjectPickerForm({
   // visible — clicking one fills the input but the list does not
   // collapse) above Sessions (always visible — placeholder when no
   // path / ledger pending).
-  const recentsDataSource = useTideRecentsDataSource(recents, trimmedPath);
-  const sessionsDataSource = useTideSessionsDataSource(
+  const recentsDataSource = useDevRecentsDataSource(recents, trimmedPath);
+  const sessionsDataSource = useDevSessionsDataSource(
     trimmedPath,
     sessionLedger,
   );
@@ -1207,7 +1207,7 @@ function TideProjectPickerForm({
 
   const trashSession = useCallback(
     (sessionId: string): void => {
-      const store = getTideSessionLedgerStore();
+      const store = getDevSessionLedgerStore();
       if (store === null) return;
       const row = ledgerRows.find((r) => r.session_id === sessionId);
       if (row === undefined || row.state === "live") return;
@@ -1314,7 +1314,7 @@ function TideProjectPickerForm({
   const pendingTrashMessage = "Move to Trash?";
 
   const trashAll = useCallback((): void => {
-    const store = getTideSessionLedgerStore();
+    const store = getDevSessionLedgerStore();
     if (store === null) return;
     let any = false;
     for (const row of ledgerRows) {
@@ -1713,15 +1713,15 @@ function TideProjectPickerForm({
 }
 
 
-interface TideCardBodyProps {
+interface DevCardBodyProps {
   cardId: string;
-  services: TideCardServices;
+  services: DevCardServices;
   /** Z0 — top-of-card content; null collapses the row. */
   headerContent?: React.ReactNode;
   /** Z2 — status-bar content; null collapses the row. */
   statusBarContent?: React.ReactNode;
   /** Z1 — per-turn trailing renderer; invoked once per row half. */
-  renderTurnTrailing?: TideTurnTrailingRenderer;
+  renderTurnTrailing?: DevTurnTrailingRenderer;
   /** Z4 — prompt-entry footer content; null collapses the slot. */
   footerContent?: React.ReactNode;
 }
@@ -1729,7 +1729,7 @@ interface TideCardBodyProps {
 /**
  * Render the consolidated `<TugPaneBanner>` from a derived spec.
  * The body calls this once with the spec from
- * `deriveTideCardBannerSpec` and the `setDismissedAt` setter the
+ * `deriveDevCardBannerSpec` and the `setDismissedAt` setter the
  * Dismiss footer wires up for the `error` kind. Centralized here so
  * the JSX stays close to its presentation siblings without burying
  * the precedence-chain mapping inside the body's render tree.
@@ -1749,8 +1749,8 @@ interface TideCardBodyProps {
  * losing the `lastVisiblePropsRef` hold that keeps content stable
  * during exit.
  */
-function renderTideCardBanner(
-  spec: ReturnType<typeof deriveTideCardBannerSpec>,
+function renderDevCardBanner(
+  spec: ReturnType<typeof deriveDevCardBannerSpec>,
   setDismissedAt: (at: number) => void,
 ): React.ReactElement {
   if (spec.kind === "error") {
@@ -1820,24 +1820,24 @@ function renderTideCardBanner(
   return <TugPaneBanner visible={false} message="" />;
 }
 
-export function TideCardBody({
+export function DevCardBody({
   cardId,
   services,
   headerContent,
   statusBarContent,
   renderTurnTrailing,
   footerContent,
-}: TideCardBodyProps) {
+}: DevCardBodyProps) {
   const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, entryDelegateRef } = services;
 
-  useTideCardObserver(cardId, codeSessionStore);
+  useDevCardObserver(cardId, codeSessionStore);
 
   const entryPanelRef = useRef<TugSplitPanelHandle | null>(null);
   // Imperative handle to the transcript pane. `handleAfterSubmit`
   // reads it to jump the transcript back to the live edge on submit
   // (the transcript is a split-pane sibling of the prompt entry, so
   // the gesture can't bubble through the DOM).
-  const transcriptRef = useRef<TideTranscriptHandle | null>(null);
+  const transcriptRef = useRef<DevTranscriptHandle | null>(null);
   // Captured by the JSX's composed ref below for the first-mount
   // fade-in animation. Read by a useLayoutEffect with empty deps —
   // the effect runs once when this card first acquires services
@@ -1860,10 +1860,10 @@ export function TideCardBody({
   // clear semantics — on retry submit or turn_complete(success) the snapshot
   // transitions to `lastError: null` and the derivation drops the banner.
   // `resume_failed` is filtered out by the helper because
-  // `useTideCardObserver` is about to clear the binding and route that
+  // `useDevCardObserver` is about to clear the binding and route that
   // cause through the picker.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const bannerSpec = deriveTideCardBannerSpec(codeSnap, { dismissedAt });
+  const bannerSpec = deriveDevCardBannerSpec(codeSnap, { dismissedAt });
 
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
@@ -2045,7 +2045,7 @@ export function TideCardBody({
   // **Contract** ([L24] structure-zone events drive structure-zone
   // effects): every overlay that sets `inert` on this card's
   // `.tug-pane-body` MUST emit a per-card `xxxDidHide` lifecycle event
-  // after `inert` is cleared, and `TideCardBody` MUST subscribe with
+  // after `inert` is cleared, and `DevCardBody` MUST subscribe with
   // an idempotent focus claim gated on this card being first
   // responder. Adding a new overlay that violates the contract
   // silently breaks the editor's caret on dismissal.
@@ -2089,7 +2089,7 @@ export function TideCardBody({
   //       every overlay show/hide cycle by this contract.
   // [L24] structure-zone (`inert` clearing) drives structure-zone
   //       (focus reclaim) via the per-overlay event pipe.
-  // Tide-card's one focus destination is its `tug-prompt-entry`.
+  // Dev-card's one focus destination is its `tug-prompt-entry`.
   // Several lifecycle triggers need to re-claim it; each is gated on
   // this card being first responder so a background-card event never
   // steals focus from the card the user is actually in. The
@@ -2163,7 +2163,7 @@ export function TideCardBody({
   //       with the rest of the body. The focus contract documented
   //       above is unaffected — the fade does not set `inert` and
   //       does not interfere with `view.hasFocus`.
-  // [L24] structure-zone (`TideCardBody` mount) drives appearance-
+  // [L24] structure-zone (`DevCardBody` mount) drives appearance-
   //       zone (opacity ramp); the WAAPI animation writes directly
   //       to the DOM, never round-tripping through React state ([L02]
   //       does not apply because this is appearance, not data).
@@ -2338,7 +2338,7 @@ export function TideCardBody({
   // The status badge shows the card's bound `projectDir` — the cwd that
   // Claude is running against. Subscribed via L02 so a rebind (when
   // picker → spawn_session completes) repaints without an extra prop
-  // handoff. Fallback to null is defensive: `TideCardBody` only renders
+  // handoff. Fallback to null is defensive: `DevCardBody` only renders
   // when services are non-null, which implies a binding, but during the
   // narrow window between binding clear and services teardown we render
   // nothing rather than a stale path.
@@ -2358,10 +2358,10 @@ export function TideCardBody({
   // Dev-only placement-experiment slots. In production this returns
   // an object with every slot undefined (the harness is gated behind
   // the empty-default tugbank mapping); in dev, the slots resolve
-  // whichever datum the current `window.tugTidePlacement` mapping
-  // selects. Explicit props on `TideCardBody` win over experiment
+  // whichever datum the current `window.tugDevPlacement` mapping
+  // selects. Explicit props on `DevCardBody` win over experiment
   // content — the harness only fills slots the caller left unset.
-  const experimentSlots = useTidePlacementSlots({
+  const experimentSlots = useDevPlacementSlots({
     codeSessionStore,
     sessionMetadataStore,
     onScrollToRow: handleScrollToRow,
@@ -2420,8 +2420,8 @@ export function TideCardBody({
         storageKey={`tide.prompt-entry.${cardId}`}
       >
         {/*
-          Top pane: multi-turn transcript. `TideTranscriptHost` mounts a
-          `TugListView` over a `TideTranscriptDataSource` that maps
+          Top pane: multi-turn transcript. `DevTranscriptHost` mounts a
+          `TugListView` over a `DevTranscriptDataSource` that maps
           `codeSessionStore.transcript` (committed turns) and
           `inflightUserMessage` (the live submission) onto pairs of
           `(user, code)` rows. The streaming `code` cell observes
@@ -2433,7 +2433,7 @@ export function TideCardBody({
         <TugSplitPanel id="dev-card-top" defaultSize="70%" minSize="10%">
           {/*
             Top-pane flex column — three rows (Z0 / transcript / Z2).
-            Always rendered so `TideTranscriptHost`'s mount identity
+            Always rendered so `DevTranscriptHost`'s mount identity
             stays stable across slot-content changes ([L26]); empty
             Z0 / Z2 wrappers collapse to zero height via `flex: 0 0
             auto` + no intrinsic content.
@@ -2448,7 +2448,7 @@ export function TideCardBody({
             >
               {effectiveHeaderContent}
             </div>
-            <TideTranscriptHost
+            <DevTranscriptHost
               ref={transcriptRef}
               codeSessionStore={codeSessionStore}
               sessionMetadataStore={sessionMetadataStore}
@@ -2474,7 +2474,7 @@ export function TideCardBody({
               */}
               {effectiveStatusBarContent != null && (
                 <>
-                  <TideCardSashGrip
+                  <DevCardSashGrip
                     entryPanelRef={entryPanelRef}
                     side="start"
                     disabled={maximized}
@@ -2537,12 +2537,12 @@ export function TideCardBody({
                 onAfterSubmit={handleAfterSubmit}
                 indicatorsContent={
                   <>
-                    <TideRouteIndicatorBadge
+                    <DevRouteIndicatorBadge
                       codeSessionStore={codeSessionStore}
                       sessionMetadataStore={sessionMetadataStore}
                     />
                     {effectivePromptStatusContent}
-                    <TideSessionIdBadge cardId={cardId} />
+                    <DevSessionIdBadge cardId={cardId} />
                     {effectiveFooterContent}
                   </>
                 }
@@ -2559,7 +2559,7 @@ export function TideCardBody({
         </TugSplitPanel>
       </TugSplitPane>
       {/*
-        Single TugPaneBanner driven by `deriveTideCardBannerSpec`.
+        Single TugPaneBanner driven by `deriveDevCardBannerSpec`.
         The precedence chain (error > transport > none) is enforced
         in the helper; this JSX maps the spec's discriminated kind
         to TugPaneBanner props. Mutual exclusion by construction —
@@ -2572,7 +2572,7 @@ export function TideCardBody({
         false`; the component runs its exit animation and then
         unmounts via its internal `mounted` state.
       */}
-      {renderTideCardBanner(bannerSpec, setDismissedAt)}
+      {renderDevCardBanner(bannerSpec, setDismissedAt)}
       </div>
     </CardContentResponderScope>
   );
@@ -2585,7 +2585,7 @@ export function TideCardBody({
 /**
  * Props for {@link SettingsSheetBody}.
  *
- * Sender ids are provided by the enclosing `TideCardBody` so the form
+ * Sender ids are provided by the enclosing `DevCardBody` so the form
  * bindings (registered there via `useResponderForm`) can target the
  * controls. Both stores are forwarded so the body can subscribe
  * directly via `useSyncExternalStore` and stay in sync without an
@@ -2613,7 +2613,7 @@ function letterSpacingLabel(value: number): string {
 
 /**
  * Body of the combined settings sheet shown when the user taps the `…`
- * button in the Tide card's title bar.
+ * button in the Dev card's title bar.
  *
  * Two stacked sections:
  *   1. **Response** — the inter-entry vertical gap. Magnification
@@ -2752,26 +2752,26 @@ function SettingsSheetBody({
 }
 
 // ---------------------------------------------------------------------------
-// registerTideCard
+// registerDevCard
 // ---------------------------------------------------------------------------
 
 /**
  * Register the Dev card in the global card registry.
  *
- * Per `roadmap/dev-to-dev-rename.md` [D08], during the Tide → Dev
+ * Per `roadmap/dev-to-dev-rename.md` [D08], during the Dev → Dev
  * transition two `componentId` registrations are live: `"dev"` (the
  * new canonical name, title "Dev") and `"tide"` (a back-compat alias
  * that preserves existing call sites). Both registrations share the
- * same `TideCardContent` component and lifecycle. Step 11 of the
+ * same `DevCardContent` component and lifecycle. Step 11 of the
  * rename plan drops the `"tide"` alias once all consumers swap.
  *
  * Must be called before `DeckManager.addCard("dev")` (or the legacy
  * `addCard("tide")`) is invoked. Call from `main.tsx` alongside
  * `registerGitCard()`.
  */
-export function registerTideCard(): void {
+export function registerDevCard(): void {
   const shared = {
-    contentFactory: (cardId: string) => <TideCardContent cardId={cardId} />,
+    contentFactory: (cardId: string) => <DevCardContent cardId={cardId} />,
     defaultFeedIds: [
       FeedId.CODE_INPUT,
       FeedId.CODE_OUTPUT,
@@ -2811,6 +2811,6 @@ export function registerTideCard(): void {
   registerCard({
     componentId: "tide",
     ...shared,
-    defaultMeta: { title: "Tide", icon: "MessageSquareText", closable: true, confirmClose: true },
+    defaultMeta: { title: "Dev", icon: "MessageSquareText", closable: true, confirmClose: true },
   });
 }

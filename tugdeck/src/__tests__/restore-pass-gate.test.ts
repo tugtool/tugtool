@@ -1,11 +1,11 @@
 /**
  * Unit tests for `RestorePassGate` — the one-shot signal that gates
- * the Tide project picker behind the startup restore pass.
+ * the Dev project picker behind the startup restore pass.
  *
- * `TideCardContent` holds an unbound card on the restore placeholder
+ * `DevCardContent` holds an unbound card on the restore placeholder
  * until this gate is settled, so the project-picker sheet cannot
  * flash during the `list_card_bindings` round-trip. The gate's one
- * load-bearing invariant is idempotency: `restoreTideSessions` is
+ * load-bearing invariant is idempotency: `restoreDevSessions` is
  * re-run on every reconnect, and a timeout backstop can race the
  * response — none of those re-settles must re-notify subscribers or
  * un-settle the gate. These tests pin that on fresh instances.
@@ -37,7 +37,7 @@ describe("RestorePassGate", () => {
   });
 
   it("a second _settle is idempotent — no re-notify, still settled", () => {
-    // Models a reconnect `restoreTideSessions` pass, or a timeout
+    // Models a reconnect `restoreDevSessions` pass, or a timeout
     // backstop firing after the response already settled the gate.
     const gate = new RestorePassGate();
     let notifications = 0;

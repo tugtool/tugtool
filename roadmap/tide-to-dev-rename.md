@@ -707,12 +707,12 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D01], [D02]
 
 **Tasks:**
-- [ ] `Tide` → `Dev` for every PascalCase identifier across `tugdeck/src` (component names, type names, store names, hook names, interface names). Sanity-check via `git grep '\bTide[A-Z]'` — should return 0 hits after the rename.
-- [ ] Update file-internal references in lockstep.
+- [x] `Tide` → `Dev` for every identifier across active source (component names, type names, store names, hook names, interface names, doc-comment mentions). *Single sed pass `s/Tide/Dev/g` over the 115 files containing `Tide[A-Z]` (~753 hits) using `git grep -l 'Tide' tugdeck tests tugapp/Sources tugcode tugrust | while read f; do sed -i '' 's/Tide/Dev/g' "$f"; done`. This also swept the bare `Tide` codename references in doc comments and the useTidePlacementSlots → useDevPlacementSlots / useTideCardObserver → useDevCardObserver hook names (which would have been touched in Step 4 anyway).*
+- [x] Update file-internal references in lockstep. *Same pass covered it.*
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green. *3039 tests pass.*
 
 ---
 

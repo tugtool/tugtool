@@ -1,11 +1,11 @@
 /**
- * useTideCardObserver — bridges per-card session events to the
+ * useDevCardObserver — bridges per-card session events to the
  * picker-notice store.
  *
  * Single responsibility: when `lastError.cause === "resume_failed"`,
  * stash a one-shot notice keyed by this card and clear the binding.
- * The cleared binding makes `useTideCardServices` return null →
- * `TideCardContent` re-renders the picker, which reads the notice
+ * The cleared binding makes `useDevCardServices` return null →
+ * `DevCardContent` re-renders the picker, which reads the notice
  * and surfaces it above the radio group. We deliberately do NOT
  * call `sendCloseSession` here: the bridge has already torn down
  * on the supervisor side, so a close would leak a duplicate frame.
@@ -21,7 +21,7 @@ import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { pickerNoticeStore } from "@/lib/picker-notice-store";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 
-export function useTideCardObserver(
+export function useDevCardObserver(
   cardId: string,
   codeSessionStore: CodeSessionStore,
 ): void {

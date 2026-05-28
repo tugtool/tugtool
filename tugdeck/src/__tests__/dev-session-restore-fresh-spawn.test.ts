@@ -1,7 +1,7 @@
 /**
  * `dev-session-restore` — zero-turn fresh-spawn restore hold.
  *
- * On a cold relaunch, `restoreTideSessions` resolves each ledger
+ * On a cold relaunch, `restoreDevSessions` resolves each ledger
  * binding by `turn_count`: `> 0` resumes the JSONL, `=== 0` fires a
  * fresh `spawn_session(mode=new)` under the same project. The fresh
  * path mints a new session — there is nothing to "restore" — but the
@@ -11,7 +11,7 @@
  *
  * These tests pin the production wire that closes that window: the
  * zero-turn branch arms a `tideRestoreRegistry` hold (so
- * `TideCardContent` shows the quiet `TideRestoring` backdrop), and
+ * `DevCardContent` shows the quiet `DevRestoring` backdrop), and
  * `notifySpawnRejected` drops the hold when tugcast rejects the spawn
  * so the card can fall through to the picker + its error banner.
  *
@@ -23,7 +23,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 
 import type { TugConnection } from "@/connection";
 import {
-  restoreTideSessions,
+  restoreDevSessions,
   notifySpawnRejected,
   tideRestoreRegistry,
 } from "@/lib/dev-session-restore";
@@ -86,8 +86,8 @@ const TOUCHED_CARD_IDS = new Set<string>();
 function runRestore(cardId: string, projectDir: string): void {
   TOUCHED_CARD_IDS.add(cardId);
   const deck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
-  restoreTideSessions(
-    deck as unknown as Parameters<typeof restoreTideSessions>[0],
+  restoreDevSessions(
+    deck as unknown as Parameters<typeof restoreDevSessions>[0],
     fakeConnection,
   );
   publishListCardBindingsOk({ bindings: [zeroTurnBinding(cardId, projectDir)] });
@@ -110,7 +110,7 @@ describe("dev-session-restore — zero-turn fresh-spawn hold", () => {
 
     // Without the hold the card would fall through to the picker the
     // instant the pass gate settles; the entry keeps it on the quiet
-    // `TideRestoring` backdrop until the bind lands.
+    // `DevRestoring` backdrop until the bind lands.
     expect(tideRestoreRegistry.has(cardId)).toBe(true);
     expect(tideRestoreRegistry.get(cardId)?.projectDir).toBe(projectDir);
   });
@@ -142,8 +142,8 @@ describe("dev-session-restore — zero-turn fresh-spawn hold", () => {
     TOUCHED_CARD_IDS.add(cardId);
 
     const deck = createFakeDeck([{ id: cardId, componentId: "tide" }]);
-    restoreTideSessions(
-      deck as unknown as Parameters<typeof restoreTideSessions>[0],
+    restoreDevSessions(
+      deck as unknown as Parameters<typeof restoreDevSessions>[0],
       fakeConnection,
     );
     publishListCardBindingsOk({

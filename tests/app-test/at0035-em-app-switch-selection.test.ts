@@ -35,7 +35,7 @@
  *
  * `gallery-prompt-entry` (TugPromptEntry, what dev-card uses
  * internally). The legacy `gallery-prompt-input` was retired.
- * Tide itself can't run in the in-app sweep because
+ * Dev itself can't run in the in-app sweep because
  * its content factory gates on `feedsReady`, which depends on a
  * live tugcast/Claude Code stream — manual user verification
  * gates the tide path.

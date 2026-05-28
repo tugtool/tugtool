@@ -34,7 +34,7 @@ export interface SessionMetadataSnapshot {
   /**
    * Claude Code's stream-json format version (`system_metadata.version`,
    * e.g. `"2.1.105"`). `null` before the metadata event lands. Read by
-   * the Tide card's drift-caution surface to compare against the pinned
+   * the Dev card's drift-caution surface to compare against the pinned
    * catalog version.
    */
   version: string | null;

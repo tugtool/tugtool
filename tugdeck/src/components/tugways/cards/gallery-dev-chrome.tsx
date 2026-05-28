@@ -1,7 +1,7 @@
 /**
  * gallery-dev-chrome.tsx — visual fixture for the per-card chrome
- * surfaces shipped in [#step-29] and earlier: `TideSessionInitBanner`,
- * `TideErrorBlock`, and `TideCautionBadge`.
+ * surfaces shipped in [#step-29] and earlier: `DevSessionInitBanner`,
+ * `DevErrorBlock`, and `DevCautionBadge`.
  *
  * Each component stacks 3-5 mock variants:
  *
@@ -27,9 +27,9 @@
 
 import React from "react";
 
-import { TideSessionInitBanner } from "@/components/tugways/chrome/dev-session-init-banner";
-import { TideErrorBlock } from "@/components/tugways/chrome/dev-error-block";
-import { TideCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
+import { DevSessionInitBanner } from "@/components/tugways/chrome/dev-session-init-banner";
+import { DevErrorBlock } from "@/components/tugways/chrome/dev-error-block";
+import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -52,17 +52,17 @@ const META_MODEL_CHANGED = { ...META_BASE, model: "claude-sonnet-4-6" };
 const META_PERMISSION_CHANGED = { ...META_BASE, permissionMode: "plan" };
 
 // ---------------------------------------------------------------------------
-// GalleryTideChrome
+// GalleryDevChrome
 // ---------------------------------------------------------------------------
 
-export function GalleryTideChrome(): React.ReactElement {
+export function GalleryDevChrome(): React.ReactElement {
   return (
     <div className="cg-content" data-testid="gallery-dev-chrome">
       <div className="cg-section">
         <TugLabel className="cg-section-title">
           SessionInitBanner — first observation (no previous metadata)
         </TugLabel>
-        <TideSessionInitBanner
+        <DevSessionInitBanner
           input={{ kind: "system_metadata", metadata: META_BASE }}
         />
       </div>
@@ -74,7 +74,7 @@ export function GalleryTideChrome(): React.ReactElement {
           SessionInitBanner — identical repeat (renders null; nothing
           visible below this label)
         </TugLabel>
-        <TideSessionInitBanner
+        <DevSessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: META_BASE,
@@ -89,7 +89,7 @@ export function GalleryTideChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           SessionInitBanner — model changed
         </TugLabel>
-        <TideSessionInitBanner
+        <DevSessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: META_MODEL_CHANGED,
@@ -104,7 +104,7 @@ export function GalleryTideChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           SessionInitBanner — permission-mode changed
         </TugLabel>
-        <TideSessionInitBanner
+        <DevSessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: META_PERMISSION_CHANGED,
@@ -119,7 +119,7 @@ export function GalleryTideChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           SessionInitBanner — with drift caution chip
         </TugLabel>
-        <TideSessionInitBanner
+        <DevSessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: { ...META_BASE, version: "2.2.0" },
@@ -137,7 +137,7 @@ export function GalleryTideChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           ErrorBlock — recoverable (Retry button wired)
         </TugLabel>
-        <TideErrorBlock
+        <DevErrorBlock
           input={{
             kind: "error",
             message: "Network hiccup — request timed out after 30s.",
@@ -155,7 +155,7 @@ export function GalleryTideChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           ErrorBlock — recoverable (no Retry handler; status-only)
         </TugLabel>
-        <TideErrorBlock
+        <DevErrorBlock
           input={{
             kind: "error",
             message: "Rate limit reached; auto-retry will fire in 15s.",
@@ -170,7 +170,7 @@ export function GalleryTideChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           ErrorBlock — non-recoverable (Copy-error button)
         </TugLabel>
-        <TideErrorBlock
+        <DevErrorBlock
           input={{
             kind: "error",
             message:
@@ -187,9 +187,9 @@ export function GalleryTideChrome(): React.ReactElement {
           CautionBadge — unknown_tool / unknown_shape / version_drift
         </TugLabel>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <TideCautionBadge caution={{ reason: "unknown_tool", detail: "ZzzMystery" }} />
-          <TideCautionBadge caution={{ reason: "unknown_shape", detail: "Read: file: missing" }} />
-          <TideCautionBadge caution={{ reason: "version_drift", detail: "2.2.0 ≠ 2.1.148" }} />
+          <DevCautionBadge caution={{ reason: "unknown_tool", detail: "ZzzMystery" }} />
+          <DevCautionBadge caution={{ reason: "unknown_shape", detail: "Read: file: missing" }} />
+          <DevCautionBadge caution={{ reason: "version_drift", detail: "2.2.0 ≠ 2.1.148" }} />
         </div>
       </div>
     </div>

@@ -18,7 +18,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  TideTranscriptDataSource,
+  DevTranscriptDataSource,
   assistantRowIndexForTurn,
   buildRowLayout,
   userRowIndexForTurn,
@@ -192,14 +192,14 @@ describe("[L26] idForIndex stability: `${turnKey}-{user,assistant}` survives inf
     const liveSnap = snapshotWith({
       activeTurn: activeTurn({ turnKey: "T", isWake: false, withText: "hi" }),
     });
-    const ds = new TideTranscriptDataSource(storeWith(liveSnap));
+    const ds = new DevTranscriptDataSource(storeWith(liveSnap));
     expect(ds.idForIndex(0)).toBe("T-user");
     expect(ds.idForIndex(1)).toBe("T-assistant");
 
     const committedSnap = snapshotWith({
       transcript: [normalTurn("T", "hi", "hello")],
     });
-    const ds2 = new TideTranscriptDataSource(storeWith(committedSnap));
+    const ds2 = new DevTranscriptDataSource(storeWith(committedSnap));
     expect(ds2.idForIndex(0)).toBe("T-user");
     expect(ds2.idForIndex(1)).toBe("T-assistant");
   });
@@ -208,12 +208,12 @@ describe("[L26] idForIndex stability: `${turnKey}-{user,assistant}` survives inf
     const liveSnap = snapshotWith({
       activeTurn: activeTurn({ turnKey: "W", isWake: true, withText: "wake" }),
     });
-    const ds = new TideTranscriptDataSource(storeWith(liveSnap));
+    const ds = new DevTranscriptDataSource(storeWith(liveSnap));
     expect(ds.numberOfItems()).toBe(1);
     expect(ds.idForIndex(0)).toBe("W-assistant");
 
     const committedSnap = snapshotWith({ transcript: [wakeTurn("W", "wake")] });
-    const ds2 = new TideTranscriptDataSource(storeWith(committedSnap));
+    const ds2 = new DevTranscriptDataSource(storeWith(committedSnap));
     expect(ds2.numberOfItems()).toBe(1);
     expect(ds2.idForIndex(0)).toBe("W-assistant");
   });
@@ -228,7 +228,7 @@ describe("rowAt produces a descriptor consumers can narrow on", () => {
     const snap = snapshotWith({
       transcript: [normalTurn("T", "hello", "world")],
     });
-    const ds = new TideTranscriptDataSource(storeWith(snap));
+    const ds = new DevTranscriptDataSource(storeWith(snap));
     expect(ds.kindForIndex(0)).toBe("user");
     expect(ds.kindForIndex(1)).toBe("assistant");
     expect(ds.rowAt(0).turn?.turnKey).toBe("T");
@@ -238,7 +238,7 @@ describe("rowAt produces a descriptor consumers can narrow on", () => {
   test("in-flight normal: row 0 is `user` carrying activeTurn; row 1 is `assistant`", () => {
     const active = activeTurn({ turnKey: "L", isWake: false, withText: "hi" });
     const snap = snapshotWith({ activeTurn: active });
-    const ds = new TideTranscriptDataSource(storeWith(snap));
+    const ds = new DevTranscriptDataSource(storeWith(snap));
     expect(ds.kindForIndex(0)).toBe("user");
     expect(ds.kindForIndex(1)).toBe("assistant");
     expect(ds.rowAt(0).activeTurn).toBe(active);
@@ -249,7 +249,7 @@ describe("rowAt produces a descriptor consumers can narrow on", () => {
     const snap = snapshotWith({
       queuedSends: [{ turnKey: "Q", text: "later", atoms: [] }],
     });
-    const ds = new TideTranscriptDataSource(storeWith(snap));
+    const ds = new DevTranscriptDataSource(storeWith(snap));
     expect(ds.numberOfItems()).toBe(1);
     expect(ds.kindForIndex(0)).toBe("ghost");
     const row = ds.rowAt(0);

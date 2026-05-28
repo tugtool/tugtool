@@ -1,12 +1,12 @@
 /**
- * Tide picker — data sources for the master/detail list views.
+ * Dev picker — data sources for the master/detail list views.
  *
  * The picker is a vertical master/detail layout: a Recents list
  * (master, always visible) above a Sessions list (detail, always
  * visible). Each list has its own `TugListView` and its own data
  * source, both kept simple and focused.
  *
- *  - `TideRecentsDataSource` enumerates recent project paths in the
+ *  - `DevRecentsDataSource` enumerates recent project paths in the
  *    order tugbank provides them (most-recently-used first). Every
  *    recent always appears — clicking one fills the input and marks
  *    that recent as selected (computed from `currentPath ===
@@ -17,7 +17,7 @@
  *    `<mark>` highlights — narrowing-by-highlight, not narrowing-by-
  *    elision.
  *
- *  - `TideSessionsDataSource` enumerates session-choice rows for the
+ *  - `DevSessionsDataSource` enumerates session-choice rows for the
  *    currently-typed project path: `session-new` plus one
  *    `session-resume` per ledger row, in newest-first order. When
  *    the path is empty, or the ledger is pending / idle / errored,
@@ -84,7 +84,7 @@ export type SessionsRow =
   | { readonly kind: "loading" };
 
 // ---------------------------------------------------------------------------
-// TideRecentsDataSource
+// DevRecentsDataSource
 // ---------------------------------------------------------------------------
 
 interface RecentsInputs {
@@ -98,7 +98,7 @@ interface RecentsInputs {
  * highlight ranges per row when the typed query is a substring of
  * the path.
  */
-export class TideRecentsDataSource implements TugListViewDataSource {
+export class DevRecentsDataSource implements TugListViewDataSource {
   private inputs: RecentsInputs;
   private rows: RecentsRow[] = [];
   private readonly listeners = new Set<() => void>();
@@ -176,16 +176,16 @@ export class TideRecentsDataSource implements TugListViewDataSource {
 }
 
 /**
- * Hook — mint a stable `TideRecentsDataSource` per hook lifetime
+ * Hook — mint a stable `DevRecentsDataSource` per hook lifetime
  * and feed it the latest `(recents, query)` snapshot each render.
  */
-export function useTideRecentsDataSource(
+export function useDevRecentsDataSource(
   recents: ReadonlyArray<string>,
   query: string,
-): TideRecentsDataSource {
-  const ref = useRef<TideRecentsDataSource | null>(null);
+): DevRecentsDataSource {
+  const ref = useRef<DevRecentsDataSource | null>(null);
   if (ref.current === null) {
-    ref.current = new TideRecentsDataSource({ recents, query });
+    ref.current = new DevRecentsDataSource({ recents, query });
   }
   const ds = ref.current;
   const didChange = ds.setInputsWithoutNotify({ recents, query });
@@ -200,7 +200,7 @@ export function useTideRecentsDataSource(
 }
 
 // ---------------------------------------------------------------------------
-// TideSessionsDataSource
+// DevSessionsDataSource
 // ---------------------------------------------------------------------------
 
 interface SessionsInputs {
@@ -222,7 +222,7 @@ interface SessionsInputs {
  *    surfaces the error per [D11]; the picker form may render a
  *    placeholder for the idle case.
  */
-export class TideSessionsDataSource implements TugListViewDataSource {
+export class DevSessionsDataSource implements TugListViewDataSource {
   private inputs: SessionsInputs;
   private rows: SessionsRow[] = [];
   private readonly listeners = new Set<() => void>();
@@ -356,16 +356,16 @@ export class TideSessionsDataSource implements TugListViewDataSource {
 }
 
 /**
- * Hook — mint a stable `TideSessionsDataSource` per hook lifetime
+ * Hook — mint a stable `DevSessionsDataSource` per hook lifetime
  * and feed it the latest `(query, ledger)` snapshot each render.
  */
-export function useTideSessionsDataSource(
+export function useDevSessionsDataSource(
   query: string,
   ledger: WorkspaceSnapshot,
-): TideSessionsDataSource {
-  const ref = useRef<TideSessionsDataSource | null>(null);
+): DevSessionsDataSource {
+  const ref = useRef<DevSessionsDataSource | null>(null);
   if (ref.current === null) {
-    ref.current = new TideSessionsDataSource({ query, ledger });
+    ref.current = new DevSessionsDataSource({ query, ledger });
   }
   const ds = ref.current;
   const didChange = ds.setInputsWithoutNotify({ query, ledger });

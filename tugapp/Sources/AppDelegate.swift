@@ -410,7 +410,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Refresh the Tide picker's "initial project path" hint so a first-
+    /// Refresh the Dev picker's "initial project path" hint so a first-
     /// time user (no Recent Project Paths yet) has a sensible default
     /// they can hit Open on without typing. Debug builds point at the
     /// repo source tree; release builds point at `$HOME`. Written every
@@ -660,7 +660,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("show-card", params: ["component": "git"])
     }
 
-    @objc private func showTideCard(_ sender: Any) {
+    @objc private func showDevCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "tide"])
     }
 
@@ -1084,7 +1084,7 @@ extension AppDelegate: NSMenuDelegate {
         // Dev-mode items (moved from Developer menu)
         if devModeEnabled {
             menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Show Tide Card", action: #selector(showTideCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Dev Card", action: #selector(showDevCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
             menu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
             menu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(showGitCard(_:)), keyEquivalent: "3", modifierMask: [.command, .option]))
             menu.addItem(NSMenuItem.separator())

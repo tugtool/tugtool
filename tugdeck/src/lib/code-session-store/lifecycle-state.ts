@@ -1,11 +1,11 @@
 /**
- * `lifecycle-state` — the Tide card lifecycle state machine.
+ * `lifecycle-state` — the Dev card lifecycle state machine.
  *
  * `deriveLifecycleSnapshot` encodes the dev-card lifecycle
  * state-to-zone coordination matrix as one pure projection: it reads the
  * matrix-relevant signals off the `CodeSessionStore` snapshot and
- * returns the matrix row — the `TideLifecycleState`, the active
- * `TideLifecycleOverlay`s, and the derived Z5 `submitButtonMode`.
+ * returns the matrix row — the `DevLifecycleState`, the active
+ * `DevLifecycleOverlay`s, and the derived Z5 `submitButtonMode`.
  * Every zone that coordinates on lifecycle reads this one snapshot
  * (via `useLifecycleState`), so the matrix has exactly one executable
  * source of truth and a regression against any matrix cell is a
@@ -37,7 +37,7 @@ import type { CodeSessionPhase, TransportState } from "./types";
  * their own — INTERRUPTING (an interrupt round-trip is in flight) and
  * COMPLETE (`idle` once at least one turn has committed).
  */
-export type TideLifecycleState =
+export type DevLifecycleState =
   | "idle"
   | "submitting"
   | "awaiting_first_token"
@@ -56,7 +56,7 @@ export type TideLifecycleState =
  * derived value here — it surfaces directly as transcript ghost rows off
  * the snapshot's `queuedSends`.
  */
-export type TideLifecycleOverlay = "transport_down";
+export type DevLifecycleOverlay = "transport_down";
 
 /**
  * The Z5 submit-button mode — the matrix's Z5 column. The `submit`
@@ -69,7 +69,7 @@ export type TideLifecycleOverlay = "transport_down";
  * ghost rows). The remaining kinds are all disabled buttons:
  * `awaiting_user` / `stopping` / `reconnecting` / `restoring`.
  */
-export type TideSubmitButtonMode =
+export type DevSubmitButtonMode =
   | { kind: "submit"; disabled: boolean }
   | { kind: "stop" }
   | { kind: "awaiting_user" }
@@ -78,10 +78,10 @@ export type TideSubmitButtonMode =
   | { kind: "restoring" };
 
 /** One row of the matrix — what `deriveLifecycleSnapshot` projects. */
-export interface TideLifecycleSnapshot {
-  state: TideLifecycleState;
-  overlays: ReadonlySet<TideLifecycleOverlay>;
-  submitButtonMode: TideSubmitButtonMode;
+export interface DevLifecycleSnapshot {
+  state: DevLifecycleState;
+  overlays: ReadonlySet<DevLifecycleOverlay>;
+  submitButtonMode: DevSubmitButtonMode;
 }
 
 /**
@@ -120,7 +120,7 @@ export interface LifecycleStoreSignals {
  * streaming row gives wakes the right visual treatment without a
  * matrix-wide audit.
  */
-function deriveLifecycleState(s: LifecycleStoreSignals): TideLifecycleState {
+function deriveLifecycleState(s: LifecycleStoreSignals): DevLifecycleState {
   if (s.phase === "errored") return "errored";
   if (s.phase === "replaying") return "replaying";
   if (s.interruptInFlight) return "interrupting";
@@ -153,8 +153,8 @@ function deriveLifecycleState(s: LifecycleStoreSignals): TideLifecycleState {
 /** The active overlay set — the matrix's overlay row. */
 function deriveOverlays(
   s: LifecycleStoreSignals,
-): ReadonlySet<TideLifecycleOverlay> {
-  const overlays = new Set<TideLifecycleOverlay>();
+): ReadonlySet<DevLifecycleOverlay> {
+  const overlays = new Set<DevLifecycleOverlay>();
   // TRANSPORT_DOWN covers both `offline` (no wire) and `restoring`
   // (wire back, binding not re-ack'd) — anything but `online`.
   if (s.transportState !== "online") overlays.add("transport_down");
@@ -163,9 +163,9 @@ function deriveOverlays(
 
 /** The Z5 submit-button mode — the matrix's Z5 column. */
 function deriveSubmitButtonMode(
-  state: TideLifecycleState,
-  overlays: ReadonlySet<TideLifecycleOverlay>,
-): TideSubmitButtonMode {
+  state: DevLifecycleState,
+  overlays: ReadonlySet<DevLifecycleOverlay>,
+): DevSubmitButtonMode {
   // Transport down trumps everything — neither submit nor stop can
   // reach the wire, so the button is an inert "Reconnecting…".
   if (overlays.has("transport_down")) return { kind: "reconnecting" };
@@ -207,8 +207,8 @@ function deriveSubmitButtonMode(
 // ---------------------------------------------------------------------------
 
 function overlaySetsEqual(
-  a: ReadonlySet<TideLifecycleOverlay>,
-  b: ReadonlySet<TideLifecycleOverlay>,
+  a: ReadonlySet<DevLifecycleOverlay>,
+  b: ReadonlySet<DevLifecycleOverlay>,
 ): boolean {
   if (a.size !== b.size) return false;
   for (const overlay of a) {
@@ -218,8 +218,8 @@ function overlaySetsEqual(
 }
 
 function submitButtonModesEqual(
-  a: TideSubmitButtonMode,
-  b: TideSubmitButtonMode,
+  a: DevSubmitButtonMode,
+  b: DevSubmitButtonMode,
 ): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "submit" && b.kind === "submit") {
@@ -236,8 +236,8 @@ function submitButtonModesEqual(
  * {@link deriveLifecycleSnapshot} is built on this.
  */
 export function lifecycleSnapshotsEqual(
-  a: TideLifecycleSnapshot,
-  b: TideLifecycleSnapshot,
+  a: DevLifecycleSnapshot,
+  b: DevLifecycleSnapshot,
 ): boolean {
   if (a === b) return true;
   return (
@@ -266,12 +266,12 @@ export function lifecycleSnapshotsEqual(
  */
 export function deriveLifecycleSnapshot(
   storeSnapshot: LifecycleStoreSignals,
-  previous?: TideLifecycleSnapshot,
-): TideLifecycleSnapshot {
+  previous?: DevLifecycleSnapshot,
+): DevLifecycleSnapshot {
   const state = deriveLifecycleState(storeSnapshot);
   const overlays = deriveOverlays(storeSnapshot);
   const submitButtonMode = deriveSubmitButtonMode(state, overlays);
-  const next: TideLifecycleSnapshot = { state, overlays, submitButtonMode };
+  const next: DevLifecycleSnapshot = { state, overlays, submitButtonMode };
   if (previous !== undefined && lifecycleSnapshotsEqual(previous, next)) {
     return previous;
   }

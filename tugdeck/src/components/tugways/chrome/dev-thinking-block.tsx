@@ -1,17 +1,17 @@
 /**
- * `TideThinkingBlock` — inline collapsible chrome for the assistant's
- * "thinking" stream within a Tide code row.
+ * `DevThinkingBlock` — inline collapsible chrome for the assistant's
+ * "thinking" stream within a Dev code row.
  *
  * Two modes (mutually exclusive):
  *
- *   1. **Streaming** — `<TideThinkingBlock streamingStore={…}
+ *   1. **Streaming** — `<DevThinkingBlock streamingStore={…}
  *      streamingPath="inflight.thinking" />`. Subscribes to a
  *      `PropertyStore` path and renders deltas live. Default-expanded
  *      so the user can watch reasoning as it arrives. The block self-
  *      hides when the path holds no content yet (no thinking →
  *      no chrome).
  *
- *   2. **Static** — `<TideThinkingBlock initialText={turn.thinking} />`.
+ *   2. **Static** — `<DevThinkingBlock initialText={turn.thinking} />`.
  *      Renders a finished turn's thinking. Default-**collapsed** per
  *      [D14] — once the answer is in, the reasoning trail is
  *      supplementary; the user opts in to expand. Renders nothing
@@ -63,7 +63,7 @@ import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 
 /**
  * Maximum length of the collapsed-state preview line before truncation.
- * Picked to fit the typical Tide card width without wrapping at
+ * Picked to fit the typical Dev card width without wrapping at
  * 14-16 px label sizes. Exported for the test that asserts truncation.
  */
 export const PREVIEW_MAX_LENGTH = 80;
@@ -99,11 +99,11 @@ export function computePreview(text: string): string {
 }
 
 /**
- * Props for `TideThinkingBlock`. `initialText` and `streamingStore`
+ * Props for `DevThinkingBlock`. `initialText` and `streamingStore`
  * are mutually exclusive at mount; if both are supplied, streaming
  * mode wins (mirrors `TugMarkdownBlock`).
  */
-export interface TideThinkingBlockProps {
+export interface DevThinkingBlockProps {
   /**
    * Static thinking text from a completed turn (`TurnEntry.thinking`).
    * The block mounts default-**collapsed** per [D14].
@@ -134,7 +134,7 @@ export interface TideThinkingBlockProps {
   className?: string;
 }
 
-export const TideThinkingBlock: React.FC<TideThinkingBlockProps> = ({
+export const DevThinkingBlock: React.FC<DevThinkingBlockProps> = ({
   initialText,
   streamingStore,
   streamingPath,

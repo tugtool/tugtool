@@ -3,8 +3,8 @@
  * the four Z2 status-row anchors (indicator, TIME, TOKENS, CONTEXT).
  *
  * Each component renders inside a `TugPopoverContent` returned by
- * `TideTelemetryStatusRow`. The popovers share a layout vocabulary
- * (`PerAreaPopoverFrame`, `PopoverRow`, `TidePopoverRowGrid`) so the
+ * `DevTelemetryStatusRow`. The popovers share a layout vocabulary
+ * (`PerAreaPopoverFrame`, `PopoverRow`, `DevPopoverRowGrid`) so the
  * four surfaces read with the same rhythm — title bar above a 1px
  * rule, then either a 3-column row grid (Time / Tokens / state-change
  * log) or a 2-column gauge + legend layout (Context).
@@ -56,7 +56,7 @@ import { TugBadge } from "@/components/tugways/tug-badge";
 import {
   tideSessionPhaseKey,
   tideSessionPhaseVisual,
-  type TideSessionPhaseInput,
+  type DevSessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
 import {
   endStateBadgeFor,
@@ -145,7 +145,7 @@ function requestPreviewText(turn: TurnEntry): string {
  * Popover-content frame shared by every Z2 anchor — centered uppercase
  * title bar above a 1px rule, then the body. The summary footer is
  * NOT rendered here for the row-grid popovers (Time / Tokens / state
- * log): those use {@link TidePopoverRowGrid}, which folds the summary
+ * log): those use {@link DevPopoverRowGrid}, which folds the summary
  * into the same subgrid so columns align across rows and summary.
  * The Context popover renders its own arc + legend body and never
  * carries a summary footer.
@@ -187,7 +187,7 @@ function PerAreaPopoverFrame({
 /**
  * One row in a Time / Tokens popover. Renders four grid cells (label /
  * preview / annotation / value) into the surrounding
- * {@link TidePopoverRowGrid} via CSS subgrid. Columns size to the
+ * {@link DevPopoverRowGrid} via CSS subgrid. Columns size to the
  * widest content across EVERY row in the grid (both the scrollable
  * row list and the summary footer), so the column edges line up
  * vertically end-to-end.
@@ -354,7 +354,7 @@ function RequestPreview({ turn }: { turn: TurnEntry }): React.ReactElement {
  * If the row list is empty, the grid degenerates to "summary only"
  * (or to the caller's `empty` content when no summary applies).
  */
-function TidePopoverRowGrid({
+function DevPopoverRowGrid({
   rows,
   summary,
   empty,
@@ -436,7 +436,7 @@ function EmptyTranscriptBody(): React.ReactElement {
  * popovers compute identical numbers.
  *
  * Row + summary share a single subgrid so the column edges line up
- * end-to-end ({@link TidePopoverRowGrid}).
+ * end-to-end ({@link DevPopoverRowGrid}).
  */
 export function TimePopoverContent({
   transcript,
@@ -483,7 +483,7 @@ export function TimePopoverContent({
   }
   return (
     <PerAreaPopoverFrame title="Per-request log — Time">
-      <TidePopoverRowGrid rows={rows} summary={summaryRows} />
+      <DevPopoverRowGrid rows={rows} summary={summaryRows} />
     </PerAreaPopoverFrame>
   );
 }
@@ -501,7 +501,7 @@ export function TimePopoverContent({
  * in-flight turns are excluded from the row log, with the live
  * current-turn delta surfaced as a separate footer row.
  *
- * Row + summary share a single subgrid ({@link TidePopoverRowGrid}).
+ * Row + summary share a single subgrid ({@link DevPopoverRowGrid}).
  */
 export function TokensPopoverContent({
   transcript,
@@ -550,7 +550,7 @@ export function TokensPopoverContent({
   }
   return (
     <PerAreaPopoverFrame title="Per-request log — Tokens">
-      <TidePopoverRowGrid rows={rows} summary={summaryRows} />
+      <DevPopoverRowGrid rows={rows} summary={summaryRows} />
     </PerAreaPopoverFrame>
   );
 }
@@ -682,7 +682,7 @@ type StateChangeTone = "default" | "success" | "caution" | "danger";
  * {@link TugProgressIndicator} uses, without instantiating an
  * indicator per row.
  */
-function stateChangeToneFor(input: TideSessionPhaseInput): StateChangeTone {
+function stateChangeToneFor(input: DevSessionPhaseInput): StateChangeTone {
   const visual = tideSessionPhaseVisual(tideSessionPhaseKey(input));
   if (visual.role === "danger") return "danger";
   if (visual.role === "caution") return "caution";

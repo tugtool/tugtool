@@ -2,7 +2,7 @@
  * Replay-clock tests for `CodeSessionStore`.
  *
  * The store owns three time-derived snapshot fields used by the
- * Tide card's resume UX:
+ * Dev card's resume UX:
  *
  *   - `replayPreflightActive` — opens on `notifyResumeBindingLanded()`,
  *     closes on the first of `replay_started`, `replay_complete`,

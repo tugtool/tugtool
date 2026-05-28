@@ -496,8 +496,8 @@ export function TugSheetContent({
   // strips DOM focus from anything inside (including CodeMirror's
   // contentDOM). When the sheet exits, the editor is reachable again
   // but unfocused — Radix's `onUnmountAutoFocus` returns focus to
-  // the trigger element, but Tide's editor is not the trigger here.
-  // `TideCardBody` subscribes to `sheetDidHide` and re-focuses the
+  // the trigger element, but Dev's editor is not the trigger here.
+  // `DevCardBody` subscribes to `sheetDidHide` and re-focuses the
   // prompt-entry editor, gated on first-responder state. Per the
   // contract documented in `dev-card.tsx` (the focus-claim handlers
   // block) and pinned by
@@ -917,7 +917,7 @@ interface UseTugSheetState {
  * ## Cascade-target pattern (modal close → follow-up chain dispatch)
  *
  * When a sheet's consumer needs to dispatch a follow-up action
- * through the responder chain — for example, the Tide picker
+ * through the responder chain — for example, the Dev picker
  * canceling and dismissing its host card — it must capture the
  * cascade dispatch's target id at sheet-open time, not at close time.
  * Per `tugplan-dev-overlay-framework.md` [D02]
