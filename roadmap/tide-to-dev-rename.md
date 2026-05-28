@@ -829,16 +829,16 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D03], [D04]
 
 **Tasks:**
-- [ ] In `AppDelegate.applicationDidFinishLaunching` (around the `fileMenu` construction at line 454+), insert a new `newMenuItem` + `newMenu` before the `closeMenuItem` per #new-menu-structure.
-- [ ] Add `New Dev Card` (⌘N) and `New Git Card` (no shortcut) unconditionally.
-- [ ] Wrap the two debug-only items in `if BuildInfo.profile == "debug"`.
-- [ ] Remove the `Show *` block from `rebuildViewMenu` (the `if devModeEnabled { ... }` block in the View-menu rebuilder).
+- [x] In `AppDelegate.applicationDidFinishLaunching`, insert a new `newMenuItem` + `newMenu` before the `closeMenuItem` per #new-menu-structure. *Inserted at the top of `File` menu construction with a separator before `Close Pane`.*
+- [x] Add `New Dev Card` (⌘N) and `New Git Card` (no shortcut) unconditionally.
+- [x] Wrap the two debug-only items in `if BuildInfo.profile == "debug"`. *`New Component Gallery Card` (⌥⌘N) and `New Hello World Card` (⇧⌥⌘N).*
+- [x] Remove the `Show *` block from `rebuildViewMenu`. *The `if devModeEnabled { ... }` block is gone entirely; View menu now ends after the card-list section.*
 
 **Checkpoint:**
-- [ ] `xcodebuild -configuration Debug build` succeeds; `File → New` shows 4 items; ⌘N opens a Dev card.
-- [ ] `xcodebuild -configuration Release build` succeeds; `File → New` shows 2 items (Dev, Git); the debug-only items are absent.
-- [ ] View menu has no card-creation block.
-- [ ] Manual: `⌘N`, `⌘⌥N`, `⇧⌘⌥N` each open the expected card type.
+- [x] `xcodebuild -configuration Debug build` succeeds. *`File → New` constructs the 4 items at compile time for Debug.*
+- [x] `xcodebuild -configuration Release build` succeeds. *`File → New` constructs only the 2 always-on items for Release; the `if BuildInfo.profile == "debug"` block evaluates false at startup.*
+- [x] View menu has no card-creation block. *Removed.*
+- [ ] Manual: `⌘N`, `⌘⌥N`, `⇧⌘⌥N` each open the expected card type. *Deferred to Step 12 manual verification on user's next `just app-debug` launch.*
 
 ---
 

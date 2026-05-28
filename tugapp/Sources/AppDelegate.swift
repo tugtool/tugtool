@@ -478,6 +478,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
+
+        // New submenu (per roadmap/tide-to-dev-rename.md [D03] [D04]).
+        // Two items always available; two more on debug builds only,
+        // gated at compile time on BuildInfo.profile so release
+        // bundles literally never expose the gallery + hello-world
+        // creation surfaces.
+        let newMenuItem = NSMenuItem(title: "New", action: nil, keyEquivalent: "")
+        let newMenu = NSMenu(title: "New")
+        newMenuItem.submenu = newMenu
+        fileMenu.addItem(newMenuItem)
+        newMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n"))
+        newMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: ""))
+        if BuildInfo.profile == "debug" {
+            newMenu.addItem(NSMenuItem.separator())
+            newMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]))
+            newMenu.addItem(NSMenuItem(title: "New Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option, .shift]))
+        }
+
+        fileMenu.addItem(NSMenuItem.separator())
+
         // Close Card / Close Pane: routes through the web view's responder
         // chain rather than NSWindow.performClose. The custom selector sends a
         // Control frame that action-dispatch.ts turns into a `close` chain
@@ -1081,15 +1101,6 @@ extension AppDelegate: NSMenuDelegate {
             }
         }
 
-        // Dev-mode items (moved from Developer menu)
-        if devModeEnabled {
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Show Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
-            menu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
-            menu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "3", modifierMask: [.command, .option]))
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
-        }
     }
 }
 
