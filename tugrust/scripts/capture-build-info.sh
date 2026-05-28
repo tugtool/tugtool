@@ -9,12 +9,12 @@ set -euo pipefail
 # [D02] [D03] for the design rationale.
 #
 # Writes (always):
-#   BuildProfile      "development" (Debug) or "production" (Release)
+#   BuildProfile      "debug" (Debug) or "release" (Release)
 #   BuildBranch       git branch at build time, or "detached-<sha8>"
 #                     if HEAD is detached
 #   BuildCommit       full SHA-1 of HEAD at build time (diagnostic)
 #
-# Writes (development builds only; production omits per [D03]):
+# Writes (debug builds only; release omits per [D03] [D19]):
 #   BuildSourceTree   absolute path to the repo root the bundle was
 #                     built from
 #
@@ -39,10 +39,10 @@ fi
 
 case "${CONFIGURATION:-}" in
     Debug)
-        BUILD_PROFILE="development"
+        BUILD_PROFILE="debug"
         ;;
     Release)
-        BUILD_PROFILE="production"
+        BUILD_PROFILE="release"
         ;;
     *)
         echo "error: unknown CONFIGURATION '${CONFIGURATION:-}' (expected Debug or Release)" >&2
@@ -73,14 +73,14 @@ plutil -replace BuildProfile -string "$BUILD_PROFILE" "$PLIST"
 plutil -replace BuildBranch  -string "$BUILD_BRANCH"  "$PLIST"
 plutil -replace BuildCommit  -string "$BUILD_COMMIT"  "$PLIST"
 
-if [ "$BUILD_PROFILE" = "development" ]; then
+if [ "$BUILD_PROFILE" = "debug" ]; then
     plutil -replace BuildSourceTree -string "$BUILD_SOURCE_TREE" "$PLIST"
 else
-    # Defensive: strip the key if a prior dev build's cached plist
+    # Defensive: strip the key if a prior debug build's cached plist
     # leaked into this configuration's products. `plutil -remove`
     # exits 1 and writes "No value to remove..." to stdout (not
     # stderr) when the key is absent — discard both since absence
-    # is the expected case for clean production builds.
+    # is the expected case for clean release builds.
     if plutil -extract BuildSourceTree raw "$PLIST" >/dev/null 2>&1; then
         plutil -remove BuildSourceTree "$PLIST"
     fi

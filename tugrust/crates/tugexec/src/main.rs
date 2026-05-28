@@ -694,12 +694,12 @@ mod tests {
         let _lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
         let prior = std::env::var_os("TUG_INSTANCE_ID");
         unsafe {
-            std::env::set_var("TUG_INSTANCE_ID", "production-main");
+            std::env::set_var("TUG_INSTANCE_ID", "release-main");
         }
         // Test the helper directly. Clap's `default_value_t = expr`
         // evaluation strategy is vendor surface — the piece of logic
         // we own here is `default_session()` itself.
-        assert_eq!(default_session(), "cc-production-main");
+        assert_eq!(default_session(), "cc-release-main");
         unsafe {
             match prior {
                 Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),

@@ -59,7 +59,7 @@ pub const REGISTRY_VERSION: u32 = 1;
 pub struct Instance {
     /// Canonical per-instance identifier (`<profile>-<branch-slug>`).
     pub instance_id: String,
-    /// Build profile (`production` or `development`).
+    /// Build profile (`release` or `debug`).
     pub profile: String,
     /// Branch the bundle was built from.
     pub branch: String,
@@ -371,8 +371,8 @@ mod tests {
     fn fixture(instance_id: &str, pid: i32) -> Instance {
         Instance {
             instance_id: instance_id.to_owned(),
-            profile: "development".to_owned(),
-            branch: instance_id.trim_start_matches("development-").to_owned(),
+            profile: "debug".to_owned(),
+            branch: instance_id.trim_start_matches("debug-").to_owned(),
             bundle_id: format!("dev.tugtool.app.{instance_id}"),
             bundle_path: PathBuf::from("/tmp/Tug.app"),
             pid,
@@ -413,21 +413,21 @@ mod tests {
     fn register_then_find() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("reg.json");
-        register_at(&path, fixture("development-foo", ALIVE_PID)).unwrap();
+        register_at(&path, fixture("debug-foo", ALIVE_PID)).unwrap();
         let listed = load_from(&path).unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].instance_id, "development-foo");
+        assert_eq!(listed[0].instance_id, "debug-foo");
     }
 
     #[test]
     fn register_replaces_existing_id() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("reg.json");
-        let mut a = fixture("development-foo", ALIVE_PID);
+        let mut a = fixture("debug-foo", ALIVE_PID);
         a.tugcast_port = 55310;
         register_at(&path, a).unwrap();
 
-        let mut b = fixture("development-foo", ALIVE_PID);
+        let mut b = fixture("debug-foo", ALIVE_PID);
         b.tugcast_port = 55320;
         register_at(&path, b).unwrap();
 
@@ -444,7 +444,7 @@ mod tests {
         // would prune at write time too).
         let on_disk = OnDisk {
             version: REGISTRY_VERSION,
-            instances: vec![fixture("development-foo", DEAD_PID)],
+            instances: vec![fixture("debug-foo", DEAD_PID)],
         };
         write_atomically(&path, &on_disk).unwrap();
 
@@ -452,7 +452,7 @@ mod tests {
         assert!(listed.is_empty(), "dead PID should be pruned");
         // The on-disk copy is untouched by a read-only load.
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(raw.contains("development-foo"));
+        assert!(raw.contains("debug-foo"));
     }
 
     #[test]
@@ -462,42 +462,42 @@ mod tests {
         let on_disk = OnDisk {
             version: REGISTRY_VERSION,
             instances: vec![
-                fixture("development-foo", DEAD_PID),
-                fixture("development-bar", DEAD_PID),
+                fixture("debug-foo", DEAD_PID),
+                fixture("debug-bar", DEAD_PID),
             ],
         };
         write_atomically(&path, &on_disk).unwrap();
 
-        register_at(&path, fixture("development-baz", ALIVE_PID)).unwrap();
+        register_at(&path, fixture("debug-baz", ALIVE_PID)).unwrap();
 
         let listed = load_from(&path).unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].instance_id, "development-baz");
+        assert_eq!(listed[0].instance_id, "debug-baz");
 
         // After the write the dead entries should be physically gone.
         let raw = std::fs::read_to_string(&path).unwrap();
-        assert!(!raw.contains("development-foo"));
-        assert!(!raw.contains("development-bar"));
+        assert!(!raw.contains("debug-foo"));
+        assert!(!raw.contains("debug-bar"));
     }
 
     #[test]
     fn unregister_removes_entry() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("reg.json");
-        register_at(&path, fixture("development-foo", ALIVE_PID)).unwrap();
-        register_at(&path, fixture("development-bar", ALIVE_PID)).unwrap();
-        unregister_at(&path, "development-foo").unwrap();
+        register_at(&path, fixture("debug-foo", ALIVE_PID)).unwrap();
+        register_at(&path, fixture("debug-bar", ALIVE_PID)).unwrap();
+        unregister_at(&path, "debug-foo").unwrap();
 
         let listed = load_from(&path).unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].instance_id, "development-bar");
+        assert_eq!(listed[0].instance_id, "debug-bar");
     }
 
     #[test]
     fn unregister_missing_is_noop() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("reg.json");
-        unregister_at(&path, "development-foo").unwrap();
+        unregister_at(&path, "debug-foo").unwrap();
         assert!(load_from(&path).unwrap().is_empty());
     }
 
@@ -536,10 +536,10 @@ mod tests {
             }
         });
 
-        register(fixture("development-find-by-id-test", ALIVE_PID)).unwrap();
-        let got = find_by_id("development-find-by-id-test").unwrap();
+        register(fixture("debug-find-by-id-test", ALIVE_PID)).unwrap();
+        let got = find_by_id("debug-find-by-id-test").unwrap();
         assert!(got.is_some());
-        unregister("development-find-by-id-test").unwrap();
+        unregister("debug-find-by-id-test").unwrap();
     }
 
     /// Tiny scoped-defer helper: returns a guard that runs `f` on
@@ -576,12 +576,12 @@ mod tests {
             let path_a = path.clone();
             let path_b = path.clone();
             let t_a = thread::spawn(move || {
-                let mut inst = fixture("development-A", ALIVE_PID);
+                let mut inst = fixture("debug-A", ALIVE_PID);
                 inst.tugcast_port = 10000 + round;
                 register_at(&path_a, inst).unwrap();
             });
             let t_b = thread::spawn(move || {
-                let mut inst = fixture("development-B", ALIVE_PID);
+                let mut inst = fixture("debug-B", ALIVE_PID);
                 inst.tugcast_port = 20000 + round;
                 register_at(&path_b, inst).unwrap();
             });
@@ -591,7 +591,7 @@ mod tests {
             let ids: std::collections::BTreeSet<_> =
                 listed.iter().map(|i| i.instance_id.clone()).collect();
             assert!(
-                ids.contains("development-A") && ids.contains("development-B"),
+                ids.contains("debug-A") && ids.contains("debug-B"),
                 "round {round}: lost an entry — got {ids:?}"
             );
         }

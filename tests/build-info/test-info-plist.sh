@@ -5,12 +5,13 @@ set -euo pipefail
 # bake identity into the bundle's Info.plist (capture-build-info.sh +
 # assign-bundle-id.sh). Builds a Debug bundle, inspects the Info.plist,
 # and verifies:
-#   - BuildProfile      == "development"   (Debug → development)
+#   - BuildProfile      == "debug"        (Debug → debug, per [D19])
 #   - BuildBranch       == current git branch (or detached-<sha8>)
 #   - BuildCommit       == current HEAD sha
-#   - BuildSourceTree   == repo root      (development builds include it)
-#   - CFBundleIdentifier matches the [D10] mapping for the cwd's
-#     (profile, branch) tuple, computed via tugrust/scripts/branch-slug.sh
+#   - BuildSourceTree   == repo root      (debug builds include it)
+#   - CFBundleIdentifier matches the [D10] / [D19] mapping for the
+#     cwd's (profile, branch) tuple, computed via
+#     tugrust/scripts/branch-slug.sh
 #
 # Reports the expected BuildInfo.instanceId for a Swift consumer.
 #
@@ -78,12 +79,12 @@ REPO_ROOT_REAL="$(cd "$TUGAPP_DIR/.." && pwd)"
 # branch-slug.sh surfaces here. Parity is also independently checked
 # by test-slug-parity.sh.
 BRANCH_SLUG="$(bash "$REPO_ROOT/tugrust/scripts/branch-slug.sh" "$GIT_BRANCH")"
-case "development-$GIT_BRANCH" in
-    development-main)
-        EXPECTED_BUNDLE_ID="dev.tugtool.app.dev"
+case "debug-$GIT_BRANCH" in
+    debug-main)
+        EXPECTED_BUNDLE_ID="dev.tugtool.app.debug"
         ;;
     *)
-        EXPECTED_BUNDLE_ID="dev.tugtool.app.development-$BRANCH_SLUG"
+        EXPECTED_BUNDLE_ID="dev.tugtool.app.debug-$BRANCH_SLUG"
         ;;
 esac
 
@@ -101,19 +102,19 @@ check() {
 }
 
 echo "==> verifying $PLIST"
-check BuildProfile       "$PROFILE"     "development"
+check BuildProfile       "$PROFILE"     "debug"
 check BuildBranch        "$BRANCH"      "$GIT_BRANCH"
 check BuildCommit        "$COMMIT"      "$GIT_HEAD"
 check BuildSourceTree    "$SOURCE_TREE" "$REPO_ROOT_REAL"
 check CFBundleIdentifier "$BUNDLE_ID"   "$EXPECTED_BUNDLE_ID"
 
-EXPECTED_INSTANCE_ID="development-$BRANCH_SLUG"
+EXPECTED_INSTANCE_ID="debug-$BRANCH_SLUG"
 echo "==> expected BuildInfo.instanceId for a Swift consumer: $EXPECTED_INSTANCE_ID"
 
 # Codesign DR drift check. When the bundle is signed with a real
 # identity (Developer ID Application — lands in Step 3), the DR is a
 # structured requirement expression of the form:
-#     identifier "dev.tugtool.app.dev" and anchor apple generic and ...
+#     identifier "dev.tugtool.app.debug" and anchor apple generic and ...
 # and we can assert the identifier matches CFBundleIdentifier.
 #
 # Pre-Step-3, the build uses ad-hoc signing whose DR is just

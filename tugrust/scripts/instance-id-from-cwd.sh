@@ -2,7 +2,7 @@
 # Resolve the per-instance identity for the current working directory.
 #
 # Usage:
-#   instance-id-from-cwd.sh <profile>   # profile is "development" or "production"
+#   instance-id-from-cwd.sh <profile>   # profile is "debug" or "release"
 #
 # Output: <profile>-<branch-slug>
 #

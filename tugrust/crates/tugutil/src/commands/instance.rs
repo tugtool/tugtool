@@ -28,8 +28,8 @@ pub enum InstanceCommands {
     /// up to `--timeout` seconds, and escalates to SIGKILL if the
     /// process is still alive after the wait.
     Stop {
-        /// Instance ID to stop (e.g. `production-main`,
-        /// `development-foo`).
+        /// Instance ID to stop (e.g. `release-main`,
+        /// `debug-foo`).
         instance_id: String,
 
         /// Seconds to wait for graceful exit before escalating to SIGKILL.

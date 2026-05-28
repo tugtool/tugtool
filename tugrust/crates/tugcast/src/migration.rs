@@ -10,12 +10,12 @@
 //!    transition; production has never seen a `deck-settings.json`.
 //!
 //! 2. `migrate_legacy_tugbank` (all builds): per [D06], on the first
-//!    launch of `(production, main)`, copies the legacy
+//!    launch of `(release, main)`, copies the legacy
 //!    `~/.tugbank.db` into `<data-dir>/tugbank.db`. The legacy file
 //!    is never written to, moved, or deleted by Tug code — it stays
 //!    as a backup. A marker file `.migrated-from-legacy` inside the
 //!    data dir guarantees the copy runs at most once. Skipped
-//!    silently for non-`production-main` instances.
+//!    silently for non-`release-main` instances.
 
 use std::path::Path;
 
@@ -137,13 +137,13 @@ pub(crate) enum LegacyMigration {
     /// written anyway so future legacy DBs aren't accidentally
     /// pulled in.
     NoLegacyDb,
-    /// This instance is not `production-main`. Migration is silently
+    /// This instance is not `release-main`. Migration is silently
     /// skipped per [D06].
-    SkippedNotProductionMain,
+    SkippedNotReleaseMain,
 }
 
 /// Copy the legacy `~/.tugbank.db` into the per-instance tugbank for
-/// `(production, main)` on first launch, per [D06].
+/// `(release, main)` on first launch, per [D06].
 ///
 /// Idempotence: a sentinel file at
 /// `<data-dir>/.migrated-from-legacy` is written after the copy
@@ -157,14 +157,14 @@ pub(crate) enum LegacyMigration {
 /// legacy file intact (Tug code never modifies it).
 ///
 /// `instance_id` is the value of `TUG_INSTANCE_ID`; migration is a
-/// no-op when it isn't `"production-main"`.
+/// no-op when it isn't `"release-main"`.
 pub(crate) fn migrate_legacy_tugbank(
     instance_id: Option<&str>,
     legacy_path: &Path,
     per_instance_dir: &Path,
 ) -> std::io::Result<LegacyMigration> {
-    if instance_id != Some("production-main") {
-        return Ok(LegacyMigration::SkippedNotProductionMain);
+    if instance_id != Some("release-main") {
+        return Ok(LegacyMigration::SkippedNotReleaseMain);
     }
 
     let marker = per_instance_dir.join(LEGACY_MIGRATION_MARKER);
@@ -182,7 +182,7 @@ pub(crate) fn migrate_legacy_tugbank(
         info!(
             legacy = %legacy_path.display(),
             marker = %marker.display(),
-            "no legacy ~/.tugbank.db found; marking production-main as migrated"
+            "no legacy ~/.tugbank.db found; marking release-main as migrated"
         );
         return Ok(LegacyMigration::NoLegacyDb);
     }
@@ -205,7 +205,7 @@ pub(crate) fn migrate_legacy_tugbank(
         legacy = %legacy_path.display(),
         dest = %dest.display(),
         marker = %marker.display(),
-        "migrated legacy ~/.tugbank.db into production-main"
+        "migrated legacy ~/.tugbank.db into release-main"
     );
     Ok(LegacyMigration::Migrated)
 }
@@ -371,14 +371,13 @@ mod tests {
     }
 
     #[test]
-    fn legacy_migration_runs_on_production_main_when_legacy_present() {
+    fn legacy_migration_runs_on_release_main_when_legacy_present() {
         let tmp = TempDir::new().unwrap();
         let legacy = tmp.path().join("legacy.db");
-        let per_instance = tmp.path().join("instances/production-main");
+        let per_instance = tmp.path().join("instances/release-main");
         write_legacy_db(&legacy, b"LEGACY-CONTENT");
 
-        let result =
-            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap();
+        let result = migrate_legacy_tugbank(Some("release-main"), &legacy, &per_instance).unwrap();
         assert_eq!(result, LegacyMigration::Migrated);
 
         let dest = per_instance.join("tugbank.db");
@@ -395,11 +394,11 @@ mod tests {
     fn legacy_migration_is_noop_after_first_run() {
         let tmp = TempDir::new().unwrap();
         let legacy = tmp.path().join("legacy.db");
-        let per_instance = tmp.path().join("instances/production-main");
+        let per_instance = tmp.path().join("instances/release-main");
         write_legacy_db(&legacy, b"v1");
 
         assert_eq!(
-            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap(),
+            migrate_legacy_tugbank(Some("release-main"), &legacy, &per_instance).unwrap(),
             LegacyMigration::Migrated
         );
 
@@ -407,7 +406,7 @@ mod tests {
         // second run must NOT touch the per-instance copy.
         std::fs::write(&legacy, b"v2-DO-NOT-MIGRATE").unwrap();
         assert_eq!(
-            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap(),
+            migrate_legacy_tugbank(Some("release-main"), &legacy, &per_instance).unwrap(),
             LegacyMigration::AlreadyMigrated
         );
         assert_eq!(
@@ -417,15 +416,14 @@ mod tests {
     }
 
     #[test]
-    fn legacy_migration_skipped_for_non_production_main() {
+    fn legacy_migration_skipped_for_non_release_main() {
         let tmp = TempDir::new().unwrap();
         let legacy = tmp.path().join("legacy.db");
-        let per_instance = tmp.path().join("instances/development-foo");
+        let per_instance = tmp.path().join("instances/debug-foo");
         write_legacy_db(&legacy, b"legacy");
 
-        let result =
-            migrate_legacy_tugbank(Some("development-foo"), &legacy, &per_instance).unwrap();
-        assert_eq!(result, LegacyMigration::SkippedNotProductionMain);
+        let result = migrate_legacy_tugbank(Some("debug-foo"), &legacy, &per_instance).unwrap();
+        assert_eq!(result, LegacyMigration::SkippedNotReleaseMain);
         assert!(!per_instance.join("tugbank.db").exists());
         assert!(!per_instance.join(LEGACY_MIGRATION_MARKER).exists());
     }
@@ -438,17 +436,16 @@ mod tests {
         write_legacy_db(&legacy, b"legacy");
 
         let result = migrate_legacy_tugbank(None, &legacy, &per_instance).unwrap();
-        assert_eq!(result, LegacyMigration::SkippedNotProductionMain);
+        assert_eq!(result, LegacyMigration::SkippedNotReleaseMain);
     }
 
     #[test]
     fn legacy_migration_marks_done_even_without_legacy_db() {
         let tmp = TempDir::new().unwrap();
         let legacy = tmp.path().join("legacy.db"); // does not exist
-        let per_instance = tmp.path().join("instances/production-main");
+        let per_instance = tmp.path().join("instances/release-main");
 
-        let result =
-            migrate_legacy_tugbank(Some("production-main"), &legacy, &per_instance).unwrap();
+        let result = migrate_legacy_tugbank(Some("release-main"), &legacy, &per_instance).unwrap();
         assert_eq!(result, LegacyMigration::NoLegacyDb);
         assert!(per_instance.join(LEGACY_MIGRATION_MARKER).exists());
         assert!(!per_instance.join("tugbank.db").exists());

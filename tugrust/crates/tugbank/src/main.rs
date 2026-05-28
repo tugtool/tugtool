@@ -50,8 +50,8 @@ struct Cli {
     #[arg(long, global = true)]
     path: Option<String>,
 
-    /// Per-instance identifier (e.g. `production-main`,
-    /// `development-foo`). Resolves the DB to
+    /// Per-instance identifier (e.g. `release-main`,
+    /// `debug-foo`). Resolves the DB to
     /// `<Application Support>/Tug/instances/<id>/tugbank.db`.
     /// Overrides TUGBANK_PATH and TUG_INSTANCE_ID; ignored when --path
     /// is also set.

@@ -119,18 +119,18 @@ mod tests {
 
     #[test]
     fn derive_port_is_deterministic() {
-        let a = derive_port("development-foo", 55300, 100);
-        let b = derive_port("development-foo", 55300, 100);
+        let a = derive_port("debug-foo", 55300, 100);
+        let b = derive_port("debug-foo", 55300, 100);
         assert_eq!(a, b);
     }
 
     #[test]
     fn derive_port_is_within_window() {
         for id in [
-            "production-main",
-            "development-main",
-            "development-tide-wake-1",
-            "production-detached-deadbeef",
+            "release-main",
+            "debug-main",
+            "debug-tide-wake-1",
+            "release-detached-deadbeef",
         ] {
             let p = derive_port(id, 55300, 100);
             assert!((55300..55400).contains(&p), "{id} → {p} out of range");
@@ -142,11 +142,11 @@ mod tests {
         // No two of these should collide given the 100-port window
         // unless we are uniquely unlucky.
         let ports: Vec<_> = [
-            "production-main",
-            "development-main",
-            "development-foo",
-            "development-bar",
-            "development-baz",
+            "release-main",
+            "debug-main",
+            "debug-foo",
+            "debug-bar",
+            "debug-baz",
         ]
         .iter()
         .map(|id| derive_port(id, 55300, 100))
@@ -159,15 +159,15 @@ mod tests {
 
     #[test]
     fn tugcast_and_vite_defaults_are_in_their_windows() {
-        let tc = tugcast_port_default("development-foo");
-        let v = vite_port_default("development-foo");
+        let tc = tugcast_port_default("debug-foo");
+        let v = vite_port_default("debug-foo");
         assert!((TUGCAST_PORT_BASE..TUGCAST_PORT_BASE + TUGCAST_PORT_WINDOW).contains(&tc));
         assert!((VITE_PORT_BASE..VITE_PORT_BASE + VITE_PORT_WINDOW).contains(&v));
     }
 
     #[test]
     fn allocate_port_returns_derived_when_free() {
-        let id = "development-foo";
+        let id = "debug-foo";
         let want = derive_port(id, 55300, 100);
         let alloc = allocate_port(id, 55300, 100, |_| true);
         assert_eq!(
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn allocate_port_walks_past_held_port() {
-        let id = "development-foo";
+        let id = "debug-foo";
         let derived = derive_port(id, 55300, 100);
         let alloc = allocate_port(id, 55300, 100, |p| p != derived);
         match alloc {
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn allocate_port_falls_back_when_window_full() {
-        let alloc = allocate_port("development-foo", 55300, 100, |_| false);
+        let alloc = allocate_port("debug-foo", 55300, 100, |_| false);
         assert_eq!(alloc, AllocatedPort::EphemeralFallback);
     }
 
@@ -206,7 +206,7 @@ mod tests {
         // full walk is guaranteed to visit every port. With four
         // ports total and only one accepted, the walker MUST wrap to
         // reach it from any starting offset.
-        let id = "development-wrap";
+        let id = "debug-wrap";
         let base: u16 = 9000;
         let window: u16 = 4;
         let target: u16 = 9000;

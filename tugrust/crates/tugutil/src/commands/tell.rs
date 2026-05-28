@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn resolve_port_explicit_port_wins() {
-        let r = resolve_port(Some(9999), Some("development-foo".to_owned()));
+        let r = resolve_port(Some(9999), Some("debug-foo".to_owned()));
         assert_eq!(r, Ok(9999));
     }
 

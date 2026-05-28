@@ -4,17 +4,28 @@ set -euo pipefail
 # assign-bundle-id.sh — xcodebuild build-phase script
 #
 # Assigns the bundle's CFBundleIdentifier per (BuildProfile, BuildBranch)
-# according to roadmap/tug-multi-instance.md [D10]:
+# according to roadmap/tug-multi-instance.md [D10] (suffix scheme as
+# amended by [D19]):
 #
-#   (production, main)        → dev.tugtool.app
-#   (development, main)       → dev.tugtool.app.dev
-#   (development, <other>)    → dev.tugtool.app.development-<slug>
-#   (production, <other>)     → dev.tugtool.app.production-<slug>
+#   (release, main)       → dev.tugtool.app
+#   (debug, main)         → dev.tugtool.app.debug
+#   (debug, <other>)      → dev.tugtool.app.debug-<slug>
+#   (release, <other>)    → dev.tugtool.app.release-<slug>
 #
 # Where <slug> is the BuildBranch normalized via
 # `tugrust/scripts/branch-slug.sh` (the canonical bash implementation
 # of the slug algorithm). Parity with the Swift `BranchSlug.compute`
 # is verified by `tests/build-info/test-slug-parity.sh`.
+#
+# Per [D19]: the rename from production/development → release/debug
+# invalidates the user's existing AX (Accessibility) TCC grant on the
+# old `(development, main)` shorthand `dev.tugtool.app.dev`. The new
+# `(debug, main)` bundle ID `dev.tugtool.app.debug` prompts for AX on
+# first launch — one-time cost, accepted. The orphan TCC entry on
+# `dev.tugtool.app.dev` is harmless and can be cleared manually via
+# `tccutil reset Accessibility dev.tugtool.app.dev`. The
+# `(release, main)` bundle ID `dev.tugtool.app` is unchanged, so its
+# AX grant survives.
 #
 # Required env (set by Xcode at build time):
 #   TARGET_BUILD_DIR          parent directory of the built bundle
@@ -70,11 +81,11 @@ BUILD_PROFILE="$(read_key BuildProfile)"
 BUILD_BRANCH="$(read_key BuildBranch)"
 
 case "${BUILD_PROFILE}-${BUILD_BRANCH}" in
-    production-main)
+    release-main)
         BUNDLE_ID="dev.tugtool.app"
         ;;
-    development-main)
-        BUNDLE_ID="dev.tugtool.app.dev"
+    debug-main)
+        BUNDLE_ID="dev.tugtool.app.debug"
         ;;
     *)
         BRANCH_SLUG="$(bash "$SLUG_CMD" "$BUILD_BRANCH")"

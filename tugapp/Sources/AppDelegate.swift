@@ -377,9 +377,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             // No explicit preference yet — default from the build
             // profile baked into Info.plist by Step 1's
-            // capture-build-info.sh. Development bundles ship with
-            // dev mode ON; production bundles ship with it OFF.
-            devModeEnabled = BuildInfo.profile == "development"
+            // capture-build-info.sh. Debug bundles ship with dev
+            // mode ON; release bundles ship with it OFF.
+            devModeEnabled = BuildInfo.profile == "debug"
         }
 
         sourceTreePath = ProcessManager.readTugbank(

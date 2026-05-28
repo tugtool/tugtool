@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # test-bundle-id-mapping.sh — exercises every branch of [D10]'s
-# (profile, branch) → CFBundleIdentifier mapping without requiring a
-# real Xcode build for each variant.
+# (profile, branch) → CFBundleIdentifier mapping (with profile tokens
+# renamed per [D19]) without requiring a real Xcode build for each
+# variant.
 #
 # Strategy:
 #   1. Create a minimal Info.plist scratch file containing the keys
@@ -34,25 +35,25 @@ PLIST="$BUNDLE_CONTENTS/Info.plist"
 # Variants. The bash array carries (profile, branch, expected) triples
 # colon-separated so we can iterate cleanly.
 declare -a CASES=(
-    "production:main:dev.tugtool.app"
-    "development:main:dev.tugtool.app.dev"
-    "development:tide-foo:dev.tugtool.app.development-tide-foo"
-    "production:tide-foo:dev.tugtool.app.production-tide-foo"
+    "release:main:dev.tugtool.app"
+    "debug:main:dev.tugtool.app.debug"
+    "debug:tide-foo:dev.tugtool.app.debug-tide-foo"
+    "release:tide-foo:dev.tugtool.app.release-tide-foo"
     # Branch with characters that exercise the slugifier:
-    "development:feat/foo:dev.tugtool.app.development-feat-foo"
-    "production:wip/foo bar:dev.tugtool.app.production-wip-foo-bar"
+    "debug:feat/foo:dev.tugtool.app.debug-feat-foo"
+    "release:wip/foo bar:dev.tugtool.app.release-wip-foo-bar"
     # Detached-HEAD shape:
-    "development:detached-abcd1234:dev.tugtool.app.development-detached-abcd1234"
+    "debug:detached-abcd1234:dev.tugtool.app.debug-detached-abcd1234"
     # Uppercase / mixed:
-    "development:Tide-Wake-1:dev.tugtool.app.development-tide-wake-1"
+    "debug:Tide-Wake-1:dev.tugtool.app.debug-tide-wake-1"
 )
 
 # Failure-only variant: a branch that slugifies to empty should be
 # rejected with a clear error (we don't want the bundle ID to end with
 # `-` and a trailing nothing).
 declare -a FAIL_CASES=(
-    "development:###"
-    "development:   "
+    "debug:###"
+    "debug:   "
 )
 
 fail=0
@@ -65,11 +66,11 @@ verify_expected() {
     local branch="$2"
     local expected="$3"
     case "$profile-$branch" in
-        production-main)
+        release-main)
             [ "$expected" = "dev.tugtool.app" ] && return 0
             ;;
-        development-main)
-            [ "$expected" = "dev.tugtool.app.dev" ] && return 0
+        debug-main)
+            [ "$expected" = "dev.tugtool.app.debug" ] && return 0
             ;;
         *)
             local slug
@@ -77,7 +78,7 @@ verify_expected() {
             [ "$expected" = "dev.tugtool.app.${profile}-${slug}" ] && return 0
             ;;
     esac
-    printf '  table-bug %-12s %-22s   expected=%s  does not satisfy [D10]\n' \
+    printf '  table-bug %-12s %-22s   expected=%s  does not satisfy [D10]/[D19]\n' \
         "$profile" "<$branch>" "$expected" >&2
     return 1
 }

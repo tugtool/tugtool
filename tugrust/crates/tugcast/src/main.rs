@@ -207,9 +207,9 @@ async fn main() {
         );
     }
 
-    // One-time legacy ~/.tugbank.db migration into production-main.
+    // One-time legacy ~/.tugbank.db migration into release-main.
     // Runs before TugbankClient::open so the copied DB is the one
-    // opened. Skipped silently for non-production-main instances or
+    // opened. Skipped silently for non-release-main instances or
     // when the legacy file is absent. Errors are non-fatal — tugcast
     // continues with an empty per-instance DB on failure.
     if let Some(id) = tug_instance::instance_id()
@@ -220,7 +220,7 @@ async fn main() {
             .join(".tugbank.db");
         match migration::migrate_legacy_tugbank(Some(&id), &legacy_path, parent) {
             Ok(migration::LegacyMigration::Migrated) => {
-                info!(legacy = %legacy_path.display(), "copied legacy ~/.tugbank.db into production-main")
+                info!(legacy = %legacy_path.display(), "copied legacy ~/.tugbank.db into release-main")
             }
             Ok(_) => {}
             Err(e) => warn!(error = %e, "legacy tugbank migration failed (non-fatal)"),

@@ -110,9 +110,9 @@ mod tests {
         let _lock = ENV_MUTEX.lock().unwrap_or_else(|p| p.into_inner());
         let prior = std::env::var_os("TUG_INSTANCE_ID");
         unsafe {
-            std::env::set_var("TUG_INSTANCE_ID", "development-foo");
+            std::env::set_var("TUG_INSTANCE_ID", "debug-foo");
         }
-        assert_eq!(default_session(), "cc-development-foo");
+        assert_eq!(default_session(), "cc-debug-foo");
         unsafe {
             match prior {
                 Some(v) => std::env::set_var("TUG_INSTANCE_ID", v),

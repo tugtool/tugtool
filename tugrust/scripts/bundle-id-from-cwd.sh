@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Resolve the CFBundleIdentifier for the current working directory's
-# Tug build identity, applying the same [D10] mapping that
+# Tug build identity, applying the same [D10] / [D19] mapping that
 # `assign-bundle-id.sh` uses at xcodebuild time:
 #
-#   (production, main)        → dev.tugtool.app
-#   (development, main)       → dev.tugtool.app.dev
-#   (development, <other>)    → dev.tugtool.app.development-<slug>
-#   (production, <other>)     → dev.tugtool.app.production-<slug>
+#   (release, main)       → dev.tugtool.app
+#   (debug, main)         → dev.tugtool.app.debug
+#   (debug, <other>)      → dev.tugtool.app.debug-<slug>
+#   (release, <other>)    → dev.tugtool.app.release-<slug>
 #
 # Usage:
-#   bundle-id-from-cwd.sh <profile>   # development | production
+#   bundle-id-from-cwd.sh <profile>   # debug | release
 #
 # Output: a CFBundleIdentifier string.
 
@@ -29,11 +29,11 @@ else
 fi
 
 case "${PROFILE}-${BRANCH}" in
-    production-main)
+    release-main)
         echo "dev.tugtool.app"
         ;;
-    development-main)
-        echo "dev.tugtool.app.dev"
+    debug-main)
+        echo "dev.tugtool.app.debug"
         ;;
     *)
         REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"

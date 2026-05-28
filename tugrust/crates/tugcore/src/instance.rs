@@ -9,7 +9,7 @@
 //! existing code with no behavioral change for unmodified callers.
 //!
 //! The instance ID itself is `<profile>-<branch-slug>` — for
-//! example `production-main` or `development-tide-wake-1`. Tug code
+//! example `release-main` or `debug-tide-wake-1`. Tug code
 //! does not parse the ID; downstream readers treat it as an opaque
 //! filesystem-safe token.
 //!
@@ -267,11 +267,11 @@ mod tests {
     #[serial]
     fn data_dir_with_instance_id_uses_instances_subdir() {
         let _g = EnvGuard::snapshot();
-        set_instance(Some("development-foo"));
+        set_instance(Some("debug-foo"));
         let dir = data_dir();
         assert!(
-            dir.ends_with("Tug/instances/development-foo"),
-            "expected .../Tug/instances/development-foo, got {}",
+            dir.ends_with("Tug/instances/debug-foo"),
+            "expected .../Tug/instances/debug-foo, got {}",
             dir.display()
         );
     }
@@ -293,9 +293,9 @@ mod tests {
     #[serial]
     fn log_dir_is_under_data_dir() {
         let _g = EnvGuard::snapshot();
-        set_instance(Some("development-bar"));
+        set_instance(Some("debug-bar"));
         let dir = log_dir();
-        assert!(dir.ends_with("Tug/instances/development-bar/Logs"));
+        assert!(dir.ends_with("Tug/instances/debug-bar/Logs"));
     }
 
     #[test]
@@ -320,21 +320,21 @@ mod tests {
     #[serial]
     fn tugbank_and_sessions_db_paths_some_when_set() {
         let _g = EnvGuard::snapshot();
-        set_instance(Some("development-baz"));
+        set_instance(Some("debug-baz"));
         let tb = tugbank_db_path().expect("expected Some when ID set");
         let sl = sessions_db_path().expect("expected Some when ID set");
-        assert!(tb.ends_with("Tug/instances/development-baz/tugbank.db"));
-        assert!(sl.ends_with("Tug/instances/development-baz/sessions.db"));
+        assert!(tb.ends_with("Tug/instances/debug-baz/tugbank.db"));
+        assert!(sl.ends_with("Tug/instances/debug-baz/sessions.db"));
     }
 
     #[test]
     #[serial]
     fn notify_socket_path_suffixed_when_id_set() {
         let _g = EnvGuard::snapshot();
-        set_instance(Some("development-qux"));
+        set_instance(Some("debug-qux"));
         let sock = notify_socket_path();
         let name = sock.file_name().unwrap().to_str().unwrap();
-        assert_eq!(name, "tugbank-notify-development-qux.sock");
+        assert_eq!(name, "tugbank-notify-debug-qux.sock");
     }
 
     #[test]
@@ -351,9 +351,9 @@ mod tests {
     #[serial]
     fn bundle_path_marker_under_data_dir() {
         let _g = EnvGuard::snapshot();
-        set_instance(Some("development-marker"));
+        set_instance(Some("debug-marker"));
         let marker = bundle_path_marker();
-        assert!(marker.ends_with("Tug/instances/development-marker/bundle-path"));
+        assert!(marker.ends_with("Tug/instances/debug-marker/bundle-path"));
     }
 
     #[test]
@@ -424,7 +424,7 @@ mod tests {
         set_instance(None);
         set_bundle(None);
         assert_eq!(write_bundle_path_marker().unwrap(), MarkerWrite::Skipped);
-        set_instance(Some("development-foo"));
+        set_instance(Some("debug-foo"));
         set_bundle(None);
         assert_eq!(write_bundle_path_marker().unwrap(), MarkerWrite::Skipped);
         set_instance(None);
@@ -438,7 +438,7 @@ mod tests {
         let _e = EnvGuard::snapshot();
         let tmp = tempfile::tempdir().unwrap();
         let _h = HomeGuard::redirect(tmp.path());
-        set_instance(Some("development-write"));
+        set_instance(Some("debug-write"));
         set_bundle(Some("/Applications/Tug.app"));
 
         assert_eq!(write_bundle_path_marker().unwrap(), MarkerWrite::Written);
@@ -457,7 +457,7 @@ mod tests {
         let _e = EnvGuard::snapshot();
         let tmp = tempfile::tempdir().unwrap();
         let _h = HomeGuard::redirect(tmp.path());
-        set_instance(Some("development-rewrite"));
+        set_instance(Some("debug-rewrite"));
         set_bundle(Some("/Applications/Tug.app"));
         assert_eq!(write_bundle_path_marker().unwrap(), MarkerWrite::Written);
 

@@ -164,22 +164,23 @@ wasm:
 # invalidate the grant.
 #
 # (Note: Step 15 of the multi-instance plan will retire this recipe
-# in favor of `just app-dev`. Until then, this is the canonical dev
-# loop.)
+# in favor of `just app-debug`. Until then, this is the canonical
+# debug loop.)
 # ── Multi-instance recipe surface ────────────────────────────────────────────
 #
-# The dev/prod axis (per [D17] of roadmap/tug-multi-instance.md):
-# `app-dev` / `app-prod` build + relaunch a per-(profile, branch)
-# instance. Running `app-prod` from a worktree branch produces a
-# `(production, <branch>)` instance, not `(production, main)` — the
-# axis is build-flavor, not identity-fork.
+# The debug/release axis (per [D17] of roadmap/tug-multi-instance.md,
+# tokens renamed per [D19]): `app-debug` / `app-release` build +
+# relaunch a per-(profile, branch) instance. Running `app-release`
+# from a worktree branch produces a `(release, <branch>)` instance,
+# not `(release, main)` — the axis is build-flavor, not
+# identity-fork.
 #
 # Distribution-flow recipes (`dmg`, `notarize`) live separately and
 # operate on bundles, not running instances.
 
-# Build a Debug bundle and (re)launch the cwd-derived development
+# Build a Debug bundle and (re)launch the cwd-derived debug
 # instance. Identity is computed from the current git branch and the
-# `development` profile.
+# `debug` profile.
 #
 # The quit-prior step is the FIRST thing the recipe does, before
 # cargo/wasm/xcodebuild/sign. sign-bundle.sh rewrites the bundle's
@@ -187,16 +188,16 @@ wasm:
 # kernel notices the signature change under its live mmap'd code and
 # SIGKILLs tugcast — the WebView then flashes a disconnect banner
 # during what should be a smooth handoff. Quitting first avoids that.
-app-dev: build wasm
+app-debug: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
     echo "==> Quitting prior $INSTANCE_ID, if running"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
-    # Dev bundles serve the frontend via Vite HMR — no `bun run build`
+    # Debug bundles serve the frontend via Vite HMR — no `bun run build`
     # is needed here. The xcodebuild build phase tolerates an empty
-    # tugdeck/dist; production builds (`app-prod`) run the full vite
+    # tugdeck/dist; release builds (`app-release`) run the full vite
     # build before xcodebuild.
     # Touch Swift sources so xcodebuild detects changes on this mount.
     find tugapp/Sources -name '*.swift' -exec touch {} +
@@ -218,78 +219,78 @@ app-dev: build wasm
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
     open "$APP_DIR"
 
-# Build a Release bundle and (re)launch the cwd-derived production
-# instance. Quit-prior runs first for the same reason as app-dev.
-app-prod: build wasm
+# Build a Release bundle and (re)launch the cwd-derived release
+# instance. Quit-prior runs first for the same reason as app-debug.
+app-release: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
     echo "==> Quitting prior $INSTANCE_ID, if running"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
-    echo "==> Building tugdeck static assets for the production bundle"
+    echo "==> Building tugdeck static assets for the release bundle"
     (cd tugdeck && bun run build)
     find tugapp/Sources -name '*.swift' -exec touch {} +
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' build
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
-    # Seed source-tree-path for the prod instance too. AppDelegate
+    # Seed source-tree-path for the release instance too. AppDelegate
     # falls back to BuildInfo.sourceTree if the tugbank value is
     # missing, but release builds intentionally omit BuildSourceTree
-    # ([D03]), so this write is the only path for prod from a
+    # ([D03]), so this write is the only path for release from a
     # developer checkout.
     tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
     open "$APP_DIR"
 
-# Relaunch the cwd-derived dev instance without rebuilding.
-launch-dev:
+# Relaunch the cwd-derived debug instance without rebuilding.
+launch-debug:
     #!/usr/bin/env bash
     set -euo pipefail
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     if [ ! -d "$APP_DIR" ]; then
         echo "error: Tug.app not built at $APP_DIR" >&2
-        echo "       Run 'just app-dev' first." >&2
+        echo "       Run 'just app-debug' first." >&2
         exit 1
     fi
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     open "$APP_DIR"
 
-# Relaunch the cwd-derived prod instance without rebuilding.
-launch-prod:
+# Relaunch the cwd-derived release instance without rebuilding.
+launch-release:
     #!/usr/bin/env bash
     set -euo pipefail
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     if [ ! -d "$APP_DIR" ]; then
         echo "error: Tug.app not built at $APP_DIR" >&2
-        echo "       Run 'just app-prod' first." >&2
+        echo "       Run 'just app-release' first." >&2
         exit 1
     fi
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     open "$APP_DIR"
 
-# Stop the cwd-derived dev instance (idempotent). Quits the GUI app
-# AND the tugcast registry entry — `just app-dev` then re-launches
+# Stop the cwd-derived debug instance (idempotent). Quits the GUI app
+# AND the tugcast registry entry — `just app-debug` then re-launches
 # fresh, instead of LaunchServices bringing the previous (stale)
 # Tug.app to front.
-stop-dev:
+stop-debug:
     #!/usr/bin/env bash
     set -euo pipefail
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh development)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh debug)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
 
-# Stop the cwd-derived prod instance (idempotent).
-stop-prod:
+# Stop the cwd-derived release instance (idempotent).
+stop-release:
     #!/usr/bin/env bash
     set -euo pipefail
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
-    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh production)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
+    BUNDLE_ID="$(bash tugrust/scripts/bundle-id-from-cwd.sh release)"
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
 
 # Stop every live Tug instance.
@@ -320,11 +321,11 @@ stop:
 instances *FLAGS:
     tugrust/target/debug/tugutil instance list {{FLAGS}}
 
-# Tail today's dev-instance log.
-logs-dev:
+# Tail today's debug-instance log.
+logs-debug:
     #!/usr/bin/env bash
     set -euo pipefail
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh debug)"
     DATE="$(date +%Y-%m-%d)"
     LOG="$HOME/Library/Application Support/Tug/instances/$INSTANCE_ID/Logs/tugcast.log.$DATE"
     if [ ! -f "$LOG" ]; then
@@ -333,11 +334,11 @@ logs-dev:
     fi
     tail -F "$LOG"
 
-# Tail today's prod-instance log.
-logs-prod:
+# Tail today's release-instance log.
+logs-release:
     #!/usr/bin/env bash
     set -euo pipefail
-    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh release)"
     DATE="$(date +%Y-%m-%d)"
     LOG="$HOME/Library/Application Support/Tug/instances/$INSTANCE_ID/Logs/tugcast.log.$DATE"
     if [ ! -f "$LOG" ]; then
@@ -369,7 +370,7 @@ worktree-remove WORKTREE *FLAGS:
         BRANCH="detached-$(git -C "$WORKTREE" rev-parse HEAD | cut -c1-8)"
     fi
     SLUG="$(bash tugrust/scripts/branch-slug.sh "$BRANCH")"
-    INSTANCE_ID="development-$SLUG"
+    INSTANCE_ID="debug-$SLUG"
     echo "==> worktree-remove: $WORKTREE"
     echo "    branch:      $BRANCH"
     echo "    instance ID: $INSTANCE_ID"
@@ -646,7 +647,7 @@ app-test *FILES:
     APP_BIN="$APP_DIR/Contents/MacOS/Tug"
     if [ ! -x "$APP_BIN" ]; then
         echo "error: Tug.app not built at $APP_BIN" >&2
-        echo "       Run 'just app-dev' first." >&2
+        echo "       Run 'just app-debug' first." >&2
         exit 1
     fi
 
@@ -658,9 +659,9 @@ app-test *FILES:
 
     # Clean slate before the first spawn: wipe any apptest-* data
     # dirs from earlier runs and stop any apptest-* tugcasts that
-    # are still alive. Other instances (developer's `app-dev` /
-    # `app-prod`, harness colleagues' parallel `app-test` runs) are
-    # untouched — pkill -x Tug would have killed them all.
+    # are still alive. Other instances (developer's `app-debug` /
+    # `app-release`, harness colleagues' parallel `app-test` runs)
+    # are untouched — pkill -x Tug would have killed them all.
     rm -rf "$HOME/Library/Application Support/Tug/instances/apptest-"* 2>/dev/null || true
     while read -r ID; do
         case "$ID" in apptest-*)
@@ -672,7 +673,7 @@ app-test *FILES:
     TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
         # Targeted teardown — stop only the apptest-* instances the
-        # harness minted. A developer's separately-running app-dev
+        # harness minted. A developer's separately-running app-debug
         # session continues unaffected.
         while read -r ID; do
             case "$ID" in apptest-*)
@@ -821,17 +822,17 @@ app-test *FILES:
 # Runtime ~20-30s (vs ~3min for the full sweep).
 app-test-smoke: (app-test "harness-smoke/smoke.test.ts" "harness-smoke/version-handshake.test.ts" "at0001-tab-switch-fc.test.ts")
 
-# Clean Debug xcodebuild artifacts (matches `app-dev`)
-clean-dev:
+# Clean Debug xcodebuild artifacts (matches `app-debug`)
+clean-debug:
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
 
-# Clean Release xcodebuild artifacts (matches `app-prod`)
-clean-prod:
+# Clean Release xcodebuild artifacts (matches `app-release`)
+clean-release:
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' clean 2>/dev/null || true
 
-# Clean the Rust workspace target dir (shared by dev + prod)
+# Clean the Rust workspace target dir (shared by debug + release)
 clean-rust:
     cd tugrust && cargo clean
 
 # Wipe every build artifact: Debug + Release xcodebuild outputs and Rust target/
-clean-all: clean-dev clean-prod clean-rust
+clean-all: clean-debug clean-release clean-rust

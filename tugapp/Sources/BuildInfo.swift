@@ -7,7 +7,7 @@ import Foundation
 /// References: roadmap/tug-multi-instance.md [D01] [D02] [D03].
 enum BuildInfo {
     /// Build profile, derived from xcodebuild's `$CONFIGURATION`:
-    /// "development" (Debug) or "production" (Release).
+    /// "debug" (Debug) or "release" (Release), per [D19].
     static let profile: String = requireString("BuildProfile")
 
     /// Branch the bundle was built from. For builds made from a
@@ -15,8 +15,8 @@ enum BuildInfo {
     static let branch: String = requireString("BuildBranch")
 
     /// Absolute path to the repo root the bundle was built from.
-    /// Development builds only — production builds intentionally omit
-    /// this key per [D03].
+    /// Debug builds only — release builds intentionally omit this
+    /// key per [D03].
     static let sourceTree: String? = Bundle.main
         .object(forInfoDictionaryKey: "BuildSourceTree") as? String
 
