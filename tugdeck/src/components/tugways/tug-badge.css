@@ -311,7 +311,7 @@ body {
      loose). At `lg` this lands the inter-row spacing and the top/bottom
      margins about halfway between a flush centre and an even distribution. */
   justify-content: center;
-  gap: 0.25em;
+  gap: 0.33em;
   line-height: 1;
 }
 

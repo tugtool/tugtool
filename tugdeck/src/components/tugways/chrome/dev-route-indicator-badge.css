@@ -47,33 +47,6 @@ body {
   cursor: default;
 }
 
-/* ---- Width-stabilized face ----
-   Active and alternate faces are stacked in one CSS-grid cell. The
-   active face paints; the alternate keeps `visibility: hidden` but
-   participates in layout — the cell sizes to
-   `max(activeWidth, alternateWidth)`, so the route flip never changes
-   the badge's footprint. Mirrors `TugButton`'s `widthStabilize`
-   pattern; the data-attribute names are kept consistent on purpose. */
-.dev-route-indicator-badge-face {
-  display: inline-grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
-  align-items: center;
-  justify-items: center;
-}
-
-.dev-route-indicator-badge-face > [data-tug-stable-label="active"],
-.dev-route-indicator-badge-face > [data-tug-stable-label="alternate"] {
-  grid-row: 1;
-  grid-column: 1;
-  white-space: nowrap;
-}
-
-.dev-route-indicator-badge-face > [data-tug-stable-label="alternate"] {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 /* ---- Click-expand report (inside TugPopoverContent) ---- */
 
 .dev-route-indicator-badge-report {

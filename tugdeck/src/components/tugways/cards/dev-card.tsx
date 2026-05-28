@@ -2367,8 +2367,8 @@ export function DevCardBody({
   }, [cardId, projectDir]);
 
   const projectStatusContent = projectDir !== null ? (
-    <TugBadge size="sm" emphasis="tinted" role="inherit">
-      Project: {projectDir}
+    <TugBadge size="sm" emphasis="tinted" role="agent" layout="label-top" label="Project">
+      {projectDir}
     </TugBadge>
   ) : null;
 

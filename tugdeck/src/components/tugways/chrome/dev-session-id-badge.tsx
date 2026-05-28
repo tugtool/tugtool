@@ -50,11 +50,13 @@ export function DevSessionIdBadge({
   return (
     <TugBadge
       emphasis="tinted"
-      role="inherit"
+      role="agent"
       size="sm"
+      layout="label-top"
+      label="Session"
       title={tugSessionId}
     >
-      Session: {tugSessionId.slice(0, TRUNCATE_LENGTH)}
+      {tugSessionId.slice(0, TRUNCATE_LENGTH)}
     </TugBadge>
   );
 }

@@ -10,38 +10,41 @@
  *   ❯ Code | `Claude Code <version>` (drift-aware)      | sessionMetadataStore + drift detectors
  *   $ Shell| `<shell name>`                             | HostFactsStore.shell
  *
+ * Rendered as a two-line `TugBadge` (`layout="label-top"`): an
+ * uppercase caption over the value — `CLAUDE CODE` / version on the
+ * Code route, `SHELL` / shell-path on the Shell route — matching the
+ * other Z4B chrome chips.
+ *
  * **Mount identity ([L26], Risk R03).** The badge keeps its mount
  * across a route flip — the returned tree always has the same shape:
  * a single `TugPopover` wrapping a `TugPopoverTrigger` wrapping one
- * `TugBadge`. Only the badge's children, role, icon, and the
+ * `TugBadge`. Only the badge's `label`, children, role, icon, and the
  * conditional `TugPopoverContent` swap. React reconciles the
  * `TugBadge` element as the same type at the same position; the
  * `Code`-route drift popover's open/closed state survives a flip-
  * away-and-back through Shell.
  *
- * **Code branch.** Identical to the prior `DevVersionBadge`: shows
- * the running Claude Code stream-json version, escalates to `caution`
- * when the dispatch detected drift ([D04] / [Q03]). A click opens the
- * report popover listing running / validated versions and any drift
- * events. Falls back to the tugbank-persisted last-known version
- * before the live `system_metadata.version` lands, or `?` when none
- * has ever been seen.
+ * **Code branch.** Caption `Claude Code`, value the running
+ * stream-json version (with `· N events` appended on drift); escalates
+ * to `caution` when the dispatch detected drift ([D04] / [Q03]). A
+ * click opens the report popover listing running / validated versions
+ * and any drift events. Falls back to the tugbank-persisted last-known
+ * version before the live `system_metadata.version` lands, or `?` when
+ * none has ever been seen.
  *
- * **Shell branch.** Shows the full `$SHELL` path (`/bin/zsh`,
- * `/usr/local/bin/fish`, …), read from {@link useHostFacts} ([D04]).
- * Falls back to the basename (`shell`) if `shellPath` is empty (an
- * older tugcast that predates the field), then to the `shell`
+ * **Shell branch.** Caption `Shell`, value the full `$SHELL` path
+ * (`/bin/zsh`, `/usr/local/bin/fish`, …), read from {@link useHostFacts}
+ * ([D04]). Falls back to the basename (`shell`) if `shellPath` is empty
+ * (an older tugcast that predates the field), then to the `shell`
  * placeholder before host facts resolve at all (the fetch is one-shot
  * at app load, so this is brief). No popover content — clicking does
  * nothing visible.
  *
- * **Width is stable across the route flip.** Both faces are stacked in
- * one CSS-grid cell — the active face paints, the alternate stays
- * `visibility: hidden` but participates in layout — so the cell sizes
- * to `max(activeWidth, alternateWidth)` regardless of which branch is
- * live. Mirrors `TugButton`'s `widthStabilize` pattern. The drift case
- * (Code with `· N events` appended) still widens the badge — drift is
- * a separate state that demands attention, not the route flip.
+ * **No width stabilization.** Z4B chips do not pin a footprint across
+ * the route flip — the badge is as wide as its current face, so the
+ * width may change when the route or the version changes. (This is a
+ * deliberate Z4B policy; the chip's own two rows still size to the
+ * wider of caption / value.)
  *
  * Laws:
  *  - [L02] external state enters through `useSyncExternalStore` — the
@@ -252,23 +255,23 @@ export function DevRouteIndicatorBadge({
         ? hostFacts.shell
         : "shell";
 
-  let codeFace: string;
+  // Content line for the Code route: the running version, with the
+  // drift event count appended when drift is present (the running /
+  // validated split and the full event list live in the click-expand
+  // report). `?` until any version has been seen.
+  let codeContent: string;
   if (displayVersion === null) {
-    codeFace = "Claude Code ?";
+    codeContent = "?";
   } else if (!hasDrift) {
-    codeFace = `Claude Code ${displayVersion}`;
-  } else if (version !== null && version !== VALIDATED_CC_VERSION) {
-    codeFace = `Claude Code ${version} · validated ${VALIDATED_CC_VERSION} · ${eventCountLabel(summary.count)}`;
+    codeContent = displayVersion;
   } else {
-    codeFace = `Claude Code ${displayVersion} · ${eventCountLabel(summary.count)}`;
+    codeContent = `${version ?? displayVersion} · ${eventCountLabel(summary.count)}`;
   }
 
-  // Active / alternate split for width stabilization. The active face
-  // paints; the alternate participates in layout (`visibility: hidden`)
-  // so the grid cell sizes to `max(active, alternate)` width — the
-  // route flip never changes the badge's footprint.
-  const activeFace = isShell ? shellFace : codeFace;
-  const alternateFace = isShell ? codeFace : shellFace;
+  // Two-line faces: an uppercase caption (CSS-transformed) over the
+  // value. Caption and value both swap with the route.
+  const caption = isShell ? "Shell" : "Claude Code";
+  const content = isShell ? shellFace : codeContent;
 
   // One-shape render: `TugPopover` always wraps the `TugBadge` ([L26],
   // Risk R03) so the badge's mount survives a route flip. The
@@ -279,7 +282,9 @@ export function DevRouteIndicatorBadge({
     <TugPopover>
       <TugPopoverTrigger>
         <TugBadge
-          role={hasDrift ? "caution" : "inherit"}
+          layout="label-top"
+          label={caption}
+          role={hasDrift ? "caution" : "agent"}
           emphasis="tinted"
           size="sm"
           icon={hasDrift ? <TriangleAlert aria-hidden="true" /> : undefined}
@@ -287,15 +292,7 @@ export function DevRouteIndicatorBadge({
           data-route={isShell ? "shell" : "code"}
           data-slot="dev-route-indicator-badge"
         >
-          <span
-            className="dev-route-indicator-badge-face"
-            data-slot="dev-route-indicator-badge-face"
-          >
-            <span data-tug-stable-label="active">{activeFace}</span>
-            <span data-tug-stable-label="alternate" aria-hidden="true">
-              {alternateFace}
-            </span>
-          </span>
+          {content}
         </TugBadge>
       </TugPopoverTrigger>
       {isShell ? null : (
