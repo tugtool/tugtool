@@ -92,8 +92,60 @@ body {
   /* user-select inherits none from body. Form inputs inside the sheet
      opt in to user-select: text individually. The sheet itself is chrome
      — labels, headers, and buttons should not be selectable. */
-  /* Base state: off-screen above clip. TugAnimator's fill:forwards holds the final position. */
+}
+
+/* ---- Presentation resting states ----
+ *
+ * Each presentation style ([data-tug-sheet-presentation]) declares the
+ * panel's pre-enter / post-exit resting transform here so the panel is
+ * already in its "off" position before the JS enter animation takes
+ * over — no first-paint flash. TugAnimator's fill:forwards holds the
+ * fully-presented position once the enter animation completes. The
+ * first/last keyframes in `SHEET_PRESENTATION_MOTION` (tug-sheet.tsx)
+ * must match these resting states.
+ *
+ * All three land in the identical presented geometry — the resting
+ * state is the only difference [L06].
+ *
+ *   - top:        off-screen above the clip (window-shade drop).
+ *   - bottom:     off-screen below its slot (mirror slide-up).
+ *   - scale-fade: slightly shrunk and transparent (no slide).
+ *
+ * `data-tug-sheet-presentation` is always set by TugSheetContent, so
+ * the `top` rule below is the effective default. */
+.tug-sheet-content[data-tug-sheet-presentation="top"] {
   transform: translateY(-100%);
+}
+
+.tug-sheet-content[data-tug-sheet-presentation="bottom"] {
+  transform: translateY(100%);
+}
+
+.tug-sheet-content[data-tug-sheet-presentation="scale-fade"] {
+  transform: scale(0.96);
+  opacity: 0;
+}
+
+/* ---- Reduced motion ----
+ *
+ * TugAnimator strips spatial properties (translate/scale) under
+ * reduced motion and substitutes a short opacity fade, but it cannot
+ * touch the CSS resting transforms above — left intact, a sheet would
+ * stay slid-off or shrunk-and-invisible. Reset every presentation to
+ * its fully-presented geometry so the fade lands somewhere visible.
+ * Placed after the resting-state rules to win on source order; the
+ * `body[data-tug-motion="off"]` form carries extra specificity for the
+ * JS-driven toggle. [L06] */
+@media (prefers-reduced-motion: reduce) {
+  .tug-sheet-content[data-tug-sheet-presentation] {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
+  transform: none;
+  opacity: 1;
 }
 
 /* ---- Sheet header: title left, close button right ---- */

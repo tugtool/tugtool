@@ -97,6 +97,72 @@ import {
 import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
 
 /* ---------------------------------------------------------------------------
+ * Presentation styles
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * Visual entrance/exit style for a TugSheet. Every style lands in the
+ * *identical* fully-presented geometry (position, size, centering) —
+ * the difference is purely the animated transition into and out of that
+ * resting state [L06]. UX is the same across all three; this is a UI
+ * affordance only.
+ *
+ *   - `"top"`        Window-shade drop from the title bar (default).
+ *                    The panel slides down into place and slides back
+ *                    up on dismiss. The original — and only — style.
+ *   - `"bottom"`     Mirror of `"top"` from the opposite edge: the
+ *                    panel slides up into place from below and slides
+ *                    back down on dismiss.
+ *   - `"scale-fade"` The panel fades in while scaling up from slightly
+ *                    smaller, and fades out while scaling back down.
+ *                    No directional slide.
+ *
+ * The resting (pre-enter / post-exit) state for each style is declared
+ * in `tug-sheet.css` keyed on `data-tug-sheet-presentation` so the
+ * panel is correctly positioned before the JS enter animation runs —
+ * no first-paint flash. The keyframes below must stay in sync with
+ * those resting states.
+ */
+export type TugSheetPresentation = "top" | "bottom" | "scale-fade";
+
+/** Enter/exit keyframe pair for one presentation style. */
+interface SheetPresentationMotion {
+  enter: Keyframe[];
+  exit: Keyframe[];
+}
+
+/**
+ * Keyframes per presentation style. The first enter frame (and last
+ * exit frame) must match the resting state declared in `tug-sheet.css`
+ * for the same `data-tug-sheet-presentation` value, so the panel does
+ * not jump when the JS animation takes over from the CSS resting state.
+ *
+ * Under reduced motion TugAnimator strips the spatial properties and
+ * substitutes a short opacity fade; the CSS resting states are reset to
+ * the presented geometry in that mode (see `tug-sheet.css`).
+ */
+const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationMotion> = {
+  top: {
+    enter: [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }],
+    exit: [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }],
+  },
+  bottom: {
+    enter: [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
+    exit: [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
+  },
+  "scale-fade": {
+    enter: [
+      { transform: "scale(0.96)", opacity: 0 },
+      { transform: "scale(1)", opacity: 1 },
+    ],
+    exit: [
+      { transform: "scale(1)", opacity: 1 },
+      { transform: "scale(0.96)", opacity: 0 },
+    ],
+  },
+};
+
+/* ---------------------------------------------------------------------------
  * Internal context
  * ---------------------------------------------------------------------------*/
 
@@ -341,6 +407,13 @@ export interface TugSheetContentProps {
    * pages when observing dispatches by sender. [L11]
    */
   senderId?: string;
+  /**
+   * Visual entrance/exit style. All styles share the identical
+   * fully-presented geometry — only the animated transition differs
+   * [L06]. Defaults to `"top"` (the window-shade drop). See
+   * {@link TugSheetPresentation}.
+   */
+  presentation?: TugSheetPresentation;
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -365,6 +438,7 @@ export function TugSheetContent({
   onOpenAutoFocus,
   getResult,
   senderId: senderIdProp,
+  presentation = "top",
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -540,7 +614,7 @@ export function TugSheetContent({
     if (!contentEl) return;
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
-    g.animate(contentEl, [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }], {
+    g.animate(contentEl, SHEET_PRESENTATION_MOTION[presentation].enter, {
       key: "sheet-content",
       easing: "ease-out",
     });
@@ -558,7 +632,7 @@ export function TugSheetContent({
       // didn't complete; subscribers will hear about the next
       // transition (will-hide / did-hide) instead.
     });
-  }, [open, mounted, cardIdForLifecycle, sheetLifecycle]);
+  }, [open, mounted, cardIdForLifecycle, sheetLifecycle, presentation]);
 
   // Exit animation: runs when !open && mounted (DOM still present for animation).
   useLayoutEffect(() => {
@@ -570,7 +644,7 @@ export function TugSheetContent({
     }
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
-    g.animate(contentEl, [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], {
+    g.animate(contentEl, SHEET_PRESENTATION_MOTION[presentation].exit, {
       key: "sheet-content",
       easing: "ease-in",
     });
@@ -580,7 +654,7 @@ export function TugSheetContent({
       // Animation interrupted — unmount anyway to avoid stuck state.
       setMounted(false);
     });
-  }, [open, mounted]);
+  }, [open, mounted, presentation]);
 
   // Scrim show/hide: raise the host pane's built-in scrim while the
   // sheet is open. The cleanup return guarantees a balanced decrement
@@ -693,6 +767,7 @@ export function TugSheetContent({
             aria-labelledby={titleId}
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
+            data-tug-sheet-presentation={presentation}
             onKeyDown={handleKeyDown}
             onMouseDown={suppressButtonFocusShift}
           >
@@ -784,6 +859,12 @@ export interface ShowSheetOptions {
   content: (close: (result?: string) => void) => React.ReactNode;
   /** Override initial focus target. */
   onOpenAutoFocus?: (event: Event) => void;
+  /**
+   * Visual entrance/exit style. Forwarded to the rendered
+   * `TugSheetContent`. Defaults to `"top"`. See
+   * {@link TugSheetPresentation}.
+   */
+  presentation?: TugSheetPresentation;
   /**
    * Cascade-target responder id captured at sheet-open time.
    *
@@ -1132,6 +1213,7 @@ export function useTugSheet(): {
           onOpenAutoFocus={options.onOpenAutoFocus}
           getResult={getResultForContent}
           senderId={senderId}
+          presentation={options.presentation}
         >
           {options.content(close)}
         </TugSheetContent>

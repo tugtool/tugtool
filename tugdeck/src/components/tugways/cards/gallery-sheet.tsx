@@ -1,10 +1,11 @@
 /**
  * gallery-sheet.tsx -- TugSheet demo tab for the Component Gallery.
  *
- * Shows TugSheet in four modes: basic compound API with a form, sheet with
- * optional description, imperative ref-based API, and rich scrollable content.
- * TugSheet portals into the gallery card via TugPanePortalContext — the sheet
- * drops from the title bar as a window shade, exactly as it does in production.
+ * Shows TugSheet in its compound API (form), optional-description, imperative
+ * ref-based, and rich-scrollable modes, plus the three presentation styles
+ * (top / bottom / scale-fade). TugSheet portals into the gallery card via
+ * TugPanePortalContext — the sheet animates in over the card exactly as it
+ * does in production.
  *
  * @module components/tugways/cards/gallery-sheet
  */
@@ -61,12 +62,13 @@ const fieldRowStyle: React.CSSProperties = {
 /**
  * GallerySheet -- TugSheet demo tab.
  *
- * Five sections:
+ * Six sections:
  * 1. useTugSheet() hook — imperative Promise-based API (primary).
- * 2. Basic compound API (TugSheet / TugSheetTrigger / TugSheetContent) with a form.
- * 3. Sheet with optional `description` prop (aria-describedby).
- * 4. Imperative ref API (useRef<TugSheetHandle> + open() / close()).
- * 5. Rich scrollable content (checklist).
+ * 2. Presentation styles — top / bottom / scale-fade via the `presentation` prop.
+ * 3. Basic compound API (TugSheet / TugSheetTrigger / TugSheetContent) with a form.
+ * 4. Sheet with optional `description` prop (aria-describedby).
+ * 5. Imperative ref API (useRef<TugSheetHandle> + open() / close()).
+ * 6. Rich scrollable content (checklist).
  */
 /**
  * SheetCloseButton -- TugPushButton that closes the enclosing TugSheet
@@ -85,6 +87,25 @@ function SheetCloseButton(props: TugPushButtonProps) {
         close();
       }}
     />
+  );
+}
+
+/**
+ * PresentationSheetBody -- shared body for the Presentation Styles demo.
+ * Rendered inside a `useTugSheet()` sheet; the `close` callback comes
+ * from the hook's content render function.
+ */
+function PresentationSheetBody({ close }: { close: (result?: string) => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <div style={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
+        Reopen with a different style to compare — every style lands in the same
+        position and size. Only the entrance and exit animation differ.
+      </div>
+      <div className="tug-sheet-actions">
+        <TugPushButton emphasis="filled" onClick={() => close()}>Done</TugPushButton>
+      </div>
+    </div>
   );
 }
 
@@ -148,7 +169,63 @@ export function GallerySheet() {
 
       <TugSeparator />
 
-      {/* ---- 2. Basic Sheet ---- */}
+      {/* ---- 2. Presentation Styles ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Presentation Styles</TugLabel>
+        <div style={labelStyle}>
+          Same fully-presented geometry, three entrance/exit animations via the{" "}
+          <code>presentation</code> prop. Top is the default window-shade drop; bottom
+          mirrors it from below; scale-fade fades in while scaling up.
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            onClick={() =>
+              void showSheet({
+                title: "Top (default)",
+                description: "Window-shade drop from the title bar.",
+                presentation: "top",
+                content: (close) => <PresentationSheetBody close={close} />,
+              })
+            }
+          >
+            Top
+          </TugPushButton>
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            onClick={() =>
+              void showSheet({
+                title: "Bottom",
+                description: "Slides up into place from below.",
+                presentation: "bottom",
+                content: (close) => <PresentationSheetBody close={close} />,
+              })
+            }
+          >
+            Bottom
+          </TugPushButton>
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            onClick={() =>
+              void showSheet({
+                title: "Scale / Fade",
+                description: "Fades in while scaling up — no directional slide.",
+                presentation: "scale-fade",
+                content: (close) => <PresentationSheetBody close={close} />,
+              })
+            }
+          >
+            Scale / Fade
+          </TugPushButton>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 3. Basic Sheet ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Basic Sheet</TugLabel>
         <div style={labelStyle}>
@@ -209,7 +286,7 @@ export function GallerySheet() {
 
       <TugSeparator />
 
-      {/* ---- 3. Sheet with Description ---- */}
+      {/* ---- 4. Sheet with Description ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Sheet with Description</TugLabel>
         <div style={labelStyle}>
@@ -246,7 +323,7 @@ export function GallerySheet() {
 
       <TugSeparator />
 
-      {/* ---- 4. Imperative API ---- */}
+      {/* ---- 5. Imperative API ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Imperative API</TugLabel>
         <div style={labelStyle}>
@@ -296,7 +373,7 @@ export function GallerySheet() {
 
       <TugSeparator />
 
-      {/* ---- 5. Rich Content ---- */}
+      {/* ---- 6. Rich Content ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">Rich Content</TugLabel>
         <div style={labelStyle}>
