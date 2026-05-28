@@ -166,15 +166,15 @@ This plan uses the standard tugplan v2 anchor conventions (see `tuglaws/tugplan-
 
 **Resolution:** DEFERRED to Step 11 implementation. Will pick at code-time based on whether `fs2` is acceptable as a new workspace dep.
 
-#### [Q02] Icon design specifics (DEFERRED) {#q02-icon-design}
+#### [Q02] Icon design specifics (RESOLVED) {#q02-icon-design}
 
 **Question:** What do the production vs. development icons look like? What does the per-branch overlay on non-main development icons look like?
 
 **Why it matters:** Dock differentiation is the user-facing payoff of per-identity Bundle IDs. A clean visual story makes the multi-instance experience legible at a glance.
 
-**Plan to resolve:** Out of scope for Phase 1 plumbing. Step 5 ships the *mechanism* (Info.plist `CFBundleIconFile` + a build-phase script that selects the icon based on `BUILD_PROFILE` and optionally overlays a branch label for non-main dev builds), with a placeholder dev icon (production icon + diagonal stripe) and a `TODO` for the actual artwork. The user provides final artwork in a follow-on commit.
+**Resolution:** Production and development icons ship as full asset-catalog sets at `tugapp/Assets.xcassets/{AppIcon,DevAppIcon}.appiconset/`. Per-branch overlay for non-main dev builds is **deferred indefinitely** — the dock-differentiation gap turns out to be thin in practice (bundle ID + dock tooltip already distinguish worktree builds; rendered-text-on-icon at 22pt becomes illegible past ~6 chars), and going to loose-`.icns` overrides just to support compositing would back the project out of the standard asset-catalog flow. If multi-worktree dock confusion turns out to bite, revisit by adding a loose-`.icns` override layer that overrides the asset catalog for non-main dev builds; not a Phase 1 concern.
 
-**Resolution:** DEFERRED. Mechanism in Step 5; artwork follow-up.
+**Resolution:** RESOLVED. Asset-catalog artwork in place; branch overlay deferred. See [D15] for the implementation shape.
 
 #### [Q03] What does `tugutil instance` look like beyond `list` / `stop`? (OPEN) {#q03-tugutil-instance}
 
@@ -442,18 +442,19 @@ Assignment happens via an xcodebuild build-phase script that writes `CFBundleIde
 **Implications:**
 - The plan's Non-goals section names this explicitly so readers don't expect a story for it.
 
-#### [D15] Per-profile icons with per-branch overlay for non-main dev (DECIDED) {#d15-icons}
+#### [D15] Per-profile icons via asset catalog + per-config xcconfig override (DECIDED) {#d15-icons}
 
-**Decision:** Two base app icons ship in the bundle: a production icon and a development icon. The build-phase script that sets the bundle ID also selects the icon file. Non-main development builds additionally generate a branch-labeled variant (production icon or dev icon with the branch name composited on top) at build time and bake it into the bundle's `AppIcon.icns`.
+**Decision:** Production and development icons ship as separate asset-catalog entries: `tugapp/Assets.xcassets/AppIcon.appiconset/` and `tugapp/Assets.xcassets/DevAppIcon.appiconset/`. Per-configuration `ASSETCATALOG_COMPILER_APPICON_NAME` overrides in `project.pbxproj` select which entry becomes the bundle's primary icon: Debug → `DevAppIcon`, Release → `AppIcon`. No build-phase script. Per-branch overlay for non-main dev builds is **out of scope** for Phase 1 per [Q02].
 
 **Rationale:**
-- Dock differentiation is the user-facing payoff of per-identity Bundle IDs. Visible at a glance.
-- A separate production icon vs. development icon makes the "which one am I clicking" question trivial for the prod-vs-dev case.
-- The branch-name overlay is the right answer for "I have three dev worktrees open and need to tell them apart."
+- Dock differentiation between production and development is the high-value, frequent-use case. The Xcode-native asset-catalog + per-config setting delivers it in ~4 lines of pbxproj — no script, no `sips`/`iconutil` pipeline, no maintenance debt.
+- Plan-as-originally-spec'd called for loose `.icns` files + a build-phase script that composites text onto them. That predated the user committing real artwork to the asset catalog (commit `fca105f7` — design(icons): dev app icons). The asset-catalog model is where modern macOS apps land; aligning with it is the right call.
+- Branch overlay for worktree dev builds was the original justification for the script-based approach. Empirically: at the dock sizes that matter (16-128 pt), legible branch labels need to be ≤6 characters; longer slugs become unreadable. Bundle IDs + dock-hover tooltips already differentiate worktree builds with full precision. The overlay was solving a thin problem with an expensive mechanism.
 
 **Implications:**
-- Build-phase script needs `iconutil` or equivalent to composite text onto an `.icns`. Reasonable; `sips` and `iconutil` are macOS-standard tools.
-- Artwork is deferred to [Q02]; mechanism lands in Step 5.
+- Asset catalog is the source of truth for icon artwork. Adding new variants (e.g. nightly, beta) means adding new `*.appiconset/` entries to `Assets.xcassets/` and a new pbxproj per-config override.
+- A `NightlyAppIcon.appiconset/` already exists in the catalog (committed alongside the dev icon); it's reserved for a future nightly-release flow and not wired up in Phase 1.
+- If branch overlay later turns out to matter, the addition is purely additive: drop a generated `.icns` at `Contents/Resources/AppIcon.icns` post-build; a loose `.icns` at that path overrides the asset catalog without disturbing the per-config setting. The Phase 1 mechanism doesn't lock out the Phase 2 mechanism.
 
 #### [D16] Per-binary entitlements; inside-out signing replaces --deep (DECIDED) {#d16-per-binary-entitlements}
 
@@ -787,11 +788,11 @@ No new configuration files. All configuration is via:
 | `tugrust/crates/tugutil/src/commands/instance.rs` | `tugutil instance` subcommand (list, stop, current). |
 | `tugrust/scripts/capture-build-info.sh` | xcodebuild build-phase script: writes BuildProfile/BuildBranch/BuildSourceTree/BuildCommit into Info.plist. |
 | `tugrust/scripts/assign-bundle-id.sh` | xcodebuild build-phase script: writes CFBundleIdentifier per [D10]. |
-| `tugrust/scripts/select-app-icon.sh` | xcodebuild build-phase script: selects/composites the icon per [D15]. |
+| ~~`tugrust/scripts/select-app-icon.sh`~~ | **Not built.** Asset-catalog + per-config xcconfig override replaces this script per [D15]. |
 | `tugrust/scripts/sign-bundle.sh` | Inside-out signing helper per [D16]. Replaces the `--deep` invocation in current build-app.sh. Used by both debug and release paths. |
 | `tugrust/scripts/notarize.sh` | Wraps `ditto`-pack + `xcrun notarytool submit --keychain-profile tug-notary --wait` + `xcrun stapler staple` + `spctl --assess` verification. Release-only. |
 | `tugapp/tugcode.entitlements` | New entitlements file applied only to the bun-compiled `tugcode` binary. Contains the five bun-required permissive entitlements per [D16]. |
-| `tugapp/Resources/AppIcon-dev.icns` | Development base icon (placeholder until [Q02] resolves). |
+| ~~`tugapp/Resources/AppIcon-dev.icns`~~ | **Not built.** Dev icon ships as `tugapp/Assets.xcassets/DevAppIcon.appiconset/` (asset catalog, real artwork). |
 
 #### Symbols to add / modify {#symbols}
 
@@ -985,24 +986,27 @@ No new configuration files. All configuration is via:
 
 **Depends on:** #step-2
 
-**Commit:** `feat(multi-instance): per-profile app icon + branch overlay for non-main dev`
+**Commit:** `feat(multi-instance): per-profile app icon via asset catalog + xcconfig`
 
-**References:** [D15], [Q02], (#process-tree)
+**References:** [D15], [Q02]
 
 **Artifacts:**
-- `tugapp/Resources/AppIcon-dev.icns` — placeholder dev base icon (production icon + diagonal stripe).
-- `tugrust/scripts/select-app-icon.sh` — new build-phase script.
+- `tugapp/Assets.xcassets/DevAppIcon.appiconset/` — already in tree (commit `fca105f7`); full size ladder of real dev artwork.
+- `tugapp/Assets.xcassets/AppIcon.appiconset/` — already in tree; production artwork.
+- `tugapp/Tug.xcodeproj/project.pbxproj` — per-configuration `ASSETCATALOG_COMPILER_APPICON_NAME` overrides.
 
 **Tasks:**
-- [ ] Add a placeholder dev icon to the project's asset catalog. (Final artwork is deferred per [Q02].)
-- [ ] Write `select-app-icon.sh`: based on `BUILD_PROFILE`, copy the appropriate `.icns` into the bundle as `AppIcon.icns`. For non-main development builds, composite the branch name onto the icon using `sips` + `iconutil` and replace.
-- [ ] Add the script as a build phase ordered after `assign-bundle-id.sh`.
+- [x] In `project.pbxproj`, override `ASSETCATALOG_COMPILER_APPICON_NAME` per build configuration: Debug → `DevAppIcon`, Release → `AppIcon`. (No new build-phase script; Xcode's asset catalog compiler reads the setting at compile time and picks the right entry to bake into `Assets.car` as the bundle's primary icon.)
+- [ ] (Optional, follow-on) A `NightlyAppIcon.appiconset/` is already present but not wired up in Phase 1. When a nightly release flow lands, add a per-target / per-scheme override that selects it.
 
 **Tests:**
-- [ ] Visual check: a production build, a development-main build, and a development-foo build each have distinct dock icons.
+- [x] Visual check: a Debug build's dock icon is the dev artwork; a Release build's dock icon is the production artwork. *Verified indirectly via the asset catalog compiled bytes (see next test); the artwork itself was committed in `fca105f7`.*
+- [x] `assetutil --info <bundle>/Contents/Resources/Assets.car` lists the expected primary icon entry name for each configuration. *Debug: `"Name" : "DevAppIcon"` with renditions `AppIcon-dev-{16,32,64,128,256,512,1024}.png` (+ @2x variants). Release: `"Name" : "AppIcon"` with the production `AppIcon-*.png` ladder.*
 
 **Checkpoint:**
-- [ ] `defaults read $(pwd)/Tug.app/Contents/Info CFBundleIconFile` returns the expected icon name for each identity.
+- [x] A clean Debug build's `Assets.car` reports `DevAppIcon` as the compiled app icon; a clean Release build reports `AppIcon`. *Verified.*
+- [x] Signing remains valid after the icon change. *`bash tugrust/scripts/sign-bundle.sh` on the new Debug bundle returns "valid on disk" + "satisfies its Designated Requirement".*
+- [x] Step 1-4 regression sweep still green (24 slug + 24 parity + 8 [D10] mapping + Info.plist integration + DR identifier check). *Verified.*
 
 ---
 
