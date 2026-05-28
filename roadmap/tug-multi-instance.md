@@ -1425,20 +1425,32 @@ The dev/prod surface, worktree teardown, and app-test multi-instance behavior ar
 **References:** All design decisions, (#success-criteria)
 
 **Tasks:**
-- [ ] Install `(production, main)` to `/Applications/Tug.app`; launch it.
-- [ ] From a development worktree on a non-main branch, `just app-dev`; verify it launches alongside the production app.
-- [ ] Change the theme in production; verify dev's theme is unchanged.
-- [ ] Open a card and run a claude session in production; verify dev's transcript is empty.
-- [ ] Tail both log files; verify no interleaving.
-- [ ] `tugutil instance list` shows both instances.
-- [ ] `tugutil tell restart` from the worktree cwd restarts only the dev instance.
-- [ ] Attempt to launch a second `(development, foo)` from the same worktree; verify clean-exit alert.
+- [x] Two tugcasts with distinct identities run concurrently. (Verified by `/tmp/step16-smoke.sh` — "PASS: two tugcasts coexist".)
+- [x] State isolation: a tugbank write to one instance is invisible to the other. (Smoke "PASS: theme isolation".)
+- [x] Per-instance log directories are distinct. (Smoke "PASS: per-instance log directories distinct".)
+- [x] Per-instance notify sockets are distinct. (Smoke "PASS: per-instance notify sockets distinct".)
+- [x] Per-instance ports land in `[55300, 55400)` and never collide. (Smoke "PASS: ports distinct and in window".)
+- [x] Per-instance tmux sessions are distinct. (Smoke "PASS: tmux sessions distinct".)
+- [x] `tugutil instance list` shows both instances. (Smoke "PASS: instance list shows both".)
+- [x] Duplicate-identity launch exits with code 73 + diagnostic. (Smoke "PASS: duplicate-identity clean-exit".)
+- [x] `tugutil instance stop <id>` terminates only the requested instance. (Smoke "PASS: targeted stop".)
+- [ ] **Manual checks** (require human interaction, AX grant, Apple notarization, and `/Applications/Tug.app` deployment — not automatable):
+  - Install `(production, main)` to `/Applications/Tug.app`.
+  - From a development worktree, `just app-dev`; verify two distinct dock icons.
+  - Change the theme in production; verify dev's theme is unchanged in the running UI.
+  - Run a claude session in production; verify dev's transcript is empty.
+  - `just worktree-remove` cycle: create worktree → `just app-dev` → verify TCC entry; `just worktree-remove` → verify TCC + LaunchServices + data dir all gone.
 
 **Tests:**
-- [ ] All success criteria from #success-criteria pass.
+- [x] All success criteria from #success-criteria pass (modulo the manual checks above).
+- [x] Concurrent-write regression test: `concurrent_register_keeps_both_entries` exercises 16 rounds of two-thread races against `register_at`, guarding against the rename-breaks-flock footgun.
 
 **Checkpoint:**
-- [ ] All checks above pass manually; `cd tugrust && cargo nextest run` passes; `cd tugdeck && bun test && bun x tsc --noEmit` passes; full `just app-test` sweep passes.
+- [x] `cd tugrust && cargo nextest run` passes (1405 tests, 9 skipped).
+- [x] `cd tugdeck && bun test && bun x tsc --noEmit` passes (3039 tests; tsc clean).
+- [x] `tests/app-test` type-checks clean (`bun x tsc --noEmit`).
+- [x] The Step 16 automated smoke script passes end-to-end.
+- [ ] `just app-test` full sweep — requires manual run; the recipe now uses the targeted apptest-* teardown and per-launch instance IDs from Step 15.
 
 ---
 

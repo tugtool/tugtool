@@ -38,6 +38,17 @@ use serde::{Deserialize, Serialize};
 /// Filename used inside the per-user runtime directory.
 pub const REGISTRY_FILENAME: &str = "tug-instances.json";
 
+/// Filename of the advisory lockfile that serializes registry writes.
+///
+/// Concurrent writers all flock this file — never the data file
+/// itself. `flock(2)` operates on the inode behind a file descriptor,
+/// and `rename(2)` (used by `write_atomically`) replaces the data
+/// file's inode. Locking the data file directly would silently allow
+/// two writers to think they held the exclusive lock — each holding
+/// it on a different (and possibly unlinked) inode. The lockfile is
+/// never renamed, so flock semantics survive the atomic-rename.
+pub const REGISTRY_LOCKFILE: &str = "tug-instances.json.lock";
+
 /// Current on-disk schema version. Bumped only on incompatible
 /// changes; readers tolerate forward-compatible additions inside the
 /// `Instance` record.
@@ -118,18 +129,29 @@ pub fn load() -> Result<Vec<Instance>, Error> {
 /// Read live instances from an arbitrary registry path. Public for
 /// tests; production code uses [`load`].
 pub fn load_from(path: &Path) -> Result<Vec<Instance>, Error> {
+    // Acquire a shared lock on the lockfile so we don't read a half-
+    // written registry while a writer is in the middle of its
+    // rename. Missing lockfile is treated as "no contention" — we
+    // proceed to the read without locking; the worst case is a single
+    // failed parse on the next call.
+    let lock_path = lockfile_path(path);
+    let _guard = LockFile::open_shared(&lock_path).ok();
+
     let file = match OpenOptions::new().read(true).open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
-    let _guard = LockGuard::shared(&file)?;
     let on_disk = read_on_disk(&file)?;
     Ok(on_disk
         .instances
         .into_iter()
         .filter(|i| is_pid_live(i.pid))
         .collect())
+}
+
+fn lockfile_path(registry_path: &Path) -> PathBuf {
+    registry_path.with_file_name(REGISTRY_LOCKFILE)
 }
 
 /// Find the live instance with `instance_id`, if any.
@@ -169,15 +191,8 @@ pub fn register(instance: Instance) -> Result<(), Error> {
 /// Same as [`register`] but targets an arbitrary path. Tests use this
 /// to avoid touching the real `$TMPDIR/tug-instances.json`.
 pub fn register_at(path: &Path, instance: Instance) -> Result<(), Error> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(path)?;
-    let _guard = LockGuard::exclusive(&file)?;
-
-    let mut on_disk = read_on_disk(&file).unwrap_or_default();
+    let _guard = LockFile::open_exclusive(&lockfile_path(path))?;
+    let mut on_disk = read_or_default(path)?;
     on_disk.version = REGISTRY_VERSION;
     on_disk.instances.retain(|i| {
         // Drop any prior entry for this identity AND any entry whose
@@ -186,7 +201,6 @@ pub fn register_at(path: &Path, instance: Instance) -> Result<(), Error> {
         i.instance_id != instance.instance_id && is_pid_live(i.pid)
     });
     on_disk.instances.push(instance);
-
     write_atomically(path, &on_disk)
 }
 
@@ -201,13 +215,11 @@ pub fn unregister(instance_id: &str) -> Result<(), Error> {
 
 /// Same as [`unregister`] but targets an arbitrary path.
 pub fn unregister_at(path: &Path, instance_id: &str) -> Result<(), Error> {
-    let file = match OpenOptions::new().read(true).write(true).open(path) {
-        Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    let _guard = LockGuard::exclusive(&file)?;
-    let mut on_disk = read_on_disk(&file).unwrap_or_default();
+    if !path.exists() {
+        return Ok(());
+    }
+    let _guard = LockFile::open_exclusive(&lockfile_path(path))?;
+    let mut on_disk = read_or_default(path)?;
     on_disk.version = REGISTRY_VERSION;
     let before = on_disk.instances.len();
     on_disk
@@ -240,6 +252,17 @@ fn read_on_disk(mut file: &File) -> Result<OnDisk, Error> {
         return Err(Error::UnsupportedVersion(parsed.version));
     }
     Ok(parsed)
+}
+
+/// Read the registry file at `path`. Returns `OnDisk::default()`
+/// when the file does not exist or is empty. Bubbles JSON parse and
+/// version-mismatch errors so callers can surface them.
+fn read_or_default(path: &Path) -> Result<OnDisk, Error> {
+    match OpenOptions::new().read(true).open(path) {
+        Ok(file) => read_on_disk(&file),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(OnDisk::default()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 fn write_atomically(path: &Path, on_disk: &OnDisk) -> Result<(), Error> {
@@ -275,28 +298,48 @@ fn is_pid_live(pid: i32) -> bool {
     err.raw_os_error() == Some(libc::EPERM)
 }
 
-/// RAII guard around an advisory file lock. Drops the lock when the
-/// guard goes out of scope so panics, early returns, and `?`s all
-/// release cleanly.
-struct LockGuard<'a> {
-    file: &'a File,
+/// RAII guard that opens a lockfile, holds an `flock` on it, and
+/// releases the lock when dropped.
+///
+/// `LockFile` is the *only* correct way to serialize registry
+/// writers because `flock(2)` operates on the inode behind a file
+/// descriptor. The data file's inode is replaced by every
+/// `write_atomically` (rename swaps inodes), so locking the data
+/// file directly is a footgun: two writers can each "hold the
+/// exclusive lock" on different inodes that the path used to point
+/// at. The lockfile is never renamed, so its inode is stable across
+/// writes and `flock` actually serializes.
+struct LockFile {
+    file: File,
 }
 
-impl<'a> LockGuard<'a> {
-    fn shared(file: &'a File) -> std::io::Result<Self> {
-        flock(file, libc::LOCK_SH)?;
+impl LockFile {
+    fn open_exclusive(path: &Path) -> std::io::Result<Self> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        flock(&file, libc::LOCK_EX)?;
         Ok(Self { file })
     }
 
-    fn exclusive(file: &'a File) -> std::io::Result<Self> {
-        flock(file, libc::LOCK_EX)?;
+    fn open_shared(path: &Path) -> std::io::Result<Self> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        flock(&file, libc::LOCK_SH)?;
         Ok(Self { file })
     }
 }
 
-impl Drop for LockGuard<'_> {
+impl Drop for LockFile {
     fn drop(&mut self) {
-        let _ = flock(self.file, libc::LOCK_UN);
+        let _ = flock(&self.file, libc::LOCK_UN);
     }
 }
 
@@ -512,5 +555,45 @@ mod tests {
     }
     fn scopeguard<F: FnMut()>(f: F) -> Guard<F> {
         Guard(Some(f))
+    }
+
+    /// Two threads racing on `register_at` against the same path
+    /// must both end up in the resulting file. This is the
+    /// regression test for the rename-breaks-flock bug — a previous
+    /// implementation locked the data file directly, which silently
+    /// allowed both writers to think they held the exclusive lock
+    /// (each on a different inode after the atomic rename).
+    #[test]
+    fn concurrent_register_keeps_both_entries() {
+        use std::thread;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("reg.json");
+        // Spawn many writer pairs so contention is high; flake-free
+        // even at very high contention is the point.
+        for round in 0..16 {
+            std::fs::remove_file(&path).ok();
+            let path_a = path.clone();
+            let path_b = path.clone();
+            let t_a = thread::spawn(move || {
+                let mut inst = fixture("development-A", ALIVE_PID);
+                inst.tugcast_port = 10000 + round;
+                register_at(&path_a, inst).unwrap();
+            });
+            let t_b = thread::spawn(move || {
+                let mut inst = fixture("development-B", ALIVE_PID);
+                inst.tugcast_port = 20000 + round;
+                register_at(&path_b, inst).unwrap();
+            });
+            t_a.join().unwrap();
+            t_b.join().unwrap();
+            let listed = load_from(&path).unwrap();
+            let ids: std::collections::BTreeSet<_> =
+                listed.iter().map(|i| i.instance_id.clone()).collect();
+            assert!(
+                ids.contains("development-A") && ids.contains("development-B"),
+                "round {round}: lost an entry — got {ids:?}"
+            );
+        }
     }
 }
