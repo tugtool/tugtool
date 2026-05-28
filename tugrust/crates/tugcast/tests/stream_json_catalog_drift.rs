@@ -60,7 +60,9 @@ use serde_json::Value;
 // unit tests and the real-claude-gated drift regression test. Keep
 // unconditional so the differ's 24 unit tests still run in standard
 // `cargo nextest run` invocations.
-use common::catalog::{EventShape, Schema, canonical_type_sequence, shape_sequence};
+use common::catalog::{
+    EventShape, Schema, TOLERATED_ABSENCE_EVENT_TYPES, canonical_type_sequence, shape_sequence,
+};
 
 // Real-claude-only imports — only used by
 // `stream_json_catalog_drift_regression` and its helper
@@ -561,8 +563,20 @@ fn diff_probe_sequence(
     let g_set: BTreeSet<String> = g_canon.iter().cloned().collect();
     let c_set: BTreeSet<String> = c_canon.iter().cloned().collect();
 
-    let removed: Vec<String> = g_set.difference(&c_set).cloned().collect();
+    let raw_removed: Vec<String> = g_set.difference(&c_set).cloned().collect();
     let added: Vec<String> = c_set.difference(&g_set).cloned().collect();
+
+    // Split removed slots into strict failures and tolerated absences.
+    // Tolerated-absence event types (see `TOLERATED_ABSENCE_EVENT_TYPES`)
+    // are emitted on a per-turn model-behavior basis, not on a protocol
+    // contract — `thinking_text` is the canonical case. Their loss in a
+    // single capture is run-to-run variance, not protocol drift. We
+    // still surface them as a WARN under `NewSequenceSlots`'s symmetric
+    // partner so a reviewer sees what changed, but they don't fail the
+    // run.
+    let (tolerated_removed, removed): (Vec<String>, Vec<String>) = raw_removed
+        .into_iter()
+        .partition(|t| TOLERATED_ABSENCE_EVENT_TYPES.contains(&t.as_str()));
 
     if !removed.is_empty() {
         report.fail(FailureKind::RemovedSequenceSlots {
@@ -576,6 +590,19 @@ fn diff_probe_sequence(
             slots: added,
         });
     }
+    if !tolerated_removed.is_empty() {
+        // Symmetrize with NewSequenceSlots's WARN level. The added
+        // counterpart already exists; this is the demoted "removed"
+        // half for tolerated-absence event types. Reusing
+        // `NewSequenceSlots` keeps the FailureKind set minimal — a
+        // reviewer reading the report sees "added" / "lost" symmetry
+        // via the probe's golden/current set comparison.
+        report.warn(FailureKind::OptionalSequenceVariance {
+            probe_name: probe_name.to_string(),
+            golden: shape_sequence(golden),
+            current: shape_sequence(current),
+        });
+    }
 
     // ---- Event-type *order* comparison — supple. ----
     // Runs on the structural shape reduction (`shape_sequence`):
@@ -583,9 +610,24 @@ fn diff_probe_sequence(
     // tool-activity runs collapsed. Agent tool-call-count and
     // interleaving variance is therefore benign by construction; only
     // a genuine transposition of the turn skeleton fails. Gated on the
-    // event-type sets matching — if they differ, the set drift above
-    // already covers it and a reorder finding would be redundant.
-    if g_set == c_set {
+    // event-type sets matching — if they differ (after tolerating
+    // benign absences), the set drift above already covers it and a
+    // reorder finding would be redundant.
+    //
+    // The tolerated-absence event types are also excluded from the
+    // gate's set equality check: if golden has `thinking_text` and
+    // current doesn't, we still want the order check to run against
+    // a normalized golden so a real transposition elsewhere still
+    // surfaces. We build a `g_set_norm` that mirrors `c_set` for the
+    // tolerated types.
+    let g_set_norm: BTreeSet<String> = g_set
+        .iter()
+        .filter(|t| {
+            !TOLERATED_ABSENCE_EVENT_TYPES.contains(&t.as_str()) || c_set.contains(t.as_str())
+        })
+        .cloned()
+        .collect();
+    if g_set_norm == c_set {
         let g_shape = shape_sequence(golden);
         let c_shape = shape_sequence(current);
         if g_shape != c_shape {
@@ -1073,6 +1115,45 @@ mod differ_tests {
 
     #[test]
     fn probe_sequence_removed_slot_fails() {
+        // `cost_update` is one of the four turn-skeleton bookends (per
+        // README "Indicators that an event is still REQUIRED"); its
+        // disappearance is real drift and must fail. `thinking_text`
+        // can't be used as the removed stand-in any more — it's in
+        // `TOLERATED_ABSENCE_EVENT_TYPES` and demotes to a warn (see
+        // [`probe_sequence_tolerated_absence_warns`]).
+        let golden = schema_with_probe_seq(
+            "test-01",
+            &[
+                "system_metadata",
+                "assistant_text",
+                "cost_update",
+                "turn_complete",
+            ],
+        );
+        let current = schema_with_probe_seq(
+            "test-01",
+            &["system_metadata", "assistant_text", "turn_complete"],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert_fail_kind(&report, |k| {
+            matches!(k, FailureKind::RemovedSequenceSlots { probe_name, slots }
+                if probe_name == "test-01"
+                && slots.contains(&"cost_update".to_string()))
+        });
+    }
+
+    // ---- 13b. Probe sequence: removed tolerated-absence slot → warn,
+    //     no fail
+    //
+    // `thinking_text` is in `TOLERATED_ABSENCE_EVENT_TYPES` (see
+    // `common::catalog`): claude chooses whether to think per turn, so
+    // a single capture missing `thinking_text` when golden had it is
+    // model-behavior variance, not protocol drift. The differ surfaces
+    // it as an `OptionalSequenceVariance` WARN — visible to a reviewer
+    // without blocking the run.
+
+    #[test]
+    fn probe_sequence_tolerated_absence_warns() {
         let golden = schema_with_probe_seq(
             "test-01",
             &[
@@ -1087,10 +1168,13 @@ mod differ_tests {
             &["system_metadata", "assistant_text", "turn_complete"],
         );
         let report = diff_schemas(&golden, &current);
-        assert_fail_kind(&report, |k| {
-            matches!(k, FailureKind::RemovedSequenceSlots { probe_name, slots }
-                if probe_name == "test-01"
-                && slots.contains(&"thinking_text".to_string()))
+        assert!(
+            !report.has_failures(),
+            "tolerated-absence event types must not fail the run",
+        );
+        assert_warn_kind(&report, |k| {
+            matches!(k, FailureKind::OptionalSequenceVariance { probe_name, .. }
+                if probe_name == "test-01")
         });
     }
 

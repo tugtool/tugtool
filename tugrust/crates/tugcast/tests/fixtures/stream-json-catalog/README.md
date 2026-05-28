@@ -140,6 +140,8 @@ For each shape difference the diff surfaces, assign it to exactly one of three c
 
 The event-type **set** check stays strict through all of this: a probe that *stops* emitting `tool_use_structured` or `streaming_usage`, or emits a brand-new event type, still fails (`RemovedSequenceSlots`) or warns (`NewSequenceSlots`). Only the *ordering* check is reduced. So a `ReorderedSequence` finding is now always a genuine transposition of the turn skeleton — never the agent doing N versus N±1 tool calls.
 
+**One carve-out: `TOLERATED_ABSENCE_EVENT_TYPES`** (`tests/common/catalog.rs`). A small set of event types that claude emits based on per-turn model behavior rather than a protocol contract — `thinking_text` is the canonical case — are demoted from FAIL to WARN when missing from `current`. Their absence in a single capture is run-to-run variance (claude chose not to think on a short prompt), not protocol drift. The probe table already lists them in `optional_events` for capture-time stability checks; this constant bridges the gap to the drift differ. Reviewers still see the variance via `OptionalSequenceVariance` warnings.
+
 #### Benign — no consumer change needed
 
 Commit the new fixture, keep the old. Examples:

@@ -794,12 +794,24 @@ pub fn canonical_type_sequence(types: &[String]) -> Vec<String> {
 }
 
 /// Event types whose *position* in a probe's sequence is not
-/// reducer-relevant: usage-accounting frames the transport flushes at
-/// non-deterministic points. [`shape_sequence`] drops them before the
-/// order comparison. Their existence and field shape are still pinned
-/// — by the event-type *set* comparison in `diff_probe_sequence` and
-/// by the per-event-type schema — so dropping them here loses nothing.
-pub const INTERSTITIAL_EVENT_TYPES: &[&str] = &["streaming_usage"];
+/// reducer-relevant: status / accounting frames the transport flushes
+/// at non-deterministic points. [`shape_sequence`] drops them before
+/// the order comparison. Their existence and field shape are still
+/// pinned — by the event-type *set* comparison in `diff_probe_sequence`
+/// and by the per-event-type schema — so dropping them here loses
+/// nothing.
+///
+/// - `streaming_usage`: per-message token-usage flushes, position
+///   varies with transport batching; the reducer reads them by
+///   recency, not by position.
+/// - `rate_limit_event`: subscription-quota broadcast claude 2.1.x
+///   emits once per turn alongside the first stream events. Its
+///   interleaving relative to `content_block_start` / `assistant_text`
+///   is non-deterministic across runs of the same probe (empirically
+///   surfaced as `ReorderedSequence` FAILs in test-14 / test-19 /
+///   test-22 against v2.1.154). The consumer (`SessionMetadataStore`
+///   adjacent) reads it by recency for quota chrome, not by position.
+pub const INTERSTITIAL_EVENT_TYPES: &[&str] = &["streaming_usage", "rate_limit_event"];
 
 /// Event types that constitute a tool-call cycle. [`shape_sequence`]
 /// collapses a contiguous run of these to a single
@@ -814,6 +826,20 @@ pub const TOOL_ACTIVITY_EVENT_TYPES: &[&str] = &["tool_use", "tool_result", "too
 /// The single token a contiguous tool-activity run reduces to in
 /// [`shape_sequence`].
 pub const TOOL_ACTIVITY_MARKER: &str = "tool_activity";
+
+/// Event types whose *absence* in a current capture is benign — claude
+/// emits them based on model behavior, not on a protocol contract, so
+/// "golden had it, current doesn't" is run-to-run variance rather than
+/// a removed slot. `diff_probe_sequence` excludes these from the
+/// strict set check and reports any losses as a WARN instead of a FAIL.
+///
+/// - `thinking_text`: extended-thinking deltas. Claude chooses whether
+///   to think per turn; short or simple prompts often elicit no
+///   thinking and produce no events. The probe table already lists it
+///   in every probe's `optional_events`, but that field is consumed by
+///   capture-time stability checks, not by the differ — this constant
+///   bridges the gap.
+pub const TOLERATED_ABSENCE_EVENT_TYPES: &[&str] = &["thinking_text"];
 
 /// Reduce a probe's event-type sequence to its **order-comparison
 /// shape**: drop position-insensitive interstitial events
