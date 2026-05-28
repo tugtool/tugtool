@@ -53,6 +53,7 @@ import {
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { cardSettingsStore } from "@/lib/card-settings-store";
+import { cardTitleStore } from "@/lib/card-title-store";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 import * as paneFrameRegistry from "@/components/chrome/pane-frame-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
@@ -924,9 +925,25 @@ export function TugPane({
     ? activeCardRegistration.defaultMeta
     : meta;
 
-  const displayTitle = cardTitle
-    ? `${cardTitle}: ${effectiveMeta.title}`
+  // Per-card title override (cardTitleStore). When a card publishes
+  // an override (e.g. the Dev card publishes its bound project path
+  // once a session is picked), the title bar composes it as
+  // `"<registry> — <override>"`. Subscription is keyed on the
+  // active card so a card swap repaints the title without prop drill.
+  const activeCardTitleOverride = useSyncExternalStore(
+    cardTitleStore.subscribe,
+    useCallback(
+      () => cardTitleStore.get(activeCardId ?? null),
+      [activeCardId],
+    ),
+  );
+
+  const baseTitle = cardTitle
+    ? `${cardTitle} : ${effectiveMeta.title}`
     : effectiveMeta.title;
+  const displayTitle = activeCardTitleOverride
+    ? `${baseTitle} : ${activeCardTitleOverride}`
+    : baseTitle;
 
   const resolvedAccessory: React.ReactNode | null = hasMultipleCards
     ? (

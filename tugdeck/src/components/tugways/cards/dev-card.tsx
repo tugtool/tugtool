@@ -107,6 +107,7 @@ import {
   type SpawnError,
 } from "@/lib/dev-spawn-error-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
+import { cardTitleStore } from "@/lib/card-title-store";
 import { useDevCardObserver } from "./use-dev-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
@@ -2349,6 +2350,22 @@ export function DevCardBody({
       [cardId],
     ),
   );
+
+  // Publish the bound project path to the pane chrome's title bar
+  // via `cardTitleStore`. The title bar composes it as
+  // `"Dev — <projectDir>"`. Cleared on unmount or when the binding
+  // goes away so the title bar falls back to the registry default.
+  useEffect(() => {
+    if (projectDir !== null) {
+      cardTitleStore.set(cardId, projectDir);
+    } else {
+      cardTitleStore.clear(cardId);
+    }
+    return () => {
+      cardTitleStore.clear(cardId);
+    };
+  }, [cardId, projectDir]);
+
   const projectStatusContent = projectDir !== null ? (
     <TugBadge size="sm" emphasis="tinted" role="inherit">
       Project: {projectDir}
