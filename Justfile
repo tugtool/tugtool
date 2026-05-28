@@ -166,7 +166,21 @@ wasm:
 # (Note: Step 15 of the multi-instance plan will retire this recipe
 # in favor of `just app-dev`. Until then, this is the canonical dev
 # loop.)
-app: build wasm
+# ── Multi-instance recipe surface ────────────────────────────────────────────
+#
+# The dev/prod axis (per [D17] of roadmap/tug-multi-instance.md):
+# `app-dev` / `app-prod` build + relaunch a per-(profile, branch)
+# instance. Running `app-prod` from a worktree branch produces a
+# `(production, <branch>)` instance, not `(production, main)` — the
+# axis is build-flavor, not identity-fork.
+#
+# Distribution-flow recipes (`dmg`, `notarize`) live separately and
+# operate on bundles, not running instances.
+
+# Build a Debug bundle and (re)launch the cwd-derived development
+# instance. Identity is computed from the current git branch and the
+# `development` profile.
+app-dev: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
     (cd tugdeck && bun run build)
@@ -174,73 +188,158 @@ app: build wasm
     find tugapp/Sources -name '*.swift' -exec touch {} +
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' build
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
-    # tugcast/tugcode/tugutil/tugexec/tugrelaunch and tugdeck/dist are copied into
-    # the bundle by the Tug target's shell script build phase (see project.pbxproj).
     echo "==> Re-signing with Developer ID for stable AX grant"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
-    echo "==> Launching Tug.app"
-    # Tell the app where the source tree is so tugcast can find tugcode, tugdeck, etc.
-    tugbank write dev.tugexec.app source-tree-path "$(pwd)"
-    TUG_PID=$(pgrep -x Tug 2>/dev/null || true)
-    if [ -n "$TUG_PID" ]; then
-        # App is running — orderly signal/wait/relaunch via tugrelaunch.
-        tugrust/target/debug/tugrelaunch --app-bundle "$APP_DIR" --pid "$TUG_PID"
-    else
-        open "$APP_DIR"
+    # Non-blocking orphan-detection preamble so users get a nudge to
+    # clean up bundle-less data dirs without ever failing the build.
+    if tugrust/target/debug/tugutil instance prune --json 2>/dev/null | grep -q instance_id; then
+        echo "[warn] orphaned per-instance data dirs detected. Run 'tugutil instance prune' to clean up." >&2
     fi
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
+    echo "==> Launching $INSTANCE_ID ($APP_DIR)"
+    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
+        | grep -q "\"$INSTANCE_ID\""; then
+        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
+    fi
+    open "$APP_DIR"
 
-# Run/restart Tug.app using whatever's already built — no Rust, wasm,
-# tugdeck, or xcodebuild work. Useful when only Swift-untouched assets
-# (e.g. tugdeck dist via HMR or a prior `bun run build`) need to be
-# picked up, or to relaunch after a manual quit.
-launch:
+# Build a Release bundle and (re)launch the cwd-derived production
+# instance.
+app-prod: build wasm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    (cd tugdeck && bun run build)
+    find tugapp/Sources -name '*.swift' -exec touch {} +
+    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' build
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    echo "==> Re-signing with Developer ID"
+    bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
+    echo "==> Launching $INSTANCE_ID ($APP_DIR)"
+    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
+        | grep -q "\"$INSTANCE_ID\""; then
+        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
+    fi
+    open "$APP_DIR"
+
+# Relaunch the cwd-derived dev instance without rebuilding.
+launch-dev:
     #!/usr/bin/env bash
     set -euo pipefail
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
     if [ ! -d "$APP_DIR" ]; then
         echo "error: Tug.app not built at $APP_DIR" >&2
-        echo "       Run 'just app' (or 'just build-app') first." >&2
+        echo "       Run 'just app-dev' first." >&2
         exit 1
     fi
-    echo "==> Launching Tug.app"
-    tugbank write dev.tugexec.app source-tree-path "$(pwd)"
-    TUG_PID=$(pgrep -x Tug 2>/dev/null || true)
-    if [ -n "$TUG_PID" ]; then
-        tugrust/target/debug/tugrelaunch --app-bundle "$APP_DIR" --pid "$TUG_PID"
-    else
-        open "$APP_DIR"
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
+    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
+        | grep -q "\"$INSTANCE_ID\""; then
+        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
     fi
+    open "$APP_DIR"
 
-# Tail today's tugcast log. Includes forwarded tugcode / Claude
-# stderr under the `tugcast::tugcode_stderr` target — that's where
-# Claude's real error messages land since Tug.app is launched via
-# `open` (see `just app`) and the raw stderr fd is otherwise lost
-# to launchd.
-logs:
+# Relaunch the cwd-derived prod instance without rebuilding.
+launch-prod:
     #!/usr/bin/env bash
     set -euo pipefail
+    APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"
+    if [ ! -d "$APP_DIR" ]; then
+        echo "error: Tug.app not built at $APP_DIR" >&2
+        echo "       Run 'just app-prod' first." >&2
+        exit 1
+    fi
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
+    if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
+        | grep -q "\"$INSTANCE_ID\""; then
+        tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
+    fi
+    open "$APP_DIR"
+
+# Stop the cwd-derived dev instance (idempotent).
+stop-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
+    tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
+
+# Stop the cwd-derived prod instance (idempotent).
+stop-prod:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
+    tugrust/target/debug/tugutil instance stop "$INSTANCE_ID" --timeout 5 || true
+
+# Stop every live Tug instance.
+stop:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    while read -r ID; do
+        [ -n "$ID" ] || continue
+        tugrust/target/debug/tugutil instance stop "$ID" --timeout 5 || true
+    done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+
+# One-line wrapper around `tugutil instance list`. Forwards any extra
+# args (e.g. `--json`).
+instances *FLAGS:
+    tugrust/target/debug/tugutil instance list {{FLAGS}}
+
+# Tail today's dev-instance log.
+logs-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
     DATE="$(date +%Y-%m-%d)"
-    LOG="$HOME/Library/Application Support/Tug/Logs/tugcast.log.$DATE"
+    LOG="$HOME/Library/Application Support/Tug/instances/$INSTANCE_ID/Logs/tugcast.log.$DATE"
     if [ ! -f "$LOG" ]; then
-        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app' first."
+        echo "no log for $INSTANCE_ID at $LOG — has the instance run today?"
         exit 1
     fi
     tail -F "$LOG"
 
-# Same body as `logs`. The discoverable name makes intent obvious
-# when grepping `just --list`; reach for this when triaging
-# session-lifecycle / replay issues.
-# Tail today's tugcast log (alias for `logs`).
-tail-tugcast:
+# Tail today's prod-instance log.
+logs-prod:
     #!/usr/bin/env bash
     set -euo pipefail
+    INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
     DATE="$(date +%Y-%m-%d)"
-    LOG="$HOME/Library/Application Support/Tug/Logs/tugcast.log.$DATE"
+    LOG="$HOME/Library/Application Support/Tug/instances/$INSTANCE_ID/Logs/tugcast.log.$DATE"
     if [ ! -f "$LOG" ]; then
-        echo "No log yet for $DATE at $LOG. Launch Tug.app with 'just app' first."
+        echo "no log for $INSTANCE_ID at $LOG — has the instance run today?"
         exit 1
     fi
     tail -F "$LOG"
+
+# Tug-aware wrapper around `git worktree remove`. Cleans up the
+# worktree's instance state first (bundle, LaunchServices entry,
+# per-instance data dir, optionally TCC), then removes the worktree.
+# Eliminates the "did I forget to clean up first" failure mode.
+worktree-remove WORKTREE *FLAGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WORKTREE="{{WORKTREE}}"
+    FLAGS="{{FLAGS}}"
+    if [ ! -d "$WORKTREE" ]; then
+        echo "error: $WORKTREE is not a directory" >&2
+        exit 1
+    fi
+    if ! git worktree list | awk '{print $1}' | grep -qFx "$(cd "$WORKTREE" && pwd)"; then
+        echo "error: $WORKTREE is not a registered git worktree" >&2
+        echo "       run 'git worktree list' to see what's tracked" >&2
+        exit 1
+    fi
+    BRANCH="$(git -C "$WORKTREE" rev-parse --abbrev-ref HEAD)"
+    if [ "$BRANCH" = "HEAD" ]; then
+        BRANCH="detached-$(git -C "$WORKTREE" rev-parse HEAD | cut -c1-8)"
+    fi
+    SLUG="$(bash tugrust/scripts/branch-slug.sh "$BRANCH")"
+    INSTANCE_ID="development-$SLUG"
+    echo "==> worktree-remove: $WORKTREE"
+    echo "    branch:      $BRANCH"
+    echo "    instance ID: $INSTANCE_ID"
+    tugrust/target/debug/tugutil instance remove "$INSTANCE_ID" $FLAGS
+    git worktree remove --force "$WORKTREE"
+    echo "==> Removed worktree $WORKTREE and its instance state ($INSTANCE_ID)."
 
 # Use this during smoke runs (see
 # `roadmap/tugplan-tide-transcript-resume-smoke.md`) so the relevant
@@ -511,82 +610,8 @@ app-test *FILES:
     APP_BIN="$APP_DIR/Contents/MacOS/Tug"
     if [ ! -x "$APP_BIN" ]; then
         echo "error: Tug.app not built at $APP_BIN" >&2
-        echo "       Run 'just build-app' first." >&2
+        echo "       Run 'just app-dev' first." >&2
         exit 1
-    fi
-
-    # Compute the bundle's current designated requirement (DR) ONCE,
-    # plus the sentinel value from the last successful `build-app`.
-    # Both the early-skip optimization and the post-resign drift check
-    # reuse them.
-    SENTINEL_FILE=".tugtool/code-sign-fingerprint"
-    DR_EXTRACT='s/^#?[[:space:]]*designated[[:space:]]+=>[[:space:]]+(.*)$/\1/p'
-    CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | sed -nE "$DR_EXTRACT" | head -1)"
-    SAVED_DR=""
-    if [ -f "$SENTINEL_FILE" ]; then
-        SAVED_DR="$(cat "$SENTINEL_FILE")"
-    fi
-
-    # Optimization: if the bundle DR already matches the sentinel,
-    # the bundle is signed with the same identity that's behind the
-    # AX grant — re-signing would be a no-op. Skip it.
-    #
-    # Falls through to the re-sign branch when:
-    #   - DR extraction failed (CURRENT_DR is empty — happens for
-    #     pure ad-hoc bundles that haven't been Developer-ID-signed
-    #     yet, since `# designated => cdhash H"..."` is preserved
-    #     by the sed pattern but represents an ad-hoc cdhash that
-    #     won't match a real Developer ID DR string),
-    #   - sentinel doesn't exist yet (first run after teardown +
-    #     setup, or before first build-app),
-    #   - DR mismatches sentinel (Xcode IDE Build between runs,
-    #     or the user re-issued their Developer ID cert).
-    if [ -n "$CURRENT_DR" ] && [ -n "$SAVED_DR" ] && [ "$CURRENT_DR" = "$SAVED_DR" ]; then
-        echo "==> Re-sign skipped (bundle DR matches sentinel)"
-    else
-        # Re-sign inside-out with Developer ID per [D16] so the DR
-        # matches what build-app produced. Three branches:
-        #   - Identity present: re-sign via sign-bundle.sh; on failure
-        #     exit non-zero with a diagnostic.
-        #   - Identity missing AND APP_TEST_SKIP_RESIGN=1: print a
-        #     notice and skip. Useful for first-time onboarding.
-        #   - Identity missing without the opt-out: exit non-zero
-        #     with an actionable message.
-        if security find-identity -v -p codesigning 2>/dev/null \
-                | grep -q "Developer ID Application:"; then
-            if ! bash tugrust/scripts/sign-bundle.sh "$APP_DIR" >/dev/null 2>&1; then
-                echo "error: sign-bundle.sh failed during app-test setup" >&2
-                bash tugrust/scripts/sign-bundle.sh "$APP_DIR" >&2 || true
-                exit 1
-            fi
-        elif [ "${APP_TEST_SKIP_RESIGN:-}" = "1" ]; then
-            echo "==> APP_TEST_SKIP_RESIGN=1: skipping re-sign (Developer ID identity not found)"
-        else
-            echo "error: Developer ID Application identity missing from login keychain." >&2
-            echo "       Run 'just setup-dev-signing' to verify install," >&2
-            echo "       or set APP_TEST_SKIP_RESIGN=1 to bypass." >&2
-            echo "       See tests/app-test/README.md → 'Accessibility grant" >&2
-            echo "       failure modes' for diagnosis." >&2
-            exit 1
-        fi
-
-        # Drift detection: re-extract the post-resign DR and compare
-        # against the sentinel. A mismatch here means the saved DR
-        # references a cert different from the current one (cert
-        # re-issued). We warn but don't fatal — the user may have
-        # re-granted AX manually; if AX is actually broken the
-        # harness's per-spawn preflight will throw
-        # AccessibilityPermissionMissingError with full context.
-        POST_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | sed -nE "$DR_EXTRACT" | head -1)"
-        if [ -z "$POST_DR" ]; then
-            echo "[warn] code-sign: could not extract designated requirement from $APP_DIR" >&2
-        elif [ -n "$SAVED_DR" ] && [ "$POST_DR" != "$SAVED_DR" ]; then
-            echo "[warn] code-sign fingerprint drift detected." >&2
-            echo "       Saved : $SAVED_DR" >&2
-            echo "       Current: $POST_DR" >&2
-            echo "       AX grant likely invalidated; see tests/app-test/README.md" >&2
-            echo "       § 'Accessibility grant failure modes' for diagnosis." >&2
-        fi
     fi
 
     # Refresh tugdeck/dist so the harness (which loads prod-built
@@ -595,17 +620,29 @@ app-test *FILES:
     # reflects current source.
     (cd tugdeck && bun run build >/dev/null)
 
-    # Clean slate before the first spawn. tugcast lives in its own
-    # process group; a prior `app.close()` SIGTERM leaks it past Tug's
-    # death and causes port-55255 collisions on the next launch.
-    pkill -x Tug 2>/dev/null || true
-    pkill -x tugcast 2>/dev/null || true
+    # Clean slate before the first spawn: wipe any apptest-* data
+    # dirs from earlier runs and stop any apptest-* tugcasts that
+    # are still alive. Other instances (developer's `app-dev` /
+    # `app-prod`, harness colleagues' parallel `app-test` runs) are
+    # untouched — pkill -x Tug would have killed them all.
+    rm -rf "$HOME/Library/Application Support/Tug/instances/apptest-"* 2>/dev/null || true
+    while read -r ID; do
+        case "$ID" in apptest-*)
+            tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
+        esac
+    done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
     sleep 0.3
 
     TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
-        pkill -x Tug 2>/dev/null || true
-        pkill -x tugcast 2>/dev/null || true
+        # Targeted teardown — stop only the apptest-* instances the
+        # harness minted. A developer's separately-running app-dev
+        # session continues unaffected.
+        while read -r ID; do
+            case "$ID" in apptest-*)
+                tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
+            esac
+        done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
         rm -f "$TMPOUT"
     }
     trap cleanup EXIT INT TERM
@@ -662,11 +699,15 @@ app-test *FILES:
             FAILURE_BLOCKS+=("$f"$'\n'"$(cat "$TMPOUT")")
         fi
 
-        # Between files, kill stragglers. Tug-only — pkilling tugcast
-        # here disturbs WindowServer state and surfaces as Finder-
-        # activation races in subsequent tests; the harness's
-        # wrappedKill already pkills tugcast on `app.close()`.
-        pkill -x Tug 2>/dev/null || true
+        # Between files, stop any apptest-* stragglers. The harness's
+        # `app.close()` already targets the current instance; this is
+        # defence-in-depth for the rare case where a test panics
+        # before reaching `close`.
+        while read -r ID; do
+            case "$ID" in apptest-*)
+                tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
+            esac
+        done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
         sleep 0.3
     done
 

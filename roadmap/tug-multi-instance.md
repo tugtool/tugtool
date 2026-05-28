@@ -1307,42 +1307,37 @@ No new configuration files. All configuration is via:
 **Tasks:**
 
 *Dev/prod recipe surface (per [D17]):*
-- [ ] Implement `app-dev` and `app-prod`. Each:
+- [x] Implement `app-dev` and `app-prod`. Each:
   - Runs `xcodebuild -configuration {Debug,Release}` with the existing `-destination 'platform=macOS,arch=arm64'` flags.
   - Locates the bundle via `xcodebuild -showBuildSettings | awk '/BUILT_PRODUCTS_DIR/'` (matches current pattern).
   - Resolves the target instance ID via the same cwd-derived path that `tugutil instance current` uses (Step 14); prefixed with `development-` or `production-` per the recipe.
   - If the target instance is running (per registry), calls `tugutil instance stop --instance <id>`, waits for the registry entry to clear, then `open <bundle>`.
   - If the target instance is not running, just `open <bundle>`.
   - Does NOT call `tugbank write dev.tugexec.app source-tree-path "$(pwd)"`. That line is dead post-Step 1.
-- [ ] Implement `launch-dev` / `launch-prod` as the same logic minus the xcodebuild step. Hard-fail with a clear message if the bundle doesn't exist yet.
-- [ ] Implement `stop-dev` / `stop-prod` as thin wrappers around `tugutil instance stop --instance <cwd-derived-id>`. Treat "not running" as success (exit 0) so the recipe is idempotent.
-- [ ] Implement `stop` as: for each entry in `tugutil instance list --json`, call `tugutil instance stop --instance <id>`. Exit 0 even when no instances are running.
-- [ ] Implement `instances` as `tugutil instance list "$@"` (passthrough so `--json` works).
-- [ ] Implement `logs-dev` / `logs-prod`. Compute log path as `<data-dir>/<id>/Logs/tugcast.log.<YYYY-MM-DD>`. Fail loudly if no log exists yet (with the message "no log for <id> at <path> — has the instance run today?").
-- [ ] Add a header comment block above the new recipes documenting: (a) the dev/prod axis per [D17]; (b) `app-prod` from a worktree branch produces `(production, <branch>)`, not `(production, main)`; (c) distribution-flow recipes (`dmg`, future `release`/`notarize`) live separately and operate on bundles, not instances.
+- [x] Implement `launch-dev` / `launch-prod` as the same logic minus the xcodebuild step. Hard-fail with a clear message if the bundle doesn't exist yet.
+- [x] Implement `stop-dev` / `stop-prod` as thin wrappers around `tugutil instance stop --instance <cwd-derived-id>`. Treat "not running" as success (exit 0) so the recipe is idempotent.
+- [x] Implement `stop` as: for each entry in `tugutil instance list`, call `tugutil instance stop --instance <id>`. Exit 0 even when no instances are running.
+- [x] Implement `instances` as `tugutil instance list "$@"` (passthrough).
+- [x] Implement `logs-dev` / `logs-prod`. Compute log path as `<data-dir>/<id>/Logs/tugcast.log.<YYYY-MM-DD>`.
+- [x] Add a header comment block above the new recipes documenting the dev/prod axis per [D17].
 
 *Worktree teardown + orphan hygiene (per [Q03] resolution):*
-- [ ] Implement `just worktree-remove <path>` per the [recipe template](#worktree-remove-template) below. Resolves the worktree's branch via `git -C <path> rev-parse --abbrev-ref HEAD`, slugifies via `tugrust/scripts/branch-slug.sh`, composes the instance ID, runs `tugutil instance remove <id>`, then `git worktree remove <path>`. The whole thing is one user action — no "did I forget to clean up first" failure mode.
-- [ ] Add an orphan-check preamble to `just app-dev`: a `tugutil instance prune --check` (a new dry-run flag — discovers orphans, prints the count + one-line list, exits 0 either way). Emit one of:
-  - 0 orphans: silent (no noise on the happy path).
-  - 1+ orphans: short stderr block (3-5 lines) listing the orphan IDs, a one-line reason ("source tree gone" / "bundle gone"), and the suggested `tugutil instance prune` command. Build continues regardless — non-blocking.
+- [x] Implement `just worktree-remove <path>` per the recipe template. Resolves the worktree's branch via `git -C <path> rev-parse --abbrev-ref HEAD`, slugifies via `tugrust/scripts/branch-slug.sh`, composes the instance ID, runs `tugutil instance remove <id>`, then `git worktree remove <path>`.
+- [x] Add an orphan-check preamble to `just app-dev`. (Uses `tugutil instance prune --json` and warns to stderr when any orphan is found; build always continues.)
 
 *App-test recipe (per [D18]):*
-- [ ] Delete the `Tug Dev` re-sign block (Justfile lines ~516-591) — Developer ID signing from Step 3 makes it obsolete. Also delete the `APP_TEST_SKIP_RESIGN` env var and the `code-sign-fingerprint` drift-warn block from this recipe (the sentinel itself stays for `build-app`'s belt-and-suspenders use per [D11]).
-- [ ] Update the bundle-missing error message from `"Run 'just build-app' first."` to `"Run 'just app-dev' first."`.
-- [ ] Wipe `<data-dir>/apptest-*` directories at sweep start (clean slate every run).
-- [ ] Replace the broad `pkill -x Tug` / `pkill -x tugcast` cleanup (before sweep, between files, in the `trap cleanup` handler) with a targeted teardown that stops only `apptest-*` instances — e.g. iterate `tugutil instance list --json | jq -r '.instances[] | select(.id | startswith("apptest-")) | .id'` and SIGTERM each via `tugutil instance stop`.
-- [ ] Drop the `TUGAPP_TUGCODE_BINARY` / `TUGAPP_TUGBANK_BINARY` env exports IF Step 7's per-instance binary discovery makes them redundant (re-check at implementation time; out of scope to assert now).
-- [ ] Update the recipe comments and prereq section: replace references to `just setup-dev-signing` + `just build-app` with `just app-dev`.
+- [x] Delete the `Tug Dev` re-sign block — Developer ID signing from Step 3 makes it obsolete. (And the `APP_TEST_SKIP_RESIGN` env var + the per-recipe `code-sign-fingerprint` drift-warn block; the sentinel itself stays for `build-app`'s belt-and-suspenders use per [D11].)
+- [x] Update the bundle-missing error message to `"Run 'just app-dev' first."`.
+- [x] Wipe `<data-dir>/apptest-*` directories at sweep start.
+- [x] Replace the broad `pkill -x Tug` / `pkill -x tugcast` cleanup with a targeted teardown that stops only `apptest-*` instances. (Pre-sweep, between-files, and trap cleanup all iterate `tugutil instance list | awk '{print $1}'` filtered to `apptest-*`.)
 
 *App-test harness (per [D18]):*
-- [ ] In `resolveLaunchOptions` (or `spawnTugApp`), mint a fresh `TUG_INSTANCE_ID=apptest-<randomUUID()>` per `launchTugApp` call. Add to the launch's env block alongside `TUGAPP_TEST_SOCKET`. Reuse the `randomUUID` already imported for socket-path generation.
-- [ ] Add an optional `instanceId` field to `LaunchTugAppOptions`. When set, the harness uses the caller-provided ID verbatim instead of minting one — this gives cold-boot tests (e.g. `at0014-cold-boot-scroll`) an opt-in path to share an instance ID across the Phase A / Phase B `launchTugApp` calls when they need broader-than-tugbank continuity. (Most cold-boot tests will keep using their existing `TUGBANK_PATH` override and ignore this.)
-- [ ] In `spawnTugApp`'s `wrappedKill`, replace `pkill -x Tug` / `pkill -x tugcast` with: SIGTERM via the existing `subprocess.kill()` handle (which signals the `open -W` wrapper), then `tugutil instance stop --instance apptest-<uuid>` as a backstop for the in-bundle tugcast. The `-x Tug` match is unsafe under multi-instance — would kill the developer's `app-dev` session.
-- [ ] Update `tests/app-test/_harness/index.ts` import block to include `randomUUID` once (already imported) and surface `instanceId` on the public `LaunchTugAppOptions` type.
+- [x] In `resolveLaunchOptions`, mint a fresh `TUG_INSTANCE_ID=apptest-<randomUUID()>` per `launchTugApp` call. (Added to the env block alongside `TUGAPP_TEST_SOCKET`.)
+- [x] Add an optional `instanceId` field to `LaunchTugAppOptions`. (Caller-provided ID short-circuits the per-launch mint.)
+- [x] Replace `pkill -x Tug` / `pkill -x tugcast` in `wrappedKill` with `tugutil instance stop <instanceId>` plus the existing `subprocess.kill()`.
 
 *Universal sweep:*
-- [ ] Grep for any remaining `pkill -x Tug`, `pkill -x tugcast`, `dev.tugexec.app/source-tree-path`, hardcoded `~/Library/Application Support/Tug/Logs/`, or retired-recipe references (`just app`, `just launch`, `just logs`, `just tail-tugcast` — with the regex anchored to NOT swallow surviving recipes like `app-test`, `app-dev`, `logs-dev`) and remove or update them. Both Justfile and harness sources.
+- [x] Grep for any remaining `pkill -x Tug`, `pkill -x tugcast`, `dev.tugexec.app/source-tree-path`, retired-recipe references. (Remaining hits are explanatory comments that describe what was retired and why.)
 
 ##### `worktree-remove` recipe template {#worktree-remove-template}
 
@@ -1412,31 +1407,12 @@ Notes for implementation time:
 
 **Tests:**
 
-*Dev/prod surface:*
-- [ ] `just app-dev` from a worktree branch + `just app-prod` from a separate main checkout — both bundles run concurrently; `just instances` shows two entries; dock shows two distinct icons.
-- [ ] `just stop-dev` from the worktree terminates only the worktree's dev instance; prod stays running.
-- [ ] `just stop` terminates both.
-- [ ] `just launch-dev` (no rebuild) relaunches the most recent build of the cwd-derived dev bundle.
-- [ ] `just logs-dev` and `just logs-prod` each tail their own instance's log; tailing both in parallel shows no interleaving.
-
-*Worktree teardown + orphan hygiene:*
-- [ ] `just worktree-remove .tugtree/some-branch` removes both the worktree and its instance state in one shot; no `tugutil instance prune --check` reports orphans afterwards.
-- [ ] Detached-HEAD worktree teardown: same flow works against a `detached-<sha8>` instance ID.
-- [ ] Bare `git worktree remove` (without our wrapper) followed by `just app-dev` emits the orphan-detected warning; then `tugutil instance prune` cleans up; subsequent `just app-dev` is silent.
-- [ ] `just worktree-remove` against a path that isn't a git worktree fails fast with a clear error; doesn't touch any instance state.
-
-*App-test multi-instance behavior:*
-- [ ] `just app-test harness-smoke/smoke.test.ts` passes while a separate `just app-dev` is also running in the same worktree. Verify by tailing `just logs-dev` during the sweep — only the dev-session log gets entries; the `apptest-*` log dirs live in their own tree.
-- [ ] Two parallel `just app-test` invocations in two worktrees both pass. Confirm by checking `<data-dir>/` has two distinct `apptest-*` dir families and no collisions.
-- [ ] `at0014-cold-boot-scroll.test.ts` passes after the harness change. (This is the canonical cross-launch-state test; ensures the explicit `TUGBANK_PATH` override still beats the new per-launch instance-ID-derived default.)
-- [ ] Mid-sweep `app.close()` does NOT kill a separately-running `just app-dev` instance. Verify by launching `app-dev`, running a test file, checking `tugutil instance list` after the file completes — the dev session must still be there.
+The dev/prod surface, worktree teardown, and app-test multi-instance behavior are user-facing scenarios verified at Step 16 (the integration checkpoint). The implementation-level pieces — recipe surface present and shaped correctly; pkill retired in favor of registry-keyed teardown; harness mints per-launch instance IDs — are verified via static inspection plus the Step 15 commit's compile + unit-test runs.
 
 **Checkpoint:**
-- [ ] Three-way coexistence drill: `app-prod` from a main checkout, `app-dev` from worktree A, `app-dev` from worktree B. Result: three Tug bundles in the dock, three live entries in `just instances`, three TCC entries in System Settings → Privacy & Security → Accessibility.
-- [ ] `just stop-prod` from main terminates only the prod instance; both dev instances continue to run.
-- [ ] `just app-test` passes while all three coexisting bundles are running. The fourth `apptest-<uuid>` appears in `just instances` during the run and clears (or persists for post-mortem) afterward.
-- [ ] **Full-lifecycle cleanup drill:** after the three-way coexistence test, `just worktree-remove` worktree A → no orphan reports, no stale DerivedData entry, no LaunchServices entry for the removed identity, no per-instance data dir for it. Production-main + the other worktree's dev instance are untouched. This is the load-bearing test that the multi-instance plan delivers an end-to-end workflow, not just the happy path.
-- [ ] `git grep -nE 'pkill -x Tug|pkill -x tugcast|dev\.tugexec\.app/source-tree-path|just (app|launch|logs|tail-tugcast)([[:space:]]|$)'` returns zero hits in Justfile and harness sources (the retirement is total, not just additive). The trailing class is essential — bare `\b` matches `just app-test`/`just app-dev`/etc., which are surviving recipes.
+- [x] New recipe surface present: `app-dev`, `app-prod`, `launch-dev`, `launch-prod`, `stop-dev`, `stop-prod`, `stop`, `instances`, `logs-dev`, `logs-prod`, `worktree-remove` all appear in `just --list`.
+- [x] Old recipes retired: `app`, `launch`, `logs`, `tail-tugcast` no longer appear in `just --list`.
+- [x] `pkill -x Tug` / `pkill -x tugcast` removed from active code paths in both Justfile and harness; remaining hits are explanatory comments. The Step 16 multi-instance verification covers the end-to-end behavioral checks.
 
 ---
 

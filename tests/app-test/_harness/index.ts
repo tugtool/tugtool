@@ -155,6 +155,7 @@ interface ResolvedLaunch {
   logPath: string | null;
   expectedSurfaceVersion: string;
   skipAccessibilityPreflight: boolean;
+  instanceId: string;
 }
 
 /**
@@ -1285,6 +1286,13 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
   const logPath = opts.testName
     ? pathResolve(LOGS_DIR, `${sanitizeTestName(opts.testName)}.log`)
     : null;
+  // Per-launch instance identity. Defaults to `apptest-<uuid>` so each
+  // launchTugApp call gets its own per-instance data dir, tugbank,
+  // tmux session, and registry entry — concurrent app-tests don't
+  // collide, and a separately-running `just app-dev` is untouched by
+  // the harness's targeted teardown. Tests that need cross-launch
+  // continuity (e.g. cold-boot) pass `opts.instanceId` explicitly.
+  const instanceId = opts.instanceId ?? `apptest-${randomUUID()}`;
   return {
     appPath,
     socketPath,
@@ -1295,10 +1303,12 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
       ...(opts.persistInTestMode ? { TUGAPP_PERSIST_IN_TEST_MODE: "1" } : {}),
       ...(opts.env ?? {}),
       TUGAPP_TEST_SOCKET: socketPath,
+      TUG_INSTANCE_ID: instanceId,
     },
     logPath,
     expectedSurfaceVersion: opts.expectedSurfaceVersion ?? EXPECTED_SURFACE_VERSION,
     skipAccessibilityPreflight: opts.skipAccessibilityPreflight ?? false,
+    instanceId,
   };
 }
 
@@ -1467,10 +1477,9 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
   // ## Kill semantics
   //
   // SIGTERM to the `open -W` wrapper doesn't reliably propagate to the
-  // launched app. We instead send the kill signal directly to Tug.app
-  // via `pkill -x Tug`; the wrapper exits once the app it was waiting
-  // on does. Single-client test loop keeps the `-x` match unambiguous
-  // (there's only one Tug process at a time).
+  // launched app. We instead use `tugutil instance stop <id>` (via
+  // wrappedKill below) which signals only the apptest-* PID for this
+  // launch — safe under multi-instance, untouched developer sessions.
   const bundlePath = resolved.appPath.replace(/\/Contents\/MacOS\/[^/]+$/, "");
   const envArgs: string[] = [];
   for (const [k, v] of Object.entries(resolved.env)) {
@@ -1506,7 +1515,9 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
     stdin: "ignore",
   });
 
-  // Wrap `.kill` so SIGTERM reliably reaches the Tug.app process AND
+  // Wrap `.kill` so SIGTERM reliably reaches the Tug.app process and
+  // its tugcast child — targeted to THIS instance, not all Tug
+  // processes on the machine.
   // its tugcast child. Without the tugcast kill, `app.close()`
   // (SIGTERM-to-Tug-only) leaks tugcast: it lives in its own process
   // group (Tug's `ProcessManager` only kills the group from the
@@ -1514,6 +1525,7 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
   // that). The next launch then races port-55255 reclamation, which
   // surfaces as flakes in tests that run back-to-back.
   const originalKill = subprocess.kill.bind(subprocess);
+  const instanceId = resolved.instanceId;
   const wrappedKill = (signal?: string): void => {
     const sig = signal ?? "SIGTERM";
     const spawnSync = (
@@ -1523,20 +1535,29 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
         };
       }
     ).Bun?.spawnSync;
-    // `pkill -x <name>` matches the executable name exactly. Both
-    // matches are idempotent — they no-op if the named process
-    // isn't running.
-    for (const name of ["Tug", "tugcast"]) {
-      try {
-        spawnSync?.({
-          cmd: ["/usr/bin/pkill", sig === "SIGKILL" ? "-KILL" : "-TERM", "-x", name],
-          stdout: "ignore",
-          stderr: "ignore",
-          stdin: "ignore",
-        });
-      } catch {
-        // ignore — the fallback below still runs
-      }
+    // Targeted teardown via `tugutil instance stop <id>`. The bare
+    // `pkill -x Tug` approach is unsafe under multi-instance: it
+    // would kill a developer's separately-running `just app-dev`
+    // session. `tugutil instance stop` looks up the PID for this
+    // specific apptest-<uuid> in the registry and signals only it.
+    // `--timeout` keeps the call short — we send SIGTERM then a
+    // fast escalation to SIGKILL.
+    try {
+      spawnSync?.({
+        cmd: [
+          "tugutil",
+          "instance",
+          "stop",
+          instanceId,
+          "--timeout",
+          sig === "SIGKILL" ? "0" : "2",
+        ],
+        stdout: "ignore",
+        stderr: "ignore",
+        stdin: "ignore",
+      });
+    } catch {
+      // ignore — the fallback below still runs
     }
     // Also signal the `open -W` wrapper so its `.exited` resolves
     // promptly on the harness side.

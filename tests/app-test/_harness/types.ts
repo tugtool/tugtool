@@ -425,4 +425,18 @@ export interface LaunchTugAppOptions {
    * to keep the bypass active and writes silent.
    */
   persistInTestMode?: boolean;
+
+  /**
+   * Override the harness-minted instance ID. When unset, the harness
+   * generates `apptest-<uuid>` per launch — each `launchTugApp` call
+   * gets its own per-instance data dir, tugbank, and tmux session.
+   * When set, the harness uses the caller-provided ID verbatim. Use
+   * this to share an instance across the Phase A / Phase B launches
+   * of a cross-launch test (e.g. cold-boot tests that want broader-
+   * than-tugbank continuity).
+   *
+   * Sets `TUG_INSTANCE_ID` on the launched app's environment;
+   * tugcore::instance and Swift InstanceConfig both read it.
+   */
+  instanceId?: string;
 }
