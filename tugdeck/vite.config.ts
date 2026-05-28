@@ -492,11 +492,13 @@ export default (defineConfig as any)(() => {
         // artifacts; new crates need no edit here.
         ignored: ["**/palette-engine.ts", "**/tugdeck/crates/*/pkg/**"],
       },
-      hmr: {
-        host: "127.0.0.1",
-        port: 55155,
-        protocol: "ws",
-      },
+      // No explicit `hmr` block: Vite defaults to HMR on the same
+      // host:port the dev server is listening on. Under multi-
+      // instance the dev server port is per-instance (derived from
+      // TUG_INSTANCE_ID via tugcore::ports::vite_port_default), so
+      // pinning HMR to a hardcoded port would point the client at a
+      // closed socket on every instance other than the legacy
+      // production-main one. Trust the default.
     },
     preview: {
       proxy: proxyConfig,

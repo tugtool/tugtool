@@ -355,8 +355,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Preferences
 
     private func loadPreferences() {
-        devModeEnabled = ProcessManager.readTugbankBool(domain: TugConfig.domain, key: TugConfig.keyDevModeEnabled)
-        sourceTreePath = ProcessManager.readTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath)
+        // Per-instance tugbank starts empty on a fresh identity. Both
+        // `dev-mode-enabled` and `source-tree-path` fall back to
+        // build-time values so a fresh dev instance lights up with
+        // the Developer menu visible and its source tree wired, and
+        // a fresh prod instance defaults to non-dev with the user-
+        // picker flow available.
+        //
+        // `readTugbank` returns Optional<String>, so we can tell the
+        // difference between "key absent" (use the build-profile
+        // default) and "key explicitly false" (honor the user's
+        // preference).
+        let devModeRaw = ProcessManager.readTugbank(
+            domain: TugConfig.domain, key: TugConfig.keyDevModeEnabled
+        )
+        if let raw = devModeRaw {
+            devModeEnabled = raw.caseInsensitiveCompare("true") == .orderedSame
+        } else {
+            // No explicit preference yet — default from the build
+            // profile baked into Info.plist by Step 1's
+            // capture-build-info.sh. Development bundles ship with
+            // dev mode ON; production bundles ship with it OFF.
+            devModeEnabled = BuildInfo.profile == "development"
+        }
+
+        sourceTreePath = ProcessManager.readTugbank(
+            domain: TugConfig.domain, key: TugConfig.keySourceTreePath
+        )
+        if sourceTreePath == nil, let buildTimePath = BuildInfo.sourceTree {
+            sourceTreePath = buildTimePath
+        }
 
         // In-app harness path: force production mode regardless of the
         // tugbank setting. The harness loads from tugcast's pre-built

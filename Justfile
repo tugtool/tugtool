@@ -183,7 +183,10 @@ wasm:
 app-dev: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
-    (cd tugdeck && bun run build)
+    # Dev bundles serve the frontend via Vite HMR — no `bun run build`
+    # is needed here. The xcodebuild build phase tolerates an empty
+    # tugdeck/dist; production builds (`app-prod`) run the full vite
+    # build before xcodebuild.
     # Touch Swift sources so xcodebuild detects changes on this mount.
     find tugapp/Sources -name '*.swift' -exec touch {} +
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' build
@@ -196,6 +199,12 @@ app-dev: build wasm
         echo "[warn] orphaned per-instance data dirs detected. Run 'tugutil instance prune' to clean up." >&2
     fi
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh development)"
+    # Seed the per-instance source-tree-path so the first launch knows
+    # where to find tugdeck/, tugcode, etc. AppDelegate also falls
+    # back to BuildInfo.sourceTree (capture-build-info.sh writes
+    # $SRCROOT into Info.plist), but writing it explicitly here keeps
+    # the user's chosen tree wins over any stale build-time value.
+    tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
     if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
         | grep -q "\"$INSTANCE_ID\""; then
@@ -208,6 +217,7 @@ app-dev: build wasm
 app-prod: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "==> Building tugdeck static assets for the production bundle"
     (cd tugdeck && bun run build)
     find tugapp/Sources -name '*.swift' -exec touch {} +
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' build
@@ -215,6 +225,12 @@ app-prod: build wasm
     echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     INSTANCE_ID="$(bash tugrust/scripts/instance-id-from-cwd.sh production)"
+    # Seed source-tree-path for the prod instance too. AppDelegate
+    # falls back to BuildInfo.sourceTree if the tugbank value is
+    # missing, but release builds intentionally omit BuildSourceTree
+    # ([D03]), so this write is the only path for prod from a
+    # developer checkout.
+    tugrust/target/debug/tugbank --instance "$INSTANCE_ID" write dev.tugtool.app source-tree-path "$(pwd)" >/dev/null
     echo "==> Launching $INSTANCE_ID ($APP_DIR)"
     if tugrust/target/debug/tugutil instance list --json 2>/dev/null \
         | grep -q "\"$INSTANCE_ID\""; then
