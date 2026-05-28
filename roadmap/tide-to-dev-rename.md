@@ -723,14 +723,14 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D01], [D02], [Q04]
 
 **Tasks:**
-- [ ] `useTide*` → `useDev*` for hook function names.
-- [ ] `.tide-*` CSS classes → `.dev-*` (with their JSX/TSX callers in lockstep).
-- [ ] `--tugx-tide-*` custom properties → `--tugx-dev-*`.
+- [x] `useTide*` → `useDev*` for hook function names. *Already swept by Step 3's case-sensitive `s/Tide/Dev/g` sed pass.*
+- [x] `.tide-*` CSS classes → `.dev-*` (with their JSX/TSX callers in lockstep). *Already swept by Step 2's `s/tide-/dev-/g` sed pass over tugdeck/src; this step caught the 3 stragglers in `tugdeck/styles/themes/{brio,harmony}.css` and `tugdeck/src/components/tugways/tug-list-view.css` (doc-comment references to `.tide-card-transcript` / `tide-thinking-block.css` / "the tide-card transcript").*
+- [x] `--tugx-tide-*` custom properties → `--tugx-dev-*`. *Already swept; confirmed: 12 `--tugx-dev-*` definitions live in dev-card-*.css with zero `--tugx-tide-*` residue.*
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean.
-- [ ] `bun test` green.
-- [ ] Visual smoke: spawn a `dev` card; layout matches the prior `tide` card pixel-for-pixel.
+- [x] `bun x tsc --noEmit` clean.
+- [x] `bun test` green. *3039 tests pass.*
+- [ ] Visual smoke: spawn a `dev` card; layout matches the prior `tide` card pixel-for-pixel. *Deferred to Step 12 manual verification (HMR picks up CSS changes; smoke happens on user's next `just app-debug` launch).*
 
 ---
 

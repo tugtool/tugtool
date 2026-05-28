@@ -109,7 +109,7 @@ body {
 
    `--tugx-list-view-padding-block` sets a symmetric default for
    both pseudo-elements. Optional `*-start` / `*-end` longhands
-   let a consumer pick asymmetric breathing room (e.g., the tide-
+   let a consumer pick asymmetric breathing room (e.g., the dev-
    card transcript needs more space below the last entry to clear
    the Z2 status bar than it does above the first entry). Both
    longhands fall back to the symmetric token, so existing
