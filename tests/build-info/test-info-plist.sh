@@ -1,18 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# test-info-plist.sh — integration test for the capture-build-info
-# build phase. Builds a Debug bundle, inspects the Info.plist that
-# the build phase wrote into it, and verifies:
-#   - BuildProfile  == "development"   (Debug → development)
-#   - BuildBranch   == current git branch (or detached-<sha8>)
-#   - BuildCommit   == current HEAD sha
-#   - BuildSourceTree == repo root      (development builds include it)
-#   - CFBundleIdentifier == dev.tugtool.app (until Step 2 lands)
+# test-info-plist.sh — integration test for the build phases that
+# bake identity into the bundle's Info.plist (capture-build-info.sh +
+# assign-bundle-id.sh). Builds a Debug bundle, inspects the Info.plist,
+# and verifies:
+#   - BuildProfile      == "development"   (Debug → development)
+#   - BuildBranch       == current git branch (or detached-<sha8>)
+#   - BuildCommit       == current HEAD sha
+#   - BuildSourceTree   == repo root      (development builds include it)
+#   - CFBundleIdentifier matches the [D10] mapping for the cwd's
+#     (profile, branch) tuple, computed via tugrust/scripts/branch-slug.sh
 #
-# Reports the expected BuildInfo.instanceId (computed by running the
-# branch-slug algorithm against BuildBranch) so a human can spot-check
-# end-to-end identity composition.
+# Reports the expected BuildInfo.instanceId for a Swift consumer.
 #
 # Use `--no-build` to skip xcodebuild and verify whatever bundle is
 # already built (faster iteration).
@@ -60,19 +60,6 @@ read_key() {
     plutil -extract "$1" raw -o - "$PLIST" 2>/dev/null || true
 }
 
-# Reproduce the Swift slugify in shell — the goal is to assert that
-# BuildBranch + slugify gives the expected instance ID. The Swift
-# version is canonical; this sed pipeline is *only* used to predict
-# the instance ID a Swift BuildInfo read would surface. If the two
-# implementations diverge, the unit test (test-branch-slug.sh) covers
-# Swift; tests in Step 2's assign-bundle-id.sh will cover the bash
-# implementation against the same case table.
-shell_slugify() {
-    printf '%s\n' "$1" \
-        | LC_ALL=C tr '[:upper:]' '[:lower:]' \
-        | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
-}
-
 PROFILE="$(read_key BuildProfile)"
 BRANCH="$(read_key BuildBranch)"
 COMMIT="$(read_key BuildCommit)"
@@ -85,6 +72,20 @@ if [ "$GIT_BRANCH" = "HEAD" ]; then
     GIT_BRANCH="detached-$(echo "$GIT_HEAD" | cut -c1-8)"
 fi
 REPO_ROOT_REAL="$(cd "$TUGAPP_DIR/.." && pwd)"
+
+# Expected bundle ID per [D10], using the canonical bash slugifier so
+# any divergence between Swift's BranchSlug.compute and bash's
+# branch-slug.sh surfaces here. Parity is also independently checked
+# by test-slug-parity.sh.
+BRANCH_SLUG="$(bash "$REPO_ROOT/tugrust/scripts/branch-slug.sh" "$GIT_BRANCH")"
+case "development-$GIT_BRANCH" in
+    development-main)
+        EXPECTED_BUNDLE_ID="dev.tugtool.app.dev"
+        ;;
+    *)
+        EXPECTED_BUNDLE_ID="dev.tugtool.app.development-$BRANCH_SLUG"
+        ;;
+esac
 
 fail=0
 check() {
@@ -100,14 +101,41 @@ check() {
 }
 
 echo "==> verifying $PLIST"
-check BuildProfile     "$PROFILE"     "development"
-check BuildBranch      "$BRANCH"      "$GIT_BRANCH"
-check BuildCommit      "$COMMIT"      "$GIT_HEAD"
-check BuildSourceTree  "$SOURCE_TREE" "$REPO_ROOT_REAL"
-check CFBundleIdentifier "$BUNDLE_ID" "dev.tugtool.app"
+check BuildProfile       "$PROFILE"     "development"
+check BuildBranch        "$BRANCH"      "$GIT_BRANCH"
+check BuildCommit        "$COMMIT"      "$GIT_HEAD"
+check BuildSourceTree    "$SOURCE_TREE" "$REPO_ROOT_REAL"
+check CFBundleIdentifier "$BUNDLE_ID"   "$EXPECTED_BUNDLE_ID"
 
-EXPECTED_INSTANCE_ID="development-$(shell_slugify "$GIT_BRANCH")"
+EXPECTED_INSTANCE_ID="development-$BRANCH_SLUG"
 echo "==> expected BuildInfo.instanceId for a Swift consumer: $EXPECTED_INSTANCE_ID"
+
+# Codesign DR drift check. When the bundle is signed with a real
+# identity (Developer ID Application — lands in Step 3), the DR is a
+# structured requirement expression of the form:
+#     identifier "dev.tugtool.app.dev" and anchor apple generic and ...
+# and we can assert the identifier matches CFBundleIdentifier.
+#
+# Pre-Step-3, the build uses ad-hoc signing whose DR is just
+# `cdhash H"..."` with no identifier field. In that case we surface the
+# raw DR informationally — no assertion, no failure. The drift gate
+# turns on automatically once Step 3 produces structured DRs.
+DR_LINE="$(codesign -d -r- "$APP" 2>&1 | sed -nE 's/^#?[[:space:]]*designated[[:space:]]+=>[[:space:]]+(.*)$/\1/p' | head -1)"
+DR_ID="$(printf '%s\n' "$DR_LINE" \
+    | sed -nE 's/.*identifier[[:space:]]+"([^"]+)".*/\1/p; s/.*identifier[[:space:]]+([^[:space:]]+).*/\1/p' \
+    | head -1)"
+if [ -z "$DR_LINE" ]; then
+    printf '  FAIL %-22s = <could not extract>\n' "DR (raw)"
+    fail=$((fail + 1))
+elif [ -z "$DR_ID" ]; then
+    printf '  info %-22s = %s\n' "DR (ad-hoc)" "$DR_LINE"
+    printf '       %-22s   (identifier check turns on with Step 3 Developer ID signing)\n' ""
+elif [ "$DR_ID" = "$BUNDLE_ID" ]; then
+    printf '  ok   %-22s = %s\n' "DR identifier" "$DR_ID"
+else
+    printf '  FAIL %-22s = %s  (expected %s)\n' "DR identifier" "$DR_ID" "$BUNDLE_ID"
+    fail=$((fail + 1))
+fi
 
 if [ "$fail" -ne 0 ]; then
     echo "FAIL: $fail key(s) did not match expected values" >&2

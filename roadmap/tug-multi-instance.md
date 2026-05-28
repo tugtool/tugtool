@@ -890,16 +890,18 @@ No new configuration files. All configuration is via:
 - `tugapp/Tug.xcodeproj/project.pbxproj` — registers the script.
 
 **Tasks:**
-- [ ] Write `assign-bundle-id.sh` per #bundle-id-assignment.
-- [ ] Add as a Run Script build phase ordered after `capture-build-info.sh` and before code-signing.
-- [ ] Update Tug.entitlements and any code-signing-related xcconfigs to use `$(PRODUCT_BUNDLE_IDENTIFIER)` references where possible, so the dynamic ID propagates correctly.
+- [x] Write `assign-bundle-id.sh` per #bundle-id-assignment.
+- [x] Add as a Run Script build phase ordered after `capture-build-info.sh` and before code-signing.
+- [x] Update Tug.entitlements and any code-signing-related xcconfigs to use `$(PRODUCT_BUNDLE_IDENTIFIER)` references where possible, so the dynamic ID propagates correctly. *Tug.entitlements has no bundle-ID refs (verified); no xcconfigs in tugapp/ (build settings are inline in pbxproj). Left `PRODUCT_BUNDLE_IDENTIFIER = dev.tugtool.app;` in pbxproj as the Xcode-IDE-Build fallback; documented in assign-bundle-id.sh that CFBundleIdentifier post-build is the canonical value. The xcent's `application-identifier` drift is cosmetic for our bundle shape (no sandbox, no app groups, no keychain access groups).*
+- [x] Extract the bash slugifier into `tugrust/scripts/branch-slug.sh` (canonical bash implementation, called by assign-bundle-id.sh) so the bash/Swift parity test has a single source to compare.
 
 **Tests:**
-- [ ] Drift test: `codesign -d -r- Tug.app` reports a designated requirement whose identifier matches the post-build Info.plist `CFBundleIdentifier`.
-- [ ] Manual: build with `BUILD_BRANCH=test-branch`, verify Info.plist contains `dev.tugtool.app.development-test-branch`.
+- [x] Drift test: `codesign -d -r- Tug.app` reports a designated requirement whose identifier matches the post-build Info.plist `CFBundleIdentifier`. *Implemented as an informational check in `test-info-plist.sh`; pre-Step-3 ad-hoc signing produces a `cdhash H"..."` DR with no identifier field, so the gate is off. Step 3's Developer ID signing produces a structured DR with an identifier; the check auto-promotes to a hard assertion at that point.*
+- [x] Manual: build with `BUILD_BRANCH=test-branch`, verify Info.plist contains `dev.tugtool.app.development-test-branch`. *Mechanized as `tests/build-info/test-bundle-id-mapping.sh` — exercises all four [D10] variants (production-main, development-main, development-other, production-other) plus six edge cases (mixed-case, slash, space, detached-HEAD shape) without needing real branches. Includes failure-mode coverage for branches that slugify to empty.*
+- [x] Slug parity: `tests/build-info/test-slug-parity.sh` runs the full 24-case driver table through both `branch-slug.sh` and a one-shot compiled Swift binary built from `BranchSlug.swift`, asserts byte-for-byte agreement.
 
 **Checkpoint:**
-- [ ] `plutil -extract CFBundleIdentifier raw -o - Tug.app/Contents/Info.plist` returns the expected per-identity ID for production-main, development-main, and a non-main dev build.
+- [x] `plutil -extract CFBundleIdentifier raw -o - Tug.app/Contents/Info.plist` returns the expected per-identity ID for production-main, development-main, and a non-main dev build. *Verified: production-main → `dev.tugtool.app` (Release build); development-main → `dev.tugtool.app.dev` (Debug build); non-main dev → `dev.tugtool.app.development-<slug>` (via test-bundle-id-mapping.sh exercising 6 non-main variants).*
 
 ---
 
