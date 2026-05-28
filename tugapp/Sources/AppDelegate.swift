@@ -694,10 +694,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Read the short git revision of the source tree. Returns nil when the
     /// path is missing, not a git repo, or git is unavailable on PATH.
     private func gitShortRev(at path: String) -> String? {
+        return runGit(at: path, args: ["rev-parse", "--short", "HEAD"])
+    }
+
+    /// Read the current git branch of the source tree. Returns nil when the
+    /// path is missing, not a git repo, detached HEAD, or git is unavailable.
+    private func gitBranch(at path: String) -> String? {
+        guard let value = runGit(at: path, args: ["rev-parse", "--abbrev-ref", "HEAD"]) else {
+            return nil
+        }
+        return value == "HEAD" ? nil : value
+    }
+
+    private func runGit(at path: String, args: [String]) -> String? {
         guard let gitPath = ProcessManager.which("git") else { return nil }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: gitPath)
-        proc.arguments = ["-C", path, "rev-parse", "--short", "HEAD"]
+        proc.arguments = ["-C", path] + args
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = Pipe()
@@ -720,17 +733,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.setDevInfo(text: "")
             return
         }
+        let branch: String
         let rev: String
-        if let path = sourceTreePath, let r = gitShortRev(at: path) {
-            rev = r
+        if let path = sourceTreePath {
+            branch = gitBranch(at: path) ?? "unknown"
+            rev = gitShortRev(at: path) ?? "unknown"
         } else {
+            branch = "unknown"
             rev = "unknown"
         }
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         let buildStamp = formatter.string(from: appLaunchTime)
         let loadStamp = formatter.string(from: lastLoadTime)
-        window.setDevInfo(text: "\(rev) · build \(buildStamp) · load \(loadStamp)")
+        window.setDevInfo(text: "\(branch) · \(rev) · build \(buildStamp) · load \(loadStamp)")
     }
 
     /// Update the cached card list from the frontend (called by MainWindow on cardList message).
