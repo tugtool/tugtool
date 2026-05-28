@@ -15,7 +15,7 @@
  * gap.
  *
  * On-roster content factories (`gallery-prompt-entry`,
- * tide-card editor) restore synchronously
+ * dev-card editor) restore synchronously
  * inside Phase-1's layout effect, so the race window is sub-frame
  * and not reproducible from the harness without explicit
  * instrumentation. The behavioral assertion this test makes —

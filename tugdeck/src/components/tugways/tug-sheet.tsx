@@ -60,7 +60,7 @@
  * @see ./internal/floating-surface-notes.ts for the cross-surface
  *      invariants table covering popover / confirm-popover / alert /
  *      sheet and the chain-reactive vs. modal semantic models.
- * @see `roadmap/tugplan-tide-overlay-framework.md` (#mental-model)
+ * @see `roadmap/tugplan-dev-overlay-framework.md` (#mental-model)
  *      for the system-level architecture covering portals, the
  *      responder chain, focus events, the pane focus controller,
  *      and focus-discipline markers — the five subsystems whose
@@ -499,9 +499,9 @@ export function TugSheetContent({
   // the trigger element, but Tide's editor is not the trigger here.
   // `TideCardBody` subscribes to `sheetDidHide` and re-focuses the
   // prompt-entry editor, gated on first-responder state. Per the
-  // contract documented in `tide-card.tsx` (the focus-claim handlers
+  // contract documented in `dev-card.tsx` (the focus-claim handlers
   // block) and pinned by
-  // `tests/app-test/at0051-tide-mount-focus.test.ts`: any modal-class
+  // `tests/app-test/at0051-dev-mount-focus.test.ts`: any modal-class
   // surface that portals into the pane chrome and sets `inert` on
   // the pane body MUST emit a per-card `didHide` lifecycle event
   // after `inert` clears, mirroring this emission. Removing or
@@ -787,7 +787,7 @@ export interface ShowSheetOptions {
   /**
    * Cascade-target responder id captured at sheet-open time.
    *
-   * Per `tugplan-tide-overlay-framework.md` [D02]
+   * Per `tugplan-dev-overlay-framework.md` [D02]
    * (#sheet-cascade-rationale), modal surfaces that need a follow-up
    * chain dispatch on close (e.g., dispatching `CLOSE` to dismiss the
    * host card after a picker cancel) capture the dispatch's target
@@ -920,7 +920,7 @@ interface UseTugSheetState {
  * through the responder chain — for example, the Tide picker
  * canceling and dismissing its host card — it must capture the
  * cascade dispatch's target id at sheet-open time, not at close time.
- * Per `tugplan-tide-overlay-framework.md` [D02]
+ * Per `tugplan-dev-overlay-framework.md` [D02]
  * (#sheet-cascade-rationale), `firstResponderId` at close time is
  * fragile (it settles via the unregister fallback after FocusScope
  * unmount, focusin handlers, etc.) and using

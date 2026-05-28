@@ -387,8 +387,8 @@ describe("readTideRecentProjects", () => {
 });
 
 // PUT behavior for `putTideRecentProjects` is covered by T-TIDE-07 in
-// tide-card.test.tsx (which asserts the bind effect fires it with the
+// dev-card.test.tsx (which asserts the bind effect fires it with the
 // right payload). Duplicating it here would require an unmocked
-// `fetch`, but tide-card.test.tsx process-globally replaces the
-// exported `putTideRecentProjects` with a recorder to keep tide-card's
+// `fetch`, but dev-card.test.tsx process-globally replaces the
+// exported `putTideRecentProjects` with a recorder to keep dev-card's
 // bind effect from racing with other test files' fetch stubs.

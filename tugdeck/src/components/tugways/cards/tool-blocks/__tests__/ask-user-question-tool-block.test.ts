@@ -33,8 +33,8 @@ import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
   resolveToolBlock,
-} from "../../tide-assistant-renderer-dispatch";
-import type { ParsedQuestion } from "@/components/tugways/chrome/tide-question-dialog";
+} from "../../dev-assistant-renderer-dispatch";
+import type { ParsedQuestion } from "@/components/tugways/chrome/dev-question-dialog";
 
 function q(question: string, multiSelect: boolean, labels: string[]): ParsedQuestion {
   return {

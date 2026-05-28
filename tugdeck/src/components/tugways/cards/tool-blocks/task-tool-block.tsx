@@ -35,7 +35,7 @@
  *     plain-text `tool_result.output`; the body is dropped.
  *   - `status === "ready"` → steady-state render.
  *
- * Registration: `tide-assistant-renderer-dispatch.ts` imports this
+ * Registration: `dev-assistant-renderer-dispatch.ts` imports this
  * module and calls `registerToolBlock("agent", TaskToolBlock)` from
  * its own bottom-of-file initialization — the historical `task` name
  * resolves here via the `task → agent` alias ([D16]).

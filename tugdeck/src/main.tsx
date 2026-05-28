@@ -12,8 +12,8 @@ import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { cardServicesStore } from "./lib/card-services-store";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
-import { restoreTideSessions } from "./lib/tide-session-restore";
-import { attachTideSessionLedgerStore } from "./lib/tide-session-ledger-store";
+import { restoreTideSessions } from "./lib/dev-session-restore";
+import { attachTideSessionLedgerStore } from "./lib/dev-session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import {
@@ -30,10 +30,10 @@ import {
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerGitCard } from "./components/tugways/cards/git-card";
-import { registerTideCard } from "./components/tugways/cards/tide-card";
+import { registerTideCard } from "./components/tugways/cards/dev-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
-import { installTidePlacementGlobal } from "./components/tugways/cards/tide-card-placement-experiment";
+import { installTidePlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
@@ -308,7 +308,7 @@ if (!container) {
   // Reconnect path: every WebSocket recovery from a close re-runs the
   // restore loop so cards rebind without a page reload after a tugcast
   // restart. The order — clearAll, then re-restore — is per [D04] in
-  // roadmap/tugplan-tide-connection-health.md: bindings the client
+  // roadmap/tugplan-dev-connection-health.md: bindings the client
   // still holds against a now-dead server are worse than no bindings,
   // because they would route frames the new server is not emitting.
   //

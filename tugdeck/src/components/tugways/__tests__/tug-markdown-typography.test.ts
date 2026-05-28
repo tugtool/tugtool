@@ -12,7 +12,7 @@
  * What this test does NOT do:
  *  - Compute styles. CSS variables resolve to text-only assertions
  *    (does the var reference exist in the rule body) handled in
- *    `tide-md-token-coverage.test.ts`.
+ *    `dev-md-token-coverage.test.ts`.
  *  - Render via React. The pipeline is pure, so a parser-only test
  *    is enough; the React mount path is covered separately by
  *    `tug-markdown-block.test.tsx`.

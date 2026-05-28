@@ -30,7 +30,7 @@ export interface SendActionEvent {
    * entry so the transcript chip renderer can walk `text` looking
    * for `U+FFFC` and read the corresponding atom for chip placement.
    *
-   * Per [Step 5c](../../../roadmap/tide-atoms.md#step-5c).
+   * Per [Step 5c](../../../roadmap/dev-atoms.md#step-5c).
    */
   text: string;
   /**
@@ -48,8 +48,8 @@ export interface SendActionEvent {
    * forwarded verbatim on the `user_message` IPC frame; the reducer
    * just hands it to the `send-frame` effect.
    *
-   * Per [Step 5c](../../../roadmap/tide-atoms.md#step-5c) and
-   * [Spec S03](../../../roadmap/tide-atoms.md#s03-build-wire-payload).
+   * Per [Step 5c](../../../roadmap/dev-atoms.md#step-5c) and
+   * [Spec S03](../../../roadmap/dev-atoms.md#s03-build-wire-payload).
    */
   content: ContentBlock[];
   /**
@@ -412,7 +412,7 @@ export interface WireErrorEvent {
  * banner surfaces the message. Self-clears on the next successful
  * turn commit.
  *
- * Per [Table T01](../../../roadmap/tide-atoms.md#t01-failure-modes).
+ * Per [Table T01](../../../roadmap/dev-atoms.md#t01-failure-modes).
  */
 export interface AttachmentRejectedEvent {
   type: "attachment_rejected";
@@ -546,7 +546,7 @@ export interface ResumeFailedEvent {
  * reducer drops it in any other phase so a stray frame on a live
  * session can't corrupt `pendingTurn`.
  *
- * See `roadmap/tugplan-tide-session-wake.md` [D14] (activeMsgId
+ * See `roadmap/tugplan-dev-session-wake.md` [D14] (activeMsgId
  * tracking), [D15] (add_<kind> naming), and `#spec-wire-frames` for
  * the canonical wire-shape definition.
  */
@@ -606,7 +606,7 @@ export interface AddUserMessageEvent {
  * claude actively polling rather than going idle, so there is no
  * wake to bracket.
  *
- * See `roadmap/tugplan-tide-session-wake.md` [D01], [D02] for the
+ * See `roadmap/tugplan-dev-session-wake.md` [D01], [D02] for the
  * bracket pattern and detection rationale.
  */
 export interface WakeStartedEvent {

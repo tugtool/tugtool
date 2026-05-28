@@ -1,5 +1,5 @@
 /**
- * `atom-bytes-store` — per-tide-card side-table of base64 bytes for
+ * `atom-bytes-store` — per-dev-card side-table of base64 bytes for
  * inline image atoms (drop / paste).
  *
  * ## What lives here, and why a separate store
@@ -20,7 +20,7 @@
  *
  * ## Lifetimes
  *
- * One instance per `CodeSessionStore` (per-tide-card scope). The
+ * One instance per `CodeSessionStore` (per-dev-card scope). The
  * store is created in the `CodeSessionStore` constructor and disposed
  * when the store is disposed. Entries live from `put()` until
  * `delete()` or store disposal; state preservation (`snapshot()` →
@@ -64,10 +64,10 @@
  *    state survives cold boot / pane restore / HMR.
  *
  * References:
- *  - [Spec S02] AtomBytesStore interface — `roadmap/tide-atoms.md#s02-atom-bytes-store`
- *  - [D03] per-card bytes-store keyed by UUID — `roadmap/tide-atoms.md#d03-atom-bytes-store`
- *  - [D04] no raw bytes on the React snapshot — `roadmap/tide-atoms.md#d04-no-bytes-on-snapshot`
- *  - [Table T02] persistence tiers — `roadmap/tide-atoms.md#t02-persistence-tiers`
+ *  - [Spec S02] AtomBytesStore interface — `roadmap/dev-atoms.md#s02-atom-bytes-store`
+ *  - [D03] per-card bytes-store keyed by UUID — `roadmap/dev-atoms.md#d03-atom-bytes-store`
+ *  - [D04] no raw bytes on the React snapshot — `roadmap/dev-atoms.md#d04-no-bytes-on-snapshot`
+ *  - [Table T02] persistence tiers — `roadmap/dev-atoms.md#t02-persistence-tiers`
  */
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ export interface AtomBytesEntry {
    * as fully populated and does not re-bake — this preserves the
    * drop-time bake across the submit boundary.
    *
-   * Per [Step 5c](roadmap/tide-atoms.md#step-5c) and the
+   * Per [Step 5c](roadmap/dev-atoms.md#step-5c) and the
    * thumbnail-at-synthesis design.
    */
   thumbnailDataUrl?: string;

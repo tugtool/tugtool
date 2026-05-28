@@ -32,7 +32,7 @@
  *
  * ## Coverage
  *
- * `gallery-prompt-entry` (TugPromptEntry wrapper, what tide-card
+ * `gallery-prompt-entry` (TugPromptEntry wrapper, what dev-card
  * uses internally). Runs the fresh-card inactive-at-mount →
  * tab-activate path with no bag seeding. The legacy
  * `gallery-prompt-input` was retired.
@@ -134,7 +134,7 @@ async function runFreshCardActivation(app: App, componentId: string): Promise<vo
 }
 
 describe.skipIf(!SHOULD_RUN)("at0033-em: fresh EM card inactive-at-mount activates via dispatch-activated (registry-tag path)", () => {
-  test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): focus lands on contenteditable, not toolbar button", async () => {
+  test("gallery-prompt-entry (TugPromptEntry, dev-card's editor): focus lands on contenteditable, not toolbar button", async () => {
     const app = await launchTugApp({ testName: "at0033-em-fresh-entry" });
     try {
       await runFreshCardActivation(app, "gallery-prompt-entry");

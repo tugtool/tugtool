@@ -285,7 +285,7 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
  * added to cycle pairing) cannot recur — adding a new opener kind is
  * a one-line addition (mint a new prefix), not a structural change.
  *
- * See `roadmap/tugplan-tide-session-wake.md` [D13] (replay direct
+ * See `roadmap/tugplan-dev-session-wake.md` [D13] (replay direct
  * emission), [D14] (activeMsgId tracking), and `#spec-translate-context`
  * for the normative state-rules table.
  */
@@ -477,7 +477,7 @@ function emitOrphanIfOpen(
  * Match Claude Code's `<task-notification>` envelope — the synthetic
  * `user` JSONL entry the runtime injects when a between-turn Monitor /
  * Bash-runbg / Task-runbg notification (Cohort A wake source per
- * `roadmap/tugplan-tide-session-wake.md` [Q01]) closes a wait. The
+ * `roadmap/tugplan-dev-session-wake.md` [Q01]) closes a wait. The
  * envelope shape, from a captured Monitor wake:
  *
  *     <task-notification>
@@ -893,7 +893,7 @@ function handleUserEntry(
   // Submitted content blocks for the `add_user_message` frame —
   // preserves interleaving (text / image / text / image …) verbatim
   // from JSONL, which is Anthropic's canonical storage format. Per
-  // [Step 5c](roadmap/tide-atoms.md#step-5c).
+  // [Step 5c](roadmap/dev-atoms.md#step-5c).
   const submittedContent: ContentBlock[] = [];
   const textParts: string[] = [];
   let hasImage = false;

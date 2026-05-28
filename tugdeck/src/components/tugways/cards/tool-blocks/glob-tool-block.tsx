@@ -29,7 +29,7 @@
  *     plain-text `tool_result.output`; the body is dropped.
  *   - `status === "ready"` → steady-state render.
  *
- * Registration: `tide-assistant-renderer-dispatch.ts` imports this
+ * Registration: `dev-assistant-renderer-dispatch.ts` imports this
  * module and calls `registerToolBlock("glob", GlobToolBlock)` from
  * its own bottom-of-file initialization — keeping the import graph
  * one-directional (dispatch → wrapper → chrome / body kind → types).

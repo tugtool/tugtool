@@ -631,7 +631,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   //
   // `callbacksVersion` is the bridge from a child's late registration
   // back into the restore-effect's dep set. Cards whose content factory
-  // mounts conditionally (e.g. tide-card gates on `feedsReady` — its
+  // mounts conditionally (e.g. dev-card gates on `feedsReady` — its
   // editor doesn't render until `defaultFeedIds` resolve from tugcast)
   // can have their state-preservation-callback registration arrive
   // several commits AFTER hostContentEl is non-null. Without this
@@ -1043,7 +1043,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // `data-tug-scroll-key` value but starts at scrollTop=0; if we
     // tracked settled-by-key only, the new element would be skipped
     // and the user's saved scroll would be lost the moment they
-    // saved post-rebuild (see at0065-tide-card-like-inner-scroll-
+    // saved post-rebuild (see at0065-dev-card-like-inner-scroll-
     // restore.test.ts Phase 4 for the regression).
     //
     // The matching MutationObserver below adds `attributes: true,
@@ -1180,7 +1180,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     // [D95] — content-owning cards (any card whose factory writes
     // `bag.content` via `useCardStatePreservation`) own their own DOM
     // selection AND their engine's caret. The content payload carries
-    // whatever the owner needs (for tide-card: `bag.content.selection`
+    // whatever the owner needs (for dev-card: `bag.content.selection`
     // flat offsets, and engine-driven focus via `setSelectedRange`).
     // CardHost must step out of selection: a second source of truth
     // would race the owner's restore on mount and clobber it. CardHost
@@ -1340,7 +1340,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   const feedData = useCardFeedStore(hostStackId, feedIds);
   // Test-mode override: bypass the feed-data gate so cards whose
   // `defaultFeedIds` would otherwise wait on a live tugcast/tugcode
-  // backend (notably tide-card, which gates on `[CODE_INPUT,
+  // backend (notably dev-card, which gates on `[CODE_INPUT,
   // CODE_OUTPUT, SESSION_METADATA, FILETREE]`) can mount in the
   // in-app harness. Tests don't drive the AI side of those cards;
   // they exercise focus, selection, persistence, and other

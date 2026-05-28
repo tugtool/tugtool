@@ -1,7 +1,7 @@
 /**
  * `lifecycle-state` — the Tide card lifecycle state machine.
  *
- * `deriveLifecycleSnapshot` encodes the tide-card lifecycle
+ * `deriveLifecycleSnapshot` encodes the dev-card lifecycle
  * state-to-zone coordination matrix as one pure projection: it reads the
  * matrix-relevant signals off the `CodeSessionStore` snapshot and
  * returns the matrix row — the `TideLifecycleState`, the active
@@ -32,7 +32,7 @@ import type { CodeSessionPhase, TransportState } from "./types";
 // ---------------------------------------------------------------------------
 
 /**
- * The ten lifecycle states of the tide-card lifecycle matrix. Eight map 1:1
+ * The ten lifecycle states of the dev-card lifecycle matrix. Eight map 1:1
  * onto a `CodeSessionPhase`; two are projections with no raw phase of
  * their own — INTERRUPTING (an interrupt round-trip is in flight) and
  * COMPLETE (`idle` once at least one turn has committed).
@@ -116,7 +116,7 @@ export interface LifecycleStoreSignals {
  * an active streaming turn (status indicator success+pulse, submit
  * button is Stop). Slice 2 may introduce a `waking` matrix state
  * with trigger-aware chrome (see [Q02] in
- * `roadmap/tugplan-tide-session-wake.md`); until then, sharing the
+ * `roadmap/tugplan-dev-session-wake.md`); until then, sharing the
  * streaming row gives wakes the right visual treatment without a
  * matrix-wide audit.
  */

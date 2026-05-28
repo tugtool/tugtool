@@ -210,7 +210,7 @@ export function usePaneFocusController(
       // responder chain in sync with that focus.
       //
       // The selector keys on the canvas overlay's `data-slot` —
-      // NOT on `data-tug-focus="refuse"`. Per `tugplan-tide-overlay-
+      // NOT on `data-tug-focus="refuse"`. Per `tugplan-dev-overlay-
       // framework.md` [D01] (#mental-model), the two concerns are
       // disambiguated: focus-refuse is button-class chain-promotion
       // / browser-focus-prevention; the canvas-overlay short-circuit

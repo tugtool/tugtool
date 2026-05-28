@@ -9,7 +9,7 @@
 //! existing code with no behavioral change for unmodified callers.
 //!
 //! The instance ID itself is `<profile>-<branch-slug>` — for
-//! example `release-main` or `debug-tide-wake-1`. Tug code
+//! example `release-main` or `debug-dev-wake-1`. Tug code
 //! does not parse the ID; downstream readers treat it as an opaque
 //! filesystem-safe token.
 //!

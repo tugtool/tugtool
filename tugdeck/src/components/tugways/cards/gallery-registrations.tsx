@@ -91,14 +91,14 @@ import { GalleryShareOnboardingGuideToolBlock } from "./gallery-share-onboarding
 import { GalleryRemoteTriggerToolBlock } from "./gallery-remote-trigger-tool-block";
 import { GalleryTaskInlineToolBlock } from "./gallery-task-inline-tool-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
-import { GalleryTideThinking } from "./gallery-tide-thinking";
+import { GalleryTideThinking } from "./gallery-dev-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
 import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
 import { GalleryToolBlockNetwork } from "./gallery-tool-block-network";
 import { GalleryToolBlockSearch } from "./gallery-tool-block-search";
 import { GalleryImageBlock } from "./gallery-image-block";
-import { GalleryTideChrome } from "./gallery-tide-chrome";
+import { GalleryTideChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
@@ -648,7 +648,7 @@ export function registerGalleryCards(): void {
   // ([#step-29]) + CautionBadge (pre-existing). One card hosts all
   // three so the per-card chrome surfaces co-locate visually.
   registerCard({
-    componentId: "gallery-tide-chrome",
+    componentId: "gallery-dev-chrome",
     contentFactory: (_cardId) => <GalleryTideChrome />,
     defaultMeta: { title: "Tide Chrome (banner / error / caution)", icon: "Layers", closable: true },
     family: "developer",
@@ -685,7 +685,7 @@ export function registerGalleryCards(): void {
 
   // TideThinkingBlock — the inline collapsible reasoning chrome.
   registerCard({
-    componentId: "gallery-tide-thinking",
+    componentId: "gallery-dev-thinking",
     contentFactory: (_cardId) => <GalleryTideThinking />,
     defaultMeta: { title: "TideThinkingBlock", icon: "Brain", closable: true },
     family: "developer",
@@ -789,7 +789,7 @@ export function registerGalleryCards(): void {
   // `onSelect` gating). Companion to `gallery-list-view` above:
   // that card exercises mutation, streaming, and windowing; this
   // one scopes to the role contract introduced by Phase 0 of
-  // `tugplan-tide-picker-redesign`.
+  // `tugplan-dev-picker-redesign`.
   registerCard({
     componentId: "gallery-list-view-headers",
     contentFactory: (_cardId) => <GalleryListViewHeaders />,
@@ -804,10 +804,10 @@ export function registerGalleryCards(): void {
   // `TugListView` carries `scrollKey="gallery-list-view-scroll"` so
   // the [A9] region-scroll axis captures the list's position into
   // `bag.regionScroll`, AND mounts in `inline` mode (every cell in
-  // the DOM, no windowing) to mirror the tide-card transcript
+  // the DOM, no windowing) to mirror the dev-card transcript
   // configuration. The region-scroll-anchor app-tests
   // (`at0059-region-scroll-anchor-save.test.ts`,
-  // `at0060-tide-card-content-settled.test.ts`,
+  // `at0060-dev-card-content-settled.test.ts`,
   // `at0061-region-scroll-anchor-apply.test.ts`) drive this card.
   registerCard({
     componentId: "gallery-list-view-scroll-keyed",

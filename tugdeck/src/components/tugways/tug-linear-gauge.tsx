@@ -9,7 +9,7 @@
  * Two density modes:
  *
  *  - `compact` (default): slim inline strip designed for chrome
- *    surfaces like the tide-card status strip (~20 px tall row,
+ *    surfaces like the dev-card status strip (~20 px tall row,
  *    bar + readout inline, optional inline label).
  *  - `detailed`: stacked face with major / minor ticks above the
  *    bar, percent + value + label centered, hi / lo labels framing

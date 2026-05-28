@@ -45,7 +45,7 @@ import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
   resolveToolBlock,
-} from "../../tide-assistant-renderer-dispatch";
+} from "../../dev-assistant-renderer-dispatch";
 
 // ---------------------------------------------------------------------------
 // Synthetic fixtures — the catalog has no Grep probe, so [#step-16]

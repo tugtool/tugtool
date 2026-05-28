@@ -34,7 +34,7 @@ export const TUG_ATOM_CHAR = "\uFFFC";
  * surface). At submit time, `buildWirePayload` consults the
  * bytes-store by id; at transcript-commit time, the same id moves
  * onto `AttachmentRecord.id` for click-to-enlarge lookup. Per
- * [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+ * [D03](roadmap/dev-atoms.md#d03-atom-bytes-store).
  */
 export interface AtomSegment {
   kind: "atom";

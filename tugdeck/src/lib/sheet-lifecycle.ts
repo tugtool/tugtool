@@ -33,7 +33,7 @@
  *                 result skip this event).
  *
  * Per-card scope. Sheets exist in the context of a card (the picker
- * is the tide-card's; the gallery sheet is the gallery card's);
+ * is the dev-card's; the gallery sheet is the gallery card's);
  * subscribers register against a `cardId` and only see that card's
  * events. A wildcard subscription (`cardId === null`) sees every
  * card's events — useful for global telemetry, not for focus work.

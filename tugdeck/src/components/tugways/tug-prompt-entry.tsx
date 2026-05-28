@@ -193,7 +193,7 @@ interface TugPromptEntryState {
    * attachment bytes (the corresponding atoms become unsubmittable
    * skeletons rather than crashes).
    *
-   * Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store) and
+   * Per [D03](roadmap/dev-atoms.md#d03-atom-bytes-store) and
    * [L23](../../tuglaws/tuglaws.md#l23).
    */
   attachmentBytes?: Record<string, { content: string; mediaType: string }>;
@@ -544,7 +544,7 @@ export interface TugPromptEntryProps {
    * route value (`❯` Code / `$` Shell — see
    * `ROUTE_ITEMS`). The entry looks up the active route and forwards
    * the match to `TugTextEditor`; routes absent from the map — or an
-   * undefined prop entirely — render no placeholder. The tide-card
+   * undefined prop entirely — render no placeholder. The dev-card
    * supplies route-specific copy; the gallery prompt-entry omits it.
    */
   placeholderByRoute?: Readonly<Record<string, string>>;
@@ -632,8 +632,8 @@ export const TugPromptEntry = React.forwardRef<
   // callback flow through to `TugTextEditor` so the drop / paste
   // extensions can populate the side-table at insert time and surface
   // downsample-rejection messages via the existing banner channel.
-  // Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store) and
-  // [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+  // Per [D03](roadmap/dev-atoms.md#d03-atom-bytes-store) and
+  // [Table T01](roadmap/dev-atoms.md#t01-failure-modes).
   const attachmentBytesStore = useMemo(
     () => codeSessionStore.getAtomBytesStore(),
     [codeSessionStore],
@@ -893,7 +893,7 @@ export const TugPromptEntry = React.forwardRef<
     // silently — confusing UX. Surface a banner via the existing
     // attachment-error channel and bail; the user retries once the
     // pulsing pending chips settle. Per
-    // [D02](roadmap/tide-atoms.md#d02-image-attach-text-rest)'s
+    // [D02](roadmap/dev-atoms.md#d02-image-attach-text-rest)'s
     // pending-atom contract.
     const pendingAttachmentCount = positionedAtoms.filter(
       (a) =>

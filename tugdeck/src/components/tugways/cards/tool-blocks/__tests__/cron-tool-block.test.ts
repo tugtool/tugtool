@@ -20,7 +20,7 @@ import {
   deriveCronVerb,
   narrowCronInput,
 } from "../cron-tool-block";
-import { BESPOKE_FACTORY_BY_NAME } from "../../tide-assistant-renderer-dispatch";
+import { BESPOKE_FACTORY_BY_NAME } from "../../dev-assistant-renderer-dispatch";
 
 // ---------------------------------------------------------------------------
 // narrowCronInput

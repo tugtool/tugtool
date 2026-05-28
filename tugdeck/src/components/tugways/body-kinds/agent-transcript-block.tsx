@@ -70,7 +70,7 @@ import "./agent-transcript-block.css";
 import React from "react";
 import { createPortal } from "react-dom";
 
-import { dispatchToolCallState } from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
+import { dispatchToolCallState } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import { useChromeActionsTarget } from "@/components/tugways/cards/tool-blocks/tool-block-chrome";
 import type { ChildToolCallsMap } from "@/components/tugways/cards/tool-blocks/types";
 import type { ToolUseMessage } from "@/lib/code-session-store";

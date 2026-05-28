@@ -11,15 +11,15 @@
  * One realistic EM factory:
  *
  *   - `gallery-prompt-entry` — TugPromptEntry wrapper. This is
- *      what tide-card uses internally. Bag.content shape is
+ *      what dev-card uses internally. Bag.content shape is
  *      `{ currentRoute, perRoute, maximized }`. Real-world
  *      relevance: every Tide AI session card and every full-on
- *      tide-card mounts a TugPromptEntry as its primary editor.
+ *      dev-card mounts a TugPromptEntry as its primary editor.
  *      (The legacy `gallery-prompt-input` TugPromptInput-direct
  *      surface was retired; only the wrapper remains as a gallery
  *      fixture.)
  *
- * tide-card itself is registered (`componentId: "tide"`) but
+ * dev-card itself is registered (`componentId: "tide"`) but
  * requires session-machinery setup (project-picker bind, code
  * feeds) that's outside this smoke's envelope. `gallery-prompt-entry`
  * is the practical proxy — same `TugPromptEntry`, same
@@ -153,7 +153,7 @@ async function runRoundTrip(app: App, componentId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)("m02: EM intra-pane tab switch preserves text + restores engine focus", () => {
-  test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): tab-away + tab-back round-trip", async () => {
+  test("gallery-prompt-entry (TugPromptEntry, dev-card's editor): tab-away + tab-back round-trip", async () => {
     const app = await launchTugApp({ testName: "at0002-tab-switch-em-entry" });
     try {
       await runRoundTrip(app, "gallery-prompt-entry");

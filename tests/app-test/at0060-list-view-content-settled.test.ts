@@ -119,7 +119,7 @@ describe.skipIf(!SHOULD_RUN)(
           //
           // (For a non-inline / virtualized list view this would
           // assert against only the windowed cell count; this
-          // fixture is inline, mirroring tide-card-transcript.)
+          // fixture is inline, mirroring dev-card-transcript.)
           await app.waitForCondition<boolean>(
             `(function(){
               var cells = document.querySelectorAll(${JSON.stringify(cellsSelectorFor("A"))});

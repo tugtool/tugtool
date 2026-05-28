@@ -159,7 +159,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   // Escape routes to the same chain action as ⌘. so floating UI
   // (popovers, alerts, sheets) dismisses via its existing
   // CANCEL_DIALOG handlers, AND — when nothing dialog-like is in the
-  // chain — a card-level CANCEL_DIALOG handler (e.g. tide-card.tsx's
+  // chain — a card-level CANCEL_DIALOG handler (e.g. dev-card.tsx's
   // card-content responder) can interrupt an in-flight turn. The
   // chain's "first responder up" walk gives the natural priority:
   // visible popover dismisses first, drag cancels next (via the

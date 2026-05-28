@@ -5,7 +5,7 @@
  *
  * ## Why this exists
  *
- * Step 4 of the tide-prompt-entry-zones plan moved route ownership out
+ * Step 4 of the dev-prompt-entry-zones plan moved route ownership out
  * of `TugPromptEntry`'s `useState` into a `RouteLifecycle` instance
  * ([D02]). The component now reads the route via `useSyncExternalStore`
  * and every route trigger funnels through `routeLifecycle.setRoute`.

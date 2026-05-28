@@ -1,11 +1,11 @@
 /**
- * at0086-tide-route-indicator-badge.test.ts — `TideRouteIndicatorBadge`
+ * at0086-dev-route-indicator-badge.test.ts — `TideRouteIndicatorBadge`
  * repaints when the prompt-entry route flips, and keeps its mount
  * identity across the flip ([AT0086]).
  *
  * ## Why this exists
  *
- * Step 6 of the tide-prompt-entry-zones plan made the Z4B indicator
+ * Step 6 of the dev-prompt-entry-zones plan made the Z4B indicator
  * badge route-aware (Table T01, reduced to Code / Shell after Command's
  * retirement):
  *
@@ -52,7 +52,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 const BADGE_SELECTOR =
-  '[data-card-id="A"] [data-slot="tide-route-indicator-badge"]';
+  '[data-card-id="A"] [data-slot="dev-route-indicator-badge"]';
 const SHELL_SEGMENT_SELECTOR =
   '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment:nth-of-type(2)';
 const CODE_SEGMENT_SELECTOR =
@@ -121,7 +121,7 @@ describe.skipIf(!SHOULD_RUN)(
       "Code → Shell → Code: text follows the route; badge DOM node identity is preserved",
       async () => {
         const app = await launchTugApp({
-          testName: "at0086-tide-route-indicator-badge",
+          testName: "at0086-dev-route-indicator-badge",
         });
         try {
           await app.enableDeckTrace(true);
@@ -209,7 +209,7 @@ describe.skipIf(!SHOULD_RUN)(
           const tail = app.tailLog(200);
           if (tail !== "") {
             process.stderr.write(
-              `\n[at0086-tide-route-indicator-badge] log tail:\n${tail}\n`,
+              `\n[at0086-dev-route-indicator-badge] log tail:\n${tail}\n`,
             );
           }
           throw err;

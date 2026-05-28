@@ -7,7 +7,7 @@
  * Two behaviors of the real `TugListView` + `SmartScroll` + CardHost
  * region-scroll restore, driven through `gallery-list-view-scroll-keyed`
  * (an `inline`, region-scroll-keyed, streaming-disabled fixture that
- * mirrors the tide-card transcript's configuration — the same fixture
+ * mirrors the dev-card transcript's configuration — the same fixture
  * AT0059–AT0061 / AT0069 use).
  *
  * ## An explicit `scrollToBottom()` must beat a cold-boot restore anchor
@@ -15,7 +15,7 @@
  * When a card cold-boots into a saved mid-list scroll position, the
  * restore-anchor apply effect re-applies that position on every commit
  * while `restoreAnchorRef` is set. An imperative `scrollToBottom()` —
- * the jump-to-latest the tide-card transcript host issues on submit —
+ * the jump-to-latest the dev-card transcript host issues on submit —
  * is a supersede signal: it must land at the bottom AND hold there, not
  * be pulled back to the saved anchor.
  *

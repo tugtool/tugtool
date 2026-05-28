@@ -137,7 +137,7 @@ body {
 /* `inline`-mode `TugListView`. Same specificity guard as
  * `path-list-block.css`: a nested `.tug-list-view` inside the
  * transcript would otherwise inherit the entry-sized row gap from
- * `.tide-card-transcript .tug-list-view`. The three-class form ties
+ * `.dev-card-transcript .tug-list-view`. The three-class form ties
  * specificity and source-order is no longer load-bearing. */
 .tugx-todo .tug-list-view.tugx-todo-list {
   height: auto;

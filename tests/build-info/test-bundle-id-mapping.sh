@@ -37,15 +37,15 @@ PLIST="$BUNDLE_CONTENTS/Info.plist"
 declare -a CASES=(
     "release:main:dev.tugtool.app"
     "debug:main:dev.tugtool.app.debug"
-    "debug:tide-foo:dev.tugtool.app.debug-tide-foo"
-    "release:tide-foo:dev.tugtool.app.release-tide-foo"
+    "debug:dev-foo:dev.tugtool.app.debug-dev-foo"
+    "release:dev-foo:dev.tugtool.app.release-dev-foo"
     # Branch with characters that exercise the slugifier:
     "debug:feat/foo:dev.tugtool.app.debug-feat-foo"
     "release:wip/foo bar:dev.tugtool.app.release-wip-foo-bar"
     # Detached-HEAD shape:
     "debug:detached-abcd1234:dev.tugtool.app.debug-detached-abcd1234"
     # Uppercase / mixed:
-    "debug:Tide-Wake-1:dev.tugtool.app.debug-tide-wake-1"
+    "debug:Dev-Wake-1:dev.tugtool.app.debug-dev-wake-1"
 )
 
 # Failure-only variant: a branch that slugifies to empty should be

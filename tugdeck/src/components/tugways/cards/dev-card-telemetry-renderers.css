@@ -1,0 +1,453 @@
+/**
+ * dev-card-telemetry-renderers.css — placement-agnostic styling for
+ * the dev-card telemetry renderers (window utilization, cumulative
+ * tokens, per-turn duration, etc.).
+ *
+ * The renderers compose primitives (TugArcGauge today; potentially
+ * TugLinearGauge or TugBadge in future) and need a small set of
+ * cascade-scoped overrides that adjust the primitive's appearance
+ * for this consumer per [D12]. Crucially, the overrides are keyed
+ * on a renderer-owned class (e.g. `.dev-telemetry-window-utilization`)
+ * NOT on a placement-zone selector — so the renderer reads the
+ * same regardless of which slot (Z1 / Z2 / Z3 / Z4) it lands in
+ * during the placement-experiment study.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] component-authoring file pair (`.tsx` + `.css`); the
+ *    renderers carry `data-slot="dev-telemetry-*"` so the markup is
+ *    self-locating in the DOM tree.
+ *  - [L20] the renderers own only their root-class scope; they
+ *    override no global tokens. The TugArcGauge / TugLinearGauge
+ *    primitives keep their own tokens; this file uses the
+ *    cascade-scoped override pattern (set `--tugx-gauge-*` inside
+ *    the renderer's root class) for adjustments that the consumer's
+ *    surface justifies.
+ *  - [L16] every color-setting rule below sets EITHER both `color` and
+ *    `background-color` OR carries an explicit `@tug-renders-on`.
+ *
+ * @module components/tugways/cards/dev-card-telemetry-renderers
+ */
+
+/* ============================================================================
+   .dev-telemetry-window-utilization — TugArcGauge variant
+   ============================================================================
+   Compact dashboard-style dial with `value / max` and a "tokens"
+   label stacked beneath. Placement-agnostic; the same rules apply
+   in every zone the placement-experiment harness might assign.
+   ========================================================================= */
+
+/* Wrapper is a single-line flex row hosting TWO items: `[value]
+   [arc]`. The primitive's compact JSX renders the SVG first and the
+   readout (containing the value span) second; placing the SVG at
+   `order: 2` flips them so the readout's value sits to the left of
+   the arc on a shared baseline.
+   Bumps `--tugx-gauge-arc-stroke-width-compact` to thicken the
+   visible ring at the small SVG size: the primitive's default 6
+   viewBox-user-unit stroke paints at ~1.7 CSS px on a 28-px SVG;
+   10 puts it around 3 CSS px — readable without crowding the
+   bottom-90° opening. */
+.dev-telemetry-window-utilization.tug-arc-gauge {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  width: auto;
+  --tugx-gauge-arc-stroke-width-compact: 10px;
+}
+
+/* SVG pinned to a compact diameter so the dial reads as
+   supplementary to the text rather than the dominant element.
+   `order: 2` places it AFTER the readout (which keeps default
+   order 0) in visual order. */
+.dev-telemetry-window-utilization .tug-arc-gauge-svg {
+  width: 28px;
+  order: 2;
+}
+
+/* The inactive track stroke uses a higher-contrast color than the
+   gauge's default field-surface, which would otherwise blend into
+   any tinted surface (the Z2 status-bar background, the Z3 / Z4
+   prompt-entry surface, etc.). The element here is the track stroke
+   itself; pairing surface depends on placement, so the annotation
+   names the most-saturated host surface the harness can land on. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-window-utilization .tug-arc-gauge-track {
+  stroke: var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* Readout adopts the surrounding chrome font (drops the primitive's
+   mono fallback). Children inherit from this rule via the DOM, so
+   the value span reads in the card font with tabular figures
+   (already set by the primitive on this same selector). The
+   column-layout `margin-top` makes no sense in our row wrapper —
+   reset it to zero so the value sits flush against the arc. */
+.dev-telemetry-window-utilization .tug-arc-gauge-readout {
+  font-family: inherit;
+  margin-top: 0;
+}
+
+/* ============================================================================
+   .dev-telemetry-status-row — Z2 combined session-status row
+   ============================================================================
+   IBM-1620-inspired instrument readout — the design selected by the
+   HMR study and polished across the status-row workshop. The row
+   carries four cells, each a two-row stack:
+
+     [label apparatus]   ← letterspaced uppercase label embedded in a
+                            hairline rule with downward endcap ticks
+     [centered value]
+
+   The STATE cell's value is the human-readable phase title, flanked
+   by two label-less state-indicator glyphs (concentric dot +
+   pulsing ring) pinned to either end of the value area. TIME /
+   TOKENS / CONTEXT carry plain labels and live figures. TASKS
+   carries a small TugProgress ring (animating when at least one
+   task is pending/in_progress; stopped — closed outlined circle —
+   when no tasks or all completed) + an `N/M` label (or "None") and
+   opens to a popover with the full assembled task list. The
+   cumulative TOTAL TIME / TOTAL TOKENS are not separate cells;
+   those sums surface inside the TIME / TOKENS popovers' summary
+   footers.
+
+   Each cell sets its own static `--tugx-dev-status-cell-width`
+   (post-[D100]; non-uniform). Both `.dev-telemetry-status-value-wrap`
+   and `.dev-telemetry-endcap-rule` read that one slot, so within
+   a cell the apparatus and value-wrap stack at the same width.
+   Cells never resize as live values tick (no jitter); the override
+   decides each cell's static size at author time. Widths are sized
+   to clear the widest realistic content of each cell — TIME /
+   TOKENS / TASKS pinch the most so the 5-cell row fits inside the
+   side-margin band the prior 4-cell row occupied.
+
+   Row layout — single 5-cell flex layout (STATE, TIME, TOKENS,
+   CONTEXT, TASKS) with `justify-content: center` and a fixed
+   inter-item `gap`. The five cells pack as one centered group; the
+   leftover row width splits into two equal flexing margins on the
+   far left and right. Every cell is a fixed-width box, so the
+   group's total width is constant and the cells never shift.
+
+   Collapse priority (least-to-most persistent) — driven by container
+   queries on the host's `container-name: dev-status`. As the host
+   narrows, cells hide whole-cell (label apparatus + value together):
+     1. time            → ~430px
+     2. tokens          → ~260px
+     3. state / context / tasks → always shown (most persistent)
+   ========================================================================= */
+
+.dev-telemetry-status-row {
+  /* Flat 5-cell flex row post-[D100]: STATE + TIME + TOKENS +
+     CONTEXT + TASKS as direct siblings. `justify-content: center`
+     packs the five cells as one centered group with a fixed
+     inter-item `gap`; the leftover row width splits into two equal
+     flexing margins on the far left and right. Every cell is a
+     fixed-width box (`--tugx-dev-status-cell-width`), so the
+     group's total width is constant and individual cells never
+     resize as live values tick — content centers within each
+     cell's slot. */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--tug-font-family-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  gap: var(--tug-space-2xl);
+  width: 100%;
+  padding-inline: var(--tug-space-2xl);
+  box-sizing: border-box;
+
+  /* Cell-width slot — read by both `.dev-telemetry-status-value-wrap`
+     and `.dev-telemetry-endcap-rule` (so apparatus and value-wrap
+     share one width). The default is a generous 21ch fallback; the
+     per-priority overrides immediately below shrink each cell to a
+     content-sized width so the 5-cell row (post-[D100], with TASKS
+     joining) fits in the side-margin band the prior 4-cell row
+     occupied — TIME / TOKENS / TASKS pinch the most because their
+     content is short; STATE and CONTEXT keep most of their room
+     because their content is wider. Within a cell the width never
+     changes as live values tick (no jitter); only the per-priority
+     override decides the cell's static size. */
+  --tugx-dev-status-cell-width: 21ch;
+}
+
+.dev-telemetry-status-cell[data-priority="state"] {
+  --tugx-dev-status-cell-width: 20ch;
+}
+.dev-telemetry-status-cell[data-priority="time"] {
+  --tugx-dev-status-cell-width: 16ch;
+}
+.dev-telemetry-status-cell[data-priority="tokens"] {
+  --tugx-dev-status-cell-width: 16ch;
+}
+.dev-telemetry-status-cell[data-priority="context"] {
+  --tugx-dev-status-cell-width: 20ch;
+}
+.dev-telemetry-status-cell[data-priority="tasks"] {
+  --tugx-dev-status-cell-width: 16ch;
+}
+
+.dev-telemetry-status-cell {
+  /* Each cell is a two-row vertical stack: label apparatus on top,
+     value centered below. `flex: 0 0 auto` keeps cells at their
+     intrinsic fixed width so the row's `justify-content: center`
+     distributes the leftover width into the row's flexing margins
+     rather than stretching individual cells. */
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.dev-telemetry-status-value-wrap {
+  /* Wrap centers its single child value within the uniform cell
+     width — so values can change character count freely and remain
+     centered on the same axis as the label above them. */
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: var(--tugx-dev-status-cell-width);
+}
+
+/* STATE value row — the phase title centered between two label-less
+   TugStateIndicator glyphs pinned to either end of the value area.
+   `space-between` pins the glyphs to the edges; with equal-width
+   glyphs the title stays centered on the cell axis as its text
+   changes width. `gap` guarantees a minimum channel so the longest
+   title never crowds a glyph. */
+.dev-telemetry-status-cell[data-priority="state"]
+  .dev-telemetry-status-value-wrap {
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+}
+
+/* Nudge the two flanking indicator glyphs a couple of px inward from
+   the value-wrap edges. A margin on the glyphs only — the value-wrap
+   keeps its `--tugx-dev-status-cell-width`, so the STATE cell stays
+   the same width as every other status cell and nothing relays out. */
+.dev-telemetry-status-cell[data-priority="state"] .tug-progress-indicator {
+  margin-inline: 2px;
+}
+
+/* TASKS value row — a single `TugProgressIndicator` (pulsing-dot
+   variant) whose `label` carries the `N/M` text (or `None`). The
+   indicator is the cell's only child and fills the uniform cell
+   width via its own flex layout. */
+.dev-telemetry-status-cell[data-priority="tasks"]
+  .dev-telemetry-status-value-wrap {
+  gap: var(--tug-space-xs);
+}
+
+/* The indicator's label inside the TASKS cell takes the same focal
+   "value" treatment as every other cell: bold, tabular-nums,
+   step-up size. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-status-cell[data-priority="tasks"]
+  .tug-progress-indicator-label-active {
+  font-size: 0.8125rem;
+  font-weight: bold;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dim the indicator + label when there are no tasks so the cell
+   reads as a quiet placeholder. */
+.dev-telemetry-status-cell[data-priority="tasks"]
+  .dev-telemetry-status-value-wrap[data-empty="true"] {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Value treatment — the row's focal data: a step up in size from the
+   row's chrome font, bold weight, strong color. `tabular-nums` so the
+   digits hold a constant column as the live values tick. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-status-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: 0.8125rem;
+  font-weight: bold;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Context value — split into colored numerator + muted denominator.
+   The numerator's color tracks the usage ratio via
+   `data-context-threshold`; the `/` and denominator stay muted so
+   the live numerator is the eye-catch. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-status-value-context {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.dev-telemetry-status-context-numerator {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.dev-telemetry-status-value-context[data-context-threshold="caution"]
+  .dev-telemetry-status-context-numerator {
+  color: var(--tug7-element-global-text-normal-caution-rest);
+}
+
+.dev-telemetry-status-value-context[data-context-threshold="danger"]
+  .dev-telemetry-status-context-numerator {
+  color: var(--tug7-element-global-text-normal-danger-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-status-context-denominator {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  opacity: 0.7;
+  /* Breathing room before the `/`. The numerator + denominator are
+     inline-flex items, so a leading space inside the denominator's
+     text collapses — the gap must be a margin, not a text space. */
+  margin-inline-start: var(--tug-space-sm);
+}
+
+/* ----------------------------------------------------------------------------
+   .dev-telemetry-status-anchor — popover-anchor affordance for the
+   four cell triggers.
+
+   Each of the four Z2 cell anchors (STATE, TIME, TOKENS, CONTEXT) is
+   wrapped by a `TugPopoverTrigger` that hangs this class on the
+   trigger span. The class only declares the hover hint (cursor +
+   tinted background); the popover itself opens via Radix on click,
+   so this stays a pure visible-affordance helper.
+
+   Negative margin offsets compensate for the padding so the row's
+   visual rhythm is unchanged when the trigger absorbs the click
+   target.
+
+   The hover state lives entirely in CSS, never through React state
+   ([L06]).
+   ------------------------------------------------------------------------- */
+
+.dev-telemetry-status-anchor {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  transition: background-color calc(120ms * var(--tug-timing, 1)) ease;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-status-anchor:hover {
+  background-color: var(--tug7-surface-highlight-primary-normal-hover-rest);
+}
+
+/* ----------------------------------------------------------------------------
+   .dev-telemetry-endcap-rule — IBM-1620 letterspaced-label-rule-with-endcaps
+
+   Structure:
+     [tick-left]  [rule-fill]  [LABEL]  [rule-fill]  [tick-right]
+
+   The two `rule-fill` spans are 1px-tall flex items that fill
+   whatever horizontal space remains after the label takes its
+   intrinsic width — splitting evenly on either side via `flex: 1`.
+
+   The two endcap ticks are absolutely positioned at the apparatus's
+   horizontal extremes, anchored vertically to the rule's center via
+   `top: 50%` (for ticks pointing down) or `bottom: 50%` (for ticks
+   pointing up). The `data-ticks` attribute on the parent flips the
+   direction; `margin-{bottom,top}` reserves visible space for the
+   tick excursion so it doesn't overlap the value cell.
+   ------------------------------------------------------------------------- */
+
+.dev-telemetry-endcap-rule {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  width: var(--tugx-dev-status-cell-width);
+  /* Tick excursion — `--tugx-dev-status-endcap-length` is the cap
+     length in px; reserving margin in the tick direction keeps the
+     tick from overlapping the adjacent value row. */
+  --tugx-dev-status-endcap-length: 5px;
+}
+
+.dev-telemetry-endcap-rule[data-ticks="down"] {
+  margin-bottom: var(--tugx-dev-status-endcap-length);
+}
+
+.dev-telemetry-endcap-rule[data-ticks="up"] {
+  margin-top: var(--tugx-dev-status-endcap-length);
+}
+
+/* The two horizontal hairline segments flanking the label.
+   Rule sets only `background-color` (no foreground); pairs to the
+   most-saturated host surface the harness can land on. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-endcap-rule-fill {
+  flex: 1;
+  height: 1px;
+  background-color: var(--tug7-element-global-border-normal-default-rest);
+  opacity: 0.55;
+}
+
+/* The letterspaced uppercase label. Keeps its own monospaced face —
+   declared explicitly here — while the rest of the row reads in the
+   sans chrome font, so the endcap apparatus stays an instrument
+   legend distinct from the values it captions. Slight downward
+   translate (~0.5px) nudges the label's optical center onto the
+   rule line. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-endcap-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0 4px;
+  transform: translateY(0.5px);
+  white-space: nowrap;
+}
+
+/* Endcap ticks — absolutely positioned 1px-wide vertical strokes at
+   each end of the apparatus. Their `top: 50%` / `bottom: 50%`
+   anchor connects them to the rule's vertical center, and `height`
+   determines how far they extend toward the value. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-telemetry-endcap-tick {
+  position: absolute;
+  width: 1px;
+  height: var(--tugx-dev-status-endcap-length);
+  background-color: var(--tug7-element-global-border-normal-default-rest);
+  opacity: 0.55;
+}
+
+.dev-telemetry-endcap-tick-left {
+  left: 0;
+}
+
+.dev-telemetry-endcap-tick-right {
+  right: 0;
+}
+
+.dev-telemetry-endcap-rule[data-ticks="down"] .dev-telemetry-endcap-tick {
+  top: 50%;
+}
+
+.dev-telemetry-endcap-rule[data-ticks="up"] .dev-telemetry-endcap-tick {
+  bottom: 50%;
+}
+
+/* Container-query collapse rules. The Z2 host (`.dev-card-status-bar`)
+   declares `container-type: inline-size` + `container-name:
+   dev-status` so these `@container` rules can target it.
+
+   As the host narrows, whole cells (label apparatus + value
+   together) hide in priority order — TIME first, then TOKENS. The
+   STATE and CONTEXT cells stay as the most-persistent pair. */
+
+@container dev-status (max-width: 430px) {
+  .dev-telemetry-status-cell[data-priority="time"] {
+    display: none;
+  }
+}
+
+@container dev-status (max-width: 260px) {
+  .dev-telemetry-status-cell[data-priority="tokens"] {
+    display: none;
+  }
+}

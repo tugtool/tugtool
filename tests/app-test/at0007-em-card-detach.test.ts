@@ -9,7 +9,7 @@
  * the drag-start save) and dispatches via
  * `invokeActivationCallback(cardId, "transfer-after-move")`.
  *
- * Coverage: `gallery-prompt-entry` (TugPromptEntry, what tide-card
+ * Coverage: `gallery-prompt-entry` (TugPromptEntry, what dev-card
  * uses internally). The legacy `gallery-prompt-input` was retired.
  *
  * ## Focus-actually-landing assertion
@@ -125,7 +125,7 @@ async function runDetach(app: App, componentId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)("at0007-em: EM card detach to new standalone pane preserves engine state + dispatches onCardActivated", () => {
-  test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): drag A out of P1 to canvas void", async () => {
+  test("gallery-prompt-entry (TugPromptEntry, dev-card's editor): drag A out of P1 to canvas void", async () => {
     const app = await launchTugApp({ testName: "at0007-em-detach-entry" });
     try {
       await runDetach(app, "gallery-prompt-entry");

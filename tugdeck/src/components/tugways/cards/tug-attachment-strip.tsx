@@ -33,9 +33,9 @@
  *    `data-slot="tug-attachment-strip"` on the root span/div.
  *
  * References:
- *  - [Spec S06](roadmap/tide-atoms.md#s06-attachment-strip)
- *  - [Step 6](roadmap/tide-atoms.md#step-6)
- *  - [D04](roadmap/tide-atoms.md#d04-no-bytes-on-snapshot) — only the
+ *  - [Spec S06](roadmap/dev-atoms.md#s06-attachment-strip)
+ *  - [Step 6](roadmap/dev-atoms.md#step-6)
+ *  - [D04](roadmap/dev-atoms.md#d04-no-bytes-on-snapshot) — only the
  *    side-table-resident bytes-store carries thumbnails; the React
  *    snapshot stays lightweight.
  *
@@ -114,7 +114,7 @@ export interface TugAttachmentStripProps {
   /**
    * Optional click handler — v1 opens the source image in a new tab
    * by default (the consumer can override per-card to send a
-   * tide-card preview, or to surface the original bytes inline).
+   * dev-card preview, or to surface the original bytes inline).
    * Called with the atom and its position within the strip.
    */
   onAttachmentClick?: (atom: AtomSegment, index: number) => void;

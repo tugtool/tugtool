@@ -631,7 +631,7 @@ export interface ResumeFailed {
  * holds whatever synthesized opener id it minted ([D13]); that id is
  * translator-internal and never reaches the wire on this frame.
  *
- * See `roadmap/tugplan-tide-session-wake.md` [D14] (activeMsgId
+ * See `roadmap/tugplan-dev-session-wake.md` [D14] (activeMsgId
  * tracking), [D15] (add_<kind> naming), and `#spec-wire-frames` for
  * the canonical wire-shape definition.
  */
@@ -693,7 +693,7 @@ export interface AddUserMessage {
  * (`frameToEvent`) mints it on frame receipt, mirroring the
  * `add_user_message` pattern.
  *
- * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
+ * See `roadmap/tugplan-dev-session-wake.md` [D02] for the detector
  * rationale and [Q01] for the empirical capture this contract is
  * pinned against.
  */

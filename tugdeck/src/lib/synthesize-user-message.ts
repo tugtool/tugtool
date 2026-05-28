@@ -58,7 +58,7 @@
  * `#NNNN-image-N` from the transcript message number. The boundary
  * is intentional: editor = drafting surface, transcript =
  * JSONL-honest committed view (see [Step 5c — submit boundary]
- * (roadmap/tide-atoms.md#step-5c-submit-boundary)).
+ * (roadmap/dev-atoms.md#step-5c-submit-boundary)).
  *
  * Laws:
  *  - [L02] external state — the bytes-store mutation is documented
@@ -67,8 +67,8 @@
  *  - [L19] file structure / docstring discipline.
  *
  * References:
- *  - [Step 5c](roadmap/tide-atoms.md#step-5c)
- *  - [Spec S03](roadmap/tide-atoms.md#s03-build-wire-payload) (revised)
+ *  - [Step 5c](roadmap/dev-atoms.md#step-5c)
+ *  - [Spec S03](roadmap/dev-atoms.md#s03-build-wire-payload) (revised)
  */
 
 import type { ContentBlock } from "@/protocol";

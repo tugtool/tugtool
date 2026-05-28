@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from "bun:test";
 
-import { RestorePassGate } from "@/lib/tide-session-restore";
+import { RestorePassGate } from "@/lib/dev-session-restore";
 
 describe("RestorePassGate", () => {
   it("starts unsettled", () => {

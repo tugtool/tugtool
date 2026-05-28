@@ -688,14 +688,15 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D02], [D07]
 
 **Tasks:**
-- [ ] For each file in the inventory list, `git mv tide-X.tsx dev-X.tsx`. Use `git mv` (not `mv` + `git add`) to preserve rename detection.
-- [ ] Update all import paths across the tree: `from "./tide-card-transcript"` → `from "./dev-card-transcript"`. Use a global find-and-replace tool (ripgrep + sed, or VS Code's multi-file rename); inspect every match.
-- [ ] Update CSS `@import` paths and any dynamic `import()` strings.
+- [x] For each file in the inventory list, `git mv tide-X.tsx dev-X.tsx`. *66 file renames (40 in cards/ + lib/ + tugdeck/src/__tests__/ from the initial list, plus 25 in chrome/ + cards/__tests__/ + tugways/__tests__/ surfaced during the second sweep, plus 1 doc.).*
+- [x] Update all import paths across the tree. *252 files swept via `git grep -l 'tide-[a-z]' | while read f; do sed -i '' 's/tide-/dev-/g' "$f"; done` restricted to tugdeck/src tugapp/Sources tugcode/src tugrust/crates tests. After sweep: 0 remaining `tide-[a-z]` refs in active source.*
+- [x] Update CSS `@import` paths and any dynamic `import()` strings. *Covered by the same sed pass.*
+- [x] Fix one fixture inconsistency in `tests/build-info/test-bundle-id-mapping.sh`: the `Tide-Wake-1` mixed-case input renamed to `Dev-Wake-1` to match its expected slug output.
 
 **Checkpoint:**
-- [ ] `bun x tsc --noEmit` clean — no broken imports.
-- [ ] `bun test` green.
-- [ ] `bun run build` (Vite static build for tugdeck) succeeds.
+- [x] `bun x tsc --noEmit` clean — no broken imports.
+- [x] `bun test` green. *3039 tests pass, 0 fail.*
+- [ ] `bun run build` (Vite static build for tugdeck) succeeds. *Deferred to Step 12 (HMR is always running per project convention; the dev server picks up changes on save).*
 
 ---
 

@@ -2,7 +2,7 @@
  * Shared types for the Tide assistant-rendering tool-block layer.
  *
  * These contracts are consumed by:
- *   - `tide-assistant-renderer-dispatch.ts` — the registry + dispatch logic
+ *   - `dev-assistant-renderer-dispatch.ts` — the registry + dispatch logic
  *   - every per-tool block in `./tool-blocks/*.tsx`
  *   - every body-kind primitive under `../body-kinds/*.tsx`
  *

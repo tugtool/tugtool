@@ -2,7 +2,7 @@
  * gallery-tug-arc-gauge.tsx — `TugArcGauge` demo tab for the
  * Component Gallery.
  *
- * Four sections — see [#step-20-2](roadmap/tide-assistant-rendering.md#step-20-2):
+ * Four sections — see [#step-20-2](roadmap/dev-assistant-rendering.md#step-20-2):
  *
  *   1. Interactive sandbox — slider for `value`, numeric inputs for
  *      `min` / `max`, toggles for `density`, `fillRole`, label,

@@ -21,7 +21,7 @@ const args = [
 
 const proc = spawn("claude", args, {
   stdio: ["pipe", "pipe", "inherit"],
-  cwd: "/tmp/tide-cohort-sweep",
+  cwd: "/tmp/dev-cohort-sweep",
 });
 
 const captureLines = [];
@@ -52,7 +52,7 @@ proc.stdout.on("data", (chunk) => {
 
 proc.on("exit", (code) => {
   writeFileSync(
-    "/tmp/tide-cohort-sweep/capture-sw-streamio.jsonl",
+    "/tmp/dev-cohort-sweep/capture-sw-streamio.jsonl",
     captureLines.join("\n") + "\n",
   );
   console.error(`[probe] claude exited code=${code} lines=${captureLines.length}`);

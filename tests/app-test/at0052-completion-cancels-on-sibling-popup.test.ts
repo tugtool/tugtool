@@ -2,7 +2,7 @@
  * at0052-completion-cancels-on-sibling-popup.test.ts —
  * The image-5 bug-reproducer.
  *
- * Per `tugplan-tide-popup-bindings.md` Step 4 / [D05] / (#companion-binding).
+ * Per `tugplan-dev-popup-bindings.md` Step 4 / [D05] / (#companion-binding).
  * Original report: in a gallery-text-editor card, opening `@`/`/`
  * completion and then clicking the font-family `TugPopupButton`
  * (a sibling of the editor inside the card's toolbar) left the

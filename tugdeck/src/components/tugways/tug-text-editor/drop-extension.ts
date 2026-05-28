@@ -468,7 +468,7 @@ const tugDropCaretTheme = EditorView.baseTheme({
  * the `attachment_rejected` banner. The discriminated shape lets us
  * tailor copy per failure mode; the resulting messages match the
  * surface entries in [Table T01]
- * (`roadmap/tide-atoms.md#t01-failure-modes`).
+ * (`roadmap/dev-atoms.md#t01-failure-modes`).
  *
  * Exported for the paste handler (in `clipboard-filters.ts`) which
  * uses the same convention.
@@ -673,7 +673,7 @@ async function runAttachmentJob(
       // Carry the downsample pipeline's already-baked thumbnail
       // through to the bytes-store so the post-submit synthesizer
       // sees a fully-populated entry and doesn't re-bake. Per
-      // [Step 5c](roadmap/tide-atoms.md#step-5c) — Step 6's strip
+      // [Step 5c](roadmap/dev-atoms.md#step-5c) — Step 6's strip
       // renderer reads `thumbnailDataUrl` unconditionally.
       thumbnailDataUrl: outcome.result.thumbnailDataUrl,
     });
@@ -744,7 +744,7 @@ function setDropActive(host: HTMLElement | null, state: DropActiveState): void {
  * extension-based file→atom conversion.
  *
  * `getBytesStore` and `onAttachmentError` are the bytes-store-aware
- * additions (Step 2 of `roadmap/tide-atoms.md`). When `getBytesStore`
+ * additions (Step 2 of `roadmap/dev-atoms.md`). When `getBytesStore`
  * returns a live `AtomBytesStore`, the drop pipeline runs through
  * the async `processAttachmentFiles` path: image-extension files are
  * downsampled, given a stable UUID, and stashed in the store; the

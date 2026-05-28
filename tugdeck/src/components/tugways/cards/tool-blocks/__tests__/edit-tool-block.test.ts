@@ -37,7 +37,7 @@ import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
   resolveToolBlock,
-} from "../../tide-assistant-renderer-dispatch";
+} from "../../dev-assistant-renderer-dispatch";
 
 // ---------------------------------------------------------------------------
 // narrowEditInput

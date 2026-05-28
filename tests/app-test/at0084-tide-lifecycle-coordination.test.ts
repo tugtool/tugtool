@@ -1,8 +1,8 @@
 /**
- * at0084-tide-lifecycle-coordination.test.ts — end-to-end verification
- * of the tide-card lifecycle state-to-zone coordination matrix.
+ * at0084-dev-lifecycle-coordination.test.ts — end-to-end verification
+ * of the dev-card lifecycle state-to-zone coordination matrix.
  *
- * The capstone of the tide-card lifecycle-coordination work. The
+ * The capstone of the dev-card lifecycle-coordination work. The
  * lifecycle matrix says what each zone (Z1 transcript trailing, Z2
  * status row, Z5 submit button) paints in each lifecycle state; the
  * pure projection (`deriveLifecycleSnapshot`) is unit-tested
@@ -192,7 +192,7 @@ function stateCellLabel(app: App, cardId: CardId): Promise<string | null> {
   return app.evalJS<string | null>(
     `(function(){
       var cell = document.querySelector(
-        '[data-card-id="${cardId}"] [data-priority="state"] .tide-telemetry-status-value');
+        '[data-card-id="${cardId}"] [data-priority="state"] .dev-telemetry-status-value');
       return cell ? cell.textContent : null;
     })()`,
   );
@@ -202,7 +202,7 @@ function stateCellLabel(app: App, cardId: CardId): Promise<string | null> {
 function ghostRowCount(app: App, cardId: CardId): Promise<number> {
   return app.evalJS<number>(
     `document.querySelectorAll(
-      '[data-card-id="${cardId}"] [data-slot="tide-transcript-ghost-row"]').length`,
+      '[data-card-id="${cardId}"] [data-slot="dev-transcript-ghost-row"]').length`,
   );
 }
 
@@ -210,7 +210,7 @@ function ghostRowCount(app: App, cardId: CardId): Promise<number> {
 function ghostRowTexts(app: App, cardId: CardId): Promise<string[]> {
   return app.evalJS<string[]>(
     `Array.from(document.querySelectorAll(
-      '[data-card-id="${cardId}"] [data-slot="tide-transcript-ghost-row"] .tide-card-transcript-user-body'
+      '[data-card-id="${cardId}"] [data-slot="dev-transcript-ghost-row"] .dev-card-transcript-user-body'
     )).map(function (el) { return el.textContent; })`,
   );
 }
@@ -223,7 +223,7 @@ async function waitForGhostRowCount(
 ): Promise<void> {
   await app.waitForCondition<boolean>(
     `document.querySelectorAll(
-      '[data-card-id="${cardId}"] [data-slot="tide-transcript-ghost-row"]').length === ${n}`,
+      '[data-card-id="${cardId}"] [data-slot="dev-transcript-ghost-row"]').length === ${n}`,
     { timeoutMs: 5000 },
   );
 }
@@ -232,7 +232,7 @@ async function waitForGhostRowCount(
 function committedUserRowCount(app: App, cardId: CardId): Promise<number> {
   return app.evalJS<number>(
     `document.querySelectorAll(
-      '[data-card-id="${cardId}"] [data-testid="tide-card-transcript-user-body"]').length`,
+      '[data-card-id="${cardId}"] [data-testid="dev-card-transcript-user-body"]').length`,
   );
 }
 
@@ -270,7 +270,7 @@ async function mountAllCards(app: App): Promise<void> {
   for (const id of CARD_IDS) {
     await app.waitForCondition<boolean>(
       `document.querySelector(
-        '[data-card-id="${id}"] [data-slot="tide-telemetry-status-row"]') !== null`,
+        '[data-card-id="${id}"] [data-slot="dev-telemetry-status-row"]') !== null`,
       { timeoutMs: 8000 },
     );
   }
@@ -281,13 +281,13 @@ async function mountAllCards(app: App): Promise<void> {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0084: tide-card lifecycle state-to-zone matrix",
+  "AT0084: dev-card lifecycle state-to-zone matrix",
   () => {
     test(
       "every matrix row and cancellation gesture paints the zones the matrix specifies",
       async () => {
         const app = await launchTugApp({
-          testName: "at0084-tide-lifecycle-coordination",
+          testName: "at0084-dev-lifecycle-coordination",
         });
         try {
           await mountAllCards(app);
@@ -331,7 +331,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(function(){
               var c = document.querySelector(
-                '[data-card-id="A"] [data-priority="state"] .tide-telemetry-status-value');
+                '[data-card-id="A"] [data-priority="state"] .dev-telemetry-status-value');
               return c !== null && c.textContent === "Working";
             })()`,
             { timeoutMs: 5000 },
@@ -409,7 +409,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // C1 — the ghost row's ✕ un-sends that one queued message.
           await app.click(
-            '[data-card-id="C"] [data-slot="tide-transcript-ghost-row"] ' +
+            '[data-card-id="C"] [data-slot="dev-transcript-ghost-row"] ' +
               '[data-slot="tug-icon-button"]',
           );
           await waitForGhostRowCount(app, "C", 0);
@@ -427,7 +427,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(function(){
               var c = document.querySelector(
-                '[data-card-id="D"] [data-priority="state"] .tide-telemetry-status-value');
+                '[data-card-id="D"] [data-priority="state"] .dev-telemetry-status-value');
               return c !== null && c.textContent === "Error";
             })()`,
             { timeoutMs: 5000 },

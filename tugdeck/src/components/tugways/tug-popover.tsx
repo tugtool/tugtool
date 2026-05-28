@@ -554,8 +554,8 @@ export interface TugPopoverAnchorProps {
  *    instance serve N anchor targets by swapping the ref's `current`.
  *    This is the shape `TugConfirmPopover`'s controlled-mode API uses
  *    to point at whichever in-list row owns the current confirmation
- *    request — see [tugplan-tide-picker-redesign §D14](
- *    ../../roadmap/tugplan-tide-picker-redesign.md#d14-no-per-cell-popovers).
+ *    request — see [tugplan-dev-picker-redesign §D14](
+ *    ../../roadmap/tugplan-dev-picker-redesign.md#d14-no-per-cell-popovers).
  *
  * Why this exists: composing `Popover.Trigger` onto an element that
  * already participates in pointerdown / pointerup / click event

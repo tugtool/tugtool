@@ -7,8 +7,8 @@
  *   - **Header:** file icon + tool name "Read" + an atom-chip
  *     showing the path's basename, built via the shared
  *     `<TugAtomChip>` primitive (per
- *     [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
- *     [Step 7](roadmap/tide-atoms.md#step-7)). Hovering shows the
+ *     [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
+ *     [Step 7](roadmap/dev-atoms.md#step-7)). Hovering shows the
  *     full path via the chip's `<title>` tooltip. When
  *     `input.offset` / `input.limit` set, an inline line-range
  *     badge surfaces the window the model asked for.
@@ -43,7 +43,7 @@
  *
  * Registration:
  *
- *   `tide-assistant-renderer-dispatch.ts` imports this module and
+ *   `dev-assistant-renderer-dispatch.ts` imports this module and
  *   calls `registerToolBlock("read", ReadToolBlock)` from its own
  *   bottom-of-file initialization. Routing the registration through
  *   dispatch (rather than self-registering) preserves the

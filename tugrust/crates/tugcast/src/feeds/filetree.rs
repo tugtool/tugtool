@@ -56,7 +56,7 @@ pub struct FileTreeFeed {
     /// `new` from the workspace root; rebuilt whenever a
     /// `.tugattachignore` event arrives in the watcher batch (analogous
     /// to the existing `.gitignore` re-walk). Per
-    /// `roadmap/tide-atoms.md#step-4` and [D06].
+    /// `roadmap/dev-atoms.md#step-4` and [D06].
     secret_filter: SecretFilter,
     /// Shared FILETREE-response broadcast channel. Every workspace's
     /// `FileTreeFeed` publishes its response frames here; the router
@@ -69,7 +69,7 @@ pub struct FileTreeFeed {
     /// `watch_tx` (the `watch_tx` argument to `run`) is still written
     /// for back-compat / test introspection, but the router no longer
     /// consumes it — see `main.rs`'s FILETREE wiring and
-    /// `roadmap/tide-atoms.md#step-pre-4`.
+    /// `roadmap/dev-atoms.md#step-pre-4`.
     ft_response_tx: broadcast::Sender<Frame>,
 }
 
@@ -196,7 +196,7 @@ impl FileTreeFeed {
     /// Check if an FsEvent touches the workspace-root `.tugattachignore`.
     /// Per [D06], only the root-level file is honored (no nested
     /// support); a nested path like `subdir/.tugattachignore` is
-    /// ignored. Per Step 4 in `roadmap/tide-atoms.md`.
+    /// ignored. Per Step 4 in `roadmap/dev-atoms.md`.
     fn is_tugattachignore_change(event: &FsEvent) -> bool {
         let path = match event {
             FsEvent::Created { path } | FsEvent::Modified { path } | FsEvent::Removed { path } => {
@@ -322,7 +322,7 @@ impl FileTreeFeed {
                         // against the bare filename so a secret file
                         // in `~/projects/other-repo/.env` doesn't leak
                         // into completion. Per Step 4 in
-                        // `roadmap/tide-atoms.md`.
+                        // `roadmap/dev-atoms.md`.
                         if self.secret_filter.is_secret(name) {
                             continue;
                         }
@@ -546,7 +546,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Secret-file filtering (Step 4: roadmap/tide-atoms.md#step-4)
+    // Secret-file filtering (Step 4: roadmap/dev-atoms.md#step-4)
     // -----------------------------------------------------------------------
 
     /// Construct a feed rooted at `workspace_root` with `initial_files`

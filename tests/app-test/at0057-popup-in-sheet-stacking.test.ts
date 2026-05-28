@@ -2,7 +2,7 @@
  * at0057-popup-in-sheet-stacking.test.ts —
  * [D09] popup-in-sheet z-tier elevation visual gate.
  *
- * Per `tugplan-tide-popup-bindings.md` Step 5 / [D09] / [Q01]: when a
+ * Per `tugplan-dev-popup-bindings.md` Step 5 / [D09] / [Q01]: when a
  * popup-class primitive (TugPopupMenu, TugPopover, TugContextMenu)
  * opens from a control inside a sheet, the popup's z-index MUST be
  * elevated above the sheet's z-index. Both share the canvas overlay

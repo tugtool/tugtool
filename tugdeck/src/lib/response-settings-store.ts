@@ -6,7 +6,7 @@
  *
  *   - `entryMargin` (px): inter-entry vertical gap, written through to
  *     `--tugx-list-view-row-gap` via the cascade variable
- *     `--tugx-tide-entry-margin`.
+ *     `--tugx-dev-entry-margin`.
  *
  * Magnification was previously a second field here; it was retired
  * when the magnification control moved to the macOS app's View menu.
@@ -140,6 +140,6 @@ export class ResponseSettingsStore {
     const el = this._targetEl;
     if (!el) return;
     const s = this._settings;
-    el.style.setProperty("--tugx-tide-entry-margin", `${s.entryMargin}px`);
+    el.style.setProperty("--tugx-dev-entry-margin", `${s.entryMargin}px`);
   }
 }

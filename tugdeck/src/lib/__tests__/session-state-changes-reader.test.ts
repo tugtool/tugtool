@@ -13,7 +13,7 @@ import {
   _resetTideSessionLedgerEventsForTest,
   publishListSessionStateChangesErr,
   publishListSessionStateChangesOk,
-} from "@/lib/tide-session-ledger-events";
+} from "@/lib/dev-session-ledger-events";
 import { loadSessionStateChanges } from "@/lib/session-state-changes-reader";
 import {
   CONTROL_ACTION_LIST_SESSION_STATE_CHANGES,

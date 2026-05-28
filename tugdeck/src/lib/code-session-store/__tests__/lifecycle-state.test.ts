@@ -1,5 +1,5 @@
 /**
- * Pure-logic tests for `lifecycle-state.ts` — the tide-card
+ * Pure-logic tests for `lifecycle-state.ts` — the dev-card
  * lifecycle state-to-zone matrix encoded as `deriveLifecycleSnapshot`.
  *
  * Coverage:

@@ -134,7 +134,7 @@ export function resolveDefaultFocusTarget(cardRoot: HTMLElement): {
  * the window-focus reactivation path, where the focus call is a
  * synchronous re-claim against an element the browser has already
  * focused, and any scroll-into-view would visibly move the
- * surrounding card content (e.g. dragging a tide-card transcript
+ * surrounding card content (e.g. dragging a dev-card transcript
  * down to keep the editor in view).
  */
 export function traceApplyDefaultFocus(

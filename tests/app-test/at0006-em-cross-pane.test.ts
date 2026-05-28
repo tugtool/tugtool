@@ -12,7 +12,7 @@
  * registered `onCardActivated` focuses the engine root.
  *
  * Coverage: `gallery-prompt-entry` (TugPromptEntry, what
- * tide-card uses internally). Runs the full P1→P2 drag round-trip.
+ * dev-card uses internally). Runs the full P1→P2 drag round-trip.
  * The legacy `gallery-prompt-input` TugPromptInput-direct surface
  * was retired.
  *
@@ -148,7 +148,7 @@ async function runCrossPaneDrag(app: App, componentId: string): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)("at0006-em: EM cross-pane drag preserves engine state + restores focus", () => {
-  test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): drag A from P1 to P2's tab bar", async () => {
+  test("gallery-prompt-entry (TugPromptEntry, dev-card's editor): drag A from P1 to P2's tab bar", async () => {
     const app = await launchTugApp({ testName: "at0006-em-cross-pane-entry" });
     try {
       await runCrossPaneDrag(app, "gallery-prompt-entry");

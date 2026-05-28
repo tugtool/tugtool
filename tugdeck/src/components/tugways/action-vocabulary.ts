@@ -355,8 +355,8 @@ export const TUG_ACTIONS = {
   //                         sender — auto-derived stable id from the
   //                         emitting `TugIconButton`; rarely matters
   //                         because the `sessionId` payload disambiguates.
-  //                         See [tugplan-tide-picker-redesign §D14](
-  //                         ../../../roadmap/tugplan-tide-picker-redesign.md#d14-no-per-cell-popovers).
+  //                         See [tugplan-dev-picker-redesign §D14](
+  //                         ../../../roadmap/tugplan-dev-picker-redesign.md#d14-no-per-cell-popovers).
   REQUEST_TRASH_SESSION: "request-trash-session",
 
   // ---- Meta ----

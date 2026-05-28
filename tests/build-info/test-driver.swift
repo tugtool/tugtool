@@ -6,7 +6,7 @@
 let cases: [(input: String, expected: String)] = [
     // The three examples called out in the plan task list.
     ("feat/foo",      "feat-foo"),
-    ("Tide-1",        "tide-1"),
+    ("Tide-1",        "dev-1"),
     ("wip/foo bar",   "wip-foo-bar"),
 
     // Identity cases — values already valid as slugs.
@@ -21,7 +21,7 @@ let cases: [(input: String, expected: String)] = [
     ("a/b/c",         "a-b-c"),
 
     // Mixed-case and digits.
-    ("Tide-Wake-1",   "tide-wake-1"),
+    ("Tide-Wake-1",   "dev-wake-1"),
     ("ABC123",        "abc123"),
 
     // Whitespace becomes a separator.

@@ -111,7 +111,7 @@ body {
  * doesn't. Without an offset, the SVG visually renders 1–2 px ABOVE
  * the header text's top. Pushing the SVG down by ~0.125em (one
  * eighth of the icon's em-sized box) brings their visual tops into
- * line at the nominal `1em` icon size used inside `tide-card-
+ * line at the nominal `1em` icon size used inside `dev-card-
  * transcript`. */
 .tug-transcript-entry__icon > svg {
   margin-block-start: 0.125em;

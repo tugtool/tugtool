@@ -1,0 +1,457 @@
+/**
+ * dev-card-telemetry-popovers.css — styling for the four Z2
+ * status-row popovers (indicator / TIME / TOKENS / CONTEXT).
+ *
+ * The popovers share a frame + row vocabulary:
+ *
+ *   PerAreaPopoverFrame
+ *     ├─ title (centered uppercase)
+ *     ├─ rule (1px)
+ *     └─ body slot
+ *           ├─ TidePopoverRowGrid (Time / Tokens) — subgrid 3-col
+ *           │   ├─ scroller (rows; subgrid)
+ *           │   ├─ divider
+ *           │   └─ summary rows (subgrid)
+ *           ├─ ContextBreakdownBody (Context) — gauge + legend grid
+ *           └─ state-log scroller (state changes) — 5-col grid
+ *
+ * `data-popover-kind` on the frame root selects width/padding
+ * variants for the three popover families (default narrow row-log,
+ * wider Context, taller state-change log).
+ *
+ * Tuglaw cross-check:
+ *  - [L06] every visible state lives on CSS class / data-attribute
+ *    selectors. The popovers carry no inline style for appearance.
+ *  - [L19] file pair with the popover module; every primitive
+ *    carries `data-slot="dev-popover-*"`.
+ *  - [L20] consumers only — popovers use existing component-tier
+ *    primitives (TugBadge / TugArcGauge) and `--tug-space-*` +
+ *    `--tug7-*` tokens. No new slot family declared here.
+ *
+ * @module components/tugways/cards/dev-card-telemetry-popovers
+ */
+
+/* ============================================================================
+   Shared frame
+   ========================================================================= */
+
+.dev-popover-frame {
+  padding: var(--tug-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--tug-font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+}
+
+.dev-popover-frame[data-popover-kind="default"] {
+  /* Sized for the four-column per-turn row — entry-number pair,
+     request preview (capped at 24 chars), end-state badge, and a
+     non-wrapping value. The narrower cap squeezed the value's `auto`
+     track until "0h 0m 02s" wrapped to three lines; this range lets
+     the row breathe and the popover sizes to content within it. */
+  min-width: 380px;
+  max-width: 560px;
+}
+
+.dev-popover-frame[data-popover-kind="context"] {
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.dev-popover-frame[data-popover-kind="state-log"] {
+  min-width: 380px;
+  max-width: 520px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-frame-title {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.625rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-frame-rule {
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+/* ============================================================================
+   Empty body
+   ========================================================================= */
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-empty {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-style: italic;
+  padding-block: 4px;
+}
+
+/* ============================================================================
+   Shared row-grid (Time / Tokens)
+   ============================================================================
+   One outer grid spans both the scrolling row list AND the summary
+   footer; both use `subgrid` to inherit columns from the outer
+   grid. The three columns (label / annotation / value) therefore
+   size to the widest content across EVERY row in the popover —
+   row-list edges and summary edges align end-to-end.
+
+   The scroller wrapper caps the row-list height at the shared
+   10-row visible height; the summary rows below the divider are
+   always visible.
+   ========================================================================= */
+
+.dev-popover-row-grid {
+  /* Right-edge gutter shared by the scroller AND the summary footer.
+     It does double duty: keeps the value column clear of the
+     scrollbar thumb, and — because both blocks inset by the SAME
+     amount — keeps their subgrid tracks column-aligned across the
+     divider. Padding only on the scroller (the old approach) shifted
+     the scroller's subgrid left of the summary's. */
+  --dev-popover-scroll-gutter: 12px;
+  display: grid;
+  /* label · preview · annotation · value — see PopoverRow's
+     four-column contract. The value column flexes; the rest size to
+     their widest content across every row (scroller + summary). */
+  grid-template-columns: max-content max-content max-content auto;
+  row-gap: 0;
+}
+
+.dev-popover-row-grid-scroller {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  /* Shared 10-row visible cap × ~22px per row at this font size. */
+  max-height: calc(10 * 22px);
+  overflow-y: auto;
+  padding-right: var(--dev-popover-scroll-gutter);
+}
+
+/* Summary footer — the same subgrid + right gutter as the scroller,
+   so the label / annotation / value column edges line up vertically
+   across the divider. The summary rows are NOT inside the scroller
+   (they must stay always-visible), so they need their own matching
+   gutter; without it the scroller's tracks drift left of these. */
+.dev-popover-row-grid-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  padding-right: var(--dev-popover-scroll-gutter);
+}
+
+.dev-popover-row-grid-empty {
+  grid-column: 1 / -1;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-row-grid-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-block: 6px;
+  /* Match the row blocks' right inset so the rule ends flush with the
+     value column rather than overhanging into the scrollbar gutter. */
+  margin-inline-end: var(--dev-popover-scroll-gutter);
+}
+
+/* Each row is a subgrid spanning the three columns; the grid cells
+   below pick up the parent's tracks via `grid-template-columns:
+   subgrid`. */
+.dev-popover-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  column-gap: var(--tug-space-md);
+  padding-block: 2px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-row-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-row-annotation {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-weight: 400;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-row-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: 600;
+  text-align: right;
+  /* A value like "0h 0m 02s" carries spaces — it must read as one
+     unit, never broken across lines when the column is tight. */
+  white-space: nowrap;
+}
+
+/* The `#N · #N+1` entry-number pair occupying a per-turn row's label
+   cell — two click targets plus a muted separator dot. */
+.dev-popover-turn-pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-turn-pair-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Turn-number entry rendered as a click target — scrolls the
+   transcript to that entry's row. Reset to inherit the row-label's
+   muted mono treatment, but carry a faint underline AT REST so every
+   number reads as clickable (not just the hovered one); hover / focus
+   brightens both the text and the underline. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-popover-row-turn {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  vertical-align: baseline;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--tug7-element-global-text-normal-muted-rest);
+  text-underline-offset: 2px;
+  transition:
+    color 80ms ease,
+    text-decoration-color 80ms ease;
+}
+
+.dev-popover-row-turn:hover,
+.dev-popover-row-turn:focus-visible {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-decoration-color: currentColor;
+}
+
+.dev-popover-row-turn:focus-visible {
+  outline: none;
+}
+
+/* Request-string preview cell — holds the end-truncated TugLabel.
+   `min-width: 0` lets the cell shrink below its content's intrinsic
+   width; the label text is pre-truncated in JS so the column sizes
+   to the widest preview via the grid's `max-content` track. */
+.dev-popover-row-preview {
+  min-width: 0;
+}
+
+/* The preview TugLabel — match the popover's mono row rhythm rather
+   than the label primitive's default size token ([L20] cascade-
+   scoped override; the `muted` color + `mono` props carry the rest). */
+.dev-popover-row .dev-popover-row-request {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* ============================================================================
+   Context popover body
+   ========================================================================= */
+
+.dev-context-popover-body {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--tug-space-lg);
+}
+
+.dev-context-popover-gauge {
+  width: 180px;
+  flex: 0 0 auto;
+}
+
+.dev-context-popover-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  column-gap: var(--tug-space-md);
+  row-gap: 4px;
+  align-items: baseline;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Drop the legend down so its first row sits at the gauge's
+     tick-mark band rather than at the gauge's tip; the summary
+     rows then extend below the gauge's bottom edge, balancing
+     the popover visually. */
+  padding-top: 18px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-context-popover-legend-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  display: flex;
+  align-items: center;
+}
+
+.dev-context-popover-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  flex: 0 0 auto;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-context-popover-legend-percent {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-context-popover-legend-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-context-popover-grid-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-block: 4px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-context-popover-summary-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-context-popover-summary-percent {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-context-popover-summary-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}
+
+/* ============================================================================
+   State-change log popover
+   ========================================================================= */
+
+.dev-state-log-scroller {
+  /* Tighter rows than the row-list popovers (no per-row badges or
+     borders); cap at the same 10 visible entries via the row's
+     ~18px extent. */
+  max-height: calc(10 * 18px);
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+.dev-state-log-grid {
+  display: grid;
+  grid-template-columns:
+    max-content max-content max-content max-content max-content;
+  column-gap: var(--tug-space-xl);
+  row-gap: 4px;
+  align-items: center;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-state-log-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-state-log-time {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-state-log-phase {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-state-log-transport {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-state-log-interrupt {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ============================================================================
+   Tasks popover
+   ============================================================================
+   The popover renders the task list as a flex column of
+   `TugProgressIndicator` rows (`variant="pulsing-dot"`,
+   `glyphPosition="left"`), then frames it with a footer carrying the
+   count summary + Copy. The rows sit on the popover surface directly
+   — no extra inner frame, no body-kind chrome to suppress — matching
+   the visual rhythm of Time / Tokens / Context.
+   ========================================================================= */
+
+.dev-popover-frame:has(.dev-tasks-popover-body) {
+  min-width: 340px;
+  max-width: 520px;
+}
+
+.dev-tasks-popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-block: var(--tug-space-xs);
+}
+
+/* Per-row padding so the indicator/label don't hug the popover edges. */
+.dev-tasks-popover-row {
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+}
+
+/* Completed rows: strikethrough the label so the "done" reading is
+   reinforced beyond the success-colored dot. The strikethrough is a
+   presentation-only cue on the row's label slot; the indicator's own
+   appearance is owned by the component via its `state` prop. */
+.dev-tasks-popover-row[data-status="completed"]
+  .tug-progress-indicator-label-active {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-tasks-popover-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  padding-block-start: var(--tug-space-sm);
+  /* Side margins inset the pending label + Copy button from the
+     popover frame's edges. The leading inset is larger because the
+     trailing item (Copy) is a ghost button — its hover/active
+     background extends outward into its own padding, so a flush-
+     right placement reads visually balanced even with a smaller
+     trailing inset. The leading pending label has no such padding
+     and needs the extra room to avoid hugging the popover edge. */
+  padding-inline-start: var(--tug-space-md);
+  padding-inline-end: var(--tug-space-xs);
+  margin-block-start: var(--tug-space-xs);
+  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.dev-tasks-popover-pending {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.6875rem;
+}

@@ -638,7 +638,7 @@ export class DeckManager implements IDeckManagerStore {
     const paneId = crypto.randomUUID();
     const sizePolicy = getSizePolicy(componentId);
     // Clamp preferred width AND height to 90% of the live canvas so
-    // registrations with large preferred sizes (e.g. tide-card at
+    // registrations with large preferred sizes (e.g. dev-card at
     // 900x1200) open at a sensible ceiling on small canvases instead
     // of pushing past the viewport. Each dimension is also floored at
     // the policy `min` so a tiny canvas never produces a sub-minimum

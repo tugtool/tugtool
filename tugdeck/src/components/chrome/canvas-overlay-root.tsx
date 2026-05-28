@@ -40,7 +40,7 @@
  *
  * ## Focus-discipline disambiguation
  *
- * Per `tugplan-tide-overlay-framework.md` [D01] (#mental-model), this
+ * Per `tugplan-dev-overlay-framework.md` [D01] (#mental-model), this
  * root no longer carries `data-tug-focus="refuse"`. Pane-focus-
  * controller's "skip clicks inside the canvas overlay" check keys on
  * `data-slot="tug-canvas-overlay-root"` (the slot above) directly,
@@ -71,7 +71,7 @@
  *            live in `lib/` (substrates consume the hook).
  *
  * Framework decisions:
- *   - `tugplan-tide-overlay-framework.md` [D01] — focus-discipline
+ *   - `tugplan-dev-overlay-framework.md` [D01] — focus-discipline
  *     attribute disambiguation; pane-focus-controller selector decoupled
  *     from `data-tug-focus="refuse"`.
  *
@@ -129,7 +129,7 @@ export function CanvasOverlayRoot(_props: CanvasOverlayRootProps): React.ReactEl
   //
   // The pane-focus-controller's "skip canvas-overlay click" check
   // keys on `data-slot="tug-canvas-overlay-root"` (the slot below) —
-  // not on a focus-discipline marker. Per `tugplan-tide-overlay-
+  // not on a focus-discipline marker. Per `tugplan-dev-overlay-
   // framework.md` [D01] (#mental-model), focus-discipline attributes
   // (`data-tug-focus="refuse"`) are scoped to button-class chain-
   // promotion / browser-focus-prevention semantics, decoupled from

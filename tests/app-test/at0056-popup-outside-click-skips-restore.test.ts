@@ -2,7 +2,7 @@
  * at0056-popup-outside-click-skips-restore.test.ts —
  * Service-binding external-click predicate.
  *
- * Per `tugplan-tide-popup-bindings.md` Step 5 / [D07] / [Q02]:
+ * Per `tugplan-dev-popup-bindings.md` Step 5 / [D07] / [Q02]:
  * the service binding's restore predicate must SKIP when the user
  * clicked outside any popup before the close cascade fired. Always-
  * restore would overwrite the user's chosen click target with the

@@ -11,7 +11,7 @@
  * [D01] Plain TypeScript class outside React state
  * [D05] Two-level action validation (canHandle + validateAction)
  *
- * ## INVARIANTS (per `tugplan-tide-overlay-framework.md` [D04])
+ * ## INVARIANTS (per `tugplan-dev-overlay-framework.md` [D04])
  *
  * Six contracts the chain guarantees. Each is asserted by a test in
  * `tugdeck/src/__tests__/responder-chain-invariants.test.ts`. Reviewers
@@ -32,7 +32,7 @@
  *   I3. `sendToTarget(id, ...)` walks `parentId` from `id`, regardless
  *       of `firstResponderId` state. Never a no-op because the first
  *       responder is unexpected. (This is the contract that fixed the
- *       Step 3 cancel-cascade bug — see `tugplan-tide-overlay-framework.md`
+ *       Step 3 cancel-cascade bug — see `tugplan-dev-overlay-framework.md`
  *       (#sheet-cascade-rationale).)
  *
  *   I4. `findResponderForTarget(node)` walks DOM `parentElement` from
@@ -59,7 +59,7 @@
  * The mental model the framework operates within — five subsystems
  * (portals, responder chain, focus events, pane focus controller, focus-
  * discipline markers) and their interactions — is documented in
- * `tugplan-tide-overlay-framework.md` (#mental-model). Read it before
+ * `tugplan-dev-overlay-framework.md` (#mental-model). Read it before
  * proposing chain-touching changes.
  */
 
@@ -222,7 +222,7 @@ export interface ResponderNode<Extra extends string = never> {
    * tabbable descendant. Generic responders (text inputs, buttons,
    * generic containers) omit the callback and the DOM walk Just Works.
    *
-   * Per `tugplan-tide-popup-bindings.md` [D03] (#focus-contract). The
+   * Per `tugplan-dev-popup-bindings.md` [D03] (#focus-contract). The
    * callback is captured at registration; like `canHandle` /
    * `validateAction` / `kind`, it is a structural property of the
    * responder's identity. Changing it mid-life would require
@@ -509,7 +509,7 @@ export class ResponderChainManager {
    * needs the keyboard caret to land on the newly-promoted responder
    * (cross-card activation via Cmd-tab).
    *
-   * Algorithm per `tugplan-tide-popup-bindings.md` [D04] (#focus-contract):
+   * Algorithm per `tugplan-dev-popup-bindings.md` [D04] (#focus-contract):
    *
    *   1. If `id` is not registered → no-op (and dev-mode warn). Tolerant
    *      of races where the captured target was unregistered between

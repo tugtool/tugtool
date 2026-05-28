@@ -25,7 +25,7 @@
  *      space; assert activeElement is the contenteditable.
  *
  * Runs against `gallery-prompt-entry` (TugPromptEntry, what
- * tide-card uses internally — the only remaining gallery fixture
+ * dev-card uses internally — the only remaining gallery fixture
  * since the legacy `TugPromptInput`-direct surface was retired).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.

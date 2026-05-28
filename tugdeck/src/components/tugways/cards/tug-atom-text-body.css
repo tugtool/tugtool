@@ -58,6 +58,6 @@
 
 /* Chip rendering rules live in `lib/tug-atom-chip.css` (shared with
    the assistant-side tool-block path chips per
-   [D08](roadmap/tide-atoms.md#d08-tool-block-only)). The line-height
+   [D08](roadmap/dev-atoms.md#d08-tool-block-only)). The line-height
    floor above and the chip's `vertical-align: middle` together keep
    atoms from growing the line — see the file docstring above. */

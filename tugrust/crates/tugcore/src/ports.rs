@@ -129,7 +129,7 @@ mod tests {
         for id in [
             "release-main",
             "debug-main",
-            "debug-tide-wake-1",
+            "debug-dev-wake-1",
             "release-detached-deadbeef",
         ] {
             let p = derive_port(id, 55300, 100);

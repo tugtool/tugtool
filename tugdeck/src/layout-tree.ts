@@ -115,7 +115,7 @@ export interface FormControlSnapshot {
  * it as transparent storage; regions encode their own semantics.
  *
  * Motivating use case: variable-height virtualized lists (e.g.
- * `TugListView` driving the tide-card transcript) cannot rely on raw
+ * `TugListView` driving the dev-card transcript) cannot rely on raw
  * `{x, y}` alone because cell heights drift between save and restore
  * — markdown content arrives, tool blocks settle, file viewers
  * measure their substrates — and the saved pixel `y` no longer maps

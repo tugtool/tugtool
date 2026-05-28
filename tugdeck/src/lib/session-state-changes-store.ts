@@ -84,7 +84,7 @@ export class SessionStateChangesStore {
    *
    * Referentially stable per `tugSessionId` until a new row appends
    * or the load settles — same `useSyncExternalStore` contract the
-   * rest of tide-session-* stores follow.
+   * rest of dev-session-* stores follow.
    */
   getSnapshot = (tugSessionId: string): SessionStateChangesSnapshot => {
     const cached = this.snapshots.get(tugSessionId);

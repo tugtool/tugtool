@@ -25,7 +25,7 @@ import {
 import {
   subscribeToListSessionStateChangesErr,
   subscribeToListSessionStateChangesOk,
-} from "@/lib/tide-session-ledger-events";
+} from "@/lib/dev-session-ledger-events";
 import type {
   CodeSessionPhase,
   TransportState,

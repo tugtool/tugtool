@@ -80,7 +80,7 @@ const CANONICAL_PERMISSION_DENY_MESSAGE =
  * iterator hasn't finished by this point, the replay aborts with
  * `replay_complete { error: { kind: "replay_timeout" } }` and live
  * forwarding resumes. Matches the wall-clock budget called out in
- * `roadmap/tugplan-tide-transcript-resume.md` (D10).
+ * `roadmap/tugplan-dev-transcript-resume.md` (D10).
  */
 export const REPLAY_HARD_TIMEOUT_MS = 10_000;
 
@@ -177,11 +177,11 @@ export type JsonlReadResult =
 /**
  * One row of the `turns` submission journal read by tugcode through
  * the cross-process bun:sqlite handle. Mirrors the Rust `JournalRow`
- * shape (mid-turn-replay [Step 5.2](roadmap/tugplan-tide-mid-turn-replay.md#step-5-2)).
+ * shape (mid-turn-replay [Step 5.2](roadmap/tugplan-dev-mid-turn-replay.md#step-5-2)).
  * Tugcode never writes to this table; tugcast's `dispatch_one`
- * intercept owns inserts ([Step 4.3](roadmap/tugplan-tide-mid-turn-replay.md#step-4-3))
+ * intercept owns inserts ([Step 4.3](roadmap/tugplan-dev-mid-turn-replay.md#step-4-3))
  * and the merger's `apply_outbound_turn_intercept` owns FIFO deletes
- * ([Step 5.3](roadmap/tugplan-tide-mid-turn-replay.md#step-5-3)).
+ * ([Step 5.3](roadmap/tugplan-dev-mid-turn-replay.md#step-5-3)).
  */
 interface JournalRow {
   journal_id: string;
@@ -194,7 +194,7 @@ interface JournalRow {
 /**
  * Build a multiset (text → count) of user-message texts seen in the
  * JSONL bytes. Used by [`runReplay`]'s pending-row injection
- * (mid-turn-replay [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6))
+ * (mid-turn-replay [Step 5.6](roadmap/tugplan-dev-mid-turn-replay.md#step-5-6))
  * to decide which journal rows still need a synthetic
  * `add_user_message` emit (i.e., the rows whose `user_text` does
  * NOT appear as a `user_message` line in JSONL — claude has not yet
@@ -544,7 +544,7 @@ export interface ResultMetadata {
  *     wrapper mints it on receipt, mirroring the existing
  *     add_user_message pattern.
  *
- * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
+ * See `roadmap/tugplan-dev-session-wake.md` [D02] for the detector
  * rationale and [Q01] for the empirical wire shape this contract is
  * pinned against.
  */
@@ -1399,7 +1399,7 @@ export class ActiveTurn {
    * `handleUserMessage` from the inbound `UserMessage`. Source-of-truth
    * for the in-flight turn's synthetic `add_user_message` payload
    * during `runReplay` (mid-turn replay re-emits exactly these
-   * blocks). Per [Step 5c](roadmap/tide-atoms.md#step-5c).
+   * blocks). Per [Step 5c](roadmap/dev-atoms.md#step-5c).
    *
    * Replaces the prior `userText` + `userAttachments` pair — the
    * inbound wire shape is now Anthropic-API content blocks directly,
@@ -1777,7 +1777,7 @@ export class SessionManager {
    *      this flag so the next `system/task_notification` re-opens a
    *      fresh bracket.
    *
-   * See `roadmap/tugplan-tide-session-wake.md` [D02] for the detector
+   * See `roadmap/tugplan-dev-session-wake.md` [D02] for the detector
    * design and [Q01] for the empirical wire shape that justifies
    * `handleInterTurnEvent` (not `routeTopLevelEvent`) as the detector
    * site — `task_notification` arrives strictly between turns.
@@ -2169,7 +2169,7 @@ export class SessionManager {
    * R0d originally introduced a 30s spawn-watchdog timer on top of
    * the watcher to catch a "claude is hung silently — running but
    * unresponsive" failure mode. That timer was removed in
-   * [Step R1d](roadmap/tugplan-tide-transcript-resume.md#step-r1d):
+   * [Step R1d](roadmap/tugplan-dev-transcript-resume.md#step-r1d):
    * the proxy it used (`claudeReceivedInput`) only flips on user
    * input, so its actual semantic was "user idle for 30s," not
    * "claude is hung." Smoke B exposed this — Developer>Reload doesn't
@@ -2426,7 +2426,7 @@ export class SessionManager {
    * wire timing as the pre-collapse startup-replay path.
    *
    * The legacy direct invocation from `main.ts` and `initialize()`
-   * was removed in [Step R4](roadmap/tugplan-tide-transcript-resume.md#step-r4)
+   * was removed in [Step R4](roadmap/tugplan-dev-transcript-resume.md#step-r4)
    * to eliminate dual replay-trigger paths. The `replayActive`
    * re-entrancy guard remains as defense-in-depth: a future caller
    * that reintroduces overlap is dropped at the entry rather than
@@ -2470,7 +2470,7 @@ export class SessionManager {
     // request_replay against the same session — sent from tugdeck on
     // `Developer > Reload` / HMR / card remount — needs the JSONL pass to
     // rehydrate the freshly-mounted CodeSessionStore. The mid-turn-replay
-    // [Step 5](roadmap/tugplan-tide-mid-turn-replay.md#step-5) close-out
+    // [Step 5](roadmap/tugplan-dev-mid-turn-replay.md#step-5) close-out
     // smoke surfaced this: open new card, type "hello", get response,
     // Developer > Reload → empty window because both tugdeck's
     // `binding.sessionMode === "resume"` gate (also dropped) and this
@@ -2611,10 +2611,10 @@ export class SessionManager {
     // translator emits `replay_started` → committed-turn frames →
     // `replay_complete`, raced against the exit + timeout promises.
     // The trailing in-flight turn's predicate is the
-    // [Step 5.5](roadmap/tugplan-tide-mid-turn-replay.md#step-5-5)
+    // [Step 5.5](roadmap/tugplan-dev-mid-turn-replay.md#step-5-5)
     // territory; this substep restores the pre-Step-4 translator-driven
     // shape unchanged. The journal-driven pending-row injection lands
-    // in [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6),
+    // in [Step 5.6](roadmap/tugplan-dev-mid-turn-replay.md#step-5-6),
     // wrapping this path with a pre-pass over `sessions.db`.
     let count = 0;
     let lastProgressPosted = 0;
@@ -2842,7 +2842,7 @@ export class SessionManager {
    * "no pending rows to surface" so a sqlite hiccup doesn't block
    * the user-visible JSONL replay.
    *
-   * Mid-turn-replay [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6).
+   * Mid-turn-replay [Step 5.6](roadmap/tugplan-dev-mid-turn-replay.md#step-5-6).
    */
   private readPendingTurnsForSession(): JournalRow[] {
     if (this.sessionsDb === null) return [];
@@ -2885,7 +2885,7 @@ export class SessionManager {
 
   /**
    * Pre-translator pass for the never-drop guarantee
-   * (mid-turn-replay [Step 5.6](roadmap/tugplan-tide-mid-turn-replay.md#step-5-6)
+   * (mid-turn-replay [Step 5.6](roadmap/tugplan-dev-mid-turn-replay.md#step-5-6)
    * — the load-bearing implementation of [DM08]).
    *
    * For each pending journal row whose `user_text` does not appear as
@@ -3111,7 +3111,7 @@ export class SessionManager {
       // frame on the wire; the tugdeck reducer's commit path maps
       // `waking → idle` on the `turn_complete` that this `result`
       // produces). See `handleTaskNotification` for the bracket-open
-      // side and `roadmap/tugplan-tide-session-wake.md` [D02].
+      // side and `roadmap/tugplan-dev-session-wake.md` [D02].
       if (turn.gotResult) {
         this.activeTurn = null;
         if (this.isInWake) {
@@ -3969,7 +3969,7 @@ export class SessionManager {
 
     // Forward the inbound content blocks directly to claude. The
     // wire shape IS the Anthropic API shape post-Step-5c; no
-    // construction step. Per [Step 5c](roadmap/tide-atoms.md#step-5c).
+    // construction step. Per [Step 5c](roadmap/dev-atoms.md#step-5c).
     const contentBlocks = msg.content;
 
     const userInput = JSON.stringify({

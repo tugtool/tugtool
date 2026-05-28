@@ -1,0 +1,30 @@
+/**
+ * dev-card-z1c.css — TideZ1C in-flight indicator visual chrome.
+ *
+ * Per [D19] / `#spec-z1c`, TideZ1C is rendered inside
+ * `TugTranscriptEntry`'s `inflightFooter` slot — the slot owns the
+ * row-level layout (left edge, top margin, gap with neighbouring
+ * footer chrome), so this file carries only the indicator's own
+ * fine-grained visual nudges, if any. Today the indicator renders
+ * with `TugThinkingIndicator`'s default token family and needs no
+ * overrides — the file exists for symmetry with the rest of the
+ * dev-card chrome (every component has a paired CSS file per
+ * [L19]) and as the hook for any future tweaks scoped to the
+ * `data-slot="dev-z1c"` selector.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] file pair with `dev-card-z1c.tsx`; `data-slot` on the
+ *    indicator anchors any future rules.
+ *  - [L20] no `--tug7-*` redefinitions; no neighbour-component
+ *    token namespace touched.
+ *
+ * @module components/tugways/cards/dev-card-z1c
+ */
+
+/* Z1C indicator nudge — push 2 × `--tug-space-xs` (8 px) right so
+ * the thinking bars don't sit flush against the body-column edge
+ * underneath the identifier line. Twice the standard inline spacing
+ * unit reads as a deliberate gutter without losing alignment. */
+[data-slot="dev-z1c"] {
+  margin-left: var(--tug-space-xs);
+}

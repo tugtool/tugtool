@@ -6,8 +6,8 @@
  *
  *   - **Header:** file-pen icon + tool name + an atom-chip showing
  *     the file's basename (via the shared `<TugAtomChip>` primitive,
- *     per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
- *     [Step 7](roadmap/tide-atoms.md#step-7)) + an inline `+N −M`
+ *     per [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
+ *     [Step 7](roadmap/dev-atoms.md#step-7)) + an inline `+N −M`
  *     change-count badge computed from the diff. `MultiEdit` resolves
  *     to this wrapper through the `multiedit → edit` alias ([D16]);
  *     the header shows whatever name the wire carried, so a MultiEdit
@@ -52,7 +52,7 @@
  *
  * Registration:
  *
- *   `tide-assistant-renderer-dispatch.ts` imports this module and calls
+ *   `dev-assistant-renderer-dispatch.ts` imports this module and calls
  *   `registerToolBlock("edit", EditToolBlock)` from its own
  *   bottom-of-file initialization — the `multiedit` alias resolves
  *   there too. Routing registration through dispatch (rather than

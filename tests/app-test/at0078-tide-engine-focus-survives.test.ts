@@ -1,5 +1,5 @@
 /**
- * at0078-tide-engine-focus-survives.test.ts — tide-card engine focus
+ * at0078-dev-engine-focus-survives.test.ts — dev-card engine focus
  * survives the app-resign / app-become-active round-trip
  * (cmd-tab away + back) [AT0078].
  *
@@ -14,7 +14,7 @@
  * invoking the registered engine hook. AT0078 is the regression
  * gate that proves removing the macrotask delegate + the
  * autonomous onCardActivated did NOT break engine focus on real
- * tide-card when the user genuinely had engine focus at save
+ * dev-card when the user genuinely had engine focus at save
  * time.
  *
  * ## Shape
@@ -29,7 +29,7 @@
  *      → `applyBagFocus` → engine resolution → engine hook
  *      invocation → `paintMirrorAsActive(undefined)` →
  *      `view.focus()` lands on the contenteditable.
- *   6. Assert `document.activeElement` is the tide-card's
+ *   6. Assert `document.activeElement` is the dev-card's
  *      contenteditable.
  *
  * ## Why this is the engine-path regression gate
@@ -53,11 +53,11 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
 const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
-describe.skipIf(!SHOULD_RUN)("AT0078: tide-card engine focus survives app-switch", () => {
+describe.skipIf(!SHOULD_RUN)("AT0078: dev-card engine focus survives app-switch", () => {
   test(
-    "cmd-tab away + back preserves focus on the tide-card contenteditable",
+    "cmd-tab away + back preserves focus on the dev-card contenteditable",
     async () => {
-      const app = await launchTugApp({ testName: "at0078-tide-engine-focus" });
+      const app = await launchTugApp({ testName: "at0078-dev-engine-focus" });
       try {
         await app.enableDeckTrace(true);
 
@@ -128,7 +128,7 @@ describe.skipIf(!SHOULD_RUN)("AT0078: tide-card engine focus survives app-switch
 
         await app.simulateAppBecomeActive();
 
-        // Focus lands back on the tide-card contenteditable via the
+        // Focus lands back on the dev-card contenteditable via the
         // framework's `applyBagFocus` → engine hook path.
         await app.waitForCondition<boolean>(
           `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(PROMPT_INPUT_SELECTOR)}) && document.activeElement.closest('[data-card-id="A"]') !== null`,

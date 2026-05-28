@@ -691,7 +691,7 @@ export async function awaitEngineReady(
 }
 
 /**
- * Bind a fake session for a tide-card so its content factory skips
+ * Bind a fake session for a dev-card so its content factory skips
  * past the project-picker UI and renders TideCardBody directly.
  *
  * Production binds via a `spawn_session_ok` CONTROL ack from a live

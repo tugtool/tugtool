@@ -41,7 +41,7 @@ import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
   resolveToolBlock,
-} from "../../tide-assistant-renderer-dispatch";
+} from "../../dev-assistant-renderer-dispatch";
 import { loadGoldenProbe } from "@/lib/code-session-store/testing/golden-catalog";
 
 // ---------------------------------------------------------------------------

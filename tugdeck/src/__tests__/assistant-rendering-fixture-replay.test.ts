@@ -49,7 +49,7 @@ import {
   dispatchToolCallState,
   registerToolBlock,
   resolveToolBlock,
-} from "@/components/tugways/cards/tide-assistant-renderer-dispatch";
+} from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import { BashToolBlock } from "@/components/tugways/cards/tool-blocks/bash-tool-block";
 import { ReadToolBlock } from "@/components/tugways/cards/tool-blocks/read-tool-block";
 import { EditToolBlock } from "@/components/tugways/cards/tool-blocks/edit-tool-block";
@@ -113,7 +113,7 @@ function toolCallFromEvent(ev: Record<string, unknown>): ToolUseMessage {
 
 // ---------------------------------------------------------------------------
 // Hermetic registry — bun shares module state across test files, and
-// `tide-assistant-renderer-dispatch.test.ts` resets the registry in its
+// `dev-assistant-renderer-dispatch.test.ts` resets the registry in its
 // own `beforeEach`. Re-establish the real registrations so this file's
 // routing assertions are deterministic regardless of file order.
 // ---------------------------------------------------------------------------

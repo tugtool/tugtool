@@ -2,7 +2,7 @@
  * at0058-popup-in-sheet-close-focus.test.ts —
  * Service binding's external-click predicate when popup is in sheet.
  *
- * Per `tugplan-tide-popup-bindings.md` Step 5 / [D07] / [D09]: the
+ * Per `tugplan-dev-popup-bindings.md` Step 5 / [D07] / [D09]: the
  * external-click predicate distinguishes "user moved on" from "user
  * is still working in this surface" by asking whether the pointerdown
  * target is inside the canvas overlay root. Sheet content is also

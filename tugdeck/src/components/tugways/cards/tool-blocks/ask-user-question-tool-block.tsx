@@ -7,7 +7,7 @@
  * them at a time:
  *
  *   1. **Asking state (`status === "streaming"`).** The inline
- *      `QuestionDialog` ([D13]) — `tide-question-dialog.tsx` —
+ *      `QuestionDialog` ([D13]) — `dev-question-dialog.tsx` —
  *      renders the live prompt with radio / check buttons and
  *      submits the user's choices back to Claude. While the call is
  *      streaming, this wrapper renders `null` and stays out of the
@@ -51,7 +51,7 @@
  *    `input.answers`) so the wrapper renders correctly across the
  *    catalog's variations.
  *
- * Registration: `tide-assistant-renderer-dispatch.ts` imports this
+ * Registration: `dev-assistant-renderer-dispatch.ts` imports this
  * module and calls `registerToolBlock("askuserquestion", …)`
  * alongside the other wrappers. The registry's lowercased keys
  * absorb wire-shape casing variants (`AskUserQuestion` /
@@ -93,7 +93,7 @@ import {
   initialQuestionSelections,
   parseQuestions,
   type ParsedQuestion,
-} from "@/components/tugways/chrome/tide-question-dialog";
+} from "@/components/tugways/chrome/dev-question-dialog";
 import type { ControlRequestForward } from "@/lib/code-session-store";
 
 import { ToolBlockChrome } from "./tool-block-chrome";

@@ -330,7 +330,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // Controls only need to add the attribute. Both behaviors are
     // handled here — no per-component onMouseDown handlers needed.
     //
-    // Narrowed semantics. Per `tugplan-tide-overlay-framework.md`
+    // Narrowed semantics. Per `tugplan-dev-overlay-framework.md`
     // [D01] (#mental-model), `data-tug-focus="refuse"` controls
     // exactly two behaviors and nothing else: chain-promotion-skip
     // (here, in `promoteOnPointerDown`) and browser-focus-prevention

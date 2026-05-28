@@ -949,7 +949,7 @@ export function transferFocusAfterMove(
  *   3. Single-channel dispatch via {@link applyBagFocus} with
  *      `preventScroll: true` ([L23] — preserve user-visible scroll
  *      across cmd-tab return; the default `focus()` semantics scroll
- *      the focused element into view, which in a tide-card
+ *      the focused element into view, which in a dev-card
  *      (transcript above + editor below) drags the transcript
  *      downward whenever the editor re-claims focus on cmd-tab
  *      return).

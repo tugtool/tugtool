@@ -336,7 +336,7 @@ export interface CodeSessionState {
    * through without reshaping — preserves `Object.is` stability for
    * `useSyncExternalStore` consumers ([L02]).
    *
-   * Per [Step 5c](../../../roadmap/tide-atoms.md#step-5c).
+   * Per [Step 5c](../../../roadmap/dev-atoms.md#step-5c).
    */
   queuedSends: Array<{
     content: ContentBlock[];
@@ -362,7 +362,7 @@ export interface CodeSessionState {
       //    the standard `lastError: null` reset path.
       // Originates from `CodeSessionStore.publishAttachmentError`,
       // dispatched as `{ type: "attachment_rejected", message }`.
-      // Per [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+      // Per [Table T01](roadmap/dev-atoms.md#t01-failure-modes).
       | "attachment_rejected";
     message: string;
     at: number;
@@ -889,7 +889,7 @@ function handleInterrupt(
   ) {
     // Detect the wake context: an interrupt fired during `waking`
     // before any content has landed. A wake has no user submission
-    // ([Q03] in `roadmap/tugplan-tide-session-wake.md`), so there is
+    // ([Q03] in `roadmap/tugplan-dev-session-wake.md`), so there is
     // nothing to route into the restore slot. Preserve any prior
     // restore so a wake pull-down doesn't clobber a stranded user
     // draft.
@@ -2483,7 +2483,7 @@ function handleRespondApproval(
   // The decision is sent out on the wire below and the SDK's
   // tool_use/tool_result for the gated tool IS the durable transcript
   // artifact — there is no client-side record kept here. See
-  // `#step-3-5` in `roadmap/archive/tide-interactive-dialogs.md` for why
+  // `#step-3-5` in `roadmap/archive/dev-interactive-dialogs.md` for why
   // JSONL cannot durably reconstruct a separate permission record.
   const next: CodeSessionState = {
     ...state,
@@ -2757,7 +2757,7 @@ function handleSessionStateErrored(
  * Originates from `CodeSessionStore.publishAttachmentError`, called
  * by the drop / paste pipelines when `downsampleImage` returns a
  * discriminated error. Per
- * [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+ * [Table T01](roadmap/dev-atoms.md#t01-failure-modes).
  */
 function handleAttachmentRejected(
   state: CodeSessionState,
@@ -3402,7 +3402,7 @@ function handleAddUserMessage(
  * `isInWake` and gates re-emission until the next `result`); a stray
  * frame from a busy phase would be a tugcode bug.
  *
- * See `roadmap/tugplan-tide-session-wake.md` [D01] [D02]
+ * See `roadmap/tugplan-dev-session-wake.md` [D01] [D02]
  * [#spec-wake-started-state-reset].
  */
 function handleWakeStarted(

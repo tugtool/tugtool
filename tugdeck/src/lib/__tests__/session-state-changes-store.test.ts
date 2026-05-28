@@ -22,7 +22,7 @@ import {
 import {
   _resetTideSessionLedgerEventsForTest,
   publishListSessionStateChangesOk,
-} from "@/lib/tide-session-ledger-events";
+} from "@/lib/dev-session-ledger-events";
 import type { TugConnection } from "@/connection";
 import { FeedId, type FeedIdValue } from "@/protocol";
 

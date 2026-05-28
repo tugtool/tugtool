@@ -3,7 +3,7 @@
  * fire a dismiss callback when focus transitions out of the owner's
  * subtree.
  *
- * Per `tugplan-tide-popup-bindings.md` [D05] (#companion-binding) /
+ * Per `tugplan-dev-popup-bindings.md` [D05] (#companion-binding) /
  * [D05]'s rationale: companion popups (the editor's `@`/`/`/`:` typeahead;
  * future hover-style cards anchored to a host) auto-dismiss when the
  * user is no longer working in the host. The signal that "the user is

@@ -107,14 +107,14 @@ class CardServicesStore {
    *
    * Without this wire, the wire `close_session` frame would have to
    * be sent by the deck-canvas's user-close handler — but that
-   * makes the deck know about a tide-specific store, violating [L10]
+   * makes the deck know about a dev-specific store, violating [L10]
    * (one responsibility per layer). With this wire, the deck-canvas
    * stays card-type-agnostic.
    */
   attachDeckManager(deckManager: DeckManager): void {
     // Ensure the binding-store subscription is in place before any
     // later module subscribes to the same store. The downstream
-    // `tide-session-restore.ts` binding subscriber depends on
+    // `dev-session-restore.ts` binding subscriber depends on
     // cardServicesStore having already constructed the per-card
     // services for a freshly-arrived binding (it looks up the
     // codeSessionStore via `getServices`); subscribers fire in
@@ -252,7 +252,7 @@ class CardServicesStore {
     // and tugcast routes them to this card's workspace feed (with its
     // .tugattachignore + secret-file filter applied) rather than the
     // bootstrap (tugtool repo) feed. See
-    // `roadmap/tide-atoms.md#step-pre-4`.
+    // `roadmap/dev-atoms.md#step-pre-4`.
     const fileTreeStore = new FileTreeStore(
       fileTreeFeedStore,
       FeedId.FILETREE,
@@ -290,7 +290,7 @@ class CardServicesStore {
     });
 
     // Recovery dispatch ([D12], Phase A-R1 / Step R1c, broadened by
-    // mid-turn-replay [Step 5](roadmap/tugplan-tide-mid-turn-replay.md#step-5)).
+    // mid-turn-replay [Step 5](roadmap/tugplan-dev-mid-turn-replay.md#step-5)).
     // Whenever fresh services are constructed for a binding, ask the
     // supervisor to forward a `request_replay` verb to the live tugcode
     // subprocess. The verb tells tugcode to re-run `runReplay` so the

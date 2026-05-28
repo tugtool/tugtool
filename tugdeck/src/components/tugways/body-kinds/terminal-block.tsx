@@ -1359,7 +1359,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // Position-stable click is now encapsulated inside the affordance
   // components (BlockCopyButton, BlockFoldCue) — each calls
   // `useOuterScrollport` + `usePositionStableClick` internally. The
-  // scrollport-level tail spacer combo (wired by tide-card-transcript)
+  // scrollport-level tail spacer combo (wired by dev-card-transcript)
   // still applies: the spacer raises `maxScrollTop` so a collapse
   // doesn't hit a hard clamp, and the position-stable hook inside
   // `BlockFoldCue` writes the exact `scrollTop` that holds the

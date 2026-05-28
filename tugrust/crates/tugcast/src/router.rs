@@ -174,7 +174,7 @@ pub struct FeedRouter {
     /// (which carry "latest value" with collision risk under concurrent
     /// producers), this list holds event streams safe to fan in from
     /// many producers. Used by the FILETREE multi-workspace response
-    /// path per `roadmap/tide-atoms.md#step-pre-4`.
+    /// path per `roadmap/dev-atoms.md#step-pre-4`.
     snapshot_broadcast_senders: Vec<broadcast::Sender<Frame>>,
 
     /// Tracks which client owns each `(input FeedId, tug_session_id?)` key
@@ -1378,7 +1378,7 @@ mod tests {
     /// `runReplay`, replay events flowing back through CODE_OUTPUT to
     /// tugdeck's `CodeSessionStore`. That two-language, two-process
     /// integration lives in the manual smoke beat (Phase A-R2 of
-    /// `tugplan-tide-transcript-resume.md`).
+    /// `tugplan-dev-transcript-resume.md`).
     #[tokio::test]
     async fn test_request_replay_reaches_supervisor_through_router() {
         let (sup, mut register_rx) = test_minimal_supervisor();

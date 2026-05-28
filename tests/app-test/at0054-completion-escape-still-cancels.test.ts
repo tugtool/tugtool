@@ -2,7 +2,7 @@
  * at0054-completion-escape-still-cancels.test.ts —
  * Escape keymap regression guard post companion-binding migration.
  *
- * Per `tugplan-tide-popup-bindings.md` Step 4 / [D05] / (#companion-binding):
+ * Per `tugplan-dev-popup-bindings.md` Step 4 / [D05] / (#companion-binding):
  * the migration replaced the cardDidDeactivate-driven cancel with a
  * DOM-focus-driven cancel. The Escape keymap path
  * (`tugCompletionKeymap` → `cancelCompletion`) was NOT touched; this

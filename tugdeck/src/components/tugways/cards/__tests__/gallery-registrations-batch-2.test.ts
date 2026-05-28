@@ -18,7 +18,7 @@
  *  - Step 27 — `ImageBlock` → `gallery-image-block`
  *  - Step 28 — TableBlock attempt reverted; no gallery card today
  *  - Step 29 — `SessionInitBanner`, `ErrorBlock`, `CautionBadge`
- *    → `gallery-tide-chrome`
+ *    → `gallery-dev-chrome`
  */
 
 import { beforeAll, describe, expect, test } from "bun:test";
@@ -35,7 +35,7 @@ const BATCH_2_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
   { componentId: "gallery-tool-block-search", title: "Search Tool Blocks" },
   { componentId: "gallery-image-block", title: "ImageBlock" },
   {
-    componentId: "gallery-tide-chrome",
+    componentId: "gallery-dev-chrome",
     title: "Tide Chrome (banner / error / caution)",
   },
 ];

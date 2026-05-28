@@ -162,7 +162,7 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // (Monitor / CronCreate / ScheduleWakeup / …). The reducer
   // transitions `idle → waking` and accepts the wake's content
   // events; the bracket closes implicitly on the next `turn_complete`.
-  // See `roadmap/tugplan-tide-session-wake.md` [D01].
+  // See `roadmap/tugplan-dev-session-wake.md` [D01].
   "wake_started",
 ]);
 
@@ -232,7 +232,7 @@ export class CodeSessionStore {
    * Exposed via {@link getAtomBytesStore} so non-React consumers
    * (the drop / paste extensions inside CodeMirror) can reach it
    * through a thunk read at fire time ([L07]). Per
-   * [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+   * [D03](roadmap/dev-atoms.md#d03-atom-bytes-store).
    */
   private readonly atomBytesStore: AtomBytesStore;
 
@@ -264,7 +264,7 @@ export class CodeSessionStore {
     // at `clear()` on dispose. Snapshot rides
     // `useCardStatePreservation` so attachment bytes survive cold
     // boot and pane restore alongside the rest of the prompt-entry
-    // draft. Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+    // draft. Per [D03](roadmap/dev-atoms.md#d03-atom-bytes-store).
     this.atomBytesStore = createAtomBytesStore();
 
     // The streaming document holds per-turn streaming paths only,
@@ -432,7 +432,7 @@ export class CodeSessionStore {
         (this.state.phase === "idle" || this.state.phase === "errored") &&
         this.state.transportState === "online",
       // `waking` is included per [Q03] resolution in
-      // `roadmap/tugplan-tide-session-wake.md`: the user can stop a
+      // `roadmap/tugplan-dev-session-wake.md`: the user can stop a
       // runaway wake turn just like a user-initiated one. The
       // interrupt frame uses the same wire shape regardless — the
       // server doesn't need to distinguish.
@@ -568,7 +568,7 @@ export class CodeSessionStore {
    * wire-flattening at submit reads from it; the
    * `useCardStatePreservation` snapshot round-trips it across pane
    * restore and cold boot. See {@link AtomBytesStore} and
-   * [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+   * [D03](roadmap/dev-atoms.md#d03-atom-bytes-store).
    *
    * Returns the live instance — callers should not snapshot or
    * memoize the reference across disposal. Survives until
@@ -586,8 +586,8 @@ export class CodeSessionStore {
    * decode failure on a corrupt / exotic source).
    *
    * Routes through the same `lastError` channel transport / wire
-   * errors use; the existing `tide-card-banner-spec` and
-   * `tide-card.tsx` label map render it as an inline banner. The
+   * errors use; the existing `dev-card-banner-spec` and
+   * `dev-card.tsx` label map render it as an inline banner. The
    * banner self-dismisses on the user's next successful submit
    * (the `lastError: null` reset in the turn-complete commit path).
    *
@@ -601,14 +601,14 @@ export class CodeSessionStore {
   /**
    * System notification: the per-card binding has been (re-)acked by
    * the supervisor and the wire is fully settled. Dispatched by the
-   * `cardSessionBindingStore` subscriber in `tide-session-restore.ts`
+   * `cardSessionBindingStore` subscriber in `dev-session-restore.ts`
    * after a restore completes; the reducer flips `transportState`
    * from `restoring` → `online` (and is a no-op when already online).
    *
    * Public rather than internal because the dispatch source lives
    * outside this class. The store does not subscribe to the binding
    * store directly: per [D04] / [D07] the binding subscriber in
-   * `tide-session-restore.ts` is the canonical "binding has arrived"
+   * `dev-session-restore.ts` is the canonical "binding has arrived"
    * signal, and feeding the event through a named method here keeps
    * `dispatch` private and the binding subscriber free of any
    * knowledge of the reducer event vocabulary.
@@ -957,7 +957,7 @@ export class CodeSessionStore {
         // tugcode does not mint it (tugcode is a Node subprocess; it
         // has no React); the store wrapper mints it on receipt and
         // threads it onto the dispatched event so the reducer stays
-        // pure. See `roadmap/tugplan-tide-session-wake.md` [D02].
+        // pure. See `roadmap/tugplan-dev-session-wake.md` [D02].
         return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
       }
       return ev as unknown as CodeSessionEvent;

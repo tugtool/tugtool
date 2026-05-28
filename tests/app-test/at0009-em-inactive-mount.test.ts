@@ -24,7 +24,7 @@
  *
  * ## Coverage
  *
- * `gallery-prompt-entry` (TugPromptEntry wrapper, what tide-card
+ * `gallery-prompt-entry` (TugPromptEntry wrapper, what dev-card
  * uses internally). The legacy `gallery-prompt-input` was retired.
  *
  * ## Out of scope: fresh inactive-at-mount
@@ -37,7 +37,7 @@
  * engine root — UNLESS an earlier selector in the chain
  * (`button:not([disabled])` for toolbar buttons) wins first.
  * That asymmetry is the same root cause as the user-reported
- * tide-card cold-boot selection gap; see [AT0010] and related
+ * dev-card cold-boot selection gap; see [AT0010] and related
  * in-app tests.
  *
  * ## Gating
@@ -160,7 +160,7 @@ async function runSavedStateInactiveMount(app: App, componentId: string): Promis
 }
 
 describe.skipIf(!SHOULD_RUN)("m09: saved-state EM card inactive-at-mount activates via dispatch-activated", () => {
-  test("gallery-prompt-entry (TugPromptEntry, tide-card's editor): dispatch-activated path fires + restores text", async () => {
+  test("gallery-prompt-entry (TugPromptEntry, dev-card's editor): dispatch-activated path fires + restores text", async () => {
     const app = await launchTugApp({ testName: "at0009-em-inactive-entry-saved" });
     try {
       await runSavedStateInactiveMount(app, "gallery-prompt-entry");

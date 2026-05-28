@@ -1,5 +1,5 @@
 /**
- * `useLifecycleState` — subscribes a tide-card component to its
+ * `useLifecycleState` — subscribes a dev-card component to its
  * `CodeSessionStore` and projects the matrix-row lifecycle
  * snapshot. Every zone that coordinates on lifecycle (Z5's submit
  * button, the transcript-replay paint gate, Z2 / Z4) reads this one

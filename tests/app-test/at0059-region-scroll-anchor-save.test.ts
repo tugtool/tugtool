@@ -5,7 +5,7 @@
  * `RegionScrollSnapshot` carries an optional `meta` field that travels
  * alongside `{x, y}` through the
  * [A9] region-scroll axis. Variable-height virtualized lists (notably
- * `TugListView` driving the tide-card transcript) write their live
+ * `TugListView` driving the dev-card transcript) write their live
  * `{anchor: {index, offset}}` payload to a `data-tug-scroll-state`
  * attribute on the scroll container; `captureRegionScrolls` reads the
  * attribute at every save moment and stores the parsed object as

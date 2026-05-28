@@ -134,7 +134,7 @@
  *    test file), module docstring, exported types.
  *
  * Decisions:
- *  - tugplan-tide-picker-redesign [D01] uitableview-search-split.
+ *  - tugplan-dev-picker-redesign [D01] uitableview-search-split.
  */
 
 import React from "react";

@@ -39,7 +39,7 @@ export type { CardSessionMode } from "../card-session-binding-store";
  * by the `handleTextDelta` / `handleTurnComplete` guards. The bracket
  * mirrors the replay pattern but uses claude's existing `turn_complete`
  * as the implicit close (no `wake_complete` frame on the wire).
- * See `roadmap/tugplan-tide-session-wake.md` [D01].
+ * See `roadmap/tugplan-dev-session-wake.md` [D01].
  */
 export type CodeSessionPhase =
   | "idle"
@@ -684,7 +684,7 @@ export interface CodeSessionSnapshot {
       // Transient attachment-rejection (oversize / unsupported /
       // decode-failed image at drop or paste). Originates from
       // `CodeSessionStore.publishAttachmentError`. Per
-      // [Table T01](../../../roadmap/tide-atoms.md#t01-failure-modes).
+      // [Table T01](../../../roadmap/dev-atoms.md#t01-failure-modes).
       | "attachment_rejected";
     message: string;
     at: number;

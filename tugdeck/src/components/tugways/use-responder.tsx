@@ -37,7 +37,7 @@
  * dispatch) and `findResponderForTarget(node)` via DOM `parentElement`
  * (pointer/focus promotion) — answer different questions and can return
  * different ancestors for portaled subtrees. Both are correct; per
- * `tugplan-tide-overlay-framework.md` [D03], use the right walk for
+ * `tugplan-dev-overlay-framework.md` [D03], use the right walk for
  * the job.
  *
  * Consumers that need to override the React-tree default (e.g.,
@@ -46,7 +46,7 @@
  * portaled-content dispatch reach handlers that live "above" the React
  * placement.
  *
- * See `tugplan-tide-overlay-framework.md` (#mental-model) for the
+ * See `tugplan-dev-overlay-framework.md` (#mental-model) for the
  * five-subsystem architecture this hook participates in (portals,
  * chain, focus events, pane focus controller, focus-discipline
  * markers).
@@ -159,7 +159,7 @@ export interface UseResponderOptions<Extra extends string = never> {
    * focuses the responder's `[data-responder-id]` element or its
    * first tabbable descendant.
    *
-   * Per `tugplan-tide-popup-bindings.md` [D03] (#focus-contract). Like
+   * Per `tugplan-dev-popup-bindings.md` [D03] (#focus-contract). Like
    * `canHandle` / `validateAction` / `kind`, `focus` is a structural
    * property captured at mount; changing it on a later render does
    * not re-register and the change has no effect. This matches the

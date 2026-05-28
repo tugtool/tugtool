@@ -1,22 +1,22 @@
 /**
- * at0035-tide-app-switch-selection.test.ts — selection survives the
+ * at0035-dev-app-switch-selection.test.ts — selection survives the
  * app-resign / app-become-active round-trip (cmd-tab away + back)
- * for the **tide-card** specifically.
+ * for the **dev-card** specifically.
  *
- * ## Why a tide-specific variant
+ * ## Why a dev-specific variant
  *
  * The user-reported bug at the heart of [AT0035]
- * reproduces ONLY with tide-card; gallery-prompt-entry doesn't
+ * reproduces ONLY with dev-card; gallery-prompt-entry doesn't
  * exhibit the intermittent collapse. Tide-card has TWO redundant
  * focus paths on activation — its own `useCardDelegate({
  * cardDidActivate })` legacy hook plus TugPromptEntry's
  * framework-driven `onCardActivated` — and the back-to-back focus
  * calls trigger WebKit's selectionchange-on-focus quirk
  * intermittently. Gallery has only the framework path. So the
- * tide-specific test is the only one that exercises the actual
+ * dev-specific test is the only one that exercises the actual
  * race the fix addresses.
  *
- * ## Why the harness can render tide-card
+ * ## Why the harness can render dev-card
  *
  * Tide-card's content factory gates on `feedsReady` — its
  * `defaultFeedIds: [CODE_INPUT, CODE_OUTPUT, SESSION_METADATA,
@@ -33,7 +33,7 @@
  *
  * Pre-fix repro required multi-second blur dwell to expose the
  * race; the test ran 10 iterations × 2-second dwell to nail down
- * the bug. Post-fix (drop tide-card's `cardWillDeactivate → .blur()`),
+ * the bug. Post-fix (drop dev-card's `cardWillDeactivate → .blur()`),
  * the path is deterministic, so the test is right-sized to 3
  * iterations × 300ms dwell — enough to gate against regression
  * without burning wall-clock time on every CI run.
@@ -50,9 +50,9 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const STRESS_ITERATIONS = 3;
 
-describe.skipIf(!SHOULD_RUN)("at0035-tide: tide-card selection survives app resign + become-active", () => {
-  test("cmd-tab away + back preserves \"llo\" selection on tide-card", async () => {
-    const app = await launchTugApp({ testName: "at0035-tide-app-switch" });
+describe.skipIf(!SHOULD_RUN)("at0035-tide: dev-card selection survives app resign + become-active", () => {
+  test("cmd-tab away + back preserves \"llo\" selection on dev-card", async () => {
+    const app = await launchTugApp({ testName: "at0035-dev-app-switch" });
     let lastIteration = -1;
     try {
       await app.enableDeckTrace(true);

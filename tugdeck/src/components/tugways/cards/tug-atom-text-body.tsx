@@ -4,7 +4,7 @@
  * elements at each `U+FFFC` position.
  *
  * Consumed by the transcript user-message row (`UserMessageCell` in
- * `tide-card-transcript.tsx`). Each atom chip is built via the shared
+ * `dev-card-transcript.tsx`). Each atom chip is built via the shared
  * `buildAtomSVGDataUri` helper, so the transcript's chips and the
  * editor's atom widgets are pixel-identical: same SVG, same theme
  * tokens, same baseline offset.
@@ -118,7 +118,7 @@ export function walkAtomText(
  *   {@link formatSequenceNumber}). Example: `messageNumber=1`,
  *   `atom.label="image-1"` → `"#0001-image-1"`. This is the
  *   transcript-side rendering — the chip's label matches the
- *   per-message attachment-strip caption ([Step 6](roadmap/tide-atoms.md#step-6)).
+ *   per-message attachment-strip caption ([Step 6](roadmap/dev-atoms.md#step-6)).
  * - When `messageNumber` is unset, the atom's stored `label` is
  *   returned verbatim. This is the editor's pre-submit rendering case:
  *   the editor has no transcript position to encode.
@@ -156,7 +156,7 @@ export interface TugAtomTextBodyProps {
    * atom's *displayed* chip label is decorated as
    * `#${pad4(messageNumber)}-${atom.label}` (e.g., `#0001-image-1`) —
    * the linkage between an inline chip and its companion entry in the
-   * per-message attachment strip ([Step 6](roadmap/tide-atoms.md#step-6)).
+   * per-message attachment strip ([Step 6](roadmap/dev-atoms.md#step-6)).
    * Non-image atoms are unaffected. When unset (the editor's
    * pre-submit rendering case), atoms render with their stored
    * `label` verbatim.

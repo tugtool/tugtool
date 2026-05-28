@@ -1,7 +1,7 @@
 /**
- * Pure-logic helpers for the tide-card Z1B end-state display.
+ * Pure-logic helpers for the dev-card Z1B end-state display.
  *
- * Used by the production Z1B status row (`tide-card-z1b.tsx`). The
+ * Used by the production Z1B status row (`dev-card-z1b.tsx`). The
  * helpers live in this module, not inline in the component, so the
  * mapping from `TurnEndReason` to badge text and tone has one
  * source of truth.

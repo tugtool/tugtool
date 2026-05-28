@@ -35,7 +35,7 @@ import {
   dispatchToolCallState,
   registerToolBlock,
   resolveToolBlock,
-} from "../../tide-assistant-renderer-dispatch";
+} from "../../dev-assistant-renderer-dispatch";
 import {
   AGENT_MAX_DEPTH,
   shouldCollapseAgentDepth,

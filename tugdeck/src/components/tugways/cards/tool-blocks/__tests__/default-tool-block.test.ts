@@ -27,8 +27,8 @@ import {
   DefaultToolBlock,
   pickOutputBody,
 } from "../default-tool-block";
-import { dispatchToolCallState } from "../../tide-assistant-renderer-dispatch";
-import { defaultIntentToolNames } from "../../tide-tool-visibility-policy";
+import { dispatchToolCallState } from "../../dev-assistant-renderer-dispatch";
+import { defaultIntentToolNames } from "../../dev-tool-visibility-policy";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------

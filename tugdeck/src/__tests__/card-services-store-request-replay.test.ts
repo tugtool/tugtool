@@ -8,7 +8,7 @@
  * bindings do not.
  *
  * Connection + lifecycle singletons are mocked the same way
- * `tide-session-restore-transport-settled.test.ts` does — those
+ * `dev-session-restore-transport-settled.test.ts` does — those
  * singletons aren't initialized in the test environment, but
  * `cardServicesStore._construct` early-returns null without them.
  *

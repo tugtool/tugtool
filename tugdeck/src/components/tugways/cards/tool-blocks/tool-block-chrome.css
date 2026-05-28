@@ -242,7 +242,7 @@ body {
 }
 
 /* The inline caution chip is its own component — `TideCautionBadge`
- * (`chrome/tide-caution-badge.css`). The chrome only places it in the
+ * (`chrome/dev-caution-badge.css`). The chrome only places it in the
  * header flow. The `--tugx-toolblock-caution-*` tokens above are
  * retained: they are the shared small-chip geometry that
  * `read-tool-block`'s line-range badge and `edit-tool-block`'s

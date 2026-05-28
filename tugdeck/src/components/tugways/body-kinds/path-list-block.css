@@ -142,8 +142,8 @@ body {
  * tokens are zeroed so path rows stack flush. The row's own
  * `--tugx-paths-row-padding` provides the inset. [L20]
  *
- * Specificity note: `tide-card.css` sets `--tugx-list-view-row-gap`
- * (and the padding tokens) on `.tide-card-transcript .tug-list-view`
+ * Specificity note: `dev-card.css` sets `--tugx-list-view-row-gap`
+ * (and the padding tokens) on `.dev-card-transcript .tug-list-view`
  * to space transcript *entries* apart. This `PathListBlock` is a
  * tool-block body rendered *inside* the transcript, so its nested
  * `.tug-list-view` also matches that selector and would inherit the

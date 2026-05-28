@@ -2,7 +2,7 @@
  * at0053-completion-cancels-on-peer-card-click.test.ts —
  * Strict-superset regression guard.
  *
- * Per `tugplan-tide-popup-bindings.md` Step 4 / [D05] / (#companion-binding):
+ * Per `tugplan-dev-popup-bindings.md` Step 4 / [D05] / (#companion-binding):
  * the companion-focus signal subsumes the prior `cardDidDeactivate`
  * subscription. When a peer card activates, DOM focus moves to the
  * peer's editor (or chrome, depending on what's clicked). Card A's

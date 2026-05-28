@@ -44,8 +44,8 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
-import { tideSpawnErrorStore } from "./lib/tide-spawn-error-store";
-import { notifySpawnRejected } from "./lib/tide-session-restore";
+import { tideSpawnErrorStore } from "./lib/dev-spawn-error-store";
+import { notifySpawnRejected } from "./lib/dev-session-restore";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
@@ -67,7 +67,7 @@ import {
   publishTrashProjectDirSessionsErr,
   publishListSessionStateChangesOk,
   publishListSessionStateChangesErr,
-} from "./lib/tide-session-ledger-events";
+} from "./lib/dev-session-ledger-events";
 
 /**
  * Ordered list of all shipped themes.
@@ -508,7 +508,7 @@ export function initActionDispatch(
   // session_updated: tugcast supervisor broadcasts these on every
   // ledger write (`record_spawn`, `record_turn`, `mark_closed`,
   // `mark_failed`, `trash`). Routed through the
-  // `tide-session-ledger-events` bus so the picker's session-ledger
+  // `dev-session-ledger-events` bus so the picker's session-ledger
   // store (step 4) can patch its in-memory cache without re-fetching.
   registerAction("session_updated", (payload) => {
     const decoded = decodeSessionUpdated(payload);

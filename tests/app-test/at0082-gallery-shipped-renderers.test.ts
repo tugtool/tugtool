@@ -64,10 +64,10 @@ interface CardSpec {
 
 const CARD_SPECS: ReadonlyArray<CardSpec> = [
   {
-    componentId: "gallery-tide-thinking",
-    testId: "gallery-tide-thinking",
+    componentId: "gallery-dev-thinking",
+    testId: "gallery-dev-thinking",
     // Streaming + completed-long + completed-short.
-    expectedSlots: [{ selector: '[data-slot="tide-thinking-block"]', count: 3 }],
+    expectedSlots: [{ selector: '[data-slot="dev-thinking-block"]', count: 3 }],
   },
   {
     componentId: "gallery-json-tree-block",

@@ -7,7 +7,7 @@
  * inline (and slightly differently) in four places: the editor host
  * (`tug-text-editor`), the markdown view (`tug-markdown-view`), the
  * native-input responder (`use-text-input-responder`), and the
- * transcript cells (`tide-card-transcript`). Selection mechanics
+ * transcript cells (`dev-card-transcript`). Selection mechanics
  * (CM6 transactions, native input setSelectionRange, DOM
  * setBaseAndExtent) live in the consumer's `TextSelectionAdapter`;
  * this hook owns the React-side wiring that's identical across them.

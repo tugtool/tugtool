@@ -529,8 +529,8 @@ export interface TugTextEditorProps
    * non-image filenames as plain text) and image clipboard items fall
    * through to the substrate's text-paste path. Gallery cards and
    * stand-alone harnesses leave this absent;
-   * tide-card prompt-entry instances wire it through from their
-   * `CodeSessionStore`. Per [D03](roadmap/tide-atoms.md#d03-atom-bytes-store).
+   * dev-card prompt-entry instances wire it through from their
+   * `CodeSessionStore`. Per [D03](roadmap/dev-atoms.md#d03-atom-bytes-store).
    *
    * The prop is a controlled reference — pass the same store
    * instance on every render. A late-arriving store (mounted as
@@ -546,7 +546,7 @@ export interface TugTextEditorProps
    *
    * Defaults to a no-op. Tide-card prompt-entry passes
    * `CodeSessionStore.publishAttachmentError`. Per
-   * [Table T01](roadmap/tide-atoms.md#t01-failure-modes).
+   * [Table T01](roadmap/dev-atoms.md#t01-failure-modes).
    */
   onAttachmentError?: (message: string) => void;
   /**
@@ -1630,7 +1630,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       id: responderId,
       actions,
       // Substrate-supplied focus callback per
-      // `tugplan-tide-popup-bindings.md` [D03] (#focus-contract).
+      // `tugplan-dev-popup-bindings.md` [D03] (#focus-contract).
       // `manager.focusResponder(responderId)` invokes this AFTER
       // promoting us to first responder; we land DOM focus on the
       // CodeMirror view's contentDOM via `view.focus()`. The DOM-walk
@@ -2034,7 +2034,7 @@ interface CompletionOverlayProps {
  *      mounts a sibling popup and `FocusScope.onMountAutoFocus`
  *      grabs focus into it; the user clicks outside the editor; a
  *      peer card is activated and focus moves to it), dispatches
- *      `cancelCompletion(view)`. Per `tugplan-tide-popup-bindings.md`
+ *      `cancelCompletion(view)`. Per `tugplan-dev-popup-bindings.md`
  *      [D05] (#companion-binding), this signal strict-supersets the
  *      former `cardDidDeactivate` subscription: every dismissal the
  *      old signal triggered, the focus signal also triggers, AND the
@@ -2070,7 +2070,7 @@ function CompletionOverlay({
   const overlayRoot = useCanvasOverlay();
   const popupRef = useRef<HTMLDivElement | null>(null);
 
-  // Companion focus binding per `tugplan-tide-popup-bindings.md` [D05]
+  // Companion focus binding per `tugplan-dev-popup-bindings.md` [D05]
   // (#companion-binding). The hook observes DOM focus on the editor's
   // contentDOM and dispatches `cancelCompletion(view)` when focus
   // leaves the subtree — strict-supersets the former

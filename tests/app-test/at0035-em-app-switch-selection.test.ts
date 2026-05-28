@@ -5,7 +5,7 @@
  *
  * ## Why this exists
  *
- * User-reported: type "hello" in a tide-card's TugPromptEntry,
+ * User-reported: type "hello" in a dev-card's TugPromptEntry,
  * select the last 3 chars ("llo"), cmd-tab away, cmd-tab back.
  * Text always restores; selection is **intermittently** lost,
  * with the caret left blinking at the end of "hello". The
@@ -33,7 +33,7 @@
  *
  * ## Coverage
  *
- * `gallery-prompt-entry` (TugPromptEntry, what tide-card uses
+ * `gallery-prompt-entry` (TugPromptEntry, what dev-card uses
  * internally). The legacy `gallery-prompt-input` was retired.
  * Tide itself can't run in the in-app sweep because
  * its content factory gates on `feedsReady`, which depends on a

@@ -280,7 +280,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // constructor from the tugbank-fetched focusedCardId). If the card still
   // exists in the deck, call `store.activateCard(id)` — the single entry
   // point that updates z-order, promotes the responder-chain key card, and
-  // notifies lifecycle observers (selection guard, tide-card focus, etc.).
+  // notifies lifecycle observers (selection guard, dev-card focus, etc.).
   // Then clear the field so this only fires once on mount.
   //
   // Empty deps array: runs once on mount. The store is a stable singleton.

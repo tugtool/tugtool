@@ -1,0 +1,74 @@
+/* @tug-pairings:
+   - --tugx-banner-bg / --tugx-banner-text-color
+   - --tugx-banner-label-color / --tugx-banner-bg
+   `TideSessionInitBanner` paints a single-row chrome at the top of a
+   card with model / permissionMode / cwd field rows. The shared
+   block-surface scaffold (`--tugx-block-*`) carries the frame; the
+   banner-specific slots tune the inline-row metrics.
+*/
+
+/**
+ * dev-session-init-banner.css — `TideSessionInitBanner` chrome.
+ *
+ * Layout:
+ *  - `.dev-session-init-banner` — one horizontal flex row, no wrap;
+ *    the icon at the leading edge, each field as a `<label>: <code>`
+ *    pair, the caution chip (when present) at the trailing edge.
+ *
+ * Token sources:
+ *  - `--tugx-banner-*` slots in the `body{}` block below alias
+ *    `--tug7-*` and `--tugx-block-*` via [L17] one-hop.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for appearance.
+ *  - [L17] one-hop alias on every `--tugx-banner-*` declaration.
+ *  - [L19] file pair, module docstring on the `.tsx`,
+ *    `data-slot="dev-session-init-banner"` on the root.
+ *  - [L20] component-token sovereignty — owns `--tugx-banner-*`.
+ */
+
+body {
+  --tugx-banner-bg:           var(--tug7-surface-global-primary-normal-raised-rest);
+  --tugx-banner-text-color:   var(--tugx-block-text-color);
+  --tugx-banner-label-color:  var(--tugx-block-text-color-muted);
+  --tugx-banner-border:       var(--tugx-block-border);
+  --tugx-banner-padding:      var(--tug-space-xs) var(--tug-space-sm);
+  --tugx-banner-gap:          var(--tug-space-md);
+  --tugx-banner-field-gap:    var(--tug-space-2xs);
+  --tugx-banner-font-size:    var(--tug-font-size-xs);
+}
+
+/* @tug-renders-on(var(--tugx-banner-bg)) */
+.dev-session-init-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tugx-banner-gap);
+  padding: var(--tugx-banner-padding);
+  background: var(--tugx-banner-bg);
+  color: var(--tugx-banner-text-color);
+  border-bottom: 1px solid var(--tugx-banner-border);
+  font-size: var(--tugx-banner-font-size);
+}
+
+.dev-session-init-banner-icon {
+  flex: 0 0 auto;
+  color: var(--tugx-banner-label-color);
+}
+
+.dev-session-init-banner-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--tugx-banner-field-gap);
+  min-width: 0;
+}
+
+.dev-session-init-banner-field-label {
+  color: var(--tugx-banner-label-color);
+  font-weight: 600;
+}
+
+.dev-session-init-banner-field-value {
+  font-family: var(--tug-font-family-mono);
+  word-break: break-all;
+}

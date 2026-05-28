@@ -61,9 +61,9 @@
  *       DOM. [L19] file structure / docstring discipline.
  *
  * References:
- *  - [D05](../../../roadmap/tide-atoms.md#d05-client-downsample)
- *  - [Risk R01](../../../roadmap/tide-atoms.md#r01-canvas-blocking)
- *  - Step 3.5.3 in `roadmap/tide-atoms.md`
+ *  - [D05](../../../roadmap/dev-atoms.md#d05-client-downsample)
+ *  - [Risk R01](../../../roadmap/dev-atoms.md#r01-canvas-blocking)
+ *  - Step 3.5.3 in `roadmap/dev-atoms.md`
  */
 
 import {

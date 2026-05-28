@@ -1,6 +1,6 @@
 /**
  * at0051-completion-popup-escapes-card.test.ts —
- * Regression guard for the canvas-overlay tier (`tugplan-tide-overlay-tier`).
+ * Regression guard for the canvas-overlay tier (`tugplan-dev-overlay-tier`).
  *
  * The file covers the load-bearing properties of the canvas-overlay
  * migration end-to-end against Tug.app on macOS / WebKit:

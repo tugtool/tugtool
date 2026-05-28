@@ -13,7 +13,7 @@
  * dispatches.
  *
  * The chord-to-menu wiring is a manual checkpoint (see
- * tide-assistant-turns.md Step 20.3.1's "Manual" checkpoint item).
+ * dev-assistant-turns.md Step 20.3.1's "Manual" checkpoint item).
  * What we CAN exercise here in automation is the dispatch surface the
  * menu fires:
  *

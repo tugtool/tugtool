@@ -434,7 +434,7 @@ function handlePaste(
 
 /**
  * Build the clipboard extension. Optional thunks unlock the
- * image-paste branch ([Step 2] of `roadmap/tide-atoms.md`):
+ * image-paste branch ([Step 2] of `roadmap/dev-atoms.md`):
  *
  *  - `getBytesStore`: per-card bytes-store; when present, image
  *    clipboard items route through the async downsample pipeline.

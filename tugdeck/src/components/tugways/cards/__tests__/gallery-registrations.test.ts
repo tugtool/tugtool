@@ -32,7 +32,7 @@ import { registerGalleryCards } from "../gallery-registrations";
 
 /** Component ids #step-14-5 adds, with the title each should carry. */
 const BATCH_1_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
-  { componentId: "gallery-tide-thinking", title: "TideThinkingBlock" },
+  { componentId: "gallery-dev-thinking", title: "TideThinkingBlock" },
   { componentId: "gallery-json-tree-block", title: "JsonTreeBlock" },
   { componentId: "gallery-tool-block-file", title: "File Tool Blocks" },
   { componentId: "gallery-tool-block-default", title: "DefaultToolBlock" },

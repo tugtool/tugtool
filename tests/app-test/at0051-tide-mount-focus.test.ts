@@ -1,5 +1,5 @@
 /**
- * at0051-tide-mount-focus.test.ts — when a tide card mounts as the
+ * at0051-dev-mount-focus.test.ts — when a tide card mounts as the
  * focused card and its session binds, the prompt-entry editor
  * (CodeMirror's contentDOM) gains DOM focus AND the custom caret
  * layer renders, all without a user click.
@@ -7,7 +7,7 @@
  * Pins TWO related contracts:
  *
  *   1. **Editor focus contract** (Spec [S02] in
- *      `roadmap/tugplan-tide-session-init-orchestration.md`): every
+ *      `roadmap/tugplan-dev-session-init-orchestration.md`): every
  *      overlay that sets `inert` on `.tug-pane-body` MUST emit a
  *      per-card `xxxDidHide` lifecycle event after `inert` clears,
  *      and `TideCardBody` MUST subscribe with an idempotent focus
@@ -263,7 +263,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "at0051-tide-mount-focus",
+            testName: "at0051-dev-mount-focus",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });
@@ -318,7 +318,7 @@ describe.skipIf(!SHOULD_RUN)(
     test(
       "new-mode bind: no banner mounts during the bind window; caret stays focused",
       async () => {
-        // Pins Spec [S01] from `tugplan-tide-session-init-orchestration.md`:
+        // Pins Spec [S01] from `tugplan-dev-session-init-orchestration.md`:
         // for `sessionMode === "new"`, `deriveTideCardBannerSpec`
         // returns `kind: "none"` for the active-phase replay-loading
         // branch, so the JSONL-missing replay round-trip that fires
@@ -344,7 +344,7 @@ describe.skipIf(!SHOULD_RUN)(
           seedTugbankForLaunch(tugbankPath);
 
           const app = await launchTugApp({
-            testName: "at0051-tide-mount-focus-new-mode",
+            testName: "at0051-dev-mount-focus-new-mode",
             env: { TUGBANK_PATH: tugbankPath },
             persistInTestMode: true,
           });

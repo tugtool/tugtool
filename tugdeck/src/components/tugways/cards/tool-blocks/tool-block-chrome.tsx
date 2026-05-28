@@ -32,7 +32,7 @@
  * `caution` is rendered as an inline `TideCautionBadge` in the header
  * per [D04] / [Q03] — three reasons surface: `unknown_tool`,
  * `unknown_shape`, `version_drift`. The chrome owns only the
- * placement; the chip is `chrome/tide-caution-badge.tsx`.
+ * placement; the chip is `chrome/dev-caution-badge.tsx`.
  *
  * ## Actions slot — body-kind affordance host
  *
@@ -97,7 +97,7 @@ import "./tool-block-chrome.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
-import { TideCautionBadge } from "@/components/tugways/chrome/tide-caution-badge";
+import { TideCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import {
   BlockActionsCluster,

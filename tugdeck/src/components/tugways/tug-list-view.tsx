@@ -63,7 +63,7 @@
  *   to ordinary cells. Cell renderers may attach their own click
  *   handlers if a header/footer needs an action; the primitive's
  *   gating is purely about wrapper-level selection dispatch. See
- *   `tugplan-tide-picker-redesign.md` [D02] for the rationale and the
+ *   `tugplan-dev-picker-redesign.md` [D02] for the rationale and the
  *   relationship to a future `numberOfSections` migration.
  *
  * Filtering:
@@ -79,7 +79,7 @@
  *   know it's filtered, and the consumer doesn't have to teach it.
  *   See `gallery-list-view-filter` for the canonical pattern (host-
  *   owned `TugInput` + `useFilteredDataSource` + `baseIndexFor`-aware
- *   cell renderer) and `tugplan-tide-picker-redesign.md` [D01] /
+ *   cell renderer) and `tugplan-dev-picker-redesign.md` [D01] /
  *   [Spec S06] for the rationale.
  */
 
@@ -363,7 +363,7 @@ export interface TugListViewHandle {
    * Scroll to the bottom of real content and engage follow-bottom, so
    * subsequent content growth stays pinned. The deliberate inverse of
    * a user scroll-up (which disengages follow-bottom): consumers call
-   * this for a "jump to latest" gesture — e.g. a tide-card submitting
+   * this for a "jump to latest" gesture — e.g. a dev-card submitting
    * a new prompt while the transcript is scrolled up. Delegates to
    * `SmartScroll.scrollToBottom`, which excludes the `inert` tail
    * spacer so the scroll lands at the bottom of *content*, not the
@@ -418,7 +418,7 @@ export interface TugListViewProps<
    *
    * Must be unique within the enclosing card subtree; cards mounting
    * two `TugListView` instances pass distinct keys (e.g.
-   * `"tide-card-transcript"` vs `"tide-card-history"`).
+   * `"dev-card-transcript"` vs `"dev-card-history"`).
    *
    * @default "tug-list-view"
    */
@@ -430,8 +430,8 @@ export interface TugListViewProps<
    * not by reaching into the primitive's CSS ([L20]).
    *
    * @example
-   * <div className="tide-card-transcript">
-   *   <TugListView ... className="tide-card-transcript-list" />
+   * <div className="dev-card-transcript">
+   *   <TugListView ... className="dev-card-transcript-list" />
    * </div>
    */
   className?: string;

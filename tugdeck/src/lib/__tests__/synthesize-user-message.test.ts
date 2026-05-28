@@ -4,7 +4,7 @@
  * JSONL replay path.
  *
  * Pins the contract documented in
- * [Step 5c](roadmap/tide-atoms.md#step-5c):
+ * [Step 5c](roadmap/dev-atoms.md#step-5c):
  *   - the (text, atoms) substrate is deterministic on its inputs
  *     given a stable resolver/minter;
  *   - the bytes-store side-effect lands `content` + `mediaType` for

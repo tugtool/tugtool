@@ -310,7 +310,7 @@ export interface EmCardState {
   kind: "em";
   /**
    * The card's `componentId` — e.g. `"gallery-prompt-input"`,
-   * `"gallery-prompt-entry"`, `"tide-card"`. Tagged so tests can
+   * `"gallery-prompt-entry"`, `"dev-card"`. Tagged so tests can
    * branch on engine flavor without consulting deck state
    * separately.
    */
@@ -520,7 +520,7 @@ export interface TugTestSurface {
    * trace ring contains an `engine-ready` event for the card,
    * `false` otherwise. The matching emit site lives at each EM-
    * engine factory's mount-time engine init (wired first in
-   * `tug-prompt-input.tsx`; tide-card / gallery-prompt-entry
+   * `tug-prompt-input.tsx`; dev-card / gallery-prompt-entry
    * follow as they pick up their own sites).
    *
    * The harness's `awaitEngineReady` wraps this in
@@ -535,10 +535,10 @@ export interface TugTestSurface {
   /**
    * Bind a fake session for a tide card so it skips past the
    * project-picker UI and renders TideCardBody directly. Without a
-   * binding, `useTideCardServices` returns `null` and tide-card
+   * binding, `useTideCardServices` returns `null` and dev-card
    * shows the picker; production sets the binding from a
    * `spawn_session_ok` CONTROL ack that requires a live tugcast +
-   * tugcode + Claude pipeline. Tests that exercise tide-specific
+   * tugcode + Claude pipeline. Tests that exercise dev-specific
    * behavior — focus, selection, persistence, app-lifecycle
    * round-trips — don't need real session frames; they need the
    * editor to mount. This helper writes synthetic values directly
@@ -1273,7 +1273,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       //   - TugPromptEntry wrapper (current):
       //     `{ route, draft: TugTextEditingState | null, maximized }`.
       //     This is what `TugPromptEntry` (and every card hosting it
-      //     — `gallery-prompt-entry`, tide-card) returns. Reach into
+      //     — `gallery-prompt-entry`, dev-card) returns. Reach into
       //     `draft` to get the engine state.
       //
       //   - TugPromptEntry legacy wrapper:

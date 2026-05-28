@@ -393,7 +393,7 @@ export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout):
 export const TIDE_RECENT_PROJECTS_MAX = 5;
 
 /**
- * Read the tide-card recent-projects list from the TugbankClient cache.
+ * Read the dev-card recent-projects list from the TugbankClient cache.
  *
  * Domain: `dev.tugtool.tide`, key: `recent-projects`.
  * Value shape: `{ paths: string[] }`. Returns `[]` if unset or malformed.
@@ -417,7 +417,7 @@ export function readTideRecentProjects(client: TugbankClient): string[] {
 }
 
 /**
- * PUT the tide-card recent-projects list to tugbank (fire-and-forget).
+ * PUT the dev-card recent-projects list to tugbank (fire-and-forget).
  * Callers are responsible for dedup + capping; the helper writes the list
  * verbatim.
  */

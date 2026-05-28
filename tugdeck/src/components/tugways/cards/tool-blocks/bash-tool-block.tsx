@@ -37,7 +37,7 @@
  *
  * Registration:
  *
- *   `tide-assistant-renderer-dispatch.ts` imports this module
+ *   `dev-assistant-renderer-dispatch.ts` imports this module
  *   eagerly and calls `registerToolBlock("bash", BashToolBlock)`
  *   from its own initialization block. Routing the registration
  *   through dispatch (rather than self-registering at the bottom of

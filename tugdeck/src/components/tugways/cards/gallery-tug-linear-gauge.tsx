@@ -2,7 +2,7 @@
  * gallery-tug-linear-gauge.tsx — `TugLinearGauge` demo tab for the
  * Component Gallery.
  *
- * Three sections — see [#step-20-1](roadmap/tide-assistant-rendering.md#step-20-1):
+ * Three sections — see [#step-20-1](roadmap/dev-assistant-rendering.md#step-20-1):
  *
  *   1. Interactive sandbox — slider for `value`, numeric inputs for
  *      `min` / `max`, toggle for `density`, toggle for `fillRole`,
@@ -15,7 +15,7 @@
  *      → value below caution → value above danger). Pins that the
  *      compact density reads at chrome scale AND scales up cleanly
  *      to the detailed face.
- *   3. Use-case preview — a tide-meter-style strip rendering the
+ *   3. Use-case preview — a dev-meter-style strip rendering the
  *      example fraction from the Step 20.3 layout sketch
  *      (`32.5k / 200k WINDOW`). Acts as the contract example for the
  *      eventual chrome consumer in [#step-20-3].
@@ -102,7 +102,7 @@ const matrixHeaderStyle: React.CSSProperties = {
 // Formatter for the strip-scale / use-case preview
 // ---------------------------------------------------------------------------
 
-/** Format a token count as `Nk` / `N.Nk` for the tide-meter-style preview. */
+/** Format a token count as `Nk` / `N.Nk` for the dev-meter-style preview. */
 function formatTokens(value: number): string {
   if (value === 0) return "0";
   if (value < 1000) return String(Math.round(value));
@@ -409,11 +409,11 @@ export function GalleryTugLinearGauge(): React.ReactElement {
       <TugSeparator />
 
       {/* ============================================================
-          3. Use-case preview — tide-meter strip
+          3. Use-case preview — dev-meter strip
           ============================================================ */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">
-          Use-case preview — tide-meter strip
+          Use-case preview — dev-meter strip
         </TugLabel>
         <div style={labelStyle}>
           Renders the <code>32.5k / 200k TOKENS</code> example value

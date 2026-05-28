@@ -26,8 +26,8 @@
 
 import React from "react";
 
-import { PermissionDialog } from "@/components/tugways/chrome/tide-permission-dialog";
-import { QuestionDialog } from "@/components/tugways/chrome/tide-question-dialog";
+import { PermissionDialog } from "@/components/tugways/chrome/dev-permission-dialog";
+import { QuestionDialog } from "@/components/tugways/chrome/dev-question-dialog";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugSeparator } from "@/components/tugways/tug-separator";

@@ -12,8 +12,8 @@
  *
  *  - **Header** — a `Notebook` icon + tool name + an atom-chip showing
  *    the notebook's basename (via the shared `<TugAtomChip>` primitive,
- *    per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
- *    [Step 7](roadmap/tide-atoms.md#step-7)) + a `· cell {cellId}`
+ *    per [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
+ *    [Step 7](roadmap/dev-atoms.md#step-7)) + a `· cell {cellId}`
  *    segment when a cell id is known + a small `edit_mode` chip
  *    (`replace` / `insert` / `delete`) and a `cell_type` chip (`code`
  *    / `markdown`) when present.

@@ -1,5 +1,5 @@
 /**
- * at0081-tide-focus-reload.test.ts — a tide card's activation focus
+ * at0081-dev-focus-reload.test.ts — a tide card's activation focus
  * lands on the prompt entry after Developer > Reload [AT0081].
  *
  * ## Why this exists
@@ -36,7 +36,7 @@
  *      the session; await engine ready. (`enableDeckTrace` persists
  *      across `appReload`, so `engine-ready` is recorded on the
  *      reloaded page and `awaitEngineReady` resolves normally.)
- *   5. Assert `document.activeElement` is the tide-card's
+ *   5. Assert `document.activeElement` is the dev-card's
  *      `tug-prompt-entry` contenteditable.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -77,7 +77,7 @@ const SEED_STATE = {
 } as const;
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0081: tide-card focus lands on the prompt entry after Developer > Reload",
+  "AT0081: dev-card focus lands on the prompt entry after Developer > Reload",
   () => {
     test(
       "after appReload, focus restores to the prompt-entry contenteditable",
@@ -85,7 +85,7 @@ describe.skipIf(!SHOULD_RUN)(
         const tugbankPath = mkTempTugbank();
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
-          testName: "at0081-tide-focus-reload",
+          testName: "at0081-dev-focus-reload",
           env: { TUGBANK_PATH: tugbankPath },
           persistInTestMode: true,
         });
@@ -151,7 +151,7 @@ describe.skipIf(!SHOULD_RUN)(
           const tail = app.tailLog(200);
           if (tail !== "") {
             process.stderr.write(
-              `\n[at0081-tide-focus-reload] log tail:\n${tail}\n`,
+              `\n[at0081-dev-focus-reload] log tail:\n${tail}\n`,
             );
           }
           throw err;

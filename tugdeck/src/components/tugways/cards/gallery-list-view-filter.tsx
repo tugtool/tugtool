@@ -47,7 +47,7 @@
  *    cell renderer; no reach into `--tugx-list-view-*`.
  *
  * Decisions:
- *  - tugplan-tide-picker-redesign [D01] uitableview-search-split —
+ *  - tugplan-dev-picker-redesign [D01] uitableview-search-split —
  *    the host owns the input.
  *  - [Spec S06] — `useFilteredDataSource(base, predicate, filterToken)`
  *    contract; `query` (a useState string) drives both the predicate

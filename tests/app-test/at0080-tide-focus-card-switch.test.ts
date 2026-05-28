@@ -1,5 +1,5 @@
 /**
- * at0080-tide-focus-card-switch.test.ts — a tide card's activation
+ * at0080-dev-focus-card-switch.test.ts — a tide card's activation
  * focus lands on the prompt entry after a card-switch round-trip
  * [AT0080].
  *
@@ -48,12 +48,12 @@ function activeElementInCard(cardId: string): string {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0080: tide-card focus lands on the prompt entry after card-switch",
+  "AT0080: dev-card focus lands on the prompt entry after card-switch",
   () => {
     test(
       "switch A → B → A returns focus to Card A's prompt-entry contenteditable",
       async () => {
-        const app = await launchTugApp({ testName: "at0080-tide-focus-card-switch" });
+        const app = await launchTugApp({ testName: "at0080-dev-focus-card-switch" });
         try {
           await app.enableDeckTrace(true);
 
@@ -117,7 +117,7 @@ describe.skipIf(!SHOULD_RUN)(
           const tail = app.tailLog(200);
           if (tail !== "") {
             process.stderr.write(
-              `\n[at0080-tide-focus-card-switch] log tail:\n${tail}\n`,
+              `\n[at0080-dev-focus-card-switch] log tail:\n${tail}\n`,
             );
           }
           throw err;

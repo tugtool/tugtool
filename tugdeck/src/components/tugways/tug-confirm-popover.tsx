@@ -13,8 +13,8 @@
  *    its own state; the popover anchors to an arbitrary external element
  *    via `<TugPopoverAnchor virtualRef>`. One instance can serve N
  *    distinct anchor targets — the canonical "in-list confirmation"
- *    shape (see [tugplan-tide-picker-redesign §D15](
- *    ../../roadmap/tugplan-tide-picker-redesign.md#d15-tug-confirm-popover-controlled)).
+ *    shape (see [tugplan-dev-picker-redesign §D15](
+ *    ../../roadmap/tugplan-dev-picker-redesign.md#d15-tug-confirm-popover-controlled)).
  *
  * The two APIs are mutually exclusive at the call site: a controlled-mode
  * caller passes `open` and skips the imperative `ref.confirm()` path

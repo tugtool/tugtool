@@ -81,12 +81,12 @@ function HostPreview({
   return (
     <div className="cg-tug-cue-host">
       <div className="cg-tug-cue-host-header">
-        <span>src/components/tugways/internal/tide-card-transcript.tsx</span>
+        <span>src/components/tugways/internal/dev-card-transcript.tsx</span>
       </div>
       <pre className="cg-tug-cue-host-body-pre">{`  1  export function TideCardTranscript({ cardId, turn }: Props) {
   2    const turns = useTurns(cardId);
   3    return (
-  4      <div className="tide-card-transcript">
+  4      <div className="dev-card-transcript">
   5        {turns.map((t) => (
   6          <TranscriptTurn key={t.id} turn={t} />
   7        ))}

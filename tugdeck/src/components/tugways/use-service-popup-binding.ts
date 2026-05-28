@@ -1,7 +1,7 @@
 /**
  * useServicePopupBinding — close-focus restoration for service-role popups.
  *
- * Per `tugplan-tide-popup-bindings.md` [D06] / [D07] (#service-binding):
+ * Per `tugplan-dev-popup-bindings.md` [D06] / [D07] (#service-binding):
  * service popups (`TugPopupMenu`, `TugPopover`, `TugConfirmPopover`,
  * `TugContextMenu`, `tug-editor-context-menu`) take focus while open
  * via Radix's `FocusScope`. When such a popup closes, focus must

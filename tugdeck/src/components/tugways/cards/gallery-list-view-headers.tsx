@@ -43,7 +43,7 @@
  *    cell renderers; no reach into `--tugx-list-view-*` from here.
  *
  * Decisions:
- *  - tugplan-tide-picker-redesign [D02] role-flat-list — Phase 0
+ *  - tugplan-dev-picker-redesign [D02] role-flat-list — Phase 0
  *    Step 1 landed `roleForIndex` on `TugListViewDataSource`; this
  *    card is the visual smoke for that primitive change.
  *  - The `kind` and `role` axes are intentionally distinct: kinds

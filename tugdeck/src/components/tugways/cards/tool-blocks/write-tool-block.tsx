@@ -11,8 +11,8 @@
  *
  *  - **Header:** file-plus icon + tool name + an atom-chip showing
  *    the file's basename (via the shared `<TugAtomChip>` primitive,
- *    per [D08](roadmap/tide-atoms.md#d08-tool-block-only) /
- *    [Step 7](roadmap/tide-atoms.md#step-7)) + an inline `{N} lines` /
+ *    per [D08](roadmap/dev-atoms.md#d08-tool-block-only) /
+ *    [Step 7](roadmap/dev-atoms.md#step-7)) + an inline `{N} lines` /
  *    `{B} bytes` size hint computed from the content, and a small
  *    `new` / `overwrite` chip that surfaces when the structured
  *    result carries a `created` boolean (Claude Code's

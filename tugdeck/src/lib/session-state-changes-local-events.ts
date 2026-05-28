@@ -17,7 +17,7 @@
  * `loadSessionStateChanges` carries the same triple; the popover's
  * external store dedupes overlap on a follow-up reader load.
  *
- * Process-global like `tide-session-ledger-events`. The store is the
+ * Process-global like `dev-session-ledger-events`. The store is the
  * intended subscriber in production; tests register their own
  * listeners.
  */

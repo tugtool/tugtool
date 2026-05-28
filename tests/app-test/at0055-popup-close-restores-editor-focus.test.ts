@@ -2,7 +2,7 @@
  * at0055-popup-close-restores-editor-focus.test.ts —
  * The image-5 close-path regression guard.
  *
- * Per `tugplan-tide-popup-bindings.md` Step 5 / [D06] / [D07] /
+ * Per `tugplan-dev-popup-bindings.md` Step 5 / [D06] / [D07] /
  * (#service-binding). The pre-fix bug: clicking a font picker (a
  * service-role TugPopupButton) and choosing an item left DOM focus
  * stranded inside the closed menu, so the next keystroke went

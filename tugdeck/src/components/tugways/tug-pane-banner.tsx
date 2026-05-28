@@ -301,9 +301,9 @@ export const TugPaneBanner = React.forwardRef<HTMLDivElement, TugPaneBannerProps
     // again but unfocused — the user sees no caret. `TideCardBody`
     // subscribes to `bannerDidHide` and re-focuses the prompt-entry
     // editor here, gated on first-responder state. Per the contract
-    // documented in `tide-card.tsx` (the focus-claim handlers
+    // documented in `dev-card.tsx` (the focus-claim handlers
     // block) and pinned by
-    // `tests/app-test/at0051-tide-mount-focus.test.ts`: any new
+    // `tests/app-test/at0051-dev-mount-focus.test.ts`: any new
     // overlay-class component that sets `inert` on the pane body
     // MUST emit a per-card `didHide` lifecycle event after `inert`
     // clears, mirroring this emission. Removing or gating this

@@ -28,7 +28,7 @@
  * insert at bottom, remove last, reset — for live mutation review,
  * plus a "Scroll to bottom" control that drives the inner
  * `TugListView`'s imperative `scrollToBottom()` handle (the same
- * jump-to-latest method the tide-card transcript host calls on
+ * jump-to-latest method the dev-card transcript host calls on
  * submit). The list view's `delegate` logs `willDisplay` /
  * `didEndDisplaying` / `onSelect` to the console so the lifecycle
  * model can be observed visually during scroll and click.
@@ -385,7 +385,7 @@ export interface GalleryListViewProps {
 
   /**
    * Forwarded to the inner `TugListView`. Set `true` to render
-   * every cell (no windowing) — same shape the tide-card
+   * every cell (no windowing) — same shape the dev-card
    * transcript uses. The region-scroll-anchor app-tests pass this
    * so the inline-rendering path is exercised under fixtures whose
    * cell count and heights are stable.
@@ -516,7 +516,7 @@ export function GalleryListView(
 
   // Imperative handle to the inner `TugListView`. The "Scroll to
   // bottom" button drives `scrollToBottom()` — the same imperative
-  // method the tide-card transcript host calls from its submit
+  // method the dev-card transcript host calls from its submit
   // handler ([D07]). Exposing it as a gallery control lets the
   // app-tests exercise the jump-to-latest gesture against the real
   // primitive (restore-anchor handling, follow-bottom re-engagement,

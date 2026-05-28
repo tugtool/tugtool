@@ -24,7 +24,7 @@ import {
   narrowWebFetchInput,
   stripCacheHitPrefix,
 } from "../web-fetch-tool-block";
-import { BESPOKE_FACTORY_BY_NAME } from "../../tide-assistant-renderer-dispatch";
+import { BESPOKE_FACTORY_BY_NAME } from "../../dev-assistant-renderer-dispatch";
 
 // ---------------------------------------------------------------------------
 // narrowWebFetchInput

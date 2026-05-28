@@ -32,7 +32,7 @@
  *      path that bypasses the card-host walk — a design regression.
  *
  * `.focus()` is deliberately NOT grep-contracted. Legitimate
- * component-internal focus claims (tide-card activation, tug-sheet
+ * component-internal focus claims (dev-card activation, tug-sheet
  * close-restore, tug-prompt-* handoff, engine-internal) are too
  * numerous for a grep to judge. The focus-restore *purpose* is pinned
  * by the Step 11 behaviour tests, not by grep.

@@ -164,7 +164,7 @@ export type EnginePaintMirrorActiveCaller =
 /**
  * Delegate-method tag on `macrotask-focus-claim` events.
  *
- * Distinguishes the three `useCardDelegate` handlers in `tide-card.tsx`
+ * Distinguishes the three `useCardDelegate` handlers in `dev-card.tsx`
  * that defer through the `MessageChannel` drain queue and currently
  * call `entryDelegateRef.current?.focus()`:
  *
@@ -289,7 +289,7 @@ export type DeckTraceEvent = {
   | {
       // Fired by EM-engine factories once their engine has finished
       // mounting and is ready to accept input / publish state.
-      // `engine` tags the factory ("tug-prompt-input", "tide-card",
+      // `engine` tags the factory ("tug-prompt-input", "dev-card",
       // "gallery-prompt-entry"). Used by harness tests to gate
       // assertions on engine-state surface methods.
       kind: "engine-ready";
@@ -381,7 +381,7 @@ export type DeckTraceEvent = {
   | {
       // Fires when `useCardDelegate`'s `MessageChannel`-deferred
       // macrotask handler calls `entryDelegateRef.current?.focus()`
-      // in `tide-card.tsx`. Distinguishes the macrotask claim from
+      // in `dev-card.tsx`. Distinguishes the macrotask claim from
       // the synchronous framework path on the trace timeline; the
       // Phase E.11 Step 3 grep gate verifies this event is absent
       // for the `cardDidActivate` delegate after the autonomous

@@ -6,7 +6,7 @@
  * `gallery-list-view-scroll-keyed` fixture (which mounts
  * `GalleryListView` with `scrollKey="gallery-list-view-scroll"`,
  * `inline=true`, `disableStreaming=true`). The fixture mirrors the
- * tide-card transcript's configuration: every cell rendered at mount,
+ * dev-card transcript's configuration: every cell rendered at mount,
  * region scroll opted into the [A9] region-scroll axis, no
  * continuous-mutation effect competing with settle detection.
  *

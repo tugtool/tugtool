@@ -1,6 +1,6 @@
 /**
  * at0071-dev-panel-tab-persistence.test.ts — TugDevPanel `activeTab`
- * persistence (Step 20.3.2 of tide-assistant-turns).
+ * persistence (Step 20.3.2 of dev-assistant-turns).
  *
  * Two assertions:
  *
