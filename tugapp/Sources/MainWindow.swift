@@ -47,18 +47,40 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     static let pageZoomStep: CGFloat = 0.1
     static let defaultPageZoom: CGFloat = 1.0
 
+    /// Minimum content size the user can resize the window down to.
+    /// Tide + the canvas need this much room to lay out without
+    /// clipping the prompt area or stat row.
+    static let minWindowSize = NSSize(width: 1200, height: 1000)
+
+    /// Fraction of the main screen's visible frame that the default
+    /// (first-launch) window occupies, and the cap applied to a
+    /// restored frame at every subsequent launch. Visible frame
+    /// excludes the menu bar and dock so 80% remains breathable.
+    static let defaultScreenFraction: CGFloat = 0.8
+
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
         self.title = "Tug"
+        self.minSize = MainWindow.minWindowSize
+
         // Restore the window frame saved by AppKit under
-        // `NSWindow Frame MainWindow` in NSUserDefaults. If no saved frame
-        // exists (first launch), center on the active screen as a default.
-        // setFrameAutosaveName then registers automatic save-on-move/resize.
+        // `NSWindow Frame MainWindow` in NSUserDefaults, then apply
+        // a fit-to-screen pass.
+        //
+        // - First launch (no saved frame): size to 80% of the main
+        //   screen's visible frame (floored at `minWindowSize`) and
+        //   center.
+        // - Subsequent launches: restore, then clamp to 80% of the
+        //   current main screen — covers the "moved from 27\" monitor
+        //   back to laptop" case where the saved frame exceeds the
+        //   new display.
+        //
+        // setFrameAutosaveName then registers automatic save-on-
+        // move/resize.
         let autosaveName: NSWindow.FrameAutosaveName = "MainWindow"
-        if !self.setFrameUsingName(autosaveName) {
-            self.center()
-        }
+        let restored = self.setFrameUsingName(autosaveName)
+        MainWindow.applyScreenFitConstraints(to: self, restored: restored)
         self.setFrameAutosaveName(autosaveName)
 
         // Configure WKUserContentController for script message handlers
@@ -545,6 +567,43 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = self
+    }
+
+    // MARK: - Screen-fit sizing
+
+    /// Apply the dev/prod canvas sizing policy: first launch sizes
+    /// to 80% of the main screen's visible frame and centers; every
+    /// subsequent launch caps the restored frame to 80% of the
+    /// current main screen so a "saved on big monitor, opened on
+    /// laptop" frame is brought back on-screen.
+    ///
+    /// The target size is floored at `minWindowSize` so even tiny
+    /// displays don't shrink the window below the usable minimum.
+    static func applyScreenFitConstraints(to window: NSWindow, restored: Bool) {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+            if !restored {
+                window.center()
+            }
+            return
+        }
+        let visible = screen.visibleFrame
+        let targetW = max(visible.width * defaultScreenFraction, minWindowSize.width)
+        let targetH = max(visible.height * defaultScreenFraction, minWindowSize.height)
+
+        if restored {
+            var frame = window.frame
+            let clampedW = min(frame.size.width, targetW)
+            let clampedH = min(frame.size.height, targetH)
+            if clampedW != frame.size.width || clampedH != frame.size.height {
+                frame.size = NSSize(width: clampedW, height: clampedH)
+                window.setFrame(frame, display: false)
+            }
+        } else {
+            var frame = window.frame
+            frame.size = NSSize(width: targetW, height: targetH)
+            window.setFrame(frame, display: false)
+            window.center()
+        }
     }
 }
 

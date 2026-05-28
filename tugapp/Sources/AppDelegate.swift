@@ -81,9 +81,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         TugbankClient.configure(path: dbPath)
         lap("TugbankClient.configure")
 
-        let contentRect = NSRect(x: 100, y: 100, width: 1200, height: 800)
+        // Placeholder rect — `MainWindow.init` overrides this
+        // immediately (restored autosave frame, else 80% of the main
+        // screen's visible frame, clamped to `minWindowSize`).
+        let initialRect = NSRect(x: 0, y: 0, width: 1, height: 1)
         window = MainWindow(
-            contentRect: contentRect,
+            contentRect: initialRect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
