@@ -813,12 +813,12 @@ The doc-sweep rules from multi-instance [D19] apply here too. Do NOT rename:
 **References:** [D03]
 
 **Tasks:**
-- [ ] Rename `showTideCard` → `newDevCard` (selector name + method body).
-- [ ] Update `sendControl("show-card", params: ["component": "tide"])` → `["component": "dev"]`.
-- [ ] Rename `showGitCard`, `showHelloWorldCard`, `showComponentGallery` → `newGitCard`, `newHelloWorldCard`, `newComponentGalleryCard`. Update their control payloads (`"component": "git"`, `"hello"`; `show-component-gallery` stays the same control name since it's about opening the gallery, not a card type).
+- [x] Rename `showTideCard` → `newDevCard` (selector name + method body). *Earlier Step 3 sed already mapped `showTideCard` → `showDevCard`; this step swaps `show` → `new` to match the menu titles per [D03]. Replace-all done.*
+- [x] Update `sendControl("show-card", params: ["component": "tide"])` → `["component": "dev"]`. *Already swept by Step 7's `"tide"` → `"dev"` pass.*
+- [x] Rename `showGitCard`, `showHelloWorldCard`, `showComponentGallery` → `newGitCard`, `newHelloWorldCard`, `newComponentGalleryCard`. *Replace-all done for all 3.*
 
 **Checkpoint:**
-- [ ] `xcodebuild -configuration Debug build` succeeds.
+- [x] `xcodebuild -configuration Debug build` succeeds.
 
 ---
 

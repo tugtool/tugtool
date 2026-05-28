@@ -648,19 +648,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sendControl("focus-pane", params: ["paneId": paneId])
     }
 
-    @objc private func showComponentGallery(_ sender: Any?) {
+    @objc private func newComponentGalleryCard(_ sender: Any?) {
         sendControl("show-component-gallery")
     }
 
-    @objc private func showHelloWorldCard(_ sender: Any) {
+    @objc private func newHelloWorldCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "hello"])
     }
 
-    @objc private func showGitCard(_ sender: Any) {
+    @objc private func newGitCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "git"])
     }
 
-    @objc private func showDevCard(_ sender: Any) {
+    @objc private func newDevCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "dev"])
     }
 
@@ -1084,11 +1084,11 @@ extension AppDelegate: NSMenuDelegate {
         // Dev-mode items (moved from Developer menu)
         if devModeEnabled {
             menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Show Dev Card", action: #selector(showDevCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
-            menu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(showHelloWorldCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
-            menu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(showGitCard(_:)), keyEquivalent: "3", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "1", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "2", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "3", modifierMask: [.command, .option]))
             menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(showComponentGallery(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
+            menu.addItem(NSMenuItem(title: "Show Component Gallery", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "g", modifierMask: [.command, .option]))
         }
     }
 }
