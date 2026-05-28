@@ -105,6 +105,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loadPreferences()
         lap("loadPreferences")
 
+        refreshInitialProjectPathHint()
+        lap("refreshInitialProjectPathHint")
+
         updateDevInfoOverlay()
 
         #if DEBUG
@@ -405,6 +408,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let path = sourceTreePath {
             ProcessManager.writeTugbank(domain: TugConfig.domain, key: TugConfig.keySourceTreePath, value: path)
         }
+    }
+
+    /// Refresh the Tide picker's "initial project path" hint so a first-
+    /// time user (no Recent Project Paths yet) has a sensible default
+    /// they can hit Open on without typing. Debug builds point at the
+    /// repo source tree; release builds point at `$HOME`. Written every
+    /// launch — it's a derived hint, not user preference.
+    private func refreshInitialProjectPathHint() {
+        let value: String
+        if BuildInfo.profile == "debug", let tree = sourceTreePath {
+            value = tree
+        } else {
+            value = NSHomeDirectory()
+        }
+        ProcessManager.writeTugbank(
+            domain: TugConfig.domain,
+            key: TugConfig.keyInitialProjectPath,
+            value: value
+        )
     }
 
     // MARK: - Menu Bar

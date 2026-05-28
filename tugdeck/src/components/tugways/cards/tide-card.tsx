@@ -1059,6 +1059,17 @@ function parseRecents(entry: TaggedValue | undefined): string[] {
   return raw.paths.filter((p): p is string => typeof p === "string" && p.length > 0);
 }
 
+/**
+ * Parse a tugbank string value. The Swift host writes
+ * `dev.tugtool.app/initial-project-path` as `{ kind: "string" }` via
+ * `TugbankClient.setString` — empty string when the key is missing
+ * or shaped unexpectedly.
+ */
+function parseString(entry: TaggedValue | undefined): string {
+  if (!entry || entry.kind !== "string" || typeof entry.value !== "string") return "";
+  return entry.value;
+}
+
 /** Stable `[]` reference — useTugbankValue's `fallback` must be reference-stable. */
 const EMPTY_STRING_ARRAY: ReadonlyArray<string> = [];
 
@@ -1109,9 +1120,38 @@ function TideProjectPickerForm({
     EMPTY_STRING_ARRAY as string[],
   );
 
+  // Suggested project path the Swift host refreshes at every launch
+  // (the repo source tree for debug builds, `$HOME` for release).
+  // Used to seed the input when the user has no Recent Project Paths
+  // yet so first launch isn't a dead-end.
+  const initialProjectPath = useTugbankValue(
+    "dev.tugtool.app",
+    "initial-project-path",
+    parseString,
+    "",
+  );
+
   const [path, setPath] = useState("");
   const trimmedPath = path.trim();
   const sessionLedger = useSessionLedger(trimmedPath);
+
+  // One-shot seed: if the picker mounts with an empty input AND no
+  // Recent Project Paths to auto-fill from, pre-populate with the
+  // Swift-provided hint so the user has a Project Path they can hit
+  // Open on without typing. Skipped once any of these conditions are
+  // resolved (typed value, recents arrived, seed applied) so later
+  // tugbank ticks can't overwrite a user edit.
+  const didSeedPathRef = useRef(false);
+  useLayoutEffect(() => {
+    if (didSeedPathRef.current) return;
+    if (path !== "" || recents.length > 0) {
+      didSeedPathRef.current = true;
+      return;
+    }
+    if (initialProjectPath === "") return;
+    didSeedPathRef.current = true;
+    setPath(initialProjectPath);
+  }, [path, recents.length, initialProjectPath]);
 
   // Two data sources for the master/detail layout: Recents (always
   // visible — clicking one fills the input but the list does not
