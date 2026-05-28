@@ -19,6 +19,7 @@ import type {
   ThinkingText,
   CompactBoundary,
   ApiRetry,
+  RateLimitEvent,
   ControlRequestForward,
   ControlRequestCancel,
   ReplayComplete,
@@ -1004,6 +1005,34 @@ export function routeTopLevelEvent(
 
     case "control_response": {
       console.log(`Received control_response: ${JSON.stringify(event)}`);
+      break;
+    }
+
+    case "rate_limit_event": {
+      // Subscription-quota broadcast emitted once per turn (post
+      // `system/init`, pre-stream) since claude 2.1.x. Forward the
+      // structured info so the frontend can show reset time + status;
+      // the claude top-level `uuid` and `session_id` are dropped
+      // because tugcode tracks session_id authoritatively and the
+      // UI doesn't need claude's per-event uuid.
+      const info = event.rate_limit_info as Record<string, unknown> | undefined;
+      if (info && typeof info === "object") {
+        const evt: RateLimitEvent = {
+          type: "rate_limit_event",
+          rate_limit_info: {
+            status: (info.status as string) || "",
+            resetsAt: (info.resetsAt as number) || 0,
+            rateLimitType: (info.rateLimitType as string) || "",
+            overageStatus: (info.overageStatus as string) || "",
+            ...(typeof info.overageDisabledReason === "string"
+              ? { overageDisabledReason: info.overageDisabledReason }
+              : {}),
+            isUsingOverage: Boolean(info.isUsingOverage),
+          },
+          ipc_version: 2,
+        };
+        messages.push(evt);
+      }
       break;
     }
 

@@ -497,12 +497,20 @@ impl TestWs {
     /// `tug_session_id` rides along as an extra field — tugcode ignores
     /// it, tugcast's router parses it via `parse_tug_session_id` to
     /// route to the right per-session worker.
+    ///
+    /// The payload is shaped per the post-Step-5c content-block wire
+    /// (`tugcode/src/types.ts`'s `UserMessage` + `ContentBlock`):
+    /// `content: [{type: "text", text: <prompt>}]`. The pre-Step-5c
+    /// `{text, attachments}` shape passes `isUserMessage` (which only
+    /// gates on `type`) but lands as `msg.content === undefined` in
+    /// `handleUserMessage`, which forwards a content-less message to
+    /// claude — claude 2.1.154 + `--replay-user-messages` silently
+    /// exits on that malformed input and the capture aborts at [D11].
     pub async fn send_code_input(&mut self, tug_session_id: &str, prompt: &str) {
         let payload = serde_json::json!({
             "tug_session_id": tug_session_id,
             "type": "user_message",
-            "text": prompt,
-            "attachments": [],
+            "content": [{"type": "text", "text": prompt}],
         });
         let bytes = serde_json::to_vec(&payload).expect("code_input json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
@@ -514,21 +522,42 @@ impl TestWs {
             .expect("send code_input frame");
     }
 
-    /// Send a `user_message` with one or more attachments. Each
-    /// attachment is a pre-built JSON object with `filename`, `content`
-    /// (base64-encoded), and `media_type`. Used by image-attachment
-    /// probes in the golden stream-json catalog.
+    /// Send a `user_message` carrying a text prompt plus one or more
+    /// image attachments. Each attachment is a pre-built JSON object
+    /// with `filename`, `content` (base64-encoded), and `media_type`
+    /// (`ProbeMsg::UserMessageWithAttachments`'s static-data shape).
+    ///
+    /// Each attachment is projected into a post-Step-5c `image`
+    /// content block — `{type: "image", source: {type: "base64",
+    /// media_type, data}}` per
+    /// `tugcode/src/types.ts:ContentBlockImage`. `filename` is dropped:
+    /// the live wire shape no longer carries it (the journal's legacy
+    /// `filename` column is reconstructed via
+    /// `derive_legacy_journal_view`, which hardcodes empty).
     pub async fn send_user_message_with_attachments(
         &mut self,
         tug_session_id: &str,
         text: &str,
         attachments: Vec<serde_json::Value>,
     ) {
+        let mut content: Vec<serde_json::Value> =
+            vec![serde_json::json!({"type": "text", "text": text})];
+        for att in &attachments {
+            content.push(serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": att.get("media_type").cloned()
+                        .unwrap_or(serde_json::Value::String(String::new())),
+                    "data": att.get("content").cloned()
+                        .unwrap_or(serde_json::Value::String(String::new())),
+                },
+            }));
+        }
         let payload = serde_json::json!({
             "tug_session_id": tug_session_id,
             "type": "user_message",
-            "text": text,
-            "attachments": attachments,
+            "content": content,
         });
         let bytes = serde_json::to_vec(&payload).expect("user_message_with_attachments json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);

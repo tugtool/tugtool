@@ -571,6 +571,39 @@ export interface ApiRetry {
 }
 
 /**
+ * Subscription-quota status broadcast emitted by Claude Code 2.1.x at the
+ * start of every turn (post-`system/init`, pre-stream). Distinct from
+ * {@link ApiRetry}, which fires on backoff-retryable HTTP failures.
+ *
+ * Mirrors the claude top-level event shape verbatim:
+ * `{ type, rate_limit_info: { status, resetsAt, rateLimitType,
+ *    overageStatus, overageDisabledReason, isUsingOverage }, uuid,
+ *    session_id }`. The frontend reads this to surface "X hours until
+ * quota reset" in the chrome and to flip into a "rate-limited" mode when
+ * `status !== "allowed"`.
+ */
+export interface RateLimitInfo {
+  /** `"allowed"`, `"warning"`, `"exceeded"`, etc. */
+  status: string;
+  /** Unix epoch seconds at which the current window resets. */
+  resetsAt: number;
+  /** `"five_hour"`, `"daily"`, etc. */
+  rateLimitType: string;
+  /** `"accepted"` or `"rejected"`. */
+  overageStatus: string;
+  /** Reason overage is disabled (`"org_level_disabled"`, etc.). May be absent. */
+  overageDisabledReason?: string;
+  /** Whether the current turn is consuming overage allotment. */
+  isUsingOverage: boolean;
+}
+
+export interface RateLimitEvent {
+  type: "rate_limit_event";
+  rate_limit_info: RateLimitInfo;
+  ipc_version: number;
+}
+
+/**
  * Structured tool result for rich UI display per D11/PN-4.
  */
 export interface ToolUseStructured {
@@ -772,6 +805,7 @@ export type OutboundMessage =
   | CompactBoundary
   | ContextBreakdown
   | ApiRetry
+  | RateLimitEvent
   | ToolUseStructured
   | ControlRequestCancel
   | ResumeFailed
