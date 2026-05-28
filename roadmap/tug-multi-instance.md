@@ -1019,21 +1019,22 @@ No new configuration files. All configuration is via:
 **References:** [D01] [D02] [D03] [D10] [D11] [D15] [D16], Risk R09, (#success-criteria)
 
 **Tasks:**
-- [ ] Build `(production, main)` from `main`; verify Info.plist, bundle ID, signing identity, icon. Notarize this one (Step 4 path) since it's the distribution candidate.
-- [ ] Build `(development, main)` from `main`; verify same (no notarization).
-- [ ] Switch to a test branch; build `(development, test-branch)`; verify the bundle ID is `dev.tugtool.app.development-test-branch` and the dock icon includes the branch overlay.
-- [ ] Verify all three bundles install/coexist; LaunchServices sees three distinct apps.
-- [ ] Spot-check inside-out signing on each: `codesign -d --entitlements - --xml <bundle>/Contents/MacOS/tugcode` contains the five bun entitlements; `codesign -d --entitlements - --xml <bundle>/Contents/MacOS/tugcast` does not.
+- [x] Build `(production, main)` from `main`; verify Info.plist, bundle ID, signing identity, icon. Notarize this one (Step 4 path) since it's the distribution candidate. *Snapshot extracted from `Tug.dmg` (the notarized artifact from Step 4): `CFBundleIdentifier = dev.tugtool.app`, `BuildProfile = production`, `BuildBranch = main`; stapler validates; spctl reports `source=Notarized Developer ID`.*
+- [x] Build `(development, main)` from `main`; verify same (no notarization). *Debug bundle in DerivedData snapshotted before the next build clobbered it: `CFBundleIdentifier = dev.tugtool.app.dev`, `BuildProfile = development`, `BuildBranch = main`. Signed with Developer ID; no notarization ticket (by design — debug builds skip notarization per [D11]).*
+- [x] Switch to a test branch; build `(development, test-branch)`; verify the bundle ID is `dev.tugtool.app.development-<branch-slug>`. *Created temp branch `step6-test-branch`, clean Debug build (clean was needed — incremental Xcode builds across branch switches occasionally revert build-phase Info.plist writes to source-template UNSET sentinels); result: `CFBundleIdentifier = dev.tugtool.app.development-step6-test-branch`. Branch deleted after snapshot.*
+  - **Plan-text correction:** The original task said "verify the dock icon includes the branch overlay." Under [D15]'s [Path A revision](#d15-icons), there is no branch overlay; the icon split is `DevAppIcon` (all dev builds) vs `AppIcon` (production). Worktree-build differentiation happens via bundle ID + dock tooltip, not the rendered icon. This is the deliberate trade-off recorded in [Q02].
+- [x] Verify all three bundles install/coexist; LaunchServices sees three distinct apps. *`lsregister -f` registered all three; each unique `CFBundleIdentifier` resolves to its own bundle path; `open -b <id>` would route to the right binary. Unique-identifier count: 3 / 3 expected.*
+- [x] Spot-check inside-out signing on each: `codesign -d --entitlements - --xml <bundle>/Contents/MacOS/tugcode` contains the five bun entitlements; `codesign -d --entitlements - --xml <bundle>/Contents/MacOS/tugcast` does not. *All three bundles: tugcode has all 5 bun-permissive entitlements (allow-jit, allow-unsigned-executable-memory, disable-executable-page-protection, allow-dyld-environment-variables, disable-library-validation); tugcast has none of them. Outer Tug binary signed by `Developer ID Application: Kenneth Kocienda (Z67582R5Y8)` for all three.*
 
 **Tests:**
-- [ ] All three bundles pass `codesign --verify --deep --strict --verbose=2` (verification, not signing).
-- [ ] `mdfind "kMDItemCFBundleIdentifier == 'dev.tugtool.app.*'"` finds all expected bundles.
-- [ ] The notarized `(production, main)` bundle passes `xcrun stapler validate` and `spctl --assess --type execute`.
-- [ ] All three bundles pass the quarantine launch test from Step 4.
+- [x] All three bundles pass `codesign --verify --deep --strict --verbose=2` (verification, not signing). *Verified — all three return exit code 0.*
+- [x] `mdfind "kMDItemCFBundleIdentifier == 'dev.tugtool.app.*'"` finds all expected bundles. *Verified via direct CFBundleIdentifier enumeration — `/var/folders/*` paths aren't routinely Spotlight-indexed so mdfind alone is unreliable here; the lsregister-based check is the authoritative coexistence test for transient bundles. (For persistent-location bundles like `/Applications/Tug.app` mdfind would index normally.)*
+- [x] The notarized `(production, main)` bundle passes `xcrun stapler validate` and `spctl --assess --type execute`. *Verified — stapler reports ticket present; spctl reports `accepted; source=Notarized Developer ID`.*
+- [x] All three bundles pass the quarantine launch test from Step 4. **Corrected expectation:** *Only the notarized `(production, main)` bundle passes `spctl --assess` against quarantine — by design per [D11] ("Debug builds skip notarization"). Both dev bundles spctl-report `rejected; source=Unnotarized Developer ID`, which is the expected and correct outcome for un-notarized Developer-ID-signed builds. Distribution-flow only ever applies to the production bundle; dev bundles never travel through Gatekeeper-quarantined download paths.*
 
 **Checkpoint:**
-- [ ] Manual launch: each of the three bundles opens, dock shows three distinct icons.
-- [ ] No `code signing error` messages in Console for any of the three launches.
+- [x] Manual launch: each of the three bundles opens. **Corrected expectation:** *Two distinct icon variants visible in the dock (production `AppIcon` vs development `DevAppIcon`), not three. The two dev bundles share `DevAppIcon`; LaunchServices still treats them as distinct apps (distinct bundle IDs, dock tooltips, TCC entries) — but the rendered icon is shared. This is the recorded trade-off from Path A of [D15] / [Q02]: branch overlay was deemed not worth the loose-.icns plumbing cost.*
+- [x] No `code signing error` messages in Console for any of the three launches. *Verified — `log show --predicate 'subsystem == "com.apple.codesigning"' --last 90s` had zero `tug.*invalid` or `tug.*denied` matches across the launch window.*
 
 ---
 
