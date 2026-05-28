@@ -27,7 +27,8 @@ Three things changed recently that make this the moment to close the gap. First,
 
 #### Strategy {#strategy}
 
-- **Foundations first** ([#step-1] through [#step-5]): land the Z4B chrome as INDICATORS only per [#d13-z4b-indicator-only] (permission-mode, model, rate-limit, session-state). All four read from `SessionMetadataStore` via the same `useSyncExternalStore` pattern — doing them together amortizes the plumbing and the placement-experiment harness churn.
+- **Z4B horizontal space groundwork first** ([#step-0]): Z4B is already at 3 single-line pills today; the four new chips would overflow. Before any chip lands, enhance `TugBadge` to support a two-line `LABEL` / `content` presentation borrowing the status-bar's letter-spaced label typography. This is a design mini-spike (`gallery-badge` demos + a tuglaws note) — no production-chip mount yet, but every subsequent chip step depends on it.
+- **Foundations after the primitive** ([#step-1] through [#step-5]): land the Z4B chrome as INDICATORS only per [#d13-z4b-indicator-only] (permission-mode, model, rate-limit, session-state). All four read from `SessionMetadataStore` via the same `useSyncExternalStore` pattern AND render through the two-line TugBadge from [#step-0] — doing them together amortizes the plumbing and the placement-experiment harness churn.
 - **`Shift+Tab` cycle matches terminal exactly** ([#d02-cycle-order]) — `default → acceptEdits → plan → auto`. Preserves muscle memory for users migrating from the terminal.
 - **Slash commands split by category** ([#l01-slash-cmd-inventory]): skill-backed (no work, they already produce real event streams), terminal-rendered-locally (reimplement as graphical surfaces — the meat of this plan), unsupported (hidden from popup per [#d14-slash-unsupported-list]; documented in a canonical list).
 - **`/rewind` matches the terminal empirically** ([#d10-rewind-matches-terminal]) — run a probe to capture what the terminal does, then design the dev-card flow to produce the same mutations. No protocol speculation.
@@ -51,12 +52,13 @@ Three things changed recently that make this the moment to close the gap. First,
 
 #### Scope {#scope}
 
-1. Z4B chrome (indicators only per [#d13-z4b-indicator-only]): permission-mode chip (display only; cycle via `Shift+Tab`), model chip (display only; change via `/model`), rate-limit chip, session-state chip refinement.
-2. Locally-rendered slash command reimplementation: `/rewind` (empirically modeled on terminal — see [#d10-rewind-matches-terminal]), `/resume`, `/permissions` rules editor, `/model` picker, `/diff` sheet, `/context` HUD, `/memory` / `/agents` / `/hooks` listing sheets, `/help` tabbed sheet, `/btw` exclude-from-history flow, `/clear`.
-3. Stream-side polish: `control_request_forward` UI for tool approval and AskUserQuestion, `api_retry` indicator, `thinking_text` empty-state (omit per [#d12-thinking-empty-state]→[#q12-thinking-empty-state]), `@`-file completion, image drag/paste, interrupt visibility, `compact_boundary` divider, `unknown_event` IPC frame + frontend banner.
-4. Slash-command popup filtering: unsupported commands hidden from the popup per [#d14-slash-unsupported-list]; canonical list of unsupported commands lives in repo docs.
-5. Reusable primitives: `SessionPickerSheet` primitive (overlay per [#d15-pane-sheets-are-overlays]) consumed by `/rewind` and `/resume`.
-6. Tugcast `git_diff_request` / `git_diff_response` control commands for `/diff` per [#d21-diff-dedicated-command].
+1. Z4B chrome groundwork: enhance `TugBadge` to support a two-line `LABEL` / `content` layout in both orderings, borrowing the status-bar legend typography ([#step-0]).
+2. Z4B chrome (indicators only per [#d13-z4b-indicator-only], rendered via the two-line `TugBadge`): permission-mode chip (display only; cycle via `Shift+Tab`), model chip (display only; change via `/model`), rate-limit chip, session-state chip refinement.
+3. Locally-rendered slash command reimplementation: `/rewind` (empirically modeled on terminal — see [#d10-rewind-matches-terminal]), `/resume`, `/permissions` rules editor, `/model` picker, `/diff` sheet, `/context` HUD, `/memory` / `/agents` / `/hooks` listing sheets, `/help` tabbed sheet, `/btw` exclude-from-history flow, `/clear`.
+4. Stream-side polish: `control_request_forward` UI for tool approval and AskUserQuestion, `api_retry` indicator, `thinking_text` empty-state (omit per [#d12-thinking-empty-state]→[#q12-thinking-empty-state]), `@`-file completion, image drag/paste, interrupt visibility, `compact_boundary` divider, `unknown_event` IPC frame + frontend banner.
+5. Slash-command popup filtering: unsupported commands hidden from the popup per [#d14-slash-unsupported-list]; canonical list of unsupported commands lives in repo docs.
+6. Reusable primitives: `SessionPickerSheet` primitive (overlay per [#d15-pane-sheets-are-overlays]) consumed by `/rewind` and `/resume`.
+7. Tugcast `git_diff_request` / `git_diff_response` control commands for `/diff` per [#d21-diff-dedicated-command].
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -625,6 +627,9 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 | Component / field | Zone | Mechanism | Notes / law citations |
 |---|---|---|---|
+| `TugBadge` — `layout` + `label` props | Local data | Component props | Pure-function rendering; no internal state |
+| `TugBadge` — label-line typography (uppercase, tracked) | Appearance | CSS rules in `tug-badge.css` reading shared label-typography tokens | [L06]; visual vocabulary shared with status-bar legend via `--tug7-element-field-text-normal-label-rest` token, NOT by reaching into TugBox's slot per [L20] |
+| `TugBadge` — width stabilization for two-line layouts | Appearance | CSS `grid` / intrinsic sizing | [L06], [R01] |
 | `PermissionModeChip` — current mode label | Structure | `useSyncExternalStore(SessionMetadataStore)` | [L02]; reads `permissionMode` |
 | `PermissionModeChip` — hover / focus / active visuals | Appearance | CSS via `data-state` attribute | [L06]; no React state for visuals |
 | `PermissionModeChip` — persisted mode for restore | Structure | tugbank `dev.permission-mode.<cardId>` | [D07]; written by Shift+Tab handler, read on card mount |
@@ -677,7 +682,11 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 | File | Purpose |
 |---|---|
-| `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` | Z4B permission-mode indicator chip ([#step-1]) — display-only per [D13] |
+| `tugdeck/src/components/tugways/tug-badge.tsx` | **Modified** — adds `layout?: "single" \| "label-top" \| "content-top"` and `label?: string` props per [#step-0] / Spec S02 |
+| `tugdeck/src/components/tugways/tug-badge.css` | **Modified** — new layout rules + label typography borrowed from `tug-box.css` legend/label-above style |
+| `tugdeck/src/components/tugways/cards/gallery-badge.tsx` | **Modified** — gallery card sections demonstrating all three layouts ([#step-0]) |
+| `tugdeck/src/components/tugways/cards/gallery-badge.css` | **Modified** — gallery layout for the new sections |
+| `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` | Z4B permission-mode indicator chip ([#step-1]) — display-only per [D13]; rendered via `TugBadge` `label-top` layout per [#step-0] |
 | `tugdeck/src/components/tugways/cards/permission-mode-chip.css` | Styles + width stabilization |
 | `tugdeck/src/components/tugways/cards/model-chip.tsx` | Z4B model indicator chip ([#step-2]) — display-only per [D13] |
 | `tugdeck/src/components/tugways/cards/model-picker-sheet.tsx` | `/model` picker overlay sheet ([#step-2b]) |
@@ -720,6 +729,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 ### Documentation Plan {#documentation-plan}
 
+- [ ] Add a short design note to [tuglaws/component-authoring.md](../tuglaws/component-authoring.md) (or a small standalone doc) documenting the `TugBadge` two-line layout per [#step-0] / Spec S02 — when to use `label-top` vs `content-top` vs `single`.
 - [ ] Update [transport-exploration.md](transport-exploration.md) "Terminal-Only Features" section to mark resolved rows with their dev-card landing-step (e.g. "`/rewind` — Overlay sheet ([dev-card-claude-code-parity.md#step-7])"). Add the empirical `/rewind` findings from [#step-7a].
 - [ ] Author `tugdeck/docs/dev-card-unsupported-slash-commands.md` per [D14] — every command the popup hides, with a brief reason. Linked from the slash popup's "?" help affordance and from `/help`.
 - [ ] Update [transport-exploration.md](transport-exploration.md) IPC inbound table with whatever shape `/rewind` adopts after the empirical study (could be a new type, an extension, or a client-driven flow).
@@ -751,9 +761,80 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 ### Execution Steps {#execution-steps}
 
-> Every step has explicit `**Depends on:**` and `**References:**` lines. Phase A is [#step-1] through [#step-5]; Phase B is [#step-6] through [#step-14] (includes [#step-2b] `/model` picker and [#step-7a] empirical capture); Phase C is [#step-15] through [#step-22]; the final integration checkpoint is [#step-23].
+> Every step has explicit `**Depends on:**` and `**References:**` lines. Phase A is [#step-0] through [#step-5] (Step 0 is the TugBadge two-line spike that all Z4B chips depend on); Phase B is [#step-6] through [#step-14] (includes [#step-2b] `/model` picker and [#step-7a] empirical capture); Phase C is [#step-15] through [#step-22]; the final integration checkpoint is [#step-23].
+
+#### Step 0: TugBadge two-line presentation — design mini-spike {#step-0}
+
+**Commit:** `feat(tugways): TugBadge two-line label/content layout + gallery card`
+
+**References:** [D01] Z4B chrome anchor, [D13] Z4B indicator-only, Risk R01 Z4B layout shift, [L06] appearance via CSS/DOM, [L15] token-driven control states, [L19] component-authoring compliance, [L20] tokens scoped to component slot, (#z4b-chrome-layout, #context, #strategy)
+
+**Problem statement.** Current Z4B already shows three single-line chips (`Claude Code 2.1.x`, `Project: <path>`, `Session: <id>`). This plan adds four more (`permission-mode`, `model`, `rate-limit`, `session-state`). Seven single-line pills will overflow a reasonably-narrow card. The status bar at the top of the dev-card uses a two-line presentation (`STATE` letter-spaced label over `Idle` content; same for `TIME`, `TOKENS`, `CONTEXT`, `TASKS`) that packs information without taking more horizontal space. Borrow that pattern for TugBadge so Z4B chips can present `LABEL` over `content` in the same band.
+
+**Goal.** Land a TugBadge variant that supports two-line label/content presentation in both orderings, demo it in the gallery, and decide which ordering the dev-card chips will use — before any Z4B chip ([#step-1] through [#step-4]) consumes it.
+
+**Artifacts:**
+- Modified: `tugdeck/src/components/tugways/tug-badge.tsx` — new `layout` prop with three variants and new `label` prop separate from content
+- Modified: `tugdeck/src/components/tugways/tug-badge.css` — new layout rules + label typography reusing the status-bar style (`text-transform: uppercase`, `letter-spacing: 0.08em`, weight 600, `--tug7-element-field-text-normal-label-rest` color) so the chip and the status-bar legend share a single visual vocabulary
+- Modified: `tugdeck/src/components/tugways/cards/gallery-badge.tsx` + `gallery-badge.css` — new gallery card sections demonstrating both two-line orderings alongside the existing single-line layout
+- New: short design note in [tuglaws/component-authoring.md](../tuglaws/component-authoring.md) (or a small follow-on doc) documenting the two-line shape and when to use which ordering
+
+**Spec S02: TugBadge two-line presentation** {#s02-two-line-badge}
+
+- Props additions:
+  - `layout?: "single" | "label-top" | "content-top"` — default `"single"` (no breaking change to existing call sites).
+  - `label?: string` — only meaningful when `layout !== "single"`; rendered as the letter-spaced uppercase line. Single-layout call sites continue passing only `children`.
+- Layout rules:
+  - `single`: existing pill, content is `children`.
+  - `label-top`: two stacked rows; row 1 = `label` styled per [#s02-label-typography]; row 2 = `children` styled as existing content text.
+  - `content-top`: same two rows in reverse vertical order.
+- Width stabilization: the badge's outer width is the max of label-line and content-line widths; pre-allocated by the widest realistic value to satisfy [#r01-z4b-layout-shift].
+
+**Spec S02-typography: label-line typography** {#s02-label-typography}
+
+The label line borrows directly from the status-bar's existing legend / label-above style (already documented in `tug-box.css:74-91`):
+
+- `font-weight: 600`
+- `text-transform: uppercase`
+- `letter-spacing: 0.08em`
+- `color: var(--tug7-element-field-text-normal-label-rest)`
+- size: one notch smaller than the content line — likely a new component-scoped token `--tugx-badge-label-text-size`
+
+The visual vocabulary is intentionally shared with the status bar so a user reading either surface sees the same label discipline.
+
+**Decision deferred to spike outcome:** which ordering (`label-top` vs `content-top`) the dev-card Z4B chips use. The screenshot's status bar uses `label-top`. The recommended starting point for Z4B is `label-top` for consistency, but the gallery card demonstrates both so the team can compare in context.
+
+**Tasks:**
+- [ ] Audit existing TugBadge call sites (`grep` `TugBadge` across `tugdeck/src`) to ensure adding the `layout` and `label` props is non-breaking (they're optional with `"single"` default).
+- [ ] Add the `layout` + `label` props to `TugBadge`. Per-layout DOM structure: `single` renders as today; `label-top` and `content-top` render two `<span>`s in a vertical flex with column ordering driven by CSS, not by reordered DOM children (keeps semantic order stable).
+- [ ] Borrow the status-bar legend typography per [#s02-label-typography]. Add component-scoped tokens for label-text size and tracking under TugBadge's own slot per [L20] — do not reach into TugBox's tokens.
+- [ ] Width-stabilize: the badge's effective width is the wider of the label line and content line (per [R01]). The CSS uses `grid` or `display: inline-block` with intrinsic sizing so the wider row drives the layout.
+- [ ] Confirm token sourcing: label color is the field-label token from the seven-slot system per [L18]; no new color tokens minted.
+- [ ] Add gallery card sections (`gallery-badge.tsx`) demonstrating all three layouts side-by-side: `single` (current), `label-top` (label uppercase letter-spaced above content), `content-top` (content above label). Include realistic Z4B-style content as preview rows (e.g. `MODE / accept`, `MODEL / Opus 4.8 · 1M`, `LIMIT / 5h 23m`, `SESSION / 6d77f06e`).
+- [ ] Add a short design note to `tuglaws/component-authoring.md` (or a small standalone doc under `tuglaws/`) documenting when to use each layout. Brief: `single` for transient or single-fact pills; `label-top` for chrome that mirrors status-bar conventions; `content-top` reserved for the rare case where content reads first (e.g., a numeric value with a small caption below).
+- [ ] Decide the Z4B chip ordering. Recommendation: `label-top` for status-bar visual parity. Confirm by viewing both in the gallery against a representative card width.
+
+**Tests:**
+- [ ] Pure-logic: existing single-layout snapshot tests continue to pass (non-breaking).
+- [ ] Pure-logic: each new layout renders the expected DOM shape (two children with the right class names).
+- [ ] Real-app: open the badge gallery card and verify both two-line layouts render with the borrowed typography against multiple themes.
+- [ ] Real-app: confirm width-stabilization — toggle content between "5h 23m" and "rate-limited" in a `label-top` chip; assert no horizontal shift.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test`
+- [ ] `just app-test tug-badge-two-line`
+- [ ] Open the badge gallery card by hand; sign off on the chosen Z4B chip ordering before Step 1 starts consuming it.
+
+**What this step does NOT do:**
+- Does not mount any Z4B chip — that's [#step-1] through [#step-4].
+- Does not change the existing single-line TugBadge default behavior — every existing call site keeps working without modification.
+- Does not touch the status bar — only borrows its typography. The status bar's existing TugBox-driven layout is unchanged.
+
+---
 
 #### Step 1: Permission-mode indicator + `Shift+Tab` cycle in Z4B {#step-1}
+
+**Depends on:** #step-0
 
 **Commit:** `feat(dev-card): permission-mode indicator in Z4B with shift+tab cycle`
 
@@ -904,15 +985,17 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 #### Step 5: Phase A Integration Checkpoint {#step-5}
 
-**Depends on:** #step-1, #step-2, #step-3, #step-4
+**Depends on:** #step-0, #step-1, #step-2, #step-3, #step-4
 
 **Commit:** `N/A (verification only)`
 
-**References:** [D01], [D04], [D13] Z4B indicator-only, (#success-criteria, #z4b-chrome-layout)
+**References:** [D01], [D04], [D13] Z4B indicator-only, Spec S02 two-line TugBadge, (#success-criteria, #z4b-chrome-layout)
 
 **Tasks:**
 - [ ] Mount a freshly-created card; verify all 4 chips populate within 200 ms of session-ready.
-- [ ] Verify width-stabilization: no horizontal shift visible across chip state changes.
+- [ ] Verify chips render via the two-line `TugBadge` layout chosen in [#step-0]; LABEL line uses the borrowed status-bar typography.
+- [ ] Verify the chip cluster fits within representative card widths without horizontal overflow — open the card at narrow and wide configurations.
+- [ ] Verify width-stabilization: no horizontal shift visible across chip state changes (per [R01]).
 - [ ] Cycle permission mode via `Shift+Tab` 4 times; verify all 4 modes are reachable and the chip updates each time.
 - [ ] Verify model chip updates after a `model_change` IPC round-trip (driven via probe; the `/model` picker doesn't exist yet — it lands in [#step-2b]).
 - [ ] Verify Z4B chips are indicator-only per [D13]: clicking any chip produces no popover or picker.
@@ -1492,7 +1575,8 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Z4B chrome shows all 4 chips as INDICATORS on every dev-card mount (display-only per [D13]; no click-to-popover on any chip). `Shift+Tab` cycles permission mode; rate-limit chip appears when status ≠ allowed; session-state reflects lifecycle.
+- [ ] `TugBadge` supports the two-line `label-top` and `content-top` layouts per Spec S02; gallery card demos both ([#step-0]); existing single-layout call sites unchanged.
+- [ ] Z4B chrome shows all 4 chips as INDICATORS on every dev-card mount, rendered via the two-line `TugBadge` (display-only per [D13]; no click-to-popover on any chip). `Shift+Tab` cycles permission mode; rate-limit chip appears when status ≠ allowed; session-state reflects lifecycle.
 - [ ] Permission mode persists per-card via tugbank per [D07] — relaunching a card restores its prior mode.
 - [ ] Typed `/rewind`, `/resume`, `/permissions`, `/model`, `/diff`, `/context`, `/memory`, `/agents`, `/hooks`, `/help` each produce the documented graphical surface (all overlay sheets per [D15]).
 - [ ] `/vim`, `/theme`, `/color`, `/mcp`, `/login`, `/logout`, `/quit`, `/usage`, `/insights`, `/goal`, `/team-onboarding`, `/usage-credits`, `/extra-usage`, `/heapdump`, `/reload-skills` are absent from the slash popup.
@@ -1524,7 +1608,8 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 | Checkpoint | Verification |
 |---|---|
-| Phase A complete | All 4 Z4B chips populate on mount; `Shift+Tab` cycles; model picker works; rate-limit chip appears on demand. `just app-test z4b-phase-a-integration` + `just capture-capabilities` |
+| Step 0 spike landed | `TugBadge` two-line layouts shipped; gallery demos signed off; chosen Z4B ordering documented. `just app-test tug-badge-two-line` |
+| Phase A complete | All 4 Z4B chips populate on mount via two-line `TugBadge`; `Shift+Tab` cycles; rate-limit chip appears on demand; chip cluster fits within the card horizontally without overflow. `just app-test z4b-phase-a-integration` + `just capture-capabilities` |
 | Phase B complete | All 9 locally-rendered slash commands have graphical equivalents; popup filtering correct. `just app-test phase-b-integration` + `just capture-capabilities` |
 | Phase C complete | Approval UI / api_retry / thinking / @-file / image / interrupt / compact polished. `just app-test phase-c-integration` + `just capture-capabilities` |
 | Drift baseline | v2.1.154 catalog still clean — `cargo nextest run -p tugcast` and `stream_json_catalog_drift_regression` |
