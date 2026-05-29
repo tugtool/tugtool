@@ -348,20 +348,29 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
             </TugPushButton>
           )}
         </div>
-        {isDir && completions.length > 0 && (
+        {isDir && (
+          // Always rendered at a fixed height so the accordion's content height
+          // is stable from the first open frame — populating it later never
+          // grows the box, so the radios below don't hop. ([L06] no reflow.)
           <ul className="permission-rules-completions" data-slot="dir-completions">
-            {completions.map((c) => (
-              <li key={c.value}>
-                <TugPushButton
-                  size="sm"
-                  emphasis="ghost"
-                  className="permission-rules-completion"
-                  onClick={() => complete(c.value)}
-                >
-                  {c.label}
-                </TugPushButton>
+            {completions.length === 0 ? (
+              <li className="permission-rules-completions-empty" aria-disabled="true">
+                No matching directories
               </li>
-            ))}
+            ) : (
+              completions.map((c) => (
+                <li key={c.value}>
+                  <TugPushButton
+                    size="sm"
+                    emphasis="ghost"
+                    className="permission-rules-completion"
+                    onClick={() => complete(c.value)}
+                  >
+                    {c.label}
+                  </TugPushButton>
+                </li>
+              ))
+            )}
           </ul>
         )}
         <TugRadioGroup
@@ -511,7 +520,11 @@ function RulePanel({ store, bucket, cwd, header }: RulePanelProps): React.ReactE
         onChange={(event) => setQuery(event.target.value)}
       />
       <RuleRowContext.Provider value={rowContext}>
-        <div className="permission-rules-list">
+        <div
+          className={
+            isDir ? "permission-rules-list permission-rules-list--dirs" : "permission-rules-list"
+          }
+        >
           <TugListView<FilteredTugListViewDataSource>
             ref={listRef}
             dataSource={filtered}
