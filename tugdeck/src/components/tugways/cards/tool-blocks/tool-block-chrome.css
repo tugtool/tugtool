@@ -52,9 +52,18 @@ body {
 
   /* Header text size — larger (sm) than the shared strip-size (2xs)
    * because the chrome header carries the tool name + args, not just
-   * a tagline. */
+   * a tagline. The tool name rides this size; the mono args row drops
+   * one step (see `--tugx-toolblock-args-size`). */
   --tugx-toolblock-header-size:  var(--tug-font-size-sm);
   --tugx-toolblock-name-weight:  600;
+
+  /* Args text size — one step below the header (xs vs sm). The args
+   * are monospace, and a mono glyph reads optically larger than the
+   * sans tool name at the same px; dropping a step puts the two on
+   * even visual footing so the command/path doesn't loom over the
+   * name beside it. The trailing badges set their own size and are
+   * unaffected. */
+  --tugx-toolblock-args-size:    var(--tug-font-size-xs);
 
   /* Header args row — the gap between a wrapper's pattern / path
    * `<code>` and its trailing inline badges (count, line-range,
@@ -180,6 +189,11 @@ body {
   overflow: hidden;
   color: var(--tugx-block-text-color-muted);
   font-family: var(--tugx-block-code-font);
+  /* One step below the header so the mono command/path sits level
+   * with the sans tool name optically rather than looming over it.
+   * The `<code>` child inherits this; trailing badges override with
+   * their own size. */
+  font-size: var(--tugx-toolblock-args-size);
 }
 
 .tool-block-chrome-args code {
