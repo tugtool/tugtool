@@ -397,8 +397,9 @@ body {
 .tug-button-layout-label-top,
 .tug-button-layout-content-top {
   /* Compact chip padding — overrides the size's wider single-line inline
-     padding (same-specificity shorthand declared later wins). */
-  padding: 0 0.625rem;
+     padding (same-specificity shorthand declared later wins). Trim is gentle
+     so a leading icon doesn't sit too far off the chip's left edge. */
+  padding: 0 0.5rem;
   /* Content-box so the shared two-line height token means the same CONTENT
      height as a TugBadge (which is content-box). Both then add their 1px top/
      bottom border identically, so a two-line button and a two-line badge at the
@@ -442,7 +443,7 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.375em; /* icon ↔ stack — em-relative so it scales with the size */
+  gap: 0.5em; /* icon ↔ stack — em-relative so it scales with the size */
   line-height: 1;
 }
 
@@ -452,12 +453,13 @@ body {
   flex-shrink: 0;
 }
 
-/* Icon scales with the two-line content font (1em), matching the badge's
-   per-size icon. Later in source than the base `.tug-button svg` rule, so it
-   wins at equal specificity. */
+/* Leading icon scales with the two-line content font but reads larger than a
+   single text line so it balances the two-row stack beside it (a lone-line 1em
+   icon looks tiny next to a caption + value). Later in source than the base
+   `.tug-button svg` rule, so it wins at equal specificity. */
 .tug-button-twoline-icon svg {
-  width: 1em;
-  height: 1em;
+  width: 1.4em;
+  height: 1.4em;
 }
 
 .tug-button-stack {

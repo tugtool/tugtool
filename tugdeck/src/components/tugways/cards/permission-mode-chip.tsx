@@ -2,8 +2,9 @@
  * `PermissionModeChip` — the Z4B permission-mode control chip.
  *
  * A two-line `TugPushButton` (`label-top` / `size="sm"` / `outlined` `agent`)
- * carrying an uppercase `MODE` caption over the session's current
- * permission-mode label, prefixed with the `shield-cog-corner` icon. Sized and
+ * carrying an uppercase `/PERMISSIONS` caption (the slash command the user
+ * would type) over the session's current permission-mode label, prefixed with
+ * the `shield-cog-corner` icon. Sized and
  * tinted to family with the neighbor two-line `sm` `agent` badges (Project,
  * Session) — the unified two-line scale lands `sm` at the same height. Pushing it opens a `TugSheet` whose behavior options
  * ([PERMISSION_MODE_MENU]) live in a `TugListView`; picking one calls
@@ -35,7 +36,7 @@
 import "./permission-mode-chip.css";
 
 import React, { useCallback, useMemo, useSyncExternalStore } from "react";
-import { ShieldCogCorner } from "lucide-react";
+import { Check, ShieldCogCorner } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
@@ -120,7 +121,7 @@ export function PermissionModeChip({
     <>
       <TugPushButton
         layout="label-top"
-        label="Mode"
+        label="/permissions"
         size="sm"
         emphasis="outlined"
         role="agent"
@@ -163,6 +164,21 @@ export function PermissionModeChip({
 // ---------------------------------------------------------------------------
 // Behavior sheet — a TugListView of mode options
 // ---------------------------------------------------------------------------
+
+/**
+ * Brief description of each permission mode, shown as the option's subtitle.
+ * Wording tracks the Claude Code Agent SDK permission-mode docs
+ * (code.claude.com/docs → Configure permissions): `default` prompts;
+ * `acceptEdits` auto-approves file edits; `plan` is read-only; `auto` uses a
+ * model classifier per call; `bypassPermissions` skips prompts.
+ */
+const PERMISSION_MODE_SUBTITLES: Record<string, string> = {
+  default: "Prompts before edits and commands",
+  acceptEdits: "Auto-approves file edits",
+  plan: "Read-only; plans without changes",
+  auto: "Model approves or denies each call",
+  bypassPermissions: "Runs all tools without prompts",
+};
 
 /**
  * The mode currently active when the sheet opened, published to the cell
@@ -212,9 +228,11 @@ class PermissionModeDataSource implements TugListViewDataSource {
 
 /**
  * One behavior-option row. A flush `TugListRow` whose title is the formatted
- * mode label; the row paints selected when its mode matches the
- * sheet-open-time current mode. Presentational — activation is the enclosing
- * `TugListView` cell wrapper's job (it fires `delegate.onSelect`).
+ * mode label over a brief description; the row paints selected (with a leading
+ * checkmark) when its mode matches the sheet-open-time current mode. Every row
+ * renders the fixed-width check holder — empty when unselected — so the titles
+ * align whether or not a row carries the mark. Presentational — activation is
+ * the enclosing `TugListView` cell wrapper's job (it fires `delegate.onSelect`).
  */
 const PermissionModeCell: TugListViewCellRenderer<PermissionModeDataSource> =
   function PermissionModeCell({
@@ -227,7 +245,13 @@ const PermissionModeCell: TugListViewCellRenderer<PermissionModeDataSource> =
     return (
       <TugListRow
         title={formatPermissionMode(mode)}
+        subtitle={PERMISSION_MODE_SUBTITLES[mode]}
         selected={selected}
+        leading={
+          <span className="permission-mode-check" aria-hidden="true">
+            {selected ? <Check /> : null}
+          </span>
+        }
         data-mode={mode}
       />
     );

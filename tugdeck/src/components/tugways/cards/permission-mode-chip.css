@@ -49,3 +49,21 @@
   height: auto;
   max-height: 18rem;
 }
+
+/*
+ * Leading checkmark column. Every option row renders this holder (empty when
+ * unselected) at a fixed width, so the titles line up whether or not a row
+ * carries the mark. The check inherits the row's text colour (currentColor).
+ */
+.permission-mode-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  flex-shrink: 0;
+}
+
+.permission-mode-check svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}

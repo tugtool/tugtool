@@ -158,7 +158,9 @@ describe.skipIf(!SHOULD_RUN)(
               var selected = [];
               for (var i = 0; i < opts.length; i++) {
                 if (opts[i].getAttribute('data-selected') === 'true') {
-                  selected.push(opts[i].textContent.trim());
+                  // Read the title line only — each row also carries a subtitle.
+                  var t = opts[i].querySelector('.tug-list-row-title');
+                  selected.push((t ? t.textContent : opts[i].textContent).trim());
                 }
               }
               return { total: opts.length, selected: selected };
@@ -168,6 +170,20 @@ describe.skipIf(!SHOULD_RUN)(
           expect(sheetState.selected, "exactly the current mode is selected").toEqual([
             afterCycle!,
           ]);
+
+          // Every row reserves a leading check holder (so titles align), and
+          // exactly the current mode shows a checkmark inside it.
+          const checks = await app.evalJS<{ holders: number; marks: number }>(
+            `(function(){
+              return {
+                holders: document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-mode-check`)}).length,
+                marks: document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-mode-check svg`)}).length,
+              };
+            })()`,
+          );
+          expect(checks.holders, "every option reserves a check holder").toBe(5);
+          expect(checks.marks, "exactly the current mode is checkmarked").toBe(1);
+
           await app.nativeClickAtElement(AUTO_OPTION);
           await app.waitForCondition<boolean>(
             `(function(){
