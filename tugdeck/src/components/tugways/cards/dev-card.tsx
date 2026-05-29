@@ -807,6 +807,7 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
 
     void showSheet({
       title: "Choose Session",
+      presentation: "top",
       // Capture the cascade target at sheet-open time per
       // `tugplan-dev-overlay-framework.md` [D02]. `cardId` is the
       // card-host's responder id; the chain walk from `cardId`
