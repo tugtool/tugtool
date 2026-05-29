@@ -87,6 +87,33 @@
   --tug7-element-control-text-ghost-option-active      | --tug7-surface-control-primary-ghost-option-active      | control
   --tug7-element-control-border-ghost-option-active    | --tug7-surface-control-primary-ghost-option-active      | control
   --tug7-element-control-icon-ghost-option-active      | --tug7-surface-global-primary-normal-default-rest       | control
+  --tug7-element-control-text-filled-agent-rest        | --tug7-surface-control-primary-filled-agent-rest        | control
+  --tug7-element-control-border-filled-agent-rest      | --tug7-surface-control-primary-filled-agent-rest        | control
+  --tug7-element-control-icon-filled-agent-rest        | --tug7-surface-control-primary-filled-agent-rest        | control
+  --tug7-element-control-text-filled-agent-hover       | --tug7-surface-control-primary-filled-agent-hover       | control
+  --tug7-element-control-border-filled-agent-hover     | --tug7-surface-control-primary-filled-agent-hover       | control
+  --tug7-element-control-icon-filled-agent-hover       | --tug7-surface-control-primary-filled-agent-hover       | control
+  --tug7-element-control-text-filled-agent-active      | --tug7-surface-control-primary-filled-agent-active      | control
+  --tug7-element-control-border-filled-agent-active    | --tug7-surface-control-primary-filled-agent-active      | control
+  --tug7-element-control-icon-filled-agent-active      | --tug7-surface-control-primary-filled-agent-active      | control
+  --tug7-element-control-text-outlined-agent-rest      | --tug7-surface-control-primary-outlined-agent-rest      | control
+  --tug7-element-control-border-outlined-agent-rest    | --tug7-surface-control-primary-outlined-agent-rest      | control
+  --tug7-element-control-icon-outlined-agent-rest      | --tug7-surface-control-primary-outlined-agent-rest      | control
+  --tug7-element-control-text-outlined-agent-hover     | --tug7-surface-control-primary-outlined-agent-hover     | control
+  --tug7-element-control-border-outlined-agent-hover   | --tug7-surface-control-primary-outlined-agent-hover     | control
+  --tug7-element-control-icon-outlined-agent-hover     | --tug7-surface-control-primary-outlined-agent-hover     | control
+  --tug7-element-control-text-outlined-agent-active    | --tug7-surface-control-primary-outlined-agent-active    | control
+  --tug7-element-control-border-outlined-agent-active  | --tug7-surface-control-primary-outlined-agent-active    | control
+  --tug7-element-control-icon-outlined-agent-active    | --tug7-surface-control-primary-outlined-agent-active    | control
+  --tug7-element-control-text-ghost-agent-rest         | --tug7-surface-control-primary-ghost-agent-rest         | control
+  --tug7-element-control-border-ghost-agent-rest       | --tug7-surface-control-primary-ghost-agent-rest         | control
+  --tug7-element-control-icon-ghost-agent-rest         | --tug7-surface-global-primary-normal-default-rest       | control
+  --tug7-element-control-text-ghost-agent-hover        | --tug7-surface-control-primary-ghost-agent-hover        | control
+  --tug7-element-control-border-ghost-agent-hover      | --tug7-surface-control-primary-ghost-agent-hover        | control
+  --tug7-element-control-icon-ghost-agent-hover        | --tug7-surface-global-primary-normal-default-rest       | control
+  --tug7-element-control-text-ghost-agent-active       | --tug7-surface-control-primary-ghost-agent-active       | control
+  --tug7-element-control-border-ghost-agent-active     | --tug7-surface-control-primary-ghost-agent-active       | control
+  --tug7-element-control-icon-ghost-agent-active       | --tug7-surface-global-primary-normal-default-rest       | control
 } */
 
 /**
@@ -341,60 +368,73 @@ body {
 /* ============================================================================
    Two-line layouts (label / content)
 
-   Mirrors TugBadge's two-line stack ([tug-badge.css]): `label-top` and
-   `content-top` stack a letter-spaced uppercase caption over the content line,
-   with an optional leading icon to the left of the stack. The button grows to
-   a taller two-line height (the single-line heights are sized for one row);
-   inline padding is tightened so a two-line button reads as a compact chip.
+   `label-top` and `content-top` stack a letter-spaced uppercase caption over
+   the content line, with an optional leading icon to the left of the stack.
 
-   Two case-handling rules keep the chip legible under TugPushButton's blanket
-   `text-transform: uppercase`: the caption declares its own `uppercase`, and
-   the content line declares `text-transform: none` to reset the value to its
-   natural case. A direct rule on each child overrides the inherited transform
-   regardless of source order, so the reset holds whether or not
-   `.tug-push-button` is on the element.
+   SHARED SCALE WITH TugBadge. The height, content font, caption font, and
+   tracking all resolve from the badge's two-line tokens
+   (`--tugx-badge-twoline-height-*`, `--tugx-badge-text-*`, `--tugx-badge-label-*`,
+   owned in tug-badge.css). So a two-line TugBadge and a two-line TugPushButton
+   at the same `size` carry the same text and the same height and family in a
+   row — the explicit design intent. This cross-component reference is the
+   [L20] geometry/typography-coordination exception (same category as the
+   published `--tug-button-{size}-height` metrics other components read); it is
+   NOT an appearance-token reach. The badge is the single source of truth for
+   the two-line chip scale; this layout borrows it rather than reinventing one.
 
-   The per-size height rules combine the layout and size classes (specificity
-   0,2,0) so they beat the single-line size `height` (0,1,0); the padding
-   override is a same-specificity shorthand declared after the size rules, so
-   it wins by source order.
+   Setting `font-size` on the two-line root means the content (via inheritance),
+   the caption (`0.8em`), and the icon (`1em`) all scale from one value per
+   size. Two `text-transform` rules keep the chip legible under TugPushButton's
+   blanket uppercase: the caption declares its own `uppercase`, the content line
+   resets to `none` (a direct child rule overrides the inherited transform).
+
+   The per-size rules combine the layout and size classes (specificity 0,2,0)
+   so they beat the single-line size `height` / `font-size` (0,1,0); the padding
+   override is a same-specificity shorthand declared after the size rules, so it
+   wins by source order.
    ========================================================================= */
-
-body {
-  --tugx-button-label-text-size: 0.8em;
-  --tugx-button-label-tracking: 0.08em;
-
-  /* Two-line height scale — one notch taller than the single-line heights so
-     the caption + content rows seat comfortably. A `sm` two-line button is
-     36px, matching the dev-card submit button (`TugPushButton size="lg"`). */
-  --tugx-button-twoline-height-2xs: 1.75rem; /* 28px */
-  --tugx-button-twoline-height-xs:  2rem;    /* 32px */
-  --tugx-button-twoline-height-sm:  2.25rem; /* 36px — matches the submit button */
-  --tugx-button-twoline-height-md:  2.5rem;  /* 40px */
-  --tugx-button-twoline-height-lg:  2.75rem; /* 44px */
-}
 
 .tug-button-layout-label-top,
 .tug-button-layout-content-top {
   /* Compact chip padding — overrides the size's wider single-line inline
      padding (same-specificity shorthand declared later wins). */
   padding: 0 0.625rem;
+  /* Content-box so the shared two-line height token means the same CONTENT
+     height as a TugBadge (which is content-box). Both then add their 1px top/
+     bottom border identically, so a two-line button and a two-line badge at the
+     same `size` resolve to the same TOTAL height and family in a row. */
+  box-sizing: content-box;
 }
 
 .tug-button-layout-label-top.tug-button-size-2xs,
-.tug-button-layout-content-top.tug-button-size-2xs { height: var(--tugx-button-twoline-height-2xs); }
+.tug-button-layout-content-top.tug-button-size-2xs {
+  height: var(--tugx-badge-twoline-height-2xs);
+  font-size: var(--tugx-badge-text-2xs);
+}
 
 .tug-button-layout-label-top.tug-button-size-xs,
-.tug-button-layout-content-top.tug-button-size-xs { height: var(--tugx-button-twoline-height-xs); }
+.tug-button-layout-content-top.tug-button-size-xs {
+  height: var(--tugx-badge-twoline-height-xs);
+  font-size: var(--tugx-badge-text-xs);
+}
 
 .tug-button-layout-label-top.tug-button-size-sm,
-.tug-button-layout-content-top.tug-button-size-sm { height: var(--tugx-button-twoline-height-sm); }
+.tug-button-layout-content-top.tug-button-size-sm {
+  height: var(--tugx-badge-twoline-height-sm);
+  font-size: var(--tugx-badge-text-sm);
+}
 
 .tug-button-layout-label-top.tug-button-size-md,
-.tug-button-layout-content-top.tug-button-size-md { height: var(--tugx-button-twoline-height-md); }
+.tug-button-layout-content-top.tug-button-size-md {
+  height: var(--tugx-badge-twoline-height-md);
+  font-size: var(--tugx-badge-text-md);
+}
 
 .tug-button-layout-label-top.tug-button-size-lg,
-.tug-button-layout-content-top.tug-button-size-lg { height: var(--tugx-button-twoline-height-lg); }
+.tug-button-layout-content-top.tug-button-size-lg {
+  height: var(--tugx-badge-twoline-height-lg);
+  font-size: var(--tugx-badge-text-lg);
+}
 
 /* Two-line inner row: [icon] [stack], vertically centred. */
 .tug-button-twoline {
@@ -402,7 +442,7 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem; /* icon ↔ stack */
+  gap: 0.375em; /* icon ↔ stack — em-relative so it scales with the size */
   line-height: 1;
 }
 
@@ -412,11 +452,12 @@ body {
   flex-shrink: 0;
 }
 
-/* Slightly smaller than the single-line 1rem icon — chip-appropriate. Later in
-   source than the base `.tug-button svg` rule, so it wins at equal specificity. */
+/* Icon scales with the two-line content font (1em), matching the badge's
+   per-size icon. Later in source than the base `.tug-button svg` rule, so it
+   wins at equal specificity. */
 .tug-button-twoline-icon svg {
-  width: 0.875rem;  /* 14px */
-  height: 0.875rem;
+  width: 1em;
+  height: 1em;
 }
 
 .tug-button-stack {
@@ -433,10 +474,10 @@ body {
 }
 
 .tug-button-label {
-  font-size: var(--tugx-button-label-text-size);
+  font-size: var(--tugx-badge-label-text-size);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tugx-button-label-tracking);
+  letter-spacing: var(--tugx-badge-label-tracking);
   line-height: 1;
   /* Caption tracks the button's resolved text colour (so it follows role /
      emphasis / hover states) dimmed a touch via opacity — no fixed token, so
@@ -931,6 +972,111 @@ body {
   color: var(--tug7-element-control-icon-ghost-option-active);
 }
 
+/* --- filled-agent: Agent-domain CTA (purple/agent) --- */
+
+.tug-button-filled-agent {
+  background-color: var(--tug7-surface-control-primary-filled-agent-rest);
+  color: var(--tug7-element-control-text-filled-agent-rest);
+  border-color: var(--tug7-element-control-border-filled-agent-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-filled-agent-rest */
+.tug-button-filled-agent svg {
+  color: var(--tug7-element-control-icon-filled-agent-rest);
+}
+
+.tug-button-filled-agent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-filled-agent-hover);
+  color: var(--tug7-element-control-text-filled-agent-hover);
+  border-color: var(--tug7-element-control-border-filled-agent-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-filled-agent-hover */
+.tug-button-filled-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-filled-agent-hover);
+}
+
+.tug-button-filled-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-filled-agent-active);
+  color: var(--tug7-element-control-text-filled-agent-active);
+  border-color: var(--tug7-element-control-border-filled-agent-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-filled-agent-active */
+.tug-button-filled-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-filled-agent-active);
+}
+
+/* --- outlined-agent: Secondary agent (purple outline) --- */
+
+.tug-button-outlined-agent {
+  background-color: var(--tug7-surface-control-primary-outlined-agent-rest);
+  color: var(--tug7-element-control-text-outlined-agent-rest);
+  border-color: var(--tug7-element-control-border-outlined-agent-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-agent-rest */
+.tug-button-outlined-agent svg {
+  color: var(--tug7-element-control-icon-outlined-agent-rest);
+}
+
+.tug-button-outlined-agent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-outlined-agent-hover);
+  color: var(--tug7-element-control-text-outlined-agent-hover);
+  border-color: var(--tug7-element-control-border-outlined-agent-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-agent-hover */
+.tug-button-outlined-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-outlined-agent-hover);
+}
+
+.tug-button-outlined-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-outlined-agent-active);
+  color: var(--tug7-element-control-text-outlined-agent-active);
+  border-color: var(--tug7-element-control-border-outlined-agent-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-agent-active */
+.tug-button-outlined-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-outlined-agent-active);
+}
+
+/* --- ghost-agent: Subtle agent (purple text, transparent bg) --- */
+
+.tug-button-ghost-agent {
+  background-color: var(--tug7-surface-control-primary-ghost-agent-rest);
+  color: var(--tug7-element-control-text-ghost-agent-rest);
+  border-color: var(--tug7-element-control-border-ghost-agent-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-button-ghost-agent svg {
+  color: var(--tug7-element-control-icon-ghost-agent-rest);
+}
+
+.tug-button-ghost-agent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-ghost-agent-hover);
+  color: var(--tug7-element-control-text-ghost-agent-hover);
+  border-color: var(--tug7-element-control-border-ghost-agent-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-button-ghost-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-ghost-agent-hover);
+}
+
+.tug-button-ghost-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-ghost-agent-active);
+  color: var(--tug7-element-control-text-ghost-agent-active);
+  border-color: var(--tug7-element-control-border-ghost-agent-active);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-button-ghost-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-ghost-agent-active);
+}
+
 /* ============================================================================
    Chain-Action Disabled State ([aria-disabled='true'])
    ========================================================================= */
@@ -949,10 +1095,13 @@ body {
  */
 [aria-disabled="true"].tug-button-filled-accent,
 [aria-disabled="true"].tug-button-filled-action,
+[aria-disabled="true"].tug-button-filled-agent,
 [aria-disabled="true"].tug-button-filled-danger,
 [aria-disabled="true"].tug-button-outlined-action,
+[aria-disabled="true"].tug-button-outlined-agent,
 [aria-disabled="true"].tug-button-outlined-option,
 [aria-disabled="true"].tug-button-ghost-action,
+[aria-disabled="true"].tug-button-ghost-agent,
 [aria-disabled="true"].tug-button-ghost-danger,
 [aria-disabled="true"].tug-button-ghost-option {
   opacity: var(--tugx-control-disabled-opacity);

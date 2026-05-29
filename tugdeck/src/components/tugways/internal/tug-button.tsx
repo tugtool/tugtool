@@ -42,7 +42,7 @@ const DEFAULT_CONFIRMATION_DURATION_MS = 1500;
 export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
 
 /** TugButton role values — controls color domain [D02] */
-export type TugButtonRole = "accent" | "action" | "data" | "danger" | "option";
+export type TugButtonRole = "accent" | "action" | "agent" | "data" | "danger" | "option";
 
 /**
  * Set of recognized semantic role values. Used at runtime to disambiguate
@@ -55,6 +55,7 @@ export type TugButtonRole = "accent" | "action" | "data" | "danger" | "option";
 const SEMANTIC_ROLES: ReadonlySet<string> = new Set<TugButtonRole>([
   "accent",
   "action",
+  "agent",
   "data",
   "danger",
   "option",

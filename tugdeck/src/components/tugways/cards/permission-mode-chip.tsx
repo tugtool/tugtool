@@ -1,13 +1,16 @@
 /**
  * `PermissionModeChip` — the Z4B permission-mode control chip.
  *
- * A two-line `TugPushButton` (`label-top` / `size="sm"`) carrying an uppercase
- * `MODE` caption over the session's current permission-mode label, prefixed
- * with the `shield-cog-corner` icon. Pushing it opens a `TugSheet` listing the
- * behavior options ([PERMISSION_MODE_MENU]); picking one calls `onSelectMode`.
- * The `Shift+Tab` cycle (handled on the dev card's card-content responder) and
- * the `/permissions` slash command remain the other two ways to change the
- * mode; all three funnel through the dev card's single `setMode`.
+ * A two-line `TugPushButton` (`label-top` / `size="sm"` / `outlined` `agent`)
+ * carrying an uppercase `MODE` caption over the session's current
+ * permission-mode label, prefixed with the `shield-cog-corner` icon. Sized and
+ * tinted to family with the neighbor two-line `sm` `agent` badges (Project,
+ * Session) — the unified two-line scale lands `sm` at the same height. Pushing it opens a `TugSheet` whose behavior options
+ * ([PERMISSION_MODE_MENU]) live in a `TugListView`; picking one calls
+ * `onSelectMode`. The `Shift+Tab` cycle (handled on the dev card's
+ * card-content responder) and the `/permissions` slash command remain the
+ * other two ways to change the mode; all three funnel through the dev card's
+ * single `setMode`.
  *
  * Data sources ([L02] — external state enters through `useSyncExternalStore`
  * only):
@@ -17,9 +20,10 @@
  *    read as the pre-population fallback so the chip shows the prior mode
  *    immediately on card relaunch, before the live metadata lands ([D07]).
  *
- * Compositional component — composes `TugPushButton` + `TugSheet`; its only
- * own CSS is the value-line width-stabilizer and the sheet's option list.
- * The composed children keep their own tokens [L20].
+ * Compositional component — composes `TugPushButton`, `TugSheet`, and
+ * `TugListView`; its only own CSS is the value-line width-stabilizer and the
+ * sheet's option-list layout. The composed children keep their own tokens
+ * [L20].
  *
  * Laws: [L02] store subscription, [L06] no React state for appearance,
  *       [L19] authoring guide, [L20] composed children keep own tokens
@@ -30,11 +34,19 @@
 
 import "./permission-mode-chip.css";
 
-import React, { useCallback, useSyncExternalStore } from "react";
+import React, { useCallback, useMemo, useSyncExternalStore } from "react";
 import { ShieldCogCorner } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
+import { TugListRow } from "@/components/tugways/tug-list-row";
+import {
+  TugListView,
+  type TugListViewCellProps,
+  type TugListViewCellRenderer,
+  type TugListViewDataSource,
+  type TugListViewDelegate,
+} from "@/components/tugways/tug-list-view";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
@@ -85,8 +97,8 @@ export function PermissionModeChip({
   const { showSheet, renderSheet } = useTugSheet();
 
   // Push → present the behavior sheet. Picking an option calls `onSelectMode`
-  // and dismisses the sheet; Cancel / Escape just dismiss. `mode` is captured
-  // at open time so the open sheet marks the then-current mode as selected.
+  // and dismisses the sheet; Done / Cancel / Escape just dismiss. `mode` is
+  // captured at open time so the open sheet marks the then-current mode.
   const openBehaviorSheet = useCallback(() => {
     void showSheet({
       title: "Permission Mode",
@@ -98,6 +110,7 @@ export function PermissionModeChip({
             onSelectMode(picked);
             close(picked);
           }}
+          onDone={() => close()}
         />
       ),
     });
@@ -110,7 +123,7 @@ export function PermissionModeChip({
         label="Mode"
         size="sm"
         emphasis="outlined"
-        role="action"
+        role="agent"
         icon={<ShieldCogCorner aria-hidden="true" />}
         data-slot="permission-mode-chip"
         aria-label="Permission mode"
@@ -147,44 +160,141 @@ export function PermissionModeChip({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Behavior sheet — a TugListView of mode options
+// ---------------------------------------------------------------------------
+
+/**
+ * The mode currently active when the sheet opened, published to the cell
+ * renderers so the matching row paints selected. `onPick` lives on the
+ * delegate (in scope where the sheet is built), so the context only carries
+ * the read-only "which row is current" flag.
+ */
+const PermissionModeListContext = React.createContext<string | null>(null);
+
+/**
+ * Static, single-section data source over [PERMISSION_MODE_MENU]. The mode set
+ * never changes during a sheet's lifetime, so `subscribe` is a no-op and
+ * `getVersion` is a stable constant.
+ */
+class PermissionModeDataSource implements TugListViewDataSource {
+  private readonly modes: readonly string[];
+
+  constructor(modes: readonly string[]) {
+    this.modes = modes;
+  }
+
+  numberOfItems(): number {
+    return this.modes.length;
+  }
+
+  idForIndex(index: number): string {
+    return this.modes[index];
+  }
+
+  kindForIndex(): string {
+    return "mode";
+  }
+
+  /** Cell-renderer accessor — the raw mode string at `index`. */
+  modeAt(index: number): string {
+    return this.modes[index];
+  }
+
+  subscribe(): () => void {
+    return () => {};
+  }
+
+  getVersion(): unknown {
+    return 0;
+  }
+}
+
+/**
+ * One behavior-option row. A flush `TugListRow` whose title is the formatted
+ * mode label; the row paints selected when its mode matches the
+ * sheet-open-time current mode. Presentational — activation is the enclosing
+ * `TugListView` cell wrapper's job (it fires `delegate.onSelect`).
+ */
+const PermissionModeCell: TugListViewCellRenderer<PermissionModeDataSource> =
+  function PermissionModeCell({
+    index,
+    dataSource,
+  }: TugListViewCellProps<PermissionModeDataSource>): React.ReactElement {
+    const currentMode = React.useContext(PermissionModeListContext);
+    const mode = dataSource.modeAt(index);
+    const selected = mode === currentMode;
+    return (
+      <TugListRow
+        title={formatPermissionMode(mode)}
+        selected={selected}
+        data-mode={mode}
+      />
+    );
+  };
+
+const PERMISSION_MODE_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<PermissionModeDataSource>
+> = {
+  mode: PermissionModeCell,
+};
+
 interface PermissionModeSheetBodyProps {
   /** The mode marked as selected when the sheet opened (`null` if unknown). */
   currentMode: string | null;
   /** Invoked with the chosen mode; the chip closes the sheet afterward. */
   onPick: (mode: string) => void;
+  /** Dismiss the sheet without changing the mode (the Done button). */
+  onDone: () => void;
 }
 
 /**
- * The behavior-options list inside the sheet. One full-width option per
- * [PERMISSION_MODE_MENU] mode; the current mode reads as `filled`, the rest as
- * `ghost`. `bypassPermissions` carries the `danger` role so the dangerous mode
- * is visibly distinct whether or not it is the active one. The selection swap
- * is appearance-only (emphasis class), not React state on this list.
+ * The behavior-options sheet body: a `TugListView` of mode rows above a Done
+ * button. The list is `inline` (every row rendered, no windowing) and
+ * `flush` so the rows read as one stacked group with the current mode
+ * highlighted. Clicking a row fires the delegate's `onSelect`, which picks
+ * that mode and closes the sheet.
+ *
+ * The list view is the keyboard-ready substrate: when component keyboard
+ * navigation lands, arrowing + Enter through these rows will choose a mode
+ * with no extra wiring here.
  */
 function PermissionModeSheetBody({
   currentMode,
   onPick,
+  onDone,
 }: PermissionModeSheetBodyProps): React.ReactElement {
+  const dataSource = useMemo(
+    () => new PermissionModeDataSource(PERMISSION_MODE_MENU),
+    [],
+  );
+  const delegate = useMemo<TugListViewDelegate>(
+    () => ({
+      onSelect: (index) => onPick(PERMISSION_MODE_MENU[index]),
+    }),
+    [onPick],
+  );
+
   return (
-    <div className="permission-mode-sheet-options" role="group">
-      {PERMISSION_MODE_MENU.map((m) => {
-        const selected = m === currentMode;
-        const danger = m === "bypassPermissions";
-        return (
-          <TugPushButton
-            key={m}
-            size="md"
-            emphasis={selected ? "filled" : "ghost"}
-            role={danger ? "danger" : "action"}
-            data-mode={m}
-            data-selected={selected ? "true" : undefined}
-            aria-pressed={selected}
-            onClick={() => onPick(m)}
-          >
-            {formatPermissionMode(m)}
-          </TugPushButton>
-        );
-      })}
+    <div className="permission-mode-sheet">
+      <PermissionModeListContext.Provider value={currentMode}>
+        <div className="permission-mode-sheet-list">
+          <TugListView<PermissionModeDataSource>
+            dataSource={dataSource}
+            delegate={delegate}
+            cellRenderers={PERMISSION_MODE_CELL_RENDERERS}
+            rowLayout="flush"
+            inline
+            className="permission-mode-list"
+          />
+        </div>
+      </PermissionModeListContext.Provider>
+      <div className="tug-sheet-actions">
+        <TugPushButton emphasis="filled" onClick={onDone}>
+          Done
+        </TugPushButton>
+      </div>
     </div>
   );
 }
