@@ -69,6 +69,15 @@ pub struct Instance {
     pub bundle_path: PathBuf,
     /// Tugcast process PID.
     pub pid: i32,
+    /// PID of the GUI host app (`Tug.app`) that spawned tugcast — its
+    /// parent process. `0` when tugcast runs standalone (no GUI host)
+    /// or when read from a registry entry written before this field
+    /// existed. Teardown (`tugutil instance stop`) signals the host so
+    /// the app runs its own shutdown and tugcast follows via its
+    /// parent-watch; signalling tugcast alone leaves the host window
+    /// alive and stuck reconnecting.
+    #[serde(default)]
+    pub host_pid: i32,
     /// TCP port tugcast bound for HTTP/WS.
     pub tugcast_port: u16,
     /// TCP port Vite bound (or `0` when Vite is not running).
@@ -376,6 +385,7 @@ mod tests {
             bundle_id: format!("dev.tugtool.app.{instance_id}"),
             bundle_path: PathBuf::from("/tmp/Tug.app"),
             pid,
+            host_pid: 0,
             tugcast_port: 55300,
             vite_port: 55200,
             tmux_session: format!("cc-{instance_id}"),
@@ -417,6 +427,28 @@ mod tests {
         let listed = load_from(&path).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].instance_id, "debug-foo");
+    }
+
+    #[test]
+    fn loads_legacy_entry_without_host_pid() {
+        // A registry written by a binary that predates `host_pid` has
+        // no such key. `#[serde(default)]` must let it deserialize with
+        // `host_pid == 0` rather than failing the whole parse — during
+        // an upgrade, old and new binaries share one registry file.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("reg.json");
+        let legacy = r#"{"version":1,"instances":[{
+            "instance_id":"debug-legacy","profile":"debug","branch":"legacy",
+            "bundle_id":"dev.tugtool.app.debug","bundle_path":"/tmp/Tug.app",
+            "pid":1,"tugcast_port":55300,"vite_port":55200,
+            "tmux_session":"cc-legacy","data_dir":"/tmp/data/legacy",
+            "started_at":"2026-01-01T00:00:00Z"}]}"#;
+        std::fs::write(&path, legacy).unwrap();
+
+        let listed = load_from(&path).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].instance_id, "debug-legacy");
+        assert_eq!(listed[0].host_pid, 0, "missing host_pid must default to 0");
     }
 
     #[test]

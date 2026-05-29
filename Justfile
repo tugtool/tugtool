@@ -613,7 +613,7 @@ build-app:
 # Recipe exit code matches the verdict (0 iff PASS).
 #
 # Prereqs:
-#   just setup-dev-signing                 # one-time; 'Tug Dev' identity
+#   just setup-dev-signing                 # one-time; Developer ID cert
 #   just build-app                         # build + sign Tug.app
 #
 # Usage:
@@ -623,18 +623,19 @@ build-app:
 #   just app-test harness-smoke/smoke.test.ts at0003-pane-activation.test.ts
 #                                          # specific files in order
 #
-# Re-signs Tug.app with 'Tug Dev' on every invocation so a bare
-# xcodebuild between runs cannot invalidate the Accessibility grant.
-# Re-signing is idempotent and fast (~100ms).
+# This recipe does NOT re-sign the bundle. `build-app` / `app-debug`
+# seal it with the Developer ID Application identity, whose designated
+# requirement is stable across rebuilds (it anchors to Apple's
+# intermediate, not a per-build cdhash), so the Accessibility grant for
+# `dev.tugtool.app.debug` survives. Native-event tests need that grant
+# for `CGEvent.post`; if AX is missing the harness fails the preflight
+# with the bundle id to add in System Settings.
 #
-# Env var:
-#   APP_TEST_SKIP_RESIGN=1   # bypass the re-sign step; useful for
-#                            # first-time onboarding before
-#                            # 'just setup-dev-signing' has run, or
-#                            # when diagnosing whether the re-sign
-#                            # itself is the culprit. Tests requiring
-#                            # AX-granted CGEvent.post will fail
-#                            # without a properly-signed bundle.
+# Teardown: each launch is its own `apptest-<uuid>` instance. The
+# harness signals the GUI app by PID (`getHostPid` over RPC) on
+# `app.close()`; tugcast then self-exits via its parent-watch. The
+# `tugutil instance stop` sweeps below are the backstop for a test that
+# panics before `close()`.
 app-test *FILES:
     #!/usr/bin/env bash
     # Deliberately NOT `set -e` — we want to keep iterating past per-
@@ -695,7 +696,7 @@ app-test *FILES:
 
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        FILES=(harness-smoke/smoke.test.ts harness-smoke/smoke-native.test.ts harness-smoke/smoke-em.test.ts harness-smoke/smoke-cold-boot.test.ts harness-smoke/smoke-app-reload.test.ts harness-smoke/smoke-capture-phase-save.test.ts at0001-tab-switch-fc.test.ts at0001-rapid-cadence.test.ts at0002-tab-switch-em.test.ts at0003-pane-activation.test.ts at0003-rapid-cadence.test.ts at0016-tab-close-handoff.test.ts at0016-rapid-cadence.test.ts at0006-cross-pane-drag.test.ts at0006-em-cross-pane.test.ts at0007-card-detach.test.ts at0007-em-card-detach.test.ts at0009-em-inactive-mount.test.ts at0021-drag-aborted.test.ts at0004-app-resign-return.test.ts at0005-app-hide-unhide.test.ts at0010-markdown-selection.test.ts at0010-cold-boot-selection.test.ts at0014-scroll-persistence.test.ts at0014-cold-boot-scroll.test.ts at0017-savestate-rpc-parity.test.ts at0018-async-content-race.test.ts at0019-pane-teardown-flush.test.ts at0020-overlay-focus-return.test.ts at0022-caret-visibility.test.ts at0023-cross-card-selection.test.ts at0024-prompt-state-roundtrip.test.ts at0025-prompt-deactivated-roundtrip.test.ts at0026-overlay-persistence.test.ts at0027-layout-state-persistence.test.ts at0030-virtual-focus.test.ts at0031-prompt-entry-chrome.test.ts at0032-em-cold-boot-selection.test.ts at0033-em-fresh-card-activation.test.ts at0034-em-focus-after-move.test.ts at0035-em-app-switch-selection.test.ts at0035-dev-app-switch-selection.test.ts at0036-inactive-card-app-switch-selection.test.ts at0037-deck-wide-restore-consistency.test.ts at0038-deactivation-inactive-paint.test.ts at0078-dev-engine-focus-survives.test.ts at0080-dev-focus-card-switch.test.ts at0081-dev-focus-reload.test.ts)
+        FILES=(harness-smoke/smoke.test.ts harness-smoke/smoke-native.test.ts harness-smoke/smoke-em.test.ts harness-smoke/smoke-cold-boot.test.ts harness-smoke/smoke-app-reload.test.ts harness-smoke/smoke-capture-phase-save.test.ts at0001-tab-switch-fc.test.ts at0001-rapid-cadence.test.ts at0002-tab-switch-em.test.ts at0003-pane-activation.test.ts at0003-rapid-cadence.test.ts at0016-tab-close-handoff.test.ts at0016-rapid-cadence.test.ts at0006-cross-pane-drag.test.ts at0006-em-cross-pane.test.ts at0007-card-detach.test.ts at0007-em-card-detach.test.ts at0009-em-inactive-mount.test.ts at0021-drag-aborted.test.ts at0004-app-resign-return.test.ts at0005-app-hide-unhide.test.ts at0010-markdown-selection.test.ts at0010-cold-boot-selection.test.ts at0014-scroll-persistence.test.ts at0014-cold-boot-scroll.test.ts at0017-savestate-rpc-parity.test.ts at0018-async-content-race.test.ts at0019-pane-teardown-flush.test.ts at0020-overlay-focus-return.test.ts at0022-caret-visibility.test.ts at0023-cross-card-selection.test.ts at0024-prompt-state-roundtrip.test.ts at0025-prompt-deactivated-roundtrip.test.ts at0026-overlay-persistence.test.ts at0027-layout-state-persistence.test.ts at0030-virtual-focus.test.ts at0032-em-cold-boot-selection.test.ts at0033-em-fresh-card-activation.test.ts at0034-em-focus-after-move.test.ts at0035-em-app-switch-selection.test.ts at0035-dev-app-switch-selection.test.ts at0036-inactive-card-app-switch-selection.test.ts at0037-deck-wide-restore-consistency.test.ts at0038-deactivation-inactive-paint.test.ts at0078-dev-engine-focus-survives.test.ts at0080-dev-focus-card-switch.test.ts at0081-dev-focus-reload.test.ts)
         SWEEP_LABEL="full"
     else
         read -r -a FILES <<< "$FILES_INPUT"

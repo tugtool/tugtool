@@ -137,23 +137,53 @@ fn run_stop(instance_id: &str, timeout_secs: u64) -> Result<i32, String> {
     let entry = registry::find_by_id(instance_id)
         .map_err(|e| format!("read registry: {e}"))?
         .ok_or_else(|| format!("no live instance '{instance_id}'"))?;
-    let pid = entry.pid;
-    println!("stopping {instance_id} (PID {pid}) — SIGTERM");
-    send_signal(pid, libc::SIGTERM);
+    let tugcast_pid = entry.pid;
+    let host_pid = entry.host_pid;
+    let have_host = host_pid > 0 && pid_alive(host_pid);
+
+    // Signal the GUI host app (`Tug.app`) — the process whose window
+    // the user sees. tugcast runs in its own process group (setpgid)
+    // and supervises tugcode; signalling tugcast alone leaves the host
+    // app alive and stuck on "Disconnected — reconnecting…". Killing
+    // the host instead lets it run its own teardown, and tugcast
+    // follows via its parent-watch. We also signal tugcast directly:
+    // it handles SIGTERM with a clean unregister, so the instance
+    // disappears promptly rather than waiting out the parent-watch
+    // poll. (Pre-`host_pid` registry entries carry `host_pid == 0`;
+    // those fall back to the tugcast-only path the old code took.)
+    if have_host {
+        println!(
+            "stopping {instance_id} — SIGTERM host app (PID {host_pid}) + tugcast (PID {tugcast_pid})"
+        );
+        send_signal(host_pid, libc::SIGTERM);
+    } else {
+        println!("stopping {instance_id} — SIGTERM tugcast (PID {tugcast_pid})");
+    }
+    send_signal(tugcast_pid, libc::SIGTERM);
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(1));
     while std::time::Instant::now() < deadline {
-        if !pid_alive(pid) {
+        let host_gone = !have_host || !pid_alive(host_pid);
+        if host_gone && !pid_alive(tugcast_pid) {
             println!("stopped cleanly");
             return Ok(0);
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    println!("still alive after {timeout_secs}s — escalating to SIGKILL");
-    send_signal(pid, libc::SIGKILL);
+
+    println!("still alive after {}s — escalating to SIGKILL", timeout_secs.max(1));
+    if have_host && pid_alive(host_pid) {
+        send_signal(host_pid, libc::SIGKILL);
+    }
+    if pid_alive(tugcast_pid) {
+        send_signal(tugcast_pid, libc::SIGKILL);
+    }
     std::thread::sleep(std::time::Duration::from_millis(200));
-    if pid_alive(pid) {
-        Err(format!("PID {pid} still alive after SIGKILL"))
+    let host_alive = have_host && pid_alive(host_pid);
+    if pid_alive(tugcast_pid) || host_alive {
+        Err(format!(
+            "instance '{instance_id}' still alive after SIGKILL (tugcast {tugcast_pid}, host {host_pid})"
+        ))
     } else {
         Ok(0)
     }

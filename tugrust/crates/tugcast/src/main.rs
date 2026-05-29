@@ -1003,6 +1003,15 @@ fn register_with_registry(actual_port: u16, tmux_session: &str) {
         bundle_id: std::env::var("TUG_BUNDLE_ID").unwrap_or_default(),
         bundle_path,
         pid: std::process::id() as i32,
+        // The parent process is the GUI host (`Tug.app`) that spawned
+        // tugcast. Recording it lets `tugutil instance stop` tear down
+        // the host app — tugcast then follows via its parent-watch
+        // (see the parent_watch loop in `run`). `0` if somehow already
+        // reparented (no live GUI host to signal).
+        host_pid: {
+            let ppid = unsafe { libc::getppid() };
+            if ppid > 1 { ppid } else { 0 }
+        },
         tugcast_port: actual_port,
         vite_port: 0,
         tmux_session: tmux_session.to_owned(),

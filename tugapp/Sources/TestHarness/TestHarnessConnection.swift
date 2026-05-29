@@ -140,6 +140,16 @@ final class TestHarnessConnection {
         switch method {
         case "version":
             respond(id: id, ok: true, payload: ["value": Self.surfaceVersion])
+        case "getHostPid":
+            // PID of this GUI app process. The harness launches Tug.app
+            // via `open -n -W`, so the subprocess handle it holds is the
+            // `open` wrapper, not the app — it has no other way to learn
+            // the app's PID. Reporting it here lets `App.close()` signal
+            // the app directly, which is race-free (works before tugcast
+            // has registered in the instance registry) and tears down the
+            // window the user sees; tugcast then self-exits via its
+            // parent-watch.
+            respond(id: id, ok: true, payload: ["value": Int(ProcessInfo.processInfo.processIdentifier)])
         case "evalJS":
             guard let script = obj["script"] as? String else {
                 respondError(id: id, name: "ProtocolError", message: "evalJS: missing 'script'")

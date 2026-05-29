@@ -19,6 +19,7 @@ export type RpcMethod =
   | "evalJS"
   | "waitForCondition"
   | "version"
+  | "getHostPid"
   | "checkAccessibilityPermission"
   | "getElementScreenBounds"
   | "nativeClick"
@@ -159,6 +160,10 @@ export type Request =
   | {
       id: number;
       method: "version";
+    }
+  | {
+      id: number;
+      method: "getHostPid";
     }
   | {
       id: number;

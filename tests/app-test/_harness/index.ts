@@ -176,6 +176,15 @@ export class App {
   private readonly onUnlink: () => void;
   private readonly logStream: WriteStream | null;
   private readonly detachSignals: () => void;
+  /**
+   * PID of the GUI Tug.app process, reported by the app over RPC at
+   * launch (`getHostPid`). `0` if the app predates that verb. `close()`
+   * signals this PID directly — the app is launched via `open -n -W`,
+   * so `subprocess` is the `open` wrapper, not the app; killing the
+   * app by PID is the only teardown that reliably makes the window go
+   * away, and unlike the registry it has no registration race.
+   */
+  private readonly hostPid: number;
   private closed = false;
 
   constructor(args: {
@@ -187,6 +196,7 @@ export class App {
     logPath: string | null;
     logStream: WriteStream | null;
     detachSignals: () => void;
+    hostPid?: number;
   }) {
     this.rpc = args.rpc;
     this.version = args.version;
@@ -196,6 +206,7 @@ export class App {
     this.logPath = args.logPath;
     this.logStream = args.logStream;
     this.detachSignals = args.detachSignals;
+    this.hostPid = args.hostPid ?? 0;
   }
 
   /**
@@ -1006,6 +1017,24 @@ export class App {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    // Primary teardown: signal the GUI Tug.app process by PID. The app
+    // has no SIGTERM handler, so SIGTERM ends it promptly, and its
+    // tugcast child then self-exits via its parent-watch. Killing the
+    // app (the parent) — not tugcast (the child) — is what actually
+    // makes the window disappear. Doing it by PID is race-free: it
+    // works even before tugcast has registered in the instance
+    // registry, which the registry-based `tugutil instance stop` path
+    // (below) can miss for a fast test.
+    if (this.hostPid > 0) {
+      try {
+        processKillNative(this.hostPid, "SIGTERM");
+      } catch {
+        // already dead
+      }
+    }
+    // Belt-and-suspenders: the wrapped kill runs `tugutil instance
+    // stop` (clears any stale registry entry + tugcast) and SIGTERMs
+    // the `open -W` wrapper so its `.exited` resolves.
     try {
       this.subprocess.kill("SIGTERM");
     } catch {
@@ -1017,6 +1046,13 @@ export class App {
     );
     const winner = await Promise.race([exitPromise, timeout]);
     if (winner === "timeout") {
+      if (this.hostPid > 0) {
+        try {
+          processKillNative(this.hostPid, "SIGKILL");
+        } catch {
+          // already dead
+        }
+      }
       try {
         this.subprocess.kill("SIGKILL");
       } catch {
@@ -1124,9 +1160,31 @@ export async function launchTugApp(
   const expectedVersion =
     resolved.expectedSurfaceVersion ?? EXPECTED_SURFACE_VERSION;
   const serverVersion = await rpc.call<string>({ method: "version" });
+
+  // Learn the GUI app's PID over RPC, right after the first handshake
+  // call, so every teardown path below (including the version-skew
+  // throw) can signal the app directly. Killing the app by PID is
+  // race-free — it works before tugcast has registered in the instance
+  // registry, which the registry-based `tugutil instance stop` can
+  // miss for a fast test. Best-effort: an app build without the
+  // `getHostPid` verb leaves `hostPid` at 0 and teardown falls back to
+  // the registry path.
+  let hostPid = 0;
+  try {
+    const reportedPid = await rpc.call<number>({ method: "getHostPid" });
+    if (typeof reportedPid === "number" && reportedPid > 0) {
+      hostPid = reportedPid;
+    }
+  } catch {
+    // Older app without getHostPid; registry teardown still applies.
+  }
+
   const expectedMajor = expectedVersion.split(".")[0];
   const actualMajor = String(serverVersion).split(".")[0];
   if (expectedMajor !== actualMajor) {
+    if (hostPid > 0) {
+      try { processKillNative(hostPid, "SIGKILL"); } catch { /* already dead */ }
+    }
     try {
       subprocess.kill("SIGTERM");
     } catch {
@@ -1199,6 +1257,9 @@ export async function launchTugApp(
         prompt: true,
       });
     } catch (err) {
+      if (hostPid > 0) {
+        try { processKillNative(hostPid, "SIGKILL"); } catch { /* already dead */ }
+      }
       try {
         subprocess.kill("SIGKILL");
       } catch {
@@ -1218,6 +1279,9 @@ export async function launchTugApp(
       throw err;
     }
     if (!ax.trusted) {
+      if (hostPid > 0) {
+        try { processKillNative(hostPid, "SIGKILL"); } catch { /* already dead */ }
+      }
       try {
         subprocess.kill("SIGKILL");
       } catch {
@@ -1259,6 +1323,7 @@ export async function launchTugApp(
     logPath: resolved.logPath,
     logStream,
     detachSignals,
+    hostPid,
   });
 }
 
@@ -1275,6 +1340,17 @@ export async function launchTugApp(
 const setTimeoutNative = (
   globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => unknown }
 ).setTimeout;
+
+/**
+ * Narrow shim for `process.kill`, used to signal the GUI Tug.app
+ * process directly by PID. Wrapped here so a grep for `process.kill`
+ * in `tests/app-test/` only hits harness internals.
+ */
+const processKillNative = (
+  globalThis as unknown as {
+    process: { kill: (pid: number, signal?: string) => void };
+  }
+).process.kill;
 
 function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
   // macOS `/tmp` is root-owned; the Swift bridge's parent-dir-owner
