@@ -65,6 +65,7 @@ import {
   atomDecorationField,
   replaceAtomsEffect,
 } from "./atom-decoration";
+import { suppressCompletionDetection } from "./completion-extension";
 import type { PositionedAtom } from "./atom-decoration";
 import type {
   HistoryProvider,
@@ -214,6 +215,11 @@ export function buildEditStateTransaction(
     changes: { from: 0, to: docLen, insert: state.text },
     effects: replaceAtomsEffect.of(positioned),
     selection: sel,
+    // Programmatic whole-document swap — never reopen the typeahead
+    // popup from the restored text's leading trigger char. Without
+    // this, recalling a `/command` from history reopens the popup and
+    // the active popup swallows the next Enter / Shift+Return.
+    annotations: suppressCompletionDetection.of(true),
   };
   if (opts.scrollIntoView) {
     spec.scrollIntoView = true;

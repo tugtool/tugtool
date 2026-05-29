@@ -85,6 +85,7 @@
  */
 
 import {
+  Annotation,
   EditorState,
   Prec,
   StateEffect,
@@ -143,6 +144,30 @@ const inactiveState: TugCompletionState = {
   selectedIndex: 0,
   provider: null,
 };
+
+// ---------------------------------------------------------------------------
+// Annotations
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks a transaction as a programmatic whole-document replacement
+ * (history navigation, state-preservation restore) rather than user
+ * editing. The completion extender skips BOTH trigger-insertion and
+ * rejoin detection on an annotated transaction, and cancels any active
+ * session.
+ *
+ * Why this is needed: `buildEditStateTransaction` swaps a whole
+ * document into the editor in one transaction. When the restored text
+ * happens to begin with a trigger character (`/command`, `@file`),
+ * `detectRejoin` would otherwise scan back from the caret, find the
+ * leading trigger, and reopen the typeahead popup. The now-active
+ * popup's `Prec.highest` keymap then swallows the next Enter /
+ * Shift+Return as an accept instead of letting it reach the submit
+ * path — so recalling a `/command` from history silently breaks
+ * submit. A programmatic restore is not the user clicking into a
+ * trigger run, so it must not reopen the popup.
+ */
+export const suppressCompletionDetection = Annotation.define<boolean>();
 
 // ---------------------------------------------------------------------------
 // State effects
@@ -503,6 +528,13 @@ function completionExtender(
   getProviders: () => Record<string, CompletionProvider>,
 ): { effects: StateEffect<unknown>[] } | null {
   const fieldState = tr.state.field(completionField);
+
+  // Programmatic whole-document replacement (history nav / restore):
+  // never open a popup from one, and cancel any session that was
+  // somehow still active. See `suppressCompletionDetection`.
+  if (tr.annotation(suppressCompletionDetection) === true) {
+    return fieldState.active ? { effects: [cancelEffect.of(null)] } : null;
+  }
 
   // Activation: typeahead is currently inactive. Two paths:
   //   1. Trigger insertion — the user just typed `@` / `/` / etc.
