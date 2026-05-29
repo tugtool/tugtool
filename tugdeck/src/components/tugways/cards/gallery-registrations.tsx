@@ -17,7 +17,7 @@
  */
 
 import React, { useId, useState } from "react";
-import { Star } from "lucide-react";
+import { Star, ShieldCheck, Bot, Gauge, Hash } from "lucide-react";
 import { registerCard, type CardSizePolicy } from "@/card-registry";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
@@ -187,19 +187,34 @@ export function TugPopupButtonDemo() {
  */
 const ALL_BADGE_ROLES: TugBadgeRole[] = ["accent", "action", "agent", "data", "danger", "success", "caution", "inherit"];
 const ALL_BADGE_SIZES: TugBadgeSize[] = ["2xs", "xs", "sm", "md", "lg", "xl", "2xl"];
-const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["tinted", "ghost"];
+const ALL_BADGE_EMPHASES: TugBadgeEmphasis[] = ["filled", "outlined", "tinted", "ghost"];
+
+/**
+ * Per-emphasis role list. All four emphases carry the seven semantic
+ * roles; only the `inherit` role differs — `filled-inherit` is
+ * intentionally not provided (its `currentColor` background would equal
+ * the surrounding text colour, collapsing its own contrast — see the
+ * inherit-role docstring in `tug-badge.tsx`), so it is skipped under the
+ * `filled` emphasis and shown under the other three.
+ */
+function badgeRolesFor(emphasis: TugBadgeEmphasis): TugBadgeRole[] {
+  return emphasis === "filled"
+    ? ALL_BADGE_ROLES.filter((role) => role !== "inherit")
+    : ALL_BADGE_ROLES;
+}
 
 /**
  * Realistic dev-card Z4B chrome faces for the two-line layout demos —
  * the permission-mode / model / rate-limit / session indicators that
  * later steps mount into the prompt-entry band. Each pairs a
- * letter-spaced caption with the value the chip displays.
+ * letter-spaced caption with the value the chip displays, plus the
+ * leading icon the icon variants show.
  */
-const TWO_LINE_BADGE_CHIPS: { label: string; content: string; role: TugBadgeRole }[] = [
-  { label: "MODE", content: "accept", role: "action" },
-  { label: "MODEL", content: "Opus 4.8 · 1M", role: "agent" },
-  { label: "LIMIT", content: "5h 23m", role: "data" },
-  { label: "SESSION", content: "6d77f06e", role: "accent" },
+const TWO_LINE_BADGE_CHIPS: { label: string; content: string; role: TugBadgeRole; icon: React.ReactNode }[] = [
+  { label: "MODE", content: "accept", role: "action", icon: <ShieldCheck /> },
+  { label: "MODEL", content: "Opus 4.8 · 1M", role: "agent", icon: <Bot /> },
+  { label: "LIMIT", content: "5h 23m", role: "data", icon: <Gauge /> },
+  { label: "SESSION", content: "6d77f06e", role: "accent", icon: <Hash /> },
 ];
 
 /** The two rate-limit faces the width-stabilized slot cycles between. */
@@ -210,18 +225,20 @@ const RATE_LIMIT_WIDE = "rate-limited";
  * GalleryBadge -- TugBadge showcase gallery tab.
  *
  * A leading Sizes section ramps the full size scale at a single
- * role; the matrices below show tinted and ghost emphasis across
- * all 8 roles at all sizes.
+ * role; the matrices below show every emphasis (filled / outlined /
+ * tinted / ghost) across all 8 roles at all sizes, in both text-only
+ * and icon + text form. Two-line layouts (`label-top` / `content-top`)
+ * follow, ramped across the size scale and shown across all four
+ * emphases, capped by a width-stabilized slot.
+ *
  * The eighth role (`inherit`) paints text / icon / border in
  * `currentColor` so the badge blends into the surrounding text —
- * primary callsite is the Z1B end-state "OK" tone in the
- * transcript. (`outlined-inherit` exists in CSS for future
- * consumers but is not surfaced here; the gallery's badge matrix
- * intentionally limits itself to `tinted` and `ghost` to avoid
- * visual confusion with button variants. `filled-inherit` is
+ * primary callsite is the Z1B end-state "OK" tone in the transcript.
+ * It is shown under outlined / tinted / ghost; `filled-inherit` is
  * intentionally not provided — its bg would equal the surrounding
- * text colour, collapsing its own contrast; see the docstring on
- * the inherit role in `tug-badge.tsx`.)
+ * text colour, collapsing its own contrast — so the filled matrix
+ * skips it (see `badgeRolesFor` and the inherit-role docstring in
+ * `tug-badge.tsx`).
  */
 export function GalleryBadge() {
   // The width-stabilized slot cycles the rate-limit value between a
@@ -275,7 +292,7 @@ export function GalleryBadge() {
             <div className="cg-matrix">
               <div className="cg-subtype-block">
                 <TugLabel size="2xs" emphasis="calm">text only</TugLabel>
-                {ALL_BADGE_ROLES.map((role) => (
+                {badgeRolesFor(emphasis).map((role) => (
                   <div key={role} className="cg-variant-row">
                     <TugLabel size="2xs" emphasis="calm">{role}</TugLabel>
                     <div className="cg-size-group">
@@ -290,7 +307,7 @@ export function GalleryBadge() {
               </div>
               <div className="cg-subtype-block">
                 <TugLabel size="2xs" emphasis="calm">icon + text</TugLabel>
-                {ALL_BADGE_ROLES.map((role) => (
+                {badgeRolesFor(emphasis).map((role) => (
                   <div key={role} className="cg-variant-row">
                     <TugLabel size="2xs" emphasis="calm">{role}</TugLabel>
                     <div className="cg-size-group">
@@ -316,13 +333,14 @@ export function GalleryBadge() {
         <TugLabel className="cg-section-title">TugBadge — Two-line layouts</TugLabel>
         <div className="cg-matrix">
           <div className="cg-subtype-block">
-            <TugLabel size="2xs" emphasis="calm">label-top — caption above value (status-bar parity)</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">label-top — caption above value, with leading icon (status-bar parity)</TugLabel>
             <div className="cg-variant-row" data-testid="badge-label-top-row">
               {TWO_LINE_BADGE_CHIPS.map((chip) => (
                 <TugBadge
                   key={chip.label}
                   layout="label-top"
                   label={chip.label}
+                  icon={chip.icon}
                   emphasis="tinted"
                   role={chip.role}
                   size="lg"
@@ -340,6 +358,7 @@ export function GalleryBadge() {
                   key={chip.label}
                   layout="content-top"
                   label={chip.label}
+                  icon={chip.icon}
                   emphasis="tinted"
                   role={chip.role}
                   size="lg"
@@ -350,10 +369,48 @@ export function GalleryBadge() {
             </div>
           </div>
           <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">label-top — size ramp (two-line height scale, 2xs → 2xl)</TugLabel>
+            <div className="cg-variant-row" data-testid="badge-two-line-size-ramp">
+              <div className="cg-size-group">
+                {ALL_BADGE_SIZES.map((size) => (
+                  <TugBadge
+                    key={size}
+                    layout="label-top"
+                    label="MODEL"
+                    icon={<Bot />}
+                    emphasis="tinted"
+                    role="agent"
+                    size={size}
+                  >
+                    {size}
+                  </TugBadge>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">label-top — across emphases</TugLabel>
+            <div className="cg-variant-row" data-testid="badge-two-line-emphases">
+              {ALL_BADGE_EMPHASES.map((emphasis) => (
+                <TugBadge
+                  key={emphasis}
+                  layout="label-top"
+                  label="MODE"
+                  icon={<ShieldCheck />}
+                  emphasis={emphasis}
+                  role="action"
+                  size="lg"
+                >
+                  accept
+                </TugBadge>
+              ))}
+            </div>
+          </div>
+          <div className="cg-subtype-block">
             <TugLabel size="2xs" emphasis="calm">single — the one-row pill, unchanged</TugLabel>
             <div className="cg-variant-row" data-testid="badge-single-row">
               {TWO_LINE_BADGE_CHIPS.map((chip) => (
-                <TugBadge key={chip.label} emphasis="tinted" role={chip.role} size="md">
+                <TugBadge key={chip.label} emphasis="tinted" role={chip.role} size="md" icon={chip.icon}>
                   {`${chip.label} ${chip.content}`}
                 </TugBadge>
               ))}
