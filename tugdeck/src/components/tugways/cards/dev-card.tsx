@@ -40,6 +40,7 @@ import { useDevPlacementSlots } from "./dev-card-placement-experiment";
 import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
+import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { TugPaneBanner } from "../tug-pane-banner";
@@ -2352,14 +2353,18 @@ export function DevCardBody({
     onSelectMode: permissionMode.setMode,
   });
 
-  // Surface for each local slash command, keyed by command name. Empty for
-  // now — the permission **mode** sheet is opened by the chip / `Shift+Tab`,
-  // not a slash command, and `/permissions` (the rules editor, [#step-1.6])
-  // isn't built yet. `RUN_SLASH_COMMAND` only fires for a registered command,
-  // so the handler below no-ops on a name it can't map. When a command is
-  // added to the registry this becomes an exhaustive `Record<LocalCommandName,
-  // …>` again ([#step-1c] / [D23]).
-  const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {};
+  // The `/permissions` rules editor, owned at the card level so the slash
+  // command opens it card-scoped ([D15]). Reads the session `cwd` fresh at
+  // open time; a no-op until session metadata reports a cwd.
+  const permissionRulesSheet = usePermissionRulesSheet({ cardId, sessionMetadataStore });
+
+  // Surface for each local slash command, keyed by command name. The
+  // `as const satisfies` registry narrows `LocalCommandName` to the literal
+  // union, so this `Record` is exhaustive — a registered command without a
+  // wired surface is a compile error ([#step-1c] / [D23]).
+  const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
+    permissions: () => permissionRulesSheet.openRulesSheet(),
+  };
 
   const {
     ResponderScope: CardContentResponderScope,
@@ -2657,6 +2662,7 @@ export function DevCardBody({
             </TugBox>
             {renderSheet()}
             {permissionSheet.renderPermissionSheet()}
+            {permissionRulesSheet.renderRulesSheet()}
           </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>

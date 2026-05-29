@@ -254,6 +254,8 @@ pub(crate) fn build_app(
         .route("/api/tell", post(tell_handler))
         .route("/api/eval", post(eval_handler))
         .route("/api/host", get(crate::host::get_host))
+        .route("/api/permissions", get(crate::permissions::get_permissions))
+        .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .with_state(router)
         .layer(cors);
 

@@ -1005,25 +1005,25 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 **Goal.** The full `/permissions` rules editor matching the terminal — a tabbed, card-scoped sheet over the tool-permission rules — wired to the read/write/apply mechanism [#step-1-5] pinned. Registering `/permissions` here is the first live consumer of the [#step-1c] dispatch layer.
 
 **Artifacts:**
-- New: `permission-rules-editor.tsx` (tabbed `TugSheet`: `Allow` / `Ask` / `Deny` / `Workspace` / `Recently denied`) + `.css`.
-- New: a rules store/data source reading + writing the settings file(s) per [#step-1-5] (via tugcast filesystem or the determined route), scope-aware.
-- New: any tugcast/tugcode plumbing [#step-1-5] requires (e.g. a settings read/write control command; respawn-on-apply if not live).
-- Modified: `lib/slash-commands.ts` — register `permissions` (restoring the literal-union `LocalCommandName` + the exhaustive `Record<LocalCommandName,…>` handler in `dev-card.tsx`); `/permissions` → opens this editor.
+- New: `permission-rules-editor.tsx` (tabbed `TugSheet`: `Recently denied` / `Allow` / `Ask` / `Deny` / `Workspace`) + `.css`, plus `usePermissionRulesSheet` (card-hosted opener, mirrors `usePermissionSheet`).
+- New: `lib/permission-rules.ts` (pure: scopes/buckets/`ResolvedRule`, matcher parse, response parse, scope-union + dedup, search filter) and `lib/permission-rules-store.ts` (`PermissionRulesStore` over the endpoint + `BucketDataSource` for `TugListView`).
+- New: tugcast plumbing — `crates/tugcast/src/permissions.rs` (`GET /api/permissions?cwd` reads user/project/local scope buckets; `POST /api/permissions/rule` read-modify-writes one rule, preserving other keys), wired in `server.rs`, declared in `main.rs`. Loopback-guarded like the other `/api` handlers. **Write-and-continue** (no respawn — apply is live per [#step-1-5]).
+- Modified: `lib/slash-commands.ts` — register `permissions` (literal-union `LocalCommandName` restored + the exhaustive `Record<LocalCommandName,…>` handler in `dev-card.tsx`); `/permissions` → opens this editor.
 - New: `at0090-permissions-rules-editor.test.ts` real-app test.
 
 **Tasks:**
-- [ ] Tabbed sheet: `Allow` / `Ask` / `Deny` (rule lists) + `Workspace` (additional dirs) + `Recently denied` (promote-to-rule feed). Tabs via the chain ([L11]); rule lists via `TugListView`.
-- [ ] Rule rows render the matcher pattern; **add a rule** (pattern input + bucket), **remove**, **search** filter — full parity with the screenshot.
-- [ ] `Recently denied` sourced per [#step-1-5] (likely accumulated deny decisions); each row offers "add to Allow/Ask/Deny".
-- [ ] Read + write the settings file(s) at the scope [#step-1-5] determined; honor the apply semantics (live vs respawn).
-- [ ] `/permissions` slash command → opens the editor (key-card `RUN_SLASH_COMMAND`, same path as any local command); card-scoped overlay per [D15], focus restores on dismiss.
+- [x] Tabbed sheet: `Allow` / `Ask` / `Deny` (rule lists) + `Workspace` (additional dirs) + `Recently denied`. Rule lists via windowed `TugListView` + `useFilteredDataSource`. *Tabs are a lightweight in-sheet segmented control (active tab = structural state; highlight via CSS `data-active` per [L06]) — not `TugTabBar`, which is card-stack-coupled. The [L11] "controls emit / responders own" spirit holds: tab buttons emit, the sheet body owns the selection.*
+- [x] Rule rows render the matcher string over its scope label; **add a rule** (pattern input + scope selector defaulting to **Local**), **remove** (per-row), **search** filter — terminal parity.
+- [x] `Recently denied` renders the terminal's empty-state ("No recent denials."). *No persisted feed exists yet — denials are the runtime `control_request_forward` events the dev card surfaces in [#step-15]; the promote-to-rule affordance lands with that feed.*
+- [x] Read + write the settings file(s) at the scope [#step-1-5] determined (`user`/`project`/`local`, resolved under the session `cwd`); apply is **live** so the sheet writes-and-continues (no respawn).
+- [x] `/permissions` slash command → opens the editor (raw-text / command-atom submit → `matchLocalSlashCommand` → key-card `RUN_SLASH_COMMAND`); card-scoped overlay per [D15], focus restores on dismiss. *cwd resolves from the card's bind-time `projectDir` (so `/permissions` works before claude's first metadata frame), falling back to live `system_metadata.cwd`.*
 
 **Tests:**
-- [ ] Pure-logic: rule (de)serialization, matcher-pattern parse, search filter, bucket moves.
-- [ ] Real-app (`at0090`): type `/permissions`, accept → editor opens; add a rule → assert it's written to the expected file/scope; switch tabs; remove a rule.
+- [x] Pure-logic (`permission-rules.test.ts`): matcher parse, response parse, scope-union precedence + dedup, search filter. Rust unit tests (`permissions.rs`): scope→path, read buckets, read-modify-write (preserve keys / idempotent add / remove / newline). `slash-commands.test.ts` updated for the registered `permissions`.
+- [x] Real-app (`at0090`): type `/permissions` → editor opens; assert the five tabs + switch; add a rule → assert it's written to `<cwd>/.claude/settings.local.json`; remove → assert it's gone. Writes target a per-test temp `projectDir` (never the real repo).
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run` (if tugcast plumbing added) · `cd tugdeck && bun test` · `just app-test permissions-rules-editor`
+- [x] `cd tugrust && cargo nextest run` (648 pass) · `cd tugdeck && bun test` (3066 pass) · `just app-test permissions-rules-editor` (PASS)
 
 **What this step does NOT do:**
 - Does not touch the permission *mode* chip / `Shift+Tab` cycle — mode and rules are distinct features ([#step-1] vs here).

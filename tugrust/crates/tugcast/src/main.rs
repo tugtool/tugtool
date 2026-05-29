@@ -7,6 +7,7 @@ mod dev;
 mod feeds;
 mod host;
 mod migration;
+mod permissions;
 mod resources;
 mod router;
 mod server;
