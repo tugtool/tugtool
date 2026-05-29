@@ -38,6 +38,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useState,
 } from "react";
@@ -46,6 +47,9 @@ import { Trash2 } from "lucide-react";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugListRow } from "@/components/tugways/tug-list-row";
+import { TugTabBar } from "@/components/tugways/tug-tab-bar";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
+import type { CardState } from "@/layout-tree";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -95,6 +99,19 @@ const TABS: readonly TabSpec[] = [
   { id: "deny", label: "Deny", bucket: "deny" },
   { id: "workspace", label: "Workspace", bucket: "additionalDirectories" },
 ];
+
+/**
+ * The tabs as `TugTabBar` cards: a fixed, non-closable set (`closable: false`
+ * → no per-tab ×; the bar is rendered `addable={false}` → no `[+]`). The
+ * `componentId` is a non-registered sentinel — these are panel tabs, not deck
+ * cards, so the bar falls back to its default tab icon.
+ */
+const TAB_CARDS: readonly CardState[] = TABS.map((spec) => ({
+  id: spec.id,
+  componentId: "permission-rules-tab",
+  title: spec.label,
+  closable: false,
+}));
 
 /** One-line description under the tab strip, matching the terminal copy. */
 const TAB_DESCRIPTIONS: Record<TabId, string> = {
@@ -331,10 +348,14 @@ interface PermissionRulesSheetBodyProps {
 }
 
 /**
- * The editor body: a tab strip, the active tab's panel, and a Done button.
- * Owns the store (one per open, loaded on mount) and the active tab (structural
- * state — which panel mounts; the tab *highlight* is a CSS `data-active`
- * attribute per [L06]).
+ * The editor body: a `TugTabBar`, the active tab's panel, and a Done button.
+ * Owns the store (one per open, loaded on mount) and the active tab.
+ *
+ * The tab bar is a fixed set ([TAB_CARDS], non-closable, `addable={false}`).
+ * Per [L11] it emits `selectTab` through the chain; the body's
+ * `useResponderForm` responder handles it and updates the active tab
+ * (structural state — which panel mounts). The selected-tab highlight is the
+ * bar's own CSS `data-active` treatment [L06].
  */
 function PermissionRulesSheetBody({
   cwd,
@@ -348,6 +369,12 @@ function PermissionRulesSheetBody({
   const [tab, setTab] = useState<TabId>("allow");
   const active = TABS.find((t) => t.id === tab) ?? TABS[1];
 
+  // TugTabBar dispatches `selectTab` through the chain to this responder.
+  const tabBarId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectTab: { [tabBarId]: (id: string) => setTab(id as TabId) },
+  });
+
   const workspaceHeader = (
     <div className="permission-rules-cwd" data-slot="workspace-cwd">
       <span className="permission-rule-matcher">{cwd}</span>
@@ -356,44 +383,40 @@ function PermissionRulesSheetBody({
   );
 
   return (
-    <div className="permission-rules-sheet">
-      <div className="permission-rules-tabs" role="tablist" aria-label="Permission rules">
-        {TABS.map((spec) => (
-          <button
-            key={spec.id}
-            type="button"
-            role="tab"
-            className="permission-rules-tab"
-            data-tab={spec.id}
-            data-active={spec.id === tab ? "true" : undefined}
-            aria-selected={spec.id === tab}
-            onClick={() => setTab(spec.id)}
-          >
-            {spec.label}
-          </button>
-        ))}
-      </div>
-
-      <p className="permission-rules-description">{TAB_DESCRIPTIONS[active.id]}</p>
-
-      {active.bucket === null ? (
-        <div className="permission-rules-empty" data-slot="recently-denied-empty">
-          No recent denials.
-        </div>
-      ) : (
-        <RulePanel
-          store={store}
-          bucket={active.bucket}
-          header={active.id === "workspace" ? workspaceHeader : undefined}
+    <ResponderScope>
+      <div
+        className="permission-rules-sheet"
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+      >
+        <TugTabBar
+          stackId="permission-rules"
+          cards={TAB_CARDS}
+          activeCardId={tab}
+          senderId={tabBarId}
+          addable={false}
         />
-      )}
 
-      <div className="tug-sheet-actions">
-        <TugPushButton emphasis="filled" onClick={onDone}>
-          Done
-        </TugPushButton>
+        <p className="permission-rules-description">{TAB_DESCRIPTIONS[active.id]}</p>
+
+        {active.bucket === null ? (
+          <div className="permission-rules-empty" data-slot="recently-denied-empty">
+            No recent denials.
+          </div>
+        ) : (
+          <RulePanel
+            store={store}
+            bucket={active.bucket}
+            header={active.id === "workspace" ? workspaceHeader : undefined}
+          />
+        )}
+
+        <div className="tug-sheet-actions">
+          <TugPushButton emphasis="filled" onClick={onDone}>
+            Done
+          </TugPushButton>
+        </div>
       </div>
-    </div>
+    </ResponderScope>
   );
 }
 
@@ -446,6 +469,7 @@ export function usePermissionRulesSheet({
     if (cwd === null || cwd === "") return;
     void showSheet({
       title: "Permissions",
+      displayWidth: "wide",
       content: (close) => (
         <PermissionRulesSheetBody cwd={cwd} onDone={() => close()} />
       ),

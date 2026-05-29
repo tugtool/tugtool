@@ -37,7 +37,10 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
-const TABS = `${SHEET} .permission-rules-tab`;
+// Tabs render through TugTabBar: each tab is a `.tug-tab` with a
+// `data-testid="tug-tab-<id>"` and a `.tug-tab-title` label span.
+const TAB_TITLES = `${SHEET} .tug-tab .tug-tab-title`;
+const tabSel = (id: string): string => `${SHEET} .tug-tab[data-testid="tug-tab-${id}"]`;
 const DESCRIPTION = `${SHEET} .permission-rules-description`;
 const ADD_INPUT = `${SHEET} .permission-rules-add-input`;
 const ADD_SUBMIT = `${SHEET} [data-slot="permission-rules-add-submit"]`;
@@ -137,7 +140,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // 2. The editor shows the five terminal tabs in order.
           const tabLabels = await app.evalJS<string[]>(
-            `Array.from(document.querySelectorAll(${JSON.stringify(TABS)})).map(function(t){return t.textContent.trim();})`,
+            `Array.from(document.querySelectorAll(${JSON.stringify(TAB_TITLES)})).map(function(t){return t.textContent.trim();})`,
           );
           expect(tabLabels, "the five terminal tabs render in order").toEqual([
             "Recently denied",
@@ -150,19 +153,24 @@ describe.skipIf(!SHOULD_RUN)(
           // Default tab is Allow.
           expect(
             await app.evalJS<string | null>(
-              `(function(){var el=document.querySelector(${JSON.stringify(`${TABS}[data-active="true"]`)});return el?el.textContent.trim():null;})()`,
+              `(function(){var el=document.querySelector(${JSON.stringify(`${SHEET} .tug-tab[data-active="true"] .tug-tab-title`)});return el?el.textContent.trim():null;})()`,
             ),
           ).toBe("Allow");
 
-          // Switching to Deny updates the description copy.
-          await app.nativeClickAtElement(`${TABS}[data-tab="deny"]`);
+          // Switching to Deny updates the description copy (DOM click fires the
+          // tab's onClick → selectTab through the chain, deterministically).
+          await app.evalJS<void>(
+            `document.querySelector(${JSON.stringify(tabSel("deny"))}).click()`,
+          );
           await app.waitForCondition<boolean>(
             `(function(){var el=document.querySelector(${JSON.stringify(DESCRIPTION)});return el!==null && el.textContent.indexOf("reject")!==-1;})()`,
             { timeoutMs: 4000 },
           );
 
           // 3. Add a rule on the Allow tab and assert it lands on disk.
-          await app.nativeClickAtElement(`${TABS}[data-tab="allow"]`);
+          await app.evalJS<void>(
+            `document.querySelector(${JSON.stringify(tabSel("allow"))}).click()`,
+          );
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(ADD_INPUT)}) !== null`,
             { timeoutMs: 4000 },

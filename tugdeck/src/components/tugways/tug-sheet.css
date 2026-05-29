@@ -94,6 +94,18 @@ body {
      — labels, headers, and buttons should not be selectable. */
 }
 
+/* ---- Display width ([data-display-width]) ----
+ *
+ * `standard` (default) keeps the ≈460px reading cap above. `wide` lets an
+ * information-rich panel span 90% of the host pane — the clip is `left:0;
+ * right:0` within the pane frame, so `width: 90%` is 90% of the pane width,
+ * `margin: … auto` keeps it centered. The reading cap is lifted so the panel
+ * actually reaches that width on a wide card. [L06] */
+.tug-sheet-content[data-display-width="wide"] {
+  width: 90%;
+  max-width: none;
+}
+
 /* ---- Presentation resting states ----
  *
  * Each presentation style ([data-tug-sheet-presentation]) declares the

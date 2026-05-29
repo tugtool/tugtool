@@ -125,6 +125,22 @@ import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
  */
 export type TugSheetPresentation = "top" | "bottom" | "scale-fade";
 
+/**
+ * How wide the sheet panel sits within its host pane.
+ *
+ *   - `"standard"` The default — a centered panel capped at a comfortable
+ *                  reading width (≈460px). Right for confirmations, option
+ *                  pickers, and short forms.
+ *   - `"wide"`     The panel spans 90% of the host pane's width, for
+ *                  information-rich surfaces — tabbed editors, multi-column
+ *                  layouts, long lists — that the standard width would cramp.
+ *
+ * Both share the identical vertical placement and entrance motion; only the
+ * resting width differs [L06]. Declared in `tug-sheet.css` keyed on
+ * `data-display-width`.
+ */
+export type TugSheetDisplayWidth = "standard" | "wide";
+
 /** Enter/exit keyframe pair for one presentation style. */
 interface SheetPresentationMotion {
   enter: Keyframe[];
@@ -414,6 +430,11 @@ export interface TugSheetContentProps {
    * {@link TugSheetPresentation}.
    */
   presentation?: TugSheetPresentation;
+  /**
+   * Resting width of the panel within the host pane. Defaults to
+   * `"standard"`. See {@link TugSheetDisplayWidth}.
+   */
+  displayWidth?: TugSheetDisplayWidth;
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -439,6 +460,7 @@ export function TugSheetContent({
   getResult,
   senderId: senderIdProp,
   presentation = "scale-fade",
+  displayWidth = "standard",
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -768,6 +790,7 @@ export function TugSheetContent({
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
             data-tug-sheet-presentation={presentation}
+            data-display-width={displayWidth}
             onKeyDown={handleKeyDown}
             onMouseDown={suppressButtonFocusShift}
           >
@@ -865,6 +888,11 @@ export interface ShowSheetOptions {
    * {@link TugSheetPresentation}.
    */
   presentation?: TugSheetPresentation;
+  /**
+   * Resting width of the panel within the host pane. Defaults to
+   * `"standard"`. See {@link TugSheetDisplayWidth}.
+   */
+  displayWidth?: TugSheetDisplayWidth;
   /**
    * Cascade-target responder id captured at sheet-open time.
    *
@@ -1214,6 +1242,7 @@ export function useTugSheet(): {
           getResult={getResultForContent}
           senderId={senderId}
           presentation={options.presentation}
+          displayWidth={options.displayWidth}
         >
           {options.content(close)}
         </TugSheetContent>

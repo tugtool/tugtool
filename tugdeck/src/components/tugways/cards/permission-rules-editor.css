@@ -6,40 +6,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-sm);
-  min-width: 30rem;
-  max-width: 42rem;
-}
-
-/* ── Tab strip ──────────────────────────────────────────────────────────── */
-
-.permission-rules-tabs {
-  display: flex;
-  gap: var(--tug-space-xs);
-  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
-}
-
-.permission-rules-tab {
-  appearance: none;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: var(--tug-space-xs) var(--tug-space-sm);
-  font-family: var(--tug-font-family-sans);
-  font-size: var(--tug-font-size-sm);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  /* Reserve the active underline so selecting a tab never shifts the row. */
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color var(--tug-motion-duration-fast) var(--tug-motion-easing-standard);
-}
-
-.permission-rules-tab:hover {
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-.permission-rules-tab[data-active="true"] {
-  color: var(--tug7-element-global-text-normal-default-rest);
-  border-bottom-color: var(--tug7-element-global-fill-normal-accent-rest);
+  /* Fill the host sheet (opened `displayWidth="wide"` — 90% of the pane). */
+  width: 100%;
 }
 
 /* ── Description ────────────────────────────────────────────────────────── */

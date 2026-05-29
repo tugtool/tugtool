@@ -73,6 +73,14 @@ export interface TugTabBarProps extends Omit<React.ComponentPropsWithoutRef<"div
    * status line). Not required for production tab bar usage.
    */
   onOverflowChange?: (stage: "none" | "collapsed" | "overflow", overflowCount: number) => void;
+  /**
+   * Whether the trailing `[+]` add-tab button is shown. Defaults to
+   * `true` (the card-stack tab bar lets users open new cards). Set to
+   * `false` for a **fixed** tab set — e.g. an in-sheet tab bar over a
+   * known set of panels — where there is no "add a tab" affordance and
+   * no `addTab` dispatch ever fires.
+   */
+  addable?: boolean;
 }
 
 // ---- Helpers ----
@@ -507,6 +515,7 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
     senderId,
     acceptedFamilies,
     onOverflowChange,
+    addable = true,
     className,
     ...rest
   }: TugTabBarProps,
@@ -720,23 +729,26 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
       )}
 
       {/* [+] type picker button -- always rightmost [D07, D08].
-          Trigger is a ghost-option TugButton with no chevron. [D07] */}
-      <TugPopupMenu
-        trigger={
-          <TugButton
-            emphasis="ghost"
-            role="option"
-            size="sm"
-            className="tug-tab-add"
-            aria-label="Add tab"
-            data-testid="tug-tab-add"
-          >
-            +
-          </TugButton>
-        }
-        items={typePickerItems}
-        onSelect={handleTypeSelect}
-      />
+          Trigger is a ghost-option TugButton with no chevron. [D07].
+          Suppressed for a fixed tab set (`addable={false}`). */}
+      {addable && (
+        <TugPopupMenu
+          trigger={
+            <TugButton
+              emphasis="ghost"
+              role="option"
+              size="sm"
+              className="tug-tab-add"
+              aria-label="Add tab"
+              data-testid="tug-tab-add"
+            >
+              +
+            </TugButton>
+          }
+          items={typePickerItems}
+          onSelect={handleTypeSelect}
+        />
+      )}
     </div>
   );
 });
