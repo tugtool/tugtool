@@ -58,7 +58,6 @@ const COMPONENT_CSS_FILES = [
   "tug-dock.css",
   "tug-hue-strip.css",
   "tug-skeleton.css",
-  "cards/gallery-badge.css",
   "cards/gallery-popup-button.css",
   "cards/gallery-palette.css",
   "cards/gallery-theme-generator.css",

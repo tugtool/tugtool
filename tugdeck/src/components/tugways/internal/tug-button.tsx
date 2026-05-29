@@ -38,8 +38,17 @@ const DEFAULT_CONFIRMATION_DURATION_MS = 1500;
 
 // ---- Types ----
 
-/** TugButton emphasis values — controls visual weight [D02] */
-export type TugButtonEmphasis = "filled" | "outlined" | "ghost";
+/**
+ * TugButton emphasis values — controls visual weight [D02].
+ *
+ * `tinted` is the display-leaning emphasis shared with TugBadge: a faint
+ * role-tinted wash behind role-colored text (the dev-card status-chip look),
+ * for buttons that should read as a quiet chip rather than a solid call to
+ * action. It reuses TugBadge's `tinted` tokens directly and is static across
+ * rest/hover/active — the mirror image of TugBadge's `filled` reusing the
+ * control tokens. See the tinted section in `tug-button.css`.
+ */
+export type TugButtonEmphasis = "filled" | "outlined" | "ghost" | "tinted";
 
 /** TugButton role values — controls color domain [D02] */
 export type TugButtonRole = "accent" | "action" | "agent" | "data" | "danger" | "option";
@@ -342,7 +351,7 @@ function Spinner() {
  * use TugPushButton instead.
  *
  * Styling is controlled by the emphasis x role system [D02]:
- *   emphasis: "filled" | "outlined" | "ghost" (default: "outlined")
+ *   emphasis: "filled" | "outlined" | "ghost" | "tinted" (default: "outlined")
  *   role:     "accent" | "action" | "data" | "danger" (default: "action")
  *
  * All colors use var(--tug-*) semantic tokens for zero-re-render theme switching. [L06]

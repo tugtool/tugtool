@@ -45,6 +45,12 @@ export const ALL_COMBOS: Array<{ emphasis: TugButtonEmphasis; role: TugButtonRol
   { emphasis: "ghost",    role: "action"  },
   { emphasis: "ghost",    role: "agent"   },
   { emphasis: "ghost",    role: "danger"  },
+  // tinted × the five semantic roles shared with TugBadge (no `option` — see tug-button.css)
+  { emphasis: "tinted",   role: "accent"  },
+  { emphasis: "tinted",   role: "action"  },
+  { emphasis: "tinted",   role: "agent"   },
+  { emphasis: "tinted",   role: "data"    },
+  { emphasis: "tinted",   role: "danger"  },
 ];
 export const ALL_SIZES: TugButtonSize[] = ["2xs", "xs", "sm", "md", "lg"];
 export const ALL_SUBTYPES: TugButtonSubtype[] = ["text", "icon", "icon-text"];
@@ -69,6 +75,11 @@ const TWO_LINE_CHIPS: { label: string; content: string; role: TugButtonRole; ico
 /** The two view-toggle faces the width-stabilized button cycles between. */
 const VIEW_PRIMARY = "Inline";
 const VIEW_ALTERNATE = "Side by side";
+
+/** Roles the `tinted` emphasis supports — the five semantic colour roles it
+ * shares with TugBadge. The control-only `option` role has no tinted analog
+ * (see the tinted section in tug-button.css). */
+const TINTED_ROLES: TugButtonRole[] = ["accent", "action", "agent", "data", "danger"];
 
 // ---------------------------------------------------------------------------
 // SubtypeButton helper
@@ -215,7 +226,7 @@ export function GalleryPushButton() {
               label={previewEmphasis}
               size="sm"
               senderId={emphasisPopupId}
-              items={(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((v) => ({
+              items={(["filled", "outlined", "ghost", "tinted"] as TugButtonEmphasis[]).map((v) => ({
                 action: TUG_ACTIONS.SET_VALUE,
                 value: v,
                 label: v,
@@ -350,6 +361,75 @@ export function GalleryPushButton() {
 
       <TugSeparator />
 
+      {/* ---- Tinted emphasis ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">TugPushButton — Tinted emphasis (badge-parity chip style)</TugLabel>
+        <TugLabel size="2xs" emphasis="calm">
+          A faint role-tinted wash behind role-colored text — the same look TugBadge uses. Reads as a quiet chip; supports the five semantic roles it shares with TugBadge (no `option`).
+        </TugLabel>
+        <div className="cg-matrix">
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">text — all roles</TugLabel>
+            <div className="cg-variant-row" data-testid="button-tinted-row">
+              {TINTED_ROLES.map((role) => (
+                <TugPushButton key={role} emphasis="tinted" role={role} size="md">
+                  {role}
+                </TugPushButton>
+              ))}
+            </div>
+          </div>
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">icon + text — all roles</TugLabel>
+            <div className="cg-variant-row">
+              {TINTED_ROLES.map((role) => (
+                <TugPushButton
+                  key={role}
+                  subtype="icon-text"
+                  emphasis="tinted"
+                  role={role}
+                  size="md"
+                  icon={<Star size={14} />}
+                >
+                  {role}
+                </TugPushButton>
+              ))}
+            </div>
+          </div>
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">tinted vs filled — same role, side by side</TugLabel>
+            <div className="cg-variant-row">
+              {(["accent", "action", "agent"] as TugButtonRole[]).map((role) => (
+                <React.Fragment key={role}>
+                  <TugPushButton emphasis="filled" role={role} size="md">{role}</TugPushButton>
+                  <TugPushButton emphasis="tinted" role={role} size="md">{role}</TugPushButton>
+                  <span style={{ width: "12px" }} />
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+          <div className="cg-subtype-block">
+            <TugLabel size="2xs" emphasis="calm">two-line status chips — tinted label-top (dev-card parity)</TugLabel>
+            <div className="cg-variant-row">
+              {TWO_LINE_CHIPS.map((chip) => (
+                <TugPushButton
+                  key={chip.label}
+                  layout="label-top"
+                  label={chip.label}
+                  icon={chip.icon}
+                  emphasis="tinted"
+                  role={chip.role}
+                  size="lg"
+                >
+                  {chip.content}
+                </TugPushButton>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TugSeparator />
+
       {/* ---- Two-line layouts ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">TugPushButton — Two-line layouts (label-top / content-top)</TugLabel>
@@ -393,7 +473,7 @@ export function GalleryPushButton() {
           <div className="cg-subtype-block">
             <TugLabel size="2xs" emphasis="calm">label-top — no icon, across emphases</TugLabel>
             <div className="cg-variant-row">
-              {(["filled", "outlined", "ghost"] as TugButtonEmphasis[]).map((emphasis) => (
+              {(["filled", "outlined", "ghost", "tinted"] as TugButtonEmphasis[]).map((emphasis) => (
                 <TugPushButton
                   key={emphasis}
                   layout="label-top"

@@ -114,6 +114,16 @@
   --tug7-element-control-text-ghost-agent-active       | --tug7-surface-control-primary-ghost-agent-active       | control
   --tug7-element-control-border-ghost-agent-active     | --tug7-surface-control-primary-ghost-agent-active       | control
   --tug7-element-control-icon-ghost-agent-active       | --tug7-surface-global-primary-normal-default-rest       | control
+  --tug7-element-badge-text-tinted-accent-rest         | --tug7-surface-badge-primary-tinted-accent-rest         | informational
+  --tug7-element-badge-border-tinted-accent-rest       | --tug7-surface-badge-primary-tinted-accent-rest         | informational
+  --tug7-element-badge-text-tinted-action-rest         | --tug7-surface-badge-primary-tinted-action-rest         | informational
+  --tug7-element-badge-border-tinted-action-rest       | --tug7-surface-badge-primary-tinted-action-rest         | informational
+  --tug7-element-badge-text-tinted-agent-rest          | --tug7-surface-badge-primary-tinted-agent-rest          | informational
+  --tug7-element-badge-border-tinted-agent-rest        | --tug7-surface-badge-primary-tinted-agent-rest          | informational
+  --tug7-element-badge-text-tinted-data-rest           | --tug7-surface-badge-primary-tinted-data-rest           | informational
+  --tug7-element-badge-border-tinted-data-rest         | --tug7-surface-badge-primary-tinted-data-rest           | informational
+  --tug7-element-badge-text-tinted-danger-rest         | --tug7-surface-badge-primary-tinted-danger-rest         | informational
+  --tug7-element-badge-border-tinted-danger-rest       | --tug7-surface-badge-primary-tinted-danger-rest         | informational
 } */
 
 /**
@@ -1077,6 +1087,110 @@ body {
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-button-ghost-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
   color: var(--tug7-element-control-icon-ghost-agent-active);
+}
+
+/* ============================================================================
+   Tinted emphasis
+
+   A display-leaning emphasis shared with TugBadge: a faint role-tinted wash
+   behind role-colored text — the dev-card status-chip look — for buttons that
+   should read as a quiet chip rather than a solid call to action.
+
+   Tinted reuses TugBadge's `tinted` tokens directly (single source of truth,
+   already tuned for light + dark themes) — the mirror image of TugBadge's
+   `filled` reusing the control tokens. It is static across rest / hover /
+   active (it reads as a chip, like a badge), so each role re-asserts its colors
+   on :hover and :active to override the base button's outlined-action hover.
+
+   Roles: the five semantic colour roles tinted shares with TugBadge
+   (accent / action / agent / data / danger). The control-only `option` role
+   has no tinted analog and is intentionally omitted, mirroring how `filled`
+   omits the badge-only `inherit` role.
+   ========================================================================= */
+
+/* --- tinted-accent --- */
+
+.tug-button-tinted-accent,
+.tug-button-tinted-accent:hover:not(:disabled):not([aria-disabled="true"]),
+.tug-button-tinted-accent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-badge-primary-tinted-accent-rest);
+  color: var(--tug7-element-badge-text-tinted-accent-rest);
+  border-color: var(--tug7-element-badge-border-tinted-accent-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-badge-primary-tinted-accent-rest */
+.tug-button-tinted-accent svg,
+.tug-button-tinted-accent:hover:not(:disabled):not([aria-disabled="true"]) svg,
+.tug-button-tinted-accent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-badge-text-tinted-accent-rest);
+}
+
+/* --- tinted-action --- */
+
+.tug-button-tinted-action,
+.tug-button-tinted-action:hover:not(:disabled):not([aria-disabled="true"]),
+.tug-button-tinted-action:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-badge-primary-tinted-action-rest);
+  color: var(--tug7-element-badge-text-tinted-action-rest);
+  border-color: var(--tug7-element-badge-border-tinted-action-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-badge-primary-tinted-action-rest */
+.tug-button-tinted-action svg,
+.tug-button-tinted-action:hover:not(:disabled):not([aria-disabled="true"]) svg,
+.tug-button-tinted-action:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-badge-text-tinted-action-rest);
+}
+
+/* --- tinted-agent --- */
+
+.tug-button-tinted-agent,
+.tug-button-tinted-agent:hover:not(:disabled):not([aria-disabled="true"]),
+.tug-button-tinted-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-badge-primary-tinted-agent-rest);
+  color: var(--tug7-element-badge-text-tinted-agent-rest);
+  border-color: var(--tug7-element-badge-border-tinted-agent-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-badge-primary-tinted-agent-rest */
+.tug-button-tinted-agent svg,
+.tug-button-tinted-agent:hover:not(:disabled):not([aria-disabled="true"]) svg,
+.tug-button-tinted-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-badge-text-tinted-agent-rest);
+}
+
+/* --- tinted-data --- */
+
+.tug-button-tinted-data,
+.tug-button-tinted-data:hover:not(:disabled):not([aria-disabled="true"]),
+.tug-button-tinted-data:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-badge-primary-tinted-data-rest);
+  color: var(--tug7-element-badge-text-tinted-data-rest);
+  border-color: var(--tug7-element-badge-border-tinted-data-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-badge-primary-tinted-data-rest */
+.tug-button-tinted-data svg,
+.tug-button-tinted-data:hover:not(:disabled):not([aria-disabled="true"]) svg,
+.tug-button-tinted-data:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-badge-text-tinted-data-rest);
+}
+
+/* --- tinted-danger --- */
+
+.tug-button-tinted-danger,
+.tug-button-tinted-danger:hover:not(:disabled):not([aria-disabled="true"]),
+.tug-button-tinted-danger:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-badge-primary-tinted-danger-rest);
+  color: var(--tug7-element-badge-text-tinted-danger-rest);
+  border-color: var(--tug7-element-badge-border-tinted-danger-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-badge-primary-tinted-danger-rest */
+.tug-button-tinted-danger svg,
+.tug-button-tinted-danger:hover:not(:disabled):not([aria-disabled="true"]) svg,
+.tug-button-tinted-danger:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-badge-text-tinted-danger-rest);
 }
 
 /* ============================================================================
