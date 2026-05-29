@@ -174,8 +174,8 @@ export function GallerySheet() {
         <TugLabel className="cg-section-title">Presentation Styles</TugLabel>
         <div style={labelStyle}>
           Same fully-presented geometry, three entrance/exit animations via the{" "}
-          <code>presentation</code> prop. Top is the default window-shade drop; bottom
-          mirrors it from below; scale-fade fades in while scaling up.
+          <code>presentation</code> prop. Scale-fade — the default — fades in while
+          scaling up; top is the window-shade drop; bottom mirrors it from below.
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <TugPushButton
@@ -183,7 +183,7 @@ export function GallerySheet() {
             size="sm"
             onClick={() =>
               void showSheet({
-                title: "Top (default)",
+                title: "Top",
                 description: "Window-shade drop from the title bar.",
                 presentation: "top",
                 content: (close) => <PresentationSheetBody close={close} />,
@@ -211,8 +211,8 @@ export function GallerySheet() {
             size="sm"
             onClick={() =>
               void showSheet({
-                title: "Scale / Fade",
-                description: "Fades in while scaling up — no directional slide.",
+                title: "Scale / Fade (default)",
+                description: "Fades in while scaling up — no directional slide. The default.",
                 presentation: "scale-fade",
                 content: (close) => <PresentationSheetBody close={close} />,
               })

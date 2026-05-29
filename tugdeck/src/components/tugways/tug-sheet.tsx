@@ -107,15 +107,15 @@ import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
  * resting state [L06]. UX is the same across all three; this is a UI
  * affordance only.
  *
- *   - `"top"`        Window-shade drop from the title bar (default).
- *                    The panel slides down into place and slides back
- *                    up on dismiss. The original — and only — style.
+ *   - `"top"`        Window-shade drop from the title bar. The panel
+ *                    slides down into place and slides back up on
+ *                    dismiss. The original window-shade style.
  *   - `"bottom"`     Mirror of `"top"` from the opposite edge: the
  *                    panel slides up into place from below and slides
  *                    back down on dismiss.
  *   - `"scale-fade"` The panel fades in while scaling up from slightly
  *                    smaller, and fades out while scaling back down.
- *                    No directional slide.
+ *                    No directional slide. The default.
  *
  * The resting (pre-enter / post-exit) state for each style is declared
  * in `tug-sheet.css` keyed on `data-tug-sheet-presentation` so the
@@ -410,7 +410,7 @@ export interface TugSheetContentProps {
   /**
    * Visual entrance/exit style. All styles share the identical
    * fully-presented geometry — only the animated transition differs
-   * [L06]. Defaults to `"top"` (the window-shade drop). See
+   * [L06]. Defaults to `"scale-fade"` (fade in while scaling up). See
    * {@link TugSheetPresentation}.
    */
   presentation?: TugSheetPresentation;
@@ -438,7 +438,7 @@ export function TugSheetContent({
   onOpenAutoFocus,
   getResult,
   senderId: senderIdProp,
-  presentation = "top",
+  presentation = "scale-fade",
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -861,7 +861,7 @@ export interface ShowSheetOptions {
   onOpenAutoFocus?: (event: Event) => void;
   /**
    * Visual entrance/exit style. Forwarded to the rendered
-   * `TugSheetContent`. Defaults to `"top"`. See
+   * `TugSheetContent`. Defaults to `"scale-fade"`. See
    * {@link TugSheetPresentation}.
    */
   presentation?: TugSheetPresentation;
