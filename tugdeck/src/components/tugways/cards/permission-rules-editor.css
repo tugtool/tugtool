@@ -76,7 +76,7 @@ input.permission-rules-add-input {
 
 /* A little breathing room above the scope radios, below the matcher input. */
 .permission-rules-scope {
-  margin-top: var(--tug-space-xs);
+  margin-top: var(--tug-space-lg);
 }
 
 .permission-rules-add-actions {
