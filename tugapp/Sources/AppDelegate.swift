@@ -846,6 +846,29 @@ extension AppDelegate: BridgeDelegate {
         }
     }
 
+    func bridgeChooseDirectory(initialPath: String?, completion: @escaping (String?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a directory to add to the workspace"
+        panel.prompt = "Add"
+        if let initialPath = initialPath, !initialPath.isEmpty {
+            var isDir: ObjCBool = false
+            let resolved = (initialPath as NSString).expandingTildeInPath
+            if FileManager.default.fileExists(atPath: resolved, isDirectory: &isDir), isDir.boolValue {
+                panel.directoryURL = URL(fileURLWithPath: resolved)
+            }
+        }
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else {
+                completion(nil)
+                return
+            }
+            completion(url.path)
+        }
+    }
+
     func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void) {
         self.devModeEnabled = enabled
         self.updateDeveloperMenuVisibility()

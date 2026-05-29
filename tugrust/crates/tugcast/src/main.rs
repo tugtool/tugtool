@@ -5,6 +5,7 @@ mod control;
 mod defaults;
 mod dev;
 mod feeds;
+mod fs_complete;
 mod host;
 mod migration;
 mod permissions;

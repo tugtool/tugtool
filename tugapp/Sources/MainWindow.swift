@@ -4,6 +4,7 @@ import WebKit
 /// Protocol for bridge callbacks from WebKit to AppDelegate
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
+    func bridgeChooseDirectory(initialPath: String?, completion: @escaping (String?) -> Void)
     func bridgeSetDevMode(enabled: Bool, completion: @escaping (Bool) -> Void)
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
@@ -86,6 +87,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         // Configure WKUserContentController for script message handlers
         contentController = WKUserContentController()
         contentController.add(self, name: "sourceTree")
+        contentController.add(self, name: "chooseDirectory")
         contentController.add(self, name: "setDevMode")
         contentController.add(self, name: "getSettings")
         contentController.add(self, name: "frontendReady")
@@ -424,6 +426,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     func cleanupBridge() {
         guard !bridgeCleaned else { return }
         contentController.removeScriptMessageHandler(forName: "sourceTree")
+        contentController.removeScriptMessageHandler(forName: "chooseDirectory")
         contentController.removeScriptMessageHandler(forName: "setDevMode")
         contentController.removeScriptMessageHandler(forName: "getSettings")
         contentController.removeScriptMessageHandler(forName: "frontendReady")
@@ -627,6 +630,29 @@ extension MainWindow: WKScriptMessageHandler {
                         if let error = error {
                             NSLog("MainWindow: evaluateJavaScript failed for sourceTree (cancelled): %@", error.localizedDescription)
                         }
+                    }
+                }
+            }
+        case "chooseDirectory":
+            // Workspace "Browse…" picker. The web layer sends a request id and
+            // an optional starting path; we open an NSOpenPanel and call back
+            // window.__tugBridge.onDirectoryChosen(id, path|null). The id lets
+            // concurrent pickers resolve independently.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["id"] as? String else { return }
+            let initialPath = body["initialPath"] as? String
+            bridgeDelegate?.bridgeChooseDirectory(initialPath: initialPath) { [weak self] path in
+                guard let self = self else { return }
+                let idArg = self.escapeForJS(requestId)
+                let pathArg: String
+                if let path = path {
+                    pathArg = "'\(self.escapeForJS(path))'"
+                } else {
+                    pathArg = "null"
+                }
+                self.webView.evaluateJavaScript("window.__tugBridge?.onDirectoryChosen?.('\(idArg)', \(pathArg))") { _, error in
+                    if let error = error {
+                        NSLog("MainWindow: evaluateJavaScript failed for chooseDirectory: %@", error.localizedDescription)
                     }
                 }
             }

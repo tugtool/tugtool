@@ -74,9 +74,43 @@ input.permission-rules-search {
   padding: var(--tug-space-sm) 0;
 }
 
-/* The entry reads like the filter + list rows (monospace, matching size). */
+/* Entry row: the path/matcher input, with a trailing Browse… picker button
+   in directory mode. */
+.permission-rules-add-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* The entry reads like the filter + list rows (monospace, matching size). It
+   flexes to fill the row beside the optional Browse… button. */
 .permission-rules-add-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Directory completions (Tab / click to complete) — a short scrollable list of
+   matching child directories below the entry. */
+.permission-rules-completions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 12rem;
+  overflow-y: auto;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-md);
+}
+
+/* Each completion is a full-width, left-aligned monospace ghost button. */
+.permission-rules-completion {
+  justify-content: flex-start;
   width: 100%;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: var(--tug-font-size-xs);
 }
 
 input.permission-rules-add-input {

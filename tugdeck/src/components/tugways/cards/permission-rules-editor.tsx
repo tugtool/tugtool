@@ -44,7 +44,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, FolderOpen } from "lucide-react";
 
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -80,6 +80,11 @@ import {
   type RuleScope,
 } from "@/lib/permission-rules";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
+import { fetchDirectoryCompletions, type DirCompletion } from "@/lib/fs-complete";
+import {
+  isDirectoryPickerAvailable,
+  pickDirectory,
+} from "@/lib/native-directory-picker";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -225,36 +230,80 @@ const SCOPE_OPTIONS: readonly ScopeOption[] = [
 // Add-rule form — matcher input + scope radios + Add (inside an accordion)
 // ---------------------------------------------------------------------------
 
+/**
+ * What an add-form entry is: a tool-matcher `rule` (Allow/Ask/Deny) or a
+ * filesystem `directory` (Workspace). Directory mode validates permissively
+ * (any non-empty path, like the terminal), offers Tab/click path completion,
+ * and an OS "Browse…" picker.
+ */
+type AddEntryKind = "rule" | "directory";
+
 interface AddRuleFormProps {
   placeholder: string;
   onAdd: (scope: RuleScope, rule: string) => void;
+  /** Matcher rule vs filesystem directory — drives validation + completion. */
+  kind: AddEntryKind;
+  /** Session cwd — the base relative paths complete against (directory mode). */
+  cwd?: string;
 }
 
 /**
- * The add-rule form: a matcher input, a {@link TugRadioGroup} choosing the save
- * scope (each option label + description, worded like the terminal), and an Add
- * button. The radio group dispatches `SELECT_VALUE` through the chain ([L11]);
- * this form's `useResponderForm` responder updates the scope. The matcher must
- * be syntactically valid ({@link isValidRuleMatcher}) for Add to enable —
- * unknown tool names pass (matching the terminal); blatant garbage does not.
- * Enter in the input adds. The matcher is stored verbatim.
+ * The add form: an entry input, a {@link TugRadioGroup} choosing the save scope
+ * (label + description, worded like the terminal), and an Add button. The radio
+ * group dispatches `SELECT_VALUE` through the chain ([L11]); this form's
+ * `useResponderForm` responder updates the scope.
+ *
+ * In `rule` mode the matcher must be syntactically valid
+ * ({@link isValidRuleMatcher}) for Add to enable — unknown tool names pass
+ * (matching the terminal), blatant garbage doesn't. In `directory` mode entry
+ * is permissive (any non-empty path) and the field gains debounced directory
+ * completion (`Tab` or click a suggestion to complete) plus an OS picker. Enter
+ * adds; the value is stored verbatim.
  */
-function AddRuleForm({ placeholder, onAdd }: AddRuleFormProps): React.ReactElement {
+function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React.ReactElement {
   const [draft, setDraft] = useState("");
   const [scope, setScope] = useState<RuleScope>("local");
-  const valid = isValidRuleMatcher(draft);
+  const [completions, setCompletions] = useState<readonly DirCompletion[]>([]);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const isDir = kind === "directory";
+  const trimmed = draft.trim();
+  const valid = isDir ? trimmed !== "" : isValidRuleMatcher(draft);
+  const showPicker = isDir && isDirectoryPickerAvailable();
 
   const radioId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: { [radioId]: (next: string) => setScope(next as RuleScope) },
   });
 
+  // Directory mode: debounced completion fetch against the session cwd. An
+  // empty draft lists the cwd's child directories, so the field opens browsable.
+  useEffect(() => {
+    if (!isDir || cwd === undefined) return;
+    const handle = setTimeout(() => {
+      void fetchDirectoryCompletions(cwd, draft).then(setCompletions);
+    }, 120);
+    return () => clearTimeout(handle);
+  }, [isDir, cwd, draft]);
+
   const submit = useCallback(() => {
-    const rule = draft.trim();
-    if (!isValidRuleMatcher(rule)) return;
-    onAdd(scope, rule);
+    const entry = draft.trim();
+    if (isDir ? entry === "" : !isValidRuleMatcher(entry)) return;
+    onAdd(scope, entry);
     setDraft("");
-  }, [draft, scope, onAdd]);
+    setCompletions([]);
+  }, [draft, scope, onAdd, isDir]);
+
+  const complete = useCallback((value: string) => {
+    setDraft(value);
+    inputRef.current?.focus();
+  }, []);
+
+  const browse = useCallback(() => {
+    void pickDirectory(draft.trim() !== "" ? draft.trim() : cwd).then((path) => {
+      if (path !== null) setDraft(path);
+    });
+  }, [draft, cwd]);
 
   return (
     <ResponderScope>
@@ -262,27 +311,65 @@ function AddRuleForm({ placeholder, onAdd }: AddRuleFormProps): React.ReactEleme
         className="permission-rules-add"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <TugInput
-          size="sm"
-          value={draft}
-          placeholder={placeholder}
-          aria-label="New rule matcher"
-          validation={draft.trim() !== "" && !valid ? "invalid" : "default"}
-          className="permission-rules-add-input"
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              submit();
-            }
-          }}
-        />
+        <div className="permission-rules-add-entry">
+          <TugInput
+            ref={inputRef}
+            size="sm"
+            value={draft}
+            placeholder={placeholder}
+            aria-label={isDir ? "New directory path" : "New rule matcher"}
+            validation={trimmed !== "" && !valid ? "invalid" : "default"}
+            className="permission-rules-add-input"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                submit();
+                return;
+              }
+              // Tab completes to the first suggestion (terminal parity),
+              // falling back to normal focus movement when there's nothing
+              // to complete.
+              if (event.key === "Tab" && isDir && completions.length > 0) {
+                event.preventDefault();
+                complete(completions[0].value);
+              }
+            }}
+          />
+          {showPicker && (
+            <TugPushButton
+              size="sm"
+              emphasis="ghost"
+              aria-label="Browse for a directory"
+              data-slot="permission-rules-browse"
+              onClick={browse}
+            >
+              <FolderOpen aria-hidden="true" size={14} />
+            </TugPushButton>
+          )}
+        </div>
+        {isDir && completions.length > 0 && (
+          <ul className="permission-rules-completions" data-slot="dir-completions">
+            {completions.map((c) => (
+              <li key={c.value}>
+                <TugPushButton
+                  size="sm"
+                  emphasis="ghost"
+                  className="permission-rules-completion"
+                  onClick={() => complete(c.value)}
+                >
+                  {c.label}
+                </TugPushButton>
+              </li>
+            ))}
+          </ul>
+        )}
         <TugRadioGroup
           value={scope}
           senderId={radioId}
           size="md"
           orientation="vertical"
-          aria-label="Where to save the rule"
+          aria-label={isDir ? "Where to save the directory" : "Where to save the rule"}
           className="permission-rules-scope"
         >
           {SCOPE_OPTIONS.map((opt) => (
@@ -314,6 +401,8 @@ function AddRuleForm({ placeholder, onAdd }: AddRuleFormProps): React.ReactEleme
 interface RulePanelProps {
   store: PermissionRulesStore;
   bucket: BucketKey;
+  /** Session cwd — completion base + scope resolution root (Workspace tab). */
+  cwd?: string;
   /** Optional fixed header (the Workspace tab's read-only cwd row). */
   header?: React.ReactNode;
 }
@@ -323,7 +412,8 @@ interface RulePanelProps {
  * form, and a windowed, filtered list of the scope-labeled rule union. A freshly
  * added rule is scrolled into view so the user sees it landed.
  */
-function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElement {
+function RulePanel({ store, bucket, cwd, header }: RulePanelProps): React.ReactElement {
+  const isDir = bucket === "additionalDirectories";
   const [query, setQuery] = useState("");
   // The rule whose removal is awaiting confirmation, plus the trash button it
   // anchors the confirm popover to. `null` when no confirm is pending.
@@ -404,14 +494,19 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
       {header}
       <TugAccordion type="single" collapsible variant="outline">
         <TugAccordionItem value="add" trigger={addLabel}>
-          <AddRuleForm placeholder={ADD_PLACEHOLDER[bucket]} onAdd={onAdd} />
+          <AddRuleForm
+            placeholder={ADD_PLACEHOLDER[bucket]}
+            onAdd={onAdd}
+            kind={isDir ? "directory" : "rule"}
+            cwd={cwd}
+          />
         </TugAccordionItem>
       </TugAccordion>
       <TugInput
         size="sm"
         value={query}
-        placeholder="Filter rules"
-        aria-label="Filter rules"
+        placeholder={isDir ? "Filter directories" : "Filter rules"}
+        aria-label={isDir ? "Filter directories" : "Filter rules"}
         className="permission-rules-search"
         onChange={(event) => setQuery(event.target.value)}
       />
@@ -436,7 +531,7 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
       <TugConfirmPopover
         open={pendingRemoval !== null}
         anchorEl={pendingRemoval?.anchorEl ?? null}
-        message="Delete this rule?"
+        message={isDir ? "Delete this directory?" : "Delete this rule?"}
         confirmLabel="Delete"
         confirmRole="danger"
         cancelLabel="Cancel"
@@ -616,6 +711,7 @@ function PermissionRulesSheetBody({
           <RulePanel
             store={store}
             bucket={active.bucket}
+            cwd={cwd}
             header={active.id === "workspace" ? workspaceHeader : undefined}
           />
         )}
