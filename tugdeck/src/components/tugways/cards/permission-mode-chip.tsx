@@ -1,16 +1,13 @@
 /**
- * `PermissionModeChip` — the Z4B permission-mode indicator chip.
+ * `PermissionModeChip` — the Z4B permission-mode control chip.
  *
- * Display-only per [D13]: it shows the session's current permission mode
- * and nothing else. There is no click affordance — the mode changes via
- * `Shift+Tab` (the cycle handler on the dev card's card-content responder)
- * or the `/permissions` slash command, never by clicking the chip.
- *
- * Rendered as a two-line `TugBadge` (`label-top` / `size="sm"` / agent role)
- * per the dev-card / Claude-Code-parity plan's canonical Z4B chip config:
- * an uppercase `MODE` caption over the mode label. Not width-stabilized per
- * Risk R01 — the chip's width tracks the current label and reflows when the
- * mode cycles, by design.
+ * A two-line `TugPushButton` (`label-top` / `size="sm"`) carrying an uppercase
+ * `MODE` caption over the session's current permission-mode label, prefixed
+ * with the `shield-cog-corner` icon. Pushing it opens a `TugSheet` listing the
+ * behavior options ([PERMISSION_MODE_MENU]); picking one calls `onSelectMode`.
+ * The `Shift+Tab` cycle (handled on the dev card's card-content responder) and
+ * the `/permissions` slash command remain the other two ways to change the
+ * mode; all three funnel through the dev card's single `setMode`.
  *
  * Data sources ([L02] — external state enters through `useSyncExternalStore`
  * only):
@@ -20,24 +17,24 @@
  *    read as the pre-population fallback so the chip shows the prior mode
  *    immediately on card relaunch, before the live metadata lands ([D07]).
  *
- * Compositional component — composes `TugBadge` and adds no styling of its
- * own, so it is `.tsx`-only with no `.css` file (per the component-authoring
- * guide). `TugBadge` keeps its own tokens [L20].
+ * Compositional component — composes `TugPushButton` + `TugSheet`; its only
+ * own CSS is the value-line width-stabilizer and the sheet's option list.
+ * The composed children keep their own tokens [L20].
  *
  * Laws: [L02] store subscription, [L06] no React state for appearance,
- *       [L19] authoring guide, [L20] composed child keeps own tokens
- * Decisions: [D04] SessionMetadataStore hub, [D07] per-card persistence,
- *            [D13] indicator-only
+ *       [L19] authoring guide, [L20] composed children keep own tokens
+ * Decisions: [D04] SessionMetadataStore hub, [D07] per-card persistence
  *
  * @module components/tugways/cards/permission-mode-chip
  */
 
 import "./permission-mode-chip.css";
 
-import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import React, { useCallback, useSyncExternalStore } from "react";
+import { ShieldCogCorner } from "lucide-react";
 
-import { TugBadge, type TugBadgeMenuItem } from "@/components/tugways/tug-badge";
-import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useTugSheet } from "@/components/tugways/tug-sheet";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
@@ -53,17 +50,18 @@ export interface PermissionModeChipProps {
   /** Metadata store supplying the live `permissionMode`. */
   sessionMetadataStore: SessionMetadataStore;
   /**
-   * Sender id the chevron menu stamps on its `set-value` dispatch so the dev
-   * card's form responder can route it to `setMode`. Omit to render the chip
-   * without the menu (display-only).
+   * Called with the chosen mode when the user picks one in the behavior sheet.
+   * Wired by the dev card to `usePermissionMode().setMode`, which sends the
+   * `permission_mode` frame, optimistically reflects the mode, and persists it
+   * per card.
    */
-  menuSenderId?: string;
+  onSelectMode: (mode: string) => void;
 }
 
 export function PermissionModeChip({
   cardId,
   sessionMetadataStore,
-  menuSenderId,
+  onSelectMode,
 }: PermissionModeChipProps): React.ReactElement {
   const liveMode = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -84,52 +82,109 @@ export function PermissionModeChip({
 
   const mode = liveMode ?? persistedMode;
 
-  // Menu items: each mode option dispatches `set-value` carrying the mode
-  // string + this chip's sender. It walks up from the prompt entry to the
-  // dev card's form responder, whose `setValueString` slot for this sender
-  // calls `setMode` [L11]. `set-value` (not `select-value`, which the prompt
-  // entry already claims for route selection) so the dispatch is not
-  // intercepted before it reaches the form responder. Omitted when no
-  // `menuSenderId` — the chip stays display-only.
-  const menuItems = useMemo<TugBadgeMenuItem[] | undefined>(() => {
-    if (menuSenderId === undefined) return undefined;
-    return PERMISSION_MODE_MENU.map((m) => ({
-      action: TUG_ACTIONS.SET_VALUE,
-      value: m,
-      label: formatPermissionMode(m),
-      // Checkmark the current mode; every item carries `selected` so the
-      // unchecked rows reserve the same leading indent.
-      selected: m === mode,
-    }));
-  }, [menuSenderId, mode]);
+  const { showSheet, renderSheet } = useTugSheet();
+
+  // Push → present the behavior sheet. Picking an option calls `onSelectMode`
+  // and dismisses the sheet; Cancel / Escape just dismiss. `mode` is captured
+  // at open time so the open sheet marks the then-current mode as selected.
+  const openBehaviorSheet = useCallback(() => {
+    void showSheet({
+      title: "Permission Mode",
+      description: "Choose how Claude handles file edits and commands.",
+      content: (close) => (
+        <PermissionModeSheetBody
+          currentMode={mode}
+          onPick={(picked) => {
+            onSelectMode(picked);
+            close(picked);
+          }}
+        />
+      ),
+    });
+  }, [showSheet, mode, onSelectMode]);
 
   return (
-    <TugBadge
-      layout="label-top"
-      label="Mode"
-      size="sm"
-      role="agent"
-      emphasis="tinted"
-      data-slot="permission-mode-chip"
-      title={mode === null ? undefined : `Permission mode: ${formatPermissionMode(mode)}`}
-      menuItems={menuItems}
-      menuSenderId={menuSenderId}
-      chevron="up"
-      menuAriaLabel="Permission mode"
-    >
-      {/* Width-stabilized value: the shown label plus a hidden sizer per menu
-          mode reserve the widest label so cycling the mode never reflows the
-          chip (this chip only, per [R01]). */}
-      <span className="permission-mode-chip-value">
-        <span className="permission-mode-chip-value-shown" data-slot="permission-mode-value">
-          {formatPermissionMode(mode)}
-        </span>
-        {PERMISSION_MODE_MENU.map((m) => (
-          <span key={m} aria-hidden="true" className="permission-mode-chip-value-sizer">
-            {formatPermissionMode(m)}
+    <>
+      <TugPushButton
+        layout="label-top"
+        label="Mode"
+        size="sm"
+        emphasis="outlined"
+        role="action"
+        icon={<ShieldCogCorner aria-hidden="true" />}
+        data-slot="permission-mode-chip"
+        aria-label="Permission mode"
+        title={
+          mode === null
+            ? undefined
+            : `Permission mode: ${formatPermissionMode(mode)}`
+        }
+        onClick={openBehaviorSheet}
+      >
+        {/* Width-stabilized value: the shown label plus a hidden sizer per menu
+            mode reserve the widest label so cycling the mode never reflows the
+            chip (this chip only, per [R01]). */}
+        <span className="permission-mode-chip-value">
+          <span
+            className="permission-mode-chip-value-shown"
+            data-slot="permission-mode-value"
+          >
+            {formatPermissionMode(mode)}
           </span>
-        ))}
-      </span>
-    </TugBadge>
+          {PERMISSION_MODE_MENU.map((m) => (
+            <span
+              key={m}
+              aria-hidden="true"
+              className="permission-mode-chip-value-sizer"
+            >
+              {formatPermissionMode(m)}
+            </span>
+          ))}
+        </span>
+      </TugPushButton>
+      {renderSheet()}
+    </>
+  );
+}
+
+interface PermissionModeSheetBodyProps {
+  /** The mode marked as selected when the sheet opened (`null` if unknown). */
+  currentMode: string | null;
+  /** Invoked with the chosen mode; the chip closes the sheet afterward. */
+  onPick: (mode: string) => void;
+}
+
+/**
+ * The behavior-options list inside the sheet. One full-width option per
+ * [PERMISSION_MODE_MENU] mode; the current mode reads as `filled`, the rest as
+ * `ghost`. `bypassPermissions` carries the `danger` role so the dangerous mode
+ * is visibly distinct whether or not it is the active one. The selection swap
+ * is appearance-only (emphasis class), not React state on this list.
+ */
+function PermissionModeSheetBody({
+  currentMode,
+  onPick,
+}: PermissionModeSheetBodyProps): React.ReactElement {
+  return (
+    <div className="permission-mode-sheet-options" role="group">
+      {PERMISSION_MODE_MENU.map((m) => {
+        const selected = m === currentMode;
+        const danger = m === "bypassPermissions";
+        return (
+          <TugPushButton
+            key={m}
+            size="md"
+            emphasis={selected ? "filled" : "ghost"}
+            role={danger ? "danger" : "action"}
+            data-mode={m}
+            data-selected={selected ? "true" : undefined}
+            aria-pressed={selected}
+            onClick={() => onPick(m)}
+          >
+            {formatPermissionMode(m)}
+          </TugPushButton>
+        );
+      })}
+    </div>
   );
 }

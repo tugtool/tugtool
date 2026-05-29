@@ -32,9 +32,9 @@ export const PERMISSION_MODE_CYCLE = [
 export type CyclePermissionMode = (typeof PERMISSION_MODE_CYCLE)[number];
 
 /**
- * Modes offered in the chip's chevron popup menu. The four cycle modes plus
+ * Modes offered in the chip's behavior sheet. The four cycle modes plus
  * `bypassPermissions` — the dangerous mode [Q07]/[D02] keep out of the
- * `Shift+Tab` cycle but reachable through the menu (the menu is the graphical
+ * `Shift+Tab` cycle but reachable through the sheet (the sheet is the graphical
  * surface for modes the cycle skips).
  */
 export const PERMISSION_MODE_MENU = [

@@ -69,7 +69,7 @@ export interface UsePermissionModeOptions {
 export interface UsePermissionModeResult {
   /** Advance the mode one `Shift+Tab` step (default → acceptEdits → plan → auto → …). */
   cycle: () => void;
-  /** Set the mode to an explicit value (the `/permissions` chevron menu path). */
+  /** Set the mode to an explicit value (the behavior-sheet / `/permissions` path). */
   setMode: (mode: string) => void;
 }
 
@@ -100,7 +100,7 @@ export function usePermissionMode({
   // Set the mode to an explicit value: send the frame to tugcode → claude,
   // optimistically reflect it on the chip (no metadata round-trip exists —
   // see `applyPermissionMode`), and persist it per card. The single path
-  // both `cycle` and the `/permissions` chevron menu funnel through.
+  // both `cycle` and the chip's behavior sheet funnel through.
   const setMode = useCallback(
     (mode: string) => {
       // A manual change supersedes any not-yet-fired mount restore.

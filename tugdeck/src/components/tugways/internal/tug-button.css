@@ -339,6 +339,122 @@ body {
 }
 
 /* ============================================================================
+   Two-line layouts (label / content)
+
+   Mirrors TugBadge's two-line stack ([tug-badge.css]): `label-top` and
+   `content-top` stack a letter-spaced uppercase caption over the content line,
+   with an optional leading icon to the left of the stack. The button grows to
+   a taller two-line height (the single-line heights are sized for one row);
+   inline padding is tightened so a two-line button reads as a compact chip.
+
+   Two case-handling rules keep the chip legible under TugPushButton's blanket
+   `text-transform: uppercase`: the caption declares its own `uppercase`, and
+   the content line declares `text-transform: none` to reset the value to its
+   natural case. A direct rule on each child overrides the inherited transform
+   regardless of source order, so the reset holds whether or not
+   `.tug-push-button` is on the element.
+
+   The per-size height rules combine the layout and size classes (specificity
+   0,2,0) so they beat the single-line size `height` (0,1,0); the padding
+   override is a same-specificity shorthand declared after the size rules, so
+   it wins by source order.
+   ========================================================================= */
+
+body {
+  --tugx-button-label-text-size: 0.8em;
+  --tugx-button-label-tracking: 0.08em;
+
+  /* Two-line height scale — one notch taller than the single-line heights so
+     the caption + content rows seat comfortably. A `sm` two-line button is
+     36px, matching the dev-card submit button (`TugPushButton size="lg"`). */
+  --tugx-button-twoline-height-2xs: 1.75rem; /* 28px */
+  --tugx-button-twoline-height-xs:  2rem;    /* 32px */
+  --tugx-button-twoline-height-sm:  2.25rem; /* 36px — matches the submit button */
+  --tugx-button-twoline-height-md:  2.5rem;  /* 40px */
+  --tugx-button-twoline-height-lg:  2.75rem; /* 44px */
+}
+
+.tug-button-layout-label-top,
+.tug-button-layout-content-top {
+  /* Compact chip padding — overrides the size's wider single-line inline
+     padding (same-specificity shorthand declared later wins). */
+  padding: 0 0.625rem;
+}
+
+.tug-button-layout-label-top.tug-button-size-2xs,
+.tug-button-layout-content-top.tug-button-size-2xs { height: var(--tugx-button-twoline-height-2xs); }
+
+.tug-button-layout-label-top.tug-button-size-xs,
+.tug-button-layout-content-top.tug-button-size-xs { height: var(--tugx-button-twoline-height-xs); }
+
+.tug-button-layout-label-top.tug-button-size-sm,
+.tug-button-layout-content-top.tug-button-size-sm { height: var(--tugx-button-twoline-height-sm); }
+
+.tug-button-layout-label-top.tug-button-size-md,
+.tug-button-layout-content-top.tug-button-size-md { height: var(--tugx-button-twoline-height-md); }
+
+.tug-button-layout-label-top.tug-button-size-lg,
+.tug-button-layout-content-top.tug-button-size-lg { height: var(--tugx-button-twoline-height-lg); }
+
+/* Two-line inner row: [icon] [stack], vertically centred. */
+.tug-button-twoline {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem; /* icon ↔ stack */
+  line-height: 1;
+}
+
+.tug-button-twoline-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Slightly smaller than the single-line 1rem icon — chip-appropriate. Later in
+   source than the base `.tug-button svg` rule, so it wins at equal specificity. */
+.tug-button-twoline-icon svg {
+  width: 0.875rem;  /* 14px */
+  height: 0.875rem;
+}
+
+.tug-button-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.33em; /* inter-row spacing, mirrors the badge's two-line stack */
+  line-height: 1;
+}
+
+.tug-button-layout-content-top .tug-button-stack {
+  flex-direction: column-reverse;
+}
+
+.tug-button-label {
+  font-size: var(--tugx-button-label-text-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tugx-button-label-tracking);
+  line-height: 1;
+  /* Caption tracks the button's resolved text colour (so it follows role /
+     emphasis / hover states) dimmed a touch via opacity — no fixed token, so
+     the pairings audit doesn't apply and it stays legible on every variant. */
+  opacity: 0.72;
+}
+
+.tug-button-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  /* Reset TugPushButton's blanket uppercase for the value line; the caption
+     keeps its own. Direct child rule overrides the inherited transform. */
+  text-transform: none;
+}
+
+/* ============================================================================
    Emphasis x Role Variants [D02, D03]
    Compound class: .tug-button-{emphasis}-{role}
    ========================================================================= */

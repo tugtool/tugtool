@@ -71,6 +71,18 @@ export type TugButtonSize = "2xs" | "xs" | "sm" | "md" | "lg";
  */
 export type TugButtonSubtype = "text" | "icon" | "icon-text";
 
+/**
+ * TugButton layout — single-line (default) vs two-line label/content.
+ *
+ * Mirrors {@link TugBadgeLayout}: `label-top` / `content-top` stack a
+ * letter-spaced uppercase `label` caption and the `children` content as two
+ * rows, with an optional leading `icon` to the left of the stack. `single`
+ * (the default) is the ordinary one-line button and is non-breaking for every
+ * existing call site. DOM order is always caption-first; `content-top` only
+ * reverses the visual stacking via CSS.
+ */
+export type TugButtonLayout = "single" | "label-top" | "content-top";
+
 /** TugButton border-radius tokens (proportional, rem-based like Tailwind) */
 export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 
@@ -136,6 +148,23 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * @default "md"
    */
   size?: TugButtonSize;
+
+  /**
+   * Layout arrangement. `single` is the one-row button (default, non-breaking
+   * for every existing call site). `label-top` / `content-top` render the
+   * `label` caption and `children` content as two stacked rows, with an
+   * optional leading `icon`. See {@link TugButtonLayout}.
+   * @selector .tug-button-layout-label-top | .tug-button-layout-content-top
+   * @default "single"
+   */
+  layout?: TugButtonLayout;
+
+  /**
+   * Letter-spaced uppercase caption line for the two-line layouts. Only
+   * meaningful when `layout !== "single"`; ignored in single layout. The
+   * content line is always `children`.
+   */
+  label?: React.ReactNode;
 
   /** Direct-action mode click handler. Mutually exclusive with `action`. */
   onClick?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
@@ -325,6 +354,8 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   emphasis = "outlined",
   role: roleProp = "action",
   size = "md",
+  layout = "single",
+  label,
   onClick,
   action,
   target,
@@ -659,6 +690,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   // CSS class composition — compound emphasis-role class [D02]
   const emphasisRoleClass = `tug-button-${emphasis}-${role}`;
   const sizeClass = `tug-button-size-${size}`;
+  const twoLine = layout !== "single";
   const buttonClassName = cn(
     // Base tug-button class
     "tug-button",
@@ -666,6 +698,8 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     sizeClass,
     // Emphasis x role compound class for hover/active/transition styles
     emphasisRoleClass,
+    // Two-line label/content layout (label-top / content-top)
+    twoLine && `tug-button-layout-${layout}`,
     // Icon subtype size classes (square aspect ratio)
     subtype === "icon" && size === "2xs" && "tug-button-icon-2xs",
     subtype === "icon" && size === "xs" && "tug-button-icon-xs",
@@ -677,19 +711,55 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
     className
   );
 
+  // Two-line content (`label-top` / `content-top`): an optional leading icon
+  // beside a column that stacks the uppercase `label` caption over the
+  // `contentNode`. DOM order is caption-first; `content-top` reverses only the
+  // visual order via CSS. Mirrors TugBadge's two-line stack so the two
+  // component families read with one visual vocabulary.
+  function renderTwoLine(
+    iconNode: React.ReactNode,
+    contentNode: React.ReactNode,
+  ): React.ReactNode {
+    return (
+      <span className="tug-button-twoline">
+        {iconNode != null && iconNode !== false && (
+          <span className="tug-button-twoline-icon" aria-hidden="true">
+            {iconNode}
+          </span>
+        )}
+        <span className="tug-button-stack">
+          <span className="tug-button-label">{label}</span>
+          <span className="tug-button-content">{contentNode}</span>
+        </span>
+      </span>
+    );
+  }
+
+  // Inner content: the two-line stack when a `layout` is set, else the
+  // subtype-driven single-line content. Both the rest and confirmation
+  // sub-trees funnel through here so they stay structurally aligned.
+  function renderInner(
+    iconNode: React.ReactNode,
+    contentNode: React.ReactNode,
+  ): React.ReactNode {
+    return twoLine
+      ? renderTwoLine(iconNode, contentNode)
+      : renderSubtypeContent(iconNode, contentNode);
+  }
+
   // Content rendering per subtype
   function renderContent() {
     if (loading) {
       return (
         <>
           <span className="tug-button-loading-content" aria-hidden="true">
-            {renderSubtypeContent(icon, children)}
+            {renderInner(icon, children)}
           </span>
           <Spinner />
         </>
       );
     }
-    return renderSubtypeContent(icon, children);
+    return renderInner(icon, children);
   }
 
   function wrapLabel(labelNode: React.ReactNode): React.ReactNode {
@@ -828,7 +898,7 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
           className="tug-button-confirm-content"
           aria-label={confirmation.ariaLabel}
         >
-          {renderSubtypeContent(confirmIconResolved, confirmLabelResolved)}
+          {renderInner(confirmIconResolved, confirmLabelResolved)}
         </span>
       )}
     </Comp>

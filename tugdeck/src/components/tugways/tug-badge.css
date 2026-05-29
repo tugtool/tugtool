@@ -283,18 +283,15 @@ body {
 
    `label-top` and `content-top` stack a letter-spaced caption row and the
    content row inside a `.tug-badge-stack` column. The badge root is a *row*
-   ([stack] [optional chevron]) so an optional popup-menu chevron can sit to
-   the right of the whole stack, vertically centred, WITHOUT touching the text
-   layout. With no chevron the row holds a single child and reads identically
-   to a plain stacked chip. The stack carries the inter-row gap and the
+   holding the single stack child. The stack carries the inter-row gap and the
    `content-top` visual reversal; DOM order stays caption-first (set in
    tug-badge.tsx) so the reading order never moves.
 
    Width resolves to the wider of the two rows for free: the stack column
    sizes its cross axis to its widest child, so the chip is exactly as wide as
-   its widest line (plus the chevron, if any) with no fixed width — the
-   intra-chip half of [R01]. A consumer that must hold width across *content*
-   changes reserves the slot itself (per [R01]); the chip primitive does not.
+   its widest line with no fixed width — the intra-chip half of [R01]. A
+   consumer that must hold width across *content* changes reserves the slot
+   itself (per [R01]); the chip primitive does not.
 
    Height comes from the TugPushButton-derived two-line scale (see the
    `--tugx-badge-twoline-height-*` tokens) rather than the single-line size
@@ -310,9 +307,6 @@ body {
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  /* Gap between the text stack and the chevron (no effect when there is no
-     chevron — the row then holds a single child). */
-  gap: 0.25rem;
   line-height: 1;
 }
 
@@ -331,28 +325,6 @@ body {
 
 .tug-badge-layout-content-top .tug-badge-stack {
   flex-direction: column-reverse;
-}
-
-/* Popup-menu chevron hint — vertically centred to the right of the stack by
-   the root's `align-items: center`; `flex-shrink: 0` keeps it from being
-   squeezed. Painted in `currentColor` like the leading icon, so it never adds
-   a colour pairing of its own. */
-.tug-badge-chevron {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.tug-badge-chevron svg {
-  width: 1em;
-  height: 1em;
-  color: currentColor;
-}
-
-/* A menu-hosting badge is interactive — hint it with the pointer cursor
-   (display-only badges keep the default cursor from `.tug-badge`). */
-.tug-badge-has-menu {
-  cursor: pointer;
 }
 
 /* Two-line height scale — mirrors the TugPushButton heights by value. */

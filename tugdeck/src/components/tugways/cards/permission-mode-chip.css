@@ -1,5 +1,6 @@
 /* @tug-pairings: none — layout only. The chip's colour and chrome come from
-   the composed TugBadge; this file just width-stabilizes the value line. */
+   the composed TugPushButton and the sheet's TugPushButton options; this file
+   only width-stabilizes the value line and stacks the option list. */
 
 /*
  * Width-stabilize the permission-mode value ([R01], opt-in for this chip
@@ -25,4 +26,21 @@
 .permission-mode-chip-value-sizer {
   visibility: hidden;
   pointer-events: none;
+}
+
+/*
+ * Behavior sheet — the mode options stack as full-width rows so the labels
+ * read as a list. The leading edge is left-aligned (overriding the button's
+ * centred default) so the option labels line up.
+ */
+.permission-mode-sheet-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 16rem;
+}
+
+.permission-mode-sheet-options .tug-push-button {
+  width: 100%;
+  justify-content: flex-start;
 }

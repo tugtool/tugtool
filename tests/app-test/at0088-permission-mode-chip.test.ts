@@ -1,21 +1,20 @@
 /**
  * at0088-permission-mode-chip.test.ts — the Z4B permission-mode chip cycles
- * with `Shift+Tab` and via its chevron popup menu ([AT0088]).
+ * with `Shift+Tab` and via its behavior sheet ([AT0088]).
  *
  * ## Why this exists
  *
- * Step 1 of the dev-card / Claude-Code-parity plan adds the permission-mode
- * chip. There is no `system_metadata` round-trip on a `set_permission_mode`
- * (claude answers with a control_response only), so the chip reflects the
- * change optimistically via `SessionMetadataStore.applyPermissionMode`. Two
- * user paths drive it:
+ * The permission-mode chip is a two-line `TugPushButton`. There is no
+ * `system_metadata` round-trip on a `set_permission_mode` (claude answers with
+ * a control_response only), so the chip reflects the change optimistically via
+ * `SessionMetadataStore.applyPermissionMode`. Two user paths drive it:
  *
  *   1. **`Shift+Tab`** — the `CYCLE_PERMISSION_MODE` key-card binding →
  *      the dev card's card-content responder → `cycle()`. The chip's value
  *      line must advance through default → acceptEdits → plan → auto.
- *   2. **Chevron menu** — clicking the chip opens a popup menu whose items
- *      dispatch `select-value` through the chain to the dev card, which sets
- *      the mode. Picking an item must update the chip to that mode.
+ *   2. **Behavior sheet** — clicking the chip opens a `TugSheet` listing the
+ *      behavior options; picking one calls the dev card's `setMode`. Picking
+ *      an option must update the chip to that mode.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -29,9 +28,12 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
 // The shown value only — the width-stabilizer sizers also live under
-// .tug-badge-content, so read the dedicated shown span.
+// .tug-button-content, so read the dedicated shown span.
 const CHIP_CONTENT = `${CHIP} [data-slot="permission-mode-value"]`;
-const CHIP_CHEVRON = `${CHIP} .tug-badge-chevron`;
+const CHIP_ICON = `${CHIP} svg`;
+// Behavior sheet + its option rows (rendered into the pane frame portal).
+const SHEET = '[data-slot="tug-sheet"]';
+const AUTO_OPTION = `${SHEET} [data-mode="auto"]`;
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 function deckShape() {
@@ -76,10 +78,10 @@ async function chipWidth(app: App): Promise<number | null> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0088: permission-mode chip cycles via Shift+Tab and the chevron menu",
+  "AT0088: permission-mode chip cycles via Shift+Tab and the behavior sheet",
   () => {
     test(
-      "Shift+Tab advances the mode; the chevron menu sets it explicitly",
+      "Shift+Tab advances the mode; the behavior sheet sets it explicitly",
       async () => {
         const app = await launchTugApp({ testName: "at0088-permission-mode-chip" });
         try {
@@ -91,20 +93,21 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindDevSession("A");
           await app.awaitEngineReady("A");
 
-          // The chip mounts with a value line and a chevron hint. (We do not
-          // wait for live claude metadata: the optimistic cycle works from the
-          // unknown state too, and headless claude is slow / may never emit a
-          // `system_metadata` — the chip's behavior under test is the
-          // client-side cycle + menu, not the live mode value.)
+          // The chip mounts as a two-line button with a value line and the
+          // shield-cog icon. (We do not wait for live claude metadata: the
+          // optimistic cycle works from the unknown state too, and headless
+          // claude is slow / may never emit a `system_metadata` — the chip's
+          // behavior under test is the client-side cycle + sheet, not the live
+          // mode value.)
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(CHIP_CONTENT)}) !== null`,
             { timeoutMs: 8000 },
           );
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(CHIP_CHEVRON)}) !== null`,
+              `document.querySelector(${JSON.stringify(CHIP_ICON)}) !== null`,
             ),
-            "chip must render a chevron hint",
+            "chip must render its leading icon",
           ).toBe(true);
 
           const initialMode = await chipMode(app);
@@ -139,36 +142,33 @@ describe.skipIf(!SHOULD_RUN)(
           expect(KNOWN_MODE_LABELS).toContain(afterCycle!);
           const widthAtCycle = await chipWidth(app);
 
-          // 2. Chevron menu sets the mode explicitly. Open the menu by
-          //    clicking the chip, then pick "Auto" (menu item index 3 in
-          //    PERMISSION_MODE_MENU) via a real click — Radix fires `onSelect`
-          //    from pointer events, so a native click drives the full
-          //    item → chain-dispatch → setMode path.
-          const AUTO_ITEM = `.tug-menu-content [data-item-id="3"]`;
+          // 2. Behavior sheet sets the mode explicitly. Click the chip to open
+          //    the sheet, then pick "Auto" via a real click so the full
+          //    button → onClick → setMode path runs.
           await app.nativeClickAtElement(CHIP);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(AUTO_ITEM)}) !== null`,
+            `document.querySelector(${JSON.stringify(AUTO_OPTION)}) !== null`,
             { timeoutMs: 4000 },
           );
-          // The current mode is checkmarked; every item reserves the check
-          // column (indent) so the labels align.
-          const checkState = await app.evalJS<{ total: number; withSlot: number; checked: string[] }>(
+          // The sheet lists every behavior option, and exactly the current
+          // mode reads as selected.
+          const sheetState = await app.evalJS<{ total: number; selected: string[] }>(
             `(function(){
-              var items = document.querySelectorAll('.tug-menu-content [data-item-id]');
-              var withSlot = 0, checked = [];
-              for (var i = 0; i < items.length; i++) {
-                var slot = items[i].querySelector('.tug-menu-item-check');
-                if (slot) withSlot++;
-                if (slot && slot.querySelector('svg')) {
-                  checked.push(items[i].querySelector('.tug-menu-item-label').textContent.trim());
+              var opts = document.querySelectorAll(${JSON.stringify(`${SHEET} [data-mode]`)});
+              var selected = [];
+              for (var i = 0; i < opts.length; i++) {
+                if (opts[i].getAttribute('data-selected') === 'true') {
+                  selected.push(opts[i].textContent.trim());
                 }
               }
-              return { total: items.length, withSlot: withSlot, checked: checked };
+              return { total: opts.length, selected: selected };
             })()`,
           );
-          expect(checkState.withSlot, "every menu item must reserve the check column").toBe(checkState.total);
-          expect(checkState.checked, "exactly the current mode is checkmarked").toEqual([afterCycle!]);
-          await app.nativeClickAtElement(AUTO_ITEM);
+          expect(sheetState.total, "sheet lists every behavior option").toBe(5);
+          expect(sheetState.selected, "exactly the current mode is selected").toEqual([
+            afterCycle!,
+          ]);
+          await app.nativeClickAtElement(AUTO_OPTION);
           await app.waitForCondition<boolean>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
@@ -176,7 +176,7 @@ describe.skipIf(!SHOULD_RUN)(
             })()`,
             { timeoutMs: 4000 },
           );
-          expect(await chipMode(app), "menu pick must set the chip mode").toBe("Auto");
+          expect(await chipMode(app), "sheet pick must set the chip mode").toBe("Auto");
 
           // 3. Width stabilization: the chip reserves its widest label, so the
           //    mode change above (a different-length value) does not reflow it.

@@ -16,7 +16,7 @@ import { TugButton } from "./internal/tug-button";
 import type { TugButtonProps } from "./internal/tug-button";
 
 // Re-export types that app code needs
-export type { TugButtonConfirmation, TugButtonEmphasis, TugButtonRole, TugButtonSize } from "./internal/tug-button";
+export type { TugButtonConfirmation, TugButtonEmphasis, TugButtonLayout, TugButtonRole, TugButtonSize } from "./internal/tug-button";
 
 export interface TugPushButtonProps extends TugButtonProps {}
 

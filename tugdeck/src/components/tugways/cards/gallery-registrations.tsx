@@ -17,10 +17,10 @@
  */
 
 import React, { useId, useState } from "react";
-import { ArrowBigUp, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import { registerCard, type CardSizePolicy } from "@/card-registry";
 import { TugBadge } from "@/components/tugways/tug-badge";
-import type { TugBadgeEmphasis, TugBadgeMenuItem, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
+import type { TugBadgeEmphasis, TugBadgeRole, TugBadgeSize } from "@/components/tugways/tug-badge";
 import { TugPopupButton } from "@/components/tugways/tug-popup-button";
 import type { TugPopupButtonItem } from "@/components/tugways/tug-popup-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -205,18 +205,6 @@ const TWO_LINE_BADGE_CHIPS: { label: string; content: string; role: TugBadgeRole
 /** The two rate-limit faces the width-stabilized slot cycles between. */
 const RATE_LIMIT_NARROW = "5h 23m";
 const RATE_LIMIT_WIDE = "rate-limited";
-
-/**
- * Demo menu items for the chevron-menu badge. Each dispatches `select-value`
- * through the chain; the gallery registers no handler, so selecting is a
- * no-op here — the demo is the chevron hint + menu open/close behavior.
- */
-const BADGE_MENU_ITEMS: TugBadgeMenuItem[] = [
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "default", label: "Default", selected: false },
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "acceptEdits", label: "Accept Edits", selected: true },
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "plan", label: "Plan", selected: false },
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "auto", label: "Auto", selected: false },
-];
 
 /**
  * GalleryBadge -- TugBadge showcase gallery tab.
@@ -421,48 +409,6 @@ export function GalleryBadge() {
           >
             toggle value
           </button>
-        </div>
-      </div>
-
-      <TugSeparator />
-
-      {/* ---- Chevron popup menu ---- */}
-      <div className="cg-section">
-        <TugLabel className="cg-section-title">TugBadge — Chevron popup menu</TugLabel>
-        <TugLabel size="2xs" emphasis="calm">
-          A chevron hints interactivity; clicking opens a menu whose items dispatch through the chain. The chevron is vertically centred to the right of both rows and does not shift the text.
-        </TugLabel>
-        <div className="cg-variant-row">
-          <TugBadge
-            layout="label-top"
-            label="Mode"
-            emphasis="tinted"
-            role="agent"
-            size="lg"
-            chevron="up"
-            menuItems={BADGE_MENU_ITEMS}
-            menuAriaLabel="Demo mode menu"
-            menuHeader={{ label: "Tab to cycle", icon: <ArrowBigUp aria-hidden="true" /> }}
-            data-testid="badge-menu-up"
-          >
-            Accept Edits
-          </TugBadge>
-          <TugBadge
-            layout="content-top"
-            label="Model"
-            emphasis="tinted"
-            role="agent"
-            size="lg"
-            chevron="down"
-            menuItems={BADGE_MENU_ITEMS}
-            menuAriaLabel="Demo model menu"
-            data-testid="badge-menu-down"
-          >
-            Opus 4.8 · 1M
-          </TugBadge>
-          <TugBadge emphasis="tinted" role="agent" size="md" chevron="down" menuItems={BADGE_MENU_ITEMS} menuAriaLabel="Demo single menu">
-            single + chevron
-          </TugBadge>
         </div>
       </div>
 
