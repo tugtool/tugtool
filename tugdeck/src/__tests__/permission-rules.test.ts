@@ -8,11 +8,26 @@ import { describe, expect, test } from "bun:test";
 import {
   emptyPermissionsSnapshot,
   filterResolvedRules,
+  isValidRuleMatcher,
   parsePermissionsResponse,
   parseRule,
   resolveBucket,
   type PermissionsSnapshot,
 } from "@/lib/permission-rules";
+
+describe("isValidRuleMatcher", () => {
+  test("accepts well-formed matchers, including unknown tool names", () => {
+    for (const ok of ["WebSearch", "Bash(ls:*)", "Read(//tmp/**)", "qqolWIHJqwoihqweFOIH"]) {
+      expect(isValidRuleMatcher(ok), ok).toBe(true);
+    }
+  });
+
+  test("rejects blatantly malformed input", () => {
+    for (const bad of ["", "   ", "9lives", "foo bar", "(oops)", "Bash(ls:*"]) {
+      expect(isValidRuleMatcher(bad), bad).toBe(false);
+    }
+  });
+});
 
 describe("parseRule", () => {
   test("splits Tool(specifier)", () => {

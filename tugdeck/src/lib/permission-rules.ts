@@ -112,6 +112,22 @@ export function parseRule(raw: string): { tool: string; specifier: string | null
   return { tool: m[1], specifier: m[2] };
 }
 
+// A syntactically well-formed matcher: a `Tool` name (letter/underscore then
+// word chars / hyphens) optionally followed by a parenthesized specifier. This
+// is a *shape* check, not a known-tool check — Claude Code itself accepts any
+// tool name (`Foo`, `qqolWIH…`), so we only reject input that isn't a matcher
+// at all (empty, leading digit/space, embedded spaces in the bare name).
+const RULE_SYNTAX = /^[A-Za-z_][\w-]*(\(.*\))?$/;
+
+/**
+ * Whether `raw` is a syntactically valid permission-rule matcher. Used to gate
+ * the add-rule control so blatantly malformed input can't be added; unknown
+ * tool names still pass (matching the terminal's permissive entry).
+ */
+export function isValidRuleMatcher(raw: string): boolean {
+  return RULE_SYNTAX.test(raw.trim());
+}
+
 /**
  * Coerce an unknown JSON value into a `ScopeBuckets`, keeping only string
  * entries in each bucket (defensive against a hand-edited settings file).

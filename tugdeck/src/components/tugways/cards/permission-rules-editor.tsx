@@ -40,20 +40,24 @@ import React, {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
-import { Trash2 } from "lucide-react";
+import { Circle, CircleDot, Trash2 } from "lucide-react";
 
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
+import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
 import {
   TugListView,
   type TugListViewCellProps,
   type TugListViewCellRenderer,
+  type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import {
   useFilteredDataSource,
@@ -65,8 +69,10 @@ import {
   PermissionRulesStore,
 } from "@/lib/permission-rules-store";
 import {
+  isValidRuleMatcher,
   type BucketKey,
   type ResolvedRule,
+  type RuleScope,
 } from "@/lib/permission-rules";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
@@ -165,18 +171,19 @@ const RuleCell: TugListViewCellRenderer<FilteredTugListViewDataSource> =
         variant="flush"
         trailingReveal="hover"
         trailing={
-          <button
-            type="button"
-            className="permission-rule-remove"
-            aria-label={`Remove ${rule.raw}`}
+          <TugPushButton
+            emphasis="ghost"
+            size="sm"
+            aria-label={`Delete ${rule.raw}`}
             data-tug-focus="refuse"
             onClick={(event) => {
+              if (event === undefined) return;
               event.stopPropagation();
               ctx.onRemoveRequest(rule, event.currentTarget);
             }}
           >
             <Trash2 aria-hidden="true" size={14} />
-          </button>
+          </TugPushButton>
         }
       >
         <span className="permission-rule-matcher" title={rule.raw}>
@@ -192,29 +199,84 @@ const RULE_CELL_RENDERERS: Record<
 > = { rule: RuleCell };
 
 // ---------------------------------------------------------------------------
-// Add-rule row — pattern input + Add
+// Scope picker — where a new rule is saved (matches the terminal's choices)
 // ---------------------------------------------------------------------------
 
-interface AddRuleRowProps {
+interface ScopeOption {
+  scope: RuleScope;
+  label: string;
+  description: string;
+}
+
+/** The three writable scopes, worded + ordered like the terminal's prompt. */
+const SCOPE_OPTIONS: readonly ScopeOption[] = [
+  { scope: "local", label: "Project settings (local)", description: "Saved in .claude/settings.local.json" },
+  { scope: "project", label: "Project settings", description: "Checked in at .claude/settings.json" },
+  { scope: "user", label: "User settings", description: "Saved at ~/.claude/settings.json" },
+];
+
+/** A vertical radio group choosing the save scope (label + description each). */
+function ScopeRadioGroup({
+  value,
+  onChange,
+}: {
+  value: RuleScope;
+  onChange: (scope: RuleScope) => void;
+}): React.ReactElement {
+  return (
+    <div className="permission-rules-scope" role="radiogroup" aria-label="Where to save the rule">
+      {SCOPE_OPTIONS.map((opt) => {
+        const selected = opt.scope === value;
+        return (
+          <button
+            key={opt.scope}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            className="permission-rules-scope-option"
+            data-selected={selected ? "true" : undefined}
+            onClick={() => onChange(opt.scope)}
+          >
+            <span className="permission-rules-scope-dot" aria-hidden="true">
+              {selected ? <CircleDot size={16} /> : <Circle size={16} />}
+            </span>
+            <span className="permission-rules-scope-text">
+              <span className="permission-rules-scope-label">{opt.label}</span>
+              <span className="permission-rules-scope-desc">{opt.description}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Add-rule form — matcher input + scope radios + Add (inside an accordion)
+// ---------------------------------------------------------------------------
+
+interface AddRuleFormProps {
   placeholder: string;
-  onAdd: (rule: string) => void;
+  onAdd: (scope: RuleScope, rule: string) => void;
 }
 
 /**
- * The add-rule control: a matcher input and an Add button (Enter in the input
- * also adds). The matcher is stored verbatim; Claude Code validates it on
- * reload. New rules land in the project's local scope alongside the existing
- * ones (the owning `RulePanel` picks the scope).
+ * The add-rule form: a matcher input, the scope radio group, and an Add button.
+ * The matcher must be syntactically valid ({@link isValidRuleMatcher}) for Add
+ * to enable — unknown tool names pass (matching the terminal); blatant garbage
+ * does not. Enter in the input adds. The matcher is stored verbatim.
  */
-function AddRuleRow({ placeholder, onAdd }: AddRuleRowProps): React.ReactElement {
+function AddRuleForm({ placeholder, onAdd }: AddRuleFormProps): React.ReactElement {
   const [draft, setDraft] = useState("");
+  const [scope, setScope] = useState<RuleScope>("local");
+  const valid = isValidRuleMatcher(draft);
 
   const submit = useCallback(() => {
     const rule = draft.trim();
-    if (rule === "") return;
-    onAdd(rule);
+    if (!isValidRuleMatcher(rule)) return;
+    onAdd(scope, rule);
     setDraft("");
-  }, [draft, onAdd]);
+  }, [draft, scope, onAdd]);
 
   return (
     <div className="permission-rules-add">
@@ -223,6 +285,7 @@ function AddRuleRow({ placeholder, onAdd }: AddRuleRowProps): React.ReactElement
         value={draft}
         placeholder={placeholder}
         aria-label="New rule matcher"
+        validation={draft.trim() !== "" && !valid ? "invalid" : "default"}
         className="permission-rules-add-input"
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
@@ -232,21 +295,24 @@ function AddRuleRow({ placeholder, onAdd }: AddRuleRowProps): React.ReactElement
           }
         }}
       />
-      <TugPushButton
-        size="sm"
-        emphasis="filled"
-        data-slot="permission-rules-add-submit"
-        disabled={draft.trim() === ""}
-        onClick={submit}
-      >
-        Add
-      </TugPushButton>
+      <ScopeRadioGroup value={scope} onChange={setScope} />
+      <div className="permission-rules-add-actions">
+        <TugPushButton
+          size="sm"
+          emphasis="filled"
+          data-slot="permission-rules-add-submit"
+          disabled={!valid}
+          onClick={submit}
+        >
+          Add
+        </TugPushButton>
+      </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Rule-bucket panel — search + add + windowed list
+// Rule-bucket panel — search + add accordion + windowed list
 // ---------------------------------------------------------------------------
 
 interface RulePanelProps {
@@ -257,8 +323,9 @@ interface RulePanelProps {
 }
 
 /**
- * A panel over one editable bucket: a search field, the add-rule row, and a
- * windowed, filtered list of the scope-labeled rule union.
+ * A panel over one editable bucket: a filter field, a collapsible add-rule
+ * form, and a windowed, filtered list of the scope-labeled rule union. A freshly
+ * added rule is scrolled into view so the user sees it landed.
  */
 function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElement {
   const [query, setQuery] = useState("");
@@ -268,6 +335,11 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
     rule: ResolvedRule;
     anchorEl: HTMLElement;
   } | null>(null);
+
+  const listRef = useRef<TugListViewHandle | null>(null);
+  // Raw matcher of a just-added rule, scrolled into view once it lands in the
+  // list (cleared after the scroll). A ref, not state — it must not re-render.
+  const pendingScrollRef = useRef<string | null>(null);
 
   const baseDataSource = useMemo(
     () => new BucketDataSource(store, bucket),
@@ -286,6 +358,22 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
     query,
   );
 
+  // Re-render when the store changes so the scroll effect below can run after
+  // an add lands the new rule in the (already-recomputed) filtered projection.
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  useEffect(() => {
+    const raw = pendingScrollRef.current;
+    if (raw === null) return;
+    const count = filtered.numberOfItems();
+    for (let i = 0; i < count; i += 1) {
+      if (baseDataSource.ruleAt(filtered.baseIndexFor(i)).raw === raw) {
+        listRef.current?.scrollToIndex(i, { block: "nearest" });
+        pendingScrollRef.current = null;
+        return;
+      }
+    }
+  }, [snapshot, filtered, baseDataSource]);
+
   const rowContext = useMemo<RuleRowContextValue>(
     () => ({
       baseDataSource,
@@ -294,15 +382,15 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
     [baseDataSource],
   );
 
-  // New rules land in the project's local scope (`.claude/settings.local.json`)
-  // — where the existing rules live and where Claude Code's own `/permissions`
-  // add defaults ([#step-1-5]).
   const onAdd = useCallback(
-    (rule: string) => {
-      void store.mutate("local", bucket, "add", rule);
+    (scope: RuleScope, rule: string) => {
+      pendingScrollRef.current = rule;
+      void store.mutate(scope, bucket, "add", rule);
     },
     [store, bucket],
   );
+
+  const addLabel = bucket === "additionalDirectories" ? "Add a directory" : "Add a rule";
 
   return (
     <div className="permission-rules-panel">
@@ -315,10 +403,15 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
         className="permission-rules-search"
         onChange={(event) => setQuery(event.target.value)}
       />
-      <AddRuleRow placeholder={ADD_PLACEHOLDER[bucket]} onAdd={onAdd} />
+      <TugAccordion type="single" collapsible variant="outline">
+        <TugAccordionItem value="add" trigger={addLabel}>
+          <AddRuleForm placeholder={ADD_PLACEHOLDER[bucket]} onAdd={onAdd} />
+        </TugAccordionItem>
+      </TugAccordion>
       <RuleRowContext.Provider value={rowContext}>
         <div className="permission-rules-list">
           <TugListView<FilteredTugListViewDataSource>
+            ref={listRef}
             dataSource={filtered}
             cellRenderers={RULE_CELL_RENDERERS}
             rowLayout="flush"
@@ -328,8 +421,8 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
       <TugConfirmPopover
         open={pendingRemoval !== null}
         anchorEl={pendingRemoval?.anchorEl ?? null}
-        message="Remove this rule?"
-        confirmLabel="Remove"
+        message="Delete this rule?"
+        confirmLabel="Delete"
         confirmRole="danger"
         cancelLabel="Cancel"
         side="left"

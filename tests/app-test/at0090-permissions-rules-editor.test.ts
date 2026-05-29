@@ -179,9 +179,13 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // 3. Add a rule on the Allow tab and assert it lands on disk.
+          // 3. Add a rule on the Allow tab and assert it lands on disk. The
+          //    add form lives in a collapsed accordion — expand it first.
           await app.evalJS<void>(
             `document.querySelector(${JSON.stringify(tabSel("allow"))}).click()`,
+          );
+          await app.evalJS<void>(
+            `document.querySelector(${JSON.stringify(`${SHEET} .tug-accordion-trigger`)}).click()`,
           );
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(ADD_INPUT)}) !== null`,
@@ -216,15 +220,15 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // 4. Remove the rule: the trash button opens a danger confirm
-          //    popover; confirming removes the rule from disk.
+          // 4. Remove the rule: the trash button (the row's only button) opens
+          //    a danger confirm popover; confirming removes the rule from disk.
           await app.evalJS<void>(
             `(function(){
               var rows = document.querySelectorAll(${JSON.stringify(`${SHEET} .tug-list-row`)});
               for (var i = 0; i < rows.length; i++) {
                 var m = rows[i].querySelector('.permission-rule-matcher');
                 if (m && m.textContent.trim() === ${JSON.stringify(MARKER)}) {
-                  var btn = rows[i].querySelector('.permission-rule-remove');
+                  var btn = rows[i].querySelector('button');
                   if (btn) btn.click();
                   return;
                 }
@@ -233,15 +237,15 @@ describe.skipIf(!SHOULD_RUN)(
             })()`,
           );
           // Removal requires a deliberate confirm — click the popover's danger
-          // "Remove" button (the trash button itself carries no text label).
+          // "Delete" button (the trash button itself carries no text label).
           await app.waitForCondition<boolean>(
-            `Array.from(document.querySelectorAll('button')).some(function(b){return b.textContent.trim() === 'Remove';})`,
+            `Array.from(document.querySelectorAll('button')).some(function(b){return b.textContent.trim() === 'Delete';})`,
             { timeoutMs: 4000 },
           );
           await app.evalJS<void>(
             `(function(){
-              var btn = Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.trim() === 'Remove';});
-              if (!btn) throw new Error('confirm Remove button not found');
+              var btn = Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.trim() === 'Delete';});
+              if (!btn) throw new Error('confirm Delete button not found');
               btn.click();
             })()`,
           );

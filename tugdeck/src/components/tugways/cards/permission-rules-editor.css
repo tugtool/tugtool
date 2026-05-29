@@ -30,15 +30,75 @@
   width: 100%;
 }
 
+/* Add-rule form (inside the accordion): input, scope radios, Add — stacked. */
 .permission-rules-add {
   display: flex;
-  align-items: center;
-  gap: var(--tug-space-xs);
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-sm) 0;
 }
 
 .permission-rules-add-input {
-  flex: 1 1 auto;
-  min-width: 0;
+  width: 100%;
+}
+
+.permission-rules-add-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ── Scope radio group ─────────────────────────────────────────────────── */
+
+.permission-rules-scope {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+}
+
+.permission-rules-scope-option {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-2xs) var(--tug-space-xs);
+  border-radius: var(--tug-radius-sm);
+  text-align: left;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.permission-rules-scope-option:hover {
+  background: var(--tug7-element-control-fill-ghost-action-hover, transparent);
+}
+
+.permission-rules-scope-dot {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.permission-rules-scope-option[data-selected="true"] .permission-rules-scope-dot {
+  color: var(--tug7-element-global-fill-normal-accent-rest);
+}
+
+.permission-rules-scope-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.permission-rules-scope-label {
+  font-size: var(--tug-font-size-sm);
+}
+
+.permission-rules-scope-desc {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* The windowed rule list needs a bounded height to scroll within the sheet. */
@@ -58,23 +118,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.permission-rule-remove {
-  appearance: none;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--tug-space-2xs);
-  border-radius: var(--tug-radius-sm);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.permission-rule-remove:hover {
-  color: var(--tug7-element-field-border-normal-danger-rest);
 }
 
 /* ── Workspace cwd row + empty states ──────────────────────────────────── */

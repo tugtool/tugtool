@@ -934,6 +934,19 @@ export const TugPromptEntry = React.forwardRef<
           phase: "discrete",
         });
         if (handled) {
+          // Record the command in per-session history so ↑ recalls it,
+          // exactly like a sent message (the dispatch consumed the draft,
+          // but the user still typed and submitted a line).
+          const sessionId = snapRef.current.tugSessionId;
+          historyStore.push({
+            id: `${sessionId}-${Date.now()}`,
+            sessionId,
+            projectPath: "",
+            route: routeLifecycle.getRoute() || "",
+            text: commandLine ?? "",
+            atoms: [],
+            timestamp: Date.now(),
+          });
           editor.clear();
           return;
         }
