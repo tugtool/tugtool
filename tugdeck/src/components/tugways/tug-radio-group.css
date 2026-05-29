@@ -42,6 +42,9 @@
 
 .tug-radio-group-vertical .tug-radio-group-items {
   flex-direction: column;
+  /* A bit more breathing room between stacked options than the horizontal
+     segmented case — especially with two-line (description) items. */
+  gap: var(--tug-space-xs);
 }
 
 /* ============================================================================
@@ -54,6 +57,29 @@
   gap: var(--tug-space-2xs);
 }
 
+
+/* ============================================================================
+   Two-line item (label + optional description)
+   ========================================================================= */
+
+/* When an item carries a description, top-align the dot with the label line
+   rather than centering it against the whole two-line stack. */
+[data-slot="tug-radio-item"][data-has-description] {
+  align-items: flex-start;
+}
+
+.tug-radio-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  text-align: left;
+}
+
+.tug-radio-item-description {
+  font-weight: 400;
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
 
 /* ============================================================================
    Group Label (.tug-radio-group-label)

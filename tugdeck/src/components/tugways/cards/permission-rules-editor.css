@@ -12,10 +12,11 @@
 
 /* ── Description ────────────────────────────────────────────────────────── */
 
+/* Tab description (a TugLabel): block so the margins apply; size/weight come
+   from the TugLabel `size="md" emphasis="strong"`. */
 .permission-rules-description {
-  margin: 0;
-  font-size: var(--tug-font-size-sm);
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  display: block;
+  margin: var(--tug-space-sm) 0;
 }
 
 /* ── Panel: search + add + list ────────────────────────────────────────── */
@@ -26,8 +27,33 @@
   gap: var(--tug-space-sm);
 }
 
+/* Filter sits below the Add accordion — a little breathing room above it.
+   `input.` raises specificity over `.tug-input-size-sm` so the monospace +
+   size match the list rows ([L20] cascade-scoped override). */
+/* Centered over the list at 65% of its width. */
 .permission-rules-search {
+  display: block;
+  width: 50%;
+  margin: var(--tug-space-md) auto var(--tug-space-sm) auto;
+}
+
+input.permission-rules-search {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: var(--tug-font-size-xs);
+}
+
+/* Finder-style count under the list, centered. */
+.permission-rules-count {
+  display: block;
   width: 100%;
+  margin-top: var(--tug-space-xs);
+  text-align: center;
+}
+
+/* The panel already spaces the count from the actions row; drop the sheet's
+   default top margin on the actions so count→Done isn't doubly spaced. */
+.permission-rules-sheet .tug-sheet-actions {
+  margin-top: 0;
 }
 
 /* Add-rule form (inside the accordion): input, scope radios, Add — stacked. */
@@ -38,32 +64,24 @@
   padding: var(--tug-space-sm) 0;
 }
 
+/* The entry reads like the filter + list rows (monospace, matching size). */
 .permission-rules-add-input {
   width: 100%;
+}
+
+input.permission-rules-add-input {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: var(--tug-font-size-xs);
+}
+
+/* A little breathing room above the scope radios, below the matcher input. */
+.permission-rules-scope {
+  margin-top: var(--tug-space-xs);
 }
 
 .permission-rules-add-actions {
   display: flex;
   justify-content: flex-end;
-}
-
-/* ── Scope radio item content (label + description, inside TugRadioItem) ─── */
-
-.permission-rules-scope-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.05rem;
-  text-align: left;
-}
-
-.permission-rules-scope-label {
-  font-size: var(--tug-font-size-sm);
-}
-
-.permission-rules-scope-desc {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: var(--tug-font-size-2xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* The windowed rule list needs a bounded height to scroll within the sheet. */

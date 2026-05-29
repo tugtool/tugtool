@@ -265,6 +265,12 @@ export interface TugRadioItemProps {
   /** Label text. */
   children: React.ReactNode;
   /**
+   * Optional secondary line rendered muted below the label — the radio
+   * equivalent of a list row's subtitle. When present the item is a two-line
+   * stack and the dot top-aligns with the label.
+   */
+  description?: React.ReactNode;
+  /**
    * Disables this item individually.
    * @selector :disabled | [data-disabled]
    */
@@ -272,7 +278,7 @@ export interface TugRadioItemProps {
 }
 
 export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProps>(
-  function TugRadioItem({ value, children, disabled }, ref) {
+  function TugRadioItem({ value, children, description, disabled }, ref) {
     const { size, disabled: groupDisabled } = React.useContext(TugRadioGroupContext);
 
     const isDisabled = disabled ?? groupDisabled;
@@ -299,6 +305,7 @@ export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProp
         <TugButton
           ref={ref}
           data-slot="tug-radio-item"
+          data-has-description={description !== undefined ? "" : undefined}
           emphasis="ghost"
           size={buttonSize}
           subtype="icon-text"
@@ -309,7 +316,14 @@ export const TugRadioItem = React.forwardRef<HTMLButtonElement, TugRadioItemProp
             </span>
           }
         >
-          {children}
+          {description !== undefined ? (
+            <span className="tug-radio-item-text">
+              <span className="tug-radio-item-label">{children}</span>
+              <span className="tug-radio-item-description">{description}</span>
+            </span>
+          ) : (
+            children
+          )}
         </TugButton>
       </RadioGroupPrimitive.Item>
     );

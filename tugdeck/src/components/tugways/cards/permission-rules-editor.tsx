@@ -47,6 +47,7 @@ import React, {
 import { Trash2 } from "lucide-react";
 
 import { TugInput } from "@/components/tugways/tug-input";
+import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
@@ -275,16 +276,14 @@ function AddRuleForm({ placeholder, onAdd }: AddRuleFormProps): React.ReactEleme
         <TugRadioGroup
           value={scope}
           senderId={radioId}
-          size="sm"
+          size="md"
           orientation="vertical"
           aria-label="Where to save the rule"
+          className="permission-rules-scope"
         >
           {SCOPE_OPTIONS.map((opt) => (
-            <TugRadioItem key={opt.scope} value={opt.scope}>
-              <span className="permission-rules-scope-text">
-                <span className="permission-rules-scope-label">{opt.label}</span>
-                <span className="permission-rules-scope-desc">{opt.description}</span>
-              </span>
+            <TugRadioItem key={opt.scope} value={opt.scope} description={opt.description}>
+              {opt.label}
             </TugRadioItem>
           ))}
         </TugRadioGroup>
@@ -385,9 +384,25 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
 
   const addLabel = bucket === "additionalDirectories" ? "Add a directory" : "Add a rule";
 
+  // Finder-style count under the list. `total` is the whole bucket; `shown` is
+  // the filtered subset. The `snapshot` subscription above re-renders this on
+  // every load/mutation, so these reads stay current.
+  const total = baseDataSource.numberOfItems();
+  const shown = filtered.numberOfItems();
+  const noun = (n: number): string => (n === 1 ? "item" : "items");
+  const countText =
+    query.trim() !== ""
+      ? `Showing ${shown} of ${total} ${noun(total)}`
+      : `${total} ${noun(total)}`;
+
   return (
     <div className="permission-rules-panel">
       {header}
+      <TugAccordion type="single" collapsible variant="outline">
+        <TugAccordionItem value="add" trigger={addLabel}>
+          <AddRuleForm placeholder={ADD_PLACEHOLDER[bucket]} onAdd={onAdd} />
+        </TugAccordionItem>
+      </TugAccordion>
       <TugInput
         size="sm"
         value={query}
@@ -396,11 +411,6 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
         className="permission-rules-search"
         onChange={(event) => setQuery(event.target.value)}
       />
-      <TugAccordion type="single" collapsible variant="outline">
-        <TugAccordionItem value="add" trigger={addLabel}>
-          <AddRuleForm placeholder={ADD_PLACEHOLDER[bucket]} onAdd={onAdd} />
-        </TugAccordionItem>
-      </TugAccordion>
       <RuleRowContext.Provider value={rowContext}>
         <div className="permission-rules-list">
           <TugListView<FilteredTugListViewDataSource>
@@ -411,6 +421,14 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
           />
         </div>
       </RuleRowContext.Provider>
+      <TugLabel
+        size="2xs"
+        emphasis="calm"
+        align="center"
+        className="permission-rules-count"
+      >
+        {countText}
+      </TugLabel>
       <TugConfirmPopover
         open={pendingRemoval !== null}
         anchorEl={pendingRemoval?.anchorEl ?? null}
@@ -491,7 +509,13 @@ function PermissionRulesSheetBody({
           addable={false}
         />
 
-        <p className="permission-rules-description">{TAB_DESCRIPTIONS[active.id]}</p>
+        <TugLabel
+        size="md"
+        emphasis="normal"
+        className="permission-rules-description"
+      >
+        {TAB_DESCRIPTIONS[active.id]}
+      </TugLabel>
 
         {active.bucket === null ? (
           <div className="permission-rules-empty" data-slot="recently-denied-empty">
