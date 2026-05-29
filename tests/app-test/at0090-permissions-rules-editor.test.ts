@@ -138,6 +138,18 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 6000 },
           );
 
+          // 1b. Regression guard for the pane-focus-controller fix: a real
+          // click on an input inside the sheet must focus it. The sheet is
+          // portaled into the pane frame (a sibling of the card host), so the
+          // controller must NOT suppress its mousedown focus the way it does
+          // for pane chrome.
+          const SEARCH = `${SHEET} .permission-rules-search`;
+          await app.nativeClickAtElement(SEARCH);
+          await app.waitForCondition<boolean>(
+            `document.activeElement === document.querySelector(${JSON.stringify(SEARCH)})`,
+            { timeoutMs: 4000 },
+          );
+
           // 2. The editor shows the five terminal tabs in order.
           const tabLabels = await app.evalJS<string[]>(
             `Array.from(document.querySelectorAll(${JSON.stringify(TAB_TITLES)})).map(function(t){return t.textContent.trim();})`,
@@ -204,7 +216,8 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // 4. Remove the rule via its row's remove button; it leaves disk.
+          // 4. Remove the rule: the trash button opens a danger confirm
+          //    popover; confirming removes the rule from disk.
           await app.evalJS<void>(
             `(function(){
               var rows = document.querySelectorAll(${JSON.stringify(`${SHEET} .tug-list-row`)});
@@ -217,6 +230,19 @@ describe.skipIf(!SHOULD_RUN)(
                 }
               }
               throw new Error('marker row not found for removal');
+            })()`,
+          );
+          // Removal requires a deliberate confirm — click the popover's danger
+          // "Remove" button (the trash button itself carries no text label).
+          await app.waitForCondition<boolean>(
+            `Array.from(document.querySelectorAll('button')).some(function(b){return b.textContent.trim() === 'Remove';})`,
+            { timeoutMs: 4000 },
+          );
+          await app.evalJS<void>(
+            `(function(){
+              var btn = Array.from(document.querySelectorAll('button')).find(function(b){return b.textContent.trim() === 'Remove';});
+              if (!btn) throw new Error('confirm Remove button not found');
+              btn.click();
             })()`,
           );
 

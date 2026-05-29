@@ -65,12 +65,10 @@ import {
   PermissionRulesStore,
 } from "@/lib/permission-rules-store";
 import {
-  SCOPE_LABELS,
-  SCOPE_PRECEDENCE,
   type BucketKey,
   type ResolvedRule,
-  type RuleScope,
 } from "@/lib/permission-rules";
+import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 
@@ -138,17 +136,20 @@ const ADD_PLACEHOLDER: Record<BucketKey, string> = {
 interface RuleRowContextValue {
   /** Base (unfiltered) data source — the cell reads the rule through it. */
   baseDataSource: BucketDataSource;
-  /** Remove this rule from its scope's bucket. */
-  onRemove: (rule: ResolvedRule) => void;
+  /**
+   * Request removal of this rule — opens a confirm popover anchored to the
+   * clicked trash button. Removal only happens after the user confirms.
+   */
+  onRemoveRequest: (rule: ResolvedRule, anchorEl: HTMLElement) => void;
 }
 
 const RuleRowContext = React.createContext<RuleRowContextValue | null>(null);
 
 /**
- * One rule row: the full matcher string over its scope label, with a hover-
- * revealed remove button. The list-view cell wrapper handles focus; removal is
- * the trailing button (clicks stop propagation so they don't read as a row
- * select).
+ * One rule row: the full matcher string, with a hover-revealed remove button.
+ * The list-view cell wrapper handles focus; the trash button requests removal
+ * (clicks stop propagation so they don't read as a row select), which opens a
+ * danger confirm popover — removal takes a deliberate second click.
  */
 const RuleCell: TugListViewCellRenderer<FilteredTugListViewDataSource> =
   function RuleCell({
@@ -163,7 +164,6 @@ const RuleCell: TugListViewCellRenderer<FilteredTugListViewDataSource> =
       <TugListRow
         variant="flush"
         trailingReveal="hover"
-        subtitle={SCOPE_LABELS[rule.scope]}
         trailing={
           <button
             type="button"
@@ -172,7 +172,7 @@ const RuleCell: TugListViewCellRenderer<FilteredTugListViewDataSource> =
             data-tug-focus="refuse"
             onClick={(event) => {
               event.stopPropagation();
-              ctx.onRemove(rule);
+              ctx.onRemoveRequest(rule, event.currentTarget);
             }}
           >
             <Trash2 aria-hidden="true" size={14} />
@@ -192,30 +192,29 @@ const RULE_CELL_RENDERERS: Record<
 > = { rule: RuleCell };
 
 // ---------------------------------------------------------------------------
-// Add-rule row — pattern input + scope selector + Add
+// Add-rule row — pattern input + Add
 // ---------------------------------------------------------------------------
 
 interface AddRuleRowProps {
   placeholder: string;
-  onAdd: (scope: RuleScope, rule: string) => void;
+  onAdd: (rule: string) => void;
 }
 
 /**
- * The add-rule control: a matcher input, a scope selector (defaulting to Local
- * — the gitignored personal file, matching where rules typically land), and an
- * Add button. Enter in the input also adds. The matcher is stored verbatim;
- * Claude Code validates it on reload.
+ * The add-rule control: a matcher input and an Add button (Enter in the input
+ * also adds). The matcher is stored verbatim; Claude Code validates it on
+ * reload. New rules land in the project's local scope alongside the existing
+ * ones (the owning `RulePanel` picks the scope).
  */
 function AddRuleRow({ placeholder, onAdd }: AddRuleRowProps): React.ReactElement {
   const [draft, setDraft] = useState("");
-  const [scope, setScope] = useState<RuleScope>("local");
 
   const submit = useCallback(() => {
     const rule = draft.trim();
     if (rule === "") return;
-    onAdd(scope, rule);
+    onAdd(rule);
     setDraft("");
-  }, [draft, scope, onAdd]);
+  }, [draft, onAdd]);
 
   return (
     <div className="permission-rules-add">
@@ -233,19 +232,6 @@ function AddRuleRow({ placeholder, onAdd }: AddRuleRowProps): React.ReactElement
           }
         }}
       />
-      <div className="permission-rules-scope" role="group" aria-label="Rule scope">
-        {SCOPE_PRECEDENCE.map((candidate) => (
-          <button
-            key={candidate}
-            type="button"
-            className="permission-rules-scope-option"
-            data-active={candidate === scope ? "true" : undefined}
-            onClick={() => setScope(candidate)}
-          >
-            {SCOPE_LABELS[candidate]}
-          </button>
-        ))}
-      </div>
       <TugPushButton
         size="sm"
         emphasis="filled"
@@ -276,6 +262,12 @@ interface RulePanelProps {
  */
 function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElement {
   const [query, setQuery] = useState("");
+  // The rule whose removal is awaiting confirmation, plus the trash button it
+  // anchors the confirm popover to. `null` when no confirm is pending.
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    rule: ResolvedRule;
+    anchorEl: HTMLElement;
+  } | null>(null);
 
   const baseDataSource = useMemo(
     () => new BucketDataSource(store, bucket),
@@ -297,16 +289,17 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
   const rowContext = useMemo<RuleRowContextValue>(
     () => ({
       baseDataSource,
-      onRemove: (rule) => {
-        void store.mutate(rule.scope, bucket, "remove", rule.raw);
-      },
+      onRemoveRequest: (rule, anchorEl) => setPendingRemoval({ rule, anchorEl }),
     }),
-    [baseDataSource, store, bucket],
+    [baseDataSource],
   );
 
+  // New rules land in the project's local scope (`.claude/settings.local.json`)
+  // — where the existing rules live and where Claude Code's own `/permissions`
+  // add defaults ([#step-1-5]).
   const onAdd = useCallback(
-    (scope: RuleScope, rule: string) => {
-      void store.mutate(scope, bucket, "add", rule);
+    (rule: string) => {
+      void store.mutate("local", bucket, "add", rule);
     },
     [store, bucket],
   );
@@ -317,8 +310,8 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
       <TugInput
         size="sm"
         value={query}
-        placeholder="Search rules…"
-        aria-label="Search rules"
+        placeholder="Filter rules"
+        aria-label="Filter rules"
         className="permission-rules-search"
         onChange={(event) => setQuery(event.target.value)}
       />
@@ -332,6 +325,22 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
           />
         </div>
       </RuleRowContext.Provider>
+      <TugConfirmPopover
+        open={pendingRemoval !== null}
+        anchorEl={pendingRemoval?.anchorEl ?? null}
+        message="Remove this rule?"
+        confirmLabel="Remove"
+        confirmRole="danger"
+        cancelLabel="Cancel"
+        side="left"
+        onConfirm={() => {
+          if (pendingRemoval !== null) {
+            void store.mutate(pendingRemoval.rule.scope, bucket, "remove", pendingRemoval.rule.raw);
+          }
+          setPendingRemoval(null);
+        }}
+        onCancel={() => setPendingRemoval(null)}
+      />
     </div>
   );
 }

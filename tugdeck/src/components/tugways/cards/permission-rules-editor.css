@@ -41,31 +41,6 @@
   min-width: 0;
 }
 
-/* Scope selector — a small segmented control. Active option fills accent. */
-.permission-rules-scope {
-  display: inline-flex;
-  flex-shrink: 0;
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-md);
-  overflow: hidden;
-}
-
-.permission-rules-scope-option {
-  appearance: none;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: var(--tug-space-2xs) var(--tug-space-xs);
-  font-family: var(--tug-font-family-sans);
-  font-size: var(--tug-font-size-2xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.permission-rules-scope-option[data-active="true"] {
-  background: var(--tug7-element-global-fill-normal-accent-rest);
-  color: var(--tug7-element-global-text-normal-inverse-rest);
-}
-
 /* The windowed rule list needs a bounded height to scroll within the sheet. */
 .permission-rules-list {
   height: 20rem;

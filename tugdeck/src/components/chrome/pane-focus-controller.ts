@@ -328,6 +328,15 @@ export function usePaneFocusController(
       // the correct outcome (input → focus input, etc.). Only pane-
       // chrome clicks need the focus-clearing suppression.
       if (startEl.closest("[data-card-host]") !== null) return;
+      // Sheet-content click: a TugSheet is a pane-modal overlay portaled
+      // into the pane *frame* ([D19]) — a sibling of the card host, so the
+      // `[data-card-host]` exemption above misses it even though its inputs
+      // and buttons are genuine focusable content, not pane chrome.
+      // Suppressing mousedown here would kill click-to-focus for a TugInput
+      // inside a sheet (the button-class click path still works, and
+      // programmatic `.focus()` works, which is exactly the asymmetry that
+      // makes the bug subtle). Treat it like a card-content click.
+      if (startEl.closest('[data-slot="tug-sheet"]') !== null) return;
       event.preventDefault();
     }
 
