@@ -422,9 +422,10 @@ The original question about model-scope (card vs session) is consequently moot �
 - The doc list keeps the policy discoverable for users wondering "why isn't `/vim` here?"
 
 **Implications:**
-- `SessionMetadataStore.getCommandCompletionProvider()` applies the allowlist before returning completions.
-- The allowlist source is a single constant; the docs reference the same constant.
-- Typed `/vim` (etc.) produces no behavior — silent drop, not even a no-op message.
+- The completion-merge seam and the submit-time dispatch this filter plugs into land in [#step-1c] (per [D23]); [#step-13] adds the allowlist *filter* over claude's reported commands + the discoverable doc.
+- `SessionMetadataStore.getCommandCompletionProvider()` applies the allowlist before returning completions; the local-command registry from [#step-1c] is merged in alongside.
+- The allowlist source is a single constant co-located with / read by the [#step-1c] registry; the docs reference the same constant.
+- Typed `/vim` (etc.) produces no behavior — silent drop at submit, not even a no-op message ([#step-13] blocklists the known-unsupported set so they do not reach claude). Local commands ([D23]) dispatch to their surface; everything else (`/commit` and other claude-owned commands) is sent to claude verbatim.
 
 #### [D15] Pane sheets are card-scoped overlays, not split-pane right halves (DECIDED) {#d15-pane-sheets-are-overlays}
 
@@ -519,6 +520,24 @@ The original question about model-scope (card vs session) is consequently moot �
 - No new gauge primitive needed.
 - The expand-on-`/context` interaction shows the status-bar popover content directly (or a copy of it).
 
+#### [D23] Local slash commands dispatch through the responder chain (DECIDED) {#d23-slash-dispatch}
+
+**Decision:** Locally-handled slash commands are recognized at submit time against a single registry (`tugdeck/src/lib/slash-commands.ts`) and dispatched as a `RUN_SLASH_COMMAND` action through the responder chain ([L11]) to the dev-card's card-content responder, which opens the command's graphical surface. They are NOT sent to claude. The same registry is the completion source for local-only commands and the allowlist [D14] reads.
+
+**Rationale:**
+- One mechanism for every terminal-rendered-locally command (#l01-slash-cmd-inventory); each new command is a registry entry + a surface, not bespoke "popup routing."
+- Key-card-scoped dispatch is the exact path the existing `CYCLE_PERMISSION_MODE` shortcut travels ([L11]); the card-content responder already owns the card's command surface, so it is the natural handler — no new side channel and no responder re-parenting.
+- Registry-as-source-of-truth unifies completion, dispatch, and the [D14] allowlist.
+
+**Implications:**
+- The prompt entry dispatches `RUN_SLASH_COMMAND` **key-card-scoped** (`sendToKeyCard`, the same walk `CYCLE_PERMISSION_MODE` uses), so it lands on the card-content responder directly. No responder `parentId` pinning; the targeted-control-dispatch path (which would route through the settings-form responder and was fragile) is explicitly not used.
+- Skip-send is gated on the dispatch's `handled` result — a matched command that no responder handles (gallery, handler-less host) falls through to a normal send rather than being swallowed.
+- The local-command completion entries merge at the **dev-card composition layer** (where the `/` provider is already assembled), keeping `SessionMetadataStore` generic and the gallery popup clean.
+- The action payload carries `{ name, args }` from the start, so arg-bearing commands (`/btw <text>`, `/add-dir <path>`) need no reshape.
+- [#step-2b] / [#step-7] / [#step-8] / [#step-9] / [#step-10] / [#step-12] drop "Modified: slash-command popup routing"; they register their command and provide its surface.
+- [#step-13] / [D14] reduces to the unsupported-command allowlist filter + doc + the remaining UI-affordance mappings (`/help`, `/clear`, …).
+- Built in [#step-1c], before any other command step consumes it.
+
 ---
 
 ### Deep Dives (Optional) {#deep-dives}
@@ -538,8 +557,8 @@ The original question about model-scope (card vs session) is consequently moot �
 | `/rewind` | Pick a checkpoint to fork from | 2 | **Overlay pane sheet**, terminal-empirically-modeled ([#d10-rewind-matches-terminal]) | 7 |
 | `/resume` | Pick a prior session | 2 | **Overlay pane sheet** ([#step-8]) | 8 |
 | `/status` | Print model/cwd/mode/session | 2 | **Already in Z4B chrome** via [#step-1]-[#step-4]; typed `/status` no-op (chrome is the surface) | 4 |
-| `/model` | Interactive model picker | 2 | **Model picker sheet** ([#step-2b]) — Z4B chip is indicator-only per [#d13-z4b-indicator-only] | 2b |
-| `/permissions` | Mode picker + rule editor | 2 | **Permission picker + rules editor sheet** ([#step-9]) — Z4B chip is indicator-only | 1, 9 |
+| `/model` | Interactive model picker | 2 | **Model picker sheet** ([#step-2b]); dispatched via the [#step-1c] registry — Z4B chip is indicator-only per [#d13-z4b-indicator-only] | 1c, 2b |
+| `/permissions` | Mode picker + rule editor | 2 | Dispatched via the [#step-1c] registry; opens the **mode sheet** from [#step-1] (first consumer of the dispatch layer), expanded to the **rules editor sheet** in [#step-9] — Z4B chip is indicator-only | 1, 1c, 9 |
 | `/diff` | `git diff` in pager | 2 | **Diff sheet** over `git_diff_request` command ([#d21-diff-dedicated-command]) | 10 |
 | `/context` | One-shot context snapshot | 2 | **Persistent HUD** reusing status-bar arc gauge ([#d22-context-arc-gauge]) | 11 |
 | `/memory` | List/edit memory files | 2 | **Sheet** ([#step-12]) | 12 |
@@ -703,7 +722,8 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | `tugdeck/src/components/tugways/cards/agents-sheet.tsx` | `/agents` listing ([#step-12]) |
 | `tugdeck/src/components/tugways/cards/hooks-sheet.tsx` | `/hooks` listing ([#step-12]) |
 | `tugdeck/src/components/tugways/cards/help-tabbed-sheet.tsx` | `/help` tabbed sheet ([#step-13]) per [D16] |
-| `tugdeck/src/lib/slash-supported.ts` | Canonical `GRAPHICAL_SUPPORTED_COMMANDS` allowlist per [D14] |
+| `tugdeck/src/lib/slash-commands.ts` | `LOCAL_SLASH_COMMANDS` registry + `matchLocalSlashCommand` — the locally-handled-command dispatch source of truth ([#step-1c]) per [D23] |
+| `tugdeck/src/lib/slash-supported.ts` | Canonical `GRAPHICAL_SUPPORTED_COMMANDS` allowlist per [D14] ([#step-13]; reads / co-located with `slash-commands.ts`) |
 | `tugdeck/docs/dev-card-unsupported-slash-commands.md` | Discoverable list of unsupported commands per [D14] |
 | `tugdeck/src/components/tugways/cards/tool-approval-modal.tsx` | `control_request_forward` (`is_question: false`) modal ([#step-15]) |
 | `tugdeck/src/components/tugways/cards/api-retry-indicator.tsx` | `api_retry` indicator ([#step-16]) |
@@ -721,6 +741,10 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | `routeTopLevelEvent` default branch | branch | `tugcode/src/session.ts:1031` | Emits `unknown_event` IPC frame per [D19] (in addition to existing console log) |
 | `SHIFT_TAB_RESPONDER` | constant | `tugdeck/src/lib/substrate-responders.ts` (new or existing module) | Substrate responder for the Z4B cycle |
 | `GRAPHICAL_SUPPORTED_COMMANDS` | constant | `tugdeck/src/lib/slash-supported.ts` | Per [D14] |
+| `LOCAL_SLASH_COMMANDS` / `matchLocalSlashCommand` | constant + fn | `tugdeck/src/lib/slash-commands.ts` | Per [D23] / [#step-1c]; registry + exact-match lookup |
+| `RUN_SLASH_COMMAND` | action | `tugdeck/src/components/tugways/action-vocabulary.ts` | Per [D23] / [#step-1c]; key-card-scoped dispatch from the prompt entry to the card-content responder; payload `{ name, args }` |
+| `useKeyCardDispatch` | hook | `tugdeck/src/components/tugways/` | Per [#step-1c]; key-card-scoped dispatch of `RUN_SLASH_COMMAND` (the `CYCLE_PERMISSION_MODE` path) |
+| local-command completion merge | wiring | `tugdeck/src/components/tugways/cards/dev-card.tsx` | Per [#step-1c]; composes the local-command provider into the `/` provider (`SessionMetadataStore` stays generic) |
 | `useSessionMetadata.permissionMode` selector | hook | `tugdeck/src/components/tugways/cards/use-dev-card-observer.ts` | Wraps `useSyncExternalStore` |
 | `SessionPickerSheet<TRow>` | component | new file | Generic over data-source row type; overlay per [D15] |
 | Tugcast `git_diff_request` / `git_diff_response` | control protocol | tugcast control module | New typed request/response per [D21] for `/diff` |
@@ -762,7 +786,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 ### Execution Steps {#execution-steps}
 
-> Every step has explicit `**Depends on:**` and `**References:**` lines. Phase A is [#step-0] through [#step-5] (Step 0 is the TugBadge two-line spike that all Z4B chips depend on); Phase B is [#step-6] through [#step-14] (includes [#step-2b] `/model` picker and [#step-7a] empirical capture); Phase C is [#step-15] through [#step-22]; the final integration checkpoint is [#step-23].
+> Every step has explicit `**Depends on:**` and `**References:**` lines. Phase A is [#step-0] through [#step-5] (Step 0 is the TugBadge two-line spike that all Z4B chips depend on; [#step-1c] is the local slash-command dispatch foundation that lands `/permissions` and that every later command step builds on); Phase B is [#step-6] through [#step-14] (includes [#step-2b] `/model` picker and [#step-7a] empirical capture); Phase C is [#step-15] through [#step-22]; the final integration checkpoint is [#step-23].
 
 #### Step 0: TugBadge two-line presentation — design mini-spike {#step-0}
 
@@ -887,6 +911,62 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 ---
 
+#### Step 1c: Local slash-command dispatch + completion integration {#step-1c}
+
+**Depends on:** #step-1
+
+**Commit:** `feat(dev-card): local slash-command dispatch + /permissions`
+
+**References:** [D23] local slash-command dispatch model, [D14] slash popup excludes unsupported, [D13] Z4B indicator-only, [L02] external state via store, [L11] controls emit actions through the responder chain, (#slash-cmd-inventory, #strategy)
+
+**Problem statement.** Slash commands today are 100% claude-sourced and pass-through. `SessionMetadataStore.getCommandCompletionProvider()` (`session-metadata-store.ts:244`) returns only what claude reports in `system_metadata` (`slash_commands` + `skills` + `agents`, merged/deduped). At submit, `performSubmit` (`tug-prompt-entry.tsx:844`) strips only the route prefix and calls `codeSessionStore.send()` — there is **no interception**. So a typed `/permissions` is sent to claude as a user message, and claude (stream-json / print mode) answers "`/permissions` isn't available in this environment." Every terminal-rendered-locally command in [#l01-slash-cmd-inventory] (`/model`, `/rewind`, `/diff`, …) bounces the same way. Steps 2b / 7 / 8 / 9 / 10 / 12 each list "Modified: slash-command popup routing" as if a routing layer exists — none does. This step builds it once so those steps become a one-line registry entry plus their surface.
+
+**Goal.** One dispatch layer with three parts: (1) a registry of locally-handled commands, (2) the registry merged into the slash popup, (3) submit-time interception that routes a typed local command to a graphical surface via the responder chain instead of sending it to claude. Ship `/permissions` as the first consumer — reusing the mode sheet the chip already opens.
+
+**Artifacts:**
+- New: `tugdeck/src/lib/slash-commands.ts` — `LOCAL_SLASH_COMMANDS` registry (`{ name, description, takesArgs? }[]`, popup order) + `matchLocalSlashCommand(text) → { name, args } | null` (args `""` for no-arg commands; arg-accepting commands capture the remainder). Pure data + lookup — the single source of truth that [#step-2b] / [#step-7] / … extend and that [D14]'s allowlist ([#step-13]) reads.
+- New: `RUN_SLASH_COMMAND` action in `action-vocabulary.ts`, payload `{ value: <command-name>, args: string }` (args `""` for no-arg commands) — carries args from the start so `/btw <text>` / `/add-dir <path>` ([#step-13]) need no reshape.
+- New: a small `useKeyCardDispatch` hook (or an existing equivalent) over `ResponderChainContext` returning `(event) => manager?.sendToKeyCard(event) ?? false` — the key-card-scoped dispatch the prompt entry uses (the same walk `CYCLE_PERMISSION_MODE` travels).
+- Modified: `dev-card.tsx` — the local-command completion entries are merged at the **dev-card composition layer**, where the `/` provider is already assembled (`dev-card.tsx:386`, wrapping `getCommandCompletionProvider()` in `wrapPositionZero`). Compose the store provider with a local-command provider there, deduped. `SessionMetadataStore` stays generic — local commands do not leak into the gallery popup, and the store's `category` union is untouched. [D14] allowlist *filtering* of claude's commands stays [#step-13].
+- Modified: `tug-prompt-entry.tsx` `performSubmit` — before `codeSessionStore.send()`, run `matchLocalSlashCommand` (a pure import — benign data coupling, like the existing `ROUTE_PREFIX_ALIAS` import) on the trimmed draft. On a match with **no atoms**, dispatch `RUN_SLASH_COMMAND` **key-card-scoped** and check `handled`: handled → clear editor, run `onAfterSubmit`, return (the command never reaches claude); **not handled → fall through to the normal `send()`** (a handler-less host such as the gallery regresses to status-quo, never silently swallows). TugPromptEntry knows the command *shape* (via the pure matcher), not what each command does.
+- Modified: `dev-card.tsx` — register the `RUN_SLASH_COMMAND` handler on the **card-content responder** (next to `CYCLE_PERMISSION_MODE`). Key-card-scoped dispatch lands there directly — the same path `CYCLE_PERMISSION_MODE` travels — so **no responder `parentId` pinning is needed** (the earlier draft's form-responder pin is dropped: it routed dispatch incidentally through the settings-form responder and was fragile under any responder reorder). The handler resolves the command via the registry and opens its surface.
+- Modified: `permission-mode-chip.tsx` / `dev-card.tsx` — host the permission sheet at `DevCardBody` (one `useTugSheet`); the chip's `onClick` and the `RUN_SLASH_COMMAND` handler share that single opener (the chip stops owning its own sheet). Confirm focus restores to the prompt editor on dismiss ([L23] / single text-entry destination — `TugSheet` handles this).
+
+**Spec S03: local slash-command dispatch** {#s03-slash-dispatch}
+- `matchLocalSlashCommand` returns `{ name, args }`: a no-arg command matches only when the whole trimmed draft equals `/name` (args `""`); an arg-accepting command (declared via `takesArgs` in the registry) matches `/name` optionally followed by whitespace + the captured remainder.
+- A draft carrying atoms is never a local-command match — a command line is plain text.
+- Recognition happens at submit, not on every keystroke — the popup is completion; dispatch is submit.
+- A matched command dispatches `RUN_SLASH_COMMAND` **key-card-scoped** ([L11]) — the same walk `CYCLE_PERMISSION_MODE` uses — landing on the card-content responder, which owns the surface. No command-specific knowledge lives in TugPromptEntry.
+- Skip-send is gated on the dispatch's `handled` result: handled → the command is consumed; not handled → it is sent to claude verbatim, exactly as today (claude owns its own `/commit`; a handler-less host never swallows it).
+- UX note: in the `❯` (prompt) route Return inserts a newline, so `/permissions` submits via Shift+Return or the submit button. Changing per-route Return semantics for slash commands is out of scope here.
+
+**Tasks:**
+- [ ] Add `slash-commands.ts` with `LOCAL_SLASH_COMMANDS` (seed: `permissions`, no args) + `matchLocalSlashCommand` returning `{ name, args }`.
+- [ ] Add `RUN_SLASH_COMMAND` to `action-vocabulary.ts` (payload `{ value: name, args }`).
+- [ ] Add `useKeyCardDispatch` (or confirm an existing key-card-dispatch hook) over `ResponderChainContext`.
+- [ ] Intercept in `performSubmit` (pure `matchLocalSlashCommand` import): match + no atoms → key-card dispatch `RUN_SLASH_COMMAND` → if `handled`, clear + `onAfterSubmit` + return; else fall through to `send()`. Honor the empty / blocked-submit gates already there.
+- [ ] Compose the local-command completion provider into the dev-card `/` provider (`dev-card.tsx:386`); leave `SessionMetadataStore` generic.
+- [ ] Register the `RUN_SLASH_COMMAND` handler on the card-content responder (no `parentId` pin); the handler resolves the command via the registry and opens its surface.
+- [ ] Lift the permission sheet to `DevCardBody`; the chip's `onClick` and the `/permissions` handler share one opener; confirm focus restore to the prompt editor on dismiss.
+
+**Tests:**
+- [ ] Pure-logic: `matchLocalSlashCommand` — no-arg exact match, arg-accepting match captures the remainder, atom-bearing draft → null, unknown `/foo` → null.
+- [ ] Pure-logic: the dev-card local-command completion provider merges with + dedups against the store provider (test the composed provider, not the store).
+- [ ] Real-app: type `/permissions`, submit; assert the permission sheet opens AND the transcript shows **no new user row** (assert via transcript DOM state, not a `send()` spy — per `feedback_no_mock_store_tests`); pick a mode; assert the chip reflects it.
+- [ ] Real-app: type `/commit`, submit; assert a new user row appears (unmatched pass-through unaffected).
+- [ ] Real-app: dismiss the sheet; assert focus returns to the prompt editor ([L23]).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test`
+- [ ] `just app-test slash-permissions`
+
+**What this step does NOT do:**
+- Does not filter claude's reported commands by the [D14] allowlist — that is [#step-13]; this step only adds local commands and the merge seam.
+- Does not build the `/model` picker (that surface is [#step-2b], gated on [#step-6]); `/model` joins the registry when its sheet exists.
+- Does not change the `/permissions` surface beyond the Step-1 mode sheet; the full rules editor is [#step-9].
+
+---
+
 #### Step 2: Model indicator chip in Z4B {#step-2}
 
 **Depends on:** #step-1
@@ -916,15 +996,15 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 2b: `/model` slash command opens picker sheet {#step-2b}
 
-**Depends on:** #step-6
+**Depends on:** #step-1c, #step-6
 
 **Commit:** `feat(dev-card): /model slash command opens model picker sheet`
 
-**References:** [D13] Z4B indicator-only, [D15] pane sheets are overlays, (#slash-cmd-inventory)
+**References:** [D23] local slash-command dispatch, [D13] Z4B indicator-only, [D15] pane sheets are overlays, (#slash-cmd-inventory)
 
 **Artifacts:**
 - New: `model-picker-sheet.tsx`
-- Modified: slash-command popup routing — typed `/model` opens the sheet
+- Modified: register `/model` in the [#step-1c] slash-command registry; its `RUN_SLASH_COMMAND` handler opens the picker sheet (no bespoke routing — the dispatch layer already exists)
 
 **Tasks:**
 - [ ] Implement `ModelPickerSheet` as an overlay per [D15], listing available models (Opus 4.8, Sonnet 4.6, Haiku 4.5, Haiku fast-mode).
@@ -1094,7 +1174,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 7b: `/rewind` on top of `SessionPickerSheet` {#step-7}
 
-**Depends on:** #step-6, #step-7a
+**Depends on:** #step-1c, #step-6, #step-7a
 
 **Commit:** `feat(dev-card): /rewind overlay sheet`
 
@@ -1103,7 +1183,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 **Artifacts:**
 - New: `rewind-sheet-data-source.ts`
 - New (driven by [#step-7a] findings): whatever IPC types / methods the empirical capture revealed — could be a new inbound type, an extension to `session_command`, or a client-side replay flow
-- Modified: slash-command popup routing — typed `/rewind` opens the sheet (in addition to slash menu)
+- Modified: register `/rewind` in the [#step-1c] registry; its `RUN_SLASH_COMMAND` handler opens the sheet (in addition to the slash menu)
 - Modified: `protocol.ts` adds the IPC type if a new one is needed
 - Modified: `code-session-store/` reducer if transcript truncation requires it; surgery scoped to preserve mount identity per [L26]
 
@@ -1135,7 +1215,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 8: `/resume` on top of `SessionPickerSheet` {#step-8}
 
-**Depends on:** #step-6
+**Depends on:** #step-1c, #step-6
 
 **Commit:** `feat(dev-card): /resume sheet — pick a prior session to continue`
 
@@ -1143,7 +1223,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 **Artifacts:**
 - New: `resume-sheet-data-source.ts`
-- Modified: slash-command popup routing for `/resume`
+- Modified: register `/resume` in the [#step-1c] registry; its `RUN_SLASH_COMMAND` handler opens the sheet
 
 **Tasks:**
 - [ ] Implement `ResumeSheetDataSource` over the tugbank session journal — list prior sessions with first-message preview, timestamp, turn count, cost.
@@ -1161,15 +1241,15 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 9: `/permissions` picker + rules editor sheet {#step-9}
 
-**Depends on:** #step-6
+**Depends on:** #step-1c, #step-6
 
 **Commit:** `feat(dev-card): /permissions picker + rules editor overlay sheet`
 
-**References:** [D02] cycle order, [D13] Z4B indicator-only, [D15] overlays, (#slash-cmd-inventory)
+**References:** [D02] cycle order, [D23] local slash-command dispatch, [D13] Z4B indicator-only, [D15] overlays, (#slash-cmd-inventory)
 
 **Artifacts:**
 - New: `permission-rules-editor.tsx` (overlay sheet per [D15])
-- Modified: slash-command popup routing — typed `/permissions` opens the sheet
+- Modified: `/permissions` already dispatches via the [#step-1c] registry; this step swaps the surface its handler opens from the Step-1 mode sheet to the picker + rules editor
 
 **Tasks:**
 - [ ] Build the sheet with two regions: (a) mode picker (all 6 modes) — selection sends `{type: "permission_mode", mode}`; (b) rule editor for additive session-scoped rules.
@@ -1188,7 +1268,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 10: `/diff` sheet via dedicated `git_diff_request` command {#step-10}
 
-**Depends on:** #step-6
+**Depends on:** #step-1c, #step-6
 
 **Commit:** `feat(dev-card+tugcast): /diff overlay sheet via git_diff_request command`
 
@@ -1247,7 +1327,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 12: Listing sheets — `/memory`, `/agents`, `/hooks` {#step-12}
 
-**Depends on:** #step-6
+**Depends on:** #step-1c, #step-6
 
 **Commit:** `feat(dev-card): memory/agents/hooks listing overlay sheets`
 
@@ -1255,7 +1335,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 **Artifacts:**
 - New: `memory-sheet.tsx`, `agents-sheet.tsx`, `hooks-sheet.tsx` (overlays per [D15])
-- Modified: slash-command popup routing for these 3 commands
+- Modified: register `/memory`, `/agents`, `/hooks` in the [#step-1c] registry; each `RUN_SLASH_COMMAND` handler opens its sheet
 
 **Tasks:**
 - [ ] `MemorySheet`: list files in `system_metadata.memory_paths.auto`; row-click opens file in embedded `gallery-text-editor.tsx`.
@@ -1276,19 +1356,19 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 13: Slash-popup filtering + `/clear`, `/help`, `/export`, `/copy`, `/btw`, `/add-dir`, `/bug` mapping {#step-13}
 
-**Depends on:** #step-5, #step-6
+**Depends on:** #step-1c, #step-5, #step-6
 
 **Commit:** `feat(dev-card): slash-popup filtering + map UI-affordance slash commands`
 
-**References:** [D11] btw exclude flag, [D14] unsupported-list, [D16] clear+help supported, [D15] overlays, (#slash-cmd-inventory)
+**References:** [D11] btw exclude flag, [D14] unsupported-list, [D23] local slash-command dispatch, [D16] clear+help supported, [D15] overlays, (#slash-cmd-inventory)
 
 **Artifacts:**
-- New: `tugdeck/src/lib/slash-supported.ts` — canonical allowlist constant
+- New: `tugdeck/src/lib/slash-supported.ts` — canonical allowlist constant (co-located with / read by the [#step-1c] `slash-commands.ts` registry)
 - New: `tugdeck/docs/dev-card-unsupported-slash-commands.md` (or under `tuglaws/`) — discoverable list of unsupported commands
 - New: `help-tabbed-sheet.tsx` (overlay per [D15])
-- Modified: `session-metadata-store.ts` `getCommandCompletionProvider` applies the allowlist
-- Modified: slash-command popup component to filter
-- Wiring: typed-shortcut handlers for `/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/bug`, `/btw`
+- Modified: `session-metadata-store.ts` `getCommandCompletionProvider` applies the allowlist *filter* over claude's commands (the local-command merge seam landed in [#step-1c])
+- Modified: slash-command popup component to filter; submit-side blocklist swallows known-unsupported commands so they don't reach claude (per [D14])
+- Wiring: register `/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/bug`, `/btw` in the [#step-1c] registry; their `RUN_SLASH_COMMAND` handlers perform the mapped action
 
 **Tasks:**
 
