@@ -685,6 +685,24 @@ const tugCompletionKeymap = Prec.highest(
       if (!state.active) return false;
       // IME composition: leave keys alone — the IME owns commit.
       if (event.isComposing) return false;
+      // A key the active typeahead consumes is fully owned by it: stop it
+      // bubbling to the document keyboard pipeline so it can't ALSO drive a
+      // chain action. Without this, an Enter that accepts a completion
+      // continues to the bubble-phase Stage 2 (Enter → default-button
+      // activation); if the accept opened a sheet, that stray Enter clicks
+      // the sheet's primary button and dismisses it on the spot. The
+      // typeahead's keys are navigation/accept/cancel — none should leak.
+      const consumes =
+        event.key === "Enter" ||
+        event.key === "Tab" ||
+        event.key === "Escape" ||
+        event.key === "ArrowDown" ||
+        event.key === "ArrowUp" ||
+        event.key === "PageDown" ||
+        event.key === "PageUp" ||
+        event.key === "Home" ||
+        event.key === "End";
+      if (consumes) event.stopPropagation();
       switch (event.key) {
         case "Enter":
         case "Tab": {

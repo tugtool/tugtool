@@ -63,18 +63,23 @@ export interface PermissionModeChipProps {
   /** Metadata store supplying the live `permissionMode`. */
   sessionMetadataStore: SessionMetadataStore;
   /**
-   * Called with the chosen mode when the user picks one in the behavior sheet.
-   * Wired by the dev card to `usePermissionMode().setMode`, which sends the
-   * `permission_mode` frame, optimistically reflects the mode, and persists it
-   * per card.
+   * Open the shared permission sheet. Wired by the dev card to the single
+   * opener from {@link usePermissionSheet} — the same opener the `/permissions`
+   * slash command routes to, so the chip and the command present one sheet.
    */
-  onSelectMode: (mode: string) => void;
+  onOpenSheet: () => void;
 }
 
+/**
+ * Display-only Z4B chip: a two-line `TugPushButton` showing the session's
+ * current permission mode under a `/PERMISSIONS` caption. The chip owns no
+ * sheet — clicking it calls `onOpenSheet`, the shared opener the dev card
+ * also routes the `/permissions` slash command to ([#step-1c]).
+ */
 export function PermissionModeChip({
   cardId,
   sessionMetadataStore,
-  onSelectMode,
+  onOpenSheet,
 }: PermissionModeChipProps): React.ReactElement {
   const liveMode = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -95,12 +100,101 @@ export function PermissionModeChip({
 
   const mode = liveMode ?? persistedMode;
 
+  return (
+    <TugPushButton
+      layout="label-top"
+      label="/permissions"
+      size="sm"
+      emphasis="tinted"
+      role="agent"
+      icon={<ShieldCogCorner aria-hidden="true" />}
+      data-slot="permission-mode-chip"
+      aria-label="Permission mode"
+      title={
+        mode === null
+          ? undefined
+          : `Permission mode: ${formatPermissionMode(mode)}`
+      }
+      onClick={onOpenSheet}
+    >
+      {/* Width-stabilized value: the shown label plus a hidden sizer per menu
+          mode reserve the widest label so cycling the mode never reflows the
+          chip (this chip only, per [R01]). */}
+      <span className="permission-mode-chip-value">
+        <span
+          className="permission-mode-chip-value-shown"
+          data-slot="permission-mode-value"
+        >
+          {formatPermissionMode(mode)}
+        </span>
+        {PERMISSION_MODE_MENU.map((m) => (
+          <span
+            key={m}
+            aria-hidden="true"
+            className="permission-mode-chip-value-sizer"
+          >
+            {formatPermissionMode(m)}
+          </span>
+        ))}
+      </span>
+    </TugPushButton>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// usePermissionSheet — the shared, card-hosted permission sheet
+// ---------------------------------------------------------------------------
+
+/** Args for {@link usePermissionSheet}. */
+export interface UsePermissionSheetArgs {
+  /** Card whose persisted mode pre-populates the sheet's selection. */
+  cardId: string;
+  /** Metadata store supplying the authoritative live `permissionMode`. */
+  sessionMetadataStore: SessionMetadataStore;
+  /**
+   * Called with the chosen mode when the user picks one. Wired by the dev
+   * card to `usePermissionMode().setMode`, which sends the `permission_mode`
+   * frame, optimistically reflects the mode, and persists it per card.
+   */
+  onSelectMode: (mode: string) => void;
+}
+
+/** Imperative handle to the single, card-hosted permission sheet. */
+export interface PermissionSheetController {
+  /** Present the sheet, marking the current mode. */
+  openPermissionSheet: () => void;
+  /** Render the sheet portal — call once in the card's content region. */
+  renderPermissionSheet: () => React.ReactNode;
+}
+
+/**
+ * Own the permission sheet once, at the card level, so the chip click and the
+ * `/permissions` slash command present the *same* sheet ([#step-1c]). The dev
+ * card calls this hook, passes `openPermissionSheet` to the chip's
+ * `onOpenSheet` and to its `RUN_SLASH_COMMAND` handler, and renders
+ * `renderPermissionSheet` in its content region (card-scoped per [D15]).
+ *
+ * The current mode is read fresh from the store at open time ([L07]), falling
+ * back to the per-card persisted value before the first `system_metadata`
+ * lands.
+ */
+export function usePermissionSheet({
+  cardId,
+  sessionMetadataStore,
+  onSelectMode,
+}: UsePermissionSheetArgs): PermissionSheetController {
   const { showSheet, renderSheet } = useTugSheet();
 
-  // Push → present the behavior sheet. Picking an option calls `onSelectMode`
-  // and dismisses the sheet; Done / Cancel / Escape just dismiss. `mode` is
-  // captured at open time so the open sheet marks the then-current mode.
-  const openBehaviorSheet = useCallback(() => {
+  const persistedMode = useTugbankValue<string | null>(
+    PERMISSION_MODE_DOMAIN,
+    cardId,
+    parsePersistedPermissionMode,
+    null,
+  );
+
+  const openPermissionSheet = useCallback(() => {
+    const mode =
+      sessionMetadataStore.getSnapshot().permissionMode ?? persistedMode;
     void showSheet({
       title: "Permission Mode",
       description: "Choose how Claude handles file edits and commands.",
@@ -115,50 +209,9 @@ export function PermissionModeChip({
         />
       ),
     });
-  }, [showSheet, mode, onSelectMode]);
+  }, [showSheet, sessionMetadataStore, persistedMode, onSelectMode]);
 
-  return (
-    <>
-      <TugPushButton
-        layout="label-top"
-        label="/permissions"
-        size="sm"
-        emphasis="tinted"
-        role="agent"
-        icon={<ShieldCogCorner aria-hidden="true" />}
-        data-slot="permission-mode-chip"
-        aria-label="Permission mode"
-        title={
-          mode === null
-            ? undefined
-            : `Permission mode: ${formatPermissionMode(mode)}`
-        }
-        onClick={openBehaviorSheet}
-      >
-        {/* Width-stabilized value: the shown label plus a hidden sizer per menu
-            mode reserve the widest label so cycling the mode never reflows the
-            chip (this chip only, per [R01]). */}
-        <span className="permission-mode-chip-value">
-          <span
-            className="permission-mode-chip-value-shown"
-            data-slot="permission-mode-value"
-          >
-            {formatPermissionMode(mode)}
-          </span>
-          {PERMISSION_MODE_MENU.map((m) => (
-            <span
-              key={m}
-              aria-hidden="true"
-              className="permission-mode-chip-value-sizer"
-            >
-              {formatPermissionMode(m)}
-            </span>
-          ))}
-        </span>
-      </TugPushButton>
-      {renderSheet()}
-    </>
-  );
+  return { openPermissionSheet, renderPermissionSheet: renderSheet };
 }
 
 // ---------------------------------------------------------------------------

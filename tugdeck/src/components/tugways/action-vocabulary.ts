@@ -223,6 +223,15 @@ export const TUG_ACTIONS = {
   //                 card-content responder. Non-dev cards register no
   //                 handler, so the dispatch is a silent no-op and ⇧⇥
   //                 falls through to normal reverse-tab navigation.
+  // RUN_SLASH_COMMAND: payload — `value: { name, args }` (a matched local
+  //                 slash command + any trailing args). The prompt entry
+  //                 dispatches it key-card-scoped when a typed `/command`
+  //                 matches the local registry (`lib/slash-commands.ts`);
+  //                 the dev card's card-content responder handles it by
+  //                 opening the command's graphical surface ([D23]).
+  //                 Transport-independent — not gated on send-readiness.
+  //                 A host with no handler leaves it unhandled, so the
+  //                 prompt entry sends the text to claude instead.
   CYCLE_CARD:     "cycle-card",
   PREVIOUS_TAB:   "previous-tab",
   NEXT_TAB:       "next-tab",
@@ -231,6 +240,7 @@ export const TUG_ACTIONS = {
   FOCUS_PROMPT:   "focus-prompt",
   JUMP_TO_TAB:    "jump-to-tab",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
+  RUN_SLASH_COMMAND: "run-slash-command",
 
   // ---- Dialog / popover ----
   //

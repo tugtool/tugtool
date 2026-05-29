@@ -47,7 +47,7 @@ import React, {
 } from "react";
 
 import { ArrowUp, Bot, Plus, Shell, Square } from "lucide-react";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -79,6 +79,8 @@ import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { useKeyCardDispatch } from "./use-key-card-dispatch";
+import { matchLocalSlashCommand } from "@/lib/slash-commands";
 import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
@@ -475,6 +477,20 @@ export interface TugPromptEntryProps {
    */
   onAfterSubmit?: () => void;
   /**
+   * Fires when the user presses Escape while the editor is *empty*
+   * (`doc.length === 0`). A host-effect hook: the entry owns no pane
+   * geometry, so it just surfaces the gesture and lets the host decide
+   * — the Dev card collapses the entry pane to its minimum height.
+   *
+   * Only fires on the idle path. When a turn is in flight the entry's
+   * conditional `CANCEL_DIALOG` handler claims Escape upstream (Stop ≡
+   * Esc) and the keystroke never reaches the editor's keymap, so a
+   * minimize can never race an interrupt. A non-empty editor falls
+   * through to the editor's own Escape semantics (e.g. autocomplete
+   * dismiss). Omit to disable the gesture (the gallery harness does).
+   */
+  onEscapeWhenEmpty?: () => void;
+  /**
    * Optional content rendered in the status row above the input.
    */
   statusContent?: React.ReactNode;
@@ -598,6 +614,7 @@ export const TugPromptEntry = React.forwardRef<
     dropHandler,
     onBeforeSubmit,
     onAfterSubmit,
+    onEscapeWhenEmpty,
     statusContent,
     cautionContent,
     indicatorsContent,
@@ -762,6 +779,13 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     onAfterSubmitRef.current = onAfterSubmit;
   }, [onAfterSubmit]);
+  // Live ref for the empty-Escape gesture. The editor keymap below is
+  // captured at mount (empty-deps memo), so it must read the current
+  // callback through a ref rather than closing over the prop. [L07]
+  const onEscapeWhenEmptyRef = useRef(onEscapeWhenEmpty);
+  useLayoutEffect(() => {
+    onEscapeWhenEmptyRef.current = onEscapeWhenEmpty;
+  }, [onEscapeWhenEmpty]);
 
   // Live refs for the maximize controlled-pair so the chain-action
   // handler (registered once at mount via `useResponder.actions`)
@@ -822,6 +846,27 @@ export const TugPromptEntry = React.forwardRef<
           String(update.state.doc.length === 0),
         );
       }),
+      // Empty-Escape gesture. On an empty editor, Escape surfaces
+      // `onEscapeWhenEmpty` so the host can collapse the entry pane.
+      // Gated on `doc.length === 0`: a non-empty editor returns `false`
+      // so Escape falls through to the editor's own handlers
+      // (autocomplete dismiss, etc.). Host-supplied extensions sit
+      // below the substrate's keymap precedence, so by the time Escape
+      // reaches here the typeahead / completion layers have already
+      // had their turn — and none of those can be open on an empty
+      // doc, which is why the empty gate is sufficient.
+      keymap.of([
+        {
+          key: "Escape",
+          run: (view) => {
+            if (view.state.doc.length !== 0) return false;
+            const onEscape = onEscapeWhenEmptyRef.current;
+            if (onEscape === undefined) return false;
+            onEscape();
+            return true;
+          },
+        },
+      ]),
     ],
     [],
   );
@@ -831,6 +876,14 @@ export const TugPromptEntry = React.forwardRef<
   // flips true. See `classifyBlockedSubmit` + `performSubmit`'s
   // blocked-submit branch.
   const pendingSubmitRef = useRef(false);
+
+  // Key-card dispatch for locally-handled slash commands. A bare
+  // `/command` matching the local registry is routed to the key card's
+  // card-content responder (the dev card opens its surface) instead of
+  // being sent to claude — the same walk `CYCLE_PERMISSION_MODE` uses
+  // ([D23], [#step-1c]). The prompt entry stays generic: it knows the
+  // command *shape* via the pure matcher, not what any command does.
+  const { dispatch: dispatchToKeyCard } = useKeyCardDispatch();
 
   // Shared submit logic. Invoked by both the SUBMIT chain-action
   // handler (button click, Cmd+Enter, etc.) and the Return /
@@ -846,6 +899,47 @@ export const TugPromptEntry = React.forwardRef<
     const view = editor?.view() ?? null;
     const snap = snapRef.current;
     if (editor === null || view === null) return;
+
+    // Slash-command interception ([D23], [#step-1c]). Accepting any
+    // slash-command suggestion inserts a `type:"command"` atom and dismisses
+    // the popup — uniform for every command. The local-vs-remote split is
+    // made HERE, at submit: a command whose name is in the local registry
+    // opens its surface (dispatch `RUN_SLASH_COMMAND` to the key card's
+    // card-content responder); everything else (a claude command atom, plain
+    // text) flows on to `send()` unchanged. The command line is recognized in
+    // either form — a bare `/name` typed without the popup, or a lone
+    // accepted command atom (the U+FFFC placeholder is the only text). Runs
+    // BEFORE the send-readiness gates (matching `Shift+Tab`, not gated on
+    // `canSubmit`); if no responder handles the dispatch (a host with no
+    // card-content handler, e.g. the gallery), fall through to `send()`.
+    if (!isEffectivelyEmpty(view)) {
+      const draftAtoms = getAtomsInState(view.state);
+      const draftText = editor.captureState().text;
+      let commandLine: string | null = null;
+      if (draftAtoms.length === 0) {
+        commandLine = draftText;
+      } else if (
+        draftAtoms.length === 1 &&
+        draftAtoms[0].segment.type === "command" &&
+        draftText.split(TUG_ATOM_CHAR).join("").trim() === ""
+      ) {
+        commandLine = `/${draftAtoms[0].segment.value}`;
+      }
+      const localCommand =
+        commandLine !== null ? matchLocalSlashCommand(commandLine) : null;
+      if (localCommand !== null) {
+        const handled = dispatchToKeyCard({
+          action: TUG_ACTIONS.RUN_SLASH_COMMAND,
+          value: localCommand,
+          phase: "discrete",
+        });
+        if (handled) {
+          editor.clear();
+          return;
+        }
+      }
+    }
+
     // Z5 disabled-mode gate. When `submitButtonMode` is one of the
     // four inert kinds (awaiting-user / stopping / reconnecting /
     // restoring) the button is `disabled` — a native-disabled button
@@ -958,7 +1052,7 @@ export const TugPromptEntry = React.forwardRef<
     // already-empty editor.
     onAfterSubmitRef.current?.();
     // Route is a sticky user preference. Do not reset on submit.
-  }, [codeSessionStore, historyStore]);
+  }, [codeSessionStore, historyStore, dispatchToKeyCard]);
 
   // Flush a deferred submit. When a submit landed during the
   // transport-settling window, `performSubmit`'s blocked-submit branch

@@ -310,6 +310,11 @@ function handleEnter(
   // chain; the substrate guarantees a submit fires.
   if (event.metaKey && !event.shiftKey && !event.altKey && !event.ctrlKey) {
     event.preventDefault();
+    // The editor owns this Enter — stop it bubbling to the document
+    // keyboard pipeline's Stage-2 (Enter → default-button activation). A
+    // submit may open a sheet mid-event; without this, the same Enter then
+    // clicks the just-opened sheet's primary button and dismisses it.
+    event.stopPropagation();
     config.onSubmit();
     return true;
   }
@@ -318,6 +323,9 @@ function handleEnter(
   const action = resolveEnterAction(config, isNumpad, event.shiftKey);
   if (action === "submit") {
     event.preventDefault();
+    // Editor owns the Enter — don't let it ALSO drive Stage-2 default-button
+    // activation (see the Cmd-Enter branch above).
+    event.stopPropagation();
     // Defer to a chain-registered default button (e.g., a dialog's
     // primary action) when one is in scope. The click routes
     // through the button's own onClick — and the chain provider's

@@ -39,7 +39,8 @@ import { DevCardSashGrip } from "./dev-card-sash-grip";
 import { useDevPlacementSlots } from "./dev-card-placement-experiment";
 import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
-import { PermissionModeChip } from "./permission-mode-chip";
+import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
+import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
@@ -120,6 +121,10 @@ import {
 import type { SessionRow } from "@/protocol";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { wrapPositionZero } from "./completion-providers/position-zero";
+import {
+  localCommandCompletionProvider,
+  mergeCommandProviders,
+} from "./completion-providers/local-commands";
 import {
   useDevRecentsDataSource,
   useDevSessionsDataSource,
@@ -383,10 +388,18 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
   const completionProviders = useMemo<Record<string, CompletionProvider>>(
     () => ({
       "@": services?.fileCompletionProvider ?? EMPTY_FILE_COMPLETION_PROVIDER,
+      // Local (graphical) slash commands are merged in here at the
+      // composition layer — listed first so a name claude also reports
+      // resolves to the local entry. The store stays generic per
+      // [#step-1c]; the gallery (which calls the store provider directly)
+      // never sees them.
       "/": services
         ? wrapPositionZero(
             entryDelegateRef,
-            services.sessionMetadataStore.getCommandCompletionProvider(),
+            mergeCommandProviders(
+              localCommandCompletionProvider(),
+              services.sessionMetadataStore.getCommandCompletionProvider(),
+            ),
           )
         : EMPTY_FILE_COMPLETION_PROVIDER,
     }),
@@ -2208,6 +2221,22 @@ export function DevCardBody({
     entryPanelRef.current?.restoreUserSize();
   }, [maximized]);
 
+  // Escape on an empty editor collapses the entry pane to its minimum
+  // height — the keyboard twin of dragging the sash grip all the way
+  // down. `setTransientSize(0)` is clamped by the library up to the
+  // panel's `minSize` (180px), so the pane lands on its floor without
+  // this site needing to know the group height. Animated to match the
+  // maximize toggle's motion. Skipped while maximized: the maximize
+  // peg owns the size and the sash is frozen, so the gesture would
+  // fight it — the user restores via the toggle instead. The content-
+  // driven sizer never undoes this while the editor stays empty: with
+  // no overflow its recompute is a no-op, so the floor holds until the
+  // user types enough to overflow (grow) or submits (restore).
+  const handleEscapeWhenEmpty = useCallback(() => {
+    if (maximized) return;
+    entryPanelRef.current?.setTransientSize(0, { animated: true });
+  }, [maximized]);
+
   // Return focus to the editor after a successful submit so the user
   // can type the next prompt immediately, and pull the transcript
   // back to the live edge. `onAfterSubmit` fires from `performSubmit`
@@ -2315,6 +2344,24 @@ export function DevCardBody({
     sessionMetadataStore,
   });
 
+  // The single permission sheet, owned at the card level so the chip click
+  // and the `/permissions` slash command present the same sheet ([#step-1c]).
+  const permissionSheet = usePermissionSheet({
+    cardId,
+    sessionMetadataStore,
+    onSelectMode: permissionMode.setMode,
+  });
+
+  // Surface for each local slash command, keyed by command name. Typed as
+  // `Record<LocalCommandName, …>` so a registry entry without a wired surface
+  // is a compile error — key-card dispatch marks `RUN_SLASH_COMMAND` handled
+  // by handler *presence*, so an unmapped command would otherwise be silently
+  // swallowed rather than opened or sent ([#step-1c] / [D23]). Rebuilt each
+  // render; the responder's live-lookup reads the current closures [L07].
+  const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
+    permissions: () => permissionSheet.openPermissionSheet(),
+  };
+
   const {
     ResponderScope: CardContentResponderScope,
     responderRef: cardContentResponderRef,
@@ -2331,6 +2378,18 @@ export function DevCardBody({
       // the metadata store [L07].
       [TUG_ACTIONS.CYCLE_PERMISSION_MODE]: (_event: ActionEvent) => {
         permissionMode.cycle();
+      },
+      // A typed local slash command, dispatched key-card-scoped by the
+      // prompt entry. Open the command's surface; an unknown name is a
+      // no-op (the matcher only dispatches registered names, so this is
+      // defensive against registry/handler drift) ([#step-1c] / [D23]).
+      [TUG_ACTIONS.RUN_SLASH_COMMAND]: (event: ActionEvent) => {
+        const payload = event.value as
+          | { name: LocalCommandName; args: string }
+          | undefined;
+        if (payload === undefined) return;
+        const open = slashCommandSurfaces[payload.name];
+        if (open !== undefined) open(payload.args);
       },
     },
   });
@@ -2572,6 +2631,7 @@ export function DevCardBody({
                 completionProviders={completionProviders}
                 onBeforeSubmit={handleBeforeSubmit}
                 onAfterSubmit={handleAfterSubmit}
+                onEscapeWhenEmpty={handleEscapeWhenEmpty}
                 indicatorsContent={
                   <>
                     <DevRouteIndicatorBadge
@@ -2583,7 +2643,7 @@ export function DevCardBody({
                     <PermissionModeChip
                       cardId={cardId}
                       sessionMetadataStore={sessionMetadataStore}
-                      onSelectMode={permissionMode.setMode}
+                      onOpenSheet={permissionSheet.openPermissionSheet}
                     />
                     {effectiveFooterContent}
                   </>
@@ -2597,6 +2657,7 @@ export function DevCardBody({
               />
             </TugBox>
             {renderSheet()}
+            {permissionSheet.renderPermissionSheet()}
           </ResponderScope>
         </TugSplitPanel>
       </TugSplitPane>
