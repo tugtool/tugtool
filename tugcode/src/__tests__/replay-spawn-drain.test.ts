@@ -226,8 +226,7 @@ describe("Step R1e — handleUserMessage completion via drain", () => {
       // below and dispatch into its active turn.
       const turnPromise = rig.manager.handleUserMessage({
         type: "user_message",
-        text: "hi",
-        attachments: [],
+        content: [{ type: "text", text: "hi" }],
       });
 
       // Give handleUserMessage a microtask so it can install the
@@ -259,8 +258,7 @@ describe("Step R1e — handleUserMessage completion via drain", () => {
 
       const turnPromise = rig.manager.handleUserMessage({
         type: "user_message",
-        text: "hi",
-        attachments: [],
+        content: [{ type: "text", text: "hi" }],
       });
       await rig.flush();
 
@@ -307,8 +305,7 @@ describe("Step R1e — drain robustness", () => {
       // line in a follow-up turn must still complete a handleUserMessage.
       const turnPromise = rig.manager.handleUserMessage({
         type: "user_message",
-        text: "hi",
-        attachments: [],
+        content: [{ type: "text", text: "hi" }],
       });
       await rig.flush();
       rig.stdout.feed({ type: "result", subtype: "success", result: "" });
@@ -340,8 +337,7 @@ describe("Step R1e — drain robustness", () => {
       // completion promise).
       await rig.manager.handleUserMessage({
         type: "user_message",
-        text: "hi",
-        attachments: [],
+        content: [{ type: "text", text: "hi" }],
       });
 
       const errors = rig.emitted.filter((e) => e.type === "error");

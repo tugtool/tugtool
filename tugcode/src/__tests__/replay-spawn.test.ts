@@ -860,8 +860,7 @@ describe("Step R0d — cold-boot resume order", () => {
       const userMsgPromise = manager
         .handleUserMessage({
           type: "user_message",
-          text: "ping",
-          attachments: [],
+          content: [{ type: "text", text: "ping" }],
         })
         .then(() => {
           userMessageReturned = true;

@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { ActiveTurn, SessionManager, buildClaudeArgs, buildContentBlocksFromLegacyJournal, buildWakeStartedMessage, routeTopLevelEvent, mapStreamEvent } from "../session.ts";
 import type { EventMappingContext } from "../session.ts";
-import type { StreamingUsage } from "../types.ts";
+import type { ContentBlock, ContentBlockText, StreamingUsage } from "../types.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers (needed for stdin spy test and future Steps 1-4)
@@ -1499,7 +1499,7 @@ describe("buildContentBlocksFromLegacyJournal", () => {
     const blocks = buildContentBlocksFromLegacyJournal("hello world", []);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("text");
-    expect(blocks[0].text).toBe("hello world");
+    expect((blocks[0] as ContentBlockText).text).toBe("hello world");
   });
 
   test("non-image attachment is silently dropped (images-only contract)", () => {
@@ -1513,7 +1513,7 @@ describe("buildContentBlocksFromLegacyJournal", () => {
     ]);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("text");
-    expect(blocks[0].text).toBe("intro");
+    expect((blocks[0] as ContentBlockText).text).toBe("intro");
   });
 
   test("image attachment produces image content block with base64 source", () => {
@@ -1563,7 +1563,7 @@ describe("buildContentBlocksFromLegacyJournal", () => {
     const blocks = buildContentBlocksFromLegacyJournal("", []);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("text");
-    expect(blocks[0].text).toBe("");
+    expect((blocks[0] as ContentBlockText).text).toBe("");
   });
 
   test("all four supported image types are accepted", () => {
@@ -3624,7 +3624,7 @@ describe("dispatchEventToTurn slides ActiveTurn.currentMessageId", () => {
       crypto.randomUUID(),
     );
     const seq = (manager as any).nextSeq();
-    const content: Array<unknown> = [];
+    const content: ContentBlock[] = [];
     if (text.length > 0) content.push({ type: "text", text });
     for (const att of attachments) {
       if (att.media_type.startsWith("image/")) {
@@ -3637,7 +3637,7 @@ describe("dispatchEventToTurn slides ActiveTurn.currentMessageId", () => {
       }
     }
     if (content.length === 0) content.push({ type: "text", text: "" });
-    return { manager, turn: new ActiveTurn(seq, content as ReadonlyArray<never>) };
+    return { manager, turn: new ActiveTurn(seq, content) };
   }
 
   test("message_start slides currentMessageId from null", async () => {
@@ -4289,9 +4289,10 @@ describe("emitInflightTurnFromActiveTurn", () => {
     // since it took separate text + attachments parameters.
     // Non-image attachments are silently dropped per the images-only
     // inline-attachment contract.
-    const content: Array<unknown> = [];
-    if ((overrides.userText ?? "").length > 0) {
-      content.push({ type: "text", text: overrides.userText });
+    const content: ContentBlock[] = [];
+    const userText = overrides.userText ?? "";
+    if (userText.length > 0) {
+      content.push({ type: "text", text: userText });
     }
     for (const att of overrides.userAttachments ?? []) {
       if (!att.media_type.startsWith("image/")) continue;
@@ -4301,7 +4302,7 @@ describe("emitInflightTurnFromActiveTurn", () => {
       });
     }
     if (content.length === 0) content.push({ type: "text", text: "" });
-    const turn = new ActiveTurn(100, content as ReadonlyArray<never>);
+    const turn = new ActiveTurn(100, content);
     turn.currentMessageId = overrides.msgId ?? "msg_X";
     if (overrides.textBlock !== null && overrides.textBlock !== undefined) {
       turn.messageBlocks.set(turn.currentMessageId, [

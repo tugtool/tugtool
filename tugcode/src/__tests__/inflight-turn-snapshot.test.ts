@@ -78,7 +78,7 @@ describe("emitInflightTurnFromActiveTurn — per-Message replay-the-stream", () 
     // The snapshot must replay all four as separate frames, preserving
     // the wire's temporal interleaving so the reducer rebuilds the
     // same `messages` sequence the live path would have.
-    const turn = new ActiveTurn(0, "do tools", []);
+    const turn = new ActiveTurn(0, []);
     turn.currentMessageId = "msg_loop";
     turn.messageBlocks.set("msg_loop", [
       { index: 0, kind: "text", text: "Working on it..." },
@@ -132,7 +132,7 @@ describe("emitInflightTurnFromActiveTurn — per-Message replay-the-stream", () 
     // iterates ALL of them. This is the correctness improvement over
     // today's substrate (which dropped intermediate iterations' content
     // at commit — see [D07] § Multi-msgId-per-turn handling).
-    const turn = new ActiveTurn(0, "complex", []);
+    const turn = new ActiveTurn(0, []);
     turn.currentMessageId = "msg_B";  // sliding pointer points at last
     turn.messageBlocks.set("msg_A", [
       { index: 0, kind: "thinking", text: "let me think" },
@@ -187,7 +187,7 @@ describe("emitInflightTurnFromActiveTurn — per-Message replay-the-stream", () 
     // assistant_text.seq < turn_complete.seq). Pinning it explicitly
     // here so a future regression to "reuse turn.seq" or "skip
     // nextSeq" is caught.
-    const turn = new ActiveTurn(0, "u", []);
+    const turn = new ActiveTurn(0, []);
     turn.currentMessageId = "msg_seq";
     turn.messageBlocks.set("msg_seq", [
       { index: 0, kind: "text", text: "first" },
@@ -231,7 +231,7 @@ describe("emitInflightTurnFromActiveTurn — per-Message replay-the-stream", () 
     // of whether the reducer already saw it live. tugcode does not try
     // to remember "was this block already emitted before the bracket"
     // — it always emits, trusting the reducer's idempotence.
-    const turn = new ActiveTurn(0, "u", []);
+    const turn = new ActiveTurn(0, []);
     turn.currentMessageId = "msg_idem";
     turn.messageBlocks.set("msg_idem", [
       { index: 0, kind: "text", text: "block-zero" },

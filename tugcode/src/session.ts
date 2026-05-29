@@ -318,8 +318,8 @@ function formatReplayValue(v: unknown): string {
 export function buildContentBlocksFromLegacyJournal(
   text: string,
   attachments: Array<Attachment>
-): Array<Record<string, unknown>> {
-  const blocks: Array<Record<string, unknown>> = [];
+): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
 
   // Text always comes first.
   if (text.length > 0) {
@@ -2994,7 +2994,7 @@ export class SessionManager {
       const content = buildContentBlocksFromLegacyJournal(row.user_text, attachments);
       writeLine({
         type: "add_user_message",
-        content: content as ContentBlock[],
+        content,
         ipc_version: 2,
       });
       logReplay("pending_row_synthetic_emit", {
@@ -3267,7 +3267,7 @@ export class SessionManager {
     }
     writeLine(frame);
     this.isInWake = true;
-    this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
+    this.activeTurn = new ActiveTurn(this.nextSeq(), []);
   }
 
   /**
@@ -3309,7 +3309,7 @@ export class SessionManager {
     };
     writeLine(frame);
     this.isInWake = true;
-    this.activeTurn = new ActiveTurn(this.nextSeq(), "", []);
+    this.activeTurn = new ActiveTurn(this.nextSeq(), []);
   }
 
   private maybeEmitContextBreakdown(event: Record<string, unknown>): void {
