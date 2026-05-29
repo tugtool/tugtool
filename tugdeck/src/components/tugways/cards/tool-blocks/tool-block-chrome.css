@@ -190,6 +190,15 @@ body {
   color: inherit;
 }
 
+/* Atom chip baseline nudge. The atom chip is a baked-text `<svg>`; in the
+ * baseline-aligned args row its text rides a few px above the verb/badge
+ * baseline. Nudge it down so the chip's text sits on the header baseline. One
+ * rule covers every tool block — read / edit / write / notebook-edit all
+ * render their path chip inside this slot. */
+.tool-block-chrome-args .tug-atom-chip {
+  transform: translateY(3px);
+}
+
 /* Ghost-emphasis badges set `padding-inline: 0` to sit flush with
  * adjacent inline content (see `tug-badge.css`). In the chrome
  * header that reads too tight against the tool name — tinted /
