@@ -677,6 +677,23 @@ export class CodeSessionStore {
   }
 
   /**
+   * Set the session's permission mode. Emits a `permission_mode` CODE_INPUT
+   * frame and changes no transcript state — the dev-card's Z4B chip reflects
+   * the new mode from the next `system_metadata` (owned by
+   * `SessionMetadataStore`), not from this call, so the indicator stays
+   * truthful even if the change races an in-flight turn.
+   *
+   * The dispatch source is the dev-card's `Shift+Tab` handler (and the
+   * per-card mode restore on mount); routing through a named method here
+   * keeps `dispatch` private and the caller free of reducer-event
+   * vocabulary — same precedent as `interrupt` / `respondQuestion`.
+   */
+  setPermissionMode(mode: string): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "set_permission_mode", mode });
+  }
+
+  /**
    * Acknowledge that the prompt-entry editor has applied the most
    * recent CASE A draft restore. The reducer clears
    * `pendingDraftRestore` to `null` so the editor's

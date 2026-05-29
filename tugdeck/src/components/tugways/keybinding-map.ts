@@ -210,6 +210,14 @@ export const KEYBINDINGS: KeyBinding[] = [
   // shortcut is owned by the responder chain regardless of focus.
   { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "❯", preventDefaultOnMatch: true },
   { key: "KeyS", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "$", preventDefaultOnMatch: true },
+  // ⇧⇥ cycles the dev card's permission mode, matching the Claude Code
+  // terminal. `scope: "key-card"` routes to the active card's
+  // `card-content` responder; only the dev card registers a handler. No
+  // `preventDefaultOnMatch` — when no dev card claims the action the
+  // capture listener leaves the event alone and ⇧⇥ bubbles to normal
+  // reverse-tab navigation (Risk R02: consume only when a dev card is
+  // focused).
+  { key: "Tab", shift: true, action: TUG_ACTIONS.CYCLE_PERMISSION_MODE, scope: "key-card" },
 ];
 
 // ---- matchKeybinding ----

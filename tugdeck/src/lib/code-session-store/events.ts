@@ -274,6 +274,19 @@ export interface InterruptActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.setPermissionMode`. Not a
+ * wire event — never decoded from a frame. The reducer emits a single
+ * `permission_mode` SendFrame effect and changes NO transcript state: the
+ * dev-card's chip reflects the mode from the post-mutation `system_metadata`
+ * round-trip (owned by `SessionMetadataStore`), not from this action, per
+ * the dev-card / Claude-Code-parity plan's round-trip mutation decision.
+ */
+export interface SetPermissionModeActionEvent {
+  type: "set_permission_mode";
+  mode: string;
+}
+
+/**
  * Internal action injected by
  * `CodeSessionStore.consumePendingDraftRestore`. Not a wire event. The
  * reducer clears `pendingDraftRestore` to `null` so the prompt-entry
@@ -727,6 +740,7 @@ export type CodeSessionEvent =
   | RespondApprovalActionEvent
   | RespondQuestionActionEvent
   | InterruptActionEvent
+  | SetPermissionModeActionEvent
   | ConsumeDraftRestoreActionEvent
   | CancelQueuedSendActionEvent
   | CostUpdateEvent

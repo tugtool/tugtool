@@ -39,6 +39,8 @@ import { DevCardSashGrip } from "./dev-card-sash-grip";
 import { useDevPlacementSlots } from "./dev-card-placement-experiment";
 import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
+import { PermissionModeChip } from "./permission-mode-chip";
+import { usePermissionMode } from "@/lib/use-permission-mode";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugSplitPane, TugSplitPanel, type TugSplitPanelHandle } from "../tug-split-pane";
 import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
@@ -2302,6 +2304,16 @@ export function DevCardBody({
   });
   const { renderSheet } = cardSettings;
 
+  // Permission-mode cycle + per-card persistence/restore ([D02], [D03],
+  // [D07]). `cycle` advances default → acceptEdits → plan → auto → … and
+  // sends the `permission_mode` frame; the Z4B chip reflects the result
+  // from the next `system_metadata`. Bound to ⇧⇥ below.
+  const permissionMode = usePermissionMode({
+    cardId,
+    codeSessionStore,
+    sessionMetadataStore,
+  });
+
   const {
     ResponderScope: CardContentResponderScope,
     responderRef: cardContentResponderRef,
@@ -2311,6 +2323,13 @@ export function DevCardBody({
     actions: {
       [TUG_ACTIONS.FOCUS_PROMPT]: (_event: ActionEvent) => {
         entryDelegateRef.current?.focus();
+      },
+      // ⇧⇥ cycles the permission mode. Only the dev card registers this
+      // handler, so on any other card ⇧⇥ falls through to reverse-tab
+      // navigation (Risk R02). `cycle` reads the current mode fresh from
+      // the metadata store [L07].
+      [TUG_ACTIONS.CYCLE_PERMISSION_MODE]: (_event: ActionEvent) => {
+        permissionMode.cycle();
       },
     },
   });
@@ -2554,6 +2573,10 @@ export function DevCardBody({
                 onAfterSubmit={handleAfterSubmit}
                 indicatorsContent={
                   <>
+                    <PermissionModeChip
+                      cardId={cardId}
+                      sessionMetadataStore={sessionMetadataStore}
+                    />
                     <DevRouteIndicatorBadge
                       codeSessionStore={codeSessionStore}
                       sessionMetadataStore={sessionMetadataStore}

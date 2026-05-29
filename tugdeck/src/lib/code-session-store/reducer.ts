@@ -48,6 +48,7 @@ import type {
   RespondQuestionActionEvent,
   SendActionEvent,
   SessionInitEvent,
+  SetPermissionModeActionEvent,
   SessionNotOwnedEvent,
   SessionStateErroredEvent,
   SessionUnknownEvent,
@@ -2543,6 +2544,24 @@ function handleRespondQuestion(
   };
 }
 
+/**
+ * Emit a `permission_mode` frame and change no transcript state. The mode
+ * the chip displays comes back from the post-mutation `system_metadata`
+ * round-trip (owned by `SessionMetadataStore`), not from this dispatch —
+ * keeping the indicator truthful even if a mode change races a turn.
+ */
+function handleSetPermissionMode(
+  state: CodeSessionState,
+  event: SetPermissionModeActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state,
+    effects: [
+      { kind: "send-frame", msg: { type: "permission_mode", mode: event.mode } },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Cost update — telemetry surface, phase-tolerant
 // ---------------------------------------------------------------------------
@@ -3654,6 +3673,8 @@ export function reduce(
       return handleRespondQuestion(state, event);
     case "interrupt_action":
       return handleInterrupt(state);
+    case "set_permission_mode":
+      return handleSetPermissionMode(state, event);
     case "consume_draft_restore":
       return handleConsumeDraftRestore(state);
     case "cancel_queued_send":

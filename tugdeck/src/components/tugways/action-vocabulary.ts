@@ -216,6 +216,13 @@ export const TUG_ACTIONS = {
   //                 native beep.
   // JUMP_TO_TAB:    payload — `value: number` (1-based tab index).
   //                 Card-level: switch to the Nth tab. Used by ⌘1..9.
+  // CYCLE_PERMISSION_MODE: payload — none. Advance the dev-card's
+  //                 permission mode one step (default → acceptEdits →
+  //                 plan → auto → default). Bound to ⇧⇥, scoped
+  //                 `scope: "key-card"`, handled by the dev card's
+  //                 card-content responder. Non-dev cards register no
+  //                 handler, so the dispatch is a silent no-op and ⇧⇥
+  //                 falls through to normal reverse-tab navigation.
   CYCLE_CARD:     "cycle-card",
   PREVIOUS_TAB:   "previous-tab",
   NEXT_TAB:       "next-tab",
@@ -223,6 +230,7 @@ export const TUG_ACTIONS = {
   FOCUS_PREVIOUS: "focus-previous",
   FOCUS_PROMPT:   "focus-prompt",
   JUMP_TO_TAB:    "jump-to-tab",
+  CYCLE_PERMISSION_MODE: "cycle-permission-mode",
 
   // ---- Dialog / popover ----
   //

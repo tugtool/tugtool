@@ -89,7 +89,7 @@ export interface Interrupt {
 
 export interface PermissionModeMessage {
   type: "permission_mode";
-  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "delegate";
+  mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "auto" | "dontAsk" | "delegate";
 }
 
 export interface ModelChange {

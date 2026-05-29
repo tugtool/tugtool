@@ -684,8 +684,9 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | `tugdeck/src/components/tugways/tug-badge.css` | **Modified** — new layout rules + label typography borrowed from `tug-box.css` legend/label-above style |
 | `tugdeck/src/components/tugways/cards/gallery-badge.tsx` | **Modified** — gallery card sections demonstrating all three layouts ([#step-0]) |
 | `tugdeck/src/components/tugways/cards/gallery-badge.css` | **Modified** — gallery layout for the new sections |
-| `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` | Z4B permission-mode indicator chip ([#step-1]) — display-only per [D13]; rendered via `TugBadge` `label-top` / `size="sm"` / `role="agent"` per [#step-0], not width-stabilized per [R01] |
-| `tugdeck/src/components/tugways/cards/permission-mode-chip.css` | Styles (no width stabilization per [R01]) |
+| `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` | Z4B permission-mode indicator chip ([#step-1]) — display-only per [D13]; rendered via `TugBadge` `label-top` / `size="sm"` / `role="agent"` per [#step-0], not width-stabilized per [R01]. Compositional component: `.tsx`-only, no `.css` (composes `TugBadge`, adds no styling). |
+| `tugdeck/src/lib/permission-mode.ts` | Pure cycle / label / parse helpers ([#step-1]) |
+| `tugdeck/src/lib/use-permission-mode.ts` | Cycle callback + per-card tugbank persistence + mount-restore hook ([#step-1]) |
 | `tugdeck/src/components/tugways/cards/model-chip.tsx` | Z4B model indicator chip ([#step-2]) — display-only per [D13] |
 | `tugdeck/src/components/tugways/cards/model-picker-sheet.tsx` | `/model` picker overlay sheet ([#step-2b]) |
 | `tugdeck/src/components/tugways/cards/rate-limit-chip.tsx` | Z4B rate-limit countdown ([#step-3]) |
@@ -840,33 +841,37 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 **References:** [D01] Z4B chrome anchor (canonical chip render), [D02] cycle order matches terminal, [D03] round-trip via tugcode, [D04] SessionMetadataStore data hub, [D07] per-card mode persistence, [D13] Z4B indicator-only, Risk R01 (no width-stabilization), Risk R02, (#z4b-chrome-layout, #constraints, #strategy)
 
-**Artifacts:**
-- New: `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx`, `permission-mode-chip.css`
-- New: `tugdeck/src/lib/substrate-responders.ts` (or extension) with `SHIFT_TAB_RESPONDER`
-- Modified: `tugdeck/src/components/tugways/cards/dev-card-placement-experiment.tsx` to map the chip into Z4B
-- Modified: `tugdeck/src/lib/session-metadata-store.ts` to expose `permissionMode` (already there, verify)
-- New: tugbank key `dev.permission-mode.<cardId>` for per-card persistence per [D07].
+**Artifacts (as built):**
+- New: `tugdeck/src/components/tugways/cards/permission-mode-chip.tsx` — display-only chip. **No `.css`**: it composes `TugBadge` and adds no styling, so per the component-authoring "Compositional Component" rule it is `.tsx`-only (deviation from the artifact list's `permission-mode-chip.css`).
+- New: `tugdeck/src/lib/permission-mode.ts` — pure helpers (`PERMISSION_MODE_CYCLE`, `cyclePermissionMode`, `formatPermissionMode`, `parsePersistedPermissionMode`, `PERMISSION_MODE_DOMAIN`).
+- New: `tugdeck/src/lib/use-permission-mode.ts` — the cycle callback + per-card persistence (`writePersistedPermissionMode`, mirroring `diff-view-pref.ts`) + mount-restore effect.
+- New: `tugdeck/src/__tests__/permission-mode.test.ts` — pure-logic coverage.
+- **`Shift+Tab` wiring uses the existing keybinding + responder pattern, not a new `substrate-responders.ts`** (deviation): `CYCLE_PERMISSION_MODE` added to `action-vocabulary.ts`; a `{ key: "Tab", shift: true, scope: "key-card" }` binding in `keybinding-map.ts`; the handler registered on the dev card's existing `card-content` responder. This is the idiomatic mechanism (same as `FOCUS_PROMPT` ⌘K) and the `substrate-responders.ts` file the artifacts imagined does not exist in the codebase.
+- Modified: `tugdeck/src/components/tugways/cards/dev-card.tsx` — `usePermissionMode` call, `CYCLE_PERMISSION_MODE` handler, and `<PermissionModeChip>` mounted **leftmost directly in `indicatorsContent`** (deviation: direct mount like the route/project/session chips, not via the dev placement-experiment harness, which is for experiments not production indicators).
+- Modified: `tugdeck/src/lib/code-session-store.ts` + `code-session-store/{events,reducer}.ts` — `setPermissionMode()` method → `set_permission_mode` event → `send-frame` reducer effect (no transcript-state change, per [D03]).
+- Modified: `tugcode/src/permissions.ts` + `types.ts` — added `"auto"` to the `PermissionMode` / `PermissionModeMessage.mode` unions so the type is honest about the 4th cycle mode (confirmed real via the terminal; runtime already forwarded any mode string, so this is a type-correctness change, not a protocol change).
+- Verified: `tugdeck/src/lib/session-metadata-store.ts` already exposes `permissionMode`.
+- New: tugbank key `dev.permission-mode/<cardId>` for per-card persistence per [D07].
 
 **Tasks:**
-- [ ] Implement `PermissionModeChip` reading `SessionMetadataStore` via `useSyncExternalStore`. Display-only per [D13] — no click affordance. Render as a two-line `TugBadge` (`layout="label-top"`, `label="Mode"`, `size="sm"`, `role="agent"`) per [#step-0] / [D01].
-- [ ] Do NOT width-stabilize — the chip's width tracks the current mode label and reflows when the mode cycles, per [R01].
-- [ ] Register `Shift+Tab` substrate responder; cycle 4-mode per [D02] (`default → acceptEdits → plan → auto → default`).
-- [ ] Persist mode per-card via tugbank `dev.permission-mode.<cardId>` per [D07]; restore on card mount and send `permission_mode` IPC immediately to align the live session.
-- [ ] Mount chip into Z4B at leftmost position via placement-experiment mapping.
+- [x] Implement `PermissionModeChip` reading `SessionMetadataStore` via `useSyncExternalStore`. Display-only per [D13] — no click affordance. Renders a two-line `TugBadge` (`layout="label-top"`, `label="Mode"`, `size="sm"`, `role="agent"`) per [#step-0] / [D01]; pre-populates from the per-card tugbank value before live metadata lands ([D07]).
+- [x] Do NOT width-stabilize — the chip's width tracks the current mode label and reflows when the mode cycles, per [R01].
+- [x] Register the `Shift+Tab` cycle (4-way per [D02]: `default → acceptEdits → plan → auto → default`). Built via the `CYCLE_PERMISSION_MODE` keybinding (`scope: "key-card"`, no `preventDefaultOnMatch` so ⇧⇥ falls through to reverse-tab nav on non-dev cards per [R02]) + a handler on the dev card's `card-content` responder. **`auto` confirmed as a real mode** (user-supplied terminal screenshots show `accept edits → plan mode → auto mode → default`); `tugcode`'s type union was extended with `"auto"` to match.
+- [x] Persist mode per-card via tugbank `dev.permission-mode/<cardId>` per [D07]; restore on card mount and send `permission_mode` IPC once the session reports its initial mode, aligning the live session (race-free: waits for both live mode known AND persisted value loaded; a manual cycle supersedes a pending restore).
+- [x] Mount chip into Z4B at leftmost position (direct in `indicatorsContent`).
 
 **Tests:**
-- [ ] Pure-logic: chip snapshot reads from store under stable + transitioning states.
-- [ ] Pure-logic: cycle function `cycle(current) → next` for all 4 modes.
-- [ ] Pure-logic: tugbank persistence round-trip per cardId.
-- [ ] Real-app: `just app-test` mount a card, observe chip text, send `Shift+Tab`, assert label flips.
-- [ ] Real-app: cycle mode, close card, reopen; assert chip restores to prior mode.
-- [ ] Real-claude: round-trip `permission_mode` mutation; assert `system_metadata.permissionMode` confirms.
+- [x] Pure-logic: `cyclePermissionMode(current) → next` for all 4 modes + wrap; null / out-of-cycle modes reset to `default` (`permission-mode.test.ts`).
+- [x] Pure-logic: `formatPermissionMode` labels + `null → "…"` + unknown-mode fallback; `parsePersistedPermissionMode` tagged-value parsing (the testable half of the tugbank round-trip).
+- [~] Real-app: mount a card, observe chip text, send `Shift+Tab`, assert label flips — **deferred: app-tests offline (recent build changes).** Re-enable when app-tests are back.
+- [~] Real-app: cycle mode, close card, reopen; assert chip restores — **deferred (app-tests offline).**
+- [~] Real-claude: round-trip `permission_mode`; assert `system_metadata.permissionMode` confirms — **deferred (app-tests offline).**
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run` (warnings-as-errors)
-- [ ] `cd tugcode && bun test`
-- [ ] `cd tugdeck && bun test`
-- [ ] `just app-test permission-mode-chip`
+- [x] `cd tugrust && cargo nextest run` — 1313 passed, 9 skipped (warnings-as-errors clean).
+- [x] `cd tugcode && bun test` — 484 pass / 0 fail. (Also fixed the pre-existing `tugcode` `tsc` baseline: `ActiveTurn` 2-arg constructor, `UserMessage.content` shape, `ContentBlock[]` typing — `tsc --noEmit` now exits 0.)
+- [x] `cd tugdeck && bun test` — 3047 pass / 0 fail (8 new); `tsc` clean; token lint clean.
+- [~] `just app-test permission-mode-chip` — deferred: app-tests offline (recent build changes). tugcode needs a recompile (`feedback_tugcode_compile`) before the app-test runs, since the `"auto"` type widening is source-only until rebuilt.
 
 ---
 
