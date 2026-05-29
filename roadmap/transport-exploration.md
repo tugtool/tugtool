@@ -1376,3 +1376,37 @@ Purely **filesystem** — none of the rules data comes over stream-json (`system
 ### Default write scope for "Add a new rule"
 
 Docs don't state it. The terminal add-rule flow presents a scope picker (Local/Project/User); Local is the natural default (gitignored, personal). → 1.6 offers a scope choice on add, defaulting to **Local** (`.claude/settings.local.json`). Not blocking; refine if the terminal picker's default proves otherwise.
+
+---
+
+## `/permissions` "Recently denied" — denial wire signal (probe)
+
+Probe to answer: how does a denied tool call surface over stream-json, so the dev-card Recently-denied tab can be sourced? Setup: throwaway repo `/tmp/tug-perm-probe.*`, `claude` spawned with the tugcode flags (bidirectional `stream-json`, `--permission-prompt-tool stdio`, `--verbose`), **no `--plugin-dir`** so tugplug's `auto-approve-tug.sh` hook doesn't pre-empt the decision.
+
+### Finding — denials ride the `result` event's `permission_denials[]`
+
+A turn whose tool call was denied emits, on its terminal `result` event:
+
+```jsonc
+"permission_denials": [
+  { "tool_name": "Bash",
+    "tool_use_id": "toolu_…",
+    "tool_input": { "command": "curl -s https://example.com", "description": "…" } }
+]
+```
+
+An undenied turn carries `"permission_denials": []`. Captured via a `deny` rule (`Bash(curl:*)`) in `default` mode — rules resolve **before** the classifier, so this is classifier-independent and reproducible. The denied tool also surfaces to the model as an error `tool_result` (the model then continues in prose); the structured signal for UI is the `result.permission_denials` array.
+
+### tugcode already parses it — but drops it at the IPC boundary
+
+`session.ts` stores `event.permission_denials` into `resultMetadata.permission_denials` (typed in `protocol-types.ts`, covered by `session.test.ts`). BUT the `CostUpdate` IPC frame (`types.ts` `interface CostUpdate`) does **not** include the field — so tugcast/tugdeck never receive it today. (Grep: `permission_denials` appears only in tugcode, nowhere in tugcast/tugdeck.)
+
+### Dev-card Recently-denied plan (ties to [#step-15])
+
+1. Add `permission_denials` to the `CostUpdate` frame (data already in hand at tugcode) — tugcode rebuild (no HMR).
+2. tugcast passes it through; tugdeck accumulates denials per-session in a store that feeds the Recently-denied tab.
+3. Each row = `tool_name` + `tool_input`; "add to Allow/Ask/Deny" derives a matcher (e.g. `Bash(curl:*)`) and writes via the `/api/permissions` endpoint already built.
+
+### Auto-mode-classifier variant — NOT yet confirmed
+
+Auto mode IS enabled for this account (`system:init` → `permissionMode:"auto"`, model `claude-opus-4-8[1m]`), but during the probe the classifier model was in a **transient outage** ("…temporarily unavailable, so auto mode cannot determine the safety of Bash right now"), so a true *classifier* denial couldn't be forced — every classifier-gated action returned the outage message instead of a deny. The classifier denial uses the same `permission_denials` channel; **re-probe when the classifier recovers** to confirm whether it adds a `reason`/`message` beyond `{tool_name, tool_use_id, tool_input}`. (Probe dir + scripts kept at `/tmp/tug-perm-probe.klH6Ir/` for the rerun.)
