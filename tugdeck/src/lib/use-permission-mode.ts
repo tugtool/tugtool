@@ -135,8 +135,10 @@ export function usePermissionMode({
   const cycle = useCallback(() => {
     // Read the current mode fresh from the store rather than a render-time
     // closure so the handler registered once on the responder is never
-    // stale [L07].
-    const current = sessionMetadataStore.getSnapshot().permissionMode;
+    // stale [L07]. A session with no metadata yet is in `default` (what the
+    // chip shows), so cycling from it advances `default → acceptEdits` — not
+    // a no-op reset that would leave the chip unchanged.
+    const current = sessionMetadataStore.getSnapshot().permissionMode ?? "default";
     setMode(cyclePermissionMode(current));
   }, [sessionMetadataStore, setMode]);
 

@@ -1,11 +1,13 @@
 /**
  * slash-commands.test.ts — pure-logic coverage for the local
- * slash-command matcher and the dev-card completion merge ([#step-1c]).
+ * slash-command dispatch infrastructure ([#step-1c]).
  *
- * No store, no DOM — these are the unit-testable halves of Step 1c. The
- * submit-time dispatch, the sheet open, and the no-send-to-claude
- * behavior are covered by the real-app test
- * (`at0089-slash-permissions.test.ts`).
+ * The registry is currently **empty** — the permission *mode* chip is not a
+ * slash command, and `/permissions` (the rules editor) is [#step-1.6]. So the
+ * matcher returns null for everything and the popup shows no local commands.
+ * These tests guard the mechanics (matcher shape, provider, merge) so they
+ * stay correct as the registry repopulates; command-specific matches return
+ * with the first registered command.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -22,49 +24,25 @@ import {
   mergeCommandProviders,
 } from "@/components/tugways/cards/completion-providers/local-commands";
 
-describe("matchLocalSlashCommand", () => {
-  test("matches a bare no-arg command, args empty", () => {
-    expect(matchLocalSlashCommand("/permissions")).toEqual({
-      name: "permissions",
-      args: "",
-    });
+describe("matchLocalSlashCommand (empty registry)", () => {
+  test("the registry is empty", () => {
+    expect(LOCAL_SLASH_COMMANDS).toEqual([]);
   });
 
-  test("tolerates surrounding whitespace", () => {
-    expect(matchLocalSlashCommand("  /permissions  ")).toEqual({
-      name: "permissions",
-      args: "",
-    });
-  });
-
-  test("a no-arg command with trailing args does NOT match", () => {
-    // `/permissions` takes no args; `/permissions foo` is not the command
-    // — it falls through to claude verbatim.
-    expect(matchLocalSlashCommand("/permissions foo")).toBeNull();
-  });
-
-  test("an unknown command returns null (sent to claude)", () => {
-    expect(matchLocalSlashCommand("/commit")).toBeNull();
-    expect(matchLocalSlashCommand("/vim")).toBeNull();
-  });
-
-  test("non-command text returns null", () => {
-    expect(matchLocalSlashCommand("permissions")).toBeNull();
-    expect(matchLocalSlashCommand("hello /permissions")).toBeNull();
-    expect(matchLocalSlashCommand("")).toBeNull();
-    expect(matchLocalSlashCommand("/")).toBeNull();
-  });
-
-  test("the seed registry is all no-arg (arg capture lands with /btw, Step 13)", () => {
-    // The matcher's arg-capture branch (`takesArgs` → capture the
-    // remainder) activates only for arg-accepting commands; the seed
-    // registry has none, so the only exercisable arg behavior today is
-    // the no-arg rejection above (`/permissions foo` → null). When
-    // `/btw <text>` lands with `takesArgs: true`, its capture is asserted
-    // in that step. Pin the seed's shape so this stays honest.
-    const spec = LOCAL_SLASH_COMMANDS.find((c) => c.name === "permissions");
-    expect(spec).toBeDefined();
-    expect(matchLocalSlashCommand("/permissions extra")).toBeNull();
+  test("no input matches — nothing is a local command yet", () => {
+    for (const input of [
+      "/permissions",
+      "  /permissions  ",
+      "/permissions foo",
+      "/commit",
+      "/vim",
+      "permissions",
+      "hello /permissions",
+      "",
+      "/",
+    ]) {
+      expect(matchLocalSlashCommand(input)).toBeNull();
+    }
   });
 });
 
@@ -73,24 +51,11 @@ describe("local-command completion + merge", () => {
     return provider(query).map((item) => item.label);
   }
 
-  test("local provider lists registry commands, filters by substring", () => {
-    const provider = localCommandCompletionProvider();
-    expect(labels(provider, "")).toEqual(
-      LOCAL_SLASH_COMMANDS.map((c) => c.name),
-    );
-    expect(labels(provider, "perm")).toContain("permissions");
-    expect(labels(provider, "zzz")).toEqual([]);
+  test("local provider is empty (no local commands registered yet)", () => {
+    expect(labels(localCommandCompletionProvider(), "")).toEqual([]);
   });
 
-  test("local items are command atoms — same shape as claude's commands", () => {
-    // Uniform with claude's slash completions: accepting one inserts a
-    // command atom. The local/remote split happens at submit, not here.
-    const [item] = localCommandCompletionProvider()("permissions");
-    expect(item.atom.type).toBe("command");
-    expect(item.atom.value).toBe("permissions");
-  });
-
-  test("merge concatenates providers, local first", () => {
+  test("merge passes claude commands through when local is empty", () => {
     const claude: CompletionProvider = () => [
       mkItem("commit"),
       mkItem("deep-research"),
@@ -99,25 +64,19 @@ describe("local-command completion + merge", () => {
       localCommandCompletionProvider(),
       claude,
     );
-    expect(labels(merged, "")).toEqual([
-      "permissions", // local, first
-      "commit",
-      "deep-research",
-    ]);
+    expect(labels(merged, "")).toEqual(["commit", "deep-research"]);
   });
 
-  test("merge dedups by label, first (local) wins", () => {
-    // Claude also reports `/permissions` — the merged list shows it once,
-    // and the surviving entry is the local one (listed first).
-    const claudeWithDup: CompletionProvider = () => [
-      mkItem("permissions"),
-      mkItem("commit"),
-    ];
-    const merged = mergeCommandProviders(
-      localCommandCompletionProvider(),
-      claudeWithDup,
-    );
-    expect(labels(merged, "")).toEqual(["permissions", "commit"]);
+  test("merge dedups by label (local listed first wins, when present)", () => {
+    // Mechanics guard for when the registry repopulates: a name appearing in
+    // both the first and second provider survives once, first-wins.
+    const first: CompletionProvider = () => [mkItem("permissions"), mkItem("a")];
+    const second: CompletionProvider = () => [mkItem("permissions"), mkItem("b")];
+    expect(labels(mergeCommandProviders(first, second), "")).toEqual([
+      "permissions",
+      "a",
+      "b",
+    ]);
   });
 });
 

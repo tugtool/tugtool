@@ -2352,15 +2352,14 @@ export function DevCardBody({
     onSelectMode: permissionMode.setMode,
   });
 
-  // Surface for each local slash command, keyed by command name. Typed as
-  // `Record<LocalCommandName, …>` so a registry entry without a wired surface
-  // is a compile error — key-card dispatch marks `RUN_SLASH_COMMAND` handled
-  // by handler *presence*, so an unmapped command would otherwise be silently
-  // swallowed rather than opened or sent ([#step-1c] / [D23]). Rebuilt each
-  // render; the responder's live-lookup reads the current closures [L07].
-  const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
-    permissions: () => permissionSheet.openPermissionSheet(),
-  };
+  // Surface for each local slash command, keyed by command name. Empty for
+  // now — the permission **mode** sheet is opened by the chip / `Shift+Tab`,
+  // not a slash command, and `/permissions` (the rules editor, [#step-1.6])
+  // isn't built yet. `RUN_SLASH_COMMAND` only fires for a registered command,
+  // so the handler below no-ops on a name it can't map. When a command is
+  // added to the registry this becomes an exhaustive `Record<LocalCommandName,
+  // …>` again ([#step-1c] / [D23]).
+  const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {};
 
   const {
     ResponderScope: CardContentResponderScope,

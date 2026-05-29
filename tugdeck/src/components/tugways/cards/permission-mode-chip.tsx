@@ -98,12 +98,15 @@ export function PermissionModeChip({
     null,
   );
 
-  const mode = liveMode ?? persistedMode;
+  // Absent live metadata and a persisted override, the session is in
+  // `default` (what tugcode spawns with) — show that, not a "…" loading
+  // dash, so a fresh session reads `Default` and the sheet checkmarks it.
+  const mode = liveMode ?? persistedMode ?? "default";
 
   return (
     <TugPushButton
       layout="label-top"
-      label="/permissions"
+      label="Mode"
       size="sm"
       emphasis="tinted"
       role="agent"
@@ -194,7 +197,7 @@ export function usePermissionSheet({
 
   const openPermissionSheet = useCallback(() => {
     const mode =
-      sessionMetadataStore.getSnapshot().permissionMode ?? persistedMode;
+      sessionMetadataStore.getSnapshot().permissionMode ?? persistedMode ?? "default";
     void showSheet({
       title: "Permission Mode",
       description: "Choose how Claude handles file edits and commands.",

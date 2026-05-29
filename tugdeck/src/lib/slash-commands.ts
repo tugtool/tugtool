@@ -56,15 +56,18 @@ export interface LocalSlashCommandSpec {
  * registry entry without a wired surface is a compile error rather than
  * a silently-swallowed command.
  */
-export const LOCAL_SLASH_COMMANDS = [
-  {
-    name: "permissions",
-    description: "Set how Claude handles edits and commands",
-  },
-] as const satisfies readonly LocalSlashCommandSpec[];
+// No local slash commands yet. The permission **mode** chip is a click +
+// `Shift+Tab` control, not a slash command. The real `/permissions` is the
+// rules editor ([#step-1.6]) — `/model` ([#step-2b]) is the other near-term
+// consumer. The dispatch infrastructure (matcher, `RUN_SLASH_COMMAND`,
+// key-card dispatch, submit interception) stays and goes live when an entry
+// is added here. While the registry is empty `LocalCommandName` is `string`;
+// the literal union + compile-time-exhaustive handler return with the first
+// entry.
+export const LOCAL_SLASH_COMMANDS: readonly LocalSlashCommandSpec[] = [];
 
-/** The literal union of registered local-command names. */
-export type LocalCommandName = (typeof LOCAL_SLASH_COMMANDS)[number]["name"];
+/** A registered local-command name (`string` while the registry is empty). */
+export type LocalCommandName = string;
 
 /** A recognized local command: its name plus any trailing args (`""` if none). */
 export interface LocalSlashCommandMatch {

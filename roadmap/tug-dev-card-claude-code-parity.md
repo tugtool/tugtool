@@ -559,7 +559,7 @@ The original question about model-scope (card vs session) is consequently moot �
 | `/resume` | Pick a prior session | 2 | **Overlay pane sheet** ([#step-8]) | 8 |
 | `/status` | Print model/cwd/mode/session | 2 | **Already in Z4B chrome** via [#step-1]-[#step-4]; typed `/status` no-op (chrome is the surface) | 4 |
 | `/model` | Interactive model picker | 2 | **Model picker sheet** ([#step-2b]); dispatched via the [#step-1c] registry — Z4B chip is indicator-only per [#d13-z4b-indicator-only] | 1c, 2b |
-| `/permissions` | Mode picker + rule editor | 2 | Dispatched via the [#step-1c] registry; opens the **mode sheet** from [#step-1] (first consumer of the dispatch layer), expanded to the **rules editor sheet** in [#step-9] — Z4B chip is indicator-only | 1, 1c, 9 |
+| `/permissions` | Tool-permission **rules** editor (allow/ask/deny/workspace) | 2 | **Rules editor sheet** ([#step-1-6]), empirically specced by [#step-1-5], dispatched via the [#step-1c] registry. **Distinct from the permission *mode*** (default/acceptEdits/plan/auto), which is the Z4B chip + `Shift+Tab` ([#step-1]) and has no slash command. | 1c, 1.5, 1.6 |
 | `/diff` | `git diff` in pager | 2 | **Diff sheet** over `git_diff_request` command ([#d21-diff-dedicated-command]) | 10 |
 | `/context` | One-shot context snapshot | 2 | **Persistent HUD** reusing status-bar arc gauge ([#d22-context-arc-gauge]) | 11 |
 | `/memory` | List/edit memory files | 2 | **Sheet** ([#step-12]) | 12 |
@@ -965,7 +965,69 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 **What this step does NOT do:**
 - Does not filter claude's reported commands by the [D14] allowlist — that is [#step-13]; this step only adds local commands and the merge seam.
 - Does not build the `/model` picker (that surface is [#step-2b], gated on [#step-6]); `/model` joins the registry when its sheet exists.
-- Does not change the `/permissions` surface beyond the Step-1 mode sheet; the full rules editor is [#step-9].
+- Ships **no live slash command** (follow-up correction): the permission *mode* control is the Z4B chip + `Shift+Tab`, **not** a slash command, so the registry is empty and the dispatch infra is dormant until [#step-1-6] (`/permissions`) or [#step-2b] (`/model`) register the first command. `/permissions` is its own feature — the rules editor — planned in [#step-1-5] / [#step-1-6], **not** this mode sheet.
+
+---
+
+#### Step 1.5: Empirical capture — Claude Code `/permissions` rules read/write {#step-1-5}
+
+**Depends on:** #step-1c
+
+**Commit:** `test(tugcast): capture how Claude Code /permissions reads + writes rules`
+
+**References:** [D06] protocol baseline, [D10] empirical-capture-before-design (precedent), (#slash-cmd-inventory)
+
+**Problem statement.** `/permissions` is not the permission-*mode* chip — it is Claude Code's tool-permission **rules editor** (the screenshot: tabs `Allow` / `Ask` / `Deny` / `Workspace` / `Recently denied`, tool-matcher patterns like `Bash(… init:*)`, add-rule + search). Before designing the dev-card sheet ([#step-1-6]) we must know *where the rules live and how they're read and written* — the same de-risking [#step-7a] does for `/rewind`. Building against an assumed `settings.json` shape and silently getting the scope or live-reload behavior wrong would be the [R03]-class trap.
+
+**Goal.** Pin the rules data model and the read/write/apply mechanism as the empirical spec for [#step-1-6].
+
+**Tasks (investigation — findings ARE the spec):**
+- [ ] Drive Claude Code's `/permissions` in the terminal: add and remove a rule in each of `Allow` / `Ask` / `Deny`; observe **which file** each write lands in and at **what scope** — user `~/.claude/settings.json`, project `.claude/settings.json`, local `.claude/settings.local.json` — and the default scope per tab/action.
+- [ ] Pin the on-disk **shape**: `permissions: { allow, ask, deny }` (+ `additionalDirectories` for `Workspace`) and the matcher-pattern grammar (`Bash(cmd:*)`, `Read(path)`, `WebFetch(domain:…)`, …).
+- [ ] Determine **`Recently denied`'s source**: is it persisted, or a session log of denied tool calls? Cross-check against the `control_request_forward` (`is_question:false`) deny decisions the dev card already sees on the wire ([#step-15]).
+- [ ] Determine **apply semantics**: does the claude process tugcode spawned pick up a `settings.json` edit **live**, or only on respawn? (Decides whether [#step-1-6] writes-and-continues or writes-and-respawns.)
+- [ ] Determine the **read path for the dev card**: does any of this come over stream-json (`system/init`?) or is it purely filesystem? Decide the dev-card access route — most likely a tugcast filesystem read/write of the settings files, scope-aware.
+- [ ] Record findings in `transport-exploration.md` — the concrete file / scope / shape / apply contract that [#step-1-6] implements against.
+
+**Tests / Checkpoint:**
+- [ ] Findings documented: the concrete file / scope / shape / apply contract that [#step-1-6] implements against.
+
+---
+
+#### Step 1.6: `/permissions` rules editor — full terminal parity {#step-1-6}
+
+**Depends on:** #step-1c, #step-1-5
+
+**Commit:** `feat(dev-card): /permissions rules editor (allow/ask/deny/workspace/recently-denied)`
+
+**References:** the rules data model pinned by [#step-1-5], [D14] slash popup, [D15] card-scoped overlays, [L02] store, [L11] chain, (#slash-cmd-inventory). **Supersedes [#step-9].**
+
+**Goal.** The full `/permissions` rules editor matching the terminal — a tabbed, card-scoped sheet over the tool-permission rules — wired to the read/write/apply mechanism [#step-1-5] pinned. Registering `/permissions` here is the first live consumer of the [#step-1c] dispatch layer.
+
+**Artifacts:**
+- New: `permission-rules-editor.tsx` (tabbed `TugSheet`: `Allow` / `Ask` / `Deny` / `Workspace` / `Recently denied`) + `.css`.
+- New: a rules store/data source reading + writing the settings file(s) per [#step-1-5] (via tugcast filesystem or the determined route), scope-aware.
+- New: any tugcast/tugcode plumbing [#step-1-5] requires (e.g. a settings read/write control command; respawn-on-apply if not live).
+- Modified: `lib/slash-commands.ts` — register `permissions` (restoring the literal-union `LocalCommandName` + the exhaustive `Record<LocalCommandName,…>` handler in `dev-card.tsx`); `/permissions` → opens this editor.
+- New: `at0090-permissions-rules-editor.test.ts` real-app test.
+
+**Tasks:**
+- [ ] Tabbed sheet: `Allow` / `Ask` / `Deny` (rule lists) + `Workspace` (additional dirs) + `Recently denied` (promote-to-rule feed). Tabs via the chain ([L11]); rule lists via `TugListView`.
+- [ ] Rule rows render the matcher pattern; **add a rule** (pattern input + bucket), **remove**, **search** filter — full parity with the screenshot.
+- [ ] `Recently denied` sourced per [#step-1-5] (likely accumulated deny decisions); each row offers "add to Allow/Ask/Deny".
+- [ ] Read + write the settings file(s) at the scope [#step-1-5] determined; honor the apply semantics (live vs respawn).
+- [ ] `/permissions` slash command → opens the editor (key-card `RUN_SLASH_COMMAND`, same path as any local command); card-scoped overlay per [D15], focus restores on dismiss.
+
+**Tests:**
+- [ ] Pure-logic: rule (de)serialization, matcher-pattern parse, search filter, bucket moves.
+- [ ] Real-app (`at0090`): type `/permissions`, accept → editor opens; add a rule → assert it's written to the expected file/scope; switch tabs; remove a rule.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` (if tugcast plumbing added) · `cd tugdeck && bun test` · `just app-test permissions-rules-editor`
+
+**What this step does NOT do:**
+- Does not touch the permission *mode* chip / `Shift+Tab` cycle — mode and rules are distinct features ([#step-1] vs here).
+- Does not implement hunk-level or per-call approval UI — that is the `control_request_forward` flow ([#step-15]).
 
 ---
 
@@ -1243,25 +1305,7 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 9: `/permissions` picker + rules editor sheet {#step-9}
 
-**Depends on:** #step-1c, #step-6
-
-**Commit:** `feat(dev-card): /permissions picker + rules editor overlay sheet`
-
-**References:** [D02] cycle order, [D23] local slash-command dispatch, [D13] Z4B indicator-only, [D15] overlays, (#slash-cmd-inventory)
-
-**Artifacts:**
-- New: `permission-rules-editor.tsx` (overlay sheet per [D15])
-- Modified: `/permissions` already dispatches via the [#step-1c] registry; this step swaps the surface its handler opens from the Step-1 mode sheet to the picker + rules editor
-
-**Tasks:**
-- [ ] Build the sheet with two regions: (a) mode picker (all 6 modes) — selection sends `{type: "permission_mode", mode}`; (b) rule editor for additive session-scoped rules.
-- [ ] List current `permission_suggestions[]`-style rules; allow rule add/remove/edit; serialize as the same shape the `control_request_forward` flow accepts.
-- [ ] Mount as overlay; ESC / click-outside dismisses.
-
-**Tests:**
-- [ ] Pure-logic: rule serialization; mode-selection routing.
-- [ ] Real-app: open via `/permissions`, change mode, dismiss; assert mode change confirmed in Z4B chip and via `system_metadata`.
-- [ ] Real-app: open editor, add a rule, dismiss; assert rule shape on outbound.
+> **Superseded — pulled forward to [#step-1-5] (empirical capture) + [#step-1-6] (rules editor).** This step conflated two distinct features: the permission **mode** (default/acceptEdits/plan/auto — shipped in [#step-1] as the Z4B chip + `Shift+Tab`, no slash command) and the tool-permission **rules** editor (`/permissions` — allow/ask/deny/workspace). With mode already done, the remaining work is the rules editor, planned as [#step-1-6] against the empirical findings of [#step-1-5]. Kept here as a pointer; no separate work.
 
 **Checkpoint:**
 - [ ] `just app-test permission-rules-editor`
