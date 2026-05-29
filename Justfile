@@ -230,6 +230,12 @@ app-release: build wasm
     bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$INSTANCE_ID"
     echo "==> Building tugdeck static assets for the release bundle"
     (cd tugdeck && bun run build)
+    # The xcodebuild copy phase reads binaries from tugrust/target/$CONFIGURATION,
+    # so a Release bundle needs optimized binaries in target/release/. `build`
+    # (a dep) only produces target/debug/, which the Release config never reads.
+    echo "==> Building release Rust binaries for the bundle"
+    (cd tugrust && cargo build --release -p tugcast -p tugexec -p tugutil -p tugrelaunch)
+    bun build --compile tugcode/src/main.ts --outfile tugrust/target/release/tugcode
     find tugapp/Sources -name '*.swift' -exec touch {} +
     xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' build
     APP_DIR="$(xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')/Tug.app"

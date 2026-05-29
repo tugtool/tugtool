@@ -19,7 +19,12 @@
 
 use std::path::Path;
 
-use tracing::{info, warn};
+use tracing::info;
+// `warn!` is only used by `migrate_settings_to_tugbank`, which is itself
+// gated to debug/test builds; gate the import to match so release builds
+// (where the function is compiled out) don't see an unused import.
+#[cfg(any(debug_assertions, test))]
+use tracing::warn;
 #[cfg(any(debug_assertions, test))]
 use tugbank_core::{TugbankClient, Value};
 

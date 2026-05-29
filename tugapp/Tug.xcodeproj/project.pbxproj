@@ -246,6 +246,7 @@
 			files = (
 			);
 			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Info.plist",
 			);
 			name = "Capture build-time identity into Info.plist";
 			outputPaths = (
@@ -261,6 +262,7 @@
 			files = (
 			);
 			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Info.plist",
 			);
 			name = "Assign CFBundleIdentifier per (profile, branch)";
 			outputPaths = (
