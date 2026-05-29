@@ -212,6 +212,30 @@ export class SessionMetadataStore {
   };
 
   /**
+   * Optimistically reflect a client-initiated permission-mode change.
+   *
+   * tugcode is the authority for permission mode — it owns the
+   * `--permission-mode` flag and forwards `set_permission_mode` to claude
+   * — but claude answers with a `control_response`, not a fresh
+   * `system_metadata`, so there is no round-trip to await. The terminal
+   * updates its mode banner optimistically and so do we: the dev card's
+   * `Shift+Tab` / `/permissions` paths call this right after sending the
+   * frame so the Z4B chip reflects the change immediately.
+   *
+   * Self-correcting: the next authoritative `system_metadata` payload (on
+   * respawn / re-init) replaces the snapshot wholesale, carrying the same
+   * mode tugcode applied. A no-op when the mode is unchanged (preserves
+   * snapshot reference stability for `useSyncExternalStore`).
+   */
+  applyPermissionMode(mode: string): void {
+    if (this._snapshot.permissionMode === mode) return;
+    this._snapshot = { ...this._snapshot, permissionMode: mode };
+    for (const listener of this._listeners) {
+      listener();
+    }
+  }
+
+  /**
    * Returns a CompletionProvider for the / trigger.
    * The provider closes over the store and reads current slashCommands on each call.
    * Filters by case-insensitive substring match. Returns CompletionItem[] with

@@ -1,0 +1,28 @@
+/* @tug-pairings: none — layout only. The chip's colour and chrome come from
+   the composed TugBadge; this file just width-stabilizes the value line. */
+
+/*
+ * Width-stabilize the permission-mode value ([R01], opt-in for this chip
+ * only — the other Z4B chips are deliberately not stabilized). The shown
+ * value and a hidden sizer for every menu mode stack in a single grid cell,
+ * so the cell reserves the widest label ("Accept Edits") and cycling the mode
+ * never reflows the chip. The shown value also occupies the cell, so a mode
+ * wider than any sizer (an unexpected live value) still fits rather than
+ * clipping.
+ */
+.permission-mode-chip-value {
+  display: inline-grid;
+  /* Centre each value within the reserved (widest-label) width rather than
+     left-aligning it. */
+  justify-items: center;
+}
+
+.permission-mode-chip-value > * {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+.permission-mode-chip-value-sizer {
+  visibility: hidden;
+  pointer-events: none;
+}

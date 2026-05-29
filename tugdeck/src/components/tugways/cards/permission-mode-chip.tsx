@@ -32,13 +32,18 @@
  * @module components/tugways/cards/permission-mode-chip
  */
 
-import React, { useCallback, useSyncExternalStore } from "react";
+import "./permission-mode-chip.css";
 
-import { TugBadge } from "@/components/tugways/tug-badge";
+import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import { ArrowBigUp } from "lucide-react";
+
+import { TugBadge, type TugBadgeMenuItem } from "@/components/tugways/tug-badge";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
   PERMISSION_MODE_DOMAIN,
+  PERMISSION_MODE_MENU,
   formatPermissionMode,
   parsePersistedPermissionMode,
 } from "@/lib/permission-mode";
@@ -48,11 +53,18 @@ export interface PermissionModeChipProps {
   cardId: string;
   /** Metadata store supplying the live `permissionMode`. */
   sessionMetadataStore: SessionMetadataStore;
+  /**
+   * Sender id the chevron menu stamps on its `set-value` dispatch so the dev
+   * card's form responder can route it to `setMode`. Omit to render the chip
+   * without the menu (display-only).
+   */
+  menuSenderId?: string;
 }
 
 export function PermissionModeChip({
   cardId,
   sessionMetadataStore,
+  menuSenderId,
 }: PermissionModeChipProps): React.ReactElement {
   const liveMode = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -73,6 +85,22 @@ export function PermissionModeChip({
 
   const mode = liveMode ?? persistedMode;
 
+  // Menu items: each mode option dispatches `set-value` carrying the mode
+  // string + this chip's sender. It walks up from the prompt entry to the
+  // dev card's form responder, whose `setValueString` slot for this sender
+  // calls `setMode` [L11]. `set-value` (not `select-value`, which the prompt
+  // entry already claims for route selection) so the dispatch is not
+  // intercepted before it reaches the form responder. Omitted when no
+  // `menuSenderId` — the chip stays display-only.
+  const menuItems = useMemo<TugBadgeMenuItem[] | undefined>(() => {
+    if (menuSenderId === undefined) return undefined;
+    return PERMISSION_MODE_MENU.map((m) => ({
+      action: TUG_ACTIONS.SET_VALUE,
+      value: m,
+      label: formatPermissionMode(m),
+    }));
+  }, [menuSenderId]);
+
   return (
     <TugBadge
       layout="label-top"
@@ -82,8 +110,31 @@ export function PermissionModeChip({
       emphasis="tinted"
       data-slot="permission-mode-chip"
       title={mode === null ? undefined : `Permission mode: ${formatPermissionMode(mode)}`}
+      menuItems={menuItems}
+      menuSenderId={menuSenderId}
+      chevron="up"
+      menuAriaLabel="Permission mode"
+      // Teaching header: shows users they can also cycle the mode with the
+      // keyboard. Non-interactive (a menu label, not a selectable item).
+      menuHeader={
+        menuSenderId === undefined
+          ? undefined
+          : { label: "Tab to cycle", icon: <ArrowBigUp aria-hidden="true" /> }
+      }
     >
-      {formatPermissionMode(mode)}
+      {/* Width-stabilized value: the shown label plus a hidden sizer per menu
+          mode reserve the widest label so cycling the mode never reflows the
+          chip (this chip only, per [R01]). */}
+      <span className="permission-mode-chip-value">
+        <span className="permission-mode-chip-value-shown" data-slot="permission-mode-value">
+          {formatPermissionMode(mode)}
+        </span>
+        {PERMISSION_MODE_MENU.map((m) => (
+          <span key={m} aria-hidden="true" className="permission-mode-chip-value-sizer">
+            {formatPermissionMode(m)}
+          </span>
+        ))}
+      </span>
     </TugBadge>
   );
 }

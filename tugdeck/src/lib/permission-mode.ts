@@ -32,6 +32,20 @@ export const PERMISSION_MODE_CYCLE = [
 export type CyclePermissionMode = (typeof PERMISSION_MODE_CYCLE)[number];
 
 /**
+ * Modes offered in the chip's chevron popup menu. The four cycle modes plus
+ * `bypassPermissions` — the dangerous mode [Q07]/[D02] keep out of the
+ * `Shift+Tab` cycle but reachable through the menu (the menu is the graphical
+ * surface for modes the cycle skips).
+ */
+export const PERMISSION_MODE_MENU = [
+  "default",
+  "acceptEdits",
+  "plan",
+  "auto",
+  "bypassPermissions",
+] as const;
+
+/**
  * Human-readable labels for the chip's content line. Covers the four cycle
  * modes plus the three out-of-cycle modes claude can still report (so a
  * session restored into `bypassPermissions` reads sensibly even though the

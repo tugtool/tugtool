@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import {
   PERMISSION_MODE_CYCLE,
+  PERMISSION_MODE_MENU,
   cyclePermissionMode,
   formatPermissionMode,
   parsePersistedPermissionMode,
@@ -56,6 +57,22 @@ describe("formatPermissionMode", () => {
 
   test("an unknown mode falls back to its raw string", () => {
     expect(formatPermissionMode("futureMode")).toBe("futureMode");
+  });
+});
+
+describe("PERMISSION_MODE_MENU", () => {
+  test("contains every cycle mode plus bypassPermissions", () => {
+    for (const mode of PERMISSION_MODE_CYCLE) {
+      expect(PERMISSION_MODE_MENU).toContain(mode);
+    }
+    expect(PERMISSION_MODE_MENU).toContain("bypassPermissions");
+  });
+
+  test("every menu entry has a human label", () => {
+    for (const mode of PERMISSION_MODE_MENU) {
+      expect(formatPermissionMode(mode)).not.toBe("…");
+      expect(formatPermissionMode(mode)).not.toBe(mode);
+    }
   });
 });
 

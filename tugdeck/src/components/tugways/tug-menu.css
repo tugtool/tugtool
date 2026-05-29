@@ -366,6 +366,9 @@ body {
 
 /* @tug-renders-on: --tugx-menu-bg */
 .tug-menu-label {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
   color: var(--tugx-menu-item-meta);
   font-size: var(--tug-font-size-xs);
   font-weight: var(--tug-font-weight-medium, 500);

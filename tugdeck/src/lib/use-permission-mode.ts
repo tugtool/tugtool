@@ -69,6 +69,8 @@ export interface UsePermissionModeOptions {
 export interface UsePermissionModeResult {
   /** Advance the mode one `Shift+Tab` step (default → acceptEdits → plan → auto → …). */
   cycle: () => void;
+  /** Set the mode to an explicit value (the `/permissions` chevron menu path). */
+  setMode: (mode: string) => void;
 }
 
 export function usePermissionMode({
@@ -91,35 +93,52 @@ export function usePermissionMode({
     null,
   );
 
+  // Pre-armed by a manual `setMode` so the mount-restore effect below never
+  // overrides a change the user just made.
+  const sentRef = useRef(false);
+
+  // Set the mode to an explicit value: send the frame to tugcode → claude,
+  // optimistically reflect it on the chip (no metadata round-trip exists —
+  // see `applyPermissionMode`), and persist it per card. The single path
+  // both `cycle` and the `/permissions` chevron menu funnel through.
+  const setMode = useCallback(
+    (mode: string) => {
+      // A manual change supersedes any not-yet-fired mount restore.
+      sentRef.current = true;
+      // Optimistic chip update + persist first, so the indicator reflects the
+      // change even if the frame send is a no-op (no live session yet).
+      sessionMetadataStore.applyPermissionMode(mode);
+      writePersistedPermissionMode(cardId, mode);
+      codeSessionStore.setPermissionMode(mode);
+    },
+    [cardId, codeSessionStore, sessionMetadataStore],
+  );
+
   // Mount-restore ([D07]). Once the session reports its initial mode, align
   // it to the per-card persisted mode if they differ — so a relaunched card
   // comes back in the mode it was left in. Fires at most once per mount
   // (`sentRef`), and only after BOTH the live mode is known AND a persisted
   // value has loaded, so it neither races the session's first metadata frame
-  // nor fires for a card that has nothing persisted. A manual cycle below
-  // pre-arms `sentRef`, superseding any pending restore.
-  const sentRef = useRef(false);
+  // nor fires for a card that has nothing persisted. A manual change via
+  // `setMode` pre-arms `sentRef`, superseding any pending restore.
   useEffect(() => {
     if (sentRef.current) return;
     if (liveMode === null) return;
     if (persistedMode === null) return;
-    sentRef.current = true;
     if (persistedMode !== liveMode) {
-      codeSessionStore.setPermissionMode(persistedMode);
+      setMode(persistedMode);
+    } else {
+      sentRef.current = true;
     }
-  }, [liveMode, persistedMode, codeSessionStore]);
+  }, [liveMode, persistedMode, setMode]);
 
   const cycle = useCallback(() => {
-    // A manual cycle supersedes any not-yet-fired mount restore.
-    sentRef.current = true;
     // Read the current mode fresh from the store rather than a render-time
     // closure so the handler registered once on the responder is never
     // stale [L07].
     const current = sessionMetadataStore.getSnapshot().permissionMode;
-    const next = cyclePermissionMode(current);
-    codeSessionStore.setPermissionMode(next);
-    writePersistedPermissionMode(cardId, next);
-  }, [cardId, codeSessionStore, sessionMetadataStore]);
+    setMode(cyclePermissionMode(current));
+  }, [sessionMetadataStore, setMode]);
 
-  return { cycle };
+  return { cycle, setMode };
 }

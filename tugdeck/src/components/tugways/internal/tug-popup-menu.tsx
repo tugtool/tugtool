@@ -93,6 +93,8 @@ export interface TugPopupMenuSeparator {
 export interface TugPopupMenuLabel {
   type: "label";
   label: string;
+  /** Optional icon node rendered before the label. */
+  icon?: React.ReactNode;
 }
 
 /** A sub-menu group with its own trigger and nested items. */
@@ -132,6 +134,12 @@ export interface TugPopupMenuProps {
   onSelect: (id: string) => void;
   /** Menu alignment relative to the trigger. Default: "start". */
   align?: "start" | "center" | "end";
+  /**
+   * Preferred side of the trigger the menu opens toward. Radix still
+   * collision-flips when there is no room. Default: Radix's `"bottom"`.
+   * A bottom-anchored trigger (e.g. a prompt-bar chip) passes `"top"`.
+   */
+  side?: "top" | "right" | "bottom" | "left";
   /**
    * Distance in pixels between trigger and menu content.
    * Default: 3px (works well across sm/md/lg button sizes).
@@ -175,6 +183,7 @@ export function TugPopupMenu({
   items,
   onSelect,
   align = "start",
+  side,
   sideOffset = 3,
   defaultOpen = false,
   "data-testid": dataTestId,
@@ -351,6 +360,11 @@ export function TugPopupMenu({
             key={`${keyPrefix}-label-${idx}`}
             className="tug-menu-label"
           >
+            {entry.icon !== undefined && (
+              <span className="tug-menu-item-icon" aria-hidden="true">
+                {entry.icon}
+              </span>
+            )}
             {entry.label}
           </DropdownMenuPrimitive.Label>
         );
@@ -403,6 +417,7 @@ export function TugPopupMenu({
         <DropdownMenuPrimitive.Item
           key={item.id}
           className="tug-menu-item"
+          data-item-id={item.id}
           disabled={item.disabled}
           onSelect={(event) => handleItemSelect(item.id, event)}
           // Hovering a plain root item dismisses any open sub-menu.
@@ -430,6 +445,7 @@ export function TugPopupMenu({
         <DropdownMenuPrimitive.Content
           className={cn("tug-menu-content", inDialog && "tug-menu-in-dialog")}
           align={align}
+          {...(side !== undefined ? { side } : {})}
           sideOffset={sideOffset}
           data-testid={dataTestId}
           onCloseAutoFocus={onCloseAutoFocus}

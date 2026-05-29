@@ -2263,6 +2263,9 @@ export function DevCardBody({
   const lineNumbersId = useId();
   const activeLineGutterId = useId();
   const responseEntryMarginSliderId = useId();
+  // Sender id for the permission chip's chevron menu. Its `select-value`
+  // dispatch is routed to `permissionMode.setMode` in the form responder below.
+  const permissionModeSenderId = useId();
 
   // --- Card settings (title-bar `…` button). ---
   //
@@ -2338,6 +2341,13 @@ export function DevCardBody({
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
+      // The permission chip's chevron menu dispatches `set-value` with the
+      // chosen mode; route it to `setMode`. This form responder is the first
+      // ancestor the dispatch walks to from the prompt entry (card-content is
+      // a sibling, not an ancestor, of this responder — so it can't receive
+      // the walk; the `Shift+Tab` cycle reaches card-content via the separate
+      // key-card DOM path).
+      [permissionModeSenderId]: (v: string) => permissionMode.setMode(v),
     },
     setValueNumber: {
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
@@ -2573,16 +2583,17 @@ export function DevCardBody({
                 onAfterSubmit={handleAfterSubmit}
                 indicatorsContent={
                   <>
-                    <PermissionModeChip
-                      cardId={cardId}
-                      sessionMetadataStore={sessionMetadataStore}
-                    />
                     <DevRouteIndicatorBadge
                       codeSessionStore={codeSessionStore}
                       sessionMetadataStore={sessionMetadataStore}
                     />
                     {effectivePromptStatusContent}
                     <DevSessionIdBadge cardId={cardId} />
+                    <PermissionModeChip
+                      cardId={cardId}
+                      sessionMetadataStore={sessionMetadataStore}
+                      menuSenderId={permissionModeSenderId}
+                    />
                     {effectiveFooterContent}
                   </>
                 }
