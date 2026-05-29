@@ -982,15 +982,15 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 **Goal.** Pin the rules data model and the read/write/apply mechanism as the empirical spec for [#step-1-6].
 
 **Tasks (investigation — findings ARE the spec):**
-- [ ] Drive Claude Code's `/permissions` in the terminal: add and remove a rule in each of `Allow` / `Ask` / `Deny`; observe **which file** each write lands in and at **what scope** — user `~/.claude/settings.json`, project `.claude/settings.json`, local `.claude/settings.local.json` — and the default scope per tab/action.
-- [ ] Pin the on-disk **shape**: `permissions: { allow, ask, deny }` (+ `additionalDirectories` for `Workspace`) and the matcher-pattern grammar (`Bash(cmd:*)`, `Read(path)`, `WebFetch(domain:…)`, …).
-- [ ] Determine **`Recently denied`'s source**: is it persisted, or a session log of denied tool calls? Cross-check against the `control_request_forward` (`is_question:false`) deny decisions the dev card already sees on the wire ([#step-15]).
-- [ ] Determine **apply semantics**: does the claude process tugcode spawned pick up a `settings.json` edit **live**, or only on respawn? (Decides whether [#step-1-6] writes-and-continues or writes-and-respawns.)
-- [ ] Determine the **read path for the dev card**: does any of this come over stream-json (`system/init`?) or is it purely filesystem? Decide the dev-card access route — most likely a tugcast filesystem read/write of the settings files, scope-aware.
-- [ ] Record findings in `transport-exploration.md` — the concrete file / scope / shape / apply contract that [#step-1-6] implements against.
+- [x] Drive Claude Code's `/permissions` in the terminal: add and remove a rule in each of `Allow` / `Ask` / `Deny`; observe **which file** each write lands in and at **what scope** — user `~/.claude/settings.json`, project `.claude/settings.json`, local `.claude/settings.local.json` — and the default scope per tab/action. → captured via the six-tab UI + on-disk files: this repo's rules live in `.claude/settings.local.json` (Local, gitignored); Project absent, User has no `permissions` block. Precedence Managed > CLI > **Local > Project > User**, rules **merge (union)**. Add-rule default scope = Local (terminal picker offers Local/Project/User; one minor item to confirm against the picker's default — non-blocking).
+- [x] Pin the on-disk **shape**: `permissions: { allow, ask, deny }` (+ `additionalDirectories` for `Workspace`) and the matcher-pattern grammar (`Bash(cmd:*)`, `Read(path)`, `WebFetch(domain:…)`, …). → confirmed 1:1 against `settings.local.json`; grammar `Tool` | `Tool(specifier)`; `defaultMode` is the *mode* (Step 1), not a rule, but shares the object.
+- [x] Determine **`Recently denied`'s source**: is it persisted, or a session log of denied tool calls? Cross-check against the `control_request_forward` (`is_question:false`) deny decisions the dev card already sees on the wire ([#step-15]). → **runtime, not persisted**; UI says "denied by the auto mode classifier"; sourced 1.6-side from a session deny log cross-checking the wire denials.
+- [x] Determine **apply semantics**: does the claude process tugcode spawned pick up a `settings.json` edit **live**, or only on respawn? (Decides whether [#step-1-6] writes-and-continues or writes-and-respawns.) → **LIVE** (docs: Claude Code watches settings files and reloads `permissions`/`hooks` without restart, firing `ConfigChange`). → 1.6 **writes-and-continues**. *Confirm-at-1.6-start caveat:* not yet verified for the print/stream-json child specifically — cheap mid-session deny-rule check when 1.6 begins; fall back to respawn only if it (unexpectedly) doesn't watch.
+- [x] Determine the **read path for the dev card**: does any of this come over stream-json (`system/init`?) or is it purely filesystem? Decide the dev-card access route — most likely a tugcast filesystem read/write of the settings files, scope-aware. → **purely filesystem** (`system/init` carries tools + mode, not rules); route is **tugcast filesystem read/write, scope-aware**.
+- [x] Record findings in `transport-exploration.md` — the concrete file / scope / shape / apply contract that [#step-1-6] implements against. → recorded under "`/permissions` rules — read/write/apply capture".
 
 **Tests / Checkpoint:**
-- [ ] Findings documented: the concrete file / scope / shape / apply contract that [#step-1-6] implements against.
+- [x] Findings documented: the concrete file / scope / shape / apply contract that [#step-1-6] implements against.
 
 ---
 

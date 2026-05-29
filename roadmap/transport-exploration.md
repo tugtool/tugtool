@@ -1312,3 +1312,67 @@ plugins: [{ name: "tugplug", path: ".../tugplug", source: "tugplug@inline" }]
 - End-to-end tugcast WebSocket testing (needs T6 `--no-auth`)
 - Hook visibility investigation (E3 — open but non-blocking)
 - Background tasks, MCP, elicitation (E6 — open but non-blocking)
+
+---
+
+## `/permissions` rules — read/write/apply capture (dev-card parity [#step-1-5])
+
+Empirical spec for the `/permissions` **rules editor** ([#step-1-6]) — distinct from the permission **mode** chip ([#step-1]). Captured from: the terminal `/permissions` UI (all six tabs), the real on-disk settings files in this repo, and the official Claude Code settings docs (`code.claude.com/docs/en/settings`).
+
+### UI surface (terminal `/permissions`)
+
+Tab bar, left→right: **Permissions · Recently denied · Allow · Ask · Deny · Workspace**. `←/→` switch, `↓` select, `Esc` cancel.
+
+| Tab | Description copy | Body |
+|-----|------------------|------|
+| Recently denied | "No recent denials. Commands denied by the auto mode classifier will appear here." | runtime list (empty when none) |
+| Allow | "Claude Code won't ask before using allowed tools." | Search box + `1. Add a new rule…` + numbered existing rules |
+| Ask | "Claude Code will always ask for confirmation before using these tools." | Search box + `Add a new rule…` |
+| Deny | "Claude Code will always reject requests to use denied tools." | Search box + `Add a new rule…` |
+| Workspace | "Claude Code can read files in the workspace, and make edits when auto-accept edits is on." | original cwd (read-only) + `Add directory…` |
+
+### On-disk shape (confirmed against this repo's `.claude/settings.local.json`)
+
+```jsonc
+"permissions": {
+  "allow": [ "Bash(./tugcode/target/debug/tugcode init:*)", "Skill(dash)", "WebFetch(domain:docs.claude.com)", "Read(//tmp/**)", "WebSearch", ... ],
+  "ask":   [ ... ],          // absent here → Ask tab empty
+  "deny":  [ ... ],          // absent here → Deny tab empty
+  "additionalDirectories": [ ... ],   // the Workspace tab; absent here → only the read-only cwd shows
+  "defaultMode": "default"   // the *mode* (Step 1), NOT a rule — lives in the same object
+}
+```
+
+- **Allow-tab list maps 1:1 (same order) to `permissions.allow`.** The numbered terminal rows are exactly the array entries; `1. Add a new rule…` is a UI affordance, not data.
+- **Matcher grammar:** `Tool` (bare, e.g. `WebSearch`) or `Tool(specifier)`. Observed specifiers: `Bash(<cmd>:*)` (prefix match, `:*` wildcard tail), `Read(//abs/path/**)` (glob), `WebFetch(domain:<host>)`, `Skill(<name>)`. Per docs the canonical form is `Tool(npm run *)` / `Read(./.env)` — the `:*` and `//…` forms are how this repo's rules happen to be written.
+
+### Scopes & precedence (docs)
+
+| Scope | File | Shared | Notes |
+|-------|------|--------|-------|
+| User | `~/.claude/settings.json` | no | this repo: has general settings, **no `permissions` block** |
+| Project | `.claude/settings.json` | yes (git-committed) | this repo: **absent** |
+| Local | `.claude/settings.local.json` | no (gitignored) | **this repo's rules live here** |
+| Managed | system/MDM | yes (admin) | cannot be overridden |
+
+Precedence high→low: **Managed > CLI args > Local > Project > User.** Rules **merge across scopes (union), not override.** → the dev-card editor must read the union and be scope-aware on write.
+
+### Recently-denied source
+
+Runtime, **not persisted to settings.json**. UI copy: denials from the **auto-mode classifier**. Cross-checks with the `control_request_forward` (`is_question:false`) deny decisions the dev card already sees on the wire ([#step-15]). → 1.6 sources this tab from a session-local deny log, with per-row "add to Allow/Ask/Deny".
+
+### Apply semantics — **LIVE (no respawn)**
+
+Docs (`code.claude.com/docs/en/settings`): *"Claude Code watches your settings files and reloads them when they change, so edits to most keys apply to the running session without a restart. This includes `permissions`, `hooks`, and credential helpers… The reload covers user, project, local, and managed settings, and the `ConfigChange` hook fires for each detected change."*
+
+→ **[#step-1-6] writes-and-continues**: write the settings file via tugcast filesystem, the running claude reloads `permissions` automatically. No respawn, no confirmation-to-restart flow.
+
+> **Confirm-at-1.6-start caveat:** the docs describe Claude Code generally; the process tugcode spawns runs in **print / stream-json** mode. Same binary, so the file watcher almost certainly runs there too — but this is the one claim not yet verified *in our spawn context*. Cheap check when 1.6 starts: write a `deny` rule into `settings.local.json` mid-session and confirm the next matching tool call is blocked without respawning tugcode's claude. If (unexpectedly) print-mode doesn't watch, 1.6 falls back to write-then-respawn.
+
+### Read path for the dev card
+
+Purely **filesystem** — none of the rules data comes over stream-json (`system/init` carries tools + permission *mode*, not the allow/ask/deny rules). → dev-card route is a **tugcast filesystem read/write of the settings files, scope-aware**, as [#step-1-6] hypothesized.
+
+### Default write scope for "Add a new rule"
+
+Docs don't state it. The terminal add-rule flow presents a scope picker (Local/Project/User); Local is the natural default (gitignored, personal). → 1.6 offers a scope choice on add, defaulting to **Local** (`.claude/settings.local.json`). Not blocking; refine if the terminal picker's default proves otherwise.
