@@ -293,6 +293,23 @@ body {
   height: 1rem;
 }
 
+/* Leading check column for single-select menus. Reserved (fixed width) on
+   every item that carries a `selected` state — so unchecked items indent the
+   same as the checked one and labels align. Empty when unchecked. */
+.tug-menu-item-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.tug-menu-item-check svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 .tug-menu-item-label {
   flex: 1;
   white-space: nowrap;

@@ -61,7 +61,7 @@
 import "../tug-menu.css";
 
 import React, { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
@@ -82,6 +82,14 @@ export interface TugPopupMenuItem {
   icon?: React.ReactNode;
   /** Whether this item is disabled. Disabled items are not interactive. */
   disabled?: boolean;
+  /**
+   * Checkmark state for single-select menus. When defined, the item reserves
+   * a leading check column (so its label aligns with checked siblings) and
+   * shows a checkmark when `true`. Set it on EVERY item of a single-select
+   * menu so all labels align. Leave `undefined` for plain action menus (no
+   * check column).
+   */
+  selected?: boolean;
 }
 
 /** A visual separator line between menu sections. */
@@ -424,7 +432,15 @@ export function TugPopupMenu({
           // Nested items leave `openSubKey` alone — the cursor is
           // inside the sub-menu they belong to.
           onPointerEnter={topLevel ? () => setOpenSubKey(null) : undefined}
+          {...(item.selected !== undefined
+            ? { role: "menuitemradio", "aria-checked": item.selected }
+            : {})}
         >
+          {item.selected !== undefined && (
+            <span className="tug-menu-item-check" aria-hidden="true">
+              {item.selected ? <Check /> : null}
+            </span>
+          )}
           {item.icon !== undefined && (
             <span className="tug-menu-item-icon" aria-hidden="true">
               {item.icon}

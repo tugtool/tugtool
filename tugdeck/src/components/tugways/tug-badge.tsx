@@ -96,6 +96,12 @@ export interface TugBadgeMenuItem {
   icon?: React.ReactNode;
   /** Disable the item. */
   disabled?: boolean;
+  /**
+   * Checkmark state for single-select menus. When defined, the menu reserves
+   * a leading check column and the item with `selected: true` shows a
+   * checkmark. Set it on every item so labels align.
+   */
+  selected?: boolean;
 }
 
 /**
@@ -248,6 +254,7 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
         label: item.label,
         icon: item.icon,
         disabled: item.disabled,
+        selected: item.selected,
       })),
     ];
     const handleMenuSelect = useCallback(

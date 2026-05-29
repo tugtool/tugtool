@@ -35,7 +35,6 @@
 import "./permission-mode-chip.css";
 
 import React, { useCallback, useMemo, useSyncExternalStore } from "react";
-import { ArrowBigUp } from "lucide-react";
 
 import { TugBadge, type TugBadgeMenuItem } from "@/components/tugways/tug-badge";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -98,8 +97,11 @@ export function PermissionModeChip({
       action: TUG_ACTIONS.SET_VALUE,
       value: m,
       label: formatPermissionMode(m),
+      // Checkmark the current mode; every item carries `selected` so the
+      // unchecked rows reserve the same leading indent.
+      selected: m === mode,
     }));
-  }, [menuSenderId]);
+  }, [menuSenderId, mode]);
 
   return (
     <TugBadge
@@ -114,13 +116,6 @@ export function PermissionModeChip({
       menuSenderId={menuSenderId}
       chevron="up"
       menuAriaLabel="Permission mode"
-      // Teaching header: shows users they can also cycle the mode with the
-      // keyboard. Non-interactive (a menu label, not a selectable item).
-      menuHeader={
-        menuSenderId === undefined
-          ? undefined
-          : { label: "Tab to cycle", icon: <ArrowBigUp aria-hidden="true" /> }
-      }
     >
       {/* Width-stabilized value: the shown label plus a hidden sizer per menu
           mode reserve the widest label so cycling the mode never reflows the

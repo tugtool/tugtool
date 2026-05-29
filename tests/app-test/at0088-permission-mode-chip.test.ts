@@ -150,21 +150,24 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(AUTO_ITEM)}) !== null`,
             { timeoutMs: 4000 },
           );
-          // The teaching header is present and non-selectable (a menu label,
-          // not an item — no data-item-id, so it can never be chosen).
-          expect(
-            await app.evalJS<boolean>(
-              `(function(){
-                var labels = document.querySelectorAll('.tug-menu-content .tug-menu-label');
-                for (var i = 0; i < labels.length; i++) {
-                  if (labels[i].textContent.indexOf("Tab to cycle") !== -1 &&
-                      !labels[i].hasAttribute('data-item-id')) return true;
+          // The current mode is checkmarked; every item reserves the check
+          // column (indent) so the labels align.
+          const checkState = await app.evalJS<{ total: number; withSlot: number; checked: string[] }>(
+            `(function(){
+              var items = document.querySelectorAll('.tug-menu-content [data-item-id]');
+              var withSlot = 0, checked = [];
+              for (var i = 0; i < items.length; i++) {
+                var slot = items[i].querySelector('.tug-menu-item-check');
+                if (slot) withSlot++;
+                if (slot && slot.querySelector('svg')) {
+                  checked.push(items[i].querySelector('.tug-menu-item-label').textContent.trim());
                 }
-                return false;
-              })()`,
-            ),
-            'menu must show a non-selectable "Tab to cycle" header',
-          ).toBe(true);
+              }
+              return { total: items.length, withSlot: withSlot, checked: checked };
+            })()`,
+          );
+          expect(checkState.withSlot, "every menu item must reserve the check column").toBe(checkState.total);
+          expect(checkState.checked, "exactly the current mode is checkmarked").toEqual([afterCycle!]);
           await app.nativeClickAtElement(AUTO_ITEM);
           await app.waitForCondition<boolean>(
             `(function(){

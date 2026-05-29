@@ -212,10 +212,10 @@ const RATE_LIMIT_WIDE = "rate-limited";
  * no-op here — the demo is the chevron hint + menu open/close behavior.
  */
 const BADGE_MENU_ITEMS: TugBadgeMenuItem[] = [
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "default", label: "Default" },
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "acceptEdits", label: "Accept Edits" },
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "plan", label: "Plan" },
-  { action: TUG_ACTIONS.SELECT_VALUE, value: "auto", label: "Auto" },
+  { action: TUG_ACTIONS.SELECT_VALUE, value: "default", label: "Default", selected: false },
+  { action: TUG_ACTIONS.SELECT_VALUE, value: "acceptEdits", label: "Accept Edits", selected: true },
+  { action: TUG_ACTIONS.SELECT_VALUE, value: "plan", label: "Plan", selected: false },
+  { action: TUG_ACTIONS.SELECT_VALUE, value: "auto", label: "Auto", selected: false },
 ];
 
 /**
