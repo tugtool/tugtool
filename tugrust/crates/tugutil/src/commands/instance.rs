@@ -171,7 +171,10 @@ fn run_stop(instance_id: &str, timeout_secs: u64) -> Result<i32, String> {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    println!("still alive after {}s — escalating to SIGKILL", timeout_secs.max(1));
+    println!(
+        "still alive after {}s — escalating to SIGKILL",
+        timeout_secs.max(1)
+    );
     if have_host && pid_alive(host_pid) {
         send_signal(host_pid, libc::SIGKILL);
     }
