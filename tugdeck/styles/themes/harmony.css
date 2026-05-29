@@ -325,19 +325,21 @@ body {
   --tug7-element-control-border-filled-danger-hover: --tug-color(red, i: 100, t: 44);
   --tug7-element-control-border-filled-danger-active: --tug-color(red, i: 100, t: 38);
 
-  /* Filled Agent */
-  --tug7-surface-control-primary-filled-agent-rest: --tug-color(violet, t: 45);
-  --tug7-surface-control-primary-filled-agent-hover: --tug-color(violet, i: 55, t: 40);
-  --tug7-surface-control-primary-filled-agent-active: --tug-color(violet, i: 90, t: 35);
+  /* Filled Agent — violet reads perceptually brighter than its L suggests
+     (saturated purple), so its whole ramp sits 5 tone points darker for
+     legible white text on the fill. */
+  --tug7-surface-control-primary-filled-agent-rest: --tug-color(violet, t: 40);
+  --tug7-surface-control-primary-filled-agent-hover: --tug-color(violet, i: 55, t: 35);
+  --tug7-surface-control-primary-filled-agent-active: --tug-color(violet, i: 90, t: 30);
   --tug7-element-control-text-filled-agent-rest: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-text-filled-agent-hover: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-text-filled-agent-active: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-agent-rest: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-agent-hover: --tug-color(indigo, i: 3, t: 100);
   --tug7-element-control-icon-filled-agent-active: --tug-color(indigo, i: 3, t: 100);
-  --tug7-element-control-border-filled-agent-rest: --tug-color(violet, i: 55, t: 34);
-  --tug7-element-control-border-filled-agent-hover: --tug-color(violet, i: 65, t: 40);
-  --tug7-element-control-border-filled-agent-active: --tug-color(violet, i: 90, t: 35);
+  --tug7-element-control-border-filled-agent-rest: --tug-color(violet, i: 55, t: 29);
+  --tug7-element-control-border-filled-agent-hover: --tug-color(violet, i: 65, t: 35);
+  --tug7-element-control-border-filled-agent-active: --tug-color(violet, i: 90, t: 30);
 
   /* Filled Data */
   --tug7-surface-control-primary-filled-data-rest: --tug-color(teal, t: 45);
