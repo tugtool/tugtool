@@ -953,6 +953,41 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // =========================================================================
+  // Control — Tinted (chip emphasis shared with TugBadge; label/icon + border
+  // over the role-tinted surface, deepening across rest/hover/active)
+  // =========================================================================
+  { element: "--tug7-element-control-text-tinted-accent-rest", surface: "--tug7-surface-control-primary-tinted-accent-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-accent-hover", surface: "--tug7-surface-control-primary-tinted-accent-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-accent-active", surface: "--tug7-surface-control-primary-tinted-accent-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-accent-rest", surface: "--tug7-surface-control-primary-tinted-accent-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-accent-hover", surface: "--tug7-surface-control-primary-tinted-accent-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-accent-active", surface: "--tug7-surface-control-primary-tinted-accent-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-action-rest", surface: "--tug7-surface-control-primary-tinted-action-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-action-hover", surface: "--tug7-surface-control-primary-tinted-action-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-action-active", surface: "--tug7-surface-control-primary-tinted-action-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-action-rest", surface: "--tug7-surface-control-primary-tinted-action-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-action-hover", surface: "--tug7-surface-control-primary-tinted-action-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-action-active", surface: "--tug7-surface-control-primary-tinted-action-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-agent-rest", surface: "--tug7-surface-control-primary-tinted-agent-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-agent-hover", surface: "--tug7-surface-control-primary-tinted-agent-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-agent-active", surface: "--tug7-surface-control-primary-tinted-agent-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-agent-rest", surface: "--tug7-surface-control-primary-tinted-agent-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-agent-hover", surface: "--tug7-surface-control-primary-tinted-agent-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-agent-active", surface: "--tug7-surface-control-primary-tinted-agent-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-data-rest", surface: "--tug7-surface-control-primary-tinted-data-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-data-hover", surface: "--tug7-surface-control-primary-tinted-data-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-data-active", surface: "--tug7-surface-control-primary-tinted-data-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-data-rest", surface: "--tug7-surface-control-primary-tinted-data-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-data-hover", surface: "--tug7-surface-control-primary-tinted-data-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-data-active", surface: "--tug7-surface-control-primary-tinted-data-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-danger-rest", surface: "--tug7-surface-control-primary-tinted-danger-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-danger-hover", surface: "--tug7-surface-control-primary-tinted-danger-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-tinted-danger-active", surface: "--tug7-surface-control-primary-tinted-danger-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-danger-rest", surface: "--tug7-surface-control-primary-tinted-danger-rest", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-danger-hover", surface: "--tug7-surface-control-primary-tinted-danger-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-tinted-danger-active", surface: "--tug7-surface-control-primary-tinted-danger-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+
+  // =========================================================================
   // Control — Selected / Highlighted states
   // =========================================================================
   {

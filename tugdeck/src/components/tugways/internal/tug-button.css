@@ -114,16 +114,36 @@
   --tug7-element-control-text-ghost-agent-active       | --tug7-surface-control-primary-ghost-agent-active       | control
   --tug7-element-control-border-ghost-agent-active     | --tug7-surface-control-primary-ghost-agent-active       | control
   --tug7-element-control-icon-ghost-agent-active       | --tug7-surface-global-primary-normal-default-rest       | control
-  --tug7-element-badge-text-tinted-accent-rest         | --tug7-surface-badge-primary-tinted-accent-rest         | informational
-  --tug7-element-badge-border-tinted-accent-rest       | --tug7-surface-badge-primary-tinted-accent-rest         | informational
-  --tug7-element-badge-text-tinted-action-rest         | --tug7-surface-badge-primary-tinted-action-rest         | informational
-  --tug7-element-badge-border-tinted-action-rest       | --tug7-surface-badge-primary-tinted-action-rest         | informational
-  --tug7-element-badge-text-tinted-agent-rest          | --tug7-surface-badge-primary-tinted-agent-rest          | informational
-  --tug7-element-badge-border-tinted-agent-rest        | --tug7-surface-badge-primary-tinted-agent-rest          | informational
-  --tug7-element-badge-text-tinted-data-rest           | --tug7-surface-badge-primary-tinted-data-rest           | informational
-  --tug7-element-badge-border-tinted-data-rest         | --tug7-surface-badge-primary-tinted-data-rest           | informational
-  --tug7-element-badge-text-tinted-danger-rest         | --tug7-surface-badge-primary-tinted-danger-rest         | informational
-  --tug7-element-badge-border-tinted-danger-rest       | --tug7-surface-badge-primary-tinted-danger-rest         | informational
+  --tug7-element-control-text-tinted-accent-rest       | --tug7-surface-control-primary-tinted-accent-rest       | control
+  --tug7-element-control-text-tinted-accent-hover      | --tug7-surface-control-primary-tinted-accent-hover      | control
+  --tug7-element-control-text-tinted-accent-active     | --tug7-surface-control-primary-tinted-accent-active     | control
+  --tug7-element-control-border-tinted-accent-rest     | --tug7-surface-control-primary-tinted-accent-rest       | control
+  --tug7-element-control-border-tinted-accent-hover    | --tug7-surface-control-primary-tinted-accent-hover      | control
+  --tug7-element-control-border-tinted-accent-active   | --tug7-surface-control-primary-tinted-accent-active     | control
+  --tug7-element-control-text-tinted-action-rest       | --tug7-surface-control-primary-tinted-action-rest       | control
+  --tug7-element-control-text-tinted-action-hover      | --tug7-surface-control-primary-tinted-action-hover      | control
+  --tug7-element-control-text-tinted-action-active     | --tug7-surface-control-primary-tinted-action-active     | control
+  --tug7-element-control-border-tinted-action-rest     | --tug7-surface-control-primary-tinted-action-rest       | control
+  --tug7-element-control-border-tinted-action-hover    | --tug7-surface-control-primary-tinted-action-hover      | control
+  --tug7-element-control-border-tinted-action-active   | --tug7-surface-control-primary-tinted-action-active     | control
+  --tug7-element-control-text-tinted-agent-rest        | --tug7-surface-control-primary-tinted-agent-rest        | control
+  --tug7-element-control-text-tinted-agent-hover       | --tug7-surface-control-primary-tinted-agent-hover       | control
+  --tug7-element-control-text-tinted-agent-active      | --tug7-surface-control-primary-tinted-agent-active      | control
+  --tug7-element-control-border-tinted-agent-rest      | --tug7-surface-control-primary-tinted-agent-rest        | control
+  --tug7-element-control-border-tinted-agent-hover     | --tug7-surface-control-primary-tinted-agent-hover       | control
+  --tug7-element-control-border-tinted-agent-active    | --tug7-surface-control-primary-tinted-agent-active      | control
+  --tug7-element-control-text-tinted-data-rest         | --tug7-surface-control-primary-tinted-data-rest         | control
+  --tug7-element-control-text-tinted-data-hover        | --tug7-surface-control-primary-tinted-data-hover        | control
+  --tug7-element-control-text-tinted-data-active       | --tug7-surface-control-primary-tinted-data-active       | control
+  --tug7-element-control-border-tinted-data-rest       | --tug7-surface-control-primary-tinted-data-rest         | control
+  --tug7-element-control-border-tinted-data-hover      | --tug7-surface-control-primary-tinted-data-hover        | control
+  --tug7-element-control-border-tinted-data-active     | --tug7-surface-control-primary-tinted-data-active       | control
+  --tug7-element-control-text-tinted-danger-rest       | --tug7-surface-control-primary-tinted-danger-rest       | control
+  --tug7-element-control-text-tinted-danger-hover      | --tug7-surface-control-primary-tinted-danger-hover      | control
+  --tug7-element-control-text-tinted-danger-active     | --tug7-surface-control-primary-tinted-danger-active     | control
+  --tug7-element-control-border-tinted-danger-rest     | --tug7-surface-control-primary-tinted-danger-rest       | control
+  --tug7-element-control-border-tinted-danger-hover    | --tug7-surface-control-primary-tinted-danger-hover      | control
+  --tug7-element-control-border-tinted-danger-active   | --tug7-surface-control-primary-tinted-danger-active     | control
 } */
 
 /**
@@ -1096,11 +1116,11 @@ body {
    behind role-colored text — the dev-card status-chip look — for buttons that
    should read as a quiet chip rather than a solid call to action.
 
-   Tinted reuses TugBadge's `tinted` tokens directly (single source of truth,
-   already tuned for light + dark themes) — the mirror image of TugBadge's
-   `filled` reusing the control tokens. It is static across rest / hover /
-   active (it reads as a chip, like a badge), so each role re-asserts its colors
-   on :hover and :active to override the base button's outlined-action hover.
+   Tinted has its own control tokens whose rest state mirrors the badge tinted
+   recipe; hover / active deepen the tint and crisp the border for a clearly
+   visible, theme-sensitive interaction — defined per theme in brio.css /
+   harmony.css like every other control emphasis (the wash sits over the theme
+   canvas, so the feedback reads correctly in light and dark).
 
    Roles: the five semantic colour roles tinted shares with TugBadge
    (accent / action / agent / data / danger). The control-only `option` role
@@ -1110,87 +1130,177 @@ body {
 
 /* --- tinted-accent --- */
 
-.tug-button-tinted-accent,
-.tug-button-tinted-accent:hover:not(:disabled):not([aria-disabled="true"]),
-.tug-button-tinted-accent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug7-surface-badge-primary-tinted-accent-rest);
-  color: var(--tug7-element-badge-text-tinted-accent-rest);
-  border-color: var(--tug7-element-badge-border-tinted-accent-rest);
+.tug-button-tinted-accent {
+  background-color: var(--tug7-surface-control-primary-tinted-accent-rest);
+  color: var(--tug7-element-control-text-tinted-accent-rest);
+  border-color: var(--tug7-element-control-border-tinted-accent-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-badge-primary-tinted-accent-rest */
-.tug-button-tinted-accent svg,
-.tug-button-tinted-accent:hover:not(:disabled):not([aria-disabled="true"]) svg,
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-accent-rest */
+.tug-button-tinted-accent svg {
+  color: var(--tug7-element-control-text-tinted-accent-rest);
+}
+
+.tug-button-tinted-accent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-accent-hover);
+  color: var(--tug7-element-control-text-tinted-accent-hover);
+  border-color: var(--tug7-element-control-border-tinted-accent-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-accent-hover */
+.tug-button-tinted-accent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-text-tinted-accent-hover);
+}
+
+.tug-button-tinted-accent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-accent-active);
+  color: var(--tug7-element-control-text-tinted-accent-active);
+  border-color: var(--tug7-element-control-border-tinted-accent-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-accent-active */
 .tug-button-tinted-accent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug7-element-badge-text-tinted-accent-rest);
+  color: var(--tug7-element-control-text-tinted-accent-active);
 }
 
 /* --- tinted-action --- */
 
-.tug-button-tinted-action,
-.tug-button-tinted-action:hover:not(:disabled):not([aria-disabled="true"]),
-.tug-button-tinted-action:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug7-surface-badge-primary-tinted-action-rest);
-  color: var(--tug7-element-badge-text-tinted-action-rest);
-  border-color: var(--tug7-element-badge-border-tinted-action-rest);
+.tug-button-tinted-action {
+  background-color: var(--tug7-surface-control-primary-tinted-action-rest);
+  color: var(--tug7-element-control-text-tinted-action-rest);
+  border-color: var(--tug7-element-control-border-tinted-action-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-badge-primary-tinted-action-rest */
-.tug-button-tinted-action svg,
-.tug-button-tinted-action:hover:not(:disabled):not([aria-disabled="true"]) svg,
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-action-rest */
+.tug-button-tinted-action svg {
+  color: var(--tug7-element-control-text-tinted-action-rest);
+}
+
+.tug-button-tinted-action:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-action-hover);
+  color: var(--tug7-element-control-text-tinted-action-hover);
+  border-color: var(--tug7-element-control-border-tinted-action-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-action-hover */
+.tug-button-tinted-action:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-text-tinted-action-hover);
+}
+
+.tug-button-tinted-action:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-action-active);
+  color: var(--tug7-element-control-text-tinted-action-active);
+  border-color: var(--tug7-element-control-border-tinted-action-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-action-active */
 .tug-button-tinted-action:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug7-element-badge-text-tinted-action-rest);
+  color: var(--tug7-element-control-text-tinted-action-active);
 }
 
 /* --- tinted-agent --- */
 
-.tug-button-tinted-agent,
-.tug-button-tinted-agent:hover:not(:disabled):not([aria-disabled="true"]),
-.tug-button-tinted-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug7-surface-badge-primary-tinted-agent-rest);
-  color: var(--tug7-element-badge-text-tinted-agent-rest);
-  border-color: var(--tug7-element-badge-border-tinted-agent-rest);
+.tug-button-tinted-agent {
+  background-color: var(--tug7-surface-control-primary-tinted-agent-rest);
+  color: var(--tug7-element-control-text-tinted-agent-rest);
+  border-color: var(--tug7-element-control-border-tinted-agent-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-badge-primary-tinted-agent-rest */
-.tug-button-tinted-agent svg,
-.tug-button-tinted-agent:hover:not(:disabled):not([aria-disabled="true"]) svg,
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-agent-rest */
+.tug-button-tinted-agent svg {
+  color: var(--tug7-element-control-text-tinted-agent-rest);
+}
+
+.tug-button-tinted-agent:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-agent-hover);
+  color: var(--tug7-element-control-text-tinted-agent-hover);
+  border-color: var(--tug7-element-control-border-tinted-agent-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-agent-hover */
+.tug-button-tinted-agent:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-text-tinted-agent-hover);
+}
+
+.tug-button-tinted-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-agent-active);
+  color: var(--tug7-element-control-text-tinted-agent-active);
+  border-color: var(--tug7-element-control-border-tinted-agent-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-agent-active */
 .tug-button-tinted-agent:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug7-element-badge-text-tinted-agent-rest);
+  color: var(--tug7-element-control-text-tinted-agent-active);
 }
 
 /* --- tinted-data --- */
 
-.tug-button-tinted-data,
-.tug-button-tinted-data:hover:not(:disabled):not([aria-disabled="true"]),
-.tug-button-tinted-data:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug7-surface-badge-primary-tinted-data-rest);
-  color: var(--tug7-element-badge-text-tinted-data-rest);
-  border-color: var(--tug7-element-badge-border-tinted-data-rest);
+.tug-button-tinted-data {
+  background-color: var(--tug7-surface-control-primary-tinted-data-rest);
+  color: var(--tug7-element-control-text-tinted-data-rest);
+  border-color: var(--tug7-element-control-border-tinted-data-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-badge-primary-tinted-data-rest */
-.tug-button-tinted-data svg,
-.tug-button-tinted-data:hover:not(:disabled):not([aria-disabled="true"]) svg,
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-data-rest */
+.tug-button-tinted-data svg {
+  color: var(--tug7-element-control-text-tinted-data-rest);
+}
+
+.tug-button-tinted-data:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-data-hover);
+  color: var(--tug7-element-control-text-tinted-data-hover);
+  border-color: var(--tug7-element-control-border-tinted-data-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-data-hover */
+.tug-button-tinted-data:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-text-tinted-data-hover);
+}
+
+.tug-button-tinted-data:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-data-active);
+  color: var(--tug7-element-control-text-tinted-data-active);
+  border-color: var(--tug7-element-control-border-tinted-data-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-data-active */
 .tug-button-tinted-data:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug7-element-badge-text-tinted-data-rest);
+  color: var(--tug7-element-control-text-tinted-data-active);
 }
 
 /* --- tinted-danger --- */
 
-.tug-button-tinted-danger,
-.tug-button-tinted-danger:hover:not(:disabled):not([aria-disabled="true"]),
-.tug-button-tinted-danger:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
-  background-color: var(--tug7-surface-badge-primary-tinted-danger-rest);
-  color: var(--tug7-element-badge-text-tinted-danger-rest);
-  border-color: var(--tug7-element-badge-border-tinted-danger-rest);
+.tug-button-tinted-danger {
+  background-color: var(--tug7-surface-control-primary-tinted-danger-rest);
+  color: var(--tug7-element-control-text-tinted-danger-rest);
+  border-color: var(--tug7-element-control-border-tinted-danger-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-badge-primary-tinted-danger-rest */
-.tug-button-tinted-danger svg,
-.tug-button-tinted-danger:hover:not(:disabled):not([aria-disabled="true"]) svg,
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-danger-rest */
+.tug-button-tinted-danger svg {
+  color: var(--tug7-element-control-text-tinted-danger-rest);
+}
+
+.tug-button-tinted-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-danger-hover);
+  color: var(--tug7-element-control-text-tinted-danger-hover);
+  border-color: var(--tug7-element-control-border-tinted-danger-hover);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-danger-hover */
+.tug-button-tinted-danger:hover:not(:disabled):not([aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-text-tinted-danger-hover);
+}
+
+.tug-button-tinted-danger:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-control-primary-tinted-danger-active);
+  color: var(--tug7-element-control-text-tinted-danger-active);
+  border-color: var(--tug7-element-control-border-tinted-danger-active);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-tinted-danger-active */
 .tug-button-tinted-danger:is(:active,[data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) svg {
-  color: var(--tug7-element-badge-text-tinted-danger-rest);
+  color: var(--tug7-element-control-text-tinted-danger-active);
 }
 
 /* ============================================================================

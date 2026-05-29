@@ -744,6 +744,61 @@ body {
   --tug7-element-segment-text-normal-active-rest: --tug-color(sapphire-cobalt, i: 3, t: 100);
   --tug7-element-segment-text-normal-plain-disabled: --tug-color(indigo-cobalt, i: 7, t: 35);
 
+  /* Tinted (control) — quiet chip emphasis shared with TugBadge. Rest mirrors
+     the badge tinted recipe; hover/active deepen the tint and crisp the border
+     for a clearly visible, theme-sensitive interaction (the wash sits over the
+     theme canvas). No `option` role — tinted has no control-only variant. */
+  /* Tinted Accent */
+  --tug7-surface-control-primary-tinted-accent-rest: --tug-color(orange, i: 65, t: 60, a: 15);
+  --tug7-surface-control-primary-tinted-accent-hover: --tug-color(orange, i: 65, t: 60, a: 30);
+  --tug7-surface-control-primary-tinted-accent-active: --tug-color(orange, i: 65, t: 60, a: 44);
+  --tug7-element-control-text-tinted-accent-rest: --tug-color(orange, i: 72, t: 85);
+  --tug7-element-control-text-tinted-accent-hover: --tug-color(orange, i: 72, t: 85);
+  --tug7-element-control-text-tinted-accent-active: --tug-color(orange, i: 72, t: 85);
+  --tug7-element-control-border-tinted-accent-rest: --tug-color(orange, t: 47, a: 35);
+  --tug7-element-control-border-tinted-accent-hover: --tug-color(orange, t: 47, a: 52);
+  --tug7-element-control-border-tinted-accent-active: --tug-color(orange, t: 47, a: 65);
+  /* Tinted Action */
+  --tug7-surface-control-primary-tinted-action-rest: --tug-color(blue, i: 65, t: 60, a: 15);
+  --tug7-surface-control-primary-tinted-action-hover: --tug-color(blue, i: 65, t: 60, a: 30);
+  --tug7-surface-control-primary-tinted-action-active: --tug-color(blue, i: 65, t: 60, a: 44);
+  --tug7-element-control-text-tinted-action-rest: --tug-color(blue, i: 72, t: 85);
+  --tug7-element-control-text-tinted-action-hover: --tug-color(blue, i: 72, t: 85);
+  --tug7-element-control-text-tinted-action-active: --tug-color(blue, i: 72, t: 85);
+  --tug7-element-control-border-tinted-action-rest: --tug-color(blue, t: 47, a: 35);
+  --tug7-element-control-border-tinted-action-hover: --tug-color(blue, t: 47, a: 52);
+  --tug7-element-control-border-tinted-action-active: --tug-color(blue, t: 47, a: 65);
+  /* Tinted Agent */
+  --tug7-surface-control-primary-tinted-agent-rest: --tug-color(violet, i: 65, t: 60, a: 15);
+  --tug7-surface-control-primary-tinted-agent-hover: --tug-color(violet, i: 65, t: 60, a: 30);
+  --tug7-surface-control-primary-tinted-agent-active: --tug-color(violet, i: 65, t: 60, a: 44);
+  --tug7-element-control-text-tinted-agent-rest: --tug-color(violet, i: 72, t: 85);
+  --tug7-element-control-text-tinted-agent-hover: --tug-color(violet, i: 72, t: 85);
+  --tug7-element-control-text-tinted-agent-active: --tug-color(violet, i: 72, t: 85);
+  --tug7-element-control-border-tinted-agent-rest: --tug-color(violet, t: 47, a: 35);
+  --tug7-element-control-border-tinted-agent-hover: --tug-color(violet, t: 47, a: 52);
+  --tug7-element-control-border-tinted-agent-active: --tug-color(violet, t: 47, a: 65);
+  /* Tinted Data */
+  --tug7-surface-control-primary-tinted-data-rest: --tug-color(teal, i: 65, t: 60, a: 15);
+  --tug7-surface-control-primary-tinted-data-hover: --tug-color(teal, i: 65, t: 60, a: 30);
+  --tug7-surface-control-primary-tinted-data-active: --tug-color(teal, i: 65, t: 60, a: 44);
+  --tug7-element-control-text-tinted-data-rest: --tug-color(teal, i: 72, t: 85);
+  --tug7-element-control-text-tinted-data-hover: --tug-color(teal, i: 72, t: 85);
+  --tug7-element-control-text-tinted-data-active: --tug-color(teal, i: 72, t: 85);
+  --tug7-element-control-border-tinted-data-rest: --tug-color(teal, t: 47, a: 35);
+  --tug7-element-control-border-tinted-data-hover: --tug-color(teal, t: 47, a: 52);
+  --tug7-element-control-border-tinted-data-active: --tug-color(teal, t: 47, a: 65);
+  /* Tinted Danger */
+  --tug7-surface-control-primary-tinted-danger-rest: --tug-color(red, i: 65, t: 60, a: 15);
+  --tug7-surface-control-primary-tinted-danger-hover: --tug-color(red, i: 65, t: 60, a: 30);
+  --tug7-surface-control-primary-tinted-danger-active: --tug-color(red, i: 65, t: 60, a: 44);
+  --tug7-element-control-text-tinted-danger-rest: --tug-color(red, i: 72, t: 85);
+  --tug7-element-control-text-tinted-danger-hover: --tug-color(red, i: 72, t: 85);
+  --tug7-element-control-text-tinted-danger-active: --tug-color(red, i: 72, t: 85);
+  --tug7-element-control-border-tinted-danger-rest: --tug-color(red, t: 47, a: 35);
+  --tug7-element-control-border-tinted-danger-hover: --tug-color(red, t: 47, a: 52);
+  --tug7-element-control-border-tinted-danger-active: --tug-color(red, t: 47, a: 65);
+
   /* Badge */
   --tug7-element-badge-border-ghost-accent-rest: transparent;
   --tug7-element-badge-border-ghost-action-rest: transparent;

@@ -123,7 +123,7 @@ export function PermissionModeChip({
         layout="label-top"
         label="/permissions"
         size="sm"
-        emphasis="outlined"
+        emphasis="tinted"
         role="agent"
         icon={<ShieldCogCorner aria-hidden="true" />}
         data-slot="permission-mode-chip"
