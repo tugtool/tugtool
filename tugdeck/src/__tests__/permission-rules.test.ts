@@ -8,12 +8,26 @@ import { describe, expect, test } from "bun:test";
 import {
   emptyPermissionsSnapshot,
   filterResolvedRules,
+  denialToMatcher,
   isValidRuleMatcher,
   parsePermissionsResponse,
   parseRule,
   resolveBucket,
   type PermissionsSnapshot,
 } from "@/lib/permission-rules";
+
+describe("denialToMatcher", () => {
+  test("Bash denial yields the exact command matcher", () => {
+    expect(denialToMatcher("Bash", { command: "curl -s https://x" })).toBe(
+      "Bash(curl -s https://x)",
+    );
+  });
+
+  test("non-Bash (or Bash without a command) yields the bare tool name", () => {
+    expect(denialToMatcher("WebFetch", { url: "https://x" })).toBe("WebFetch");
+    expect(denialToMatcher("Bash", {})).toBe("Bash");
+  });
+});
 
 describe("isValidRuleMatcher", () => {
   test("accepts well-formed matchers, including unknown tool names", () => {

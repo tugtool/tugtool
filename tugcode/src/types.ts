@@ -445,6 +445,15 @@ export interface CostUpdate {
   duration_api_ms: number;
   usage: Record<string, unknown>;
   modelUsage: Record<string, unknown>;
+  /**
+   * Tool calls the turn denied — by a permission rule OR the auto-mode
+   * classifier — lifted verbatim from the `result` event's
+   * `permission_denials` (`{ tool_name, tool_use_id, tool_input }` each).
+   * Empty/omitted for a turn with no denials. The dev card accumulates these
+   * per session for its `/permissions` Recently-denied tab. Captured shape:
+   * `roadmap/transport-exploration.md`.
+   */
+  permission_denials?: unknown[];
   ipc_version: number;
 }
 

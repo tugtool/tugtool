@@ -2356,7 +2356,11 @@ export function DevCardBody({
   // The `/permissions` rules editor, owned at the card level so the slash
   // command opens it card-scoped ([D15]). Reads the session `cwd` fresh at
   // open time; a no-op until session metadata reports a cwd.
-  const permissionRulesSheet = usePermissionRulesSheet({ cardId, sessionMetadataStore });
+  const permissionRulesSheet = usePermissionRulesSheet({
+    cardId,
+    sessionMetadataStore,
+    codeSessionStore,
+  });
 
   // Surface for each local slash command, keyed by command name. The
   // `as const satisfies` registry narrows `LocalCommandName` to the literal

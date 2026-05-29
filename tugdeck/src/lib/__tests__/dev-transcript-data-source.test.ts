@@ -99,6 +99,7 @@ function snapshotWith(args: {
     activeTurn: args.activeTurn ?? null,
     pendingDraftRestore: null,
     lastCost: null,
+    permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,
     lastContextBreakdown: null,

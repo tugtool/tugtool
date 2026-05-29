@@ -129,6 +129,27 @@ export function isValidRuleMatcher(raw: string): boolean {
 }
 
 /**
+ * Derive a starting rule matcher for a denied tool call (the Recently-denied
+ * "add to Allow/Ask/Deny" affordance). A `Bash` denial yields the exact command
+ * (`Bash(<command>)`); any other tool yields its bare name (matches all uses) —
+ * a sensible default the user can narrow in the Allow tab. Decoupled from the
+ * store's `PermissionDenial` type so this stays a pure rules helper.
+ */
+export function denialToMatcher(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): string {
+  if (
+    toolName === "Bash" &&
+    typeof toolInput.command === "string" &&
+    toolInput.command.trim() !== ""
+  ) {
+    return `Bash(${toolInput.command.trim()})`;
+  }
+  return toolName;
+}
+
+/**
  * Coerce an unknown JSON value into a `ScopeBuckets`, keeping only string
  * entries in each bucket (defensive against a hand-edited settings file).
  */

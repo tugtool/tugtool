@@ -44,6 +44,7 @@ function baseSnap(
     wakeTrigger: null,
     pendingDraftRestore: null,
     lastCost: null,
+    permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,
     lastContextBreakdown: null,

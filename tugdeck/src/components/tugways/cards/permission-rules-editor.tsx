@@ -71,14 +71,18 @@ import {
   PermissionRulesStore,
 } from "@/lib/permission-rules-store";
 import {
+  denialToMatcher,
   isValidRuleMatcher,
+  RULE_BUCKETS,
   type BucketKey,
   type ResolvedRule,
+  type RuleBucket,
   type RuleScope,
 } from "@/lib/permission-rules";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { CodeSessionStore } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // Tab model
@@ -450,12 +454,99 @@ function RulePanel({ store, bucket, header }: RulePanelProps): React.ReactElemen
 }
 
 // ---------------------------------------------------------------------------
+// Recently-denied panel — session denial feed with promote-to-rule
+// ---------------------------------------------------------------------------
+
+/** Capitalized button label per bucket. */
+const BUCKET_BUTTON_LABEL: Record<RuleBucket, string> = {
+  allow: "Allow",
+  ask: "Ask",
+  deny: "Deny",
+};
+
+/**
+ * The Recently-denied tab: the session's accumulated tool-call denials (rule or
+ * auto-mode classifier), newest last, each with one-click promote to a local
+ * Allow/Ask/Deny rule (matcher via `denialToMatcher`). Empty-state matches the
+ * terminal until a denial lands. Sourced from the code-session store's
+ * `permissionDenials` ([L02]) — runtime-only, never persisted.
+ */
+function RecentlyDeniedPanel({
+  codeSessionStore,
+  rulesStore,
+}: {
+  codeSessionStore: CodeSessionStore;
+  rulesStore: PermissionRulesStore;
+}): React.ReactElement {
+  const denials = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().permissionDenials,
+      [codeSessionStore],
+    ),
+  );
+
+  if (denials.length === 0) {
+    return (
+      <TugLabel
+        size="lg"
+        emphasis="calm"
+        align="center"
+        className="permission-rules-empty"
+        data-slot="recently-denied-empty"
+      >
+        No recent denials.
+      </TugLabel>
+    );
+  }
+
+  return (
+    <div className="permission-rules-denied-list" data-slot="recently-denied-list">
+      {denials.map((denial) => {
+        const matcher = denialToMatcher(denial.toolName, denial.toolInput);
+        return (
+          <TugListRow
+            key={denial.toolUseId}
+            variant="flush"
+            trailing={
+              <span className="permission-rules-denied-actions">
+                {RULE_BUCKETS.map((bucket) => (
+                  <TugPushButton
+                    key={bucket}
+                    emphasis="ghost"
+                    size="sm"
+                    data-tug-focus="refuse"
+                    onClick={(event) => {
+                      if (event === undefined) return;
+                      event.stopPropagation();
+                      void rulesStore.mutate("local", bucket, "add", matcher);
+                    }}
+                  >
+                    {BUCKET_BUTTON_LABEL[bucket]}
+                  </TugPushButton>
+                ))}
+              </span>
+            }
+          >
+            <span className="permission-rule-matcher" title={matcher}>
+              {matcher}
+            </span>
+          </TugListRow>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sheet body
 // ---------------------------------------------------------------------------
 
 interface PermissionRulesSheetBodyProps {
   /** Session working directory — the project root scopes resolve under. */
   cwd: string;
+  /** Code-session store supplying the session's accumulated denials. */
+  codeSessionStore: CodeSessionStore;
   /** Dismiss the sheet. */
   onDone: () => void;
 }
@@ -472,6 +563,7 @@ interface PermissionRulesSheetBodyProps {
  */
 function PermissionRulesSheetBody({
   cwd,
+  codeSessionStore,
   onDone,
 }: PermissionRulesSheetBodyProps): React.ReactElement {
   const store = useMemo(() => new PermissionRulesStore(cwd), [cwd]);
@@ -507,6 +599,7 @@ function PermissionRulesSheetBody({
           activeCardId={tab}
           senderId={tabBarId}
           addable={false}
+          className="permission-rules-tabs"
         />
 
         <TugLabel
@@ -518,9 +611,7 @@ function PermissionRulesSheetBody({
       </TugLabel>
 
         {active.bucket === null ? (
-          <div className="permission-rules-empty" data-slot="recently-denied-empty">
-            No recent denials.
-          </div>
+          <RecentlyDeniedPanel codeSessionStore={codeSessionStore} rulesStore={store} />
         ) : (
           <RulePanel
             store={store}
@@ -549,6 +640,8 @@ export interface UsePermissionRulesSheetArgs {
   cardId: string;
   /** Metadata store supplying the live session `cwd` (preferred when present). */
   sessionMetadataStore: SessionMetadataStore;
+  /** Code-session store supplying the session's accumulated denials (Recently-denied tab). */
+  codeSessionStore: CodeSessionStore;
 }
 
 /** Imperative handle to the single, card-hosted rules editor. */
@@ -575,6 +668,7 @@ export interface PermissionRulesSheetController {
 export function usePermissionRulesSheet({
   cardId,
   sessionMetadataStore,
+  codeSessionStore,
 }: UsePermissionRulesSheetArgs): PermissionRulesSheetController {
   const { showSheet, renderSheet } = useTugSheet();
 
@@ -590,10 +684,14 @@ export function usePermissionRulesSheet({
       title: "Permissions",
       displayWidth: "wide",
       content: (close) => (
-        <PermissionRulesSheetBody cwd={cwd} onDone={() => close()} />
+        <PermissionRulesSheetBody
+          cwd={cwd}
+          codeSessionStore={codeSessionStore}
+          onDone={() => close()}
+        />
       ),
     });
-  }, [showSheet, sessionMetadataStore, cardId]);
+  }, [showSheet, sessionMetadataStore, codeSessionStore, cardId]);
 
   return { openRulesSheet, renderRulesSheet: renderSheet };
 }

@@ -984,6 +984,12 @@ export function routeTopLevelEvent(
         duration_api_ms: (event.duration_api_ms as number) || 0,
         usage: lastIterationUsage ?? {},
         modelUsage: (event.modelUsage as Record<string, unknown>) || {},
+        // Forward the turn's denials so the dev card can surface them in its
+        // Recently-denied tab; omit the field entirely when there were none.
+        ...(resultMetadata.permission_denials &&
+        resultMetadata.permission_denials.length > 0
+          ? { permission_denials: resultMetadata.permission_denials }
+          : {}),
         ipc_version: 2,
       };
       messages.push(costMsg);

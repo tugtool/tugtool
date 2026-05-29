@@ -10,6 +10,16 @@
   width: 100%;
 }
 
+/* ── Tab strip ─────────────────────────────────────────────────────────── */
+
+/* The in-sheet tab set is click-selected; its active state reads from the
+   bar's own active underline. Suppress WebKit's focus ring — the tab bar's
+   `overflow: hidden` crops it to a stray blue sliver at the active tab's
+   right edge. Scoped to this sheet so global tab styling is untouched. */
+.permission-rules-tabs .tug-tab:focus {
+  outline: none;
+}
+
 /* ── Description ────────────────────────────────────────────────────────── */
 
 /* Tab description (a TugLabel): block so the margins apply; size/weight come
@@ -92,6 +102,19 @@ input.permission-rules-add-input {
   overflow: hidden;
 }
 
+/* Recently-denied feed — a short, plain (non-windowed) row list that scrolls. */
+.permission-rules-denied-list {
+  max-height: 20rem;
+  overflow-y: auto;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-md);
+}
+
+.permission-rules-denied-actions {
+  display: inline-flex;
+  gap: var(--tug-space-2xs);
+}
+
 /* ── Rule rows ─────────────────────────────────────────────────────────── */
 
 .permission-rule-matcher {
@@ -123,9 +146,10 @@ input.permission-rules-add-input {
   letter-spacing: 0.04em;
 }
 
+/* Recently-denied empty state (a TugLabel owns size + tone). Just give it
+   block flow and generous top breathing room below the tab description. */
 .permission-rules-empty {
+  display: block;
+  margin-top: var(--tug-space-2xl);
   padding: var(--tug-space-md);
-  text-align: center;
-  font-size: var(--tug-font-size-sm);
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }

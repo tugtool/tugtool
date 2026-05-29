@@ -511,6 +511,20 @@ export interface ActiveTurnSnapshot {
 }
 
 /**
+ * A single denied tool call, decoded (camelCase) from a `cost_update`'s
+ * `permission_denials[]`. The source — permission rule vs. auto-mode
+ * classifier — is not distinguished on the wire; both populate the same array.
+ */
+export interface PermissionDenial {
+  /** Tool that was denied, e.g. `"Bash"`, `"WebFetch"`. */
+  toolName: string;
+  /** The denied tool call's id — the dedup key across repeated frames. */
+  toolUseId: string;
+  /** The tool input that was blocked (e.g. `{ command: "curl …" }`). */
+  toolInput: Record<string, unknown>;
+}
+
+/**
  * Public snapshot returned by `CodeSessionStore.getSnapshot()`. Stable
  * reference between dispatches that produce no change — callers can use
  * `useSyncExternalStore` without tearing ([D11]).
@@ -628,6 +642,14 @@ export interface CodeSessionSnapshot {
   } | null;
 
   lastCost: CostSnapshot | null;
+  /**
+   * Tool calls denied during this session — by a permission rule or the
+   * auto-mode classifier — accumulated across turns from each `cost_update`'s
+   * `permission_denials`, most-recent last, deduped by `toolUseId`. Feeds the
+   * dev card's `/permissions` Recently-denied tab. Empty until a denial lands;
+   * runtime-only (not persisted), so a fresh / resumed session starts empty.
+   */
+  permissionDenials: readonly PermissionDenial[];
   /**
    * Live intra-turn token usage for the in-flight turn — the LATEST
    * `streaming_usage` wire frame, so the `Tokens` / `Context` status

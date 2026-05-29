@@ -73,6 +73,7 @@ import type {
   LastReplayResult,
   LiveMessageUsage,
   Message,
+  PermissionDenial,
   ToolUseMessage,
   TransportState,
   TurnEndReason,
@@ -80,6 +81,7 @@ import type {
   UserMessage,
   WakeTrigger,
 } from "./types";
+import { decodePermissionDenials, mergeDenials } from "./denials";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import {
   deriveTurnTelemetry,
@@ -370,6 +372,13 @@ export interface CodeSessionState {
   } | null;
   lastCost: CostSnapshot | null;
   /**
+   * Tool calls denied this session, accumulated from each `cost_update`'s
+   * `permission_denials`, deduped by `toolUseId`, most-recent last. Surfaced on
+   * the snapshot for the `/permissions` Recently-denied tab. See {@link
+   * PermissionDenial}.
+   */
+  permissionDenials: readonly PermissionDenial[];
+  /**
    * Live intra-turn token usage — the LATEST `streaming_usage` wire
    * frame so the `Tokens` / `Context` status cells can climb mid-turn.
    * `null` between turns.
@@ -653,6 +662,7 @@ export function createInitialState(
     queuedSends: [],
     lastError: null,
     lastCost: null,
+    permissionDenials: [],
     liveTurnUsage: null,
     sessionInitTokens: null,
     lastContextBreakdown: null,
@@ -2591,6 +2601,14 @@ function handleCostUpdate(
     modelUsage: event.modelUsage ?? null,
   };
 
+  // Accumulate any tool calls this turn denied (rule or auto-mode classifier)
+  // for the Recently-denied tab. `mergeDenials` returns the same reference when
+  // there's nothing new, so quiescent cost_updates don't churn the snapshot.
+  const permissionDenials = mergeDenials(
+    state.permissionDenials,
+    decodePermissionDenials(event.permission_denials),
+  );
+
   return {
     // `cost_update.usage` is the turn's last-iteration usage — the
     // `streaming_usage` path captures `sessionInitTokens` first in
@@ -2599,6 +2617,7 @@ function handleCostUpdate(
     state: {
       ...state,
       lastCost,
+      permissionDenials,
       sessionInitTokens: captureSessionInit(
         state.sessionInitTokens,
         readUsage(event.usage),

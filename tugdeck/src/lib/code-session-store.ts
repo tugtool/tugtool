@@ -469,6 +469,10 @@ export class CodeSessionStore {
       // snapshot rebuild that touches an unrelated field.
       pendingDraftRestore: this.state.pendingDraftRestore,
       lastCost: this.state.lastCost,
+      // Accumulated denials for the Recently-denied tab. `mergeDenials`
+      // preserves the reference when nothing new lands, so this is
+      // `Object.is`-stable across quiescent rebuilds ([L02]).
+      permissionDenials: this.state.permissionDenials,
       // Live intra-turn token usage — the latest `streaming_usage`
       // frame. The reducer assigns a fresh `liveTurnUsage` only on a
       // frame (and clears it to `null` at turn boundaries); passing

@@ -405,6 +405,30 @@ describe("routeTopLevelEvent", () => {
     expect(result.resultMetadata!.resultValue).toBe("success");
   });
 
+  test("result with permission_denials forwards them on cost_update", () => {
+    const denials = [
+      { tool_name: "Bash", tool_use_id: "tu-1", tool_input: { command: "curl x" } },
+    ];
+    const event = {
+      type: "result",
+      subtype: "success",
+      result: "",
+      permission_denials: denials,
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu).toBeDefined();
+    expect(cu.permission_denials).toEqual(denials);
+  });
+
+  test("cost_update omits permission_denials when the turn denied nothing", () => {
+    const event = { type: "result", subtype: "success", result: "" };
+    const result = routeTopLevelEvent(event, baseCtx);
+    const cu = result.messages.find((m: any) => m.type === "cost_update") as any;
+    expect(cu).toBeDefined();
+    expect("permission_denials" in cu).toBe(false);
+  });
+
   test("result/error_during_execution sets resultValue to error (no turn_complete)", () => {
     const event = { type: "result", subtype: "error_during_execution", result: "" };
     const result = routeTopLevelEvent(event, baseCtx);

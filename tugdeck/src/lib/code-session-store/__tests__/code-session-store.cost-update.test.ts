@@ -178,4 +178,53 @@ describe("CodeSessionStore — cost_update (Step 6)", () => {
     expect(snap.lastCost?.usage).not.toBeNull();
     expect(snap.lastCost?.modelUsage).not.toBeNull();
   });
+
+  it("accumulates permission_denials across turns, deduped by tool_use_id", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+    store.send("hi", []);
+    driveToStreaming(conn, store);
+
+    expect(store.getSnapshot().permissionDenials).toEqual([]);
+
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "cost_update",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      total_cost_usd: 0.01,
+      permission_denials: [
+        { tool_name: "Bash", tool_use_id: "tu-1", tool_input: { command: "curl x" } },
+      ],
+    });
+
+    let denials = store.getSnapshot().permissionDenials;
+    expect(denials).toHaveLength(1);
+    expect(denials[0]).toEqual({
+      toolName: "Bash",
+      toolUseId: "tu-1",
+      toolInput: { command: "curl x" },
+    });
+
+    // A second cost_update re-reporting tu-1 plus a new tu-2 → only tu-2 added.
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "cost_update",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      total_cost_usd: 0.02,
+      permission_denials: [
+        { tool_name: "Bash", tool_use_id: "tu-1", tool_input: { command: "curl x" } },
+        { tool_name: "WebFetch", tool_use_id: "tu-2", tool_input: { url: "https://x" } },
+      ],
+    });
+
+    denials = store.getSnapshot().permissionDenials;
+    expect(denials.map((d) => d.toolUseId)).toEqual(["tu-1", "tu-2"]);
+
+    // A cost_update with no denials leaves the list reference unchanged.
+    const before = store.getSnapshot().permissionDenials;
+    conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+      type: "cost_update",
+      tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+      total_cost_usd: 0.03,
+    });
+    expect(store.getSnapshot().permissionDenials).toBe(before);
+  });
 });
