@@ -47,48 +47,13 @@
   justify-content: flex-end;
 }
 
-/* ── Scope radio group ─────────────────────────────────────────────────── */
-
-.permission-rules-scope {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-2xs);
-}
-
-.permission-rules-scope-option {
-  appearance: none;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--tug-space-xs);
-  padding: var(--tug-space-2xs) var(--tug-space-xs);
-  border-radius: var(--tug-radius-sm);
-  text-align: left;
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-.permission-rules-scope-option:hover {
-  background: var(--tug7-element-control-fill-ghost-action-hover, transparent);
-}
-
-.permission-rules-scope-dot {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.permission-rules-scope-option[data-selected="true"] .permission-rules-scope-dot {
-  color: var(--tug7-element-global-fill-normal-accent-rest);
-}
+/* ── Scope radio item content (label + description, inside TugRadioItem) ─── */
 
 .permission-rules-scope-text {
   display: flex;
   flex-direction: column;
   gap: 0.05rem;
+  text-align: left;
 }
 
 .permission-rules-scope-label {

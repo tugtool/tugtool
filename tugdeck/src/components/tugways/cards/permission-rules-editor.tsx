@@ -44,13 +44,14 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Circle, CircleDot, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
+import { TugRadioGroup, TugRadioItem } from "@/components/tugways/tug-radio-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
 import {
@@ -215,42 +216,6 @@ const SCOPE_OPTIONS: readonly ScopeOption[] = [
   { scope: "user", label: "User settings", description: "Saved at ~/.claude/settings.json" },
 ];
 
-/** A vertical radio group choosing the save scope (label + description each). */
-function ScopeRadioGroup({
-  value,
-  onChange,
-}: {
-  value: RuleScope;
-  onChange: (scope: RuleScope) => void;
-}): React.ReactElement {
-  return (
-    <div className="permission-rules-scope" role="radiogroup" aria-label="Where to save the rule">
-      {SCOPE_OPTIONS.map((opt) => {
-        const selected = opt.scope === value;
-        return (
-          <button
-            key={opt.scope}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            className="permission-rules-scope-option"
-            data-selected={selected ? "true" : undefined}
-            onClick={() => onChange(opt.scope)}
-          >
-            <span className="permission-rules-scope-dot" aria-hidden="true">
-              {selected ? <CircleDot size={16} /> : <Circle size={16} />}
-            </span>
-            <span className="permission-rules-scope-text">
-              <span className="permission-rules-scope-label">{opt.label}</span>
-              <span className="permission-rules-scope-desc">{opt.description}</span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Add-rule form — matcher input + scope radios + Add (inside an accordion)
 // ---------------------------------------------------------------------------
@@ -261,15 +226,23 @@ interface AddRuleFormProps {
 }
 
 /**
- * The add-rule form: a matcher input, the scope radio group, and an Add button.
- * The matcher must be syntactically valid ({@link isValidRuleMatcher}) for Add
- * to enable — unknown tool names pass (matching the terminal); blatant garbage
- * does not. Enter in the input adds. The matcher is stored verbatim.
+ * The add-rule form: a matcher input, a {@link TugRadioGroup} choosing the save
+ * scope (each option label + description, worded like the terminal), and an Add
+ * button. The radio group dispatches `SELECT_VALUE` through the chain ([L11]);
+ * this form's `useResponderForm` responder updates the scope. The matcher must
+ * be syntactically valid ({@link isValidRuleMatcher}) for Add to enable —
+ * unknown tool names pass (matching the terminal); blatant garbage does not.
+ * Enter in the input adds. The matcher is stored verbatim.
  */
 function AddRuleForm({ placeholder, onAdd }: AddRuleFormProps): React.ReactElement {
   const [draft, setDraft] = useState("");
   const [scope, setScope] = useState<RuleScope>("local");
   const valid = isValidRuleMatcher(draft);
+
+  const radioId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: { [radioId]: (next: string) => setScope(next as RuleScope) },
+  });
 
   const submit = useCallback(() => {
     const rule = draft.trim();
@@ -279,35 +252,55 @@ function AddRuleForm({ placeholder, onAdd }: AddRuleFormProps): React.ReactEleme
   }, [draft, scope, onAdd]);
 
   return (
-    <div className="permission-rules-add">
-      <TugInput
-        size="sm"
-        value={draft}
-        placeholder={placeholder}
-        aria-label="New rule matcher"
-        validation={draft.trim() !== "" && !valid ? "invalid" : "default"}
-        className="permission-rules-add-input"
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            submit();
-          }
-        }}
-      />
-      <ScopeRadioGroup value={scope} onChange={setScope} />
-      <div className="permission-rules-add-actions">
-        <TugPushButton
+    <ResponderScope>
+      <div
+        className="permission-rules-add"
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+      >
+        <TugInput
           size="sm"
-          emphasis="filled"
-          data-slot="permission-rules-add-submit"
-          disabled={!valid}
-          onClick={submit}
+          value={draft}
+          placeholder={placeholder}
+          aria-label="New rule matcher"
+          validation={draft.trim() !== "" && !valid ? "invalid" : "default"}
+          className="permission-rules-add-input"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <TugRadioGroup
+          value={scope}
+          senderId={radioId}
+          size="sm"
+          orientation="vertical"
+          aria-label="Where to save the rule"
         >
-          Add
-        </TugPushButton>
+          {SCOPE_OPTIONS.map((opt) => (
+            <TugRadioItem key={opt.scope} value={opt.scope}>
+              <span className="permission-rules-scope-text">
+                <span className="permission-rules-scope-label">{opt.label}</span>
+                <span className="permission-rules-scope-desc">{opt.description}</span>
+              </span>
+            </TugRadioItem>
+          ))}
+        </TugRadioGroup>
+        <div className="permission-rules-add-actions">
+          <TugPushButton
+            size="sm"
+            emphasis="filled"
+            data-slot="permission-rules-add-submit"
+            disabled={!valid}
+            onClick={submit}
+          >
+            Add
+          </TugPushButton>
+        </div>
       </div>
-    </div>
+    </ResponderScope>
   );
 }
 
