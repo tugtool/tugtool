@@ -1150,12 +1150,15 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 - [x] In `do_spawn_session`'s Phase-3 block, when `entry.latest_metadata` is `None`, fall back to `session_ledger.get_session_metadata(id)` — trying `claude_session_id` first, then `tug_session_id` (covers un-forked resume where the two are equal, deduped when identical) — and build a `Frame::new(FeedId::SESSION_METADATA, row.payload)` to replay. In-memory slot still wins when present (it's the freshest). New private helper `persisted_metadata_replay_frame`; the supervisor's sqlite handle is `session_ledger: Option<Arc<SessionLedger>>` (returns `None`/no replay when absent).
 - [x] Keep it a no-op for a brand-new session (no in-memory slot, no persisted row → no replay frame), matching `test_spawn_session_with_no_prior_metadata_fires_no_replay`.
 
+**Audit follow-up (capabilities retention, commit `c2104036`).** A post-implementation audit found `session_capabilities` was broadcast once per spawn but never retained — a card binding *after* that one-shot frame (reconnect, HMR remount) would never see the model list, leaving the `/model` picker ([#step-2b]) blank. Fix: add a per-session `latest_capabilities` slot (sibling of `latest_metadata`), populate it in the merger, and replay it on bind. Both slots now replay on bind — metadata first (the chip source), then capabilities (the picker source); the client routes them apart by payload `type`. In-memory only (not persisted): capabilities re-emit on the next new-mode spawn.
+
 **Tests:**
-- [x] Rust unit (3 new, against a real in-memory `SessionLedger`): bind with empty in-memory slot + a persisted ledger row → exactly one `SESSION_METADATA` frame carrying the persisted payload verbatim; ledger present but no row + no slot → none; in-memory slot present → that wins (persisted not consulted). New helper `make_supervisor_with_real_ledger`.
+- [x] Rust unit (3, against a real in-memory `SessionLedger`): bind with empty in-memory slot + a persisted ledger row → exactly one `SESSION_METADATA` frame carrying the persisted payload verbatim; ledger present but no row + no slot → none; in-memory slot present → that wins (persisted not consulted). New helper `make_supervisor_with_real_ledger`.
+- [x] Rust unit (2, capabilities retention): the capabilities slot replays on bind (carrying the SESSION_METADATA feed id); both slots populated → exactly two replay frames, metadata then capabilities.
 
 **Checkpoint:**
-- [x] `cd tugrust && cargo nextest run -p tugcast` — 760 passed / 1 skipped (warnings-as-errors clean).
-- [ ] `just build-app`; verify a resumed card's model/version/mode chips populate before any turn (deferred to the build/checkpoint pass after 2a.3, so the app is rebuilt once with all three sub-steps).
+- [x] `cd tugrust && cargo nextest run -p tugcast` — 661 passed / 4 skipped (warnings-as-errors clean).
+- [x] `just build-app` — BUILD SUCCEEDED; resumed-card replay verified by-hand live (user spot-check).
 
 ---
 
