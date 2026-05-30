@@ -774,6 +774,30 @@ export function driveDevSession(
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
 
+/** Mirrors `tugdeck/src/protocol.ts` → `RateLimitInfo`. */
+export interface RateLimitInfo {
+  status: string;
+  resetsAt: number;
+  rateLimitType: string;
+  overageStatus: string;
+  overageDisabledReason?: string;
+  isUsingOverage: boolean;
+}
+
+/**
+ * Drive the app-level, account-global rate-limit store via
+ * `window.__tug.ingestRateLimit` — mounts / clears the single deck-wide
+ * rate-limit banner ([#step-3.5]) without a live claude limit.
+ */
+export function ingestRateLimit(
+  caller: HarnessCaller,
+  info: RateLimitInfo,
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const script = callSurface(`(window.__tug.ingestRateLimit(${lit(info)}), null)`);
+  return caller.evalJS<null>(script, evalOpts).then(() => undefined);
+}
+
 // ---------------------------------------------------------------------------
 // RPC-verb wrappers (native gestures, accessibility preflight,
 // Swift-computed screen bounds)

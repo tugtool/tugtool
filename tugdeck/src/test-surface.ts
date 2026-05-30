@@ -46,6 +46,7 @@ import {
 import { cardServicesStore } from "./lib/card-services-store";
 import type { AtomSegment } from "./lib/tug-atom-img";
 import { dispatchAction } from "./action-dispatch";
+import type { RateLimitInfo } from "./protocol";
 
 // ---------------------------------------------------------------------------
 // Public types (`TugTestSurface`)
@@ -106,8 +107,13 @@ import { dispatchAction } from "./action-dispatch";
  * until it advances — that's the "the new page is up" signal,
  * tolerant of mid-navigation `evaluateJavaScript` errors.
  * Additive; major stays `1`.
+ *
+ * `1.7.0`: adds {@link TugTestSurface.ingestRateLimit} — drives the
+ * app-level, account-global rate-limit store so the banner app-test
+ * ([#step-3.5]) can mount / clear the deck-wide banner without a live
+ * claude limit. Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.6.0" as const;
+export const SURFACE_VERSION = "1.7.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -589,6 +595,14 @@ export interface TugTestSurface {
    * Z1 / Z2 / Z5 zones. Test-mode-only.
    */
   driveDevSession(cardId: string, action: DevSessionDriveAction): void;
+
+  /**
+   * Drive the app-level, account-global rate-limit store with a quota as if a
+   * live `rate_limit_event` had landed ([#step-3.5]). Account-global, so it is
+   * NOT card-scoped — one call drives the single deck-wide banner. Used by the
+   * banner app-test to mount / clear the banner without a live claude limit.
+   */
+  ingestRateLimit(info: RateLimitInfo): void;
 
   /**
    * Read the deck's current `hasFocus` state. The deck's
@@ -1387,6 +1401,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
           );
         }
       }
+    },
+
+    ingestRateLimit(info: RateLimitInfo): void {
+      deck.getRateLimitStore()._ingestForTest(info);
     },
 
     getHasFocus(): boolean {

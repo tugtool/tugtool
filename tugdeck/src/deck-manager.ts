@@ -48,6 +48,8 @@ import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
 import { TugDevPanel } from "./components/tug-dev-panel/tug-dev-panel";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
+import { RateLimitBannerProvider } from "./components/chrome/rate-limit-banner-bridge";
+import { RateLimitStore } from "./lib/rate-limit-store";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
 import { TugAlertProvider } from "./components/tugways/tug-alert";
@@ -195,6 +197,14 @@ function shouldPersistInTestMode(): boolean {
 export class DeckManager implements IDeckManagerStore {
   private container: HTMLElement;
   private connection: TugConnection;
+
+  /**
+   * App-level, account-global subscription-quota store ([#step-3.5]). Feeds
+   * the single deck-wide `RateLimitBannerProvider`. Constructed once with the
+   * connection; the harness reaches it via {@link getRateLimitStore} to drive
+   * the banner without a live claude round-trip.
+   */
+  private readonly rateLimitStore: RateLimitStore;
 
   /** Current canvas state (two-table shape). */
   private deckState: DeckState;
@@ -437,6 +447,7 @@ export class DeckManager implements IDeckManagerStore {
   ) {
     this.container = container;
     this.connection = connection;
+    this.rateLimitStore = new RateLimitStore(connection);
     this.testMode = options?.testMode === true;
     // Test mode: discard any tugbank-sourced boot arguments so the deck
     // starts empty. The harness drives state exclusively via
@@ -529,6 +540,9 @@ export class DeckManager implements IDeckManagerStore {
           React.createElement(TugBannerProvider, {
             connection: this.connection,
           }),
+          React.createElement(RateLimitBannerProvider, {
+            store: this.rateLimitStore,
+          }),
           React.createElement(DeckCanvas, {}),
           // Tug Dev Panel — persistent dev inspector. Mounts once at
           // app root, hidden by default. Visibility toggled via DOM
@@ -612,6 +626,15 @@ export class DeckManager implements IDeckManagerStore {
 
   sendControlFrame(action: string, params?: Record<string, unknown>): void {
     this.connection.sendControlFrame(action, params);
+  }
+
+  /**
+   * App-level account-global quota store, for the `__tug` test surface's
+   * `ingestRateLimit` seam ([#step-3.5]). Production code reaches it only
+   * through the mounted `RateLimitBannerProvider`.
+   */
+  getRateLimitStore(): RateLimitStore {
+    return this.rateLimitStore;
   }
 
   // ---- Card / stack management () ----

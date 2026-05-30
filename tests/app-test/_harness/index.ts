@@ -559,6 +559,14 @@ export class App {
     return client.driveDevSession(this as HarnessCaller, cardId, action);
   }
 
+  /**
+   * Drive the app-level, account-global rate-limit store — mounts / clears
+   * the single deck-wide rate-limit banner ([#step-3.5]).
+   */
+  ingestRateLimit(info: client.RateLimitInfo): Promise<void> {
+    return client.ingestRateLimit(this as HarnessCaller, info);
+  }
+
   // -------------------------------------------------------------------
   // Accessibility preflight ([D03])
   // -------------------------------------------------------------------
