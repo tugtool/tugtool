@@ -2,21 +2,24 @@
  * ResponseSettingsStore — subscribable store for the Dev transcript's
  * presentation knobs.
  *
- * One setting today:
+ * Two settings:
  *
  *   - `entryMargin` (px): inter-entry vertical gap, written through to
  *     `--tugx-list-view-row-gap` via the cascade variable
  *     `--tugx-dev-entry-margin`.
+ *   - `magnification` (factor, 1 = 100%): the Settings sheet's
+ *     Magnification slider, now implemented as CSS `zoom` applied to the
+ *     transcript root via `--transcript-zoom`. Layout zoom scopes the
+ *     scale to this card's transcript subtree (which wholly contains
+ *     the list scrollport, so the list's measurements stay in one
+ *     uniformly-scaled space), leaving the surrounding chrome at 1×.
+ *     Distinct from — and composes with — the Swift host's
+ *     `WKWebView.pageZoom` (View > Zoom In / Out), which scales the
+ *     whole window.
  *
- * Magnification was previously a second field here; it was retired
- * when the magnification control moved to the macOS app's View menu.
- * The Swift host now scales the entire WebView uniformly via
- * `WKWebView.pageZoom`, so the web frontend has no parallel
- * magnification state to manage.
- *
- * The store applies `entryMargin` as a CSS custom property on the
- * bound transcript root, so the transcript pane reads exactly the
- * user's choice and no other markdown surface in the deck is affected.
+ * The store applies both as CSS custom properties on the bound
+ * transcript root, so the transcript pane reads exactly the user's
+ * choice and no other markdown surface in the deck is affected.
  *
  * Reads initial state synchronously from the TugbankClient cache
  * (no async load, no placeholder flash). Observes `onDomainChanged`
@@ -41,6 +44,7 @@ const KEY = "settings";
 
 export const DEFAULT_RESPONSE_SETTINGS: ResponseSettings = {
   entryMargin: 24,
+  magnification: 1,
 };
 
 // ── Store ───────────────────────────────────────────────────────────────────
@@ -79,6 +83,7 @@ export class ResponseSettingsStore {
       return {
         ...DEFAULT_RESPONSE_SETTINGS,
         ...(typeof raw.entryMargin === "number" ? { entryMargin: raw.entryMargin } : {}),
+        ...(typeof raw.magnification === "number" ? { magnification: raw.magnification } : {}),
       };
     }
     return null;
@@ -141,5 +146,6 @@ export class ResponseSettingsStore {
     if (!el) return;
     const s = this._settings;
     el.style.setProperty("--tugx-dev-entry-margin", `${s.entryMargin}px`);
+    el.style.setProperty("--transcript-zoom", `${s.magnification}`);
   }
 }

@@ -249,22 +249,22 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
 // ── Response (transcript) settings ──────────────────────────────────────────
 
 /**
- * Response-settings shape stored in tugbank. One presentation knob for
+ * Response-settings shape stored in tugbank. Presentation knobs for
  * the Dev card's transcript pane (top pane, distinct from the editor
  * pane below it):
  *
  *   - `entryMargin`: inter-entry vertical gap in CSS pixels.
- *
- * The former `magnification` field was retired when the magnification
- * slider moved to the macOS app's View menu (Actual Size / Zoom In /
- * Zoom Out). The Swift host now scales the entire WebView uniformly
- * via `WKWebView.pageZoom`, persisted in `NSUserDefaults` — no
- * tugbank-side participation required. Older persisted records may
- * still carry a `magnification` key; the cache reader passes it
- * through harmlessly as an unconsumed extra field.
+ *   - `magnification`: the Settings sheet's Magnification slider value
+ *     (1 = 100%). Now implemented as CSS `zoom` on the transcript root —
+ *     it scales the whole transcript subtree (text, code, atoms, icons)
+ *     uniformly via layout zoom, scoped to this card's transcript and
+ *     leaving the surrounding chrome at 1×. Distinct from the macOS
+ *     host's `WKWebView.pageZoom` (View > Zoom In / Out), which scales
+ *     the entire window; the two compose.
  */
 export interface ResponseSettings {
   entryMargin: number;
+  magnification: number;
 }
 
 /**

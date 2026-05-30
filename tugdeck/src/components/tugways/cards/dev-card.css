@@ -232,12 +232,21 @@
      `lib/response-settings-store.ts`. [L06 / L24] */
   --tugx-dev-entry-margin: 16px;
 
+  /* Per-card transcript zoom. CSS `zoom` is a layout scale (reflows,
+     stays crisp) applied to this root, which wholly contains the
+     TugListView scrollport — so every measurement the list makes lives
+     in one uniformly-scaled space, exactly as the Swift host's
+     `WKWebView.pageZoom` does for the whole document. Only the
+     transcript subtree scales; the Z2/Z4 chrome (siblings) stays at 1×.
+     `ResponseSettingsStore` overrides `--transcript-zoom` per card. */
+  --transcript-zoom: 1;
+  zoom: var(--transcript-zoom, 1);
+
   /* Transcript root font-size. Em-relative descendants (markdown
      body, paragraph margins, heading rhythm, icon overrides below)
-     anchor to this nominal 14px. The Swift host's
-     `WKWebView.pageZoom` (driven by View > Zoom In / Zoom Out)
-     scales the whole page uniformly — no parallel per-element
-     scaling lives in the web frontend anymore. */
+     anchor to this nominal 14px; the per-card `zoom` above scales the
+     whole subtree on top of that. The Swift host's `WKWebView.pageZoom`
+     (View > Zoom In / Zoom Out) still scales the entire page uniformly. */
   font-size: 14px;
 }
 

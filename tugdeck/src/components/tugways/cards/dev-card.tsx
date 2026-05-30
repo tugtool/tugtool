@@ -46,6 +46,7 @@ import { EffortChip } from "./effort-chip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
 import { useRoute } from "@/lib/route-lifecycle";
+import { createNumberFormatter } from "@/lib/tug-format";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
@@ -261,6 +262,13 @@ const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
 
 /** Stable empty completion provider for the unbound / no-connection window. */
 const EMPTY_FILE_COMPLETION_PROVIDER = ((_q: string) => []) as CompletionProvider;
+
+/**
+ * Two-decimal formatter for the magnification slider's value input.
+ * `0.5` → `"0.50"`, `1` → `"1.00"`, `1.5` → `"1.50"`. Module-scope so
+ * the formatter identity stays stable across renders.
+ */
+const MAGNIFICATION_FORMATTER = createNumberFormatter({ decimals: 2 });
 
 /**
  * Human-readable labels for the `lastError` causes the card surfaces as
@@ -2444,6 +2452,7 @@ export function DevCardBody({
   const lineNumbersId = useId();
   const activeLineGutterId = useId();
   const responseEntryMarginSliderId = useId();
+  const responseMagnificationSliderId = useId();
 
   // --- Card settings (title-bar `…` button). ---
   //
@@ -2468,6 +2477,7 @@ export function DevCardBody({
         lineNumbersId={lineNumbersId}
         activeLineGutterId={activeLineGutterId}
         responseEntryMarginSliderId={responseEntryMarginSliderId}
+        responseMagnificationSliderId={responseMagnificationSliderId}
         onClose={close}
       />
     ),
@@ -2593,6 +2603,8 @@ export function DevCardBody({
       [lineHeightPopupId]: (v: number) => editorStore.set({ lineHeight: v }),
       [responseEntryMarginSliderId]: (v: number) =>
         responseStore.set({ entryMargin: v }),
+      [responseMagnificationSliderId]: (v: number) =>
+        responseStore.set({ magnification: v }),
     },
     toggle: {
       [lineWrapId]: (v: boolean) => editorStore.set({ lineWrap: v }),
@@ -2931,6 +2943,7 @@ interface SettingsSheetBodyProps {
   lineNumbersId: string;
   activeLineGutterId: string;
   responseEntryMarginSliderId: string;
+  responseMagnificationSliderId: string;
   /** Dismiss callback supplied by `useTugSheet`'s render closure. */
   onClose: () => void;
 }
@@ -2945,9 +2958,10 @@ function letterSpacingLabel(value: number): string {
  * button in the Dev card's title bar.
  *
  * Two stacked sections:
- *   1. **Response** — the inter-entry vertical gap. Magnification
- *      moved to the macOS app's View menu so it scales the entire
- *      WebView uniformly via `WKWebView.pageZoom`.
+ *   1. **Response** — Magnification (CSS `zoom` on the transcript root,
+ *      per card) and the inter-entry vertical gap. The macOS app's View
+ *      menu (`WKWebView.pageZoom`) scales the whole window and composes
+ *      with the per-card magnification.
  *   2. **Editor** — typography and view toggles for the prompt editor
  *      (the bottom pane).
  */
@@ -2962,6 +2976,7 @@ function SettingsSheetBody({
   lineNumbersId,
   activeLineGutterId,
   responseEntryMarginSliderId,
+  responseMagnificationSliderId,
   onClose,
 }: SettingsSheetBodyProps) {
   const editorSettings = useSyncExternalStore(
@@ -2981,13 +2996,26 @@ function SettingsSheetBody({
         variant="bordered"
         className="dev-card-settings-group"
       >
-        {/* 2-column grid (label / slider). Magnification moved to the
-            macOS app's View menu (Actual Size / Zoom In / Zoom Out)
-            so it scales the entire app uniformly via
-            `WKWebView.pageZoom`; Entry Gap remains a per-card
-            response-pane control. The grid shape is preserved so a
-            future second-row response setting drops in cleanly. */}
+        {/* 2-column grid (label / slider) so both rows share a single
+            label column auto-sized to the longest entry, keeping labels
+            close to their slider track. Both sliders share `valueWidth`
+            so their value columns also align. Magnification scales the
+            whole transcript subtree (CSS `zoom` on `.dev-card-transcript`)
+            per card; the macOS app's View menu (`WKWebView.pageZoom`)
+            still scales the entire window and composes with this. */}
         <div className="dev-card-settings-slider-grid">
+          <span className="dev-card-settings-slider-label">Magnification</span>
+          <TugSlider
+            className="dev-card-settings-slider"
+            value={responseSettings.magnification}
+            min={0.5}
+            max={1.5}
+            step={0.05}
+            senderId={responseMagnificationSliderId}
+            size="md"
+            valueWidth="3.5rem"
+            formatter={MAGNIFICATION_FORMATTER}
+          />
           <span className="dev-card-settings-slider-label">Entry Gap</span>
           <TugSlider
             className="dev-card-settings-slider"
