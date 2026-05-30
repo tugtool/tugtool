@@ -115,6 +115,7 @@ import { cardTitleStore } from "@/lib/card-title-store";
 import { useDevCardObserver } from "./use-dev-card-observer";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
+import { putDevRecentProjects } from "@/settings-api";
 import {
   useSessionLedger,
   getDevSessionLedgerStore,
@@ -1123,6 +1124,10 @@ function DevProjectPickerForm({
   onRetryRestore,
 }: DevProjectPickerFormProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // True while the path field's completion menu is open — the Recent Project
+  // Paths list steps aside (keeps its layout space) so the floating overlay
+  // never visually collides with it.
+  const [pathMenuOpen, setPathMenuOpen] = useState(false);
   // Form's outer DOM node — used to scope the anchor querySelector for
   // the form-owned trash-confirmation popover so the lookup never
   // walks outside the picker form's own subtree.
@@ -1154,23 +1159,9 @@ function DevProjectPickerForm({
   const trimmedPath = path.trim();
   const sessionLedger = useSessionLedger(trimmedPath);
 
-  // One-shot seed: if the picker mounts with an empty input AND no
-  // Recent Project Paths to auto-fill from, pre-populate with the
-  // Swift-provided hint so the user has a Project Path they can hit
-  // Open on without typing. Skipped once any of these conditions are
-  // resolved (typed value, recents arrived, seed applied) so later
-  // tugbank ticks can't overwrite a user edit.
+  // One-shot input seed — the effect lives just below the data sources (the
+  // Recents data source must be in scope to read the most-recent path).
   const didSeedPathRef = useRef(false);
-  useLayoutEffect(() => {
-    if (didSeedPathRef.current) return;
-    if (path !== "" || recents.length > 0) {
-      didSeedPathRef.current = true;
-      return;
-    }
-    if (initialProjectPath === "") return;
-    didSeedPathRef.current = true;
-    setPath(initialProjectPath);
-  }, [path, recents.length, initialProjectPath]);
 
   // Two data sources for the master/detail layout: Recents (always
   // visible — clicking one fills the input but the list does not
@@ -1181,6 +1172,30 @@ function DevProjectPickerForm({
     trimmedPath,
     sessionLedger,
   );
+
+  // One-shot seed so first open isn't a dead-end: if the input is empty,
+  // prefer the most-recent project (what the Recents list's old
+  // `selectionRequired` mode filled in on mount), else the Swift-provided
+  // hint. Skipped once a value is present so later tugbank ticks can't
+  // overwrite a user edit.
+  useLayoutEffect(() => {
+    if (didSeedPathRef.current) return;
+    if (path !== "") {
+      didSeedPathRef.current = true;
+      return;
+    }
+    if (recents.length > 0) {
+      const first = recentsDataSource.rowAt(0);
+      if (first.kind === "path-recent") {
+        didSeedPathRef.current = true;
+        setPath(first.path);
+      }
+      return;
+    }
+    if (initialProjectPath === "") return;
+    didSeedPathRef.current = true;
+    setPath(initialProjectPath);
+  }, [path, recents.length, initialProjectPath, recentsDataSource]);
 
   // Session selection. Owned here, read by cells via context. Open
   // resolves submission per [Spec S02].
@@ -1290,11 +1305,31 @@ function DevProjectPickerForm({
     }
   }, []);
 
+  // Recents trash request — mirrors the sessions handler. Declared here (above
+  // `useResponder`) so it's in scope for the action binding; the rest of the
+  // recents-trash flow (anchor, remove, confirm) lives just below the sessions
+  // block.
+  const [pendingTrashRecentPath, setPendingTrashRecentPath] = useState<
+    string | null
+  >(null);
+  const handleRequestTrashRecent = useCallback((event: ActionEvent) => {
+    const v = event.value;
+    if (
+      v !== null &&
+      typeof v === "object" &&
+      "path" in v &&
+      typeof (v as { path: unknown }).path === "string"
+    ) {
+      setPendingTrashRecentPath((v as { path: string }).path);
+    }
+  }, []);
+
   const { ResponderScope: PickerFormResponderScope, responderRef: pickerFormResponderRef } =
     useResponder({
       id: formResponderId,
       actions: {
         [TUG_ACTIONS.REQUEST_TRASH_SESSION]: handleRequestTrashSession,
+        [TUG_ACTIONS.REQUEST_TRASH_RECENT]: handleRequestTrashRecent,
       },
     });
 
@@ -1331,6 +1366,56 @@ function DevProjectPickerForm({
   // the picker UX uses the short, generic prompt "Move to Trash?" for
   // both single-row and bottom-button paths.
   const pendingTrashMessage = "Move to Trash?";
+
+  // ---- Recent Project Paths trash (mirrors the sessions per-row flow) ----
+  //
+  // `pendingTrashRecentPath` + `handleRequestTrashRecent` are declared above
+  // (next to `useResponder`). Here: anchor resolution, the remove action, and
+  // the confirm/cancel callbacks.
+  const [pendingTrashRecentAnchorEl, setPendingTrashRecentAnchorEl] =
+    useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (pendingTrashRecentPath === null) {
+      setPendingTrashRecentAnchorEl(null);
+      return;
+    }
+    const root = formRootRef.current;
+    if (root === null) return;
+    const escaped =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(pendingTrashRecentPath)
+        : pendingTrashRecentPath;
+    const selector = `[data-recent-path="${escaped}"] [data-slot="tug-icon-button"]`;
+    const el = root.querySelector<HTMLElement>(selector);
+    setPendingTrashRecentAnchorEl(el ?? null);
+  }, [pendingTrashRecentPath]);
+
+  // Remove one path from the recents list. Optimistically updates the tugbank
+  // cache (so the list re-renders immediately) then persists via PUT.
+  const trashRecent = useCallback(
+    (path: string): void => {
+      const next = recents.filter((p) => p !== path);
+      const client = getTugbankClient();
+      client?.setLocalValue("dev.tugtool.dev", "recent-projects", {
+        kind: "json",
+        value: { paths: next },
+      });
+      putDevRecentProjects(next);
+    },
+    [recents],
+  );
+
+  const handleConfirmTrashRecent = useCallback(() => {
+    if (pendingTrashRecentPath !== null) {
+      trashRecent(pendingTrashRecentPath);
+    }
+    setPendingTrashRecentPath(null);
+  }, [pendingTrashRecentPath, trashRecent]);
+
+  const handleCancelTrashRecent = useCallback(() => {
+    setPendingTrashRecentPath(null);
+  }, []);
 
   const trashAll = useCallback((): void => {
     const store = getDevSessionLedgerStore();
@@ -1542,10 +1627,12 @@ function DevProjectPickerForm({
   // response.
   const cellContextValue = useMemo(
     () => ({
+      currentPath: trimmedPath,
       selection,
       pendingTrashSessionId,
+      pendingTrashRecentPath,
     }),
-    [selection, pendingTrashSessionId],
+    [trimmedPath, selection, pendingTrashSessionId, pendingTrashRecentPath],
   );
 
   // Master/detail layout: project-path input → Recents list →
@@ -1597,21 +1684,23 @@ function DevProjectPickerForm({
           base={path !== "" ? path : "/"}
           kind="directory"
           onSubmit={submit}
+          onOpenChange={setPathMenuOpen}
           placeholder="/path/to/project"
           autoFocus
         />
       </label>
       <PickerCellProvider value={cellContextValue}>
-        <div className="dev-card-picker-section">
+        <div
+          className="dev-card-picker-section"
+          data-completing={pathMenuOpen ? "true" : undefined}
+        >
           <span className="dev-card-picker-label">Recent Project Paths</span>
           <div className="dev-card-picker-recents-host">
             {recents.length > 0 ? (
               <TugListView
                 dataSource={recentsDataSource}
-                selectionRequired
                 rowLayout="flush"
                 delegate={recentsDelegate}
-                onSelectionChange={applyRecentPath}
                 cellRenderers={RECENTS_CELL_RENDERERS}
                 scrollKey="dev-card-picker-recents"
                 className="dev-card-picker-recents-list"
@@ -1720,6 +1809,19 @@ function DevProjectPickerForm({
         side="left"
         onConfirm={handleConfirmTrash}
         onCancel={handleCancelTrash}
+      />
+      {/* Form-owned confirm popover for removing a Recent Project Path,
+          anchored to the requesting row's trash icon. Mirrors the sessions
+          popover above. */}
+      <TugConfirmPopover
+        open={pendingTrashRecentPath !== null}
+        anchorEl={pendingTrashRecentAnchorEl}
+        message="Remove from recent paths?"
+        confirmLabel="Remove"
+        confirmRole="danger"
+        side="left"
+        onConfirm={handleConfirmTrashRecent}
+        onCancel={handleCancelTrashRecent}
       />
       </div>
     </PickerFormResponderScope>

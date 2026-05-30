@@ -377,6 +377,15 @@ export const TUG_ACTIONS = {
   //                         ../../../roadmap/tugplan-dev-picker-redesign.md#d14-no-per-cell-popovers).
   REQUEST_TRASH_SESSION: "request-trash-session",
 
+  // REQUEST_TRASH_RECENT:  payload — `{ path: string }`. Dispatched by the
+  //                        trash icon on a `path-recent` row in the Dev
+  //                        picker's Recent Project Paths list. Same
+  //                        request-then-confirm shape as REQUEST_TRASH_SESSION:
+  //                        the picker form responder sets a pending-path state
+  //                        that drives a single anchored `TugConfirmPopover`,
+  //                        and the remove runs in `onConfirm`.
+  REQUEST_TRASH_RECENT: "request-trash-recent",
+
   // ---- Meta ----
   //
   // SET_PROPERTY: payload — `{ path: string; value: unknown; source?: string }`.

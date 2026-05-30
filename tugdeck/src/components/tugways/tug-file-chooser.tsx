@@ -61,6 +61,8 @@ export interface TugFileChooserProps {
   kind?: CompletionKind;
   /** Fired on Enter when the completion menu is closed — the consumer's commit. */
   onSubmit?: () => void;
+  /** Fired when the completion menu opens / closes (e.g. to hide a sibling list). */
+  onOpenChange?: (open: boolean) => void;
   placeholder?: string;
   "aria-label"?: string;
   /** Input + button size. Defaults to `sm`. */
@@ -109,6 +111,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       base,
       kind = "directory",
       onSubmit,
+      onOpenChange,
       placeholder,
       "aria-label": ariaLabel,
       size = "sm",
@@ -220,6 +223,44 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       [onChange, closeMenu],
     );
 
+    // Notify the consumer when the menu opens/closes (so a sibling list can
+    // step aside while completions are showing).
+    useEffect(() => {
+      onOpenChange?.(open);
+    }, [open, onOpenChange]);
+
+    // Normalize the resting value when the menu closes: a trailing slash is a
+    // transient navigation aid (it's what lets you descend into a directory),
+    // but once the menu is dismissed the value should be the canonical path so
+    // `/x/` and `/x` are treated as the same — no duplicate-with-slash entries
+    // downstream. Root "/" is preserved.
+    const prevOpenRef = useRef(open);
+    useEffect(() => {
+      const wasOpen = prevOpenRef.current;
+      prevOpenRef.current = open;
+      if (wasOpen && !open && value.length > 1 && value.endsWith("/")) {
+        onChange(value.replace(/\/+$/, "") || "/");
+      }
+    }, [open, value, onChange]);
+
+    // While the menu is open, swallow Escape at the window capture phase so it
+    // closes ONLY the menu — ahead of the sheet/dialog's own Escape handler
+    // (a document/chrome-level listener), which would otherwise dismiss the
+    // whole sheet. Bubble-phase stopPropagation can't beat a capture handler;
+    // a window-capture listener fires first in the event path.
+    useEffect(() => {
+      if (!open) return;
+      const onCaptureKeyDown = (e: KeyboardEvent): void => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        closeMenu();
+      };
+      window.addEventListener("keydown", onCaptureKeyDown, true);
+      return () => window.removeEventListener("keydown", onCaptureKeyDown, true);
+    }, [open, closeMenu]);
+
     const onKeyDown = useCallback(
       (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (open && completions.length > 0) {
@@ -232,8 +273,21 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
               event.preventDefault();
               setActiveIndex((i) => (i - 1 + completions.length) % completions.length);
               return;
-            case "Enter":
+            case "Enter": {
+              // Accept the highlighted match AND dismiss the menu. Enter
+              // commits the selection (the close-normalizer strips any trailing
+              // slash) — distinct from Tab, which descends to keep navigating.
+              const item = completions[activeIndex];
+              if (item !== undefined) {
+                event.preventDefault();
+                onChange(item.value);
+                closeMenu();
+              }
+              return;
+            }
             case "Tab": {
+              // Complete to the highlighted match; for a directory this descends
+              // (the menu stays open on its children) so the user can keep going.
               const item = completions[activeIndex];
               if (item !== undefined) {
                 event.preventDefault();
@@ -241,12 +295,6 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
               }
               return;
             }
-            case "Escape":
-              // Close the menu only — don't let the sheet's Escape handler run.
-              event.preventDefault();
-              event.stopPropagation();
-              closeMenu();
-              return;
             default:
               return;
           }
@@ -257,7 +305,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
           onSubmit?.();
         }
       },
-      [open, completions, activeIndex, acceptItem, closeMenu, onSubmit],
+      [open, completions, activeIndex, acceptItem, closeMenu, onChange, onSubmit],
     );
 
     // Focus alone does not open the menu — only typing does (see armedRef).

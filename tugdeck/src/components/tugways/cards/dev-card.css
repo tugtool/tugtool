@@ -582,6 +582,21 @@
   gap: var(--tug-space-md);
 }
 
+/* While the path field's completion menu is open, fade the Recent Project
+   Paths block to a faint ghost (keeps its layout space) so the floating
+   overlay reads clearly without fully erasing the list. [L06] via DOM attr. */
+.dev-card-picker-section[data-completing="true"] {
+  opacity: 0.05;
+}
+
+/* Keep a recents row's trash icon visible while its confirm popover is open
+   (Mac-menu-open style), mirroring the Sessions list. The row carries
+   `data-pending-trash="true"`; its trailing slot is hover-revealed by default. */
+.tug-list-row[data-pending-trash="true"] .tug-list-row-trailing {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* @tug-renders-on: surface.global.neutral.default
    Matches TugBox legend treatment so the Project path label and
    the section legends below read as one family of headings. */

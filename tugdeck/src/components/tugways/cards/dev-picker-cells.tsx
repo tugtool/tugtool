@@ -109,6 +109,13 @@ export type PickerSelection =
   | { readonly kind: "session-resume"; readonly sessionId: string };
 
 interface PickerCellContextValue {
+  /**
+   * The live project-path text. A recents row highlights exactly when its
+   * path equals this; when the typed path matches no recent, none highlight.
+   * The path input and the recents list are two views of one value —
+   * whichever surface the user touches writes it, the other reflects.
+   */
+  readonly currentPath: string;
   /** Current session selection. `null` when no session row is selected. */
   readonly selection: PickerSelection | null;
   /**
@@ -119,11 +126,19 @@ interface PickerCellContextValue {
    * is up — Mac-menu-open style. `null` when no trash is pending.
    */
   readonly pendingTrashSessionId: string | null;
+  /**
+   * Recent path whose trash-confirmation popover is currently open. The
+   * matching recents row marks itself `data-pending-trash="true"` so its trash
+   * icon stays visible while the popover is up. `null` when none pending.
+   */
+  readonly pendingTrashRecentPath: string | null;
 }
 
 const NULL_CONTEXT: PickerCellContextValue = {
+  currentPath: "",
   selection: null,
   pendingTrashSessionId: null,
+  pendingTrashRecentPath: null,
 };
 
 const PickerCellContext = createContext<PickerCellContextValue>(NULL_CONTEXT);
@@ -175,21 +190,47 @@ function renderHighlighted(
  * title, so it rides the `children` escape hatch, not the `title`
  * prop.
  *
- * Selection is owned by `TugListView`'s `selectionRequired` mode. The
- * list view passes the owned selected state in through the cell's
- * `selected` prop; the cell forwards it to `TugListRow`, whose pill
- * `[data-selected]` treatment paints the highlight. The cell derives
- * no selection itself. The form's `onSelectionChange` mirrors the
- * selected recent into the project-path input.
+ * Selection mirrors the typed project path: the row highlights exactly when
+ * its path equals `currentPath` (from `PickerCellContext`), and none highlight
+ * when the typed path matches no recent. Clicking a recent writes that path
+ * back through `delegate.onSelect`, so the input and this list stay two views
+ * of one value.
  */
 export const PathRecentCell: TugListViewCellRenderer<DevRecentsDataSource> = ({
   index,
   dataSource,
-  selected,
 }: TugListViewCellProps<DevRecentsDataSource>) => {
+  const { currentPath, pendingTrashRecentPath } = usePickerCellContext();
   const row = dataSource.rowAt(index);
+  // Highlight only when this recent IS the typed path (exact match); none
+  // highlight when the typed path matches no recent. Derived from the one
+  // shared value, so the list always agrees with the input.
+  const isSelected = row.path === currentPath;
+  // While this row's trash-confirm popover is up, keep its icon visible
+  // (Mac-menu-open style) — mirrors the Sessions list's per-row trash.
+  const isPendingTrash = pendingTrashRecentPath === row.path;
+  const pathShort = row.path.split("/").filter(Boolean).slice(-1)[0] ?? row.path;
   return (
-    <TugListRow selected={selected}>
+    <TugListRow
+      selected={isSelected}
+      trailingReveal="hover"
+      data-recent-path={row.path}
+      data-pending-trash={isPendingTrash ? "true" : undefined}
+      trailing={
+        <TugIconButton
+          icon={<Trash2 size={14} aria-hidden="true" />}
+          aria-label={`Remove ${pathShort} from recent paths`}
+          title={`Remove ${pathShort} from recent paths`}
+          tone="danger"
+          className="dev-card-picker-recent-trash"
+          dispatch={{
+            action: TUG_ACTIONS.REQUEST_TRASH_RECENT,
+            value: { path: row.path },
+            phase: "discrete",
+          }}
+        />
+      }
+    >
       <div
         className="dev-card-picker-path-recent"
         data-testid="dev-card-picker-path-recent"
