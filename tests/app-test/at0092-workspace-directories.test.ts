@@ -39,9 +39,12 @@ const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
 const tabSel = (id: string): string => `${SHEET} .tug-tab[data-testid="tug-tab-${id}"]`;
-const ADD_INPUT = `${SHEET} .permission-rules-add-input`;
+const ADD_INPUT = `${SHEET} .tug-file-chooser-input`;
 const ADD_SUBMIT = `${SHEET} [data-slot="permission-rules-add-submit"]`;
-const COMPLETION_ITEM = `${SHEET} .permission-rules-completion`;
+// The completion overlay is portaled into the canvas overlay tier (not the
+// sheet), so it's matched globally.
+const OVERLAY = `[data-slot="tug-file-chooser-overlay"]`;
+const OVERLAY_ITEM = `${OVERLAY} .tug-completion-menu-item`;
 
 let projectDir = "";
 const settingsPath = (): string => join(projectDir, ".claude", "settings.local.json");
@@ -144,40 +147,54 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // Type a prefix; the debounced fetch surfaces the two matching child
-          // directories (alpha/, alphabet/) — not beta/, not the empty match.
+          // Focus the chooser input (a real click → onFocus arms the menu),
+          // then type a prefix. The debounced fetch surfaces the two matching
+          // child directories (alpha/, alphabet/) in the portaled overlay — not
+          // beta/, not the empty match.
+          // Focus the chooser input (fires onFocus → arms the menu) then type.
+          // Programmatic focus is the reliable driver here: a native click can
+          // land mid accordion-open animation and miss.
+          await app.evalJS<void>(
+            `document.querySelector(${JSON.stringify(ADD_INPUT)}).focus()`,
+          );
           await app.evalJS<void>(
             `window.__tug.type(${JSON.stringify(ADD_INPUT)}, "al")`,
           );
           await app.waitForCondition<boolean>(
             `(function(){
-              var items = Array.from(document.querySelectorAll(${JSON.stringify(COMPLETION_ITEM)})).map(function(b){return b.textContent.trim();});
+              var items = Array.from(document.querySelectorAll(${JSON.stringify(OVERLAY_ITEM)})).map(function(b){return b.textContent.trim();});
               return items.indexOf("alpha/") !== -1 && items.indexOf("alphabet/") !== -1;
             })()`,
             { timeoutMs: 5000 },
           );
           const labels = await app.evalJS<string[]>(
-            `Array.from(document.querySelectorAll(${JSON.stringify(COMPLETION_ITEM)})).map(function(b){return b.textContent.trim();})`,
+            `Array.from(document.querySelectorAll(${JSON.stringify(OVERLAY_ITEM)})).map(function(b){return b.textContent.trim();})`,
           );
-          expect(labels, "completion lists matching dirs only, sorted").toEqual([
+          expect(labels, "overlay lists matching dirs only, sorted").toEqual([
             "alpha/",
             "alphabet/",
           ]);
 
-          expect(workspaceDirs(), "no dir before add").not.toContain("alpha/");
+          expect(workspaceDirs(), "no dir before add").not.toContain("alphabet/");
 
-          // Click the alpha/ completion → fills the field → Add writes it.
-          await app.evalJS<void>(
-            `(function(){
-              var btn = Array.from(document.querySelectorAll(${JSON.stringify(COMPLETION_ITEM)})).find(function(b){return b.textContent.trim() === "alpha/";});
-              if (!btn) throw new Error("alpha/ completion not found");
-              btn.click();
-            })()`,
-          );
+          // Arrow-key behavior: ↓ moves the highlight from alpha/ (index 0) to
+          // alphabet/ (index 1); Enter accepts it into the field. Selecting that
+          // (empty) directory closes the menu.
+          await app.nativeKey("ArrowDown");
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(ADD_INPUT)}).value === "alpha/"`,
+            `(function(){
+              var sel = document.querySelector(${JSON.stringify(`${OVERLAY} .tug-completion-menu-item-selected`)});
+              return sel !== null && sel.textContent.trim() === "alphabet/";
+            })()`,
             { timeoutMs: 4000 },
           );
+          await app.nativeKey("Return");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(ADD_INPUT)}).value === "alphabet/"`,
+            { timeoutMs: 4000 },
+          );
+
+          // Add writes the chosen directory.
           await app.waitForCondition<boolean>(
             `(function(){var b=document.querySelector(${JSON.stringify(ADD_SUBMIT)});return b!==null && !b.disabled;})()`,
             { timeoutMs: 4000 },
@@ -187,13 +204,13 @@ describe.skipIf(!SHOULD_RUN)(
           );
 
           await waitForDirs(
-            (dirs) => dirs.includes("alpha/"),
+            (dirs) => dirs.includes("alphabet/"),
             "Add must write the directory to additionalDirectories",
           );
 
           // The added directory appears as a row in the list.
           await app.waitForCondition<boolean>(
-            `Array.from(document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-rule-matcher`)})).some(function(el){return el.textContent.trim() === "alpha/";})`,
+            `Array.from(document.querySelectorAll(${JSON.stringify(`${SHEET} .permission-rule-matcher`)})).some(function(el){return el.textContent.trim() === "alphabet/";})`,
             { timeoutMs: 4000 },
           );
 

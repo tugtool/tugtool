@@ -38,6 +38,7 @@ import { GalleryScaleTiming } from "./gallery-scale-timing";
 import { GalleryAnimator } from "./gallery-animator";
 import { GallerySkeleton } from "./gallery-skeleton";
 import { GalleryInput } from "./gallery-input";
+import { GalleryFileChooser } from "./gallery-file-chooser";
 import { GalleryLabel } from "./gallery-label";
 import { GalleryMarquee } from "./gallery-marquee";
 import { GalleryCheckbox } from "./gallery-checkbox";
@@ -1412,6 +1413,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-input",
     contentFactory: (_cardId) => <GalleryInput />,
     defaultMeta: { title: "TugInput", icon: "TextCursorInput", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.textInput,
+  });
+
+  registerCard({
+    componentId: "gallery-file-chooser",
+    contentFactory: (_cardId) => <GalleryFileChooser />,
+    defaultMeta: { title: "TugFileChooser", icon: "FolderOpen", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

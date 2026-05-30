@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { fetchDirectoryCompletions } from "@/lib/fs-complete";
+import { fetchPathCompletions } from "@/lib/fs-complete";
 
 function makeResponse(status: number, body: unknown): Response {
   return {
@@ -19,32 +19,48 @@ afterEach(() => {
   mock.restore();
 });
 
-describe("fetchDirectoryCompletions", () => {
-  test("encodes base + partial into the query and returns valid entries", async () => {
+describe("fetchPathCompletions", () => {
+  test("encodes base + partial + kind into the query and returns valid entries", async () => {
     let calledUrl = "";
     globalThis.fetch = mock(async (url: string | URL | Request) => {
       calledUrl = String(url);
       return makeResponse(200, {
         completions: [
-          { label: "private/", value: "/proj/private/" },
-          { label: "public/", value: "/proj/public/" },
+          { label: "private/", value: "/proj/private/", isDir: true },
+          { label: "public/", value: "/proj/public/", isDir: true },
         ],
       });
     }) as unknown as typeof fetch;
 
-    const out = await fetchDirectoryCompletions("/proj", "p i");
-    expect(calledUrl).toBe("/api/fs/complete?base=%2Fproj&partial=p%20i");
+    const out = await fetchPathCompletions("/proj", "p i");
+    expect(calledUrl).toBe(
+      "/api/fs/complete?base=%2Fproj&partial=p%20i&kind=directory",
+    );
     expect(out).toEqual([
-      { label: "private/", value: "/proj/private/" },
-      { label: "public/", value: "/proj/public/" },
+      { label: "private/", value: "/proj/private/", isDir: true },
+      { label: "public/", value: "/proj/public/", isDir: true },
     ]);
+  });
+
+  test("file kind is passed through and isDir defaults false when absent", async () => {
+    let calledUrl = "";
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      calledUrl = String(url);
+      return makeResponse(200, {
+        completions: [{ label: "notes.md", value: "/x/notes.md" }],
+      });
+    }) as unknown as typeof fetch;
+
+    const out = await fetchPathCompletions("/x", "no", "file");
+    expect(calledUrl).toBe("/api/fs/complete?base=%2Fx&partial=no&kind=file");
+    expect(out).toEqual([{ label: "notes.md", value: "/x/notes.md", isDir: false }]);
   });
 
   test("drops malformed entries and tolerates a non-array payload", async () => {
     globalThis.fetch = mock(async () =>
       makeResponse(200, {
         completions: [
-          { label: "ok/", value: "/x/ok/" },
+          { label: "ok/", value: "/x/ok/", isDir: true },
           { label: 42, value: "/x/bad/" }, // non-string label → drop
           { value: "/x/missing-label/" }, // missing label → drop
           "nope", // not an object → drop
@@ -52,23 +68,23 @@ describe("fetchDirectoryCompletions", () => {
       }),
     ) as unknown as typeof fetch;
 
-    expect(await fetchDirectoryCompletions("/x", "")).toEqual([
-      { label: "ok/", value: "/x/ok/" },
+    expect(await fetchPathCompletions("/x", "")).toEqual([
+      { label: "ok/", value: "/x/ok/", isDir: true },
     ]);
 
     globalThis.fetch = mock(async () =>
       makeResponse(200, { completions: "not-an-array" }),
     ) as unknown as typeof fetch;
-    expect(await fetchDirectoryCompletions("/x", "")).toEqual([]);
+    expect(await fetchPathCompletions("/x", "")).toEqual([]);
   });
 
   test("returns [] on a non-OK response or a thrown fetch", async () => {
     globalThis.fetch = mock(async () => makeResponse(500, {})) as unknown as typeof fetch;
-    expect(await fetchDirectoryCompletions("/x", "")).toEqual([]);
+    expect(await fetchPathCompletions("/x", "")).toEqual([]);
 
     globalThis.fetch = mock(async () => {
       throw new Error("offline");
     }) as unknown as typeof fetch;
-    expect(await fetchDirectoryCompletions("/x", "")).toEqual([]);
+    expect(await fetchPathCompletions("/x", "")).toEqual([]);
   });
 });

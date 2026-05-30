@@ -74,75 +74,10 @@ input.permission-rules-search {
   padding: var(--tug-space-sm) 0;
 }
 
-/* Entry row: the path/matcher input, with a trailing Browse… picker button
-   in directory mode. */
-.permission-rules-add-entry {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-xs);
-}
-
-/* Square picker button: an explicit 1.75rem box matching the sm input's height
-   (`aspect-ratio` collapsed under flexbox). A touch of left margin sets it off
-   from the input. The descendant selector beats the button's own size class. */
-.permission-rules-add-entry [data-slot="permission-rules-browse"] {
-  flex-shrink: 0;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  margin-left: var(--tug-space-2xs);
-}
-
-/* The entry reads like the filter + list rows (monospace, matching size). It
-   flexes to fill the row beside the optional Browse… button. */
+/* The matcher entry (rule mode) reads like the filter + list rows. The
+   directory entry is a TugFileChooser, which owns its own layout. */
 .permission-rules-add-input {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Directory completions (Tab / click to complete) — a fixed-height list of
-   matching child directories below the entry. Exactly 6 rows (each 2rem) tall,
-   plus the 1px top/bottom border, so the panel never reflows as matches change;
-   overflow scrolls. */
-.permission-rules-completions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  box-sizing: border-box;
-  height: calc(2rem * 6 + 2px);
-  overflow-y: auto;
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-md);
-}
-
-/* Each completion is a full-width, left-aligned, fixed-height monospace row.
-   `text-transform: none` undoes TugPushButton's uppercasing — directory names
-   are case-sensitive and must read verbatim. The compound selector beats the
-   button's own size class. */
-.permission-rules-completions .permission-rules-completion {
-  justify-content: flex-start;
   width: 100%;
-  height: 2rem;
-  padding: 0 var(--tug-space-sm);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: var(--tug-font-size-xs);
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-/* Muted placeholder occupying the first row when nothing matches — keeps the
-   reserved list from reading as a blank box. */
-.permission-rules-completions-empty {
-  display: flex;
-  align-items: center;
-  height: 2rem;
-  padding: 0 var(--tug-space-sm);
-  font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 input.permission-rules-add-input {

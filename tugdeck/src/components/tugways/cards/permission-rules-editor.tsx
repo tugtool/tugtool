@@ -44,9 +44,10 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Trash2, FolderOpen } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 import { TugInput } from "@/components/tugways/tug-input";
+import { TugFileChooser } from "@/components/tugways/tug-file-chooser";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugListRow } from "@/components/tugways/tug-list-row";
@@ -80,11 +81,6 @@ import {
   type RuleScope,
 } from "@/lib/permission-rules";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
-import { fetchDirectoryCompletions, type DirCompletion } from "@/lib/fs-complete";
-import {
-  isDirectoryPickerAvailable,
-  pickDirectory,
-} from "@/lib/native-directory-picker";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -256,54 +252,28 @@ interface AddRuleFormProps {
  * In `rule` mode the matcher must be syntactically valid
  * ({@link isValidRuleMatcher}) for Add to enable — unknown tool names pass
  * (matching the terminal), blatant garbage doesn't. In `directory` mode entry
- * is permissive (any non-empty path) and the field gains debounced directory
- * completion (`Tab` or click a suggestion to complete) plus an OS picker. Enter
- * adds; the value is stored verbatim.
+ * is permissive (any non-empty path) and the field is a {@link TugFileChooser}:
+ * an overlay completion menu + an OS picker. Enter adds; value stored verbatim.
  */
 function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React.ReactElement {
   const [draft, setDraft] = useState("");
   const [scope, setScope] = useState<RuleScope>("local");
-  const [completions, setCompletions] = useState<readonly DirCompletion[]>([]);
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const isDir = kind === "directory";
   const trimmed = draft.trim();
   const valid = isDir ? trimmed !== "" : isValidRuleMatcher(draft);
-  const showPicker = isDir && isDirectoryPickerAvailable();
 
   const radioId = useId();
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: { [radioId]: (next: string) => setScope(next as RuleScope) },
   });
 
-  // Directory mode: debounced completion fetch against the session cwd. An
-  // empty draft lists the cwd's child directories, so the field opens browsable.
-  useEffect(() => {
-    if (!isDir || cwd === undefined) return;
-    const handle = setTimeout(() => {
-      void fetchDirectoryCompletions(cwd, draft).then(setCompletions);
-    }, 120);
-    return () => clearTimeout(handle);
-  }, [isDir, cwd, draft]);
-
   const submit = useCallback(() => {
     const entry = draft.trim();
     if (isDir ? entry === "" : !isValidRuleMatcher(entry)) return;
     onAdd(scope, entry);
     setDraft("");
-    setCompletions([]);
   }, [draft, scope, onAdd, isDir]);
-
-  const complete = useCallback((value: string) => {
-    setDraft(value);
-    inputRef.current?.focus();
-  }, []);
-
-  const browse = useCallback(() => {
-    void pickDirectory(draft.trim() !== "" ? draft.trim() : cwd).then((path) => {
-      if (path !== null) setDraft(path);
-    });
-  }, [draft, cwd]);
 
   return (
     <ResponderScope>
@@ -311,13 +281,22 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
         className="permission-rules-add"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <div className="permission-rules-add-entry">
+        {isDir ? (
+          <TugFileChooser
+            value={draft}
+            onChange={setDraft}
+            base={cwd ?? ""}
+            kind="directory"
+            onSubmit={submit}
+            placeholder={placeholder}
+            aria-label="New directory path"
+          />
+        ) : (
           <TugInput
-            ref={inputRef}
             size="sm"
             value={draft}
             placeholder={placeholder}
-            aria-label={isDir ? "New directory path" : "New rule matcher"}
+            aria-label="New rule matcher"
             validation={trimmed !== "" && !valid ? "invalid" : "default"}
             className="permission-rules-add-input"
             onChange={(event) => setDraft(event.target.value)}
@@ -325,53 +304,9 @@ function AddRuleForm({ placeholder, onAdd, kind, cwd }: AddRuleFormProps): React
               if (event.key === "Enter") {
                 event.preventDefault();
                 submit();
-                return;
-              }
-              // Tab completes to the first suggestion (terminal parity),
-              // falling back to normal focus movement when there's nothing
-              // to complete.
-              if (event.key === "Tab" && isDir && completions.length > 0) {
-                event.preventDefault();
-                complete(completions[0].value);
               }
             }}
           />
-          {showPicker && (
-            <TugPushButton
-              size="sm"
-              emphasis="ghost"
-              aria-label="Browse for a directory"
-              data-slot="permission-rules-browse"
-              onClick={browse}
-            >
-              <FolderOpen aria-hidden="true" size={14} />
-            </TugPushButton>
-          )}
-        </div>
-        {isDir && (
-          // Always rendered at a fixed height so the accordion's content height
-          // is stable from the first open frame — populating it later never
-          // grows the box, so the radios below don't hop. ([L06] no reflow.)
-          <ul className="permission-rules-completions" data-slot="dir-completions">
-            {completions.length === 0 ? (
-              <li className="permission-rules-completions-empty" aria-disabled="true">
-                No matching directories
-              </li>
-            ) : (
-              completions.map((c) => (
-                <li key={c.value}>
-                  <TugPushButton
-                    size="sm"
-                    emphasis="ghost"
-                    className="permission-rules-completion"
-                    onClick={() => complete(c.value)}
-                  >
-                    {c.label}
-                  </TugPushButton>
-                </li>
-              ))
-            )}
-          </ul>
         )}
         <TugRadioGroup
           value={scope}

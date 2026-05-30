@@ -846,13 +846,16 @@ extension AppDelegate: BridgeDelegate {
         }
     }
 
-    func bridgeChooseDirectory(initialPath: String?, completion: @escaping (String?) -> Void) {
+    func bridgeChoosePath(kind: String, initialPath: String?, completion: @escaping (String?) -> Void) {
+        let wantFile = kind == "file"
         let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
+        panel.canChooseFiles = wantFile
+        // Directories are always navigable; in directory mode they're also the
+        // selectable result. In file mode the user descends dirs to pick a file.
+        panel.canChooseDirectories = !wantFile
         panel.allowsMultipleSelection = false
-        panel.message = "Choose a directory to add to the workspace"
-        panel.prompt = "Add"
+        panel.message = wantFile ? "Choose a file" : "Choose a directory"
+        panel.prompt = "Choose"
         if let initialPath = initialPath, !initialPath.isEmpty {
             var isDir: ObjCBool = false
             let resolved = (initialPath as NSString).expandingTildeInPath

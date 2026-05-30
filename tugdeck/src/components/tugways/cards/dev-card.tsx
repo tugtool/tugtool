@@ -49,7 +49,7 @@ import { useContentDrivenPanelSize } from "../use-content-driven-panel-size";
 import { group } from "../tug-animator";
 import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
-import { TugInput } from "../tug-input";
+import { TugFileChooser } from "../tug-file-chooser";
 import { TugPushButton } from "../tug-push-button";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { TugLabel } from "../tug-label";
@@ -822,6 +822,7 @@ function DevProjectPicker({ cardId }: DevProjectPickerProps) {
     void showSheet({
       title: "Choose Session",
       presentation: "top",
+      displayWidth: "wide",
       // Capture the cascade target at sheet-open time per
       // `tugplan-dev-overlay-framework.md` [D02]. `cardId` is the
       // card-host's responder id; the chain walk from `cardId`
@@ -1589,18 +1590,13 @@ function DevProjectPickerForm({
       )}
       <label className="dev-card-picker-field">
         <span className="dev-card-picker-label">Project path</span>
-        <TugInput
+        <TugFileChooser
           ref={inputRef}
-          type="text"
-          className="dev-card-picker-path-input"
           value={path}
-          onChange={(e) => setPath((e.target as HTMLInputElement).value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            }
-          }}
+          onChange={setPath}
+          base={path !== "" ? path : "/"}
+          kind="directory"
+          onSubmit={submit}
           placeholder="/path/to/project"
           autoFocus
         />

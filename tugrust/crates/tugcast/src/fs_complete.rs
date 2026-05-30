@@ -26,12 +26,17 @@ use tracing::warn;
 const MAX_COMPLETIONS: usize = 100;
 
 /// Query string for `GET /api/fs/complete`: the session working directory
-/// (`base`) relative paths resolve under, and the `partial` path typed so far.
+/// (`base`) relative paths resolve under, the `partial` path typed so far, and
+/// the `kind` of entry to surface — `directory` (default) lists only child
+/// directories; `file` lists files too (directories still appear so the user
+/// can descend toward a file).
 #[derive(Debug, Deserialize)]
 pub(crate) struct CompleteQuery {
     base: String,
     #[serde(default)]
     partial: String,
+    #[serde(default)]
+    kind: Option<String>,
 }
 
 /// Resolve `$HOME`, mirroring `permissions.rs`.
@@ -65,48 +70,61 @@ fn resolve_dir(dir_part: &str, base: &Path, home: &Path) -> PathBuf {
     }
 }
 
-/// List child directories of `read_dir_path` whose names case-insensitively
-/// prefix-match `prefix`, formatted as completion entries. The `dir_part` (as
-/// typed) is prepended to each name so the returned `value` is a drop-in
-/// replacement for the input. Best-effort: returns `[]` on any read error.
-fn list_completions(read_dir_path: &Path, dir_part: &str, prefix: &str) -> Vec<Value> {
+/// List children of `read_dir_path` whose names case-insensitively prefix-match
+/// `prefix`, formatted as completion entries. Directories always appear (so a
+/// file chooser can descend); files appear only when `include_files`. The
+/// `dir_part` (as typed) is prepended to each name so the returned `value` is a
+/// drop-in replacement for the input — directories get a trailing `/` (to keep
+/// descending), files do not. Each entry carries `isDir`. Directories sort
+/// before files, then alphabetically. Best-effort: returns `[]` on any read
+/// error.
+fn list_completions(
+    read_dir_path: &Path,
+    dir_part: &str,
+    prefix: &str,
+    include_files: bool,
+) -> Vec<Value> {
     let entries = match std::fs::read_dir(read_dir_path) {
         Ok(entries) => entries,
         Err(_) => return Vec::new(),
     };
     let needle = prefix.to_lowercase();
-    let mut names: Vec<String> = Vec::new();
+    // (is_dir, name) — sorted dirs-first then by name.
+    let mut found: Vec<(bool, String)> = Vec::new();
     for entry in entries.flatten() {
         let is_dir = match entry.file_type() {
             Ok(ft) => ft.is_dir(),
             Err(_) => false,
         };
-        if !is_dir {
+        if !is_dir && !include_files {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.to_lowercase().starts_with(&needle) {
-            names.push(name);
+            found.push((is_dir, name));
         }
     }
-    names.sort();
-    names
+    // Directories first (so descending is one keystroke away), then by name.
+    found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    found
         .into_iter()
         .take(MAX_COMPLETIONS)
-        .map(|name| {
+        .map(|(is_dir, name)| {
+            let suffix = if is_dir { "/" } else { "" };
             json!({
-                "label": format!("{name}/"),
-                "value": format!("{dir_part}{name}/"),
+                "label": format!("{name}{suffix}"),
+                "value": format!("{dir_part}{name}{suffix}"),
+                "isDir": is_dir,
             })
         })
         .collect()
 }
 
-/// Handle `GET /api/fs/complete?base=<abs>&partial=<text>`.
+/// Handle `GET /api/fs/complete?base=<abs>&partial=<text>&kind=<directory|file>`.
 ///
-/// Returns `{ "completions": [ { "label": "<name>/", "value": "<dir-part><name>/" } ] }`.
-/// Restricted to loopback. 400 when `base` is not absolute. A missing/unreadable
-/// parent directory yields an empty list, not an error.
+/// Returns `{ "completions": [ { "label", "value", "isDir" } ] }`. Restricted to
+/// loopback. 400 when `base` is not absolute. A missing/unreadable parent
+/// directory yields an empty list, not an error.
 pub(crate) async fn get_fs_complete(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(query): Query<CompleteQuery>,
@@ -139,10 +157,11 @@ pub(crate) async fn get_fs_complete(
     };
 
     let partial = query.partial;
+    let include_files = query.kind.as_deref() == Some("file");
     let result = tokio::task::spawn_blocking(move || {
         let (dir_part, prefix) = split_partial(&partial);
         let read_dir_path = resolve_dir(dir_part, &base, &home);
-        let completions = list_completions(&read_dir_path, dir_part, prefix);
+        let completions = list_completions(&read_dir_path, dir_part, prefix, include_files);
         json!({ "completions": completions })
     })
     .await;
@@ -188,31 +207,49 @@ mod tests {
     }
 
     #[test]
-    fn list_completions_returns_matching_child_dirs_only() {
+    fn list_completions_directory_kind_returns_child_dirs_only() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("private")).unwrap();
         std::fs::create_dir(dir.path().join("public")).unwrap();
         std::fs::create_dir(dir.path().join("assets")).unwrap();
         std::fs::write(dir.path().join("plan.txt"), "x").unwrap();
 
-        // Prefix "p" matches the two p-dirs (sorted), not the plan.txt file.
-        let out = list_completions(dir.path(), "/root/", "p");
+        // Prefix "p", directory kind → the two p-dirs only, not plan.txt.
+        let out = list_completions(dir.path(), "/root/", "p", false);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0]["label"], json!("private/"));
         assert_eq!(out[0]["value"], json!("/root/private/"));
+        assert_eq!(out[0]["isDir"], json!(true));
         assert_eq!(out[1]["label"], json!("public/"));
+    }
+
+    #[test]
+    fn list_completions_file_kind_includes_files_dirs_first() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("pkg")).unwrap();
+        std::fs::write(dir.path().join("plan.txt"), "x").unwrap();
+
+        // Prefix "p", file kind → both, directory sorted first, files have no
+        // trailing slash and isDir=false.
+        let out = list_completions(dir.path(), "", "p", true);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0]["label"], json!("pkg/"));
+        assert_eq!(out[0]["isDir"], json!(true));
+        assert_eq!(out[1]["label"], json!("plan.txt"));
+        assert_eq!(out[1]["value"], json!("plan.txt"));
+        assert_eq!(out[1]["isDir"], json!(false));
     }
 
     #[test]
     fn list_completions_is_case_insensitive_and_empty_prefix_lists_all_dirs() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("Private")).unwrap();
-        assert_eq!(list_completions(dir.path(), "", "priv").len(), 1);
-        assert_eq!(list_completions(dir.path(), "", "").len(), 1);
+        assert_eq!(list_completions(dir.path(), "", "priv", false).len(), 1);
+        assert_eq!(list_completions(dir.path(), "", "", false).len(), 1);
     }
 
     #[test]
     fn list_completions_missing_dir_is_empty() {
-        assert!(list_completions(Path::new("/no/such/dir"), "", "").is_empty());
+        assert!(list_completions(Path::new("/no/such/dir"), "", "", false).is_empty());
     }
 }

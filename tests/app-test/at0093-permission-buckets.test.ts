@@ -38,7 +38,6 @@ const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
 const tabSel = (id: string): string => `${SHEET} .tug-tab[data-testid="tug-tab-${id}"]`;
-const ADD_INPUT = `${SHEET} .permission-rules-add-input`;
 const ADD_SUBMIT = `${SHEET} [data-slot="permission-rules-add-submit"]`;
 
 let projectDir = "";
@@ -46,18 +45,24 @@ const settingsLocal = (): string => join(projectDir, ".claude", "settings.local.
 
 beforeAll(() => {
   if (!SHOULD_RUN) return;
+  // Spawn clean (no pre-seeded settings — a project that spawns with a
+  // non-default permission mode disrupts the prompt; out of scope here). The
+  // pre-seed is written after the editor opens; the first add's read-modify-
+  // write still has to preserve it.
   projectDir = mkdtempSync(join(tmpdir(), "at0093-buckets-"));
-  mkdirSync(join(projectDir, ".claude"));
-  // Pre-seed: an existing allow rule + a mode + an unrelated key. Each must
-  // survive every add (non-destructive merge).
+});
+
+/** Pre-seed settings.local.json with keys every add must preserve. */
+function seedSettings(): void {
+  mkdirSync(join(projectDir, ".claude"), { recursive: true });
   writeFileSync(
     settingsLocal(),
     JSON.stringify({
-      permissions: { defaultMode: "plan", allow: ["WebSearch"] },
+      permissions: { defaultMode: "acceptEdits", allow: ["WebSearch"] },
       spinnerTipsEnabled: false,
     }),
   );
-});
+}
 
 afterAll(() => {
   if (projectDir !== "" && existsSync(projectDir)) {
@@ -139,6 +144,11 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 6000 },
           );
 
+          // Now seed the keys the adds must preserve, on disk, before any add.
+          // The editor loaded an empty file on open; each add's read-modify-
+          // write (the real Rust handler) reads this fresh and must keep it.
+          seedSettings();
+
           // Add one entry on a given tab and wait for it to land in `key`.
           // The add form lives in a collapsed accordion; expand it if the
           // input isn't already showing (the RulePanel instance — and thus the
@@ -149,23 +159,29 @@ describe.skipIf(!SHOULD_RUN)(
             key: string,
             entry: string,
           ): Promise<void> => {
+            // The Workspace tab's entry is a TugFileChooser; the rule tabs use
+            // the plain matcher input.
+            const input =
+              tabId === "workspace"
+                ? `${SHEET} .tug-file-chooser-input`
+                : `${SHEET} .permission-rules-add-input`;
             await app.evalJS<void>(
               `document.querySelector(${JSON.stringify(tabSel(tabId))}).click()`,
             );
             await app.evalJS<void>(
               `(function(){
-                if (document.querySelector(${JSON.stringify(ADD_INPUT)}) === null) {
+                if (document.querySelector(${JSON.stringify(input)}) === null) {
                   var t = document.querySelector(${JSON.stringify(`${SHEET} .tug-accordion-trigger`)});
                   if (t) t.click();
                 }
               })()`,
             );
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(ADD_INPUT)}) !== null`,
+              `document.querySelector(${JSON.stringify(input)}) !== null`,
               { timeoutMs: 4000 },
             );
             await app.evalJS<void>(
-              `window.__tug.type(${JSON.stringify(ADD_INPUT)}, ${JSON.stringify(entry)})`,
+              `window.__tug.type(${JSON.stringify(input)}, ${JSON.stringify(entry)})`,
             );
             await app.waitForCondition<boolean>(
               `(function(){var b=document.querySelector(${JSON.stringify(ADD_SUBMIT)});return b!==null && !b.disabled;})()`,
@@ -194,7 +210,7 @@ describe.skipIf(!SHOULD_RUN)(
           // Non-destructive merge: the mode and the unrelated key survive.
           const settings = readSettings();
           const perms = settings.permissions as Record<string, unknown>;
-          expect(perms.defaultMode, "defaultMode preserved").toBe("plan");
+          expect(perms.defaultMode, "defaultMode preserved").toBe("acceptEdits");
           expect(settings.spinnerTipsEnabled, "unrelated key preserved").toBe(false);
 
           process.stdout.write("VERDICT: PASS\n");

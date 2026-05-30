@@ -1,0 +1,40 @@
+/* @tug-pairings: none — layout only. The input + button bring their own chrome
+   from the composed TugInput / TugPushButton, and the completion overlay borrows
+   tug-completion-menu.css. [L20] */
+
+/* Field row: the path input, with an optional trailing square Browse… button. */
+.tug-file-chooser {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+.tug-file-chooser-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Paths read best monospace. `input.` raises specificity over `.tug-input`'s
+   inherited family regardless of stylesheet load order. */
+input.tug-file-chooser-input {
+  font-family: var(--tug-font-family-mono);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Square picker button matching the sm input's height (an explicit box —
+   aspect-ratio collapses under flexbox). A touch of left margin sets it off
+   from the input. The descendant selector beats the button's own size class. */
+.tug-file-chooser [data-slot="tug-file-chooser-browse"] {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  margin-left: var(--tug-space-2xs);
+}
+
+/* The completion overlay shows directory paths verbatim, in monospace, undoing
+   TugPushButton-style casing concerns (it's a plain <li>). */
+.tug-completion-menu[data-slot="tug-file-chooser-overlay"] .tug-completion-menu-label {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
