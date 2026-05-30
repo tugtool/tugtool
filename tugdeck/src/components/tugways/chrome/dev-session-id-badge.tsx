@@ -1,13 +1,12 @@
 /**
- * `DevSessionIdBadge` — dev-only Z4B chip showing the truncated
- * `tugSessionId` of the card's current binding.
+ * `DevSessionIdBadge` — Z4B chip showing the truncated `tugSessionId`
+ * of the card's current binding.
  *
  * Purpose: surface "which session am I bound to right now?" inline so
  * regressions in session-restore (e.g. an unintended `mode=new` after
  * Developer > Reload) are visible at a glance — pre-reload and
- * post-reload ids should match if the binding survived. Outside dev
- * the badge tree-shakes out via `isDevEnv()`; production builds pay
- * no rendering cost.
+ * post-reload ids should match if the binding survived. Renders in all
+ * builds; collapses to `null` only when the card has no binding.
  *
  * Reads the binding through `cardSessionBindingStore` per [L02] —
  * external state enters React via `useSyncExternalStore`. The
@@ -22,7 +21,6 @@ import React from "react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
-import { isDevEnv } from "@/lib/dev-env";
 
 export interface DevSessionIdBadgeProps {
   /** The card whose binding's session id to display. */
@@ -44,7 +42,6 @@ export function DevSessionIdBadge({
     ),
   );
 
-  if (!isDevEnv()) return null;
   if (tugSessionId === null) return null;
 
   return (
