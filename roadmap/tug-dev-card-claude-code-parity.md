@@ -629,7 +629,7 @@ Legend — **✅ covered** (existing step) · **🆓 pass-through** (free this p
 | `/status` | local-jsx | client | ✅ covered by Z4B chrome ([#step-1]–[#step-4]); typed `/status` is a no-op |
 | `/export`,`/add-dir` | local-jsx | client | ✅ planned in [#step-13] (save dialog / dir picker) |
 | `/skills` | local-jsx | client | ✅ **promoted to [#step-12]** — read-only listing alongside agents/hooks/memory |
-| `/rename` | local | client | ✅ **promoted to [#step-13]** — renames the card title; client-side, no IPC |
+| `/rename` | local | client | ✅ **promoted to [#step-13]** — names the **session** (ledger `name` column + `rename_session` verb); surfaced in the Z4B session chip (≤16 chars) and the session chooser; no IPC to claude |
 | `/fast` | local | client | ⏸ defer — Opus fast-mode toggle; a model-variant control, revisit with the model chip |
 | `/branch` | local-jsx | client | ⏸ defer — conversation branching; Phase B session-fork follow-on (sibling of `/rewind`) |
 | `/plan` | local-jsx | client | ⏸ defer — plan-mode workflow is an explicit [#non-goals] follow-on |
@@ -648,7 +648,7 @@ Legend — **✅ covered** (existing step) · **🆓 pass-through** (free this p
 **Recommended additions to the current parity pass** (everything else above is either already covered or deferred):
 
 1. **Pass-throughs — no build, just don't hide them.** `/init`, `/insights`, `/compact` (and, structurally, *every* `prompt`-type and skill command). Action: the [#step-13] allowlist must keep these visible and route them to claude verbatim per the [D14] refinement above. Verify each emits a normal turn over the bridge with a one-shot probe before relying on it (the `type:"prompt"` expansion is expected to work headless, but confirm — same empirical discipline as [D10]).
-2. **Two cheap client-side wins, now promoted into existing steps:** `/skills` → a read-only listing in [#step-12] (same shape as agents/hooks/memory); `/rename` → a card-title rename action in [#step-13]. Both are low-cost and high-recognition; their tasks/artifacts/tests are written into those steps.
+2. **Two wins promoted into existing steps:** `/skills` → a read-only listing in [#step-12] (same shape as agents/hooks/memory — genuinely cheap); `/rename` → a **session-name** feature in [#step-13], surfaced in the Z4B session chip (≤16 chars) and the session chooser. `/rename` grew from "trivial" to a small **cross-layer** feature (ledger `name` column + `rename_session` verb + chip + chooser reads) once it became a real, persisted session label rather than a card-tab rename — still contained, scoped accordingly in the step.
 
 **Explicitly deferred this pass** (with the grouped reasons in L02): conversation-structure (`/branch`, `/plan`, `/goal`), view/preference (`/focus`, `/fast`, `/config`), automation (`/loop`, `/tasks`, `/autofix-pr`, `/recap`), plugin/dev-loop (`/advisor`, `/plugin`, `/reload-*`), account/host (`/login`, `/logout`, `/privacy-settings`, `/ide`, `/desktop`, `/mobile`, `/remote-control`, `/remote-env`, `/background`, `/doctor`, `/release-notes`), and web-only (`/ultraplan`, `/ultrareview`). None are conversational-surface parity gaps; each is a host-app, account, automation, or web concern with a natural future home.
 
@@ -667,7 +667,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 - `model`: format `Opus 4.8 · 1M`. Display-only. Model changes via `/model` slash command.
 - `rate-limit`: appears only when `status !== "allowed"` or `resetsAt < 60min`; otherwise absent (removed, no placeholder slot). Display-only.
 - `project-path`: existing chip, already cut over to the two-line `label-top` / `size="sm"` / `role="agent"` config (caption `PROJECT`).
-- `session-state`: existing chip, already cut over to the same two-line config (caption `SESSION`); lifecycle-state refinement in [#step-4].
+- `session-state`: existing chip, already cut over to the same two-line config (caption `SESSION`). Shows the session **name** when one has been set via `/rename` ([#step-13]) — capped at ~16 chars, ellipsized, with the full name + raw id in the tooltip — falling back to the truncated `tugSessionId` otherwise. (The original lifecycle-state refinement was cancelled; lifecycle lives in the status bar — see [#step-4].)
 
 #### `/rewind` interaction flow {#rewind-flow}
 
@@ -1730,6 +1730,7 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 - Modified: `session-metadata-store.ts` `getCommandCompletionProvider` applies the allowlist *filter* over claude's commands (the local-command merge seam landed in [#step-1c])
 - Modified: slash-command popup component to filter; submit-side blocklist swallows known-unsupported commands so they don't reach claude (per [D14])
 - Wiring: register `/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/rename`, `/bug`, `/btw` in the [#step-1c] registry; their `RUN_SLASH_COMMAND` handlers perform the mapped action
+- For `/rename` (cross-layer session name): add a `name TEXT` column to the tugcast `sessions` ledger (`session_ledger.rs`) + a `rename_session` control verb (`CONTROL_ACTION_RENAME_SESSION`, sibling of `trash_session`); the session-list query the chooser reads returns `name`. Modified: `DevSessionIdBadge` reads the name (≤16-char cap, id to tooltip); `dev-picker-cells.tsx` uses the name as the `session-resume` row title when present.
 
 **Tasks:**
 
@@ -1744,7 +1745,10 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 - [ ] `/export`: open save dialog with format picker (JSONL / markdown).
 - [ ] `/copy`: copy last assistant_text accumulation; bind Cmd+Shift+C.
 - [ ] `/add-dir`: directory picker → control message (or punt if no IPC support yet — flag).
-- [ ] `/rename` (the [#l02-slash-cmd-audit] cheap win): rename the current conversation = rename the **card** title. `/rename <text>` (arg-bearing per [D23]) sets the title directly; bare `/rename` opens a one-field rename dialog seeded with the current title. The handler updates the card's `title` via the deck manager (the same field the tab bar shows) and persists with the card — a client-side action, no IPC to claude (the card title IS the conversation label in Tug). Reuse an existing Tug input dialog; no bespoke sheet.
+- [ ] `/rename` (the [#l02-slash-cmd-audit] win — names the **session**, matching the terminal's `/rename` which renames the conversation shown in `/resume`). `/rename <text>` (arg-bearing per [D23]) sets the name; bare `/rename` opens a one-field dialog seeded with the current name (reuse an existing Tug input dialog; no bespoke sheet). The name is **session-scoped and persisted** so it surfaces in two places:
+  - **Z4B session chip** (`DevSessionIdBadge`): show the name as the chip value, **capped at ~16 chars** (ellipsized), with the full name + raw `tugSessionId` in the tooltip; fall back to the truncated id when no name is set. Optimistic on rename; authoritative from the ledger on bind.
+  - **Session chooser** (`dev-picker-cells.tsx` `session-resume` row): use the name as the row title when present, falling back to today's `last_user_prompt`-derived title.
+  - **Cross-layer scope (grounded):** the tugcast `sessions` ledger table has no name column today — add `name TEXT` (the schema self-healing guard supports it) set by a new `rename_session` control verb (sibling of `trash_session` / `close_session`); the existing session-list query the chooser reads returns it. No IPC to claude (the name is Tug-side conversation metadata, exactly as the terminal's `local`-type `/rename` is local). This is a small cross-layer feature (ledger column + control verb + chip read + chooser read), not a one-file client action — scope accordingly.
 
 *`/btw` exclude-from-history flow (substeps in execution order, per [D11]):*
 - [ ] **13.btw.1 — Probe claude 2.1.154 support for the metadata flag.** Add a real-claude probe that sends `user_message` with `metadata.exclude_from_history: true` and a marker text. After the turn completes, read the session JSONL and assert whether the marker text is present. Document the result in `transport-exploration.md` and decide the implementation path:
@@ -1759,7 +1763,8 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 - [ ] Pure-logic: allowlist filter; copy formatter; `/btw` metadata flag serialization.
 - [ ] Pure-logic: tugbank journal-write filter respects `exclude_from_history` (whether or not claude honors it).
 - [ ] Pure-logic: transcript projection skips exclude-flagged turns.
-- [ ] Real-app: each typed shortcut performs the expected UI action; `/help` sheet renders with tabs; `/rename <text>` updates the card title (and bare `/rename` opens the dialog).
+- [ ] Real-app: each typed shortcut performs the expected UI action; `/help` sheet renders with tabs; `/rename <text>` sets the session name → Z4B session chip shows it (≤16 chars, id in tooltip) and bare `/rename` opens the dialog.
+- [ ] Real-app: a renamed session shows its name as the row title in the session chooser (open the chooser, assert the named row).
 - [ ] Real-claude probe for `/btw` (13.btw.1): assert whether the marker text appears in the session JSONL after a turn with the flag.
 
 **Checkpoint:**
