@@ -10,6 +10,7 @@ import {
   formatQuestionAnswer,
   generateRequestId,
 } from "./control.ts";
+import { parseInitializeControlResponse } from "./capabilities.ts";
 import type {
   UserMessage,
   ToolApproval,
