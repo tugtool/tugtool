@@ -254,6 +254,17 @@ pub struct LedgerEntry {
     /// Latest `system_metadata` payload for this session, for on-subscribe
     /// replay per [D14].
     pub latest_metadata: Option<Frame>,
+    /// Latest `session_capabilities` payload for this session, for
+    /// on-subscribe replay. Distinct from `latest_metadata`: capabilities
+    /// (the turn-free `initialize` model list / command catalog) are
+    /// broadcast once per spawn, so a card that subscribes *after* that
+    /// frame flew — reconnect, HMR remount, a late-binding card — would
+    /// otherwise never see the model list and the `/model` picker would
+    /// have no data. Retained here and replayed on bind, the same shape
+    /// `latest_metadata` uses for `system_metadata`. In-memory only (not
+    /// persisted to sqlite): capabilities are re-emitted fresh on the
+    /// next spawn's handshake, so they need not survive a tugcast restart.
+    pub latest_capabilities: Option<Frame>,
     /// Owned subprocess handle when `Live`.
     pub child: Option<tokio::process::Child>,
     /// Stdin sender when `Live`.
@@ -311,6 +322,7 @@ impl LedgerEntry {
             crash_budget,
             queue: BoundedQueue::new(),
             latest_metadata: None,
+            latest_capabilities: None,
             child: None,
             input_tx: None,
             cancel: CancellationToken::new(),
@@ -1986,7 +1998,7 @@ impl AgentSupervisor {
         // per-session lock. Reconnect flows observe the existing entry and
         // its `latest_metadata`; fresh flows observe a just-minted Idle
         // entry with `latest_metadata: None`.
-        let replay_frame = {
+        let (replay_frame, capabilities_frame) = {
             let mut entry = entry_arc.lock().await;
             // Record the binding card. `card_id` is preserved across
             // lifecycle transitions (close/errored/crash-exhausted),
@@ -2002,14 +2014,20 @@ impl AgentSupervisor {
             // a fresh-process resume shows nothing live until the user types.
             // Keyed by claude's session id (the metadata PK); falls back to
             // the tug id for un-forked sessions where the two are equal.
-            match entry.latest_metadata.clone() {
+            let metadata = match entry.latest_metadata.clone() {
                 Some(frame) => Some(frame),
                 None => self
                     .persisted_metadata_replay_frame(
                         entry.claude_session_id.as_deref(),
                         tug_session_id.as_str(),
                     ),
-            }
+            };
+            // Capabilities (the turn-free `initialize` model list) are
+            // in-memory only — replayed on reconnect / HMR remount so the
+            // `/model` picker keeps its data even though the one-shot
+            // broadcast already flew. Absent for a fresh-process bind that
+            // hasn't handshaken yet (the next spawn re-emits them).
+            (metadata, entry.latest_capabilities.clone())
         };
         // Live-elsewhere visibility for cross-card pickers is driven by
         // the ledger row the bridge writes on `session_init` (with
@@ -2021,6 +2039,9 @@ impl AgentSupervisor {
                 .send(build_session_state_frame(&tug_session_id, "pending", None));
 
         if let Some(frame) = replay_frame {
+            let _ = self.session_metadata_tx.send(frame);
+        }
+        if let Some(frame) = capabilities_frame {
             let _ = self.session_metadata_tx.send(frame);
         }
 
@@ -3288,12 +3309,21 @@ impl AgentSupervisor {
                         // `system_metadata`: the FeedStore keeps only the
                         // latest payload per feed, and the client routes by
                         // wire feed-id) so the dev card's metadata store
-                        // receives it. Not stored in `latest_metadata` —
-                        // that slot is the on-bind `system_metadata` replay
-                        // source, and capabilities are re-emitted fresh on
-                        // every spawn, so there is nothing to replay.
+                        // receives it. Retained in its own per-session slot
+                        // (`latest_capabilities`, distinct from the
+                        // `latest_metadata` system_metadata slot) so a card
+                        // that binds after the one-shot broadcast — reconnect,
+                        // HMR remount — gets the model list replayed on bind.
                         let cap_frame =
                             Frame::new(FeedId::SESSION_METADATA, frame.payload.clone());
+                        let entry_arc = {
+                            let ledger = self.ledger.lock().await;
+                            ledger.get(&id).cloned()
+                        };
+                        if let Some(entry_arc) = entry_arc {
+                            let mut entry = entry_arc.lock().await;
+                            entry.latest_capabilities = Some(cap_frame.clone());
+                        }
                         let _ = self.session_metadata_tx.send(cap_frame);
                     }
                     // Forward-before-mutate: the wire-side broadcast above
@@ -4408,6 +4438,71 @@ mod tests {
             "persisted row is not consulted when the slot is populated",
         );
         assert!(meta_rx.try_recv().is_err(), "single replay frame");
+    }
+
+    /// A `session_capabilities` payload — the turn-free `initialize` model
+    /// list / command catalog, tagged so the merger and the client route
+    /// it apart from `system_metadata`.
+    fn fake_capabilities_frame() -> Frame {
+        let body = serde_json::json!({
+            "type": "session_capabilities",
+            "models": [{ "value": "default", "displayName": "Default (recommended)" }],
+            "commands": [],
+        });
+        Frame::new(FeedId::SESSION_METADATA, serde_json::to_vec(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_replays_capabilities_on_bind() {
+        // Capabilities are broadcast once per spawn; a reconnect / HMR
+        // remount that binds afterward must still get them replayed so the
+        // /model picker keeps its data. They replay independently of the
+        // metadata slot (here: capabilities present, no metadata) and
+        // carry the SESSION_METADATA feed id.
+        let (sup, mut meta_rx, _ledger) = make_supervisor_with_real_ledger();
+
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        let caps = fake_capabilities_frame();
+        entry.lock().await.latest_capabilities = Some(caps.clone());
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let received = meta_rx.try_recv().expect("capabilities replay frame present");
+        assert_eq!(received, caps, "the capabilities slot replays on bind");
+        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
+        assert!(meta_rx.try_recv().is_err(), "only the capabilities frame");
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_replays_metadata_and_capabilities_together() {
+        // When both slots are populated (a reconnect to a session that has
+        // run a turn AND handshaken), bind replays BOTH — one
+        // system_metadata frame and one session_capabilities frame.
+        let (sup, mut meta_rx, _ledger) = make_supervisor_with_real_ledger();
+
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        let metadata = fake_metadata_frame("sess-1");
+        let caps = fake_capabilities_frame();
+        {
+            let mut e = entry.lock().await;
+            e.latest_metadata = Some(metadata.clone());
+            e.latest_capabilities = Some(caps.clone());
+        }
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        // Metadata replays first (it is the on-bind chip source), then
+        // capabilities. Both ride SESSION_METADATA; the client routes them
+        // by payload `type`.
+        let first = meta_rx.try_recv().expect("metadata replay frame");
+        assert_eq!(first, metadata, "metadata replays first");
+        let second = meta_rx.try_recv().expect("capabilities replay frame");
+        assert_eq!(second, caps, "capabilities replays second");
+        assert!(meta_rx.try_recv().is_err(), "exactly two replay frames");
     }
 
     // ---- handle_control: close_session ----
