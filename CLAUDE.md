@@ -11,7 +11,6 @@ Tugtool is a developer tool suite built around Tide — a unified command surfac
 **Exceptions:**
 - The `/commit` skill: when the user invokes `/commit`, commit immediately without asking for confirmation.
 - Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the same commit style as the `/commit` skill. Report each commit hash and message.
-- The `tugutil worktree setup` command commits the tugplan file and .tugtool/ infrastructure to the worktree branch as part of worktree setup.
 - The `bake` and `dash` skills commit on their **`tugutil dash` worktree** (never on `main`) via `tugutil dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugutil dash join`.
 
 ## Repository Structure

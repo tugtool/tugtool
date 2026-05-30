@@ -4,7 +4,7 @@
 ///
 /// Returns a string in the format "YYYY-MM-DDTHH:MM:SS.MMMZ"
 /// This function is used for timestamp generation across the codebase.
-pub fn now_iso8601() -> String {
+pub(crate) fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let duration = SystemTime::now()

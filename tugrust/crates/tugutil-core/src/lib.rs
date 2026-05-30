@@ -18,9 +18,6 @@ pub mod parser;
 /// Validation logic and rules
 pub mod validator;
 
-/// Interaction adapter for mode-agnostic user interaction
-pub mod interaction;
-
 /// Timestamp utilities
 pub mod session;
 
@@ -36,40 +33,19 @@ pub mod state;
 /// Dash state management
 pub mod dash;
 
-// Re-exports for convenience
-pub use config::{
-    Config, NamingConfig, RESERVED_FILES, TugConfig, find_project_root, find_project_root_from,
-    find_tugplans, is_reserved_file, tugplan_name_from_path,
-};
-pub use dash::{
-    DashInfo, DashRound, DashRoundMeta, DashStatus, detect_default_branch, validate_dash_name,
-};
+// Re-exports — exactly the surface consumed by the `tugutil` binary.
+pub use config::{Config, find_project_root, find_tugplans, tugplan_name_from_path};
+pub use dash::{DashRoundMeta, DashStatus, detect_default_branch, validate_dash_name};
 pub use error::TugError;
-pub use interaction::{InteractionAdapter, InteractionError, InteractionResult, ProgressHandle};
 pub use parser::parse_tugplan;
 pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
-pub use session::now_iso8601;
-pub use state::{
-    ArchiveResult, ArtifactSummary, BatchEntry, ChecklistItemDetail, ChecklistSummary, ClaimResult,
-    CompleteResult, InitResult, PlanListEntry, PlanState, ReadyResult, ReconcileEntry,
-    ReconcileResult, ReleaseResult, SkippedMismatch, StateDb, StepInfo, StepState, UpdateResult,
-    compute_plan_hash, derive_plan_slug, generate_plan_id,
-};
-pub use types::{
-    Anchor, Checkpoint, CheckpointKind, Decision, ParseDiagnostic, Question, Step, TugPlan,
-    TugPlanMetadata, TugPlanStatus,
-};
+pub use state::StateDb;
+pub use types::{ParseDiagnostic, TugPlan};
 pub use validator::{
     Severity, ValidationConfig, ValidationIssue, ValidationLevel, ValidationResult,
     validate_tugplan, validate_tugplan_with_config,
 };
-pub use worktree::{
-    CleanupMode, CleanupResult, DiscoveredWorktree, WorktreeConfig, WorktreeDiscovery,
-    cleanup_stale_branches, cleanup_worktrees, create_worktree, derive_tugplan_slug,
-    find_repo_root, find_repo_root_from, find_worktree_by_tugplan, generate_branch_name,
-    is_valid_worktree_path, list_tugplan_branches, list_worktrees, remove_worktree,
-    resolve_worktree, sanitize_branch_name,
-};
+pub use worktree::{find_repo_root, sanitize_branch_name};
 
 #[cfg(test)]
 mod dependency_smoke_tests {

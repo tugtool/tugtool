@@ -1,46 +1,24 @@
 //! CLI command implementations
 
 pub mod color;
-pub mod commit;
 pub mod dash;
-pub mod doctor;
 pub mod init;
 pub mod instance;
 pub mod list;
-pub mod log;
-pub mod merge;
-pub mod open_pr;
 pub mod resolve;
-pub mod state;
 pub mod tell;
 pub mod validate;
 pub mod version;
-pub mod worktree;
 
 pub use color::run_color;
-pub use commit::run_commit;
 pub use dash::{
     DashCommands, run_dash_commit, run_dash_create, run_dash_join, run_dash_list, run_dash_release,
     run_dash_show,
 };
-pub use doctor::run_doctor;
 pub use init::run_init;
 pub use instance::{InstanceCommands, run_instance};
 pub use list::run_list;
-pub use log::{LogCommands, run_log_prepend, run_log_rotate};
-pub use merge::run_merge;
-pub use open_pr::run_open_pr;
 pub use resolve::run_resolve;
-pub use state::{
-    StateCommands, run_state_archive, run_state_artifact, run_state_claim, run_state_complete,
-    run_state_complete_checklist, run_state_heartbeat, run_state_init, run_state_list,
-    run_state_ready, run_state_reconcile, run_state_reinit, run_state_release, run_state_reset,
-    run_state_show, run_state_start,
-};
 pub use tell::run_tell;
 pub use validate::run_validate;
 pub use version::run_version;
-pub use worktree::{
-    WorktreeCommands, run_worktree_cleanup, run_worktree_discard, run_worktree_list,
-    run_worktree_setup,
-};

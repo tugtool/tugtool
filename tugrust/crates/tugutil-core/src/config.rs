@@ -94,7 +94,7 @@ impl Config {
 }
 
 /// Reserved file names that are not treated as plan files
-pub const RESERVED_FILES: &[&str] = &["tugplan-implementation-log.md"];
+pub(crate) const RESERVED_FILES: &[&str] = &["tugplan-implementation-log.md"];
 
 /// Directories searched for plan files, in priority order.
 ///
@@ -103,10 +103,10 @@ pub const RESERVED_FILES: &[&str] = &["tugplan-implementation-log.md"];
 /// proposed plans. Lookups try directories in this order, so an entry in
 /// `.tugtool/` takes precedence over an entry with the same filename in
 /// `roadmap/`.
-pub const PLAN_SEARCH_DIRS: &[&str] = &[".tugtool", "roadmap"];
+pub(crate) const PLAN_SEARCH_DIRS: &[&str] = &[".tugtool", "roadmap"];
 
 /// Check if a filename is reserved (not a plan file)
-pub fn is_reserved_file(filename: &str) -> bool {
+pub(crate) fn is_reserved_file(filename: &str) -> bool {
     RESERVED_FILES.contains(&filename)
 }
 
@@ -122,7 +122,7 @@ pub fn find_project_root() -> Result<PathBuf, TugError> {
 }
 
 /// Find the project root starting from a specific directory
-pub fn find_project_root_from(start: PathBuf) -> Result<PathBuf, TugError> {
+pub(crate) fn find_project_root_from(start: PathBuf) -> Result<PathBuf, TugError> {
     let mut current = start;
     loop {
         let tugtool_dir = current.join(".tugtool");

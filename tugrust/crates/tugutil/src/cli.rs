@@ -2,9 +2,7 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::commands::{
-    DashCommands, InstanceCommands, LogCommands, StateCommands, WorktreeCommands,
-};
+use crate::commands::{DashCommands, InstanceCommands};
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
 
@@ -83,58 +81,6 @@ pub enum Commands {
         status: Option<String>,
     },
 
-    /// Worktree commands for isolated implementation environments
-    ///
-    /// Create, list, and clean up git worktrees for plan implementations.
-    #[command(
-        subcommand,
-        long_about = "Worktree commands for isolated implementation environments.\n\nProvides git worktree integration for plan implementations:\n  - Each plan gets its own branch and worktree\n  - Isolated working directory prevents conflicts\n  - Clean up merged worktrees after PR completion\n\nSubcommands:\n  setup   Set up worktree and branch for a plan\n  list    Show all active worktrees\n  cleanup Remove worktrees for merged branches\n\nTypical workflow:\n  1. tugtool worktree setup .tugtool/tugplan-auth.md\n  2. (implement in worktree, create PR, merge)\n  3. tugtool worktree cleanup --merged"
-    )]
-    Worktree(WorktreeCommands),
-
-    /// State management commands
-    #[command(
-        subcommand,
-        long_about = "State management commands for tracking plan execution.\n\nSubcommands:\n  init  Initialize state database from a plan"
-    )]
-    State(StateCommands),
-
-    /// Log management commands
-    ///
-    /// Rotate and prepend entries to the implementation log.
-    #[command(
-        subcommand,
-        long_about = "Log management commands.\n\nProvides log rotation and prepend functionality:\n  - Rotate: Archive logs exceeding size thresholds\n  - Prepend: Add new entries atomically\n\nSubcommands:\n  rotate  Archive log when over 500 lines or 100KB\n  prepend Add entry to log atomically\n\nTypical workflow:\n  1. tug log rotate  # Manual rotation\n  2. (automatic rotation happens via commit)"
-    )]
-    Log(LogCommands),
-
-    /// Health checks for tug project
-    ///
-    /// Verify initialization, log size, worktrees, and references.
-    #[command(
-        long_about = "Health checks for tug project.\n\nRuns checks:\n  - initialized: Verify .tugtool/ exists with required files\n  - log_size: Check implementation log within thresholds\n  - worktrees: Verify worktree paths are valid\n  - broken_refs: Check for broken anchor references\n\nExit codes:\n  0 - All checks passed\n  1 - Some checks have warnings\n  2 - Some checks failed\n\nUse --json for machine-readable output."
-    )]
-    Doctor,
-
-    /// Merge a plan's implementation and clean up worktree
-    ///
-    /// Automates the post-implementation merge workflow with auto mode detection.
-    #[command(
-        long_about = "Merge a plan's implementation and clean up worktree.\n\nMode auto-detection:\n  Remote mode: Repository has 'origin' remote\n  Local mode:  No remote configured\n\nRemote mode workflow:\n  1. Find worktree for plan\n  2. Check main is synced with origin\n  3. Find PR for worktree branch\n  4. Verify PR checks have passed\n  5. Auto-commit infrastructure files\n  6. Push main to origin\n  7. Merge PR via squash\n  8. Pull main to get squashed commit\n  9. Clean up worktree and branch\n\nLocal mode workflow:\n  1. Find worktree for plan\n  2. Check branch has commits to merge\n  3. Auto-commit infrastructure files\n  4. Squash merge branch into main\n  5. Clean up worktree and branch\n\nInfrastructure files (auto-committed):\n  - agents/*.md, skills/**, .claude/skills/**\n  - .tugtool/config.toml, .tugtool/tugplan-implementation-log.md\n  - CLAUDE.md\n\nUse --dry-run to preview operations.\nUse --force to proceed with non-infrastructure uncommitted files (not recommended)."
-    )]
-    Merge {
-        /// Plan file path (e.g., .tugtool/tugplan-12.md)
-        plan: String,
-
-        /// Show what would happen without executing
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Proceed even with non-infrastructure uncommitted files
-        #[arg(long)]
-        force: bool,
-    },
-
     /// Resolve a plan identifier to a file path
     ///
     /// Uses the five-stage resolution cascade: exact path, bare filename, slug, prefix, auto-select.
@@ -156,66 +102,6 @@ pub enum Commands {
         /// Show extended build information (commit, date, rustc version)
         #[arg(short, long)]
         verbose: bool,
-    },
-
-    /// Commit a single implementation step
-    ///
-    /// Atomically performs log rotation, prepend, and git commit.
-    #[command(
-        long_about = "Commit a single implementation step.\n\nAtomic sequence:\n  1. Rotate log if over threshold\n  2. Prepend log entry\n  3. Stage files\n  4. Git commit\n\nAll file paths are relative to worktree root.\n\nPartial success: If commit succeeds but state complete fails, exits 0 with state_update_failed=true."
-    )]
-    Commit {
-        /// Absolute path to the worktree directory
-        #[arg(long, value_name = "PATH")]
-        worktree: String,
-
-        /// Step anchor (e.g., step-1)
-        #[arg(long, value_name = "ANCHOR")]
-        step: String,
-
-        /// Plan file path relative to repo root
-        #[arg(long, value_name = "PATH")]
-        plan: String,
-
-        /// Git commit message
-        #[arg(long, value_name = "MESSAGE")]
-        message: String,
-
-        /// One-line summary for log entry
-        #[arg(long, value_name = "TEXT")]
-        summary: String,
-    },
-
-    /// Push branch and open a pull request
-    ///
-    /// Pushes branch to remote and creates PR.
-    #[command(
-        long_about = "Push branch and open a pull request.\n\nSequence:\n  1. Check gh auth\n  2. Derive repo from remote (if not provided)\n  3. Generate PR body from git log\n  4. Push branch to remote\n  5. Create PR via gh\n\nRequires:\n  - GitHub CLI (gh) installed and authenticated\n  - Remote 'origin' configured"
-    )]
-    OpenPr {
-        /// Absolute path to the worktree directory
-        #[arg(long, value_name = "PATH")]
-        worktree: String,
-
-        /// Git branch name (e.g., tug/auth-20260208-143022)
-        #[arg(long, value_name = "BRANCH")]
-        branch: String,
-
-        /// Base branch to merge into (e.g., main)
-        #[arg(long, value_name = "BRANCH")]
-        base: String,
-
-        /// PR title
-        #[arg(long, value_name = "TEXT")]
-        title: String,
-
-        /// Plan file path relative to repo root
-        #[arg(long, value_name = "PATH")]
-        plan: String,
-
-        /// GitHub repo in owner/repo format (auto-derived if not provided)
-        #[arg(long, value_name = "REPO")]
-        repo: Option<String>,
     },
 
     /// Send an action to tugcast via HTTP POST
