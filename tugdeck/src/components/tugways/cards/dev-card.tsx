@@ -40,6 +40,7 @@ import { useDevPlacementSlots } from "./dev-card-placement-experiment";
 import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
+import { ModelChip } from "./model-chip";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
@@ -2751,6 +2752,7 @@ export function DevCardBody({
                       sessionMetadataStore={sessionMetadataStore}
                       onOpenSheet={permissionSheet.openPermissionSheet}
                     />
+                    <ModelChip sessionMetadataStore={sessionMetadataStore} />
                     {effectiveFooterContent}
                   </>
                 }

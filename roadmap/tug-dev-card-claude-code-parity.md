@@ -1040,22 +1040,89 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 **References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, [D09] model-confirm in transcript, [D13] Z4B indicator-only, (#z4b-chrome-layout)
 
-**Artifacts:**
-- New: `model-chip.tsx`
-- Modified: placement-experiment to mount model chip in Z4B
+**Artifacts (as built):**
+- New: `tugdeck/src/components/tugways/cards/model-chip.tsx` — display-only chip. **No `.css`**: it composes `TugBadge` and adds no styling, so it is `.tsx`-only per the component-authoring "Compositional Component" rule (same shape as `DevSessionIdBadge` and the project badge).
+- New: `tugdeck/src/lib/model-label.ts` — pure `formatModelLabel` helper (`claude-opus-4-8[1m]` → `Opus 4.8 · 1M`), mirroring `model-context-max.ts`'s `[1m]`-suffix discipline.
+- New: `tugdeck/src/lib/__tests__/model-label.test.ts` — pure-logic coverage.
+- Modified: `tugdeck/src/components/tugways/cards/dev-card.tsx` — `<ModelChip>` mounted directly in `indicatorsContent`, right of `PermissionModeChip` (cluster: `route | project | session | permission-mode | model`). **Direct mount** like the other display-only chips, not via the placement-experiment harness (deviation from the artifact list's "placement-experiment" note — the harness is for experiments, not production indicators).
 
 **Tasks:**
-- [ ] Implement `ModelChip` reading `model` from `SessionMetadataStore`. Display-only per [D13] — no click affordance. Render as a two-line `TugBadge` (`layout="label-top"`, `label="Model"`, `size="sm"`, `role="agent"`) per [#step-0] / [D01].
-- [ ] Format display: `Opus 4.8 · 1M` from raw `claude-opus-4-8[1m]`.
-- [ ] Do NOT width-stabilize — the chip's width tracks the model label, per [R01].
-- [ ] Synthetic `assistant_text` confirmation from `model_change` continues to render in the transcript per [D09] — no suppression, no banner.
+- [x] Implement `ModelChip` reading `model` from `SessionMetadataStore` via `useSyncExternalStore`. Display-only per [D13] — no click affordance. Renders a two-line `TugBadge` (`layout="label-top"`, `label="Model"`, `size="sm"`, `role="agent"`) per [#step-0] / [D01]. **Never hides on missing data** (user-directed correction): when no model has been reported the chip stays visible and escalates to `role="caution"` with a `?` value and a `TriangleAlert` icon, mirroring the Claude Code version chip's drift treatment ([dev-route-indicator-badge.tsx]) — an absent model is surfaced, not swallowed.
+- [x] Format display: `Opus 4.8 · 1M` from raw `claude-opus-4-8[1m]` (`formatModelLabel`). Unparseable / legacy ids fall back to the raw string, matching `formatPermissionMode`'s discipline.
+- [x] Do NOT width-stabilize — the chip's width tracks the model label, per [R01].
+- [x] Synthetic `assistant_text` confirmation from `model_change` continues to render in the transcript per [D09] — no suppression, no banner (this step adds no transcript / banner code).
 
 **Tests:**
-- [ ] Pure-logic: format function `formatModelLabel("claude-opus-4-8[1m]") === "Opus 4.8 · 1M"` for each model.
-- [ ] Real-app: chip text matches `system_metadata.model` on mount and after `model_change` round-trip.
+- [x] Pure-logic: `formatModelLabel("claude-opus-4-8[1m]") === "Opus 4.8 · 1M"` + base/extended/release-date/no-version/unparseable cases (`model-label.test.ts`, 5 tests).
+- [~] Real-app: chip text matches `system_metadata.model` — **deferred.** The chip reads `FeedId.SESSION_METADATA` on the shared connection feed, which the `driveDevSession`/`ingestFrame` harness path (CodeSessionStore-scoped) does not reach; a metadata-feed injection verb would be net-new harness plumbing. Display-only behavior is covered by the pure-logic formatter + the existing two-line `TugBadge` real-app coverage (`at0087`). Land the real-app check alongside [#step-2b] (`/model` picker), which exercises the live `model_change` round-trip end-to-end.
 
 **Checkpoint:**
-- [ ] `just app-test model-chip`
+- [x] `cd tugdeck && bun test` — 3089 pass / 0 fail (5 new); `tsc --noEmit` clean.
+- [~] `just app-test model-chip` — deferred with the real-app test above; folds into [#step-2b].
+
+**Step 2 follow-up — the live-metadata gap (user-directed investigation):** review surfaced that on a freshly-opened / restored dev card, the model chip honestly shows `?` while the version and `MODE` chips *look* populated. Empirical tracing (live ledger query + spawning the real `claude` binary the way tugcode does) proved this is **not a tugcode bug** — it is claude's stream-json protocol: in `--input-format stream-json` mode claude emits **nothing — not even `system/init` — until it receives the first user message** (confirmed: stdin held open 4s with no message → 0 bytes; the `session.ts:2231` comment says the same). The version chip masks the gap with a *global* last-known-version tugbank fallback; the `MODE` chip masks it with a *per-card* persisted-or-`default` fallback; the model chip has no fallback, so it is the only honest one. Closing this gap turn-free is [#step-2a].
+
+---
+
+#### Step 2a: `initialize` control-request handshake + metadata replay on bind {#step-2a}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(tugcode+tugcast): initialize handshake + session-metadata replay on bind`
+
+**References:** [D04] SessionMetadataStore hub, [D06] protocol baseline, [D13] Z4B indicator-only, [D14] (the `initialize` `commands` list feeds the allowlist source), Risk R04 (strict shapes / drift), [L02] external state via store, (#z4b-chrome-layout, #inputs-outputs). Empirically-modeled like [#d10-rewind-matches-terminal] / [#step-1-5] — the findings below ARE the spec.
+
+**Problem statement.** A dev card cannot show this session's *live* model / version / mode until claude has been spoken to, because claude's stream-json mode is silent until the first user message ([#step-2] follow-up). Two distinct gaps result: (1) a **resumed / known** session has accurate metadata persisted in the ledger, but tugcast only replays its *in-memory* `latest_metadata` slot on bind — which is `None` in a fresh tugcast process — so the persisted truth is never surfaced; (2) a **brand-new** session has no metadata at all until the first turn. Both are closeable **without provoking a turn**: claude answers a standard `initialize` control request at spawn time with its capabilities, and the ledger already holds the last-known live metadata for resumed sessions.
+
+**Goal.** Populate every Z4B chip with honest, session-accurate data the moment it is knowable — turn-free — by (1) adopting claude's `initialize` control-request handshake in tugcode and forwarding its capabilities, and (2) replaying the persisted ledger `system_metadata` row on bind in tugcast for resumed/known sessions. The honest `?` caution chip ([#step-2]) remains only for the genuinely-unknowable residue.
+
+**Empirical findings (verified against `claude` 2.1.158 + the live `debug-main` ledger) — these ARE the spec:**
+
+- **claude is silent until the first user message.** Spawned `--output-format stream-json --input-format stream-json --verbose --permission-mode default` with stdin held open and no message → **0 bytes / no `system/init`** after 4s. Send one `user` message → `system/init` arrives *first* (carrying `model`, `permissionMode`, `claude_code_version`/`version`, `cwd`, `session_id`, `tools`, …), then the response. So `system/init` is the **only** source of the *exact live* current-model id, and it is strictly post-first-turn.
+- **The `initialize` control request is answered turn-free.** Sending only `{"type":"control_request","request_id":"…","request":{"subtype":"initialize"}}` (no user message) → an **immediate** `control_response` with `response.subtype:"success"`. This is the documented SDK handshake (Python / TS / Go / Elixir all send it at spawn).
+- **What `initialize` returns** (top-level keys of `response.response`): `account`, `agents`, `available_output_styles`, `commands`, `models`, `output_style`, `pid`.
+  - `commands`: full slash-command catalog — array of `{ name, description, argumentHint }` (24 entries observed). Turn-free source for the slash popup + the [D14] allowlist.
+  - `models`: the model **picker list** — array of `{ value, displayName, description, supportsEffort?, supportedEffortLevels?, supportsAdaptiveThinking?, supportsFastMode?, supportsAutoMode? }`. Observed: `default` / `sonnet` / `sonnet[1m]` / `haiku`. **This is the structured source [#step-2b]'s `/model` picker needs** (no more hardcoded model list).
+  - `agents`, `available_output_styles` (`['default','Proactive','Explanatory','Learning']`), `output_style` (`'default'`), `account` (`{tokenSource, apiKeySource, apiProvider}`).
+- **What `initialize` does NOT return:** the exact current **model id**, **version**, **permissionMode**, **cwd**, or **session_id**. The default model appears only as **prose** inside `models[0]` (`value:"default"`, `displayName:"Default (recommended)"`, `description:"Use the default model (currently Opus 4.8 (1M context)) · …"`). There is **no** structured "current/default model id" field.
+- **The default-model convention.** `models[0]` is always `value:"default"` / `displayName:"Default (recommended)"`. Confirmed: spawning with **no `--model`** → `system/init.model = claude-opus-4-8[1m]`; spawning `--model sonnet` → `claude-sonnet-4-6`. So on a new no-`--model` session claude resolves the **account default**, and `"Default (recommended)"` is the correct, honest pre-turn label for the model chip (it sharpens to the exact id on first `system/init`).
+- **tugcode already knows mode (and often model) at spawn.** `buildClaudeArgs` always passes `--permission-mode <mode>` and passes `--model <model>` when set (`session.ts:437-451`). So the *mode* is known to tugcode at spawn independent of claude.
+- **The ledger holds accurate per-session metadata.** Every persisted `session_metadata` row carries `model` + `version` + `permissionMode` together (e.g. `claude-opus-4-8[1m]` | `2.1.157` | `acceptEdits`). On bind, `do_spawn_session` replays only the in-memory `LedgerEntry.latest_metadata` slot (`agent_supervisor.rs:1937-1958`), which is `None` for a session whose `system/init` wasn't captured in *this* tugcast process; `get_session_metadata` (the accurate persisted row) is **never** replayed on bind.
+
+**Decision — `#3 "provoke a fake turn"` is REJECTED.** A turn-free path exists and is standard (the `initialize` handshake), so synthesizing a dummy user message to force `system/init` is unnecessary and would risk surfacing a spurious turn / cost. We never send a fake turn.
+
+**Artifacts:**
+- New / modified (tugcode): send an `initialize` control_request to claude immediately after spawn (before/independent of the first user turn) and forward its `control_response` capabilities to the frontend. Define a new outbound IPC type carrying the turn-free capabilities — at minimum `models` and `commands` (plus `agents`, `available_output_styles`, `output_style`, `account`). Strict-typed per [Q13]/[R04]; unknown fields dropped. Recompile required (`feedback_tugcode_compile` — tugcode is bun-compiled, no HMR).
+- Modified (tugcast `agent_supervisor.rs`): on bind, when `LedgerEntry.latest_metadata` is `None`, fall back to `ledger.get_session_metadata(claude_session_id)` and replay **that** persisted row onto `SESSION_METADATA` (rewrapped as `FeedId::SESSION_METADATA`, same path as the live publish). Resumed/known sessions then populate all chips immediately, self-correcting when fresh `system/init` lands. `cargo build` + app relaunch required (Rust, no HMR).
+- Modified (tugdeck): extend `SessionMetadataStore` (or a sibling capabilities store) to consume the new `initialize`-capabilities IPC; surface `models` + `commands` for downstream consumers. The model chip ([#step-2]) gains a third source below live `system/init` and below the ledger-replayed value: the `initialize` default-model label (`"Default (recommended)"`) for a new no-`--model` session. **Resolution order (most → least authoritative): live `system_metadata.model` → ledger-replayed row → per-card spawn `--model` (if set) → `initialize` default-model label → honest `?` caution.**
+- Decide the exact new IPC frame name/shape during implementation (candidate: `session_capabilities`), pinned against a fixture per [D06]; document in `transport-exploration.md` alongside the [#step-1-5] capture.
+
+**Tasks:**
+- [ ] **Confirm-at-start:** re-verify the `initialize` request/response shape against the tugcode-spawned print/stream-json child specifically (not just a bare CLI spawn) — the same "confirm against the real child" caveat [#step-1-5] used for live settings reload. If claude's child shape differs, the findings above are the fallback baseline.
+- [ ] tugcode: issue the `initialize` control_request at spawn; parse the `control_response`; emit a new strict-typed capabilities IPC (`models`, `commands`, `agents`, `available_output_styles`, `output_style`, `account`). Do **not** block the first user turn on it.
+- [ ] tugcast: replay the persisted ledger `system_metadata` row on bind when the in-memory slot is empty (rewrapped as `FeedId::SESSION_METADATA`). Add a unit test mirroring `test_spawn_session_replays_latest_metadata_for_known_session` but seeding the *persisted* row (empty in-memory slot).
+- [ ] tugdeck: consume the capabilities IPC; thread `models` to where [#step-2b]'s picker will read it; apply the model-chip resolution order above (new-session shows `"Default (recommended)"`, not `?`).
+- [ ] Keep the honest `?` caution chip ([#step-2]) as the final fallback only.
+- [ ] Document the `initialize` handshake + capabilities shape in `transport-exploration.md`; note the no-structured-current-model limitation and the `models[0]`=default convention.
+
+**Tests:**
+- [ ] Pure-logic (tugdeck): capabilities-IPC parser (`models` / `commands` shape, strict drop of unknowns); model-chip resolution-order predicate (live > ledger > spawn-arg > initialize-default > `?`).
+- [ ] Rust unit (tugcast): bind with empty in-memory slot but a persisted ledger row replays exactly one `SESSION_METADATA` frame carrying the persisted model/version/mode; brand-new session (no row, no slot) replays none.
+- [ ] tugcode unit / probe: `initialize` request → `control_response` parsed into the capabilities IPC; assert `models` + `commands` present, current-model-id absent (documents the limitation).
+- [ ] Real-app: open a **resumed** card → all chips (model/version/mode) populate from the replayed ledger row before any turn. Open a **new** card → model chip reads `Default (recommended)`, version/mode read their honest values, and all sharpen to live `system/init` after the first turn.
+- [ ] Drift regression stays clean; `just capture-capabilities` after the tugcode IPC change.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` (warnings-as-errors clean)
+- [ ] `cd tugcode && bun test` + recompile (`target/debug/tugcode`)
+- [ ] `cd tugdeck && bun test`; `tsc --noEmit` clean
+- [ ] `just build-app` / `just app-debug`; verify resumed-card chips populate pre-turn and new-card model chip reads `Default (recommended)`
+- [ ] `just capture-capabilities` (drift clean)
+
+**What this step does NOT do:**
+- Does not build the `/model` picker UI — that is [#step-2b], which consumes the `models` list this step plumbs.
+- Does not provoke a fake turn to force `system/init` (rejected above).
+- Does not change the [#step-2] chip's honest-`?` behavior except to add higher-priority sources ahead of it; `?` remains the final fallback.
 
 ---
 
