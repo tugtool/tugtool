@@ -34,7 +34,7 @@
  */
 
 import React from "react";
-import { Edit, FileText, Terminal } from "lucide-react";
+import { Edit, Glasses, Terminal } from "lucide-react";
 
 import { FileBlock, type FileData } from "@/components/tugways/body-kinds/file-block";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
@@ -218,7 +218,7 @@ export function GalleryPinnedHeaders() {
       <PinSection title="FileBlock inside ToolBlockChrome — Find/Copy/fold cue portal into chrome header">
         <ToolBlockChrome
           toolName="Read"
-          toolIcon={<FileText size={14} aria-hidden="true" />}
+          toolIcon={<Glasses size={14} aria-hidden="true" />}
           argsSummary={<code>{LONG_FILE.filePath}</code>}
           status="ready"
         >

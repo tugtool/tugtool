@@ -174,8 +174,7 @@ body {
 /* The detail content. For a command it wraps across as many lines as it
  * needs — NO `text-overflow`, NO horizontal scroll, NO hover-expand
  * ([D05]). For a path chip it simply holds the (intrinsically sized)
- * chip; the chip centers on the line without the old `translateY` nudge
- * ([D04]). */
+ * chip. */
 .tool-call-header-detail-content {
   flex: 1 1 auto;
   min-width: 0;
@@ -197,4 +196,11 @@ body {
   white-space: inherit;
   overflow-wrap: inherit;
   word-break: inherit;
+}
+
+/* Atom chips render as inline SVGs, which sit a touch low on the text
+ * baseline — nudge them up 1px so the chip box optically centers on the
+ * detail-row line against the leading icon. */
+.tool-call-header .tug-atom-chip {
+  transform: translateY(-1.5px);
 }

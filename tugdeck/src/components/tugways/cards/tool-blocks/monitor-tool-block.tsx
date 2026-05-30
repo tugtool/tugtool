@@ -10,7 +10,8 @@
  * output if they want.
  *
  * Composition (Spec S03, [#bk-conformance]):
- *  - `ToolBlockChrome` owns the frame: a `Radar` icon + the tool
+ *  - `ToolBlockChrome` owns the frame: the per-tool icon (resolved from
+ *    the central `tool-icons` registry) + the tool
  *    name `Monitor` + an args summary that names what's being
  *    watched, the status stripe, the inline `DevCautionBadge`
  *    (when the dispatch flagged drift), and the error band.
@@ -69,7 +70,6 @@
 import "./monitor-tool-block.css";
 
 import React from "react";
-import { Radar } from "lucide-react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
