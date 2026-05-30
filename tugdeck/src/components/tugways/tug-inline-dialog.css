@@ -66,7 +66,7 @@ body {
    * icon's vertical center on the title's first-line center. */
   --tugx-idialog-icon-size:          20px;
   --tugx-idialog-icon-default-color: var(--tug7-element-global-icon-normal-muted-rest);
-  --tugx-idialog-icon-caution-color: var(--tug7-element-global-text-normal-caution-rest);
+  --tugx-idialog-icon-caution-color: var(--tug7-surface-toggle-primary-normal-caution-rest);
   --tugx-idialog-icon-danger-color:  var(--tug7-element-global-text-normal-danger-rest);
   --tugx-idialog-icon-success-color: var(--tug7-element-global-text-normal-success-rest);
   --tugx-idialog-icon-info-color:    var(--tug7-element-global-text-normal-link-rest);
