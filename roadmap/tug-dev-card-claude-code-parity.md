@@ -873,6 +873,52 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 
 > Every step has explicit `**Depends on:**` and `**References:**` lines. Phase A is [#step-0] through [#step-5] (Step 0 is the TugBadge two-line spike that all Z4B chips depend on; [#step-1c] is the local slash-command dispatch foundation that lands `/permissions` and that every later command step builds on); Phase B is [#step-6] through [#step-14] (includes [#step-2b] `/model` picker and [#step-7a] empirical capture); Phase C is [#step-15] through [#step-22]; the final integration checkpoint is [#step-23].
 
+#### Step Status Ledger {#step-status-ledger}
+
+> **The march checklist (audited 2026-05-30).** Verified against the codebase (artifacts + app-tests + commits), not just the checkboxes. `✅ DONE` = shipped, skip it; `▶ TODO` = remaining work; `⛔ SUPERSEDED` = reverted/cancelled, do not build; `⚠ VERIFY` = open question (see flags below the table). The remaining march, in order, is the `▶`/`⚠` rows.
+
+| Step | Title | Status | Evidence / note |
+|---|---|---|---|
+| 0 | TugBadge two-line spike | ✅ DONE | `tug-badge.tsx` `layout`/`label`; `at0087` |
+| 1 | Permission-mode chip + `Shift+Tab` | ✅ DONE | `permission-mode-chip.tsx`; `at0088` |
+| 1c | Local slash-command dispatch | ✅ DONE | `lib/slash-commands.ts`; completion merge |
+| 1.5 | Capture `/permissions` read/write | ✅ DONE | prereq consumed by 1.6 |
+| 1.6 | `/permissions` rules editor | ✅ DONE | `permission-rules-editor.tsx`; `at0090`–`at0094` |
+| 2 | Model chip | ✅ DONE | `model-chip.tsx` |
+| 2a / 2a.1 / 2a.2 / 2a.3 | `initialize` handshake + capabilities replay | ✅ DONE | `capabilities.ts`, `session_capabilities`; commits `8254f037`…`33cd3ad7` |
+| 2b | `/model` picker | ✅ DONE | `model-picker-sheet.tsx`; `ebc21271` |
+| 3 | Rate-limit **chip** | ⛔ SUPERSEDED | reverted `9abb96bc` → banner ([#step-3.5], [D24]) |
+| 3.5 | Rate-limit **banner** | ✅ DONE | `rate-limit-banner-bridge.tsx`; `1c264064` |
+| 4 | Effort chip | ▶ TODO | next up; [R07] respawn decided |
+| 5 | Phase A integration checkpoint | ▶ TODO | verification only; checklist refreshed |
+| 6 | `SessionPickerSheet` primitive | ✅ DONE | capability exists via `dev-picker-cells.tsx` (session-resume rows, kbd nav, overlay); generic primitive not separately needed |
+| 7a | Capture terminal `/rewind` | ▶ TODO | empirical probe |
+| 7b | `/rewind` | ▶ TODO | builds on existing picker (not the generic primitive) |
+| 8 | `/resume` | ▶ TODO | **rescoped (Q-A):** reuse the existing session chooser as-is; only re-wire cancel to keep the current session (not close the card) |
+| 9 | `/permissions` picker + editor | ✅ DONE | folded into 1.6 (`permission-rules-editor.tsx`) — Q-B |
+| 10 | `/diff` sheet | ▶ TODO | `diff-sheet.tsx` + tugcast `git_diff_request` |
+| 11 | `/context` HUD | ▶ TODO | `context-hud.tsx` |
+| 12 | Listing sheets (`/memory` `/agents` `/hooks` `/skills`) | ▶ TODO | |
+| 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
+| 14 | Phase B integration checkpoint | ▶ TODO | verification only |
+| 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
+| 16 | `api_retry` indicator | ▶ TODO | |
+| 17 | `thinking_text` empty-state | ✅ DONE | decision: **omit** ([Q12]) — no empty header to build — Q-D |
+| 18 | `@`-file completion | ✅ DONE | `services.fileCompletionProvider` wired to prompt entry |
+| 19 | Image drag/paste | ✅ DONE | `image-downsample.ts`, `atom-bytes-store.ts`, `synthesize-user-message.ts` |
+| 20 | Interrupt visibility | ✅ DONE | `tug-prompt-entry.tsx` primary `Stop` button + `canInterrupt` |
+| 21 | `compact_boundary` divider | ▶ TODO | **rescoped (Q-E):** nothing exists today; render the compact summary content the way the terminal does — in-step wire-check for what we actually receive |
+| 22 | `unknown_event` IPC frame | ▶ TODO | |
+| 23 | Phase C integration checkpoint | ▶ TODO | verification only |
+
+**Audit questions — resolved 2026-05-30:**
+
+- **Q-A ([#step-8] `/resume`) → RESOLVED.** Reuse the existing session chooser **as-is** (it is the same UI); the only work is re-wiring *cancel* to leave the current session unchanged instead of closing the card. Step 8 rescoped accordingly.
+- **Q-B ([#step-9]) → RESOLVED: already done.** Folded into [#step-1.6]'s `permission-rules-editor.tsx`. Step 9 marked DONE.
+- **Q-C ([#step-15]) → RESOLVED: already done.** Tool approval ships as `PermissionDialog` (`dev-permission-dialog`). Step 15 marked DONE.
+- **Q-D ([#step-17]) → RESOLVED: omit.** No empty thinking header ([Q12]); nothing to build. Step 17 marked DONE.
+- **Q-E ([#step-21]) → RESOLVED: build it.** Nothing exists today; the terminal shows compact summary content, so render that same content the same way when available. The wire-check for what we actually receive is part of the step. Step 21 stays TODO, rescoped.
+
 #### Step 0: TugBadge two-line presentation — design mini-spike {#step-0}
 
 **Commit:** `feat(tugways): TugBadge two-line label/content layout + gallery card`
@@ -1492,32 +1538,7 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 #### Step 6: `SessionPickerSheet` overlay primitive {#step-6}
 
-**Depends on:** #step-5
-
-**Commit:** `feat(dev-card): SessionPickerSheet overlay primitive`
-
-**References:** [D05] SessionPickerSheet, [D15] pane sheets are overlays, (#rewind-flow)
-
-**Artifacts:**
-- New: `session-picker-sheet.tsx`, `session-picker-sheet.css`
-- New: portal target / overlay layer in `dev-card.tsx` for hosted overlays (or extend existing overlay infrastructure if present)
-
-**Tasks:**
-- [ ] Implement generic `SessionPickerSheet<TRow>` taking `dataSource: DataSource<TRow>`, `renderRow: (row) => ReactNode`, `onSelect: (row) => void`, `onCancel: () => void`.
-- [ ] Sheet uses `TugListView` for virtualized rows, `gallery-pinned-headers` for time-bucket headers.
-- [ ] Mount as **card-scoped overlay** per [D15]: `position: absolute` within the card root (NOT `position: fixed`, NOT a `body`-portal). Backdrop dims the card's content region only. Other panes / cards in the deck are unaffected.
-- [ ] Keyboard: arrow keys navigate, Enter selects, Cmd+Enter "select-and-card", ESC dismisses, click on backdrop-within-card dismisses.
-- [ ] Focus trap is scoped to the card — focus cannot tab outside the card while the sheet is open.
-- [ ] Focus restores to the prompt entry on dismiss.
-- [ ] Per-card scroll/selection memory via tugbank `dev.session-picker-sheet.<cardId>.<sheetKind>`.
-
-**Tests:**
-- [ ] Pure-logic: data-source iteration, row selection state.
-- [ ] Real-app: mount sheet with a synthetic data source; verify overlay shape (no horizontal split, no escape from card boundary), keyboard navigation, focus return on dismiss.
-- [ ] Real-app multi-card: open a sheet in card A in a two-card deck; verify card B remains undimmed and interactable.
-
-**Checkpoint:**
-- [ ] `just app-test session-picker-sheet`
+> **✅ ALREADY DONE.** The session-picker capability ships as `dev-picker-cells.tsx` (the `session-resume` rows used by the cold-boot / empty-card chooser): an overlay sheet with `TugListView` rows, keyboard navigation (arrow + Enter + wrap), dismiss, and focus restore — i.e. everything the generic `SessionPickerSheet<TRow>` primitive was specced to provide ([D05]/[D15]). We did **not** need to build the separate generic primitive; `/rewind` ([#step-7]) and `/resume` ([#step-8]) build on the existing picker. Original detail removed — see git history for the superseded spec.
 
 ---
 
@@ -1591,38 +1612,36 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 ---
 
-#### Step 8: `/resume` on top of `SessionPickerSheet` {#step-8}
+#### Step 8: `/resume` — reuse the existing session chooser {#step-8}
 
-**Depends on:** #step-1c, #step-6
+**Depends on:** #step-1c
 
-**Commit:** `feat(dev-card): /resume sheet — pick a prior session to continue`
+**Commit:** `feat(dev-card): /resume opens the session chooser, cancel keeps current session`
 
-**References:** [D05] SessionPickerSheet, (#rewind-flow)
+**References:** [D23] local slash-command dispatch, (#rewind-flow)
+
+> **Rescoped (Q-A).** The session chooser that lists + resumes prior sessions **already exists** (`dev-picker-cells.tsx` `session-resume` rows, used on cold-boot / empty card) — it is the same UI `/resume` wants. So Step 8 does NOT build a new sheet or data source. It (1) wires the `/resume` command to open that existing chooser on demand, and (2) re-wires *cancel* so that, when the chooser is opened over a **live** session, dismissing it leaves the current session unchanged rather than closing the card (the cold-boot / empty-card path keeps its existing cancel behavior).
 
 **Artifacts:**
-- New: `resume-sheet-data-source.ts`
-- Modified: register `/resume` in the [#step-1c] registry; its `RUN_SLASH_COMMAND` handler opens the sheet
+- Modified: register `/resume` in the [#step-1c] registry; its `RUN_SLASH_COMMAND` handler opens the existing session chooser sheet.
+- Modified: the chooser's cancel/dismiss path — parameterize "cancel closes card" vs "cancel keeps current session" on how it was opened (cold-boot vs `/resume`).
 
 **Tasks:**
-- [ ] Implement `ResumeSheetDataSource` over the tugbank session journal — list prior sessions with first-message preview, timestamp, turn count, cost.
-- [ ] Selection sends `session_command: "continue"` with the picked session id.
-- [ ] Handle the readiness gap for `continue` (per transport-exploration test-17): `session_init` arrives immediate with `"pending-cont…"`; UI proceeds.
+- [ ] `/resume` handler opens the existing session chooser (no new sheet, no new data source).
+- [ ] Cancel-behavior parameter: opened-via-`/resume` ⇒ ESC / backdrop / cancel dismisses and leaves the live session intact; cold-boot / empty-card path unchanged.
+- [ ] Selecting a session resumes it through the chooser's existing path (unchanged).
 
 **Tests:**
-- [ ] Pure-logic: session-journal projection.
-- [ ] Real-app: pick a session, assert continue inbound + transcript loads.
+- [ ] Real-app: with a live bound session, `/resume` opens the chooser; cancel returns to the unchanged session (card not closed); picking a different session resumes it.
 
 **Checkpoint:**
-- [ ] `just app-test resume-sheet`
+- [ ] `just app-test resume-command`
 
 ---
 
 #### Step 9: `/permissions` picker + rules editor sheet {#step-9}
 
-> **Superseded — pulled forward to [#step-1-5] (empirical capture) + [#step-1-6] (rules editor).** This step conflated two distinct features: the permission **mode** (default/acceptEdits/plan/auto — shipped in [#step-1] as the Z4B chip + `Shift+Tab`, no slash command) and the tool-permission **rules** editor (`/permissions` — allow/ask/deny/workspace). With mode already done, the remaining work is the rules editor, planned as [#step-1-6] against the empirical findings of [#step-1-5]. Kept here as a pointer; no separate work.
-
-**Checkpoint:**
-- [ ] `just app-test permission-rules-editor`
+> **✅ ALREADY DONE (folded into [#step-1.6]).** This step conflated the permission **mode** (default/acceptEdits/plan/auto — shipped in [#step-1] as the Z4B chip + `Shift+Tab`) with the tool-permission **rules** editor (`/permissions`). Both shipped: the rules editor is `permission-rules-editor.tsx` (`at0090`–`at0094`). No separate work — kept as a pointer.
 
 ---
 
@@ -1800,29 +1819,7 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 #### Step 15: `control_request_forward` UI polish {#step-15}
 
-**Depends on:** #step-5
-
-**Commit:** `feat(dev-card): tool-approval modal + AskUserQuestion polish`
-
-**References:** [D06] protocol baseline, Risk R05, (#constraints)
-
-**Artifacts:**
-- New: `tool-approval-modal.tsx`
-- Modified: existing AskUserQuestion renderer to polish 4-option layout + salvage path
-
-**Tasks:**
-- [ ] Implement `ToolApprovalModal` mounted near the in-flight tool block on `control_request_forward` with `is_question: false`.
-- [ ] Modal shows tool_name, input (truncated, expand-on-click), decision_reason, permission_suggestions as one-click "Always allow" rules, allow/deny buttons.
-- [ ] AskUserQuestion: per-question radio (single-select) or checkbox (multiSelect); honor 4-option cap; "Other" with freeform text-input below.
-- [ ] Both flows respond via `tool_approval` or `question_answer` IPC.
-
-**Tests:**
-- [ ] Pure-logic: input-truncation, permission-suggestion serialization.
-- [ ] Real-app: drive permission deny in a probe; observe modal; click allow; assert outbound IPC.
-
-**Checkpoint:**
-- [ ] `just app-test tool-approval-modal`
-- [ ] `just app-test askuserquestion-flow`
+> **✅ ALREADY DONE (Q-C).** Tool approval ships as `PermissionDialog` (`dev-permission-dialog`): `control_request_forward` (`is_question: false`) surfaces the tool + input + allow/deny, responding via `tool_approval`. Original detail removed — see git history. *Verify-on-touch:* if the AskUserQuestion (`is_question: true`) per-question 4-option layout + salvage ([R05]) or the one-click `permission_suggestions` "always-allow" rules are not fully present, they are small follow-ups on the existing dialog, not net-new.
 
 ---
 
@@ -1857,104 +1854,25 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 #### Step 17: `thinking_text` empty-state {#step-17}
 
-**Depends on:** #step-5
-
-**Commit:** `fix(dev-card): thinking_text empty-state — omit when absent`
-
-**References:** [Q12] thinking empty-state, (#test-categories)
-
-**Artifacts:**
-- Modified: `gallery-dev-thinking.tsx` to honor [Q12]'s decision
-
-**Tasks:**
-- [ ] Per [Q12] DECIDED → omit header entirely on absence.
-- [ ] Verify the thinking collapsible mounts on `thinking_text` partials and renders correctly.
-- [ ] Confirm against v2.1.154 stream shape (`stream_event/thinking_delta`).
-
-**Tests:**
-- [ ] Pure-logic: thinking-block presence predicate.
-- [ ] Real-app: turn with thinking, assert visible; turn without, assert no header.
-
-**Checkpoint:**
-- [ ] `just app-test thinking-empty-state`
+> **✅ DONE by decision (Q-D / [Q12]): omit.** No empty thinking header — the collapsible exists only when thinking deltas arrived, absent otherwise. There is nothing to build. *Verify-on-touch:* if a turn without thinking ever renders an empty header, that is the one-line fix this step would have made.
 
 ---
 
 #### Step 18: `@`-file completion in prompt entry {#step-18}
 
-**Depends on:** #step-5
-
-**Commit:** `feat(dev-card): @-file completion in prompt entry`
-
-**References:** [D06] protocol baseline, (#dependencies)
-
-**Artifacts:**
-- New: `at-file-completer.ts`
-- Modified: prompt-entry to register `@` trigger via existing `CompletionProvider` interface
-
-**Tasks:**
-- [ ] Add `@` trigger to the prompt entry's completion infrastructure.
-- [ ] Implement `AtFileCompleter` reading the FILESYSTEM snapshot feed (0x10).
-- [ ] Fuzzy match; popup anchored under cursor.
-- [ ] Selection: text file → injects content as a text content block referencing the path; image file → injects as image content block per `tugcode/src/types.ts:ContentBlockImage`.
-
-**Tests:**
-- [ ] Pure-logic: fuzzy-match scoring.
-- [ ] Real-app: type `@CLAUDE`, observe completion popup; pick file; assert content block on send.
-
-**Checkpoint:**
-- [ ] `just app-test at-file-completion`
+> **✅ ALREADY DONE.** Live `@`-file completion is wired in the dev card: `completionProviders["@"] = services.fileCompletionProvider` (from `FileTreeStore.getFileCompletionProvider()`), registered on `TugPromptEntry` via the existing `CompletionProvider` interface and matching against the real filesystem feed. Original detail removed — see git history.
 
 ---
 
 #### Step 19: Image drag/paste in prompt entry {#step-19}
 
-**Depends on:** #step-5
-
-**Commit:** `feat(dev-card): image drag/paste in prompt entry`
-
-**References:** [D06] protocol baseline, Risk R06, (#dependencies)
-
-**Artifacts:**
-- Modified: prompt-entry to handle drop / paste events for image data
-- Modified: `gallery-attachment-strip.tsx` to render thumbnails
-
-**Tasks:**
-- [ ] Detect image data on drop/paste; reject non-image text (per `feedback_persistent_text_entry`).
-- [ ] Downsample via `image-downsample.ts`.
-- [ ] Show thumbnail in attachment strip.
-- [ ] On send, attach as `image` content block per `ContentBlockImage`.
-
-**Tests:**
-- [ ] Pure-logic: image-type detection, downsample call.
-- [ ] Real-app: drop a PNG, send, observe message with image attached.
-
-**Checkpoint:**
-- [ ] `just app-test image-drag-paste`
+> **✅ ALREADY DONE.** Image drag/paste ships via `image-downsample.ts`, `atom-bytes-store.ts`, and `synthesize-user-message.ts` (downsample → thumbnail → `image` content block per `ContentBlockImage`), already noted as shipped in [#assumptions]. Original detail removed — see git history. (Risk [R06] — regression-pin after Step-5c — remains the relevant watch-item.)
 
 ---
 
 #### Step 20: Interrupt visibility refinement {#step-20}
 
-**Depends on:** #step-5
-
-**Commit:** `fix(dev-card): interrupt produces "stopped" label, not generic error`
-
-**References:** [D06] protocol baseline, (#test-categories)
-
-**Artifacts:**
-- Modified: turn-completion renderer to distinguish interrupt-driven `result: "error"` from genuine errors
-
-**Tasks:**
-- [ ] Track interrupt intent locally (the interrupt button click sets a per-turn flag).
-- [ ] When `turn_complete` arrives with `result: "error"` AND the flag is set, label as "stopped by user".
-- [ ] Otherwise: generic error banner.
-
-**Tests:**
-- [ ] Real-app: send a long prompt, click interrupt mid-stream, assert "stopped by user" label.
-
-**Checkpoint:**
-- [ ] `just app-test interrupt-stopped-label`
+> **✅ ALREADY DONE.** Interrupt is fully surfaced in `tug-prompt-entry.tsx`: a primary `Stop` button gated on `snap.canInterrupt` (`data-can-interrupt`, `Square` icon), with the interrupt/send decision and clear-and-route teardown handled (the older "submit is interrupt" branch was retired in favor of the explicit Stop button). Original detail removed — see git history. *Verify-on-march:* if the specific "stopped by user" turn label (vs. generic error) is desired and not present, it is a tiny follow-up.
 
 ---
 
@@ -1962,22 +1880,24 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 **Depends on:** #step-5
 
-**Commit:** `feat(dev-card): compact_boundary divider in transcript`
+**Commit:** `feat(dev-card): render compact summary in transcript`
 
 **References:** [D06] protocol baseline, (#test-categories)
 
+> **Rescoped (Q-E).** Nothing renders for compaction today. The terminal shows the compaction **content** (the summary), not just a divider line — so the goal is to surface that same content the same way **when it is available**. The first task is an empirical wire-check (what does `/compact` actually deliver over our bridge — a `compact_boundary` marker only, or summary content too?); the render is designed to match the terminal against whatever the check finds.
+
 **Artifacts:**
-- New: `compact-boundary-divider.tsx`
-- Modified: transcript renderer to insert divider at the boundary
+- New: compaction transcript renderer (divider + summary content as the wire provides)
+- Modified: transcript renderer to insert it at the boundary
 
 **Tasks:**
-- [ ] Subscribe to `compact_boundary` events.
-- [ ] Render an in-transcript divider: "Conversation compacted at <time>. <N> tokens summarized."
+- [ ] **Wire-check first:** drive `/compact` over the bridge and capture exactly what arrives (`compact_boundary` fields, and whether the summary content is carried). Pin the shape before designing the render.
+- [ ] Render to match the terminal: the compaction marker plus the summary content when present (`"Conversation compacted… <N> tokens summarized"` + the summary body if delivered).
 - [ ] Style as a soft separator, not an error.
 
 **Tests:**
-- [ ] Pure-logic: divider props from `compact_boundary` payload.
-- [ ] Real-app: drive `/compact`, observe divider in transcript.
+- [ ] Pure-logic: render props from the captured `compact_boundary` payload.
+- [ ] Real-app: drive `/compact`, observe the compaction render (divider + summary if available) in the transcript.
 
 **Checkpoint:**
 - [ ] `just app-test compact-boundary-divider`
