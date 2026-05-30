@@ -69,6 +69,31 @@ describe("suppressCompletionDetection", () => {
     expect(next.field(completionField).active).toBe(false);
   });
 
+  test("moving the caret into a recalled `/command` does NOT reopen the popup", () => {
+    // The remaining half of the recall-submit bug: after a suppressed
+    // whole-doc swap, clicking / arrowing into the restored trigger run
+    // is a pure selection change. Rejoin is gated on `docChanged`, so it
+    // must not reopen — otherwise the popup would steal the next submit.
+    const recalled = replaceDoc(makeState(), "/permissions", true);
+    expect(recalled.field(completionField).active).toBe(false);
+
+    const moved = recalled.update({ selection: EditorSelection.cursor(5) }).state;
+    expect(moved.field(completionField).active).toBe(false);
+  });
+
+  test("typing within a recalled `/command` still reopens the popup", () => {
+    // The composition case rejoin exists for: an actual edit inside the
+    // run reopens completion (a doc change), unlike a bare caret move.
+    const recalled = replaceDoc(makeState(), "/permission", true);
+    expect(recalled.field(completionField).active).toBe(false);
+
+    const typed = recalled.update({
+      changes: { from: 11, insert: "s" },
+      selection: EditorSelection.cursor(12),
+    }).state;
+    expect(typed.field(completionField).active).toBe(true);
+  });
+
   test("an annotated replace cancels an already-active session", () => {
     // Type `/` so the popup opens, then a suppressed whole-doc swap
     // (history nav landing on a different entry) must close it.

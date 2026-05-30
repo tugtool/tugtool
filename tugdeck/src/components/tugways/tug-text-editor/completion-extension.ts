@@ -374,16 +374,20 @@ export function deriveQueryUpdate(
 
 /**
  * Inspect a transaction in the inactive state to decide whether the
- * caret has landed inside a literal trigger…run that was never
+ * user just *edited* inside a literal trigger…run that was never
  * accepted as an atom — rejoining typeahead with the existing text as
  * the query.
  *
- * Runs only on transactions that changed doc or selection (some
- * caret-affecting work happened) and that aren't themselves cancel
- * transactions. Pressing Escape leaves the caret in the same spot
- * but produces a cancel — the next user-driven change re-evaluates
- * rejoin per the same rules, so typing one more char or arrowing
- * within the run reopens the popup, while sitting still does not.
+ * Gated on `tr.docChanged` (and not a cancel): only an actual edit
+ * within the run reopens the popup. A pure caret move — clicking or
+ * arrowing into an existing run — does NOT reopen. This is deliberate:
+ * a finished line swapped in whole (history recall, restore) commonly
+ * ends in a trigger run (`/command`, trailing `@file`), and reopening
+ * the popup on the subsequent click/arrow would let the now-active
+ * popup's high-precedence keymap swallow the next Enter / Shift+Return
+ * as an accept instead of a submit. Typing one more char within the
+ * run still reopens it (a doc change), which is the case that matters
+ * for live composition.
  */
 export function detectRejoin(
   tr: Transaction,
@@ -399,8 +403,7 @@ export function detectRejoin(
   for (const eff of tr.effects) {
     if (eff.is(cancelEffect)) return null;
   }
-  const selectionChanged = !tr.startState.selection.eq(tr.state.selection);
-  if (!tr.docChanged && !selectionChanged) return null;
+  if (!tr.docChanged) return null;
   const sel = tr.state.selection.main;
   if (sel.from !== sel.to) return null;
   const found = scanBackForTrigger(tr.state.doc, sel.head, providers);
