@@ -41,6 +41,7 @@ import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
+import { useModelPicker } from "./model-picker-sheet";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
@@ -2446,10 +2447,16 @@ export function DevCardBody({
 
   // The single permission sheet, owned at the card level so the chip click
   // and the `/permissions` slash command present the same sheet ([#step-1c]).
+  // One shared sheet host for the card's pickers, so opening one (chip or
+  // slash command) replaces any other open picker instead of stacking a
+  // second sheet on top of it ([#step-2b]).
+  const cardPickerSheet = useTugSheet();
+
   const permissionSheet = usePermissionSheet({
     cardId,
     sessionMetadataStore,
     onSelectMode: permissionMode.setMode,
+    showSheet: cardPickerSheet.showSheet,
   });
 
   // The `/permissions` rules editor, owned at the card level so the slash
@@ -2461,12 +2468,19 @@ export function DevCardBody({
     codeSessionStore,
   });
 
+  const modelPicker = useModelPicker({
+    codeSessionStore,
+    sessionMetadataStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Surface for each local slash command, keyed by command name. The
   // `as const satisfies` registry narrows `LocalCommandName` to the literal
   // union, so this `Record` is exhaustive — a registered command without a
   // wired surface is a compile error ([#step-1c] / [D23]).
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
+    model: () => modelPicker.openModelPicker(),
   };
 
   const {
@@ -2752,7 +2766,10 @@ export function DevCardBody({
                       sessionMetadataStore={sessionMetadataStore}
                       onOpenSheet={permissionSheet.openPermissionSheet}
                     />
-                    <ModelChip sessionMetadataStore={sessionMetadataStore} />
+                    <ModelChip
+                      sessionMetadataStore={sessionMetadataStore}
+                      onOpenPicker={modelPicker.openModelPicker}
+                    />
                     {effectiveFooterContent}
                   </>
                 }
@@ -2765,7 +2782,7 @@ export function DevCardBody({
               />
             </TugBox>
             {renderSheet()}
-            {permissionSheet.renderPermissionSheet()}
+            {cardPickerSheet.renderSheet()}
             {permissionRulesSheet.renderRulesSheet()}
           </ResponderScope>
         </TugSplitPanel>

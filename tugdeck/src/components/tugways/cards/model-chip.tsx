@@ -1,58 +1,87 @@
 /**
- * `ModelChip` — Z4B display-only model indicator.
+ * `ModelChip` — Z4B model control chip.
  *
- * Shows the session's active model (`system_metadata.model`) as a two-line
- * `TugBadge` (`label-top` / `size="sm"` / `role="agent"`) carrying a `MODEL`
- * caption over the formatted label (`claude-opus-4-8[1m]` → `Opus 4.8 · 1M`).
+ * A two-line `TugPushButton` (`label-top` / `size="sm"` / `role="agent"`)
+ * carrying a `MODEL` caption over the formatted active model
+ * (`claude-opus-4-8[1m]` → `Opus 4.8 · 1M`), sized + tinted to family with
+ * the neighbor `sm` `agent` chips. Pressing it opens the shared model picker
+ * sheet — the same sheet the `/model` slash command opens ([#step-2b]). The
+ * chip owns no sheet: clicking it calls `onOpenPicker`, the card-hosted
+ * opener from {@link useModelPicker}.
  *
- * Display-only per [D13] — no click, no menu. The model is changed via the
- * `/model` slash command ([#step-2b]); the synthetic `model_change`
- * confirmation lands in the transcript per [D09], so this chip does no banner
- * work and owns no sheet. It is the model sibling of `DevSessionIdBadge` and
- * the project badge — the same plain `TugBadge` shape.
+ * **Interactive per [D13] (second exception).** [D13] keeps Z4B chips
+ * indicator-only with one exception — the permission-mode chip. The model
+ * chip is the second: model is a high-frequency control that earns a press,
+ * and routing it through the chip (plus `/model`) mirrors the permission
+ * chip's chip-+-command pattern rather than standing up a bespoke surface.
  *
  * **Never hides on missing data.** When the session has not reported a model
- * (`model === null`), the chip stays mounted and escalates to `caution` with a
- * `?` value and an alert icon — the same "surface the gap, don't swallow it"
- * treatment the Claude Code version chip uses for drift
- * ([dev-route-indicator-badge.tsx]). An absent model is information worth
- * seeing, not a reason to vanish.
+ * (`model === null`) and no `initialize` default is known, the chip stays
+ * mounted and escalates to `caution` with a `?` value and an alert icon — the
+ * same "surface the gap, don't swallow it" treatment the Claude Code version
+ * chip uses for drift ([dev-route-indicator-badge.tsx]). An absent model is
+ * information worth seeing, not a reason to vanish; the press still opens the
+ * picker so the user can set one.
  *
- * Data source ([L02] — external state enters React through
- * `useSyncExternalStore` only): the live `model` from
- * `SessionMetadataStore`, updated by each `system_metadata` event. The chip is
- * NOT width-stabilized — it reflows when the model changes, accepted per [R01].
+ * Resolution order (matches the picker's active-row resolution): live
+ * `model` (live OR ledger-replayed `system_metadata.model`) → the
+ * `initialize` default-model label (`models[0].displayName`) → honest `?`
+ * caution. Data source ([L02] — external state enters React through
+ * `useSyncExternalStore` only): `SessionMetadataStore`. The chip is
+ * width-stabilized ([R01], opt-in like the permission-mode chip): switching
+ * among model labels never reflows it, and a wider unexpected value still
+ * fits.
  *
- * Compositional component — composes `TugBadge` and adds no styling, so it is
- * `.tsx`-only per the component-authoring "Compositional Component" rule; the
- * composed `TugBadge` keeps its own tokens [L20].
+ * Compositional component — composes `TugPushButton`; its only own CSS is the
+ * value-line width-stabilizer. The composed `TugPushButton` keeps its own
+ * tokens [L20].
  *
  * Laws: [L02] store subscription, [L06] appearance via CSS/DOM, [L19] authoring
  * Decisions: [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub,
- *            [D09] model-confirm in transcript, [D13] Z4B indicator-only
+ *            [D13] Z4B model is the second interactive chip
  *
  * @module components/tugways/cards/model-chip
  */
 
+import "./model-chip.css";
+
 import React, { useSyncExternalStore } from "react";
 import { TriangleAlert } from "lucide-react";
 
-import { TugBadge } from "@/components/tugways/tug-badge";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { formatModelLabel } from "@/lib/model-label";
+import { KNOWN_MODELS, selectorToModelId } from "@/lib/model-picker-data";
+
+/**
+ * Resolved-model labels the chip width-stabilizes against — one per known
+ * model family (`Opus 4.8 · 1M`, `Sonnet 4.6`, `Haiku 4.5`). Reserving the
+ * widest means switching models never reflows the chip ([R01]).
+ */
+const MODEL_CHIP_SIZER_LABELS = KNOWN_MODELS.map((m) =>
+  formatModelLabel(selectorToModelId(m.value)),
+);
 
 export interface ModelChipProps {
-  /** Metadata store supplying the live `model`. */
+  /** Metadata store supplying the live `model` + the `initialize` model list. */
   sessionMetadataStore: SessionMetadataStore;
+  /**
+   * Open the shared model picker sheet. Wired by the dev card to the single
+   * opener from {@link useModelPicker} — the same opener the `/model` slash
+   * command routes to, so the chip and the command present one sheet.
+   */
+  onOpenPicker: () => void;
 }
 
 /**
- * Display-only Z4B chip showing the active model. When no model has been
- * reported yet it stays visible as a `caution` chip with a `?` value, rather
- * than hiding — an unknown model is surfaced, never swallowed.
+ * Z4B chip showing the active model and opening the shared picker on press.
+ * When no model has been reported yet it stays visible as a `caution` chip
+ * with a `?` value, rather than hiding — an unknown model is surfaced, never
+ * swallowed.
  */
 export function ModelChip({
   sessionMetadataStore,
+  onOpenPicker,
 }: ModelChipProps): React.ReactElement {
   const snapshot = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -66,34 +95,54 @@ export function ModelChip({
     snapshot.models.length > 0 ? snapshot.models[0].displayName : null;
 
   let content: string;
-  let role: "agent" | "caution";
+  let unknown = false;
   let title: string;
   if (exactModel !== null) {
     content = formatModelLabel(exactModel);
-    role = "agent";
     title = exactModel;
   } else if (defaultModelLabel !== null) {
     content = defaultModelLabel;
-    role = "agent";
     title = `${defaultModelLabel} — exact model resolves on the first turn`;
   } else {
     content = "?";
-    role = "caution";
+    unknown = true;
     title = "Model not reported by the session";
   }
 
+  // `TugPushButton` has no `caution` role (unlike `TugBadge`), so an unknown
+  // model is surfaced via the alert icon + a `data-unknown` hook rather than a
+  // role escalation — still "show the gap, don't swallow it", never hides.
   return (
-    <TugBadge
-      emphasis="tinted"
-      role={role}
-      size="sm"
+    <TugPushButton
       layout="label-top"
       label="Model"
-      icon={role === "caution" ? <TriangleAlert aria-hidden="true" /> : undefined}
-      title={title}
+      size="sm"
+      emphasis="tinted"
+      role="agent"
+      icon={unknown ? <TriangleAlert aria-hidden="true" /> : undefined}
       data-slot="model-chip"
+      data-unknown={unknown ? "" : undefined}
+      aria-label="Model"
+      title={title}
+      onClick={onOpenPicker}
     >
-      {content}
-    </TugBadge>
+      {/* Width-stabilized value: the shown label plus a hidden sizer per known
+          model label reserve the widest so switching never reflows the chip
+          (this chip only, per [R01]). */}
+      <span className="model-chip-value">
+        <span className="model-chip-value-shown" data-slot="model-value">
+          {content}
+        </span>
+        {MODEL_CHIP_SIZER_LABELS.map((label) => (
+          <span
+            key={label}
+            aria-hidden="true"
+            className="model-chip-value-sizer"
+          >
+            {label}
+          </span>
+        ))}
+      </span>
+    </TugPushButton>
   );
 }

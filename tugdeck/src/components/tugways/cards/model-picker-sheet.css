@@ -1,0 +1,43 @@
+/* @tug-pairings: none — layout only. The sheet's chrome comes from the
+   composed TugSheet; the option rows from TugListView / TugListRow. This file
+   only sizes the option list and the leading checkmark column. */
+
+/*
+ * Model picker sheet — a TugListView of model rows above the Done button.
+ */
+.model-picker-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 18rem;
+}
+
+/*
+ * The list view is `height: 100%` by default (it expects a bounded flex
+ * parent). In the sheet we want it to size to its rows instead, so we relax
+ * the height to content with a scroll cap for the overflow case — a
+ * cascade-scoped override on this instance, the sanctioned customization path
+ * ([L20]).
+ */
+.model-picker-sheet-list .tug-list-view {
+  height: auto;
+  max-height: 18rem;
+}
+
+/*
+ * Leading checkmark column. Every option row renders this holder (empty when
+ * unselected) at a fixed width, so the titles line up whether or not a row
+ * carries the mark. The check inherits the row's text colour (currentColor).
+ */
+.model-picker-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  flex-shrink: 0;
+}
+
+.model-picker-check svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}

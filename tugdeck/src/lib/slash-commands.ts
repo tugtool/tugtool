@@ -68,6 +68,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "permissions",
     description: "Edit tool-permission rules (allow / ask / deny / workspace)",
   },
+  {
+    name: "model",
+    description: "Switch the active model for this session",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

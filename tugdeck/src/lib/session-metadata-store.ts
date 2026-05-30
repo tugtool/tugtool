@@ -312,6 +312,26 @@ export class SessionMetadataStore {
   }
 
   /**
+   * Optimistically reflect a client-initiated model change.
+   *
+   * Like {@link applyPermissionMode}: claude answers a `set_model` control
+   * request with a `control_response`, not a fresh `system_metadata`, so there
+   * is no round-trip to await. The `/model` picker calls this right after
+   * sending the frame so the Z4B model chip reflects the change immediately.
+   * `model` is a resolved model id (e.g. `claude-sonnet-4-6`) so the chip's
+   * `formatModelLabel` renders a friendly label. Self-correcting: the next
+   * authoritative `system_metadata` replaces the snapshot wholesale. A no-op
+   * when unchanged (preserves snapshot reference stability).
+   */
+  applyModel(model: string): void {
+    if (this._snapshot.model === model) return;
+    this._snapshot = { ...this._snapshot, model };
+    for (const listener of this._listeners) {
+      listener();
+    }
+  }
+
+  /**
    * Returns a CompletionProvider for the / trigger.
    * The provider closes over the store and reads current slashCommands on each call.
    * Filters by case-insensitive substring match. Returns CompletionItem[] with

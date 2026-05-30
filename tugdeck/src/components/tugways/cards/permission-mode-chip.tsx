@@ -35,11 +35,11 @@
 
 import "./permission-mode-chip.css";
 
-import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Check, ShieldCogCorner } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { useTugSheet } from "@/components/tugways/tug-sheet";
+import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import {
   TugListView,
@@ -160,14 +160,18 @@ export interface UsePermissionSheetArgs {
    * frame, optimistically reflects the mode, and persists it per card.
    */
   onSelectMode: (mode: string) => void;
+  /**
+   * The card's shared sheet host (`useTugSheet().showSheet`). Routing every
+   * card picker through one host means opening this sheet replaces any other
+   * open picker instead of stacking a second sheet.
+   */
+  showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
 }
 
-/** Imperative handle to the single, card-hosted permission sheet. */
+/** Imperative handle to the card-hosted permission sheet. */
 export interface PermissionSheetController {
   /** Present the sheet, marking the current mode. */
   openPermissionSheet: () => void;
-  /** Render the sheet portal — call once in the card's content region. */
-  renderPermissionSheet: () => React.ReactNode;
 }
 
 /**
@@ -185,9 +189,8 @@ export function usePermissionSheet({
   cardId,
   sessionMetadataStore,
   onSelectMode,
+  showSheet,
 }: UsePermissionSheetArgs): PermissionSheetController {
-  const { showSheet, renderSheet } = useTugSheet();
-
   const persistedMode = useTugbankValue<string | null>(
     PERMISSION_MODE_DOMAIN,
     cardId,
@@ -204,17 +207,19 @@ export function usePermissionSheet({
       content: (close) => (
         <PermissionModeSheetBody
           currentMode={mode}
-          onPick={(picked) => {
-            onSelectMode(picked);
-            close(picked);
+          onConfirm={(picked) => {
+            if (picked !== null && picked !== mode) {
+              onSelectMode(picked);
+            }
+            close(picked ?? undefined);
           }}
-          onDone={() => close()}
+          onCancel={() => close()}
         />
       ),
     });
   }, [showSheet, sessionMetadataStore, persistedMode, onSelectMode]);
 
-  return { openPermissionSheet, renderPermissionSheet: renderSheet };
+  return { openPermissionSheet };
 }
 
 // ---------------------------------------------------------------------------
@@ -323,10 +328,10 @@ const PERMISSION_MODE_CELL_RENDERERS: Record<
 interface PermissionModeSheetBodyProps {
   /** The mode marked as selected when the sheet opened (`null` if unknown). */
   currentMode: string | null;
-  /** Invoked with the chosen mode; the chip closes the sheet afterward. */
-  onPick: (mode: string) => void;
-  /** Dismiss the sheet without changing the mode (the Done button). */
-  onDone: () => void;
+  /** Commit the chosen mode (no-op if unchanged) and dismiss — OK / Enter. */
+  onConfirm: (mode: string | null) => void;
+  /** Dismiss without changing the mode — Cancel / Escape / Cmd-. */
+  onCancel: () => void;
 }
 
 /**
@@ -342,23 +347,39 @@ interface PermissionModeSheetBodyProps {
  */
 function PermissionModeSheetBody({
   currentMode,
-  onPick,
-  onDone,
+  onConfirm,
+  onCancel,
 }: PermissionModeSheetBodyProps): React.ReactElement {
+  // In-sheet selection — clicking a row moves the checkmark; nothing commits
+  // until OK (or Enter). Cancel / Escape leave the mode unchanged.
+  const [selected, setSelected] = useState<string | null>(currentMode);
   const dataSource = useMemo(
     () => new PermissionModeDataSource(PERMISSION_MODE_MENU),
     [],
   );
   const delegate = useMemo<TugListViewDelegate>(
     () => ({
-      onSelect: (index) => onPick(PERMISSION_MODE_MENU[index]),
+      onSelect: (index) => setSelected(PERMISSION_MODE_MENU[index]),
     }),
-    [onPick],
+    [],
   );
 
+  const confirm = (): void => onConfirm(selected);
+
   return (
-    <div className="permission-mode-sheet">
-      <PermissionModeListContext.Provider value={currentMode}>
+    <div
+      className="permission-mode-sheet"
+      onKeyDown={(e) => {
+        // Enter accepts (OK) regardless of focus; preventDefault suppresses a
+        // focused button's native Enter-click. Escape / Cmd-. are handled by
+        // TugSheet (cancelDialog → dismiss, no commit).
+        if (e.key === "Enter") {
+          e.preventDefault();
+          confirm();
+        }
+      }}
+    >
+      <PermissionModeListContext.Provider value={selected}>
         <div className="permission-mode-sheet-list">
           <TugListView<PermissionModeDataSource>
             dataSource={dataSource}
@@ -371,8 +392,9 @@ function PermissionModeSheetBody({
         </div>
       </PermissionModeListContext.Provider>
       <div className="tug-sheet-actions">
-        <TugPushButton emphasis="filled" onClick={onDone}>
-          Done
+        <TugPushButton onClick={onCancel}>Cancel</TugPushButton>
+        <TugPushButton emphasis="filled" onClick={confirm}>
+          OK
         </TugPushButton>
       </div>
     </div>

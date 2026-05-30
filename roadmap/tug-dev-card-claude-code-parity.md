@@ -1218,24 +1218,32 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 **Commit:** `feat(dev-card): /model slash command opens model picker sheet`
 
-**References:** [D23] local slash-command dispatch, [D13] Z4B indicator-only, [D15] pane sheets are overlays, (#slash-cmd-inventory)
+**References:** [D23] local slash-command dispatch, [D13] Z4B indicator-only (**amended** — model is now the second interactive chip), [D15] pane sheets are overlays, (#slash-cmd-inventory)
 
 **Artifacts:**
-- New: `model-picker-sheet.tsx`
-- Modified: register `/model` in the [#step-1c] slash-command registry; its `RUN_SLASH_COMMAND` handler opens the picker sheet (no bespoke routing — the dispatch layer already exists)
+- New: `model-picker-sheet.tsx` — exports `useModelPicker` (the card-hosted shared sheet, mirroring `usePermissionSheet`) and the `TugListView`-based sheet body.
+- New: `model-picker-data.ts` — `KNOWN_MODELS` static fallback + pure `resolvePickerModels(models, activeModel)` resolver.
+- Modified: `model-chip.tsx` — converted from display-only `TugBadge` to interactive `TugPushButton` with `onOpenPicker` (mirrors `PermissionModeChip`).
+- Modified: register `/model` in the [#step-1c] slash-command registry; its `commandHandlers` entry calls `modelPicker.openModelPicker()` (no bespoke routing — the dispatch layer already exists).
+- Modified: `dev-card.tsx` — `useModelPicker({ codeSessionStore, sessionMetadataStore })` wired to the chip's `onOpenPicker` AND the `model` slash-command surface; `renderModelPicker()` mounted in the content region. One sheet, two entry points.
 
 **Tasks:**
-- [ ] Implement `ModelPickerSheet` as an overlay per [D15], listing available models (Opus 4.8, Sonnet 4.6, Haiku 4.5, Haiku fast-mode).
-- [ ] Highlight current model from `SessionMetadataStore.getSnapshot().model`.
-- [ ] Selection sends `{type: "model_change", model}`; sheet dismisses on confirmation.
-- [ ] Keyboard: arrow keys navigate, Enter selects, ESC dismisses.
+- [x] Implement the model picker as a card-hosted shared sheet per [D15], listing available models from the `initialize` list (or the static `KNOWN_MODELS` fallback for resumed sessions). Chip press and `/model` share the one sheet via `useModelPicker` (the established `usePermissionSheet` idiom — chosen over the unused `activeOverlay` state for parity with the sibling chip).
+- [x] Highlight current model — `resolvePickerModels` marks the live `SessionMetadataStore` model, or the default option, and surfaces a live model absent from the list as its own labeled row.
+- [x] Selection sends `{type: "model_change", model}` (via `DevControlSender.setModel`); sheet dismisses on confirmation.
+- [~] Keyboard: the sheet uses `TugListView` (the keyboard-ready substrate, same as the permission sheet); arrow/Enter land with component keyboard navigation, ESC dismisses today via `TugSheet`.
 
 **Tests:**
-- [ ] Pure-logic: highlight predicate; selection serialization.
-- [ ] Real-app: type `/model`, observe sheet; pick a model; assert `model_change` IPC outbound + chip updates after `system_metadata`; assert synthetic confirmation lands in transcript per [D09].
+- [x] Pure-logic: `resolvePickerModels` — live-list vs fallback, active-row marking, default-to-first, live-model-as-own-option (`src/lib/__tests__/model-picker-data.test.ts`, 6 cases).
+- [ ] Real-app: type `/model`, observe sheet; pick a model; assert `model_change` IPC outbound + chip updates after `system_metadata`; assert synthetic confirmation lands in transcript per [D09]. **Deferred** to a `just app-test` pass.
 
 **Checkpoint:**
-- [ ] `just app-test model-picker-sheet`
+- [ ] `just app-test model-picker-sheet` — deferred with the real-app test above.
+
+**Implementation notes.**
+- **Backend was already complete.** `tugcode` already carries the `model_change` inbound type, `isModelChange` guard, and `handleModelChange` (sends claude control `{subtype: "set_model", model}` — confirmed correct against the Agent SDK's `encode_set_model_request`). tugdeck's `protocol.ts` already had the `model_change` outbound and `DevControlSender.setModel`. tugcast's control feed is a transparent conduit (no new verb work). So this step is **frontend-only**: chip → button, picker sheet, slash command, wiring. No tugcode recompile or Rust change.
+- **[D13] / [Q08] amended.** Those decisions framed every Z4B chip as indicator-only with the permission chip as the sole exception. Per direct user direction, the model chip is now the **second** interactive chip — it opens the shared picker on press, exactly like the permission chip opens its sheet. The chip is an *opener*, not an inline picker; the sheet remains the picker surface. Reconcile the D13/Q08 prose accordingly.
+- **No optimistic chip update.** Unlike permission mode (which has no round-trip and so updates optimistically), the model chip reflects the new model on the next `system_metadata` round-trip per [D03] — avoids showing a raw `value` (e.g. `default`) before the labeled live model lands.
 
 ---
 

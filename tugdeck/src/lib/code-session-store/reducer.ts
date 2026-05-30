@@ -2572,6 +2572,24 @@ function handleSetPermissionMode(
   };
 }
 
+/**
+ * Emit a `model_change` frame and change no transcript state. The model the
+ * chip displays comes back from the post-mutation `system_metadata` round-trip
+ * (owned by `SessionMetadataStore`), not from this dispatch — keeping the
+ * indicator truthful even if a model change races a turn.
+ */
+function handleSetModel(
+  state: CodeSessionState,
+  event: { type: "set_model"; model: string },
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state,
+    effects: [
+      { kind: "send-frame", msg: { type: "model_change", model: event.model } },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Cost update — telemetry surface, phase-tolerant
 // ---------------------------------------------------------------------------
@@ -3694,6 +3712,8 @@ export function reduce(
       return handleInterrupt(state);
     case "set_permission_mode":
       return handleSetPermissionMode(state, event);
+    case "set_model":
+      return handleSetModel(state, event);
     case "consume_draft_restore":
       return handleConsumeDraftRestore(state);
     case "cancel_queued_send":

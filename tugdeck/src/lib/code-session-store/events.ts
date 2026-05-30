@@ -287,6 +287,19 @@ export interface SetPermissionModeActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.setModel`. Not a wire event —
+ * never decoded from a frame. The reducer emits a single `model_change`
+ * SendFrame effect and changes NO transcript state: the dev-card's model chip
+ * reflects the model from the post-mutation `system_metadata` round-trip
+ * (owned by `SessionMetadataStore`), not from this action, per the dev-card /
+ * Claude-Code-parity plan's round-trip mutation decision.
+ */
+export interface SetModelActionEvent {
+  type: "set_model";
+  model: string;
+}
+
+/**
  * Internal action injected by
  * `CodeSessionStore.consumePendingDraftRestore`. Not a wire event. The
  * reducer clears `pendingDraftRestore` to `null` so the prompt-entry
@@ -741,6 +754,7 @@ export type CodeSessionEvent =
   | RespondQuestionActionEvent
   | InterruptActionEvent
   | SetPermissionModeActionEvent
+  | SetModelActionEvent
   | ConsumeDraftRestoreActionEvent
   | CancelQueuedSendActionEvent
   | CostUpdateEvent

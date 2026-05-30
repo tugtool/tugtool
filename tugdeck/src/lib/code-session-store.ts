@@ -698,6 +698,21 @@ export class CodeSessionStore {
   }
 
   /**
+   * Set the session's model. Emits a `model_change` CODE_INPUT frame and
+   * changes no transcript state — the dev-card's Z4B model chip reflects the
+   * new model from the next `system_metadata` (owned by
+   * `SessionMetadataStore`), not from this call, so the indicator stays
+   * truthful even if the change races an in-flight turn. The dispatch source
+   * is the `/model` picker and the model chip press; routing through a named
+   * method here keeps `dispatch` private and the caller free of reducer-event
+   * vocabulary — same precedent as `setPermissionMode`.
+   */
+  setModel(model: string): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "set_model", model });
+  }
+
+  /**
    * Acknowledge that the prompt-entry editor has applied the most
    * recent CASE A draft restore. The reducer clears
    * `pendingDraftRestore` to `null` so the editor's
