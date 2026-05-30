@@ -889,7 +889,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 2b | `/model` picker | ✅ DONE | `model-picker-sheet.tsx`; `ebc21271` |
 | 3 | Rate-limit **chip** | ⛔ SUPERSEDED | reverted `9abb96bc` → banner ([#step-3.5], [D24]) |
 | 3.5 | Rate-limit **banner** | ✅ DONE | `rate-limit-banner-bridge.tsx`; `1c264064` |
-| 4 | Effort chip | ▶ TODO | next up; [R07] respawn decided |
+| 4 | Effort chip | ✅ DONE | `effort-chip.tsx` + `effort-picker-sheet.tsx` + `lib/effort.ts` + `use-effort.ts`; tugcode `--effort`/`effort_change` respawn ([R07]); `at0096` PASS |
 | 5 | Phase A integration checkpoint | ▶ TODO | verification only; checklist refreshed |
 | 6 | `SessionPickerSheet` primitive | ✅ DONE | capability exists via `dev-picker-cells.tsx` (session-resume rows, kbd nav, overlay); generic primitive not separately needed |
 | 7a | Capture terminal `/rewind` | ▶ TODO | empirical probe |
@@ -1478,7 +1478,7 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 > **Decision (resolved 2026-05-30): build it as written.** The `effort_change` → respawn-with-`--resume` path is accepted: effort changes are infrequent and user-initiated, and the transcript is preserved via tugcast replay, so the brief reconnect is an acceptable cost for a real, interactive control. Chosen over a display-only chip (rejected — defeats the "button chip like model/permission" intent) and a defer-to-next-spawn set (rejected — weakest UX). Revisit only if a `set_effort` control verb lands (swap to live, no UI change) or the reconnect proves disruptive in practice ([R07] trigger).
 
 **Artifacts:**
-- New: `effort-chip.tsx` — Z4B interactive button chip, a two-line `TugPushButton` (`label-top` / `size="sm"` / `role="agent"`, caption `EFFORT`, value the level label e.g. `High`), mirroring `model-chip.tsx`. Press opens the shared effort picker. **Model-gated:** renders `null` when the active model does not support effort (the `effort` capability object is absent) — an honest gate, the lesson from [#step-3.5] (don't surface what doesn't apply).
+- New: `effort-chip.tsx` — Z4B interactive button chip, a two-line `TugPushButton` (`label-top` / `size="sm"` / `role="agent"`, caption `EFFORT`, value the level label e.g. `High`), mirroring `model-chip.tsx`. Press opens the shared effort picker. **Always present** (the Z4B cluster is a stable row, like Mode / Model): when there is no level to show — the active model doesn't support effort (per-model `supportsEffort`), support is unknown (resumed session), or no override is set — it shows the `-` placeholder rather than hiding. When the model has no supported levels the press is an inert no-op (the picker has nothing to offer).
 - New: `effort-picker-sheet.tsx` + `useEffortPicker` hook — the shared picker sheet (supported levels only, current marked), modeled on `model-picker-sheet.tsx` / `useModelPicker`. The chip press and a future `/effort` slash command both route to the one opener.
 - New: `lib/effort.ts` — pure `EFFORT_LEVELS` order, `formatEffortLabel(level)`, `parsePersistedEffort`.
 - Modified: `session-metadata-store.ts` adds `effort: string | null` (current level) and effort-support info (which levels are supported / whether the model supports effort), parsed from `session_capabilities`.
@@ -1488,21 +1488,21 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 - Modified: tugbank `dev.effort.<cardId>` namespace for per-card effort persistence ([D07]).
 
 **Tasks:**
-- [ ] Pure helpers: `EFFORT_LEVELS = ["low","medium","high","xhigh","max"]`, `formatEffortLabel`, `parsePersistedEffort`. Unit-tested.
-- [ ] tugcode: re-add `supportsEffort` + `effort` support map to `capabilities.ts`; surface the current effort level in `session_capabilities`.
-- [ ] tugcode: add `--effort` to spawn argv + `effort` to the spawn config; handle inbound `effort_change` by respawning claude with the new `--effort` and `--resume` (transcript preserved via tugcast replay).
-- [ ] `SessionMetadataStore`: parse `effort` (current) + support info from `session_capabilities`; expose on the snapshot.
-- [ ] `EffortChip`: two-line `TugPushButton` reading `effort` + support via `useSyncExternalStore` ([L02]); model-gated (`null` when unsupported); press → shared picker. Width-stabilized like the model chip (the level labels are short and bounded) per [R01]'s opt-in precedent.
-- [ ] `EffortPickerSheet` + `useEffortPicker`: supported levels only, current marked; on select → optimistic `SessionMetadataStore.applyEffort(level)` + send `effort_change` + persist per card ([D07]).
-- [ ] Mount in Z4B; wire the picker opener (shared with a future `/effort` command).
+- [x] Pure helpers: `EFFORT_LEVELS = ["low","medium","high","xhigh","max"]`, `formatEffortLabel`, `parsePersistedEffort` (+ `orderEffortLevels`, `resolveEffortSupport`). Unit-tested (`lib/effort.ts`, `lib/__tests__/effort.test.ts`).
+- [x] tugcode: re-added `supportsEffort` + `supportedEffortLevels` to `capabilities.ts`'s `parseModels`; `buildSessionCapabilities` surfaces the current effort (caller-supplied — `initialize` carries no current-effort field, so tugcode, the `--effort` owner, is the authority). `capabilities.test.ts` updated.
+- [x] tugcode: `--effort` added to `buildClaudeArgs` + `effort` on `ClaudeSpawnConfig`; `Session.currentEffort` threaded through every (re)spawn (incl. fork/continue); inbound `effort_change` (`main.ts` dispatch + `handleEffortChange`) respawns claude with `--effort` + `--resume <sessionId>` (transcript preserved via tugcast replay) — no-op respawn when no live session id yet (level still recorded for the next spawn).
+- [x] `SessionMetadataStore`: parses `effort` + per-model `supportsEffort` / `supportedEffortLevels` from `session_capabilities`; preserves both across the `system_metadata` replace; `applyEffort` optimistic update; exposed on the snapshot.
+- [x] `EffortChip`: two-line `TugPushButton` reading `effort` + support via `useSyncExternalStore` ([L02]); **always present** (stable Z4B row) — shows the level when set+supported, else the `-` placeholder (unsupported / unknown / unset); press → shared picker (inert no-op when no supported levels). Width-stabilized per [R01] (own `effort-chip.css`).
+- [x] `EffortPickerSheet` + `useEffortPicker`: the *active model's* `supportedEffortLevels` only (opus 5, sonnet 4 — captured live), current marked; confirm-style (OK/Enter) like the model picker since each commit respawns. `useEffort` hook owns `setEffort` → optimistic `applyEffort` + persist (`dev.effort.<cardId>`) + `effort_change`, plus capability-gated mount-restore ([D07]).
+- [x] Mounted in Z4B after the model chip; picker opener shared (chip press + a future `/effort` command both route to `openEffortPicker`).
 
 **Tests:**
-- [ ] Pure-logic: `formatEffortLabel` / `parsePersistedEffort` / supported-level filtering.
-- [ ] Real-app: drive a `session_capabilities` with effort support → chip mounts showing the current level; pick a level → chip updates optimistically and an `effort_change` is sent; drive capabilities WITHOUT effort support → chip is absent (model-gated).
-- [ ] Real-app: assert the `effort_change` respawn round-trip preserves the transcript (resume/replay) — the [R07] behavior.
+- [x] Pure-logic: `formatEffortLabel` / `parsePersistedEffort` / `orderEffortLevels` / `resolveEffortSupport` (per-model gating + level bounds). 13 cases, all green.
+- [x] Real-app (`at0096-effort-chip.test.ts`): chip present from mount showing `-` (no caps yet); inject `session_capabilities` with effort support → chip shows `High`; open picker (5 opus levels, current selected) → pick `Max` + OK → chip updates optimistically to `Max` (width stable); inject capabilities WITHOUT effort support → chip stays present, falls back to `-`. Driven via the new `ingestSessionMetadata` surface seam (the chip reads its own `SESSION_METADATA` FeedStore, unreachable by `driveDevSession`); synthetic clicks since the chip sits below the test window's CGEvent-clickable edge.
+- [~] Real-app: the `effort_change` **respawn-with-resume** round-trip ([R07]) preserves the transcript — **integration-level** (needs a live tugcode + claude). Out of this UI test's reach; the optimistic chip update (the observable client-side effect of the set path) is covered above, and the respawn is verified at the Phase A checkpoint ([#step-5]) / live runs. The set path is wired end-to-end (chip → `setEffort` → `effort_change` frame → tugcode respawn).
 
 **Checkpoint:**
-- [ ] `just app-test effort-chip`
+- [x] `just app-test effort-chip` — **VERDICT: PASS** (1/1 files, 8 expects).
 
 ---
 

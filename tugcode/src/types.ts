@@ -102,6 +102,20 @@ export interface SessionCommand {
   command: "fork" | "continue" | "new";
 }
 
+/**
+ * Inbound `effort_change` verb ([#step-4]). Unlike `permission_mode` /
+ * `model_change`, claude has no live control subtype for reasoning effort in
+ * 2.1.158 (the only subtypes are `initialize`, `can_use_tool`,
+ * `set_permission_mode`, `set_model`) — effort is set ONLY via the `--effort`
+ * spawn flag. So tugcode applies this by respawning claude with the new
+ * `--effort` + `--resume`, preserving the transcript via tugcast's
+ * resume/replay ([R07]).
+ */
+export interface EffortChange {
+  type: "effort_change";
+  effort: string;
+}
+
 export interface StopTask {
   type: "stop_task";
   task_id: string;
@@ -130,6 +144,7 @@ export type InboundMessage =
   | Interrupt
   | PermissionModeMessage
   | ModelChange
+  | EffortChange
   | SessionCommand
   | StopTask
   | RequestReplay;
@@ -427,14 +442,22 @@ export interface SystemMetadata {
  * subtitle. `models[0]` is the account default by convention
  * (`value: "default"`, `displayName: "Default (recommended)"`), so the
  * model chip falls back to its `displayName` for a new no-`--model`
- * session. The wire carries more fields (`supportsEffort`, … ) — they're
- * dropped here per the strict-shape policy; re-add when a consumer needs
- * them.
+ * session.
+ *
+ * `supportsEffort` + `supportedEffortLevels` are the reasoning-effort
+ * capability for this model, surfaced for the Z4B effort chip ([#step-4]):
+ * `supportsEffort` is absent on the wire when the model does not support
+ * effort (e.g. haiku), and `supportedEffortLevels` VARIES by model (opus
+ * supports `low|medium|high|xhigh|max`, sonnet drops `xhigh`). The remaining
+ * wire fields (`supportsAdaptiveThinking`, … ) are still dropped per the
+ * strict-shape policy; re-add when a consumer needs them.
  */
 export interface CapabilityModel {
   value: string;
   displayName: string;
   description?: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: string[];
 }
 
 /**
@@ -465,6 +488,14 @@ export interface SessionCapabilities {
   available_output_styles: string[];
   output_style: string;
   account: Record<string, unknown> | null;
+  /**
+   * The session's current reasoning-effort level ([#step-4]), or `null` when
+   * no `--effort` override is in force (the model runs at its built-in
+   * default, which claude does NOT expose on the wire). tugcode owns the
+   * `--effort` spawn flag, so it — not claude's `initialize` response, which
+   * carries no current-effort field — is the authority for this value.
+   */
+  effort: string | null;
   ipc_version: number;
 }
 
@@ -884,6 +915,7 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "interrupt" ||
     typed.type === "permission_mode" ||
     typed.type === "model_change" ||
+    typed.type === "effort_change" ||
     typed.type === "session_command" ||
     typed.type === "stop_task" ||
     typed.type === "request_replay"
@@ -916,6 +948,10 @@ export function isPermissionMode(msg: InboundMessage): msg is PermissionModeMess
 
 export function isModelChange(msg: InboundMessage): msg is ModelChange {
   return msg.type === "model_change";
+}
+
+export function isEffortChange(msg: InboundMessage): msg is EffortChange {
+  return msg.type === "effort_change";
 }
 
 export function isSessionCommand(msg: InboundMessage): msg is SessionCommand {

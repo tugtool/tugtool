@@ -300,6 +300,20 @@ export interface SetModelActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.setEffort`. Not a wire event —
+ * never decoded from a frame. The reducer emits a single `effort_change`
+ * SendFrame effect and changes NO transcript state: tugcode applies the new
+ * reasoning-effort level by respawning claude with `--effort` + `--resume`
+ * (no live `set_effort` control verb exists in 2.1.158 — [R07]), and the Z4B
+ * effort chip reflects the level optimistically (`SessionMetadataStore`),
+ * since the respawn emits no fresh metadata for a resumed session.
+ */
+export interface SetEffortActionEvent {
+  type: "set_effort";
+  effort: string;
+}
+
+/**
  * Internal action injected by
  * `CodeSessionStore.consumePendingDraftRestore`. Not a wire event. The
  * reducer clears `pendingDraftRestore` to `null` so the prompt-entry
@@ -755,6 +769,7 @@ export type CodeSessionEvent =
   | InterruptActionEvent
   | SetPermissionModeActionEvent
   | SetModelActionEvent
+  | SetEffortActionEvent
   | ConsumeDraftRestoreActionEvent
   | CancelQueuedSendActionEvent
   | CostUpdateEvent

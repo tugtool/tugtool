@@ -355,6 +355,7 @@ export type InboundMessage =
     }
   | { type: "permission_mode"; mode: string }
   | { type: "model_change"; model: string }
+  | { type: "effort_change"; effort: string }
   | { type: "session_command"; command: "new" | "continue" | "fork" }
   | { type: "stop_task"; task_id: string };
 

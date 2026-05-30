@@ -374,6 +374,12 @@ export interface ClaudeSpawnConfig {
   /** When omitted, the claude CLI uses its own configured default model. */
   model?: string;
   permissionMode: string;
+  /**
+   * Reasoning-effort level for `--effort` ([#step-4]). When omitted / null,
+   * no `--effort` flag is passed and the model runs at its built-in default
+   * (claude exposes no current-effort value, so unset is genuinely unset).
+   */
+  effort?: string | null;
   sessionId: string | null;
   continue?: boolean;
   forkSession?: boolean;
@@ -449,6 +455,10 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
 
   if (config.model) {
     args.push("--model", config.model);
+  }
+
+  if (config.effort) {
+    args.push("--effort", config.effort);
   }
 
   if (config.sessionId) {
@@ -1725,6 +1735,15 @@ export class SessionManager {
   private claudeStdoutEofObserved: boolean = false;
   private permissionManager = new PermissionManager();
   /**
+   * The session's current reasoning-effort level ([#step-4]), or `null` when
+   * no `--effort` override is in force. tugcode owns the `--effort` flag, so
+   * this is the authority for the effort surfaced in `session_capabilities`
+   * and re-applied on every (re)spawn. Set by {@link handleEffortChange},
+   * which respawns claude to apply it (there is no live `set_effort` control
+   * subtype in 2.1.158 — [R07]).
+   */
+  private currentEffort: string | null = null;
+  /**
    * Optional `/context`-style breakdown emitter. Injected by main.ts
    * after reading the user's Claude Code settings; null in tests and
    * any caller that doesn't supply one. When present, the dispatcher
@@ -2019,6 +2038,7 @@ export class SessionManager {
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),
       permissionMode: this.permissionManager.getMode(),
+      effort: this.currentEffort,
       sessionId: mode === "resume" ? id : null,
       sessionIdOverride: mode === "session-id" && id !== null ? id : undefined,
     });
@@ -3161,7 +3181,7 @@ export class SessionManager {
     // consume the line. Any other `control_response` falls through to the
     // normal path.
     if (this.initializeRequestId !== null && event.type === "control_response") {
-      const parsed = parseInitializeControlResponse(event);
+      const parsed = parseInitializeControlResponse(event, this.currentEffort);
       if (parsed !== null && parsed.requestId === this.initializeRequestId) {
         this.initializeRequestId = null;
         writeLine(parsed.capabilities);
@@ -4277,6 +4297,36 @@ export class SessionManager {
   }
 
   /**
+   * Handle reasoning-effort change ([#step-4], [R07]).
+   *
+   * claude 2.1.158 has NO live control subtype for effort — it is set only via
+   * the `--effort` spawn flag — so unlike model / permission mode (which are
+   * live `control_request`s) this must respawn claude with the new `--effort`
+   * + `--resume <sessionId>`. The transcript survives the brief reconnect via
+   * tugcast's resume/replay; the chip already reflects the change optimistically
+   * (the client sent it before this frame). Records the level so every
+   * subsequent (re)spawn — including the immediate one here — carries it and so
+   * the next `session_capabilities` surfaces it.
+   *
+   * A no-op of the respawn when there is no live session id yet (nothing to
+   * resume): the level is still recorded, so it takes effect on the next spawn.
+   */
+  async handleEffortChange(effort: string): Promise<void> {
+    console.log(`Setting reasoning effort: ${effort}`);
+    this.currentEffort = effort;
+
+    // No conversation to resume yet — record the level and let the next spawn
+    // pick it up via `buildClaudeArgs`.
+    if (this.sessionId === null || this.sessionId === "") return;
+
+    await this.killAndCleanup();
+    this.claudeProcess = this.spawnClaude(this.sessionId, "resume");
+    this.startStdoutDrain(this.claudeProcess);
+    // The drain forwards claude's `system:init` to tugcast asynchronously, as
+    // in `handleSessionFork` / `handleSessionContinue`; no synchronous await.
+  }
+
+  /**
    * Fork the current session: kill current process, respawn with --continue --fork-session.
    * Per D10 (#d10-session-forking).
    */
@@ -4289,6 +4339,7 @@ export class SessionManager {
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),
       permissionMode: this.permissionManager.getMode(),
+      effort: this.currentEffort,
       sessionId: null,
       continue: true,
       forkSession: true,
@@ -4325,6 +4376,7 @@ export class SessionManager {
     const args = buildClaudeArgs({
       pluginDir: this.getPluginDir(),
       permissionMode: this.permissionManager.getMode(),
+      effort: this.currentEffort,
       sessionId: null,
       continue: true,
     });

@@ -44,13 +44,17 @@ describe("buildSessionCapabilities", () => {
     expect(caps!.type).toBe("session_capabilities");
     expect(caps!.ipc_version).toBe(2);
 
-    // models keep only value/displayName/description; supports* dropped.
+    // models keep value/displayName/description + the reasoning-effort
+    // capability (supportsEffort / supportedEffortLevels) for the Z4B effort
+    // chip; the other supports* fields stay dropped per the strict-shape policy.
     expect(caps!.models).toEqual([
       {
         value: "default",
         displayName: "Default (recommended)",
         description:
           "Use the default model (currently Opus 4.8 (1M context)) · $5/$25 per Mtok",
+        supportsEffort: true,
+        supportedEffortLevels: ["low", "high"],
       },
       { value: "sonnet", displayName: "Sonnet", description: "Sonnet 4.6" },
     ]);
@@ -71,6 +75,30 @@ describe("buildSessionCapabilities", () => {
       tokenSource: "claude.ai",
       apiProvider: "firstParty",
     });
+    // No effort argument → null (no override in force); the wire carries no
+    // current-effort field, so this defaults rather than being parsed.
+    expect(caps!.effort).toBeNull();
+  });
+
+  test("surfaces the caller-supplied current effort level", () => {
+    const caps = buildSessionCapabilities(
+      RAW_INITIALIZE_RESPONSE.response.response,
+      "high",
+    );
+    expect(caps!.effort).toBe("high");
+  });
+
+  test("keeps supportsEffort:false and omits the flag when absent", () => {
+    const caps = buildSessionCapabilities({
+      models: [
+        { value: "haiku", displayName: "Haiku" }, // no effort fields → omitted
+        { value: "x", displayName: "X", supportsEffort: false },
+      ],
+    });
+    // Absent on the wire ⇒ omitted (its absence IS the unsupported signal);
+    // an explicit `false` is preserved.
+    expect(caps!.models[0]).toEqual({ value: "haiku", displayName: "Haiku" });
+    expect(caps!.models[1].supportsEffort).toBe(false);
   });
 
   test("the current model id is NOT present (documents the limitation)", () => {
@@ -114,6 +142,7 @@ describe("buildSessionCapabilities", () => {
     expect(caps!.available_output_styles).toEqual([]);
     expect(caps!.output_style).toBe("");
     expect(caps!.account).toBeNull();
+    expect(caps!.effort).toBeNull();
   });
 
   test("returns null for non-object input", () => {

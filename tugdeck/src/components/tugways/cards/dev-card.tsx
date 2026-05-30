@@ -42,6 +42,9 @@ import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
 import { useModelPicker } from "./model-picker-sheet";
+import { EffortChip } from "./effort-chip";
+import { useEffortPicker } from "./effort-picker-sheet";
+import { useEffort } from "@/lib/use-effort";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
@@ -2474,6 +2477,23 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // Reasoning-effort set path + per-card persistence/restore ([#step-4],
+  // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
+  // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
+  // it. The shared picker (chip press / future `/effort`) reads the active
+  // model's supported levels fresh at open time.
+  const effort = useEffort({
+    cardId,
+    codeSessionStore,
+    sessionMetadataStore,
+  });
+
+  const effortPicker = useEffortPicker({
+    sessionMetadataStore,
+    onSelectEffort: effort.setEffort,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Surface for each local slash command, keyed by command name. The
   // `as const satisfies` registry narrows `LocalCommandName` to the literal
   // union, so this `Record` is exhaustive — a registered command without a
@@ -2769,6 +2789,10 @@ export function DevCardBody({
                     <ModelChip
                       sessionMetadataStore={sessionMetadataStore}
                       onOpenPicker={modelPicker.openModelPicker}
+                    />
+                    <EffortChip
+                      sessionMetadataStore={sessionMetadataStore}
+                      onOpenPicker={effortPicker.openEffortPicker}
                     />
                     {effectiveFooterContent}
                   </>

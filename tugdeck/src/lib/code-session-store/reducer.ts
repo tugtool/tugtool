@@ -2590,6 +2590,24 @@ function handleSetModel(
   };
 }
 
+/**
+ * Emit an `effort_change` frame and change no transcript state. tugcode
+ * applies the level by respawning claude with `--effort` + `--resume` (no live
+ * control verb — [R07]); the Z4B effort chip reflects it optimistically
+ * (`SessionMetadataStore`), since a resumed respawn emits no fresh metadata.
+ */
+function handleSetEffort(
+  state: CodeSessionState,
+  event: { type: "set_effort"; effort: string },
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state,
+    effects: [
+      { kind: "send-frame", msg: { type: "effort_change", effort: event.effort } },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Cost update — telemetry surface, phase-tolerant
 // ---------------------------------------------------------------------------
@@ -3714,6 +3732,8 @@ export function reduce(
       return handleSetPermissionMode(state, event);
     case "set_model":
       return handleSetModel(state, event);
+    case "set_effort":
+      return handleSetEffort(state, event);
     case "consume_draft_restore":
       return handleConsumeDraftRestore(state);
     case "cancel_queued_send":

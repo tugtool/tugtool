@@ -567,6 +567,16 @@ export class App {
     return client.ingestRateLimit(this as HarnessCaller, info);
   }
 
+  /**
+   * Drive a dev card's `SessionMetadataStore` with a decoded
+   * `session_capabilities` / `system_metadata` payload ([#step-4]) — mounts
+   * the Z4B effort chip and flips its model gate without a live claude
+   * handshake. Requires a prior `bindDevSession(cardId)`.
+   */
+  ingestSessionMetadata(cardId: string, payload: unknown): Promise<void> {
+    return client.ingestSessionMetadata(this as HarnessCaller, cardId, payload);
+  }
+
   // -------------------------------------------------------------------
   // Accessibility preflight ([D03])
   // -------------------------------------------------------------------

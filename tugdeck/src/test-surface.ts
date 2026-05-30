@@ -112,8 +112,16 @@ import type { RateLimitInfo } from "./protocol";
  * app-level, account-global rate-limit store so the banner app-test
  * ([#step-3.5]) can mount / clear the deck-wide banner without a live
  * claude limit. Additive; major stays `1`.
+ *
+ * `1.8.0`: adds {@link TugTestSurface.ingestSessionMetadata} — drives a dev
+ * card's `SessionMetadataStore` with a decoded `session_capabilities` /
+ * `system_metadata` payload, so the Z4B effort-chip app-test ([#step-4]) can
+ * mount the chip and exercise its model gate without a live claude handshake.
+ * The chip reads its own `SESSION_METADATA` FeedStore, which the
+ * `driveDevSession`/`ingestFrame` (CodeSessionStore) path does not reach.
+ * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.7.0" as const;
+export const SURFACE_VERSION = "1.8.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -603,6 +611,17 @@ export interface TugTestSurface {
    * banner app-test to mount / clear the banner without a live claude limit.
    */
   ingestRateLimit(info: RateLimitInfo): void;
+
+  /**
+   * Drive a dev card's `SessionMetadataStore` with a decoded SESSION_METADATA
+   * payload (`session_capabilities` or `system_metadata`) as if it had landed
+   * on the feed ([#step-4]). Resolves the card's services via
+   * `cardServicesStore`; throws if the card is not bound (call `bindDevSession`
+   * first). Used by the effort-chip app-test to mount the chip and flip its
+   * model gate without a live claude handshake — the chip reads its own
+   * SESSION_METADATA FeedStore, unreachable by `driveDevSession`.
+   */
+  ingestSessionMetadata(cardId: string, payload: unknown): void;
 
   /**
    * Read the deck's current `hasFocus` state. The deck's
@@ -1405,6 +1424,17 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     ingestRateLimit(info: RateLimitInfo): void {
       deck.getRateLimitStore()._ingestForTest(info);
+    },
+
+    ingestSessionMetadata(cardId: string, payload: unknown): void {
+      const services = cardServicesStore.getServices(cardId);
+      if (services === null) {
+        throw new Error(
+          `ingestSessionMetadata: card "${cardId}" has no bound session — ` +
+            `call bindDevSession("${cardId}") first`,
+        );
+      }
+      services.sessionMetadataStore._ingestForTest(payload);
     },
 
     getHasFocus(): boolean {

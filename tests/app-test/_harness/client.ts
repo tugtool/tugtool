@@ -798,6 +798,26 @@ export function ingestRateLimit(
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
 
+/**
+ * Drive a dev card's `SessionMetadataStore` via
+ * `window.__tug.ingestSessionMetadata` — feeds a decoded
+ * `session_capabilities` / `system_metadata` payload as if it had landed on
+ * the SESSION_METADATA feed, so the Z4B effort chip ([#step-4]) can mount and
+ * flip its model gate without a live claude handshake. Requires a prior
+ * `bindDevSession(cardId)`.
+ */
+export function ingestSessionMetadata(
+  caller: HarnessCaller,
+  cardId: string,
+  payload: unknown,
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const script = callSurface(
+    `(window.__tug.ingestSessionMetadata(${lit(cardId)}, ${lit(payload)}), null)`,
+  );
+  return caller.evalJS<null>(script, evalOpts).then(() => undefined);
+}
+
 // ---------------------------------------------------------------------------
 // RPC-verb wrappers (native gestures, accessibility preflight,
 // Swift-computed screen bounds)

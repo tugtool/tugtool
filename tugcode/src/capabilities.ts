@@ -45,8 +45,12 @@ function stringArray(value: unknown): string[] {
 
 /**
  * Parse the `models` array. Each entry needs a string `value` +
- * `displayName`; `description` is optional. Malformed entries are
- * skipped rather than failing the whole parse.
+ * `displayName`; `description` is optional. The reasoning-effort capability
+ * (`supportsEffort` + `supportedEffortLevels`) is carried through for the Z4B
+ * effort chip ([#step-4]): `supportsEffort` is absent on the wire when the
+ * model does not support effort (e.g. haiku), so it is kept only when the
+ * entry actually carries the flag — its absence IS the "unsupported" signal.
+ * Malformed entries are skipped rather than failing the whole parse.
  */
 function parseModels(value: unknown): CapabilityModel[] {
   if (!Array.isArray(value)) return [];
@@ -60,6 +64,12 @@ function parseModels(value: unknown): CapabilityModel[] {
     const model: CapabilityModel = { value: v, displayName };
     const description = readString(obj, "description");
     if (description !== null) model.description = description;
+    if (typeof obj.supportsEffort === "boolean") {
+      model.supportsEffort = obj.supportsEffort;
+    }
+    if (Array.isArray(obj.supportedEffortLevels)) {
+      model.supportedEffortLevels = stringArray(obj.supportedEffortLevels);
+    }
     out.push(model);
   }
   return out;
@@ -96,9 +106,15 @@ function parseCommands(value: unknown): CapabilityCommand[] {
  * Always succeeds with a value otherwise — missing fields degrade to
  * empty arrays / `""` / `null`, never throw, so a partial response still
  * surfaces what it can.
+ *
+ * `effort` is the session's current reasoning-effort level, supplied by the
+ * caller ([#step-4]): claude's `initialize` response carries no current-effort
+ * field, so tugcode — the `--effort` owner — passes in the level it spawned
+ * with (`null` when no override is in force).
  */
 export function buildSessionCapabilities(
   response: unknown,
+  effort: string | null = null,
 ): SessionCapabilities | null {
   const obj = asObject(response);
   if (obj === null) return null;
@@ -110,6 +126,7 @@ export function buildSessionCapabilities(
     available_output_styles: stringArray(obj.available_output_styles),
     output_style: readString(obj, "output_style") ?? "",
     account: asObject(obj.account),
+    effort,
     ipc_version: 2,
   };
 }
@@ -125,6 +142,7 @@ export function buildSessionCapabilities(
  */
 export function parseInitializeControlResponse(
   event: Record<string, unknown>,
+  effort: string | null = null,
 ): { requestId: string; capabilities: SessionCapabilities } | null {
   if (event.type !== "control_response") return null;
   const response = asObject(event.response);
@@ -132,7 +150,7 @@ export function parseInitializeControlResponse(
   if (response.subtype !== "success") return null;
   const requestId = readString(response, "request_id");
   if (requestId === null) return null;
-  const capabilities = buildSessionCapabilities(response.response);
+  const capabilities = buildSessionCapabilities(response.response, effort);
   if (capabilities === null) return null;
   return { requestId, capabilities };
 }

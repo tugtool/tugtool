@@ -1,0 +1,115 @@
+/**
+ * `EffortChip` — the Z4B reasoning-effort control chip ([#step-4]).
+ *
+ * A two-line `TugPushButton` (`label-top` / `size="sm"` / `role="agent"`)
+ * carrying an `EFFORT` caption over the session's current effort level
+ * (`high` → `High`, unset → `Default`), sized + tinted to family with the
+ * neighbor `sm` `agent` chips. Pressing it opens the shared effort picker —
+ * the same opener a future `/effort` slash command would route to. The chip
+ * owns no sheet: clicking it calls `onOpenPicker`, the card-hosted opener from
+ * {@link useEffortPicker}.
+ *
+ * **Always present, like its neighbor chips.** The Z4B cluster is a stable
+ * row (Claude Code / Project / Session / Mode / Model / Effort) — chips do not
+ * appear and disappear as data arrives. So the effort chip always renders;
+ * when there is no level to show — the active model doesn't support effort,
+ * support is unknown (resumed session, no capabilities), or no override is set
+ * — it displays the `-` placeholder rather than hiding. Reasoning effort is
+ * per-model (opus supports five levels, sonnet four, haiku none), so when the
+ * model has no supported levels the press is an inert no-op (the picker has
+ * nothing to offer); otherwise it opens the picker.
+ *
+ * Data source ([L02] — external state enters React through
+ * `useSyncExternalStore` only): `SessionMetadataStore` (the live `effort`, the
+ * active `model`, and the capability `models[]` whose per-model support bounds
+ * the picker + decides whether a level is shown). The chip is width-stabilized
+ * ([R01], opt-in like the model / permission chips): switching among levels
+ * (and the `-` placeholder) never reflows it.
+ *
+ * Compositional component — composes `TugPushButton`; its only own CSS is the
+ * value-line width-stabilizer. The composed `TugPushButton` keeps its own
+ * tokens [L20].
+ *
+ * Laws: [L02] store subscription, [L06] appearance via CSS/DOM, [L19] authoring
+ * Decisions: [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub,
+ *            [D07] per-card persistence (level restore), [D13] interactive chip
+ *
+ * @module components/tugways/cards/effort-chip
+ */
+
+import "./effort-chip.css";
+
+import React, { useSyncExternalStore } from "react";
+
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import { formatEffortLabel, resolveEffortSupport } from "@/lib/effort";
+
+export interface EffortChipProps {
+  /** Metadata store supplying the live `effort` + the capability `models[]`. */
+  sessionMetadataStore: SessionMetadataStore;
+  /**
+   * Open the shared effort picker sheet. Wired by the dev card to the single
+   * opener from {@link useEffortPicker} — the same opener a future `/effort`
+   * slash command would route to, so the chip and the command present one
+   * sheet.
+   */
+  onOpenPicker: () => void;
+}
+
+/**
+ * Z4B chip showing the active model's reasoning-effort level and opening the
+ * shared picker on press. Always present; shows `-` when there is no level to
+ * display (unsupported model, unknown support, or no override set).
+ */
+export function EffortChip({
+  sessionMetadataStore,
+  onOpenPicker,
+}: EffortChipProps): React.ReactElement {
+  const snapshot = useSyncExternalStore(
+    sessionMetadataStore.subscribe,
+    sessionMetadataStore.getSnapshot,
+  );
+
+  const support = resolveEffortSupport(snapshot.models, snapshot.model);
+  // A level is shown only when the model supports effort AND one is set;
+  // otherwise the chip shows the `-` placeholder (formatEffortLabel(null)).
+  const content = formatEffortLabel(support.supported ? snapshot.effort : null);
+  // Width-stabilize against the `-` placeholder plus every supported level
+  // label so switching among them never reflows the chip ([R01]).
+  const sizerLabels = [
+    formatEffortLabel(null),
+    ...support.levels.map((level) => formatEffortLabel(level)),
+  ];
+
+  const title = !support.supported
+    ? "Reasoning effort: not supported by this model"
+    : snapshot.effort === null
+      ? "Reasoning effort: not set"
+      : `Reasoning effort: ${content}`;
+
+  return (
+    <TugPushButton
+      layout="label-top"
+      label="Effort"
+      size="sm"
+      emphasis="tinted"
+      role="agent"
+      data-slot="effort-chip"
+      aria-label="Reasoning effort"
+      title={title}
+      onClick={onOpenPicker}
+    >
+      <span className="effort-chip-value">
+        <span className="effort-chip-value-shown" data-slot="effort-value">
+          {content}
+        </span>
+        {sizerLabels.map((label) => (
+          <span key={label} aria-hidden="true" className="effort-chip-value-sizer">
+            {label}
+          </span>
+        ))}
+      </span>
+    </TugPushButton>
+  );
+}

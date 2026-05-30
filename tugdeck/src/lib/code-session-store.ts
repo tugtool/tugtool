@@ -713,6 +713,21 @@ export class CodeSessionStore {
   }
 
   /**
+   * Set the session's reasoning-effort level. Emits an `effort_change`
+   * CODE_INPUT frame and changes no transcript state — tugcode applies it by
+   * respawning claude with `--effort` + `--resume` (no live control verb in
+   * 2.1.158, [R07]), and the Z4B effort chip reflects the level optimistically
+   * (`SessionMetadataStore`). The dispatch source is the effort picker and the
+   * effort chip; routing through a named method here keeps `dispatch` private
+   * and the caller free of reducer-event vocabulary — same precedent as
+   * `setModel` / `setPermissionMode`.
+   */
+  setEffort(effort: string): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "set_effort", effort });
+  }
+
+  /**
    * Acknowledge that the prompt-entry editor has applied the most
    * recent CASE A draft restore. The reducer clears
    * `pendingDraftRestore` to `null` so the editor's

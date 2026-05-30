@@ -36,6 +36,18 @@ export interface CapabilityModel {
   value: string;
   displayName: string;
   description?: string;
+  /**
+   * Whether this model supports reasoning effort ([#step-4]). Absent on the
+   * wire (and here) when the model does not support it — e.g. haiku — so its
+   * absence IS the "unsupported" signal that gates the effort chip.
+   */
+  supportsEffort?: boolean;
+  /**
+   * The effort levels this model supports, in the wire's order. Varies by
+   * model (opus: `low|medium|high|xhigh|max`; sonnet drops `xhigh`), so the
+   * picker offers the *active* model's list. Absent when effort is unsupported.
+   */
+  supportedEffortLevels?: string[];
 }
 
 /** Snapshot of the current session metadata state. */
@@ -62,6 +74,16 @@ export interface SessionMetadataSnapshot {
    * `system_metadata.model` (or the on-bind ledger replay) sharpens it.
    */
   models: CapabilityModel[];
+  /**
+   * The session's current reasoning-effort level ([#step-4]), from
+   * `session_capabilities.effort`. `null` when no `--effort` override is in
+   * force (the model runs at its built-in default, which the wire does not
+   * expose) — the chip reads `null` as "Default". tugcode is the authority
+   * (it owns the `--effort` flag); a client-initiated change reflects here
+   * optimistically via {@link SessionMetadataStore.applyEffort}, since the
+   * respawn-to-apply ([R07]) emits no fresh metadata for a resumed session.
+   */
+  effort: string | null;
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -74,6 +96,7 @@ const EMPTY_SNAPSHOT: SessionMetadataSnapshot = {
   version: null,
   slashCommands: [],
   models: [],
+  effort: null,
 };
 
 /**
@@ -96,6 +119,17 @@ function parseCapabilityModels(raw: unknown): CapabilityModel[] {
       displayName: obj.displayName,
     };
     if (typeof obj.description === "string") model.description = obj.description;
+    // Reasoning-effort capability ([#step-4]). `supportsEffort` is absent when
+    // unsupported, so keep it only when present; `supportedEffortLevels` keeps
+    // only its string elements. Mirrors tugcode's `capabilities.ts` parser.
+    if (typeof obj.supportsEffort === "boolean") {
+      model.supportsEffort = obj.supportsEffort;
+    }
+    if (Array.isArray(obj.supportedEffortLevels)) {
+      model.supportedEffortLevels = obj.supportedEffortLevels.filter(
+        (l): l is string => typeof l === "string",
+      );
+    }
     out.push(model);
   }
   return out;
@@ -197,9 +231,11 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
     cwd: typeof p.cwd === "string" ? p.cwd : null,
     version: typeof p.version === "string" ? p.version : null,
     slashCommands,
-    // `models` comes from `session_capabilities`, not `system_metadata`;
-    // `_onFeedUpdate` preserves the captured value across this replace.
+    // `models` + `effort` come from `session_capabilities`, not
+    // `system_metadata`; `_onFeedUpdate` preserves the captured values across
+    // this replace.
     models: [],
+    effort: null,
   };
 }
 
@@ -235,7 +271,16 @@ export class SessionMetadataStore {
     // Reference comparison: only process if the payload reference changed.
     if (payload === this._lastPayloadRef) return;
     this._lastPayloadRef = payload;
+    this._processPayload(payload);
+  }
 
+  /**
+   * Apply one decoded SESSION_METADATA payload to the snapshot. Shared by the
+   * live feed path ({@link _onFeedUpdate}) and the test injection
+   * ({@link _ingestForTest}); the reference-dedupe lives in `_onFeedUpdate`,
+   * so this always processes what it is given.
+   */
+  private _processPayload(payload: unknown): void {
     // Two payload types ride the SESSION_METADATA feed: `system_metadata`
     // (live current model / version / mode, post-turn) and
     // `session_capabilities` (the turn-free `initialize` model list /
@@ -250,10 +295,12 @@ export class SessionMetadataStore {
         : undefined;
 
     if (payloadType === "session_capabilities") {
-      const models = parseCapabilityModels(
-        (payload as Record<string, unknown>).models,
-      );
-      this._snapshot = { ...this._snapshot, models };
+      const cap = payload as Record<string, unknown>;
+      const models = parseCapabilityModels(cap.models);
+      // tugcode surfaces the current effort level here (it owns `--effort`);
+      // `null` when no override is in force ([#step-4]).
+      const effort = typeof cap.effort === "string" ? cap.effort : null;
+      this._snapshot = { ...this._snapshot, models, effort };
       for (const listener of this._listeners) listener();
       return;
     }
@@ -268,7 +315,11 @@ export class SessionMetadataStore {
     // is no longer needed — but the turn-free `models` captured from a
     // prior `session_capabilities` frame is preserved across the replace
     // (the two payload types share this feed slot).
-    this._snapshot = { ...parsed, models: this._snapshot.models };
+    this._snapshot = {
+      ...parsed,
+      models: this._snapshot.models,
+      effort: this._snapshot.effort,
+    };
     for (const listener of this._listeners) {
       listener();
     }
@@ -285,6 +336,20 @@ export class SessionMetadataStore {
   /** Return the current session metadata snapshot. (L02) */
   getSnapshot = (): SessionMetadataSnapshot => {
     return this._snapshot;
+  };
+
+  /**
+   * Test-only. Apply a decoded `session_capabilities` / `system_metadata`
+   * payload as if it had landed on the feed, bypassing the connection. The
+   * effort-chip app-test drives the Z4B chip with this via the `__tug` surface
+   * (`ingestSessionMetadata`) — the chip reads its own `SESSION_METADATA`
+   * FeedStore, which the `driveDevSession`/`ingestFrame` (CodeSessionStore)
+   * path does not reach.
+   *
+   * @internal — reached only through the DEV-gated `window.__tug` test surface.
+   */
+  _ingestForTest = (payload: unknown): void => {
+    this._processPayload(payload);
   };
 
   /**
@@ -326,6 +391,24 @@ export class SessionMetadataStore {
   applyModel(model: string): void {
     if (this._snapshot.model === model) return;
     this._snapshot = { ...this._snapshot, model };
+    for (const listener of this._listeners) {
+      listener();
+    }
+  }
+
+  /**
+   * Optimistically reflect a client-initiated reasoning-effort change
+   * ([#step-4]). Unlike model / permission mode, effort has no live control
+   * verb — tugcode applies it by respawning claude with `--effort` + `--resume`
+   * ([R07]) — and a resumed respawn emits no fresh `session_capabilities`, so
+   * this optimistic update is the ONLY thing that moves the chip until a later
+   * new-mode spawn re-reports it. The effort picker calls this right after
+   * sending the frame. A no-op when unchanged (preserves snapshot reference
+   * stability for `useSyncExternalStore`).
+   */
+  applyEffort(effort: string): void {
+    if (this._snapshot.effort === effort) return;
+    this._snapshot = { ...this._snapshot, effort };
     for (const listener of this._listeners) {
       listener();
     }

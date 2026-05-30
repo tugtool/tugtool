@@ -1,0 +1,25 @@
+/* @tug-pairings: none — layout only. The chip's colour and chrome come from
+   the composed TugPushButton; this file only width-stabilizes the value line. */
+
+/*
+ * Width-stabilize the effort value ([R01], opt-in for this chip — like the
+ * model + permission-mode chips). The shown value and a hidden sizer per
+ * supported level (plus the unset "Default") stack in a single grid cell, so
+ * the cell reserves the widest label and switching the level never reflows the
+ * chip.
+ */
+.effort-chip-value {
+  display: inline-grid;
+  /* Centre each value within the reserved (widest-label) width. */
+  justify-items: center;
+}
+
+.effort-chip-value > * {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+.effort-chip-value-sizer {
+  visibility: hidden;
+  pointer-events: none;
+}

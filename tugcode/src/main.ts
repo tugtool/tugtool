@@ -10,6 +10,7 @@ import {
   isInterrupt,
   isPermissionMode,
   isModelChange,
+  isEffortChange,
   isSessionCommand,
   isStopTask,
   isRequestReplay,
@@ -331,6 +332,20 @@ async function main() {
       sessionManager?.handlePermissionMode(msg);
     } else if (isModelChange(msg)) {
       sessionManager?.handleModelChange(msg.model);
+    } else if (isEffortChange(msg)) {
+      // Reasoning-effort change ([#step-4]). Respawn-with-resume (no live
+      // control verb in 2.1.158, [R07]) — fire-and-forget like
+      // session_command: awaiting here would block the IPC loop while
+      // killAndCleanup drains the old process.
+      sessionManager?.handleEffortChange(msg.effort).catch((err) => {
+        console.error("Effort change failed:", err);
+        writeLine({
+          type: "error",
+          message: `Effort change failed: ${err}`,
+          recoverable: true,
+          ipc_version: 2,
+        });
+      });
     } else if (isStopTask(msg)) {
       sessionManager?.handleStopTask(msg.task_id);
     } else if (isRequestReplay(msg)) {
