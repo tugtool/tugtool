@@ -317,7 +317,8 @@ pub(crate) async fn post_rule(ConnectInfo(addr): ConnectInfo<SocketAddr>, body: 
     let path = scope_path(req.scope, &cwd, &home);
     let bucket = req.bucket.key();
     let op = req.op;
-    let result = tokio::task::spawn_blocking(move || apply_mutation(&path, bucket, op, &rule)).await;
+    let result =
+        tokio::task::spawn_blocking(move || apply_mutation(&path, bucket, op, &rule)).await;
 
     match result {
         Ok(Ok(())) => (StatusCode::OK, axum::Json(json!({"status": "ok"}))).into_response(),
@@ -438,7 +439,11 @@ mod tests {
     fn apply_mutation_normalizes_non_array_bucket() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        std::fs::write(&path, r#"{ "permissions": { "allow": "oops-not-an-array" } }"#).unwrap();
+        std::fs::write(
+            &path,
+            r#"{ "permissions": { "allow": "oops-not-an-array" } }"#,
+        )
+        .unwrap();
         apply_mutation(&path, "allow", Op::Add, "WebSearch").unwrap();
         let root = read_root(&path);
         assert_eq!(root["permissions"]["allow"], json!(["WebSearch"]));

@@ -197,7 +197,10 @@ mod tests {
         let base = Path::new("/project");
         let home = Path::new("/home/user");
         assert_eq!(resolve_dir("", base, home), PathBuf::from("/project"));
-        assert_eq!(resolve_dir("../", base, home), PathBuf::from("/project/../"));
+        assert_eq!(
+            resolve_dir("../", base, home),
+            PathBuf::from("/project/../")
+        );
         assert_eq!(resolve_dir("/abs/", base, home), PathBuf::from("/abs/"));
         assert_eq!(resolve_dir("~/", base, home), PathBuf::from("/home/user"));
         assert_eq!(
