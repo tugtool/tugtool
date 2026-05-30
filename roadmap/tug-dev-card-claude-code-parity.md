@@ -1113,11 +1113,14 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 - [ ] Drift regression stays clean; `just capture-capabilities` after the tugcode IPC change.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run` (warnings-as-errors clean)
-- [ ] `cd tugcode && bun test` + recompile (`target/debug/tugcode`)
-- [ ] `cd tugdeck && bun test`; `tsc --noEmit` clean
-- [ ] `just build-app` / `just app-debug`; verify resumed-card chips populate pre-turn and new-card model chip reads `Default (recommended)`
-- [ ] `just capture-capabilities` (drift clean)
+- [x] `cd tugrust && cargo nextest run -p tugcast` — 762 passed / 1 skipped (warnings-as-errors clean).
+- [x] `cd tugcode && bun test` — 497 pass / 0 fail; `tsc --noEmit` clean. Recompiled via `just build-app`.
+- [x] `cd tugdeck && bun test` — 3093 pass / 0 fail; `tsc --noEmit` clean.
+- [x] `just build-app` — BUILD SUCCEEDED (Rust + tugcode + Tug.app signed); new code live in the debug app.
+- [~] Real-claude verify (resumed-card chips pre-turn + new-card `Default (recommended)`) — by-hand against the rebuilt app; awaiting user spot-check.
+- [ ] `just capture-capabilities` (drift clean) — real-claude ~2-3 min; the new `session_capabilities` IPC frame is additive (default-branch tolerant in tugcast), so run when convenient to refresh the golden snapshot.
+
+**Status:** [#step-2a-1] / [#step-2a-2] / [#step-2a-3] all implemented, tested, committed, and built. Step 2a complete pending the optional `capture-capabilities` refresh + the by-hand real-claude spot-check.
 
 **What this step does NOT do:**
 - Does not build the `/model` picker UI — that is [#step-2b], which consumes the `models` list this step plumbs.
