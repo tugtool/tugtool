@@ -45,9 +45,7 @@ use super::agent_bridge::{
     ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, SessionMode, TugcodeSpawner, run_session_bridge,
 };
 use super::code::parse_tug_session_id;
-use super::session_metadata::{
-    is_rate_limit_event, is_session_capabilities, is_system_metadata,
-};
+use super::session_metadata::{is_rate_limit_event, is_session_capabilities, is_system_metadata};
 use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
 
 /// Capacity of per-session CODE_INPUT buffering queues.
@@ -2032,11 +2030,10 @@ impl AgentSupervisor {
             // the tug id for un-forked sessions where the two are equal.
             let metadata = match entry.latest_metadata.clone() {
                 Some(frame) => Some(frame),
-                None => self
-                    .persisted_metadata_replay_frame(
-                        entry.claude_session_id.as_deref(),
-                        tug_session_id.as_str(),
-                    ),
+                None => self.persisted_metadata_replay_frame(
+                    entry.claude_session_id.as_deref(),
+                    tug_session_id.as_str(),
+                ),
             };
             // Capabilities (the turn-free `initialize` model list) are
             // in-memory only — replayed on reconnect / HMR remount so the
@@ -4522,7 +4519,9 @@ mod tests {
             .await
             .expect_handled();
 
-        let received = meta_rx.try_recv().expect("capabilities replay frame present");
+        let received = meta_rx
+            .try_recv()
+            .expect("capabilities replay frame present");
         assert_eq!(received, caps, "the capabilities slot replays on bind");
         assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
         assert!(meta_rx.try_recv().is_err(), "only the capabilities frame");
