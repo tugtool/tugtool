@@ -38,6 +38,7 @@ import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
+  DEFAULT_EFFORT_LEVEL,
   EFFORT_DOMAIN,
   parsePersistedEffort,
   resolveEffortSupport,
@@ -115,9 +116,10 @@ export function useEffort({
 
   // Mount-restore ([D07]). Once the NEW-mode capabilities land (the `models[]`
   // readiness signal) and a persisted level has loaded, re-apply it if the
-  // active model supports it and it differs from the live level. Fires at most
-  // once per mount (`sentRef`). A resumed session has no capabilities, so this
-  // never fires for it (no respawn). A manual change pre-arms `sentRef`.
+  // active model supports it and it differs from the *effective* live level.
+  // Fires at most once per mount (`sentRef`). A resumed session has no
+  // capabilities, so this never fires for it (no respawn). A manual change
+  // pre-arms `sentRef`.
   const liveEffort = snapshot.effort;
   const { models, model } = snapshot;
   useEffect(() => {
@@ -135,7 +137,12 @@ export function useEffort({
       sentRef.current = true;
       return;
     }
-    if (persistedEffort !== liveEffort) {
+    // Compare against the EFFECTIVE level (the chip's `effort ?? default`), so a
+    // card whose persisted level equals the session default (e.g. persisted
+    // `high` on a fresh session already running at the `high` default) does NOT
+    // trigger a needless respawn ([R07]).
+    const effectiveLive = liveEffort ?? DEFAULT_EFFORT_LEVEL;
+    if (persistedEffort !== effectiveLive) {
       setEffort(persistedEffort);
     } else {
       sentRef.current = true;

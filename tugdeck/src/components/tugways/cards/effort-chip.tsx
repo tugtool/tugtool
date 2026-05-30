@@ -43,7 +43,11 @@ import React, { useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
-import { formatEffortLabel, resolveEffortSupport } from "@/lib/effort";
+import {
+  DEFAULT_EFFORT_LEVEL,
+  formatEffortLabel,
+  resolveEffortSupport,
+} from "@/lib/effort";
 
 export interface EffortChipProps {
   /** Metadata store supplying the live `effort` + the capability `models[]`. */
@@ -72,9 +76,14 @@ export function EffortChip({
   );
 
   const support = resolveEffortSupport(snapshot.models, snapshot.model);
-  // A level is shown only when the model supports effort AND one is set;
-  // otherwise the chip shows the `-` placeholder (formatEffortLabel(null)).
-  const content = formatEffortLabel(support.supported ? snapshot.effort : null);
+  // When the model supports effort the chip always shows a level: the explicit
+  // override if set, else the session's effective default ([DEFAULT_EFFORT_LEVEL]
+  // — claude runs a fresh session at `high`). Only an unsupported model has no
+  // level, shown as the `-` placeholder (formatEffortLabel(null)).
+  const effectiveEffort = support.supported
+    ? (snapshot.effort ?? DEFAULT_EFFORT_LEVEL)
+    : null;
+  const content = formatEffortLabel(effectiveEffort);
   // Width-stabilize against the `-` placeholder plus every supported level
   // label so switching among them never reflows the chip ([R01]).
   const sizerLabels = [
@@ -85,7 +94,7 @@ export function EffortChip({
   const title = !support.supported
     ? "Reasoning effort: not supported by this model"
     : snapshot.effort === null
-      ? "Reasoning effort: not set"
+      ? `Reasoning effort: ${content} (default)`
       : `Reasoning effort: ${content}`;
 
   return (

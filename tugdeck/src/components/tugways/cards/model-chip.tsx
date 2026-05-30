@@ -91,8 +91,13 @@ export function ModelChip({
   // Resolution order: exact current model (live or ledger-replayed) →
   // the `initialize` default-model label → honest caution `?`.
   const exactModel = snapshot.model;
+  // The default model's display name is `Default (recommended)` — too long for
+  // the chip's reserved width, so the chip drops the trailing parenthetical
+  // (`Default`). The picker sheet keeps the full label (it has the room).
   const defaultModelLabel =
-    snapshot.models.length > 0 ? snapshot.models[0].displayName : null;
+    snapshot.models.length > 0
+      ? snapshot.models[0].displayName.replace(/\s*\([^)]*\)\s*$/, "")
+      : null;
 
   let content: string;
   let unknown = false;

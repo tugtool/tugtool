@@ -44,7 +44,11 @@ import {
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
-import { formatEffortLabel, resolveEffortSupport } from "@/lib/effort";
+import {
+  DEFAULT_EFFORT_LEVEL,
+  formatEffortLabel,
+  resolveEffortSupport,
+} from "@/lib/effort";
 
 /**
  * Brief description per level, shown as the option's subtitle — paraphrasing
@@ -104,7 +108,9 @@ export function useEffortPicker({
     // No levels ⇒ the chip would be hidden; defensively no-op rather than
     // present an empty sheet.
     if (levels.length === 0) return;
-    const activeValue = snapshot.effort;
+    // Mark the explicit override if set, else the effective default the chip
+    // shows — so the sheet opens with the current level checkmarked, not blank.
+    const activeValue = snapshot.effort ?? DEFAULT_EFFORT_LEVEL;
     void showSheet({
       title: "Reasoning Effort",
       description: "Choose how long Claude thinks before answering.",

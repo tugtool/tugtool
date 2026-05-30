@@ -158,8 +158,11 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await chipLevel(app), "chip present showing `-` before caps").toBe("-");
 
           // Capabilities whose active model (default → opus) supports effort,
-          // currently set to `high` → the chip shows "High".
-          await app.ingestSessionMetadata("A", effortCapabilities("high"));
+          // with NO explicit override (`effort: null`) → the chip shows the
+          // session's effective default, "High" (claude runs a fresh session at
+          // high effort). A supported session is never blank — only an
+          // unsupported model shows `-`.
+          await app.ingestSessionMetadata("A", effortCapabilities(null));
           await app.waitForCondition<boolean>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
@@ -167,15 +170,15 @@ describe.skipIf(!SHOULD_RUN)(
             })()`,
             { timeoutMs: 6000 },
           );
-          expect(await chipLevel(app), "chip shows the current level").toBe("High");
+          expect(await chipLevel(app), "supported + unset → default High").toBe("High");
           const widthAtHigh = await chipWidth(app);
 
           // Open the picker (synthetic click — the chip sits at the card's
           // bottom-right edge, below the window's clickable region for a
           // CGEvent, so we drive its real `onClick` directly; at0095 set the
           // precedent of DOM-driven chip/banner app-tests). Opus supports
-          // exactly five levels, and exactly the current level ("high") is
-          // selected.
+          // exactly five levels, and the effective default ("high") is
+          // pre-selected.
           await app.click(CHIP);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(`${SHEET} [data-effort="max"]`)}) !== null`,

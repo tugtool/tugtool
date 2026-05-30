@@ -40,6 +40,17 @@ export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
 /**
+ * The effective effort level when a session supports effort but carries no
+ * explicit `--effort` override. claude 2.1.158 *"now defaults to high effort"*
+ * (its own release note, confirmed in the binary), so a fresh session is
+ * genuinely running at `high` — the chip shows that rather than a bare
+ * placeholder. Only an *unsupported* model (e.g. haiku) has no level at all
+ * (`-`). Self-correcting: an explicit pick replaces it; if a future claude
+ * changes its default, set one and the override carries.
+ */
+export const DEFAULT_EFFORT_LEVEL: EffortLevel = "high";
+
+/**
  * Human-readable label per level for the chip's content line and the picker
  * rows. `xhigh` reads as claude's own "Extra-High" wording (the terminal
  * labels it `extra-high`); the rest are the title-cased level.

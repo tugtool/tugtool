@@ -505,16 +505,19 @@ body {
   flex-direction: column-reverse;
 }
 
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-button-label {
   font-size: var(--tugx-badge-label-text-size);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: var(--tugx-badge-label-tracking);
   line-height: 1;
-  /* Caption tracks the button's resolved text colour (so it follows role /
-     emphasis / hover states) dimmed a touch via opacity — no fixed token, so
-     the pairings audit doesn't apply and it stays legible on every variant. */
-  opacity: 0.72;
+  /* The two-line caption shares the two-line TugBadge's caption colour (the
+     status-bar legend token), NOT the button's resolved text colour — so a
+     two-line button caption (`MODE` / `MODEL` / `EFFORT`) reads identically to
+     the neighbouring two-line badge captions (`SESSION` / `PROJECT`) instead of
+     picking up the role/emphasis tint. Matches `.tug-badge-label`. */
+  color: var(--tug7-element-field-text-normal-label-rest);
 }
 
 .tug-button-content {
