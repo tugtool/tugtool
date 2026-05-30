@@ -506,8 +506,8 @@ body {
   --tug7-element-control-icon-ghost-accent-hover: --tug-color(orange, i: 2, t: 100);
   --tug7-element-control-icon-ghost-accent-active: --tug-color(orange, i: 2, t: 100);
   --tug7-element-control-border-ghost-accent-rest: transparent;
-  --tug7-element-control-border-ghost-accent-hover: --tug-color(orange, i: 20, t: 60);
-  --tug7-element-control-border-ghost-accent-active: --tug-color(orange, i: 20, t: 60);
+  --tug7-element-control-border-ghost-accent-hover: --tug-color(orange, i: 65, t: 47);
+  --tug7-element-control-border-ghost-accent-active: --tug-color(orange, i: 75, t: 47);
 
   /* Ghost Action */
   --tug7-surface-control-primary-ghost-action-rest: transparent;
@@ -523,8 +523,8 @@ body {
   --tug7-element-control-icon-ghost-action-active: --tug-color(blue, i: 2, t: 100);
   --tug7-element-control-icon-ghost-action-confirmed: --tug-color(green, i: 2, t: 100);
   --tug7-element-control-border-ghost-action-rest: transparent;
-  --tug7-element-control-border-ghost-action-hover: --tug-color(blue, i: 20, t: 60);
-  --tug7-element-control-border-ghost-action-active: --tug-color(blue, i: 20, t: 60);
+  --tug7-element-control-border-ghost-action-hover: --tug-color(blue, i: 65, t: 47);
+  --tug7-element-control-border-ghost-action-active: --tug-color(blue, i: 75, t: 47);
   --tug7-element-control-border-ghost-action-confirmed: transparent;
 
   /* Ghost Option */
@@ -538,8 +538,8 @@ body {
   --tug7-element-control-icon-ghost-option-hover: --tug-color(blue, i: 2, t: 100);
   --tug7-element-control-icon-ghost-option-active: --tug-color(blue, i: 2, t: 100);
   --tug7-element-control-border-ghost-option-rest: transparent;
-  --tug7-element-control-border-ghost-option-hover: --tug-color(blue, i: 20, t: 60);
-  --tug7-element-control-border-ghost-option-active: --tug-color(blue, i: 20, t: 60);
+  --tug7-element-control-border-ghost-option-hover: --tug-color(blue, i: 65, t: 47);
+  --tug7-element-control-border-ghost-option-active: --tug-color(blue, i: 75, t: 47);
 
   /* Ghost Danger */
   --tug7-surface-control-primary-ghost-danger-rest: transparent;
@@ -552,8 +552,8 @@ body {
   --tug7-element-control-icon-ghost-danger-hover: --tug-color(red, i: 2, t: 100);
   --tug7-element-control-icon-ghost-danger-active: --tug-color(red, i: 2, t: 100);
   --tug7-element-control-border-ghost-danger-rest: transparent;
-  --tug7-element-control-border-ghost-danger-hover: --tug-color(red, i: 20, t: 60);
-  --tug7-element-control-border-ghost-danger-active: --tug-color(red, i: 20, t: 60);
+  --tug7-element-control-border-ghost-danger-hover: --tug-color(red, i: 65, t: 47);
+  --tug7-element-control-border-ghost-danger-active: --tug-color(red, i: 75, t: 47);
 
   /* Ghost Agent */
   --tug7-surface-control-primary-ghost-agent-rest: transparent;
@@ -566,8 +566,8 @@ body {
   --tug7-element-control-icon-ghost-agent-hover: --tug-color(violet, i: 2, t: 100);
   --tug7-element-control-icon-ghost-agent-active: --tug-color(violet, i: 2, t: 100);
   --tug7-element-control-border-ghost-agent-rest: transparent;
-  --tug7-element-control-border-ghost-agent-hover: --tug-color(violet, i: 20, t: 60);
-  --tug7-element-control-border-ghost-agent-active: --tug-color(violet, i: 20, t: 60);
+  --tug7-element-control-border-ghost-agent-hover: --tug-color(violet, i: 65, t: 47);
+  --tug7-element-control-border-ghost-agent-active: --tug-color(violet, i: 75, t: 47);
 
   /* Ghost Data */
   --tug7-surface-control-primary-ghost-data-rest: transparent;
@@ -580,8 +580,8 @@ body {
   --tug7-element-control-icon-ghost-data-hover: --tug-color(teal, i: 2, t: 100);
   --tug7-element-control-icon-ghost-data-active: --tug-color(teal, i: 2, t: 100);
   --tug7-element-control-border-ghost-data-rest: transparent;
-  --tug7-element-control-border-ghost-data-hover: --tug-color(teal, i: 20, t: 60);
-  --tug7-element-control-border-ghost-data-active: --tug-color(teal, i: 20, t: 60);
+  --tug7-element-control-border-ghost-data-hover: --tug-color(teal, i: 65, t: 47);
+  --tug7-element-control-border-ghost-data-active: --tug-color(teal, i: 75, t: 47);
 
   /* Ghost Success */
   --tug7-surface-control-primary-ghost-success-rest: transparent;
@@ -594,8 +594,8 @@ body {
   --tug7-element-control-icon-ghost-success-hover: --tug-color(green, i: 2, t: 100);
   --tug7-element-control-icon-ghost-success-active: --tug-color(green, i: 2, t: 100);
   --tug7-element-control-border-ghost-success-rest: transparent;
-  --tug7-element-control-border-ghost-success-hover: --tug-color(green, i: 20, t: 60);
-  --tug7-element-control-border-ghost-success-active: --tug-color(green, i: 20, t: 60);
+  --tug7-element-control-border-ghost-success-hover: --tug-color(green, i: 65, t: 47);
+  --tug7-element-control-border-ghost-success-active: --tug-color(green, i: 75, t: 47);
 
   /* Ghost Caution */
   --tug7-surface-control-primary-ghost-caution-rest: transparent;
@@ -608,8 +608,8 @@ body {
   --tug7-element-control-icon-ghost-caution-hover: --tug-color(yellow, i: 2, t: 100);
   --tug7-element-control-icon-ghost-caution-active: --tug-color(yellow, i: 2, t: 100);
   --tug7-element-control-border-ghost-caution-rest: transparent;
-  --tug7-element-control-border-ghost-caution-hover: --tug-color(yellow, i: 20, t: 60);
-  --tug7-element-control-border-ghost-caution-active: --tug-color(yellow, i: 20, t: 60);
+  --tug7-element-control-border-ghost-caution-hover: --tug-color(yellow, i: 65, t: 47);
+  --tug7-element-control-border-ghost-caution-active: --tug-color(yellow, i: 75, t: 47);
 
   /* Control — Surface / Selected / Highlighted */
   --tug7-element-control-border-normal-highlighted-rest: --tug-color(blue, i: 50, t: 50, a: 25);
