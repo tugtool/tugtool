@@ -39,10 +39,16 @@
  *     within one) reopen the popup.
  *
  *   - **Keys**: a `Prec.highest` `domEventHandlers` keymap intercepts
- *     Tab / Enter / Arrows / Page / Home / End / Escape only when
- *     typeahead is active. When inactive, every branch returns
- *     `false` and the keystroke falls through to the Step 4 keymap
- *     (Enter → submit/newline, Cmd-Up → history) and beyond.
+ *     Tab / Enter / Arrows / Page / Home / End / Escape only when the
+ *     popup is on screen — active AND non-empty (see
+ *     {@link completionPopupIsInteractive}; an empty list is hidden, so
+ *     it must not eat keys). Otherwise every branch returns `false` and
+ *     the keystroke falls through to the Step 4 keymap (Enter →
+ *     submit/newline, Cmd-Up → history) and beyond. One further carve-
+ *     out even with a visible popup: a modifier-bearing Enter (Shift /
+ *     Cmd / Ctrl / Alt) is a submit-class gesture, not a completion
+ *     accept, so it too falls through — guaranteeing Shift+Return always
+ *     submits (see {@link completionConsumesEnter}).
  *
  *   - **Accept**: `acceptCompletionAt(view, index?)` deletes the
  *     trigger + query range, inserts U+FFFC, attaches an
@@ -713,13 +719,77 @@ export function cancelCompletion(view: EditorView): void {
 /** Page jump magnitude — matches `tug-prompt-input`'s 10-row page. */
 const PAGE_STEP = 10;
 
+/**
+ * Whether the active-typeahead keymap should claim an Enter-family
+ * keystroke as a completion *accept*. Only a modifier-free Enter does:
+ * any modifier-bearing Enter is a submit-class gesture — Shift+Enter is
+ * the explicit submit override, Cmd+Enter is forced submit — and must
+ * be yielded to the lower submit keymap, never swallowed as an accept.
+ *
+ * This is the load-bearing guarantee behind the invariant "while the
+ * caret is in a prompt-entry, Shift+Return submits": it must hold even
+ * when the popup is open (history recall, paste into a trigger run,
+ * live `/command` composition). Earlier fixes tried to stop the popup
+ * from *opening* in specific cases; gating the accept here enforces the
+ * invariant for every case at once.
+ *
+ * Pure; exported for the test suite.
+ */
+export function completionConsumesEnter(mods: {
+  shiftKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+}): boolean {
+  return !(mods.shiftKey || mods.metaKey || mods.ctrlKey || mods.altKey);
+}
+
+/**
+ * Whether the typeahead popup currently owns the navigation / accept
+ * keys. True only when a session is active AND has at least one item —
+ * i.e. the popup is actually on screen. `paintCompletionPopup` hides an
+ * empty list with `display:none`, so an active-but-empty session (a `/`
+ * pasted mid-text, gated to zero items by the position-0 rule; or an
+ * async source mid-load) is invisible and owns nothing. When it owns
+ * nothing the keymap yields every key, so submit / newline / caret
+ * motion are never swallowed by a popup the user cannot see — the
+ * other half of why a pasted file path used to kill Shift+Return.
+ *
+ * Pure; exported for the test suite.
+ */
+export function completionPopupIsInteractive(snapshot: {
+  active: boolean;
+  itemCount: number;
+}): boolean {
+  return snapshot.active && snapshot.itemCount > 0;
+}
+
 const tugCompletionKeymap = Prec.highest(
   EditorView.domEventHandlers({
     keydown(event, view) {
       const state = view.state.field(completionField);
-      if (!state.active) return false;
+      // Only a visible popup (active + non-empty) owns keys. An inactive
+      // or active-but-empty (invisible) session yields everything.
+      if (
+        !completionPopupIsInteractive({
+          active: state.active,
+          itemCount: state.filtered.length,
+        })
+      ) {
+        return false;
+      }
       // IME composition: leave keys alone — the IME owns commit.
       if (event.isComposing) return false;
+      // Submit-class Enter overrides (Shift / Cmd / Ctrl / Alt + Enter)
+      // are never a completion accept. Yield them untouched — no
+      // preventDefault, no stopPropagation — so they fall through to the
+      // submit keymap. Returning before the `consumes` block below is
+      // deliberate: we must NOT stop propagation, or the document
+      // keyboard pipeline and the editor's own submit handler would be
+      // starved of the very keystroke that has to submit.
+      if (event.key === "Enter" && !completionConsumesEnter(event)) {
+        return false;
+      }
       // A key the active typeahead consumes is fully owned by it: stop it
       // bubbling to the document keyboard pipeline so it can't ALSO drive a
       // chain action. Without this, an Enter that accepts a completion

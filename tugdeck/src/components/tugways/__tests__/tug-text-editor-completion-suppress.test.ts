@@ -16,6 +16,13 @@
  * submit. `buildEditStateTransaction` stamps the transaction with
  * `suppressCompletionDetection`, which the extender honors by leaving
  * the session inactive.
+ *
+ * Suppressing the *open* is necessary but not sufficient: paste into a
+ * trigger run, or live `/command` composition, legitimately leave the
+ * popup active, and Shift+Return must STILL submit. The load-bearing
+ * guarantee lives in {@link completionConsumesEnter}: the active-popup
+ * keymap only claims a modifier-free Enter as an accept and yields any
+ * modifier-bearing Enter (Shift/Cmd/Ctrl/Alt) to the submit keymap.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -24,7 +31,9 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
 import {
+  completionConsumesEnter,
   completionField,
+  completionPopupIsInteractive,
   suppressCompletionDetection,
   tugCompletionExt,
 } from "../tug-text-editor/completion-extension";
@@ -105,5 +114,52 @@ describe("suppressCompletionDetection", () => {
 
     const swapped = replaceDoc(opened, "/permissions", true);
     expect(swapped.field(completionField).active).toBe(false);
+  });
+});
+
+describe("completionConsumesEnter — submit override yields past the popup", () => {
+  const noMods = { shiftKey: false, metaKey: false, ctrlKey: false, altKey: false };
+
+  test("a modifier-free Enter is claimed as a completion accept", () => {
+    expect(completionConsumesEnter(noMods)).toBe(true);
+  });
+
+  test("Shift+Enter is NOT consumed — it yields to the submit keymap", () => {
+    // The invariant the user mandates: caret in a prompt-entry ⇒
+    // Shift+Return submits, even while the popup is open.
+    expect(completionConsumesEnter({ ...noMods, shiftKey: true })).toBe(false);
+  });
+
+  test("Cmd+Enter (forced submit) also yields", () => {
+    expect(completionConsumesEnter({ ...noMods, metaKey: true })).toBe(false);
+  });
+
+  test("Ctrl+Enter and Alt+Enter yield as well", () => {
+    expect(completionConsumesEnter({ ...noMods, ctrlKey: true })).toBe(false);
+    expect(completionConsumesEnter({ ...noMods, altKey: true })).toBe(false);
+  });
+
+  test("any modifier combination with Enter yields", () => {
+    expect(
+      completionConsumesEnter({ shiftKey: true, metaKey: true, ctrlKey: false, altKey: false }),
+    ).toBe(false);
+  });
+});
+
+describe("completionPopupIsInteractive — only an on-screen popup owns keys", () => {
+  test("active with items: the popup owns navigation / accept keys", () => {
+    expect(completionPopupIsInteractive({ active: true, itemCount: 3 })).toBe(true);
+  });
+
+  test("active but empty: invisible popup owns nothing (keys fall through)", () => {
+    // The mid-text `/` paste case: rejoin activates a session, the
+    // position-0 gate yields zero items, the popup is `display:none`.
+    // It must NOT swallow Shift+Return / Enter / arrows.
+    expect(completionPopupIsInteractive({ active: true, itemCount: 0 })).toBe(false);
+  });
+
+  test("inactive: never owns keys", () => {
+    expect(completionPopupIsInteractive({ active: false, itemCount: 0 })).toBe(false);
+    expect(completionPopupIsInteractive({ active: false, itemCount: 5 })).toBe(false);
   });
 });
