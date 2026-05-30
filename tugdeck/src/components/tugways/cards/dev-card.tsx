@@ -56,7 +56,7 @@ import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPushButton } from "../tug-push-button";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, Trash2 } from "lucide-react";
 import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,
@@ -1750,6 +1750,11 @@ function DevProjectPickerForm({
             )}
           </div>
           <div className="dev-card-picker-trash-all">
+            <TugLabel data-testid="dev-card-picker-trash-all-label">
+              {nonLiveCount > 1
+                ? `Move all sessions to Trash for this path (${nonLiveCount})`
+                : "Move all sessions to Trash for this path"}
+            </TugLabel>
             <TugConfirmPopover
               ref={trashAllConfirmRef}
               message={
@@ -1762,16 +1767,15 @@ function DevProjectPickerForm({
               side="top"
             >
               <TugPushButton
+                subtype="icon"
                 emphasis="ghost"
-                role="action"
+                role="danger"
+                icon={<Trash2 size={16} aria-hidden="true" />}
                 onClick={handleTrashAllClick}
                 disabled={nonLiveCount === 0}
+                aria-label="Move all sessions to Trash for this path"
                 data-testid="dev-card-picker-trash-all"
-              >
-                {nonLiveCount > 1
-                  ? `Move all sessions to Trash for this path (${nonLiveCount})`
-                  : "Move all sessions to Trash for this path"}
-              </TugPushButton>
+              />
             </TugConfirmPopover>
           </div>
         </div>

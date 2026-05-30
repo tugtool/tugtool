@@ -945,7 +945,9 @@
    separates it from the dense list above. */
 .dev-card-picker-trash-all {
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: var(--tug-space-sm, 8px);
   padding: var(--tug-space-lg, 16px) var(--tug-space-md, 12px) 0;
 }
 
