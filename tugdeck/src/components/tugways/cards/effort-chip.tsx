@@ -26,9 +26,9 @@
  * ([R01], opt-in like the model / permission chips): switching among levels
  * (and the `-` placeholder) never reflows it.
  *
- * Compositional component — composes `TugPushButton`; its only own CSS is the
- * value-line width-stabilizer. The composed `TugPushButton` keeps its own
- * tokens [L20].
+ * Compositional component — composes `TugPushButton` and the shared
+ * `TugStableOverlay` (the value-line width-stabilizer); it owns no CSS of its
+ * own. The composed children keep their own tokens [L20].
  *
  * Laws: [L02] store subscription, [L06] appearance via CSS/DOM, [L19] authoring
  * Decisions: [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub,
@@ -37,11 +37,10 @@
  * @module components/tugways/cards/effort-chip
  */
 
-import "./effort-chip.css";
-
 import React, { useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import {
   DEFAULT_EFFORT_LEVEL,
@@ -114,16 +113,11 @@ export function EffortChip({
       disabled={disabled}
       onClick={onOpenPicker}
     >
-      <span className="effort-chip-value">
-        <span className="effort-chip-value-shown" data-slot="effort-value">
-          {content}
-        </span>
-        {sizerLabels.map((label) => (
-          <span key={label} aria-hidden="true" className="effort-chip-value-sizer">
-            {label}
-          </span>
-        ))}
-      </span>
+      <TugStableOverlay
+        data-slot="effort-value"
+        active={content}
+        alternates={sizerLabels}
+      />
     </TugPushButton>
   );
 }

@@ -39,6 +39,7 @@ import React, { useCallback, useMemo, useState, useSyncExternalStore } from "rea
 import { Check, ShieldCogCorner } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import {
@@ -126,25 +127,14 @@ export function PermissionModeChip({
       onClick={onOpenSheet}
     >
       {/* Width-stabilized value: the shown label plus a hidden sizer per menu
-          mode reserve the widest label so cycling the mode never reflows the
-          chip (this chip only, per [R01]). */}
-      <span className="permission-mode-chip-value">
-        <span
-          className="permission-mode-chip-value-shown"
-          data-slot="permission-mode-value"
-        >
-          {formatPermissionMode(mode)}
-        </span>
-        {PERMISSION_MODE_MENU.map((m) => (
-          <span
-            key={m}
-            aria-hidden="true"
-            className="permission-mode-chip-value-sizer"
-          >
-            {formatPermissionMode(m)}
-          </span>
-        ))}
-      </span>
+          mode reserve the widest label ("Accept Edits") so cycling the mode
+          never reflows the chip ([R01]). A live value wider than any sizer
+          still fits — the active face is a real layout item. */}
+      <TugStableOverlay
+        data-slot="permission-mode-value"
+        active={formatPermissionMode(mode)}
+        alternates={PERMISSION_MODE_MENU.map((m) => formatPermissionMode(m))}
+      />
     </TugPushButton>
   );
 }

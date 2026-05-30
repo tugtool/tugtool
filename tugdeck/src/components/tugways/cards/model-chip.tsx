@@ -32,9 +32,9 @@
  * among model labels never reflows it, and a wider unexpected value still
  * fits.
  *
- * Compositional component — composes `TugPushButton`; its only own CSS is the
- * value-line width-stabilizer. The composed `TugPushButton` keeps its own
- * tokens [L20].
+ * Compositional component — composes `TugPushButton` and the shared
+ * `TugStableOverlay` (the value-line width-stabilizer); it owns no CSS of its
+ * own. The composed children keep their own tokens [L20].
  *
  * Laws: [L02] store subscription, [L06] appearance via CSS/DOM, [L19] authoring
  * Decisions: [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub,
@@ -43,12 +43,11 @@
  * @module components/tugways/cards/model-chip
  */
 
-import "./model-chip.css";
-
 import React, { useSyncExternalStore } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { formatModelLabel } from "@/lib/model-label";
 import { KNOWN_MODELS, selectorToModelId } from "@/lib/model-picker-data";
@@ -138,21 +137,13 @@ export function ModelChip({
     >
       {/* Width-stabilized value: the shown label plus a hidden sizer per known
           model label reserve the widest so switching never reflows the chip
-          (this chip only, per [R01]). */}
-      <span className="model-chip-value">
-        <span className="model-chip-value-shown" data-slot="model-value">
-          {content}
-        </span>
-        {MODEL_CHIP_SIZER_LABELS.map((label) => (
-          <span
-            key={label}
-            aria-hidden="true"
-            className="model-chip-value-sizer"
-          >
-            {label}
-          </span>
-        ))}
-      </span>
+          ([R01]). A live value wider than any sizer still fits — the active
+          face is a real layout item. */}
+      <TugStableOverlay
+        data-slot="model-value"
+        active={content}
+        alternates={MODEL_CHIP_SIZER_LABELS}
+      />
     </TugPushButton>
   );
 }
