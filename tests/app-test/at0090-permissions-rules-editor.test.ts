@@ -128,9 +128,15 @@ describe.skipIf(!SHOULD_RUN)(
           //    dismiss the completion popup (Escape leaves the raw text), then
           //    force-submit with Cmd+Enter. The raw `/permissions` text is
           //    recognized as a local command and dispatched, opening the sheet.
+          // Settle between native events (~200ms, matching at0045/at0048). The
+          // press-and-hold popover that used to steal mid-type focus is disabled
+          // at launch (`-ApplePressAndHoldEnabled NO`), so a single nativeType
+          // lands cleanly.
           await app.nativeClickAtElement(PROMPT_INPUT);
           await app.nativeType("/permissions");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Escape");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Return", ["cmd"]);
 
           await app.waitForCondition<boolean>(

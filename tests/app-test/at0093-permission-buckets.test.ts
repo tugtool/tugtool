@@ -135,9 +135,15 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindDevSession("A", { projectDir });
           await app.awaitEngineReady("A");
 
+          // Open the editor by typing `/permissions`. Settle between native
+          // events (~200ms, at0045/at0048 idiom); the focus-stealing
+          // press-and-hold popover is disabled at launch
+          // (`-ApplePressAndHoldEnabled NO`). The real open path is at0090.
           await app.nativeClickAtElement(PROMPT_INPUT);
           await app.nativeType("/permissions");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Escape");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Return", ["cmd"]);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SHEET)}) !== null`,

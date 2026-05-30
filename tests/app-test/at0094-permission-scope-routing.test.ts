@@ -117,9 +117,13 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindDevSession("A", { projectDir });
           await app.awaitEngineReady("A");
 
+          // Paced keystrokes (one batch, ~40ms apart) so the OS doesn't drop
+          // keys the way a fast nativeType can under load.
           await app.nativeClickAtElement(PROMPT_INPUT);
           await app.nativeType("/permissions");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Escape");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Return", ["cmd"]);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SHEET)}) !== null`,

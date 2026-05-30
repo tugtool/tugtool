@@ -109,10 +109,13 @@ describe.skipIf(!SHOULD_RUN)(
             },
           });
 
-          // Open the editor (raw-text local-command submit).
+          // Open the editor (raw-text local-command submit). Paced keystrokes
+          // (one batch, ~40ms apart) so the OS doesn't drop keys under load.
           await app.nativeClickAtElement(PROMPT_INPUT);
           await app.nativeType("/permissions");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Escape");
+          await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Return", ["cmd"]);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SHEET)}) !== null`,

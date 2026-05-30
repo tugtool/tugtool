@@ -202,10 +202,18 @@ final class NativeEventHandlers {
 
     init(webView: WKWebView) {
         self.webView = webView
-        // [Q05] — login-session source. Tracks modifier state across
-        // all events posted through it; auto-stamps flags on events
-        // that follow a held-modifier keyDown.
-        self.source = CGEventSource(stateID: .combinedSessionState)
+        // Private event-state source. It keeps its OWN modifier-state table —
+        // so a Cmd/Shift posted through it is still auto-stamped onto the inner
+        // keystrokes of a `holdModifier` scope (Cmd+A, Cmd+Return keep working)
+        // — but, unlike `.combinedSessionState`/`.hidSystemState`, it does NOT
+        // merge in the system's live hardware/global modifier state. That
+        // ambient bleed was the flake: a stray Fn/Globe bit stamped onto a
+        // character event pops the Character Viewer (emoji picker) mid-type,
+        // and a not-yet-released Cmd turns plain keystrokes into shortcuts —
+        // both seen dropping chars from `/permissions` (→ `/prissions`, picker
+        // open). Apple's CGEventSourceStateID docs recommend `.privateState`
+        // for exactly this: deterministic, reproducible synthetic input.
+        self.source = CGEventSource(stateID: .privateState)
     }
 
     // MARK: - Click
