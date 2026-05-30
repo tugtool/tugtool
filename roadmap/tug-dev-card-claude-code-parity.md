@@ -1190,17 +1190,21 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 **References:** [D04], [D13], [L02], Risk R01, (#z4b-chrome-layout). Slice of [#step-2a].
 
+**Routing decision (user-approved).** `session_capabilities` rides the **SESSION_METADATA** feed, not a dedicated one. tugcast's merger detects it (`is_session_capabilities`, sibling of `is_system_metadata`) and rewraps it as `FeedId::SESSION_METADATA` before broadcast — tugdeck's `FeedStore` keeps only the latest payload per feed, so a CODE_OUTPUT consumer would lose it amid transcript frames. `SessionMetadataStore` discriminates the two payload types by `type` and keeps them in **separate snapshot regions** (`models` vs the metadata fields) so neither wipes the other across the shared feed slot. Not stored in `latest_metadata` (that slot is the on-bind `system_metadata` replay source; capabilities re-emit fresh each spawn).
+
 **Tasks:**
-- [ ] Parse the `session_capabilities` IPC into a store (extend `SessionMetadataStore` or a sibling); surface `models` (for [#step-2b]) + `commands`.
-- [ ] Apply the model-chip resolution order: live `system_metadata.model` → ledger-replayed row → per-card spawn `--model` (if set) → `initialize` default-model label (`models[0].displayName`, "Default (recommended)") → honest `?` caution. New no-`--model` session reads the default label, not `?`.
+- [x] `session_capabilities` → SESSION_METADATA: `is_session_capabilities` detector (`session_metadata.rs`) + merger rewrap-and-broadcast (`agent_supervisor.rs`).
+- [x] Parse it in `SessionMetadataStore`: `models: CapabilityModel[]` snapshot field + `parseCapabilityModels` (skips malformed, mirrors tugcode's parser); `_onFeedUpdate` routes by `type`, capturing `models` and `system_metadata` into separate regions that survive each other.
+- [x] Apply the model-chip resolution order: live `system_metadata.model` (live **or** the 2a.1 on-bind ledger replay — same `snapshot.model`) → `initialize` default-model label (`models[0].displayName`, "Default (recommended)") → honest `?` caution. (Per-card spawn `--model` is subsumed: claude echoes it back as `system_metadata.model`, arriving via the live path.)
 
 **Tests:**
-- [ ] Pure-logic: capabilities parser (`models`/`commands` shape, strict drop); model-chip resolution-order predicate.
-- [ ] Real-app: resumed card → chips populate pre-turn (from 2a.1 replay); new card → model chip reads `Default (recommended)`; both sharpen to live `system/init` on first turn.
+- [x] Pure-logic (tugdeck `session-metadata-store.test.ts`, 4 new): capabilities `models` parse (malformed skipped); capabilities don't set the live `model`; system_metadata preserves captured `models` and vice versa. tugcast unit (`session_metadata.rs`, 2 new): `is_session_capabilities` detect / non-detect.
+- [~] Real-app: resumed card → chips populate pre-turn; new card → model chip reads `Default (recommended)`; both sharpen on first turn. **Deferred to a by-hand real-claude verify** — the metadata feed is process-spawned (tugcast+tugcode), which the CodeSessionStore-scoped harness doesn't drive; covered structurally by the unit tests above.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`; `tsc --noEmit` clean
-- [ ] `just build-app`; verify resumed-card chips pre-turn + new-card default label
+- [x] `cd tugdeck && bun test` — 3118 pass / 0 fail; `tsc --noEmit` clean.
+- [x] `cd tugrust && cargo nextest run -p tugcast` — 659 run, 659 passed / 4 skipped.
+- [x] `just build-app` — BUILD SUCCEEDED; new code live in the debug app. By-hand chip verify awaiting user spot-check.
 
 ---
 
