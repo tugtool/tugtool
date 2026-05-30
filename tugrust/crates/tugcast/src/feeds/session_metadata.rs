@@ -26,6 +26,22 @@ pub fn is_system_metadata(payload: &[u8]) -> bool {
         .any(|w| w == SYSTEM_METADATA_NEEDLE)
 }
 
+/// Needle bytes for identifying `session_capabilities` events — the
+/// turn-free `initialize`-handshake capabilities tugcode emits once per
+/// spawn (model list, command catalog, …).
+const SESSION_CAPABILITIES_NEEDLE: &[u8] = b"\"type\":\"session_capabilities\"";
+
+/// Check if a payload is a `session_capabilities` event. Like
+/// `system_metadata`, these are routed onto the low-churn
+/// SESSION_METADATA feed (the FeedStore keeps only the latest payload
+/// per feed, so a CODE_OUTPUT consumer would lose it amid transcript
+/// frames). The client store discriminates the two by their `type`.
+pub fn is_session_capabilities(payload: &[u8]) -> bool {
+    payload
+        .windows(SESSION_CAPABILITIES_NEEDLE.len())
+        .any(|w| w == SESSION_CAPABILITIES_NEEDLE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,5 +68,18 @@ mod tests {
     fn rejects_other_type() {
         let payload = br#"{"type":"system","subtype":"init"}"#;
         assert!(!is_system_metadata(payload));
+    }
+
+    #[test]
+    fn detects_session_capabilities() {
+        let payload = br#"{"type":"session_capabilities","models":[],"commands":[]}"#;
+        assert!(is_session_capabilities(payload));
+        assert!(!is_system_metadata(payload));
+    }
+
+    #[test]
+    fn rejects_capabilities_for_non_capabilities() {
+        let payload = br#"{"type":"system_metadata","model":"x"}"#;
+        assert!(!is_session_capabilities(payload));
     }
 }

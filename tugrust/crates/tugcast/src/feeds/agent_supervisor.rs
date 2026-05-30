@@ -45,7 +45,7 @@ use super::agent_bridge::{
     ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, SessionMode, TugcodeSpawner, run_session_bridge,
 };
 use super::code::parse_tug_session_id;
-use super::session_metadata::is_system_metadata;
+use super::session_metadata::{is_session_capabilities, is_system_metadata};
 use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
 
 /// Capacity of per-session CODE_INPUT buffering queues.
@@ -3282,6 +3282,19 @@ impl AgentSupervisor {
                             entry.latest_metadata = Some(meta_frame.clone());
                         }
                         let _ = self.session_metadata_tx.send(meta_frame);
+                    } else if is_session_capabilities(&frame.payload) {
+                        // Turn-free `initialize` capabilities ([#step-2a]).
+                        // Rewrap onto SESSION_METADATA (same rationale as
+                        // `system_metadata`: the FeedStore keeps only the
+                        // latest payload per feed, and the client routes by
+                        // wire feed-id) so the dev card's metadata store
+                        // receives it. Not stored in `latest_metadata` —
+                        // that slot is the on-bind `system_metadata` replay
+                        // source, and capabilities are re-emitted fresh on
+                        // every spawn, so there is nothing to replay.
+                        let cap_frame =
+                            Frame::new(FeedId::SESSION_METADATA, frame.payload.clone());
+                        let _ = self.session_metadata_tx.send(cap_frame);
                     }
                     // Forward-before-mutate: the wire-side broadcast above
                     // is the user-visible signal and must not be delayed

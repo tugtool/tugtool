@@ -34,7 +34,7 @@
  * @module components/tugways/cards/model-chip
  */
 
-import React, { useCallback, useSyncExternalStore } from "react";
+import React, { useSyncExternalStore } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
@@ -54,28 +54,46 @@ export interface ModelChipProps {
 export function ModelChip({
   sessionMetadataStore,
 }: ModelChipProps): React.ReactElement {
-  const model = useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     sessionMetadataStore.subscribe,
-    useCallback(
-      () => sessionMetadataStore.getSnapshot().model,
-      [sessionMetadataStore],
-    ),
+    sessionMetadataStore.getSnapshot,
   );
 
-  const known = model !== null;
+  // Resolution order: exact current model (live or ledger-replayed) →
+  // the `initialize` default-model label → honest caution `?`.
+  const exactModel = snapshot.model;
+  const defaultModelLabel =
+    snapshot.models.length > 0 ? snapshot.models[0].displayName : null;
+
+  let content: string;
+  let role: "agent" | "caution";
+  let title: string;
+  if (exactModel !== null) {
+    content = formatModelLabel(exactModel);
+    role = "agent";
+    title = exactModel;
+  } else if (defaultModelLabel !== null) {
+    content = defaultModelLabel;
+    role = "agent";
+    title = `${defaultModelLabel} — exact model resolves on the first turn`;
+  } else {
+    content = "?";
+    role = "caution";
+    title = "Model not reported by the session";
+  }
 
   return (
     <TugBadge
       emphasis="tinted"
-      role={known ? "agent" : "caution"}
+      role={role}
       size="sm"
       layout="label-top"
       label="Model"
-      icon={known ? undefined : <TriangleAlert aria-hidden="true" />}
-      title={known ? model : "Model not reported by the session"}
+      icon={role === "caution" ? <TriangleAlert aria-hidden="true" /> : undefined}
+      title={title}
       data-slot="model-chip"
     >
-      {known ? formatModelLabel(model) : "?"}
+      {content}
     </TugBadge>
   );
 }

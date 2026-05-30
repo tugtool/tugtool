@@ -25,6 +25,19 @@ export interface SlashCommandInfo {
   category: "local" | "agent" | "skill";
 }
 
+/**
+ * One model offered by the `initialize` control-response `models` list,
+ * forwarded turn-free as a `session_capabilities` frame. The picker
+ * ([#step-2b]) reads `value` (the `--model` selector) + `displayName`;
+ * `models[0]` is the account default by convention (`value: "default"`,
+ * `displayName: "Default (recommended)"`).
+ */
+export interface CapabilityModel {
+  value: string;
+  displayName: string;
+  description?: string;
+}
+
 /** Snapshot of the current session metadata state. */
 export interface SessionMetadataSnapshot {
   sessionId: string | null;
@@ -39,6 +52,16 @@ export interface SessionMetadataSnapshot {
    */
   version: string | null;
   slashCommands: SlashCommandInfo[];
+  /**
+   * Available models from the turn-free `initialize` handshake
+   * ([#step-2a]). Empty until the `session_capabilities` frame lands.
+   * `models[0]` is the account default. Source for the `/model` picker
+   * ([#step-2b]) and the model chip's pre-turn default-model label —
+   * `initialize` does NOT carry the exact current model id, only this
+   * list, so the chip shows `models[0].displayName` until a live
+   * `system_metadata.model` (or the on-bind ledger replay) sharpens it.
+   */
+  models: CapabilityModel[];
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -50,7 +73,33 @@ const EMPTY_SNAPSHOT: SessionMetadataSnapshot = {
   cwd: null,
   version: null,
   slashCommands: [],
+  models: [],
 };
+
+/**
+ * Parse the `models` array of a `session_capabilities` payload. Keeps
+ * only entries with a string `value` + `displayName`; `description` is
+ * optional. Malformed entries are skipped (never throws) — mirrors
+ * tugcode's `capabilities.ts` parser.
+ */
+function parseCapabilityModels(raw: unknown): CapabilityModel[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CapabilityModel[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const obj = entry as Record<string, unknown>;
+    if (typeof obj.value !== "string" || typeof obj.displayName !== "string") {
+      continue;
+    }
+    const model: CapabilityModel = {
+      value: obj.value,
+      displayName: obj.displayName,
+    };
+    if (typeof obj.description === "string") model.description = obj.description;
+    out.push(model);
+  }
+  return out;
+}
 
 /** Validate and normalize a category string. */
 function toCategory(raw: unknown): "local" | "agent" | "skill" {
@@ -148,6 +197,9 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
     cwd: typeof p.cwd === "string" ? p.cwd : null,
     version: typeof p.version === "string" ? p.version : null,
     slashCommands,
+    // `models` comes from `session_capabilities`, not `system_metadata`;
+    // `_onFeedUpdate` preserves the captured value across this replace.
+    models: [],
   };
 }
 
@@ -184,15 +236,39 @@ export class SessionMetadataStore {
     if (payload === this._lastPayloadRef) return;
     this._lastPayloadRef = payload;
 
+    // Two payload types ride the SESSION_METADATA feed: `system_metadata`
+    // (live current model / version / mode, post-turn) and
+    // `session_capabilities` (the turn-free `initialize` model list /
+    // command catalog, [#step-2a]). The FeedStore keeps only the latest
+    // payload per feed, so each arrives here as the single current slot;
+    // we capture each into its own snapshot region and preserve the
+    // other across the update, so a later `system_metadata` never wipes
+    // the captured `models`, and vice versa.
+    const payloadType =
+      typeof payload === "object" && payload !== null
+        ? (payload as Record<string, unknown>).type
+        : undefined;
+
+    if (payloadType === "session_capabilities") {
+      const models = parseCapabilityModels(
+        (payload as Record<string, unknown>).models,
+      );
+      this._snapshot = { ...this._snapshot, models };
+      for (const listener of this._listeners) listener();
+      return;
+    }
+
     const parsed = parseMetadataPayload(payload);
     if (!parsed) return;
 
-    // Wholesale replace. The tugcast supervisor's bridge intercept
-    // merges every `system_metadata` line against the persisted
-    // ledger row before forwarding, so the wire always delivers the
-    // most-informationally-rich payload. Client-side merge is no
-    // longer needed.
-    this._snapshot = parsed;
+    // Wholesale replace of the metadata region. The tugcast supervisor's
+    // bridge intercept merges every `system_metadata` line against the
+    // persisted ledger row before forwarding, so the wire always
+    // delivers the most-informationally-rich payload. Client-side merge
+    // is no longer needed — but the turn-free `models` captured from a
+    // prior `session_capabilities` frame is preserved across the replace
+    // (the two payload types share this feed slot).
+    this._snapshot = { ...parsed, models: this._snapshot.models };
     for (const listener of this._listeners) {
       listener();
     }
