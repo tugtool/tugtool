@@ -1883,6 +1883,16 @@ export class SessionManager {
    */
   private sessionInitSeen: boolean = false;
 
+  /**
+   * `request_id` of the `initialize` control-request sent at spawn, or
+   * `null` before it's sent / after its response lands. claude answers
+   * this turn-free with a `control_response` carrying the session's
+   * capabilities (model list, command catalog, …); the stdout drain
+   * correlates the response by this id and emits a `session_capabilities`
+   * IPC. Reset on respawn so a fresh handshake is issued each spawn.
+   */
+  private initializeRequestId: string | null = null;
+
   constructor(
     projectDir: string,
     sessionId: string,
@@ -2094,6 +2104,9 @@ export class SessionManager {
     // an already-dead subprocess (manager state can drift if a prior
     // crash left `sessionInitSeen` true but `claudeProcess` null).
     this.sessionInitSeen = false;
+    // Clear the pending `initialize` correlation so a respawn issues a
+    // fresh handshake rather than matching the dead process's id.
+    this.initializeRequestId = null;
   }
 
   /**
@@ -2242,6 +2255,7 @@ export class SessionManager {
     this.startStdoutDrain(this.claudeProcess);
     this.startStderrReader();
     this.installEarlyExitWatcher();
+    this.sendInitializeHandshake();
 
     logSessionLifecycle("tugcode.spawn_claude_async", {
       session_id: this.sessionId,
@@ -2262,6 +2276,25 @@ export class SessionManager {
     }
 
     return this.claudeReadyPromise!;
+  }
+
+  /**
+   * Send the `initialize` control-request to claude immediately after
+   * spawn so the frontend learns the session's capabilities (model list,
+   * command catalog, …) without waiting for the first user turn — claude
+   * in stream-json mode is otherwise silent until input arrives.
+   *
+   * Fire-and-forget: the response is correlated by `request_id` and
+   * handled in {@link handleClaudeLine} (it arrives with no active turn).
+   * This does NOT block the first user message — `spawnClaudeAndWatch`'s
+   * readiness gate is independent. No-op if the process is gone.
+   */
+  private sendInitializeHandshake(): void {
+    if (!this.claudeProcess) return;
+    this.initializeRequestId = generateRequestId();
+    sendControlRequest(this.claudeProcess.stdin, this.initializeRequestId, {
+      subtype: "initialize",
+    });
   }
 
   /**
@@ -3101,6 +3134,21 @@ export class SessionManager {
     } catch {
       console.log(`Skipping non-JSON line: ${line}`);
       return;
+    }
+    // Intercept the `initialize` control-response before any turn
+    // routing — it arrives turn-free (no active turn), so it must be
+    // caught here rather than in `routeTopLevelEvent` (which only runs
+    // for an open turn). Correlate by `request_id` against the one we
+    // sent at spawn; emit the capabilities as `session_capabilities` and
+    // consume the line. Any other `control_response` falls through to the
+    // normal path.
+    if (this.initializeRequestId !== null && event.type === "control_response") {
+      const parsed = parseInitializeControlResponse(event);
+      if (parsed !== null && parsed.requestId === this.initializeRequestId) {
+        this.initializeRequestId = null;
+        writeLine(parsed.capabilities);
+        return;
+      }
     }
     // Wake bracket detector ([D07]). The harness's built-in scheduler
     // fires ScheduleWakeup / CronCreate timers between turns and emits

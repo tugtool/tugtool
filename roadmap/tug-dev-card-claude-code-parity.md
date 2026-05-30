@@ -1165,17 +1165,17 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 **References:** [Q13]/[R04] strict shapes, [D06] protocol baseline, (#inputs-outputs). Slice of [#step-2a]; empirical findings in [#step-2a].
 
 **Tasks:**
-- [ ] Send the `initialize` control_request to claude at spawn (`{type:"control_request", request_id, request:{subtype:"initialize"}}` via `sendControlRequest`); do **not** block the first user turn on it.
-- [ ] Intercept the matching `control_response` in the stdout drain (correlate by `request_id`); parse `response.response` strict-typed into a new `SessionCapabilities` outbound IPC carrying `models`, `commands`, `agents`, `available_output_styles`, `output_style`, `account`. Drop unknown fields.
-- [ ] Add `SessionCapabilities` to `types.ts` (`OutboundMessage` union) + the tugcast/tugdeck `protocol.ts` reader.
+- [x] Send the `initialize` control_request to claude at spawn (`sendInitializeHandshake` after `installEarlyExitWatcher`, via `sendControlRequest` with a stored `initializeRequestId`); does **not** block the first user turn (the readiness gate is independent). Reset on respawn alongside `sessionInitSeen`.
+- [x] Intercept the matching `control_response` at the top of `handleClaudeLine` (it arrives turn-free, no active turn — so caught before turn routing; correlated by `request_id`); parse `response.response` strict-typed into a new `SessionCapabilities` outbound IPC carrying `models`, `commands`, `agents`, `available_output_styles`, `output_style`, `account`. Unknown fields dropped; malformed model/command entries skipped. Pure parser in new `src/capabilities.ts` (`buildSessionCapabilities` + `parseInitializeControlResponse`).
+- [x] Add `SessionCapabilities` (+ `CapabilityModel` / `CapabilityCommand`) to `types.ts` and the `OutboundMessage` union. (tugdeck `protocol.ts` reader lands in [#step-2a-3].)
 
 **Tests:**
-- [ ] tugcode unit: `initialize` request emitted at spawn; a fed `control_response` parses into `session_capabilities` with `models` + `commands` present, current-model-id absent (documents the limitation).
-- [ ] Drift regression / `just capture-capabilities` after the IPC change.
+- [x] tugcode unit (`capabilities.test.ts`, 13 tests): a captured `control_response` parses into `session_capabilities` with `models` + `commands` present and the current-model-id **absent** (documents the limitation); malformed entries skipped; missing fields degrade to empty; `parseInitializeControlResponse` correlation + success/error/missing-id branches. The send-at-spawn + intercept-by-id wiring is 3 lines exercised end-to-end by [#step-2a-3]'s real-app test (no hand-rolled subprocess mock, per `feedback_no_mock_store_tests`).
+- [ ] Drift regression / `just capture-capabilities` after the IPC change (run in the build/checkpoint pass after 2a.3).
 
 **Checkpoint:**
-- [ ] `cd tugcode && bun test` + recompile (`target/debug/tugcode`)
-- [ ] `cd tugrust && cargo nextest run -p tugcast` (payload_inspector tolerates the new frame)
+- [x] `cd tugcode && bun test` — 497 pass / 0 fail (13 new); `tsc --noEmit` clean.
+- [ ] recompile (`just build-tugcode`) + `cd tugrust && cargo nextest run -p tugcast` (payload_inspector tolerates the new frame) — in the post-2a.3 build pass.
 
 ---
 

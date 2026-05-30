@@ -421,6 +421,54 @@ export interface SystemMetadata {
 }
 
 /**
+ * One model offered by the `initialize` control-response `models` list.
+ * The picker ([#step-2b]) reads `value` (the `--model` selector) and
+ * `displayName` (the user-facing label); `description` is the optional
+ * subtitle. `models[0]` is the account default by convention
+ * (`value: "default"`, `displayName: "Default (recommended)"`), so the
+ * model chip falls back to its `displayName` for a new no-`--model`
+ * session. The wire carries more fields (`supportsEffort`, … ) — they're
+ * dropped here per the strict-shape policy; re-add when a consumer needs
+ * them.
+ */
+export interface CapabilityModel {
+  value: string;
+  displayName: string;
+  description?: string;
+}
+
+/**
+ * One slash command from the `initialize` control-response `commands`
+ * list — the turn-free catalog the slash popup + allowlist consume.
+ */
+export interface CapabilityCommand {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+}
+
+/**
+ * Turn-free session capabilities, parsed from claude's `initialize`
+ * control-response and emitted once per spawn. Distinct from
+ * `system_metadata` (which only lands after the first user turn and
+ * carries the *live current* model / version / mode): `initialize`
+ * answers immediately at spawn but carries only *capabilities* — the
+ * available model list, the command catalog, agents, output styles, and
+ * account info — NOT the exact current model id / version / mode. The
+ * frontend uses `models` for the picker and the default-model label.
+ */
+export interface SessionCapabilities {
+  type: "session_capabilities";
+  models: CapabilityModel[];
+  commands: CapabilityCommand[];
+  agents: string[];
+  available_output_styles: string[];
+  output_style: string;
+  account: Record<string, unknown> | null;
+  ipc_version: number;
+}
+
+/**
  * Cost and usage summary emitted after each turn completes per PN-19.
  *
  * `usage` carries the turn's LAST tool-loop iteration's `usage` — the
@@ -809,6 +857,7 @@ export type OutboundMessage =
   | ContentBlockStart
   | ControlRequestForward
   | SystemMetadata
+  | SessionCapabilities
   | CostUpdate
   | StreamingUsage
   | CompactBoundary
