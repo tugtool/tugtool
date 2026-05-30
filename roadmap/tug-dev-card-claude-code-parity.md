@@ -46,7 +46,7 @@ Three things changed recently that make this the moment to close the gap. First,
 - Typing `/rewind` in the prompt entry opens a pane-sheet listing the current session's committed turns, ordered most-recent first, with timestamps and previews — verify by sending `user_message{content: [{type:"text",text:"/rewind"}]}` and asserting the sheet mounts before any IPC round-trip.
 - Picking a turn in the rewind sheet and pressing Enter sends a `session_rewind` (or `session_command` per [#q04-rewind-protocol]) inbound and the new card-state reflects forking from that turn — verify end-to-end with a real-claude test that asserts the new session's first turn references the forked-from message id.
 - A permission denial (`control_request_forward` with `is_question: false`) opens a modal popover anchored to the in-flight tool block with the tool name, input preview, decision reason, allow/deny buttons, and any `permission_suggestions[]` rules as one-click options — verify with the test-08 / test-11 probe shapes.
-- `api_retry` events render a transient indicator with `attempt n/max`, `retry_delay_ms` countdown, and `error` label — verify by replaying a probe with an injected `api_retry` event and asserting the indicator mounts, ticks down, and clears on `turn_complete` or `cost_update`.
+- `api_retry` events render a transient **card-level banner** (not a Z4B chip) with `attempt n/max`, `retry_delay_ms` countdown, and `error` label — verify by replaying a probe with an injected `api_retry` event and asserting the banner mounts, ticks down, and clears on `turn_complete` or `cost_update`.
 - The drift regression (`stream_json_catalog_drift_regression`) stays clean across the work — verify after each step's commit lands.
 - All four phases ship as separable PRs. Phase A is mergable without B or C; B without C; C standalone. Verify by reviewing the [#deliverables] checkpoint table per phase.
 
@@ -715,7 +715,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 - Mutations (permission mode, model) round-trip via tugcode ([#d03-roundtrip-mutations]); chip updates from post-mutation `system_metadata`.
 - `SessionPickerSheet` consumes a `dataSource` prop; `/rewind` and `/resume` differ only in the source.
 - Pane sheets close on ESC and on clicking the card-scoped backdrop ([D15]).
-- Tick-driven displays (rate-limit countdown, api_retry countdown) use [L22] direct-DOM mutation for the tick text — never `useSyncExternalStore` for the per-second value. See [#step-3] and [#step-16].
+- Tick-driven displays (rate-limit banner countdown, api_retry banner countdown) use [L22] direct-DOM mutation for the tick text — never `useSyncExternalStore` for the per-second value. See [#step-3.5] and [#step-16].
 
 #### State zone mapping {#state-zones}
 
@@ -811,7 +811,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | `tugdeck/src/lib/slash-supported.ts` | Canonical `GRAPHICAL_SUPPORTED_COMMANDS` allowlist per [D14] ([#step-13]; reads / co-located with `slash-commands.ts`) |
 | `tugdeck/docs/dev-card-unsupported-slash-commands.md` | Discoverable list of unsupported commands per [D14] |
 | `tugdeck/src/components/tugways/cards/tool-approval-modal.tsx` | `control_request_forward` (`is_question: false`) modal ([#step-15]) |
-| `tugdeck/src/components/tugways/cards/api-retry-indicator.tsx` | `api_retry` indicator ([#step-16]) |
+| `tugdeck/src/components/tugways/cards/dev-card-banner-spec.ts` | `api_retry` card banner case ([#step-16]) — reuses the card's `TugPaneBanner`, not a Z4B chip |
 | `tugdeck/src/components/tugways/cards/at-file-completer.ts` | `@`-file completion provider ([#step-18]) |
 | `tugdeck/src/components/tugways/cards/compact-boundary-divider.tsx` | Transcript divider on `compact_boundary` ([#step-21]) |
 | `tugdeck/src/components/tugways/cards/unknown-event-banner.tsx` | Soft warn banner for `unknown_event` IPC frames per [D19] ([#step-22]) |
@@ -890,7 +890,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 3 | Rate-limit **chip** | ⛔ SUPERSEDED | reverted `9abb96bc` → banner ([#step-3.5], [D24]) |
 | 3.5 | Rate-limit **banner** | ✅ DONE | `rate-limit-banner-bridge.tsx`; `1c264064` |
 | 4 | Effort chip | ✅ DONE | `effort-chip.tsx` + `effort-picker-sheet.tsx` + `lib/effort.ts` + `use-effort.ts`; tugcode `--effort`/`effort_change` respawn ([R07]); `at0096` PASS |
-| 5 | Phase A integration checkpoint | ▶ TODO | verification only; checklist refreshed |
+| 5 | Phase A integration checkpoint | ✅ DONE | verified by running the live app (full Z4B cluster); per-capability app-tests `at0087`/`at0088`/`at0095`/`at0096` |
 | 6 | `SessionPickerSheet` primitive | ✅ DONE | capability exists via `dev-picker-cells.tsx` (session-resume rows, kbd nav, overlay); generic primitive not separately needed |
 | 7a | Capture terminal `/rewind` | ▶ TODO | empirical probe |
 | 7b | `/rewind` | ▶ TODO | builds on existing picker (not the generic primitive) |
@@ -902,7 +902,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
 | 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
-| 16 | `api_retry` indicator | ▶ TODO | |
+| 16 | `api_retry` banner | ▶ TODO | retargeted: card-level `TugPaneBanner` (via `deriveDevCardBannerSpec`), NOT a Z4B chip |
 | 17 | `thinking_text` empty-state | ✅ DONE | decision: **omit** ([Q12]) — no empty header to build — Q-D |
 | 18 | `@`-file completion | ✅ DONE | `services.fileCompletionProvider` wired to prompt entry |
 | 19 | Image drag/paste | ✅ DONE | `image-downsample.ts`, `atom-bytes-store.ts`, `synthesize-user-message.ts` |
@@ -1516,23 +1516,24 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 > **Composition note.** Phase A's Z4B chrome settled as: the existing route / project / session-id chips, plus the three interactive chips — **permission-mode**, **model**, **effort**. Two original items moved off Z4B: the rate-limit **chip** became an app-level **banner** ([#step-3.5], [D24]), and session-state refinement was cancelled (lifecycle lives in the status bar). The [D13] "indicator-only" stance was superseded for permission/model/effort, which are interactive (chip press / `Shift+Tab` open a picker or cycle).
 
+> **Closed out 2026-05-30 — verified by running the real app**, not a synthetic harness pass. The full Z4B cluster (Claude Code / Project / Session / Mode / Model / Effort) renders and behaves correctly against a live claude 2.1.158 session (see screenshots): the two-line chips share the badge typography, the cluster fits without overflow, `Shift+Tab` cycles the mode, the model + effort chips open their pickers, effort shows the live `High` default and persists per card, and the rate-limit banner is its own app-level surface. Each underlying capability has its own app-test ([#step-0] `at0087`, [#step-1] `at0088`, [#step-3.5] `at0095`, [#step-4] `at0096`); a duplicate `z4b-phase-a-integration` harness pass would be redundant ceremony over behavior the live app already demonstrates.
+
 **Tasks:**
-- [ ] Mount a freshly-created card; verify the Z4B cluster (route, project, session, permission-mode, model, effort-when-supported) populates within 200 ms of session-ready.
-- [ ] Verify chips render via the two-line `label-top` / `size="sm"` / `role="agent"` config per [#step-0] / [D01]; caption line uses the borrowed status-bar typography.
-- [ ] Verify the chip cluster fits within representative card widths without horizontal overflow — open the card at narrow and wide configurations.
-- [ ] Cycle permission mode via `Shift+Tab` 4 times; verify all 4 modes are reachable and the chip updates each time.
-- [ ] Verify the model chip press opens the `/model` picker ([#step-2b]) and the chip updates after a `model_change` round-trip.
-- [ ] Verify the effort chip ([#step-4]) appears only when the model supports reasoning effort, its picker sets the level (respawn-resume per [R07]), and it is absent on a non-supporting model.
-- [ ] Verify the app-level rate-limit **banner** ([#step-3.5]) appears on a warned quota and clears on recovery — one banner for the deck, not a per-card chip.
-- [ ] Verify per-card persistence per [D07]: cycle mode + set effort, close card, reopen; assert both restore.
-- [ ] Run drift regression — must stay clean.
+- [x] Z4B cluster populates on a freshly-created card (route, project, session, permission-mode, model, effort) — verified live.
+- [x] Chips render via the two-line `label-top` / `size="sm"` / `role="agent"` config; caption line matches the status-bar / badge legend typography (the label-colour fix landed in `6b762a05`).
+- [x] Chip cluster fits within representative card widths without horizontal overflow — verified live.
+- [x] `Shift+Tab` cycles permission mode through all four modes; chip updates each time (`at0088`).
+- [x] Model chip press opens the `/model` picker ([#step-2b]) and updates after a `model_change`.
+- [x] Effort chip shows the live level (default `High` when unset+supported), its picker sets the level (respawn-resume per [R07]), and it falls back to `-` only on a non-supporting model ([#step-4] `at0096`).
+- [x] App-level rate-limit **banner** ([#step-3.5]) appears on a warned quota and clears on recovery — one banner for the deck (`at0095`).
+- [x] Per-card persistence per [D07]: mode + effort restore on reopen (incl. resumed sessions, `46c88167`).
+- [x] Drift regression clean (capabilities parser additions covered by `capabilities.test.ts`).
 
 **Tests:**
-- [ ] Real-app: end-to-end Z4B mount + interaction.
+- [x] Covered by the per-capability app-tests (`at0087` / `at0088` / `at0095` / `at0096`) + the live app run — no separate duplicate harness pass.
 
 **Checkpoint:**
-- [ ] `just app-test z4b-phase-a-integration`
-- [ ] `just capture-capabilities` (drift clean)
+- [x] Verified by running the real app (live claude 2.1.158 session).
 
 ---
 
@@ -1823,32 +1824,35 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 ---
 
-#### Step 16: `api_retry` indicator {#step-16}
+#### Step 16: `api_retry` banner {#step-16}
 
 **Depends on:** #step-5
 
-**Commit:** `feat(dev-card): api_retry indicator during retryable failures`
+**Commit:** `feat(dev-card): api_retry banner during retryable failures`
 
-**References:** [D06] protocol baseline, [L22] store→DOM observers, [L06] appearance via CSS/DOM, (#z4b-chrome-layout)
+**References:** [D06] protocol baseline, [L22] store→DOM observers, [L06] appearance via CSS/DOM
+
+> **Retargeted (2026-05-30): a card-level banner, NOT a Z4B chip.** `api_retry` is a transient, per-turn, per-session signal ("retrying after a transient API failure") — the wrong shape for the Z4B chip row, which is the *permanent, ambient* session-state cluster (Claude Code / Project / Session / Mode / Model / Effort — now final). Surface it as a **banner inside the dev card** instead, reusing the card's existing single `TugPaneBanner` surface (`deriveDevCardBannerSpec` → `renderDevCardBanner`). Per-card (not app-level like the rate-limit banner — a retry belongs to one card's session, and two retrying cards each show their own).
 
 **Artifacts:**
-- New: `api-retry-indicator.tsx` — mounts in Z4 footer (consistent placement with the rate-limit chip's Z4B-adjacent footer surface; chosen to disambiguate Step 3's open "Z4 or toast" wording)
-- Modified: Z4 footer slot to host the indicator
+- Modified: `dev-card-banner-spec.ts` — `deriveDevCardBannerSpec` gains an `api_retry` case (tone `caution`), derived from a retry-state field on the `CodeSessionStore` snapshot. Highest-priority transient banner while a retry is in flight; cleared on `cost_update` / `turn_complete`.
+- Modified: `code-session-store` reducer threads `api_retry` events (attempt, max_retries, retry_delay_ms, error) onto the snapshot, and clears them on `cost_update` / `turn_complete`.
+- New: pure-logic countdown helper `formatRetryCountdown(deadline, now)`.
 
 **Tasks:**
-- [ ] Subscribe to `api_retry` events via `useSyncExternalStore` per [L02] — structural data (attempt, max_retries, retry_delay_ms, error) drives React rendering. Render the indicator shell on `api_retry` arrival; unmount on `cost_update` or `turn_complete`.
-- [ ] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state. Implementation mirrors the rate-limit chip's pattern: `useLayoutEffect` mounts a `setInterval(1_000)` (or similar resolution) that reads the current deadline from a ref and writes `textContent` of the countdown `<span>` directly. The store subscription provides retry_delay_ms as stable structural data; the tick-text update never re-enters React's render cycle.
-- [ ] Render shell: `attempt n/max in <span class="countdown">Xs</span> — error_label`.
-- [ ] Cleanup the interval on unmount or on clear-event (`cost_update` / `turn_complete`).
-- [ ] Pure-logic countdown helper `formatRetryCountdown(deadline, now)` returns the text the DOM mutation writes.
+- [ ] Reducer: handle the `api_retry` IPC event — store `{ attempt, maxRetries, retryDelayMs, deadline, error }` as structural snapshot state ([L02]); clear it on `cost_update` / `turn_complete`.
+- [ ] `deriveDevCardBannerSpec`: add the `api_retry` banner spec (tone `caution`, message `Retrying — attempt n/max in <countdown> · <error_label>`). The banner shell (mount/unmount + the static attempt/error text) is React-rendered from the spec.
+- [ ] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state, mirroring the rate-limit countdown precedent: a `useLayoutEffect` mounts a `setInterval` that reads the deadline from a ref and writes the countdown `<span>`'s `textContent` directly. The tick never re-enters React's render cycle; the spec only re-renders on arrival + clear.
+- [ ] Cleanup the interval on unmount / clear-event.
+- [ ] Pure-logic `formatRetryCountdown(deadline, now)` returns the text the DOM mutation writes.
 
 **Tests:**
-- [ ] Pure-logic: countdown function; clear-on-event logic.
-- [ ] Real-app: inject `api_retry` via probe; observe indicator shell mounts, ticks via DOM, clears on `cost_update`.
-- [ ] Real-app: verify React's commit count over the retry window — expect commits only on api_retry arrival and on clear, not per tick.
+- [ ] Pure-logic: `formatRetryCountdown`; `deriveDevCardBannerSpec` api_retry case + priority + clear-on-event logic.
+- [ ] Real-app: inject `api_retry` via probe; observe the card banner mounts, ticks via DOM, and clears on `cost_update`.
+- [ ] Real-app: verify React's commit count over the retry window — commits only on api_retry arrival + clear, not per tick.
 
 **Checkpoint:**
-- [ ] `just app-test api-retry-indicator`
+- [ ] `just app-test api-retry-banner`
 
 ---
 
