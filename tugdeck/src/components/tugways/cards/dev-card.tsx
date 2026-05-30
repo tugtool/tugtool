@@ -45,6 +45,7 @@ import { useModelPicker } from "./model-picker-sheet";
 import { EffortChip } from "./effort-chip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
+import { useRoute } from "@/lib/route-lifecycle";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
 import { usePermissionMode } from "@/lib/use-permission-mode";
@@ -203,6 +204,48 @@ const DEV_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
   "❯": "Ask Claude to build, fix, or explain",
   "$": "Run a shell command",
 };
+
+/** Shell route value — mirrors `ROUTE_ITEMS` in `tug-prompt-entry.tsx`. */
+const ROUTE_SHELL = "$";
+
+/** Max characters the Z4B Project chip shows before it falls back to the
+ *  leaf directory name. */
+const PROJECT_CHIP_MAX_CHARS = 16;
+
+/**
+ * Display text for the Z4B Project chip. If the whole path fits within
+ * {@link PROJECT_CHIP_MAX_CHARS}, it is shown verbatim. Otherwise the chip
+ * shows just the leaf directory name; a leaf that is itself too long is
+ * mid-truncated with an ellipsis. The full path always travels in the chip's
+ * `title` (tooltip) when the shown text differs from it.
+ */
+function formatProjectChipText(dir: string): string {
+  if (dir.length <= PROJECT_CHIP_MAX_CHARS) return dir;
+  const leaf = dir.replace(/\/+$/, "").split("/").pop() ?? dir;
+  if (leaf.length <= PROJECT_CHIP_MAX_CHARS) return leaf;
+  // Mid-truncate the leaf, reserving one char for the ellipsis.
+  const keep = PROJECT_CHIP_MAX_CHARS - 1;
+  const head = Math.ceil(keep / 2);
+  const tail = Math.floor(keep / 2);
+  return `${leaf.slice(0, head)}…${leaf.slice(leaf.length - tail)}`;
+}
+
+/**
+ * Reads the active route from `RouteLifecycle` and yields whether it is the
+ * Shell route to a render callback. Mounted inside the prompt entry's
+ * indicator slot (where the provider is in scope), so the Z4B chips can pick
+ * up each component's own `disabled` feature on the Shell route — the
+ * Session / Mode / Model / Effort chips drive a Claude Code session, which
+ * Shell has none of. The route indicator and Project chips apply to both
+ * routes and stay live.
+ */
+function DevRouteShellGate({
+  children,
+}: {
+  children: (isShell: boolean) => React.ReactNode;
+}): React.ReactElement {
+  return <>{children(useRoute() === ROUTE_SHELL)}</>;
+}
 
 const LINE_HEIGHT_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 1.0, label: "1.0" },
@@ -2590,9 +2633,18 @@ export function DevCardBody({
     };
   }, [cardId, projectDir]);
 
+  const projectChipText =
+    projectDir !== null ? formatProjectChipText(projectDir) : null;
   const projectStatusContent = projectDir !== null ? (
-    <TugBadge size="sm" emphasis="tinted" role="agent" layout="label-top" label="Project">
-      {projectDir}
+    <TugBadge
+      size="sm"
+      emphasis="tinted"
+      role="agent"
+      layout="label-top"
+      label="Project"
+      title={projectChipText !== projectDir ? projectDir : undefined}
+    >
+      {projectChipText}
     </TugBadge>
   ) : null;
 
@@ -2784,20 +2836,29 @@ export function DevCardBody({
                       sessionMetadataStore={sessionMetadataStore}
                     />
                     {effectivePromptStatusContent}
-                    <DevSessionIdBadge cardId={cardId} />
-                    <PermissionModeChip
-                      cardId={cardId}
-                      sessionMetadataStore={sessionMetadataStore}
-                      onOpenSheet={permissionSheet.openPermissionSheet}
-                    />
-                    <ModelChip
-                      sessionMetadataStore={sessionMetadataStore}
-                      onOpenPicker={modelPicker.openModelPicker}
-                    />
-                    <EffortChip
-                      sessionMetadataStore={sessionMetadataStore}
-                      onOpenPicker={effortPicker.openEffortPicker}
-                    />
+                    <DevRouteShellGate>
+                      {(isShell) => (
+                        <>
+                          <DevSessionIdBadge cardId={cardId} disabled={isShell} />
+                          <PermissionModeChip
+                            cardId={cardId}
+                            sessionMetadataStore={sessionMetadataStore}
+                            onOpenSheet={permissionSheet.openPermissionSheet}
+                            disabled={isShell}
+                          />
+                          <ModelChip
+                            sessionMetadataStore={sessionMetadataStore}
+                            onOpenPicker={modelPicker.openModelPicker}
+                            disabled={isShell}
+                          />
+                          <EffortChip
+                            sessionMetadataStore={sessionMetadataStore}
+                            onOpenPicker={effortPicker.openEffortPicker}
+                            disabled={isShell}
+                          />
+                        </>
+                      )}
+                    </DevRouteShellGate>
                     {effectiveFooterContent}
                   </>
                 }

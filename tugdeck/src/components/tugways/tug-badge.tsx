@@ -21,6 +21,7 @@ import "./tug-badge.css";
 import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useCopyableText } from "./use-copyable-text";
+import { TugStableOverlay } from "./internal/tug-stable-overlay";
 
 // ---- Types ----
 
@@ -127,6 +128,28 @@ export interface TugBadgeProps extends Omit<React.ComponentPropsWithoutRef<"span
    * an `icon` is supplied.
    */
   iconGap?: number;
+  /**
+   * Disabled appearance. Dims the badge to the shared control
+   * disabled-opacity and makes it non-interactive (`pointer-events: none`,
+   * `aria-disabled`). Use when the badge's subject is inapplicable in the
+   * current context — e.g. a Code-session chip on the Shell route.
+   * @selector .tug-badge-disabled
+   * @default false
+   */
+  disabled?: boolean;
+  /**
+   * Width-stabilization. When the badge swaps its face in place (e.g. a
+   * route indicator toggling between two captions/values), pass the
+   * *other* face here so the badge reserves the wider of the two and its
+   * neighbors never reflow on the swap. The active face still grows past
+   * the reserved width if it must (no clipping). `alternateLabel` /
+   * `alternateContent` default to the live `label` / `children` when only
+   * one half differs. Composes the shared {@link TugStableOverlay}.
+   */
+  widthStabilize?: {
+    alternateLabel?: React.ReactNode;
+    alternateContent?: React.ReactNode;
+  };
 }
 
 // ---- TugBadge ----
@@ -141,6 +164,8 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     children,
     icon,
     iconGap,
+    disabled = false,
+    widthStabilize,
     className,
     style,
     ...rest
@@ -175,20 +200,44 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     // `.tug-badge-stack` column; single layout keeps the icon + children
     // inline. DOM order is stable (caption first); `content-top` reverses
     // only the visual order.
-    const inner = twoLine ? (
-      <span className="tug-badge-stack">
-        <span className="tug-badge-label">{label}</span>
-        <span className="tug-badge-content">
-          {icon && <span className="tug-badge-icon">{icon}</span>}
-          {children}
+    const buildFace = (
+      faceLabel: React.ReactNode,
+      faceContent: React.ReactNode,
+    ): React.ReactNode =>
+      twoLine ? (
+        <span className="tug-badge-stack">
+          <span className="tug-badge-label">{faceLabel}</span>
+          <span className="tug-badge-content">
+            {icon && <span className="tug-badge-icon">{icon}</span>}
+            {faceContent}
+          </span>
         </span>
-      </span>
-    ) : (
-      <>
-        {icon && <span className="tug-badge-icon">{icon}</span>}
-        {children}
-      </>
-    );
+      ) : (
+        <>
+          {icon && <span className="tug-badge-icon">{icon}</span>}
+          {faceContent}
+        </>
+      );
+
+    const activeFace = buildFace(label, children);
+    // Width-stabilize: overlay the active face over the alternate face in a
+    // single grid cell (shared `TugStableOverlay`), so the badge reserves the
+    // wider of the two and a face swap never reflows neighbors.
+    const inner =
+      widthStabilize === undefined ? (
+        activeFace
+      ) : (
+        <TugStableOverlay
+          data-slot="tug-badge-stable"
+          active={activeFace}
+          alternates={[
+            buildFace(
+              widthStabilize.alternateLabel ?? label,
+              widthStabilize.alternateContent ?? children,
+            ),
+          ]}
+        />
+      );
 
     return (
       <>
@@ -207,8 +256,10 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
             sizeClass,
             layoutClass,
             emphasisRoleClass,
+            disabled && "tug-badge-disabled",
             className,
           )}
+          aria-disabled={disabled || undefined}
           style={mergedStyle}
           onContextMenu={copyable.handleContextMenu}
           {...rest}

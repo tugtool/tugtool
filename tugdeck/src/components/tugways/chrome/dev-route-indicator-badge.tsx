@@ -40,11 +40,14 @@
  * at app load, so this is brief). No popover content — clicking does
  * nothing visible.
  *
- * **No width stabilization.** Z4B chips do not pin a footprint across
- * the route flip — the badge is as wide as its current face, so the
- * width may change when the route or the version changes. (This is a
- * deliberate Z4B policy; the chip's own two rows still size to the
- * wider of caption / value.)
+ * **Width stabilization.** The badge pins its footprint across the
+ * route flip so its neighbors (Project / Session / … chips) never
+ * shift when the user toggles Code ↔ Shell. This rides `TugBadge`'s
+ * `widthStabilize` feature: the badge is handed the *inactive* face
+ * (caption + value) and reserves the wider of the two faces. A face
+ * that grows past the reserved width (the Code route's `· N events`
+ * drift annotation) still fits — the active face is a real layout
+ * item, so the box grows to it rather than clipping.
  *
  * Laws:
  *  - [L02] external state enters through `useSyncExternalStore` — the
@@ -269,9 +272,13 @@ export function DevRouteIndicatorBadge({
   }
 
   // Two-line faces: an uppercase caption (CSS-transformed) over the
-  // value. Caption and value both swap with the route.
+  // value. Caption and value both swap with the route. The *inactive*
+  // face is handed to `TugBadge`'s `widthStabilize` so the chip reserves
+  // the wider of the two and a route flip never reflows its neighbors.
   const caption = isShell ? "Shell" : "Claude Code";
   const content = isShell ? shellFace : codeContent;
+  const inactiveCaption = isShell ? "Claude Code" : "Shell";
+  const inactiveContent = isShell ? codeContent : shellFace;
 
   // One-shape render: `TugPopover` always wraps the `TugBadge` ([L26],
   // Risk R03) so the badge's mount survives a route flip. The
@@ -291,6 +298,10 @@ export function DevRouteIndicatorBadge({
           className={cls}
           data-route={isShell ? "shell" : "code"}
           data-slot="dev-route-indicator-badge"
+          widthStabilize={{
+            alternateLabel: inactiveCaption,
+            alternateContent: inactiveContent,
+          }}
         >
           {content}
         </TugBadge>

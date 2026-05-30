@@ -59,6 +59,9 @@ export interface EffortChipProps {
    * sheet.
    */
   onOpenPicker: () => void;
+  /** Dim + disable the chip (e.g. on the Shell route, where reasoning effort
+   *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
+  disabled?: boolean;
 }
 
 /**
@@ -69,6 +72,7 @@ export interface EffortChipProps {
 export function EffortChip({
   sessionMetadataStore,
   onOpenPicker,
+  disabled,
 }: EffortChipProps): React.ReactElement {
   const snapshot = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -107,6 +111,7 @@ export function EffortChip({
       data-slot="effort-chip"
       aria-label="Reasoning effort"
       title={title}
+      disabled={disabled}
       onClick={onOpenPicker}
     >
       <span className="effort-chip-value">

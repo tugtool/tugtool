@@ -187,6 +187,15 @@ body {
   cursor: default;
 }
 
+/* Disabled: dim to the shared control disabled-opacity and drop interaction.
+   Matches the treatment TugButton and the other controls use for disabled
+   ([L06]). The badge is display-only, so this is opacity + pointer-events;
+   `aria-disabled` is set by the component. */
+.tug-badge-disabled {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+  pointer-events: none;
+}
+
 /* ============================================================================
    Icon Support
    ========================================================================= */

@@ -1568,74 +1568,12 @@ body {
 }
 
 /* ============================================================================
-   Stable-label grid ([L06] width-stabilize)
+   Width-stabilize ([L06])
    ========================================================================= */
 
 /*
- * Width-stabilizing label wrapper. Renders both the active and
- * alternate labels inside a single grid cell so the cell sizes to
- * max-content of both and the button's intrinsic width is stable
- * across toggles. The active label paints; the alternate is hidden
- * via `visibility: hidden` but contributes to layout sizing.
- *
- * Why not `position: absolute` for the alternate: absolute positioning
- * removes the element from layout flow, so the cell would size to the
- * active label only — defeating the entire mechanism. The grid
- * approach keeps both labels in flow at the same grid-area, which is
- * the smallest CSS primitive that says "stack these and size to the
- * max."
- *
- * Why `:hover` selector still works: the active and alternate spans
- * are inside the button (descendants of `<button>`). `:hover` on the
- * button matches regardless of which descendant's bounding box the
- * pointer is over.
+ * The label / icon-text-cluster width stabilizer now lives in the shared
+ * `TugStableOverlay` primitive (`internal/tug-stable-overlay.{tsx,css}`),
+ * which TugButton composes from `wrapLabel` / the icon-text cluster branch.
+ * Nothing button-specific remains here.
  */
-.tug-button-stable-label {
-  display: inline-grid;
-  grid-template-areas: "label";
-  align-items: center;
-  justify-items: center;
-}
-
-.tug-button-stable-label > [data-tug-stable-label="active"],
-.tug-button-stable-label > [data-tug-stable-label="alternate"] {
-  grid-area: label;
-  min-width: 0;
-  /* Inherit text wrapping behavior from the button. */
-  white-space: inherit;
-}
-
-.tug-button-stable-label > [data-tug-stable-label="alternate"] {
-  visibility: hidden;
-  pointer-events: none;
-}
-
-/*
- * Width-stabilized `icon-text` cluster. `wrapLabel` stabilizes a lone
- * label; this stabilizes the *whole* icon + label cluster. Both label
- * states render as full clusters overlaid in one grid cell: the cell
- * sizes to the wider cluster, the active one paints and the alternate
- * stays `visibility: hidden` but holds the width. `justify-items:
- * center` centers the active cluster in that cell — so the icon stays
- * tight against its text (no gap) and the slack reserved for the
- * wider alternate label falls evenly on both sides instead of jamming
- * the cluster against the leading edge.
- *
- * The cluster cells keep the `.tug-button-icon-text` class so the
- * icon-size rules and the icon↔label gap still apply.
- */
-.tug-button-stable-cluster {
-  display: inline-grid;
-  grid-template-areas: "cluster";
-  align-items: center;
-  justify-items: center;
-}
-
-.tug-button-stable-cluster > [data-tug-stable-label] {
-  grid-area: cluster;
-}
-
-.tug-button-stable-cluster > [data-tug-stable-label="alternate"] {
-  visibility: hidden;
-  pointer-events: none;
-}

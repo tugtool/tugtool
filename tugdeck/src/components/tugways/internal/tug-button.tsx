@@ -19,6 +19,7 @@ import type { TugAction } from "../action-vocabulary";
 import { useTugBoxDisabled } from "./tug-box-context";
 import { useControlDispatch } from "../use-control-dispatch";
 import { ResponderParentContext } from "../responder-chain";
+import { TugStableOverlay } from "./tug-stable-overlay";
 
 // ---- No-op constants for useSyncExternalStore when chain is inactive ----
 // Module-level stable references prevent React from seeing new function
@@ -284,13 +285,13 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
    * intrinsic width becomes the max-content of both labels and is
    * stable across toggles.
    *
-   * Implementation: CSS Grid with both labels in the same cell
-   * (`grid-template-areas: "label"`). The inactive child carries
+   * Implementation: the shared {@link TugStableOverlay} primitive — both
+   * labels overlaid in one grid cell. The inactive child carries
    * `aria-hidden="true"` so screen readers don't announce a ghost
    * label. Per [L06] the visibility swap is appearance — driven by
    * CSS, never React state.
    *
-   * @selector .tug-button-stable-label
+   * @selector [data-slot="tug-button-stable-label"]
    */
   widthStabilize?: { alternateLabel: React.ReactNode };
 
@@ -774,21 +775,15 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
 
   function wrapLabel(labelNode: React.ReactNode): React.ReactNode {
     if (widthStabilize === undefined) return labelNode;
-    // CSS Grid with both labels in the same cell. The active label
-    // paints; the alternate keeps `visibility: hidden` but participates
-    // in layout so the cell sizes to max-content of both. Width is
-    // therefore stable across toggles between the two labels — see
-    // `.tug-button-stable-label` in tug-button.css.
+    // Overlay the active + alternate label in one grid cell so the cell
+    // sizes to max-content of both and the button width is stable across
+    // the swap. Shared with TugBadge via `TugStableOverlay`.
     return (
-      <span
-        className="tug-button-stable-label"
+      <TugStableOverlay
         data-slot="tug-button-stable-label"
-      >
-        <span data-tug-stable-label="active">{labelNode}</span>
-        <span data-tug-stable-label="alternate" aria-hidden="true">
-          {widthStabilize.alternateLabel}
-        </span>
-      </span>
+        active={labelNode}
+        alternates={[widthStabilize.alternateLabel]}
+      />
     );
   }
 
@@ -827,27 +822,19 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
         // which would leave the cluster jammed to the leading edge.
         if (widthStabilize !== undefined) {
           return (
-            <span
-              className="tug-button-stable-cluster"
+            <TugStableOverlay
               data-slot="tug-button-stable-label"
-            >
-              <span
-                className="tug-button-icon-text"
-                data-tug-stable-label="active"
-              >
-                {renderIconTextCluster(iconNode, labelNode)}
-              </span>
-              <span
-                className="tug-button-icon-text"
-                data-tug-stable-label="alternate"
-                aria-hidden="true"
-              >
-                {renderIconTextCluster(
-                  iconNode,
-                  widthStabilize.alternateLabel,
-                )}
-              </span>
-            </span>
+              active={
+                <span className="tug-button-icon-text">
+                  {renderIconTextCluster(iconNode, labelNode)}
+                </span>
+              }
+              alternates={[
+                <span className="tug-button-icon-text">
+                  {renderIconTextCluster(iconNode, widthStabilize.alternateLabel)}
+                </span>,
+              ]}
+            />
           );
         }
         return (

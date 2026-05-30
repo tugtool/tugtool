@@ -25,6 +25,9 @@ import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 export interface DevSessionIdBadgeProps {
   /** The card whose binding's session id to display. */
   cardId: string;
+  /** Dim + disable the chip (e.g. on the Shell route, where the Code
+   *  session id is inapplicable). Forwarded to {@link TugBadge}. */
+  disabled?: boolean;
 }
 
 /** First N chars of the session id — long enough to disambiguate
@@ -33,6 +36,7 @@ const TRUNCATE_LENGTH = 8;
 
 export function DevSessionIdBadge({
   cardId,
+  disabled,
 }: DevSessionIdBadgeProps): React.ReactElement | null {
   const tugSessionId = React.useSyncExternalStore(
     cardSessionBindingStore.subscribe,
@@ -52,6 +56,7 @@ export function DevSessionIdBadge({
       layout="label-top"
       label="Session"
       title={tugSessionId}
+      disabled={disabled}
     >
       {tugSessionId.slice(0, TRUNCATE_LENGTH)}
     </TugBadge>

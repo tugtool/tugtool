@@ -71,6 +71,9 @@ export interface ModelChipProps {
    * command routes to, so the chip and the command present one sheet.
    */
   onOpenPicker: () => void;
+  /** Dim + disable the chip (e.g. on the Shell route, where model selection
+   *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
+  disabled?: boolean;
 }
 
 /**
@@ -82,6 +85,7 @@ export interface ModelChipProps {
 export function ModelChip({
   sessionMetadataStore,
   onOpenPicker,
+  disabled,
 }: ModelChipProps): React.ReactElement {
   const snapshot = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -129,6 +133,7 @@ export function ModelChip({
       data-unknown={unknown ? "" : undefined}
       aria-label="Model"
       title={title}
+      disabled={disabled}
       onClick={onOpenPicker}
     >
       {/* Width-stabilized value: the shown label plus a hidden sizer per known

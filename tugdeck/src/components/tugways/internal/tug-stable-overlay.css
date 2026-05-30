@@ -1,0 +1,34 @@
+/* @tug-pairings: none — layout only. TugStableOverlay reserves footprint;
+   the variants it wraps own their own colour and chrome. */
+
+/*
+ * tug-stable-overlay.css — the shared width/height-stabilizing overlay.
+ * Both variants live in one grid cell (`grid-area: stable`), so the cell
+ * sizes to the widest/tallest. The active variant paints; alternates stay
+ * `visibility: hidden` yet hold their footprint. See `tug-stable-overlay.tsx`
+ * for why grid (not absolute positioning) is required.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance via CSS.
+ *  - [L19] file pair; root carries the consumer's `data-slot`.
+ *  - [L20] owns only its layout box; wrapped variants keep their tokens.
+ */
+
+.tug-stable-overlay {
+  display: inline-grid;
+  grid-template-areas: "stable";
+  align-items: center;
+  justify-items: center;
+}
+
+.tug-stable-overlay > .tug-stable-overlay-variant {
+  grid-area: stable;
+  min-width: 0;
+  /* Inherit text-wrap behavior from the consumer (button/badge). */
+  white-space: inherit;
+}
+
+.tug-stable-overlay > [data-tug-stable="alternate"] {
+  visibility: hidden;
+  pointer-events: none;
+}

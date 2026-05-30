@@ -68,6 +68,9 @@ export interface PermissionModeChipProps {
    * slash command routes to, so the chip and the command present one sheet.
    */
   onOpenSheet: () => void;
+  /** Dim + disable the chip (e.g. on the Shell route, where permission mode
+   *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
+  disabled?: boolean;
 }
 
 /**
@@ -80,6 +83,7 @@ export function PermissionModeChip({
   cardId,
   sessionMetadataStore,
   onOpenSheet,
+  disabled,
 }: PermissionModeChipProps): React.ReactElement {
   const liveMode = useSyncExternalStore(
     sessionMetadataStore.subscribe,
@@ -118,6 +122,7 @@ export function PermissionModeChip({
           ? undefined
           : `Permission mode: ${formatPermissionMode(mode)}`
       }
+      disabled={disabled}
       onClick={onOpenSheet}
     >
       {/* Width-stabilized value: the shown label plus a hidden sizer per menu
