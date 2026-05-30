@@ -51,17 +51,10 @@ async function readAll(paths: readonly string[]): Promise<string> {
 async function gatherSamples(): Promise<Sample[]> {
   const projectClaudeMd = await readFile(path.join(REPO_ROOT, "CLAUDE.md"));
 
-  const agentPaths = [
-    "tugplug/agents/architect-agent.md",
-    "tugplug/agents/coder-agent.md",
-    "tugplug/agents/critic-agent.md",
-    "tugplug/agents/committer-agent.md",
-  ].map((p) => path.join(REPO_ROOT, p));
-  const agentsConcatenated = await readAll(agentPaths);
-
   const skillPaths = [
-    "tugplug/skills/plan/SKILL.md",
-    "tugplug/skills/merge/SKILL.md",
+    "tugplug/skills/recipe/SKILL.md",
+    "tugplug/skills/bake/SKILL.md",
+    "tugplug/skills/dash/SKILL.md",
   ].map((p) => path.join(REPO_ROOT, p));
   const skillsConcatenated = await readAll(skillPaths);
 
@@ -94,12 +87,7 @@ async function gatherSamples(): Promise<Sample[]> {
       text: projectClaudeMd,
     },
     {
-      label: "Four tugplug agent definitions",
-      category: "custom_agents",
-      text: agentsConcatenated,
-    },
-    {
-      label: "Two tugplug skill manifests",
+      label: "tugplug skill manifests (recipe, bake, dash)",
       category: "skills",
       text: skillsConcatenated,
     },

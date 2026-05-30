@@ -115,14 +115,6 @@ pub enum TugError {
     #[error("E025: Skills not found in share directory: {path}")]
     SkillsNotFound { path: String },
 
-    /// E026: Required agents missing for command
-    #[error("E026: Missing required agents for 'tug {command}': {}", missing.join(", "))]
-    RequiredAgentsMissing {
-        command: String,
-        missing: Vec<String>,
-        searched: Vec<String>,
-    },
-
     // === Interaction errors (E027) ===
     /// E027: Interaction failed (non-TTY, timeout, etc.)
     #[error("E027: Interaction failed: {reason}")]
@@ -262,7 +254,6 @@ impl TugError {
             TugError::PlanValidationWarnings { .. } => "E023",
             TugError::UserAborted => "E024",
             TugError::SkillsNotFound { .. } => "E025",
-            TugError::RequiredAgentsMissing { .. } => "E026",
             TugError::InteractionFailed { .. } => "E027",
             TugError::WorktreeAlreadyExists => "E028",
             TugError::GitVersionInsufficient => "E029",
@@ -338,8 +329,6 @@ impl TugError {
             TugError::UserAborted => 5, // User aborted planning loop
 
             TugError::SkillsNotFound { .. } => 7, // Skills not found
-
-            TugError::RequiredAgentsMissing { .. } => 8, // Required agents missing
 
             TugError::InteractionFailed { .. } => 1, // Interaction errors
 
@@ -451,23 +440,6 @@ mod tests {
         assert_eq!(err.exit_code(), 4);
         assert!(err.to_string().contains("drift detected"));
         assert!(err.to_string().contains("Monitor halted"));
-    }
-
-    #[test]
-    fn test_required_agents_missing_error() {
-        let err = TugError::RequiredAgentsMissing {
-            command: "plan".to_string(),
-            missing: vec!["clarifier-agent".to_string(), "critic-agent".to_string()],
-            searched: vec![
-                "./agents/".to_string(),
-                "/opt/homebrew/share/tug/agents/".to_string(),
-            ],
-        };
-        assert_eq!(err.code(), "E026");
-        assert_eq!(err.exit_code(), 8);
-        assert!(err.to_string().contains("tug plan"));
-        assert!(err.to_string().contains("clarifier-agent"));
-        assert!(err.to_string().contains("critic-agent"));
     }
 
     #[test]
