@@ -2772,7 +2772,18 @@ export function DevCardBody({
                     side="start"
                     disabled={maximized}
                   />
-                  <div className="dev-card-status-bar-main">
+                  <div
+                    className="dev-card-status-bar-main"
+                    // Z2 status content is chrome: clicking a status cell, its
+                    // popover trigger, or an empty gap must not pull focus off
+                    // the editor. Ancestor-matched `data-tug-focus="refuse"`
+                    // covers the cells + gaps; the leading sash grip and
+                    // trailing maximize button (siblings) own their own focus
+                    // behavior. Keeping first-responder on the editor also
+                    // lets a status popover restore editor focus on Escape /
+                    // Cmd-. via the service-popup binding.
+                    data-tug-focus="refuse"
+                  >
                     {effectiveStatusBarContent}
                   </div>
                   {/*

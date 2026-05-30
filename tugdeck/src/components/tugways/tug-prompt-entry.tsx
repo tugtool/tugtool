@@ -1523,7 +1523,17 @@ export const TugPromptEntry = React.forwardRef<
               preserveState={false}
             />
           </div>
-          <div className="tug-prompt-entry-toolbar">
+          <div
+            className="tug-prompt-entry-toolbar"
+            // The toolbar is chrome: clicking anywhere in it — a badge, the
+            // route toggle, the spacers, the empty gaps — must not steal
+            // first-responder or DOM focus from the editor. `data-tug-focus`
+            // is ancestor-matched (`closest`), so marking the row refuses
+            // focus for every descendant that doesn't already (the TugBadge
+            // chips and the empty spacers); TugButton children already refuse
+            // on their own. [L11 / responder-chain-provider focus-refusal]
+            data-tug-focus="refuse"
+          >
             {/* Z4A — leading-fixed slot; currently the route choice-group. */}
             <TugChoiceGroup
               items={[...ROUTE_ITEMS]}
