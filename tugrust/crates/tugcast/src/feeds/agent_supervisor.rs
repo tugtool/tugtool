@@ -1671,6 +1671,58 @@ impl AgentSupervisor {
         }
     }
 
+    /// Build a `SESSION_METADATA` replay frame from the persisted ledger
+    /// row, for a bind whose in-memory `latest_metadata` slot is empty.
+    ///
+    /// claude is silent in stream-json mode until the first user message,
+    /// so a resumed / known session would otherwise show no live model /
+    /// version / mode until the user types. The sqlite `session_metadata`
+    /// table holds the last-known merged payload (keyed by claude's
+    /// session id), so we surface it the moment the card binds; the next
+    /// live `system/init` replaces it wholesale on the first turn.
+    ///
+    /// Tries `claude_session_id` first (the metadata PK), then the tug
+    /// session id (equal for un-forked sessions, where the binding's
+    /// claude id may not yet be populated in memory). Returns `None` when
+    /// there is no sqlite ledger handle or no persisted row (a genuinely
+    /// brand-new session), so a fresh flow fires no replay — matching the
+    /// `latest_metadata: None` behavior it falls back from. Payload is
+    /// rewrapped as `FeedId::SESSION_METADATA` (the wire byte the client's
+    /// `register_stream(FeedId::SESSION_METADATA, …)` subscription keys on,
+    /// same as the live merger publish).
+    fn persisted_metadata_replay_frame(
+        &self,
+        claude_session_id: Option<&str>,
+        tug_session_id: &str,
+    ) -> Option<Frame> {
+        let ledger = self.session_ledger.as_ref()?;
+        // Try claude id first (the metadata PK), then the tug id — but only
+        // the tug id when it differs (un-forked sessions share one id).
+        let mut candidates: Vec<&str> = Vec::with_capacity(2);
+        if let Some(id) = claude_session_id {
+            candidates.push(id);
+        }
+        if !candidates.contains(&tug_session_id) {
+            candidates.push(tug_session_id);
+        }
+        for candidate in candidates {
+            match ledger.get_session_metadata(candidate) {
+                Ok(Some(row)) => {
+                    return Some(Frame::new(FeedId::SESSION_METADATA, row.payload));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        session_id = candidate,
+                        "get_session_metadata failed during bind replay (ignored)"
+                    );
+                }
+            }
+        }
+        None
+    }
+
     async fn do_spawn_session(
         &self,
         card_id: &str,
@@ -1942,7 +1994,22 @@ impl AgentSupervisor {
             // gates on `spawn_state` instead of nullity. Same-card
             // reconnects overwrite with the same value (no-op).
             entry.card_id = Some(card_id.to_owned());
-            entry.latest_metadata.clone()
+            // Prefer the in-memory slot (freshest — captured this process);
+            // fall back to the persisted ledger row so a resumed/known
+            // session surfaces its last-known model / version / mode the
+            // moment the card binds, before any turn. claude is silent in
+            // stream-json mode until the first user message, so without this
+            // a fresh-process resume shows nothing live until the user types.
+            // Keyed by claude's session id (the metadata PK); falls back to
+            // the tug id for un-forked sessions where the two are equal.
+            match entry.latest_metadata.clone() {
+                Some(frame) => Some(frame),
+                None => self
+                    .persisted_metadata_replay_frame(
+                        entry.claude_session_id.as_deref(),
+                        tug_session_id.as_str(),
+                    ),
+            }
         };
         // Live-elsewhere visibility for cross-card pickers is driven by
         // the ledger row the bridge writes on `session_init` (with
@@ -4189,6 +4256,145 @@ mod tests {
             meta_rx.try_recv().is_err(),
             "no replay should fire for a brand-new session"
         );
+    }
+
+    // ---- bind-time persisted-metadata replay (Step 2a.1) ----
+    //
+    // claude is silent in stream-json mode until the first user message,
+    // so a resumed / known session must surface its last-known metadata
+    // from the persisted sqlite row on bind. These pin
+    // `persisted_metadata_replay_frame`'s three branches against a real
+    // in-memory `SessionLedger`: persisted row replays when the in-memory
+    // slot is empty; brand-new (no row, no slot) replays nothing; the
+    // in-memory slot wins over the persisted row when both exist.
+
+    /// A supervisor wired with a real in-memory `SessionLedger` (the
+    /// sqlite read/write handle), a stall spawner (eager spawn installs
+    /// plumbing but never produces claude output), and the metadata
+    /// broadcast receiver. Mirrors `make_supervisor_with_store` but
+    /// threads `Some(ledger)` so `persisted_metadata_replay_frame` can
+    /// read the persisted row.
+    fn make_supervisor_with_real_ledger() -> (
+        AgentSupervisor,
+        broadcast::Receiver<Frame>,
+        Arc<crate::session_ledger::SessionLedger>,
+    ) {
+        let (state_tx, _state_rx) = broadcast::channel(512);
+        let (meta_tx, meta_rx) = broadcast::channel(32);
+        let (code_tx, _code_rx) = broadcast::channel(32);
+        let (control_tx, _control_rx) = broadcast::channel(512);
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let cancel = CancellationToken::new();
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let recorder: Arc<dyn SessionsRecorder> =
+            Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
+        let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            state_tx,
+            meta_tx,
+            code_tx,
+            control_tx,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel,
+        );
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+        (sup, meta_rx, ledger)
+    }
+
+    /// A persisted `system_metadata` payload carrying model / version /
+    /// mode — the shape the bridge merges and writes per turn.
+    fn persisted_metadata_payload(model: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "type": "system_metadata",
+            "model": model,
+            "version": "2.1.157",
+            "permissionMode": "acceptEdits",
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_replays_persisted_metadata_when_slot_empty() {
+        let (sup, mut meta_rx, ledger) = make_supervisor_with_real_ledger();
+
+        // Persist a row keyed by the (un-forked) session id, then bind a
+        // ledger entry whose in-memory slot is empty — the fresh-process
+        // resume case.
+        let payload = persisted_metadata_payload("claude-opus-4-8[1m]");
+        ledger
+            .record_session_metadata("sess-1", &payload, 1_000)
+            .unwrap();
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        assert!(
+            entry.lock().await.latest_metadata.is_none(),
+            "precondition: in-memory slot is empty",
+        );
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let received = meta_rx.try_recv().expect("persisted replay frame present");
+        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
+        assert_eq!(
+            received.payload, payload,
+            "replay frame carries the persisted row payload verbatim",
+        );
+        assert!(
+            meta_rx.try_recv().is_err(),
+            "only a single replay frame is emitted",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_no_persisted_row_fires_no_replay() {
+        let (sup, mut meta_rx, _ledger) = make_supervisor_with_real_ledger();
+
+        // Ledger handle present but no persisted row and no in-memory slot
+        // (a genuinely brand-new session) → no replay.
+        insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        assert!(
+            meta_rx.try_recv().is_err(),
+            "no replay for a session with no persisted row and no in-memory slot",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_in_memory_slot_wins_over_persisted() {
+        let (sup, mut meta_rx, ledger) = make_supervisor_with_real_ledger();
+
+        // Both a persisted row AND an in-memory slot exist; the freshest
+        // (in-memory) wins, and the persisted row is not consulted.
+        let persisted = persisted_metadata_payload("claude-opus-4-6");
+        ledger
+            .record_session_metadata("sess-1", &persisted, 1_000)
+            .unwrap();
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        let in_memory = fake_metadata_frame("sess-1");
+        entry.lock().await.latest_metadata = Some(in_memory.clone());
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let received = meta_rx.try_recv().expect("replay frame present");
+        assert_eq!(
+            received, in_memory,
+            "in-memory slot wins over the persisted row",
+        );
+        assert_ne!(
+            received.payload, persisted,
+            "persisted row is not consulted when the slot is populated",
+        );
+        assert!(meta_rx.try_recv().is_err(), "single replay frame");
     }
 
     // ---- handle_control: close_session ----

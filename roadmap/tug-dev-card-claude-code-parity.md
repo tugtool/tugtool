@@ -1124,6 +1124,81 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 - Does not provoke a fake turn to force `system/init` (rejected above).
 - Does not change the [#step-2] chip's honest-`?` behavior except to add higher-priority sources ahead of it; `?` remains the final fallback.
 
+**Sub-step breakdown (implementation order).** Step 2a bundles three independent changes across three build systems; each lands and tests on its own and is committed separately:
+- **[#step-2a-1]** tugcast ledger-replay-on-bind (Rust) — self-contained, no dependency on the others; fixes the resumed-card case (all chips populate from the persisted row pre-turn).
+- **[#step-2a-2]** tugcode `initialize` handshake + `session_capabilities` IPC (TS, recompile) — defines the new IPC frame.
+- **[#step-2a-3]** tugdeck consume `session_capabilities` + model-chip resolution order (HMR) — depends on 2a-2's IPC shape; adds the new-session `"Default (recommended)"` label.
+
+---
+
+#### Step 2a.1: tugcast — replay persisted ledger metadata on bind {#step-2a-1}
+
+**Depends on:** #step-2
+
+**Commit:** `feat(tugcast): replay persisted session metadata on bind`
+
+**References:** [D04] SessionMetadataStore hub, [D14] per-session metadata broadcast, [L02], (#z4b-chrome-layout). Self-contained slice of [#step-2a].
+
+**Problem.** On bind, `do_spawn_session` replays only the in-memory `LedgerEntry.latest_metadata` slot (`agent_supervisor.rs:1937-1958`), which is `None` for a session whose `system/init` wasn't captured in *this* tugcast process (fresh process, or a card bound before its first turn). The accurate persisted row (`persistent_ledger.get_session_metadata`, keyed by claude session id) is never replayed — so a resumed card shows nothing live for model/version/mode until the first turn.
+
+**Findings (verified in source).** `AgentSupervisor.persistent_ledger: Arc<SessionLedger>` is the sqlite handle; `get_session_metadata(claude_session_id) -> Option<SessionMetadataRow>` returns the merged `system_metadata` JSON bytes. `LedgerEntry` holds both `tug_session_id` and `claude_session_id: Option<String>` (the latter set on `session_init`; equal to the tug id for un-forked sessions). The live publish path rewraps as `Frame::new(FeedId::SESSION_METADATA, payload)` (merger `agent_supervisor.rs:3206-3217`); the replay must use the same wrapping so a client subscribed to `SESSION_METADATA` decodes it.
+
+**Tasks:**
+- [x] In `do_spawn_session`'s Phase-3 block, when `entry.latest_metadata` is `None`, fall back to `session_ledger.get_session_metadata(id)` — trying `claude_session_id` first, then `tug_session_id` (covers un-forked resume where the two are equal, deduped when identical) — and build a `Frame::new(FeedId::SESSION_METADATA, row.payload)` to replay. In-memory slot still wins when present (it's the freshest). New private helper `persisted_metadata_replay_frame`; the supervisor's sqlite handle is `session_ledger: Option<Arc<SessionLedger>>` (returns `None`/no replay when absent).
+- [x] Keep it a no-op for a brand-new session (no in-memory slot, no persisted row → no replay frame), matching `test_spawn_session_with_no_prior_metadata_fires_no_replay`.
+
+**Tests:**
+- [x] Rust unit (3 new, against a real in-memory `SessionLedger`): bind with empty in-memory slot + a persisted ledger row → exactly one `SESSION_METADATA` frame carrying the persisted payload verbatim; ledger present but no row + no slot → none; in-memory slot present → that wins (persisted not consulted). New helper `make_supervisor_with_real_ledger`.
+
+**Checkpoint:**
+- [x] `cd tugrust && cargo nextest run -p tugcast` — 760 passed / 1 skipped (warnings-as-errors clean).
+- [ ] `just build-app`; verify a resumed card's model/version/mode chips populate before any turn (deferred to the build/checkpoint pass after 2a.3, so the app is rebuilt once with all three sub-steps).
+
+---
+
+#### Step 2a.2: tugcode — `initialize` handshake + `session_capabilities` IPC {#step-2a-2}
+
+**Depends on:** #step-2a-1
+
+**Commit:** `feat(tugcode): initialize handshake + session_capabilities IPC`
+
+**References:** [Q13]/[R04] strict shapes, [D06] protocol baseline, (#inputs-outputs). Slice of [#step-2a]; empirical findings in [#step-2a].
+
+**Tasks:**
+- [ ] Send the `initialize` control_request to claude at spawn (`{type:"control_request", request_id, request:{subtype:"initialize"}}` via `sendControlRequest`); do **not** block the first user turn on it.
+- [ ] Intercept the matching `control_response` in the stdout drain (correlate by `request_id`); parse `response.response` strict-typed into a new `SessionCapabilities` outbound IPC carrying `models`, `commands`, `agents`, `available_output_styles`, `output_style`, `account`. Drop unknown fields.
+- [ ] Add `SessionCapabilities` to `types.ts` (`OutboundMessage` union) + the tugcast/tugdeck `protocol.ts` reader.
+
+**Tests:**
+- [ ] tugcode unit: `initialize` request emitted at spawn; a fed `control_response` parses into `session_capabilities` with `models` + `commands` present, current-model-id absent (documents the limitation).
+- [ ] Drift regression / `just capture-capabilities` after the IPC change.
+
+**Checkpoint:**
+- [ ] `cd tugcode && bun test` + recompile (`target/debug/tugcode`)
+- [ ] `cd tugrust && cargo nextest run -p tugcast` (payload_inspector tolerates the new frame)
+
+---
+
+#### Step 2a.3: tugdeck — consume `session_capabilities` + model-chip resolution order {#step-2a-3}
+
+**Depends on:** #step-2a-2
+
+**Commit:** `feat(dev-card): consume session_capabilities; model-chip resolution order`
+
+**References:** [D04], [D13], [L02], Risk R01, (#z4b-chrome-layout). Slice of [#step-2a].
+
+**Tasks:**
+- [ ] Parse the `session_capabilities` IPC into a store (extend `SessionMetadataStore` or a sibling); surface `models` (for [#step-2b]) + `commands`.
+- [ ] Apply the model-chip resolution order: live `system_metadata.model` → ledger-replayed row → per-card spawn `--model` (if set) → `initialize` default-model label (`models[0].displayName`, "Default (recommended)") → honest `?` caution. New no-`--model` session reads the default label, not `?`.
+
+**Tests:**
+- [ ] Pure-logic: capabilities parser (`models`/`commands` shape, strict drop); model-chip resolution-order predicate.
+- [ ] Real-app: resumed card → chips populate pre-turn (from 2a.1 replay); new card → model chip reads `Default (recommended)`; both sharpen to live `system/init` on first turn.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test`; `tsc --noEmit` clean
+- [ ] `just build-app`; verify resumed-card chips pre-turn + new-card default label
+
 ---
 
 #### Step 2b: `/model` slash command opens picker sheet {#step-2b}
