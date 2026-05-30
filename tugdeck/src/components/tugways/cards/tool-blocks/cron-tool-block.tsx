@@ -82,7 +82,7 @@ import {
   ToolBlockFieldRow,
   ToolBlockPre,
 } from "./body-bits";
-import { StreamingPlaceholder, ToolBlockChrome } from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -209,6 +209,7 @@ export const CronToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const cronInput = React.useMemo(() => narrowCronInput(input), [input]);
@@ -229,7 +230,7 @@ export const CronToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     body = renderCronBody({ verb, input: cronInput, textOutput });
   }
@@ -251,9 +252,9 @@ export const CronToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="cron-tool-block"
       toolName={composedToolName}
-      toolIcon={<Clock size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

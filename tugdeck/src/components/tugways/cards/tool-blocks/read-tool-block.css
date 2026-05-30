@@ -1,28 +1,15 @@
 /**
  * read-tool-block.css — `ReadToolBlock`.
  *
- * Structural overlay only. The wrapper composes `ToolBlockChrome`
- * for its frame, `FileBlock` for its body, `MiddleEllipsisPath` for
- * the header path, and `TugBadge` for the line-range metadata badge.
- * This file holds only the args-row flex layout and the
- * "Showing N of M lines" footer label.
+ * The wrapper composes `ToolBlockChrome` (frame + the shared
+ * `ToolCallHeader`) and `FileBlock` for its body. The old args-row +
+ * footer rules (`.read-tool-block-{args,showing}`) are gone: the path
+ * chip is the header's `identity`, and the line-range + "Showing N of M
+ * lines" badges render trailing in the header's `meta` cluster ([Q02])
+ * via `TugBadge`. No read-specific header CSS remains; the file is kept
+ * as the wrapper's import target ([L19] file pair).
  *
  * Tuglaw cross-check:
- *  - [L19] file pair, `data-slot="read-tool-block"` (delegated to
- *    chrome via `rootSlot`).
- *  - [L20] no new `--tugx-*` slot; the line-range is a real
- *    `TugBadge` instance, not a bespoke chip class.
+ *  - [L19] file pair, `data-slot="read-tool-block"` (delegated via `rootSlot`).
+ *  - [L20] no `--tugx-*` slot introduced.
  */
-
-.read-tool-block-args {
-  display: flex;
-  align-items: baseline;
-  gap: var(--tugx-toolblock-header-gap);
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.read-tool-block-showing {
-  font-variant-numeric: tabular-nums;
-}

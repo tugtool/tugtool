@@ -1,0 +1,200 @@
+/* @tug-pairings:
+   - --tugx-block-strip-bg / --tugx-block-strip-border / --tugx-block-strip-font  (shared chrome strip surface; from tugx-block.css)
+   - --tugx-block-text-color / --tugx-block-text-color-muted                       (shared chrome text tones)
+   - --tugx-block-code-font                                                        (shared mono family for command/identity)
+   The header is a single sticky strip carrying the lifecycle dot, the
+   per-tool icon, the tool name, the single-row identity, the trailing
+   meta cluster + actions, and an optional full-width wrapping command
+   row beneath. The `data-phase` attribute is informational; the dot
+   itself owns the lifecycle color via the indicator's tokens.
+*/
+
+/**
+ * tool-call-header.css — the one tool-call header ([D01] of
+ * roadmap/tool-call-header.md).
+ *
+ * Token sources:
+ *  - Shared strip surface (bg, border, fonts, text tones) comes from
+ *    `--tugx-block-*` so the header frames identically to the chrome it
+ *    sits in. Consumed directly below.
+ *  - Header-specific slots (name typography, icon color, command row
+ *    geometry, meta gap) are `--tugx-toolheader-*`, declared in the
+ *    body{} block.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] appearance via attributes / the dot's own DOM, never React state.
+ *  - [L17] `--tugx-toolheader-*` resolves to `--tug*` in one hop.
+ *  - [L19] file pair, docstring, `data-slot="tool-call-header"`.
+ *  - [L20] owns the `--tugx-toolheader-*` family; never reaches into the
+ *    dot's or a body kind's tokens.
+ */
+
+/* ---- Component-tier aliases — toolheader-specific only [L17] ---- */
+
+body {
+  /* Tool name — the one typographic treatment for every tool's name. */
+  --tugx-toolheader-name-size: var(--tug-font-size-sm);
+  --tugx-toolheader-name-weight: 600;
+
+  /* Identity + command share the mono family; the command row drops one
+   * size step so a long command reads level with the sans name rather
+   * than looming over it. */
+  --tugx-toolheader-identity-size: var(--tug-font-size-xs);
+  --tugx-toolheader-command-size: var(--tug-font-size-xs);
+
+  /* Leading-glyph column — the dot (identity row) and the icon (detail
+   * row) share this exact box width so the tool name and the detail text
+   * align on one left margin. Matches the dot's `size` prop (DOT_SIZE)
+   * and the icon's TOOL_ICON_SIZE — keep all three in lockstep. */
+  --tugx-toolheader-glyph-size: 14px;
+
+  /* Gap after the leading glyph (dot / icon) on each row — the same on
+   * both rows so the name and the detail align. Also the gap within the
+   * trailing meta cluster. */
+  --tugx-toolheader-row-gap: var(--tug-space-sm);
+  --tugx-toolheader-meta-gap: var(--tug-space-sm);
+  --tugx-toolheader-actions-gap: var(--tug-space-2xs);
+
+  /* Detail-text line-height — the icon box matches one line of it so the
+   * icon centers against the FIRST line of a multi-line command. */
+  --tugx-toolheader-detail-line: 1.5;
+
+  /* Vertical gap between the identity row and the detail row. */
+  --tugx-toolheader-row-stack-gap: var(--tug-space-2xs);
+}
+
+/* ---- Root strip ---- */
+
+/* Sticky header — stays visible while the wrapper's body scrolls, and
+ * telescopes under an outer pin context via `--tugx-pin-stack-top`
+ * (written by an enclosing entry header). Mirrors the treatment the
+ * retired `.tool-block-chrome-header` carried. */
+.tool-call-header {
+  position: sticky;
+  top: var(--tugx-pin-stack-top, 0);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-toolheader-row-stack-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: var(--tugx-block-strip-bg);
+  border-bottom: 1px solid var(--tugx-block-strip-border);
+  font-family: var(--tugx-block-strip-font);
+  color: var(--tugx-block-text-color);
+}
+
+/* ---- Identity row ---- */
+
+/* Identity row — `[dot] Name … [meta] [actions]`. The dot sits in the
+ * shared leading-glyph column; the name follows after the row gap. */
+.tool-call-header-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-toolheader-row-gap);
+  /* Reserve a full glyph line so the dot's row height matches the
+   * detail row's first line. */
+  min-height: var(--tugx-toolheader-glyph-size);
+}
+
+/* Leading-glyph column, shared by the dot and the detail-row icon so the
+ * name and the detail text align on one left margin. Fixed box; the glyph
+ * centers inside it. */
+.tool-call-header-dot,
+.tool-call-header-icon {
+  flex: 0 0 var(--tugx-toolheader-glyph-size);
+  width: var(--tugx-toolheader-glyph-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-call-header-icon {
+  /* Match one line of detail text so the icon centers against the FIRST
+   * line of a wrapping command. */
+  height: calc(
+    var(--tugx-toolheader-command-size) * var(--tugx-toolheader-detail-line)
+  );
+  color: var(--tugx-block-text-color-muted);
+}
+
+.tool-call-header-name {
+  flex: 0 0 auto;
+  font-size: var(--tugx-toolheader-name-size);
+  font-weight: var(--tugx-toolheader-name-weight);
+  color: var(--tugx-block-text-color);
+}
+
+/* ---- Trailing meta cluster (counts / diff-stats / truncated) ---- */
+
+.tool-call-header-meta {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  /* Push the cluster to the trailing edge regardless of whether the
+   * identity-content (flex: 1 1 auto) is present. */
+  margin-left: auto;
+  gap: var(--tugx-toolheader-meta-gap);
+}
+
+/* ---- Actions slot (trailing edge) ---- */
+
+/* Body-kind affordances portal here; the chrome's copy/fold cluster
+ * renders here for body-bits wrappers. Layout-only — children own their
+ * appearance ([L20]). `margin-left: auto` guarantees trailing placement
+ * even when no meta cluster precedes it. */
+.tool-call-header-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+  gap: var(--tugx-toolheader-actions-gap);
+}
+
+/* When the meta cluster IS present it already owns the auto-margin; the
+ * actions slot then sits immediately after it rather than grabbing a
+ * second auto-gap. */
+.tool-call-header-meta + .tool-call-header-actions {
+  margin-left: 0;
+}
+
+/* ---- Detail row — `[icon] <command | chip>` ---- */
+
+/* The per-tool identifier on its own row beneath the identity row: the
+ * full command/pattern (command-shaped tools) or the path chip (file
+ * tools). The icon leads in the shared glyph column so the detail text
+ * aligns under the tool name. `flex-start` so the icon sits against the
+ * FIRST line of a multi-line command rather than floating at its
+ * vertical center. */
+.tool-call-header-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tugx-toolheader-row-gap);
+}
+
+/* The detail content. For a command it wraps across as many lines as it
+ * needs — NO `text-overflow`, NO horizontal scroll, NO hover-expand
+ * ([D05]). For a path chip it simply holds the (intrinsically sized)
+ * chip; the chip centers on the line without the old `translateY` nudge
+ * ([D04]). */
+.tool-call-header-detail-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--tugx-block-text-color-muted);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-toolheader-command-size);
+  line-height: var(--tugx-toolheader-detail-line);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.tool-call-header-detail-content code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+}

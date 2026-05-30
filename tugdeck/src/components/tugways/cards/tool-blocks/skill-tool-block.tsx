@@ -78,7 +78,7 @@ import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
 import { ToolBlockBody, ToolBlockFieldRow } from "./body-bits";
-import { StreamingPlaceholder, ToolBlockChrome } from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -192,6 +192,7 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const skillInput = React.useMemo(() => narrowSkillInput(input), [input]);
@@ -218,7 +219,7 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
   // the result label (only when picked as `label`).
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     const hasArgs =
       skillInput.args !== undefined && skillInput.args.length > 0;
@@ -277,9 +278,9 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="skill-tool-block"
       toolName={toolName}
-      toolIcon={<Sparkles size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

@@ -63,7 +63,7 @@ import {
   ToolBlockFieldRow,
   ToolBlockPre,
 } from "./body-bits";
-import { StreamingPlaceholder, ToolBlockChrome } from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -168,6 +168,7 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const sharedInput = React.useMemo(
@@ -199,7 +200,7 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     body = renderShareBody({ input: sharedInput, textOutput, shareLink });
   }
@@ -221,9 +222,9 @@ export const ShareOnboardingGuideToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="share-onboarding-guide-tool-block"
       toolName={composedToolName}
-      toolIcon={<BookOpen size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

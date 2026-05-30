@@ -68,21 +68,16 @@
 import "./bash-tool-block.css";
 
 import React from "react";
-import { Terminal } from "lucide-react";
 
 import {
   TerminalBlock,
   type TerminalData,
 } from "@/components/tugways/body-kinds/terminal-block";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
-import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { parseUnifiedDiffText } from "@/lib/diff/parse-unified-diff";
 import type { DiffHunk } from "@/lib/diff/types";
 
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -262,6 +257,7 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   isError = false,
   durationMs,
   status,
+  phase,
   caution,
 }) => {
   const bashInput = React.useMemo(() => narrowInput(input), [input]);
@@ -278,14 +274,11 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     [terminalData],
   );
 
-  const argsSummary = bashInput.command !== undefined ? (
-    // `truncated` gates the tooltip on actual clipping — the `<code>`
-    // is the ellipsizing element, so `TugTooltip`'s scrollWidth vs
-    // clientWidth check measures it directly. A command that fits
-    // gets no (redundant) tooltip.
-    <TugTooltip content={bashInput.command} side="bottom" truncated>
-      <code data-slot="bash-tool-block-command">{bashInput.command}</code>
-    </TugTooltip>
+  // The command renders in full on the header's wrapping command row
+  // ([D05]) — no truncation, no tooltip. The whole command is always
+  // visible, however long.
+  const command = bashInput.command !== undefined ? (
+    <code data-slot="bash-tool-block-command">{bashInput.command}</code>
   ) : undefined;
 
   const errorMessage =
@@ -352,7 +345,9 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     (structured.stderr !== undefined && structured.stderr.length > 0);
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    // No body while streaming — the header's lifecycle dot is the
+    // in-flight signal ([D02]).
+    body = null;
   } else if (status === "error" && !hasStructuredBody) {
     body = null;
   } else if (diffHunks !== null) {
@@ -379,9 +374,9 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="bash-tool-block"
       toolName={toolName}
-      toolIcon={<Terminal size={14} aria-hidden="true" />}
-      argsSummary={argsSummary}
+      command={command}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       footerBadges={footerBadges}

@@ -68,7 +68,6 @@
 import "./grep-tool-block.css";
 
 import React from "react";
-import { Search } from "lucide-react";
 
 import {
   PathListBlock,
@@ -82,12 +81,9 @@ import {
   type SearchResultMatch,
   type SearchResultSpan,
 } from "@/components/tugways/body-kinds/search-result-block";
-import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
+import { ToolHeaderCount, ToolHeaderTruncated } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -352,6 +348,7 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const grepInput = React.useMemo(() => narrowGrepInput(input), [input]);
@@ -368,50 +365,46 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
     () => composeGrepPathListData(structured),
     [structured],
   );
-  const matchCountLabel = React.useMemo(
-    () => composeGrepMatchCountLabel(structured),
-    [structured],
-  );
-  const fileCountLabel = React.useMemo(
-    () => composeGrepFileCountLabel(structured),
-    [structured],
-  );
+  // Raw counts for the shared meta primitives ([D06]). Same source
+  // precedence as the (now-retired-from-render) label helpers, which
+  // stay exported for their unit tests.
+  const matchCount =
+    structured.numMatches ??
+    (structured.files !== undefined
+      ? structured.files.reduce(
+          (sum, file) => sum + (file.matches?.length ?? 0),
+          0,
+        )
+      : undefined);
+  const fileCount =
+    structured.numFiles ??
+    structured.files?.length ??
+    structured.filenames?.length;
 
+  // Pattern in the wrapping command row; counts + truncated in the meta
+  // cluster via the shared primitives.
   const pattern = grepInput.pattern;
-  const argsSummary =
+  const command =
     pattern !== undefined ? (
-      <span className="grep-tool-block-args">
-        {/* `truncated` gates the tooltip on actual clipping — the
-         * `<code>` is the ellipsizing element, so `TugTooltip`'s
-         * scrollWidth-vs-clientWidth check measures it directly. */}
-        <TugTooltip content={pattern} side="bottom" truncated>
-          <code data-slot="grep-tool-block-pattern">{pattern}</code>
-        </TugTooltip>
-        {matchCountLabel !== undefined ? (
-          <span
-            data-slot="grep-tool-block-match-count"
-            className="grep-tool-block-count"
-          >
-            {matchCountLabel}
-          </span>
+      <code data-slot="grep-tool-block-pattern">{pattern}</code>
+    ) : undefined;
+  const meta =
+    matchCount !== undefined ||
+    fileCount !== undefined ||
+    structured.truncated === true ? (
+      <>
+        {matchCount !== undefined ? (
+          <ToolHeaderCount
+            count={matchCount}
+            noun="match"
+            pluralNoun="matches"
+          />
         ) : null}
-        {fileCountLabel !== undefined ? (
-          <span
-            data-slot="grep-tool-block-file-count"
-            className="grep-tool-block-count"
-          >
-            {fileCountLabel}
-          </span>
+        {fileCount !== undefined ? (
+          <ToolHeaderCount count={fileCount} noun="file" />
         ) : null}
-        {structured.truncated === true ? (
-          <span
-            data-slot="grep-tool-block-truncation"
-            className="grep-tool-block-truncation"
-          >
-            truncated
-          </span>
-        ) : null}
-      </span>
+        {structured.truncated === true ? <ToolHeaderTruncated /> : null}
+      </>
     ) : undefined;
 
   // Errored greps carry the failure message in `textOutput`; surface
@@ -428,7 +421,7 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
   // uses).
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (mode === "content" && searchData !== undefined) {
@@ -457,9 +450,10 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="grep-tool-block"
       toolName={toolName}
-      toolIcon={<Search size={14} aria-hidden="true" />}
-      argsSummary={argsSummary}
+      command={command}
+      meta={meta}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >

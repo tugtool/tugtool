@@ -86,6 +86,7 @@ import type {
   CostSnapshot,
   ToolUseMessage,
 } from "@/lib/code-session-store";
+import { deriveToolCallPhase } from "@/lib/code-session-store/tool-call-phase-visual";
 
 import { BashToolBlock } from "./tool-blocks/bash-tool-block";
 import { ReadToolBlock } from "./tool-blocks/read-tool-block";
@@ -896,6 +897,22 @@ function extractTextOutput(result: unknown): string | undefined {
 }
 
 /**
+ * Generic interruption signal for the header phase ([D03]). A tool's
+ * `structured_result` may carry an `interrupted: true` flag (bash
+ * surfaces it when a command is killed mid-run; other long-running
+ * tools may too). Returns `true` only for an explicit boolean `true`;
+ * any other shape — absent field, non-boolean, no structured result —
+ * is "not interrupted." Tools that never carry the flag simply read
+ * `false`, leaving the phase to fall out of `status` alone.
+ */
+function extractInterrupted(structuredResult: unknown): boolean {
+  if (structuredResult === null || typeof structuredResult !== "object") {
+    return false;
+  }
+  return (structuredResult as Record<string, unknown>).interrupted === true;
+}
+
+/**
  * Tool-call dispatch — looks up the tool name in the registry, with
  * alias resolution. A call that `detectToolCallDrift` flags (unknown
  * tool name, or a registered wrapper whose `structured_result` fails
@@ -929,6 +946,7 @@ export function dispatchToolCallState(
   depth = 0,
   childToolCallsByParent?: ChildToolCallsMap,
   session?: CodeSessionStore,
+  awaiting = false,
 ): DispatchResult {
   const lower = toolCall.toolName.toLowerCase();
   const canonical = TOOL_ALIASES.get(lower) ?? lower;
@@ -943,6 +961,20 @@ export function dispatchToolCallState(
         ? "error"
         : "ready";
 
+  // Header-indicator phase ([D03]). Richer than `status`: the leftmost
+  // pulsing-dot needs `in_flight | awaiting | success | error |
+  // interrupted`. `awaiting` (the permission/question hold) is the
+  // caller's to supply — the transcript view id-joins the live
+  // snapshot's `pendingApproval` / `pendingQuestion` `tool_use_id`
+  // against this call and passes the result here ([Q01], #step-6).
+  // `interrupted` comes from a generic structured-result flag (bash and
+  // any tool that carries it).
+  const phase = deriveToolCallPhase({
+    status: toolCall.status,
+    interrupted: extractInterrupted(toolCall.structuredResult),
+    awaiting,
+  });
+
   const baseProps = {
     toolUseId: toolCall.toolUseId,
     toolName: toolCall.toolName,
@@ -952,6 +984,7 @@ export function dispatchToolCallState(
     textOutput: extractTextOutput(toolCall.result),
     isError: toolCall.status === "error",
     status,
+    phase,
     depth,
     childToolCallsByParent,
     session,

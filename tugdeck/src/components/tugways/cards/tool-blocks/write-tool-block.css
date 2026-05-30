@@ -1,25 +1,15 @@
 /**
  * write-tool-block.css — `WriteToolBlock`.
  *
- * Structural overlay only. The wrapper composes `ToolBlockChrome` for
- * its frame, `FileBlock` for its body, `MiddleEllipsisPath` for the
- * header path, and `TugBadge` (tinted / action / 2xs) for the inline
- * size + new/overwrite metadata badges. This file holds only the
- * args-row flex layout — every visible chip rule lives in `TugBadge`'s
- * own CSS.
+ * The wrapper composes `ToolBlockChrome` (frame + the shared
+ * `ToolCallHeader`) and `FileBlock` for its body. The old args-row rule
+ * (`.write-tool-block-args`) is gone: the path chip is the header's
+ * `identity` and the size + new/overwrite badges render trailing in the
+ * header's `meta` cluster ([Q02]) via `TugBadge`. No write-specific
+ * header CSS remains; the file is kept as the wrapper's import target
+ * ([L19] file pair).
  *
  * Tuglaw cross-check:
- *  - [L19] file pair, `data-slot="write-tool-block"` (delegated to
- *    chrome via `rootSlot`).
- *  - [L20] no new `--tugx-*` slot; the metadata badges are real
- *    `TugBadge` instances, not bespoke chip CSS.
+ *  - [L19] file pair, `data-slot="write-tool-block"` (delegated via `rootSlot`).
+ *  - [L20] no `--tugx-*` slot introduced.
  */
-
-.write-tool-block-args {
-  display: flex;
-  align-items: baseline;
-  gap: var(--tugx-toolblock-header-gap);
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-}

@@ -71,7 +71,7 @@ import "./write-tool-block.css";
 import "@/lib/tug-atom-chip.css";
 
 import React from "react";
-import { AlignLeft, FilePlus, Replace, Sparkles } from "lucide-react";
+import { AlignLeft, Replace, Sparkles } from "lucide-react";
 
 import {
   FileBlock,
@@ -83,10 +83,7 @@ import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockPre } from "./body-bits";
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -187,6 +184,7 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const writeInput = React.useMemo(() => narrowWriteInput(input), [input]);
@@ -208,22 +206,27 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? writeInput.file_path;
-  const argsSummary =
+  // Identity: the path chip. Meta: size + new/overwrite badges, trailing
+  // in the header ([Q02]).
+  const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <span className="write-tool-block-args">
-        <TugAtomChip
-          type="file"
-          label={formatAtomLabel(filePath, "filename")}
-          value={filePath}
-          data-slot="write-tool-block-path"
-          className="tug-atom-chip"
-        />
+      <TugAtomChip
+        type="file"
+        label={formatAtomLabel(filePath, "filename")}
+        value={filePath}
+        data-slot="write-tool-block-path"
+        className="tug-atom-chip"
+      />
+    ) : undefined;
+  const meta =
+    sizeLabel !== undefined || createdLabel !== undefined ? (
+      <>
         {sizeLabel !== undefined ? (
           <TugBadge
             data-slot="write-tool-block-size"
             emphasis="ghost"
             role="action"
-            size="md"
+            size="2xs"
             icon={<AlignLeft size={12} aria-hidden="true" />}
           >
             {sizeLabel}
@@ -234,7 +237,7 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
             data-slot="write-tool-block-created"
             emphasis="ghost"
             role="action"
-            size="md"
+            size="2xs"
             icon={
               structured.created === true ? (
                 <Sparkles size={12} aria-hidden="true" />
@@ -246,7 +249,7 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
             {createdLabel}
           </TugBadge>
         ) : null}
-      </span>
+      </>
     ) : undefined;
 
   const errorMessage =
@@ -256,7 +259,7 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (fileData !== undefined) {
@@ -276,9 +279,10 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="write-tool-block"
       toolName={toolName}
-      toolIcon={<FilePlus size={14} aria-hidden="true" />}
-      argsSummary={argsSummary}
+      identity={identity}
+      meta={meta}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >

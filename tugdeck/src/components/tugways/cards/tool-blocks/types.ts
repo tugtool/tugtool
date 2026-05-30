@@ -21,6 +21,7 @@ import type React from "react";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
 import type { CodeSessionStore, ToolUseMessage } from "@/lib/code-session-store";
+import type { ToolCallPhase } from "@/lib/code-session-store/tool-call-phase-visual";
 
 // ---------------------------------------------------------------------------
 // Caution flag — drift detection per drift-fallback decision.
@@ -144,6 +145,19 @@ export interface ToolBlockProps<TInput = unknown, TStructured = unknown> {
   durationMs?: number;
   /** Lifecycle state per the streaming → ready → error progression. */
   status: ToolBlockStatus;
+  /**
+   * Header-indicator lifecycle phase — the richer reading the leftmost
+   * `pulsing-dot` paints. Distinct from `status`: `status` drives body
+   * composition (streaming placeholder vs body vs error band) and stays
+   * `streaming | ready | error`; `phase` splits those into the dot's
+   * five lifecycle poses (`in_flight | awaiting | success | error |
+   * interrupted`, plus a quiescent `idle`). Derived by
+   * `deriveToolCallPhase` in the dispatch from the store status plus the
+   * awaiting-dialog join ([Q01]) and the interruption signal ([D03]).
+   * Optional so standalone / gallery mounts that don't compute it fall
+   * back to a status-derived default at the chrome.
+   */
+  phase?: ToolCallPhase;
   /** Drift caution; rendered as an inline chip on the wrapper chrome. */
   caution?: CautionFlag;
   /**

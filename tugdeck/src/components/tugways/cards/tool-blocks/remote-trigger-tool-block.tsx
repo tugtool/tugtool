@@ -67,7 +67,7 @@ import {
   ToolBlockFieldRow,
   ToolBlockPre,
 } from "./body-bits";
-import { StreamingPlaceholder, ToolBlockChrome } from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -188,6 +188,7 @@ export const RemoteTriggerToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const triggerInput = React.useMemo(
@@ -210,7 +211,7 @@ export const RemoteTriggerToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     body = renderRemoteTriggerBody({ input: triggerInput, textOutput });
   }
@@ -230,9 +231,9 @@ export const RemoteTriggerToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="remote-trigger-tool-block"
       toolName={composedToolName}
-      toolIcon={<Zap size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

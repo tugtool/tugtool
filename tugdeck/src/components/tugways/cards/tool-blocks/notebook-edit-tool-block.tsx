@@ -76,7 +76,6 @@ import {
   Code,
   FileText,
   Hash,
-  Notebook,
   Plus,
   Replace,
   Trash2,
@@ -90,10 +89,7 @@ import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
 import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -205,6 +201,7 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const editInput = React.useMemo(
@@ -225,22 +222,27 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
   const newSource = structured.newSource ?? editInput.new_source;
   const oldSource = structured.oldSource;
 
-  const argsSummary =
+  // Identity: the notebook path chip. Meta: cell id + edit-mode +
+  // cell-type badges, trailing in the header ([Q02]).
+  const identity =
     notebookPath !== undefined && notebookPath.length > 0 ? (
-      <span className="notebook-edit-tool-block-args">
-        <TugAtomChip
-          type="file"
-          label={formatAtomLabel(notebookPath, "filename")}
-          value={notebookPath}
-          data-slot="notebook-edit-tool-block-path"
-          className="tug-atom-chip"
-        />
+      <TugAtomChip
+        type="file"
+        label={formatAtomLabel(notebookPath, "filename")}
+        value={notebookPath}
+        data-slot="notebook-edit-tool-block-path"
+        className="tug-atom-chip"
+      />
+    ) : undefined;
+  const meta =
+    notebookPath !== undefined && notebookPath.length > 0 ? (
+      <>
         {cellId !== undefined ? (
           <TugBadge
             data-slot="notebook-edit-tool-block-cell"
             emphasis="ghost"
             role="action"
-            size="md"
+            size="2xs"
             icon={<Hash size={12} aria-hidden="true" />}
           >
             {cellId}
@@ -250,7 +252,7 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
           data-slot="notebook-edit-tool-block-edit-mode"
           emphasis="ghost"
           role="action"
-          size="md"
+          size="2xs"
           icon={
             editMode === "insert" ? (
               <Plus size={12} aria-hidden="true" />
@@ -268,7 +270,7 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
             data-slot="notebook-edit-tool-block-cell-type"
             emphasis="ghost"
             role="action"
-            size="md"
+            size="2xs"
             icon={
               cellType === "code" ? (
                 <Code size={12} aria-hidden="true" />
@@ -280,7 +282,7 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
             {cellType}
           </TugBadge>
         ) : null}
-      </span>
+      </>
     ) : undefined;
 
   const errorMessage =
@@ -290,7 +292,7 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (editMode === "delete") {
@@ -357,9 +359,10 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="notebook-edit-tool-block"
       toolName={toolName}
-      toolIcon={<Notebook size={14} aria-hidden="true" />}
-      argsSummary={argsSummary}
+      identity={identity}
+      meta={meta}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >

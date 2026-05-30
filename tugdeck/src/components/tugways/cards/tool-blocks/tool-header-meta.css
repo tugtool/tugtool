@@ -1,0 +1,43 @@
+/* @tug-pairings:
+   - --tugx-block-tone-add-color / --tugx-block-tone-remove-color  (shared diff add/remove tones; from tugx-block.css)
+   The diff-stat is the one header meta primitive that paints its own
+   color (two-toned +N −M); ToolHeaderCount and ToolHeaderTruncated ride
+   TugBadge's tokens and declare nothing here.
+*/
+
+/**
+ * tool-header-meta.css — tones for the bespoke diff-stat ([D06]).
+ *
+ * Tuglaw cross-check:
+ *  - [L17] `--tugx-toolheader-diffstat-*` resolves to `--tugx-block-tone-*`
+ *    in one hop.
+ *  - [L19] file pair, `data-slot="tool-header-diffstat"`.
+ *  - [L20] owns the `--tugx-toolheader-diffstat-*` slot family.
+ */
+
+body {
+  --tugx-toolheader-diffstat-gap: var(--tug-space-2xs);
+  --tugx-toolheader-diffstat-size: var(--tug-font-size-2xs);
+  --tugx-toolheader-diffstat-weight: 600;
+  --tugx-toolheader-diffstat-add: var(--tugx-block-tone-add-color);
+  --tugx-toolheader-diffstat-remove: var(--tugx-block-tone-remove-color);
+}
+
+.tool-header-diffstat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--tugx-toolheader-diffstat-gap);
+  font-family: var(--tugx-block-code-font);
+  font-size: var(--tugx-toolheader-diffstat-size);
+  font-weight: var(--tugx-toolheader-diffstat-weight);
+  /* A diff stat reads as a single unit; keep its two spans on one line. */
+  white-space: nowrap;
+}
+
+.tool-header-diffstat-add {
+  color: var(--tugx-toolheader-diffstat-add);
+}
+
+.tool-header-diffstat-remove {
+  color: var(--tugx-toolheader-diffstat-remove);
+}

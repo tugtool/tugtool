@@ -54,18 +54,14 @@
 import "./glob-tool-block.css";
 
 import React from "react";
-import { Search } from "lucide-react";
 
 import {
   PathListBlock,
   type PathListData,
 } from "@/components/tugways/body-kinds/path-list-block";
-import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
+import { ToolHeaderCount, ToolHeaderTruncated } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -167,6 +163,7 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const globInput = React.useMemo(() => narrowGlobInput(input), [input]);
@@ -178,38 +175,23 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
     () => composeGlobPathListData(structured),
     [structured],
   );
-  const countLabel = React.useMemo(
-    () => composeGlobCountLabel(structured),
-    [structured],
-  );
+  const fileCount = structured.numFiles ?? structured.filenames?.length;
 
+  // Pattern in the wrapping command row; count + truncated in the
+  // trailing meta cluster via the shared primitives ([D06]).
   const pattern = globInput.pattern;
-  const argsSummary =
+  const command =
     pattern !== undefined ? (
-      <span className="glob-tool-block-args">
-        {/* `truncated` gates the tooltip on actual clipping — the
-         * `<code>` is the ellipsizing element, so `TugTooltip`'s
-         * scrollWidth-vs-clientWidth check measures it directly. */}
-        <TugTooltip content={pattern} side="bottom" truncated>
-          <code data-slot="glob-tool-block-pattern">{pattern}</code>
-        </TugTooltip>
-        {countLabel !== undefined ? (
-          <span
-            data-slot="glob-tool-block-count"
-            className="glob-tool-block-count"
-          >
-            {countLabel}
-          </span>
+      <code data-slot="glob-tool-block-pattern">{pattern}</code>
+    ) : undefined;
+  const meta =
+    fileCount !== undefined || structured.truncated === true ? (
+      <>
+        {fileCount !== undefined ? (
+          <ToolHeaderCount count={fileCount} noun="file" />
         ) : null}
-        {structured.truncated === true ? (
-          <span
-            data-slot="glob-tool-block-truncation"
-            className="glob-tool-block-truncation"
-          >
-            truncated
-          </span>
-        ) : null}
-      </span>
+        {structured.truncated === true ? <ToolHeaderTruncated /> : null}
+      </>
     ) : undefined;
 
   // Errored globs carry the failure message in `textOutput`; surface
@@ -224,7 +206,7 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
   // when the structured result supplied a path list.
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (pathListData !== undefined) {
@@ -244,9 +226,10 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="glob-tool-block"
       toolName={toolName}
-      toolIcon={<Search size={14} aria-hidden="true" />}
-      argsSummary={argsSummary}
+      command={command}
+      meta={meta}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >

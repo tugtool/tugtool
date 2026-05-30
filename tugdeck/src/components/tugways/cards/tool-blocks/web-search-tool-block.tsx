@@ -82,10 +82,7 @@ import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
 import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -247,6 +244,7 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const searchInput = React.useMemo(
@@ -295,7 +293,7 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (hasResults || hasRawText || allowedDomains !== undefined || blockedDomains !== undefined) {
@@ -370,9 +368,9 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="web-search-tool-block"
       toolName={toolName}
-      toolIcon={<Search size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

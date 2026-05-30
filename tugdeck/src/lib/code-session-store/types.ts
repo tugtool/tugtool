@@ -380,6 +380,18 @@ export interface ControlRequestForward {
   request_id: string;
   is_question: boolean;
   tool_name?: string;
+  /**
+   * The `tool_use_id` of the tool call this dialog is blocked on. The
+   * `control_request_forward` wire event already carries it (confirmed
+   * across the catalog from v2.1.104 onward — tugcode copies it from
+   * the SDK's `can_use_tool` request for BOTH permission and question
+   * forwards), and `extractForward` keeps it on the stored record. The
+   * tool-call header id-joins this against a `ToolUseMessage.toolUseId`
+   * to paint that row's lifecycle dot `awaiting` ([Q01] of
+   * roadmap/tool-call-header.md). Typed here (previously reachable only
+   * via the index signature).
+   */
+  tool_use_id?: string;
   input?: unknown;
   question?: string;
   options?: ReadonlyArray<unknown>;

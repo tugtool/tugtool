@@ -61,7 +61,6 @@
 import "./task-tool-block.css";
 
 import React from "react";
-import { Bot } from "lucide-react";
 
 import {
   AgentTranscriptBlock,
@@ -71,10 +70,7 @@ import {
 
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -247,6 +243,7 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
   depth = 0,
   childToolCallsByParent,
@@ -304,7 +301,7 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   // AgentTranscriptBlock when the structured result composed one.
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (transcriptData !== undefined) {
@@ -326,9 +323,9 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="task-tool-block"
       toolName={toolName}
-      toolIcon={<Bot size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >

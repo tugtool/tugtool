@@ -633,6 +633,13 @@ interface CodeRowBodyProps {
   turnKey: string;
   streamingStore: PropertyStore;
   session: CodeSessionStore;
+  /**
+   * `tool_use_id` of the call a permission/question dialog is currently
+   * blocked on, or `undefined` when nothing is awaiting. The matching
+   * tool row paints its lifecycle dot `awaiting` ([Q01], #step-6).
+   * Live only — a committed turn never has a pending dialog.
+   */
+  awaitingToolUseId?: string;
 }
 
 const CodeRowBody: React.FC<CodeRowBodyProps> = ({
@@ -640,6 +647,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   turnKey,
   streamingStore,
   session,
+  awaitingToolUseId,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
   // `parentToolUseId` ([#step-17-5]). Subagent children render
@@ -698,11 +706,15 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     // tool_use — render top-level calls only; subagent children are
     // resolved inside their parent's wrapper.
     if (message.parentToolUseId !== undefined) continue;
+    const awaiting =
+      awaitingToolUseId !== undefined &&
+      message.toolUseId === awaitingToolUseId;
     const { Component, props } = dispatchToolCallState(
       message,
       0,
       childrenByParent,
       session,
+      awaiting,
     );
     elements.push(<Component key={message.messageKey} {...props} />);
   }
@@ -898,6 +910,15 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
                 turnKey={turnKey}
                 streamingStore={streamingStore}
                 session={codeSessionStore}
+                awaitingToolUseId={
+                  // Id-join the live pending dialog to its tool row so
+                  // that row's lifecycle dot reads `awaiting` ([Q01]).
+                  // Permission and question forwards both carry
+                  // `tool_use_id`; whichever is live wins.
+                  pendingApproval?.tool_use_id ??
+                  pendingQuestion?.tool_use_id ??
+                  undefined
+                }
               />
               {permissionSlot}
               {questionSlot}

@@ -97,8 +97,7 @@ import "./tool-block-chrome.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
-import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
-import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import type { ToolCallPhase } from "@/lib/code-session-store/tool-call-phase-visual";
 import {
   BlockActionsCluster,
   BlockCopyButton,
@@ -106,7 +105,28 @@ import {
   useBlockFoldState,
 } from "@/components/tugways/body-kinds/affordances";
 
+import { ToolCallHeader } from "./tool-call-header";
 import type { CautionFlag, ToolBlockStatus } from "./types";
+
+/**
+ * Map the chrome's body-composition `status` onto a header-dot
+ * {@link ToolCallPhase} when the wrapper hasn't passed a richer
+ * `phase`. `streaming → in_flight`, `ready → success`, `error →
+ * error`. The `awaiting` and `interrupted` readings can't be derived
+ * from `status` alone — a wrapper (or the dispatch, #step-6) supplies
+ * those via the explicit `phase` prop, which always wins.
+ */
+function statusToPhase(status: ToolBlockStatus): ToolCallPhase {
+  switch (status) {
+    case "streaming":
+      return "in_flight";
+    case "error":
+      return "error";
+    case "ready":
+    default:
+      return "success";
+  }
+}
 
 /**
  * Context exposing the chrome's actions-slot DOM node to descendants.
@@ -208,8 +228,39 @@ export interface ToolBlockChromeProps {
    * mono-styling; the chrome treats it opaquely.
    */
   argsSummary?: React.ReactNode;
+  /**
+   * Single-row identity content for the header (a path atom-chip, a
+   * short label). When omitted, the chrome falls back to `argsSummary`
+   * for back-compat — wrappers migrate to passing `identity` + `command`
+   * + `meta` explicitly (#step-7 onward). Sits on the identity row and
+   * ellipsizes there.
+   */
+  identity?: React.ReactNode;
+  /**
+   * Command-shaped args rendered in full on their own wrapping row,
+   * never truncated ([D05]). For bash commands, grep patterns, cron
+   * expressions. Omit for chip-identity tools.
+   */
+  command?: React.ReactNode;
+  /**
+   * Trailing metadata cluster — counts / diff-stats / truncated via the
+   * shared [D06] primitives ([Q02]: header, not footer).
+   */
+  meta?: React.ReactNode;
+  /**
+   * Whether to show the per-tool icon ([D07]). Defaults to `true`.
+   */
+  showIcon?: boolean;
   /** Lifecycle state per Spec S03's `ToolBlockStatus`. */
   status?: ToolBlockStatus;
+  /**
+   * Header-dot lifecycle phase ([D03]). When omitted, the chrome
+   * derives it from `status` via `statusToPhase` — so the dot lights up
+   * on every block without a wrapper change. A wrapper (or the dispatch,
+   * #step-6) passes the richer phase to express `awaiting` /
+   * `interrupted`, which `status` alone can't.
+   */
+  phase?: ToolCallPhase;
   /** Drift caution surfaced as an inline badge in the header. */
   caution?: CautionFlag;
   /**
@@ -268,37 +319,6 @@ export interface ToolBlockChromeProps {
 }
 
 /**
- * Streaming placeholder — a small inline element wrappers can drop
- * into `children` when `status === "streaming"` and no body content
- * is ready yet. It's a stand-alone export so consumers can also use
- * it inside the body region of a partial-input render (e.g.
- * `BashToolBlock` shows it while the command field is still
- * arriving).
- *
- * Renders a single {@link TugProgressIndicator} ring in
- * indeterminate mode — the project-standard "work in flight"
- * indicator. Every in-flight tool block speaks the same visual
- * vocabulary.
- */
-export const StreamingPlaceholder: React.FC = () => (
-  <div
-    data-slot="tool-block-streaming-placeholder"
-    className="tool-block-streaming-placeholder"
-  >
-    {/* `role="inherit"` so the ring picks up the wrapper's muted
-     * text color instead of the theme's accent (orange in brio).
-     * The placeholder is a "we're waiting" cue, not a foreground
-     * accent — same vocabulary as the surrounding prose tone. */}
-    <TugProgressIndicator
-      variant="ring"
-      size={16}
-      role="inherit"
-      aria-label="In progress"
-    />
-  </div>
-);
-
-/**
  * Resolve the chrome's fold state in a way that satisfies the
  * Rules-of-Hooks even when the wrapper didn't pass a `fold` prop —
  * by always calling `useBlockFoldState` with safe defaults derived
@@ -321,7 +341,12 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
   toolName,
   toolIcon,
   argsSummary,
+  identity,
+  command,
+  meta,
+  showIcon = true,
   status = "ready",
+  phase,
   caution,
   footerBadges,
   errorMessage,
@@ -407,44 +432,32 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
       data-caution={caution?.reason ?? undefined}
       className={cn("tool-block-chrome", className)}
     >
-      <div
+      {/* The header is now the shared `ToolCallHeader` ([D01]). The
+       * chrome owns the frame/body/footer and the actions-slot context
+       * + sticky-height observer; the header owns the dot + identity row
+       * presentation. Back-compat: a wrapper that still passes the
+       * opaque `argsSummary` gets it routed to the header's single-row
+       * `identity` slot; migrated wrappers pass `identity` / `command` /
+       * `meta` explicitly (#step-7 onward).
+       *
+       * The `copyText` / `fold` opt-in cluster (for body-bits wrappers)
+       * is handed to the header as its `actions` content; embedded body
+       * kinds portal into the same slot via `actionsSlotRef` →
+       * `ChromeActionsTargetContext`. The two paths stay mutually
+       * exclusive by the existing wrapper contract. */}
+      <ToolCallHeader
         ref={headerRef}
-        className="tool-block-chrome-header"
-        data-slot="tool-block-header"
-      >
-        {toolIcon !== undefined ? (
-          <span className="tool-block-chrome-icon" aria-hidden="true">
-            {toolIcon}
-          </span>
-        ) : null}
-        <span className="tool-block-chrome-name">{toolName}</span>
-        {argsSummary !== undefined ? (
-          <span className="tool-block-chrome-args">{argsSummary}</span>
-        ) : null}
-        {caution !== undefined ? (
-          <DevCautionBadge caution={caution} />
-        ) : null}
-        {/* Actions slot — see module docstring. A composed body kind
-         * portals its resting affordances here when `embedded={true}`.
-         * The slot is always rendered (even when empty) so the slot
-         * node is in the DOM from the chrome's first paint, the
-         * context value is non-null on first descendant render, and
-         * the body kind's portal call can target it without a
-         * re-render dance. Layout: `flex: 0 0 auto`; args ellipsizes
-         * to make room as affordances accumulate.
-         *
-         * When the wrapper opts into the chrome's own `copyText` /
-         * `fold` props (body-bits wrappers — see those props' docs),
-         * we render the matching `BlockCopyButton` / `BlockFoldCue`
-         * directly here. The opt-in contract guarantees this and the
-         * embedded-portal path are mutually exclusive — a wrapper
-         * uses one or the other, never both. */}
-        <div
-          ref={setActionsTarget}
-          className="tool-block-chrome-actions"
-          data-slot="tool-block-actions"
-        >
-          {copyText !== undefined || fold !== undefined ? (
+        phase={phase ?? statusToPhase(status)}
+        toolName={toolName}
+        icon={toolIcon}
+        showIcon={showIcon}
+        identity={identity ?? argsSummary}
+        command={command}
+        meta={meta}
+        caution={caution}
+        actionsSlotRef={setActionsTarget}
+        actions={
+          copyText !== undefined || fold !== undefined ? (
             <BlockActionsCluster data-slot="tool-block-chrome-actions-cluster">
               {copyText !== undefined ? (
                 <BlockCopyButton
@@ -465,9 +478,9 @@ export const ToolBlockChrome: React.FC<ToolBlockChromeProps> = ({
                 />
               ) : null}
             </BlockActionsCluster>
-          ) : null}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
       <div
         className="tool-block-chrome-body"
         data-slot="tool-block-body"

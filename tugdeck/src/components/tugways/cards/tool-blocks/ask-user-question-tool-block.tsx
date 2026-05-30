@@ -357,6 +357,7 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
   session,
 }) => {
@@ -543,9 +544,9 @@ export const AskUserQuestionToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="ask-user-question-tool-block"
       toolName={toolName}
-      toolIcon={<MessageCircleQuestion size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={chromeStatus}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >

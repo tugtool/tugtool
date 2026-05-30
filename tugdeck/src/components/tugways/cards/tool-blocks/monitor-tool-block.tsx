@@ -79,7 +79,7 @@ import {
   ToolBlockFieldRow,
   ToolBlockPre,
 } from "./body-bits";
-import { StreamingPlaceholder, ToolBlockChrome } from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -219,6 +219,7 @@ export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const monitorInput = React.useMemo(() => narrowMonitorInput(input), [input]);
@@ -244,7 +245,7 @@ export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
   // stack: until row (if present) + output (if present).
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     const hasUntil =
       monitorInput.until !== undefined && monitorInput.until.length > 0;
@@ -301,9 +302,9 @@ export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="monitor-tool-block"
       toolName={toolName}
-      toolIcon={<Radar size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

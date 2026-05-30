@@ -103,6 +103,7 @@ import { GalleryDevChrome } from "./gallery-dev-chrome";
 import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
+import { GalleryToolCallHeader } from "./gallery-tool-call-header";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -1088,6 +1089,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-tug-progress-indicator",
     contentFactory: (_cardId) => <GalleryTugProgressIndicator />,
     defaultMeta: { title: "TugProgressIndicator", icon: "Activity", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-tool-call-header",
+    contentFactory: (_cardId) => <GalleryToolCallHeader />,
+    defaultMeta: { title: "ToolCallHeader", icon: "Wrench", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

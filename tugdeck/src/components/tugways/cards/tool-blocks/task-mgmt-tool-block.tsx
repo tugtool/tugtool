@@ -99,7 +99,7 @@ import {
   ToolBlockFieldRow,
   ToolBlockPre,
 } from "./body-bits";
-import { StreamingPlaceholder, ToolBlockChrome } from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -287,6 +287,7 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const mgmtInput = React.useMemo(
@@ -315,7 +316,7 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     body = renderTaskMgmtBody({ verb, input: mgmtInput, textOutput, tail });
   }
@@ -344,9 +345,9 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="task-mgmt-tool-block"
       toolName={composedToolName}
-      toolIcon={<ListTodo size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

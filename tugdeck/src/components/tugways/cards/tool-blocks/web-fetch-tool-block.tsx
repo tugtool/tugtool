@@ -84,10 +84,7 @@ import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 
 import { MiddleEllipsisPath } from "./middle-ellipsis-path";
 import { ToolBlockBody, ToolBlockFieldRow, ToolBlockPre } from "./body-bits";
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -156,6 +153,7 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const fetchInput = React.useMemo(() => narrowWebFetchInput(input), [input]);
@@ -195,7 +193,7 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
 
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (hasPrompt || hasMarkdown) {
@@ -248,9 +246,9 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="web-fetch-tool-block"
       toolName={toolName}
-      toolIcon={<Globe size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

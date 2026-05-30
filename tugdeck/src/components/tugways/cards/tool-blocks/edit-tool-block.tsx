@@ -81,7 +81,6 @@ import "./edit-tool-block.css";
 import "@/lib/tug-atom-chip.css";
 
 import React from "react";
-import { FilePenLine } from "lucide-react";
 
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import {
@@ -93,10 +92,8 @@ import {
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
+import { ToolHeaderDiffStat } from "./tool-header-meta";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -336,6 +333,7 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const editInput = React.useMemo(() => narrowEditInput(input), [input]);
@@ -353,31 +351,25 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? editInput.file_path;
-  const argsSummary =
+  // Identity: the path chip. Meta: the `+N −M` change summary via the
+  // shared diff-stat primitive ([D06]) — the bespoke two-span markup is
+  // gone.
+  const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <span className="edit-tool-block-args">
-        <TugAtomChip
-          type="file"
-          label={formatAtomLabel(filePath, "filename")}
-          value={filePath}
-          data-slot="edit-tool-block-path"
-          className="tug-atom-chip"
-        />
-        {changeCounts !== undefined ? (
-          <span
-            data-slot="edit-tool-block-stats"
-            className="edit-tool-block-stats"
-            aria-label={`${changeCounts.added} added, ${changeCounts.removed} removed`}
-          >
-            <span className="edit-tool-block-stats-add">
-              +{changeCounts.added}
-            </span>
-            <span className="edit-tool-block-stats-remove">
-              −{changeCounts.removed}
-            </span>
-          </span>
-        ) : null}
-      </span>
+      <TugAtomChip
+        type="file"
+        label={formatAtomLabel(filePath, "filename")}
+        value={filePath}
+        data-slot="edit-tool-block-path"
+        className="tug-atom-chip"
+      />
+    ) : undefined;
+  const meta =
+    changeCounts !== undefined ? (
+      <ToolHeaderDiffStat
+        added={changeCounts.added}
+        removed={changeCounts.removed}
+      />
     ) : undefined;
 
   // Errored edits carry the failure message in `textOutput` (e.g.
@@ -388,12 +380,12 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
       <span data-slot="edit-tool-block-error-output">{textOutput}</span>
     ) : undefined;
 
-  // Body: streaming → placeholder; error → none (the chrome's error
-  // band is the primary content); ready → the embedded DiffBlock when
-  // there is something to diff.
+  // Body: streaming → none (header dot is the in-flight cue); error →
+  // none (the chrome's error band is the primary content); ready → the
+  // embedded DiffBlock when there is something to diff.
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (diffData !== undefined) {
@@ -413,9 +405,10 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="edit-tool-block"
       toolName={toolName}
-      toolIcon={<FilePenLine size={14} aria-hidden="true" />}
-      argsSummary={argsSummary}
+      identity={identity}
+      meta={meta}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >

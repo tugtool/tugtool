@@ -1,24 +1,15 @@
 /**
  * notebook-edit-tool-block.css — `NotebookEditToolBlock`.
  *
- * Structural overlay only. The wrapper composes `ToolBlockChrome`
- * for its frame, `DiffBlock` / `FileBlock` for the body,
- * `MiddleEllipsisPath` for the notebook path, and `TugBadge` for
- * every inline metadata badge (cell-id, edit-mode, cell-type).
- * This file holds only the args-row flex layout.
+ * The wrapper composes `ToolBlockChrome` (frame + the shared
+ * `ToolCallHeader`) and `DiffBlock` / `FileBlock` for its body. The old
+ * args-row rule (`.notebook-edit-tool-block-args`) is gone: the path
+ * chip is the header's `identity` and the cell-id / edit-mode /
+ * cell-type badges render trailing in the header's `meta` cluster
+ * ([Q02]) via `TugBadge`. No notebook-specific header CSS remains; the
+ * file is kept as the wrapper's import target ([L19] file pair).
  *
  * Tuglaw cross-check:
- *  - [L19] file pair, `data-slot="notebook-edit-tool-block"`
- *    (delegated to chrome via `rootSlot`).
- *  - [L20] no new `--tugx-*` slot; the metadata badges are real
- *    `TugBadge` instances, not bespoke chip CSS.
+ *  - [L19] file pair, `data-slot="notebook-edit-tool-block"` (delegated via `rootSlot`).
+ *  - [L20] no `--tugx-*` slot introduced.
  */
-
-.notebook-edit-tool-block-args {
-  display: flex;
-  align-items: baseline;
-  gap: var(--tugx-toolblock-header-gap);
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-}

@@ -285,6 +285,67 @@ describe("dispatch — tool_call routing", () => {
 });
 
 // ---------------------------------------------------------------------------
+// dispatchToolCallState — header-dot phase derivation ([D03], #step-6)
+// ---------------------------------------------------------------------------
+
+describe("dispatchToolCallState — phase", () => {
+  it("pending call defaults to in_flight", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "pending" }),
+    ).props as { phase: string };
+    expect(props.phase).toBe("in_flight");
+  });
+
+  it("done call is success", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "done" }),
+    ).props as { phase: string };
+    expect(props.phase).toBe("success");
+  });
+
+  it("error call is error", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "error" }),
+    ).props as { phase: string };
+    expect(props.phase).toBe("error");
+  });
+
+  it("structured-result interrupted flag wins over a done status", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", {
+        status: "done",
+        structuredResult: { interrupted: true },
+      }),
+    ).props as { phase: string };
+    expect(props.phase).toBe("interrupted");
+  });
+
+  it("awaiting=true id-join paints a pending call awaiting", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "pending" }),
+      0,
+      undefined,
+      undefined,
+      true,
+    ).props as { phase: string };
+    expect(props.phase).toBe("awaiting");
+  });
+
+  it("awaiting defaults false — a normal pending call is not awaiting", () => {
+    registerToolBlock("bash", FakeEditWrapper);
+    const props = dispatchToolCallState(
+      fakeToolCall("Bash", { status: "pending" }),
+    ).props as { phase: string };
+    expect(props.phase).toBe("in_flight");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveToolBlock — alias and case-insensitive lookup
 // ---------------------------------------------------------------------------
 

@@ -71,7 +71,7 @@ import { GitBranch } from "lucide-react";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
 import { ToolBlockBody, ToolBlockFieldRow } from "./body-bits";
-import { StreamingPlaceholder, ToolBlockChrome } from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -181,6 +181,7 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
   input,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const worktreeInput = React.useMemo(
@@ -209,7 +210,7 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
   // case).
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     const hasPath =
       worktreeInput.path !== undefined && worktreeInput.path.length > 0;
@@ -256,9 +257,9 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="worktree-tool-block"
       toolName={composedToolName}
-      toolIcon={<GitBranch size={14} aria-hidden="true" />}
       argsSummary={argsSummary}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
       fold={fold}

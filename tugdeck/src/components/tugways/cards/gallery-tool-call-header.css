@@ -1,0 +1,29 @@
+/**
+ * gallery-tool-call-header.css — layout for the ToolCallHeader showcase.
+ *
+ * Pure gallery scaffolding ([L20]: no component tokens declared here).
+ * Each stack frames the headers on a bordered card so the sticky strip
+ * surface reads against the gallery background.
+ */
+
+.gallery-tool-call-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+  padding: var(--tug-space-md);
+}
+
+.gallery-tch-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+}
+
+.gallery-tch-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  overflow: clip;
+}

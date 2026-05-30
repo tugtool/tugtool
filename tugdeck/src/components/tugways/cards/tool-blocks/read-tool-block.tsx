@@ -72,7 +72,7 @@ import "./read-tool-block.css";
 import "@/lib/tug-atom-chip.css";
 
 import React from "react";
-import { AlignLeft, FileText } from "lucide-react";
+import { AlignLeft } from "lucide-react";
 
 import {
   FileBlock,
@@ -82,10 +82,7 @@ import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { formatAtomLabel } from "@/lib/tug-atom-img";
 
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -249,6 +246,7 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const readInput = React.useMemo(() => narrowInput(input), [input]);
@@ -264,34 +262,50 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
     () => composeLineRangeBadge(readInput),
     [readInput],
   );
-  const footerHint = React.useMemo(
+  const showingHint = React.useMemo(
     () => composeReadFooterHint(fileData),
     [fileData],
   );
 
   const filePath = readInput.file_path;
-  const argsSummary =
+  // Identity: the path chip. Meta (trailing, in the header per [Q02]):
+  // the input-derived line-range badge plus the result-derived
+  // "Showing N of M lines" hint — the latter moved up from the footer.
+  const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <span className="read-tool-block-args">
-        <TugAtomChip
-          type="file"
-          label={formatAtomLabel(filePath, "filename")}
-          value={filePath}
-          data-slot="read-tool-block-path"
-          className="tug-atom-chip"
-        />
+      <TugAtomChip
+        type="file"
+        label={formatAtomLabel(filePath, "filename")}
+        value={filePath}
+        data-slot="read-tool-block-path"
+        className="tug-atom-chip"
+      />
+    ) : undefined;
+  const meta =
+    lineRange !== undefined || showingHint !== undefined ? (
+      <>
         {lineRange !== undefined ? (
           <TugBadge
             data-slot="read-tool-block-line-range"
             emphasis="ghost"
             role="action"
-            size="md"
+            size="2xs"
             icon={<AlignLeft size={12} aria-hidden="true" />}
           >
             {lineRange}
           </TugBadge>
         ) : null}
-      </span>
+        {showingHint !== undefined ? (
+          <TugBadge
+            data-slot="read-tool-block-showing"
+            emphasis="ghost"
+            role="inherit"
+            size="2xs"
+          >
+            {showingHint}
+          </TugBadge>
+        ) : null}
+      </>
     ) : undefined;
 
   // Errored reads carry the failure message in `textOutput` (e.g.
@@ -302,25 +316,12 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
       <span data-slot="read-tool-block-error-output">{textOutput}</span>
     ) : undefined;
 
-  const footerBadges =
-    footerHint !== undefined ? (
-      <span
-        data-slot="read-tool-block-showing"
-        className="read-tool-block-showing"
-      >
-        {footerHint}
-      </span>
-    ) : undefined;
-
-  // Render the body in two cases:
-  //   - streaming: placeholder (chrome reserves space)
-  //   - ready / non-error: the FileBlock if we have something to
-  //     show. On error, the chrome's error band is enough; the
-  //     wrapper drops the body so the failure message reads as the
-  //     primary content.
+  // Body: streaming → none (the header dot is the in-flight cue);
+  // error → none (the chrome's error band is enough); ready → the
+  // FileBlock when there's something to show.
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else if (status === "error") {
     body = null;
   } else if (fileData !== undefined) {
@@ -340,12 +341,12 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="read-tool-block"
       toolName={toolName}
-      toolIcon={<FileText size={14} aria-hidden="true" />}
-      argsSummary={argsSummary}
+      identity={identity}
+      meta={meta}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
-      footerBadges={footerBadges}
     >
       {body}
     </ToolBlockChrome>

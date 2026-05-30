@@ -67,16 +67,12 @@
 import "./default-tool-block.css";
 
 import React from "react";
-import { Wrench } from "lucide-react";
 
 import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
-import {
-  StreamingPlaceholder,
-  ToolBlockChrome,
-} from "./tool-block-chrome";
+import { ToolBlockChrome } from "./tool-block-chrome";
 import type { ToolBlockProps } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -126,6 +122,7 @@ export const DefaultToolBlock: React.FC<ToolBlockProps> = ({
   structuredResult,
   textOutput,
   status,
+  phase,
   caution,
 }) => {
   const outputBody = React.useMemo(
@@ -146,7 +143,7 @@ export const DefaultToolBlock: React.FC<ToolBlockProps> = ({
   // output.
   let body: React.ReactNode;
   if (status === "streaming") {
-    body = <StreamingPlaceholder />;
+    body = null;
   } else {
     const showResult = status === "ready" && outputBody.kind !== "none";
     body = (
@@ -185,8 +182,8 @@ export const DefaultToolBlock: React.FC<ToolBlockProps> = ({
     <ToolBlockChrome
       rootSlot="default-tool-block"
       toolName={toolName}
-      toolIcon={<Wrench size={14} aria-hidden="true" />}
       status={status}
+      phase={phase}
       caution={caution}
       errorMessage={errorMessage}
     >
