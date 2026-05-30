@@ -111,19 +111,25 @@ export interface EffortSupport {
  * "supported" only when the entry says so AND it lists at least one
  * recognized level.
  *
- * Returns unsupported when the model list is the static fallback (a resumed
- * session carries no `initialize` capabilities, so effort support is genuinely
- * unknown) — the honest gate that keeps the chip from claiming a control it
- * cannot substantiate.
+ * A resumed session carries no live `initialize` capabilities (`models` is
+ * empty), but its model id is still known via `system_metadata` replay — so
+ * support resolves from the static `KNOWN_MODELS` fallback (which carries the
+ * captured per-family effort data), exactly as the model chip falls back for
+ * its label. Only when NOTHING is known yet — no capabilities AND no resolved
+ * model — is support genuinely unknowable (returns unsupported → `-`).
  */
 export function resolveEffortSupport(
   models: CapabilityModel[],
   activeModel: string | null,
 ): EffortSupport {
-  // Only the live `initialize` list carries effort capability; the static
-  // fallback (empty `models`) does not, so an empty list is "unknown" → gated.
-  if (models.length === 0) return { supported: false, levels: [] };
+  // Nothing known yet (no live capabilities, no resolved model) — can't tell.
+  if (models.length === 0 && activeModel === null) {
+    return { supported: false, levels: [] };
+  }
 
+  // `resolvePickerModels` uses the live list when present, else the static
+  // `KNOWN_MODELS` fallback — so a resumed session with a known model id still
+  // resolves its effort support.
   const { options, activeValue } = resolvePickerModels(models, activeModel);
   const entry =
     options.find((m) => m.value === activeValue) ?? options[0] ?? null;

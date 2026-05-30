@@ -125,9 +125,10 @@ export function useEffort({
   useEffect(() => {
     if (sentRef.current) return;
     if (persistedEffort === null) return;
-    // Readiness: capabilities present ⇒ a new-mode session is up and effort
-    // support is known. Without them we cannot tell support nor avoid racing.
-    if (models.length === 0) return;
+    // Readiness: either live capabilities (a new-mode session is up) OR a
+    // resolved model id (a resumed session's `system_metadata` has replayed).
+    // Before EITHER lands we can't tell support and shouldn't race the spawn.
+    if (models.length === 0 && model === null) return;
     const support = resolveEffortSupport(models, model);
     if (
       !support.supported ||

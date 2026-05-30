@@ -110,8 +110,23 @@ describe("resolveEffortSupport", () => {
     expect(support.levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
 
-  test("an empty capability list (resumed session) is gated — unknown support", () => {
-    const support = resolveEffortSupport([], "claude-opus-4-8[1m]");
+  test("resumed session (no caps) resolves support from the known model id", () => {
+    // Empty capabilities but a known model → static KNOWN_MODELS fallback.
+    const opus = resolveEffortSupport([], "claude-opus-4-8[1m]");
+    expect(opus.supported).toBe(true);
+    expect(opus.levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+
+    const sonnet = resolveEffortSupport([], "claude-sonnet-4-6");
+    expect(sonnet.supported).toBe(true);
+    expect(sonnet.levels).toEqual(["low", "medium", "high", "max"]);
+
+    const haiku = resolveEffortSupport([], "claude-haiku-4-5");
+    expect(haiku.supported).toBe(false);
+    expect(haiku.levels).toEqual([]);
+  });
+
+  test("nothing known (no caps, no model) is gated — unknowable support", () => {
+    const support = resolveEffortSupport([], null);
     expect(support.supported).toBe(false);
     expect(support.levels).toEqual([]);
   });

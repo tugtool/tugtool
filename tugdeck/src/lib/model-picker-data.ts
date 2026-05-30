@@ -33,16 +33,26 @@ export const KNOWN_MODELS: CapabilityModel[] = [
     value: "default",
     displayName: "Default (recommended)",
     description: "Opus 4.8 with 1M context · Most capable for complex work",
+    // Reasoning-effort support per the captured claude 2.1.158 `initialize`
+    // models[]: opus supports all five levels, sonnet four (no `xhigh`), haiku
+    // none. Carried on the static fallback so the effort chip ([#step-4]) can
+    // resolve support for a RESUMED session, which gets no live `initialize`
+    // capabilities. New sessions override this with the live per-model data.
+    supportsEffort: true,
+    supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
   },
   {
     value: "sonnet",
     displayName: "Sonnet",
     description: "Sonnet 4.6 · Best for everyday tasks",
+    supportsEffort: true,
+    supportedEffortLevels: ["low", "medium", "high", "max"],
   },
   {
     value: "haiku",
     displayName: "Haiku",
     description: "Haiku 4.5 · Fastest for quick answers",
+    // No `supportsEffort` — haiku does not support reasoning effort.
   },
 ];
 
