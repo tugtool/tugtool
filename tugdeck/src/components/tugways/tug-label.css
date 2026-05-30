@@ -14,8 +14,9 @@
  *   ".tug-label-role-danger":      element=tone-text-normal-danger-rest      surface=surface-global-primary-normal-default-rest
  *   ".tug-label-role-data":        element=tone-text-normal-data-rest        surface=surface-global-primary-normal-default-rest
  *   ".tug-label-role-success":     element=tone-text-normal-success-rest     surface=surface-global-primary-normal-default-rest
- *   ".tug-label-emphasis-calm":    element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
- *   ".tug-label-emphasis-whisper": element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-emphasis-calm":     element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-emphasis-whisper":  element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
+ *   ".tug-label-emphasis-proposal": element=global-text-normal-muted-rest     surface=surface-global-primary-normal-default-rest
  * } */
 
 /**
@@ -34,6 +35,7 @@
  * | --tug7-element-tone-text-normal-success-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-role-success (color)      |
  * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-calm (color)     |
  * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-whisper (color)  |
+ * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | content      | .tug-label-emphasis-proposal (color) |
  */
 
 
@@ -127,6 +129,21 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .tug-label-emphasis-whisper {
   font-style: italic;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* `proposal`: a muted small-caps caption. True small caps (via
+   `font-variant-caps`) render at roughly x-height, so a small bump in
+   `font-size` (relative `em`, so it still composes with the `size` prop)
+   lands the caps at a comfortable caption height — smaller than `shout`'s
+   full uppercase, but not as tiny as raw x-height small caps. Painted at
+   the `calm` muted color. For descriptive captions beside an action. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-label-emphasis-proposal {
+  font-weight: 600;
+  font-variant-caps: all-small-caps;
+  font-size: 1.0em;
+  letter-spacing: 0.06em;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 

@@ -51,15 +51,19 @@ export type TugLabelAlign = "start" | "center" | "end";
  * - `shout`: bold + ALL CAPS.
  * - `strong`: bold.
  * - `normal` (default): inherits the base weight/style.
+ * - `proposal`: muted small caps — true `font-variant-caps` small caps
+ *   (≈x-height, so compact) + letter-spacing at the muted `calm` color,
+ *   reading as a quiet caption. For descriptive captions paired with an action.
  * - `calm`: muted gray, upright — quieter than normal.
  * - `whisper`: muted gray + italic — like a whisper, the quietest tier.
  *
- * `calm` and `whisper` paint `--tug7-element-global-text-normal-muted-rest`;
- * `whisper` adds italic on top. When `role` is also set, the emphasis color
- * wins (source order in the cascade), so reach for `role` when a role-driven
- * accent should show through.
+ * `proposal`, `calm`, and `whisper` paint
+ * `--tug7-element-global-text-normal-muted-rest`; `whisper` adds italic and
+ * `proposal` adds small caps + letter-spacing on top. When `role` is also set,
+ * the emphasis color wins (source order in the cascade), so reach for `role`
+ * when a role-driven accent should show through.
  */
-export type TugLabelEmphasis = "calm" | "normal" | "shout" | "strong" | "whisper";
+export type TugLabelEmphasis = "calm" | "normal" | "proposal" | "shout" | "strong" | "whisper";
 
 /** TugLabel props. */
 export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
@@ -81,9 +85,10 @@ export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"labe
   role?: TugLabelRole;
   /**
    * Emphasis variant — a volume scale from `shout` (loudest) to
-   * `whisper` (quietest). `calm` and `whisper` both paint the
-   * muted text token; `whisper` adds italic.
-   * @selector .tug-label-emphasis-calm | .tug-label-emphasis-whisper | .tug-label-emphasis-strong | .tug-label-emphasis-shout
+   * `whisper` (quietest). `proposal`, `calm`, and `whisper` all paint
+   * the muted text token; `whisper` adds italic and `proposal` adds
+   * small caps + letter-spacing (compact caption look).
+   * @selector .tug-label-emphasis-calm | .tug-label-emphasis-whisper | .tug-label-emphasis-strong | .tug-label-emphasis-shout | .tug-label-emphasis-proposal
    * @default "normal"
    */
   emphasis?: TugLabelEmphasis;

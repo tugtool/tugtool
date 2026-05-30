@@ -18,7 +18,7 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 
 const ALL_SIZES: TugLabelSize[] = ["sm", "md", "lg"];
 
-const ALL_EMPHASES: TugLabelEmphasis[] = ["shout", "strong", "normal", "calm", "whisper"];
+const ALL_EMPHASES: TugLabelEmphasis[] = ["shout", "strong", "normal", "proposal", "calm", "whisper"];
 
 const LONG_TEXT =
   "This is a long label that demonstrates multiline text wrapping behavior when the content exceeds the available width of the container element";
