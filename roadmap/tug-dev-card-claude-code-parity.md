@@ -1256,28 +1256,31 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 **References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, [D06] protocol baseline, [Q02] rate-limit store shape, [Q13] RateLimitEvent strictness, Risk R04, [L22] store→DOM observers, [L06] appearance via CSS/DOM, (#z4b-chrome-layout)
 
 **Artifacts:**
-- New: `rate-limit-chip.tsx`
-- Modified: `session-metadata-store.ts` adds `rateLimit: RateLimitInfo | null` field, `_onRateLimitUpdate` reading the most-recent `rate_limit_event` payload from the feed
-- Modified: `protocol.ts` for `RateLimitEvent` outbound IPC type (mirror tugcode's `RateLimitEvent`)
+- New: `rate-limit-chip.tsx` + `rate-limit-chip.css`
+- New: `lib/rate-limit.ts` (pure `formatResetCountdown` / `isRateLimitChipVisible` / `rateLimitSeverity` / `isRateLimitExhausted` / `rateLimitContent`) + `lib/__tests__/rate-limit.test.ts`
+- Modified: `session-metadata-store.ts` adds `rateLimit: RateLimitInfo | null` field; `_applyPayload` (extracted from `_onFeedUpdate`) discriminates `rate_limit_event` and preserves `rateLimit` / `models` across a `system_metadata` replace; `_ingestPayloadForTest` test seam
+- Modified: `protocol.ts` for `RateLimitInfo` + `RateLimitEvent` outbound IPC types (mirror tugcode's)
+- Modified (NOT originally listed — required): `tugcast` supervisor must rewrap `rate_limit_event` off CODE_OUTPUT onto SESSION_METADATA, same as `system_metadata` / `session_capabilities` — the chip's metadata-feed source. `feeds/session_metadata.rs` adds `is_rate_limit_event`; `feeds/agent_supervisor.rs` adds a `LedgerEntry::latest_rate_limit` slot, a merger branch, and on-bind replay (in-memory only; matters most when hard rate-limited and unable to start a turn to refresh). 9af307fe only landed the tugcode→IPC passthrough, not this re-route.
+- Modified: `test-surface.ts` routes SESSION_METADATA `ingestFrame` to `sessionMetadataStore._ingestPayloadForTest` (mirrors production feed routing)
 
 **Tasks:**
-- [ ] Extend `SessionMetadataSnapshot` with `rateLimit`.
-- [ ] Add `RateLimitEvent` parser; integrate with `FeedStore` subscription on the metadata feed.
-- [ ] Implement `RateLimitChip` reading `rateLimit` via `useSyncExternalStore` per [L02] — structural data (status, resetsAt, isUsingOverage) drives React rendering. Render as a two-line `TugBadge` (`layout="label-top"`, `label="Limit"`, `size="sm"`) per [#step-0] / [D01].
-- [ ] Visibility predicate: hidden when `status === "allowed"` and `resetsAt > 60min`; visible otherwise. Render once on structural change, not every tick.
-- [ ] Role: `agent` at rest, escalating to `caution` (and `danger` for hard limits / overage) on alert states — the one Z4B chip whose role is state-driven rather than fixed.
-- [ ] Do NOT width-stabilize — the countdown reflows the chip as it ticks ("5h 23m" → "59m" → "rate-limited"), accepted per [R01].
-- [ ] Color / overage state via `data-status` and `data-overage` attributes on the chip root; CSS owns the color transitions per [L06]. No React state for color.
-- [ ] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state. Implementation: `useLayoutEffect` mounts a `setInterval(60_000)` that reads the current `resetsAt` from a ref and writes `textContent` of the countdown `<span>` directly. The store subscription provides resetsAt as stable structural data; the tick-text update never re-enters React's render cycle. Cleanup the interval on unmount or when the chip becomes hidden.
-- [ ] Format helper `formatResetCountdown(resetsAt, now)` returns the text the DOM mutation writes (e.g. `"5h 23m"`); pure function, no side effects.
+- [x] Extend `SessionMetadataSnapshot` with `rateLimit`.
+- [x] Add `RateLimitEvent` parser; integrate with `FeedStore` subscription on the metadata feed.
+- [x] Implement `RateLimitChip` reading `rateLimit` via `useSyncExternalStore` per [L02] — structural data (status, resetsAt, isUsingOverage) drives React rendering. Render as a two-line `TugBadge` (`layout="label-top"`, `label="Limit"`, `size="sm"`) per [#step-0] / [D01].
+- [x] Visibility predicate: hidden when `status === "allowed"` and `resetsAt > 60min`; visible otherwise. Render once on structural change, not every tick.
+- [x] Role: `agent` at rest, escalating to `caution` (and `danger` for hard limits / overage) on alert states — the one Z4B chip whose role is state-driven rather than fixed.
+- [x] Do NOT width-stabilize — the countdown reflows the chip as it ticks ("5h 23m" → "59m" → "rate-limited"), accepted per [R01].
+- [x] Color / overage state via `data-status` and `data-overage` attributes on the chip root; CSS owns the color transitions per [L06]. No React state for color.
+- [x] **Countdown text ticks via direct DOM mutation per [L22]** — NOT via React state. Implementation: `useLayoutEffect` mounts a `setInterval(60_000)` that reads the current `resetsAt` from a ref and writes `textContent` of the countdown `<span>` directly. The store subscription provides resetsAt as stable structural data; the tick-text update never re-enters React's render cycle. Cleanup the interval on unmount or when the chip becomes hidden.
+- [x] Format helper `formatResetCountdown(resetsAt, now)` returns the text the DOM mutation writes (e.g. `"5h 23m"`); pure function, no side effects.
 
 **Tests:**
-- [ ] Pure-logic: `formatResetCountdown(resetsAt, now)` for various offsets; visibility predicate for combinations.
-- [ ] Real-app: replay a fixture frame with `status: "warning"`, assert chip mounts; replay `status: "allowed"` with `resetsAt > 60min`, assert chip unmounts.
-- [ ] Real-app: verify the chip does NOT re-render through React on tick — measure React's commit count over a 5-minute window; expect commits only on structural state changes, not on each minute boundary.
+- [x] Pure-logic: `formatResetCountdown(resetsAt, now)` for various offsets; visibility predicate for combinations. (`lib/__tests__/rate-limit.test.ts`)
+- [x] Real-app: replay a fixture frame with `status: "warning"`, assert chip mounts; replay `status: "allowed"` with `resetsAt > 60min`, assert chip unmounts. (`at0095-rate-limit-chip.test.ts`)
+- [x] Real-app: verify the chip does NOT re-render through React on tick. Implemented faster than the literal 5-minute commit-count window: the chip exposes a `__atRateLimitTick` hook + `__atRateLimitRenderCount` (both gated on `__tugTestMode`); the test fires one tick, asserts the countdown span's `textContent` was rewritten AND the render counter is unchanged — proving the tick is DOM-only.
 
 **Checkpoint:**
-- [ ] `just app-test rate-limit-chip`
+- [x] `just app-test rate-limit-chip` → `VERDICT: PASS`
 
 ---
 

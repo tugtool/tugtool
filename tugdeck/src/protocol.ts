@@ -299,6 +299,40 @@ export interface ContentBlockImageSourceBase64 {
 }
 
 /**
+ * Subscription-quota status, mirroring tugcode's `RateLimitInfo`
+ * (`tugcode/src/types.ts`) verbatim. Carried by {@link RateLimitEvent}
+ * on the per-turn quota broadcast claude 2.1.x emits at the start of
+ * every turn. The Z4B rate-limit chip reads this to surface "X until
+ * reset" and to escalate when `status !== "allowed"`.
+ */
+export interface RateLimitInfo {
+  /** `"allowed"`, `"warning"`, `"exceeded"`, etc. */
+  status: string;
+  /** Unix epoch **seconds** at which the current window resets. */
+  resetsAt: number;
+  /** `"five_hour"`, `"daily"`, etc. */
+  rateLimitType: string;
+  /** `"accepted"` or `"rejected"`. */
+  overageStatus: string;
+  /** Reason overage is disabled (`"org_level_disabled"`, etc.). May be absent. */
+  overageDisabledReason?: string;
+  /** Whether the current turn is consuming overage allotment. */
+  isUsingOverage: boolean;
+}
+
+/**
+ * Server-to-client `rate_limit_event` frame, mirroring tugcode's
+ * `RateLimitEvent`. Rides the SESSION_METADATA feed (the tugcast
+ * supervisor rewraps it off CODE_OUTPUT alongside `system_metadata` /
+ * `session_capabilities`); the client store discriminates by `type`.
+ */
+export interface RateLimitEvent {
+  type: "rate_limit_event";
+  rate_limit_info: RateLimitInfo;
+  ipc_version: number;
+}
+
+/**
  * Client-to-server message shapes for the CODE_INPUT feed. The union mirrors
  * the stream-json inbound messages tugcode accepts. T3.4.a only emits the
  * first four variants; the remaining entries are forward-compat placeholders

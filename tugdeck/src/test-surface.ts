@@ -46,6 +46,7 @@ import {
 import { cardServicesStore } from "./lib/card-services-store";
 import type { AtomSegment } from "./lib/tug-atom-img";
 import { dispatchAction } from "./action-dispatch";
+import { FeedId } from "./protocol";
 
 // ---------------------------------------------------------------------------
 // Public types (`TugTestSurface`)
@@ -216,9 +217,11 @@ export interface SeedDeckStateArgs {
  *    queues, exactly as the prompt-entry does.
  *  - `ingestFrame` — feed a decoded wire frame into the store as if it
  *    arrived off the connection (`feedId` is a `FeedId` value;
- *    `decoded` carries a matching `tug_session_id`). Drives
- *    STREAMING / TOOL_WORK / AWAITING_USER / COMPLETE / ERRORED /
- *    REPLAYING.
+ *    `decoded` carries a matching `tug_session_id`). Routed by feed:
+ *    SESSION_METADATA frames feed the metadata store the Z4B chips read
+ *    (a `rate_limit_event` mounts the rate-limit chip); every other feed
+ *    drives the code-session store's STREAMING / TOOL_WORK /
+ *    AWAITING_USER / COMPLETE / ERRORED / REPLAYING transitions.
  *  - `interrupt` — `store.interrupt()`.
  *  - `transportClose` / `transportReconnect` — drive the transport
  *    overlay without touching the real shared connection.
@@ -1369,7 +1372,16 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
           store.send(action.text, action.atoms ?? []);
           return;
         case "ingestFrame":
-          store._ingestFrameForTest(action.feedId, action.decoded);
+          // Route by feed exactly as production does: SESSION_METADATA
+          // frames (`system_metadata` / `session_capabilities` /
+          // `rate_limit_event`) feed the metadata store the Z4B chips read;
+          // every other feed (CODE_OUTPUT transcript, SESSION_STATE, …)
+          // feeds the code-session store.
+          if (action.feedId === FeedId.SESSION_METADATA) {
+            services.sessionMetadataStore._ingestPayloadForTest(action.decoded);
+          } else {
+            store._ingestFrameForTest(action.feedId, action.decoded);
+          }
           return;
         case "interrupt":
           store.interrupt();

@@ -45,7 +45,9 @@ use super::agent_bridge::{
     ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, SessionMode, TugcodeSpawner, run_session_bridge,
 };
 use super::code::parse_tug_session_id;
-use super::session_metadata::{is_session_capabilities, is_system_metadata};
+use super::session_metadata::{
+    is_rate_limit_event, is_session_capabilities, is_system_metadata,
+};
 use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
 
 /// Capacity of per-session CODE_INPUT buffering queues.
@@ -265,6 +267,19 @@ pub struct LedgerEntry {
     /// persisted to sqlite): capabilities are re-emitted fresh on the
     /// next spawn's handshake, so they need not survive a tugcast restart.
     pub latest_capabilities: Option<Frame>,
+    /// Latest `rate_limit_event` payload for this session, for
+    /// on-subscribe replay. Distinct slot from `latest_metadata` /
+    /// `latest_capabilities`: the per-turn quota broadcast carries the
+    /// Z4B rate-limit chip's state, and a card that binds *after* the
+    /// last broadcast flew (reconnect, HMR remount) would otherwise show
+    /// no quota state until the next turn re-broadcasts. That tail
+    /// matters most precisely when the session is hard rate-limited — the
+    /// user cannot start a turn to refresh it — so the last-known frame
+    /// is replayed on bind, the same shape `latest_capabilities` uses.
+    /// In-memory only (not persisted to sqlite): `resetsAt` is an
+    /// absolute time that self-corrects on the next live broadcast, so a
+    /// stale value need not survive a tugcast restart.
+    pub latest_rate_limit: Option<Frame>,
     /// Owned subprocess handle when `Live`.
     pub child: Option<tokio::process::Child>,
     /// Stdin sender when `Live`.
@@ -323,6 +338,7 @@ impl LedgerEntry {
             queue: BoundedQueue::new(),
             latest_metadata: None,
             latest_capabilities: None,
+            latest_rate_limit: None,
             child: None,
             input_tx: None,
             cancel: CancellationToken::new(),
@@ -1998,7 +2014,7 @@ impl AgentSupervisor {
         // per-session lock. Reconnect flows observe the existing entry and
         // its `latest_metadata`; fresh flows observe a just-minted Idle
         // entry with `latest_metadata: None`.
-        let (replay_frame, capabilities_frame) = {
+        let (replay_frame, capabilities_frame, rate_limit_frame) = {
             let mut entry = entry_arc.lock().await;
             // Record the binding card. `card_id` is preserved across
             // lifecycle transitions (close/errored/crash-exhausted),
@@ -2027,7 +2043,17 @@ impl AgentSupervisor {
             // `/model` picker keeps its data even though the one-shot
             // broadcast already flew. Absent for a fresh-process bind that
             // hasn't handshaken yet (the next spawn re-emits them).
-            (metadata, entry.latest_capabilities.clone())
+            //
+            // Rate-limit (the per-turn quota broadcast) is likewise
+            // in-memory only — replayed on reconnect / HMR remount so the
+            // Z4B rate-limit chip keeps its state even though the last
+            // per-turn broadcast already flew. Absent until the first turn
+            // emits one.
+            (
+                metadata,
+                entry.latest_capabilities.clone(),
+                entry.latest_rate_limit.clone(),
+            )
         };
         // Live-elsewhere visibility for cross-card pickers is driven by
         // the ledger row the bridge writes on `session_init` (with
@@ -2042,6 +2068,9 @@ impl AgentSupervisor {
             let _ = self.session_metadata_tx.send(frame);
         }
         if let Some(frame) = capabilities_frame {
+            let _ = self.session_metadata_tx.send(frame);
+        }
+        if let Some(frame) = rate_limit_frame {
             let _ = self.session_metadata_tx.send(frame);
         }
 
@@ -3325,6 +3354,30 @@ impl AgentSupervisor {
                             entry.latest_capabilities = Some(cap_frame.clone());
                         }
                         let _ = self.session_metadata_tx.send(cap_frame);
+                    } else if is_rate_limit_event(&frame.payload) {
+                        // Per-turn subscription-quota broadcast ([#step-3]).
+                        // Rewrap onto SESSION_METADATA (same rationale as
+                        // `system_metadata` / `session_capabilities`: the
+                        // FeedStore keeps only the latest payload per feed and
+                        // the client routes by wire feed-id) so the dev card's
+                        // metadata store — not the high-churn CODE_OUTPUT
+                        // transcript store — receives it. Retained in its own
+                        // per-session slot (`latest_rate_limit`) so a card that
+                        // binds after the last broadcast (reconnect, HMR
+                        // remount) replays the quota state on bind, which
+                        // matters most when the session is hard rate-limited
+                        // and cannot start a turn to refresh it.
+                        let rl_frame =
+                            Frame::new(FeedId::SESSION_METADATA, frame.payload.clone());
+                        let entry_arc = {
+                            let ledger = self.ledger.lock().await;
+                            ledger.get(&id).cloned()
+                        };
+                        if let Some(entry_arc) = entry_arc {
+                            let mut entry = entry_arc.lock().await;
+                            entry.latest_rate_limit = Some(rl_frame.clone());
+                        }
+                        let _ = self.session_metadata_tx.send(rl_frame);
                     }
                     // Forward-before-mutate: the wire-side broadcast above
                     // is the user-visible signal and must not be delayed
@@ -4503,6 +4556,49 @@ mod tests {
         let second = meta_rx.try_recv().expect("capabilities replay frame");
         assert_eq!(second, caps, "capabilities replays second");
         assert!(meta_rx.try_recv().is_err(), "exactly two replay frames");
+    }
+
+    /// A `rate_limit_event` payload — the per-turn subscription-quota
+    /// broadcast, tagged so the merger and the client route it apart from
+    /// `system_metadata` / `session_capabilities`.
+    fn fake_rate_limit_frame() -> Frame {
+        let body = serde_json::json!({
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "warning",
+                "resetsAt": 1_700_000_000,
+                "rateLimitType": "five_hour",
+                "overageStatus": "accepted",
+                "isUsingOverage": false,
+            },
+            "ipc_version": 2,
+        });
+        Frame::new(FeedId::SESSION_METADATA, serde_json::to_vec(&body).unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_replays_rate_limit_on_bind() {
+        // The per-turn quota broadcast is in-memory only, like capabilities;
+        // a reconnect / HMR remount that binds after the last broadcast flew
+        // must still get it replayed so the Z4B rate-limit chip keeps its
+        // state — which matters most when the session is hard rate-limited
+        // and cannot start a turn to refresh it. It replays independently of
+        // the metadata / capabilities slots and carries the SESSION_METADATA
+        // feed id.
+        let (sup, mut meta_rx, _ledger) = make_supervisor_with_real_ledger();
+
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        let rate_limit = fake_rate_limit_frame();
+        entry.lock().await.latest_rate_limit = Some(rate_limit.clone());
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let received = meta_rx.try_recv().expect("rate-limit replay frame present");
+        assert_eq!(received, rate_limit, "the rate-limit slot replays on bind");
+        assert_eq!(received.feed_id, FeedId::SESSION_METADATA);
+        assert!(meta_rx.try_recv().is_err(), "only the rate-limit frame");
     }
 
     // ---- handle_control: close_session ----

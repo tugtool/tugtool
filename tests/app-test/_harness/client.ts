@@ -743,9 +743,11 @@ export function bindDevSession(
  *
  *  - `send` — submit a user message; a mid-turn `send` queues.
  *  - `ingestFrame` — feed a decoded wire frame into the store
- *    (`feedId` is a `FeedId` value — `CODE_OUTPUT` is `0x40`;
- *    `decoded` is the frame payload, with a `tug_session_id`
- *    matching the bound session).
+ *    (`feedId` is a `FeedId` value — `CODE_OUTPUT` is `0x40`,
+ *    `SESSION_METADATA` is `0x51`; `decoded` is the frame payload,
+ *    with a `tug_session_id` matching the bound session). Routed by
+ *    feed: SESSION_METADATA frames feed the metadata store the Z4B
+ *    chips read; other feeds feed the code-session store.
  *  - `interrupt` — `store.interrupt()`.
  *  - `transportClose` / `transportReconnect` — drive the transport
  *    overlay.

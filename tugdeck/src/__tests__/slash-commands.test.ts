@@ -1,12 +1,12 @@
 /**
  * slash-commands.test.ts — pure-logic coverage for the local
  * slash-command dispatch infrastructure ([#step-1c]) with `/permissions`
- * registered ([#step-1.6]) as the first live consumer.
+ * ([#step-1.6]) and `/model` ([#step-2b]) registered as the live consumers.
  *
- * `/permissions` opens the tool-permission rules editor; the permission *mode*
- * chip is a click + `Shift+Tab` control, not a slash command, so it is not in
- * the registry. These tests guard the matcher shape, the completion provider,
- * and the merge.
+ * `/permissions` opens the tool-permission rules editor; `/model` opens the
+ * model picker. The permission *mode* chip is a click + `Shift+Tab` control,
+ * not a slash command, so it is not in the registry. These tests guard the
+ * matcher shape, the completion provider, and the merge.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -24,17 +24,24 @@ import {
 } from "@/components/tugways/cards/completion-providers/local-commands";
 
 describe("matchLocalSlashCommand", () => {
-  test("permissions is registered", () => {
-    expect(LOCAL_SLASH_COMMANDS.map((c) => c.name)).toEqual(["permissions"]);
+  test("permissions and model are registered", () => {
+    expect(LOCAL_SLASH_COMMANDS.map((c) => c.name)).toEqual([
+      "permissions",
+      "model",
+    ]);
   });
 
-  test("bare /permissions matches, with surrounding whitespace tolerated", () => {
+  test("bare /permissions and /model match, with surrounding whitespace tolerated", () => {
     expect(matchLocalSlashCommand("/permissions")).toEqual({
       name: "permissions",
       args: "",
     });
     expect(matchLocalSlashCommand("  /permissions  ")).toEqual({
       name: "permissions",
+      args: "",
+    });
+    expect(matchLocalSlashCommand("/model")).toEqual({
+      name: "model",
       args: "",
     });
   });
@@ -44,7 +51,7 @@ describe("matchLocalSlashCommand", () => {
   });
 
   test("unregistered names and non-command text return null", () => {
-    for (const input of ["/vim", "/model", "permissions", "hello /permissions", "", "/"]) {
+    for (const input of ["/vim", "/theme", "permissions", "hello /permissions", "", "/"]) {
       expect(matchLocalSlashCommand(input)).toBeNull();
     }
   });
@@ -55,9 +62,9 @@ describe("local-command completion + merge", () => {
     return provider(query).map((item) => item.label);
   }
 
-  test("local provider offers permissions as a command atom", () => {
+  test("local provider offers permissions and model as command atoms", () => {
     const items = localCommandCompletionProvider()("");
-    expect(items.map((i) => i.label)).toEqual(["permissions"]);
+    expect(items.map((i) => i.label)).toEqual(["permissions", "model"]);
     expect(items[0].atom).toEqual({
       kind: "atom",
       type: "command",
@@ -69,7 +76,8 @@ describe("local-command completion + merge", () => {
   test("local provider filters by case-insensitive substring", () => {
     expect(labels(localCommandCompletionProvider(), "perm")).toEqual(["permissions"]);
     expect(labels(localCommandCompletionProvider(), "PERM")).toEqual(["permissions"]);
-    expect(labels(localCommandCompletionProvider(), "model")).toEqual([]);
+    expect(labels(localCommandCompletionProvider(), "model")).toEqual(["model"]);
+    expect(labels(localCommandCompletionProvider(), "vim")).toEqual([]);
   });
 
   test("merge lists local first and dedups a name claude also reports", () => {
@@ -78,8 +86,9 @@ describe("local-command completion + merge", () => {
       mkItem("commit"),
     ];
     const merged = mergeCommandProviders(localCommandCompletionProvider(), claude);
-    // permissions appears once (local wins), claude's other commands follow.
-    expect(labels(merged, "")).toEqual(["permissions", "commit"]);
+    // permissions appears once (local wins), then the other local command,
+    // then claude's remaining commands.
+    expect(labels(merged, "")).toEqual(["permissions", "model", "commit"]);
   });
 });
 

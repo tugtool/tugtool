@@ -1,0 +1,25 @@
+/* @tug-pairings: none — the chip's colour comes entirely from the composed
+   TugBadge's role (driven by quota severity in the .tsx, per [L20] the chip
+   never paints the badge's chrome). This file owns only the transition that
+   smooths a role swap, per [L06] (appearance via CSS, never React state). The
+   `data-status` / `data-overage` attributes the chip sets are truthful DOM
+   reflections of state — inspection / test hooks, not colour sources. */
+
+/*
+ * Smooth the role escalation. When the quota tightens (agent → caution →
+ * danger) the store update swaps the TugBadge role class; transitioning the
+ * resolved colours means the chip eases between states rather than snapping.
+ * Timing only — the colour values stay the badge's own role tokens.
+ */
+[data-slot="rate-limit-chip"] {
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+/* The countdown value line never wraps — it reflows the chip width instead
+   ([R01]; this chip is deliberately not width-stabilized). */
+.rate-limit-chip-value {
+  white-space: nowrap;
+}

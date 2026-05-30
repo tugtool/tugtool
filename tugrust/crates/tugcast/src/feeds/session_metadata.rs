@@ -42,6 +42,25 @@ pub fn is_session_capabilities(payload: &[u8]) -> bool {
         .any(|w| w == SESSION_CAPABILITIES_NEEDLE)
 }
 
+/// Needle bytes for identifying `rate_limit_event` frames — the
+/// per-turn subscription-quota broadcast tugcode forwards from claude
+/// 2.1.x (status / resetsAt / overage).
+const RATE_LIMIT_EVENT_NEEDLE: &[u8] = b"\"type\":\"rate_limit_event\"";
+
+/// Check if a payload is a `rate_limit_event` frame. Routed onto the
+/// SESSION_METADATA feed for the same reason as `system_metadata` and
+/// `session_capabilities`: the per-turn quota broadcast carries the
+/// chrome state the Z4B rate-limit chip reads, and the FeedStore keeps
+/// only the latest payload per feed, so leaving it on the high-churn
+/// CODE_OUTPUT stream would clobber it amid transcript frames before
+/// the metadata store could observe it. The client store discriminates
+/// all three by their `type`.
+pub fn is_rate_limit_event(payload: &[u8]) -> bool {
+    payload
+        .windows(RATE_LIMIT_EVENT_NEEDLE.len())
+        .any(|w| w == RATE_LIMIT_EVENT_NEEDLE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,5 +100,19 @@ mod tests {
     fn rejects_capabilities_for_non_capabilities() {
         let payload = br#"{"type":"system_metadata","model":"x"}"#;
         assert!(!is_session_capabilities(payload));
+    }
+
+    #[test]
+    fn detects_rate_limit_event() {
+        let payload = br#"{"type":"rate_limit_event","rate_limit_info":{"status":"warning","resetsAt":1234567890}}"#;
+        assert!(is_rate_limit_event(payload));
+        assert!(!is_system_metadata(payload));
+        assert!(!is_session_capabilities(payload));
+    }
+
+    #[test]
+    fn rejects_rate_limit_for_non_rate_limit() {
+        let payload = br#"{"type":"system_metadata","model":"x"}"#;
+        assert!(!is_rate_limit_event(payload));
     }
 }

@@ -13,7 +13,7 @@
  */
 
 import type { FeedStore } from "./feed-store";
-import type { FeedIdValue } from "../protocol";
+import type { FeedIdValue, RateLimitInfo } from "../protocol";
 import type { CompletionProvider, CompletionItem } from "./tug-text-types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -62,6 +62,15 @@ export interface SessionMetadataSnapshot {
    * `system_metadata.model` (or the on-bind ledger replay) sharpens it.
    */
   models: CapabilityModel[];
+  /**
+   * Most-recent subscription-quota state, from the per-turn
+   * `rate_limit_event` frame ([#step-3], [Q02]/[D04] — extends this
+   * snapshot rather than a parallel store). `null` until the first
+   * `rate_limit_event` lands. The Z4B rate-limit chip reads this; like
+   * `models`, it rides the SESSION_METADATA feed and is preserved across
+   * a `system_metadata` / `session_capabilities` replace.
+   */
+  rateLimit: RateLimitInfo | null;
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -74,6 +83,7 @@ const EMPTY_SNAPSHOT: SessionMetadataSnapshot = {
   version: null,
   slashCommands: [],
   models: [],
+  rateLimit: null,
 };
 
 /**
@@ -99,6 +109,32 @@ function parseCapabilityModels(raw: unknown): CapabilityModel[] {
     out.push(model);
   }
   return out;
+}
+
+/**
+ * Parse the `rate_limit_info` object of a `rate_limit_event` payload into
+ * a {@link RateLimitInfo}, or null if malformed. Mirrors tugcode's
+ * strict-but-tolerant receiver ([D18]/[Q13]): unknown extra fields are
+ * dropped (forward-compat); a missing required field falls back to a
+ * benign default rather than throwing, so a shape drift degrades the chip
+ * gracefully instead of crashing the store. `status` is the load-bearing
+ * field — without a string `status` the frame is rejected.
+ */
+function parseRateLimitInfo(raw: unknown): RateLimitInfo | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.status !== "string") return null;
+  const info: RateLimitInfo = {
+    status: obj.status,
+    resetsAt: typeof obj.resetsAt === "number" ? obj.resetsAt : 0,
+    rateLimitType: typeof obj.rateLimitType === "string" ? obj.rateLimitType : "",
+    overageStatus: typeof obj.overageStatus === "string" ? obj.overageStatus : "",
+    isUsingOverage: Boolean(obj.isUsingOverage),
+  };
+  if (typeof obj.overageDisabledReason === "string") {
+    info.overageDisabledReason = obj.overageDisabledReason;
+  }
+  return info;
 }
 
 /** Validate and normalize a category string. */
@@ -197,9 +233,12 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
     cwd: typeof p.cwd === "string" ? p.cwd : null,
     version: typeof p.version === "string" ? p.version : null,
     slashCommands,
-    // `models` comes from `session_capabilities`, not `system_metadata`;
-    // `_onFeedUpdate` preserves the captured value across this replace.
+    // `models` (from `session_capabilities`) and `rateLimit` (from
+    // `rate_limit_event`) ride the same feed but arrive in their own
+    // frames; `_applyPayload` preserves the captured values across this
+    // wholesale `system_metadata` replace.
     models: [],
+    rateLimit: null,
   };
 }
 
@@ -236,14 +275,24 @@ export class SessionMetadataStore {
     if (payload === this._lastPayloadRef) return;
     this._lastPayloadRef = payload;
 
-    // Two payload types ride the SESSION_METADATA feed: `system_metadata`
-    // (live current model / version / mode, post-turn) and
-    // `session_capabilities` (the turn-free `initialize` model list /
-    // command catalog, [#step-2a]). The FeedStore keeps only the latest
-    // payload per feed, so each arrives here as the single current slot;
-    // we capture each into its own snapshot region and preserve the
-    // other across the update, so a later `system_metadata` never wipes
-    // the captured `models`, and vice versa.
+    this._applyPayload(payload);
+  }
+
+  /**
+   * Apply one decoded SESSION_METADATA payload to the snapshot,
+   * discriminating by its `type`, and notify listeners on a real change.
+   *
+   * Three payload types ride the SESSION_METADATA feed: `system_metadata`
+   * (live current model / version / mode, post-turn), `session_capabilities`
+   * (the turn-free `initialize` model list / command catalog), and
+   * `rate_limit_event` (the per-turn subscription-quota broadcast). The
+   * FeedStore keeps only the latest payload per feed, so each arrives here
+   * as the single current slot; we capture each into its own snapshot region
+   * (`models`, `rateLimit`, and the `system_metadata` core) and preserve the
+   * others across the update, so a later `system_metadata` never wipes the
+   * captured `models` / `rateLimit`, and vice versa.
+   */
+  private _applyPayload(payload: unknown): void {
     const payloadType =
       typeof payload === "object" && payload !== null
         ? (payload as Record<string, unknown>).type
@@ -258,6 +307,19 @@ export class SessionMetadataStore {
       return;
     }
 
+    if (payloadType === "rate_limit_event") {
+      const rateLimit = parseRateLimitInfo(
+        (payload as Record<string, unknown>).rate_limit_info,
+      );
+      // A malformed frame (no string `status`) is dropped, not written as
+      // `null` — keeping the last-known good quota state rather than
+      // blanking the chip on a single drifted payload.
+      if (rateLimit === null) return;
+      this._snapshot = { ...this._snapshot, rateLimit };
+      for (const listener of this._listeners) listener();
+      return;
+    }
+
     const parsed = parseMetadataPayload(payload);
     if (!parsed) return;
 
@@ -265,10 +327,14 @@ export class SessionMetadataStore {
     // bridge intercept merges every `system_metadata` line against the
     // persisted ledger row before forwarding, so the wire always
     // delivers the most-informationally-rich payload. Client-side merge
-    // is no longer needed — but the turn-free `models` captured from a
-    // prior `session_capabilities` frame is preserved across the replace
-    // (the two payload types share this feed slot).
-    this._snapshot = { ...parsed, models: this._snapshot.models };
+    // is no longer needed — but the turn-free `models` and `rateLimit`
+    // captured from prior frames are preserved across the replace (all
+    // three payload types share this feed slot).
+    this._snapshot = {
+      ...parsed,
+      models: this._snapshot.models,
+      rateLimit: this._snapshot.rateLimit,
+    };
     for (const listener of this._listeners) {
       listener();
     }
@@ -330,6 +396,21 @@ export class SessionMetadataStore {
       listener();
     }
   }
+
+  /**
+   * Test-only. Apply a decoded SESSION_METADATA payload exactly as a live
+   * frame off the feed would, bypassing the `FeedStore` subscription. The
+   * app-test harness drives the Z4B chips with this (a `rate_limit_event`
+   * to mount the rate-limit chip, a `system_metadata` to flip the mode/model
+   * chips) without a real claude round-trip. Production payloads always
+   * arrive through `_onFeedUpdate`, never here.
+   *
+   * @internal — reached only through the DEV-gated `window.__tug` test
+   *  surface; not part of the public L02 contract.
+   */
+  _ingestPayloadForTest = (payload: unknown): void => {
+    this._applyPayload(payload);
+  };
 
   /**
    * Returns a CompletionProvider for the / trigger.
