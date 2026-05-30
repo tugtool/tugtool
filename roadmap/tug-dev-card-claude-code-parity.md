@@ -539,6 +539,20 @@ The original question about model-scope (card vs session) is consequently moot �
 - [#step-13] / [D14] reduces to the unsupported-command allowlist filter + doc + the remaining UI-affordance mappings (`/help`, `/clear`, …).
 - Built in [#step-1c], before any other command step consumes it.
 
+#### [D24] Rate-limit is an app-level caution banner, not a Z4B chip (DECIDED) {#d24-rate-limit-banner}
+
+**Decision:** Subscription-quota state is surfaced as a single **app-level, transient caution banner** (modeled on the reconnection banner / `TugBannerProvider`), shown only when claude signals trouble — NOT as a persistent per-card Z4B chip. This reverses the [#step-3] chip and supersedes [Q02]/[D04] for this surface (the per-card store hub was premised on the chip). See [#step-3.5].
+
+**Rationale:**
+- **Parity, not extension.** The Claude Code terminal exposes no usage/limit chrome and no `/usage`-style slash command; the documented place to check quota is the web console. A persistent dev-card indicator is an extension beyond parity. The terminal's only quota affordance is a *transient* "approaching/at your limit" notice — which a banner matches and a chip does not.
+- **Quota is account-global.** One subscription quota is shared by every session/card. A per-card surface duplicates the identical state across cards; a single app-level banner is the correct cardinality. This is the same shape as the connection-disconnect banner, which is also one-per-app.
+- **The data is coarse and unverified.** `rate_limit_event` carries no usage percentage and, in every captured sample, only the benign `allowed` / `overageStatus: "rejected"` default. A loud persistent chip over-promises on thin, guessed data; a transient banner that only appears on a non-`allowed` status (or active overage) and auto-clears fails safe.
+
+**Implications:**
+- The transport built in [#step-3] is retained and reused: tugcast `rate_limit_event` → SESSION_METADATA routing, and `protocol.ts` `RateLimitInfo` / `RateLimitEvent`. Only the per-card chip + its `SessionMetadataStore.rateLimit` binding were removed.
+- An app-level `RateLimitStore` singleton (not the per-card `SessionMetadataStore`) holds the account-global quota; the banner provider mounts once in `deck-manager.ts`.
+- No red/`danger` tier until a real warned/limited payload is captured and pinned; calm `caution` only.
+
 ---
 
 ### Deep Dives (Optional) {#deep-dives}
@@ -628,7 +642,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 #### Modes / Policies {#modes-policies}
 
 - Permission modes cycle (per [#d02-cycle-order]): `default → acceptEdits → plan → auto → default`. `bypassPermissions` and `dontAsk` reachable only via badge popover.
-- Rate-limit chip visibility (per [#step-3] / [#q02-rate-limit-store]): hidden when `status === "allowed"` && `resetsAt > 60min`; visible otherwise.
+- Rate-limit chip visibility (per [#step-3] / [#q02-rate-limit-store]): **revised after observing real wire data** — every captured `rate_limit_event` is the benign `status: "allowed"`, `overageStatus: "rejected"` (org-disabled) default, and the payload carries no "percent used". Show the chip ONLY when `status !== "allowed"` OR `isUsingOverage`; the near-reset heuristic and the `overageStatus === "rejected"` → danger rule are removed (they lit a red chip on healthy idle sessions). Calm `caution` (amber) when visible; no `danger`/red tier until a confirmed hard-limit payload is captured.
 - Slash-popup filter (per [#q09-slash-popup-filter]): graphical-supported allowlist; dev-flag shows full list.
 
 #### Semantics {#semantics}
@@ -711,7 +725,9 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | `tugdeck/src/lib/use-permission-mode.ts` | Cycle callback + per-card tugbank persistence + mount-restore hook ([#step-1]) |
 | `tugdeck/src/components/tugways/cards/model-chip.tsx` | Z4B model indicator chip ([#step-2]) — display-only per [D13] |
 | `tugdeck/src/components/tugways/cards/model-picker-sheet.tsx` | `/model` picker overlay sheet ([#step-2b]) |
-| `tugdeck/src/components/tugways/cards/rate-limit-chip.tsx` | Z4B rate-limit countdown ([#step-3]) |
+| `tugdeck/src/lib/rate-limit-store.ts` | App-level account-global quota store ([#step-3.5]) |
+| `tugdeck/src/components/chrome/rate-limit-banner-bridge.tsx` | App-level rate-limit caution banner provider ([#step-3.5]) |
+| `tugdeck/src/lib/rate-limit.ts` | Pure banner-state + countdown helpers ([#step-3.5]) |
 | `tugdeck/src/components/tugways/cards/session-picker-sheet.tsx` | Reusable overlay session-picker primitive ([#step-6]) |
 | `tugdeck/src/components/tugways/cards/session-picker-sheet.css` | Sheet layout (overlay) |
 | `tugdeck/src/components/tugways/cards/rewind-sheet-data-source.ts` | `/rewind` data source over `code-session-store.transcript` ([#step-7]) |
@@ -1249,9 +1265,11 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 #### Step 3: Rate-limit chip in Z4B {#step-3}
 
+> **SUPERSEDED — reverted in favor of [#step-3.5].** The Z4B chip was built and shipped (commit `3dfc2274`), then pulled. Two reasons surfaced in review: (1) **it isn't parity** — the Claude Code terminal exposes no usage/limit chrome and no `/usage` slash command; the documented place to check quota is the web console, so a persistent indicator is an *extension*, not parity; (2) **quota is account-global**, so a per-card chip would duplicate the same state across every open dev card. The replacement is a single **app-level caution banner** ([#step-3.5]), shown only when claude actually signals trouble. The chip, its per-card store binding, and `lib/rate-limit.ts` were removed; the **transport infra was kept** (tugcast `rate_limit_event` → SESSION_METADATA routing in `feeds/session_metadata.rs` + `feeds/agent_supervisor.rs`, and `protocol.ts` `RateLimitInfo` / `RateLimitEvent`) — [#step-3.5] consumes it. The task list below is the historical record of what was built.
+
 **Depends on:** #step-1
 
-**Commit:** `feat(dev-card): rate-limit chip surfaces subscription-quota state in Z4B`
+**Commit:** `feat(dev-card): rate-limit chip surfaces subscription-quota state in Z4B` (shipped as `3dfc2274`, then reverted by [#step-3.5])
 
 **References:** [D01] Z4B chrome anchor, [D04] SessionMetadataStore hub, [D06] protocol baseline, [Q02] rate-limit store shape, [Q13] RateLimitEvent strictness, Risk R04, [L22] store→DOM observers, [L06] appearance via CSS/DOM, (#z4b-chrome-layout)
 
@@ -1281,6 +1299,44 @@ The visual vocabulary is intentionally shared with the status bar so a user read
 
 **Checkpoint:**
 - [x] `just app-test rate-limit-chip` → `VERDICT: PASS`
+
+---
+
+#### Step 3.5: App-level rate-limit caution banner {#step-3.5}
+
+**Depends on:** #step-3 (consumes the transport infra it kept)
+
+**Commit:** `feat(dev-card): app-level rate-limit caution banner`
+
+**References:** [D24] app-level banner (this step), [Q02] rate-limit store shape (revised), [D18] strict shape, [Q13] strictness, Risk R04, [L06] appearance via CSS/DOM, (#strategy)
+
+**Course-correction rationale.** Quota is **account-global** and the terminal has **no usage chrome**. So the right surface is one **transient, app-level** caution banner (not per-card, not a persistent indicator) that appears only when claude actually signals trouble — modeled exactly on the reconnection banner (`TugBannerProvider` in `components/chrome/tug-banner-bridge.tsx`), which is already the app-level, single-instance, connection-fed banner pattern. This **supersedes [Q02]/[D04]** for this surface: an account-global signal belongs in an app-level store, not the per-card `SessionMetadataStore` (the premise behind [Q02]'s "extend the per-card snapshot" was the per-card chip, which is gone).
+
+**The data reality (drives the conservative trigger).** The `rate_limit_event` payload is coarse — `{ status, resetsAt, rateLimitType, overageStatus, overageDisabledReason?, isUsingOverage }` — and carries **no "percent used"** (the web console's usage bars come from a different API). Every payload captured against claude 2.1.x so far is the benign default: `status: "allowed"`, `overageStatus: "rejected"` (the org-level-disabled default, NOT an alert), `isUsingOverage: false`. We have **no captured warned/limited payload**, so the trigger keys on the one thing claude varies — a `status` that is no longer `"allowed"`, or an active overage spend — and `overageStatus` is ignored entirely. The banner is transient and state-driven (auto-clears on recovery), so a mis-guessed trouble-status fails safe (the banner simply doesn't show) rather than false-alarming. A capture probe to pin the real warned/limited `status` strings is a follow-on ([#roadmap]).
+
+**Artifacts:**
+- New: `lib/rate-limit-store.ts` — app-level singleton, constructed at deck-manager boot with the `TugConnection`, subscribing to the SESSION_METADATA feed and tracking the latest `rate_limit_event` across **all** sessions (account-global ⇒ most-recent is authoritative). `subscribe` / `getSnapshot` ([L02]) + an `_ingestForTest` seam.
+- New: `lib/rate-limit.ts` (re-introduced, banner-shaped) — pure `rateLimitBannerState(info): "ok" | "approaching" | "limited"` (or `null`) + `formatResetCountdown(resetsAt, now)`; `lib/__tests__/rate-limit.test.ts`.
+- New: `components/chrome/rate-limit-banner-bridge.tsx` — `RateLimitBannerProvider`, mirrors `TugBannerProvider`: always mounted, subscribes to the app-level store, renders **one** `TugBanner` (`variant="status"`, `tone="caution"`).
+- Modified: `deck-manager.ts` mounts `RateLimitBannerProvider` alongside `TugBannerProvider` (single instance for the whole deck).
+- Modified: `test-surface.ts` adds an **app-level** (not card-scoped) ingest seam routing a `rate_limit_event` into the app-level store.
+- Reused unchanged (kept from [#step-3]): tugcast `rate_limit_event` → SESSION_METADATA routing; `protocol.ts` `RateLimitInfo` / `RateLimitEvent`.
+
+**Tasks:**
+- [ ] `RateLimitStore` app-level singleton: subscribe to SESSION_METADATA at the connection level, keep the latest `rate_limit_event` payload (filter by `type`), expose `subscribe`/`getSnapshot` + `_ingestForTest`.
+- [ ] `rateLimitBannerState(info)` pure helper: `null`/`ok` when `status === "allowed"` && `!isUsingOverage`; `approaching` / `limited` otherwise (single tier today — calm caution; no danger/red until a real limited payload is captured). `overageStatus` ignored.
+- [ ] `formatResetCountdown` pure helper (carried over).
+- [ ] `RateLimitBannerProvider` modeled on `TugBannerProvider`: one `TugBanner` (`status` / `caution`), message e.g. `Approaching usage limit — resets in {countdown} · check usage at claude.ai`; visibility state-driven, auto-clears when the quota returns to `allowed`. A short show-delay (matching the reconnection banner's `SHOW_DELAY_MS`) so a single transient frame doesn't flash it.
+- [ ] Mount once in `deck-manager.ts`. **No per-card surface** — the dedup is structural (one banner for the deck).
+- [ ] App-level test seam in `test-surface.ts`.
+
+**Tests:**
+- [ ] Pure-logic: `rateLimitBannerState` over the benign default (hidden), non-allowed status (shown), overage spend (shown), and `overageStatus: "rejected"` alone (hidden); `formatResetCountdown` offsets.
+- [ ] Real-app: inject a benign `allowed`/`rejected` frame → **no banner**; inject a non-allowed frame → **one** banner appears with the reset countdown; return to `allowed` → banner clears.
+- [ ] Real-app **dedup**: open two dev cards, inject a non-allowed frame → exactly **one** banner element in the deck (the bug this step exists to prevent).
+
+**Checkpoint:**
+- [ ] `just app-test rate-limit-banner`
 
 ---
 

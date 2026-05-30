@@ -41,7 +41,6 @@ import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
-import { RateLimitChip } from "./rate-limit-chip";
 import { useModelPicker } from "./model-picker-sheet";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import type { LocalCommandName } from "@/lib/slash-commands";
@@ -2771,7 +2770,6 @@ export function DevCardBody({
                       sessionMetadataStore={sessionMetadataStore}
                       onOpenPicker={modelPicker.openModelPicker}
                     />
-                    <RateLimitChip sessionMetadataStore={sessionMetadataStore} />
                     {effectiveFooterContent}
                   </>
                 }
