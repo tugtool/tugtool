@@ -2284,13 +2284,30 @@ export class SessionManager {
    * command catalog, …) without waiting for the first user turn — claude
    * in stream-json mode is otherwise silent until input arrives.
    *
+   * **New mode only.** On a `--resume` spawn whose conversation claude
+   * can't find, claude emits `result: error` + "No conversation found"
+   * and exits — tugcode classifies that as `resume_failed` (terminal, no
+   * retry) by pattern-matching the spawn's output. Injecting an
+   * `initialize` control-request into that window perturbs the failing
+   * spawn's output/timing enough that the classifier misses the
+   * resume-failed signature and treats the exit as a generic crash,
+   * which retries until `crash_budget_exhausted`. Gating to `new` mode
+   * keeps resume spawns byte-identical to their pre-handshake behavior;
+   * resumed sessions don't need the handshake anyway — their model /
+   * version / mode come from the on-bind ledger-metadata replay (tugcast,
+   * [#step-2a-1]), the accurate per-session truth. A fresh `--session-id`
+   * spawn answers `initialize` cleanly (verified) and has no ledger row
+   * to replay, so it is the case that needs the handshake.
+   *
    * Fire-and-forget: the response is correlated by `request_id` and
    * handled in {@link handleClaudeLine} (it arrives with no active turn).
    * This does NOT block the first user message — `spawnClaudeAndWatch`'s
-   * readiness gate is independent. No-op if the process is gone.
+   * readiness gate is independent. No-op if the process is gone or this
+   * is a resume spawn.
    */
   private sendInitializeHandshake(): void {
     if (!this.claudeProcess) return;
+    if (this.sessionMode !== "new") return;
     this.initializeRequestId = generateRequestId();
     sendControlRequest(this.claudeProcess.stdin, this.initializeRequestId, {
       subtype: "initialize",
