@@ -75,6 +75,11 @@ export interface ToolApproval {
   updatedInput?: Record<string, unknown>;
   // Present when decision === "deny"; human-readable reason.
   message?: string;
+  // Present when decision === "allow" and the user picked a durable
+  // scope ("Allow for this project", etc.): the SDK `PermissionUpdate[]`
+  // (a `permission_suggestions` entry, round-tripped back) the CLI
+  // records as a rule at its `destination`. Carried opaquely.
+  updatedPermissions?: unknown[];
 }
 
 export interface QuestionAnswer {

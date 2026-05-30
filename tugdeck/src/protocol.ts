@@ -347,6 +347,11 @@ export type InboundMessage =
       decision: "allow" | "deny";
       updatedInput?: unknown;
       message?: string;
+      // On allow: the SDK `PermissionUpdate[]` (the scope suggestion the
+      // user picked, round-tripped back) the CLI records as a durable
+      // rule at its chosen destination. Carried opaquely — the store is
+      // a dumb conduit; only the dialog and the CLI introspect it.
+      updatedPermissions?: unknown[];
     }
   | {
       type: "question_answer";

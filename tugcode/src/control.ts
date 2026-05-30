@@ -55,18 +55,29 @@ export function sendControlResponse(
 /**
  * Format an "allow" permission response per PN-1.
  * CRITICAL: uses "behavior": "allow" NOT "decision": "allow".
+ *
+ * When the user picked a durable scope ("Allow for this project", etc.)
+ * the chosen `permission_suggestions` entry is round-tripped back as
+ * `updatedPermissions` (the SDK `PermissionResult.updatedPermissions`
+ * field, `PermissionUpdate[]`); the CLI records the rule at its
+ * `destination`. Omitted for a plain "Allow once" so no rule is added.
  */
 export function formatPermissionAllow(
   requestId: string,
-  updatedInput: Record<string, unknown>
+  updatedInput: Record<string, unknown>,
+  updatedPermissions?: unknown[]
 ): Record<string, unknown> {
+  const response: Record<string, unknown> = {
+    behavior: "allow",
+    updatedInput,
+  };
+  if (updatedPermissions !== undefined && updatedPermissions.length > 0) {
+    response.updatedPermissions = updatedPermissions;
+  }
   return {
     subtype: "success",
     request_id: requestId,
-    response: {
-      behavior: "allow",
-      updatedInput,
-    },
+    response,
   };
 }
 

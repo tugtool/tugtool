@@ -1154,6 +1154,43 @@ describe("control protocol (Step 2.2)", () => {
     expect((manager as any).pendingControlRequests.has("req-allow-1")).toBe(false);
   });
 
+  test("handleToolApproval allow forwards updatedPermissions for a durable scope", () => {
+    const manager = new SessionManager("/tmp/tugcode-ctrl-allow-perm-" + Date.now(), crypto.randomUUID());
+
+    const pendingCR = {
+      type: "control_request",
+      request_id: "req-allow-perm",
+      request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "tokei" } },
+    };
+    (manager as any).pendingControlRequests.set("req-allow-perm", pendingCR);
+
+    const writtenData: string[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => writtenData.push(String(data)),
+        flush: () => {},
+      },
+    };
+
+    const update = {
+      type: "addRules",
+      rules: [{ toolName: "Bash", ruleContent: "tokei:*" }],
+      behavior: "allow",
+      destination: "localSettings",
+    };
+    manager.handleToolApproval({
+      type: "tool_approval",
+      request_id: "req-allow-perm",
+      decision: "allow",
+      updatedPermissions: [update],
+    });
+
+    const parsed = JSON.parse(writtenData[0].replace(/\n$/, ""));
+    // The chosen scope rides back so the CLI records the rule.
+    expect(parsed.response.response.behavior).toBe("allow");
+    expect(parsed.response.response.updatedPermissions).toEqual([update]);
+  });
+
   test("handleToolApproval deny sends correct control_response to stdin", () => {
     const manager = new SessionManager("/tmp/tugcode-ctrl-deny-" + Date.now(), crypto.randomUUID());
 

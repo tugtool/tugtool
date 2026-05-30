@@ -196,13 +196,34 @@ export function selectPermissionBodyKind(toolName: string): PermissionBodyKind {
 }
 
 /**
+ * The structured SDK `PermissionUpdate` carried by an actionable
+ * suggestion (the rules-bearing variant). Restated locally — the wire
+ * delivers `permission_suggestions` as opaque `unknown[]`, and on
+ * Allow the dialog round-trips the user's chosen entry straight back
+ * as `updatedPermissions` so the CLI records a durable rule at its
+ * `destination`. We never construct one; we only narrow + echo, so the
+ * shape stays minimal (extra wire fields ride along untouched).
+ */
+export interface PermissionUpdate {
+  type: string;
+  destination: string;
+  behavior?: "allow" | "deny";
+  rules?: Array<{ toolName: string; ruleContent?: string }>;
+}
+
+/**
  * An actionable `permission_suggestion` narrowed to what the dialog
  * needs: a wire `behavior` the `tool_approval` round-trip can honor
- * (`allow` / `deny`) plus a human-readable button label.
+ * (`allow` / `deny`), a human-readable button label, and — when the
+ * suggestion is a structured durable-scope update — the raw
+ * {@link PermissionUpdate} to echo back on Allow. `update` is absent
+ * for a degenerate suggestion that names no scope (it then behaves
+ * like "Allow once" — no rule added).
  */
 export interface PermissionSuggestionAction {
   behavior: "allow" | "deny";
   label: string;
+  update?: PermissionUpdate;
 }
 
 /**
@@ -259,8 +280,12 @@ export function composePermissionSuggestionLabel(
  * `{ behavior, destination, rules: [{ ruleContent, toolName }], type }`.
  * The narrowed label is composed from `behavior` + `destination` only
  * (see {@link composePermissionSuggestionLabel}); the wire's `rules`
- * content is intentionally dropped from the visible label since the
- * dialog's description already carries it.
+ * content is dropped from the visible *label* since the dialog's
+ * description already carries it. The structured entry itself is
+ * retained as `update` (when it carries a `type` + `destination`) so
+ * the Allow round-trip can echo it back as `updatedPermissions`; a
+ * suggestion without those fields yields no `update` and reads as a
+ * one-shot allow.
  */
 export function narrowPermissionSuggestion(
   value: unknown,
@@ -271,9 +296,18 @@ export function narrowPermissionSuggestion(
   if (behavior !== "allow" && behavior !== "deny") return null;
   const destination =
     typeof v.destination === "string" ? v.destination : undefined;
+  // Retain the raw object as the round-trip `update` only when it is a
+  // structured scope update (string `type` + a `destination`). It is
+  // echoed verbatim — it came from the SDK, so it is valid by
+  // construction; we never reshape it.
+  const update =
+    typeof v.type === "string" && destination !== undefined
+      ? (v as unknown as PermissionUpdate)
+      : undefined;
   return {
     behavior,
     label: composePermissionSuggestionLabel(behavior, destination),
+    ...(update !== undefined ? { update } : {}),
   };
 }
 
@@ -295,6 +329,17 @@ export const ALLOW_ONCE_OPTION_LABEL = "Allow once";
  */
 export const ALLOW_ONCE_OPTION_DESCRIPTION =
   "Allow this single invocation. No rule is added.";
+
+/**
+ * The stable option `value` for an allow-scoped suggestion, derived
+ * from its label. Shared by {@link buildPermissionOptions} (which
+ * stamps it onto the radio option) and the dialog's Allow handler
+ * (which maps the selected value back to the suggestion's `update`),
+ * so the two never drift. Pure; exported for the test suite.
+ */
+export function permissionScopeOptionValue(label: string): string {
+  return `allow:${label}`;
+}
 
 /**
  * Build the options array fed to `TugInlineDialog`'s `options` prop
@@ -329,7 +374,7 @@ export function buildPermissionOptions(
   ];
   for (const suggestion of allowSuggestions) {
     out.push({
-      value: `allow:${suggestion.label}`,
+      value: permissionScopeOptionValue(suggestion.label),
       label: suggestion.label,
     });
   }
@@ -718,7 +763,7 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   );
 
   const respond = React.useCallback(
-    (next: "allow" | "deny", message?: string) => {
+    (next: "allow" | "deny", updatedPermissions?: unknown[]) => {
       // Re-check against the live store rather than the rendered
       // `isPending` — robust against a click that arrives in the same
       // tick as another responder, or a stale closure.
@@ -727,8 +772,8 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
       if (!stillPending) return;
       session.respondApproval(
         requestId,
-        message !== undefined
-          ? { decision: next, message }
+        updatedPermissions !== undefined
+          ? { decision: next, updatedPermissions }
           : { decision: next },
       );
     },
@@ -802,16 +847,26 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({
   // reaching the hook and React would crash with "Rendered fewer
   // hooks than expected."
   const handleAllow = React.useCallback(() => {
-    // The implicit "Allow once" maps to allow-without-scope; any
-    // other selected option's label is the scope message Claude
-    // reads back to bind the rule.
+    // The implicit "Allow once" maps to allow-without-scope (no rule
+    // written). Any other selection round-trips the chosen suggestion's
+    // structured `update` back as `updatedPermissions`, so the CLI
+    // records a durable rule at its destination. A selected scope whose
+    // suggestion carried no structured `update` degrades to a one-shot
+    // allow rather than sending a malformed rule.
     if (selectedOption === ALLOW_ONCE_OPTION_VALUE) {
       respond("allow");
       return;
     }
-    const chosen = allowOptions.find((o) => o.value === selectedOption);
-    respond("allow", chosen?.label);
-  }, [allowOptions, respond, selectedOption]);
+    const chosen = suggestions.find(
+      (s) =>
+        s.behavior === "allow" &&
+        permissionScopeOptionValue(s.label) === selectedOption,
+    );
+    respond(
+      "allow",
+      chosen?.update !== undefined ? [chosen.update] : undefined,
+    );
+  }, [respond, selectedOption, suggestions]);
 
   const handleDeny = React.useCallback(() => {
     respond("deny");

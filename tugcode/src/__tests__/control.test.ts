@@ -39,6 +39,33 @@ describe("formatPermissionAllow", () => {
     // Must NOT have "decision" key
     expect("decision" in response).toBe(false);
   });
+
+  test("omits updatedPermissions for a plain allow (Allow once adds no rule)", () => {
+    const result = formatPermissionAllow("req-1", { path: "/foo" });
+    const response = result.response as any;
+    expect("updatedPermissions" in response).toBe(false);
+  });
+
+  test("omits updatedPermissions when the array is empty", () => {
+    const result = formatPermissionAllow("req-1", { path: "/foo" }, []);
+    const response = result.response as any;
+    expect("updatedPermissions" in response).toBe(false);
+  });
+
+  test("echoes updatedPermissions verbatim for a durable scope", () => {
+    // "Allow for this project" round-trips the chosen PermissionUpdate
+    // back so the CLI records the rule at its destination.
+    const update = {
+      type: "addRules",
+      rules: [{ toolName: "Bash", ruleContent: "tokei:*" }],
+      behavior: "allow",
+      destination: "localSettings",
+    };
+    const result = formatPermissionAllow("req-1", { command: "tokei" }, [update]);
+    const response = result.response as any;
+    expect(response.behavior).toBe("allow");
+    expect(response.updatedPermissions).toEqual([update]);
+  });
 });
 
 // ---------------------------------------------------------------------------

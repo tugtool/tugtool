@@ -2517,6 +2517,7 @@ function handleRespondApproval(
           decision: event.decision,
           updatedInput: event.updatedInput,
           message: event.message,
+          updatedPermissions: event.updatedPermissions,
         },
       },
     ],

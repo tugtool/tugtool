@@ -48,6 +48,7 @@ import {
   isBoilerplateApprovalReason,
   narrowPermissionSuggestion,
   permissionDialogPreservationKey,
+  permissionScopeOptionValue,
   seedPermissionDialogSelectedOption,
   selectPermissionBodyKind,
   type PermissionDialogPreservedState,
@@ -203,9 +204,10 @@ describe("composePermissionSuggestionLabel", () => {
 describe("narrowPermissionSuggestion", () => {
   it("narrows the v2.1.x catalog allow + session shape", () => {
     // Verbatim from test-11-permission-deny-roundtrip.jsonl. The
-    // wire's verbose `rules` content is intentionally dropped from
-    // the visible label — the dialog's description already names the
-    // specific tool + command being asked about.
+    // wire's verbose `rules` content is dropped from the visible
+    // *label* — the dialog's description already names the specific
+    // tool + command — but the structured entry is retained as
+    // `update` so the Allow round-trip can echo it back verbatim.
     const suggestion = {
       behavior: "allow",
       destination: "session",
@@ -215,7 +217,39 @@ describe("narrowPermissionSuggestion", () => {
     expect(narrowPermissionSuggestion(suggestion)).toEqual({
       behavior: "allow",
       label: "Allow for this session",
+      update: {
+        behavior: "allow",
+        destination: "session",
+        rules: [{ ruleContent: "//nonexistent/**", toolName: "Read" }],
+        type: "addRules",
+      },
     });
+  });
+
+  it("retains the structured update for an allow + project addRules", () => {
+    // "Allow for this project" rides back as `updatedPermissions` so
+    // the CLI writes a durable rule at its destination.
+    const suggestion = {
+      behavior: "allow" as const,
+      destination: "localSettings",
+      rules: [{ ruleContent: "tokei:*", toolName: "Bash" }],
+      type: "addRules",
+    };
+    const narrowed = narrowPermissionSuggestion(suggestion);
+    expect(narrowed?.label).toBe("Allow for this project");
+    expect(narrowed?.update).toEqual(suggestion);
+  });
+
+  it("captures no `update` when the suggestion names no scope (type/destination)", () => {
+    // A degenerate allow with no structured shape carries nothing to
+    // echo — Allow on it behaves like a one-shot allow.
+    expect(
+      narrowPermissionSuggestion({ behavior: "allow" })?.update,
+    ).toBeUndefined();
+    expect(
+      narrowPermissionSuggestion({ behavior: "allow", destination: "session" })
+        ?.update,
+    ).toBeUndefined();
   });
 
   it("narrows a deny + userSettings suggestion", () => {
@@ -334,6 +368,31 @@ describe("buildPermissionOptions", () => {
     // and we want "Allow once" (the no-rule scope) to be that
     // default — never a persistent rule.
     expect(options[0].value).toBe(ALLOW_ONCE_OPTION_VALUE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// permissionScopeOptionValue — option-value ↔ suggestion linkage
+// ---------------------------------------------------------------------------
+
+describe("permissionScopeOptionValue", () => {
+  it("derives the `allow:<label>` value the option and the Allow handler share", () => {
+    expect(permissionScopeOptionValue("Allow for this project")).toBe(
+      "allow:Allow for this project",
+    );
+  });
+
+  it("matches the value buildPermissionOptions stamps onto each scope option", () => {
+    // Drift guard: the dialog's Allow handler maps the selected value
+    // back to a suggestion via this helper, so the value the builder
+    // emits must equal the value the helper derives from the label.
+    const allows: ReadonlyArray<PermissionSuggestionAction> = [
+      { behavior: "allow", label: "Allow for this project" },
+    ];
+    const options = buildPermissionOptions(allows);
+    expect(options[1].value).toBe(
+      permissionScopeOptionValue("Allow for this project"),
+    );
   });
 });
 

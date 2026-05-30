@@ -4165,6 +4165,11 @@ export class SessionManager {
    * Handle tool_approval: send control_response to claude stdin per D05/D06.
    * Uses "behavior" not "decision" per PN-1.
    *
+   * Allow scope: when the user picked a durable scope the chosen
+   * `permission_suggestions` entry rides back as `msg.updatedPermissions`
+   * and is forwarded as the SDK `updatedPermissions`, so the CLI writes
+   * the rule at its `destination`. A plain "Allow once" carries none.
+   *
    * Deny message: the SDK passes our `message` string verbatim into the
    * `tool_result.content` the AI sees. A short string like "User denied"
    * leaves the AI without the canonical STOP directive — verified in a
@@ -4192,7 +4197,11 @@ export class SessionManager {
     const originalInput = (pendingRequest?.input as Record<string, unknown>) || {};
 
     if (msg.decision === "allow") {
-      const response = formatPermissionAllow(msg.request_id, msg.updatedInput || originalInput);
+      const response = formatPermissionAllow(
+        msg.request_id,
+        msg.updatedInput || originalInput,
+        msg.updatedPermissions,
+      );
       sendControlResponse(stdin, response);
     } else {
       const response = formatPermissionDeny(

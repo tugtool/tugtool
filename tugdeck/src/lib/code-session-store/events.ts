@@ -252,6 +252,9 @@ export interface RespondApprovalActionEvent {
   decision: "allow" | "deny";
   updatedInput?: unknown;
   message?: string;
+  // On allow with a chosen scope: the SDK `PermissionUpdate[]` echoed
+  // back so the CLI records a durable rule. Opaque at this layer.
+  updatedPermissions?: unknown[];
 }
 
 /**

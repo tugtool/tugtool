@@ -824,6 +824,7 @@ export class CodeSessionStore {
       decision: "allow" | "deny";
       updatedInput?: unknown;
       message?: string;
+      updatedPermissions?: unknown[];
     },
   ): void {
     if (this._disposed) return;
@@ -833,6 +834,7 @@ export class CodeSessionStore {
       decision: payload.decision,
       updatedInput: payload.updatedInput,
       message: payload.message,
+      updatedPermissions: payload.updatedPermissions,
     });
   }
 
