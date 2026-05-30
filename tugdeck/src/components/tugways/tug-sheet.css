@@ -97,13 +97,19 @@ body {
 /* ---- Display width ([data-display-width]) ----
  *
  * `standard` (default) keeps the ≈460px reading cap above. `wide` lets an
- * information-rich panel span 85% of the host pane — the clip is `left:0;
- * right:0` within the pane frame, so `width: 85%` is 85% of the pane width,
- * `margin: … auto` keeps it centered. The reading cap is lifted so the panel
- * actually reaches that width on a wide card. [L06] */
+ * information-rich panel grow past that cap — but sized relative to the host
+ * pane's *minimum* width (`--tug-pane-min-width`, set on the pane frame),
+ * not its live width. A pane the user has dragged wide would make a percentage
+ * of the live width sprawl; anchoring the percentage to the min width keeps a
+ * wide sheet a predictable size regardless of how big the card is. The
+ * `min-width` floor catches cards whose minimum width is very narrow, so the
+ * sheet never collapses below a usable width. `margin: … auto` keeps it
+ * centered; the trailing `max-width` guards against overflow on a pane
+ * narrower than the floor. [L06] */
 .tug-sheet-content[data-display-width="wide"] {
-  width: 85%;
-  max-width: none;
+  width: calc(0.75 * var(--tug-pane-min-width, 800px));
+  min-width: min(600px, calc(100% - 2 * var(--tugx-sheet-space-b)));
+  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
 }
 
 /* ---- Presentation resting states ----

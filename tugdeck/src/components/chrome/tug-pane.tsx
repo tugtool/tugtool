@@ -1578,6 +1578,12 @@ export function TugPane({
         height: frameHeight,
         zIndex,
         boxSizing: "border-box",
+        // Expose the pane's minimum width to descendants via CSS custom
+        // property. `wide` TugSheets size relative to this floor rather
+        // than the pane's (potentially much larger) live width, so a
+        // wide sheet stays a predictable size instead of sprawling on a
+        // big card. [L06]
+        ["--tug-pane-min-width" as string]: `${sizePolicy.min.width}px`,
       }}
     >
       {/* 8 resize handles -- hidden when collapsed; drag remains active [D07] */}
