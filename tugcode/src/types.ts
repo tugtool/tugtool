@@ -978,10 +978,15 @@ export interface RewindPreviewResult {
  * means the working tree was reverted; `canRewind:false` + `error`
  * means it could not be (aged-out checkpoint, checkpointing disabled).
  *
- * The conversation half (`scope:"conversation"|"both"`) lands in
- * [#step-7-2]; its ack fields (e.g. a fork's new session-id) are added
- * there. `scope` echoes the request so the dev-card knows which
- * dimensions were applied.
+ * The conversation half (`scope:"conversation"|"both"`, [#step-7-2]) is a
+ * JSONL truncate + silent `--resume` respawn (no `rewind_files` control
+ * request). When `fork` was requested, the respawn loads a truncated COPY
+ * under a freshly-minted claude session id; `newSessionId` carries that id
+ * so the dev-card can rebind the card→session binding (and persist it, so a
+ * cold-boot resumes the fork rather than the original). Absent for the
+ * destructive in-place variant (same id) and for the pure-code dimension.
+ * `scope` echoes the request so the dev-card knows which dimensions were
+ * applied.
  */
 export interface RewindResult {
   type: "rewind_result";
@@ -989,6 +994,7 @@ export interface RewindResult {
   scope: "conversation" | "code" | "both";
   canRewind: boolean;
   error?: string;
+  newSessionId?: string;
   ipc_version: number;
 }
 

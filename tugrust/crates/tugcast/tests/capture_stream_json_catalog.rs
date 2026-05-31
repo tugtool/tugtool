@@ -218,6 +218,35 @@ async fn capture_all_probes() {
     }
     println!("-----------------------------------------------------");
 
+    // A filtered run is a de-risking inspection, not a re-baseline: writing
+    // fixtures from a subset would corrupt the manifest/schema (missing
+    // probes). Print the captured event types per probe and return without
+    // touching the committed golden.
+    if std::env::var("TUG_PROBE_FILTER").ok().filter(|s| !s.is_empty()).is_some() {
+        println!("--- TUG_PROBE_FILTER active: inspection only, NOT writing fixtures ---");
+        for probe in &captures {
+            let types: Vec<&str> = probe
+                .events
+                .iter()
+                .filter_map(|e| e.get("type").and_then(|v| v.as_str()))
+                .collect();
+            println!("  {} [{}]:\n    {}", probe.name, probe.events.len(), types.join(", "));
+            // Dump the rewind-relevant payloads so a filtered run confirms
+            // semantics (canRewind / newSessionId / fork session id), not just
+            // that the event types appeared.
+            for e in &probe.events {
+                match e.get("type").and_then(|v| v.as_str()) {
+                    Some("rewind_result") | Some("rewind_preview_result")
+                    | Some("session_init") => {
+                        println!("      → {e}");
+                    }
+                    _ => {}
+                }
+            }
+        }
+        return;
+    }
+
     let version =
         extract_version(&captures).expect("no system_metadata version found — aborting per [D11]");
 

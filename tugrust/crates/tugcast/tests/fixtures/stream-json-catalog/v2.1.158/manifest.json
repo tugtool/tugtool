@@ -9,7 +9,7 @@
       "status": "passed"
     },
     {
-      "event_count": 20,
+      "event_count": 19,
       "name": "test-02-longer-response-streaming",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -27,43 +27,43 @@
       "status": "passed"
     },
     {
-      "event_count": 24,
+      "event_count": 25,
       "name": "test-05-tool-use-read",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 14,
+      "event_count": 13,
       "name": "test-06-interrupt-mid-stream",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 32,
+      "event_count": 33,
       "name": "test-07-multiple-tool-calls",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 30,
+      "event_count": 31,
       "name": "test-08-tool-error-nonexistent",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 26,
+      "event_count": 24,
       "name": "test-09-bash-auto-approved",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 35,
+      "event_count": 36,
       "name": "test-10-long-streaming-300-words",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 27,
+      "event_count": 31,
       "name": "test-11-permission-deny-roundtrip",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -78,11 +78,11 @@
       "event_count": 0,
       "name": "test-13-session-command-new",
       "runtime_ms": "{{i64}}",
-      "skip_reason": "blocked on dev.md \u00a7T0.5 P16 \u2014 session_command routing bug",
+      "skip_reason": "blocked on dev.md §T0.5 P16 — session_command routing bug",
       "status": "skipped"
     },
     {
-      "event_count": 29,
+      "event_count": 28,
       "name": "test-14-message-during-turn",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -94,7 +94,7 @@
       "status": "passed"
     },
     {
-      "event_count": 14,
+      "event_count": 15,
       "name": "test-16-model-change-roundtrip",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -103,7 +103,7 @@
       "event_count": 0,
       "name": "test-17-session-command-continue",
       "runtime_ms": "{{i64}}",
-      "skip_reason": "blocked on dev.md \u00a7T0.5 P16 \u2014 session_command routing bug",
+      "skip_reason": "blocked on dev.md §T0.5 P16 — session_command routing bug",
       "status": "skipped"
     },
     {
@@ -113,7 +113,7 @@
       "status": "passed"
     },
     {
-      "event_count": 14,
+      "event_count": 15,
       "name": "test-19-slash-compact",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -122,7 +122,7 @@
       "event_count": 0,
       "name": "test-20-session-command-fork",
       "runtime_ms": "{{i64}}",
-      "skip_reason": "blocked on dev.md \u00a7T0.5 P16 \u2014 session_command routing bug",
+      "skip_reason": "blocked on dev.md §T0.5 P16 — session_command routing bug",
       "status": "skipped"
     },
     {
@@ -132,13 +132,13 @@
       "status": "passed"
     },
     {
-      "event_count": 41,
+      "event_count": 34,
       "name": "test-22-subagent-spawn",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     },
     {
-      "event_count": 17,
+      "event_count": 16,
       "name": "test-23-image-attachment",
       "runtime_ms": "{{i64}}",
       "status": "passed"
@@ -153,7 +153,7 @@
       "event_count": 0,
       "name": "test-25-tugplug-plan-invocation",
       "runtime_ms": "{{i64}}",
-      "skip_reason": "probe script incomplete \u2014 /tugplug:plan asks clarifying questions the script never answers; needs redesign (not P19)",
+      "skip_reason": "probe script incomplete — /tugplug:plan asks clarifying questions the script never answers; needs redesign (not P19)",
       "status": "skipped"
     },
     {
@@ -214,7 +214,7 @@
       "event_count": 0,
       "name": "test-35-askuserquestion-flow",
       "runtime_ms": "{{i64}}",
-      "skip_reason": "first-run flake at stability>=2 \u2014 probe returns 0 events intermittently; needs root-cause investigation separate from P19",
+      "skip_reason": "first-run flake at stability>=2 — probe returns 0 events intermittently; needs root-cause investigation separate from P19",
       "status": "skipped"
     },
     {
@@ -226,6 +226,24 @@
     {
       "event_count": 29,
       "name": "test-37-rewind-files-roundtrip",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 25,
+      "name": "test-38-rewind-conversation-fork",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 35,
+      "name": "test-39-rewind-both-composition",
+      "runtime_ms": "{{i64}}",
+      "status": "passed"
+    },
+    {
+      "event_count": 24,
+      "name": "test-40-rewind-conversation-in-place",
       "runtime_ms": "{{i64}}",
       "status": "passed"
     }

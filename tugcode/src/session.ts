@@ -250,6 +250,152 @@ export function extractUserMessageTextCounts(jsonl: string): Map<string, number>
 }
 
 /**
+ * Outcome of computing the conversation-rewind truncation boundary
+ * ([#step-7-2]) for a `promptUuid` anchor against a session JSONL.
+ *
+ *   - `ok` — `boundary` is the line index of the anchor's user-prompt
+ *     record; keeping `lines.slice(0, boundary)` drops that turn and
+ *     everything after it (verified live: the resumed session forgets the
+ *     dropped turns and nothing downstream references them).
+ *   - `not_found` — no user-prompt record carries `promptUuid` (a stale
+ *     anchor, or one pointing at a tool_result rather than a submission).
+ *   - `compaction_blocked` — a `/compact` boundary (an on-disk
+ *     `subtype:"compact_boundary"` system record or an `isCompactSummary`
+ *     user record) sits between the anchor and the tip. Chopping across a
+ *     compaction rewrites claude's resume pointers → "No conversation
+ *     found", so the rewind is refused rather than silently corrupting the
+ *     session ([#step-7a] constraint).
+ */
+export type ConversationTruncation =
+  | { kind: "ok"; boundary: number }
+  | { kind: "not_found" }
+  | { kind: "compaction_blocked" };
+
+/**
+ * Compute where to truncate a session JSONL to rewind the conversation to
+ * the turn anchored at `promptUuid` ([#step-7-2]). Pure (no I/O) so the
+ * boundary + compaction-guard logic is unit-testable without disk or a live
+ * claude.
+ *
+ * The anchor is claude's user-prompt-record `uuid` ([#step-7a]). The on-disk
+ * JSONL interleaves the conversational `user`/`assistant` records with
+ * metadata records (`queue-operation`, `attachment`, `file-history-snapshot`,
+ * `ai-title`, `mode`, …) that carry no `uuid`; only a genuine user
+ * *submission* (a `user` record whose `message.content` is a string or an
+ * array with a non-`tool_result` block) is a valid anchor. We find that
+ * record and return its index as the slice boundary — `slice(0, boundary)`
+ * retains every record before the picked turn.
+ *
+ * The compaction guard is checked first: if any record from the tip back to
+ * the anchor is a compaction marker, the chop would cross it, so we refuse.
+ */
+export function computeConversationTruncation(
+  jsonl: string,
+  promptUuid: string,
+): ConversationTruncation {
+  const lines = jsonl.split("\n");
+  let boundary = -1;
+  let sawCompactionAfter = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null) continue;
+    const entry = parsed as {
+      type?: unknown;
+      subtype?: unknown;
+      uuid?: unknown;
+      isCompactSummary?: unknown;
+      message?: { content?: unknown } | undefined;
+    };
+    // Compaction markers: a `compact_boundary` system record or an
+    // `isCompactSummary` user record. Track whether one appears at or after
+    // the anchor (the chop range).
+    const isCompaction =
+      (entry.type === "system" && entry.subtype === "compact_boundary") ||
+      entry.isCompactSummary === true;
+    if (boundary === -1) {
+      if (
+        entry.type === "user" &&
+        typeof entry.uuid === "string" &&
+        entry.uuid === promptUuid &&
+        isUserSubmissionContent(entry.message?.content)
+      ) {
+        boundary = i;
+      }
+    }
+    // A compaction at or after the boundary is in the chop range. Until the
+    // boundary is found we don't yet know if a compaction precedes it, so
+    // record any compaction and resolve once the boundary is known.
+    if (isCompaction && (boundary === -1 || i >= boundary)) {
+      sawCompactionAfter = true;
+    }
+  }
+  if (boundary === -1) return { kind: "not_found" };
+  // Re-evaluate compaction strictly within [boundary, tip]: a compaction
+  // BEFORE the boundary is fine (it stays in the retained prefix); only one
+  // at/after the anchor blocks the chop.
+  if (sawCompactionAfter) {
+    for (let i = boundary; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.length === 0) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const entry = parsed as {
+        type?: unknown;
+        subtype?: unknown;
+        isCompactSummary?: unknown;
+      };
+      if (
+        (entry.type === "system" && entry.subtype === "compact_boundary") ||
+        entry.isCompactSummary === true
+      ) {
+        return { kind: "compaction_blocked" };
+      }
+    }
+  }
+  return { kind: "ok", boundary };
+}
+
+/**
+ * True when a JSONL `user` record's `message.content` is a genuine user
+ * submission (string content, or an array carrying at least one non-
+ * `tool_result` block) rather than a tool-result echo. Mirrors the
+ * submission test in {@link routeTopLevelEvent}'s `promptUuid` capture so a
+ * tool_result `user` record is never mistaken for a rewind anchor.
+ */
+function isUserSubmissionContent(content: unknown): boolean {
+  if (typeof content === "string") return true;
+  if (!Array.isArray(content)) return false;
+  return content.some((block) => {
+    if (typeof block !== "object" || block === null) return false;
+    return (block as { type?: unknown }).type !== "tool_result";
+  });
+}
+
+/**
+ * Default JSONL writer ([#step-7-2] conversation rewind). Writes the
+ * truncated session bytes back to disk. Replaceable from tests via
+ * {@link SessionManager}'s `jsonlWriter` option so unit tests never touch a
+ * real `~/.claude/projects` file.
+ */
+export async function defaultJsonlWriter(
+  path: string,
+  content: string,
+): Promise<void> {
+  await Bun.write(path, content);
+}
+
+/**
  * Default JSONL reader. Uses `Bun.file(path)` and treats `ENOENT` as
  * `missing`, every other error as `unreadable`. Replaceable from
  * tests via {@link SessionManager}'s `jsonlReader` option.
@@ -1899,6 +2045,8 @@ export class SessionManager {
   private claudeProjectsRoot: string;
   /** Configurable JSONL reader; default uses `Bun.file`. */
   private jsonlReader: (path: string) => Promise<JsonlReadResult>;
+  /** Configurable JSONL writer ([#step-7-2]); default uses `Bun.write`. */
+  private jsonlWriter: (path: string, content: string) => Promise<void>;
   /** Hard-timeout override (test hook). */
   private replayTimeoutMs: number;
   /** Live-buffer overflow threshold (test hook). */
@@ -1973,6 +2121,14 @@ export class SessionManager {
       promptUuid: string;
       kind: "apply";
       scope: "conversation" | "code" | "both";
+      /**
+       * Resolver for the promisified code-restore leg ([#step-7-2]). The
+       * apply path awaits the `control_response` so `scope:"both"` can run
+       * the code restore FIRST, then the conversation rewind, then emit a
+       * single combined `rewind_result`. A `preview` entry has none (its
+       * result is emitted directly on correlation).
+       */
+      resolve: (r: { canRewind: boolean; error?: string }) => void;
     }
   >();
 
@@ -1984,6 +2140,7 @@ export class SessionManager {
     options?: {
       claudeProjectsRoot?: string;
       jsonlReader?: (path: string) => Promise<JsonlReadResult>;
+      jsonlWriter?: (path: string, content: string) => Promise<void>;
       replayTimeoutMs?: number;
       replayLiveBufferMax?: number;
       replayTelemetry?: ReplayTelemetry;
@@ -2021,6 +2178,7 @@ export class SessionManager {
     this.claudeProjectsRoot =
       options?.claudeProjectsRoot ?? DEFAULT_CLAUDE_PROJECTS_ROOT;
     this.jsonlReader = options?.jsonlReader ?? defaultJsonlReader;
+    this.jsonlWriter = options?.jsonlWriter ?? defaultJsonlWriter;
     this.replayTimeoutMs = options?.replayTimeoutMs ?? REPLAY_HARD_TIMEOUT_MS;
     this.replayLiveBufferMax =
       options?.replayLiveBufferMax ?? REPLAY_LIVE_BUFFER_MAX;
@@ -4471,30 +4629,28 @@ export class SessionManager {
   }
 
   /**
-   * Handle `session_rewind` ([#step-7-1]/[#step-7-2]).
+   * Handle `session_rewind` ([#step-7-1]/[#step-7-2]) — the two restore
+   * dimensions of `/rewind`, applied to an idle session.
    *
-   * 7b.1 implements the **code** dimension: `scope:"code"` and the code
-   * leg of `scope:"both"` issue a `rewind_files{dry_run:false}` control
-   * request (reverts the working-tree files claude edited since the
-   * anchor turn) and ack via `rewind_result`. The **conversation**
-   * dimension (`scope:"conversation"` and the conversation leg of
-   * `"both"` — JSONL truncate + respawn, with fork) lands in
-   * [#step-7-2]; for `scope:"conversation"` 7b.1 issues no `rewind_files`
-   * and the conversation ack is added there. For `scope:"both"` the
-   * code restore runs FIRST on the live session (per [#step-7-2]
-   * ordering), then 7b.2 layers the fork on top.
+   * - **code** (`scope:"code"`, and the code leg of `"both"`) → a
+   *   `rewind_files{dry_run:false}` control request reverts the working-tree
+   *   files claude edited since the anchor turn ([#step-7-1]).
+   * - **conversation** (`scope:"conversation"`, and the conversation leg of
+   *   `"both"`) → truncate the session JSONL at the anchor + silent
+   *   `--resume` respawn, forking by default ([#step-7-2]).
+   * - **both** → code restore FIRST on the live session (it reverts files
+   *   via the live `fileHistory`), THEN the conversation rewind. If the code
+   *   restore fails, the conversation leg is skipped and the failure is
+   *   reported — never a partial restore.
+   *
+   * A single `rewind_result` ack reports the combined outcome (carrying the
+   * fork's `newSessionId` when applicable).
    */
-  handleSessionRewind(msg: SessionRewind): void {
+  async handleSessionRewind(msg: SessionRewind): Promise<void> {
     const restoresCode = msg.scope === "code" || msg.scope === "both";
-    if (!restoresCode) {
-      // `scope:"conversation"` — no code op. The conversation rewind +
-      // its ack are wired in [#step-7-2]; nothing to do on the code
-      // bridge. Logged so the seam is visible, not a silent drop.
-      console.log(
-        `session_rewind scope=conversation: conversation rewind lands in [#step-7-2]; no code op (promptUuid=${msg.promptUuid})`,
-      );
-      return;
-    }
+    const restoresConversation =
+      msg.scope === "conversation" || msg.scope === "both";
+
     if (!this.claudeProcess) {
       this.emitRewindResult(msg.promptUuid, msg.scope, {
         canRewind: false,
@@ -4509,17 +4665,184 @@ export class SessionManager {
       });
       return;
     }
-    const requestId = generateRequestId();
-    this.pendingRewindRequests.set(requestId, {
-      promptUuid: msg.promptUuid,
-      kind: "apply",
-      scope: msg.scope,
+
+    // Code dimension first (live session, working-tree revert). For
+    // `scope:"both"` a failed code restore aborts before the conversation
+    // leg so the two dimensions never diverge.
+    if (restoresCode) {
+      const codeResult = await this.applyCodeRewind(msg.promptUuid);
+      if (!codeResult.canRewind) {
+        this.emitRewindResult(msg.promptUuid, msg.scope, codeResult);
+        return;
+      }
+      if (!restoresConversation) {
+        this.emitRewindResult(msg.promptUuid, msg.scope, codeResult);
+        return;
+      }
+    }
+
+    // Conversation dimension (JSONL truncate + silent respawn, fork default).
+    const convResult = await this.applyConversationRewind(
+      msg.promptUuid,
+      msg.fork ?? true,
+    );
+    this.emitRewindResult(msg.promptUuid, msg.scope, convResult);
+  }
+
+  /**
+   * Issue the code-restore `rewind_files{dry_run:false}` control request and
+   * resolve once its `control_response` correlates ([#step-7-1]/[#step-7-2]).
+   * Promisified so {@link handleSessionRewind} can sequence
+   * `scope:"both"` (code, then conversation) and emit a single ack.
+   */
+  private applyCodeRewind(
+    promptUuid: string,
+  ): Promise<{ canRewind: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      if (!this.claudeProcess) {
+        resolve({ canRewind: false, error: "No active claude process." });
+        return;
+      }
+      const requestId = generateRequestId();
+      this.pendingRewindRequests.set(requestId, {
+        promptUuid,
+        kind: "apply",
+        scope: "code",
+        resolve,
+      });
+      sendControlRequest(this.claudeProcess.stdin, requestId, {
+        subtype: "rewind_files",
+        user_message_id: promptUuid,
+        dry_run: false,
+      });
     });
-    sendControlRequest(this.claudeProcess.stdin, requestId, {
-      subtype: "rewind_files",
-      user_message_id: msg.promptUuid,
-      dry_run: false,
-    });
+  }
+
+  /**
+   * Conversation rewind ([#step-7-2]): truncate the session JSONL at the
+   * `promptUuid` anchor and silent-respawn `--resume` to reload the rewound
+   * context for the next turn. NOT a replay rebuild — the respawn emits no
+   * transcript (the dev-card truncates its own store locally, [#step-7-3]),
+   * so survivors keep their mount identity ([L26]).
+   *
+   * `fork` (the default) preserves the original session: it copies the
+   * truncated history into a freshly-minted claude session id and resumes
+   * THAT, returning `newSessionId` for the card→session rebind (so a
+   * cold-boot resumes the fork, not the untruncated original). The
+   * destructive in-place variant (`fork:false`) truncates the live session's
+   * own JSONL — a pre-truncation snapshot is kept so a failed respawn rolls
+   * back.
+   *
+   * Concurrency: the truncate happens only while the claude subprocess is
+   * DOWN (between {@link killAndCleanup} and the resume spawn), so there is
+   * no write race against claude. A `/compact` boundary in the chop range,
+   * a missing JSONL, or an unknown anchor all refuse cleanly rather than
+   * corrupt the session.
+   */
+  private async applyConversationRewind(
+    promptUuid: string,
+    fork: boolean,
+  ): Promise<{ canRewind: boolean; error?: string; newSessionId?: string }> {
+    const liveId = this.resumeSessionId ?? this.sessionId;
+
+    // Resolve the on-disk JSONL the same way runReplay does — claude names
+    // its per-session file after the canonicalized cwd.
+    let canonicalProjectDir = this.projectDir;
+    try {
+      canonicalProjectDir = await realpath(this.projectDir);
+    } catch {
+      // Unresolvable (test fixture / deleted dir) — fall back to raw; the
+      // reader reports `missing` if the path doesn't exist.
+    }
+    const livePath = jsonlPathFor(
+      this.claudeProjectsRoot,
+      canonicalProjectDir,
+      liveId,
+    );
+
+    const read = await this.jsonlReader(livePath);
+    if (read.kind !== "ok") {
+      return {
+        canRewind: false,
+        error: `Could not read session JSONL (${read.message}).`,
+      };
+    }
+
+    const truncation = computeConversationTruncation(read.jsonl, promptUuid);
+    if (truncation.kind === "not_found") {
+      return {
+        canRewind: false,
+        error: "Rewind anchor not found in this session.",
+      };
+    }
+    if (truncation.kind === "compaction_blocked") {
+      return {
+        canRewind: false,
+        error:
+          "Cannot rewind across a /compact boundary; the conversation was compacted after this turn.",
+      };
+    }
+
+    const lines = read.jsonl.split("\n");
+    const truncated = lines.slice(0, truncation.boundary).join("\n") + "\n";
+
+    // Subprocess DOWN before any disk write — no race against claude.
+    await this.killAndCleanup();
+
+    if (fork) {
+      // Copy the truncated history under a fresh id; the original `livePath`
+      // is left intact. The new id is known synchronously (we mint it), so
+      // the ack + the rebind don't depend on claude's first-input init.
+      const newId = crypto.randomUUID();
+      const forkPath = jsonlPathFor(
+        this.claudeProjectsRoot,
+        canonicalProjectDir,
+        newId,
+      );
+      try {
+        await this.jsonlWriter(forkPath, truncated);
+      } catch (err) {
+        return {
+          canRewind: false,
+          error: `Could not write forked session (${err instanceof Error ? err.message : String(err)}).`,
+        };
+      }
+      // Point the manager at the fork for this and every later (re)spawn,
+      // and tell tugcast so the card→session binding is rebound + persisted
+      // (a cold-boot then resumes the truncated fork, not the original).
+      this.resumeSessionId = newId;
+      this.claudeProcess = this.spawnClaude(newId, "resume");
+      this.startStdoutDrain(this.claudeProcess);
+      this.writeSyntheticSessionInit(newId);
+      return { canRewind: true, newSessionId: newId };
+    }
+
+    // Destructive in-place: snapshot the full pre-truncation bytes so a
+    // failed respawn can roll back, then overwrite the live JSONL.
+    try {
+      await this.jsonlWriter(livePath, truncated);
+    } catch (err) {
+      return {
+        canRewind: false,
+        error: `Could not truncate session (${err instanceof Error ? err.message : String(err)}).`,
+      };
+    }
+    try {
+      this.claudeProcess = this.spawnClaude(liveId, "resume");
+      this.startStdoutDrain(this.claudeProcess);
+    } catch (err) {
+      // Roll back the truncation so the session isn't left half-rewound.
+      try {
+        await this.jsonlWriter(livePath, read.jsonl);
+      } catch {
+        // Best-effort; the spawn failure is the reported error.
+      }
+      return {
+        canRewind: false,
+        error: `Respawn after rewind failed (${err instanceof Error ? err.message : String(err)}).`,
+      };
+    }
+    return { canRewind: true };
   }
 
   /**
@@ -4572,10 +4895,11 @@ export class SessionManager {
         deletions,
       });
     } else {
-      this.emitRewindResult(pending.promptUuid, pending.scope, {
-        canRewind,
-        error,
-      });
+      // Apply leg: hand the outcome to the awaiting
+      // {@link applyCodeRewind} promise. The `rewind_result` ack is emitted
+      // by {@link handleSessionRewind} once the full (possibly combined)
+      // rewind completes — never here.
+      pending.resolve({ canRewind, error });
     }
     return true;
   }
@@ -4610,11 +4934,11 @@ export class SessionManager {
     writeLine(msg);
   }
 
-  /** Emit a {@link RewindResult} ack ([#step-7-1]). */
+  /** Emit a {@link RewindResult} ack ([#step-7-1]/[#step-7-2]). */
   private emitRewindResult(
     promptUuid: string,
     scope: "conversation" | "code" | "both",
-    fields: { canRewind: boolean; error?: string },
+    fields: { canRewind: boolean; error?: string; newSessionId?: string },
   ): void {
     const msg: RewindResult = {
       type: "rewind_result",
@@ -4622,6 +4946,9 @@ export class SessionManager {
       scope,
       canRewind: fields.canRewind,
       ...(fields.error !== undefined ? { error: fields.error } : {}),
+      ...(fields.newSessionId !== undefined
+        ? { newSessionId: fields.newSessionId }
+        : {}),
       ipc_version: 2,
     };
     writeLine(msg);

@@ -212,7 +212,7 @@ ProbeRecord {
 **Guidance:**
 
 - **Name** `test-<NN>-<slug>`. `NN` is a two-digit decimal zero-padded so lexicographic file order matches probe order. The slug is a short kebab-case description.
-- **`input_script`** is a list of `ProbeMsg` values — `UserMessage`, `UserMessageWithAttachments`, `Interrupt`, `ToolApproval`, `QuestionAnswer`, `SessionCommand`, `ModelChange`, `PermissionMode`, `WaitForEvent`, or `Sleep`. See `tests/common/probes.rs` for the concrete shapes.
+- **`input_script`** is a list of `ProbeMsg` values — `UserMessage`, `UserMessageWithAttachments`, `Interrupt`, `ToolApproval`, `QuestionAnswer`, `SessionCommand`, `ModelChange`, `PermissionMode`, `WaitForEvent`, `Sleep`, `RewindPreview`/`SessionRewind` (`/rewind` bridge), and `CaptureAnchor`/`ConsumeEvent` (consuming waits that disambiguate turn instances in a multi-turn probe — e.g. capturing turn 2's `prompt_anchor`, or gating on turn 2's `turn_complete`, instead of the first buffered one). See `tests/common/probes.rs` for the concrete shapes.
 - **`required_events`** — event types that *must* appear. Start conservative (include everything you expect to see); the Step 4 stability run will demote flapping events to optional automatically.
 - **`optional_events`** — event types that *may* appear but are not shape-checked if absent.
 - **`prerequisites`** — capture-time preconditions. `TugplugPluginLoaded` is satisfied when `$project_dir/tugplug/` exists on disk (true for the capture binary, false for some other test harnesses). `DenialCapableTool` is currently always considered satisfied.

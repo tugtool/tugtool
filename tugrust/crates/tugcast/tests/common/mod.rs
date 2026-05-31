@@ -743,22 +743,28 @@ impl TestWs {
     }
 
     /// Send a `session_rewind` message — apply a `/rewind` to the turn
-    /// anchored at `prompt_uuid` ([#step-7-1]). `scope` ∈ {`"code"`,
-    /// `"conversation"`, `"both"`}; the code dimension reverts the
-    /// working tree via `rewind_files{dry_run:false}` and acks with
-    /// `rewind_result`.
+    /// anchored at `prompt_uuid` ([#step-7-1]/[#step-7-2]). `scope` ∈
+    /// {`"code"`, `"conversation"`, `"both"`}; the code dimension reverts the
+    /// working tree via `rewind_files{dry_run:false}`, the conversation
+    /// dimension truncates the JSONL + silent-respawns. `fork` (conversation/
+    /// both only): `None` omits the flag (tugcode's default = fork into a new
+    /// session id), `Some(false)` requests the destructive in-place variant.
     pub async fn send_session_rewind(
         &mut self,
         tug_session_id: &str,
         prompt_uuid: &str,
         scope: &str,
+        fork: Option<bool>,
     ) {
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "tug_session_id": tug_session_id,
             "type": "session_rewind",
             "promptUuid": prompt_uuid,
             "scope": scope,
         });
+        if let Some(fork) = fork {
+            payload["fork"] = serde_json::Value::Bool(fork);
+        }
         let bytes = serde_json::to_vec(&payload).expect("session_rewind json");
         let frame = Frame::new(FeedId::CODE_INPUT, bytes);
         self.sink

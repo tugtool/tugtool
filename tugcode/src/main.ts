@@ -373,10 +373,23 @@ async function main() {
       // `handleClaudeLine`); no IPC-loop-blocking await.
       sessionManager?.handleRewindPreview(msg);
     } else if (isSessionRewind(msg)) {
-      // `/rewind` apply ([#step-7-1]). Code dimension reverts the
-      // working tree via `rewind_files`; the conversation dimension
-      // lands in [#step-7-2].
-      sessionManager?.handleSessionRewind(msg);
+      // `/rewind` apply. Code dimension reverts the working tree via
+      // `rewind_files` ([#step-7-1]); the conversation dimension truncates
+      // the session JSONL + silent-respawns `--resume` ([#step-7-2]). The
+      // handler is async (file I/O + respawn) and emits its own
+      // `rewind_result`; surface any unexpected throw as a failed ack rather
+      // than an unhandled rejection.
+      sessionManager?.handleSessionRewind(msg).catch((err) => {
+        console.error("Session rewind failed:", err);
+        writeLine({
+          type: "rewind_result",
+          promptUuid: msg.promptUuid,
+          scope: msg.scope,
+          canRewind: false,
+          error: `Session rewind failed: ${err}`,
+          ipc_version: 2,
+        });
+      });
     } else if (isSessionCommand(msg)) {
       if (sessionManager) {
         sessionManager.handleSessionCommand(msg.command).catch((err) => {

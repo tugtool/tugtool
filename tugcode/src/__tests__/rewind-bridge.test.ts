@@ -11,8 +11,13 @@
 // `tugrust/crates/tugcast/tests/common/probes.rs`.
 
 import { describe, test, expect } from "bun:test";
-import { ActiveTurn, SessionManager, routeTopLevelEvent } from "../session.ts";
-import type { EventMappingContext } from "../session.ts";
+import {
+  ActiveTurn,
+  SessionManager,
+  routeTopLevelEvent,
+  computeConversationTruncation,
+} from "../session.ts";
+import type { EventMappingContext, JsonlReadResult } from "../session.ts";
 
 // Capture writeLine() output (it routes through Bun.write(Bun.stdout)).
 // Mirrors session.test.ts's helper.
@@ -266,9 +271,13 @@ describe("session_rewind code dimension → rewind_files{dry_run:false}", () => 
     expect(sent.request.dry_run).toBe(false);
   });
 
-  test("scope:both sends the code apply (the conversation leg is [#step-7-2])", () => {
+  test("scope:both sends the code apply FIRST (before the conversation leg)", () => {
     const { manager, written } = mockProcessWithStdinSpy();
-    manager.handleSessionRewind({
+    // Not awaited: with no control_response delivered, the code-restore
+    // promise never resolves, so the conversation leg never starts — exactly
+    // the ordering guarantee (code, then conversation). The one synchronous
+    // write is the code `rewind_files{dry_run:false}`.
+    void manager.handleSessionRewind({
       type: "session_rewind",
       promptUuid: "anchor-both",
       scope: "both",
@@ -307,13 +316,16 @@ describe("session_rewind code dimension → rewind_files{dry_run:false}", () => 
     });
   });
 
-  test("scope:conversation issues no control request (the [#step-7-2] seam)", () => {
+  test("scope:conversation issues NO rewind_files control request", async () => {
     const { manager, written } = mockProcessWithStdinSpy();
-    manager.handleSessionRewind({
+    await manager.handleSessionRewind({
       type: "session_rewind",
       promptUuid: "anchor-convo",
       scope: "conversation",
     });
+    // The conversation dimension never touches the claude control channel;
+    // it truncates the JSONL + respawns. (No JSONL here ⇒ it errors out, but
+    // still without any control request.)
     expect(written.length).toBe(0);
     expect((manager as any).pendingRewindRequests.size).toBe(0);
   });
@@ -334,6 +346,407 @@ describe("session_rewind code dimension → rewind_files{dry_run:false}", () => 
     const ack = out.find((m) => m.type === "rewind_result");
     expect(ack.canRewind).toBe(false);
     expect(ack.error).toContain("busy");
+  });
+});
+
+// A realistic multi-turn session JSONL: conversational user/assistant
+// records interleaved with the metadata records claude actually writes
+// (queue-operation / attachment / file-history-snapshot / mode), none of
+// which carry a usable anchor uuid. Mirrors the shape captured live in the
+// [#step-7-2] experiment.
+function buildSessionJsonl(): { jsonl: string; anchors: string[] } {
+  const a1 = "uuid-prompt-alpha";
+  const a2 = "uuid-prompt-beta";
+  const a3 = "uuid-prompt-gamma";
+  const lines = [
+    { type: "queue-operation" },
+    { type: "user", uuid: a1, parentUuid: null, message: { role: "user", content: [{ type: "text", text: "Remember ALPHA" }] } },
+    { type: "attachment", uuid: "att-1", parentUuid: a1 },
+    { type: "file-history-snapshot" },
+    { type: "assistant", uuid: "asst-1", parentUuid: a1, message: { role: "assistant", content: [{ type: "text", text: "ok" }] } },
+    { type: "ai-title" },
+    { type: "user", uuid: a2, parentUuid: "asst-1", message: { role: "user", content: [{ type: "text", text: "Remember BETA" }] } },
+    { type: "assistant", uuid: "asst-2", parentUuid: a2, message: { role: "assistant", content: [{ type: "text", text: "ok" }] } },
+    { type: "mode" },
+    { type: "user", uuid: a3, parentUuid: "asst-2", message: { role: "user", content: [{ type: "text", text: "Remember GAMMA" }] } },
+    { type: "file-history-snapshot" },
+  ];
+  return { jsonl: lines.map((l) => JSON.stringify(l)).join("\n") + "\n", anchors: [a1, a2, a3] };
+}
+
+describe("computeConversationTruncation (pure boundary + compaction guard)", () => {
+  test("boundary is the index of the anchor's user-prompt record", () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const lines = jsonl.split("\n");
+    // rewind to GAMMA (last turn): boundary excludes the GAMMA prompt record.
+    const r = computeConversationTruncation(jsonl, anchors[2]);
+    expect(r.kind).toBe("ok");
+    if (r.kind !== "ok") return;
+    expect(JSON.parse(lines[r.boundary]).uuid).toBe(anchors[2]);
+    // The retained prefix keeps ALPHA + BETA, drops GAMMA.
+    const kept = lines.slice(0, r.boundary).join("\n");
+    expect(kept).toContain("Remember ALPHA");
+    expect(kept).toContain("Remember BETA");
+    expect(kept).not.toContain("Remember GAMMA");
+  });
+
+  test("rewinding to the first turn keeps nothing of the conversation", () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const r = computeConversationTruncation(jsonl, anchors[0]);
+    expect(r.kind).toBe("ok");
+    if (r.kind !== "ok") return;
+    const kept = jsonl.split("\n").slice(0, r.boundary).join("\n");
+    expect(kept).not.toContain("Remember ALPHA");
+  });
+
+  test("an unknown anchor is not_found", () => {
+    const { jsonl } = buildSessionJsonl();
+    expect(computeConversationTruncation(jsonl, "no-such-uuid").kind).toBe(
+      "not_found",
+    );
+  });
+
+  test("a tool_result user record is not a valid anchor", () => {
+    const jsonl =
+      JSON.stringify({
+        type: "user",
+        uuid: "tr-uuid",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }],
+        },
+      }) + "\n";
+    expect(computeConversationTruncation(jsonl, "tr-uuid").kind).toBe(
+      "not_found",
+    );
+  });
+
+  test("a compact_boundary system record AFTER the anchor blocks the rewind", () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    // Splice a compaction between BETA and GAMMA, then rewind to BETA: the
+    // chop range [BETA..tip] now crosses the compaction → refuse.
+    const lines = jsonl.split("\n").filter((l) => l.trim());
+    const idx = lines.findIndex((l) => l.includes('"mode"'));
+    lines.splice(idx, 0, JSON.stringify({ type: "system", subtype: "compact_boundary" }));
+    const spliced = lines.join("\n") + "\n";
+    expect(computeConversationTruncation(spliced, anchors[1]).kind).toBe(
+      "compaction_blocked",
+    );
+  });
+
+  test("an isCompactSummary user record after the anchor blocks the rewind", () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const lines = jsonl.split("\n").filter((l) => l.trim());
+    const idx = lines.findIndex((l) => l.includes('"mode"'));
+    lines.splice(idx, 0, JSON.stringify({ type: "user", uuid: "sum-1", isCompactSummary: true, message: { role: "user", content: "summary" } }));
+    const spliced = lines.join("\n") + "\n";
+    expect(computeConversationTruncation(spliced, anchors[1]).kind).toBe(
+      "compaction_blocked",
+    );
+  });
+
+  test("a compaction BEFORE the anchor does not block (stays in the kept prefix)", () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const lines = jsonl.split("\n").filter((l) => l.trim());
+    // Compaction between ALPHA and BETA; rewind to GAMMA → compaction is in
+    // the retained prefix, not the chop range → allowed.
+    const betaIdx = lines.findIndex((l) => l.includes(anchors[1]));
+    lines.splice(betaIdx, 0, JSON.stringify({ type: "system", subtype: "compact_boundary" }));
+    const spliced = lines.join("\n") + "\n";
+    expect(computeConversationTruncation(spliced, anchors[2]).kind).toBe("ok");
+  });
+});
+
+// Build a manager wired for conversation-rewind integration tests: canned
+// JSONL in, captured writes out, and the spawn/kill primitives stubbed so no
+// real claude is launched and no real file is touched.
+function convManager(jsonl: string | null) {
+  const writes: { path: string; content: string }[] = [];
+  const spawns: { id: string | null; mode: string }[] = [];
+  let killCalls = 0;
+  const manager = new SessionManager(
+    "/tmp/tugcode-conv-" + Date.now() + "-" + Math.floor(performance.now()),
+    crypto.randomUUID(),
+    "resume",
+    "live-claude-id",
+    {
+      jsonlReader: async (): Promise<JsonlReadResult> =>
+        jsonl === null
+          ? { kind: "missing", message: "no jsonl" }
+          : { kind: "ok", jsonl },
+      jsonlWriter: async (path: string, content: string) => {
+        writes.push({ path, content });
+      },
+      sessionsDbPath: null,
+    },
+  );
+  // A claude process must look present + idle for the guards.
+  (manager as any).claudeProcess = { stdin: { write: () => {}, flush: () => {} } };
+  (manager as any).spawnClaude = (id: string | null, mode: string) => {
+    spawns.push({ id, mode });
+    return { stdin: { write: () => {}, flush: () => {} } };
+  };
+  (manager as any).startStdoutDrain = () => {};
+  (manager as any).killAndCleanup = async () => {
+    killCalls++;
+    (manager as any).claudeProcess = null;
+  };
+  return { manager, writes, spawns, killCalls: () => killCalls };
+}
+
+describe("conversation rewind — fork (default)", () => {
+  test("forks: writes a truncated COPY under a new id, respawns it, acks newSessionId, leaves the original untouched", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager, writes, spawns } = convManager(jsonl);
+
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[1], // rewind to BETA
+        scope: "conversation",
+        fork: true,
+      });
+    });
+
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(true);
+    expect(ack.scope).toBe("conversation");
+    expect(typeof ack.newSessionId).toBe("string");
+    expect(ack.newSessionId).not.toBe("live-claude-id");
+
+    // Exactly one write — the fork copy — and it is NOT the live session's
+    // path (the original is preserved).
+    expect(writes.length).toBe(1);
+    expect(writes[0].path).toContain(ack.newSessionId);
+    expect(writes[0].path).not.toContain("live-claude-id");
+    // The copy is truncated to before BETA: keeps ALPHA, drops BETA + GAMMA.
+    expect(writes[0].content).toContain("Remember ALPHA");
+    expect(writes[0].content).not.toContain("Remember BETA");
+    expect(writes[0].content).not.toContain("Remember GAMMA");
+
+    // Respawned --resume against the new fork id.
+    expect(spawns).toEqual([{ id: ack.newSessionId, mode: "resume" }]);
+    // resumeSessionId now points at the fork (so later respawns + cold-boot
+    // follow the fork, not the original).
+    expect((manager as any).resumeSessionId).toBe(ack.newSessionId);
+  });
+
+  test("silent respawn: no replay/transcript frames — only the ack and the synthetic session_init for the rebind", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager } = convManager(jsonl);
+
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[2],
+        scope: "conversation",
+        fork: true,
+      });
+    });
+
+    // [L26] precondition: the respawn must not re-emit the transcript.
+    const types = out.map((m) => m.type);
+    expect(types).not.toContain("replay_started");
+    expect(types).not.toContain("replay_complete");
+    expect(types).not.toContain("add_user_message");
+    expect(types).not.toContain("assistant_text");
+    // The only frames are the rebind's session_init and the ack.
+    const sessionInit = out.find((m) => m.type === "session_init");
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(sessionInit.session_id).toBe(ack.newSessionId);
+  });
+});
+
+describe("conversation rewind — destructive in-place (fork:false)", () => {
+  test("overwrites the live JSONL in place, respawns the same id, no newSessionId", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager, writes, spawns } = convManager(jsonl);
+
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[2],
+        scope: "conversation",
+        fork: false,
+      });
+    });
+
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(true);
+    expect(ack.newSessionId).toBeUndefined();
+    // The write targets the live session's own path (destructive).
+    expect(writes.length).toBe(1);
+    expect(writes[0].path).toContain("live-claude-id");
+    expect(spawns).toEqual([{ id: "live-claude-id", mode: "resume" }]);
+  });
+});
+
+describe("conversation rewind — guards", () => {
+  test("a missing JSONL refuses without killing or respawning", async () => {
+    const { manager, writes, spawns, killCalls } = convManager(null);
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: "anchor",
+        scope: "conversation",
+      });
+    });
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(false);
+    expect(ack.error).toContain("Could not read session JSONL");
+    expect(writes.length).toBe(0);
+    expect(spawns.length).toBe(0);
+    expect(killCalls()).toBe(0);
+  });
+
+  test("an unknown anchor refuses before any kill/truncate/respawn", async () => {
+    const { jsonl } = buildSessionJsonl();
+    const { manager, writes, spawns, killCalls } = convManager(jsonl);
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: "stale-anchor",
+        scope: "conversation",
+      });
+    });
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(false);
+    expect(ack.error).toContain("anchor not found");
+    expect(writes.length).toBe(0);
+    expect(spawns.length).toBe(0);
+    expect(killCalls()).toBe(0);
+  });
+
+  test("a rewind across a /compact boundary is refused, not silently corrupted", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const lines = jsonl.split("\n").filter((l) => l.trim());
+    const idx = lines.findIndex((l) => l.includes('"mode"'));
+    lines.splice(idx, 0, JSON.stringify({ type: "system", subtype: "compact_boundary" }));
+    const { manager, writes, spawns } = convManager(lines.join("\n") + "\n");
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[1], // BETA, before the spliced compaction
+        scope: "conversation",
+      });
+    });
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(false);
+    expect(ack.error).toContain("/compact boundary");
+    expect(writes.length).toBe(0);
+    expect(spawns.length).toBe(0);
+  });
+
+  test("idle gating: a conversation rewind mid-turn is rejected without touching disk", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager, writes, spawns } = convManager(jsonl);
+    (manager as any).activeTurn = new ActiveTurn(0, []);
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[1],
+        scope: "conversation",
+      });
+    });
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(false);
+    expect(ack.error).toContain("busy");
+    expect(writes.length).toBe(0);
+    expect(spawns.length).toBe(0);
+  });
+});
+
+describe("conversation rewind — scope:both ordering", () => {
+  test("code restore runs first, then the fork; combined ack carries newSessionId", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager, writes, spawns } = convManager(jsonl);
+    // Capture the code-restore control request as it's sent, and answer it.
+    const sentControl: any[] = [];
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => {
+          const ev = JSON.parse(String(data).replace(/\n$/, ""));
+          sentControl.push(ev);
+          // Reply success on the next tick so the awaiting code leg resolves.
+          queueMicrotask(() => {
+            (manager as any).handleClaudeLine(
+              JSON.stringify({
+                type: "control_response",
+                response: {
+                  subtype: "success",
+                  request_id: ev.request_id,
+                  response: { canRewind: true },
+                },
+              }),
+            );
+          });
+        },
+        flush: () => {},
+      },
+    };
+
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[2],
+        scope: "both",
+        fork: true,
+      });
+    });
+
+    // Code restore was issued (rewind_files{dry_run:false}) ...
+    expect(sentControl.length).toBe(1);
+    expect(sentControl[0].request.subtype).toBe("rewind_files");
+    expect(sentControl[0].request.dry_run).toBe(false);
+    // ... and the conversation fork followed (a copy write + a respawn).
+    expect(writes.length).toBe(1);
+    expect(spawns.length).toBe(1);
+
+    const acks = out.filter((m) => m.type === "rewind_result");
+    expect(acks.length).toBe(1); // exactly one combined ack
+    expect(acks[0]).toMatchObject({ scope: "both", canRewind: true });
+    expect(typeof acks[0].newSessionId).toBe("string");
+  });
+
+  test("scope:both aborts the conversation leg if the code restore fails", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager, writes, spawns } = convManager(jsonl);
+    (manager as any).claudeProcess = {
+      stdin: {
+        write: (data: unknown) => {
+          const ev = JSON.parse(String(data).replace(/\n$/, ""));
+          queueMicrotask(() => {
+            (manager as any).handleClaudeLine(
+              JSON.stringify({
+                type: "control_response",
+                response: {
+                  subtype: "success",
+                  request_id: ev.request_id,
+                  response: { canRewind: false, error: "No file checkpoint found." },
+                },
+              }),
+            );
+          });
+        },
+        flush: () => {},
+      },
+    };
+
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[2],
+        scope: "both",
+        fork: true,
+      });
+    });
+
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(false);
+    expect(ack.error).toContain("No file checkpoint");
+    // The conversation leg never ran — no fork write, no respawn.
+    expect(writes.length).toBe(0);
+    expect(spawns.length).toBe(0);
   });
 });
 

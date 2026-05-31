@@ -1680,7 +1680,8 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 
 **Artifacts:**
 - tugcode: on `session_rewind{scope:"conversation"|"both"}`, locate the session JSONL (`~/.claude/projects/<slug>/<sid>.jsonl` — derivation already exists), **truncate to the record before the `promptUuid` record** (clean turn boundary), then silent-respawn (above).
-- **Fork is the default** (matches the terminal's "the conversation will be forked"): `--fork-session` mints a registered copy, truncate+resume the *copy*, and **rebind the card to the fork's session-id**. **The rebind MUST persist** through the card→session binding (`cardSessionBindingStore` / `dev-session-restore.ts`) — otherwise cold-boot resumes the *original* untruncated session and the rewind silently reverts on reload (verified: the transcript restores by replaying the bound session's JSONL). In-place truncation (`--resume` same id, destructive — drops the tail permanently) is the **opt-in** variant; same sid, so no binding change, cold-boot-consistent already.
+- **Fork is the default** (matches the terminal's "the conversation will be forked"): a registered copy of the *truncated* history under a fresh claude session id, resumed in place of the original, with the card **rebound to the fork's session-id**. **The rebind MUST persist** through the card→session binding (`cardSessionBindingStore` / `dev-session-restore.ts`) — otherwise cold-boot resumes the *original* untruncated session and the rewind silently reverts on reload (verified: the transcript restores by replaying the bound session's JSONL). In-place truncation (`--resume` same id, destructive — drops the tail permanently) is the **opt-in** variant; same sid, so no binding change, cold-boot-consistent already.
+  - **Fork mechanism — empirical correction (2026-05-31, claude 2.1.158).** The original plan said "`--fork-session` mints a registered copy, truncate+resume the *copy*." Two live findings reshaped this: (1) in stream-json mode claude emits **no `system:init` (and no fork file) until first input** — so `--fork-session` cannot materialize a copy to truncate *before* the next turn, and the fork's new id can't be learned without spending a turn; (2) a **byte-for-byte copy of a real registered session under a new id IS resumable** via `--resume <newid>` (the [#step-7a] "new-session-id transcripts are rejected" finding applied to *hand-authored* transcripts, not copies of real sessions). So the implemented fork is: **copy the truncated history to a freshly-minted id on disk, then silent-respawn `--resume <newid>`** — no `--fork-session` flag. The new id is known synchronously (we mint it), so the `rewind_result.newSessionId` ack + the synthetic `session_init` rebind don't depend on claude's deferred init. Same end state (registered fork, original preserved, card rebound), simpler and race-free. (Verified live: a 2-turn session forked to turn 1 resumed cleanly and recalled only the retained turn; the original session id was untouched.)
 - **`scope:"both"` order (code restore, then fork):** run `rewind_files{dry_run:false}` on the **live** session first — it reverts the working-directory files (session-independent) using the live session's `fileHistory` — *then* fork the conversation. Forking first risks running `rewind_files` against a fork whose `fileHistory` carriage is unverified. **Confirm this composition with a probe during implementation** (fork + code-restore is the one untested interaction from [#step-7a]).
 - **Compaction-boundary guard:** if a `compact_boundary` sits between the target turn and the tip, refuse / snap to the nearest safe boundary (chopping past a compaction breaks `--resume` → "No conversation found" — [#step-7a] constraint). Never silently corrupt the session.
 - **Concurrency safety:** truncate the JSONL **only while the claude subprocess is down** (between `killAndCleanup` and the resume spawn) so there's no write race against claude; for the destructive in-place variant, snapshot the pre-truncation tail first so a failed respawn can roll back.
@@ -1688,23 +1689,23 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 - Outbound: an ack (and, for fork, the new session-id for the card rebind). **No transcript re-emit.**
 
 **Tasks:**
-- [ ] JSONL truncation keyed on the `promptUuid` record at a clean turn boundary.
-- [ ] Silent respawn (`--resume`) with replay-emit suppressed; fork path (`--fork-session` → truncate+resume copy → emit new session-id for rebind).
-- [ ] **Fork rebind persists** the new session-id through `cardSessionBindingStore` / `dev-session-restore.ts` (cold-boot resumes the fork, not the original).
-- [ ] **`scope:"both"` order:** code-restore on the live session first, then fork; **probe the fork + code-restore composition** before relying on it.
-- [ ] Compaction-boundary guard.
-- [ ] Concurrency: truncate only while the subprocess is down; pre-truncation snapshot for the in-place variant.
-- [ ] Emit ack / new-session-id outbound (no transcript rebuild).
+- [x] JSONL truncation keyed on the `promptUuid` record at a clean turn boundary. (`computeConversationTruncation` — pure helper; `slice(0, boundary)` keeps every record before the anchor's user-prompt record.)
+- [x] Silent respawn (`--resume`) with replay-emit suppressed; fork path (copy truncated history to a fresh id → `--resume <newid>` → emit new session-id for rebind — *not* `--fork-session`, per the empirical correction above).
+- [x] **Fork rebind persists** the new session-id — tugcode sets `resumeSessionId = newId`, emits `rewind_result.newSessionId` **and** a synthetic `session_init(newId)` (which tugcast persists as `claude_session_id` → cold-boot resumes the fork). The `cardSessionBindingStore` / `dev-session-restore.ts` consumption is [#step-7-3].
+- [x] **`scope:"both"` order:** code-restore on the live session first, then fork (a failed code restore aborts before the conversation leg — no partial). Composition probed live: `test-39-rewind-both-composition` (`canRewind:true`, code revert + fork's `newSessionId`).
+- [x] Compaction-boundary guard. (`compute…` returns `compaction_blocked` for an `isCompactSummary` user record or `subtype:"compact_boundary"` system record in the chop range → `rewind_result{canRewind:false}`, never a corrupt resume.)
+- [x] Concurrency: truncate only while the subprocess is down (`killAndCleanup` precedes any write); the in-place variant keeps the full pre-truncation bytes and rolls back on respawn failure.
+- [x] Emit ack / new-session-id outbound (no transcript rebuild).
 
 **Tests:**
-- [ ] Real-claude probe through tugcode: multi-turn session → `session_rewind{scope:"conversation"}` → resumed session recalls **only the retained turns** (mirrors the [#step-7a] chop verification).
-- [ ] Guard test: a rewind target across a compaction boundary is refused/snapped, **not** "No conversation found".
-- [ ] **Silent-respawn assertion:** the respawn emits **no** replay/transcript events (only the ack) — the precondition for [#step-7-3]'s [L26] correctness.
-- [ ] **Fork cold-boot:** after a `fork` rewind, the persisted binding points at the fork; a simulated cold-boot resumes the *truncated* fork (not the original). 
-- [ ] **Composition probe:** `scope:"both"` reverts a file claude edited **and** forks the conversation (confirms `rewind_files`-then-fork order works against real claude).
+- [x] Real-claude probe through tugcode: multi-turn session → `session_rewind{scope:"conversation"}` → forks + resumes (`test-38-rewind-conversation-fork`, PASS, `canRewind:true` + `newSessionId` + fork `session_init`). The "recalls only the retained turns" semantics were verified directly against claude during implementation (the chop experiment: a 2-turn session forked to turn 1 recalled only turn 1).
+- [x] Guard test: a rewind target across a compaction boundary is refused, **not** "No conversation found". (`rewind-bridge.test.ts` — both compaction-marker shapes; refuses before any kill/truncate/respawn.)
+- [x] **Silent-respawn assertion:** the respawn emits **no** replay/transcript events (only the rebind `session_init` + the ack) — the precondition for [#step-7-3]'s [L26] correctness. (`rewind-bridge.test.ts`.)
+- [~] **Fork cold-boot:** tugcode emits the fork id via `session_init` + `rewind_result.newSessionId`; the *persisted-binding* cold-boot assertion (binding points at the fork, cold-boot resumes the truncated fork) lands with the `cardSessionBindingStore` wiring in [#step-7-3].
+- [x] **Composition probe:** `scope:"both"` reverts a file claude edited **and** forks the conversation — `test-39-rewind-both-composition` (confirms code-restore-then-fork order against real claude).
 
 **Checkpoint:**
-- [ ] Rebuild tugcode; the three real-claude probes present + passing under `capture_all_probes`.
+- [x] Rebuild tugcode; the three real-claude probes (`test-38`/`39`/`40`) present + passing under `capture_all_probes` (40/40 captured); drift regression clean (0 failures, 4 benign `OptionalSequenceVariance` WARNs on pre-existing probes test-05/21/22/26 — assistant_text leading-narration variance, not the new probes). Golden re-baselined to v2.1.158.
 
 ##### Step 7b.3: `RewindSheet` — turn picker + restore confirm (tugdeck) {#step-7-3}
 

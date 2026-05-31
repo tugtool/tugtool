@@ -674,7 +674,64 @@ pub async fn execute_probe(
                 };
                 ws.send_rewind_preview(&tug_session_id, uuid).await;
             }
-            ProbeMsg::SessionRewind { scope } => {
+            ProbeMsg::CaptureAnchor { max_secs } => {
+                // Consume the next `prompt_anchor` so a later turn's anchor
+                // can be targeted (the non-consuming `WaitForEvent` peek would
+                // keep returning turn 1's). The matched frame is removed from
+                // the buffer and thus omitted from the fixture.
+                match ws
+                    .await_code_output_event(
+                        &tug_session_id,
+                        "prompt_anchor",
+                        Duration::from_secs(*max_secs),
+                    )
+                    .await
+                {
+                    Ok(payload) => {
+                        if let Some(uuid) =
+                            payload.get("promptUuid").and_then(|v| v.as_str())
+                        {
+                            captured_prompt_uuid = Some(uuid.to_string());
+                        }
+                    }
+                    Err(e) => {
+                        return CapturedProbe {
+                            name: probe.name.to_string(),
+                            events: Vec::new(),
+                            status: ProbeStatus::Failed(format!(
+                                "capture_anchor failed: {e}"
+                            )),
+                            runtime_ms: start.elapsed().as_millis(),
+                        };
+                    }
+                }
+            }
+            ProbeMsg::ConsumeEvent {
+                event_type,
+                max_secs,
+            } => {
+                // Consuming wait at a turn boundary (see `ConsumeEvent` doc):
+                // removes the matched event so a later non-consuming
+                // `WaitForEvent` gates on the NEXT turn's instance.
+                if let Err(e) = ws
+                    .await_code_output_event(
+                        &tug_session_id,
+                        event_type,
+                        Duration::from_secs(*max_secs),
+                    )
+                    .await
+                {
+                    return CapturedProbe {
+                        name: probe.name.to_string(),
+                        events: Vec::new(),
+                        status: ProbeStatus::Failed(format!(
+                            "consume {event_type} failed: {e}"
+                        )),
+                        runtime_ms: start.elapsed().as_millis(),
+                    };
+                }
+            }
+            ProbeMsg::SessionRewind { scope, fork } => {
                 let Some(uuid) = captured_prompt_uuid.as_deref() else {
                     return CapturedProbe {
                         name: probe.name.to_string(),
@@ -685,7 +742,8 @@ pub async fn execute_probe(
                         runtime_ms: start.elapsed().as_millis(),
                     };
                 };
-                ws.send_session_rewind(&tug_session_id, uuid, scope).await;
+                ws.send_session_rewind(&tug_session_id, uuid, scope, *fork)
+                    .await;
             }
             ProbeMsg::WaitForEvent {
                 event_type,
@@ -1008,7 +1066,21 @@ pub async fn capture_with_stability(
 ) -> Vec<CapturedProbe> {
     use crate::common::probes::PROBES;
 
-    let total_probes = PROBES.len();
+    // `TUG_PROBE_FILTER` (substring match on probe name) narrows the run to a
+    // single probe (or a few) for fast de-risking of a new probe without the
+    // full ~5-minute suite. `capture_all_probes` REFUSES to overwrite the
+    // committed golden when a filter is active (a partial run would corrupt
+    // the manifest/schema) — it captures + prints + returns. Unset → full run.
+    let filter = std::env::var("TUG_PROBE_FILTER").ok().filter(|s| !s.is_empty());
+    let selected: Vec<&ProbeRecord> = match &filter {
+        Some(f) => PROBES.iter().filter(|p| p.name.contains(f.as_str())).collect(),
+        None => PROBES.iter().collect(),
+    };
+
+    let total_probes = selected.len();
+    if let Some(f) = &filter {
+        println!("[capture] TUG_PROBE_FILTER={f} → {total_probes} of {} probes", PROBES.len());
+    }
     println!(
         "[capture] starting — {total_probes} probes × {n} stability run(s) = {} total invocations",
         total_probes * n
@@ -1016,7 +1088,7 @@ pub async fn capture_with_stability(
     let overall_start = std::time::Instant::now();
 
     let mut results: Vec<CapturedProbe> = Vec::with_capacity(total_probes);
-    for (i, probe) in PROBES.iter().enumerate() {
+    for (i, probe) in selected.into_iter().enumerate() {
         let probe_start = std::time::Instant::now();
         println!(
             "[capture] [{idx}/{total}] {name} — starting",

@@ -113,10 +113,37 @@ pub enum ProbeMsg {
     /// (`CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true`, set by tugcode
     /// at spawn) and an idle session (issue after `turn_complete`).
     RewindPreview,
-    /// `session_rewind` — apply a `/rewind` ([#step-7-1]). `scope` ∈
-    /// {`"code"`, `"conversation"`, `"both"`}. Uses the same runtime-
-    /// captured `promptUuid` as `RewindPreview`.
-    SessionRewind { scope: &'static str },
+    /// Consume the next `prompt_anchor` CODE_OUTPUT event and stash its
+    /// `promptUuid` as the rewind anchor ([#step-7-2]). Unlike
+    /// `WaitForEvent{event_type:"prompt_anchor"}` (a non-consuming peek that
+    /// always returns the FIRST buffered anchor — turn 1's), this REMOVES the
+    /// matched anchor from the buffer, so a multi-turn probe can target a
+    /// LATER turn: consume turn 1's anchor, then consume turn 2's, leaving
+    /// `captured_prompt_uuid` pointing at turn 2. The consumed anchors do not
+    /// appear in the fixture (deterministic, so drift-stable).
+    CaptureAnchor { max_secs: u64 },
+    /// Consume CODE_OUTPUT events up to and including the next one of
+    /// `event_type`, removing it from the buffer. The consuming counterpart
+    /// to `WaitForEvent` (a non-consuming peek). Needed at a TURN BOUNDARY in
+    /// a multi-turn probe: the peek-based `WaitForEvent{turn_complete}` would
+    /// keep matching turn 1's buffered `turn_complete`, firing the next step
+    /// while a later turn is still mid-flight. Consuming turn 1's
+    /// `turn_complete` makes the next `WaitForEvent{turn_complete}` gate on
+    /// turn 2's. The consumed event is omitted from the fixture (deterministic).
+    ConsumeEvent {
+        event_type: &'static str,
+        max_secs: u64,
+    },
+    /// `session_rewind` — apply a `/rewind` ([#step-7-1]/[#step-7-2]).
+    /// `scope` ∈ {`"code"`, `"conversation"`, `"both"`}. Uses the same
+    /// runtime-captured `promptUuid` as `RewindPreview`. `fork` controls the
+    /// conversation dimension ([#step-7-2]): `None` omits the flag (tugcode's
+    /// default = fork into a new session id), `Some(false)` requests the
+    /// destructive in-place `--resume` (same id).
+    SessionRewind {
+        scope: &'static str,
+        fork: Option<bool>,
+    },
 }
 
 /// Inline attachment for `UserMessageWithAttachments` probes.
@@ -164,7 +191,7 @@ pub enum ProbeStatus {
 }
 
 // -----------------------------------------------------------------------
-// Probe table — 37 entries
+// Probe table — 40 entries
 // -----------------------------------------------------------------------
 
 /// The full probe table. Order matches `transport-exploration.md` tests 1–36.
@@ -986,7 +1013,7 @@ pub static PROBES: &[ProbeRecord] = &[
                 event_type: "rewind_preview_result",
                 max_secs: 30,
             },
-            ProbeMsg::SessionRewind { scope: "code" },
+            ProbeMsg::SessionRewind { scope: "code", fork: None },
             ProbeMsg::WaitForEvent {
                 event_type: "rewind_result",
                 max_secs: 30,
@@ -1003,6 +1030,138 @@ pub static PROBES: &[ProbeRecord] = &[
         timeout_secs: 120,
         skip_reason: None,
     },
+    // --- Test 38: conversation rewind, FORK (default) ([#step-7-2]) ---
+    // The conversation half of dev-card `/rewind`, end-to-end through the
+    // bridge. A two-turn session is rewound to turn 2: tugcode copies the
+    // truncated history under a freshly-minted claude session id, silent-
+    // respawns `--resume` against the fork, and acks `rewind_result`
+    // carrying `newSessionId` (the card→session rebind). The respawn emits a
+    // `session_init` for the new id and NO transcript replay (the [L26]
+    // precondition — survivors keep their mounts). Two turns are required: a
+    // rewind that drops the only turn yields a near-empty fork that
+    // `--resume` rejects ("No conversation found"), so turn 1 is retained.
+    // `CaptureAnchor` consumes turn 1's anchor, then turn 2's, leaving the
+    // rewind target on turn 2.
+    ProbeRecord {
+        name: "test-38-rewind-conversation-fork",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Remember the word PINECONE. Reply with only: ok",
+            },
+            ProbeMsg::CaptureAnchor { max_secs: 30 },
+            ProbeMsg::ConsumeEvent {
+                event_type: "turn_complete",
+                max_secs: 90,
+            },
+            ProbeMsg::UserMessage {
+                text: "Remember the word WALRUS. Reply with only: ok",
+            },
+            ProbeMsg::CaptureAnchor { max_secs: 30 },
+            ProbeMsg::WaitForEvent {
+                event_type: "turn_complete",
+                max_secs: 90,
+            },
+            ProbeMsg::SessionRewind {
+                scope: "conversation",
+                fork: None,
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "rewind_result",
+                max_secs: 30,
+            },
+        ],
+        required_events: &["turn_complete", "session_init", "rewind_result"],
+        optional_events: &["assistant_text", "cost_update", "system_metadata"],
+        prerequisites: &[],
+        timeout_secs: 240,
+        skip_reason: None,
+    },
+    // --- Test 39: `scope:"both"` composition — code revert THEN fork ---
+    // The one untested interaction from [#step-7a]: `rewind_files` on the
+    // live session followed by a conversation fork. Turn 1 is a plain turn;
+    // turn 2 writes a file (a checkpoint). Rewinding to turn 2 with
+    // `scope:"both"` reverts turn 2's file write (live `fileHistory`) FIRST,
+    // then forks the conversation back to turn 1. The single `rewind_result`
+    // ack reports the combined outcome + the fork's `newSessionId`.
+    ProbeRecord {
+        name: "test-39-rewind-both-composition",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Remember the word OTTER. Reply with only: ok",
+            },
+            ProbeMsg::CaptureAnchor { max_secs: 30 },
+            ProbeMsg::ConsumeEvent {
+                event_type: "turn_complete",
+                max_secs: 90,
+            },
+            ProbeMsg::UserMessage {
+                text: "Use the Write tool to create a file named rewind-both-probe.txt in the current directory containing exactly the single word HELLO. Do nothing else.",
+            },
+            ProbeMsg::CaptureAnchor { max_secs: 30 },
+            ProbeMsg::WaitForEvent {
+                event_type: "turn_complete",
+                max_secs: 120,
+            },
+            ProbeMsg::SessionRewind {
+                scope: "both",
+                fork: None,
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "rewind_result",
+                max_secs: 30,
+            },
+        ],
+        required_events: &["turn_complete", "session_init", "rewind_result"],
+        optional_events: &[
+            "tool_use",
+            "tool_result",
+            "assistant_text",
+            "cost_update",
+            "system_metadata",
+        ],
+        prerequisites: &[],
+        timeout_secs: 300,
+        skip_reason: None,
+    },
+    // --- Test 40: conversation rewind, destructive IN-PLACE (fork:false) ---
+    // The opt-in variant: truncate the live session's own JSONL and resume
+    // it in place (same session id, tail dropped permanently). The ack
+    // carries NO `newSessionId` (no rebind — the id is unchanged), and the
+    // `session_init` reports the same live id rather than a fresh fork.
+    ProbeRecord {
+        name: "test-40-rewind-conversation-in-place",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Remember the word BADGER. Reply with only: ok",
+            },
+            ProbeMsg::CaptureAnchor { max_secs: 30 },
+            ProbeMsg::ConsumeEvent {
+                event_type: "turn_complete",
+                max_secs: 90,
+            },
+            ProbeMsg::UserMessage {
+                text: "Remember the word HERON. Reply with only: ok",
+            },
+            ProbeMsg::CaptureAnchor { max_secs: 30 },
+            ProbeMsg::WaitForEvent {
+                event_type: "turn_complete",
+                max_secs: 90,
+            },
+            ProbeMsg::SessionRewind {
+                scope: "conversation",
+                fork: Some(false),
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "rewind_result",
+                max_secs: 30,
+            },
+        ],
+        required_events: &["turn_complete", "session_init", "rewind_result"],
+        optional_events: &["assistant_text", "cost_update", "system_metadata"],
+        prerequisites: &[],
+        timeout_secs: 240,
+        skip_reason: None,
+    },
 ];
 
 #[cfg(test)]
@@ -1010,8 +1169,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn probe_table_has_37_entries() {
-        assert_eq!(PROBES.len(), 37, "probe table must contain all 37 probes");
+    fn probe_table_has_40_entries() {
+        assert_eq!(PROBES.len(), 40, "probe table must contain all 40 probes");
     }
 
     #[test]
