@@ -865,7 +865,18 @@ pub fn canonical_type_sequence(types: &[String]) -> Vec<String> {
 ///   surfaced as `ReorderedSequence` FAILs in test-14 / test-19 /
 ///   test-22 against v2.1.154). The consumer (`SessionMetadataStore`
 ///   adjacent) reads it by recency for quota chrome, not by position.
-pub const INTERSTITIAL_EVENT_TYPES: &[&str] = &["streaming_usage", "rate_limit_event"];
+/// - `prompt_anchor`: the `/rewind` anchor for the live turn
+///   ([#step-7-1]). tugcode emits it from claude's user-echo event,
+///   which races the first assistant stream events — so its position
+///   relative to `content_block_start` / `assistant_text` is
+///   non-deterministic run-to-run (empirically: `ReorderedSequence`
+///   FAILs in test-14 / test-23, `OptionalSequenceVariance` in
+///   test-05 / test-09 / test-11 / test-22 against v2.1.158 — the same
+///   class as `rate_limit_event`). The consumer (`CodeSessionStore`,
+///   [#step-7-3]) attaches `promptUuid` to the active pending turn
+///   regardless of where the frame lands, never by position.
+pub const INTERSTITIAL_EVENT_TYPES: &[&str] =
+    &["streaming_usage", "rate_limit_event", "prompt_anchor"];
 
 /// Event types that constitute a tool-call cycle. [`shape_sequence`]
 /// collapses a contiguous run of these to a single
