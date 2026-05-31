@@ -330,6 +330,7 @@ function RewindSheetBody({
             emphasis="filled"
             disabled={!isIdle || applying}
             onClick={() => apply("both")}
+            data-testid="rewind-confirm-both"
           >
             Restore code and conversation
           </TugPushButton>
@@ -338,10 +339,13 @@ function RewindSheetBody({
           emphasis={codeRestorable ? "outlined" : "filled"}
           disabled={!isIdle || applying}
           onClick={() => apply("conversation")}
+          data-testid="rewind-confirm-conversation"
         >
           Restore conversation
         </TugPushButton>
-        <TugPushButton onClick={() => onClose()}>Never mind</TugPushButton>
+        <TugPushButton onClick={() => onClose()} data-testid="rewind-confirm-cancel">
+          Never mind
+        </TugPushButton>
       </div>
     </div>
   );
