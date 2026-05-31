@@ -2692,6 +2692,9 @@ function handleRewindPreviewResult(
     ...(event.insertions !== undefined ? { insertions: event.insertions } : {}),
     ...(event.deletions !== undefined ? { deletions: event.deletions } : {}),
     ...(event.error !== undefined ? { error: event.error } : {}),
+    ...(event.conversationRewindable !== undefined
+      ? { conversationRewindable: event.conversationRewindable }
+      : {}),
   });
   return { state: { ...state, rewindPreviews: next }, effects: [] };
 }

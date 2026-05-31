@@ -566,6 +566,14 @@ export interface RewindTurnPreview {
   insertions?: number;
   deletions?: number;
   error?: string;
+  /**
+   * Whether the CONVERSATION dimension can rewind to this turn ([#step-7-3]):
+   * `false` when its chop range crosses a `/compact` boundary (or would leave
+   * no retained turns) — the same condition tugcode refuses at apply time.
+   * The picker disables such rows so it never offers a turn that would error.
+   * `undefined` while loading / not reported (treated as rewindable).
+   */
+  conversationRewindable?: boolean;
 }
 
 /**

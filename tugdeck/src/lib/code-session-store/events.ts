@@ -661,6 +661,9 @@ export interface RewindPreviewResultEvent {
   insertions?: number;
   deletions?: number;
   error?: string;
+  /** Whether the conversation dimension can rewind to this anchor ([#step-7-3]);
+   *  `false` crosses a `/compact` boundary. The picker disables such rows. */
+  conversationRewindable?: boolean;
 }
 
 /**

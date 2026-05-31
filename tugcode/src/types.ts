@@ -968,6 +968,16 @@ export interface RewindPreviewResult {
   filesChanged?: string[];
   insertions?: number;
   deletions?: number;
+  /**
+   * Whether the CONVERSATION dimension can rewind to this anchor ([#step-7-3]):
+   * `false` when the chop range crosses a `/compact` boundary (or the anchor
+   * is unknown / would leave no retained turns) — i.e. the same condition
+   * `computeConversationTruncation` refuses at apply time. Distinct from
+   * `canRewind` (the CODE checkpoint state). The picker disables a row whose
+   * conversation rewind would error, so it never offers a dead turn. Absent
+   * means "not determined" (the picker treats it as rewindable).
+   */
+  conversationRewindable?: boolean;
   ipc_version: number;
 }
 

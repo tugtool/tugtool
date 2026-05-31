@@ -2134,7 +2134,18 @@ export class SessionManager {
    */
   private pendingRewindRequests = new Map<
     string,
-    { promptUuid: string; kind: "preview" } | {
+    {
+      promptUuid: string;
+      kind: "preview";
+      /**
+       * Whether the conversation dimension can rewind to this anchor
+       * ([#step-7-3]) — computed from the session JSONL at request time (the
+       * same `computeConversationTruncation` "ok" condition the apply path
+       * enforces) and relayed on the `rewind_preview_result`. Lets the picker
+       * disable a row whose conversation rewind would error.
+       */
+      conversationRewindable: boolean;
+    } | {
       promptUuid: string;
       kind: "apply";
       scope: "conversation" | "code" | "both";
@@ -2148,6 +2159,17 @@ export class SessionManager {
       resolve: (r: { canRewind: boolean; error?: string }) => void;
     }
   >();
+
+  /**
+   * Cached JSONL read for the `/rewind` preview batch ([#step-7-3]). The sheet
+   * fires one `rewind_preview` per row when it opens — all while idle, so the
+   * session JSONL is stable — and each needs to know whether its anchor is
+   * conversation-rewindable. Reading the (possibly large) JSONL once and
+   * sharing the promise avoids N re-reads. Cleared when a turn opens
+   * ({@link handleUserMessage}) or the session respawns ({@link killAndCleanup})
+   * — i.e. whenever the JSONL could change.
+   */
+  private rewindPreviewJsonl: Promise<JsonlReadResult> | null = null;
 
   constructor(
     projectDir: string,
@@ -2343,6 +2365,9 @@ export class SessionManager {
     // Mark shutdown so the early-exit watcher ignores the exit code
     // from our kill rather than surfacing a phantom resume_failed.
     this.isShuttingDown = true;
+    // The session is changing (respawn / fork / truncate) — drop the cached
+    // `/rewind` preview JSONL so the next preview re-reads ([#step-7-3]).
+    this.rewindPreviewJsonl = null;
     if (this.claudeProcess) {
       try {
         // Close stdin to signal EOF (graceful shutdown).
@@ -4352,6 +4377,9 @@ export class SessionManager {
    * per claude `result`, never one per `handleUserMessage` call.
    */
   async handleUserMessage(msg: UserMessage): Promise<void> {
+    // A new turn will grow the JSONL — drop the cached `/rewind` preview read
+    // so the next preview reflects it ([#step-7-3]).
+    this.rewindPreviewJsonl = null;
     // Step R0d cold-boot order may dispatch handleUserMessage before
     // `spawnClaudeAndWatch()` has finished its synchronous setup —
     // i.e., the user typed and submitted while replay was still
@@ -4608,14 +4636,43 @@ export class SessionManager {
   }
 
   /**
-   * Handle `rewind_preview` ([#step-7-1]): issue a
-   * `rewind_files{dry_run:true}` control request for the turn anchored at
-   * `promptUuid` and correlate its `control_response` back to a
-   * `rewind_preview_result` (the picker's per-row code diff-stat). No
-   * working-tree mutation — `dry_run` reports `{canRewind, filesChanged,
-   * insertions, deletions}` only.
+   * Read the live session's on-disk JSONL — canonicalizing the project dir
+   * the way claude names its per-session file (`realpath`, since claude
+   * resolves symlinks). Used by the `/rewind` conversation checks.
    */
-  handleRewindPreview(msg: RewindPreview): void {
+  private async readLiveSessionJsonl(): Promise<JsonlReadResult> {
+    const liveId = this.resumeSessionId ?? this.sessionId;
+    let canonicalProjectDir = this.projectDir;
+    try {
+      canonicalProjectDir = await realpath(this.projectDir);
+    } catch {
+      // Unresolvable (test fixture / deleted dir) — fall back to raw.
+    }
+    return this.jsonlReader(
+      jsonlPathFor(this.claudeProjectsRoot, canonicalProjectDir, liveId),
+    );
+  }
+
+  /** Cached JSONL read for the `/rewind` preview batch (see
+   *  {@link rewindPreviewJsonl}). */
+  private readSessionJsonlForPreview(): Promise<JsonlReadResult> {
+    if (this.rewindPreviewJsonl === null) {
+      this.rewindPreviewJsonl = this.readLiveSessionJsonl();
+    }
+    return this.rewindPreviewJsonl;
+  }
+
+  /**
+   * Handle `rewind_preview` ([#step-7-1]/[#step-7-3]): issue a
+   * `rewind_files{dry_run:true}` control request for the turn anchored at
+   * `promptUuid` (the picker's per-row code diff-stat) AND determine whether
+   * the CONVERSATION dimension can rewind to that anchor — by running the same
+   * `computeConversationTruncation` "ok" check the apply path uses against the
+   * session JSONL. Both ride back on the one `rewind_preview_result`, so the
+   * picker can show the diff-stat and disable any turn whose conversation
+   * rewind would cross a `/compact` boundary (or otherwise error).
+   */
+  async handleRewindPreview(msg: RewindPreview): Promise<void> {
     if (!this.claudeProcess) {
       this.emitRewindPreviewResult(msg.promptUuid, {
         canRewind: false,
@@ -4633,10 +4690,30 @@ export class SessionManager {
       });
       return;
     }
+    // Conversation-rewindability from the (cached) JSONL — same condition the
+    // apply-time guard enforces. Default true if the JSONL can't be read (the
+    // apply path will still refuse if needed; the picker just won't pre-disable).
+    let conversationRewindable = true;
+    const read = await this.readSessionJsonlForPreview();
+    if (read.kind === "ok") {
+      conversationRewindable =
+        computeConversationTruncation(read.jsonl, msg.promptUuid).kind === "ok";
+    }
+    // Re-check liveness after the await — a turn could have opened. If so,
+    // reject rather than issue a mid-turn control request.
+    if (!this.claudeProcess || !this.isClaudeIdle()) {
+      this.emitRewindPreviewResult(msg.promptUuid, {
+        canRewind: false,
+        error: "Claude is busy; rewind preview requires an idle session.",
+        conversationRewindable,
+      });
+      return;
+    }
     const requestId = generateRequestId();
     this.pendingRewindRequests.set(requestId, {
       promptUuid: msg.promptUuid,
       kind: "preview",
+      conversationRewindable,
     });
     sendControlRequest(this.claudeProcess.stdin, requestId, {
       subtype: "rewind_files",
@@ -4917,6 +4994,7 @@ export class SessionManager {
         filesChanged,
         insertions,
         deletions,
+        conversationRewindable: pending.conversationRewindable,
       });
     } else {
       // Apply leg: hand the outcome to the awaiting
@@ -4928,7 +5006,7 @@ export class SessionManager {
     return true;
   }
 
-  /** Emit a {@link RewindPreviewResult} ([#step-7-1]). */
+  /** Emit a {@link RewindPreviewResult} ([#step-7-1]/[#step-7-3]). */
   private emitRewindPreviewResult(
     promptUuid: string,
     fields: {
@@ -4937,6 +5015,7 @@ export class SessionManager {
       filesChanged?: string[];
       insertions?: number;
       deletions?: number;
+      conversationRewindable?: boolean;
     },
   ): void {
     const msg: RewindPreviewResult = {
@@ -4952,6 +5031,9 @@ export class SessionManager {
         : {}),
       ...(fields.deletions !== undefined
         ? { deletions: fields.deletions }
+        : {}),
+      ...(fields.conversationRewindable !== undefined
+        ? { conversationRewindable: fields.conversationRewindable }
         : {}),
       ipc_version: 2,
     };

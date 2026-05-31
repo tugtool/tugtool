@@ -74,6 +74,23 @@ function mockProcessWithStdinSpy(): { manager: SessionManager; written: string[]
 
 const CTX: EventMappingContext = { msgId: "", seq: 0, rev: 0 };
 
+// A mock manager whose JSONL reader returns a fixed session log — for the
+// conversation-rewindability ([#step-7-3]) preview checks.
+function managerWithJsonl(jsonl: string): { manager: SessionManager; written: string[] } {
+  const manager = new SessionManager(
+    "/tmp/tugcode-rewind-" + Date.now() + "-" + Math.floor(performance.now()),
+    crypto.randomUUID(),
+    "new",
+    undefined,
+    { jsonlReader: async () => ({ kind: "ok" as const, jsonl }), sessionsDbPath: null },
+  );
+  const written: string[] = [];
+  (manager as any).claudeProcess = {
+    stdin: { write: (d: unknown) => written.push(String(d)), flush: () => {} },
+  };
+  return { manager, written };
+}
+
 describe("rewind anchor capture (promptUuid)", () => {
   test("a live user-submission echo surfaces promptUuid", () => {
     const result = routeTopLevelEvent(
@@ -152,9 +169,9 @@ describe("rewind anchor capture (promptUuid)", () => {
 });
 
 describe("rewind_preview → rewind_files{dry_run:true}", () => {
-  test("sends the control request and registers a pending preview", () => {
+  test("sends the control request and registers a pending preview", async () => {
     const { manager, written } = mockProcessWithStdinSpy();
-    manager.handleRewindPreview({
+    await manager.handleRewindPreview({
       type: "rewind_preview",
       promptUuid: "anchor-1",
     });
@@ -170,7 +187,7 @@ describe("rewind_preview → rewind_files{dry_run:true}", () => {
 
   test("a matching control_response relays a rewind_preview_result", async () => {
     const { manager, written } = mockProcessWithStdinSpy();
-    manager.handleRewindPreview({
+    await manager.handleRewindPreview({
       type: "rewind_preview",
       promptUuid: "anchor-2",
     });
@@ -209,7 +226,7 @@ describe("rewind_preview → rewind_files{dry_run:true}", () => {
 
   test("a canRewind:false response relays the gating error", async () => {
     const { manager, written } = mockProcessWithStdinSpy();
-    manager.handleRewindPreview({
+    await manager.handleRewindPreview({
       type: "rewind_preview",
       promptUuid: "aged-out",
     });
@@ -253,6 +270,55 @@ describe("rewind_preview → rewind_files{dry_run:true}", () => {
     const result = out.find((m) => m.type === "rewind_preview_result");
     expect(result.canRewind).toBe(false);
     expect(result.error).toContain("busy");
+  });
+});
+
+describe("rewind_preview conversationRewindable ([#step-7-3])", () => {
+  // turn1 / turn2, then a /compact boundary + summary, then turn3.
+  const u = (uuid: string, text: string) =>
+    JSON.stringify({ type: "user", uuid, message: { role: "user", content: [{ type: "text", text }] } });
+  const a = (uuid: string) =>
+    JSON.stringify({ type: "assistant", uuid, message: { role: "assistant", content: [{ type: "text", text: "ok" }] } });
+  const JSONL = [
+    u("uuid-1", "one"),
+    a("asst-1"),
+    u("uuid-2", "two"),
+    a("asst-2"),
+    JSON.stringify({ type: "system", subtype: "compact_boundary" }),
+    JSON.stringify({ type: "user", uuid: "sum", isCompactSummary: true, message: { role: "user", content: "summary" } }),
+    u("uuid-3", "three"),
+    a("asst-3"),
+  ].join("\n") + "\n";
+
+  async function previewResult(
+    manager: SessionManager,
+    written: string[],
+    promptUuid: string,
+  ): Promise<any> {
+    written.length = 0;
+    await manager.handleRewindPreview({ type: "rewind_preview", promptUuid });
+    const reqId = JSON.parse(written[0].replace(/\n$/, "")).request_id;
+    const out = await captureIpcOutput(() => {
+      (manager as any).handleClaudeLine(
+        JSON.stringify({
+          type: "control_response",
+          response: { subtype: "success", request_id: reqId, response: { canRewind: false } },
+        }),
+      );
+    });
+    return out.find((m) => m.type === "rewind_preview_result");
+  }
+
+  test("an anchor BEFORE a /compact boundary is not conversation-rewindable", async () => {
+    const { manager, written } = managerWithJsonl(JSONL);
+    const r = await previewResult(manager, written, "uuid-2");
+    expect(r.conversationRewindable).toBe(false);
+  });
+
+  test("an anchor after the last /compact boundary is conversation-rewindable", async () => {
+    const { manager, written } = managerWithJsonl(JSONL);
+    const r = await previewResult(manager, written, "uuid-3");
+    expect(r.conversationRewindable).toBe(true);
   });
 });
 

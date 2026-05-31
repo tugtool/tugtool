@@ -371,7 +371,16 @@ async function main() {
       // `/rewind` diff-stat preview ([#step-7-1]). Synchronous send +
       // correlate (the `control_response` is caught turn-free in
       // `handleClaudeLine`); no IPC-loop-blocking await.
-      sessionManager?.handleRewindPreview(msg);
+      sessionManager?.handleRewindPreview(msg).catch((err) => {
+        console.error("Rewind preview failed:", err);
+        writeLine({
+          type: "rewind_preview_result",
+          promptUuid: msg.promptUuid,
+          canRewind: false,
+          error: `Rewind preview failed: ${err}`,
+          ipc_version: 2,
+        });
+      });
     } else if (isSessionRewind(msg)) {
       // `/rewind` apply. Code dimension reverts the working tree via
       // `rewind_files` ([#step-7-1]); the conversation dimension truncates

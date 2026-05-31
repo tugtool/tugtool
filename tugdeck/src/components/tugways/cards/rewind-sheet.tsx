@@ -154,6 +154,10 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
     const row = dataSource.rowAt(index);
     const preview = previews.get(row.promptUuid);
     const selected = row.promptUuid === selectedPromptUuid;
+    // A turn whose conversation rewind would cross a /compact boundary can't be
+    // rewound to (both sheet scopes truncate the conversation), so its row is
+    // disabled and says why. `undefined` (still loading) ⇒ enabled.
+    const blocked = preview?.conversationRewindable === false;
     const title = row.preview.trim().length > 0 ? row.preview : "(empty prompt)";
     const stat = diffStatLabel(preview);
     const subtitle = row.isCurrent
@@ -168,6 +172,7 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
         className="dev-card-picker-session-option"
         data-testid="rewind-turn-row"
         data-selected={selected ? "true" : undefined}
+        data-disabled={blocked ? "true" : undefined}
         data-prompt-uuid={row.promptUuid}
       >
         <div className="dev-card-picker-session-option-text">
@@ -178,7 +183,11 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
             {title}
           </span>
           <span className="dev-card-picker-session-option-subtitle">
-            {subtitle.length > 0 ? subtitle : " "}
+            {blocked
+              ? "Can't rewind past a /compact"
+              : subtitle.length > 0
+                ? subtitle
+                : " "}
           </span>
         </div>
       </div>
@@ -250,11 +259,18 @@ function RewindSheetBody({
     () => ({
       onSelect: (index) => {
         const row = rows[index];
+        // A turn that can't be conversation-rewound to (crosses a /compact)
+        // is not selectable. Read the preview live so a result that landed
+        // after the initial render still gates the click.
+        const preview = codeSessionStore
+          .getSnapshot()
+          .rewindPreviews.get(row.promptUuid);
+        if (preview?.conversationRewindable === false) return;
         setSelected(row);
         ensurePreview(row.promptUuid);
       },
     }),
-    [rows, ensurePreview],
+    [rows, ensurePreview, codeSessionStore],
   );
 
   // Fetch every row's diff-stat once, when the sheet opens, so each turn shows
@@ -310,7 +326,13 @@ function RewindSheetBody({
     }
   }, [applying, ack, selected, onClose]);
 
-  const canApply = selected !== null && isIdle && !applying;
+  // Block Rewind if the selected turn's conversation rewind would error (e.g.
+  // a preview that resolved to not-rewindable after selection).
+  const canApply =
+    selected !== null &&
+    isIdle &&
+    !applying &&
+    selectedPreview?.conversationRewindable !== false;
   const apply = useCallback(() => {
     if (selected === null || !isIdle) return;
     setErrorMsg(null);
