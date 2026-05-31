@@ -41,41 +41,41 @@ describe("createFixtureSessionMetadataStore", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const snapshot = store.getSnapshot();
 
-    // Payload counts for the shipped v2.1.158 capture (tugplug agents
-    // retired — only the bake/dash/recipe skills remain, and the agent
-    // list is the built-in Claude Code set):
-    //   slash_commands: 31  (17 upgrade to "skill", 14 stay "local")
+    // Payload counts for the shipped v2.1.158 capture. The tugplug skills
+    // are the prefixed set (audit/commit/dash/devise/implement/vet); the
+    // agent list is the built-in Claude Code set:
+    //   slash_commands: 33  (19 upgrade to "skill", 14 stay "local")
     //   agents: 5
-    //   total after dedup: 36
-    expect(snapshot.slashCommands.length).toBe(36);
+    //   total after dedup: 38
+    expect(snapshot.slashCommands.length).toBe(38);
 
     const byCategory = new Map<string, number>();
     for (const cmd of snapshot.slashCommands) {
       byCategory.set(cmd.category, (byCategory.get(cmd.category) ?? 0) + 1);
     }
     expect(byCategory.get("local")).toBe(14);
-    expect(byCategory.get("skill")).toBe(17);
+    expect(byCategory.get("skill")).toBe(19);
     expect(byCategory.get("agent")).toBe(5);
   });
 
-  it("narrows `tug` to the 3 tugplug-prefixed entries", () => {
+  it("narrows `tug` to the tugplug-prefixed entries", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const provider = store.getCommandCompletionProvider();
     const hits = provider("tug");
-    expect(hits.length).toBe(3);
+    expect(hits.length).toBe(6);
     for (const h of hits) {
       expect(h.atom.type).toBe("command");
       expect(h.label.startsWith("tugplug:")).toBe(true);
     }
   });
 
-  it("narrows `com` to commit + compact", () => {
+  it("narrows `com` to compact + tugplug:commit", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const provider = store.getCommandCompletionProvider();
     const names = provider("com").map((h) => h.label).sort();
     expect(names).toEqual([
-      "commit",
       "compact",
+      "tugplug:commit",
     ]);
   });
 

@@ -751,7 +751,7 @@ pub static PROBES: &[ProbeRecord] = &[
     ProbeRecord {
         name: "test-25-tugplug-plan-invocation",
         input_script: &[ProbeMsg::UserMessage {
-            text: "/tugplug:plan Add a --no-auth flag to tugcast for development testing",
+            text: "/tugplug:devise Add a --no-auth flag to tugcast for development testing",
         }],
         required_events: &["system_metadata", "turn_complete"],
         optional_events: &[
@@ -764,7 +764,7 @@ pub static PROBES: &[ProbeRecord] = &[
         prerequisites: &[ProbePrereq::TugplugPluginLoaded],
         timeout_secs: 180,
         skip_reason: Some(
-            "probe script incomplete — /tugplug:plan asks clarifying questions the script never answers; needs redesign (not P19)",
+            "probe script incomplete — /tugplug:devise asks clarifying questions the script never answers; needs redesign (not P19)",
         ),
     },
     // --- Test 26: /dash and /tugplug:dash ---
