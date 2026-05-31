@@ -22,16 +22,18 @@ static PLACEHOLDER_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^<[^
 static PROSE_DEPENDENCY: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bstep\s+\d+").unwrap());
 
-/// Regex for valid **References:** format - must contain [DNN] decision citations
-/// Valid: "[D01] Decision name, [D02] Another"
+/// Regex for valid **References:** format - must contain [PNN] decision citations
+/// Valid: "[P01] Decision name, [P02] Another"
 /// Prose may also reference anchors as `(#anchor)`.
-static DECISION_CITATION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[D\d{2}\]").unwrap());
+/// The `P` prefix is plan-local; the global `[D##]` design decisions in
+/// `tuglaws/design-decisions.md` are a separate namespace a plan may cite freely.
+static DECISION_CITATION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[P\d{2}\]").unwrap());
 
 /// Regex for extracting decision IDs from References lines (with capture group)
-/// Pattern: \[(D\d{2,})\] - allows 2+ digits for forward compatibility
+/// Pattern: \[(P\d{2,})\] - allows 2+ digits for forward compatibility
 /// Note: distinct from DECISION_CITATION which is presence-only (no capture group)
 static DECISION_ID_CAPTURE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[(D\d{2,})\]").unwrap());
+    LazyLock::new(|| Regex::new(r"\[(P\d{2,})\]").unwrap());
 
 /// Regex for anchor citations in References (must be in parentheses with # prefix)
 static ANCHOR_CITATION: LazyLock<Regex> =
@@ -577,7 +579,7 @@ fn check_depends_on_format(tugplan: &TugPlan, result: &mut ValidationResult) {
 }
 
 /// E018: Check **References:** format
-/// Must contain decision citations in [DNN] format (e.g., [D01], [D02])
+/// Must contain decision citations in [PNN] format (e.g., [P01], [P02])
 fn check_references_format(tugplan: &TugPlan, result: &mut ValidationResult) {
     for step in &tugplan.steps {
         if let Some(refs) = &step.references {
@@ -601,7 +603,7 @@ fn check_references_format(tugplan: &TugPlan, result: &mut ValidationResult) {
                         "E018",
                         Severity::Error,
                         format!(
-                            "Step {} has vague References '{}' (must cite [DNN] decisions or (#anchor) refs)",
+                            "Step {} has vague References '{}' (must cite [PNN] decisions or (#anchor) refs)",
                             step.number, refs
                         ),
                     )
@@ -617,7 +619,7 @@ fn check_references_format(tugplan: &TugPlan, result: &mut ValidationResult) {
                         "E018",
                         Severity::Error,
                         format!(
-                            "Step {} References contains prose step reference '{}' (use [DNN] format for decisions, (#anchor) for section refs)",
+                            "Step {} References contains prose step reference '{}' (use [PNN] format for decisions, (#anchor) for section refs)",
                             step.number, refs
                         ),
                     )
@@ -941,7 +943,7 @@ Overview text.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Test Decision (DECIDED) {#d01-test}
+#### [P01] Test Decision (DECIDED) {#p01-test}
 
 Decision text.
 
@@ -949,7 +951,7 @@ Decision text.
 
 #### Step 1: Bootstrap {#step-1}
 
-**References:** [D01] Test decision
+**References:** [P01] Test decision
 
 **Tasks:**
 - [ ] Task one
@@ -1183,7 +1185,7 @@ Deliverable text.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Test Decision {#d01-test}
+#### [P01] Test Decision {#p01-test}
 
 Decision without status.
 "#;
@@ -1494,13 +1496,13 @@ Question without resolution.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Test Decision (DECIDED) {#d01-test}
+#### [P01] Test Decision (DECIDED) {#p01-test}
 
 Decision text.
 
 #### Step 1: Test {#step-1}
 
-**References:** [D01] Test Decision, (#context, #strategy)
+**References:** [P01] Test Decision, (#context, #strategy)
 
 **Tasks:**
 - [ ] Task
@@ -1522,11 +1524,11 @@ Decision text.
 
     #[test]
     fn test_decision_citation_regex() {
-        assert!(DECISION_CITATION.is_match("[D01] Test"));
-        assert!(DECISION_CITATION.is_match("[D99] Another"));
-        assert!(DECISION_CITATION.is_match("Some text [D01] more text"));
+        assert!(DECISION_CITATION.is_match("[P01] Test"));
+        assert!(DECISION_CITATION.is_match("[P99] Another"));
+        assert!(DECISION_CITATION.is_match("Some text [P01] more text"));
         assert!(!DECISION_CITATION.is_match("D01 Test")); // Missing brackets
-        assert!(!DECISION_CITATION.is_match("[D1] Test")); // Single digit
+        assert!(!DECISION_CITATION.is_match("[P1] Test")); // Single digit
     }
 
     #[test]
@@ -1674,7 +1676,7 @@ Decision text.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Decision One (DECIDED) {#d01-one}
+#### [P01] Decision One (DECIDED) {#p01-one}
 
 This is decided but never cited.
 
@@ -1694,7 +1696,7 @@ This is decided but never cited.
         let w011_issues: Vec<&ValidationIssue> =
             result.issues.iter().filter(|i| i.code == "W011").collect();
         assert_eq!(w011_issues.len(), 1);
-        assert!(w011_issues[0].message.contains("[D01]"));
+        assert!(w011_issues[0].message.contains("[P01]"));
     }
 
     #[test]
@@ -1713,7 +1715,7 @@ This is decided but never cited.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Decision One (OPEN) {#d01-one}
+#### [P01] Decision One (OPEN) {#p01-one}
 
 This is open, so not required to be cited.
 
@@ -1751,7 +1753,7 @@ This is open, so not required to be cited.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Decision One (DEFERRED) {#d01-one}
+#### [P01] Decision One (DEFERRED) {#p01-one}
 
 This is deferred, so not required to be cited.
 
@@ -1792,7 +1794,7 @@ This is deferred, so not required to be cited.
 
 **Commit:** `feat: add feature`
 
-**References:** [D03] Nonexistent decision
+**References:** [P03] Nonexistent decision
 
 **Tasks:**
 - [ ] Task one
@@ -1804,7 +1806,7 @@ This is deferred, so not required to be cited.
         let w012_issues: Vec<&ValidationIssue> =
             result.issues.iter().filter(|i| i.code == "W012").collect();
         assert_eq!(w012_issues.len(), 1);
-        assert!(w012_issues[0].message.contains("[D03]"));
+        assert!(w012_issues[0].message.contains("[P03]"));
     }
 
     #[test]
@@ -1823,7 +1825,7 @@ This is deferred, so not required to be cited.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Decision One (DECIDED) {#d01-one}
+#### [P01] Decision One (DECIDED) {#p01-one}
 
 This decision exists.
 
@@ -1831,7 +1833,7 @@ This decision exists.
 
 **Commit:** `feat: add feature`
 
-**References:** [D01] Decision One
+**References:** [P01] Decision One
 
 **Tasks:**
 - [ ] Task one

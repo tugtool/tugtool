@@ -36,13 +36,13 @@ Measurable success criteria:
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Use Rust for implementation (DECIDED) {#d01-use-rust}
+#### [P01] Use Rust for implementation (DECIDED) {#p01-use-rust}
 
 **Decision:** Build the feature in Rust for performance and safety.
 
 **Rationale:** Rust provides memory safety without garbage collection.
 
-#### [D02] REST API architecture (DECIDED) {#d02-rest-api}
+#### [P02] REST API architecture (DECIDED) {#p02-rest-api}
 
 **Decision:** Use REST API for external interface.
 
@@ -56,7 +56,7 @@ Measurable success criteria:
 
 **Commit:** `feat: initial setup`
 
-**References:** [D01] Use Rust for implementation, (#strategy, #success-criteria)
+**References:** [P01] Use Rust for implementation, (#strategy, #success-criteria)
 
 **Tasks:**
 - [ ] Create project structure
@@ -82,7 +82,7 @@ Measurable success criteria:
 
 **Commit:** `feat(api): add REST endpoints`
 
-**References:** [D02] REST API architecture, [D01] Use Rust for implementation, (#design-decisions)
+**References:** [P02] REST API architecture, [P01] Use Rust for implementation, (#design-decisions)
 
 **Tasks:**
 - [ ] Define API routes

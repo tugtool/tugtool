@@ -79,7 +79,7 @@ It serves as a reference implementation for the tug validation system.
 
 **Plan to resolve:** Design review
 
-**Resolution:** DECIDED (see [D01])
+**Resolution:** DECIDED (see [P01])
 
 ---
 
@@ -99,7 +99,7 @@ It serves as a reference implementation for the tug validation system.
 
 ### 1.0.0 Design Decisions {#design-decisions}
 
-#### [D01] Use Complete Structure (DECIDED) {#d01-complete}
+#### [P01] Use Complete Structure (DECIDED) {#p01-complete}
 
 **Decision:** This fixture demonstrates all sections for comprehensive testing.
 
@@ -110,7 +110,7 @@ It serves as a reference implementation for the tug validation system.
 **Implications:**
 - Fixture must be updated when schema changes
 
-#### [D02] Include All Artifact Types (DECIDED) {#d02-artifacts}
+#### [P02] Include All Artifact Types (DECIDED) {#p02-artifacts}
 
 **Decision:** Include examples of decisions, questions, specs, tables, risks.
 
@@ -176,7 +176,7 @@ It serves as a reference implementation for the tug validation system.
 
 **Commit:** `test: add complete fixture`
 
-**References:** [D01] Use complete structure, [D02] Include all artifact types, (#context, #strategy)
+**References:** [P01] Use complete structure, [P02] Include all artifact types, (#context, #strategy)
 
 **Artifacts:**
 - Complete test fixture
@@ -204,7 +204,7 @@ It serves as a reference implementation for the tug validation system.
 
 **Commit:** `test: verify complete fixture`
 
-**References:** [D01] Use complete structure, (#specification)
+**References:** [P01] Use complete structure, (#specification)
 
 **Artifacts:**
 - Validation confirmation

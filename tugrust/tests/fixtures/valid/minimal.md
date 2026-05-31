@@ -24,7 +24,7 @@ This is a minimal plan that should pass validation with no errors.
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Example Decision (DECIDED) {#d01-example}
+#### [P01] Example Decision (DECIDED) {#p01-example}
 
 **Decision:** This is an example decision.
 
@@ -38,7 +38,7 @@ This is a minimal plan that should pass validation with no errors.
 
 **Commit:** `feat: initial setup`
 
-**References:** [D01] Example decision
+**References:** [P01] Example decision
 
 **Tasks:**
 - [ ] Create initial structure

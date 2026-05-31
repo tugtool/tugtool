@@ -80,10 +80,10 @@ pub struct Anchor {
     pub line: usize,
 }
 
-/// A design decision
+/// A plan-local design decision
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Decision {
-    /// Decision ID (e.g., "D01")
+    /// Decision ID (e.g., "P01")
     pub id: String,
     /// Decision title
     pub title: String,

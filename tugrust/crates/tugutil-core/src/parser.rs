@@ -26,9 +26,13 @@ mod patterns {
         regex::Regex::new(r"^#{3,5}\s+Step\s+(\d+):?\s*(.+?)\s*(?:\{#([a-z0-9-]+)\})?\s*$").unwrap()
     });
 
+    // Plan-local design decisions are `[P01]` and open questions are `[Q01]`.
+    // The `P` prefix (not `D`) keeps plan-local decisions distinct from the
+    // global `[D##]` design decisions in `tuglaws/design-decisions.md`, which a
+    // plan may also cite by reference.
     pub static DECISION_HEADER: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(
-            r"^####\s+\[([DQ]\d+)\]\s*(.+?)\s*(?:\((\w+)\))?\s*(?:\{#([a-z0-9-]+)\})?\s*$",
+            r"^####\s+\[([PQ]\d+)\]\s*(.+?)\s*(?:\((\w+)\))?\s*(?:\{#([a-z0-9-]+)\})?\s*$",
         )
         .unwrap()
     });
@@ -63,7 +67,7 @@ mod patterns {
         LazyLock::new(|| regex::Regex::new(r"(?i)^#{1,6}\s+step\s+\d+").unwrap());
 
     pub static NEAR_MISS_DECISION: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"(?i)^\s*#{1,6}\s*\[[DQ]\d+\]").unwrap());
+        LazyLock::new(|| regex::Regex::new(r"(?i)^\s*#{1,6}\s*\[[PQ]\d+\]").unwrap());
 
     pub static NEAR_MISS_PHASE: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"(?i)^#{1,6}\s+phase\s+[\d.]+:").unwrap());
@@ -103,6 +107,11 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
 
     // Track current parsing context
     let mut in_metadata_table = false;
+    // Metadata-table detection is scoped to the Plan Metadata section so that
+    // unrelated `| key | value |` tables elsewhere in the document (e.g. the Step
+    // Status Ledger, whose separator row can resemble the metadata separator) are
+    // never mis-parsed as metadata fields.
+    let mut in_plan_metadata_section = false;
     let mut in_step: Option<usize> = None; // Index into tugplan.steps
     let mut current_section = CurrentSection::None;
     let mut anchor_locations: HashMap<String, usize> = HashMap::new();
@@ -230,8 +239,10 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
             continue;
         }
 
-        // Detect metadata table start
-        if line.contains("| Field | Value |") || line.contains("|------|-------|") {
+        // Detect metadata table start (only within the Plan Metadata section)
+        if in_plan_metadata_section
+            && (line.contains("| Field | Value |") || line.contains("|------|-------|"))
+        {
             in_metadata_table = true;
             continue;
         }
@@ -308,7 +319,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
             let status = caps.get(3).map(|m| m.as_str().to_string());
             let anchor = caps.get(4).map(|m| m.as_str().to_string());
 
-            if id.starts_with('D') {
+            if id.starts_with('P') {
                 tugplan.decisions.push(Decision {
                     id: id.to_string(),
                     title: title.to_string(),
@@ -463,7 +474,7 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
                     code: "P002".to_string(),
                     message: "Decision/Question header does not match strict format".to_string(),
                     line: line_number,
-                    suggestion: Some("Use format: #### [D01] Title (STATUS) {#d01-slug} (with #### exactly, capital D/Q)".to_string()),
+                    suggestion: Some("Use format: #### [P01] Title (STATUS) {#p01-slug} (with #### exactly, capital P/Q)".to_string()),
                 });
             }
 
@@ -496,6 +507,12 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
         if let Some(caps) = patterns::SECTION_HEADER.captures(line) {
             let header_text = caps.get(2).unwrap().as_str();
             let header_lower = header_text.to_lowercase();
+            let header_anchor = caps.get(3).map(|m| m.as_str());
+
+            // Track the Plan Metadata section so metadata-table detection is scoped
+            // to it. Any other section heading leaves it.
+            in_plan_metadata_section = header_anchor == Some("plan-metadata")
+                || header_lower.contains("metadata");
 
             if header_lower.contains("tasks:") || header_lower == "tasks" {
                 current_section = CurrentSection::Tasks;
@@ -572,7 +589,7 @@ mod tests {
 
 **Commit:** `feat: initial setup`
 
-**References:** [D01] Test decision
+**References:** [P01] Test decision
 
 **Tasks:**
 - [ ] Task one
@@ -607,7 +624,7 @@ mod tests {
         assert_eq!(step.title, "Bootstrap");
         assert_eq!(step.anchor, "step-1");
         assert_eq!(step.commit_message, Some("feat: initial setup".to_string()));
-        assert_eq!(step.references, Some("[D01] Test decision".to_string()));
+        assert_eq!(step.references, Some("[P01] Test decision".to_string()));
 
         assert_eq!(step.tasks.len(), 2);
         assert!(!step.tasks[0].checked);
@@ -738,11 +755,11 @@ mod tests {
 
 ### Design Decisions {#design-decisions}
 
-#### [D01] Use Rust (DECIDED) {#d01-use-rust}
+#### [P01] Use Rust (DECIDED) {#p01-use-rust}
 
 **Decision:** Build in Rust.
 
-#### [D02] Use clap (OPEN) {#d02-use-clap}
+#### [P02] Use clap (OPEN) {#p02-use-clap}
 
 **Decision:** Consider clap for CLI.
 "#;
@@ -750,15 +767,15 @@ mod tests {
         let tugplan = parse_tugplan(content).unwrap();
 
         assert_eq!(tugplan.decisions.len(), 2);
-        assert_eq!(tugplan.decisions[0].id, "D01");
+        assert_eq!(tugplan.decisions[0].id, "P01");
         assert_eq!(tugplan.decisions[0].title, "Use Rust");
         assert_eq!(tugplan.decisions[0].status, Some("DECIDED".to_string()));
         assert_eq!(
             tugplan.decisions[0].anchor,
-            Some("d01-use-rust".to_string())
+            Some("p01-use-rust".to_string())
         );
 
-        assert_eq!(tugplan.decisions[1].id, "D02");
+        assert_eq!(tugplan.decisions[1].id, "P02");
         assert_eq!(tugplan.decisions[1].status, Some("OPEN".to_string()));
     }
 
@@ -1029,17 +1046,17 @@ Example step header:
 Example decision:
 
 ```
-#### [D01] Example Decision (DECIDED) {#d01-example}
+#### [P01] Example Decision (DECIDED) {#p01-example}
 ```
 
-#### [D02] Real Decision (DECIDED) {#d02-real}
+#### [P02] Real Decision (DECIDED) {#p02-real}
 "#;
 
         let tugplan = parse_tugplan(content).unwrap();
 
-        // Only D02 should be parsed
+        // Only P02 should be parsed
         assert_eq!(tugplan.decisions.len(), 1);
-        assert_eq!(tugplan.decisions[0].id, "D02");
+        assert_eq!(tugplan.decisions[0].id, "P02");
         assert_eq!(tugplan.decisions[0].title, "Real Decision");
     }
 
@@ -1214,7 +1231,7 @@ Example:
 | Status | active |
 | Last updated | 2026-02-03 |
 
-#### [d01] lowercase decision (DECIDED)
+#### [p01] lowercase decision (DECIDED)
 "#;
 
         let tugplan = parse_tugplan(content).unwrap();
@@ -1222,6 +1239,56 @@ Example:
         assert_eq!(tugplan.diagnostics.len(), 1);
         assert_eq!(tugplan.diagnostics[0].code, "P002");
         assert!(tugplan.diagnostics[0].message.contains("Decision"));
+    }
+
+    #[test]
+    fn test_metadata_detection_scoped_to_plan_metadata_section() {
+        // A four-column table outside the Plan Metadata section — e.g. the Step
+        // Status Ledger, whose separator row begins with `|------|-------|` — must
+        // NOT be mis-parsed as metadata (no spurious P004 diagnostics).
+        let content = r#"## Phase 1.0: Test {#phase-1}
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Test |
+| Status | active |
+| Last updated | 2026-02-03 |
+
+### Execution Steps {#execution-steps}
+
+#### Step Status Ledger {#step-status-ledger}
+
+| Step | Title | Status | Commit |
+|------|-------|--------|--------|
+| #step-1 | Do the thing | pending | — |
+| #step-2 | Do the next | pending | — |
+
+#### Step 1: Do the thing {#step-1}
+
+**References:** (#plan-metadata)
+
+**Tasks:**
+- [ ] Do it
+"#;
+
+        let tugplan = parse_tugplan(content).unwrap();
+
+        let p004: Vec<_> = tugplan
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "P004")
+            .collect();
+        assert!(
+            p004.is_empty(),
+            "Ledger rows should not be parsed as metadata fields: {:?}",
+            p004
+        );
+
+        // The real metadata table is still parsed correctly.
+        assert_eq!(tugplan.metadata.owner, Some("Test".to_string()));
+        assert_eq!(tugplan.metadata.status, Some("active".to_string()));
     }
 
     #[test]

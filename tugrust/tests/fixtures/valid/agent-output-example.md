@@ -39,7 +39,7 @@ Key features shown:
 
 ### 1.0.0 Design Decisions {#design-decisions}
 
-#### [D01] Use Conventional Commits (DECIDED) {#d01-conventional-commits}
+#### [P01] Use Conventional Commits (DECIDED) {#p01-conventional-commits}
 
 **Decision:** Commit messages follow Conventional Commits format with `feat:`, `fix:`, `docs:` prefixes.
 
@@ -58,7 +58,7 @@ Key features shown:
 
 **Commit:** `feat: initial project setup`
 
-**References:** [D01] Use conventional commits, (#context, #strategy)
+**References:** [P01] Use conventional commits, (#context, #strategy)
 
 **Artifacts:**
 - Project structure
@@ -90,7 +90,7 @@ Key features shown:
 
 **Commit:** `feat: implement core functionality`
 
-**References:** [D01] Use conventional commits
+**References:** [P01] Use conventional commits
 
 **Artifacts:**
 - Core module
@@ -122,7 +122,7 @@ Key features shown:
 
 **Commit:** `docs: add documentation`
 
-**References:** [D01] Use conventional commits
+**References:** [P01] Use conventional commits
 
 **Artifacts:**
 - README.md

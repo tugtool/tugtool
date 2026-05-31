@@ -22,7 +22,7 @@ This plan has steps that reference non-existent anchors and decisions.
 
 ### 1.0.0 Design Decisions {#design-decisions}
 
-#### [D01] Only Decision (DECIDED) {#d01-only}
+#### [P01] Only Decision (DECIDED) {#p01-only}
 
 **Decision:** This is the only decision.
 
@@ -37,7 +37,7 @@ This plan has steps that reference non-existent anchors and decisions.
 
 **Commit:** `test: missing references`
 
-**References:** [D01] Only decision, [D99] Non-existent decision, (#non-existent-anchor)
+**References:** [P01] Only decision, [P99] Non-existent decision, (#non-existent-anchor)
 
 **Tasks:**
 - [ ] Task
@@ -61,7 +61,7 @@ This plan has steps that reference non-existent anchors and decisions.
 
 **Commit:** `test: bad dependency`
 
-**References:** [D01] Only decision
+**References:** [P01] Only decision
 
 **Tasks:**
 - [ ] Task
