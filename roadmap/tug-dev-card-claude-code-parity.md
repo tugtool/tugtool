@@ -143,6 +143,8 @@ This plan format relies on **explicit, named anchors** and **rich `References:` 
 
 **Resolution:** DECIDED → **match the Claude Code terminal empirically.** Run a capture probe that drives `/rewind` in the terminal, observe what flows on the wire / what claude / harness state mutates, and design the dev-card flow to produce the same mutations. This becomes a prerequisite investigation step before [#step-7] designs the sheet. See [#d10-rewind-matches-terminal] and [#step-7] artifacts.
 
+**Empirical answer ([#step-7a], 2026-05-30, claude 2.1.158):** `/rewind` is **not a wire verb** — over stream-json it bounces with a synthetic turn (`"/rewind isn't available in this environment."`). The terminal's rewind is entirely client-side: truncate the `parentUuid`-chained session JSONL at the chosen turn, restore file checkpoints, and `--resume` (same `session_id`). So the dev-card `session_rewind` inbound is **client-driven in tugcode** — truncate-JSONL + respawn-`--resume`, the [R07] pattern — with nothing forwarded to claude. Full writeup: [transport-exploration.md#rewind-empirical-capture-2158](transport-exploration.md#rewind-empirical-capture-2158).
+
 #### [Q05] `/btw` out-of-history turn shape (DECIDED) {#q05-btw-shape}
 
 **Question:** Terminal `/btw` runs a turn that doesn't persist to session history. Does our journal need an `exclude_from_history` flag, do we synthesize a separate ephemeral session, or do we write to history with a hint?
@@ -892,7 +894,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 4 | Effort chip | ✅ DONE | `effort-chip.tsx` + `effort-picker-sheet.tsx` + `lib/effort.ts` + `use-effort.ts`; tugcode `--effort`/`effort_change` respawn ([R07]); `at0096` PASS |
 | 5 | Phase A integration checkpoint | ✅ DONE | verified by running the live app (full Z4B cluster); per-capability app-tests `at0087`/`at0088`/`at0095`/`at0096` |
 | 6 | `SessionPickerSheet` primitive | ✅ DONE | capability exists via `dev-picker-cells.tsx` (session-resume rows, kbd nav, overlay); generic primitive not separately needed |
-| 7a | Capture terminal `/rewind` | ▶ TODO | empirical probe |
+| 7a | Capture terminal `/rewind` | ✅ DONE | empirical probe — `/rewind` bounces (not a wire verb); dev-card flow is client-driven truncate+`--resume`. `test-36-slash-rewind` pinned; catalog re-baselined to v2.1.158 |
 | 7b | `/rewind` | ▶ TODO | builds on existing picker (not the generic primitive) |
 | 8 | `/resume` | ▶ TODO | **rescoped (Q-A):** reuse the existing session chooser as-is; only re-wire cancel to keep the current session (not close the card) |
 | 9 | `/permissions` picker + editor | ✅ DONE | folded into 1.6 (`permission-rules-editor.tsx`) — Q-B |
@@ -1547,28 +1549,28 @@ So the trigger is grounded, not guessed: hidden on `status === "allowed"`; **app
 
 **Depends on:** #step-5
 
-**Commit:** `test(tugcast): probe terminal /rewind wire shape against claude 2.1.154`
+**Commit:** `test(tugcast): probe terminal /rewind wire shape; re-baseline golden catalog to claude 2.1.158`
 
-**References:** [D06] protocol baseline, [D10] rewind matches terminal, Risk R03, (#rewind-flow)
+**References:** [D06] protocol baseline, [D10] rewind matches terminal, Risk R03, (#rewind-flow), (transport-exploration.md#rewind-empirical-capture-2158)
 
 **Artifacts:**
-- New: probe `test-N-slash-rewind` in `tugrust/crates/tugcast/tests/common/probes.rs` driving `/rewind` end-to-end in a real-claude session
-- New: golden fixture entry under `v2.1.154/` (or whatever current version is when this step lands) pinning the canonical event sequence
+- New: probe `test-36-slash-rewind` in `tugrust/crates/tugcast/tests/common/probes.rs` driving `/rewind` over stream-json
+- New: full golden baseline `v2.1.158/` (36 probes incl. rewind) pinning the canonical event sequence; `capabilities/2.1.158/` + `capabilities/LATEST` advanced
 - Updated: `roadmap/transport-exploration.md` adds the empirical findings of what terminal `/rewind` actually does on the wire
 
 **Tasks:**
-- [ ] Run `/rewind` in the Claude Code terminal with a multi-turn session; capture the stream-json output.
-- [ ] Identify what the terminal sends (any new inbound shapes), what the harness mutates (session-id derivation, JSONL handling), what claude emits (new event types or just a replay).
-- [ ] Add `test-N-slash-rewind` to the probe table with the canonical input + expected event sequence.
-- [ ] Run `just capture-capabilities` to bake the fixture.
-- [ ] Document the findings in `transport-exploration.md` for future reference.
+- [x] Run `/rewind` over stream-json (the only path tugcode drives) against a real `claude 2.1.158` session; capture the output. **Finding: it bounces — synthetic turn (`model:"<synthetic>"`, `num_turns:0`, `$0`), text `"/rewind isn't available in this environment."`**
+- [x] Identify what the terminal sends / harness mutates / claude emits. **Finding: `/rewind` is NOT a wire verb. The terminal's rewind is client-side (truncate the `parentUuid`-chained session JSONL + restore checkpoints + `--resume`, same `session_id`). `--resume` reconstructs state purely from the JSONL (verified cross-process).**
+- [x] Add `test-36-slash-rewind` to the probe table with the canonical input + expected event sequence.
+- [x] Run `just capture-capabilities` to bake the fixture. **(Binary moved to 2.1.158 → full re-baseline of all 36 probes.)**
+- [x] Document the findings in `transport-exploration.md` ([#rewind-empirical-capture-2158](transport-exploration.md#rewind-empirical-capture-2158)).
 
 **Tests:**
-- [ ] Real-claude probe via `cargo nextest run -p tugcast --features real-claude-tests capture_all_probes`.
-- [ ] Drift regression stays clean against the new fixture.
+- [x] Real-claude probe via `capture_all_probes` — 36/36 captured in 124s; `test-36-slash-rewind` PASS (10 events).
+- [x] Drift regression clean — 0 failures, 3 Benign-class warnings (test-05/09 `assistant_text`↔`tool_activity` reorder; test-06 gained `rate_limit_event`).
 
 **Checkpoint:**
-- [ ] `just capture-capabilities` (drift clean; new probe present in v<version>/)
+- [x] `just capture-capabilities` — drift clean; `test-36-slash-rewind` present in `v2.1.158/`. (Recipe's auto-commit declined per git policy; files staged for the user to commit.)
 
 ---
 

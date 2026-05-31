@@ -151,10 +151,10 @@ pub enum ProbeStatus {
 }
 
 // -----------------------------------------------------------------------
-// Probe table — 35 entries
+// Probe table — 36 entries
 // -----------------------------------------------------------------------
 
-/// The full probe table. Order matches `transport-exploration.md` tests 1–35.
+/// The full probe table. Order matches `transport-exploration.md` tests 1–36.
 ///
 /// **Tentative classification.** Reconcile against live `claude 2.1.104`
 /// before treating `required_events` as ground truth — the capture
@@ -904,6 +904,31 @@ pub static PROBES: &[ProbeRecord] = &[
             "first-run flake at stability>=2 — probe returns 0 events intermittently; needs root-cause investigation separate from P19",
         ),
     },
+    // --- Test 36: Slash command /rewind (terminal-local; bounces) ---
+    // Empirical capture for dev-card `/rewind` ([#step-7a], [D10]). The
+    // terminal's `/rewind` is an interactive checkpoint picker rendered
+    // entirely client-side — it is NOT a wire verb. Driven over
+    // stream-json as a `user_message`, claude bounces it with a
+    // *synthetic* assistant turn (`model: "<synthetic>"`, `num_turns: 0`,
+    // `total_cost_usd: 0`, zero tokens): "/rewind isn't available in this
+    // environment." — the same terminal-rendered-locally class as
+    // `/permissions`, `/diff`, etc.
+    //
+    // This probe pins that bounce so a future claude that DID add a real
+    // rewind verb (or changed the bounce text/shape) surfaces as drift.
+    // The dev-card `/rewind` ([#step-7]) is therefore necessarily
+    // client-driven: tugcode truncates the session JSONL at the chosen
+    // message uuid and respawns `--resume` (the [R07] respawn pattern) —
+    // there is nothing to forward to claude.
+    ProbeRecord {
+        name: "test-36-slash-rewind",
+        input_script: &[ProbeMsg::UserMessage { text: "/rewind" }],
+        required_events: &["system_metadata", "assistant_text", "turn_complete"],
+        optional_events: &["session_init", "cost_update", "thinking_text"],
+        prerequisites: &[],
+        timeout_secs: 30,
+        skip_reason: None,
+    },
 ];
 
 #[cfg(test)]
@@ -911,8 +936,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn probe_table_has_35_entries() {
-        assert_eq!(PROBES.len(), 35, "probe table must contain all 35 probes");
+    fn probe_table_has_36_entries() {
+        assert_eq!(PROBES.len(), 36, "probe table must contain all 36 probes");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 *Live document. Updated as we probe the tugcast/tugcode transport.*
 
-> **Version banner.** This document was empirically verified against `claude 2.1.87` (initial capture, 2026-03-29) and `2.1.104` (multi-session router Step 10 integration run, 2026-04-12). The **authoritative machine-readable golden fixtures** live at [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/) and are ground truth — this prose catalog is a human-readable summary that may lag behind the fixtures. If the drift test fails, the fixtures are correct and this document is stale; update the prose to match.
+> **Version banner.** This document was empirically verified against `claude 2.1.87` (initial capture, 2026-03-29) and `2.1.104` (multi-session router Step 10 integration run, 2026-04-12), and re-baselined to `2.1.158` on 2026-05-30 (dev-card parity Step 7a — full 36-probe catalog, adding `test-36-slash-rewind`). The **authoritative machine-readable golden fixtures** live at [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/) and are ground truth — this prose catalog is a human-readable summary that may lag behind the fixtures. If the drift test fails, the fixtures are correct and this document is stale; update the prose to match.
 >
 > **Cross-links:** [`tide.md#p2-followup-golden-catalog`](tide.md#p2-followup-golden-catalog) (originating tide item) · [`tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md`](../tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/README.md) (developer-facing recovery guide, placeholder vocabulary, and version-bump runbook).
 
@@ -832,9 +832,20 @@ These features exist in the Claude Code terminal but produce **no events in stre
 | **Plan mode chooser** | `/plan` | Present approve/reject/keep-planning options after plan generation. | Medium |
 | **Compact with focus** | `/compact [focus]` | Compaction indicator + optional focus text input. | Medium |
 | **Session rename** | `/rename` | Text input, update session metadata. | Low |
-| **Session fork/branch** | `/branch`, `/rewind` | Fork current session, checkpoint management. Sends `session_command`. | Low |
+| **Checkpoint rewind** | `/rewind` | Client-driven; **does NOT cross the wire** — see [`/rewind` empirical capture](#rewind-empirical-capture-2158) below. Dev-card flow: truncate the session JSONL at the chosen turn + respawn `--resume`. | Low |
+| **Session fork/branch** | `/branch` | Fork current session, checkpoint management. (`/branch` likewise bounces in stream-json; unprobed.) | Low |
 | **Color/theme picker** | `/color`, `/theme` | Custom UI for theme selection. | Low |
 | **Vim mode toggle** | `/vim` | Keybinding mode switch for prompt input. | Low |
+
+### `/rewind` empirical capture (claude 2.1.158) {#rewind-empirical-capture-2158}
+
+Captured for dev-card parity Step 7a ([`tug-dev-card-claude-code-parity.md#step-7a`](tug-dev-card-claude-code-parity.md#step-7a), decision [D10]). Pinned as `test-36-slash-rewind` in the golden catalog. The earlier table row claiming `/rewind` "sends `session_command`" was a prose assumption — it is **empirically false**.
+
+**Finding 1 — `/rewind` is not a wire verb.** Driven over stream-json as a `user_message` (the only thing tugcode can send), `claude 2.1.158` bounces it with a *synthetic* turn — `assistant.model: "<synthetic>"`, `num_turns: 0`, `total_cost_usd: 0`, zero tokens — emitting the assistant text `"/rewind isn't available in this environment."` It is the same terminal-rendered-locally class as `/permissions`, `/diff`, `/help`, etc. The terminal's `/rewind` is an **interactive checkpoint picker rendered entirely client-side**; nothing about it reaches claude. Pinned IPC sequence (10 events): `session_init · context_breakdown · session_capabilities · system_metadata · context_breakdown · content_block_start · assistant_text · cost_update · assistant_text · turn_complete`.
+
+**Finding 2 — the rewind mechanism is filesystem + respawn, not a message.** The terminal restores file checkpoints, truncates the conversation transcript, and resumes. The transcript is a per-session JSONL at `~/.claude/projects/<slug>/<session-id>.jsonl`, a `parentUuid`-chained record log: `user(uuid=A, parent=-) → [attachment records] → assistant(parent=A) → user(uuid=B, parent=prev-assistant) → assistant(parent=B) → …`, interleaved with bookkeeping records (`queue-operation`, `last-prompt`, `mode`, `attachment`). A rewind to turn *B* = drop every record after *B*'s subtree, keep the same `session_id`, and `--resume`. Verified empirically: a fresh `claude --resume <sid>` in a *separate process* recalled a codeword set in a prior process, confirming `--resume` reconstructs state purely from the JSONL.
+
+**Implication for [#step-7] (`/rewind` sheet).** The dev-card `/rewind` is necessarily **client-driven in tugcode**: there is nothing to forward to claude. The eventual `session_rewind` inbound (`{type:"session_rewind", msg_id}`) must be handled tugcode-side by truncating the session JSONL at the chosen message uuid and respawning `--resume` — structurally the same respawn-to-apply pattern already used for `--effort` ([R07], Step 4). A "fork-and-card" secondary action forks to a new `session_id` instead of truncating in place. No new claude-facing protocol is required.
 
 ### Permission and Approval UI
 
