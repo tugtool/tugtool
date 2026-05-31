@@ -24,10 +24,11 @@ import {
 } from "@/components/tugways/cards/completion-providers/local-commands";
 
 describe("matchLocalSlashCommand", () => {
-  test("permissions and model are registered", () => {
+  test("permissions, model, and rewind are registered", () => {
     expect(LOCAL_SLASH_COMMANDS.map((c) => c.name)).toEqual([
       "permissions",
       "model",
+      "rewind",
     ]);
   });
 
@@ -62,15 +63,24 @@ describe("local-command completion + merge", () => {
     return provider(query).map((item) => item.label);
   }
 
-  test("local provider offers permissions and model as command atoms", () => {
+  test("local provider offers permissions, model, and rewind as command atoms", () => {
     const items = localCommandCompletionProvider()("");
-    expect(items.map((i) => i.label)).toEqual(["permissions", "model"]);
+    expect(items.map((i) => i.label)).toEqual(["permissions", "model", "rewind"]);
     expect(items[0].atom).toEqual({
       kind: "atom",
       type: "command",
       label: "permissions",
       value: "permissions",
     });
+  });
+
+  test("isOffered gates a command out of the list (empty-state, e.g. /rewind)", () => {
+    const gated = localCommandCompletionProvider({
+      isOffered: (name) => name !== "rewind",
+    });
+    expect(gated("").map((i) => i.label)).toEqual(["permissions", "model"]);
+    // The gate is consulted on substring queries too.
+    expect(gated("rew").map((i) => i.label)).toEqual([]);
   });
 
   test("local provider filters by case-insensitive substring", () => {
@@ -86,9 +96,9 @@ describe("local-command completion + merge", () => {
       mkItem("commit"),
     ];
     const merged = mergeCommandProviders(localCommandCompletionProvider(), claude);
-    // permissions appears once (local wins), then the other local command,
+    // permissions appears once (local wins), then the other local commands,
     // then claude's remaining commands.
-    expect(labels(merged, "")).toEqual(["permissions", "model", "commit"]);
+    expect(labels(merged, "")).toEqual(["permissions", "model", "rewind", "commit"]);
   });
 });
 

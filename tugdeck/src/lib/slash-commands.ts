@@ -72,6 +72,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "model",
     description: "Switch the active model for this session",
   },
+  {
+    name: "rewind",
+    description: "Rewind the conversation (and optionally code) to an earlier turn",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

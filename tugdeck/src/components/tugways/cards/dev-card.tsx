@@ -42,6 +42,8 @@ import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
 import { useModelPicker } from "./model-picker-sheet";
+import { useRewindSheet } from "./rewind-sheet";
+import { canOfferRewind } from "./rewind-turn-source";
 import { EffortChip } from "./effort-chip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
@@ -455,7 +457,15 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
         ? wrapPositionZero(
             entryDelegateRef,
             mergeCommandProviders(
-              localCommandCompletionProvider(),
+              localCommandCompletionProvider({
+                // `/rewind` is offered only once the session has a valid
+                // rewind target (≥2 anchored turns) — [#step-7-3] empty-state
+                // gating. Read live on each query, not closed over a stale
+                // snapshot ([L07]).
+                isOffered: (name) =>
+                  name !== "rewind" ||
+                  canOfferRewind(services.codeSessionStore.getSnapshot().transcript),
+              }),
               services.sessionMetadataStore.getCommandCompletionProvider(),
             ),
           )
@@ -2534,6 +2544,15 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/rewind` turn picker + restore confirm ([#step-7-3]), card-scoped per
+  // [D15]. Reads the transcript fresh at open time; the popup already gates
+  // the command on having a rewind target, and `openRewindSheet` no-ops if
+  // there is none.
+  const rewindSheet = useRewindSheet({
+    codeSessionStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2558,6 +2577,7 @@ export function DevCardBody({
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
     model: () => modelPicker.openModelPicker(),
+    rewind: () => rewindSheet.openRewindSheet(),
   };
 
   const {

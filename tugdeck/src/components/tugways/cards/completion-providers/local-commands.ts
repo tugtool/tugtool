@@ -19,7 +19,18 @@
  */
 
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
-import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
+import { LOCAL_SLASH_COMMANDS, type LocalCommandName } from "@/lib/slash-commands";
+
+/** Options for {@link localCommandCompletionProvider}. */
+export interface LocalCommandProviderOptions {
+  /**
+   * Per-command availability gate, evaluated fresh on every query so it can
+   * read live state (e.g. `/rewind` is offered only once the session has a
+   * rewind target — [#step-7-3] empty-state gating). Omitted ⇒ every
+   * registered command is offered.
+   */
+  isOffered?: (name: LocalCommandName) => boolean;
+}
 
 /**
  * A `CompletionProvider` over {@link LOCAL_SLASH_COMMANDS}. Items are the same
@@ -31,11 +42,15 @@ import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
  * claude ([#step-1c] / [D23]). Filtered by case-insensitive substring on the
  * name.
  */
-export function localCommandCompletionProvider(): CompletionProvider {
+export function localCommandCompletionProvider(
+  options: LocalCommandProviderOptions = {},
+): CompletionProvider {
+  const { isOffered } = options;
   return (query: string): CompletionItem[] => {
     const lower = query.toLowerCase();
     const items: CompletionItem[] = [];
     for (const cmd of LOCAL_SLASH_COMMANDS) {
+      if (isOffered !== undefined && !isOffered(cmd.name)) continue;
       if (lower === "" || cmd.name.toLowerCase().includes(lower)) {
         items.push({
           label: cmd.name,
