@@ -1,0 +1,18 @@
+/* @tug-pairings: none — layout only. The sheet chrome comes from the composed
+   TugSheet; the rows from the reused session cells (`dev-card-picker-session-*`,
+   already styled by the project picker). This file only sizes the list. No
+   color-setting rules, so no `@tug-renders-on` surfaces ([L16]). */
+
+.resume-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 24rem;
+}
+
+/* Size the reused sessions list to its rows with a scroll cap, instead of the
+   list view's default `height: 100%` (a cascade-scoped override, [L20]). */
+.resume-sheet-list .tug-list-view {
+  height: auto;
+  max-height: 22rem;
+}

@@ -1757,15 +1757,15 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 - Reuse: the cold-boot / empty-card `DevProjectPicker` is unchanged (it keeps its full-card project+sessions flow for the unbound state).
 
 **Tasks:**
-- [ ] `/resume` handler opens the focused sessions overlay via `cardPickerSheet` (sessions-only; project-path entry + recents are *not* shown — this is a live-session rebind, same project).
-- [ ] Selecting a session rebinds the card and resumes it (a genuine resume → replay rebuilds the transcript, distinct from `/rewind`'s silent local truncation).
-- [ ] ESC / backdrop / cancel dismisses and leaves the **live session intact** (card not closed); the cold-boot / empty-card path is untouched.
+- [x] `/resume` handler opens the focused sessions overlay via `cardPickerSheet` (`resume-sheet.tsx` — `useResumeSheet`); sessions-only, no project-path/recents chrome. Reads the bound project from `cardSessionBindingStore` and lists its sessions via the EXISTING `useDevSessionsDataSource` + module-constant `SESSIONS_CELL_RENDERERS` ([L26]); registered in the [#step-1c] registry + wired through `RUN_SLASH_COMMAND`.
+- [x] Selecting a session rebinds the card and resumes it — pick-to-resume through the SAME path the full picker's Open uses: `fireRestore(cardId, sessionId, projectDir, connection)` for a resume row, `sendSpawnSession(…, "new")` for "New session" (live rows are inert). The wire send is deferred past the sheet exit animation so the binding flip doesn't unmount the sheet mid-exit (mirrors `DevProjectPicker`).
+- [x] ESC / backdrop / Cancel dismisses and leaves the **live session intact** (card not closed, transcript survives); the cold-boot / empty-card `DevProjectPicker` is untouched.
 
 **Tests:**
-- [ ] Real-app: with a live bound session, `/resume` opens the sessions overlay (no project-path/recents chrome); cancel returns to the unchanged session (card not closed); picking a different session rebinds + resumes it.
+- [x] Real-app (`at0099-resume-command`): a live bound session (a turn driven via `driveDevSession`) → `/resume` via the real submit path opens the overlay with the **sessions list but no recents/path chrome** → Cancel dismisses and the **card stays bound with its transcript intact**. *(The pick→rebind spawn/resume round-trip goes through the shared `fireRestore`/`sendSpawnSession` path — a supervisor concern out of the store-only app-test harness's reach; the wiring is type-checked + the path is the same one the full picker exercises.)*
 
 **Checkpoint:**
-- [ ] `just app-test resume-command`
+- [x] `just app-test resume-command` → PASS (`at0099-resume-command.test.ts`).
 
 ---
 

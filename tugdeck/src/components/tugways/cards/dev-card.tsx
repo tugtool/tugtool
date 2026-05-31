@@ -44,6 +44,7 @@ import { ModelChip } from "./model-chip";
 import { useModelPicker } from "./model-picker-sheet";
 import { useRewindSheet } from "./rewind-sheet";
 import { canOfferRewind } from "./rewind-turn-source";
+import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
@@ -2553,6 +2554,15 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/resume` focused sessions overlay ([#step-8]), card-scoped per [D15].
+  // Reads the bound project from the binding store and lists its sessions;
+  // picking one rebinds this card to that conversation. Distinct from the
+  // full-card `DevProjectPicker` (unbound state) and from `/rewind`.
+  const resumeSheet = useResumeSheet({
+    cardId,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2578,6 +2588,7 @@ export function DevCardBody({
     permissions: () => permissionRulesSheet.openRulesSheet(),
     model: () => modelPicker.openModelPicker(),
     rewind: () => rewindSheet.openRewindSheet(),
+    resume: () => resumeSheet.openResumeSheet(),
   };
 
   const {
