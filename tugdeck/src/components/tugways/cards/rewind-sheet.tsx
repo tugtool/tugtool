@@ -257,6 +257,20 @@ function RewindSheetBody({
     [rows, ensurePreview],
   );
 
+  // Fetch every row's diff-stat once, when the sheet opens, so each turn shows
+  // its `+N −M` / "No code changes" upfront rather than popping in on click.
+  // Cached in the store, so re-opening the sheet re-fetches nothing. (For a
+  // user-opened sheet over a bounded turn list these dry-run round-trips are
+  // cheap; keyed on `rows` so it runs once per open, not per snapshot tick.)
+  useEffect(() => {
+    const snap = codeSessionStore.getSnapshot().rewindPreviews;
+    for (const row of rows) {
+      if (!snap.has(row.promptUuid)) {
+        codeSessionStore.requestRewindPreview(row.promptUuid);
+      }
+    }
+  }, [rows, codeSessionStore]);
+
   // Code restore is offered only when the selected turn has a restorable
   // checkpoint with actual changes (its lazy diff-stat says so).
   const selectedPreview =
