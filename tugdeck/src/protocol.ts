@@ -362,7 +362,19 @@ export type InboundMessage =
   | { type: "model_change"; model: string }
   | { type: "effort_change"; effort: string }
   | { type: "session_command"; command: "new" | "continue" | "fork" }
-  | { type: "stop_task"; task_id: string };
+  | { type: "stop_task"; task_id: string }
+  // `/rewind` bridge ([#step-7-1]/[#step-7-2]). `promptUuid` is claude's
+  // user-prompt-record uuid (the rewind anchor), surfaced additively by
+  // tugcode — NOT the dev-card `msgId`. `rewind_preview` requests the per-turn
+  // diff-stat (dry-run); `session_rewind` applies the chosen dimension(s),
+  // `fork` selecting a forked copy (default) over destructive in-place.
+  | { type: "rewind_preview"; promptUuid: string }
+  | {
+      type: "session_rewind";
+      promptUuid: string;
+      scope: "conversation" | "code" | "both";
+      fork?: boolean;
+    };
 
 /**
  * Encode an InboundMessage as the raw JSON payload bytes (no frame header).

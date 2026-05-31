@@ -624,7 +624,84 @@ export interface AddUserMessageEvent {
    * and the reducer falls back to `Date.now()`.
    */
   timestamp?: number;
+  /**
+   * Claude's user-prompt-record `uuid` — the `/rewind` anchor ([#step-7-1]),
+   * carried on the replay / mid-turn-snapshot path (the only paths that emit
+   * `add_user_message`). The reducer stamps it onto the turn's
+   * `pendingTurn.promptUuid` so it commits onto the `TurnEntry`. The
+   * steady-state live path carries the anchor on a separate `prompt_anchor`
+   * frame instead. Optional — older sessions / pre-[#step-7-1] frames omit it.
+   */
+  promptUuid?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Live-path `/rewind` anchor ([#step-7-1]). tugcode emits one `prompt_anchor`
+ * per steady-state live turn once it captures the user-prompt `uuid` from
+ * claude's echo. The reducer stamps it onto the active `pendingTurn` so it
+ * commits onto the `TurnEntry`; a no-op when there's no pending turn or the
+ * anchor is already set (first wins). Purely additive — never mints a turn.
+ */
+export interface PromptAnchorEvent {
+  type: "prompt_anchor";
+  promptUuid: string;
+}
+
+/**
+ * Relayed `rewind_preview_result` ([#step-7-1]) — the per-turn diff-stat for
+ * the anchor the sheet requested via `rewind_preview`. The reducer folds it
+ * into `rewindPreviews[promptUuid]` (clearing the `loading` flag).
+ */
+export interface RewindPreviewResultEvent {
+  type: "rewind_preview_result";
+  promptUuid: string;
+  canRewind: boolean;
+  filesChanged?: ReadonlyArray<string>;
+  insertions?: number;
+  deletions?: number;
+  error?: string;
+}
+
+/**
+ * Relayed `rewind_result` ([#step-7-2]) — the applied-rewind ack. The reducer
+ * records it as `lastRewindResult` AND, for a successful conversation/both
+ * rewind, performs the LOCAL transcript truncation (drop the anchor turn and
+ * everything after; survivors keep their `turnKey`/`msgId` byte-identical so
+ * React preserves their mounts — [L26]). Coupling the truncation to the ack
+ * (not an optimistic pre-send mutation) means a refused rewind never mangles
+ * the transcript.
+ */
+export interface RewindResultEvent {
+  type: "rewind_result";
+  promptUuid: string;
+  scope: "conversation" | "code" | "both";
+  canRewind: boolean;
+  error?: string;
+  newSessionId?: string;
+}
+
+/**
+ * Store-method action ([#step-7-3]): request a per-turn diff-stat preview.
+ * Marks `rewindPreviews[promptUuid] = { loading: true }` and emits a
+ * `rewind_preview` CODE_INPUT frame. No transcript change.
+ */
+export interface RequestRewindPreviewActionEvent {
+  type: "request_rewind_preview";
+  promptUuid: string;
+}
+
+/**
+ * Store-method action ([#step-7-3]): apply a `/rewind`. Emits a
+ * `session_rewind` CODE_INPUT frame ([#step-7-1]/[#step-7-2]); the transcript
+ * truncation (for conversation/both) happens later, when the matching
+ * `rewind_result` ack lands. No optimistic transcript mutation.
+ */
+export interface SessionRewindActionEvent {
+  type: "session_rewind_request";
+  promptUuid: string;
+  scope: "conversation" | "code" | "both";
+  fork?: boolean;
 }
 
 /**
@@ -794,4 +871,9 @@ export type CodeSessionEvent =
   | TickSoftBudgetEvent
   | TickTimeoutDwellDoneEvent
   | TickPreflightDoneEvent
-  | AttachmentRejectedEvent;
+  | AttachmentRejectedEvent
+  | PromptAnchorEvent
+  | RewindPreviewResultEvent
+  | RewindResultEvent
+  | RequestRewindPreviewActionEvent
+  | SessionRewindActionEvent;

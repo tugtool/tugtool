@@ -45,6 +45,7 @@ import {
   createInitialState,
   deriveActiveTurnSnapshot,
   reduce,
+  truncateTranscriptAtAnchor,
   type CodeSessionState,
 } from "./code-session-store/reducer";
 import { logSessionLifecycle } from "./session-lifecycle-log";
@@ -164,6 +165,14 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // events; the bracket closes implicitly on the next `turn_complete`.
   // See `roadmap/tugplan-dev-session-wake.md` [D01].
   "wake_started",
+  // `/rewind` frames ([#step-7-1]/[#step-7-2]). `prompt_anchor` carries the
+  // live turn's rewind anchor (the reducer stamps it onto the turn);
+  // `rewind_preview_result` carries a per-turn diff-stat (folded into the
+  // preview cache); `rewind_result` is the applied-rewind ack (records the
+  // result + drives the L26-safe local truncation).
+  "prompt_anchor",
+  "rewind_preview_result",
+  "rewind_result",
 ]);
 
 export interface CodeSessionStoreOptions {
@@ -452,6 +461,12 @@ export class CodeSessionStore {
       // queue churn.
       queuedSends: this.state.queuedSends,
       transcript: this._transcript,
+      // `/rewind` ([#step-7-3]): pass the reducer references through unchanged
+      // so they stay `Object.is`-stable across quiescent rebuilds ([L02]) —
+      // the reducer rebuilds `rewindPreviews` only on a preview round-trip and
+      // `lastRewindResult` only on an applied rewind.
+      rewindPreviews: this.state.rewindPreviews,
+      lastRewindResult: this.state.lastRewindResult,
       // [D07] Derive the public `activeTurn` projection from
       // `state.pendingTurn` + `state.scratch[turnKey]`. `null` when no
       // turn is in flight; otherwise carries the turn-stable
@@ -725,6 +740,34 @@ export class CodeSessionStore {
   setEffort(effort: string): void {
     if (this._disposed) return;
     this.dispatch({ type: "set_effort", effort });
+  }
+
+  /**
+   * Request the per-turn code diff-stat preview for the `/rewind` sheet
+   * ([#step-7-1]/[#step-7-3]). Marks `rewindPreviews[promptUuid]` loading and
+   * emits a `rewind_preview` (dry-run) CODE_INPUT frame; the result folds back
+   * into the cache when `rewind_preview_result` lands. The sheet calls this
+   * lazily for visible/uncached rows only (the N+1 trap lives here if misused).
+   */
+  requestRewindPreview(promptUuid: string): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "request_rewind_preview", promptUuid });
+  }
+
+  /**
+   * Apply a `/rewind` ([#step-7-1]/[#step-7-2]/[#step-7-3]). Emits a
+   * `session_rewind` CODE_INPUT frame; the result lands as `lastRewindResult`,
+   * and a successful conversation/both rewind truncates the transcript locally
+   * (L26-safe — survivors keep their mounts). `fork` (conversation/both only)
+   * selects a forked copy (default) over the destructive in-place variant.
+   */
+  sessionRewind(
+    promptUuid: string,
+    scope: "conversation" | "code" | "both",
+    fork?: boolean,
+  ): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "session_rewind_request", promptUuid, scope, fork });
   }
 
   /**
@@ -1002,6 +1045,12 @@ export class CodeSessionStore {
             typeof ev.timestamp === "number" && Number.isFinite(ev.timestamp)
               ? ev.timestamp
               : undefined,
+          // `/rewind` anchor on the replay / mid-turn-snapshot path
+          // ([#step-7-1]); the reducer stamps it onto the turn.
+          promptUuid:
+            typeof ev.promptUuid === "string" && ev.promptUuid.length > 0
+              ? ev.promptUuid
+              : undefined,
         } as unknown as CodeSessionEvent;
       }
       if (ev.type === "wake_started") {
@@ -1147,6 +1196,18 @@ export class CodeSessionStore {
           // useSyncExternalStore consumers.
           this._transcript = [...this._transcript, effect.entry];
           break;
+        case "truncate-transcript": {
+          // L26-safe local truncation ([#step-7-3]): drop the anchor turn
+          // and everything after; survivors keep their `TurnEntry` reference
+          // (and thus `turnKey`/`msgId`) so React preserves their mounts. The
+          // pure helper returns the SAME array reference when the anchor
+          // isn't present, so a stale ack is a true no-op (no snapshot churn).
+          this._transcript = truncateTranscriptAtAnchor(
+            this._transcript,
+            effect.promptUuid,
+          );
+          break;
+        }
         case "schedule_timer": {
           // Re-entry on the same name cancels the prior timer first
           // so neither callback can race with the new one.

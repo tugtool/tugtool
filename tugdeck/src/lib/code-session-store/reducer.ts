@@ -60,6 +60,11 @@ import type {
   TurnCompleteEvent,
   WakeStartedEvent,
   WireErrorEvent,
+  PromptAnchorEvent,
+  RewindPreviewResultEvent,
+  RewindResultEvent,
+  RequestRewindPreviewActionEvent,
+  SessionRewindActionEvent,
 } from "./events";
 import type {
   ActiveTurnSnapshot,
@@ -74,6 +79,8 @@ import type {
   LiveMessageUsage,
   Message,
   PermissionDenial,
+  RewindResultAck,
+  RewindTurnPreview,
   ToolUseMessage,
   TransportState,
   TurnEndReason,
@@ -135,6 +142,14 @@ export interface PendingTurn {
   turnKey: string;
   submitAt: number;
   isWake: boolean;
+  /**
+   * Claude's user-prompt-record `uuid` — the `/rewind` anchor ([#step-7-1]).
+   * Set from `add_user_message.promptUuid` (replay) at turn open, or from a
+   * live `prompt_anchor` frame mid-turn ({@link handlePromptAnchor}), and
+   * copied onto the committed `TurnEntry` by {@link buildTurnEntry}. Absent
+   * until the anchor arrives.
+   */
+  promptUuid?: string;
 }
 
 /** Derive a Message's `messageKey` from the wire coordinate it owns. */
@@ -239,6 +254,18 @@ export interface CodeSessionState {
   sessionMode: CardSessionMode;
 
   activeMsgId: string | null;
+  /**
+   * `/rewind` per-turn diff-stat previews ([#step-7-3]), keyed by
+   * `promptUuid`. Folded from `rewind_preview_result` frames; surfaced on the
+   * snapshot for the sheet ([L02]). Session-cached — never reset at turn
+   * boundaries. Reference-stable across dispatches that don't touch it.
+   */
+  rewindPreviews: ReadonlyMap<string, RewindTurnPreview>;
+  /**
+   * Most recent applied-rewind ack ([#step-7-3]); `null` until a
+   * `session_rewind` completes. The sheet observes it to dismiss / rebind.
+   */
+  lastRewindResult: RewindResultAck | null;
   /**
    * Per-turn scratch ([D07]) — one entry per turn, keyed by `turnKey`,
    * spanning every msgId iteration of the turn's tool-use loop. The
@@ -652,6 +679,8 @@ export function createInitialState(
     displayLabel,
     sessionMode,
     activeMsgId: null,
+    rewindPreviews: new Map(),
+    lastRewindResult: null,
     scratch: new Map(),
     pendingApproval: null,
     pendingQuestion: null,
@@ -1929,6 +1958,11 @@ function buildTurnEntry(
   return {
     msgId,
     turnKey,
+    // The `/rewind` anchor captured during the turn ([#step-7-1]); `undefined`
+    // for turns whose anchor never arrived (older sessions, wake turns).
+    ...(state.pendingTurn?.promptUuid !== undefined
+      ? { promptUuid: state.pendingTurn.promptUuid }
+      : {}),
     messages,
     result: effectiveReason === "complete" ? "success" : "interrupted",
     endedAt,
@@ -2607,6 +2641,150 @@ function handleSetEffort(
       { kind: "send-frame", msg: { type: "effort_change", effort: event.effort } },
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// /rewind ([#step-7-3]) — anchor capture, diff-stat previews, applied ack +
+// L26-safe local truncation. The transcript array lives in the store wrapper
+// (NOT reducer state, [D04]), so truncation is an effect the wrapper applies
+// via `truncateTranscriptAtAnchor`; everything else is pure reducer state.
+// ---------------------------------------------------------------------------
+
+/**
+ * Stamp the live `/rewind` anchor ([#step-7-1]) onto the in-flight turn.
+ * First wins; a no-op when there's no pending turn (between turns) or the
+ * anchor is already set (replay opener carried it, or a duplicate frame).
+ */
+function handlePromptAnchor(
+  state: CodeSessionState,
+  event: PromptAnchorEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const pending = state.pendingTurn;
+  if (
+    pending === null ||
+    pending.promptUuid !== undefined ||
+    typeof event.promptUuid !== "string" ||
+    event.promptUuid.length === 0
+  ) {
+    return { state, effects: [] };
+  }
+  return {
+    state: {
+      ...state,
+      pendingTurn: { ...pending, promptUuid: event.promptUuid },
+    },
+    effects: [],
+  };
+}
+
+/** Fold a `rewind_preview_result` diff-stat into the cache ([#step-7-3]). */
+function handleRewindPreviewResult(
+  state: CodeSessionState,
+  event: RewindPreviewResultEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const next = new Map(state.rewindPreviews);
+  next.set(event.promptUuid, {
+    loading: false,
+    canRewind: event.canRewind,
+    ...(event.filesChanged !== undefined
+      ? { filesChanged: event.filesChanged }
+      : {}),
+    ...(event.insertions !== undefined ? { insertions: event.insertions } : {}),
+    ...(event.deletions !== undefined ? { deletions: event.deletions } : {}),
+    ...(event.error !== undefined ? { error: event.error } : {}),
+  });
+  return { state: { ...state, rewindPreviews: next }, effects: [] };
+}
+
+/**
+ * Record an applied-rewind ack ([#step-7-2]) and, for a successful
+ * conversation/both rewind, emit the local transcript truncation. The
+ * truncation is coupled to the ack (not optimistic) so a refused rewind never
+ * mangles the transcript.
+ */
+function handleRewindResult(
+  state: CodeSessionState,
+  event: RewindResultEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const ack: RewindResultAck = {
+    promptUuid: event.promptUuid,
+    scope: event.scope,
+    canRewind: event.canRewind,
+    ...(event.error !== undefined ? { error: event.error } : {}),
+    ...(event.newSessionId !== undefined
+      ? { newSessionId: event.newSessionId }
+      : {}),
+  };
+  const effects: Effect[] = [];
+  if (
+    event.canRewind &&
+    (event.scope === "conversation" || event.scope === "both")
+  ) {
+    effects.push({ kind: "truncate-transcript", promptUuid: event.promptUuid });
+  }
+  return { state: { ...state, lastRewindResult: ack }, effects };
+}
+
+/**
+ * Store-method action: mark a turn's preview loading and emit the dry-run
+ * `rewind_preview` frame ([#step-7-1]). The sheet owns the cache discipline
+ * (request visible/uncached rows only); this just records the in-flight state.
+ */
+function handleRequestRewindPreview(
+  state: CodeSessionState,
+  event: RequestRewindPreviewActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const next = new Map(state.rewindPreviews);
+  next.set(event.promptUuid, { loading: true, canRewind: false });
+  return {
+    state: { ...state, rewindPreviews: next },
+    effects: [
+      {
+        kind: "send-frame",
+        msg: { type: "rewind_preview", promptUuid: event.promptUuid },
+      },
+    ],
+  };
+}
+
+/** Store-method action: emit the `session_rewind` apply frame ([#step-7-2]). */
+function handleSessionRewindRequest(
+  state: CodeSessionState,
+  event: SessionRewindActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state,
+    effects: [
+      {
+        kind: "send-frame",
+        msg: {
+          type: "session_rewind",
+          promptUuid: event.promptUuid,
+          scope: event.scope,
+          ...(event.fork !== undefined ? { fork: event.fork } : {}),
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * L26-safe local transcript truncation ([#step-7-3]). Returns the prefix of
+ * `transcript` strictly BEFORE the turn whose `promptUuid` matches `anchor` —
+ * dropping that turn and every turn after it, matching tugcode's JSONL chop
+ * ([#step-7-2]: rewinding to a turn returns to the state before it). Survivors
+ * are the SAME `TurnEntry` references, so their `turnKey`/`msgId` (React's
+ * reconciliation identity inputs) are byte-identical and no mount tears down.
+ * Returns the array unchanged (same reference) when no turn carries the
+ * anchor — a stale/absent anchor never destroys the transcript.
+ */
+export function truncateTranscriptAtAnchor(
+  transcript: ReadonlyArray<TurnEntry>,
+  anchor: string,
+): ReadonlyArray<TurnEntry> {
+  const idx = transcript.findIndex((t) => t.promptUuid === anchor);
+  if (idx === -1) return transcript;
+  return transcript.slice(0, idx);
 }
 
 // ---------------------------------------------------------------------------
@@ -3427,6 +3605,11 @@ function handleAddUserMessage(
         turnKey: event.turnKey,
         submitAt: now,
         isWake: false,
+        // Replay / mid-turn-snapshot path carries the `/rewind` anchor on the
+        // opener; the live path delivers it later via `prompt_anchor`.
+        ...(typeof event.promptUuid === "string" && event.promptUuid.length > 0
+          ? { promptUuid: event.promptUuid }
+          : {}),
       },
       scratch: withScratchEntry(
         state.scratch,
@@ -3782,6 +3965,16 @@ export function reduce(
       return handleTickPreflightDone(state);
     case "attachment_rejected":
       return handleAttachmentRejected(state, event);
+    case "prompt_anchor":
+      return handlePromptAnchor(state, event);
+    case "rewind_preview_result":
+      return handleRewindPreviewResult(state, event);
+    case "rewind_result":
+      return handleRewindResult(state, event);
+    case "request_rewind_preview":
+      return handleRequestRewindPreview(state, event);
+    case "session_rewind_request":
+      return handleSessionRewindRequest(state, event);
     default:
       return { state, effects: [] };
   }

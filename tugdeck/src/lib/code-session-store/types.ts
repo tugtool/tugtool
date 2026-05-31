@@ -283,6 +283,17 @@ export interface TurnEntry {
   turnKey: string;
   msgId: string;
   /**
+   * Claude's user-prompt-record `uuid` for this turn — the `/rewind`
+   * anchor ([#step-7-1]/[#step-7-3]). Captured from the live `prompt_anchor`
+   * frame (steady-state) or `add_user_message.promptUuid` (replay /
+   * mid-turn snapshot), both surfaced additively by tugcode. It is the value
+   * `session_rewind.promptUuid` takes — NOT `msgId` (that is claude's
+   * *assistant* message id). `undefined` for turns whose anchor never
+   * arrived (older sessions, wake turns with no user submission); such turns
+   * are simply not rewind-targetable.
+   */
+  promptUuid?: string;
+  /**
    * Ordered Message sequence — the wire's arrival order, preserving
    * the interleaving of text / thinking / tool_use across every
    * `msg_id` iteration of the turn ([D07]). Each Message carries a
@@ -541,6 +552,37 @@ export interface PermissionDenial {
  * reference between dispatches that produce no change — callers can use
  * `useSyncExternalStore` without tearing ([D11]).
  */
+/**
+ * Per-turn code diff-stat preview for the `/rewind` sheet ([#step-7-3]),
+ * keyed by `promptUuid`. Populated lazily from a `rewind_preview` →
+ * `rewind_preview_result` round-trip ([#step-7-1]) — one entry per turn the
+ * sheet has fetched, cached for the session so re-opening the sheet doesn't
+ * re-fetch. `loading` is true between the request and its result.
+ */
+export interface RewindTurnPreview {
+  loading: boolean;
+  canRewind: boolean;
+  filesChanged?: ReadonlyArray<string>;
+  insertions?: number;
+  deletions?: number;
+  error?: string;
+}
+
+/**
+ * Outcome of an applied `session_rewind` ([#step-7-2]/[#step-7-3]) — the
+ * `rewind_result` ack relayed by tugcode. `newSessionId` is present only for
+ * a successful fork (the card→session rebind target). The sheet reads
+ * `lastRewindResult` to dismiss on success / surface an error, and to drive
+ * the fork rebind.
+ */
+export interface RewindResultAck {
+  promptUuid: string;
+  scope: "conversation" | "code" | "both";
+  canRewind: boolean;
+  error?: string;
+  newSessionId?: string;
+}
+
 export interface CodeSessionSnapshot {
   phase: CodeSessionPhase;
   transportState: TransportState;
@@ -595,6 +637,23 @@ export interface CodeSessionSnapshot {
   queuedSends: ReadonlyArray<QueuedSend>;
 
   transcript: ReadonlyArray<TurnEntry>;
+
+  /**
+   * Lazily-fetched, session-cached per-turn diff-stat previews for the
+   * `/rewind` sheet ([#step-7-3]), keyed by `promptUuid`. The reducer is the
+   * sole writer (folding `rewind_preview_result` frames); the sheet reads it
+   * via the store snapshot ([L02]). Empty until the sheet requests a preview.
+   * Reference-stable across dispatches that don't touch it.
+   */
+  rewindPreviews: ReadonlyMap<string, RewindTurnPreview>;
+
+  /**
+   * The most recent applied-rewind ack ([#step-7-3]) — `null` until a
+   * `session_rewind` completes. The sheet observes the transition to dismiss
+   * on success (and rebind the card on a fork). Carries its `promptUuid` so a
+   * stale ack from a prior rewind can be told apart from the current one.
+   */
+  lastRewindResult: RewindResultAck | null;
 
   /**
    * The in-flight turn — set the moment `send()` (or

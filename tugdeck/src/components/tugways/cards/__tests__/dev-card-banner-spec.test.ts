@@ -40,6 +40,8 @@ function baseSnap(
     pendingQuestion: null,
     queuedSends: [],
     transcript: [],
+    rewindPreviews: new Map(),
+    lastRewindResult: null,
     activeTurn: null,
     wakeTrigger: null,
     pendingDraftRestore: null,

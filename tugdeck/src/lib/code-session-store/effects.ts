@@ -140,6 +140,21 @@ export interface RecordContextBreakdownEffect {
   capturedAt: number;
 }
 
+/**
+ * Locally truncate the committed transcript to the `/rewind` anchor
+ * ([#step-7-3]): drop the turn whose `promptUuid` matches AND every turn
+ * after it; survivors keep their `TurnEntry` reference (and thus their
+ * `turnKey`/`msgId`) byte-identical so React preserves their mounts ([L26]).
+ * Emitted by the `rewind_result` handler for a successful conversation/both
+ * rewind; the store wrapper applies it to its `_transcript` array (which does
+ * not live in reducer state — [D04]) via `truncateTranscriptAtAnchor`. A no-op
+ * when the anchor isn't in the transcript.
+ */
+export interface TruncateTranscriptEffect {
+  kind: "truncate-transcript";
+  promptUuid: string;
+}
+
 export type Effect =
   | WriteInflightEffect
   | ClearInflightEffect
@@ -148,7 +163,8 @@ export type Effect =
   | ScheduleTimerEffect
   | CancelTimerEffect
   | RecordTelemetryEffect
-  | RecordContextBreakdownEffect;
+  | RecordContextBreakdownEffect
+  | TruncateTranscriptEffect;
 
 export function isWriteInflight(e: Effect): e is WriteInflightEffect {
   return e.kind === "write-inflight";

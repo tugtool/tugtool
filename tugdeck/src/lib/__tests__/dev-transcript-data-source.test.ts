@@ -96,6 +96,8 @@ function snapshotWith(args: {
     pendingQuestion: null,
     queuedSends: args.queuedSends ?? [],
     transcript: args.transcript ?? [],
+    rewindPreviews: new Map(),
+    lastRewindResult: null,
     activeTurn: args.activeTurn ?? null,
     pendingDraftRestore: null,
     lastCost: null,
