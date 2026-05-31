@@ -1865,7 +1865,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     role: "informational",
   },
 
-  // --- Canvas / preview surfaces (gallery-theme-generator.css) ---
+  // --- Canvas / preview surfaces (gallery-theme-accessibility.css) ---
   {
     element: "--tug7-element-global-text-normal-muted-rest",
     surface: "--tug7-surface-global-primary-normal-canvas-rest",
@@ -1890,7 +1890,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // --- Surface control — text (gallery-card.css, gallery-palette.css,
-  //     tug-tab.css, gallery-theme-generator.css) ---
+  //     tug-tab.css, gallery-theme-accessibility.css) ---
   {
     element: "--tug7-element-global-text-normal-default-rest",
     surface: "--tug7-surface-global-primary-normal-control-rest",
@@ -1924,7 +1924,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // --- Semantic tone backgrounds as surfaces ---
-  // fg-default on tone-caution-bg: autofix suggestion list items (gallery-theme-generator.css)
+  // fg-default on tone-caution-bg: autofix suggestion list items (gallery-theme-accessibility.css)
   {
     element: "--tug7-element-global-text-normal-default-rest",
     surface: "--tug7-surface-tone-primary-normal-caution-rest",
@@ -2473,7 +2473,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug7-surface-global-primary-normal-inset-rest",
     role: "decorative",
   },
-  // border-default on bg-canvas (gallery-theme-generator.css)
+  // border-default on bg-canvas (gallery-theme-accessibility.css)
   {
     element: "--tug7-element-global-border-normal-default-rest",
     surface: "--tug7-surface-global-primary-normal-canvas-rest",
@@ -2485,7 +2485,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     surface: "--tug7-surface-global-primary-normal-overlay-rest",
     role: "decorative",
   },
-  // accent-default on accent-subtle (gallery-theme-generator.css: mode btn active)
+  // accent-default on accent-subtle (gallery-theme-accessibility.css: mode btn active)
   {
     element: "--tug7-element-global-fill-normal-accent-rest",
     surface: "--tug7-element-global-fill-normal-accentSubtle-rest",

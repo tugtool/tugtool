@@ -1,0 +1,547 @@
+/* ============================================================================
+   Content wrapper — tighter layout than default cg-content
+   ========================================================================= */
+
+/**
+ * @tug-pairings
+ * | Element                                          | Surface                                          | Role         | Context                              |
+ * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
+ * | --tug7-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gtg-token-value (color)             |
+ * | --tug7-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug7-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | informational | .gtg-dash-badge--pass (color)        |
+ * | --tug7-element-tone-border-normal-success-rest (element-tone-border-normal-success-rest) | --tug7-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | informational | .gtg-dash-badge--pass (border)       |
+ * | --tug7-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug7-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | informational | .gtg-dash-badge--marginal (color)    |
+ * | --tug7-element-tone-border-normal-caution-rest (element-tone-border-normal-caution-rest) | --tug7-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | informational | .gtg-dash-badge--marginal (border)   |
+ * | --tug7-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug7-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gtg-dash-badge--fail (color)        |
+ * | --tug7-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug7-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gtg-dash-badge--fail (border)       |
+ * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | informational | .gtg-doc-source-label (color)        |
+ * | --tug7-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | informational | .gtg-doc-source-label (border)       |
+ */
+
+.gtg-content {
+  gap: 10px;
+  padding: 12px;
+  position: relative;
+}
+
+/* ============================================================================
+   Header row: theme name + source label + accessibility badge
+   ========================================================================= */
+
+.gtg-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ============================================================================
+   Emphasis x Role Preview — button, badge, and selection control matrix [Step 7]
+   ========================================================================= */
+
+/* Outer container for all three subsections */
+.gtg-erp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Each subsection (buttons / badges / selection controls) */
+.gtg-erp-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-erp-subtitle {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  user-select: none;
+}
+
+/* Buttons: 1 row-label + 4 role columns */
+.gtg-erp-button-grid {
+  display: grid;
+  grid-template-columns: 52px repeat(4, minmax(48px, 1fr));
+  gap: 4px;
+  overflow-x: auto;
+}
+
+/* Badges: 1 row-label + 7 role columns */
+.gtg-erp-badge-grid {
+  display: grid;
+  grid-template-columns: 52px repeat(7, minmax(48px, 1fr));
+  gap: 4px;
+  overflow-x: auto;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-erp-col-label {
+  font-size: 9px;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: center;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-erp-row-label {
+  font-size: 9px;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  user-select: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* Individual cell — centers the component */
+.gtg-erp-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Selection controls row: one cell per role */
+.gtg-erp-selection-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  overflow-x: auto;
+}
+
+/* Each selection cell: role label + checkbox + switch stacked */
+.gtg-erp-selection-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/**
+ * @tug-pairings
+ * | Element                                                    | Surface                                                    | Role         | Context                                      |
+ * |------------------------------------------------------------|------------------------------------------------------------|--------------|--------------------------------------------- |
+ */
+
+/* ============================================================================
+   Token preview grid
+   ========================================================================= */
+
+.gtg-token-grid {
+  display: grid;
+  grid-template-columns: 1fr 40px minmax(120px, 1fr);
+  gap: 2px 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  padding: 8px;
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-token-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  user-select: none;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 40px minmax(120px, 1fr);
+  gap: 0 10px;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-token-name {
+  font-size: 10px;
+  font-family: var(--tug-font-family-mono, monospace);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  padding: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-token-swatch {
+  width: 24px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  align-self: center;
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-token-value {
+  font-size: 10px;
+  font-family: var(--tug-font-family-mono, monospace);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  padding: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ============================================================================
+   Contrast dashboard
+   ========================================================================= */
+
+/* Summary bar — "N/M pairs pass contrast" */
+.gtg-dash-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  padding: 6px 10px;
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  user-select: none;
+}
+
+.gtg-dash-summary-count {
+  font-weight: 600;
+  font-family: var(--tug-font-family-mono, monospace);
+}
+
+/* Scrollable grid container */
+.gtg-dash-grid {
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 1fr 72px 72px 72px;
+  gap: 2px 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  padding: 8px;
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-dash-col-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  user-select: none;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 24px 24px 1fr 1fr 72px 72px 72px;
+  gap: 0 8px;
+  align-items: end;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-dash-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  align-self: center;
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-dash-token-name {
+  font-size: 10px;
+  font-family: var(--tug-font-family-mono, monospace);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+  padding: 2px 0;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-dash-ratio {
+  font-size: 10px;
+  font-family: var(--tug-font-family-mono, monospace);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  align-self: center;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+
+/* Pass/fail badge */
+.gtg-dash-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--tug-font-family-sans);
+  letter-spacing: 0.04em;
+  border-radius: var(--tug-radius-xs);
+  padding: 2px 6px;
+  user-select: none;
+  align-self: center;
+  white-space: nowrap;
+}
+
+/* Green — pass both thresholds */
+.gtg-dash-badge--pass {
+  background-color: var(--tug7-surface-tone-primary-normal-success-rest);
+  color: var(--tug7-element-tone-text-normal-success-rest);
+  border: 1px solid var(--tug7-element-tone-border-normal-success-rest);
+}
+
+/* Yellow — marginal (within 0.5 of threshold) */
+.gtg-dash-badge--marginal {
+  background-color: var(--tug7-surface-tone-primary-normal-caution-rest);
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+  border: 1px solid var(--tug7-element-tone-border-normal-caution-rest);
+}
+
+/* Red — fail */
+.gtg-dash-badge--fail {
+  background-color: var(--tug7-surface-tone-primary-normal-danger-rest);
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+  border: 1px solid var(--tug7-element-tone-border-normal-danger-rest);
+}
+
+/* Decorative — no requirement, shown as neutral */
+.gtg-dash-badge--decorative {
+  background-color: var(--tug7-surface-global-primary-normal-raised-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* ============================================================================
+   CVD preview strip
+   ========================================================================= */
+
+.gtg-cvd-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  padding: 8px;
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+  overflow-x: auto;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-cvd-col-headers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-cvd-token-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  user-select: none;
+  width: 80px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Each CVD type row */
+.gtg-cvd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* Label cell (type name + optional warning badge) */
+.gtg-cvd-type-label-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100px;
+  flex-shrink: 0;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-cvd-type-label {
+  font-size: 10px;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.gtg-cvd-warn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  background-color: var(--tug7-surface-tone-primary-normal-caution-rest);
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+  border: 1px solid var(--tug7-element-tone-border-normal-caution-rest);
+  cursor: default;
+  flex-shrink: 0;
+}
+
+/* Pair of swatches for one semantic token (original + simulated) */
+.gtg-cvd-swatch-pair {
+  display: flex;
+  gap: 2px;
+  width: 80px;
+  flex-shrink: 0;
+  justify-content: center;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-cvd-swatch {
+  width: 36px;
+  height: 28px;
+  border-radius: 3px;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  flex-shrink: 0;
+  content-visibility: auto;
+}
+
+.gtg-cvd-swatch--missing {
+  background-color: var(--tug7-surface-global-primary-normal-raised-rest);
+  opacity: 0.4;
+}
+
+/* ============================================================================
+   Auto-fix panel
+   ========================================================================= */
+
+.gtg-autofix-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ============================================================================
+   Contrast diagnostics panel (Step 5)
+   ========================================================================= */
+
+.gtg-diag-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-diag-section-title {
+  font-size: 11px;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  user-select: none;
+}
+
+.gtg-diag-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-diag-item {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  line-height: 1.5;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-diag-token {
+  font-family: var(--tug-font-family-mono, monospace);
+  font-size: 10px;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-diag-detail {
+  font-size: 10px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Document model header — New/Open buttons + doc info
+   ========================================================================= */
+
+.gtg-doc-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gtg-doc-name {
+  font-size: 12px;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Read-only source label (e.g. "live css") */
+.gtg-doc-source-label {
+  font-size: 10px;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 500;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: var(--tug-radius-xs);
+  padding: 2px 6px;
+  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gtg-doc-readonly-badge {
+  font-size: 10px;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: var(--tug-radius-xs);
+  padding: 2px 6px;
+  user-select: none;
+}

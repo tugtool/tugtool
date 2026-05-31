@@ -489,7 +489,7 @@ The badge mockup tinted variants use `--tug-color(*-light)` expressions as text 
 
 ---
 
-## File 23: gallery-theme-generator-content.css
+## File 23: gallery-theme-accessibility-content.css
 
 **Component:** GalleryThemeGeneratorContent
 
@@ -546,7 +546,7 @@ The badge mockup tinted variants use `--tug-color(*-light)` expressions as text 
 | gallery-badge-mockup.css | yes | 7 |
 | gallery-popup-button.css | yes | 2 |
 | gallery-palette-content.css | yes | 4 |
-| gallery-theme-generator-content.css | yes | 18 |
+| gallery-theme-accessibility-content.css | yes | 18 |
 
 **Total files audited: 23 / 23** — complete.
 

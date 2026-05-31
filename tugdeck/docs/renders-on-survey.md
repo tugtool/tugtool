@@ -52,7 +52,7 @@ via class-name guessing (strategies 2-4). This revision uses pure static analysi
 | cards/gallery-badge-mockup.css | 8 rules | 8 |
 | cards/gallery-popup-button.css | 9 rules | 9 |
 | cards/gallery-palette-content.css | 9 rules | 9 |
-| cards/gallery-theme-generator-content.css | 32 rules | 32 |
+| cards/gallery-theme-accessibility-content.css | 32 rules | 32 |
 | **TOTAL** | | **143** |
 
 > The previous survey captured only 100 distinct rules because it was based solely on the audit
@@ -376,7 +376,7 @@ All `.badge-mockup-*` UI elements render inside the gallery card content area on
 
 ---
 
-### cards/gallery-theme-generator-content.css — 32 annotations
+### cards/gallery-theme-accessibility-content.css — 32 annotations
 
 (Unchanged from previous survey — correctly identified.)
 
@@ -442,7 +442,7 @@ Most elements render on `--tug-base-surface-default`. Key exceptions noted below
 | cards/gallery-badge-mockup.css | 8 |
 | cards/gallery-popup-button.css | 9 |
 | cards/gallery-palette-content.css | 9 |
-| cards/gallery-theme-generator-content.css | 32 |
+| cards/gallery-theme-accessibility-content.css | 32 |
 | **TOTAL** | **143** |
 
 > The total of 143 is above the ~130 estimate but within the Risk R01 threshold of 160.

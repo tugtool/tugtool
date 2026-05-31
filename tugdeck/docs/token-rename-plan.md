@@ -44,7 +44,7 @@
 | `tugdeck/src/components/tugways/tug-input.css` | CSS | Line 28: `color: var(--tug-base-field-fg)` |
 | `tugdeck/src/components/tugways/element-surface-pairing-map.ts` | TS | Lines 761, 766, 771: `element: "--tug-base-field-fg"` |
 | `tugdeck/src/__tests__/theme-derivation-engine.test.ts` | TS | Line 534: token in snapshot list; Line 1168: expected value map |
-| `tugdeck/src/__tests__/gallery-theme-generator-content.test.tsx` | TSX | Line 113: token in rendered token list |
+| `tugdeck/src/__tests__/gallery-theme-accessibility-content.test.tsx` | TSX | Line 113: token in rendered token list |
 
 ---
 
@@ -136,7 +136,7 @@
 | `tugdeck/styles/themes/harmony.css` | CSS (generated) | Line 412: `--tug-base-checkmark: ...` — regenerated |
 | `tugdeck/src/components/tugways/tug-checkbox.css` | CSS | Line 120: `color: var(--tug-base-checkmark)` |
 | `tugdeck/src/components/tugways/element-surface-pairing-map.ts` | TS | Lines 1036, 1041: `element: "--tug-base-checkmark"` |
-| `tugdeck/src/__tests__/gallery-theme-generator-content.test.tsx` | TSX | Line 106: token in rendered token list |
+| `tugdeck/src/__tests__/gallery-theme-accessibility-content.test.tsx` | TSX | Line 106: token in rendered token list |
 | `tugdeck/src/__tests__/theme-derivation-engine.test.ts` | TS | Line 507: token in snapshot list; Line 981: expected value map |
 | `tugdeck/src/components/tugways/tug-checkbox.tsx` | TSX | Lines 5, 17: comments referencing `--tug-base-checkmark` (update for clarity) |
 | `tugdeck/src/components/tugways/tug-checkbox.css` | CSS | Line 9: comment referencing `--tug-base-checkmark` (update for clarity) |
@@ -213,7 +213,7 @@
 | `tugdeck/src/components/tugways/cards/gallery-checkbox-content.tsx` | #3 | Inline style string |
 | `tugdeck/src/components/tugways/tug-checkbox.tsx` | #5 | Comment text (no functional change) |
 | `tugdeck/src/__tests__/theme-derivation-engine.test.ts` | All 7 | Token name strings in snapshot lists and expected value maps |
-| `tugdeck/src/__tests__/gallery-theme-generator-content.test.tsx` | #1, #5 | Token name strings in rendered token list |
+| `tugdeck/src/__tests__/gallery-theme-accessibility-content.test.tsx` | #1, #5 | Token name strings in rendered token list |
 | `tugdeck/scripts/generate-tug-tokens.ts` | #7 | Remove `"separator"` group from `GROUP_ORDER` and `GROUP_LABELS`; update `getGroup` if needed |
 
 **Total files to update:** 17 source files (plus 2 generated CSS files that are rebuilt automatically).

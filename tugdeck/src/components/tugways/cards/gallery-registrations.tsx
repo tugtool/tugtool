@@ -43,7 +43,7 @@ import { GalleryLabel } from "./gallery-label";
 import { GalleryMarquee } from "./gallery-marquee";
 import { GalleryCheckbox } from "./gallery-checkbox";
 import { GallerySwitch } from "./gallery-switch";
-import { GalleryThemeGenerator } from "./gallery-theme-generator";
+import { GalleryThemeAccessibility } from "./gallery-theme-accessibility";
 import { GalleryPopupButton } from "./gallery-popup-button";
 import { GalleryIconButton } from "./gallery-icon-button";
 import { GallerySlider } from "./gallery-slider";
@@ -566,8 +566,8 @@ export function registerGalleryCards(): void {
   });
 
   registerCard({
-    componentId: "gallery-theme-generator",
-    contentFactory: (_cardId) => <GalleryThemeGenerator />,
+    componentId: "gallery-theme-accessibility",
+    contentFactory: (_cardId) => <GalleryThemeAccessibility />,
     defaultMeta: { title: "Theme Accessibility", icon: "Paintbrush", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
