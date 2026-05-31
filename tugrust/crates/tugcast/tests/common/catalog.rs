@@ -595,6 +595,11 @@ pub async fn execute_probe(
     let mut request_id_by_tool_use_id: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     let mut most_recent_request_id: Option<String> = None;
+    // `/rewind` anchor captured at runtime from a `prompt_anchor`
+    // CODE_OUTPUT event ([#step-7-1]) — the `promptUuid` the subsequent
+    // `RewindPreview` / `SessionRewind` messages target. Same
+    // capture-from-a-waited-event pattern as `most_recent_request_id`.
+    let mut captured_prompt_uuid: Option<String> = None;
     for msg in probe.input_script {
         match msg {
             ProbeMsg::UserMessage { text } => {
@@ -656,6 +661,32 @@ pub async fn execute_probe(
             ProbeMsg::PermissionMode { mode } => {
                 ws.send_permission_mode(&tug_session_id, mode).await;
             }
+            ProbeMsg::RewindPreview => {
+                let Some(uuid) = captured_prompt_uuid.as_deref() else {
+                    return CapturedProbe {
+                        name: probe.name.to_string(),
+                        events: Vec::new(),
+                        status: ProbeStatus::Failed(
+                            "rewind_preview without a prior prompt_anchor".to_string(),
+                        ),
+                        runtime_ms: start.elapsed().as_millis(),
+                    };
+                };
+                ws.send_rewind_preview(&tug_session_id, uuid).await;
+            }
+            ProbeMsg::SessionRewind { scope } => {
+                let Some(uuid) = captured_prompt_uuid.as_deref() else {
+                    return CapturedProbe {
+                        name: probe.name.to_string(),
+                        events: Vec::new(),
+                        status: ProbeStatus::Failed(
+                            "session_rewind without a prior prompt_anchor".to_string(),
+                        ),
+                        runtime_ms: start.elapsed().as_millis(),
+                    };
+                };
+                ws.send_session_rewind(&tug_session_id, uuid, scope).await;
+            }
             ProbeMsg::WaitForEvent {
                 event_type,
                 max_secs,
@@ -686,6 +717,16 @@ pub async fn execute_probe(
                                 }
                             }
                         }
+                        // `/rewind` anchor capture ([#step-7-1]): stash the
+                        // `promptUuid` from a `prompt_anchor` so a later
+                        // `RewindPreview` / `SessionRewind` can target it.
+                        if *event_type == "prompt_anchor" {
+                            if let Some(uuid) =
+                                payload.get("promptUuid").and_then(|v| v.as_str())
+                            {
+                                captured_prompt_uuid = Some(uuid.to_string());
+                            }
+                        }
                     }
                     Err(e) => {
                         return CapturedProbe {
@@ -703,9 +744,22 @@ pub async fn execute_probe(
         }
     }
 
-    // Collect events until terminal turn_complete or timeout.
+    // Collect events until the terminal event or timeout. The terminator
+    // is `turn_complete` UNLESS the script's final message is a
+    // `WaitForEvent`, in which case it is that event type — so a probe
+    // that continues past its turn's `turn_complete` (the `/rewind`
+    // round-trip ends on `rewind_result`, [#step-7-1]) captures the full
+    // tail into the fixture instead of truncating at `turn_complete`.
+    let terminator: &str = match probe.input_script.last() {
+        Some(ProbeMsg::WaitForEvent { event_type, .. }) => event_type,
+        _ => "turn_complete",
+    };
     let events = match ws
-        .collect_code_output(&tug_session_id, Duration::from_secs(probe.timeout_secs))
+        .collect_code_output_until(
+            &tug_session_id,
+            terminator,
+            Duration::from_secs(probe.timeout_secs),
+        )
         .await
     {
         Ok(mut events) => {

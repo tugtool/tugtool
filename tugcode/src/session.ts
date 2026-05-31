@@ -30,6 +30,10 @@ import type {
   WakeStarted,
   Attachment,
   ContentBlock,
+  RewindPreview,
+  SessionRewind,
+  RewindPreviewResult,
+  RewindResult,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
@@ -604,6 +608,14 @@ export interface TopLevelRoutingResult {
    * the id.
    */
   messageId?: string;
+  /**
+   * Claude's user-prompt-record `uuid`, set when this top-level event is
+   * the live echo of the turn's own submission (`--replay-user-messages`).
+   * The `/rewind` anchor ([#step-7-1]); `dispatchEventToTurn` captures it
+   * onto `ActiveTurn.promptUuid` and emits a {@link PromptAnchor}. Absent
+   * on tool-result `user` events and on echoes carrying no `uuid`.
+   */
+  promptUuid?: string;
 }
 
 /**
@@ -636,6 +648,7 @@ export function routeTopLevelEvent(
   let resultMetadata: ResultMetadata | undefined;
   let systemMetadata: Record<string, unknown> | undefined;
   let messageId: string | undefined;
+  let promptUuid: string | undefined;
 
   // parent_tool_use_id is present on all 5 message types per PN-8.
   const rawParentId = event.parent_tool_use_id;
@@ -821,6 +834,29 @@ export function routeTopLevelEvent(
     case "user": {
       const message = event.message as Record<string, unknown> | undefined;
       const rawContent = message?.content;
+
+      // `/rewind` anchor capture ([#step-7-1]). With `--replay-user-messages`
+      // claude echoes the turn's own submission back as a `user` event
+      // carrying the prompt-record `uuid`. That uuid is the rewind anchor
+      // (`rewind_files.user_message_id` + the JSONL truncation boundary).
+      // Capture it only from a *submission* echo — content that is a
+      // plain string (slash command) or an array bearing a non-`tool_result`
+      // block (the user's text/image). Mid-turn tool-result `user` events
+      // (content is exclusively `tool_result` blocks) are NOT the prompt and
+      // must not overwrite the anchor. `dispatchEventToTurn` latches the
+      // surfaced value onto `ActiveTurn` and emits a `prompt_anchor`.
+      const echoUuid = event.uuid;
+      if (typeof echoUuid === "string" && echoUuid.length > 0) {
+        const isSubmissionEcho =
+          typeof rawContent === "string" ||
+          (Array.isArray(rawContent) &&
+            (rawContent as Array<Record<string, unknown>>).some(
+              (b) => b.type !== "tool_result",
+            ));
+        if (isSubmissionEcho) {
+          promptUuid = echoUuid;
+        }
+      }
 
       // Slash commands return content as a plain string (not an array).
       // Per §13c: {"type":"user","isReplay":true,"message":{"role":"user",
@@ -1090,6 +1126,7 @@ export function routeTopLevelEvent(
     resultMetadata,
     systemMetadata,
     messageId,
+    promptUuid,
   };
 }
 
@@ -1463,6 +1500,15 @@ export class ActiveTurn {
    * and the synthetic emit forwards them unchanged.
    */
   readonly userContent: ReadonlyArray<ContentBlock>;
+  /**
+   * Claude's user-prompt-record `uuid` for this turn — the `/rewind`
+   * anchor ([#step-7-1]). Captured from the live user-echo event
+   * (`--replay-user-messages`) the first time the turn's own submission
+   * is echoed back; `null` until then (and for turns whose echo carries
+   * no `uuid`). Emitted live as a {@link PromptAnchor} and re-emitted on
+   * the mid-turn snapshot's `add_user_message.promptUuid`.
+   */
+  promptUuid: string | null = null;
   /** Streaming-text revision counter, bumped per stream-event delta. */
   rev: number = 0;
   /** Accumulated streaming text; emitted as a final `assistant_text` on `gotResult`. */
@@ -1912,6 +1958,23 @@ export class SessionManager {
    * IPC. Reset on respawn so a fresh handshake is issued each spawn.
    */
   private initializeRequestId: string | null = null;
+  /**
+   * In-flight `rewind_files` control requests ([#step-7-1]), keyed by the
+   * `request_id` sent to claude. Each entry carries the originating
+   * `promptUuid` + the rewind dimension so the `control_response` (caught
+   * turn-free in {@link handleClaudeLine}, same pattern as the `initialize`
+   * handshake) can be mapped back to the right outbound IPC — a
+   * `rewind_preview_result` for a `dry_run` query, or a `rewind_result`
+   * ack for an apply. Cleared on correlation.
+   */
+  private pendingRewindRequests = new Map<
+    string,
+    { promptUuid: string; kind: "preview" } | {
+      promptUuid: string;
+      kind: "apply";
+      scope: "conversation" | "code" | "both";
+    }
+  >();
 
   constructor(
     projectDir: string,
@@ -3199,6 +3262,19 @@ export class SessionManager {
         return;
       }
     }
+    // `rewind_files` control-response correlation ([#step-7-1]). Like the
+    // `initialize` handshake, a rewind response arrives turn-free (we only
+    // issue rewind requests while claude is idle), so it must be caught
+    // here before turn routing. Correlate by `request_id` against the map
+    // and relay as the matching outbound IPC. Any uncorrelated
+    // `control_response` falls through (logged at the `case` site).
+    if (
+      event.type === "control_response" &&
+      this.pendingRewindRequests.size > 0 &&
+      this.tryHandleRewindControlResponse(event)
+    ) {
+      return;
+    }
     // Wake bracket detector ([D07]). The harness's built-in scheduler
     // fires ScheduleWakeup / CronCreate timers between turns and emits
     // a fresh `system/init` to bracket the resulting assistant turn.
@@ -3511,6 +3587,24 @@ export class SessionManager {
       ctx.msgId = turn.currentMessageId;
     }
 
+    // `/rewind` anchor ([#step-7-1]). The live user-echo reveals the
+    // turn's prompt-record uuid; latch it onto the turn (so the mid-turn
+    // snapshot can carry it on `add_user_message.promptUuid`) and deliver
+    // it live as a `prompt_anchor`. Emit once — the first echo carrying a
+    // uuid wins. Gated by `suppressEmit`: during a replay bracket the
+    // anchor rides `add_user_message.promptUuid` instead, so a live
+    // `prompt_anchor` would be redundant (state still latches).
+    if (routeResult.promptUuid !== undefined && turn.promptUuid === null) {
+      turn.promptUuid = routeResult.promptUuid;
+      if (!turn.suppressEmit) {
+        writeLine({
+          type: "prompt_anchor",
+          promptUuid: routeResult.promptUuid,
+          ipc_version: 2,
+        });
+      }
+    }
+
     for (const ipcMsg of routeResult.messages) {
       if (routeResult.parentToolUseId) {
         (ipcMsg as unknown as Record<string, unknown>).parent_tool_use_id =
@@ -3769,6 +3863,11 @@ export class SessionManager {
     writeLine({
       type: "add_user_message",
       content: turn.userContent.slice(),
+      // `/rewind` anchor ([#step-7-1]). On this snapshot path the live
+      // `prompt_anchor` was suppressed (it fires only outside a replay
+      // bracket), so carry the captured uuid here so the freshly-bound
+      // client recovers the anchor for the in-flight turn.
+      ...(turn.promptUuid !== null ? { promptUuid: turn.promptUuid } : {}),
       ipc_version: 2,
     });
 
@@ -4314,6 +4413,218 @@ export class SessionManager {
     }
     const stdin = this.claudeProcess.stdin;
     sendControlRequest(stdin, generateRequestId(), { subtype: "set_model", model });
+  }
+
+  /**
+   * True when no turn is in flight — the precondition for a
+   * `rewind_files` control request ([#step-7-1]). claude services a
+   * `rewind_files` request turn-free; issuing one mid-turn races the
+   * in-flight agent loop against a working-tree mutation, so the rewind
+   * verbs gate on this. A turn that has latched `gotResult`/`interrupted`
+   * is finished from the bridge's view even before the drain clears the
+   * slot, so it counts as idle.
+   */
+  private isClaudeIdle(): boolean {
+    return (
+      this.activeTurn === null ||
+      this.activeTurn.gotResult ||
+      this.activeTurn.interrupted
+    );
+  }
+
+  /**
+   * Handle `rewind_preview` ([#step-7-1]): issue a
+   * `rewind_files{dry_run:true}` control request for the turn anchored at
+   * `promptUuid` and correlate its `control_response` back to a
+   * `rewind_preview_result` (the picker's per-row code diff-stat). No
+   * working-tree mutation — `dry_run` reports `{canRewind, filesChanged,
+   * insertions, deletions}` only.
+   */
+  handleRewindPreview(msg: RewindPreview): void {
+    if (!this.claudeProcess) {
+      this.emitRewindPreviewResult(msg.promptUuid, {
+        canRewind: false,
+        error: "No active claude process.",
+      });
+      return;
+    }
+    if (!this.isClaudeIdle()) {
+      // Idle gating: a `rewind_files` request mid-turn is rejected; the
+      // dev-card ([#step-7-3]) reflects the busy state and retries when
+      // the turn completes.
+      this.emitRewindPreviewResult(msg.promptUuid, {
+        canRewind: false,
+        error: "Claude is busy; rewind preview requires an idle session.",
+      });
+      return;
+    }
+    const requestId = generateRequestId();
+    this.pendingRewindRequests.set(requestId, {
+      promptUuid: msg.promptUuid,
+      kind: "preview",
+    });
+    sendControlRequest(this.claudeProcess.stdin, requestId, {
+      subtype: "rewind_files",
+      user_message_id: msg.promptUuid,
+      dry_run: true,
+    });
+  }
+
+  /**
+   * Handle `session_rewind` ([#step-7-1]/[#step-7-2]).
+   *
+   * 7b.1 implements the **code** dimension: `scope:"code"` and the code
+   * leg of `scope:"both"` issue a `rewind_files{dry_run:false}` control
+   * request (reverts the working-tree files claude edited since the
+   * anchor turn) and ack via `rewind_result`. The **conversation**
+   * dimension (`scope:"conversation"` and the conversation leg of
+   * `"both"` — JSONL truncate + respawn, with fork) lands in
+   * [#step-7-2]; for `scope:"conversation"` 7b.1 issues no `rewind_files`
+   * and the conversation ack is added there. For `scope:"both"` the
+   * code restore runs FIRST on the live session (per [#step-7-2]
+   * ordering), then 7b.2 layers the fork on top.
+   */
+  handleSessionRewind(msg: SessionRewind): void {
+    const restoresCode = msg.scope === "code" || msg.scope === "both";
+    if (!restoresCode) {
+      // `scope:"conversation"` — no code op. The conversation rewind +
+      // its ack are wired in [#step-7-2]; nothing to do on the code
+      // bridge. Logged so the seam is visible, not a silent drop.
+      console.log(
+        `session_rewind scope=conversation: conversation rewind lands in [#step-7-2]; no code op (promptUuid=${msg.promptUuid})`,
+      );
+      return;
+    }
+    if (!this.claudeProcess) {
+      this.emitRewindResult(msg.promptUuid, msg.scope, {
+        canRewind: false,
+        error: "No active claude process.",
+      });
+      return;
+    }
+    if (!this.isClaudeIdle()) {
+      this.emitRewindResult(msg.promptUuid, msg.scope, {
+        canRewind: false,
+        error: "Claude is busy; rewind requires an idle session.",
+      });
+      return;
+    }
+    const requestId = generateRequestId();
+    this.pendingRewindRequests.set(requestId, {
+      promptUuid: msg.promptUuid,
+      kind: "apply",
+      scope: msg.scope,
+    });
+    sendControlRequest(this.claudeProcess.stdin, requestId, {
+      subtype: "rewind_files",
+      user_message_id: msg.promptUuid,
+      dry_run: false,
+    });
+  }
+
+  /**
+   * Correlate a turn-free `control_response` against
+   * {@link pendingRewindRequests} ([#step-7-1]). Returns `true` when the
+   * response matched a pending rewind request (and was consumed into the
+   * matching outbound IPC), `false` when it did not (the caller lets it
+   * fall through). Mirrors the `initialize`-handshake correlation: the
+   * `request_id` lives on the inner `response` object.
+   */
+  private tryHandleRewindControlResponse(
+    event: Record<string, unknown>,
+  ): boolean {
+    const response = event.response as Record<string, unknown> | undefined;
+    if (!response || typeof response !== "object") return false;
+    const requestId = response.request_id as string | undefined;
+    if (typeof requestId !== "string") return false;
+    const pending = this.pendingRewindRequests.get(requestId);
+    if (!pending) return false;
+    this.pendingRewindRequests.delete(requestId);
+
+    // The rewind payload is the doubly-nested `response.response`
+    // ({canRewind, error?, filesChanged?, insertions?, deletions?}) per
+    // the [#step-7a] envelope. A `subtype:"error"` or a missing inner
+    // payload degrades to a non-rewindable result rather than throwing.
+    const inner = response.response as Record<string, unknown> | undefined;
+    const canRewind = inner?.canRewind === true;
+    const error =
+      typeof inner?.error === "string" ? (inner.error as string) : undefined;
+
+    if (pending.kind === "preview") {
+      const filesChanged = Array.isArray(inner?.filesChanged)
+        ? (inner!.filesChanged as unknown[]).filter(
+            (f): f is string => typeof f === "string",
+          )
+        : undefined;
+      const insertions =
+        typeof inner?.insertions === "number"
+          ? (inner.insertions as number)
+          : undefined;
+      const deletions =
+        typeof inner?.deletions === "number"
+          ? (inner.deletions as number)
+          : undefined;
+      this.emitRewindPreviewResult(pending.promptUuid, {
+        canRewind,
+        error,
+        filesChanged,
+        insertions,
+        deletions,
+      });
+    } else {
+      this.emitRewindResult(pending.promptUuid, pending.scope, {
+        canRewind,
+        error,
+      });
+    }
+    return true;
+  }
+
+  /** Emit a {@link RewindPreviewResult} ([#step-7-1]). */
+  private emitRewindPreviewResult(
+    promptUuid: string,
+    fields: {
+      canRewind: boolean;
+      error?: string;
+      filesChanged?: string[];
+      insertions?: number;
+      deletions?: number;
+    },
+  ): void {
+    const msg: RewindPreviewResult = {
+      type: "rewind_preview_result",
+      promptUuid,
+      canRewind: fields.canRewind,
+      ...(fields.error !== undefined ? { error: fields.error } : {}),
+      ...(fields.filesChanged !== undefined
+        ? { filesChanged: fields.filesChanged }
+        : {}),
+      ...(fields.insertions !== undefined
+        ? { insertions: fields.insertions }
+        : {}),
+      ...(fields.deletions !== undefined
+        ? { deletions: fields.deletions }
+        : {}),
+      ipc_version: 2,
+    };
+    writeLine(msg);
+  }
+
+  /** Emit a {@link RewindResult} ack ([#step-7-1]). */
+  private emitRewindResult(
+    promptUuid: string,
+    scope: "conversation" | "code" | "both",
+    fields: { canRewind: boolean; error?: string },
+  ): void {
+    const msg: RewindResult = {
+      type: "rewind_result",
+      promptUuid,
+      scope,
+      canRewind: fields.canRewind,
+      ...(fields.error !== undefined ? { error: fields.error } : {}),
+      ipc_version: 2,
+    };
+    writeLine(msg);
   }
 
   /**

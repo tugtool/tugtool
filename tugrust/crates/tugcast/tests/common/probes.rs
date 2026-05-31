@@ -104,6 +104,19 @@ pub enum ProbeMsg {
     /// short time after driving a long prompt so streaming has started
     /// before the interrupt fires.
     Sleep { millis: u64 },
+    /// `rewind_preview` — the `/rewind` diff-stat preview ([#step-7-1]).
+    /// The anchor `promptUuid` is NOT static: it is captured at runtime
+    /// from the `prompt_anchor` CODE_OUTPUT event of a preceding turn
+    /// (via a `WaitForEvent{event_type:"prompt_anchor"}`), just as
+    /// `ToolApproval` captures its `request_id` from a
+    /// `control_request_forward`. Requires file checkpointing
+    /// (`CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true`, set by tugcode
+    /// at spawn) and an idle session (issue after `turn_complete`).
+    RewindPreview,
+    /// `session_rewind` — apply a `/rewind` ([#step-7-1]). `scope` ∈
+    /// {`"code"`, `"conversation"`, `"both"`}. Uses the same runtime-
+    /// captured `promptUuid` as `RewindPreview`.
+    SessionRewind { scope: &'static str },
 }
 
 /// Inline attachment for `UserMessageWithAttachments` probes.
@@ -151,7 +164,7 @@ pub enum ProbeStatus {
 }
 
 // -----------------------------------------------------------------------
-// Probe table — 36 entries
+// Probe table — 37 entries
 // -----------------------------------------------------------------------
 
 /// The full probe table. Order matches `transport-exploration.md` tests 1–36.
@@ -929,6 +942,60 @@ pub static PROBES: &[ProbeRecord] = &[
         timeout_secs: 30,
         skip_reason: None,
     },
+    // --- Test 37: `rewind_files` round-trip through tugcode ([#step-7-1]) ---
+    // The code-restore half of dev-card `/rewind`, driven END-TO-END through
+    // tugcast → tugcode → claude (the [#step-7a] capture was direct against
+    // claude; this is the bridge). Sequence:
+    //   1. Ask claude to Write a file → creates a file checkpoint
+    //      (acceptEdits auto-approves the Write; tugcode spawns claude with
+    //      `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true`).
+    //   2. `prompt_anchor` fires early in the turn — the capture binary
+    //      stashes its `promptUuid` (the rewind anchor) at runtime.
+    //   3. Wait for `turn_complete` so the session is idle (rewind requires
+    //      idle — the bridge's gate).
+    //   4. `rewind_preview` → `rewind_files{dry_run:true}` → the captured
+    //      `rewind_preview_result` carries the per-turn diff stat
+    //      (`canRewind`, `filesChanged`, `insertions`, `deletions`) —
+    //      matching `fixtures/control-requests/rewind-files.v2.1.158.json`.
+    //   5. `session_rewind{scope:"code"}` → `rewind_files{dry_run:false}` →
+    //      `rewind_result{canRewind:true}`; the written file is reverted on
+    //      disk (the apply side-effect, as in the fixture).
+    ProbeRecord {
+        name: "test-37-rewind-files-roundtrip",
+        input_script: &[
+            ProbeMsg::UserMessage {
+                text: "Use the Write tool to create a file named rewind-probe.txt in the current directory containing exactly the single word HELLO. Do nothing else.",
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "prompt_anchor",
+                max_secs: 30,
+            },
+            ProbeMsg::WaitForEvent {
+                event_type: "turn_complete",
+                max_secs: 90,
+            },
+            ProbeMsg::RewindPreview,
+            ProbeMsg::WaitForEvent {
+                event_type: "rewind_preview_result",
+                max_secs: 30,
+            },
+            ProbeMsg::SessionRewind { scope: "code" },
+            ProbeMsg::WaitForEvent {
+                event_type: "rewind_result",
+                max_secs: 30,
+            },
+        ],
+        required_events: &[
+            "prompt_anchor",
+            "turn_complete",
+            "rewind_preview_result",
+            "rewind_result",
+        ],
+        optional_events: &["tool_use", "tool_result", "assistant_text", "cost_update"],
+        prerequisites: &[],
+        timeout_secs: 120,
+        skip_reason: None,
+    },
 ];
 
 #[cfg(test)]
@@ -936,8 +1003,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn probe_table_has_36_entries() {
-        assert_eq!(PROBES.len(), 36, "probe table must contain all 36 probes");
+    fn probe_table_has_37_entries() {
+        assert_eq!(PROBES.len(), 37, "probe table must contain all 37 probes");
     }
 
     #[test]

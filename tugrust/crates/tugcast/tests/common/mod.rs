@@ -722,6 +722,53 @@ impl TestWs {
             .expect("send permission_mode frame");
     }
 
+    /// Send a `rewind_preview` message — the `/rewind` diff-stat preview
+    /// for the turn anchored at `prompt_uuid` ([#step-7-1]). tugcode
+    /// issues a `rewind_files{dry_run:true}` control request and relays
+    /// the `control_response` as a `rewind_preview_result`.
+    pub async fn send_rewind_preview(&mut self, tug_session_id: &str, prompt_uuid: &str) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "rewind_preview",
+            "promptUuid": prompt_uuid,
+        });
+        let bytes = serde_json::to_vec(&payload).expect("rewind_preview json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.sink
+            .lock()
+            .await
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send rewind_preview frame");
+    }
+
+    /// Send a `session_rewind` message — apply a `/rewind` to the turn
+    /// anchored at `prompt_uuid` ([#step-7-1]). `scope` ∈ {`"code"`,
+    /// `"conversation"`, `"both"`}; the code dimension reverts the
+    /// working tree via `rewind_files{dry_run:false}` and acks with
+    /// `rewind_result`.
+    pub async fn send_session_rewind(
+        &mut self,
+        tug_session_id: &str,
+        prompt_uuid: &str,
+        scope: &str,
+    ) {
+        let payload = serde_json::json!({
+            "tug_session_id": tug_session_id,
+            "type": "session_rewind",
+            "promptUuid": prompt_uuid,
+            "scope": scope,
+        });
+        let bytes = serde_json::to_vec(&payload).expect("session_rewind json");
+        let frame = Frame::new(FeedId::CODE_INPUT, bytes);
+        self.sink
+            .lock()
+            .await
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send session_rewind frame");
+    }
+
     /// Wait for a `SESSION_STATE` frame whose payload announces
     /// `target_state` for `tug_session_id`. Consumes the matching frame
     /// from the buffer on success.
@@ -807,6 +854,23 @@ impl TestWs {
         tug_session_id: &str,
         timeout: Duration,
     ) -> Result<Vec<serde_json::Value>, String> {
+        self.collect_code_output_until(tug_session_id, "turn_complete", timeout)
+            .await
+    }
+
+    /// Like [`collect_code_output`], but the terminator event type is
+    /// explicit. Used by probes that continue PAST `turn_complete` — the
+    /// `/rewind` round-trip ([#step-7-1]) issues its `rewind_preview` /
+    /// `session_rewind` while the session is idle, so its
+    /// `rewind_preview_result` / `rewind_result` land after the turn's
+    /// own `turn_complete`. Collecting until `rewind_result` captures
+    /// the full round-trip into the fixture.
+    pub async fn collect_code_output_until(
+        &mut self,
+        tug_session_id: &str,
+        terminator_type: &str,
+        timeout: Duration,
+    ) -> Result<Vec<serde_json::Value>, String> {
         let deadline = Instant::now() + timeout;
         let mut out = Vec::new();
         loop {
@@ -815,7 +879,7 @@ impl TestWs {
             });
             if let Some(i) = idx_opt {
                 let f = self.buffer.remove(i);
-                let is_terminator = f.payload["type"].as_str() == Some("turn_complete");
+                let is_terminator = f.payload["type"].as_str() == Some(terminator_type);
                 out.push(f.payload);
                 if is_terminator {
                     return Ok(out);

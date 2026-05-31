@@ -141,6 +141,52 @@ export interface RequestReplay {
   type: "request_replay";
 }
 
+/**
+ * Inbound `rewind_preview` verb ([#step-7-1]). Asks tugcode for the
+ * diff-stat the picker shows on a `/rewind` row — what code would be
+ * reverted if the user rewound to the turn anchored at `promptUuid`.
+ *
+ * Maps to a `rewind_files{dry_run:true, user_message_id:promptUuid}`
+ * control request against claude (the code-restore half of `/rewind`;
+ * see transport-exploration.md#rewind-files-control-request). The
+ * `control_response` is correlated by `request_id` and relayed back as
+ * an outbound {@link RewindPreviewResult}. `dry_run` means claude
+ * reports `{canRewind, filesChanged, insertions, deletions}` WITHOUT
+ * touching the working tree.
+ *
+ * `promptUuid` is claude's user-prompt-record uuid — the anchor the
+ * dev-card carries on the opening user `Message` (surfaced additively
+ * via {@link PromptAnchor} / {@link AddUserMessage.promptUuid}), NOT
+ * the assistant `msg_id`.
+ */
+export interface RewindPreview {
+  type: "rewind_preview";
+  promptUuid: string;
+}
+
+/**
+ * Inbound `session_rewind` verb ([#step-7-1]/[#step-7-2]). Applies a
+ * `/rewind` to the turn anchored at `promptUuid`.
+ *
+ * `scope`:
+ *   - `"code"` — revert the working-tree files claude edited since the
+ *     anchor turn (`rewind_files{dry_run:false}` control request).
+ *   - `"conversation"` — truncate the session JSONL at the anchor and
+ *     respawn (lands in [#step-7-2]; the conversation branch is a seam
+ *     in 7b.1).
+ *   - `"both"` — code restore on the live session FIRST, then the
+ *     conversation rewind ([#step-7-2] ordering).
+ *
+ * `fork` (conversation/both only, [#step-7-2]) selects `--fork-session`
+ * over destructive in-place `--resume`.
+ */
+export interface SessionRewind {
+  type: "session_rewind";
+  promptUuid: string;
+  scope: "conversation" | "code" | "both";
+  fork?: boolean;
+}
+
 export type InboundMessage =
   | ProtocolInit
   | UserMessage
@@ -152,7 +198,9 @@ export type InboundMessage =
   | EffortChange
   | SessionCommand
   | StopTask
-  | RequestReplay;
+  | RequestReplay
+  | RewindPreview
+  | SessionRewind;
 
 // Outbound message types (tugcode stdout → tugcast)
 // ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
@@ -801,6 +849,24 @@ export interface AddUserMessage {
    * the reducer falls back to `Date.now()` for live submissions.
    */
   timestamp?: number;
+  /**
+   * Optional claude user-prompt-record `uuid` — the `/rewind` anchor
+   * ([#step-7]). Additive: this is the value `rewind_files.user_message_id`
+   * takes and the JSONL truncation boundary, NOT the assistant `msg_id`.
+   *
+   * Set on the paths where the frame mints the turn from a record that
+   * carries the uuid:
+   *   - replay (`replay.ts`) — the JSONL `user` entry's `uuid`;
+   *   - mid-turn snapshot (`emitInflightTurnFromActiveTurn`) — the
+   *     `uuid` captured from the live user-echo onto `ActiveTurn`.
+   * Absent on the never-drop synthetic path (the tugcast journal does
+   * not store claude's prompt uuid) and on the steady-state LIVE path
+   * (which emits no `add_user_message` — the live anchor rides
+   * {@link PromptAnchor} instead). The dev-card stores it on the
+   * opening user `Message` and sends it back on a {@link RewindPreview}
+   * / {@link SessionRewind}.
+   */
+  promptUuid?: string;
   ipc_version: number;
 }
 
@@ -878,6 +944,80 @@ export interface ReplayComplete {
   ipc_version: number;
 }
 
+/**
+ * Outbound result of a {@link RewindPreview} ([#step-7-1]). Relays the
+ * `rewind_files{dry_run:true}` control-response back to the dev-card so
+ * the `/rewind` picker can render the turn's code diff-stat badge.
+ *
+ * `canRewind:false` is the "how far back you can restore" limit — the
+ * checkpoint aged out or file checkpointing is off. `error` carries
+ * claude's reason in that case ("No file checkpoint found …",
+ * "File rewinding is not enabled."). On `canRewind:true`,
+ * `filesChanged`/`insertions`/`deletions` populate the badge
+ * (`+N −M`, or "No code changes" when the arrays are empty).
+ *
+ * `promptUuid` echoes the request's anchor so the dev-card can match
+ * the result to the picker row that asked for it (the bridge supports
+ * concurrent single-anchor lazy queries — [#step-7-3]'s N+1 discipline).
+ */
+export interface RewindPreviewResult {
+  type: "rewind_preview_result";
+  promptUuid: string;
+  canRewind: boolean;
+  error?: string;
+  filesChanged?: string[];
+  insertions?: number;
+  deletions?: number;
+  ipc_version: number;
+}
+
+/**
+ * Outbound acknowledgement of a {@link SessionRewind} ([#step-7-1]).
+ * The code-restore half (`scope:"code"` or the code leg of `"both"`)
+ * relays the `rewind_files{dry_run:false}` outcome: `canRewind:true`
+ * means the working tree was reverted; `canRewind:false` + `error`
+ * means it could not be (aged-out checkpoint, checkpointing disabled).
+ *
+ * The conversation half (`scope:"conversation"|"both"`) lands in
+ * [#step-7-2]; its ack fields (e.g. a fork's new session-id) are added
+ * there. `scope` echoes the request so the dev-card knows which
+ * dimensions were applied.
+ */
+export interface RewindResult {
+  type: "rewind_result";
+  promptUuid: string;
+  scope: "conversation" | "code" | "both";
+  canRewind: boolean;
+  error?: string;
+  ipc_version: number;
+}
+
+/**
+ * Outbound `prompt_anchor` ([#step-7-1]) — the LIVE-path delivery of a
+ * turn's `/rewind` anchor. Emitted once per live turn when tugcode
+ * captures the user-prompt `uuid` from claude's user-echo event
+ * (`--replay-user-messages`), during the active turn.
+ *
+ * Why a dedicated frame rather than {@link AddUserMessage.promptUuid}:
+ * the steady-state live path emits NO `add_user_message` (the dev-card
+ * minted the turn locally at `handleSend`, keyed by `turnKey`). A live
+ * `add_user_message` would duplicate-mint the turn. `prompt_anchor`
+ * carries only the anchor; the reducer ([#step-7-3]) attaches it to the
+ * in-flight turn (the unambiguous active pending turn) without minting.
+ * Purely additive — existing consumers ignore it; `msgId`/`turnKey`/
+ * reducer keying are untouched.
+ *
+ * Resume/cold-boot/reconnect recover the anchor from
+ * {@link AddUserMessage.promptUuid} instead (those paths DO emit
+ * `add_user_message`), so `prompt_anchor` is the live path's
+ * counterpart, not a second copy of the same delivery.
+ */
+export interface PromptAnchor {
+  type: "prompt_anchor";
+  promptUuid: string;
+  ipc_version: number;
+}
+
 export type OutboundMessage =
   | ProtocolAck
   | SessionInit
@@ -906,7 +1046,10 @@ export type OutboundMessage =
   | AddUserMessage
   | ReplayStarted
   | ReplayComplete
-  | WakeStarted;
+  | WakeStarted
+  | RewindPreviewResult
+  | RewindResult
+  | PromptAnchor;
 
 // Type guards
 export function isInboundMessage(msg: unknown): msg is InboundMessage {
@@ -923,7 +1066,9 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "effort_change" ||
     typed.type === "session_command" ||
     typed.type === "stop_task" ||
-    typed.type === "request_replay"
+    typed.type === "request_replay" ||
+    typed.type === "rewind_preview" ||
+    typed.type === "session_rewind"
   );
 }
 
@@ -969,4 +1114,12 @@ export function isStopTask(msg: InboundMessage): msg is StopTask {
 
 export function isRequestReplay(msg: InboundMessage): msg is RequestReplay {
   return msg.type === "request_replay";
+}
+
+export function isRewindPreview(msg: InboundMessage): msg is RewindPreview {
+  return msg.type === "rewind_preview";
+}
+
+export function isSessionRewind(msg: InboundMessage): msg is SessionRewind {
+  return msg.type === "session_rewind";
 }

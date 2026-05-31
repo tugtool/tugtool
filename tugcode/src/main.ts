@@ -14,6 +14,8 @@ import {
   isSessionCommand,
   isStopTask,
   isRequestReplay,
+  isRewindPreview,
+  isSessionRewind,
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
@@ -365,6 +367,16 @@ async function main() {
       } else {
         console.error("request_replay received before session initialized");
       }
+    } else if (isRewindPreview(msg)) {
+      // `/rewind` diff-stat preview ([#step-7-1]). Synchronous send +
+      // correlate (the `control_response` is caught turn-free in
+      // `handleClaudeLine`); no IPC-loop-blocking await.
+      sessionManager?.handleRewindPreview(msg);
+    } else if (isSessionRewind(msg)) {
+      // `/rewind` apply ([#step-7-1]). Code dimension reverts the
+      // working tree via `rewind_files`; the conversation dimension
+      // lands in [#step-7-2].
+      sessionManager?.handleSessionRewind(msg);
     } else if (isSessionCommand(msg)) {
       if (sessionManager) {
         sessionManager.handleSessionCommand(msg.command).catch((err) => {

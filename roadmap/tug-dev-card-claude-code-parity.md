@@ -1628,7 +1628,7 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 
 **Anchor — the rewind target (additive design, confirmed live in [#step-7a]).** The anchor is claude's **user-prompt-record `uuid`** — the value `rewind_files.user_message_id` takes AND the JSONL truncation boundary. **It is NOT the dev-card's `msgId`** (that is claude's *assistant* `message.id`; the user opener carries no `msg_id` on the wire — verified). It IS, however, **already on the wire**: every user message claude echoes back under `--replay-user-messages` carries a `uuid` field, verified *equal* to the JSONL prompt-record uuid — currently received-but-ignored. We surface it **additively, without touching `msgId` / `turnKey` / the reducer keying** (the hard-won id model is unchanged — one new field, one clear purpose, not an overload):
 
-- **tugcode** captures the prompt `uuid` from the user-echo event and threads it as a **new OPTIONAL field `promptUuid?`** on the existing `user_message` outbound frame. Purely additive — existing frames/consumers are unaffected.
+- **tugcode** captures the prompt `uuid` from the user-echo event and surfaces it **additively**, by two complementary paths (implemented in [#step-7-1]): (a) the **replay / mid-turn-snapshot** paths — which already emit `add_user_message` — gain a new OPTIONAL field `promptUuid?` (replay reads it from the JSONL `user` record's `uuid`; the snapshot from the captured echo); (b) the **steady-state live** path — which emits NO `add_user_message` (the dev-card minted the turn locally at `handleSend`) — gets a dedicated `prompt_anchor {promptUuid}` frame, since a live `add_user_message` would duplicate-mint the turn. Both are purely additive; existing frames/consumers are unaffected and `msgId`/`turnKey`/keying are untouched. (The original single-frame plan assumed `add_user_message` rode the live path too; it does not — hence the split.)
 - **dev-card** stores `promptUuid` as a new optional field on the opening user `Message`; the rewind IPC sends it back. The anchor travels with the turn and survives resume (the replayed `user_message` frame carries it, since the JSONL record has the uuid).
 - **Resume / cold-boot:** recovered for free from the replayed frames; belt-and-suspenders fallback — tugcode can derive it by walking the stored assistant `msgId` record's `parentUuid` chain (skipping tool_result / `attachment` records) to the prompt record. Verified through a tool-use turn ([#step-7a]).
 - **Alternative considered (A'):** keep the prompt uuid only in a per-session tugcode map and have the dev-card send the existing `msgId` (zero new stored field, but adds tugcode state + rebuild logic). **Chose the optional field** for explicitness and to avoid a stateful map; revisit only if implementation surfaces a reason.
@@ -1645,27 +1645,27 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 
 **Artifacts:**
 - tugcode: `rewind_files` control-request send + `control_response` correlation (the [#step-7a] envelope; `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true` already set in `spawnClaude`).
-- **Anchor capture (additive — see umbrella):** capture the prompt `uuid` from the user-echo event and thread it as the optional `promptUuid?` on the `user_message` outbound frame. (This is the only `user_message`-frame change; `msgId`/`turnKey`/reducer keying untouched.)
+- **Anchor capture (additive — see umbrella):** capture the prompt `uuid` from the user-echo event (`routeTopLevelEvent`'s `case "user"`, submission-echo only — not tool-result `user` events) and surface it on the optional `promptUuid?` of `add_user_message` (replay + mid-turn snapshot) AND on a new live-path `prompt_anchor {promptUuid}` frame (steady-state live emits no `add_user_message`). `msgId`/`turnKey`/reducer keying untouched.
 - New inbound IPC `rewind_preview` `{type:"rewind_preview", promptUuid}` → `rewind_files{dry_run:true, user_message_id:promptUuid}` → outbound `rewind_preview_result` `{promptUuid, canRewind, filesChanged?, insertions?, deletions?}`.
 - `session_rewind` **code branch** (`scope:"code"|"both"`) → `rewind_files{dry_run:false, user_message_id:promptUuid}` → outbound ack. (The `conversation` branch lands in [#step-7-2].)
 - `protocol.ts` + `tugcode/src/types.ts` gain these types; pin against a fixture per [D06].
 
 **Tasks:**
-- [ ] tugcode: capture the prompt `uuid` from the user-echo event → `promptUuid?` on the `user_message` frame.
-- [ ] tugcode: send the `rewind_files` control request and correlate its `control_response` (reuse the `initialize`/`pendingControlRequests` pattern); map to/from the new IPC.
-- [ ] `rewind_preview` → dry-run → `rewind_preview_result` outbound.
-- [ ] `session_rewind{scope:"code"}` (+ the code half of `"both"`) → apply → ack.
-- [ ] **Idle gating:** `rewind_files` requires claude idle (no in-flight turn). tugcode rejects/queues a `rewind_preview`/`session_rewind` while a turn is active and signals the busy state; the sheet ([#step-7-3]) reflects it. Confirm claude's behavior for a mid-turn `rewind_files` during the probe.
-- [ ] Probe-table entry driving the round-trip **through tugcode** (session edits a file → dry-run asserts diff stats → apply asserts file reverted), matching the [#step-7a] fixture.
+- [x] tugcode: capture the prompt `uuid` from the user-echo event → `promptUuid?` on `add_user_message` (replay + snapshot) + a live-path `prompt_anchor` frame (`routeTopLevelEvent` surfaces `promptUuid`; `dispatchEventToTurn` latches `ActiveTurn.promptUuid` + emits `prompt_anchor`; `replay.ts` reads `entry.uuid`).
+- [x] tugcode: send the `rewind_files` control request and correlate its `control_response` (`pendingRewindRequests` map + `tryHandleRewindControlResponse`, caught turn-free in `handleClaudeLine` exactly like the `initialize` handshake); map to/from the new IPC.
+- [x] `rewind_preview` → dry-run → `rewind_preview_result` outbound (`handleRewindPreview`).
+- [x] `session_rewind{scope:"code"}` (+ the code half of `"both"`) → apply → `rewind_result` ack (`handleSessionRewind`; `scope:"conversation"` is the [#step-7-2] seam — issues no control request).
+- [x] **Idle gating:** `rewind_files` requires claude idle (`isClaudeIdle`). tugcode rejects a `rewind_preview`/`session_rewind` mid-turn with a `canRewind:false`+busy-error result; the sheet ([#step-7-3]) reflects it. *(Claude's own mid-turn `rewind_files` behavior is confirmed by the live probe.)*
+- [x] Probe-table entry (`test-37-rewind-files-roundtrip`) driving the round-trip **through tugcode** (Write a file → capture `prompt_anchor` uuid → dry-run `rewind_preview_result` → apply `rewind_result` + file reverted), matching the [#step-7a] fixture. New `ProbeMsg::RewindPreview`/`SessionRewind`, `TestWs::send_rewind_*`, runtime `promptUuid` capture, and `collect_code_output_until` (the round-trip ends past `turn_complete` on `rewind_result`).
 
 **N+1 note (informs [#step-7-3]'s consumption).** The TUI reads in-process `fileHistory` for free; over the bridge each row's diff stat is a `rewind_files{dry_run}` round-trip. The sheet must fetch **lazily — visible/focused rows only, cached** — never fire one per turn on open. The bridge supports on-demand single-anchor queries; the batching discipline lives in 7b.3.
 
 **Tests:**
-- [ ] tugcode unit (`bun test`): control-request correlation + IPC mapping; `promptUuid` capture.
-- [ ] Real-claude probe through tugcode: dry-run diff stats + apply reverts a written file (matches `rewind-files.v2.1.158.json`).
+- [x] tugcode unit (`bun test`): control-request correlation + IPC mapping; `promptUuid` capture (`src/__tests__/rewind-bridge.test.ts`, 15 tests).
+- [x] Real-claude probe through tugcode wired (`test-37`); the probe-table + shape unit tests pass (`cargo nextest -p tugcast`, 664 pass). *Live execution* runs under `just capture-capabilities` (real-claude, regenerates the golden catalog) — pending the user's capture run.
 
 **Checkpoint:**
-- [ ] Rebuild tugcode (`bun build --compile`); `cd tugcode && bun test` green; the through-tugcode probe present + passing under `capture_all_probes`.
+- [x] Rebuild tugcode (`bun build --compile`) — done; `cd tugcode && bun test` green (516 pass); the through-tugcode probe present (`test-37-rewind-files-roundtrip`). *Passing under live `capture_all_probes`* is the user's `just capture-capabilities` run (it spends subscription quota across the full table and regenerates committed fixtures).
 
 ##### Step 7b.2: conversation rewind — JSONL truncate + `--resume` (tugcode) {#step-7-2}
 

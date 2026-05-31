@@ -1026,6 +1026,13 @@ function handleUserEntry(
     type: "add_user_message",
     content: submittedContent,
     timestamp: parseEntryTimestamp(entry),
+    // `/rewind` anchor ([#step-7-1]). The JSONL `user` record's `uuid` is
+    // claude's prompt-record id — the value `rewind_files.user_message_id`
+    // takes and the JSONL truncation boundary. Carry it so a resumed /
+    // cold-booted dev-card recovers each turn's anchor from the replay.
+    ...(typeof entry.uuid === "string" && entry.uuid.length > 0
+      ? { promptUuid: entry.uuid }
+      : {}),
     ipc_version: IPC_VERSION,
   });
   ctx.openTurnMsgId = mintOpenerId(ctx, "u");
