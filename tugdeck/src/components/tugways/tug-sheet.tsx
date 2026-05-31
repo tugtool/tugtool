@@ -774,9 +774,17 @@ export function TugSheetContent({
     // clipped by the chrome's overflow:hidden.
     <TugSheetStackingContext.Provider value={true}>
       <div className="tug-sheet-clip">
-        {/* FocusScope wraps content to trap Tab/Shift-Tab */}
+        {/* A sheet is PANE-modal, never app-modal: its modality must not leak
+            to other panes ([D15], pane-model). Same-pane modality is enforced
+            by `inert` on this pane's `.tug-pane-body` (the card behind is
+            unfocusable) — scoped to this pane only. `loop` contains Tab/Shift-Tab
+            within the sheet at its ends. We deliberately do NOT set `trapped`:
+            Radix's `trapped` installs a DOCUMENT-GLOBAL focusin redirect that
+            yanks focus back from anywhere — including OTHER panes — so a sheet
+            open in one pane would block focusing a card in another. `loop` +
+            `inert` give full pane-modal containment without that leak. */}
         <FocusScopeRadix.FocusScope
-          trapped={open}
+          trapped={false}
           loop
           onMountAutoFocus={handleMountAutoFocus}
           onUnmountAutoFocus={handleUnmountAutoFocus}
