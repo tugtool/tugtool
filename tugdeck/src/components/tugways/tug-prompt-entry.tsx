@@ -950,6 +950,16 @@ export const TugPromptEntry = React.forwardRef<
     const snap = snapRef.current;
     if (editor === null || view === null) return;
 
+    // Submit-while-completing: if the completion popup is open with a
+    // highlighted item, accept it FIRST so a submit made via the button or
+    // Shift+Return commits the *completed* command / `@`-mention, not the
+    // typed fragment (e.g. `/re` + Enter would otherwise send `/re`, not
+    // `/rewind`). The keyboard accept (plain Enter / Tab) lives in the
+    // completion keymap; this is the seam for submit paths that bypass it.
+    // The accept dispatches synchronously, so the draft reads below see the
+    // inserted atom. Applies uniformly to `/` commands and `@` mentions.
+    editor.acceptActiveCompletion();
+
     // Slash-command interception ([D23], [#step-1c]). Accepting any
     // slash-command suggestion inserts a `type:"command"` atom and dismisses
     // the popup — uniform for every command. The local-vs-remote split is

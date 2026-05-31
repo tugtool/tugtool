@@ -134,6 +134,7 @@ import type { TugTextEditorKeymapConfig } from "./tug-text-editor/keymap";
 import {
   acceptCompletionAt,
   cancelCompletion,
+  completionPopupIsInteractive,
   getCompletionState,
   navigateCompletion,
   subscribeCompletionState,
@@ -336,6 +337,18 @@ export interface TugTextEditorDelegate {
    * currently mounted.
    */
   view(): EditorView | null;
+  /**
+   * If the completion popup is currently open and interactive (active
+   * with at least one item), accept the highlighted item — inserting
+   * its atom — and return `true`. Otherwise no-op and return `false`.
+   *
+   * Submit flows (the Z5 button, Shift+Return) call this BEFORE reading
+   * the draft so a submit made while the popup is open commits the
+   * *completed* command / mention, not the typed fragment. The keyboard
+   * accept (plain Enter / Tab) lives in the completion keymap; this is
+   * the seam for submit paths that bypass it. No-op when not mounted.
+   */
+  acceptActiveCompletion(): boolean;
   /**
    * Insert an atom at the current selection head, replacing any
    * non-empty selection. The transaction inserts the U+FFFC text
@@ -1282,6 +1295,21 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useImperativeHandle(ref, () => ({
       view() {
         return viewRef.current;
+      },
+      acceptActiveCompletion(): boolean {
+        const view = viewRef.current;
+        if (view === null) return false;
+        const state = getCompletionState(view);
+        if (
+          !completionPopupIsInteractive({
+            active: state.active,
+            itemCount: state.filtered.length,
+          })
+        ) {
+          return false;
+        }
+        acceptCompletionAt(view);
+        return true;
       },
       insertAtom(segment: AtomSegment) {
         const view = viewRef.current;
