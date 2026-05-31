@@ -912,10 +912,10 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 5 | Phase A integration checkpoint | ✅ DONE | verified by running the live app (full Z4B cluster); per-capability app-tests `at0087`/`at0088`/`at0095`/`at0096` |
 | 6 | `SessionPickerSheet` primitive | ✅ DONE | capability exists via `dev-picker-cells.tsx` (session-resume rows, kbd nav, overlay); generic primitive not separately needed |
 | 7a | Capture terminal `/rewind` | ✅ DONE | full empirical reverse-engineering vs `claude 2.1.158`. 4 mechanisms verified live: diff-stats + code restore via `rewind_files` control verb; conversation restore via JSONL-truncate + `--resume`; cancel. Summarize = in-process compaction, **no wire verb → deferred**. `test-36-slash-rewind` pinned; catalog re-baselined to v2.1.158 |
-| 7b.1 | `/rewind`: `rewind_files` bridge (tugcode) | ▶ TODO | client→claude control-request relay; `rewind_preview` (diff stats) + code restore. Real-claude through-tugcode probe |
-| 7b.2 | `/rewind`: conversation rewind (tugcode) | ▶ TODO | `session_rewind{scope:conversation}` → JSONL truncate + `--resume`; compaction-boundary guard. Independent of 7b.1 |
-| 7b.3 | `/rewind`: `RewindSheet` (tugdeck) | ▶ TODO | turn picker + 3-action confirm form; consumes 7b.1/7b.2; truncation reducer with [L26] mount identity. Decoupled from `SessionPickerSheet` |
-| 8 | `/resume` | ▶ TODO | focused sessions overlay via `cardPickerSheet` (reuse `SessionResumeCell` + sessions data source) — *not* the full-card `DevProjectPicker`; cancel keeps the live session |
+| 7b.1 | `/rewind`: `rewind_files` bridge (tugcode) | ✅ DONE | `rewind_files` control relay + `rewind_preview`/diff-stats + code restore; idle-gated; live through-tugcode probe `test-37` (golden `b1e4c122`); `rewind-bridge.test.ts` |
+| 7b.2 | `/rewind`: conversation rewind (tugcode) | ✅ DONE | `session_rewind{scope:conversation/both}` → JSONL truncate + fork/`--resume`; compaction-boundary guard; live probes `test-38`/`test-39`; empty-first-turn guard `290927d5` |
+| 7b.3 | `/rewind`: `RewindSheet` (tugdeck) | ✅ DONE | `rewind-turn-source.ts` + `RewindSheet` (single wide step, lazy diff-stat, idle/empty-state gating, fork-default, history rewind); L26-safe local truncation; `at0097`/`at0098` |
+| 8 | `/resume` | ✅ DONE | focused sessions overlay `resume-sheet.tsx` via `cardPickerSheet` (reuses `SESSIONS_CELL_RENDERERS` + sessions data source); cancel keeps the live session; `at0099` |
 | 9 | `/permissions` picker + editor | ✅ DONE | folded into 1.6 (`permission-rules-editor.tsx`) — Q-B |
 | 10 | `/diff` sheet | ▶ TODO | `diff-sheet.tsx` + tugcast `git_diff_request` |
 | 11 | `/context` HUD | ▶ TODO | `context-hud.tsx` |
