@@ -80,6 +80,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "resume",
     description: "Resume a different session for this project in this card",
   },
+  {
+    name: "diff",
+    description: "View uncommitted changes (git diff HEAD) for this project",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

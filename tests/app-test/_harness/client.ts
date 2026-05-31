@@ -818,6 +818,25 @@ export function ingestSessionMetadata(
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
 
+/**
+ * Drive a dev card's `GitDiffStore` via `window.__tug.ingestGitDiff` — feeds
+ * a decoded `git_diff_response` payload as if it had landed on the GIT_DIFF
+ * feed, so the `/diff` sheet ([#step-10b]) renders its per-file accordion
+ * without a live tugcast git round-trip. Requires a prior
+ * `bindDevSession(cardId)`.
+ */
+export function ingestGitDiff(
+  caller: HarnessCaller,
+  cardId: string,
+  payload: unknown,
+  evalOpts?: EvalJsOptions,
+): Promise<void> {
+  const script = callSurface(
+    `(window.__tug.ingestGitDiff(${lit(cardId)}, ${lit(payload)}), null)`,
+  );
+  return caller.evalJS<null>(script, evalOpts).then(() => undefined);
+}
+
 // ---------------------------------------------------------------------------
 // RPC-verb wrappers (native gestures, accessibility preflight,
 // Swift-computed screen bounds)

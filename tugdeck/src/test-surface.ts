@@ -120,8 +120,14 @@ import type { RateLimitInfo } from "./protocol";
  * The chip reads its own `SESSION_METADATA` FeedStore, which the
  * `driveDevSession`/`ingestFrame` (CodeSessionStore) path does not reach.
  * Additive; major stays `1`.
+ *
+ * `1.10.0`: adds {@link TugTestSurface.ingestGitDiff} — drives a dev card's
+ * `GitDiffStore` with a decoded `git_diff_response` payload, so the `/diff`
+ * sheet app-test ([#step-10b]) can render the per-file accordion without a
+ * live tugcast git round-trip (which [#step-10a]'s subprocess test proves).
+ * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.9.0" as const;
+export const SURFACE_VERSION = "1.10.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -635,6 +641,14 @@ export interface TugTestSurface {
    * SESSION_METADATA FeedStore, unreachable by `driveDevSession`.
    */
   ingestSessionMetadata(cardId: string, payload: unknown): void;
+
+  /**
+   * Drive a dev card's `GitDiffStore` with a decoded `git_diff_response`
+   * payload, as if a matching `GIT_DIFF` frame had landed — so the `/diff`
+   * sheet ([#step-10b]) renders its per-file accordion without a live tugcast
+   * git round-trip. Requires a prior `bindDevSession(cardId)`.
+   */
+  ingestGitDiff(cardId: string, payload: unknown): void;
 
   /**
    * Read the deck's current `hasFocus` state. The deck's
@@ -1457,6 +1471,17 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         );
       }
       services.sessionMetadataStore._ingestForTest(payload);
+    },
+
+    ingestGitDiff(cardId: string, payload: unknown): void {
+      const services = cardServicesStore.getServices(cardId);
+      if (services === null) {
+        throw new Error(
+          `ingestGitDiff: card "${cardId}" has no bound session — ` +
+            `call bindDevSession("${cardId}") first`,
+        );
+      }
+      services.gitDiffStore._ingestForTest(payload);
     },
 
     getHasFocus(): boolean {

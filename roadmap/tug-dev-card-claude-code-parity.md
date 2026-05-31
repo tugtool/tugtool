@@ -918,7 +918,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 8 | `/resume` | ✅ DONE | focused sessions overlay `resume-sheet.tsx` via `cardPickerSheet` (reuses `SESSIONS_CELL_RENDERERS` + sessions data source); cancel keeps the live session; `at0099` |
 | 9 | `/permissions` picker + editor | ✅ DONE | folded into 1.6 (`permission-rules-editor.tsx`) — Q-B |
 | 10.A | `/diff` sourcing — tugcast `git_diff_request` | ✅ DONE | tugcast handler + protocol + round-trip proof |
-| 10.B | `/diff` accordion sheet (dev-card UI) | ▶ TODO | `diff-sheet.tsx` over the 10.A feed |
+| 10.B | `/diff` accordion sheet (dev-card UI) | ✅ DONE | `diff-sheet.tsx` over the 10.A feed |
 | 11 | `/context` HUD | ▶ TODO | `context-hud.tsx` |
 | 12 | Listing sheets (`/memory` `/agents` `/hooks` `/skills`) | ▶ TODO | |
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
@@ -1834,22 +1834,22 @@ Split into **[#step-10a] sourcing** (tugcast `git_diff_request`/`git_diff_respon
 
 **Artifacts:**
 - New: `tugdeck/src/components/tugways/cards/diff-sheet.tsx` (+ `.css`) — overlay sheet per [D15], `TugAccordion`-bodied
-- New/Modified: client transport to fire `git_diff_request(root)` and resolve the single-shot `git_diff_response` (correlated by `requestId`)
-- Modified: register `/diff` in `lib/slash-commands.ts` to open the sheet
+- New: `tugdeck/src/lib/git-diff-store.ts` — `GitDiffStore` (single-shot request/response over the GIT_DIFF feeds) + pure presentation helpers
+- Modified: `protocol.ts` (`GIT_DIFF` 0x21, `GIT_DIFF_QUERY` 0x22), `card-services-store.ts` (per-card `gitDiffStore` + workspace-filtered feed), `diff-block.tsx` (`suppressHeader` prop), `lib/slash-commands.ts` (register `/diff`), `dev-card.tsx` (wire `useDiffSheet` + `diff:` surface), `test-surface.ts` (`ingestGitDiff`, v1.10.0)
 
 **Tasks:**
-- [ ] Client transport: send `git_diff_request` carrying the card's project dir (same source as the Z4B chip) + a `requestId`; resolve the matching single-shot `git_diff_response`.
-- [ ] Implement `DiffSheet` — header summary + `TugAccordion type="multiple"`, one item per file (trigger = path + `+N −M`; body = `DiffBlock` over the file's unified text). Empty-tree state.
-- [ ] Sheet fires `git_diff_request` on mount; renders via `tugdeck/src/lib/diff/`.
-- [ ] Mount as overlay per [D15] — pane-modal, portaled into the host pane frame (honor the modality invariants hardened in the cross-pane work).
-- [ ] Refresh on user action (a refresh control re-fires the request); no continuous feed subscription.
+- [x] Client transport: `GitDiffStore` sends `GIT_DIFF_QUERY` carrying the card's project dir (same source as the Z4B chip) as `root` + a per-store `requestId`, and resolves the matching single-shot `GIT_DIFF` response (workspace-key-filtered feed + request_id gate ignore stale/replayed frames).
+- [x] Implement `DiffSheet` — header summary ("Uncommitted changes (git diff HEAD)" + "N files changed +X −Y") + `TugAccordion type="multiple"`, one item per file (trigger = status letter + path + `+N −M`; body = `DiffBlock suppressHeader` over the file's unified text, or a note for binary). Empty-tree state.
+- [x] Sheet fires `git_diff_request` on open; renders via `tugdeck/src/lib/diff/` (`DiffBlock`).
+- [x] Mount as overlay per [D15] — via the card's shared `cardPickerSheet.showSheet`, pane-modal (the same host the hardened cross-pane modality protects).
+- [x] Refresh control (`diff-refresh`) re-fires the request; single-shot, no continuous feed subscription.
 
 **Tests:**
-- [ ] Pure-logic: `git_diff_response` → accordion model mapping (file ordering, `+N −M` formatting, status labels, empty-tree state).
-- [ ] Real-app: mount the sheet against a dirty working tree; assert accordion item count == changed files, header totals, and that expanding one item renders its hunks.
+- [x] Pure-logic (`git-diff-store.test.ts`, 12 cases): `+N −M` formatting, status label/letter, summary-line pluralization + empty, `fileStatLabel` binary, payload parse + order + defaults + malformed-reject.
+- [x] Real-app (`at0104-diff-sheet.test.ts`): `/diff` opens the sheet; the accordion lists both files; header summarizes ("2 files changed +2 −0"); the trigger shows the path; multi-file opens collapsed; expanding a file renders its hunks; refresh → empty payload → empty state.
 
 **Checkpoint:**
-- [ ] `just app-test diff-sheet`
+- [x] `just app-test diff-sheet` — VERDICT: PASS (1/1). Plus tsc clean and 3213 tugdeck unit tests green (slash-command registry expectations updated for `/diff`).
 
 ---
 

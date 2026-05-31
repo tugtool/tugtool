@@ -24,12 +24,13 @@ import {
 } from "@/components/tugways/cards/completion-providers/local-commands";
 
 describe("matchLocalSlashCommand", () => {
-  test("permissions, model, rewind, and resume are registered", () => {
+  test("permissions, model, rewind, resume, and diff are registered", () => {
     expect(LOCAL_SLASH_COMMANDS.map((c) => c.name)).toEqual([
       "permissions",
       "model",
       "rewind",
       "resume",
+      "diff",
     ]);
   });
 
@@ -66,7 +67,13 @@ describe("local-command completion + merge", () => {
 
   test("local provider offers permissions, model, and rewind as command atoms", () => {
     const items = localCommandCompletionProvider()("");
-    expect(items.map((i) => i.label)).toEqual(["permissions", "model", "rewind", "resume"]);
+    expect(items.map((i) => i.label)).toEqual([
+      "permissions",
+      "model",
+      "rewind",
+      "resume",
+      "diff",
+    ]);
     expect(items[0].atom).toEqual({
       kind: "atom",
       type: "command",
@@ -79,7 +86,12 @@ describe("local-command completion + merge", () => {
     const gated = localCommandCompletionProvider({
       isOffered: (name) => name !== "rewind",
     });
-    expect(gated("").map((i) => i.label)).toEqual(["permissions", "model", "resume"]);
+    expect(gated("").map((i) => i.label)).toEqual([
+      "permissions",
+      "model",
+      "resume",
+      "diff",
+    ]);
     // The gate is consulted on substring queries too.
     expect(gated("rew").map((i) => i.label)).toEqual([]);
   });
@@ -99,7 +111,14 @@ describe("local-command completion + merge", () => {
     const merged = mergeCommandProviders(localCommandCompletionProvider(), claude);
     // permissions appears once (local wins), then the other local commands,
     // then claude's remaining commands.
-    expect(labels(merged, "")).toEqual(["permissions", "model", "rewind", "resume", "commit"]);
+    expect(labels(merged, "")).toEqual([
+      "permissions",
+      "model",
+      "rewind",
+      "resume",
+      "diff",
+      "commit",
+    ]);
   });
 });
 

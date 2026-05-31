@@ -43,6 +43,7 @@ import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
 import { useModelPicker } from "./model-picker-sheet";
 import { useRewindSheet } from "./rewind-sheet";
+import { useDiffSheet } from "./diff-sheet";
 import { canOfferRewind } from "./rewind-turn-source";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
@@ -87,6 +88,7 @@ import { useSheetDelegate } from "@/lib/sheet-lifecycle";
 import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
+import type { GitDiffStore } from "@/lib/git-diff-store";
 import { deriveDevCardBannerSpec } from "./dev-card-banner-spec";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
@@ -406,6 +408,8 @@ export interface DevCardServices {
   completionProviders: Record<string, CompletionProvider>;
   editorStore: EditorSettingsStore;
   responseStore: ResponseSettingsStore;
+  /** Single-shot `/diff` request/response store ([#step-10b]). */
+  gitDiffStore: GitDiffStore;
   /**
    * Delegate handle for the embedded `TugPromptEntry`. Owned by the
    * hook because the `/` completion provider's position-0 gate reads
@@ -484,6 +488,7 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       completionProviders,
       editorStore: services.editorStore,
       responseStore: services.responseStore,
+      gitDiffStore: services.gitDiffStore,
       entryDelegateRef,
     };
   }, [services, completionProviders]);
@@ -2015,7 +2020,7 @@ export function DevCardBody({
   renderTurnTrailing,
   footerContent,
 }: DevCardBodyProps) {
-  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, entryDelegateRef } = services;
+  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, gitDiffStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
 
@@ -2596,6 +2601,14 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/diff` uncommitted-changes sheet ([#step-10b]), card-scoped per [D15].
+  // Fires `git_diff_request` for this card's project dir on open; the response
+  // renders as a per-file `TugAccordion`. Single-shot, not a feed ([D21]).
+  const diffSheet = useDiffSheet({
+    gitDiffStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2622,6 +2635,7 @@ export function DevCardBody({
     model: () => modelPicker.openModelPicker(),
     rewind: () => rewindSheet.openRewindSheet(),
     resume: () => resumeSheet.openResumeSheet(),
+    diff: () => diffSheet.openDiffSheet(),
   };
 
   const {

@@ -170,6 +170,19 @@ export interface DiffBlockProps {
   embedded?: boolean;
 
   /**
+   * Suppress DiffBlock's own identity header (path + stats + the resting
+   * affordances) when a host already renders the file's identity — e.g. the
+   * `/diff` accordion ([#step-10b]), where each file is an accordion item
+   * whose trigger shows the path + `+N −M`. Unlike `embedded`, this requires
+   * no `ToolBlockChrome`: the header and its affordances simply don't render
+   * (drive `viewMode` via the prop if a host-level toggle is wanted). The
+   * hunks render exactly as in standalone mode.
+   *
+   * @default false
+   */
+  suppressHeader?: boolean;
+
+  /**
    * Identifier used for tugbank-persisted per-card preferences.
    * Currently scopes the inline ↔ side-by-side `viewMode`. When
    * omitted, `viewMode` falls back to the prop / default and is not
@@ -458,11 +471,15 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   onToggleCollapsed,
   className,
   embedded = false,
+  suppressHeader = false,
   cardId,
   viewMode: viewModeProp,
   onViewModeChange,
   componentStatePreservationKey,
 }) => {
+  // The identity header is dropped when embedded (a chrome owns identity) or
+  // when a host explicitly suppresses it (e.g. the `/diff` accordion trigger).
+  const headerHidden = embedded || suppressHeader;
   // -- Telescoping pin: write the identity-header height -------------------
   //
   // The hunk headers below pin under the identity header. In standalone
@@ -509,7 +526,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     return () => {
       observer.disconnect();
     };
-  }, [embedded, data === undefined]);
+  }, [headerHidden, data === undefined]);
 
   // Chrome actions target — non-null when this DiffBlock is composed
   // inside a `ToolBlockChrome`. The resting affordances (fold cue,
@@ -969,7 +986,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
           data-view-mode={viewMode}
           className={rootClass}
         >
-          {embedded ? null : (
+          {headerHidden ? null : (
             <div
               ref={headerRef}
               className="tugx-diff-header"
@@ -1068,7 +1085,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       data-view-mode={viewMode}
       className={rootClass}
     >
-      {embedded ? null : (
+      {headerHidden ? null : (
         <div
           ref={headerRef}
           className="tugx-diff-header"

@@ -1,0 +1,131 @@
+/* @tug-pairings:
+   - --tug7-element-tone-text-normal-success-rest  (added: status "A", +N stat)
+   - --tug7-element-tone-text-normal-danger-rest   (deleted: status "D", −M stat)
+   - --tug7-element-tone-text-normal-caution-rest  (modified: status "M")
+   - --tug7-element-tone-text-normal-accent-rest   (renamed: status "R")
+
+   Text-color-only (no background painting): the sheet surface and foreground
+   come from the composed TugSheet; per-file hunks come from the composed
+   DiffBlock; the accordion from TugAccordion; buttons from TugPushButton.
+   Status letters and the +/− stat tint via the tone *text* tokens above, which
+   layer on the inherited sheet foreground — so no @tug-renders-on ([L16]). */
+
+.diff-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Header: "Uncommitted changes (git diff HEAD)" + summary on the left, the
+   Refresh control on the right. */
+.diff-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.diff-sheet-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.diff-sheet-summary {
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.diff-sheet-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Status / empty / error notices. */
+.diff-sheet-status,
+.diff-sheet-empty,
+.diff-sheet-error,
+.diff-sheet-binary-note {
+  margin: 0;
+  padding: 1rem 0;
+  font-size: 0.875rem;
+}
+
+.diff-sheet-status,
+.diff-sheet-empty {
+  opacity: 0.6;
+  text-align: center;
+}
+
+.diff-sheet-binary-note {
+  padding: 0.5rem 0;
+  opacity: 0.6;
+}
+
+/* One accordion item per file. The trigger is a single row: status badge,
+   path (grows + truncates), and the +N −M stat pinned to the right. */
+.diff-sheet-file-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.8125rem;
+}
+
+.diff-sheet-file-status {
+  flex: 0 0 auto;
+  width: 1.1em;
+  text-align: center;
+  font-weight: 600;
+}
+
+.diff-sheet-file-status[data-status="added"] {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+.diff-sheet-file-status[data-status="deleted"] {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+.diff-sheet-file-status[data-status="modified"] {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+.diff-sheet-file-status[data-status="renamed"] {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+.diff-sheet-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.diff-sheet-file-stat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 0.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-sheet-stat-add {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+.diff-sheet-stat-remove {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+.diff-sheet-stat-binary {
+  opacity: 0.6;
+}
+
+/* The per-file DiffBlock sits flush inside its accordion item — the item
+   already provides the boundary, so drop DiffBlock's standalone frame to
+   avoid a double border. */
+.diff-sheet-file-diff.tugx-diff {
+  border: 0;
+  border-radius: 0;
+}

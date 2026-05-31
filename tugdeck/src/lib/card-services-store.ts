@@ -36,6 +36,7 @@ import { EditorSettingsStore } from "./editor-settings-store";
 import { ResponseSettingsStore } from "./response-settings-store";
 import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
+import { GitDiffStore } from "./git-diff-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
@@ -64,6 +65,14 @@ export interface CardServices {
   readonly sessionMetadataFeedStore: FeedStore;
   readonly fileTreeStore: FileTreeStore;
   readonly fileTreeFeedStore: FeedStore;
+  /**
+   * Single-shot `/diff` request/response store ([#step-10b]) and its
+   * GIT_DIFF feed (workspace-key filtered, like FILETREE). Fires
+   * `git_diff_request` for this card's project dir and resolves the
+   * matching response — not a continuous subscription.
+   */
+  readonly gitDiffStore: GitDiffStore;
+  readonly gitDiffFeedStore: FeedStore;
   /**
    * The `@` file-completion provider. Captured once at construction
    * because each call to `FileTreeStore.getFileCompletionProvider()`
@@ -260,6 +269,22 @@ class CardServicesStore {
     );
     const fileCompletionProvider = fileTreeStore.getFileCompletionProvider();
 
+    // `/diff` ([#step-10b]): a GIT_DIFF feed filtered to this card's
+    // workspace, plus the single-shot request/response store. Passing
+    // `projectDir` makes each `git_diff_request` carry `root` so tugcast
+    // resolves this card's workspace (the Z4B chip's dir).
+    const gitDiffFeedStore = new FeedStore(
+      connection,
+      [FeedId.GIT_DIFF],
+      undefined,
+      workspaceFilter,
+    );
+    const gitDiffStore = new GitDiffStore(
+      gitDiffFeedStore,
+      FeedId.GIT_DIFF,
+      binding.projectDir,
+    );
+
     // Bind success → prepend this card's project path to the dev
     // recent-projects list (dedup, cap). Done here rather than in a
     // React effect so the side effect is co-located with services
@@ -338,6 +363,8 @@ class CardServicesStore {
       sessionMetadataFeedStore,
       fileTreeStore,
       fileTreeFeedStore,
+      gitDiffStore,
+      gitDiffFeedStore,
       fileCompletionProvider,
     };
   }
@@ -353,6 +380,8 @@ class CardServicesStore {
     services.sessionMetadataFeedStore.dispose();
     services.fileTreeStore.dispose();
     services.fileTreeFeedStore.dispose();
+    services.gitDiffStore.dispose();
+    services.gitDiffFeedStore.dispose();
   }
 
   // ── Public API ───────────────────────────────────────────────────────────

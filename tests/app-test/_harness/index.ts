@@ -577,6 +577,16 @@ export class App {
     return client.ingestSessionMetadata(this as HarnessCaller, cardId, payload);
   }
 
+  /**
+   * Drive a dev card's `GitDiffStore` with a decoded `git_diff_response`
+   * payload so the `/diff` sheet ([#step-10b]) renders its per-file
+   * accordion without a live tugcast git round-trip. Requires a prior
+   * `bindDevSession(cardId)`.
+   */
+  ingestGitDiff(cardId: string, payload: unknown): Promise<void> {
+    return client.ingestGitDiff(this as HarnessCaller, cardId, payload);
+  }
+
   // -------------------------------------------------------------------
   // Accessibility preflight ([D03])
   // -------------------------------------------------------------------
