@@ -72,6 +72,14 @@ export interface HistoryProvider {
   back(current: TugTextEditingState): TugTextEditingState | null;
   /** Navigate forward. Returns the next entry, or the draft when reaching the end. */
   forward(): TugTextEditingState | null;
+  /**
+   * Reset the cursor to the draft slot (the end of the list) and
+   * replace the saved draft with `draft`. Called from the submit flow
+   * so the next backward navigation starts from the most recent entry
+   * — including the just-submitted one — rather than continuing from
+   * wherever the user had browsed to before submitting.
+   */
+  resetToDraft(draft: TugTextEditingState): void;
 }
 
 // ---------------------------------------------------------------------------

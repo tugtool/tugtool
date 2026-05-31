@@ -108,6 +108,11 @@ class SessionHistoryProvider implements HistoryProvider {
     this._cursor = -1;
     return this._draft;
   }
+
+  resetToDraft(draft: TugTextEditingState): void {
+    this._cursor = -1;
+    this._draft = draft;
+  }
 }
 
 /**
@@ -174,6 +179,11 @@ class RouteHistoryProvider implements HistoryProvider {
 
     this._cursor = -1;
     return this._draft;
+  }
+
+  resetToDraft(draft: TugTextEditingState): void {
+    this._cursor = -1;
+    this._draft = draft;
   }
 }
 

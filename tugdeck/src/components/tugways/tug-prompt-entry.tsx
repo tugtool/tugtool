@@ -150,6 +150,18 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
 const DEFAULT_ROUTE = "❯";
 
 /**
+ * Empty editing state — the draft a freshly-cleared editor holds.
+ * Passed to `HistoryProvider.resetToDraft` after a submit so the
+ * history cursor returns to the end of the list. Read-only; never
+ * mutated, so a single shared instance is safe.
+ */
+const EMPTY_EDIT_STATE: TugTextEditingState = {
+  text: "",
+  atoms: [],
+  selection: null,
+};
+
+/**
  * Separator joining `sessionId` + `route` into the in-memory
  * history-provider cache key. U+001F (ASCII Unit Separator) — a
  * control character that cannot occur in a session id, so the two
@@ -768,6 +780,15 @@ export const TugPromptEntry = React.forwardRef<
     return fresh;
   }, [historyStore, route, snap.tugSessionId]);
 
+  // Live ref to the active route's history provider so `performSubmit`
+  // can reset its cursor without taking `currentHistoryProvider` as a
+  // dep (which would churn `performSubmit`'s identity on every route
+  // switch). [L07]
+  const currentHistoryProviderRef = useRef(currentHistoryProvider);
+  useLayoutEffect(() => {
+    currentHistoryProviderRef.current = currentHistoryProvider;
+  }, [currentHistoryProvider]);
+
   // Live refs for `onBeforeSubmit` / `onAfterSubmit` so an inline
   // closure passed by the host doesn't churn `performSubmit`'s
   // identity. [L07]
@@ -948,6 +969,10 @@ export const TugPromptEntry = React.forwardRef<
             timestamp: Date.now(),
           });
           editor.clear();
+          // Submitting (even a recalled entry) returns the history
+          // cursor to the end of the list — next ↑ starts from the most
+          // recent entry, including this one.
+          currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
           return;
         }
       }
@@ -1064,6 +1089,11 @@ export const TugPromptEntry = React.forwardRef<
     // Fire AFTER clear so host hooks (e.g., refocus) act on the
     // already-empty editor.
     onAfterSubmitRef.current?.();
+    // Submitting returns the history cursor to the end of the list, so
+    // the next ↑ starts from the most recent entry (this submission)
+    // rather than wherever the user had browsed to. The draft is the
+    // now-empty editor.
+    currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
     // Route is a sticky user preference. Do not reset on submit.
   }, [codeSessionStore, historyStore, dispatchToKeyCard]);
 

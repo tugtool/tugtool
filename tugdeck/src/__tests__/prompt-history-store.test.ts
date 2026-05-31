@@ -209,6 +209,29 @@ describe("PromptHistoryStore.createProvider", () => {
     expect(result).toBeNull();
   });
 
+  test("resetToDraft() returns the cursor to the end of the list", async () => {
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
+
+    const store = new PromptHistoryStore();
+    const SID = "sess-reset";
+    store.push(makeEntry(SID, "first"));
+    store.push(makeEntry(SID, "second"));
+    store.push(makeEntry(SID, "third"));
+
+    const provider = store.createProvider(SID);
+
+    // Browse back into older history.
+    provider.back(makeState("draft")); // "third"
+    provider.back(makeState("draft")); // "second"
+
+    // Submitting resets the cursor to the end of the list.
+    provider.resetToDraft(EMPTY_STATE);
+
+    // The next back() starts from the most recent entry again — not from
+    // "second" (where the cursor had been left).
+    expect(provider.back(makeState("draft"))?.text).toBe("third");
+  });
+
   test("createProvider() does not return entries from other sessions", async () => {
     globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
 
