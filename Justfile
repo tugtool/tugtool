@@ -52,6 +52,20 @@ capture-capabilities:
         echo "error: claude not found on PATH" >&2
         exit 1
     fi
+    # Dirty-tugplug guard. The capture spawns claude with `--plugin-dir tugplug`,
+    # so the golden `system_metadata` (skills / slash_commands / agents) reflects
+    # whatever is in `tugplug/` AT CAPTURE TIME. Uncommitted skill changes there
+    # silently bake into the committed baseline and desync its consumers (e.g.
+    # tugdeck/src/__tests__/system-metadata-fixture.test.ts) — exactly the
+    # contamination that the recipe/devise + bake/implement rename caused. Refuse
+    # on a dirty `tugplug/` tree so the baseline always reflects committed state.
+    # Override with TUG_ALLOW_DIRTY_TUGPLUG=1 for an intentional pre-commit capture.
+    if [ -z "${TUG_ALLOW_DIRTY_TUGPLUG:-}" ] && [ -n "$(git status --porcelain -- tugplug)" ]; then
+        echo "error: tugplug/ has uncommitted changes — the capture would bake them into the golden" >&2
+        echo "  commit or stash them first, or set TUG_ALLOW_DIRTY_TUGPLUG=1 to capture anyway" >&2
+        git status --porcelain -- tugplug >&2
+        exit 1
+    fi
     echo "---- claude version ----"
     claude --version
     echo
