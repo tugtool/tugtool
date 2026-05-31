@@ -1,0 +1,63 @@
+{
+  "_provenance": {
+    "what": "Empirical capture of the `rewind_files` control request round-trip (the code-restore dimension of terminal /rewind).",
+    "claude_version": "2.1.158",
+    "captured": "2026-05-30",
+    "step": "tug-dev-card-claude-code-parity.md#step-7a",
+    "doc": "roadmap/transport-exploration.md#rewind-files-control-request",
+    "method": "Direct stream-json driver against real claude (NOT through tugcode — tugcode's rewind_files IPC path lands in #step-7). Session spawned with CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true, --permission-mode bypassPermissions; turn 1 had claude Write a file (creating a checkpoint), then the two control requests below were sent on stdin.",
+    "placeholders": {
+      "{{cwd}}": "absolute working directory of the session (machine-specific; normalized here)"
+    },
+    "notes": [
+      "rewind_files is a CLIENT → claude control request (same direction as interrupt/set_model), NOT the claude→client control_request_forward used for tool gates.",
+      "Requires file checkpointing enabled; otherwise the response is {canRewind:false, error:\"File rewinding is not enabled.\"}.",
+      "A message with no checkpoint yields {canRewind:false, error:\"No file checkpoint found ...\"} — this is the 'how far back you can restore' limit.",
+      "dry_run:true returns the diff stats WITHOUT applying (drives the picker's per-row +N -M and the 'No code changes' rows); dry_run:false applies the restore (the file was actually reverted/removed)."
+    ]
+  },
+  "envelope": {
+    "request": "{ \"type\": \"control_request\", \"request_id\": <string>, \"request\": { \"subtype\": \"rewind_files\", \"user_message_id\": <uuid>, \"dry_run\": <bool, optional, default false> } }",
+    "response": "{ \"type\": \"control_response\", \"response\": { \"subtype\": \"success\", \"request_id\": <string>, \"response\": { \"canRewind\": <bool>, \"error\": <string, optional>, \"filesChanged\": <string[], optional>, \"insertions\": <number, optional>, \"deletions\": <number, optional> } } }"
+  },
+  "captures": [
+    {
+      "label": "dry_run — preview the restore (picker diff stats)",
+      "sent": {
+        "type": "control_request",
+        "request_id": "rf-dry",
+        "request": { "subtype": "rewind_files", "user_message_id": "<turn-1 user message uuid>", "dry_run": true }
+      },
+      "received": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "rf-dry",
+          "response": {
+            "canRewind": true,
+            "filesChanged": ["{{cwd}}/note.txt"],
+            "insertions": 0,
+            "deletions": 1
+          }
+        }
+      }
+    },
+    {
+      "label": "apply — perform the restore (file reverted on disk)",
+      "sent": {
+        "type": "control_request",
+        "request_id": "rf-apply",
+        "request": { "subtype": "rewind_files", "user_message_id": "<turn-1 user message uuid>", "dry_run": false }
+      },
+      "received": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "rf-apply",
+          "response": { "canRewind": true }
+        }
+      },
+      "side_effect": "note.txt (created in turn 1) was deleted on disk — the restore genuinely reverts file edits."
+    }
+  ]
+}

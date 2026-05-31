@@ -2070,6 +2070,17 @@ export class SessionManager {
     void ANTHROPIC_AUTH_TOKEN;
     void CLAUDE_CODE_OAUTH_TOKEN;
 
+    // Enable file checkpointing so the dev-card's `/rewind` can restore the
+    // *code* dimension (not just the conversation). The terminal has this on
+    // by default; in stream-json/SDK mode it is opt-in via this env var.
+    // Once enabled, claude snapshots files it edits via Edit/Write (not bash
+    // or manual edits) into its per-session `fileHistory`, and the
+    // `rewind_files` control request becomes answerable — `{canRewind}` plus
+    // `{filesChanged, insertions, deletions}` for the picker's per-turn diff
+    // stats (empirically captured against claude 2.1.158; see
+    // roadmap/transport-exploration.md#rewind-files-control-request).
+    scrubbedEnv.CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING = "true";
+
     return Bun.spawn([claudePath, ...args], {
       stdin: "pipe",
       stdout: "pipe",

@@ -832,20 +832,70 @@ These features exist in the Claude Code terminal but produce **no events in stre
 | **Plan mode chooser** | `/plan` | Present approve/reject/keep-planning options after plan generation. | Medium |
 | **Compact with focus** | `/compact [focus]` | Compaction indicator + optional focus text input. | Medium |
 | **Session rename** | `/rename` | Text input, update session metadata. | Low |
-| **Checkpoint rewind** | `/rewind` | Client-driven; **does NOT cross the wire** — see [`/rewind` empirical capture](#rewind-empirical-capture-2158) below. Dev-card flow: truncate the session JSONL at the chosen turn + respawn `--resume`. | Low |
+| **Checkpoint rewind** | `/rewind` | **Resolved → [dev-card #step-7](tug-dev-card-claude-code-parity.md#step-7).** Two dimensions (see [`/rewind` empirical capture](#rewind-empirical-capture-2158)): **conversation** = truncate JSONL + `--resume` (no wire verb); **code** = [`rewind_files`](#rewind-files-control-request) control request. Summarize from/up to here = in-process compaction, no wire verb → **deferred**. Typed `/rewind` bounces. | Low |
 | **Session fork/branch** | `/branch` | Fork current session, checkpoint management. (`/branch` likewise bounces in stream-json; unprobed.) | Low |
 | **Color/theme picker** | `/color`, `/theme` | Custom UI for theme selection. | Low |
 | **Vim mode toggle** | `/vim` | Keybinding mode switch for prompt input. | Low |
 
 ### `/rewind` empirical capture (claude 2.1.158) {#rewind-empirical-capture-2158}
 
-Captured for dev-card parity Step 7a ([`tug-dev-card-claude-code-parity.md#step-7a`](tug-dev-card-claude-code-parity.md#step-7a), decision [D10]). Pinned as `test-36-slash-rewind` in the golden catalog. The earlier table row claiming `/rewind` "sends `session_command`" was a prose assumption — it is **empirically false**.
+Captured for dev-card parity Step 7a ([`tug-dev-card-claude-code-parity.md#step-7a`](tug-dev-card-claude-code-parity.md#step-7a), decision [D10]). This is the **final synthesis** of a multi-pass reverse-engineering of `/rewind` against `claude 2.1.158` — the typed-command bounce, the terminal-UI screenshots, and a series of live probes. Earlier partial conclusions (including a wrong "purely client-side, no wire protocol" first pass and a mistaken "conversation rewind is unreachable") are superseded; the resolved state is below. Pinned as `test-36-slash-rewind`.
 
-**Finding 1 — `/rewind` is not a wire verb.** Driven over stream-json as a `user_message` (the only thing tugcode can send), `claude 2.1.158` bounces it with a *synthetic* turn — `assistant.model: "<synthetic>"`, `num_turns: 0`, `total_cost_usd: 0`, zero tokens — emitting the assistant text `"/rewind isn't available in this environment."` It is the same terminal-rendered-locally class as `/permissions`, `/diff`, `/help`, etc. The terminal's `/rewind` is an **interactive checkpoint picker rendered entirely client-side**; nothing about it reaches claude. Pinned IPC sequence (10 events): `session_init · context_breakdown · session_capabilities · system_metadata · context_breakdown · content_block_start · assistant_text · cost_update · assistant_text · turn_complete`.
+#### The complete stdin input surface
 
-**Finding 2 — the rewind mechanism is filesystem + respawn, not a message.** The terminal restores file checkpoints, truncates the conversation transcript, and resumes. The transcript is a per-session JSONL at `~/.claude/projects/<slug>/<session-id>.jsonl`, a `parentUuid`-chained record log: `user(uuid=A, parent=-) → [attachment records] → assistant(parent=A) → user(uuid=B, parent=prev-assistant) → assistant(parent=B) → …`, interleaved with bookkeeping records (`queue-operation`, `last-prompt`, `mode`, `attachment`). A rewind to turn *B* = drop every record after *B*'s subtree, keep the same `session_id`, and `--resume`. Verified empirically: a fresh `claude --resume <sid>` in a *separate process* recalled a codeword set in a prior process, confirming `--resume` reconstructs state purely from the JSONL.
+Enumerated from the binary (not sampled) — this is the hard boundary for everything a stream-json client (tugcode) can ask claude to do:
 
-**Implication for [#step-7] (`/rewind` sheet).** The dev-card `/rewind` is necessarily **client-driven in tugcode**: there is nothing to forward to claude. The eventual `session_rewind` inbound (`{type:"session_rewind", msg_id}`) must be handled tugcode-side by truncating the session JSONL at the chosen message uuid and respawning `--resume` — structurally the same respawn-to-apply pattern already used for `--effort` ([R07], Step 4). A "fork-and-card" secondary action forks to a new `session_id` instead of truncating in place. No new claude-facing protocol is required.
+- **5 message types:** `user`, `bash_command`, `control_request`, `assistant`, `system`. Anything else is logged `"Ignoring unknown message type"` and dropped.
+- **43 `control_request` subtypes** — incl. `initialize`, `interrupt`, `set_model`, `set_permission_mode`, `can_use_tool`, `rename_session`, `get_context_usage`, `seed_read_state`, **`rewind_files`**, … The **only** rewind-relevant verb is `rewind_files`. There is **no** `rewind_conversation`, `compact`, or `summarize` control verb, and `initialize` accepts no client-supplied conversation history (`initialMessages` is populated internally from the resumed JSONL only).
+
+A dev-card feature is reachable only if it maps onto this surface, *or* onto something tugcode can do to the local session files.
+
+#### Architectural frame — in-process host ops vs. wire-exposed ops
+
+`claude` is one binary in two modes. The **interactive TUI** is a single process holding *both* the UI and the agent core (message array, model loop, compaction), so its `/rewind` mutates the in-memory message array directly (`messages.slice(0, idx)`) and runs the compaction engine (`SXK`) on a slice — no wire, no message. **Bridge mode** (`--input-format stream-json`, what tugcode drives) is a headless agent core; tugcode is a *separate process* limited to the surface above. The TUI's in-memory operations have a wire equivalent only where Anthropic exposed one: they exposed the **file** half of rewind (`rewind_files` — file history lives in claude's process) but **not** the conversation-array slice or scoped compaction. This is why the four features split the way they do.
+
+**Finding 1 — typed `/rewind` is not a wire verb.** Driven over stream-json as a `user_message`, `claude 2.1.158` bounces it with a *synthetic* turn — `assistant.model: "<synthetic>"`, `num_turns: 0`, `total_cost_usd: 0`, zero tokens — emitting `"/rewind isn't available in this environment."` Same terminal-rendered-locally class as `/permissions`, `/diff`, `/help`. The TUI's `/rewind` is a client-side picker; the typed string never reaches a handler. Pinned IPC sequence (10 events): `session_init · context_breakdown · session_capabilities · system_metadata · context_breakdown · content_block_start · assistant_text · cost_update · assistant_text · turn_complete`.
+
+**Finding 2 — conversation rewind = JSONL truncation + `--resume` (PROVEN).** The transcript is a per-session JSONL at `~/.claude/projects/<slug>/<session-id>.jsonl` — a `parentUuid`-chained record log of user/assistant turns plus bookkeeping records (`queue-operation`, `last-prompt`, `mode`, `attachment`, `ai-title`). **The JSONL *is* the conversation:** the model API is stateless, so claude rebuilds context from this file each turn. To rewind to a turn, **truncate the file to that turn boundary (drop the tail records) and `--resume` the same `session_id`.** Verified live: a 3-turn session chopped to 2 turns resumed cleanly and recalled only the retained turns — no artifacts, no re-responses, nothing for claude to "detect" (there is no external ledger of what the conversation "should" be). **Constraints discovered:**
+1. Cut at a clean turn boundary (before the target `user` record).
+2. **Do not chop across a `/compact` boundary** — compaction rewrites the resume pointers, so chopping past it yields `"No conversation found"`.
+3. A hand-authored transcript under a *new* (unregistered) session-id is rejected (`"No conversation found"`); only tail-truncation of an existing, registered, non-compacted session works.
+
+(The TUI does the in-memory equivalent: `messages.slice(0, rewindToMessageIndex)`, telemetry `tengu_conversation_rewind`.) Note: *adding* a fabricated `assistant` turn over the wire is accepted into context but claude detects it as pre-filled; *removing* tail records has no such tell. Rewind only removes.
+
+**Finding 3 — code rewind = the `rewind_files` control request.** "Restore the code" is not blind filesystem work — claude snapshots files it edits via Edit/Write (*not* bash or manual edits — binary string: *"Rewinding does not affect files edited manually or via bash."*) into a per-session `fileHistory`, and exposes restore over a control request. Full protocol + live capture: [`#rewind-files-control-request`](#rewind-files-control-request). Reachable over the bridge once file checkpointing is enabled.
+
+**Finding 4 — Summarize from/up to here = in-process compaction; NO wire verb (DEFERRED).** The two "Summarize" options run claude's **compaction engine** (`SXK`/`yXK`) over a message *slice* anchored at the picked turn (`direction:"from"|"up_to"`, optional `userContext`; `up_to` forks context), making a real model call and persisting an `is_compact_summary` user message with `summarize_metadata:{messagesSummarized, userContext, direction}`. This is an **in-process host op** — there is no scoped-compaction control verb, and the only wire summarization is the whole-conversation `/compact` user command (arg = `<optional custom summarization instructions>`, auto-chosen boundary; emits `compact_boundary` with `preserved_segment{head_uuid, anchor_uuid, tail_uuid}`). A client could only *approximate* scoped summarize via chop→`/compact`→re-append, whose final splice is unverified. **Decision (2026-05-30): Summarize is out of scope for the dev-card `/rewind`** ([#step-7]); revisit only if claude ships an anchored-compact control verb (the natural sibling of `rewind_files`).
+
+**The terminal UX (from screenshots).** Step 1 — a picker listing the session's own user messages, each annotated with a per-turn diff stat (`+239 -25`, or "No code changes") and a `(current)` marker; only messages with a surviving checkpoint are code-restorable (the "how far back" limit). Step 2 — a confirm sheet whose options are conditional on `canRewind`: **Restore code and conversation · Restore conversation · Summarize from here · Summarize up to here · Never mind**. When a turn changed no code, only the conversation option appears ("The code will be unchanged").
+
+**Implication for [#step-7] (`/rewind` sheet).** The dev-card ships **three of the four** wire-reachable features: diff-stat preview + code restore (`rewind_files{dry_run:true|false}`, requires `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true`, now set in `spawnClaude`), conversation restore (JSONL truncate + `--resume`), and cancel. Summarize is deferred (Finding 4). `/rewind` is **not** a `SessionPickerSheet` (sessions) consumer — it is a turns-within-this-session picker with a restore-options confirm form (its own `RewindSheet`).
+
+### `rewind_files` control request (claude 2.1.158) {#rewind-files-control-request}
+
+The code-restore half of `/rewind`. A **client → claude** control request (same direction as `interrupt` / `set_model`, the *opposite* of the `control_request_forward` tool gate). Grounded against the `2.1.158` binary (zod schemas) and a live round-trip; pinned in [`tugrust/crates/tugcast/tests/fixtures/control-requests/rewind-files.v2.1.158.json`](../tugrust/crates/tugcast/tests/fixtures/control-requests/rewind-files.v2.1.158.json).
+
+**Request** (sent on claude's stdin):
+```json
+{ "type": "control_request", "request_id": "<string>",
+  "request": { "subtype": "rewind_files", "user_message_id": "<uuid>", "dry_run": true } }
+```
+**Response** (on claude's stdout):
+```json
+{ "type": "control_response",
+  "response": { "subtype": "success", "request_id": "<string>",
+    "response": { "canRewind": true, "filesChanged": ["<path>"], "insertions": 0, "deletions": 1 } } }
+```
+
+- `user_message_id` — the uuid of the user message to rewind to the point **before**.
+- `dry_run: true` → returns `{canRewind, filesChanged, insertions, deletions}` **without** applying (this is what populates the picker's diff stats and decides which confirm options show). `dry_run: false`/omitted → **applies** the restore (reverts the files on disk) and returns `{canRewind: true}`.
+- Gating (the "how far back" limit): `{canRewind:false, error:"File rewinding is not enabled."}` when checkpointing is off; `{canRewind:false, error:"No file checkpoint found ..."}` for a message with no surviving snapshot.
+- Enablement: default-on for the interactive terminal (`!CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING`); **opt-in** in SDK/stream-json mode via `CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING=true`. tugcode now sets this at spawn (`tugcode/src/session.ts spawnClaude`).
+- A standalone CLI form also exists: `claude --rewind-files <user_message_id>` (requires `--resume`; rejects combination with a prompt).
+
+**Live capture (2026-05-30).** Turn 1 had claude `Write` `note.txt` ("HELLO"); then `rewind_files{dry_run:true}` → `{canRewind:true, filesChanged:["…/note.txt"], insertions:0, deletions:1}`; then `rewind_files{dry_run:false}` → `{canRewind:true}` and `note.txt` was **deleted on disk**. Reproduction driver is recorded in the fixture's `_provenance` (spawn flags + stdin sequence).
+
+**Not yet captured through tugcode.** The round-trip above was driven *directly* against claude. Surfacing it through tugcode (a `rewind_files` inbound IPC → claude control request → relay the `control_response` as an outbound IPC) is the first implementation task of [#step-7]; a probe-table entry that drives it end-to-end lands then.
 
 ### Permission and Approval UI
 
