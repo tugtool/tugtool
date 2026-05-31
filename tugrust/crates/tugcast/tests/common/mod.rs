@@ -488,6 +488,40 @@ impl TestWs {
             .await;
     }
 
+    /// Send a GIT_DIFF_QUERY frame carrying `{ root?, requestId }` — the
+    /// `/diff` request ([#step-10a]). `root: None` exercises the bootstrap
+    /// fall-back (the `--source-tree` workspace the test spawned tugcast on).
+    pub async fn send_git_diff_query(&mut self, root: Option<&Path>, request_id: &str) {
+        let mut payload = serde_json::json!({ "requestId": request_id });
+        if let Some(root) = root {
+            payload["root"] = serde_json::Value::String(root.to_string_lossy().into_owned());
+        }
+        let bytes = serde_json::to_vec(&payload).expect("git_diff_query json");
+        let frame = Frame::new(FeedId::GIT_DIFF_QUERY, bytes);
+        self.sink
+            .lock()
+            .await
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send git_diff_query frame");
+    }
+
+    /// Wait for the single-shot GIT_DIFF response whose `request_id` matches,
+    /// returning its payload and removing it from the buffer ([#step-10a]).
+    pub async fn await_git_diff(
+        &mut self,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let deadline = Instant::now() + timeout;
+        let idx = self
+            .pump_until(deadline, |f| {
+                f.feed_id == FeedId::GIT_DIFF && f.payload["request_id"] == request_id
+            })
+            .await?;
+        Ok(self.buffer.remove(idx).payload)
+    }
+
     pub async fn send_reset_session(&mut self, card_id: &str, tug_session_id: &str) {
         self.send_control_action("reset_session", card_id, tug_session_id)
             .await;

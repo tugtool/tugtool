@@ -917,7 +917,8 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 7b.3 | `/rewind`: `RewindSheet` (tugdeck) | ✅ DONE | `rewind-turn-source.ts` + `RewindSheet` (single wide step, lazy diff-stat, idle/empty-state gating, fork-default, history rewind); L26-safe local truncation; `at0097`/`at0098` |
 | 8 | `/resume` | ✅ DONE | focused sessions overlay `resume-sheet.tsx` via `cardPickerSheet` (reuses `SESSIONS_CELL_RENDERERS` + sessions data source); cancel keeps the live session; `at0099` |
 | 9 | `/permissions` picker + editor | ✅ DONE | folded into 1.6 (`permission-rules-editor.tsx`) — Q-B |
-| 10 | `/diff` sheet (accordion-per-file) | ▶ TODO | `diff-sheet.tsx` + tugcast `git_diff_request` |
+| 10.A | `/diff` sourcing — tugcast `git_diff_request` | ✅ DONE | tugcast handler + protocol + round-trip proof |
+| 10.B | `/diff` accordion sheet (dev-card UI) | ▶ TODO | `diff-sheet.tsx` over the 10.A feed |
 | 11 | `/context` HUD | ▶ TODO | `context-hud.tsx` |
 | 12 | Listing sheets (`/memory` `/agents` `/hooks` `/skills`) | ▶ TODO | |
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
@@ -1781,9 +1782,11 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 
 **Depends on:** #step-1c, #step-6
 
-**Commit:** `feat(dev-card+tugcast): /diff overlay sheet via git_diff_request command`
-
 **References:** [D15] overlays, [D21] diff dedicated command, (#slash-cmd-inventory), `TugAccordion`, [cross-pane-modality-investigations](cross-pane-modality-investigations.md) (the sheet is pane-modal)
+
+Split into **[#step-10a] sourcing** (tugcast `git_diff_request`/`git_diff_response`, proven by a round-trip before any UI exists) and **[#step-10b] the accordion sheet** (dev-card UI on top of the proven feed). The split de-risks the data path: 10.B builds nothing until 10.A demonstrates tugcast returns the right diff for the right project dir.
+
+**Project dir, not "session-independent" (resolved 2026-05-31).** The diff is computed in the **session's project dir** — the same dir the Z4B GIT-status chip reflects. tugcast already keys git by exactly that: `WorkspaceRegistry` is per-`project_dir`, and each `WorkspaceEntry` runs `GitFeed::new(project_dir, …)` (`feeds/workspace_registry.rs`). tugcast is the right home not because the diff is independent of the *session* (it isn't — it's tied to the session's project) but because it's independent of the claude *process*: a diff is a filesystem fact, so `/diff` works whether claude is busy, idle, or dead, and burns no turn. tugcode runs no raw git (its `/rewind` delegates to claude's SDK `rewind_files` verb; claude exposes no diff verb), so tugcast — which already shells `git` against the project dir — is where this belongs. The request carries `root` (the project dir from session metadata) and the handler resolves the `WorkspaceEntry`, mirroring the `FILETREE_QUERY` `root`-routing adapter in `main.rs`.
 
 **UI shape — accordion, not master/detail.** Claude Code's `/diff` is a terminal-pager affordance: a flat file list you arrow through, Enter to open one file full-screen, Esc to back out (see the two reference captures). That two-step navigation is a TUI compromise, not a model to copy. The Tug-native presentation is a single overlay sheet whose body is a **`TugAccordion type="multiple"`** with one item per changed file:
 
@@ -1793,29 +1796,57 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 
 **Reuse existing infrastructure — do not rebuild the diff renderer.** `tugdeck/src/lib/diff/` already provides `parse-unified-diff`, `DiffData`, `countDiffStats`, and the `DiffBlock` body-kind component that renders unified-diff text into styled hunks (inline / side-by-side). Each accordion body hosts a `DiffBlock` fed `{ source: "unified", text, filePath }`; the accordion trigger owns file identity + stats, so `DiffBlock` runs with its own header suppressed. On the tugcast side, `feeds/git.rs` already shells `git` async against a `repo_dir` — the new handler follows that pattern.
 
-**Artifacts:**
-- New: `tugdeck/src/components/tugways/cards/diff-sheet.tsx` (+ `.css`) — overlay sheet per [D15], `TugAccordion`-bodied
-- New: tugcast `git_diff_request` / `git_diff_response` control commands and handler (reusing the `git.rs` async-`git` pattern)
-- Modified: tugcast control-protocol types to add the new request/response shapes
-- Modified: register `/diff` in `lib/slash-commands.ts` to open the sheet
-
 **Response shape (`git_diff_response`).** A summary (`base: "HEAD"`, `file_count`, `total_added`, `total_removed`) plus `files: GitDiffFile[]`, where each file carries `{ path, old_path?, status (added|modified|deleted|renamed), added, removed, unified }` — the per-file unified-diff text, so the accordion can render `+N −M` in the collapsed trigger without the client parsing first, and lazily render hunks via `DiffBlock` on expand.
 
+##### Step 10.A: `git_diff_request` / `git_diff_response` — tugcast sourcing + round-trip {#step-10a}
+
+**Depends on:** (none — pure tugcast)
+
+**Commit:** `feat(tugcast): git_diff_request command sources project-dir diff`
+
+**Artifacts:**
+- New: tugcast `git_diff_request` / `git_diff_response` control commands + handler (reusing the `git.rs` async-`git` pattern, resolving the `WorkspaceEntry` by `root`)
+- Modified: tugcast control-protocol types to add the new request/response shapes
+- Modified: `main.rs` request routing — a `git_diff_request` adapter mirroring the `FILETREE_QUERY` `root`-resolution (fall back to bootstrap)
+
 **Tasks:**
-- [ ] Tugcast: implement the `git_diff_request` handler — run `git diff HEAD` from the repo root, split the combined output per file (`diff --git` boundaries), and serialize the `git_diff_response` (summary + per-file unified text + git-authoritative stats/status).
-- [ ] Add the `git_diff_request` / `git_diff_response` types to the tugcast control protocol.
-- [ ] Dev-card: implement `DiffSheet` — header summary + `TugAccordion type="multiple"`, one item per file (trigger = path + `+N −M`; body = `DiffBlock` over the file's unified text).
-- [ ] Sheet fires `git_diff_request` on mount; receives single-shot `git_diff_response`; renders via `tugdeck/src/lib/diff/`.
+- [x] Add the `git_diff_request` / `git_diff_response` shapes to the protocol. Implemented as dedicated feed IDs — `GIT_DIFF_QUERY` (0x22, request, carries `root` + `requestId`) and `GIT_DIFF` (0x21, single-shot response) — mirroring `FILETREE`/`FILETREE_QUERY`. Wire types `GitDiffSnapshot` / `GitDiffFile` / `GitDiffFileStatus` in `tugcast-core/types.rs` (echo `request_id` + `workspace_key`).
+- [x] Implement the handler — `feeds/git.rs::build_git_diff_snapshot` runs `git diff HEAD -M` in the resolved `project_dir`, `parse_git_diff` splits on `diff --git` boundaries, reads git's declared status markers, counts the rendered `+`/`-` lines (header totals == body), and carries each file's unified chunk verbatim. Zero new deps — consistent with the workspace's git-CLI convention (decision logged below).
+- [x] Wire the request frame routing in `main.rs` (a `root`-resolution adapter via the new `WorkspaceRegistry::resolve_diff_target`, falling back to bootstrap); per-request task, single-shot `GIT_DIFF` broadcast correlated by `request_id` + `workspace_key`.
+
+**Decision — zero-dep `git` CLI, single pass (resolved 2026-05-31).** There is no `git diff --json`; the unified diff is text. Git's `--numstat`/`--name-status` porcelain cover only *metadata* (and can disagree with the rendered hunks). A Rust git lib (`git2`/`gix`) is a heavy native/large dep used nowhere else in the workspace and still makes us re-serialize unified text. The in-workspace `tugdiff-wasm` parses a *single* file's hunks (client-side) — wrong layer/workspace. So: one `git diff HEAD`, segment + read git's own markers + count the text we render. Fully covers rename/binary; one subprocess; header == body guaranteed.
+
+**Tests:**
+- [x] Rust unit: `parse_git_diff` against fixtures for modified / added / deleted / pure-rename / rename-with-edits / binary / multi-file-order / empty (`feeds/git.rs`).
+- [x] Rust integration: `build_git_diff_snapshot` against a real temp repo covering all four statuses + clean-tree-empty; `resolve_diff_target` matches a registered `root` and falls back to bootstrap on unknown/absent (`feeds/workspace_registry.rs`).
+
+**Checkpoint (the round-trip proof):**
+- [x] `cd tugrust && cargo nextest run -p tugcast` — 753 pass, 0 fail.
+- [x] Live round-trip: `tests/git_diff_roundtrip.rs` spawns a real tugcast subprocess on a deliberately dirtied repo, fires a `GIT_DIFF_QUERY` over the WebSocket, and asserts the `GIT_DIFF` response carries the right files/stats/statuses for that project dir — through the full frame → router → registry → `git diff` → broadcast path, before any sheet exists. Both round-trip tests pass.
+
+##### Step 10.B: `/diff` accordion sheet — dev-card UI {#step-10b}
+
+**Depends on:** #step-10a, #step-1c, #step-6
+
+**Commit:** `feat(dev-card): /diff accordion sheet over git_diff_request`
+
+**Artifacts:**
+- New: `tugdeck/src/components/tugways/cards/diff-sheet.tsx` (+ `.css`) — overlay sheet per [D15], `TugAccordion`-bodied
+- New/Modified: client transport to fire `git_diff_request(root)` and resolve the single-shot `git_diff_response` (correlated by `requestId`)
+- Modified: register `/diff` in `lib/slash-commands.ts` to open the sheet
+
+**Tasks:**
+- [ ] Client transport: send `git_diff_request` carrying the card's project dir (same source as the Z4B chip) + a `requestId`; resolve the matching single-shot `git_diff_response`.
+- [ ] Implement `DiffSheet` — header summary + `TugAccordion type="multiple"`, one item per file (trigger = path + `+N −M`; body = `DiffBlock` over the file's unified text). Empty-tree state.
+- [ ] Sheet fires `git_diff_request` on mount; renders via `tugdeck/src/lib/diff/`.
 - [ ] Mount as overlay per [D15] — pane-modal, portaled into the host pane frame (honor the modality invariants hardened in the cross-pane work).
 - [ ] Refresh on user action (a refresh control re-fires the request); no continuous feed subscription.
 
 **Tests:**
 - [ ] Pure-logic: `git_diff_response` → accordion model mapping (file ordering, `+N −M` formatting, status labels, empty-tree state).
-- [ ] Rust unit: tugcast handler against a fixture git workspace covering added / modified / deleted / renamed files; assert per-file split + stats.
 - [ ] Real-app: mount the sheet against a dirty working tree; assert accordion item count == changed files, header totals, and that expanding one item renders its hunks.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast`
 - [ ] `just app-test diff-sheet`
 
 ---

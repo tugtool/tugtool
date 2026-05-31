@@ -433,6 +433,24 @@ impl WorkspaceRegistry {
         let _ = bootstrap_tx.send(ftq).await;
     }
 
+    /// Resolve the workspace a `/diff` request targets ([#step-10a]).
+    ///
+    /// Returns the entry whose canonical key matches `root`, or `bootstrap`
+    /// when `root` is `None` or matches no registered workspace — the same
+    /// fall-back policy as [`route_filetree_query`], so a card bound to a
+    /// per-session project diffs that project while the dev-loop / unbound
+    /// case diffs the bootstrap `--source-tree`. Unlike the FILETREE path,
+    /// a diff has no per-workspace channel; the caller runs the diff against
+    /// the returned entry's `project_dir` directly.
+    pub fn resolve_diff_target(
+        &self,
+        root: Option<&Path>,
+        bootstrap: &Arc<WorkspaceEntry>,
+    ) -> Arc<WorkspaceEntry> {
+        root.and_then(|p| self.find_entry_by_path(p))
+            .unwrap_or_else(|| Arc::clone(bootstrap))
+    }
+
     /// Decrement the refcount for `key` and, if it reaches zero, fire
     /// the entry's cancel token, remove it from the map, and drop the
     /// `Arc<WorkspaceEntry>`. The spawned tasks (file watcher, filesystem,
@@ -627,6 +645,64 @@ mod tests {
 
         drop(entry);
         drop(found);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    // ---- resolve_diff_target ([#step-10a] /diff routing) ----
+
+    #[tokio::test]
+    async fn test_resolve_diff_target_matches_registered_root() {
+        let bootstrap_dir = TempDir::new().expect("bootstrap tempdir");
+        let card_dir = TempDir::new().expect("card tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+
+        let bootstrap = registry
+            .get_or_create(bootstrap_dir.path(), cancel.clone())
+            .expect("bootstrap get_or_create");
+        let card = registry
+            .get_or_create(card_dir.path(), cancel.clone())
+            .expect("card get_or_create");
+
+        let resolved = registry.resolve_diff_target(Some(card_dir.path()), &bootstrap);
+        assert!(
+            Arc::ptr_eq(&resolved, &card),
+            "a known root must resolve to its own workspace, not bootstrap",
+        );
+
+        drop(bootstrap);
+        drop(card);
+        drop(resolved);
+        drain_and_drop(registry, cancel).await;
+    }
+
+    #[tokio::test]
+    async fn test_resolve_diff_target_falls_back_to_bootstrap() {
+        let bootstrap_dir = TempDir::new().expect("bootstrap tempdir");
+        let cancel = CancellationToken::new();
+        let registry = WorkspaceRegistry::new_for_test();
+        let bootstrap = registry
+            .get_or_create(bootstrap_dir.path(), cancel.clone())
+            .expect("bootstrap get_or_create");
+
+        // Unknown root → bootstrap.
+        let unknown = TempDir::new().expect("unknown tempdir");
+        let by_unknown = registry.resolve_diff_target(Some(unknown.path()), &bootstrap);
+        assert!(
+            Arc::ptr_eq(&by_unknown, &bootstrap),
+            "an unregistered root must fall back to bootstrap",
+        );
+
+        // Absent root → bootstrap.
+        let by_none = registry.resolve_diff_target(None, &bootstrap);
+        assert!(
+            Arc::ptr_eq(&by_none, &bootstrap),
+            "a missing root must fall back to bootstrap",
+        );
+
+        drop(bootstrap);
+        drop(by_unknown);
+        drop(by_none);
         drain_and_drop(registry, cancel).await;
     }
 

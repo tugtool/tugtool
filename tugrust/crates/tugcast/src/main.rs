@@ -361,6 +361,13 @@ async fn main() {
     // crash. Per `roadmap/dev-atoms.md#step-pre-4`.
     let (ft_response_tx, _) = broadcast::channel::<Frame>(64);
 
+    // Shared GIT_DIFF-response broadcast channel ([#step-10a]). The
+    // GIT_DIFF_QUERY adapter (below) publishes one single-shot
+    // `GitDiffSnapshot` here per `/diff` request; the router fans it out to
+    // every client and JS filters by `request_id` + `workspace_key`. A small
+    // buffer suffices — `/diff` is a user-initiated, infrequent action.
+    let (gd_response_tx, _) = broadcast::channel::<Frame>(16);
+
     // Create the bootstrap WorkspaceRegistry. In W1 this holds exactly one
     // entry (the startup `--source-tree`); W2 adds per-session `get_or_create`
     // calls from AgentSupervisor::spawn_session_worker. The registry owns
@@ -410,6 +417,59 @@ async fn main() {
                     );
                 }
             }
+        }
+    });
+
+    // Adapter: router sends raw Frames on GIT_DIFF_QUERY ([#step-10a]). Parse
+    // `{root, requestId}`, resolve the workspace the diff belongs to (the
+    // card's project dir — the Z4B chip's dir — falling back to bootstrap
+    // exactly like the FILETREE adapter), then run a single `git diff HEAD`
+    // there and broadcast the `GitDiffSnapshot` on GIT_DIFF. Each request is
+    // serviced in its own task so a slow git invocation for one card never
+    // head-of-line-blocks another's `/diff`.
+    let (gd_input_tx, mut gd_input_rx) = mpsc::channel::<Frame>(16);
+    let gd_registry = Arc::clone(&registry);
+    let gd_bootstrap = Arc::clone(&bootstrap);
+    let gd_response_tx_loop = gd_response_tx.clone();
+    tokio::spawn(async move {
+        #[derive(serde::Deserialize)]
+        struct RawDiffQuery {
+            root: Option<String>,
+            #[serde(rename = "requestId")]
+            request_id: Option<String>,
+        }
+        while let Some(frame) = gd_input_rx.recv().await {
+            let raw = match serde_json::from_slice::<RawDiffQuery>(&frame.payload) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        payload_len = frame.payload.len(),
+                        "GIT_DIFF_QUERY: malformed JSON payload"
+                    );
+                    continue;
+                }
+            };
+            let root_pb = raw.root.map(PathBuf::from);
+            let entry = gd_registry.resolve_diff_target(root_pb.as_deref(), &gd_bootstrap);
+            let request_id = raw.request_id.unwrap_or_default();
+            let response_tx = gd_response_tx_loop.clone();
+            tokio::spawn(async move {
+                let snapshot = crate::feeds::git::build_git_diff_snapshot(
+                    &entry.project_dir,
+                    request_id,
+                    entry.workspace_key.as_ref(),
+                )
+                .await;
+                match serde_json::to_vec(&snapshot) {
+                    Ok(json) => {
+                        let _ = response_tx.send(Frame::new(FeedId::GIT_DIFF, json));
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "GIT_DIFF: failed to serialize response");
+                    }
+                }
+            });
         }
     });
 
@@ -665,6 +725,7 @@ async fn main() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
+    feed_router.register_input(FeedId::GIT_DIFF_QUERY, gd_input_tx);
 
     // Attach the supervisor to the router so `handle_client` can intercept
     // session-lifecycle CONTROL frames and cross-check CODE_INPUT P5
@@ -715,7 +776,7 @@ async fn main() {
     // `ClientState::Live` and forwards every frame to the socket. JS
     // filters by `workspace_key` to dispatch responses to the right
     // card. Per `roadmap/dev-atoms.md#step-pre-4`.
-    feed_router.add_broadcast_senders(vec![ft_response_tx]);
+    feed_router.add_broadcast_senders(vec![ft_response_tx, gd_response_tx]);
 
     // Filesystem, filetree, and git feed tasks are owned by the
     // WorkspaceRegistry's bootstrap entry — spawned inside

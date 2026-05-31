@@ -13,7 +13,9 @@ use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use tugcast_core::types::{FileStatus, GitStatus};
+use tugcast_core::types::{
+    FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitStatus,
+};
 use tugcast_core::{FeedId, Frame, SnapshotFeed};
 
 use super::code::splice_workspace_key;
@@ -242,6 +244,202 @@ impl SnapshotFeed for GitFeed {
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Single-shot `git diff HEAD` sourcing for the `/diff` sheet ([#step-10a])
+// ---------------------------------------------------------------------------
+
+/// The ref the working tree is diffed against for `/diff`. Claude Code's
+/// `/diff` shows "Uncommitted changes (git diff HEAD)"; we match it.
+const GIT_DIFF_BASE: &str = "HEAD";
+
+/// Run `git diff HEAD` in `repo_dir` and assemble a single-shot
+/// [`GitDiffSnapshot`] for a `/diff` request.
+///
+/// The diff is computed in the project dir tugcast already keys git by (the
+/// dir behind the Z4B GIT-status chip). Rename detection is on (`-M`),
+/// colorization off, and `core.quotepath=false` so non-ASCII paths arrive
+/// literal. The `total_*` summary is derived from the parsed files so the
+/// header totals always equal the sum the client renders.
+///
+/// On a git error — most commonly a repository with no commits, where `HEAD`
+/// does not resolve — the snapshot is empty (`file_count = 0`); the sheet
+/// shows its "no changes" state rather than surfacing a raw git failure.
+pub async fn build_git_diff_snapshot(
+    repo_dir: &Path,
+    request_id: String,
+    workspace_key: &str,
+) -> GitDiffSnapshot {
+    let files = match fetch_git_diff(repo_dir).await {
+        Some(output) => parse_git_diff(&output),
+        None => Vec::new(),
+    };
+    let total_added = files.iter().map(|f| f.added).sum();
+    let total_removed = files.iter().map(|f| f.removed).sum();
+    GitDiffSnapshot {
+        request_id,
+        workspace_key: workspace_key.to_string(),
+        base: GIT_DIFF_BASE.to_string(),
+        file_count: files.len() as u32,
+        total_added,
+        total_removed,
+        files,
+    }
+}
+
+/// Fetch the combined `git diff HEAD` output for the working tree. Returns
+/// `None` (and logs) on a non-zero exit or spawn failure.
+async fn fetch_git_diff(repo_dir: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args([
+            "-C",
+            &repo_dir.to_string_lossy(),
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--no-color",
+            "-M",
+            GIT_DIFF_BASE,
+        ])
+        .output()
+        .await;
+
+    match output {
+        Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).into_owned()),
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            warn!(stderr = %stderr.trim_end(), "git diff command failed");
+            None
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to execute git diff");
+            None
+        }
+    }
+}
+
+/// Split combined `git diff` output into one [`GitDiffFile`] per file.
+///
+/// Files are delimited by `diff --git ` header lines (git emits exactly one
+/// per file pair, including pure renames and binary files). Each file's
+/// `unified` text is its chunk verbatim; status, paths, and `+`/`-` counts
+/// are derived per [`parse_diff_chunk`].
+pub fn parse_git_diff(output: &str) -> Vec<GitDiffFile> {
+    let mut files = Vec::new();
+    let mut chunk: Option<Vec<&str>> = None;
+    for line in output.lines() {
+        if line.starts_with("diff --git ") {
+            if let Some(lines) = chunk.take() {
+                files.push(parse_diff_chunk(&lines));
+            }
+            chunk = Some(vec![line]);
+        } else if let Some(lines) = chunk.as_mut() {
+            lines.push(line);
+        }
+        // Lines before the first `diff --git` (none for plain `git diff`) are
+        // ignored — there is no chunk to attach them to.
+    }
+    if let Some(lines) = chunk.take() {
+        files.push(parse_diff_chunk(&lines));
+    }
+    files
+}
+
+/// Strip git's `a/` or `b/` path prefix (after a `--- `/`+++ ` marker).
+fn strip_ab_prefix(s: &str) -> &str {
+    s.strip_prefix("a/").or_else(|| s.strip_prefix("b/")).unwrap_or(s)
+}
+
+/// Parse the new-side path out of a `diff --git a/<old> b/<new>` header,
+/// the only path source for a binary file (no `---`/`+++` lines). Best-effort
+/// for paths without spaces — the overwhelming common case; renames and text
+/// files take the more precise `rename to` / `+++ b/` paths instead.
+fn path_from_diff_header(header: &str) -> Option<String> {
+    let rest = header.strip_prefix("diff --git ")?;
+    let idx = rest.rfind(" b/")?;
+    Some(rest[idx + 3..].to_string())
+}
+
+/// Derive one file's [`GitDiffFile`] from its chunk lines (the first line is
+/// the `diff --git` header). Status comes from git's metadata markers; paths
+/// from the `rename to`/`+++ b/`/`--- a/` lines (falling back to the header);
+/// `added`/`removed` from the `+`/`-` hunk-body lines.
+fn parse_diff_chunk(lines: &[&str]) -> GitDiffFile {
+    let header = lines.first().copied().unwrap_or("");
+    let mut status = GitDiffFileStatus::Modified;
+    let mut rename_from: Option<String> = None;
+    let mut rename_to: Option<String> = None;
+    let mut plus_path: Option<String> = None;
+    let mut minus_path: Option<String> = None;
+    let mut binary = false;
+    let mut added = 0u32;
+    let mut removed = 0u32;
+    let mut in_hunk = false;
+
+    for &line in lines.iter().skip(1) {
+        if line.starts_with("new file mode") {
+            status = GitDiffFileStatus::Added;
+        } else if line.starts_with("deleted file mode") {
+            status = GitDiffFileStatus::Deleted;
+        } else if let Some(p) = line.strip_prefix("rename from ") {
+            status = GitDiffFileStatus::Renamed;
+            rename_from = Some(p.to_string());
+        } else if let Some(p) = line.strip_prefix("rename to ") {
+            status = GitDiffFileStatus::Renamed;
+            rename_to = Some(p.to_string());
+        } else if line.starts_with("Binary files ") {
+            binary = true;
+        } else if let Some(p) = line.strip_prefix("--- ") {
+            if p != "/dev/null" {
+                minus_path = Some(strip_ab_prefix(p).to_string());
+            }
+        } else if let Some(p) = line.strip_prefix("+++ ") {
+            if p != "/dev/null" {
+                plus_path = Some(strip_ab_prefix(p).to_string());
+            }
+        } else if line.starts_with("@@") {
+            in_hunk = true;
+        } else if in_hunk && line.starts_with('+') {
+            added += 1;
+        } else if in_hunk && line.starts_with('-') {
+            removed += 1;
+        }
+    }
+
+    let (path, old_path) = if status == GitDiffFileStatus::Renamed {
+        (
+            rename_to.or_else(|| plus_path.clone()).unwrap_or_default(),
+            rename_from.or_else(|| minus_path.clone()),
+        )
+    } else {
+        (
+            plus_path
+                .or(minus_path)
+                .or_else(|| path_from_diff_header(header))
+                .unwrap_or_default(),
+            None,
+        )
+    };
+
+    let unified = if lines.is_empty() {
+        String::new()
+    } else {
+        // Reconstruct the chunk verbatim with a trailing newline; the client
+        // parser tolerates the `diff --git`/`index` preamble and a trailing
+        // blank line.
+        format!("{}\n", lines.join("\n"))
+    };
+
+    GitDiffFile {
+        path,
+        old_path,
+        status,
+        added,
+        removed,
+        binary,
+        unified,
     }
 }
 
@@ -593,5 +791,236 @@ mod tests {
 
         cancel.cancel();
         let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
+    }
+
+    // -- git diff sourcing ([#step-10a]) --
+
+    const MODIFIED: &str = "\
+diff --git a/src/main.rs b/src/main.rs
+index 1234567..89abcde 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,3 +1,4 @@
+ fn main() {
+-    println!(\"old\");
++    println!(\"new\");
++    println!(\"added\");
+ }
+";
+
+    const ADDED: &str = "\
+diff --git a/new.txt b/new.txt
+new file mode 100644
+index 0000000..3b18e51
+--- /dev/null
++++ b/new.txt
+@@ -0,0 +1,2 @@
++line one
++line two
+";
+
+    const DELETED: &str = "\
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+index 3b18e51..0000000
+--- a/gone.txt
++++ /dev/null
+@@ -1,2 +0,0 @@
+-bye one
+-bye two
+";
+
+    const RENAMED_PURE: &str = "\
+diff --git a/old_name.txt b/new_name.txt
+similarity index 100%
+rename from old_name.txt
+rename to new_name.txt
+";
+
+    const RENAMED_EDITED: &str = "\
+diff --git a/a.txt b/b.txt
+similarity index 80%
+rename from a.txt
+rename to b.txt
+index 1111111..2222222 100644
+--- a/a.txt
++++ b/b.txt
+@@ -1,2 +1,2 @@
+ keep
+-old line
++new line
+";
+
+    const BINARY: &str = "\
+diff --git a/img.png b/img.png
+index 1111111..2222222 100644
+Binary files a/img.png and b/img.png differ
+";
+
+    #[test]
+    fn test_parse_diff_modified() {
+        let files = parse_git_diff(MODIFIED);
+        assert_eq!(files.len(), 1);
+        let f = &files[0];
+        assert_eq!(f.path, "src/main.rs");
+        assert_eq!(f.old_path, None);
+        assert_eq!(f.status, GitDiffFileStatus::Modified);
+        assert_eq!(f.added, 2);
+        assert_eq!(f.removed, 1);
+        assert!(!f.binary);
+        // The unified chunk is preserved verbatim (preamble through hunks).
+        assert!(f.unified.starts_with("diff --git a/src/main.rs b/src/main.rs"));
+        assert!(f.unified.contains("@@ -1,3 +1,4 @@"));
+    }
+
+    #[test]
+    fn test_parse_diff_added() {
+        let files = parse_git_diff(ADDED);
+        assert_eq!(files.len(), 1);
+        let f = &files[0];
+        assert_eq!(f.path, "new.txt");
+        assert_eq!(f.status, GitDiffFileStatus::Added);
+        assert_eq!(f.added, 2);
+        assert_eq!(f.removed, 0);
+    }
+
+    #[test]
+    fn test_parse_diff_deleted() {
+        let files = parse_git_diff(DELETED);
+        assert_eq!(files.len(), 1);
+        let f = &files[0];
+        // Path comes from the `--- a/…` side; `+++ /dev/null` is skipped.
+        assert_eq!(f.path, "gone.txt");
+        assert_eq!(f.status, GitDiffFileStatus::Deleted);
+        assert_eq!(f.added, 0);
+        assert_eq!(f.removed, 2);
+    }
+
+    #[test]
+    fn test_parse_diff_renamed_pure() {
+        let files = parse_git_diff(RENAMED_PURE);
+        assert_eq!(files.len(), 1);
+        let f = &files[0];
+        assert_eq!(f.path, "new_name.txt");
+        assert_eq!(f.old_path.as_deref(), Some("old_name.txt"));
+        assert_eq!(f.status, GitDiffFileStatus::Renamed);
+        assert_eq!(f.added, 0);
+        assert_eq!(f.removed, 0);
+    }
+
+    #[test]
+    fn test_parse_diff_renamed_with_edits() {
+        let files = parse_git_diff(RENAMED_EDITED);
+        assert_eq!(files.len(), 1);
+        let f = &files[0];
+        assert_eq!(f.path, "b.txt");
+        assert_eq!(f.old_path.as_deref(), Some("a.txt"));
+        assert_eq!(f.status, GitDiffFileStatus::Renamed);
+        assert_eq!(f.added, 1);
+        assert_eq!(f.removed, 1);
+    }
+
+    #[test]
+    fn test_parse_diff_binary() {
+        let files = parse_git_diff(BINARY);
+        assert_eq!(files.len(), 1);
+        let f = &files[0];
+        // No `---`/`+++` lines — path falls back to the `diff --git` header.
+        assert_eq!(f.path, "img.png");
+        assert_eq!(f.status, GitDiffFileStatus::Modified);
+        assert!(f.binary);
+        assert_eq!(f.added, 0);
+        assert_eq!(f.removed, 0);
+    }
+
+    #[test]
+    fn test_parse_diff_multifile_order_preserved() {
+        let combined = format!("{MODIFIED}{ADDED}{DELETED}");
+        let files = parse_git_diff(&combined);
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, vec!["src/main.rs", "new.txt", "gone.txt"]);
+        assert_eq!(files[0].status, GitDiffFileStatus::Modified);
+        assert_eq!(files[1].status, GitDiffFileStatus::Added);
+        assert_eq!(files[2].status, GitDiffFileStatus::Deleted);
+    }
+
+    #[test]
+    fn test_parse_diff_empty() {
+        assert!(parse_git_diff("").is_empty());
+    }
+
+    /// Run a git subcommand in `repo`, asserting success.
+    async fn git_in(repo: &Path, args: &[&str]) {
+        let mut full = vec!["-C", repo.to_str().unwrap()];
+        full.extend_from_slice(args);
+        let out = Command::new("git").args(&full).output().await.unwrap();
+        assert!(
+            out.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// Initialize a committed git repo with three tracked files.
+    async fn init_diff_fixture_repo() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().to_path_buf();
+        git_in(&repo, &["init"]).await;
+        git_in(&repo, &["config", "user.name", "test"]).await;
+        git_in(&repo, &["config", "user.email", "test@test.com"]).await;
+        fs::write(repo.join("keep.txt"), "v1\n").unwrap();
+        fs::write(repo.join("del.txt"), "delete me\n").unwrap();
+        fs::write(repo.join("ren_src.txt"), "rename me\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        git_in(&repo, &["commit", "-m", "init"]).await;
+        temp
+    }
+
+    #[tokio::test]
+    async fn test_build_git_diff_snapshot_covers_all_statuses() {
+        let temp = init_diff_fixture_repo().await;
+        let repo = temp.path().to_path_buf();
+
+        // Modify, delete, rename, and add — one of each status.
+        fs::write(repo.join("keep.txt"), "v2\n").unwrap();
+        git_in(&repo, &["rm", "del.txt"]).await;
+        git_in(&repo, &["mv", "ren_src.txt", "ren_dst.txt"]).await;
+        fs::write(repo.join("new.txt"), "fresh line\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+
+        let snapshot =
+            build_git_diff_snapshot(&repo, "req-42".to_string(), "ws-key").await;
+
+        assert_eq!(snapshot.request_id, "req-42");
+        assert_eq!(snapshot.workspace_key, "ws-key");
+        assert_eq!(snapshot.base, "HEAD");
+        assert_eq!(snapshot.file_count, 4, "modify + delete + rename + add");
+        assert_eq!(snapshot.file_count as usize, snapshot.files.len());
+
+        let by_path = |p: &str| snapshot.files.iter().find(|f| f.path == p).unwrap();
+        assert_eq!(by_path("keep.txt").status, GitDiffFileStatus::Modified);
+        assert_eq!(by_path("new.txt").status, GitDiffFileStatus::Added);
+        assert_eq!(by_path("del.txt").status, GitDiffFileStatus::Deleted);
+        let renamed = by_path("ren_dst.txt");
+        assert_eq!(renamed.status, GitDiffFileStatus::Renamed);
+        assert_eq!(renamed.old_path.as_deref(), Some("ren_src.txt"));
+
+        // Summary totals equal the sum across files (header == body).
+        let summed_added: u32 = snapshot.files.iter().map(|f| f.added).sum();
+        let summed_removed: u32 = snapshot.files.iter().map(|f| f.removed).sum();
+        assert_eq!(snapshot.total_added, summed_added);
+        assert_eq!(snapshot.total_removed, summed_removed);
+    }
+
+    #[tokio::test]
+    async fn test_build_git_diff_snapshot_clean_tree_is_empty() {
+        let temp = init_diff_fixture_repo().await;
+        let snapshot =
+            build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws").await;
+        assert_eq!(snapshot.file_count, 0);
+        assert!(snapshot.files.is_empty());
+        assert_eq!(snapshot.total_added, 0);
+        assert_eq!(snapshot.total_removed, 0);
     }
 }
