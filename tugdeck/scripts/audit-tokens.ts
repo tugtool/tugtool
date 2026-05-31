@@ -215,7 +215,7 @@ function extractAliases(css: string): AliasMap {
 function extractBodyBlocks(css: string): string[] {
   const blocks: string[] = [];
   // Match only standalone body {} selectors — not class names ending in "body"
-  // (e.g., .gtg-preview-body). The body selector must be preceded by whitespace or
+  // (e.g., .gta-preview-body). The body selector must be preceded by whitespace or
   // start-of-string, not by a word character or hyphen.
   const bodyRe = /(?:^|\s)body\s*\{/gm;
   let m: RegExpExecArray | null;
@@ -312,7 +312,7 @@ function parseRules(css: string): CssRule[] {
   const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
 
   // Remove body {} blocks (alias declarations).
-  // Use (?<![.#\w-]) to avoid matching class names that end in "body" (e.g., .gtg-preview-body).
+  // Use (?<![.#\w-]) to avoid matching class names that end in "body" (e.g., .gta-preview-body).
   // The body selector must be at the start of a line or preceded only by whitespace.
   const noBody = stripped.replace(/(?:^|\n)\s*body\s*\{[^}]*\}/gm, "");
 

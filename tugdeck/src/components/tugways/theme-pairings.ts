@@ -1905,7 +1905,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   },
 
   // --- Accent-subtle as background — active UI states ---
-  // fg-onAccent on accent-subtle: active preset button (gtg-preset-btn--active)
+  // fg-onAccent on accent-subtle: active preset button (gta-preset-btn--active)
   // accent-subtle has alpha 15%; parentSurface composites it over surface-default
   // before contrast measurement. [D04]
   {

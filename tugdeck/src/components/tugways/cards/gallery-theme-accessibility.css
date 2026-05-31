@@ -6,18 +6,18 @@
  * @tug-pairings
  * | Element                                          | Surface                                          | Role         | Context                              |
  * |--------------------------------------------------|--------------------------------------------------|--------------|--------------------------------------|
- * | --tug7-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gtg-token-value (color)             |
- * | --tug7-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug7-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | informational | .gtg-dash-badge--pass (color)        |
- * | --tug7-element-tone-border-normal-success-rest (element-tone-border-normal-success-rest) | --tug7-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | informational | .gtg-dash-badge--pass (border)       |
- * | --tug7-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug7-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | informational | .gtg-dash-badge--marginal (color)    |
- * | --tug7-element-tone-border-normal-caution-rest (element-tone-border-normal-caution-rest) | --tug7-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | informational | .gtg-dash-badge--marginal (border)   |
- * | --tug7-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug7-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gtg-dash-badge--fail (color)        |
- * | --tug7-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug7-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gtg-dash-badge--fail (border)       |
- * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | informational | .gtg-doc-source-label (color)        |
- * | --tug7-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | informational | .gtg-doc-source-label (border)       |
+ * | --tug7-element-global-text-normal-subtle-rest (element-global-text-normal-subtle-rest) | --tug7-surface-global-primary-normal-default-rest (surface-global-primary-normal-default-rest) | informational | .gta-token-value (color)             |
+ * | --tug7-element-tone-text-normal-success-rest (element-tone-text-normal-success-rest) | --tug7-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | informational | .gta-dash-badge--pass (color)        |
+ * | --tug7-element-tone-border-normal-success-rest (element-tone-border-normal-success-rest) | --tug7-surface-tone-primary-normal-success-rest (surface-tone-primary-normal-success-rest) | informational | .gta-dash-badge--pass (border)       |
+ * | --tug7-element-tone-text-normal-caution-rest (element-tone-text-normal-caution-rest) | --tug7-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | informational | .gta-dash-badge--marginal (color)    |
+ * | --tug7-element-tone-border-normal-caution-rest (element-tone-border-normal-caution-rest) | --tug7-surface-tone-primary-normal-caution-rest (surface-tone-primary-normal-caution-rest) | informational | .gta-dash-badge--marginal (border)   |
+ * | --tug7-element-tone-text-normal-danger-rest (element-tone-text-normal-danger-rest) | --tug7-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gta-dash-badge--fail (color)        |
+ * | --tug7-element-tone-border-normal-danger-rest (element-tone-border-normal-danger-rest) | --tug7-surface-tone-primary-normal-danger-rest (surface-tone-primary-normal-danger-rest) | informational | .gta-dash-badge--fail (border)       |
+ * | --tug7-element-global-text-normal-muted-rest (element-global-text-normal-muted-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | informational | .gta-doc-source-label (color)        |
+ * | --tug7-element-global-border-normal-muted-rest (element-global-border-normal-muted-rest) | --tug7-surface-global-primary-normal-sunken-rest (surface-global-primary-normal-sunken-rest) | informational | .gta-doc-source-label (border)       |
  */
 
-.gtg-content {
+.gta-content {
   gap: 10px;
   padding: 12px;
   position: relative;
@@ -27,7 +27,7 @@
    Header row: theme name + source label + accessibility badge
    ========================================================================= */
 
-.gtg-header-row {
+.gta-header-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -39,14 +39,14 @@
    ========================================================================= */
 
 /* Outer container for all three subsections */
-.gtg-erp {
+.gta-erp {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
 /* Each subsection (buttons / badges / selection controls) */
-.gtg-erp-subsection {
+.gta-erp-subsection {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -54,7 +54,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-erp-subtitle {
+.gta-erp-subtitle {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -64,7 +64,7 @@
 }
 
 /* Buttons: 1 row-label + 4 role columns */
-.gtg-erp-button-grid {
+.gta-erp-button-grid {
   display: grid;
   grid-template-columns: 52px repeat(4, minmax(48px, 1fr));
   gap: 4px;
@@ -72,7 +72,7 @@
 }
 
 /* Badges: 1 row-label + 7 role columns */
-.gtg-erp-badge-grid {
+.gta-erp-badge-grid {
   display: grid;
   grid-template-columns: 52px repeat(7, minmax(48px, 1fr));
   gap: 4px;
@@ -80,7 +80,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-erp-col-label {
+.gta-erp-col-label {
   font-size: 9px;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -90,7 +90,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-erp-row-label {
+.gta-erp-row-label {
   font-size: 9px;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -100,14 +100,14 @@
 }
 
 /* Individual cell — centers the component */
-.gtg-erp-cell {
+.gta-erp-cell {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 /* Selection controls row: one cell per role */
-.gtg-erp-selection-row {
+.gta-erp-selection-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -115,7 +115,7 @@
 }
 
 /* Each selection cell: role label + checkbox + switch stacked */
-.gtg-erp-selection-cell {
+.gta-erp-selection-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -132,7 +132,7 @@
    Token preview grid
    ========================================================================= */
 
-.gtg-token-grid {
+.gta-token-grid {
   display: grid;
   grid-template-columns: 1fr 40px minmax(120px, 1fr);
   gap: 2px 10px;
@@ -145,7 +145,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-token-header {
+.gta-token-header {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -161,7 +161,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-token-name {
+.gta-token-name {
   font-size: 10px;
   font-family: var(--tug-font-family-mono, monospace);
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -173,7 +173,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-token-swatch {
+.gta-token-swatch {
   width: 24px;
   height: 20px;
   border-radius: 3px;
@@ -184,7 +184,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-token-value {
+.gta-token-value {
   font-size: 10px;
   font-family: var(--tug-font-family-mono, monospace);
   color: var(--tug7-element-global-text-normal-subtle-rest);
@@ -200,7 +200,7 @@
    ========================================================================= */
 
 /* Summary bar — "N/M pairs pass contrast" */
-.gtg-dash-summary {
+.gta-dash-summary {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -214,13 +214,13 @@
   user-select: none;
 }
 
-.gtg-dash-summary-count {
+.gta-dash-summary-count {
   font-weight: 600;
   font-family: var(--tug-font-family-mono, monospace);
 }
 
 /* Scrollable grid container */
-.gtg-dash-grid {
+.gta-dash-grid {
   display: grid;
   grid-template-columns: 24px 24px 1fr 1fr 72px 72px 72px;
   gap: 2px 8px;
@@ -233,7 +233,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-dash-col-header {
+.gta-dash-col-header {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -250,7 +250,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-dash-swatch {
+.gta-dash-swatch {
   width: 20px;
   height: 20px;
   border-radius: 3px;
@@ -261,7 +261,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-dash-token-name {
+.gta-dash-token-name {
   font-size: 10px;
   font-family: var(--tug-font-family-mono, monospace);
   color: var(--tug7-element-global-text-normal-muted-rest);
@@ -273,7 +273,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-dash-ratio {
+.gta-dash-ratio {
   font-size: 10px;
   font-family: var(--tug-font-family-mono, monospace);
   color: var(--tug7-element-global-text-normal-subtle-rest);
@@ -283,7 +283,7 @@
 }
 
 /* Pass/fail badge */
-.gtg-dash-badge {
+.gta-dash-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -299,28 +299,28 @@
 }
 
 /* Green — pass both thresholds */
-.gtg-dash-badge--pass {
+.gta-dash-badge--pass {
   background-color: var(--tug7-surface-tone-primary-normal-success-rest);
   color: var(--tug7-element-tone-text-normal-success-rest);
   border: 1px solid var(--tug7-element-tone-border-normal-success-rest);
 }
 
 /* Yellow — marginal (within 0.5 of threshold) */
-.gtg-dash-badge--marginal {
+.gta-dash-badge--marginal {
   background-color: var(--tug7-surface-tone-primary-normal-caution-rest);
   color: var(--tug7-element-tone-text-normal-caution-rest);
   border: 1px solid var(--tug7-element-tone-border-normal-caution-rest);
 }
 
 /* Red — fail */
-.gtg-dash-badge--fail {
+.gta-dash-badge--fail {
   background-color: var(--tug7-surface-tone-primary-normal-danger-rest);
   color: var(--tug7-element-tone-text-normal-danger-rest);
   border: 1px solid var(--tug7-element-tone-border-normal-danger-rest);
 }
 
 /* Decorative — no requirement, shown as neutral */
-.gtg-dash-badge--decorative {
+.gta-dash-badge--decorative {
   background-color: var(--tug7-surface-global-primary-normal-raised-rest);
   color: var(--tug7-element-global-text-normal-muted-rest);
   border: 1px solid var(--tug7-element-global-border-normal-default-rest);
@@ -330,7 +330,7 @@
    CVD preview strip
    ========================================================================= */
 
-.gtg-cvd-strip {
+.gta-cvd-strip {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -342,7 +342,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-cvd-col-headers {
+.gta-cvd-col-headers {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -351,7 +351,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-cvd-token-header {
+.gta-cvd-token-header {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -364,7 +364,7 @@
 }
 
 /* Each CVD type row */
-.gtg-cvd-row {
+.gta-cvd-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -372,7 +372,7 @@
 }
 
 /* Label cell (type name + optional warning badge) */
-.gtg-cvd-type-label-cell {
+.gta-cvd-type-label-cell {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -381,7 +381,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-cvd-type-label {
+.gta-cvd-type-label {
   font-size: 10px;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
@@ -389,7 +389,7 @@
   white-space: nowrap;
 }
 
-.gtg-cvd-warn-badge {
+.gta-cvd-warn-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -406,7 +406,7 @@
 }
 
 /* Pair of swatches for one semantic token (original + simulated) */
-.gtg-cvd-swatch-pair {
+.gta-cvd-swatch-pair {
   display: flex;
   gap: 2px;
   width: 80px;
@@ -415,7 +415,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-cvd-swatch {
+.gta-cvd-swatch {
   width: 36px;
   height: 28px;
   border-radius: 3px;
@@ -424,7 +424,7 @@
   content-visibility: auto;
 }
 
-.gtg-cvd-swatch--missing {
+.gta-cvd-swatch--missing {
   background-color: var(--tug7-surface-global-primary-normal-raised-rest);
   opacity: 0.4;
 }
@@ -433,7 +433,7 @@
    Auto-fix panel
    ========================================================================= */
 
-.gtg-autofix-panel {
+.gta-autofix-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -443,14 +443,14 @@
    Contrast diagnostics panel (Step 5)
    ========================================================================= */
 
-.gtg-diag-section {
+.gta-diag-section {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-diag-section-title {
+.gta-diag-section-title {
   font-size: 11px;
   font-family: var(--tug-font-family-sans);
   font-weight: 600;
@@ -458,7 +458,7 @@
   user-select: none;
 }
 
-.gtg-diag-list {
+.gta-diag-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -468,7 +468,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-diag-item {
+.gta-diag-item {
   display: flex;
   flex-direction: row;
   align-items: baseline;
@@ -480,7 +480,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-diag-token {
+.gta-diag-token {
   font-family: var(--tug-font-family-mono, monospace);
   font-size: 10px;
   color: var(--tug7-element-global-text-normal-default-rest);
@@ -491,7 +491,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-diag-detail {
+.gta-diag-detail {
   font-size: 10px;
   color: var(--tug7-element-global-text-normal-muted-rest);
   flex-shrink: 0;
@@ -501,7 +501,7 @@
    Document model header — New/Open buttons + doc info
    ========================================================================= */
 
-.gtg-doc-info {
+.gta-doc-info {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -510,7 +510,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gtg-doc-name {
+.gta-doc-name {
   font-size: 12px;
   font-family: var(--tug-font-family-sans);
   font-weight: 600;
@@ -521,7 +521,7 @@
 }
 
 /* Read-only source label (e.g. "live css") */
-.gtg-doc-source-label {
+.gta-doc-source-label {
   font-size: 10px;
   font-family: var(--tug-font-family-sans);
   font-weight: 500;
@@ -535,7 +535,7 @@
   letter-spacing: 0.04em;
 }
 
-.gtg-doc-readonly-badge {
+.gta-doc-readonly-badge {
   font-size: 10px;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-muted-rest);
