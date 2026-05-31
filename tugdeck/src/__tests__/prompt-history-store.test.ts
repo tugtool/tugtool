@@ -370,3 +370,67 @@ describe("PromptHistoryStore.loadSession", () => {
     expect(store.getSnapshot().totalEntries).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// truncateSession() — /rewind history rewind ([#step-7-3])
+// ---------------------------------------------------------------------------
+
+describe("PromptHistoryStore.truncateSession", () => {
+  afterEach(() => {
+    mock.restore();
+    _entryCounter = 0;
+  });
+
+  test("keeps the first keepCount entries and drops the tail", () => {
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
+    const store = new PromptHistoryStore();
+    store.push(makeEntry("s", "alpha"));
+    store.push(makeEntry("s", "beta"));
+    store.push(makeEntry("s", "gamma"));
+
+    store.truncateSession("s", 1);
+
+    expect(store.getSnapshot().totalEntries).toBe(1);
+    // The retained entry is "alpha"; the dropped turns no longer recall.
+    const recalled = store.createProvider("s").back(EMPTY_STATE);
+    expect(recalled?.text).toBe("alpha");
+  });
+
+  test("is a no-op when the session already has <= keepCount entries", () => {
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
+    const store = new PromptHistoryStore();
+    let notifications = 0;
+    store.subscribe(() => { notifications++; });
+    store.push(makeEntry("s", "alpha")); // notifications -> 1
+
+    store.truncateSession("s", 5); // already <= 5: no-op
+
+    expect(store.getSnapshot().totalEntries).toBe(1);
+    expect(notifications).toBe(1); // no extra notification
+  });
+
+  test("truncating to 0 clears the session's recall", () => {
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
+    const store = new PromptHistoryStore();
+    store.push(makeEntry("s", "alpha"));
+    store.push(makeEntry("s", "beta"));
+
+    store.truncateSession("s", 0);
+
+    expect(store.getSnapshot().totalEntries).toBe(0);
+    expect(store.createProvider("s").back(EMPTY_STATE)).toBeNull();
+  });
+
+  test("leaves other sessions untouched", () => {
+    globalThis.fetch = (async () => makeResponse(200, {})) as unknown as typeof fetch;
+    const store = new PromptHistoryStore();
+    store.push(makeEntry("s1", "a"));
+    store.push(makeEntry("s1", "b"));
+    store.push(makeEntry("s2", "x"));
+
+    store.truncateSession("s1", 1);
+
+    expect(store.getSnapshot().totalEntries).toBe(2); // s1:1 + s2:1
+    expect(store.createProvider("s2").back(EMPTY_STATE)?.text).toBe("x");
+  });
+});

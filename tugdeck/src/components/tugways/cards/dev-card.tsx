@@ -2041,6 +2041,39 @@ export function DevCardBody({
     codeSessionStore.getSnapshot,
   );
 
+  // `/rewind` ([#step-7-3]): when a conversation/both rewind is applied, rewind
+  // the prompt history alongside the transcript so Cmd-Up/Down stops recalling
+  // the rewound-away prompts. The history is keyed by the stable `tugSessionId`
+  // (a fork doesn't change it), so we truncate it to the retained user-prompt
+  // count — recomputed from the just-truncated transcript, so it's idempotent
+  // and can never drop a prompt the user sent AFTER the rewind. The ref keeps
+  // it to one apply per ack. This is a cross-store coordination effect reacting
+  // to a store transition (not React-state copying — [L02]); `codeSnap` is read
+  // fresh at fire time, which is why it's intentionally out of the deps.
+  const processedRewindRef = useRef<CodeSessionSnapshot["lastRewindResult"]>(null);
+  const lastRewindResult = codeSnap.lastRewindResult;
+  useEffect(() => {
+    if (
+      lastRewindResult === null ||
+      lastRewindResult === processedRewindRef.current
+    ) {
+      return;
+    }
+    processedRewindRef.current = lastRewindResult;
+    if (
+      !lastRewindResult.canRewind ||
+      (lastRewindResult.scope !== "conversation" &&
+        lastRewindResult.scope !== "both")
+    ) {
+      return;
+    }
+    const retainedPrompts = codeSnap.transcript.filter(
+      (t) => t.messages[0]?.kind === "user_message",
+    ).length;
+    historyStore.truncateSession(codeSnap.tugSessionId, retainedPrompts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- codeSnap read fresh at fire time
+  }, [lastRewindResult, historyStore]);
+
   // --- Banner derivation. ---
   // UI-only dismiss: track the `at` timestamp of the last-dismissed error.
   // A new error (different `at`) naturally reappears. The store owns the

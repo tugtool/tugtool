@@ -310,6 +310,34 @@ export class PromptHistoryStore {
   }
 
   /**
+   * Truncate a session's history to its first `keepCount` entries, dropping
+   * the rest — used by `/rewind` ([#step-7-3]) to rewind the prompt history
+   * alongside the transcript: a conversation rewind drops the rewound-away
+   * turns, and their prompts should leave Cmd-Up/Down recall too.
+   *
+   * Idempotent and self-correcting: callers pass the retained user-prompt
+   * count derived from the post-rewind transcript, so a session that already
+   * has `≤ keepCount` entries is a no-op (a re-invocation after the user has
+   * sent fresh prompts can never drop them). Persists the truncated list to
+   * tugbank and notifies subscribers; a no-op skips both.
+   */
+  truncateSession(sessionId: string, keepCount: number): void {
+    const entries = this._sessions.get(sessionId);
+    if (!entries || entries.length <= keepCount) return;
+    entries.splice(keepCount); // keep the first `keepCount`, drop the tail
+    const pending = this._loadPromises.get(sessionId);
+    if (pending) {
+      pending.then(() => {
+        putPromptHistory(sessionId, this._sessions.get(sessionId) ?? []);
+      });
+    } else {
+      putPromptHistory(sessionId, entries);
+    }
+    this._version++;
+    this._notifyListeners();
+  }
+
+  /**
    * Load history entries for a session from tugbank.
    *
    * - Idempotent: returns the cached promise for any concurrent caller

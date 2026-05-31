@@ -33,7 +33,7 @@ const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
 const USER_ROWS = `${CARD} [data-testid="dev-card-transcript-user-body"]`;
 const PICKER_ROWS = `${SHEET} [data-prompt-uuid]`;
-const CONFIRM_CONVERSATION = `${SHEET} [data-testid="rewind-confirm-conversation"]`;
+const REWIND_APPLY = `${SHEET} [data-testid="rewind-apply"]`;
 
 function deckShape() {
   return {
@@ -118,16 +118,20 @@ describe.skipIf(!SHOULD_RUN)("AT0097: /rewind sheet — picker + conversation re
         );
         expect(pickerUuids).toEqual(["uuid-2", "uuid-3"]);
 
-        // Pick the last turn → confirm step.
+        // Pick the last turn — the Rewind button enables once a turn is
+        // selected (scope defaults to Conversation).
         await app.nativeClickAtElement(`${SHEET} [data-prompt-uuid="uuid-3"]`);
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CONFIRM_CONVERSATION)}) !== null`,
+          `(function () {
+             var b = document.querySelector(${JSON.stringify(REWIND_APPLY)});
+             return b !== null && !b.disabled;
+           })()`,
           { timeoutMs: 4000 },
         );
 
-        // Restore conversation → the sheet sends `session_rewind`; simulate the
-        // backend ack so the local L26-safe truncation runs.
-        await app.nativeClickAtElement(CONFIRM_CONVERSATION);
+        // Rewind → the sheet sends `session_rewind` (conversation by default);
+        // simulate the backend ack so the local L26-safe truncation runs.
+        await app.nativeClickAtElement(REWIND_APPLY);
         await app.driveDevSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,

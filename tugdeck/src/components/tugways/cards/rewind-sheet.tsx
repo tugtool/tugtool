@@ -1,38 +1,36 @@
 /**
- * rewind-sheet.tsx — the `/rewind` turn picker + restore-confirm sheet
+ * rewind-sheet.tsx — the `/rewind` turn picker + restore-scope sheet
  * ([#step-7-3]).
  *
  * `/rewind` is a turns-within-this-session picker (NOT the `/resume` sessions
  * chooser — [D05]). {@link useRewindSheet} owns the sheet once at the card
  * level (mirroring {@link useModelPicker}): the dev card wires `openRewindSheet`
  * to its `rewind` `RUN_SLASH_COMMAND` handler and presents it through the
- * shared `cardPickerSheet` host (card-scoped overlay, [D15]).
+ * shared `cardPickerSheet` host as a **wide** card-scoped overlay ([D15]).
  *
- * Two steps in one body (no component-type swap across steps — internal phase
- * branch): a `TugListView` turn picker, then a confirm form with the **three**
- * conditional actions ([#step-7a]): *Restore code and conversation* (both),
- * *Restore conversation* (conversation), *Never mind*. The code option is
- * shown only when the picked turn has a restorable code checkpoint (its lazy
- * `rewind_preview` diff-stat reports `canRewind` with changed files); the
- * restore actions are disabled while claude is busy (rewind requires an idle
- * session — the idle gate is enforced authoritatively by tugcode, mirrored
- * here for UX).
+ * One step, no view switch: a `TugListView` turn picker (rendered with the same
+ * session-option visual as the `/resume` sessions list) above an inline
+ * `TugChoiceGroup` that picks the restore scope — *Conversation* or *Code +
+ * conversation* (the code segment enables only when the selected turn has a
+ * restorable checkpoint, reported by its lazy diff-stat). Cancel / Rewind sit
+ * at the bottom, Rewind as the default (Enter), to the right of Cancel.
  *
- * The per-turn diff-stat is fetched lazily on row focus (not per cell on open
- * — the N+1 trap) and cached in the store snapshot's `rewindPreviews`, read
- * back via `useSyncExternalStore` ([L02]). Applying a rewind sends
- * `session_rewind` ([#step-7-1]/[#step-7-2]); conversation/both fork by
- * default (the silent respawn + the local L26-safe truncation land when the
- * `rewind_result` ack arrives). The sheet dismisses on a successful ack and
- * surfaces the error otherwise.
+ * The per-turn diff-stat is fetched lazily on row selection (not per cell on
+ * open — the N+1 trap) and cached in the store snapshot's `rewindPreviews`,
+ * read via `useSyncExternalStore` ([L02]). Rewinding sends `session_rewind`
+ * ([#step-7-1]/[#step-7-2]); conversation/both fork by default. The sheet
+ * dismisses on a successful `rewind_result` ack and surfaces the error
+ * otherwise (the local L26-safe truncation runs in the store on the ack).
  *
- * Compositional component — composes `TugSheet`, `TugListView`, `TugListRow`,
- * `TugPushButton`; composed children keep their own tokens ([L20]).
+ * Compositional — composes `TugSheet`, `TugListView`, `TugChoiceGroup`,
+ * `TugPushButton`; composed children keep their own tokens ([L20]). The
+ * `TugChoiceGroup` is a control: it emits `selectValue` through the responder
+ * chain, captured by a `useResponderForm` binding here ([L11]).
  *
  * Laws: [L02] store reads via the store API, [L06] appearance via CSS,
- *       [L19] authoring guide, [L20] composed children keep tokens,
- *       [L26] the picker rows reconcile through a module-constant
- *       `cellRenderers` (never inline lambdas) so they stay mount-stable.
+ *       [L11] controls emit / the form captures, [L19] authoring guide,
+ *       [L20] composed children keep tokens, [L26] picker rows reconcile
+ *       through a module-constant `cellRenderers` (never inline lambdas).
  * Decisions: [D05] sheet-not-shared, [D15] pane sheets are overlays.
  *
  * @module components/tugways/cards/rewind-sheet
@@ -43,6 +41,7 @@ import "./rewind-sheet.css";
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -50,7 +49,11 @@ import React, {
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
-import { TugListRow } from "@/components/tugways/tug-list-row";
+import {
+  TugChoiceGroup,
+  type TugChoiceItem,
+} from "@/components/tugways/tug-choice-group";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -67,6 +70,8 @@ import {
   RewindTurnDataSource,
   type RewindRow,
 } from "./rewind-turn-source";
+
+type RewindScope = "conversation" | "both";
 
 // ---------------------------------------------------------------------------
 // useRewindSheet — the card-hosted /rewind sheet
@@ -95,6 +100,7 @@ export function useRewindSheet({
     void showSheet({
       title: "Rewind",
       description: "Pick a turn to rewind to. Earlier turns are kept.",
+      displayWidth: "wide",
       content: (close) => (
         <RewindSheetBody
           rows={rows}
@@ -109,12 +115,12 @@ export function useRewindSheet({
 }
 
 // ---------------------------------------------------------------------------
-// Cell — one turn row, with its lazily-fetched diff-stat
+// Cell — one turn row, rendered with the session-picker visual
 // ---------------------------------------------------------------------------
 
 /**
  * Read-only context the picker cells consume: the live preview cache and the
- * sheet-selected row. `onPick` lives on the delegate (in body scope); the
+ * sheet-selected row. `onSelect` lives on the delegate (in body scope); the
  * context only carries render inputs, keeping cells presentational ([L11]).
  */
 interface RewindCellContextValue {
@@ -126,7 +132,7 @@ const RewindCellContext = React.createContext<RewindCellContextValue>({
   selectedPromptUuid: null,
 });
 
-/** Format a turn's diff-stat for the row trailing accessory. */
+/** Format a turn's diff-stat for the row subtitle. */
 function diffStatLabel(preview: RewindTurnPreview | undefined): string {
   if (preview === undefined) return "";
   if (preview.loading) return "…";
@@ -145,19 +151,35 @@ const RewindTurnCell: TugListViewCellRenderer<RewindTurnDataSource> =
     const { previews, selectedPromptUuid } = React.useContext(RewindCellContext);
     const row = dataSource.rowAt(index);
     const preview = previews.get(row.promptUuid);
+    const selected = row.promptUuid === selectedPromptUuid;
     const title = row.preview.trim().length > 0 ? row.preview : "(empty prompt)";
+    const stat = diffStatLabel(preview);
+    const subtitle = row.isCurrent
+      ? stat.length > 0
+        ? `Current · ${stat}`
+        : "Current"
+      : stat;
+    // Reuse the session-picker option visual ([L20] cascade-scoped) so the
+    // two pickers read the same.
     return (
-      <TugListRow
-        title={title}
-        subtitle={row.isCurrent ? "Current" : undefined}
-        selected={row.promptUuid === selectedPromptUuid}
-        trailing={
-          <span className="rewind-diffstat" aria-hidden="true">
-            {diffStatLabel(preview)}
-          </span>
-        }
+      <div
+        className="dev-card-picker-session-option"
+        data-testid="rewind-turn-row"
+        data-selected={selected ? "true" : undefined}
         data-prompt-uuid={row.promptUuid}
-      />
+      >
+        <div className="dev-card-picker-session-option-text">
+          <span
+            className="dev-card-picker-session-option-title"
+            title={row.preview.length > 0 ? row.preview : undefined}
+          >
+            {title}
+          </span>
+          <span className="dev-card-picker-session-option-subtitle">
+            {subtitle.length > 0 ? subtitle : " "}
+          </span>
+        </div>
+      </div>
     );
   };
 
@@ -172,7 +194,7 @@ const REWIND_CELL_RENDERERS: Record<
 };
 
 // ---------------------------------------------------------------------------
-// Sheet body — picker step → confirm step
+// Sheet body — single step: turn list + restore-scope choice group + actions
 // ---------------------------------------------------------------------------
 
 interface RewindSheetBodyProps {
@@ -195,16 +217,24 @@ function RewindSheetBody({
   const isIdle = snapshot.phase === "idle";
 
   const [selected, setSelected] = useState<RewindRow | null>(null);
-  // Set true the moment we apply a rewind, so the ack-driven dismiss only
-  // reacts to OUR rewind (not a stale `lastRewindResult` from a prior one).
+  const [scope, setScope] = useState<RewindScope>("conversation");
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // The scope choice group is a control: it emits `selectValue` through the
+  // chain; this form binding captures it into local state ([L11]).
+  const scopeGroupId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    selectValue: {
+      [scopeGroupId]: (v: string) =>
+        setScope(v === "both" ? "both" : "conversation"),
+    },
+  });
+
   const dataSource = useMemo(() => new RewindTurnDataSource(rows), [rows]);
 
-  // Lazily fetch a row's diff-stat on focus/selection (visible/focused rows
-  // only — never one fetch per turn on open). Cached in the store; re-focus
-  // doesn't re-fetch.
+  // Lazily fetch a row's diff-stat on selection (selected row only — never one
+  // fetch per turn on open). Cached in the store; re-select doesn't re-fetch.
   const ensurePreview = useCallback(
     (promptUuid: string) => {
       if (!previews.has(promptUuid)) {
@@ -225,10 +255,27 @@ function RewindSheetBody({
     [rows, ensurePreview],
   );
 
+  // Code restore is offered only when the selected turn has a restorable
+  // checkpoint with actual changes (its lazy diff-stat says so).
+  const selectedPreview =
+    selected !== null ? previews.get(selected.promptUuid) : undefined;
+  const codeRestorable =
+    selectedPreview !== undefined &&
+    !selectedPreview.loading &&
+    selectedPreview.canRewind &&
+    (selectedPreview.insertions ?? 0) + (selectedPreview.deletions ?? 0) > 0;
+  // If "both" is picked but the current selection can't restore code, the
+  // effective (and displayed) scope falls back to conversation.
+  const effectiveScope: RewindScope =
+    scope === "both" && codeRestorable ? "both" : "conversation";
+
+  const scopeItems: TugChoiceItem[] = [
+    { value: "conversation", label: "Conversation" },
+    { value: "both", label: "Code + conversation", disabled: !codeRestorable },
+  ];
+
   // React to OUR applied rewind's ack: dismiss on success, surface the error
-  // (and re-enable the actions for a retry) on failure. Watching the store
-  // transition in an effect — not copying it into state — keeps the dismiss
-  // a clean side-effect of the ack landing ([L02]).
+  // (and re-enable) on failure ([L02]).
   const ack = snapshot.lastRewindResult;
   useEffect(() => {
     if (
@@ -247,106 +294,79 @@ function RewindSheetBody({
     }
   }, [applying, ack, selected, onClose]);
 
-  const apply = useCallback(
-    (scope: "conversation" | "both") => {
-      if (selected === null || !isIdle) return;
-      setErrorMsg(null);
-      setApplying(true);
-      // Fork is the default for conversation/both ([#step-7-2]).
-      codeSessionStore.sessionRewind(selected.promptUuid, scope, true);
-    },
-    [selected, isIdle, codeSessionStore],
-  );
+  const canApply = selected !== null && isIdle && !applying;
+  const apply = useCallback(() => {
+    if (selected === null || !isIdle) return;
+    setErrorMsg(null);
+    setApplying(true);
+    // Fork is the default for conversation/both ([#step-7-2]).
+    codeSessionStore.sessionRewind(selected.promptUuid, effectiveScope, true);
+  }, [selected, isIdle, effectiveScope, codeSessionStore]);
 
-  // --- Picker step ---
-  if (selected === null) {
-    return (
+  return (
+    <ResponderScope>
       <div
         className="rewind-sheet"
+        ref={responderRef as (el: HTMLDivElement | null) => void}
         onKeyDown={(e) => {
-          if (e.key === "Enter") e.preventDefault();
+          // Enter rewinds (the default) when a turn is picked; Escape is
+          // TugSheet's cancel.
+          if (e.key === "Enter" && canApply) {
+            e.preventDefault();
+            apply();
+          }
         }}
       >
         <RewindCellContext.Provider
-          value={{ previews, selectedPromptUuid: null }}
+          value={{ previews, selectedPromptUuid: selected?.promptUuid ?? null }}
         >
           <div className="rewind-sheet-list">
             <TugListView<RewindTurnDataSource>
               dataSource={dataSource}
               delegate={delegate}
               cellRenderers={REWIND_CELL_RENDERERS}
-              rowLayout="flush"
-              inline
-              className="rewind-list"
+              className="dev-card-picker-sessions-list dev-card-picker-list-view"
             />
           </div>
         </RewindCellContext.Provider>
-        <div className="tug-sheet-actions">
-          <TugPushButton onClick={() => onClose()}>Cancel</TugPushButton>
+
+        <div className="rewind-scope-row">
+          <span className="rewind-scope-label">Restore</span>
+          <TugChoiceGroup
+            items={scopeItems}
+            value={effectiveScope}
+            senderId={scopeGroupId}
+            disabled={selected === null}
+            aria-label="Restore scope"
+            data-testid="rewind-scope"
+          />
         </div>
-      </div>
-    );
-  }
 
-  // --- Confirm step ---
-  const preview = previews.get(selected.promptUuid);
-  const codeRestorable =
-    preview !== undefined &&
-    !preview.loading &&
-    preview.canRewind &&
-    (preview.insertions ?? 0) + (preview.deletions ?? 0) > 0;
+        {!isIdle ? (
+          <p className="rewind-busy" role="status">
+            Claude is busy — wait for the current turn to finish.
+          </p>
+        ) : null}
+        {errorMsg !== null ? (
+          <p className="rewind-error" role="alert">
+            {errorMsg}
+          </p>
+        ) : null}
 
-  return (
-    <div
-      className="rewind-sheet rewind-confirm"
-      onKeyDown={(e) => {
-        // Enter confirms the primary action (conversation restore is always
-        // valid); Escape is TugSheet's cancel.
-        if (e.key === "Enter") {
-          e.preventDefault();
-          apply("conversation");
-        }
-      }}
-    >
-      <p className="rewind-confirm-summary">
-        Rewind to: <strong>{selected.preview.trim() || "(empty prompt)"}</strong>
-      </p>
-      <p className="rewind-confirm-note">
-        This turn and everything after it will be removed. Earlier turns stay.
-      </p>
-      {!isIdle ? (
-        <p className="rewind-busy" role="status">
-          Claude is busy — wait for the current turn to finish.
-        </p>
-      ) : null}
-      {errorMsg !== null ? (
-        <p className="rewind-error" role="alert">
-          {errorMsg}
-        </p>
-      ) : null}
-      <div className="rewind-confirm-actions">
-        {codeRestorable ? (
+        <div className="tug-sheet-actions">
+          <TugPushButton onClick={() => onClose()} data-testid="rewind-cancel">
+            Cancel
+          </TugPushButton>
           <TugPushButton
             emphasis="filled"
-            disabled={!isIdle || applying}
-            onClick={() => apply("both")}
-            data-testid="rewind-confirm-both"
+            disabled={!canApply}
+            onClick={apply}
+            data-testid="rewind-apply"
           >
-            Restore code and conversation
+            Rewind
           </TugPushButton>
-        ) : null}
-        <TugPushButton
-          emphasis={codeRestorable ? "outlined" : "filled"}
-          disabled={!isIdle || applying}
-          onClick={() => apply("conversation")}
-          data-testid="rewind-confirm-conversation"
-        >
-          Restore conversation
-        </TugPushButton>
-        <TugPushButton onClick={() => onClose()} data-testid="rewind-confirm-cancel">
-          Never mind
-        </TugPushButton>
+        </div>
       </div>
-    </div>
+    </ResponderScope>
   );
 }
