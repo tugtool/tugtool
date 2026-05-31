@@ -89,12 +89,21 @@ capture-capabilities:
             "tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v$VER/" \
             || true
         echo
-        read -r -p "View full stream-json diff in pager? [y/N] " ans
-        if [[ "$ans" =~ ^[Yy] ]]; then
-            git diff --no-index \
-                "tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v$PREV_VER/" \
-                "tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v$VER/" \
-                || true
+        # TTY-guarded: a non-interactive shell (CI, an agent, a piped
+        # invocation) has no stdin to read, and an unguarded `read` would
+        # hit EOF, return non-zero, and — under `set -e` — abort the recipe
+        # BEFORE the drift regression below. The pager is a convenience for
+        # a human at a terminal; headless runs skip it and proceed.
+        if [ -t 0 ]; then
+            read -r -p "View full stream-json diff in pager? [y/N] " ans
+            if [[ "$ans" =~ ^[Yy] ]]; then
+                git diff --no-index \
+                    "tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v$PREV_VER/" \
+                    "tugrust/crates/tugcast/tests/fixtures/stream-json-catalog/v$VER/" \
+                    || true
+            fi
+        else
+            echo "(non-interactive shell: skipping full-diff pager; stat summary above)"
         fi
     fi
     echo
@@ -123,7 +132,17 @@ capture-capabilities:
     echo "         capabilities/$VER/ + capabilities/LATEST"
     echo "  msg:   $COMMIT_MSG"
     echo
-    read -r -p "Approve, stage, and commit? [y/N] " ans
+    # TTY-guarded (see the pager note above). A non-interactive run never
+    # auto-commits a golden-baseline advance — that's a deliberate review
+    # gate. It leaves the refreshed fixtures in the working tree for a
+    # human to inspect and commit; the drift regression has already run
+    # and passed by this point, which is the leg that must not be skipped.
+    if [ -t 0 ]; then
+        read -r -p "Approve, stage, and commit? [y/N] " ans
+    else
+        ans="n"
+        echo "(non-interactive shell: skipping interactive baseline commit; review and commit manually)"
+    fi
     if [[ ! "$ans" =~ ^[Yy] ]]; then
         echo "Skipped. Working tree left untouched — review, then commit manually."
         exit 0
