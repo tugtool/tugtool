@@ -91,6 +91,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
 import { DevZ1B } from "@/components/tugways/cards/dev-card-z1b";
+import { useFootHeightReservation } from "@/components/tugways/cards/dev-card-transcript-foot-reservation";
 import {
   TugAtomTextBody,
   formatAtomTextForCopy,
@@ -859,123 +860,143 @@ const AssistantTurnCell: React.FC<AssistantTurnCellProps> = ({
     );
   }
 
+  // Reserve the dismissed dialog's height as a `min-height` floor on
+  // the cell-entry wrapper so a PermissionDialog / QuestionDialog
+  // unmount can't collapse `scrollHeight`, clamp `scrollTop`, and jump
+  // the transcript backward. The floor wraps the WHOLE entry (body +
+  // inflight footer), so the thinking indicator stays directly after
+  // the content and the reserved gap sits below it. Driven by observing
+  // `codeSessionStore` directly [L22] — the floor is set in the
+  // synchronous store-notify callback while the dialog is still
+  // mounted. See `dev-card-transcript-foot-reservation`.
+  const { floorRef: footFloorRef } = useFootHeightReservation(
+    codeSessionStore,
+    !isCommitted,
+  );
+
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu();
+
   return (
     <ResponderScope>
       <div {...cellProps}>
-        <TugTranscriptEntry
-          participant="assistant"
-          identifier={modelName ?? ASSISTANT_DEFAULT_IDENTIFIER}
-          timestamp={
-            timestamp === "" || timestamp === undefined ? undefined : timestamp
-          }
-          sequenceNumber={index + 1}
-          body={
-            // Body order — per [D07] sequence substrate, the wire's
-            // arrival order drives the visual order. The renderer
-            // iterates `messages` (committed or in-flight) and
-            // dispatches each kind to its inline surface:
-            //
-            //   - `assistant_thinking` → `DevThinkingBlock`,
-            //     subscribed to the Message's per-Message streaming
-            //     path (`turn.${turnKey}.message.${messageKey}.text`).
-            //   - `tool_use` (top-level only — subagent children are
-            //     resolved inside their parent's `AgentTranscriptBlock`
-            //     via the `childToolCallsByParent` map) → tool block
-            //     resolved via `dispatchToolCallState`.
-            //   - `assistant_text` → `TugMarkdownBlock`, subscribed to
-            //     the same per-Message path shape.
-            //   - `user_message` is rendered by the separate user row;
-            //     skipped here.
-            //   - `system_note` lands in Step 8 (no instances yet).
-            //
-            // After the message list, the live-only permission slot
-            // and question slot sit at the body foot — at most one is
-            // ever non-null on the same render (the SDK only opens
-            // one `control_request_forward` at a time). Slot keys
-            // (`request.request_id`) are stable, so
-            // React-reconciliation mount identity ([L26]) is
-            // preserved across the dialog's pending → null
-            // transition without remount.
-            //
-            // Subagent nesting ([#step-17-5]): the iteration skips
-            // tool_use Messages whose `parentToolUseId` is set — they
-            // render inside their parent's `AgentTranscriptBlock`.
-            // `childToolCallsByParent` is the partition map threaded
-            // into every top-level tool dispatch.
-            <div ref={(el) => { bodyRef.current = el; }}>
-              <CodeRowBody
-                messages={messages}
-                turnKey={turnKey}
-                streamingStore={streamingStore}
-                session={codeSessionStore}
-                awaitingToolUseId={
-                  // Id-join the live pending dialog to its tool row so
-                  // that row's lifecycle dot reads `awaiting` ([Q01]).
-                  // Permission and question forwards both carry
-                  // `tool_use_id`; whichever is live wins.
-                  pendingApproval?.tool_use_id ??
-                  pendingQuestion?.tool_use_id ??
-                  undefined
+        {/* Foot height-reservation floor [L22/L06/L23] — wraps the whole
+            entry so the inflight footer (thinking indicator) is held
+            inside the floor, not below the reserved gap. */}
+        <div ref={footFloorRef}>
+          <TugTranscriptEntry
+            participant="assistant"
+            identifier={modelName ?? ASSISTANT_DEFAULT_IDENTIFIER}
+            timestamp={
+              timestamp === "" || timestamp === undefined ? undefined : timestamp
+            }
+            sequenceNumber={index + 1}
+            body={
+              // Body order — per [D07] sequence substrate, the wire's
+              // arrival order drives the visual order. The renderer
+              // iterates `messages` (committed or in-flight) and
+              // dispatches each kind to its inline surface:
+              //
+              //   - `assistant_thinking` → `DevThinkingBlock`,
+              //     subscribed to the Message's per-Message streaming
+              //     path (`turn.${turnKey}.message.${messageKey}.text`).
+              //   - `tool_use` (top-level only — subagent children are
+              //     resolved inside their parent's `AgentTranscriptBlock`
+              //     via the `childToolCallsByParent` map) → tool block
+              //     resolved via `dispatchToolCallState`.
+              //   - `assistant_text` → `TugMarkdownBlock`, subscribed to
+              //     the same per-Message path shape.
+              //   - `user_message` is rendered by the separate user row;
+              //     skipped here.
+              //   - `system_note` lands in Step 8 (no instances yet).
+              //
+              // After the message list, the live-only permission slot
+              // and question slot sit at the body foot — at most one is
+              // ever non-null on the same render (the SDK only opens
+              // one `control_request_forward` at a time). Slot keys
+              // (`request.request_id`) are stable, so
+              // React-reconciliation mount identity ([L26]) is
+              // preserved across the dialog's pending → null
+              // transition without remount.
+              //
+              // Subagent nesting ([#step-17-5]): the iteration skips
+              // tool_use Messages whose `parentToolUseId` is set — they
+              // render inside their parent's `AgentTranscriptBlock`.
+              // `childToolCallsByParent` is the partition map threaded
+              // into every top-level tool dispatch.
+              <div ref={(el) => { bodyRef.current = el; }}>
+                <CodeRowBody
+                  messages={messages}
+                  turnKey={turnKey}
+                  streamingStore={streamingStore}
+                  session={codeSessionStore}
+                  awaitingToolUseId={
+                    // Id-join the live pending dialog to its tool row so
+                    // that row's lifecycle dot reads `awaiting` ([Q01]).
+                    // Permission and question forwards both carry
+                    // `tool_use_id`; whichever is live wins.
+                    pendingApproval?.tool_use_id ??
+                    pendingQuestion?.tool_use_id ??
+                    undefined
+                  }
+                />
+                {permissionSlot}
+                {questionSlot}
+              </div>
+            }
+            inflightFooter={
+              // DevZ1C — in-flight indicator zone per [D19]. Mounted
+              // only on the in-flight assistant row (`!isCommitted`); every
+              // other row passes `null` and the `inflightFooter` slot
+              // doesn't render. The component subscribes via
+              // `useSyncExternalStore` to phase + interruptInFlight;
+              // only this one row holds that subscription so other
+              // rows don't wake on each snapshot dispatch.
+              !isCommitted ? (
+                <DevZ1C codeSessionStore={codeSessionStore} />
+              ) : null
+            }
+            controls={
+              (() => {
+                // Z1B — committed-end-state aggregate per [D19].
+                // Rendered only when the turn has committed; the
+                // in-flight indicator (DevZ1C) lives in the
+                // `inflightFooter` slot above this one and has its
+                // own lifecycle. Trailing chrome (placement-
+                // experiment renderer) still renders alongside Z1B
+                // for both phases.
+                const trailing =
+                  renderTurnTrailing !== undefined && row.turnKey !== undefined
+                    ? renderTurnTrailing({
+                        turnKey: row.turnKey,
+                        half: "assistant",
+                        turn: row.turn,
+                      })
+                    : null;
+                const hasTrailing = trailing !== null && trailing !== undefined;
+                if (!isCommitted && !hasTrailing) {
+                  // Nothing to render in the controls slot — return
+                  // `undefined` so the primitive doesn't even render
+                  // the wrapper (no margin-top consumed).
+                  return undefined;
                 }
-              />
-              {permissionSlot}
-              {questionSlot}
-            </div>
-          }
-          inflightFooter={
-            // DevZ1C — in-flight indicator zone per [D19]. Mounted
-            // only on the in-flight assistant row (`!isCommitted`); every
-            // other row passes `null` and the `inflightFooter` slot
-            // doesn't render. The component subscribes via
-            // `useSyncExternalStore` to phase + interruptInFlight;
-            // only this one row holds that subscription so other
-            // rows don't wake on each snapshot dispatch.
-            !isCommitted ? (
-              <DevZ1C codeSessionStore={codeSessionStore} />
-            ) : null
-          }
-          controls={
-            (() => {
-              // Z1B — committed-end-state aggregate per [D19].
-              // Rendered only when the turn has committed; the
-              // in-flight indicator (DevZ1C) lives in the
-              // `inflightFooter` slot above this one and has its
-              // own lifecycle. Trailing chrome (placement-
-              // experiment renderer) still renders alongside Z1B
-              // for both phases.
-              const trailing =
-                renderTurnTrailing !== undefined && row.turnKey !== undefined
-                  ? renderTurnTrailing({
-                      turnKey: row.turnKey,
-                      half: "assistant",
-                      turn: row.turn,
-                    })
-                  : null;
-              const hasTrailing = trailing !== null && trailing !== undefined;
-              if (!isCommitted && !hasTrailing) {
-                // Nothing to render in the controls slot — return
-                // `undefined` so the primitive doesn't even render
-                // the wrapper (no margin-top consumed).
-                return undefined;
-              }
-              return (
-                <>
-                  {isCommitted ? (
-                    <DevZ1B
-                      participant="assistant"
-                      turn={turn}
-                      perTurnTokens={row.perTurnTokens}
-                      bodyText={copyMarkdown}
-                    />
-                  ) : null}
-                  {hasTrailing ? trailing : null}
-                </>
-              );
-            })()
-          }
-        />
+                return (
+                  <>
+                    {isCommitted ? (
+                      <DevZ1B
+                        participant="assistant"
+                        turn={turn}
+                        perTurnTokens={row.perTurnTokens}
+                        bodyText={copyMarkdown}
+                      />
+                    ) : null}
+                    {hasTrailing ? trailing : null}
+                  </>
+                );
+              })()
+            }
+          />
+        </div>
       </div>
       {menu}
     </ResponderScope>
