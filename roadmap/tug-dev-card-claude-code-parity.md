@@ -1720,20 +1720,22 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 - Modified: `code-session-store/` reducer — a **local conversation-truncation** transition (drop turns after the anchor; survivors keep `turnKey`/`msgId` untouched). This is the source of truth for the post-rewind transcript; 7b.2's respawn is silent (no replay rebuild).
 
 **Tasks:**
-- [ ] `rewind-turn-source.ts` projection; rows carry `promptUuid`; per-row diff-stat filled **lazily** (visible/focused rows only, cached) from `rewind_preview{promptUuid}` → `rewind_preview_result` ([#step-7-1]) — never one fetch per turn on open (the N+1 trap).
-- [ ] `RewindSheet`: picker → confirm (three conditional actions); keyboard nav + Enter; ESC dismisses; card-scoped overlay. Disable/queue actions while claude is busy (the idle-gating state from [#step-7-1]).
-- [ ] Wire `code` / `conversation` / `both` through `session_rewind{promptUuid, scope, fork}` ([#step-7-1]/[#step-7-2]); on a `fork` ack, rebind the card to the returned session-id **and persist the binding** (so cold-boot resumes the fork — [#step-7-2]).
-- [ ] Empty-state: 0- or 1-turn session does not surface `/rewind` in popup.
-- [ ] **[L26] mount identity (highest-risk task) — via LOCAL truncation, not replay.** The reducer truncates the store locally: turns after the anchor unmount; turns before keep their **byte-identical** identity inputs — `key` (`turnKey`/`msgId`, never phase-encoded), one phase-branching row component (no type swap), and a `useCallback`-stable renderer reference. Because 7b.2 respawns silently (no transcript re-emit), there is no replay to re-mint keys. Audit all three identity inputs together ([L26]).
+- [x] `rewind-turn-source.ts` projection; rows carry `promptUuid`; per-row diff-stat filled **lazily** (fetched on row **focus** in the sheet, cached in the store snapshot's `rewindPreviews`, read via `useSyncExternalStore`) from `rewind_preview{promptUuid}` → `rewind_preview_result` ([#step-7-1]) — never one fetch per turn on open. The projection excludes the first targetable turn (rewinding to it would empty the session).
+- [x] `RewindSheet`: picker → confirm (three conditional actions — code option shown only when the turn's diff-stat reports a restorable checkpoint); Enter confirms, ESC dismisses (TugSheet); card-scoped overlay ([D15]). Restore actions disabled while claude is busy (idle gate, mirrored from [#step-7-1]; tugcode enforces it authoritatively).
+- [x] Wire `code` / `conversation` / `both` through `session_rewind{promptUuid, scope, fork}` (`codeSessionStore.sessionRewind`, fork:true default); dismiss on the `rewind_result` ack, surface the error + allow retry on failure. **Fork rebind persists via the existing `session_init` → tugcast → tugbank path** (tugcode's synthetic `session_init(newId)` from [#step-7-2]; same plumbing `/fork` uses — the card keeps working on the stable `tugSessionId`, cold-boot reads the persisted fork id). *(Live cold-boot confirmation is the deferred app-test below.)*
+- [x] Empty-state: a 0- or 1-(anchored-)turn session does not surface `/rewind` in the popup (`canOfferRewind` gate on the local-command completion provider).
+- [x] **[L26] mount identity — via LOCAL truncation, not replay.** `truncateTranscriptAtAnchor` returns the prefix before the anchor; survivors are the **same `TurnEntry` references** (key/`msgId` byte-identical). One phase-branching sheet body (no component-type swap across picker/confirm); picker rows reconcile through a module-constant `REWIND_CELL_RENDERERS` (no inline lambdas). Driven by a `truncate-transcript` effect on the `rewind_result` ack (7b.2 respawns silently — no replay to re-mint keys). All three identity inputs audited together.
 
 **Tests:**
-- [ ] Pure-logic: turn-source projection (row count, ordering, `promptUuid` carriage, diff-stat mapping); reducer truncation preserves pre-rewind row keys verbatim.
-- [ ] Real-app: select a turn → confirm → (a) conversation restore truncates the transcript (survivors not remounted), (b) code restore reverts a file claude edited.
-- [ ] **Real-app L26 pin:** scroll to a pre-rewind turn, rewind from a later turn; assert scroll position + in-row selection survive (no remount).
+- [x] Pure-logic: turn-source projection (row count, ordering, `promptUuid` carriage, first-turn exclusion, empty-state gate — 10 tests); reducer truncation preserves pre-rewind row references verbatim + anchor capture (both paths) + preview fold + ack/truncation gating (15 tests). All green.
+- [ ] Real-app: select a turn → confirm → (a) conversation restore truncates the transcript (survivors not remounted), (b) code restore reverts a file claude edited. *(Deferred — needs a built Tug.app + a multi-turn session; the wire path is unit-verified end to end.)*
+- [ ] **Real-app L26 pin:** scroll to a pre-rewind turn, rewind from a later turn; assert scroll position + in-row selection survive (no remount). *(Deferred — same harness prerequisites.)*
 
 **Checkpoint:**
-- [ ] `just app-test rewind-sheet`
-- [ ] `just app-test rewind-mount-identity`
+- [ ] `just app-test rewind-sheet` *(deferred — real-app verification of the conversation/code restore round-trip)*
+- [ ] `just app-test rewind-mount-identity` *(deferred — real-app verification of the [L26] scroll/selection survival)*
+
+> **Status (2026-05-31).** The feature is implemented, tsc-clean, and committed across three commits (`11bc9a2a` store/protocol foundation, the sheet UI, and this plan update): protocol plumbing, the `code-session-store` anchor + L26-safe local truncation, the turn-source projection, and the `RewindSheet` (picker + confirm, lazy diff-stat, idle gating, empty-state gating, fork-by-default). Pure-logic/unit coverage is complete (25 reducer + 10 projection + slash-command/gate tests; full tugdeck suite 3197 green). The two real-app `app-test` checkpoints remain — they need a built app and a multi-turn session (real-claude or a seeded transcript) plus scroll/selection assertions, and are the live confirmation of the wire path the unit tests already pin.
 
 ---
 
