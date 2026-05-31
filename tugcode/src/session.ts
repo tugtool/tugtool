@@ -4699,6 +4699,18 @@ export class SessionManager {
       conversationRewindable =
         computeConversationTruncation(read.jsonl, msg.promptUuid).kind === "ok";
     }
+    // Non-rewindable anchor (crosses a /compact, etc.): the picker hides this
+    // row, so the code diff-stat is never shown — skip the `rewind_files`
+    // round-trip to claude entirely and answer from the JSONL alone. This also
+    // bounds the dry-run calls to the rewindable window (no claude traffic for
+    // the pre-compaction turns).
+    if (!conversationRewindable) {
+      this.emitRewindPreviewResult(msg.promptUuid, {
+        canRewind: false,
+        conversationRewindable: false,
+      });
+      return;
+    }
     // Re-check liveness after the await — a turn could have opened. If so,
     // reject rather than issue a mid-turn control request.
     if (!this.claudeProcess || !this.isClaudeIdle()) {

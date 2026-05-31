@@ -242,10 +242,41 @@ function RewindSheetBody({
     },
   });
 
-  const dataSource = useMemo(() => new RewindTurnDataSource(rows), [rows]);
+  // Only show turns the user can actually rewind to: omit any whose
+  // conversation rewind would cross a `/compact` boundary (tugcode reports
+  // `conversationRewindable:false`). A turn whose preview is still loading
+  // (`undefined`) is shown until its result lands — so an uncompacted session
+  // shows every turn immediately with no flicker; a compacted one drops the
+  // pre-compaction turns as their previews resolve.
+  const visibleRows = useMemo(
+    () =>
+      rows.filter(
+        (r) => previews.get(r.promptUuid)?.conversationRewindable !== false,
+      ),
+    [rows, previews],
+  );
+  // Rebuild the data source only when the visible SET changes (as previews
+  // resolve), not on every snapshot tick — keyed on the row-id signature.
+  const visibleKey = visibleRows.map((r) => r.promptUuid).join(",");
+  const dataSource = useMemo(
+    () => new RewindTurnDataSource(visibleRows),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on visibleKey
+    [visibleKey],
+  );
 
-  // Lazily fetch a row's diff-stat on selection (selected row only — never one
-  // fetch per turn on open). Cached in the store; re-select doesn't re-fetch.
+  // If the selected turn gets omitted (its preview resolved to not-rewindable
+  // after it was picked), drop the selection so the scope group + Rewind
+  // disable.
+  useEffect(() => {
+    if (
+      selected !== null &&
+      !visibleRows.some((r) => r.promptUuid === selected.promptUuid)
+    ) {
+      setSelected(null);
+    }
+  }, [visibleRows, selected]);
+
+  // Lazily fetch a row's diff-stat on selection (cached in the store).
   const ensurePreview = useCallback(
     (promptUuid: string) => {
       if (!previews.has(promptUuid)) {
@@ -258,19 +289,13 @@ function RewindSheetBody({
   const delegate = useMemo<TugListViewDelegate>(
     () => ({
       onSelect: (index) => {
-        const row = rows[index];
-        // A turn that can't be conversation-rewound to (crosses a /compact)
-        // is not selectable. Read the preview live so a result that landed
-        // after the initial render still gates the click.
-        const preview = codeSessionStore
-          .getSnapshot()
-          .rewindPreviews.get(row.promptUuid);
-        if (preview?.conversationRewindable === false) return;
+        const row = visibleRows[index];
+        if (row === undefined) return;
         setSelected(row);
         ensurePreview(row.promptUuid);
       },
     }),
-    [rows, ensurePreview, codeSessionStore],
+    [visibleRows, ensurePreview],
   );
 
   // Fetch every row's diff-stat once, when the sheet opens, so each turn shows
@@ -369,13 +394,19 @@ function RewindSheetBody({
           <div className="dev-card-picker-section">
             <span className="dev-card-picker-label">Turns</span>
             <div className="dev-card-picker-sessions-host">
-              <TugListView<RewindTurnDataSource>
-                dataSource={dataSource}
-                delegate={delegate}
-                cellRenderers={REWIND_CELL_RENDERERS}
-                scrollKey="rewind-turns"
-                className="dev-card-picker-sessions-list dev-card-picker-list-view"
-              />
+              {visibleRows.length > 0 ? (
+                <TugListView<RewindTurnDataSource>
+                  dataSource={dataSource}
+                  delegate={delegate}
+                  cellRenderers={REWIND_CELL_RENDERERS}
+                  scrollKey="rewind-turns"
+                  className="dev-card-picker-sessions-list dev-card-picker-list-view"
+                />
+              ) : (
+                <div className="rewind-empty" role="status">
+                  No turns to rewind to since the last /compact.
+                </div>
+              )}
             </div>
           </div>
         </RewindCellContext.Provider>

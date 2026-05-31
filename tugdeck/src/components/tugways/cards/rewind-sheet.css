@@ -26,6 +26,18 @@
   gap: 0.75rem;
 }
 
+/* Empty-state inside the bordered host when every turn is past the last
+   /compact (nothing rewindable). */
+.rewind-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 1rem;
+  text-align: center;
+  opacity: 0.6;
+}
+
 .rewind-busy,
 .rewind-error {
   margin: 0;
