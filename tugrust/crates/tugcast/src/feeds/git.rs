@@ -197,6 +197,29 @@ async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
     }
 }
 
+/// Cheap, subprocess-free check for whether `dir` lies within a git working
+/// tree: walk up from `dir` looking for a `.git` entry (a directory for a
+/// normal repo, a file for a worktree/submodule), stopping at the filesystem
+/// root.
+///
+/// Used to gate the `git status` poll. A non-git project dir (e.g.
+/// `/tmp/scratch`) otherwise forks a `git` every cycle that fails with exit
+/// 128 and logs a warning — forever. With this gate it costs only a handful
+/// of `stat`s per cycle, and the feed self-activates the moment a `.git`
+/// appears (a `git init` after the card is already live). The ancestor walk
+/// matters because a project dir can be a *subdirectory* of a repo, where
+/// `.git` lives above it.
+async fn is_within_git_worktree(dir: &Path) -> bool {
+    let mut cursor = Some(dir);
+    while let Some(current) = cursor {
+        if tokio::fs::metadata(current.join(".git")).await.is_ok() {
+            return true;
+        }
+        cursor = current.parent();
+    }
+    false
+}
+
 #[async_trait]
 impl SnapshotFeed for GitFeed {
     fn feed_id(&self) -> FeedId {
@@ -220,6 +243,14 @@ impl SnapshotFeed for GitFeed {
                     break;
                 }
                 _ = interval.tick() => {
+                    // Skip the `git status` subprocess entirely when this dir
+                    // isn't in a git working tree yet — cheap `stat`s only, no
+                    // fork, no warn-spam. The feed self-activates on a later
+                    // tick once a `.git` appears (`git init` mid-session).
+                    if !is_within_git_worktree(&self.repo_dir).await {
+                        continue;
+                    }
+
                     // Fetch git status
                     let status_output = match fetch_git_status(&self.repo_dir).await {
                         Some(output) => output,
@@ -791,6 +822,72 @@ mod tests {
 
         cancel.cancel();
         let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
+    }
+
+    // -- is_within_git_worktree gate (skip git poll for non-repos) --
+
+    #[tokio::test]
+    async fn test_is_within_git_worktree_false_for_plain_dir() {
+        let temp = TempDir::new().unwrap();
+        assert!(!is_within_git_worktree(temp.path()).await);
+    }
+
+    #[tokio::test]
+    async fn test_is_within_git_worktree_true_for_repo_and_subdir() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        git_in(repo, &["init"]).await;
+        assert!(is_within_git_worktree(repo).await, "repo root");
+
+        let sub = repo.join("a").join("b");
+        fs::create_dir_all(&sub).unwrap();
+        assert!(
+            is_within_git_worktree(&sub).await,
+            "a subdir of a repo must walk up to the ancestor .git",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_git_feed_skips_until_repo_initialized() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().to_path_buf();
+        let key: Arc<str> = Arc::from(dir.to_string_lossy().as_ref());
+        let feed = GitFeed::new(dir.clone(), key);
+        let (tx, mut rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let task = tokio::spawn(async move {
+            feed.run(tx, cancel_clone).await;
+        });
+
+        // No repo yet: the feed must emit nothing — the watch stays at its
+        // initial empty frame (the poll is gated out, no `git` is forked).
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        assert!(
+            rx.borrow_and_update().payload.is_empty(),
+            "no git status must be emitted for a non-repo dir",
+        );
+
+        // Initialize a repo mid-run; the feed must self-activate on a later tick.
+        git_in(&dir, &["init"]).await;
+        git_in(&dir, &["config", "user.name", "test"]).await;
+        git_in(&dir, &["config", "user.email", "test@test.com"]).await;
+        git_in(&dir, &["commit", "--allow-empty", "-m", "init"]).await;
+
+        let mut emitted = false;
+        for _ in 0..30 {
+            if !rx.borrow().payload.is_empty() {
+                emitted = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        assert!(emitted, "feed must emit once the repo is initialized");
+        let status: GitStatus = serde_json::from_slice(&rx.borrow().payload).unwrap();
+        assert!(!status.head_sha.is_empty());
+
+        cancel.cancel();
+        let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
     }
 
     // -- git diff sourcing ([#step-10a]) --
