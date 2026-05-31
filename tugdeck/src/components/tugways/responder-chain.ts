@@ -1088,6 +1088,31 @@ export class ResponderChainManager {
     return this.defaultButtonStack[this.defaultButtonStack.length - 1] ?? null;
   }
 
+  /**
+   * Return the topmost default button contained within `scope`, or null if
+   * none of the stacked buttons live inside it.
+   *
+   * The default-button stack is process-global, but a `Return` is owned by
+   * exactly one pane — the one the user is working in. Activating a default
+   * button that lives in a *different* pane than the keystroke's origin
+   * violates pane modality ([D15]): an unbound card's picker in pane B
+   * registers an Open default button, and a `Return` typed in pane A must
+   * not press it. Stage-2 of the keyboard pipeline scopes activation to the
+   * active pane's frame via this method, so cross-pane default-button
+   * activation is impossible by construction. When there is no pane context
+   * (gallery / standalone), the caller falls back to {@link peekDefaultButton}.
+   *
+   * Walks the stack top-down (most-recent-first) so nested modals within the
+   * same pane keep their LIFO semantics.
+   */
+  peekDefaultButtonInScope(scope: Element): HTMLButtonElement | null {
+    for (let i = this.defaultButtonStack.length - 1; i >= 0; i -= 1) {
+      const button = this.defaultButtonStack[i];
+      if (scope.contains(button)) return button;
+    }
+    return null;
+  }
+
   // ---- Subscription (for useSyncExternalStore) ----
 
   /**

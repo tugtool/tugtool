@@ -672,12 +672,15 @@ One subtler filter worth knowing: `TugPopover` installs an `observeDispatch` sub
 Separate from the main chain but registered on the same `ResponderChainManager`: a stack of HTML button elements that can be "default activated" by pressing Enter outside a text input.
 
 ```ts
-manager.pushDefaultButton(element);   // push
-manager.popDefaultButton(element); // pop (by reference)
-manager.peekDefaultButton();          // peek at top
+manager.pushDefaultButton(element);          // push
+manager.popDefaultButton(element);           // pop (by reference)
+manager.peekDefaultButton();                 // peek at the global top
+manager.peekDefaultButtonInScope(paneEl);    // peek the top button WITHIN a scope
 ```
 
-Stage 2 of the keyboard pipeline queries `peekDefaultButton()` on Enter, and — provided the current target is not a text input, textarea, or button — calls `.click()` on the element. This is how the Return key "presses" the default button in a dialog. Nested modal scoping works because the stack is LIFO: an inner dialog pushes its button on open, Enter activates the inner button, and close pops it, restoring the outer dialog's default button automatically.
+Stage 2 of the keyboard pipeline queries the default button on Enter, and — provided the current target is not a text input, textarea, or button — calls `.click()` on the element. This is how the Return key "presses" the default button in a dialog. Nested modal scoping works because the stack is LIFO: an inner dialog pushes its button on open, Enter activates the inner button, and close pops it, restoring the outer dialog's default button automatically.
+
+**The stack is process-global; activation must be pane-scoped ([D15]).** A `Return` belongs to exactly one pane — the one the user is working in. With panes side by side, a sheet in pane B (e.g. an unbound dev card's session picker) pushes its primary button onto the *same* global stack, so a naive `peekDefaultButton().click()` on a `Return` typed in pane A would press pane B's button and dismiss its sheet. Every default-button activation site therefore scopes to the originating pane via `peekDefaultButtonInScope(scope)` — which walks the stack top-down and returns the first button contained in `scope` — passing the **first responder's `.tug-pane`** (document Stage 2) or the **editor's own `.tug-pane`** (the text-editor keymap's submit-Enter defer). A default button in another pane is then unreachable by construction. The two activation sites are `responder-chain-provider.tsx` (Stage 2) and `tug-text-editor.tsx` (the keymap's `peekDefaultButton` closure); both fall back to the global `peekDefaultButton()` only when there is no pane context (gallery / standalone). This was a real cross-pane bug: a `/rewind` submitted in one pane pressed another pane's picker Open.
 
 You almost certainly do not write code that touches this directly. `TugButton` pushes/pops via a `defaultButton` prop when its parent dialog asks; the dialog components (`TugConfirmPopover`, `TugAlert`) wire that prop on their primary-action button. If you are writing a new modal-shaped component, the convention is to pass `defaultButton` to the confirm button; if you are writing a plain button, leave the default-button machinery alone.
 

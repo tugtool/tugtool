@@ -219,7 +219,24 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             active.isContentEditable ||
             active.tagName === "BUTTON");
         if (!skipActivation) {
-          const defaultButton = manager.peekDefaultButton();
+          // Pane-scope the activation. A `Return` belongs to the pane the
+          // user is working in (the first responder's pane); a default
+          // button registered by a sheet in ANOTHER pane (e.g. an unbound
+          // card's picker Open button) must NOT be pressed by it ([D15]
+          // pane modality). Resolve the first responder's `.tug-pane` and
+          // only consider default buttons inside it; cross-pane activation
+          // is then impossible by construction. With no pane context
+          // (gallery / standalone) fall back to the global top.
+          const frId = manager.getFirstResponder();
+          const frEl =
+            frId !== null && typeof document !== "undefined"
+              ? document.querySelector(`[data-responder-id="${CSS.escape(frId)}"]`)
+              : null;
+          const activePane = frEl?.closest(".tug-pane") ?? null;
+          const defaultButton =
+            activePane !== null
+              ? manager.peekDefaultButtonInScope(activePane)
+              : manager.peekDefaultButton();
           if (defaultButton !== null) {
             // Press visual ([L06] — appearance via DOM). The button's
             // CSS variants treat `[data-pressing="true"]` the same as

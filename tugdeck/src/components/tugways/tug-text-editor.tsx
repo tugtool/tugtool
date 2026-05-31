@@ -1240,7 +1240,20 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // editor's own onSubmit. Reads through a closure over the live
     // manager so a dialog mounted later than the editor still wins.
     const peekDefaultButton = useCallback((): HTMLButtonElement | null => {
-      return responderChainManager?.peekDefaultButton() ?? null;
+      const manager = responderChainManager;
+      if (!manager) return null;
+      // Pane-scope the defer. The default-button stack is process-global,
+      // but a `Return` in THIS editor must only defer to a default button
+      // in THIS editor's own pane — never one registered by a sheet in
+      // another pane (e.g. an unbound card's picker Open button). Otherwise
+      // a `Return` here would press that other pane's button, dismissing
+      // its sheet ([D15] pane modality). Resolve the editor's `.tug-pane`
+      // and scope the peek to it; with no pane context (gallery /
+      // standalone) fall back to the global top.
+      const pane = viewRef.current?.dom.closest(".tug-pane") ?? null;
+      return pane !== null
+        ? manager.peekDefaultButtonInScope(pane)
+        : manager.peekDefaultButton();
     }, [responderChainManager]);
     const keymapConfigRef = useRef<TugTextEditorKeymapConfig>({
       returnAction,
