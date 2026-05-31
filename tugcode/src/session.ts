@@ -269,7 +269,8 @@ export function extractUserMessageTextCounts(jsonl: string): Map<string, number>
 export type ConversationTruncation =
   | { kind: "ok"; boundary: number }
   | { kind: "not_found" }
-  | { kind: "compaction_blocked" };
+  | { kind: "compaction_blocked" }
+  | { kind: "no_retained_turns" };
 
 /**
  * Compute where to truncate a session JSONL to rewind the conversation to
@@ -288,6 +289,14 @@ export type ConversationTruncation =
  *
  * The compaction guard is checked first: if any record from the tip back to
  * the anchor is a compaction marker, the chop would cross it, so we refuse.
+ *
+ * Finally, the retained prefix must contain at least one *earlier* user
+ * submission. Rewinding to the very first turn would leave only leading
+ * bookkeeping records — claude rejects that on `--resume` ("No conversation
+ * found"), and for the destructive in-place variant we'd have already
+ * truncated the original. We refuse (`no_retained_turns`) rather than produce
+ * an unresumable session; clearing the whole conversation is a new-session
+ * operation, not a rewind.
  */
 export function computeConversationTruncation(
   jsonl: string,
@@ -296,6 +305,7 @@ export function computeConversationTruncation(
   const lines = jsonl.split("\n");
   let boundary = -1;
   let sawCompactionAfter = false;
+  let priorSubmissions = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line.length === 0) continue;
@@ -319,14 +329,20 @@ export function computeConversationTruncation(
     const isCompaction =
       (entry.type === "system" && entry.subtype === "compact_boundary") ||
       entry.isCompactSummary === true;
+    const isUserSubmission =
+      entry.type === "user" &&
+      isUserSubmissionContent(entry.message?.content);
     if (boundary === -1) {
       if (
-        entry.type === "user" &&
+        isUserSubmission &&
         typeof entry.uuid === "string" &&
-        entry.uuid === promptUuid &&
-        isUserSubmissionContent(entry.message?.content)
+        entry.uuid === promptUuid
       ) {
         boundary = i;
+      } else if (isUserSubmission) {
+        // A user submission strictly before the anchor → the retained prefix
+        // will hold at least one real turn.
+        priorSubmissions += 1;
       }
     }
     // A compaction at or after the boundary is in the chop range. Until the
@@ -337,6 +353,7 @@ export function computeConversationTruncation(
     }
   }
   if (boundary === -1) return { kind: "not_found" };
+  if (priorSubmissions === 0) return { kind: "no_retained_turns" };
   // Re-evaluate compaction strictly within [boundary, tip]: a compaction
   // BEFORE the boundary is fine (it stays in the retained prefix); only one
   // at/after the anchor blocks the chop.
@@ -4780,6 +4797,13 @@ export class SessionManager {
         canRewind: false,
         error:
           "Cannot rewind across a /compact boundary; the conversation was compacted after this turn.",
+      };
+    }
+    if (truncation.kind === "no_retained_turns") {
+      return {
+        canRewind: false,
+        error:
+          "Cannot rewind to the first turn (it would leave an empty, unresumable session); start a new session instead.",
       };
     }
 

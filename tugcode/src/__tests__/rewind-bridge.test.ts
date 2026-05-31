@@ -390,13 +390,13 @@ describe("computeConversationTruncation (pure boundary + compaction guard)", () 
     expect(kept).not.toContain("Remember GAMMA");
   });
 
-  test("rewinding to the first turn keeps nothing of the conversation", () => {
+  test("rewinding to the FIRST turn is refused (would leave an unresumable empty session)", () => {
     const { jsonl, anchors } = buildSessionJsonl();
-    const r = computeConversationTruncation(jsonl, anchors[0]);
-    expect(r.kind).toBe("ok");
-    if (r.kind !== "ok") return;
-    const kept = jsonl.split("\n").slice(0, r.boundary).join("\n");
-    expect(kept).not.toContain("Remember ALPHA");
+    // anchors[0] is the first user submission — slicing before it retains only
+    // leading bookkeeping, which claude rejects on --resume. Guard it.
+    expect(computeConversationTruncation(jsonl, anchors[0]).kind).toBe(
+      "no_retained_turns",
+    );
   });
 
   test("an unknown anchor is not_found", () => {
@@ -635,6 +635,24 @@ describe("conversation rewind — guards", () => {
     expect(ack.error).toContain("/compact boundary");
     expect(writes.length).toBe(0);
     expect(spawns.length).toBe(0);
+  });
+
+  test("a rewind to the first turn is refused before any kill/truncate/respawn", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager, writes, spawns, killCalls } = convManager(jsonl);
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[0], // first turn → empty retained prefix
+        scope: "conversation",
+      });
+    });
+    const ack = out.find((m) => m.type === "rewind_result");
+    expect(ack.canRewind).toBe(false);
+    expect(ack.error).toContain("first turn");
+    expect(writes.length).toBe(0);
+    expect(spawns.length).toBe(0);
+    expect(killCalls()).toBe(0);
   });
 
   test("idle gating: a conversation rewind mid-turn is rejected without touching disk", async () => {
