@@ -227,7 +227,12 @@ function RewindSheetBody({
   const previews = snapshot.rewindPreviews;
   const isIdle = snapshot.phase === "idle";
 
-  const [selected, setSelected] = useState<RewindRow | null>(null);
+  // Pre-select the most recent turn (the last, "current" row) on open — it's
+  // always rewindable (it's the tip, so nothing compacts after it), so the
+  // sheet opens ready to Rewind. The user can pick an earlier turn.
+  const [selected, setSelected] = useState<RewindRow | null>(
+    rows.length > 0 ? rows[rows.length - 1] : null,
+  );
   const [scope, setScope] = useState<RewindScope>("conversation");
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
