@@ -721,9 +721,7 @@ pub async fn execute_probe(
                         // `promptUuid` from a `prompt_anchor` so a later
                         // `RewindPreview` / `SessionRewind` can target it.
                         if *event_type == "prompt_anchor" {
-                            if let Some(uuid) =
-                                payload.get("promptUuid").and_then(|v| v.as_str())
-                            {
+                            if let Some(uuid) = payload.get("promptUuid").and_then(|v| v.as_str()) {
                                 captured_prompt_uuid = Some(uuid.to_string());
                             }
                         }
