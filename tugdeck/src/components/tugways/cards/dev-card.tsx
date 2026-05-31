@@ -2909,6 +2909,7 @@ export function DevCardBody({
               <TugPromptEntry
                 ref={entryDelegateRef}
                 id={`${cardId}-entry`}
+                localCommandTargetId={`${cardId}-card-content`}
                 codeSessionStore={codeSessionStore}
                 sessionMetadataStore={sessionMetadataStore}
                 historyStore={historyStore}

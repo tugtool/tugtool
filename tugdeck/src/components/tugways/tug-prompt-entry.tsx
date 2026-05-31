@@ -79,7 +79,7 @@ import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { useKeyCardDispatch } from "./use-key-card-dispatch";
+import { useResponderChain } from "./responder-chain-provider";
 import { matchLocalSlashCommand } from "@/lib/slash-commands";
 import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
 import { selectionGuard } from "./selection-guard";
@@ -461,6 +461,17 @@ export interface TugPromptEntryProps {
    * @selector [data-responder-id]
    */
   id: string;
+  /**
+   * Responder id that owns this entry's local slash commands — the
+   * card's command-handling scope (typically `${cardId}-card-content`).
+   * When a typed `/command` matches the local registry, the entry routes
+   * `RUN_SLASH_COMMAND` here via `manager.sendToTarget` (by identity, so
+   * it reaches the owning card regardless of where first responder sits —
+   * the pane-modality contract [D15]). Omit for hosts with no local
+   * commands (e.g. the gallery prompt entry); a matched command then
+   * falls through to `send()` unchanged.
+   */
+  localCommandTargetId?: string;
   /** Store owning Claude Code turn state for this card. */
   codeSessionStore: CodeSessionStore;
   /** Session metadata (model name, version). Accepted for T3.4.c; unused in T3.4.b. */
@@ -619,6 +630,7 @@ export const TugPromptEntry = React.forwardRef<
 >(function TugPromptEntry(props, ref) {
   const {
     id,
+    localCommandTargetId,
     codeSessionStore,
     // sessionMetadataStore — accepted for T3.4.c, unused in T3.4.b.
     historyStore,
@@ -898,13 +910,30 @@ export const TugPromptEntry = React.forwardRef<
   // blocked-submit branch.
   const pendingSubmitRef = useRef(false);
 
-  // Key-card dispatch for locally-handled slash commands. A bare
-  // `/command` matching the local registry is routed to the key card's
-  // card-content responder (the dev card opens its surface) instead of
-  // being sent to claude — the same walk `CYCLE_PERMISSION_MODE` uses
-  // ([D23], [#step-1c]). The prompt entry stays generic: it knows the
-  // command *shape* via the pure matcher, not what any command does.
-  const { dispatch: dispatchToKeyCard } = useKeyCardDispatch();
+  // Card-scoped dispatch for locally-handled slash commands. A bare
+  // `/command` matching the local registry is routed to the host-supplied
+  // `localCommandTargetId` responder — THIS card's command-owning scope —
+  // so the owning card opens the command's surface, instead of being sent
+  // to claude. The prompt entry stays generic: it knows the command
+  // *shape* via the pure matcher and the target *by id*, not what any
+  // command does ([D23], [#step-1c]).
+  //
+  // Routing to a captured target id via `sendToTarget` — NOT
+  // `sendToKeyCard` — is load-bearing for pane modality ([D15]): the key
+  // card is derived from the GLOBAL first responder, so a pane-modal sheet
+  // open in another pane (which holds first responder there) makes that
+  // pane's card the key card. A `/rewind` typed here would then be handled
+  // by the OTHER pane's card, hijacking its sheet. The prompt entry
+  // belongs to exactly one card; the command must run on THAT card, by
+  // identity, regardless of where focus sits app-wide. (The card-content
+  // responder is reached by DOM-subtree search from the key card, not by
+  // the prompt entry's parentId chain — it is a registry *sibling*, not an
+  // ancestor — so a parent-targeted control dispatch can't reach it; the
+  // host hands us its id explicitly. See responder-chain.md §"The four
+  // dispatch shapes" → cascade-target pattern.)
+  const manager = useResponderChain();
+  const localCommandTargetIdRef = useRef(localCommandTargetId);
+  localCommandTargetIdRef.current = localCommandTargetId;
 
   // Shared submit logic. Invoked by both the SUBMIT chain-action
   // handler (button click, Cmd+Enter, etc.) and the Return /
@@ -948,8 +977,17 @@ export const TugPromptEntry = React.forwardRef<
       }
       const localCommand =
         commandLine !== null ? matchLocalSlashCommand(commandLine) : null;
-      if (localCommand !== null) {
-        const handled = dispatchToKeyCard({
+      const targetId = localCommandTargetIdRef.current;
+      if (
+        localCommand !== null &&
+        manager !== null &&
+        targetId !== undefined &&
+        // Guard the `sendToTarget` throw-on-unregistered contract, and
+        // confirm the target actually owns RUN_SLASH_COMMAND before we
+        // route (else fall through to send, never silently swallow).
+        manager.nodeCanHandle(targetId, TUG_ACTIONS.RUN_SLASH_COMMAND)
+      ) {
+        const handled = manager.sendToTarget(targetId, {
           action: TUG_ACTIONS.RUN_SLASH_COMMAND,
           value: localCommand,
           phase: "discrete",
@@ -1095,7 +1133,7 @@ export const TugPromptEntry = React.forwardRef<
     // now-empty editor.
     currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
     // Route is a sticky user preference. Do not reset on submit.
-  }, [codeSessionStore, historyStore, dispatchToKeyCard]);
+  }, [codeSessionStore, historyStore, manager]);
 
   // Flush a deferred submit. When a submit landed during the
   // transport-settling window, `performSubmit`'s blocked-submit branch

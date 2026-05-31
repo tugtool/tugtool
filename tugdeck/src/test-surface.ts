@@ -45,7 +45,7 @@ import {
 } from "./lib/card-session-binding-store";
 import { cardServicesStore } from "./lib/card-services-store";
 import type { AtomSegment } from "./lib/tug-atom-img";
-import { dispatchAction } from "./action-dispatch";
+import { dispatchAction, getResponderChainManager } from "./action-dispatch";
 import type { RateLimitInfo } from "./protocol";
 
 // ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ import type { RateLimitInfo } from "./protocol";
  * `driveDevSession`/`ingestFrame` (CodeSessionStore) path does not reach.
  * Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.8.0" as const;
+export const SURFACE_VERSION = "1.9.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -409,6 +409,19 @@ export interface TugTestSurface {
   // ---- State reads ----
   getActiveCardId(): string | null;
   getFocusedCardId(): string | null;
+  /**
+   * Force the responder chain's first responder to `responderId`
+   * (SURFACE_VERSION 1.9.0). The sanctioned `makeFirstResponder`
+   * primitive, exposed for tests that must construct the documented
+   * divergence between DOM focus and chain first responder — a state
+   * pointerdown/focusin promotion cannot reach because both axes are
+   * driven off the same DOM walk. The canonical case: a pane-modal
+   * sheet holds chain first responder in one pane while the keyboard
+   * caret sits in another pane's editor. No-op (and dev-warn) if
+   * `responderId` is not a registered node. See `responder-chain.md`
+   * §"Bringing DOM focus in sync with chain state".
+   */
+  setFirstResponder(responderId: string): void;
   getCaretState(cardId: string): CaretState | null;
   getFormControlValue(cardId: string, componentStatePreservationKey: string): string | null;
   assertHostRootRegistered(cardId: string): boolean;
@@ -962,6 +975,15 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       // `getFirstResponderCardId` is the deck-manager's name for
       // exactly that bit.
       return deck.getFirstResponderCardId();
+    },
+
+    setFirstResponder(responderId: string): void {
+      // Sanctioned `makeFirstResponder`, test-only. Lets a test pin the
+      // chain first responder to a node in one pane while the keyboard
+      // caret stays in another — the DOM-focus/chain divergence that
+      // pointerdown/focusin promotion cannot produce. `makeFirstResponder`
+      // no-ops with a dev-warn for an unregistered id.
+      getResponderChainManager()?.makeFirstResponder(responderId);
     },
 
     getFocusedCardId(): string | null {
