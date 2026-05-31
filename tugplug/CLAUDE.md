@@ -2,24 +2,45 @@
 
 ## Skills
 
-The plugin ships **agentless, main-loop-driven** skills — there are no sub-agents:
+The plugin ships **agentless, main-loop-driven** skills — there are no sub-agents.
 
-- **`recipe`** — author an implementation recipe (a plan) in-thread against the
-  tugplan skeleton (`tuglaws/tugplan-skeleton.md`); validate with `tugutil validate`.
-- **`bake`** — drive a recipe to a tested debug build on an isolated `tugutil dash`
-  worktree, committing per step, stopping for review before merge.
-- **`dash`** — quick, recipe-less worktree-isolated task, same agentless model as
-  `bake` but without a plan.
+**Plan lifecycle:**
 
-All three run in the main conversation and ride the `tugutil dash` CLI lifecycle
+- **`devise`** — author an implementation plan in-thread against the
+  devise skeleton (`tuglaws/devise-skeleton.md`); validate with `tugutil validate`.
+  Writes to an explicit path (no assumed directory).
+- **`implement`** — drive a plan to a tested debug build on an isolated `tugutil dash`
+  worktree, committing per step, stopping for review before merge. Walks a single step,
+  a step range, or the whole plan, tracked via the plan's Step Status Ledger.
+  *(was `bake`; before that the old multi-agent `implement`.)*
+- **`dash`** — quick, plan-less worktree-isolated task, same agentless model as
+  `implement` but without a plan.
+
+**Assessment & commit:**
+
+- **`vet`** — pre-implementation: assess a plan (or step range) against the tuglaws
+  and the real code, then rule "fixups needed" or "clear to implement". Read-only.
+- **`audit`** — post-implementation: audit the built code (or step range) against the
+  tuglaws and the real diff, then rule "fixups needed" or "good shape". Read-only.
+- **`commit`** — analyze the working changes, stage deliberately, and make a clean
+  conventional commit immediately (no confirmation prompt).
+
+The lifecycle skills run in the main conversation and ride the `tugutil dash` CLI
 (`create` → `commit` per step/round → `join`). The flow is
-`/tugplug:recipe` → `/tugplug:bake` (or just `/tugplug:dash`) → review → `tugutil dash join`.
+`/tugplug:devise` → `/tugplug:vet` → `/tugplug:implement` (or just `/tugplug:dash`) →
+`/tugplug:audit` → review → `tugutil dash join`.
+
+**Location discipline (critical):** no skill assumes a plan directory — `roadmap/`,
+`.tugtool/`, and any other home are never hardcoded. A plan is always an explicit
+path; the working root is derived from that path and from `tugutil dash create`'s
+worktree response. Once a worktree exists it is the **only** working root — every
+operation uses an absolute path into it, and nothing (code, plan, ledger) is written
+to the base checkout until `tugutil dash join`.
 
 The old multi-agent orchestration — a swarm of clarifier/author/critic/conformance/
-overviewer/architect/coder/committer/reviewer/auditor/dash agents driven by `plan`,
-`implement`, and a `merge` wrapper — has been fully retired: no sub-agents, no
-per-step tugstate database, no inter-agent JSON contracts. The `plan`, `implement`,
-and `merge` skills and every agent are gone.
+overviewer/architect/coder/committer/reviewer/auditor/dash agents — has been fully
+retired: no sub-agents, no per-step tugstate database, no inter-agent JSON contracts.
+Every agent is gone.
 
 ## Plan Mode Policy
 

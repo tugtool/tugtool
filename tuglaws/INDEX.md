@@ -35,4 +35,4 @@
 
 ## Templates
 
-- [tugplan-skeleton.md](tugplan-skeleton.md) — Template for `roadmap/` plan documents. Kept here per user decision; it is a template, not a tuglaws law or architecture doc.
+- [devise-skeleton.md](devise-skeleton.md) — Template for plan documents (the format `/tugplug:devise` authors and `/tugplug:implement` walks). Kept here per user decision; it is a template, not a tuglaws law or architecture doc.

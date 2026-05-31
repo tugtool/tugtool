@@ -9,16 +9,16 @@ Tugtool is a developer tool suite built around Tide — a unified command surfac
 **ONLY THE USER CAN COMMIT TO GIT.** Do not run `git commit`, `git push`, or any git commands that modify the repository history unless explicitly instructed by the user. You may run read-only git commands like `git status`, `git diff`, `git log`, etc.
 
 **Exceptions:**
-- The `/commit` skill: when the user invokes `/commit`, commit immediately without asking for confirmation.
-- Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the same commit style as the `/commit` skill. Report each commit hash and message.
-- The `bake` and `dash` skills commit on their **`tugutil dash` worktree** (never on `main`) via `tugutil dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugutil dash join`.
+- The `/tugplug:commit` skill: when the user invokes it, commit immediately without asking for confirmation.
+- Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the same commit style as the `/tugplug:commit` skill. Report each commit hash and message.
+- The `implement` and `dash` skills commit on their **`tugutil dash` worktree** (never on `main`) via `tugutil dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugutil dash join`.
 
 ## Repository Structure
 
 | Directory | Description |
 |-----------|-------------|
 | `tugrust/` | Rust crates (tugcast, tugutil, tugexec, tugbank, and supporting libraries) |
-| `tugplug/` | Claude Code plugin (agents and skills) |
+| `tugplug/` | Claude Code plugin (agentless skills: devise/implement/dash/vet/audit/commit) |
 | `tugapp/` | Swift macOS app |
 | `tugdeck/` | Web frontend |
 | `tugcode/` | Claude Code bridge (stream-json IPC) |

@@ -1,4 +1,14 @@
-<!-- tugplan-skeleton v2 -->
+<!-- devise-skeleton v3 -->
+
+<!--
+  This is the format contract for plans authored by `/tugplug:devise` and walked
+  by `/tugplug:implement`. It is validated by `tugutil validate`. The devise skill's
+  output is a plan written against this skeleton.
+
+  Prefix reservation: plan-local design decisions use `[P01]` (NOT `[D01]`).
+  `[D##]` is reserved for the global design decisions in `design-decisions.md`,
+  which a plan may also cite by reference — keeping the two namespaces distinct.
+-->
 
 ## <Plan Title> {#phase-slug}
 
@@ -70,7 +80,7 @@ This plan format relies on **explicit, named anchors** and **rich `References:` 
 - **Technique**: append an explicit anchor to the end of a heading using `{#anchor-name}`.
   - Example (append anchor to any heading):
     - `### Design Decisions {#my-design-decisions}`
-    - `#### [D01] Workspace snapshots are immutable (DECIDED) {#d01-snapshots-immutable}`
+    - `#### [P01] Workspace snapshots are immutable (DECIDED) {#p01-snapshots-immutable}`
 - **Why**: do not rely on auto-generated heading slugs; explicit anchors are stable when titles change.
 
 #### 2) Anchor naming rules (lock these in)
@@ -79,7 +89,9 @@ This plan format relies on **explicit, named anchors** and **rich `References:` 
 - **Style**: short, semantic, **kebab-case**, no phase numbers (anchors should survive renumbering).
 - **Prefix conventions (use these consistently)**:
   - **`step-N`**: execution step anchors (e.g. `step-1`, `step-2`, `step-3`)
-  - **`dNN-...`**: design decisions (`[D01]`) anchors, e.g. `{#d01-sandbox-copy}`
+  - **`pNN-...`**: plan-local design decisions (`[P01]`) anchors, e.g. `{#p01-sandbox-copy}`.
+    Use `P`, never `D` — `[D##]` is reserved for the global decisions in
+    `design-decisions.md`, which this plan may also cite by reference.
   - **`qNN-...`**: open questions (`[Q01]`) anchors, e.g. `{#q01-import-resolution}`
   - **`rNN-...`**: risk notes (`Risk R01`) anchors, e.g. `{#r01-perf-regression}`
   - **`lNN-...`**: lists (`List L01`) anchors, e.g. `{#l01-supported-ops}`
@@ -91,7 +103,7 @@ This plan format relies on **explicit, named anchors** and **rich `References:` 
 
 Use stable labels so steps can cite exact plan artifacts even when prose moves around:
 
-- **Design decisions**: `#### [D01] <Title> (DECIDED) {#d01-...}`
+- **Design decisions**: `#### [P01] <Title> (DECIDED) {#p01-...}`
 - **Open questions**: `#### [Q01] <Title> (OPEN) {#q01-...}`
 - **Specs**: `**Spec S01: <Title>** {#s01-slug}` (or make it a `####` heading if you prefer)
 - **Tables**: `**Table T01: <Title>** {#t01-slug}`
@@ -100,8 +112,11 @@ Use stable labels so steps can cite exact plan artifacts even when prose moves a
 - **Milestones**: `**Milestone M01: <Title>** {#m01-slug}`
 
 Numbering rules:
-- Always use **two digits**: `D01`, `Q01`, `S01`, `T01`, `L01`, `R01`, `M01`.
+- Always use **two digits**: `P01`, `Q01`, `S01`, `T01`, `L01`, `R01`, `M01`.
 - Never reuse an ID within a plan. If you delete one, leave the gap.
+- `P##` (plan-local decisions) is distinct from `[D##]` (global decisions in
+  `design-decisions.md`). A `References:` line may cite both — `[P05]` for a
+  decision made *in this plan*, `[D40]` for one it inherits from the global set.
 
 #### 4) `**Depends on:**` lines for execution step dependencies
 
@@ -125,7 +140,7 @@ Steps that depend on other steps must include a `**Depends on:**` line that refe
 Every step must include a `**References:**` line that cites the plan artifacts it implements.
 
 Rules:
-- Cite **decisions** by ID: `[D05] ...`
+- Cite **plan-local decisions** by ID: `[P05] ...` (global decisions, if relevant, as `[D40] ...`)
 - Cite **open questions** by ID when the step resolves/de-risks them: `[Q03] ...`
 - Cite **specs/lists/tables/risks/milestones** by label: `Spec S15`, `List L03`, `Tables T27-T28`, `Risk R02`, `Milestone M01`, etc.
 - Cite **anchors** for deep links in parentheses using `#anchor` tokens (keep them stable).
@@ -135,12 +150,12 @@ Rules:
 **Good References examples:**
 
 ```
-**References:** [D05] Sandbox verification, [D12] Git-based undo, Spec S15, Tables T21-T25,
+**References:** [P05] Sandbox verification, [P12] Git-based undo, Spec S15, Tables T21-T25,
 (#session-lifecycle, #worker-process-mgmt, #config-precedence)
 ```
 
 ```
-**References:** [D01] Refactoring kernel, [D06] Python analyzer, List L04,
+**References:** [P01] Refactoring kernel, [P06] Python analyzer, List L04,
 Table T05, (#op-rename, #fundamental-wall)
 ```
 
@@ -170,7 +185,7 @@ Table T05, (#op-rename, #fundamental-wall)
 
 **Plan to resolve:** <prototype / benchmark / spike / research / decision meeting>
 
-**Resolution:** OPEN / DECIDED (see [DNN]) / DEFERRED (why, and where it will be revisited)
+**Resolution:** OPEN / DECIDED (see [PNN]) / DEFERRED (why, and where it will be revisited)
 
 ---
 
@@ -191,8 +206,13 @@ Table T05, (#op-rename, #fundamental-wall)
 ### Design Decisions {#design-decisions}
 
 > Record *decisions* (not options). Each decision includes the "why" so later phases don't reopen it accidentally.
+>
+> These are **plan-local** decisions, labelled `[P01]`, `[P02]`, … Do not use `[D##]`
+> — that prefix belongs to the global [design-decisions.md](design-decisions.md). When a
+> plan-local decision restates or depends on a global one, cite the global by ID in the
+> rationale (e.g. "follows [D40]").
 
-#### [D01] <Decision Name> (DECIDED) {#d01-decision-slug}
+#### [P01] <Decision Name> (DECIDED) {#p01-decision-slug}
 
 **Decision:** <One sentence decision statement>
 
@@ -231,6 +251,16 @@ Table T05, (#op-rename, #fundamental-wall)
 - **Internal Architecture**: component relationships, pipeline, ownership
 - **Output Schemas**: CLI output, API responses, wire formats (contract)
 - **Configuration Schema**: config file format, precedence, CLI flag mapping
+
+#### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
+
+> For frontend work, map every new piece of state to a tuglaws zone *before*
+> writing code — the zone dictates the mechanism, and getting it wrong is the most
+> common law violation. Omit this subsection for non-frontend plans.
+
+| State | Zone (appearance / local-data / structure) | Mechanism | Law |
+|-------|--------------------------------------------|-----------|-----|
+| `<state>` | <zone> | CSS+DOM / useState+useRef / store + useSyncExternalStore / useLayoutEffect | [L24], [L06], [L02], [L22] |
 
 ---
 
@@ -293,6 +323,14 @@ Table T05, (#op-rename, #fundamental-wall)
 | **Golden / Contract** | Compare output against known-good snapshots | Schemas, APIs, parsers, serialization |
 | **Drift Prevention** | Detect unintended behavior changes | Regression testing, API stability |
 
+#### What stays out of tests {#test-non-goals}
+
+> Name what you are deliberately *not* testing, and why. This keeps reviewers from
+> reading a coverage gap as an oversight, and steers authors away from low-value tests
+> the project bans (e.g. mock-store assertion tests, fake-DOM render tests).
+
+- <area not tested> — <why (covered elsewhere / not worth the brittleness / banned pattern)>
+
 ---
 
 ### Execution Steps {#execution-steps}
@@ -305,7 +343,19 @@ Table T05, (#op-rename, #fundamental-wall)
 > - If a step is large, split the work into multiple **flat steps** (`Step N`, `Step N+1`, …) with separate commits and checkpoints, each with explicit `**Depends on:**` lines.
 > - After completing a group of related flat steps, add a lightweight **Integration Checkpoint step** that depends on all constituent steps and verifies they work together. Integration checkpoint steps use `Commit: N/A (verification only)` to signal no separate commit.
 >
-> **References are mandatory:** Every step must cite specific plan artifacts ([D01], Spec S01, Table T01, etc.) and anchors (#section-name). Never cite line numbers—add an anchor instead.
+> **References are mandatory:** Every step must cite specific plan artifacts ([P01], Spec S01, Table T01, etc.) and anchors (#section-name). Never cite line numbers—add an anchor instead.
+
+#### Step Status Ledger {#step-status-ledger}
+
+> A single at-a-glance table of every step and its current state. `/tugplug:implement`
+> reads this to know where to resume (which step is the first `pending`), to scope a
+> step range, and to mark progress. Keep it in sync as steps land — flip `pending` →
+> `in progress` → `done` (record the commit). It is the plan's source of truth for "where are we?".
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-1 | <title> | pending | — |
+| #step-2 | <title> | pending | — |
 
 #### Step 1: <Prep Step Title> {#step-1}
 
@@ -313,7 +363,7 @@ Table T05, (#op-rename, #fundamental-wall)
 
 **Commit:** `<conventional-commit message>`
 
-**References:** [D01] <decision name>, (#strategy, #context)
+**References:** [P01] <decision name>, (#strategy, #context)
 
 **Artifacts:** (what this step produces/changes)
 - <new files / new commands / new schema fields / new docs>
@@ -338,7 +388,7 @@ Table T05, (#op-rename, #fundamental-wall)
 
 **Commit:** `<conventional-commit message>`
 
-**References:** [D02] <decision>, [D03] <decision>, Spec S01, List L01, (#terminology, #semantics)
+**References:** [P02] <decision>, [P03] <decision>, Spec S01, List L01, (#terminology, #semantics)
 
 **Artifacts:** (what this step produces/changes)
 - <new files / new commands / new schema fields / new docs>
@@ -363,7 +413,7 @@ Table T05, (#op-rename, #fundamental-wall)
 
 **Commit:** `<conventional-commit message>`
 
-**References:** [D04] <decision>, Spec S02, Table T01, (#inputs-outputs)
+**References:** [P04] <decision>, Spec S02, Table T01, (#inputs-outputs)
 
 **Artifacts:** (what this step produces/changes)
 - <artifact>
@@ -385,7 +435,7 @@ Table T05, (#op-rename, #fundamental-wall)
 
 **Commit:** `<conventional-commit message>`
 
-**References:** [D05] <decision>, (#public-api)
+**References:** [P05] <decision>, (#public-api)
 
 **Artifacts:** (what this step produces/changes)
 - <artifact>
@@ -407,7 +457,7 @@ Table T05, (#op-rename, #fundamental-wall)
 
 **Commit:** `N/A (verification only)`
 
-**References:** [D04] <decision>, [D05] <decision>, (#success-criteria)
+**References:** [P04] <decision>, [P05] <decision>, (#success-criteria)
 
 **Tasks:**
 - [ ] Verify all artifacts from Steps 3 and 4 are complete and work together

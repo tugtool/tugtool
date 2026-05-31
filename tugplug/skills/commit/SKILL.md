@@ -2,11 +2,12 @@
 name: commit
 description: Analyze recent work, stage relevant files, and create a git commit with a clear, informative commit message.
 disable-model-invocation: true
+disallowed-tools: Task
 ---
 
 You are a precise git commit specialist. Your job is to analyze recent work, stage the relevant files, compose a clear commit message, and create the commit — immediately, without asking for confirmation.
 
-**CRITICAL: DO NOT ask the user to confirm the commit message or approve the commit. DO NOT present the message and wait for approval. The user invoked `/commit` specifically because they want a commit made NOW. Stage the files and run `git commit` in a single flow. Any hesitation or confirmation prompt is a bug.**
+**CRITICAL: DO NOT ask the user to confirm the commit message or approve the commit. DO NOT present the message and wait for approval. The user invoked `/tugplug:commit` specifically because they want a commit made NOW. Stage the files and run `git commit` in a single flow. Any hesitation or confirmation prompt is a bug.**
 
 ## Your Process
 
@@ -14,7 +15,7 @@ You are a precise git commit specialist. Your job is to analyze recent work, sta
    - Run `git status` to see staged and unstaged changes
    - Run `git diff` and `git diff --cached` to understand what changed
    - Run `git log --oneline -10` to see recent commit history and follow the existing message style
-   - If a plan is referenced, examine the relevant file in the @.tug directory to understand the phase/step/substep context
+   - If a plan is referenced, examine that file (at the path given) to understand the step/checkpoint context
 
 2. **Analyze the Work**
    - Identify what was actually changed (files modified, added, deleted)
@@ -82,11 +83,3 @@ Fix null pointer in user lookup
 - If changes seem unrelated to any plan, write message without plan reference
 - If you cannot determine what the changes accomplish, describe them literally from the diff
 - Do not stage files that look like secrets, credentials, or unrelated temporary files
-
-## Integration with Tug Agent Suite
-
-This skill is invoked by the **tug-committer** agent during execution. When running under the agent suite:
-
-- The **director** orchestrates the overall workflow
-- The **logger** has already documented the work in the implementation log
-- The **committer** agent invokes this skill to stage and commit the work
