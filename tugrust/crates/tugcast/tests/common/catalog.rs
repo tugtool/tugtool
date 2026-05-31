@@ -892,19 +892,28 @@ pub const TOOL_ACTIVITY_EVENT_TYPES: &[&str] = &["tool_use", "tool_result", "too
 /// [`shape_sequence`].
 pub const TOOL_ACTIVITY_MARKER: &str = "tool_activity";
 
-/// Event types whose *absence* in a current capture is benign — claude
-/// emits them based on model behavior, not on a protocol contract, so
-/// "golden had it, current doesn't" is run-to-run variance rather than
-/// a removed slot. `diff_probe_sequence` excludes these from the
-/// strict set check and reports any losses as a WARN instead of a FAIL.
+/// Event types whose *presence* is per-turn model behavior, not a
+/// protocol contract — so BOTH their appearance and their absence in a
+/// given capture are run-to-run variance, not drift. The differ is
+/// fully transparent to them: it strips them from every probe-sequence
+/// comparison (no `RemovedSequenceSlots`, `NewSequenceSlots`,
+/// `OptionalSequenceVariance`, or `ReorderedSequence` ever originates
+/// from them) and never raises `MissingEventType` / `NewEventType` for
+/// them at the event-type level. Their *field shape*, when a capture
+/// does carry them, is still pinned by `diff_event_shape` (the shape
+/// diff runs whenever both golden and current have the type).
+///
+/// This symmetry is the point: a WARN that fires on inherent,
+/// never-stabilizing nondeterminism is noise, not signal — it can't be
+/// "resolved by a refresh" because the next capture is equally likely
+/// to flip. Pinning the shape (not the presence) is the right contract.
 ///
 /// - `thinking_text`: extended-thinking deltas. Claude chooses whether
-///   to think per turn; short or simple prompts often elicit no
-///   thinking and produce no events. The probe table already lists it
-///   in every probe's `optional_events`, but that field is consumed by
-///   capture-time stability checks, not by the differ — this constant
-///   bridges the gap.
-pub const TOLERATED_ABSENCE_EVENT_TYPES: &[&str] = &["thinking_text"];
+///   to think per turn; short or simple prompts often elicit none, and
+///   the choice flips run-to-run on the same prompt. The probe table
+///   also lists it in every probe's `optional_events` for capture-time
+///   stability checks; this constant is the differ's counterpart.
+pub const MODEL_OPTIONAL_EVENT_TYPES: &[&str] = &["thinking_text"];
 
 /// Reduce a probe's event-type sequence to its **order-comparison
 /// shape**: drop position-insensitive interstitial events

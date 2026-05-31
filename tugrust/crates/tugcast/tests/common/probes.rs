@@ -494,9 +494,16 @@ pub static PROBES: &[ProbeRecord] = &[
             ProbeMsg::UserMessage {
                 text: "What Anthropic model are you? Answer in one short sentence.",
             },
+            // Turn 1 runs on the default model (opus 4.8, 1M context),
+            // whose first-token + completion latency on a cold session
+            // routinely exceeds 20 s — the old value timed out here and
+            // mislabeled the probe a "flake". The intermediate wait only
+            // needs to outlast a single default-model turn; 75 s does,
+            // with headroom for thinking. The overall `timeout_secs`
+            // budget below must exceed this plus turn 2.
             ProbeMsg::WaitForEvent {
                 event_type: "turn_complete",
-                max_secs: 20,
+                max_secs: 75,
             },
             ProbeMsg::ModelChange {
                 model: "claude-sonnet-4-6",
@@ -513,7 +520,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ],
         optional_events: &["thinking_text"],
         prerequisites: &[],
-        timeout_secs: 90,
+        timeout_secs: 150,
         skip_reason: None,
     },
     // --- Test 17: session_command continue ---

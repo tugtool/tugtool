@@ -61,7 +61,7 @@ use serde_json::Value;
 // unconditional so the differ's 24 unit tests still run in standard
 // `cargo nextest run` invocations.
 use common::catalog::{
-    EventShape, Schema, TOLERATED_ABSENCE_EVENT_TYPES, canonical_type_sequence, shape_sequence,
+    EventShape, MODEL_OPTIONAL_EVENT_TYPES, Schema, canonical_type_sequence, shape_sequence,
 };
 
 // Real-claude-only imports — only used by
@@ -398,21 +398,34 @@ fn parse_event_shape(value: &Value) -> EventShape {
 pub fn diff_schemas(golden: &Schema, current: &Schema) -> DiffReport {
     let mut report = DiffReport::new();
 
-    // Event types present in golden but absent from current → fail.
-    // Event types present in both → diff their shapes.
+    // Event types present in golden but absent from current → fail,
+    // UNLESS the type is model-optional (its presence is per-turn model
+    // behavior, not a protocol contract — see `MODEL_OPTIONAL_EVENT_TYPES`),
+    // in which case its absence is benign variance, not drift.
+    // Event types present in both → diff their shapes (the shape IS
+    // pinned even for model-optional types, whenever a capture carries
+    // one).
     for (et, shape_g) in &golden.event_types {
         match current.event_types.get(et) {
-            None => report.fail(FailureKind::MissingEventType {
-                event_type: et.clone(),
-            }),
+            None => {
+                if !MODEL_OPTIONAL_EVENT_TYPES.contains(&et.as_str()) {
+                    report.fail(FailureKind::MissingEventType {
+                        event_type: et.clone(),
+                    });
+                }
+            }
             Some(shape_c) => {
                 diff_event_shape(shape_g, shape_c, std::slice::from_ref(et), &mut report);
             }
         }
     }
-    // Event types present in current but absent from golden → warn.
+    // Event types present in current but absent from golden → warn,
+    // UNLESS model-optional (a thinking turn the golden capture happened
+    // not to elicit — benign, symmetric with the absence case above).
     for et in current.event_types.keys() {
-        if !golden.event_types.contains_key(et) {
+        if !golden.event_types.contains_key(et)
+            && !MODEL_OPTIONAL_EVENT_TYPES.contains(&et.as_str())
+        {
             report.warn(FailureKind::NewEventType {
                 event_type: et.clone(),
             });
@@ -552,31 +565,39 @@ fn diff_probe_sequence(
     current: &[String],
     report: &mut DiffReport,
 ) {
+    // Strip model-optional event types from BOTH sides before any
+    // comparison. Their presence is per-turn model behavior, not a
+    // protocol contract (see `MODEL_OPTIONAL_EVENT_TYPES` — `thinking_text`
+    // is the canonical case), so their appearance OR absence is run-to-run
+    // variance that must contribute to no finding: not the set diff, not
+    // the order check. Their field shape is pinned separately by
+    // `diff_event_shape`. Stripping up front (rather than the prior
+    // asymmetric tolerated-absence partition + `g_set_norm` normalization)
+    // makes the tolerance symmetric and the rest of the function simple.
+    let golden: Vec<String> = golden
+        .iter()
+        .filter(|t| !MODEL_OPTIONAL_EVENT_TYPES.contains(&t.as_str()))
+        .cloned()
+        .collect();
+    let current: Vec<String> = current
+        .iter()
+        .filter(|t| !MODEL_OPTIONAL_EVENT_TYPES.contains(&t.as_str()))
+        .cloned()
+        .collect();
+
     // ---- Event-type *set* comparison — strict. ----
     // Computed on the consecutive-collapsed canonical, where every
     // event type stays individually visible: a probe that loses
     // `tool_use_structured`, or gains a brand-new event type, is
     // caught here regardless of the order-comparison reduction below.
-    let g_canon = canonical_type_sequence(golden);
-    let c_canon = canonical_type_sequence(current);
+    let g_canon = canonical_type_sequence(&golden);
+    let c_canon = canonical_type_sequence(&current);
 
     let g_set: BTreeSet<String> = g_canon.iter().cloned().collect();
     let c_set: BTreeSet<String> = c_canon.iter().cloned().collect();
 
-    let raw_removed: Vec<String> = g_set.difference(&c_set).cloned().collect();
+    let removed: Vec<String> = g_set.difference(&c_set).cloned().collect();
     let added: Vec<String> = c_set.difference(&g_set).cloned().collect();
-
-    // Split removed slots into strict failures and tolerated absences.
-    // Tolerated-absence event types (see `TOLERATED_ABSENCE_EVENT_TYPES`)
-    // are emitted on a per-turn model-behavior basis, not on a protocol
-    // contract — `thinking_text` is the canonical case. Their loss in a
-    // single capture is run-to-run variance, not protocol drift. We
-    // still surface them as a WARN under `NewSequenceSlots`'s symmetric
-    // partner so a reviewer sees what changed, but they don't fail the
-    // run.
-    let (tolerated_removed, removed): (Vec<String>, Vec<String>) = raw_removed
-        .into_iter()
-        .partition(|t| TOLERATED_ABSENCE_EVENT_TYPES.contains(&t.as_str()));
 
     if !removed.is_empty() {
         report.fail(FailureKind::RemovedSequenceSlots {
@@ -590,19 +611,6 @@ fn diff_probe_sequence(
             slots: added,
         });
     }
-    if !tolerated_removed.is_empty() {
-        // Symmetrize with NewSequenceSlots's WARN level. The added
-        // counterpart already exists; this is the demoted "removed"
-        // half for tolerated-absence event types. Reusing
-        // `NewSequenceSlots` keeps the FailureKind set minimal — a
-        // reviewer reading the report sees "added" / "lost" symmetry
-        // via the probe's golden/current set comparison.
-        report.warn(FailureKind::OptionalSequenceVariance {
-            probe_name: probe_name.to_string(),
-            golden: shape_sequence(golden),
-            current: shape_sequence(current),
-        });
-    }
 
     // ---- Event-type *order* comparison — supple. ----
     // Runs on the structural shape reduction (`shape_sequence`):
@@ -610,26 +618,11 @@ fn diff_probe_sequence(
     // tool-activity runs collapsed. Agent tool-call-count and
     // interleaving variance is therefore benign by construction; only
     // a genuine transposition of the turn skeleton fails. Gated on the
-    // event-type sets matching — if they differ (after tolerating
-    // benign absences), the set drift above already covers it and a
-    // reorder finding would be redundant.
-    //
-    // The tolerated-absence event types are also excluded from the
-    // gate's set equality check: if golden has `thinking_text` and
-    // current doesn't, we still want the order check to run against
-    // a normalized golden so a real transposition elsewhere still
-    // surfaces. We build a `g_set_norm` that mirrors `c_set` for the
-    // tolerated types.
-    let g_set_norm: BTreeSet<String> = g_set
-        .iter()
-        .filter(|t| {
-            !TOLERATED_ABSENCE_EVENT_TYPES.contains(&t.as_str()) || c_set.contains(t.as_str())
-        })
-        .cloned()
-        .collect();
-    if g_set_norm == c_set {
-        let g_shape = shape_sequence(golden);
-        let c_shape = shape_sequence(current);
+    // event-type sets matching — if they differ, the set drift above
+    // already covers it and a reorder finding would be redundant.
+    if g_set == c_set {
+        let g_shape = shape_sequence(&golden);
+        let c_shape = shape_sequence(&current);
         if g_shape != c_shape {
             if is_subsequence(&c_shape, &g_shape) || is_subsequence(&g_shape, &c_shape) {
                 // One shape is the other with an in-set event type
@@ -1087,8 +1080,11 @@ mod differ_tests {
     #[test]
     fn probe_sequence_added_slot_warns() {
         // Golden sequence:  [system_metadata, assistant_text, turn_complete]
-        // Current sequence: [system_metadata, thinking_text, assistant_text, turn_complete]
-        // The new `thinking_text` is a warn (added slot).
+        // Current sequence: [system_metadata, compact_boundary, assistant_text, turn_complete]
+        // The new `compact_boundary` is a warn (added slot). A genuine
+        // new (non-model-optional) event type must surface — model-optional
+        // types like `thinking_text` are stripped and would NOT (that
+        // symmetry is covered by `probe_sequence_model_optional_presence_is_silent`).
         let golden = schema_with_probe_seq(
             "test-01",
             &["system_metadata", "assistant_text", "turn_complete"],
@@ -1097,7 +1093,7 @@ mod differ_tests {
             "test-01",
             &[
                 "system_metadata",
-                "thinking_text",
+                "compact_boundary",
                 "assistant_text",
                 "turn_complete",
             ],
@@ -1106,7 +1102,7 @@ mod differ_tests {
         assert_warn_kind(&report, |k| {
             matches!(k, FailureKind::NewSequenceSlots { probe_name, slots }
                 if probe_name == "test-01"
-                && slots.contains(&"thinking_text".to_string()))
+                && slots.contains(&"compact_boundary".to_string()))
         });
         assert!(!report.has_failures());
     }
@@ -1142,18 +1138,20 @@ mod differ_tests {
         });
     }
 
-    // ---- 13b. Probe sequence: removed tolerated-absence slot → warn,
-    //     no fail
+    // ---- 13b. Probe sequence: model-optional event type → no finding,
+    //     either direction
     //
-    // `thinking_text` is in `TOLERATED_ABSENCE_EVENT_TYPES` (see
-    // `common::catalog`): claude chooses whether to think per turn, so
-    // a single capture missing `thinking_text` when golden had it is
-    // model-behavior variance, not protocol drift. The differ surfaces
-    // it as an `OptionalSequenceVariance` WARN — visible to a reviewer
-    // without blocking the run.
+    // `thinking_text` is in `MODEL_OPTIONAL_EVENT_TYPES` (see
+    // `common::catalog`): claude chooses whether to think per turn, and
+    // the choice flips run-to-run on the same prompt — so neither its
+    // appearance nor its absence is drift. The differ strips it from the
+    // sequence comparison entirely: a thinking_text-only difference
+    // produces NO finding (no fail AND no warn), symmetric in both
+    // directions. A WARN that can never be resolved by a refresh would
+    // be noise, not signal.
 
     #[test]
-    fn probe_sequence_tolerated_absence_warns() {
+    fn probe_sequence_model_optional_absence_is_silent() {
         let golden = schema_with_probe_seq(
             "test-01",
             &[
@@ -1168,14 +1166,38 @@ mod differ_tests {
             &["system_metadata", "assistant_text", "turn_complete"],
         );
         let report = diff_schemas(&golden, &current);
-        assert!(
-            !report.has_failures(),
-            "tolerated-absence event types must not fail the run",
+        assert_eq!(
+            report.findings.len(),
+            0,
+            "a model-optional (thinking_text) absence must produce no finding, got: {}",
+            report.format_report(),
         );
-        assert_warn_kind(&report, |k| {
-            matches!(k, FailureKind::OptionalSequenceVariance { probe_name, .. }
-                if probe_name == "test-01")
-        });
+    }
+
+    #[test]
+    fn probe_sequence_model_optional_presence_is_silent() {
+        // The symmetric case: golden lacked thinking_text (the capture
+        // run didn't elicit it), current has it. Still no finding.
+        let golden = schema_with_probe_seq(
+            "test-01",
+            &["system_metadata", "assistant_text", "turn_complete"],
+        );
+        let current = schema_with_probe_seq(
+            "test-01",
+            &[
+                "system_metadata",
+                "thinking_text",
+                "assistant_text",
+                "turn_complete",
+            ],
+        );
+        let report = diff_schemas(&golden, &current);
+        assert_eq!(
+            report.findings.len(),
+            0,
+            "a model-optional (thinking_text) presence must produce no finding, got: {}",
+            report.format_report(),
+        );
     }
 
     // ---- 14. Probe sequence: reordered same events → fail
