@@ -48,6 +48,7 @@ import React, {
 } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugLabel } from "@/components/tugways/tug-label";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import {
   TugChoiceGroup,
@@ -98,8 +99,9 @@ export function useRewindSheet({
     const rows = projectRewindTurns(codeSessionStore.getSnapshot().transcript);
     if (rows.length === 0) return; // nothing to rewind to
     void showSheet({
-      title: "Rewind",
-      description: "Pick a turn to rewind to. Earlier turns are kept.",
+      // Guidance rides the title line (above the divider); no separate
+      // below-the-line description, matching the session picker's header.
+      title: "Rewind: Pick a turn to rewind to. Earlier turns are kept.",
       displayWidth: "wide",
       content: (close) => (
         <RewindSheetBody
@@ -320,22 +322,29 @@ function RewindSheetBody({
         <RewindCellContext.Provider
           value={{ previews, selectedPromptUuid: selected?.promptUuid ?? null }}
         >
-          <div className="rewind-sheet-list">
-            <TugListView<RewindTurnDataSource>
-              dataSource={dataSource}
-              delegate={delegate}
-              cellRenderers={REWIND_CELL_RENDERERS}
-              className="dev-card-picker-sessions-list dev-card-picker-list-view"
-            />
+          {/* Reuse the session picker's section + bordered host so the two
+              pickers read the same ([L20] cascade-scoped). */}
+          <div className="dev-card-picker-section">
+            <span className="dev-card-picker-label">Turns</span>
+            <div className="dev-card-picker-sessions-host">
+              <TugListView<RewindTurnDataSource>
+                dataSource={dataSource}
+                delegate={delegate}
+                cellRenderers={REWIND_CELL_RENDERERS}
+                scrollKey="rewind-turns"
+                className="dev-card-picker-sessions-list dev-card-picker-list-view"
+              />
+            </div>
           </div>
         </RewindCellContext.Provider>
 
         <div className="rewind-scope-row">
-          <span className="rewind-scope-label">Restore</span>
+          <TugLabel emphasis="proposal">Restore</TugLabel>
           <TugChoiceGroup
             items={scopeItems}
             value={effectiveScope}
             senderId={scopeGroupId}
+            size="sm"
             disabled={selected === null}
             aria-label="Restore scope"
             data-testid="rewind-scope"

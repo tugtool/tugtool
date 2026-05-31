@@ -1,8 +1,9 @@
 /* @tug-pairings: none — layout only. The sheet chrome comes from the composed
-   TugSheet; the rows reuse the session-picker option visual
-   (`dev-card-picker-session-*`); the scope picker from TugChoiceGroup; the
-   buttons from TugPushButton. No color-setting rules (secondary text dimmed via
-   opacity, which inherits the sheet foreground), so no `@tug-renders-on` ([L16]). */
+   TugSheet; the turn list reuses the session picker's section + bordered host
+   (`dev-card-picker-section` / `dev-card-picker-sessions-host`) and option
+   visual; the scope picker from TugChoiceGroup; the buttons from
+   TugPushButton. No color-setting rules (secondary text dimmed via opacity,
+   which inherits the sheet foreground), so no `@tug-renders-on` ([L16]). */
 
 .rewind-sheet {
   display: flex;
@@ -10,24 +11,12 @@
   gap: 0.75rem;
 }
 
-/* Size the turn list to its rows with a scroll cap, instead of the list view's
-   default `height: 100%` (a cascade-scoped override, [L20]). The list reuses
-   the `dev-card-picker-sessions-list` visual. */
-.rewind-sheet-list .tug-list-view {
-  height: auto;
-  max-height: 22rem;
-}
-
-/* The restore-scope row: a label beside the inline TugChoiceGroup. */
+/* The restore-scope row: a proposal-style label beside the inline (sm)
+   TugChoiceGroup. */
 .rewind-scope-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-}
-
-.rewind-scope-label {
-  flex-shrink: 0;
-  opacity: 0.75;
 }
 
 .rewind-busy,
