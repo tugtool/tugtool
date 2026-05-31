@@ -1662,10 +1662,10 @@ This re-specced [#step-7] around the four verified mechanisms and retired the `S
 
 **Tests:**
 - [x] tugcode unit (`bun test`): control-request correlation + IPC mapping; `promptUuid` capture (`src/__tests__/rewind-bridge.test.ts`, 15 tests).
-- [x] Real-claude probe through tugcode wired (`test-37`); the probe-table + shape unit tests pass (`cargo nextest -p tugcast`, 664 pass). *Live execution* runs under `just capture-capabilities` (real-claude, regenerates the golden catalog) — pending the user's capture run.
+- [x] Real-claude probe through tugcode (`test-37`) **PASSED live** under `capture_all_probes` (claude 2.1.158, events=29): Write → `prompt_anchor` → `turn_complete` → `rewind_preview_result{canRewind:true, deletions:1, insertions:0}` → `rewind_result{canRewind:true, scope:code}`, matching `rewind-files.v2.1.158.json`. Golden committed (`b1e4c122`).
 
 **Checkpoint:**
-- [x] Rebuild tugcode (`bun build --compile`) — done; `cd tugcode && bun test` green (516 pass); the through-tugcode probe present (`test-37-rewind-files-roundtrip`). *Passing under live `capture_all_probes`* is the user's `just capture-capabilities` run (it spends subscription quota across the full table and regenerates committed fixtures).
+- [x] Rebuild tugcode (`bun build --compile`) — done; `cd tugcode && bun test` green (516 pass); the through-tugcode probe present + **passing live under `capture_all_probes`** (golden `test-37-rewind-files-roundtrip.jsonl`; the catalog refresh also folded `prompt_anchor` into every live-turn sequence). `cargo nextest -p tugcast`: 664 pass. *(The drift-regression leg of `just capture-capabilities` was not run — the recipe stopped at its interactive pager; run it later to validate cross-run `prompt_anchor` position stability.)*
 
 ##### Step 7b.2: conversation rewind — JSONL truncate + `--resume` (tugcode) {#step-7-2}
 
