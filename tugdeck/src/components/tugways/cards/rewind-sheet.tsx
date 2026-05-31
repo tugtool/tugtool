@@ -99,9 +99,9 @@ export function useRewindSheet({
     const rows = projectRewindTurns(codeSessionStore.getSnapshot().transcript);
     if (rows.length === 0) return; // nothing to rewind to
     void showSheet({
-      // Guidance rides the title line (above the divider); no separate
-      // below-the-line description, matching the session picker's header.
-      title: "Rewind: Pick a turn to rewind to. Earlier turns are kept.",
+      title: "Rewind",
+      // Guidance renders as a centered proposal label below the divider (in
+      // the body), not as a below-the-line description.
       displayWidth: "wide",
       content: (close) => (
         <RewindSheetBody
@@ -319,6 +319,12 @@ function RewindSheetBody({
           }
         }}
       >
+        <div className="rewind-intro">
+          <TugLabel emphasis="proposal" align="center">
+            Pick a turn to rewind to. Earlier turns are kept.
+          </TugLabel>
+        </div>
+
         <RewindCellContext.Provider
           value={{ previews, selectedPromptUuid: selected?.promptUuid ?? null }}
         >

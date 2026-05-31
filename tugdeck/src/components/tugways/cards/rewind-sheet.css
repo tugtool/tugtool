@@ -11,11 +11,18 @@
   gap: 0.75rem;
 }
 
-/* The restore-scope row: a proposal-style label beside the inline (sm)
-   TugChoiceGroup. */
+/* Centered guidance label below the divider, above the Turns list. */
+.rewind-intro {
+  display: flex;
+  justify-content: center;
+}
+
+/* The restore-scope row: a proposal-style label + the inline (sm)
+   TugChoiceGroup, centered as a group under the list. */
 .rewind-scope-row {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.75rem;
 }
 
