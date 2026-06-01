@@ -311,7 +311,14 @@ describe("rewind_preview conversationRewindable ([#step-7-3])", () => {
 
   test("an anchor BEFORE a /compact boundary is not conversation-rewindable", async () => {
     const { manager, written } = managerWithJsonl(JSONL);
-    const r = await previewResult(manager, written, "uuid-2");
+    // A non-rewindable anchor answers from the JSONL alone — no `rewind_files`
+    // round-trip to claude — so the result rides back during the preview call
+    // itself, with nothing written to claude's stdin.
+    const out = await captureIpcOutput(() => {
+      return manager.handleRewindPreview({ type: "rewind_preview", promptUuid: "uuid-2" });
+    });
+    expect(written.length).toBe(0);
+    const r = out.find((m) => m.type === "rewind_preview_result");
     expect(r.conversationRewindable).toBe(false);
   });
 
