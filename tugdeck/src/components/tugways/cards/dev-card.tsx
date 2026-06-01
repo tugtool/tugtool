@@ -48,6 +48,7 @@ import { useDiffSheet } from "./diff-sheet";
 import { useSkillsSheet } from "./skills-sheet";
 import { useAgentsSheet } from "./agents-sheet";
 import { useMemorySheet } from "./memory-sheet";
+import { useHooksSheet } from "./hooks-sheet";
 import { canOfferRewind } from "./rewind-turn-source";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
@@ -94,6 +95,7 @@ import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
+import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import { deriveDevCardBannerSpec } from "./dev-card-banner-spec";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
@@ -417,6 +419,8 @@ export interface DevCardServices {
   gitDiffStore: GitDiffStore;
   /** Single-shot `/skills` request/response store ([#step-12d]). */
   skillsInventoryStore: SkillsInventoryStore;
+  /** Single-shot `/hooks` request/response store ([#step-12c]). */
+  hooksInventoryStore: HooksInventoryStore;
   /**
    * Delegate handle for the embedded `TugPromptEntry`. Owned by the
    * hook because the `/` completion provider's position-0 gate reads
@@ -497,6 +501,7 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       responseStore: services.responseStore,
       gitDiffStore: services.gitDiffStore,
       skillsInventoryStore: services.skillsInventoryStore,
+      hooksInventoryStore: services.hooksInventoryStore,
       entryDelegateRef,
     };
   }, [services, completionProviders]);
@@ -2028,7 +2033,7 @@ export function DevCardBody({
   renderTurnTrailing,
   footerContent,
 }: DevCardBodyProps) {
-  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, gitDiffStore, skillsInventoryStore, entryDelegateRef } = services;
+  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
 
@@ -2642,6 +2647,14 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/hooks` listing sheet ([#step-12c]), card-scoped per [D15]. Fires
+  // `hooks_query` on open; the response renders as a read-only `TugAccordion`
+  // of hook events. Single-shot, not a feed.
+  const hooksSheet = useHooksSheet({
+    hooksInventoryStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2679,6 +2692,7 @@ export function DevCardBody({
     skills: () => skillsSheet.openSkillsSheet(),
     agents: () => agentsSheet.openAgentsSheet(),
     memory: () => memorySheet.openMemorySheet(),
+    hooks: () => hooksSheet.openHooksSheet(),
   };
 
   const {

@@ -1,0 +1,128 @@
+/* @tug-pairings: none — layout + inherited foreground only (no color-setting
+   rules, so no @tug-renders-on [L16]). The panel surface comes from the
+   composed TugSheet; the accordion from TugAccordion; buttons from
+   TugPushButton. Composed children keep their own tokens [L20]. */
+
+/* Layout (fixed header → scrolling accordion → fixed Done) comes from the
+   composed TugSheetScaffold; the hooks sheet only adds the header→body gap and
+   the hook-specific row styling below. */
+.hooks-sheet .tug-sheet-scaffold-header {
+  margin-bottom: 0.5rem;
+}
+
+.hooks-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.hooks-sheet-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.hooks-sheet-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.hooks-sheet-summary {
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+/* Centered notice for the loading / error states. */
+.hooks-sheet-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  margin: 0;
+  font-size: 0.875rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+/* One accordion trigger: event name, count badge, description. */
+.hooks-sheet-trigger {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.hooks-sheet-event {
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+/* Per-event count chip — a quiet pill, like "(2)" in Claude Code. */
+.hooks-sheet-count {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.4em;
+  border-radius: 999px;
+  background: var(--tug7-surface-control-primary-ghost-action-hover);
+  opacity: 0.85;
+}
+
+.hooks-sheet-event-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  opacity: 0.6;
+}
+
+/* Expanded body. */
+.hooks-sheet-empty-event {
+  margin: 0;
+  padding: 0.25rem 0 0.5rem;
+  font-size: 0.875rem;
+  opacity: 0.6;
+}
+
+.hooks-sheet-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.hooks-sheet-matcher {
+  font-size: 0.8125rem;
+  opacity: 0.7;
+  margin-bottom: 0.25rem;
+}
+
+.hooks-sheet-cmd {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.15rem 0;
+}
+
+.hooks-sheet-cmd-text {
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.hooks-sheet-cmd-timeout {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+/* The list view height note doesn't apply (accordion is not a TugListView);
+   the accordion sizes to content and the scaffold body scrolls. */

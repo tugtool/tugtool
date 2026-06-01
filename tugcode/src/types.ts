@@ -201,6 +201,20 @@ export interface SkillsInventoryQuery {
   request_id: string;
 }
 
+/**
+ * Client → tugcode request for the `/hooks` inventory ([#step-12c]). The
+ * graphical `/hooks` sheet sends this when it opens; tugcode reads the hook
+ * config from the user / project / local `settings.json` files and answers
+ * with a single {@link HooksInventory} carrying the matching `request_id`.
+ * Request/response keeps the listing fresh (settings edits are picked up on
+ * the next open) with no persistence.
+ */
+export interface HooksQuery {
+  type: "hooks_query";
+  /** Correlation id echoed back on the {@link HooksInventory} response. */
+  request_id: string;
+}
+
 export type InboundMessage =
   | ProtocolInit
   | UserMessage
@@ -215,7 +229,8 @@ export type InboundMessage =
   | RequestReplay
   | RewindPreview
   | SessionRewind
-  | SkillsInventoryQuery;
+  | SkillsInventoryQuery
+  | HooksQuery;
 
 // Outbound message types (tugcode stdout → tugcast)
 // ipc_version is required per D15 (#d15-ipc-version). Always set to 2.
@@ -760,6 +775,40 @@ export interface SkillsInventory {
   ipc_version: number;
 }
 
+/** One hook command under a matcher group — a `settings.json` `hooks` entry. */
+export interface HookCommand {
+  /** Hook kind, e.g. `"command"`. */
+  type: string;
+  /** The shell command to run (for `type: "command"`). */
+  command?: string;
+  /** Optional per-hook timeout in seconds. */
+  timeout?: number;
+}
+
+/** A matcher group under a hook event — a tool-name matcher + its commands. */
+export interface HookMatcherGroup {
+  /** Tool-name matcher pattern (e.g. `"Bash"`, `"Edit|Write"`); absent = all. */
+  matcher?: string;
+  /** The hook commands that fire for this matcher. */
+  hooks: HookCommand[];
+}
+
+/**
+ * tugcode → client answer to a {@link HooksQuery} ([#step-12c]) — the hook
+ * configuration merged across the user / project / local `settings.json`
+ * files, keyed by event name (e.g. `"PreToolUse"`). Read-only: the `/hooks`
+ * sheet displays it; edits happen in `settings.json`. Rides tugcode's stdout,
+ * relayed verbatim by tugcast on `CODE_OUTPUT`.
+ */
+export interface HooksInventory {
+  type: "hooks_inventory";
+  tug_session_id: string;
+  request_id: string;
+  /** Event name → its matcher groups (concatenated across settings scopes). */
+  events: Record<string, HookMatcherGroup[]>;
+  ipc_version: number;
+}
+
 /**
  * API retry notification. Claude Code retries up to 10 times with exponential backoff.
  */
@@ -1128,6 +1177,7 @@ export type OutboundMessage =
   | RewindPreviewResult
   | RewindResult
   | SkillsInventory
+  | HooksInventory
   | PromptAnchor;
 
 // Type guards
@@ -1148,7 +1198,8 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "request_replay" ||
     typed.type === "rewind_preview" ||
     typed.type === "session_rewind" ||
-    typed.type === "skills_inventory_query"
+    typed.type === "skills_inventory_query" ||
+    typed.type === "hooks_query"
   );
 }
 
@@ -1208,4 +1259,8 @@ export function isSkillsInventoryQuery(
   msg: InboundMessage,
 ): msg is SkillsInventoryQuery {
   return msg.type === "skills_inventory_query";
+}
+
+export function isHooksQuery(msg: InboundMessage): msg is HooksQuery {
+  return msg.type === "hooks_query";
 }

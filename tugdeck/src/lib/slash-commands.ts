@@ -100,6 +100,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "memory",
     description: "Open this project's memory files in your editor",
   },
+  {
+    name: "hooks",
+    description: "View the configured hooks for this session",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

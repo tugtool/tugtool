@@ -38,6 +38,9 @@ describe("types.ts type guards", () => {
     expect(
       isInboundMessage({ type: "skills_inventory_query", request_id: "si-1" }),
     ).toBe(true);
+    expect(
+      isInboundMessage({ type: "hooks_query", request_id: "h-1" }),
+    ).toBe(true);
   });
 
   test("isProtocolInit discriminates protocol_init", () => {

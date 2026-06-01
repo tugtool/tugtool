@@ -17,12 +17,14 @@ import {
   isRewindPreview,
   isSessionRewind,
   isSkillsInventoryQuery,
+  isHooksQuery,
 } from "./types.ts";
 import { SessionManager } from "./session.ts";
 import { loadTranscript, StubReplayEngine } from "./stub-replay.ts";
 import { readClaudeCodeSettings } from "./claude-code-settings.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
 import { buildSkillsInventory } from "./skills-inventory.ts";
+import { buildHooksInventory } from "./hooks-inventory.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { realpathSync } from "node:fs";
@@ -429,6 +431,19 @@ async function main() {
           requestId: msg.request_id,
           homeDir: homedir(),
           pluginDir: join(projectDir, "tugplug"),
+        }),
+      );
+    } else if (isHooksQuery(msg)) {
+      // `/hooks` listing ([#step-12c]). Read the hook config from the user /
+      // project / local settings.json files and answer with a single
+      // `hooks_inventory` frame correlated by `request_id`. Synchronous,
+      // idle-time, best-effort; tugcast relays the response verbatim.
+      writeLine(
+        buildHooksInventory({
+          sessionId,
+          requestId: msg.request_id,
+          homeDir: homedir(),
+          cwd: projectDir,
         }),
       );
     } else if (isSessionCommand(msg)) {

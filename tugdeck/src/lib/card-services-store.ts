@@ -38,6 +38,7 @@ import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
 import { GitDiffStore } from "./git-diff-store";
 import { SkillsInventoryStore } from "./skills-inventory-store";
+import { HooksInventoryStore } from "./hooks-inventory-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
@@ -82,6 +83,12 @@ export interface CardServices {
    */
   readonly skillsInventoryStore: SkillsInventoryStore;
   readonly skillsInventoryFeedStore: FeedStore;
+  /**
+   * Single-shot `/hooks` request/response store ([#step-12c]) and its
+   * CODE_OUTPUT feed (filtered to `type === "hooks_inventory"`).
+   */
+  readonly hooksInventoryStore: HooksInventoryStore;
+  readonly hooksInventoryFeedStore: FeedStore;
   /**
    * The `@` file-completion provider. Captured once at construction
    * because each call to `FileTreeStore.getFileCompletionProvider()`
@@ -317,6 +324,27 @@ class CardServicesStore {
       binding.tugSessionId,
     );
 
+    // `/hooks` ([#step-12c]): same shape as `/skills` — a CODE_OUTPUT feed
+    // narrowed to this session's `hooks_inventory` frames, plus the single-shot
+    // request/response store.
+    const hooksInventoryFilter: FeedStoreFilter = (_feedId, decoded) =>
+      typeof decoded === "object" &&
+      decoded !== null &&
+      (decoded as { type?: unknown }).type === "hooks_inventory" &&
+      (decoded as { tug_session_id?: unknown }).tug_session_id ===
+        binding.tugSessionId;
+    const hooksInventoryFeedStore = new FeedStore(
+      connection,
+      [FeedId.CODE_OUTPUT],
+      undefined,
+      hooksInventoryFilter,
+    );
+    const hooksInventoryStore = new HooksInventoryStore(
+      hooksInventoryFeedStore,
+      FeedId.CODE_OUTPUT,
+      binding.tugSessionId,
+    );
+
     // Bind success → prepend this card's project path to the dev
     // recent-projects list (dedup, cap). Done here rather than in a
     // React effect so the side effect is co-located with services
@@ -399,6 +427,8 @@ class CardServicesStore {
       gitDiffFeedStore,
       skillsInventoryStore,
       skillsInventoryFeedStore,
+      hooksInventoryStore,
+      hooksInventoryFeedStore,
       fileCompletionProvider,
     };
   }
@@ -418,6 +448,8 @@ class CardServicesStore {
     services.gitDiffFeedStore.dispose();
     services.skillsInventoryStore.dispose();
     services.skillsInventoryFeedStore.dispose();
+    services.hooksInventoryStore.dispose();
+    services.hooksInventoryFeedStore.dispose();
   }
 
   // ── Public API ───────────────────────────────────────────────────────────

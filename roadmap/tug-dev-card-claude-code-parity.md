@@ -823,7 +823,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | _(no new file — `/context` reuses the status-row CONTEXT popover via `DevTelemetryStatusRowHandle`; [#step-11])_ | — |
 | `tugdeck/src/components/tugways/cards/memory-sheet.tsx` | `/memory` listing; row-click opens the path in the OS editor/Finder via the host `openPath` handler ([#step-12a]) |
 | `tugdeck/src/components/tugways/cards/agents-sheet.tsx` | `/agents` read-only Running + Library sections (sectioned TugListView) ([#step-12b]) |
-| `tugdeck/src/components/tugways/cards/hooks-sheet.tsx` | `/hooks` read-only accordion ([#step-12c]) |
+| `tugdeck/src/components/tugways/cards/hooks-sheet.tsx` | `/hooks` read-only TugAccordion (event → matcher groups); request/response via `hooks-inventory.ts` ([#step-12c]) |
 | `tugdeck/src/components/tugways/cards/skills-sheet.tsx` | `/skills` read-only listing with rich columns ([#step-12d]) |
 | `tugdeck/src/components/tugways/cards/help-tabbed-sheet.tsx` | `/help` tabbed sheet ([#step-13]) per [D16] |
 | `tugdeck/src/lib/slash-commands.ts` | `LOCAL_SLASH_COMMANDS` registry + `matchLocalSlashCommand` — the locally-handled-command dispatch source of truth ([#step-1c]) per [D23] |
@@ -923,7 +923,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 12.D | `/skills` read-only list | ✅ DONE | `skills-sheet.tsx` + `skills-inventory-store.ts` + tugcode `skills-inventory.ts`; request/response through tugcode (zero-Rust); rebuild tugcode to exercise live |
 | 12.B | `/agents` Running + Library | ✅ DONE | `agents-sheet.tsx` + `agents-list.ts`; Running from transcript (pending Task), Library = built-in roster + plugin/user; sectioned TugListView, no tugcode |
 | 12.A | `/memory` list → OS editor | ✅ DONE | `memory-sheet.tsx` + `memory-destinations.ts` + `os-open.ts` + host `openPath` handler (NSWorkspace); rebuild host to exercise live |
-| 12.C | `/hooks` read-only accordion | ▶ TODO | `hooks-sheet.tsx`; tugcode emits hooks from settings.json |
+| 12.C | `/hooks` read-only accordion | ✅ DONE | `hooks-sheet.tsx` + `hooks-inventory-store.ts` + tugcode `hooks-inventory.ts`; request/response, merges settings.json scopes; rebuild tugcode to exercise live |
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
 | 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
@@ -2128,21 +2128,41 @@ one item per hook event (trigger = `EventName (N)` + one-line description),
 body = configured matchers/commands or "No hooks configured for this event,"
 under a top read-only notice banner.
 
-**Artifacts:**
-- New: `hooks-sheet.tsx` (+ `.css`), and a static catalog of hook events + descriptions
-- Modified (tugcode): extend `ClaudeCodeSettings` (today only `autoCompactEnabled`) to parse the `hooks` block across user / project / local `settings.json`, and emit it to the client
-- Modified: register `/hooks`; `RUN_SLASH_COMMAND` opens the sheet
+**Transport (as built):** request/response through tugcode, same shape as
+`/skills` — the sheet sends a `hooks_query`; tugcode reads the `hooks` block of
+the user / project / local `settings.json` files and answers with a single
+`hooks_inventory` frame (each event's matcher groups concatenated across scopes,
+CC's all-scopes-fire semantics). Kept out of `claude-code-settings.ts` (which is
+about `autoCompactEnabled`) — hooks live in their own `hooks-inventory.ts`
+builder, mirroring `skills-inventory.ts`.
+
+**Artifacts (as built):**
+- New (tugcode): `hooks-inventory.ts` (reads + merges the settings `hooks`
+  blocks); `HooksQuery` / `HookCommand` / `HookMatcherGroup` / `HooksInventory`
+  wire types in `types.ts` (+ the `isInboundMessage` allowlist entry);
+  `hooks_query` dispatch in `main.ts`.
+- New (tugdeck): `hooks-inventory-store.ts` (request/response store + the static
+  `HOOK_EVENT_CATALOG` + the `selectHookEventRows` / `countHooks` projection);
+  `hooks-sheet.tsx` + `.css`.
+- Modified: `card-services-store.ts` (per-card `hooksInventoryStore` + filtered
+  feed); register `/hooks`; dev-card surface.
 
 **Tasks:**
-- [ ] tugcode parses + emits the merged hooks config (event → matchers/commands).
-- [ ] `HooksSheet`: `TugAccordion` over the event catalog joined with the configured hooks; per-event count in the trigger; read-only notice banner.
+- [x] tugcode parses + emits the merged hooks config (event → matcher groups).
+- [x] `HooksSheet`: read-only `TugAccordion` over the catalog joined with the
+  configured hooks; per-event count in the trigger; read-only notice banner;
+  composing `TugSheetScaffold`; refresh + Done.
 
 **Tests:**
-- [ ] Pure-logic: hooks parse/merge across scopes; event-catalog join (configured vs empty).
-- [ ] Real-app: open `/hooks`, assert event rows + counts; expand one and assert its matchers render against a fixture.
+- [x] Pure-logic: tugcode `buildHooksInventory` (parse / cross-scope merge /
+  malformed-drop) (4 tests); tugdeck `selectHookEventRows` / `countHooks` /
+  `parseHooksInventoryPayload` / `_ingestForTest` (10 tests).
+- [ ] Real-app: folded into the grouped `just app-test listing-sheets`
+  checkpoint (needs the rebuilt tugcode — `just app-debug`).
 
 **Checkpoint (12.A–12.D):**
-- [ ] `just app-test listing-sheets`
+- [ ] `just app-test listing-sheets` — the grouped real-app check for all four
+  listing sheets; run after a `just app-debug` rebuild (tugcode + host changes).
 
 ---
 
