@@ -29,13 +29,19 @@
 
 import "./dev-card-telemetry-renderers.css";
 
-import React, { useCallback, useSyncExternalStore } from "react";
+import React, {
+  useCallback,
+  useImperativeHandle,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
 import {
   TugPopover,
   TugPopoverContent,
   TugPopoverTrigger,
+  type TugPopoverHandle,
 } from "@/components/tugways/tug-popover";
 import {
   TugProgressIndicator,
@@ -247,6 +253,20 @@ export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
    * inert text.
    */
   onScrollToRow?: ScrollToRowHandler;
+}
+
+/**
+ * Imperative handle for {@link DevTelemetryStatusRow}. Lets the dev card
+ * open the status-row's CONTEXT popover programmatically — the surface
+ * the `/context` slash command maps to (it pops the same breakdown a
+ * click on the CONTEXT cell shows, no separate sheet). Threaded down
+ * through `useDevPlacementSlots` to the row's Z2 instance; a null ref
+ * (the row isn't the current Z2 datum) makes `openContextPopover` a
+ * no-op.
+ */
+export interface DevTelemetryStatusRowHandle {
+  /** Open the CONTEXT popover (the `/context`-style breakdown). */
+  openContextPopover(): void;
 }
 
 /**
@@ -477,11 +497,24 @@ const DevTelemetryEndcapRuleLabel: React.FC<{
  * transitions. Only the popovers' open/closed state and the cell
  * values change; the STATE indicators reconcile tone in place.
  */
-export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
-  codeSessionStore,
-  sessionMetadataStore,
-  onScrollToRow,
-}) => {
+export const DevTelemetryStatusRow = React.forwardRef<
+  DevTelemetryStatusRowHandle,
+  DevTelemetryStatusRowProps
+>(function DevTelemetryStatusRow(
+  { codeSessionStore, sessionMetadataStore, onScrollToRow },
+  ref,
+) {
+  // Handle on the CONTEXT cell's popover so `/context` can pop it
+  // programmatically — same imperative-open pattern as TugConfirmPopover.
+  const contextPopoverRef = useRef<TugPopoverHandle>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      openContextPopover: () => contextPopoverRef.current?.open(),
+    }),
+    [],
+  );
+
   const snap = useSyncExternalStore(
     codeSessionStore.subscribe,
     codeSessionStore.getSnapshot,
@@ -745,7 +778,7 @@ export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
           {tokensPopover}
         </TugPopoverContent>
       </TugPopover>
-      <TugPopover>
+      <TugPopover ref={contextPopoverRef}>
         <TugPopoverTrigger>
           <span
             className="dev-telemetry-status-cell dev-telemetry-status-anchor"
@@ -810,7 +843,7 @@ export const DevTelemetryStatusRow: React.FC<DevTelemetryStatusRowProps> = ({
       </TugPopover>
     </div>
   );
-};
+});
 
 // ---------------------------------------------------------------------------
 // Per-turn renderers (Z1)

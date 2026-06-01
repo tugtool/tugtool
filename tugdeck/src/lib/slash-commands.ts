@@ -84,6 +84,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "diff",
     description: "View uncommitted changes (git diff HEAD) for this project",
   },
+  {
+    name: "context",
+    description: "Show the context-window breakdown in the status-bar popover",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

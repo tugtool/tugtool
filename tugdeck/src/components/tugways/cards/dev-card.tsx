@@ -37,6 +37,7 @@ import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry
 import { DevTranscriptHost, type DevTranscriptHandle } from "./dev-card-transcript";
 import { DevCardSashGrip } from "./dev-card-sash-grip";
 import { useDevPlacementSlots } from "./dev-card-placement-experiment";
+import type { DevTelemetryStatusRowHandle } from "./dev-card-telemetry-renderers";
 import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
@@ -2630,12 +2631,19 @@ export function DevCardBody({
   // `as const satisfies` registry narrows `LocalCommandName` to the literal
   // union, so this `Record` is exhaustive — a registered command without a
   // wired surface is a compile error ([#step-1c] / [D23]).
+  // Handle on the Z2 status row so `/context` can pop its CONTEXT
+  // popover — the breakdown is already a click on that cell; the slash
+  // command just opens the same surface (no separate sheet). Null while
+  // the row isn't the current Z2 datum, in which case the call no-ops.
+  const statusRowRef = useRef<DevTelemetryStatusRowHandle>(null);
+
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
     model: () => modelPicker.openModelPicker(),
     rewind: () => rewindSheet.openRewindSheet(),
     resume: () => resumeSheet.openResumeSheet(),
     diff: () => diffSheet.openDiffSheet(),
+    context: () => statusRowRef.current?.openContextPopover(),
   };
 
   const {
@@ -2748,6 +2756,7 @@ export function DevCardBody({
     codeSessionStore,
     sessionMetadataStore,
     onScrollToRow: handleScrollToRow,
+    statusRowRef,
   });
   const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
   const effectiveStatusBarContent =

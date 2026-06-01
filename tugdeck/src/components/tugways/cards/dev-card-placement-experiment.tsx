@@ -54,6 +54,7 @@ import {
   DevTelemetryStatusRow,
   DevTelemetryWindowUtilization,
 } from "./dev-card-telemetry-renderers";
+import type { DevTelemetryStatusRowHandle } from "./dev-card-telemetry-renderers";
 import type { ScrollToRowHandler } from "./dev-card-telemetry-popovers";
 import type {
   DevTurnTrailingContext,
@@ -205,6 +206,13 @@ export interface UseDevPlacementSlotsInput {
    * the transcript's imperative handle.
    */
   onScrollToRow?: ScrollToRowHandler;
+  /**
+   * Forwarded to {@link DevTelemetryStatusRow} when it occupies Z2 —
+   * gives the dev card a handle to open the CONTEXT popover for the
+   * `/context` slash command. Null where the row isn't the current Z2
+   * datum (the handle's calls then no-op).
+   */
+  statusRowRef?: React.Ref<DevTelemetryStatusRowHandle>;
 }
 
 /**
@@ -229,7 +237,8 @@ export function useDevPlacementSlots(
     EMPTY_PLACEMENT_MAP,
   );
 
-  const { codeSessionStore, sessionMetadataStore, onScrollToRow } = input;
+  const { codeSessionStore, sessionMetadataStore, onScrollToRow, statusRowRef } =
+    input;
 
   // Effective Z2 — explicit mapping wins, but a null / unset value
   // falls back to `statusRow` (the Step 20.4 HMR-study outcome).
@@ -266,6 +275,7 @@ export function useDevPlacementSlots(
         case "statusRow":
           return (
             <DevTelemetryStatusRow
+              ref={statusRowRef}
               codeSessionStore={codeSessionStore}
               sessionMetadataStore={sessionMetadataStore}
               onScrollToRow={onScrollToRow}
@@ -273,7 +283,7 @@ export function useDevPlacementSlots(
           );
       }
     },
-    [codeSessionStore, sessionMetadataStore, onScrollToRow],
+    [codeSessionStore, sessionMetadataStore, onScrollToRow, statusRowRef],
   );
 
   const renderTurnTrailing = useMemo<DevTurnTrailingRenderer | undefined>(

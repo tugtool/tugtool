@@ -919,7 +919,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 9 | `/permissions` picker + editor | ✅ DONE | folded into 1.6 (`permission-rules-editor.tsx`) — Q-B |
 | 10.A | `/diff` sourcing — tugcast `git_diff_request` | ✅ DONE | tugcast handler + protocol + round-trip proof |
 | 10.B | `/diff` accordion sheet (dev-card UI) | ✅ DONE | `diff-sheet.tsx` over the 10.A feed |
-| 11 | `/context` HUD | ▶ TODO | `context-hud.tsx` |
+| 11 | `/context` → status-bar popover | ✅ DONE | typed `/context` pops the existing CONTEXT popover via `DevTelemetryStatusRow` imperative handle; no HUD/sheet |
 | 12 | Listing sheets (`/memory` `/agents` `/hooks` `/skills`) | ▶ TODO | |
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
@@ -1885,31 +1885,44 @@ Split into **[#step-10a] sourcing** (tugcast `git_diff_request`/`git_diff_respon
 
 ---
 
-#### Step 11: `/context` HUD via status-bar arc gauge {#step-11}
+#### Step 11: `/context` → status-bar CONTEXT popover {#step-11}
 
 **Depends on:** #step-5
 
-**Commit:** `feat(dev-card): /context HUD reuses status-bar arc gauge`
+**Commit:** `feat(dev-card): /context opens status-bar CONTEXT popover`
 
 **References:** [D22] context arc gauge, (#z4b-chrome-layout)
 
-**Artifacts:**
-- New: `context-hud.tsx`
-- Reused: `tug-arc-gauge.tsx` atom (already exists in the status-bar popover; no new gauge primitive)
-- Modified: Z4 footer slot to host the HUD
+**Simplification (as built):** There is no persistent HUD and no new gauge.
+The Z2 status row's **CONTEXT** cell already shows the running `used / max`
+figure and, on click, the full `/context`-style breakdown (segmented arc +
+per-category legend) via `ContextPopoverContent`. So `/context` simply pops
+that existing popover — the same surface a click on the cell opens. No
+`context-hud.tsx`, no Z4 footer slot, no extra arc-gauge instance.
+
+**Artifacts (as built):**
+- Modified: `slash-commands.ts` — register the local `/context` command.
+- Modified: `dev-card-telemetry-renderers.tsx` — `DevTelemetryStatusRow`
+  becomes a `forwardRef` exposing `DevTelemetryStatusRowHandle`
+  (`openContextPopover()`), backed by a `TugPopoverHandle` ref on the CONTEXT
+  `TugPopover` (the established `TugConfirmPopover` imperative-open pattern).
+- Modified: `dev-card-placement-experiment.tsx` — `useDevPlacementSlots`
+  threads a `statusRowRef` to the Z2 `DevTelemetryStatusRow` instance.
+- Modified: `dev-card.tsx` — `slashCommandSurfaces.context` calls
+  `statusRowRef.current?.openContextPopover()` (no-op when the row isn't the
+  current Z2 datum).
 
 **Tasks:**
-- [ ] Mount the existing `tug-arc-gauge.tsx` atom in Z4 with `usage / context_window` ratio sourced from the most-recent `cost_update.usage` and `context_breakdown`.
-- [ ] Visual treatment matches the status-bar popover for consistency.
-- [ ] Typed `/context` expands into the same status-bar popover content (or a copy of it) showing the full token-category breakdown.
-- [ ] Tick refresh on each `cost_update` and `context_breakdown` event.
+- [x] Register `/context` in the local slash-command registry.
+- [x] Typed `/context` opens the status-bar CONTEXT popover (the full
+  token-category breakdown), via the row's imperative handle.
 
 **Tests:**
-- [ ] Pure-logic: gauge ratio computation from `usage` fields.
-- [ ] Real-app: drive a turn, assert gauge advances; type `/context`, assert popover opens with breakdown.
+- [x] Pure-logic: registry + completion-provider include `context`
+  (`slash-commands.test.ts`).
 
 **Checkpoint:**
-- [ ] `just app-test context-hud`
+- [x] `bunx tsc --noEmit` + `bun test slash-commands` green.
 
 ---
 

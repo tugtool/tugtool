@@ -24,13 +24,14 @@ import {
 } from "@/components/tugways/cards/completion-providers/local-commands";
 
 describe("matchLocalSlashCommand", () => {
-  test("permissions, model, rewind, resume, and diff are registered", () => {
+  test("permissions, model, rewind, resume, diff, and context are registered", () => {
     expect(LOCAL_SLASH_COMMANDS.map((c) => c.name)).toEqual([
       "permissions",
       "model",
       "rewind",
       "resume",
       "diff",
+      "context",
     ]);
   });
 
@@ -73,6 +74,7 @@ describe("local-command completion + merge", () => {
       "rewind",
       "resume",
       "diff",
+      "context",
     ]);
     expect(items[0].atom).toEqual({
       kind: "atom",
@@ -91,6 +93,7 @@ describe("local-command completion + merge", () => {
       "model",
       "resume",
       "diff",
+      "context",
     ]);
     // The gate is consulted on substring queries too.
     expect(gated("rew").map((i) => i.label)).toEqual([]);
@@ -117,6 +120,7 @@ describe("local-command completion + merge", () => {
       "rewind",
       "resume",
       "diff",
+      "context",
       "commit",
     ]);
   });
