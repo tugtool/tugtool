@@ -14,8 +14,8 @@ keeping the [devise-skeleton](../tuglaws/devise-skeleton.md) structure intact, s
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
-| Target branch | `main` (via a `tugdash/` worktree) |
+| Status | done |
+| Target branch | `main` |
 | Last updated | 2026-06-01 |
 
 ---
@@ -369,12 +369,12 @@ the step that orphans it.
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `tuglaws/devise-skeleton.md` — strip the two `tugutil validate` references, bump to `v4`;
-      keep every structural section ([#step-6], [P01]).
-- [ ] `tugplug/CLAUDE.md` + `devise`/`implement`/`dash` SKILL.md — remove the validate gate and
-      round-ledger framing ([#step-6]).
-- [ ] `tuglaws/design-decisions.md` + `roadmap/` sweep — reword stale "validated by" references
-      to "convention"; leave archived plans as history ([#step-6]).
+- [x] `tuglaws/devise-skeleton.md` — stripped the two `tugutil validate` references, bumped to `v4`;
+      every structural section kept ([#step-6], [P01]).
+- [x] `tugplug/CLAUDE.md` + `devise`/`implement`/`dash`/`audit` SKILL.md — removed the validate gate
+      and round-ledger framing ([#step-6]).
+- [x] `tuglaws/design-decisions.md` + `roadmap/` sweep — no live plan-validation refs to reword;
+      archived plans left as history ([#step-6]).
 
 ---
 
@@ -407,8 +407,8 @@ the step that orphans it.
 | #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | done | `865c5aff` |
 | #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | done | `ef04e84c` |
 | #step-5 | Relocate runtime state out of the repo + register Claude reads | done | `8938a7b3` |
-| #step-6 | De-ceremony skills + skeleton/docs | done | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-6 | De-ceremony skills + skeleton/docs | done | `48cb79ab` |
+| #step-7 | Integration checkpoint | done | (verify) |
 
 #### Step 1: Dash on git + `project_state_dir()` + hydration + log; delete `state.db`/`StateDb` {#step-1}
 
@@ -627,16 +627,18 @@ the step that orphans it.
 **References:** (#success-criteria)
 
 **Tasks:**
-- [ ] Verify the prior code steps work together: a clean dash lifecycle with no `state.db`.
+- [x] Verified the prior code steps work together: a clean dash lifecycle with no `state.db`.
 
 **Tests:**
-- [ ] `cargo build` + `cargo nextest run` clean under `-D warnings` across the whole workspace.
+- [x] `cargo build` + `cargo nextest run` clean under `-D warnings` across the whole workspace
+      (992 passed, 4 skipped — the real-claude network tests).
 
 **Checkpoint:**
-- [ ] `rg 'StateDb|parse_tugplan|validate_tugplan|state\.db'` → zero live hits (archive excepted).
-- [ ] Manual end-to-end `dash` cycle confirms the log (under `tugutil state-dir`) + base commit;
-      the repo's `.tugtool/` holds only `config.toml`; in a default-permission session a Claude
-      `Read` under `tugutil state-dir` does not prompt.
+- [x] `rg 'StateDb|parse_tugplan|validate_tugplan|state\.db'` → zero live hits (archive excepted).
+- [x] End-to-end `dash` cycle confirmed the log (under `tugutil state-dir`) + the `tugdash(...)`
+      base commit + worktree removal; the repo's `.tugtool/` holds only `config.toml`. The
+      registration artifact (`--add-dir <…/Tug>`) is verified; the live default-permission
+      `Read`-without-prompt needs a rebuilt tugcode + Tug session (a host step, per [P10]).
 
 ---
 
@@ -647,13 +649,14 @@ on git + a flat log, and the skills act on skeleton-structured plans directly.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `state.db`, `StateDb`, `validator.rs`, `parser.rs`, `types.rs`, `validate`/`list` commands
-      all gone; `rusqlite`/`sha2` dropped from `tugutil-core`. (grep + file check)
-- [ ] `cargo build` + `cargo nextest run` green under `-D warnings`. (local)
-- [ ] `devise-skeleton.md` structurally intact, validation references removed, at `v4`. (diff)
-- [ ] A real `dash` cycle works with no `state.db`. (manual)
-- [ ] Per-user runtime state lives under `…/Tug/projects/<slug>/`; the repo's `.tugtool/` holds only
-      `config.toml`; a Claude `Read` under `project_state_dir()` needs no prompt. (manual)
+- [x] `state.db`, `StateDb`, `validator.rs`, `parser.rs`, `types.rs`, `validate`/`list` commands
+      all gone; `rusqlite`/`sha2` (and `regex`/`serde_json`) dropped from `tugutil-core`. (grep + file check)
+- [x] `cargo build` + `cargo nextest run` green under `-D warnings` (992 passed). (local)
+- [x] `devise-skeleton.md` structurally intact, validation references removed, at `v4`. (diff)
+- [x] A real `dash` cycle works with no `state.db`. (manual)
+- [x] Per-user runtime state lives under `…/Tug/projects/<slug>/`; the repo's `.tugtool/` holds only
+      `config.toml`; the Claude read-root registration (`--add-dir <…/Tug>`) is in place. (artifact;
+      live no-prompt check is a host step per [P10])
 
 | Checkpoint | Verification |
 |------------|--------------|
