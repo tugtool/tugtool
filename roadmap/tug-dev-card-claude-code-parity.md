@@ -922,7 +922,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 11 | `/context` → status-bar popover | ✅ DONE | typed `/context` pops the existing CONTEXT popover via `DevTelemetryStatusRow` imperative handle; no HUD/sheet |
 | 12.D | `/skills` read-only list | ✅ DONE | `skills-sheet.tsx` + `skills-inventory-store.ts` + tugcode `skills-inventory.ts`; request/response through tugcode (zero-Rust); rebuild tugcode to exercise live |
 | 12.B | `/agents` Running + Library | ✅ DONE | `agents-sheet.tsx` + `agents-list.ts`; Running from transcript (pending Task), Library = built-in roster + plugin/user; sectioned TugListView, no tugcode |
-| 12.A | `/memory` list → OS editor | ▶ TODO | `memory-sheet.tsx`; host `openPath` handler; no embedded editor |
+| 12.A | `/memory` list → OS editor | ✅ DONE | `memory-sheet.tsx` + `memory-destinations.ts` + `os-open.ts` + host `openPath` handler (NSWorkspace); rebuild host to exercise live |
 | 12.C | `/hooks` read-only accordion | ▶ TODO | `hooks-sheet.tsx`; tugcode emits hooks from settings.json |
 | 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
@@ -2062,19 +2062,55 @@ folder → Finder).
 
 **Decision (this step):** OS-open only — **no embedded editor, no read/write
 IPC.** An in-app memory editor is a future project, explicitly out of scope here.
+The "Auto-memory: on/off" status line is dropped — that flag isn't on the wire
+(tugcode's settings reader only carries `autoCompactEnabled`), so showing it
+would be a guess.
 
-**Artifacts:**
-- New: `memory-sheet.tsx` (+ `.css`)
-- New (host): a parameterized `openPath` `webkit.messageHandler` in `tugapp` that calls `NSWorkspace.shared.open(url)` (sibling of the existing handlers / `openProjectHome`), + a JS bridge helper in the web layer
-- Modified: register `/memory`; `RUN_SLASH_COMMAND` opens the sheet
+**Resolved-cwd architecture (general, not a `/memory` one-off):** the
+auto-memory folder is named after **claude's resolved cwd** (`/Users/…`), not
+the path the user picked (which may be a symlink like `/u/src/tugtool`).
+Resolving that needs the filesystem, which the web layer doesn't have — and the
+form must match claude exactly (Bun's `realpathSync` does; Rust's
+`fs::canonicalize` gives the wrong `/System/Volumes/Data/…` firmlink form). So
+tugcode now **canonicalizes its project dir once at startup** (`main.ts`
+`realpathSync`) and that single value feeds the context-breakdown emitter, the
+JSONL replay path, claude's spawn cwd, AND a minimal **`system_metadata` frame
+emitted at spawn** carrying just `cwd`. tugcast's field-aware merge + on-subscribe
+replay deliver it to `SessionMetadataStore.cwd` **from the drop** (before any
+turn, race-free). Every cwd-derived feature reads that one `meta.cwd` — `/memory`
+here, and the context breakdown's `memory_files` tokenization is fixed as a
+freebie (it was mis-encoding the auto-memory dir from the alias).
+
+**Artifacts (as built):**
+- tugcode: `main.ts` canonicalizes `projectDir`; `session.ts`
+  `emitInitialSessionCwd()` emits the spawn-time `cwd` frame; `SystemMetadata`
+  content fields made optional (a frame carries only what its emitter knows).
+- New (host): an `openPath` `WKScriptMessageHandler` case in
+  `tugapp/Sources/MainWindow.swift` — expands a leading `~` (the web layer has
+  no home dir) and routes via `NSWorkspace` by `kind`: a **file** opens in the
+  default editor, **creating it (+ parent dirs) if absent** (matching CC's
+  "open memory" — a not-yet-written CLAUDE.md still opens to edit); a **folder**
+  opens in Finder (walking up to the nearest existing ancestor as a safety net,
+  now rarely needed since `cwd` is correct from the drop).
+- New (tugdeck): `os-open.ts` (`openPathInOS` — posts to the host handler,
+  no-ops off-host), `memory-destinations.ts` (pure `encodeProjectDir` +
+  `memoryDestinations(cwd)`), `memory-sheet.tsx` + `.css`.
+- Modified: register `/memory` in `slash-commands.ts`; dev-card
+  `RUN_SLASH_COMMAND` surface opens the sheet.
 
 **Tasks:**
-- [ ] Host `openPath` handler (open file in default editor / reveal folder in Finder) + typed JS bridge helper.
-- [ ] `MemorySheet`: list the memory destinations (project `CLAUDE.md` from `cwd`, user `~/.claude/CLAUDE.md`, auto-memory folder), with the "Auto-memory: on/off" header; row-click → `openPath`.
+- [x] Host `openPath` handler (open file in default editor / folder in Finder /
+  reveal parent when missing) + the `openPathInOS` JS bridge helper.
+- [x] `MemorySheet`: lists project `CLAUDE.md`, user `~/.claude/CLAUDE.md`, and
+  the auto-memory folder, all derived from `meta.cwd` (populated from the drop
+  via the spawn-time frame); **interactive** rows (`delegate.onSelect` →
+  `openPathInOS(path, kind)`); `displayWidth: "md"`; composing `TugSheetScaffold`; Done.
 
 **Tests:**
-- [ ] Pure-logic: memory-destination derivation (paths + labels) from `cwd` / home / auto-memory root.
-- [ ] Real-app: open `/memory`, assert rows; assert a row-click dispatches the `openPath` bridge call (host stubbed in test).
+- [x] Pure-logic: `encodeProjectDir` + `memoryDestinations` (paths / kinds /
+  cwd-unknown fallback) (4 tests).
+- [ ] Real-app: folded into the grouped `just app-test listing-sheets`
+  checkpoint (the `openPath` bridge needs the rebuilt host — `just app-debug`).
 
 ---
 

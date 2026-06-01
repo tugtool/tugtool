@@ -25,6 +25,7 @@ import { ContextBreakdownEmitter } from "./context-breakdown.ts";
 import { buildSkillsInventory } from "./skills-inventory.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { realpathSync } from "node:fs";
 
 // Redirect console.log/warn/error to stderr to keep stdout clean for JSON-lines
 const originalLog = console.log;
@@ -98,6 +99,21 @@ for (let i = 0; i < args.length; i++) {
     stubTranscriptPath = args[i + 1];
     i++;
   }
+}
+
+// Canonicalize the project dir to claude's resolved-cwd form ONCE, here, so
+// every cwd-derived consumer reads one value: the context-breakdown emitter,
+// the spawn-time `system_metadata` cwd ([#step-12a]), the JSONL replay path,
+// and claude's own cwd (it's spawned in this dir). The user may reach a
+// project via symlink (e.g. `/u/src/tugtool` → `/Users/<u>/Mounts/u/src/tugtool`);
+// claude names its `~/.claude/projects/<encoded-cwd>/…` dirs after the
+// resolved form, and Bun's `realpathSync` yields exactly that form (matching
+// claude). Best-effort: a path that doesn't resolve (test fixture) keeps the
+// raw value.
+try {
+  projectDir = realpathSync(projectDir);
+} catch {
+  // Unresolvable (deleted dir, test fixture) — keep the raw path.
 }
 
 console.log(

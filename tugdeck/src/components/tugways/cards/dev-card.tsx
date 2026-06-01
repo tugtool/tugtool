@@ -47,6 +47,7 @@ import { useRewindSheet } from "./rewind-sheet";
 import { useDiffSheet } from "./diff-sheet";
 import { useSkillsSheet } from "./skills-sheet";
 import { useAgentsSheet } from "./agents-sheet";
+import { useMemorySheet } from "./memory-sheet";
 import { canOfferRewind } from "./rewind-turn-source";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
@@ -2633,6 +2634,14 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/memory` listing sheet ([#step-12a]), card-scoped per [D15]. Lists the
+  // project / user / auto-memory destinations; a row hands its path to the OS
+  // (file → editor, folder → Finder) via the host `openPath` bridge.
+  const memorySheet = useMemorySheet({
+    sessionMetadataStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2669,6 +2678,7 @@ export function DevCardBody({
     context: () => statusRowRef.current?.openContextPopover(),
     skills: () => skillsSheet.openSkillsSheet(),
     agents: () => agentsSheet.openAgentsSheet(),
+    memory: () => memorySheet.openMemorySheet(),
   };
 
   const {

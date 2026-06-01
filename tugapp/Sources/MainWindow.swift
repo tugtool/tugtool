@@ -96,6 +96,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "clipboardRead")
         contentController.add(self, name: "cardList")
         contentController.add(self, name: "hmrUpdate")
+        contentController.add(self, name: "openPath")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -435,6 +436,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "clipboardRead")
         contentController.removeScriptMessageHandler(forName: "cardList")
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
+        contentController.removeScriptMessageHandler(forName: "openPath")
         bridgeCleaned = true
     }
 
@@ -683,6 +685,42 @@ extension MainWindow: WKScriptMessageHandler {
                         NSLog("MainWindow: evaluateJavaScript failed for getSettings: %@", error.localizedDescription)
                     }
                 }
+            }
+        case "openPath":
+            // `/memory` ([#step-12a]) — hand a memory path to the OS. The web
+            // layer sends a `~`-relative or absolute path plus a `kind`; we
+            // expand the tilde (the web layer has no home dir) and route via
+            // NSWorkspace. `kind == "file"`: open in the default editor,
+            // CREATING it (with parent dirs) if absent — matching Claude
+            // Code's "open memory" behavior so a not-yet-written CLAUDE.md
+            // still opens to edit. `kind == "folder"`: open in Finder if it
+            // exists, else reveal its parent (never auto-create a folder — a
+            // wrong path must not mint an empty directory). No content
+            // write-back; editing happens in the OS app.
+            guard let body = message.body as? [String: Any],
+                  let rawPath = body["path"] as? String, !rawPath.isEmpty else { return }
+            let kind = (body["kind"] as? String) ?? "file"
+            let expanded = (rawPath as NSString).expandingTildeInPath
+            let url = URL(fileURLWithPath: expanded)
+            let fm = FileManager.default
+            if kind == "folder" {
+                // Open the folder in Finder. If the exact path doesn't exist
+                // (e.g. the auto-memory folder before claude has reported its
+                // resolved cwd, so the encoding is still best-effort), walk up
+                // to the deepest existing ancestor and open that — a useful
+                // landing spot rather than a dead click. Never auto-create.
+                var dir = url
+                while !fm.fileExists(atPath: dir.path) && dir.pathComponents.count > 1 {
+                    dir = dir.deletingLastPathComponent()
+                }
+                NSWorkspace.shared.open(dir)
+            } else {
+                if !fm.fileExists(atPath: expanded) {
+                    try? fm.createDirectory(at: url.deletingLastPathComponent(),
+                                            withIntermediateDirectories: true)
+                    fm.createFile(atPath: expanded, contents: nil)
+                }
+                NSWorkspace.shared.open(url)
             }
         case "frontendReady":
             revealWebView()

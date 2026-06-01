@@ -1850,6 +1850,11 @@ describe("SessionManager behavioral", () => {
     );
     expect(initLines.length).toBe(1);
     expect((initLines[0] as any).session_id).toBe(id);
+    // The spawn-time cwd frame ([#step-12a]) carries the project dir so the
+    // client knows the resolved cwd from the drop.
+    const cwdMeta = emitted.filter((e: any) => e?.type === "system_metadata");
+    expect(cwdMeta.length).toBe(1);
+    expect((cwdMeta[0] as any).cwd).toBe(projectDir);
   });
 
   test("initialize() in 'resume' mode spawns claude with --resume and emits synthetic session_init", async () => {
@@ -1892,6 +1897,11 @@ describe("SessionManager behavioral", () => {
       (e: any) => e?.type === "resume_failed",
     );
     expect(failedLines.length).toBe(0);
+    // The spawn-time cwd frame fires on resume too ([#step-12a]) — symmetric
+    // with new mode, so a resumed-but-never-used session still knows its cwd.
+    const cwdMeta = emitted.filter((e: any) => e?.type === "system_metadata");
+    expect(cwdMeta.length).toBe(1);
+    expect((cwdMeta[0] as any).cwd).toBe(projectDir);
   });
 
   // Test helper: build a mock claude subprocess with controllable

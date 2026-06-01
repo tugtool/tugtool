@@ -486,21 +486,28 @@ export interface ControlRequestForward {
  */
 export interface SystemMetadata {
   type: "system_metadata";
-  session_id: string;
   cwd: string;
-  tools: unknown[];
-  model: string;
-  permissionMode: string;
-  slash_commands: unknown[];
-  plugins: unknown[];
-  agents: unknown[];
-  skills: unknown[];
-  mcp_servers: unknown[];
-  version?: string;
-  output_style: string;
-  fast_mode_state: string;
-  apiKeySource: string;
   ipc_version: number;
+  // Content fields are optional: a frame may carry only what its emitter
+  // knows. The full frame (forwarded from claude's `system/init`) supplies
+  // all of them; the spawn-time `cwd`-only frame ([#step-12a]) omits the
+  // rest, and tugcast's field-aware merge (`session_metadata_merge.rs` —
+  // non-empty incoming wins, else keep current) fills them from claude's
+  // real frame once it lands. Emitting empty strings here instead would
+  // clobber the model / permission-mode chips, so the fields are absent.
+  session_id?: string;
+  tools?: unknown[];
+  model?: string;
+  permissionMode?: string;
+  slash_commands?: unknown[];
+  plugins?: unknown[];
+  agents?: unknown[];
+  skills?: unknown[];
+  mcp_servers?: unknown[];
+  version?: string;
+  output_style?: string;
+  fast_mode_state?: string;
+  apiKeySource?: string;
 }
 
 /**

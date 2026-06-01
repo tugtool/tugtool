@@ -2649,6 +2649,14 @@ export class SessionManager {
       // observable outcome.
       this.prepareSession();
       await this.spawnClaudeAndWatch();
+      // Surface the resolved cwd from the drop on resume too — symmetric
+      // with the new-session branch. The replay's synthesized
+      // `system_metadata` carries an empty cwd, and a session resumed
+      // before it ever took a turn has no persisted cwd to replay, so
+      // without this its cwd-derived surfaces (e.g. `/memory`) would be
+      // blank until the first turn. The merge keeps this value over the
+      // replay's empty one.
+      this.emitInitialSessionCwd();
     } else {
       // New mode: spawn first, then synthesize the init. Order
       // matches the pre-R0d code; the only refactor here is the
@@ -2660,6 +2668,7 @@ export class SessionManager {
       // estimate is computed from disk so the Context surface is
       // populated the moment the session opens.
       this.emitInitialContextBreakdown();
+      this.emitInitialSessionCwd();
     }
 
     const claudeId = this.resolveClaudeId();
@@ -3590,6 +3599,26 @@ export class SessionManager {
   private emitInitialContextBreakdown(): void {
     const emitter = this.contextBreakdownEmitter;
     if (emitter) writeLine(emitter.onSpawn());
+  }
+
+  /**
+   * Emit the session's resolved cwd at spawn — before claude's first turn —
+   * as a minimal `system_metadata` frame ([#step-12a]). claude stays silent
+   * (no `system:init`, hence no `cwd`) until the first input, so without this
+   * the client wouldn't know the project's resolved path from the drop, and
+   * cwd-derived surfaces (e.g. `/memory`'s auto-memory folder) would have to
+   * guess from the user-typed (possibly symlinked) path. `this.projectDir` is
+   * already canonicalized in `main.ts` to claude's resolved form. Only `cwd`
+   * is carried; tugcast's field-aware merge fills the rest from claude's real
+   * `system_metadata` once it arrives, and on a resumed session the persisted
+   * richer metadata is preserved (incoming-absent fields keep current).
+   */
+  private emitInitialSessionCwd(): void {
+    writeLine({
+      type: "system_metadata",
+      cwd: this.projectDir,
+      ipc_version: 2,
+    });
   }
 
   /**

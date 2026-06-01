@@ -96,6 +96,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "agents",
     description: "List the subagents Claude can delegate to",
   },
+  {
+    name: "memory",
+    description: "Open this project's memory files in your editor",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */
