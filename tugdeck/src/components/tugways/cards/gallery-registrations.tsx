@@ -66,6 +66,7 @@ import { GalleryTugInlineDialog } from "./gallery-tug-inline-dialog";
 import { GalleryTugDialogButton } from "./gallery-tug-dialog-button";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
+import { GalleryPaneBulletin } from "./gallery-pane-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
@@ -1129,6 +1130,16 @@ export function registerGalleryCards(): void {
     componentId: "gallery-bulletin",
     contentFactory: (_cardId) => <GalleryBulletin />,
     defaultMeta: { title: "TugBulletin", icon: "Bell", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  registerCard({
+    componentId: "gallery-pane-bulletin",
+    contentFactory: (_cardId) => <GalleryPaneBulletin />,
+    defaultMeta: { title: "TugPaneBulletin", icon: "Bell", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

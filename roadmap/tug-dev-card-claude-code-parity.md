@@ -925,7 +925,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 12.A | `/memory` list → OS editor | ✅ DONE | `memory-sheet.tsx` + `memory-destinations.ts` + `os-open.ts` + host `openPath` handler (NSWorkspace); rebuild host to exercise live |
 | 12.C | `/hooks` read-only accordion | ✅ DONE | `hooks-sheet.tsx` + `hooks-inventory-store.ts` + tugcode `hooks-inventory.ts`; request/response, merges settings.json scopes; rebuild tugcode to exercise live |
 | 13.A | Slash-popup filtering + unsupported doc | ✅ DONE | `slash-supported.ts` three-tier classifier (`SUPPORTED_LOCAL` derived from registry + explicit `HIDDEN_SLASH_COMMANDS`); `filterCommandProvider` at dev-card composition layer (popup alphabetized via `mergeCommandProviders` sort); typed `/command` the card won't run → `SHOW_SLASH_COMMAND_NOTICE` → `presentAlertSheet` with reason `unsupported` (hidden) or `unknown` (typo, catalog-aware `isUnknownRemoteCommand`); `tuglaws/dev-card-unsupported-slash-commands.md` (`/bug` hidden) |
-| 13.B.1.A | `TugPaneBulletin` primitive + gallery card | ▶ TODO | proper pane-scoped bulletin (stacking, hover-persist, reliable dismiss) — deck TugBulletin is Sonner-global; provider/hook + gallery card |
+| 13.B.1.A | `TugPaneBulletin` primitive + gallery card | ✅ DONE | thin Sonner wrapper scoped per pane via `toasterId` (`<Toaster id={useId()}>` + `toast(...,{toasterId})`); `position: fixed→absolute` containment in a relative+isolated root; `gallery-pane-bulletin.tsx`. Sonner owns stacking/hover/removal — no reinvention. L06/L14/L17/L19 |
 | 13.B.1.B | `/copy` adoption | ▶ TODO | copy last assistant text + Cmd+Shift+C → `TugPaneBulletin` "Most recent message copied"; depends on 13.B.1.A |
 | 13.B.2 | `/help` sheet | ▶ TODO | `TugSheet` with allowlist-filtered command list + shortcuts + unsupported-doc link |
 | 13.B.3 | `/clear` (mini spike → implement) | ▶ TODO | no transcript-wipe today ([L23]); spike the semantics (new-session-in-card?) + spawn-path reuse before building |
@@ -2283,39 +2283,45 @@ splits into **13.B.1.A** (the primitive) and **13.B.1.B** (the `/copy` adoption)
 
 **Commit:** `feat(tugways): TugPaneBulletin pane-scoped bulletin + gallery card`
 
-**References:** [L06] appearance via CSS/DOM, [L02] external state via useSyncExternalStore, pane-model.md (pane scoping), component-authoring.md, [L19] component authoring, [#feedback] use existing Tug components / gallery-first
+**References:** [L06] appearance via CSS/DOM, [L14] Sonner owns enter/exit animation, [L17] one-hop aliases, [L19] component authoring, [#feedback] use existing Tug components / gallery-first / don't reinvent
 
 A proper pane-scoped bulletin primitive — the per-pane analog of the deck
-`TugBulletin`, owning the behavior Sonner gives the global one:
-- **Pane-scoped:** rendered within a pane/card's frame and addressed per-host, so
-  one card's bulletins never appear over another's. A `TugPaneBulletinProvider`
-  (mounted per pane) + `useTugPaneBulletin()` hook, mirroring the deck bulletin's
-  provider/hook shape but with a per-provider stack.
-- **Stacking:** multiple concurrent bulletins stack with a gap, newest-first; the
-  stack reference is `Object.is`-stable across quiescent reads ([L02]).
-- **Persist-on-interaction:** hovering (and/or clicking) a bulletin pauses its
-  auto-dismiss timer so it "hangs around"; leaving resumes it.
-- **Reliable dismissal:** per-bulletin auto-dismiss after a duration, an explicit
-  dismiss affordance, and timer cleanup on unmount (no setState-after-unmount).
-- **Appearance + animation via CSS only** ([L06]); tone variants
-  (success/caution/danger) matching the deck bulletin's API surface so the two
-  read as siblings.
+`TugBulletin`. **Decision (course-correct):** a first attempt hand-rolled the
+stack (store + per-row timers + FLIP reflow) and kept hopping / glitching on
+removal — re-implementing what Sonner already does well. We **already depend on
+Sonner**, and Sonner 2.x scopes by **`toasterId`** (a `<Toaster id>` shows only
+toasts whose `toasterId` matches; the deck's id-less toaster shows only id-less
+toasts). So the pane bulletin is a thin Sonner wrapper, exactly like the deck
+one — stacking, hover-to-persist, swipe/close, and smooth enter/exit/reflow come
+from Sonner, scoped per pane. No reinvention.
 
-**Gallery card (required — gallery-first per feedback):** a `TugPaneBulletin`
-gallery card (sibling of the existing deck-bulletin gallery card) that fires
-single / stacked / tone / long-text bulletins so stacking, hover-persist, and
-dismissal are all exercised by hand. Registered in `gallery-registrations.tsx`.
+- **Pane-scoped:** each `TugPaneBulletinProvider` mounts a `<Toaster id={useId()}>`
+  and `useTugPaneBulletin()` raises toasts addressed to that id — one card's
+  bulletins never appear over another's.
+- **Containment:** Sonner renders inline (no portal) and positions container-
+  relative (`bottom`/`left`); the provider's root is `position: relative;
+  isolation: isolate` and the CSS overrides Sonner's `position: fixed` →
+  `absolute`, anchoring the stack to the pane (not the viewport).
+- **Appearance via CSS only** ([L06]) on `unstyled` toasts, mirroring
+  `tug-bulletin.css`; tone variants via `toast.success/.error/.warning`.
 
-**Artifacts:**
-- New: `tug-pane-bulletin.tsx` (+ `.css`) — `TugPaneBulletinProvider`, `useTugPaneBulletin()`, the per-pane stack host; a small per-provider store (subscribe/getSnapshot, [L02]) holding the bulletin list with a monotonic id (no `Date.now()` identity).
+**Gallery card (gallery-first per feedback):** a `TugPaneBulletin` gallery card
+(sibling of the deck-bulletin card) firing single / tone / stack-three /
+long-duration bulletins so stacking, hover-persist, and dismissal are exercised
+by hand. Registered in `gallery-registrations.tsx`.
+
+**Artifacts (as built):**
+- New: `tug-pane-bulletin.tsx` (+ `.css`) — `TugPaneBulletinProvider` (mounts a Sonner `<Toaster>` with a `useId()` id inside a relative+isolated root) and `useTugPaneBulletin()` (imperative `paneBulletin()` + `.success`/`.danger`/`.caution`, each routing `toast(...)` with `toasterId`). Options mirror the deck `BulletinOptions` (`description`/`duration`/`action`). CSS styles the `unstyled` toast like the deck bulletin + the `position: fixed → absolute` containment override + a contained `z-index` (root `isolation: isolate`).
 - New: `gallery-pane-bulletin.tsx` + registration in `gallery-registrations.tsx`.
+- (Removed the first attempt's bespoke `tug-pane-bulletin-store.ts` + FLIP — superseded by Sonner.)
+
+**Tuglaws touched:** [L06] (CSS appearance), [L14] (Sonner owns enter/exit/reflow animation), [L17] (one-hop `--tugx-pane-bulletin-*` aliases), [L19] (component authoring + gallery card).
 
 **Tests:**
-- [ ] Pure-logic: the bulletin store/reducer — push appends with a fresh id; dismiss removes by id; reference stability across no-op reads; tone carried.
-- [ ] Real-app (gallery): fire several → they stack; hover → auto-dismiss pauses; dismiss affordance removes one; all clear on their own.
+- [x] No pure-logic test — a thin Sonner wrapper has no bespoke logic to unit-test (we don't test Sonner), exactly like the deck `TugBulletin`. Verified live via the `TugPaneBulletin` gallery card: stacking, hover-persist, ✕ dismiss, smooth removal/reflow (Sonner), pane containment.
 
 **Checkpoint:**
-- [ ] `just app-test pane-bulletin` (or exercise live in the gallery card).
+- [x] Exercised live in the gallery card (`TugPaneBulletin`); tsc clean; full pure-logic suite green (3263 pass).
 
 ---
 

@@ -1,0 +1,148 @@
+/**
+ * @tug-pairings
+ * | Element                         | Surface                       | Role          | Context                                  |
+ * |---------------------------------|-------------------------------|---------------|------------------------------------------|
+ * | --tugx-pane-bulletin-fg         | --tugx-pane-bulletin-bg       | content       | .tug-pane-bulletin (color)               |
+ * | --tugx-pane-bulletin-border     | --tugx-pane-bulletin-bg       | informational | .tug-pane-bulletin (border-color)        |
+ *
+ * Styles a Sonner toast (`unstyled`) for the pane-scoped bulletin, mirroring
+ * `tug-bulletin.css` so the two read as siblings, plus the pane-containment
+ * override: Sonner's toaster is `position: fixed` by default; scoped inside the
+ * provider's relative+isolated root we make it `absolute` so it anchors to the
+ * pane, not the viewport. Sonner owns the stacking + enter/exit/reflow [L14].
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  --tugx-pane-bulletin-bg:             var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-pane-bulletin-fg:             var(--tug7-element-global-text-normal-default-rest);
+  --tugx-pane-bulletin-border:         var(--tug7-element-global-border-normal-default-rest);
+  --tugx-pane-bulletin-shadow:         var(--tug7-element-global-shadow-normal-overlay-rest);
+  --tugx-pane-bulletin-space-a: 0.75rem;
+  --tugx-pane-bulletin-space-b: 1.5rem;
+  --tugx-pane-bulletin-accent-default: var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-pane-bulletin-accent-success: var(--tug7-element-tone-border-normal-success-rest);
+  --tugx-pane-bulletin-accent-danger:  var(--tug7-element-tone-border-normal-danger-rest);
+  --tugx-pane-bulletin-accent-caution: var(--tug7-element-tone-border-normal-caution-rest);
+}
+
+/* ---- Root: the pane is the toaster's positioning + stacking context ---- */
+
+.tug-pane-bulletin-root {
+  position: relative;
+  /* Contain the toaster's stacking within this pane so its z-index never
+     escapes over sibling cards / chrome. */
+  isolation: isolate;
+}
+
+/* ---- Containment override: anchor Sonner's toaster to the pane, not the
+   viewport. Higher specificity than Sonner's `[data-sonner-toaster]`; the
+   `!important` guards against stylesheet load order. ---- */
+
+.tug-pane-bulletin-root [data-sonner-toaster] {
+  position: absolute !important;
+  z-index: 90;
+}
+
+/* ---- Toast card — Sonner adds .tug-pane-bulletin via toastOptions.className ---- */
+
+.tug-pane-bulletin {
+  /* @tug-renders-on: --tugx-pane-bulletin-bg */
+  background-color: var(--tugx-pane-bulletin-bg);
+  color: var(--tugx-pane-bulletin-fg);
+  border: 1px solid var(--tugx-pane-bulletin-border);
+  border-left: 4px solid var(--tugx-pane-bulletin-accent-default);
+  border-radius: 0.5rem;
+  box-shadow: var(--tugx-pane-bulletin-shadow);
+  min-width: 260px;
+  max-width: 420px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--tugx-pane-bulletin-space-a) var(--tugx-pane-bulletin-space-b)
+    var(--tugx-pane-bulletin-space-a) var(--tugx-pane-bulletin-space-a);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--tugx-pane-bulletin-space-a) * 0.5);
+  cursor: default;
+  user-select: none;
+}
+
+/* ---- Tone variants — Sonner adds data-type to the toast element ---- */
+
+.tug-pane-bulletin[data-type="success"] {
+  border-left-color: var(--tugx-pane-bulletin-accent-success);
+}
+.tug-pane-bulletin[data-type="error"] {
+  border-left-color: var(--tugx-pane-bulletin-accent-danger);
+}
+.tug-pane-bulletin[data-type="warning"] {
+  border-left-color: var(--tugx-pane-bulletin-accent-caution);
+}
+
+/* ---- Title / description ---- */
+
+.tug-pane-bulletin [data-title] {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.tug-pane-bulletin [data-description] {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* ---- Action button ---- */
+
+.tug-pane-bulletin [data-button] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  padding: 0.25rem 0.75rem;
+  margin-top: calc(var(--tugx-pane-bulletin-space-a) * 0.25);
+  border: 1px solid var(--tugx-pane-bulletin-border);
+  border-radius: 0.375rem;
+  background-color: transparent;
+  color: var(--tugx-pane-bulletin-fg);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tug-pane-bulletin [data-button]:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+
+.tug-pane-bulletin [data-button]:active {
+  background-color: var(--tug7-surface-control-primary-ghost-action-active);
+}
+
+/* ---- Close button (Sonner renders it when closable) ---- */
+
+.tug-pane-bulletin [data-close-button] {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background-color: transparent;
+  color: var(--tugx-pane-bulletin-fg);
+  cursor: pointer;
+  opacity: 0.5;
+  padding: 0;
+}
+
+.tug-pane-bulletin [data-close-button]:hover {
+  opacity: 1;
+}
