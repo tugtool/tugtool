@@ -2846,12 +2846,17 @@ export function DevCardBody({
         notify?.success("Working directory added");
       });
     },
-    // `/rename <text>` names the session directly; bare `/rename` opens the
-    // one-field dialog seeded with the current name ([#step-13d]).
+    // `/rename <text>` names the session directly (with a pane-bulletin
+    // confirmation, since there's no dialog to signal success); bare `/rename`
+    // opens the one-field dialog seeded with the current name ([#step-13d]).
     rename: (args) => {
       const name = args.trim();
-      if (name.length > 0) renameSheet.renameTo(name);
-      else renameSheet.openRenameSheet();
+      if (name.length === 0) {
+        renameSheet.openRenameSheet();
+        return;
+      }
+      renameSheet.renameTo(name);
+      paneBulletinRef.current?.success(`Session renamed to “${name}”`);
     },
   };
 
