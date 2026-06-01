@@ -40,6 +40,7 @@ describe("matchLocalSlashCommand", () => {
       "hooks",
       "copy",
       "help",
+      "clear",
     ]);
   });
 
@@ -89,6 +90,7 @@ describe("local-command completion + merge", () => {
       "hooks",
       "copy",
       "help",
+      "clear",
     ]);
     expect(items[0].atom).toEqual({
       kind: "atom",
@@ -114,6 +116,7 @@ describe("local-command completion + merge", () => {
       "hooks",
       "copy",
       "help",
+      "clear",
     ]);
     // The gate is consulted on substring queries too.
     expect(gated("rew").map((i) => i.label)).toEqual([]);
@@ -136,6 +139,7 @@ describe("local-command completion + merge", () => {
     // alphabetical regardless of registry / claude-catalog order.
     expect(labels(merged, "")).toEqual([
       "agents",
+      "clear",
       "commit",
       "context",
       "copy",

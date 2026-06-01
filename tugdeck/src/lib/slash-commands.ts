@@ -112,6 +112,10 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "help",
     description: "Show available commands, shortcuts, and help",
   },
+  {
+    name: "clear",
+    description: "Start a fresh session in this card (the current one stays resumable)",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

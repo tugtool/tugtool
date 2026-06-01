@@ -60,6 +60,14 @@ import type { DeckManager } from "../deck-manager";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 
 export interface CardServices {
+  /**
+   * The session these services are bound to. Tracked so `_reconcile` can tell
+   * a *different session on the same card* (a `/resume` to another session, or
+   * a `/clear` fresh-spawn) apart from an unchanged binding — the trigger to
+   * dispose and reconstruct with a fresh store. Stable for the bag's lifetime;
+   * a rebind builds a new bag.
+   */
+  readonly tugSessionId: string;
   readonly codeSessionStore: CodeSessionStore;
   readonly editorStore: EditorSettingsStore;
   readonly responseStore: ResponseSettingsStore;
@@ -191,9 +199,18 @@ class CardServicesStore {
     const bindings = cardSessionBindingStore.getSnapshot();
     let changed = false;
 
-    // Construct for new bindings.
+    // Construct for new bindings; rebuild when the same card flips to a
+    // different session. The session-change branch is what makes a `/resume`
+    // to another session and a `/clear` fresh-spawn swap in a fresh store
+    // (and a fresh `request_replay`) — without it, `_reconcile` keyed on
+    // cardId alone would keep the old session's transcript on a rebind.
     for (const [cardId, binding] of bindings) {
-      if (this._services.has(cardId)) continue;
+      const existing = this._services.get(cardId);
+      if (existing) {
+        if (existing.tugSessionId === binding.tugSessionId) continue;
+        // Same card, new session → tear the old bag down before rebuilding.
+        this._dispose(cardId);
+      }
       const services = this._construct(cardId, binding);
       if (services) {
         this._services.set(cardId, services);
@@ -416,6 +433,7 @@ class CardServicesStore {
     sendRequestReplay(connection, binding.tugSessionId);
 
     return {
+      tugSessionId: binding.tugSessionId,
       codeSessionStore,
       editorStore,
       responseStore,

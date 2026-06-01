@@ -113,7 +113,10 @@ import {
   cardSessionBindingStore,
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
-import { sendSpawnSession } from "@/lib/session-lifecycle";
+import {
+  sendCloseSessionKeepingBinding,
+  sendSpawnSession,
+} from "@/lib/session-lifecycle";
 import { TugProgressIndicator } from "../tug-progress-indicator";
 import {
   devRestoreRegistry,
@@ -2759,6 +2762,28 @@ export function DevCardBody({
       );
     },
     help: () => helpSheet.openHelpSheet(),
+    // Start a fresh session in this card ([#step-13b3]). Spawn a new session
+    // (the spawn ack flips this card's binding → `cardServicesStore` swaps in
+    // a fresh, empty store: the transcript resets without ever wiping it,
+    // [L23]), then close the old subprocess. The card stays bound throughout
+    // (old → new), so the project picker never flashes. The previous session
+    // persists on disk and is resumable via `/resume` if it had committed
+    // turns. No-op when the card isn't bound (nothing to clear). Reads the
+    // binding live at click time ([L07]).
+    clear: () => {
+      const binding = cardSessionBindingStore.getBinding(cardId);
+      const connection = getConnection();
+      if (binding === undefined || connection === null) return;
+      const newSessionId = crypto.randomUUID();
+      sendSpawnSession(
+        connection,
+        cardId,
+        newSessionId,
+        binding.projectDir,
+        "new",
+      );
+      sendCloseSessionKeepingBinding(connection, cardId, binding.tugSessionId);
+    },
   };
 
   const {

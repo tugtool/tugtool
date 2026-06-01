@@ -89,6 +89,30 @@ export function sendCloseSession(
 }
 
 /**
+ * Send a `close_session` CONTROL frame for `(cardId, tugSessionId)` WITHOUT
+ * touching the card binding.
+ *
+ * Used by `/clear` ([#step-13b3]): the card is being rebound to a *fresh*
+ * session in the same breath, so the binding must stay put — it flips to the
+ * new session on `spawn_session_ok`, and `cardServicesStore` swaps in a fresh
+ * store on that flip. Only the old subprocess is torn down here. (Contrast
+ * {@link sendCloseSession}, which clears the binding because it means "the
+ * card is going away.")
+ */
+export function sendCloseSessionKeepingBinding(
+  connection: TugConnection,
+  cardId: string,
+  tugSessionId: string,
+): void {
+  logSessionLifecycle("close.frame_send_keep_binding", {
+    card_id: cardId,
+    tug_session_id: tugSessionId,
+  });
+  const frame = encodeCloseSession(cardId, tugSessionId);
+  connection.send(frame.feedId, frame.payload);
+}
+
+/**
  * Send a `request_replay` CONTROL frame for `tugSessionId` per [D12].
  *
  * Asks the supervisor to forward a `request_replay` verb to the live

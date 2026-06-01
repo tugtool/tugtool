@@ -928,7 +928,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.B.1.A | `TugPaneBulletin` primitive + gallery card | ✅ DONE | thin Sonner wrapper scoped per pane via `toasterId` (`<Toaster id={useId()}>` + `toast(...,{toasterId})`); `position: fixed→absolute` containment in a relative+isolated root; `gallery-pane-bulletin.tsx`. Sonner owns stacking/hover/removal — no reinvention. L06/L14/L17/L19 |
 | 13.B.1.B | `/copy` adoption | ✅ DONE | `lastAssistantCopyText` selector + `/copy` handler → green `TugPaneBulletin` "Most recent message copied" above Z2; provider wraps header+transcript (`overflow:hidden`, no scrollbar). Cmd+Shift+C NOT bound (taken by `SELECT_ROUTE`) — slash-only |
 | 13.B.2 | `/help` sheet | ✅ DONE | two-tab `TugSheet` (General: shortcuts + unsupported-doc link; Commands: built-in list). `projectHelpCommands` (`help-content.ts`): `local`-category, hidden filtered, help-text-required; skills/agents left to popup + `/agents`. Custom tab dropped by decision. Non-interactive `TugListView`; `permission-rules-editor` tab idiom |
-| 13.B.3 | `/clear` (mini spike → implement) | ▶ TODO | no transcript-wipe today ([L23]); spike the semantics (new-session-in-card?) + spawn-path reuse before building |
+| 13.B.3 | `/clear` (mini spike → implement) | ✅ DONE | `/clear` = fresh session in card (reuse spawn path); old subprocess closed, stays resumable. Core fix: `cardServicesStore._reconcile` now rebuilds on `tugSessionId` change (also repairs latent `/resume`-different + resume-"New session" gap). `sendCloseSessionKeepingBinding`; no picker flash |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ▶ TODO | `NSSavePanel` export (JSONL/md) + `NSOpenPanel` dir picker; `/add-dir` punt-with-flag if no control verb |
 | 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
 | 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
@@ -2385,28 +2385,52 @@ in-sheet `TugTabBar` idiom; the command list is a non-interactive `TugListView`.
 
 ###### Step 13.B.3: `/clear` — mini spike, then implement {#step-13b3}
 
-**Commit:** TBD (set after the spike resolves the approach)
+**Commit:** `feat(dev-card): /clear fresh session + rebuild store on session change`
 
 **References:** [D16] clear supported, [L23] transcript is user-visible state, [D23] local dispatch
 
-`/clear` has **no settled implementation** — it needs a **mini spike first**, then
-implementation. The unknowns:
-- There is **no transcript-wipe affordance** today, and [L23] keeps the transcript
-  as user-visible state we never clear (even `dispose()` leaves it). So "clear"
-  is not a primitive we already have.
-- What should `/clear` *mean* here? Candidate: **spawn a fresh session in this
-  card** (reuse the resume/rebind spawn path), transcript stays vs. genuinely
-  wiping the transcript view vs. something else. The terminal `/clear` starts a
-  fresh context; map that intent to the dev card honestly.
-- How does the existing resume/rebind spawn path behave, and what does it cost to
-  reuse for a "new session, same card" action?
+✅ **DONE** (spike resolved + implemented).
 
-**Spike tasks (investigation — produce findings, do not build yet):**
-- [ ] Determine the intended `/clear` semantics for the dev card and confirm with the user.
-- [ ] Survey the resume/rebind spawn path ([#step-8]) and the transcript/[L23] constraints; identify the smallest mechanism that delivers the chosen semantics.
-- [ ] Write the findings + chosen approach inline here (or a short note), then scope the implementation tasks. Implementation lands in a follow-up once the approach is approved.
+**Spike findings:**
+- **Semantics (user-confirmed):** `/clear` = **spawn a fresh session in this card**.
+  The prior session persists on disk and is resumable via `/resume` if it had
+  committed turns. [L23]-honest: we never *wipe* a transcript — we bind the card
+  to a new, empty session.
+- **Mechanism already exists:** the resume sheet's "New session" row already does
+  `crypto.randomUUID()` + `sendSpawnSession(conn, cardId, id, projectDir, "new")`.
+  `/clear` reuses it as a one-shot (no picker), dispatched via the [D23] registry
+  like `/copy`.
+- **The real blocker found:** `cardServicesStore._reconcile` rebuilt a card's
+  `CodeSessionStore` only when a **cardId** appeared/vanished — it did **not**
+  react to a `tugSessionId` *change* on an already-bound card. So a binding flip
+  to a new session kept the old transcript. This same gap sat under
+  `/resume`-to-a-different-session and the resume "New session" row (neither was
+  tested for transcript reset on a live card — `at0099` only covers Cancel).
 
-**Checkpoint:** (defined once the spike picks an approach)
+**Chosen approach (user-approved):**
+- **Fix `_reconcile` globally** — detect a `tugSessionId` change for an existing
+  card → dispose + reconstruct fresh services (which re-fires `request_replay`:
+  empty for a new session, full for a resumed one). `CardServices` now carries
+  its `tugSessionId` so the change is detectable. The binding store is the single
+  source of truth for "which session this card shows"; this fixes `/clear`,
+  `/resume`-different, and resume-"New session" in one place. The card stays bound
+  throughout (old → new), so the project picker never flashes.
+- **`/clear` closes the old subprocess** — spawn the new session, then
+  `sendCloseSessionKeepingBinding` for the old (a `close_session` frame that does
+  NOT clear the binding, since the binding flips to the new session on the spawn
+  ack). The old subprocess is torn down; the session stays on disk/resumable.
+
+**Artifacts:**
+- ✅ `card-services-store.ts` — `CardServices.tugSessionId` + `_reconcile` session-change rebuild.
+- ✅ `session-lifecycle.ts` — `sendCloseSessionKeepingBinding`.
+- ✅ `slash-commands.ts` — registered `/clear`; `dev-card.tsx` — `RUN_SLASH_COMMAND` `clear` surface.
+
+**Tests:**
+- ✅ Pure-logic: `card-services-store-request-replay.test.ts` gains a session-flip case (same card → new `tugSessionId` rebuilds the bag: fresh store + `request_replay` for the new session). `slash-commands.test.ts` registry pins cover `/clear`; `slash-supported.test.ts` auto-covers it.
+- ⏭️ Real-app: verified interactively in the running app (HMR) — `/clear` resets the transcript with no picker flash; old session resumable via `/resume`.
+
+**Checkpoint:**
+- ✅ `bunx tsc --noEmit` clean; full suite green (3269 pass).
 
 ---
 

@@ -254,4 +254,43 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     expect(found[0].tugSessionId).toBe(tugSessionId);
     expect(found[1].tugSessionId).toBe(tugSessionId);
   });
+
+  it("rebuilds the bag when the same card flips to a new session (/resume, /clear)", () => {
+    // The session-change path ([#step-13b3]): a `/clear` fresh-spawn or a
+    // `/resume` to another session overwrites the card's binding with a new
+    // `tugSessionId` (no unbind). `_reconcile` must dispose the old bag and
+    // construct a fresh one — a new CodeSessionStore (empty transcript) plus a
+    // request_replay addressed to the NEW session. Before this fix `_reconcile`
+    // keyed on cardId alone and the old store survived (stale transcript).
+    const cardId = "r1c-card-session-flip";
+    const sessionA = "sess-r1c-A";
+    const sessionB = "sess-r1c-B";
+
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
+    cardServicesStore.attachDeckManager(
+      fakeDeck as unknown as Parameters<
+        typeof cardServicesStore.attachDeckManager
+      >[0],
+    );
+
+    bindNew(cardId, sessionA);
+    const first = cardServicesStore.getServices(cardId);
+    expect(first).not.toBeNull();
+    expect(first?.tugSessionId).toBe(sessionA);
+    expect(findRequestReplayFrames()).toHaveLength(1);
+
+    // Flip the SAME card to a new session — the binding changes, the cardId
+    // does not.
+    bindNew(cardId, sessionB);
+    const second = cardServicesStore.getServices(cardId);
+    expect(second).not.toBeNull();
+    // Fresh bag: new session id and a brand-new (empty) store instance.
+    expect(second?.tugSessionId).toBe(sessionB);
+    expect(second?.codeSessionStore).not.toBe(first?.codeSessionStore);
+
+    // A second request_replay went out, addressed to the new session.
+    const found = findRequestReplayFrames();
+    expect(found).toHaveLength(2);
+    expect(found[1].tugSessionId).toBe(sessionB);
+  });
 });
