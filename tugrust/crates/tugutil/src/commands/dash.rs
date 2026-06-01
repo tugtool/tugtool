@@ -1174,7 +1174,10 @@ mod tests {
             .args(["log", "-1", "--format=%s", "tugdash/test-dash"])
             .output()
             .unwrap();
-        assert_eq!(String::from_utf8_lossy(&subject.stdout).trim(), "feat: thing");
+        assert_eq!(
+            String::from_utf8_lossy(&subject.stdout).trim(),
+            "feat: thing"
+        );
     }
 
     #[serial]
