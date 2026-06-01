@@ -323,7 +323,11 @@ pub fn run_dash_create(
     // Record the base branch and description in git config.
     let _ = git_output(
         &repo_root,
-        &["config", &format!("branch.{}.tugbase", branch), &base_branch],
+        &[
+            "config",
+            &format!("branch.{}.tugbase", branch),
+            &base_branch,
+        ],
     );
     if let Some(desc) = description.as_deref() {
         let _ = git_output(
@@ -676,7 +680,10 @@ pub fn run_dash_join(
         let dash_status = git_stdout(&worktree, &["status", "--porcelain"])?;
         if !dash_status.is_empty() {
             let _ = git_output(&worktree, &["add", "-A"]);
-            let _ = git_output(&worktree, &["commit", "-m", "join: commit outstanding changes"]);
+            let _ = git_output(
+                &worktree,
+                &["commit", "-m", "join: commit outstanding changes"],
+            );
         }
     }
 
@@ -710,7 +717,10 @@ pub fn run_dash_join(
 
     // Remove the worktree (warn on failure).
     if worktree.exists() {
-        let out = git_output(&repo_root, &["worktree", "remove", &worktree.to_string_lossy()]);
+        let out = git_output(
+            &repo_root,
+            &["worktree", "remove", &worktree.to_string_lossy()],
+        );
         match out {
             Ok(o) if !o.status.success() => warnings.push(format!(
                 "Failed to remove worktree: {}",
@@ -931,7 +941,12 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        let result = run_dash_create("test-dash".to_string(), Some("desc".to_string()), false, true);
+        let result = run_dash_create(
+            "test-dash".to_string(),
+            Some("desc".to_string()),
+            false,
+            true,
+        );
         assert_eq!(result.unwrap(), 0);
 
         assert!(repo.join(".tugtree/tugdash__test-dash").exists());
@@ -956,9 +971,20 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("first".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("first".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
         // Second create returns the existing dash without error.
-        let result = run_dash_create("test-dash".to_string(), Some("second".to_string()), false, true);
+        let result = run_dash_create(
+            "test-dash".to_string(),
+            Some("second".to_string()),
+            false,
+            true,
+        );
         assert_eq!(result.unwrap(), 0);
         assert!(repo.join(".tugtree/tugdash__test-dash").exists());
     }
@@ -1022,12 +1048,23 @@ mod tests {
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("Test".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
 
         let worktree = repo.join(".tugtree/tugdash__test-dash");
         fs::write(worktree.join("test.txt"), "content\n").unwrap();
 
-        let result = run_dash_commit("test-dash".to_string(), "Add test file".to_string(), false, true);
+        let result = run_dash_commit(
+            "test-dash".to_string(),
+            "Add test file".to_string(),
+            false,
+            true,
+        );
         assert_eq!(result.unwrap(), 0);
 
         // A new commit landed on the dash branch.
@@ -1041,7 +1078,10 @@ mod tests {
 
         // The dash-log got a line naming the dash.
         let log = fs::read_to_string(dash_log_path(&home, repo)).unwrap();
-        assert!(log.contains("test-dash"), "dash-log should record the commit: {log}");
+        assert!(
+            log.contains("test-dash"),
+            "dash-log should record the commit: {log}"
+        );
     }
 
     #[serial]
@@ -1053,9 +1093,20 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("Test".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
 
-        let result = run_dash_commit("test-dash".to_string(), "No changes".to_string(), false, true);
+        let result = run_dash_commit(
+            "test-dash".to_string(),
+            "No changes".to_string(),
+            false,
+            true,
+        );
         assert_eq!(result.unwrap(), 0);
 
         // No commit ahead of base.
@@ -1081,7 +1132,13 @@ mod tests {
         std::env::set_current_dir(repo).unwrap();
         redirect_state_dir(&home);
 
-        run_dash_create("test-dash".to_string(), Some("Test".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
 
         let worktree = repo.join(".tugtree/tugdash__test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
@@ -1116,7 +1173,10 @@ mod tests {
         assert!(child.wait().unwrap().success());
 
         let log = fs::read_to_string(dash_log_path(&home, repo)).unwrap();
-        assert!(log.contains("add test file"), "log should carry the instruction: {log}");
+        assert!(
+            log.contains("add test file"),
+            "log should carry the instruction: {log}"
+        );
     }
 
     #[serial]
@@ -1146,12 +1206,29 @@ mod tests {
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("Test dash".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test dash".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
         let worktree = repo.join(".tugtree/tugdash__test-dash");
         fs::write(worktree.join("feature.txt"), "new feature\n").unwrap();
-        run_dash_commit("test-dash".to_string(), "Add feature".to_string(), false, true).unwrap();
+        run_dash_commit(
+            "test-dash".to_string(),
+            "Add feature".to_string(),
+            false,
+            true,
+        )
+        .unwrap();
 
-        let result = run_dash_join("test-dash".to_string(), Some("Add new feature".to_string()), false, true);
+        let result = run_dash_join(
+            "test-dash".to_string(),
+            Some("Add new feature".to_string()),
+            false,
+            true,
+        );
         assert_eq!(result.unwrap(), 0);
 
         // Squash commit on base, worktree + branch gone.
@@ -1167,7 +1244,10 @@ mod tests {
 
         // dash-log records the terminal action.
         let dlog = fs::read_to_string(dash_log_path(&home, repo)).unwrap();
-        assert!(dlog.contains("joined"), "dash-log should record join: {dlog}");
+        assert!(
+            dlog.contains("joined"),
+            "dash-log should record join: {dlog}"
+        );
     }
 
     #[serial]
@@ -1179,11 +1259,27 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("Test".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
 
         fs::write(repo.join("dirty.txt"), "initial\n").unwrap();
-        Command::new("git").arg("-C").arg(repo).args(["add", "dirty.txt"]).output().unwrap();
-        Command::new("git").arg("-C").arg(repo).args(["commit", "-m", "Add dirty.txt"]).output().unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["add", "dirty.txt"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["commit", "-m", "Add dirty.txt"])
+            .output()
+            .unwrap();
         fs::write(repo.join("dirty.txt"), "modified\n").unwrap();
 
         let result = run_dash_join("test-dash".to_string(), None, false, true);
@@ -1201,8 +1297,19 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("Test".to_string()), false, true).unwrap();
-        Command::new("git").arg("-C").arg(repo).args(["checkout", "-b", "feature"]).output().unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["checkout", "-b", "feature"])
+            .output()
+            .unwrap();
 
         let result = run_dash_join("test-dash".to_string(), None, false, true);
         assert!(result.is_err());
@@ -1222,7 +1329,13 @@ mod tests {
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("Test".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
         let worktree = repo.join(".tugtree/tugdash__test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
 
@@ -1233,7 +1346,10 @@ mod tests {
         assert!(!branch_present(repo, "tugdash/test-dash"));
 
         let dlog = fs::read_to_string(dash_log_path(&home, repo)).unwrap();
-        assert!(dlog.contains("released"), "dash-log should record release: {dlog}");
+        assert!(
+            dlog.contains("released"),
+            "dash-log should record release: {dlog}"
+        );
     }
 
     #[serial]
@@ -1259,7 +1375,13 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        run_dash_create("test-dash".to_string(), Some("Test".to_string()), false, true).unwrap();
+        run_dash_create(
+            "test-dash".to_string(),
+            Some("Test".to_string()),
+            false,
+            true,
+        )
+        .unwrap();
         let worktree = repo.join(".tugtree/tugdash__test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
         run_dash_commit("test-dash".to_string(), "Add test".to_string(), false, true).unwrap();
