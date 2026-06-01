@@ -51,9 +51,10 @@ fn test_init_creates_expected_files() {
     let tug_dir = temp.path().join(".tugtool");
     assert!(tug_dir.is_dir(), ".tugtool directory should exist");
     assert!(tug_dir.join("config.toml").is_file(), "config should exist");
+    // The implementation-log fossil is no longer created.
     assert!(
-        tug_dir.join("tugplan-implementation-log.md").is_file(),
-        "implementation log should exist"
+        !tug_dir.join("tugplan-implementation-log.md").exists(),
+        "implementation log should NOT be created"
     );
 }
 
@@ -73,10 +74,10 @@ fn test_init_idempotent_on_existing_project() {
         "init should succeed idempotently on existing project"
     );
 
-    // All files should still exist
+    // Config should still exist; the fossil log is never created.
     let tug_dir = temp.path().join(".tugtool");
     assert!(tug_dir.join("config.toml").is_file());
-    assert!(tug_dir.join("tugplan-implementation-log.md").is_file());
+    assert!(!tug_dir.join("tugplan-implementation-log.md").exists());
 }
 
 #[test]
@@ -100,9 +101,9 @@ fn test_init_creates_missing_files() {
         "init should succeed and create missing files"
     );
 
-    // Infrastructure files should now exist
+    // The config should now exist; the fossil log is never created.
     assert!(tug_dir.join("config.toml").is_file());
-    assert!(tug_dir.join("tugplan-implementation-log.md").is_file());
+    assert!(!tug_dir.join("tugplan-implementation-log.md").exists());
 
     // Original plan file should be untouched
     let content =

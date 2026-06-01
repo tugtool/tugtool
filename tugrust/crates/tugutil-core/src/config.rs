@@ -15,20 +15,8 @@ pub struct Config {
 }
 
 /// Core tug settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TugConfig {
-    /// Validation strictness level
-    #[serde(default = "default_validation_level")]
-    pub validation_level: String,
-
-    /// Include info-level messages in validation output
-    #[serde(default)]
-    pub show_info: bool,
-
-    /// Naming settings
-    #[serde(default)]
-    pub naming: NamingConfig,
-
     /// Dash settings
     #[serde(default)]
     pub dash: DashConfig,
@@ -44,50 +32,6 @@ pub struct DashConfig {
     /// worktree+branch back and fails `create`.
     #[serde(default)]
     pub post_create: Vec<String>,
-}
-
-/// Naming configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NamingConfig {
-    /// Plan file prefix
-    #[serde(default = "default_prefix")]
-    pub prefix: String,
-
-    /// Allowed name pattern (regex)
-    #[serde(default = "default_name_pattern")]
-    pub name_pattern: String,
-}
-
-fn default_validation_level() -> String {
-    "normal".to_string()
-}
-
-fn default_prefix() -> String {
-    "tugplan-".to_string()
-}
-
-fn default_name_pattern() -> String {
-    "^[a-z][a-z0-9-]{1,49}$".to_string()
-}
-
-impl Default for TugConfig {
-    fn default() -> Self {
-        Self {
-            validation_level: default_validation_level(),
-            show_info: false,
-            naming: NamingConfig::default(),
-            dash: DashConfig::default(),
-        }
-    }
-}
-
-impl Default for NamingConfig {
-    fn default() -> Self {
-        Self {
-            prefix: default_prefix(),
-            name_pattern: default_name_pattern(),
-        }
-    }
 }
 
 impl Config {
@@ -250,8 +194,14 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.tugtool.validation_level, "normal");
-        assert!(!config.tugtool.show_info);
-        assert_eq!(config.tugtool.naming.prefix, "tugplan-");
+        assert!(config.tugtool.dash.post_create.is_empty());
+    }
+
+    #[test]
+    fn test_unknown_keys_are_ignored() {
+        // Stale checkouts carry the old validation fields; they must still parse.
+        let toml = "[tugtool]\nvalidation_level = \"strict\"\nshow_info = true\n\n[tugtool.dash]\npost_create = [\"echo hi\"]\n";
+        let config: Config = toml::from_str(toml).expect("legacy config should still parse");
+        assert_eq!(config.tugtool.dash.post_create, vec!["echo hi".to_string()]);
     }
 }

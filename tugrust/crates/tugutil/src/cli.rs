@@ -38,7 +38,7 @@ pub enum Commands {
     /// Creates .tugtool/ directory with skeleton template and config.
     /// Idempotent: safe to run multiple times (creates only missing files).
     #[command(
-        long_about = "Initialize a tug project in current directory.\n\nCreates:\n  .tugtool/config.toml                    Project configuration\n  .tugtool/tugplan-implementation-log.md  Implementation progress tracking\n\nIdempotent: if .tugtool/ already exists, creates only missing files without overwriting.\nWith --force, removes and recreates everything.\nWith --check, performs a lightweight verification of initialization status without side effects."
+        long_about = "Initialize a tug project in current directory.\n\nCreates:\n  .tugtool/config.toml  Project configuration (dash hydration hook)\n\nIdempotent: if .tugtool/ already exists, creates only missing files without overwriting.\nWith --force, removes and recreates everything.\nWith --check, performs a lightweight verification of initialization status without side effects."
     )]
     Init {
         /// Overwrite existing .tug directory

@@ -7,38 +7,11 @@ use std::path::Path;
 use crate::output::{InitCheckData, InitData, JsonResponse};
 
 /// Default config.toml content
-const DEFAULT_CONFIG: &str = r#"[tugtool]
-# Validation strictness: "lenient", "normal", "strict"
-validation_level = "normal"
-
-# Include info-level messages in validation output
-show_info = false
-
-[tugtool.naming]
-# Plan file prefix (default: "plan-")
-prefix = "tugplan-"
-
-# Allowed name pattern (regex)
-name_pattern = "^[a-z][a-z0-9-]{1,49}$"
-
-[tugtool.dash]
+const DEFAULT_CONFIG: &str = r#"[tugtool.dash]
 # Commands run from a new dash worktree to hydrate it (deps, etc.).
 # A git worktree never inherits gitignored files, so these install what a
 # fresh checkout lacks. A non-zero exit rolls the worktree back.
 post_create = ["bun install --cwd tugdeck"]
-"#;
-
-/// Empty implementation log template
-const IMPLEMENTATION_LOG_CONTENT: &str = r#"# Tug Implementation Log
-
-This file documents the implementation progress for this project.
-
-**Format:** Each entry records a completed step with tasks, files, and verification results.
-
-Entries are sorted newest-first.
-
----
-
 "#;
 
 /// Check if the project is initialized
@@ -87,13 +60,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
             files_created.push("config.toml".to_string());
         }
 
-        let log_path = tug_dir.join("tugplan-implementation-log.md");
-        if !log_path.exists() {
-            fs::write(&log_path, IMPLEMENTATION_LOG_CONTENT)
-                .map_err(|e| format!("failed to write tugplan-implementation-log.md: {}", e))?;
-            files_created.push("tugplan-implementation-log.md".to_string());
-        }
-
         // Handle .gitignore even in idempotent mode
         ensure_gitignore(quiet)?;
 
@@ -138,17 +104,9 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     fs::write(&config_path, DEFAULT_CONFIG)
         .map_err(|e| format!("failed to write config.toml: {}", e))?;
 
-    // Create implementation log
-    let log_path = tug_dir.join("tugplan-implementation-log.md");
-    fs::write(&log_path, IMPLEMENTATION_LOG_CONTENT)
-        .map_err(|e| format!("failed to write tugplan-implementation-log.md: {}", e))?;
-
     ensure_gitignore(quiet)?;
 
-    let files_created = vec![
-        "config.toml".to_string(),
-        "tugplan-implementation-log.md".to_string(),
-    ];
+    let files_created = vec!["config.toml".to_string()];
 
     if json_output {
         let response = JsonResponse::ok(
@@ -162,7 +120,6 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     } else if !quiet {
         println!("Initialized tug project in .tugtool/");
         println!("  Created: config.toml");
-        println!("  Created: tugplan-implementation-log.md");
     }
 
     Ok(0)

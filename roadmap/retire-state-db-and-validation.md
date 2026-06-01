@@ -404,8 +404,8 @@ the step that orphans it.
 |---|---|---|---|
 | #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | done | `964bc9a1` |
 | #step-2 | Delete `validator.rs` + the `validate` command | done | `8a516fa7` |
-| #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | done | — |
-| #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | pending | — |
+| #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | done | `865c5aff` |
+| #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | done | — |
 | #step-5 | Relocate runtime state out of the repo + register Claude reads | pending | — |
 | #step-6 | De-ceremony skills + skeleton/docs | pending | — |
 | #step-7 | Integration checkpoint | pending | — |
@@ -478,9 +478,9 @@ the step that orphans it.
       and the `run_validate` export from `commands/mod.rs`. *(Also decoupled `output.rs` from
       `ValidationIssue`/`ParseDiagnostic` — removed `JsonDiagnostic`, `ValidateData`,
       `ValidatedFile`, the `From` impls, and the now-dead `ok_with_issues`.)*
-- [~] Prune validation-only `TugError` variants — **folded into [#step-4]'s error sweep.** They are
+- [x] Prune validation-only `TugError` variants — **done in [#step-4]'s error sweep.** They are
       `pub` variants of a library enum, so they do *not* trip `-D warnings`; one comprehensive purge
-      after parser/types are also gone is cleaner than editing the exhaustive match arms each step.
+      after parser/types were also gone was cleaner than editing the exhaustive match arms each step.
 
 **Tests:**
 - [x] Removed validate cases from `tugutil/tests/cli_integration_tests.rs`; deleted the all-fixtures
@@ -528,25 +528,26 @@ the step that orphans it.
 **References:** [P07] worktree-hydration, [P09] config-stays, (#error-model)
 
 **Tasks:**
-- [ ] `tugutil-core/Cargo.toml` — drop `rusqlite` + `sha2`; delete the `dependency_smoke_tests`
-      module in `lib.rs` (their only users).
-- [ ] `config.rs` + `DEFAULT_CONFIG` — remove the now-dead validation fields (`validation_level`,
-      `show_info`, and `naming.name_pattern` if it served only validation — confirm consumers
-      first). `[tugtool.dash].post_create` ([P07]) becomes config.toml's primary content.
-- [ ] **Update the committed `.tugtool/config.toml`** itself (not just the template): drop the
-      validation fields, add `[tugtool.dash].post_create`. (serde ignores unknown keys, so stale
-      checkouts still parse — but the repo's own config should be correct.)
-- [ ] `commands/init.rs` — stop creating `tugplan-implementation-log.md`; remove the committed
-      fossil file. `init` still creates `.tugtool/` + `config.toml` (needed by `resolve`).
-- [ ] Remove the orphaned, tracked `.tugtool/session-memory.md` (confirm zero references first).
+- [x] `tugutil-core/Cargo.toml` — dropped `rusqlite` + `sha2` (and the now-dead `regex` +
+      `serde_json`); deleted the `dependency_smoke_tests` module in `lib.rs`.
+- [x] `config.rs` + `DEFAULT_CONFIG` — removed the dead validation fields (`validation_level`,
+      `show_info`) and the entire `NamingConfig` (zero runtime consumers — `find_tugplans`
+      hardcodes the `tugplan-` prefix). `[tugtool.dash].post_create` ([P07]) is config.toml's
+      whole content. Added a test that legacy configs (with the old keys) still parse.
+- [x] Updated the committed `.tugtool/config.toml` itself: now just `[tugtool.dash].post_create`.
+- [x] `commands/init.rs` — stopped creating `tugplan-implementation-log.md`; removed the committed
+      fossil. `init` still creates `.tugtool/` + `config.toml` (needed by `resolve`).
+- [x] Removed the orphaned, tracked `.tugtool/session-memory.md` (zero references confirmed).
+- [x] **Error sweep (folded from [#step-2]):** reduced `TugError` to the 7 live variants and
+      removed the dead `code()`/`line()`/`exit_code()` machinery (unused for `tugutil_core` — its
+      consumer was the deleted `validate` command).
 
 **Tests:**
-- [ ] Update `init` integration cases that asserted the log file is created.
-- [ ] `project_state_dir(repo_root)` returns the expected `…/Tug/projects/<slug>` path (flattened
-      slug) for a known repo root; `tugutil state-dir` prints it.
+- [x] Updated the `init` integration cases to assert the log fossil is **not** created.
+- [x] `project_state_dir` slug/path covered by `paths.rs` unit tests (added in #step-1).
 
 **Checkpoint:**
-- [ ] `cargo build` + `cargo nextest run` clean under `-D warnings`.
+- [x] `cargo build` (workspace) + `cargo nextest run` clean under `-D warnings` (101 passed).
 
 ---
 
