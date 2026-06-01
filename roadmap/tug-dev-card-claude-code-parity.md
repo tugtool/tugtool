@@ -930,6 +930,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.B.2 | `/help` sheet | ✅ DONE | two-tab `TugSheet` (General: shortcuts + unsupported-doc link; Commands: built-in list). `projectHelpCommands` (`help-content.ts`): `local`-category, hidden filtered, help-text-required; skills/agents left to popup + `/agents`. Custom tab dropped by decision. Non-interactive `TugListView`; `permission-rules-editor` tab idiom |
 | 13.B.3 | `/clear` (mini spike → implement) | ✅ DONE | `/clear` = fresh session in card (reuse spawn path); old subprocess closed, stays resumable. Core fix: `cardServicesStore._reconcile` now rebuilds on `tugSessionId` change (also repairs latent `/resume`-different + resume-"New session" gap). `sendCloseSessionKeepingBinding`; no picker flash |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ✅ DONE | `/export`: `transcript-export.ts` (md+jsonl) → `os-export.ts` → new `exportSession` `NSSavePanel` host bridge w/ Format popup. `/add-dir`: reuse `choosePath` `NSOpenPanel` → real `add_directory` CODE_INPUT verb (claude rejects `/add-dir` headless) → tugcode respawns w/ `--add-dir`+`--resume` (mirrors effort; no Rust change). Swift `BUILD SUCCEEDED`; tugcode recompiled; needs `just app-debug` to take effect |
+| 13.C.1 | `tugproto` shared verb contract + registry | 📝 PLANNED | Author inbound wire-verb contract once in a source-only `tugproto/` dir (both bundlers resolve); replace tugcode's twice-authored union + 3-place allowlist/guard + 16-way `if/else` dispatch with one `INBOUND_HANDLERS` registry. Spike bundler resolution first. Inbound only; outbound + other mirrored files deferred. **Awaiting review** |
 | 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
 | 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
@@ -2475,6 +2476,92 @@ groups them.
 
 **Checkpoint:**
 - ✅ tugdeck + tugcode `tsc` clean; tugdeck suite 3275 pass, tugcode suite 549 pass; Swift `BUILD SUCCEEDED`; tugcode binary recompiled. Needs `just app-debug` to take effect live (Swift host bridge + bun-compiled tugcode have no HMR).
+
+---
+
+###### Step 13.C.1: `tugproto` shared inbound-verb contract + registry {#step-13c1}
+
+**Commit:** `refactor: tugproto shared inbound-verb contract + tugcode verb registry`
+
+**References:** [D23] local dispatch, the `add_directory` build ([#step-13c]) as the motivating pain, the `reference_tugcode_inbound_allowlist` footgun (a missed allowlist edit → `Invalid message type`, sheet hangs).
+
+> **Status: PLANNED — awaiting review before implementation.** This is a
+> cross-cutting refactor of tugcode's hottest path (the IPC message loop) plus
+> new shared-source infra; it earns its own step and the full suite as the
+> guardrail. Do **not** fold it into a feature step.
+
+**Why.** Adding one CODE_INPUT verb (`add_directory`, [#step-13c]) touched ~6
+sites, of which only three are real work (client send-intent, server handler,
+UI affordance). The rest is boilerplate that *rots*: the wire contract is
+authored **twice** (tugdeck `protocol.ts` `InboundMessage` ∪ tugcode
+`types.ts` interface + union), and tugcode mirrors the union in **three more
+places** — the `isInboundMessage` allowlist, a per-type `isXxx` guard, and a
+hand-written `else if` branch in the 16-way `main.ts` dispatch. The allowlist
+miss is a *silent* failure (documented footgun). The fix is the same shape the
+codebase already uses on the UI side (`LOCAL_SLASH_COMMANDS`): author the
+contract once, derive the rest from a registry.
+
+**Grounding (investigated 2026-06-01):**
+- **16 inbound verbs** today: `protocol_init`, `user_message`, `tool_approval`,
+  `question_answer`, `interrupt`, `permission_mode`, `model_change`,
+  `effort_change`, `add_directory`, `session_command`, `stop_task`,
+  `request_replay`, `rewind_preview`, `session_rewind`, `skills_inventory_query`,
+  `hooks_query`. Dispatched by an `if/else` chain (`main.ts` ~191–464).
+- **No workspace.** tugdeck (vite, `@/*` → `src/*`) and tugcode (`bun build
+  --compile`, no path aliases) are independent bun packages. A "shared package"
+  here is a **source-only dir both bundlers resolve** — no npm publish, no dist
+  build. **Resolution across both bundlers is the chief risk** and is spiked
+  first.
+- Duplication is already broader than verbs — `session-lifecycle-log.ts`,
+  `session-metadata-store.ts`, `memory-destinations.ts`,
+  `code-session-store/types.ts` are hand-"Mirrors"-synced today. This step scopes
+  to **inbound verbs only**; the rest is the natural follow-on once `tugproto`
+  exists and the pattern is proven (see Deferred).
+
+**Approach (phased, incremental — registry can coexist with special-cased handlers):**
+1. **Resolution spike (de-risk first).** Stand up `tugproto/` at the repo root
+   with one trivial shared type; import it from both tugdeck and tugcode; prove
+   **both builds resolve it** — `tugdeck` HMR/`bun run build` *and*
+   `bun build --compile tugcode`. Settle the mechanism (tsconfig-path alias
+   `@tugproto/*` for both, vs. relative import + `include` widening) here, before
+   moving any real contract. If neither resolves cleanly, stop and report.
+2. **Move the inbound contract into `tugproto`.** Per-verb payload types + the
+   `InboundMessage` union, authored once, plus a runtime `INBOUND_VERB_NAMES`
+   set. Both sides import it; delete tugcode's duplicated interfaces/union and
+   tugdeck's `protocol.ts` `InboundMessage` union.
+3. **tugcode verb registry.** `INBOUND_HANDLERS: Record<InboundVerb, {handler,
+   fireAndForget?, errorLabel?}>`. Derive `isInboundMessage` from
+   `INBOUND_VERB_NAMES` (allowlist edit gone). Replace the `if/else` chain with a
+   registry lookup + uniform error-wrapping. Delete the per-type `isXxx` guards.
+   **Adding a verb becomes: one shared payload type + one registry entry + the
+   handler method.** `protocol_init` / `user_message` (the hot, complex
+   handshake + turn paths) may stay special-cased or carry a richer spec —
+   resolve during implementation, don't force a bad fit.
+4. **tugdeck send side.** Type `code-session-store.send` / the per-verb methods
+   against the shared `InboundMessage`; thin typed wrappers stay for call-site
+   safety.
+
+**Artifacts:**
+- New: `tugproto/` source dir (inbound verb names + payload types + `InboundMessage` + `INBOUND_VERB_NAMES`), resolved by both bundlers.
+- tugcode: `INBOUND_HANDLERS` registry; `isInboundMessage` derived; `main.ts` dispatch collapsed; per-type guards + duplicated interfaces deleted.
+- tugdeck: `protocol.ts` `InboundMessage` replaced by the shared import.
+- Build wiring: tugdeck vite/tsconfig alias; tugcode tsconfig/`bun build` resolution.
+
+**Tests:**
+- [ ] Resolution proof: both `bun build --compile tugcode` and tugdeck `bun run build` succeed importing a `tugproto` type (the spike's executable artifact).
+- [ ] Pure-logic: `isInboundMessage` accepts every registered verb and rejects an unknown `type` (replaces the hand-allowlist; now derived from `INBOUND_VERB_NAMES`).
+- [ ] Pure-logic: dispatch registry routes each verb to its handler (a table-driven test over `INBOUND_HANDLERS`), incl. the unknown-verb path.
+- [ ] Regression: full tugcode suite (549) + tugdeck suite green — the dispatch loop is the hot path; this is the guardrail.
+
+**Checkpoint:**
+- [ ] tugdeck + tugcode `tsc` clean; both suites green; `bun build --compile tugcode` succeeds; `just app-debug` boots and a round-trip verb (e.g. `/model`) still works.
+
+**Deferred (out of scope — flag, don't build):** the **outbound** IPC contract
+(tugcode → tugdeck events) and the other hand-mirrored files
+(`session-metadata-store`, `memory-destinations`, `code-session-store/types`,
+`session-lifecycle-log`) are larger, churnier contracts. Once `tugproto` exists
+and the inbound registry proves the pattern, fold them in as a follow-up step —
+not here.
 
 ---
 
