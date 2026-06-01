@@ -68,6 +68,24 @@ export function localCommandCompletionProvider(
 }
 
 /**
+ * Wrap a command provider, dropping items whose command name (the item
+ * `label`) fails `keep`. The dev card uses this to apply the [D14] allowlist
+ * over claude's reported commands — hiding the known-unsupported set
+ * ([#step-13a]) — at the composition layer, so the generic
+ * `SessionMetadataStore` stays free of dev-card command policy (the same
+ * reasoning that keeps the local-command merge out of the store).
+ *
+ * Synchronous only, matching the command providers it wraps.
+ */
+export function filterCommandProvider(
+  provider: CompletionProvider,
+  keep: (name: string) => boolean,
+): CompletionProvider {
+  return (query: string): CompletionItem[] =>
+    provider(query).filter((item) => keep(item.label));
+}
+
+/**
  * Merge command providers into one, de-duplicating by command label
  * (first wins). List the local provider first so a name claude also
  * reports resolves to the local (graphical) entry rather than a

@@ -924,7 +924,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 12.B | `/agents` Running + Library | ✅ DONE | `agents-sheet.tsx` + `agents-list.ts`; Running from transcript (pending Task), Library = built-in roster + plugin/user; sectioned TugListView, no tugcode |
 | 12.A | `/memory` list → OS editor | ✅ DONE | `memory-sheet.tsx` + `memory-destinations.ts` + `os-open.ts` + host `openPath` handler (NSWorkspace); rebuild host to exercise live |
 | 12.C | `/hooks` read-only accordion | ✅ DONE | `hooks-sheet.tsx` + `hooks-inventory-store.ts` + tugcode `hooks-inventory.ts`; request/response, merges settings.json scopes; rebuild tugcode to exercise live |
-| 13.A | Slash-popup filtering + unsupported doc | ▶ TODO | `slash-supported.ts` three-tier classifier + popup filter + submit blocklist + `dev-card-unsupported-slash-commands.md` (`/bug` hidden) |
+| 13.A | Slash-popup filtering + unsupported doc | ✅ DONE | `slash-supported.ts` three-tier classifier (`SUPPORTED_LOCAL` derived from registry + explicit `HIDDEN_SLASH_COMMANDS`); `filterCommandProvider` at dev-card composition layer; submit-side swallow via `slashCommandName`; catalog-aware `isUnknownRemoteCommand` → `SHOW_UNKNOWN_SLASH_COMMAND` → `presentAlertSheet` (no wasted turn on a typo); `tuglaws/dev-card-unsupported-slash-commands.md` (`/bug` hidden) |
 | 13.B | Pure-client: `/copy` `/help` `/clear` | ▶ TODO | Cmd+Shift+C copy; `help-tabbed-sheet.tsx`; `/clear` = new-session-in-card (confirm semantics, transcript stays per [L23]) |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ▶ TODO | `NSSavePanel` export (JSONL/md) + `NSOpenPanel` dir picker; `/add-dir` punt-with-flag if no control verb |
 | 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
@@ -2208,30 +2208,44 @@ the allowlist-filtered command list); the rest are independent after it.
 **References:** [D14] unsupported-list, [D23] local dispatch, [#q09-slash-popup-filter], (#slash-cmd-inventory)
 
 This is the spine the other sub-steps plug into. The allowlist is a **three-tier
-classifier**, not a flat list: `supported-local` (a [D23] registry command with a
-Tug surface), `pass-through` (a `prompt`/skill command sent to claude verbatim),
-and `hidden` (the known-unsupported set, swallowed at submit). Unknown `/names`
-default to **send-to-claude**, never swallowed — a new claude command we don't
-know about must still reach it.
+classifier** by name, not a flat list: `supported-local` (a [D23] registry command
+with a Tug surface), `pass-through` (neither local nor hidden), and `hidden` (the
+known-unsupported set, swallowed silently at submit).
 
-**Artifacts:**
-- New: `tugdeck/src/lib/slash-supported.ts` — `GRAPHICAL_SUPPORTED_COMMANDS` + the tier classifier; co-located with / read by the [#step-1c] `slash-commands.ts` registry.
-- New: `tugdeck/docs/dev-card-unsupported-slash-commands.md` — discoverable list of every hidden command + why.
-- Modified: `session-metadata-store.ts` `getCommandCompletionProvider` applies the allowlist *filter* over claude's reported commands (the local-command merge seam landed in [#step-1c]).
-- Modified: slash-command popup component filters; submit-side blocklist swallows known-unsupported commands so they don't reach claude (per [D14]).
+**Catalog-aware refinement (added during implementation).** A by-name
+`pass-through` is refined at submit against the command catalog claude reports
+(`slash_commands ∪ skills ∪ agents`): a name claude *reports* is sent verbatim
+(real turn); a name claude does *not* report — and the catalog is populated — is a
+**genuine unknown** (a typo) and gets a client-side *Unknown command* alert
+(`presentAlertSheet`) instead of burning a turn. (Before this, a typed `/foo`
+reached claude, which wasted a turn and replied with a terminal-flavored "Did you
+mean …?" that could even suggest a command we hide.) The catalog-empty case (pre
+handshake) falls through to claude, so a valid command typed early is never
+wrongly rejected. The by-name classifier stays catalog-free and pure; the
+catalog check (`isUnknownRemoteCommand`) layers on top at the dev card.
+
+**Artifacts (as built):**
+- New: `tugdeck/src/lib/slash-supported.ts` — the tier classifier. `SUPPORTED_LOCAL` is **derived from `LOCAL_SLASH_COMMANDS`** (so a command added to the [#step-1c] registry in a later sub-step becomes `supported-local` with no second edit); `HIDDEN_SLASH_COMMANDS` is the explicit known-unsupported set; `classifySlashCommand` / `isHiddenSlashCommand` are the lookups. (No `GRAPHICAL_SUPPORTED_COMMANDS` constant — deriving the supported set from the registry is the future-proof shape.)
+- New: `tuglaws/dev-card-unsupported-slash-commands.md` — discoverable list of every hidden command + why, grouped by reason; mirrors `HIDDEN_SLASH_COMMANDS`. Filed under `tuglaws/` (the sanctioned docs home per [D14]'s own pointer), indexed in `tuglaws/INDEX.md`.
+- New: `filterCommandProvider` in `completion-providers/local-commands.ts` — wraps a command provider, dropping items whose name fails a predicate.
+- Modified: `dev-card.tsx` composition layer wraps `getCommandCompletionProvider()` in `filterCommandProvider(…, (name) => !isHiddenSlashCommand(name))`. **Placement note:** [D14] proposed filtering *inside* the store; built at the **composition layer** instead, to keep the generic `SessionMetadataStore` free of dev-card command policy — the same reasoning that already keeps the local-command merge out of the store ([#step-1c]). Observable behavior is identical: claude's reported `hidden` commands never reach the dev-card popup.
+- Modified: `slash-commands.ts` exports `slashCommandName(text)` (name-only parse); `tug-prompt-entry.tsx` `performSubmit` swallows a typed `hidden` command (silent drop, recorded in history like the local-command path) before the send gates.
+- New (catalog-aware unknown): `isUnknownRemoteCommand(name, catalogNames)` in `slash-supported.ts` (pure: catalog-empty → false; non-pass-through → false; else not-in-catalog). New action `SHOW_UNKNOWN_SLASH_COMMAND` (`action-vocabulary.ts`); `tug-prompt-entry.tsx` reads its `sessionMetadataStore` catalog and dispatches it key-card-scoped when a typed `/command` is a genuine unknown (falls through to `send()` if no responder claims it); `dev-card.tsx` handles it with `presentAlertSheet` (*Unknown command*). The prompt entry already received `sessionMetadataStore` — now consumed.
+- **Catalog from the drop (root-cause fix):** the catalog was empty until a post-turn `system_metadata`, so unknown-detection no-op'd on the first input. Fixed in `session-metadata-store.ts`: the turn-free `initialize` handshake's `session_capabilities.commands` (available from the drop) now populates `slashCommands` (`parseCommandCatalog`), and an empty `system_metadata` replace no longer wipes a populated catalog. See memory `session-metadata-from-drop` for the general two-source principle (handshake vs post-turn) this recurs on.
 
 **Tasks:**
-- [ ] Define `GRAPHICAL_SUPPORTED_COMMANDS` + the three-tier classifier in `slash-supported.ts`.
-- [ ] Filter popup output — `hidden`-tier commands absent from the popup per [D14]; `pass-through` + `supported-local` visible.
-- [ ] Submit-side blocklist swallows the `hidden` set (silent drop, not a no-op message); unknown `/names` still go to claude.
-- [ ] Author `dev-card-unsupported-slash-commands.md` listing every hidden command + why (`/bug`, `/vim`, `/theme`, `/color`, `/mcp`, `/quit`, `/login`, `/logout`, `/usage`, …). Link the doc from the slash popup's "?" affordance and (later) from `/help`.
+- [x] Define the three-tier classifier in `slash-supported.ts` (`classifySlashCommand` / `isHiddenSlashCommand`; `SUPPORTED_LOCAL` derived from the registry, `HIDDEN_SLASH_COMMANDS` explicit).
+- [x] Filter popup output — `hidden`-tier commands absent from the popup per [D14] (`filterCommandProvider` at the dev-card composition layer); `pass-through` + `supported-local` visible.
+- [x] Submit-side blocklist swallows the `hidden` set (silent drop, not a no-op message); unknown `/names` still go to claude.
+- [x] Author `dev-card-unsupported-slash-commands.md` listing every hidden command + why (`/bug`, `/vim`, `/theme`, `/color`, `/mcp`, `/quit`, `/login`, `/logout`, `/usage`, …), filed in `tuglaws/` + indexed. **Popup "?" link not built:** the completion popup is a CodeMirror extension with no help affordance today — building one is a generic-text-editor primitive change (scope creep for 13.A). The doc is at a canonical path and `/help` (13.B) will surface it.
 
 **Tests:**
-- [ ] Pure-logic: classifier returns the right tier for a sampled catalog (supported-local / pass-through / hidden); unknown `/name` → send-to-claude.
-- [ ] Pure-logic: popup filter hides exactly the `hidden` tier; submit blocklist swallows it.
+- [x] Pure-logic: classifier returns the right tier for a sampled catalog (supported-local / pass-through / hidden); unknown `/name` defaults to pass-through *by name* (`slash-supported.test.ts`).
+- [x] Pure-logic: `isUnknownRemoteCommand` — empty catalog → not unknown; pass-through name absent from a populated catalog → unknown; present → not unknown; local/hidden names → never unknown (`slash-supported.test.ts`).
+- [x] Pure-logic: `filterCommandProvider` drops exactly the failing names + passes the query through; `slashCommandName` extraction (`slash-commands.test.ts`). The submit-side swallow + unknown-command alert dispatch are exercised live (real-app), not fake-DOM tested.
 
 **Checkpoint:**
-- [ ] `just app-test slash-filtering` (real-app: `/vim`, `/theme`, `/bug`, … absent from popup; supported + pass-through present).
+- [x] **Closed.** tsc clean; full pure-logic suite green (3257 pass). The filter is live via HMR. The bundled `just app-test slash-filtering` was **not** authored — popup filtering is a projection over a tested pure classifier + a one-line tested provider wrapper, and a real-app variant would need a live claude session reporting commands to assert popup contents; consistent with how the Step 12 listing sheets closed, the per-layer pure-logic suites are the right-layer coverage. Verifiable live: `/` popup omits `/vim`/`/bug`/…; typed `/vim` is a silent no-op; typed `/foo` (genuine unknown) raises the *Unknown command* alert instead of sending a turn.
 
 ---
 

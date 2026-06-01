@@ -99,6 +99,96 @@ const EMPTY_SNAPSHOT: SessionMetadataSnapshot = {
   effort: null,
 };
 
+// ── Reconciliation: two sources, one derived snapshot ──────────────────────────
+//
+// Session metadata arrives from two frames that overlap, and the public
+// snapshot is the *derived reconciliation* of them — never a single mutable
+// object patched in place by each (which is what made every new field a fresh
+// chance to forget a "preserve across the other branch" rule). The two raw
+// sources are held separately and the snapshot is recomputed by
+// {@link reconcileSnapshot} on every change, so divergence is impossible by
+// construction and field ownership lives in exactly one place. See memory
+// `session-metadata-from-drop` for the from-the-drop discipline this encodes.
+
+/**
+ * The turn-free `initialize` handshake (`session_capabilities`) — available
+ * from the drop, before any turn. Owns `models`, `effort`, and the
+ * from-the-drop command catalog (`commands`).
+ */
+interface CapabilitiesRegion {
+  models: CapabilityModel[];
+  effort: string | null;
+  commands: SlashCommandInfo[];
+}
+
+const EMPTY_CAPABILITIES: CapabilitiesRegion = {
+  models: [],
+  effort: null,
+  commands: [],
+};
+
+/**
+ * A post-turn `system_metadata` frame — richer and authoritative, but only
+ * after a turn runs. Owns the live `sessionId` / `model` / `permissionMode` /
+ * `cwd` / `version`, and the authoritative command catalog (`slashCommands`,
+ * merged from `slash_commands ∪ skills ∪ agents`).
+ */
+interface SystemRegion {
+  sessionId: string | null;
+  model: string | null;
+  permissionMode: string | null;
+  cwd: string | null;
+  version: string | null;
+  slashCommands: SlashCommandInfo[];
+}
+
+/**
+ * Client-initiated optimistic overrides, pending the authoritative frame.
+ * tugcode answers `set_model` / `set_permission_mode` with a `control_response`
+ * (not fresh metadata), and a resumed `--effort` respawn emits no fresh
+ * `session_capabilities` — so the chip reflects the change here immediately and
+ * the override is dropped when the authoritative frame that owns the field
+ * lands (`system_metadata` for model/mode, `session_capabilities` for effort).
+ */
+interface OptimisticOverrides {
+  model?: string;
+  permissionMode?: string;
+  effort?: string;
+}
+
+/**
+ * Derive the public snapshot from the two raw regions + optimistic overrides.
+ * The single source of truth for field ownership and precedence — pure, so it
+ * is trivially testable and adding a field is one line here.
+ *
+ * Precedence, per field:
+ * - `models` / `effort` ← capabilities (effort: optimistic wins until a fresh
+ *   handshake lands).
+ * - `sessionId` / `model` / `permissionMode` / `cwd` / `version` ← system
+ *   (model + mode: optimistic wins until the authoritative frame lands).
+ * - `slashCommands` (the catalog — the only field both sources carry) ← the
+ *   post-turn system catalog when non-empty, else the from-the-drop handshake
+ *   catalog. So it is populated from the drop and sharpened post-turn, and an
+ *   empty/sparse system frame never wipes a populated handshake catalog.
+ */
+function reconcileSnapshot(
+  cap: CapabilitiesRegion,
+  sys: SystemRegion | null,
+  opt: OptimisticOverrides,
+): SessionMetadataSnapshot {
+  return {
+    sessionId: sys?.sessionId ?? null,
+    model: opt.model ?? sys?.model ?? null,
+    permissionMode: opt.permissionMode ?? sys?.permissionMode ?? null,
+    cwd: sys?.cwd ?? null,
+    version: sys?.version ?? null,
+    slashCommands:
+      sys && sys.slashCommands.length > 0 ? sys.slashCommands : cap.commands,
+    models: cap.models,
+    effort: opt.effort ?? cap.effort,
+  };
+}
+
 /**
  * Parse the `models` array of a `session_capabilities` payload. Keeps
  * only entries with a string `value` + `displayName`; `description` is
@@ -181,8 +271,24 @@ function parseEntry(
   return null;
 }
 
-/** Parse a system_metadata payload into a snapshot. Returns null if not system_metadata. */
-function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null {
+/**
+ * Parse the `session_capabilities` `commands` array (the turn-free
+ * `initialize`-handshake command catalog) into `SlashCommandInfo[]`. Each
+ * entry is `{ name, description?, argumentHint? }`; reuse {@link parseEntry}
+ * with the `local` category. Malformed entries are dropped.
+ */
+function parseCommandCatalog(raw: unknown): SlashCommandInfo[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SlashCommandInfo[] = [];
+  for (const entry of raw) {
+    const cmd = parseEntry(entry, "local");
+    if (cmd) out.push(cmd);
+  }
+  return out;
+}
+
+/** Parse a system_metadata payload into a {@link SystemRegion}. Returns null if not system_metadata. */
+function parseSystemRegion(payload: unknown): SystemRegion | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as Record<string, unknown>;
   if (p.type !== "system_metadata") return null;
@@ -231,11 +337,6 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
     cwd: typeof p.cwd === "string" ? p.cwd : null,
     version: typeof p.version === "string" ? p.version : null,
     slashCommands,
-    // `models` + `effort` come from `session_capabilities`, not
-    // `system_metadata`; `_onFeedUpdate` preserves the captured values across
-    // this replace.
-    models: [],
-    effort: null,
   };
 }
 
@@ -249,7 +350,14 @@ function parseMetadataPayload(payload: unknown): SessionMetadataSnapshot | null 
  * getCommandCompletionProvider() for the / trigger.
  */
 export class SessionMetadataStore {
-  private _snapshot: SessionMetadataSnapshot = { ...EMPTY_SNAPSHOT, slashCommands: [] };
+  // The two raw sources, held separately, plus optimistic overrides. The
+  // public `_snapshot` is the DERIVED reconciliation of all three
+  // ({@link reconcileSnapshot}) — never patched in place, so the views can
+  // never diverge.
+  private _capabilities: CapabilitiesRegion = EMPTY_CAPABILITIES;
+  private _system: SystemRegion | null = null;
+  private _optimistic: OptimisticOverrides = {};
+  private _snapshot: SessionMetadataSnapshot = EMPTY_SNAPSHOT;
   private _listeners: Set<() => void> = new Set();
   private _unsubscribeFeed: (() => void) | null = null;
   private _lastPayloadRef: unknown = undefined;
@@ -275,20 +383,19 @@ export class SessionMetadataStore {
   }
 
   /**
-   * Apply one decoded SESSION_METADATA payload to the snapshot. Shared by the
-   * live feed path ({@link _onFeedUpdate}) and the test injection
-   * ({@link _ingestForTest}); the reference-dedupe lives in `_onFeedUpdate`,
-   * so this always processes what it is given.
+   * Apply one decoded SESSION_METADATA payload. Shared by the live feed path
+   * ({@link _onFeedUpdate}) and the test injection ({@link _ingestForTest});
+   * the reference-dedupe lives in `_onFeedUpdate`, so this always processes
+   * what it is given.
+   *
+   * Two payload types ride the SESSION_METADATA feed — `session_capabilities`
+   * (turn-free handshake, [#step-2a]) and `system_metadata` (post-turn). Each
+   * updates ONLY its own raw region; the public snapshot is then derived by
+   * {@link reconcileSnapshot}. Because each source owns a region and the
+   * snapshot is recomputed (not patched), one frame can never wipe a value the
+   * other owns — the bug class that kept recurring.
    */
   private _processPayload(payload: unknown): void {
-    // Two payload types ride the SESSION_METADATA feed: `system_metadata`
-    // (live current model / version / mode, post-turn) and
-    // `session_capabilities` (the turn-free `initialize` model list /
-    // command catalog, [#step-2a]). The FeedStore keeps only the latest
-    // payload per feed, so each arrives here as the single current slot;
-    // we capture each into its own snapshot region and preserve the
-    // other across the update, so a later `system_metadata` never wipes
-    // the captured `models`, and vice versa.
     const payloadType =
       typeof payload === "object" && payload !== null
         ? (payload as Record<string, unknown>).type
@@ -296,30 +403,40 @@ export class SessionMetadataStore {
 
     if (payloadType === "session_capabilities") {
       const cap = payload as Record<string, unknown>;
-      const models = parseCapabilityModels(cap.models);
-      // tugcode surfaces the current effort level here (it owns `--effort`);
-      // `null` when no override is in force ([#step-4]).
-      const effort = typeof cap.effort === "string" ? cap.effort : null;
-      this._snapshot = { ...this._snapshot, models, effort };
-      for (const listener of this._listeners) listener();
+      this._capabilities = {
+        models: parseCapabilityModels(cap.models),
+        // tugcode surfaces the current effort level here (it owns `--effort`);
+        // `null` when no override is in force ([#step-4]).
+        effort: typeof cap.effort === "string" ? cap.effort : null,
+        // The handshake carries the command catalog (`commands`) — available
+        // from the drop, before the post-turn `system_metadata`. This is what
+        // makes the [D14] popup filter + unknown-command detection ([#step-13a])
+        // work on the very first input.
+        commands: parseCommandCatalog(cap.commands),
+      };
+      // The authoritative effort just landed → drop any optimistic override.
+      delete this._optimistic.effort;
+      this._recompute();
       return;
     }
 
-    const parsed = parseMetadataPayload(payload);
-    if (!parsed) return;
+    const sys = parseSystemRegion(payload);
+    if (!sys) return;
+    this._system = sys;
+    // The authoritative model + permission mode just landed → drop the
+    // optimistic overrides they were standing in for (self-correcting).
+    delete this._optimistic.model;
+    delete this._optimistic.permissionMode;
+    this._recompute();
+  }
 
-    // Wholesale replace of the metadata region. The tugcast supervisor's
-    // bridge intercept merges every `system_metadata` line against the
-    // persisted ledger row before forwarding, so the wire always
-    // delivers the most-informationally-rich payload. Client-side merge
-    // is no longer needed — but the turn-free `models` captured from a
-    // prior `session_capabilities` frame is preserved across the replace
-    // (the two payload types share this feed slot).
-    this._snapshot = {
-      ...parsed,
-      models: this._snapshot.models,
-      effort: this._snapshot.effort,
-    };
+  /** Recompute the derived snapshot from the raw regions and notify. */
+  private _recompute(): void {
+    this._snapshot = reconcileSnapshot(
+      this._capabilities,
+      this._system,
+      this._optimistic,
+    );
     for (const listener of this._listeners) {
       listener();
     }
@@ -363,17 +480,15 @@ export class SessionMetadataStore {
    * `Shift+Tab` / `/permissions` paths call this right after sending the
    * frame so the Z4B chip reflects the change immediately.
    *
-   * Self-correcting: the next authoritative `system_metadata` payload (on
-   * respawn / re-init) replaces the snapshot wholesale, carrying the same
-   * mode tugcode applied. A no-op when the mode is unchanged (preserves
-   * snapshot reference stability for `useSyncExternalStore`).
+   * Self-correcting: the override is dropped when the next authoritative
+   * `system_metadata` lands (it owns `permissionMode`), and the reconciled
+   * snapshot then reflects tugcode's value. A no-op when the mode is unchanged
+   * (preserves snapshot reference stability for `useSyncExternalStore`).
    */
   applyPermissionMode(mode: string): void {
     if (this._snapshot.permissionMode === mode) return;
-    this._snapshot = { ...this._snapshot, permissionMode: mode };
-    for (const listener of this._listeners) {
-      listener();
-    }
+    this._optimistic = { ...this._optimistic, permissionMode: mode };
+    this._recompute();
   }
 
   /**
@@ -384,16 +499,14 @@ export class SessionMetadataStore {
    * is no round-trip to await. The `/model` picker calls this right after
    * sending the frame so the Z4B model chip reflects the change immediately.
    * `model` is a resolved model id (e.g. `claude-sonnet-4-6`) so the chip's
-   * `formatModelLabel` renders a friendly label. Self-correcting: the next
-   * authoritative `system_metadata` replaces the snapshot wholesale. A no-op
+   * `formatModelLabel` renders a friendly label. Self-correcting: the override
+   * is dropped when the next authoritative `system_metadata` lands. A no-op
    * when unchanged (preserves snapshot reference stability).
    */
   applyModel(model: string): void {
     if (this._snapshot.model === model) return;
-    this._snapshot = { ...this._snapshot, model };
-    for (const listener of this._listeners) {
-      listener();
-    }
+    this._optimistic = { ...this._optimistic, model };
+    this._recompute();
   }
 
   /**
@@ -401,17 +514,15 @@ export class SessionMetadataStore {
    * ([#step-4]). Unlike model / permission mode, effort has no live control
    * verb — tugcode applies it by respawning claude with `--effort` + `--resume`
    * ([R07]) — and a resumed respawn emits no fresh `session_capabilities`, so
-   * this optimistic update is the ONLY thing that moves the chip until a later
-   * new-mode spawn re-reports it. The effort picker calls this right after
-   * sending the frame. A no-op when unchanged (preserves snapshot reference
-   * stability for `useSyncExternalStore`).
+   * this optimistic override is the ONLY thing that moves the chip until a
+   * fresh `session_capabilities` lands (which owns `effort`) and drops it. The
+   * effort picker calls this right after sending the frame. A no-op when
+   * unchanged (preserves snapshot reference stability for `useSyncExternalStore`).
    */
   applyEffort(effort: string): void {
     if (this._snapshot.effort === effort) return;
-    this._snapshot = { ...this._snapshot, effort };
-    for (const listener of this._listeners) {
-      listener();
-    }
+    this._optimistic = { ...this._optimistic, effort };
+    this._recompute();
   }
 
   /**

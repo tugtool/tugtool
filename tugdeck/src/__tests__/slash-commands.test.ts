@@ -13,12 +13,14 @@ import { describe, expect, test } from "bun:test";
 import {
   LOCAL_SLASH_COMMANDS,
   matchLocalSlashCommand,
+  slashCommandName,
 } from "@/lib/slash-commands";
 import type {
   CompletionItem,
   CompletionProvider,
 } from "@/lib/tug-text-types";
 import {
+  filterCommandProvider,
   localCommandCompletionProvider,
   mergeCommandProviders,
 } from "@/components/tugways/cards/completion-providers/local-commands";
@@ -139,6 +141,43 @@ describe("local-command completion + merge", () => {
       "hooks",
       "commit",
     ]);
+  });
+});
+
+describe("slashCommandName", () => {
+  test("extracts the name from a command line, args and whitespace tolerated", () => {
+    expect(slashCommandName("/vim")).toBe("vim");
+    expect(slashCommandName("  /add-dir /tmp/foo  ")).toBe("add-dir");
+    expect(slashCommandName("/btw some text")).toBe("btw");
+  });
+
+  test("returns null for non-command text", () => {
+    for (const input of ["hello", "", "/", "look /vim here"]) {
+      expect(slashCommandName(input)).toBeNull();
+    }
+  });
+});
+
+describe("filterCommandProvider", () => {
+  test("drops items whose name fails the predicate", () => {
+    const base: CompletionProvider = () => [
+      mkItem("init"),
+      mkItem("vim"),
+      mkItem("compact"),
+      mkItem("theme"),
+    ];
+    const filtered = filterCommandProvider(
+      base,
+      (name) => name !== "vim" && name !== "theme",
+    );
+    expect(filtered("").map((i) => i.label)).toEqual(["init", "compact"]);
+  });
+
+  test("passes the query through to the wrapped provider", () => {
+    const base: CompletionProvider = (q) => (q === "in" ? [mkItem("init")] : []);
+    const filtered = filterCommandProvider(base, () => true);
+    expect(filtered("in").map((i) => i.label)).toEqual(["init"]);
+    expect(filtered("xx")).toEqual([]);
   });
 });
 

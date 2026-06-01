@@ -80,7 +80,11 @@ import { useResponder } from "./use-responder";
 import type { ActionEvent } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponderChain } from "./responder-chain-provider";
-import { matchLocalSlashCommand } from "@/lib/slash-commands";
+import { matchLocalSlashCommand, slashCommandName } from "@/lib/slash-commands";
+import {
+  isHiddenSlashCommand,
+  isUnknownRemoteCommand,
+} from "@/lib/slash-supported";
 import { useCardStatePreservation, useCardId } from "./use-card-state-preservation";
 import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
@@ -632,7 +636,7 @@ export const TugPromptEntry = React.forwardRef<
     id,
     localCommandTargetId,
     codeSessionStore,
-    // sessionMetadataStore — accepted for T3.4.c, unused in T3.4.b.
+    sessionMetadataStore,
     historyStore,
     completionProviders,
     dropHandler,
@@ -1024,6 +1028,79 @@ export const TugPromptEntry = React.forwardRef<
           return;
         }
       }
+
+      // [D14] submit-side blocklist ([#step-13a]). A typed command line
+      // whose name is in the known-unsupported set is swallowed here —
+      // silent drop, never sent to claude (which over stream-json would
+      // only bounce it as unavailable). A local command was already
+      // dispatched above; a pass-through / unknown name falls through to
+      // `send()`. Recorded in history like any submitted line so ↑ recalls
+      // it, mirroring the local-command path.
+      if (commandLine !== null) {
+        const hiddenName = slashCommandName(commandLine);
+        if (hiddenName !== null && isHiddenSlashCommand(hiddenName)) {
+          const sessionId = snapRef.current.tugSessionId;
+          historyStore.push({
+            id: `${sessionId}-${Date.now()}`,
+            sessionId,
+            projectPath: "",
+            route: routeLifecycle.getRoute() || "",
+            text: commandLine,
+            atoms: [],
+            timestamp: Date.now(),
+          });
+          editor.clear();
+          currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+          return;
+        }
+      }
+
+      // Unknown-command interception ([#step-13a]). A typed `/command` that
+      // is neither local nor hidden and that claude does not report in its
+      // command catalog is a genuine unknown (a typo) — surface it
+      // client-side via the card's responder instead of burning a turn
+      // (claude would only reply "Unknown command", possibly suggesting a
+      // command we hide). Gated on a populated catalog inside
+      // `isUnknownRemoteCommand`. If no responder claims it (a host with no
+      // handler), fall through to `send()`.
+      const targetForUnknown = localCommandTargetIdRef.current;
+      if (commandLine !== null && manager !== null && targetForUnknown !== undefined) {
+        const name = slashCommandName(commandLine);
+        const catalogNames = sessionMetadataStore
+          .getSnapshot()
+          .slashCommands.map((c) => c.name);
+        if (
+          name !== null &&
+          isUnknownRemoteCommand(name, catalogNames) &&
+          manager.nodeCanHandle(
+            targetForUnknown,
+            TUG_ACTIONS.SHOW_UNKNOWN_SLASH_COMMAND,
+          )
+        ) {
+          const handled = manager.sendToTarget(targetForUnknown, {
+            action: TUG_ACTIONS.SHOW_UNKNOWN_SLASH_COMMAND,
+            value: { name, commandLine },
+            phase: "discrete",
+          });
+          if (handled) {
+            // Record the typo in history so ↑ recalls it for a quick fix,
+            // mirroring the local-command and hidden-command paths.
+            const sessionId = snapRef.current.tugSessionId;
+            historyStore.push({
+              id: `${sessionId}-${Date.now()}`,
+              sessionId,
+              projectPath: "",
+              route: routeLifecycle.getRoute() || "",
+              text: commandLine,
+              atoms: [],
+              timestamp: Date.now(),
+            });
+            editor.clear();
+            currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+            return;
+          }
+        }
+      }
     }
 
     // Z5 disabled-mode gate. When `submitButtonMode` is one of the
@@ -1143,7 +1220,7 @@ export const TugPromptEntry = React.forwardRef<
     // now-empty editor.
     currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
     // Route is a sticky user preference. Do not reset on submit.
-  }, [codeSessionStore, historyStore, manager]);
+  }, [codeSessionStore, historyStore, manager, sessionMetadataStore]);
 
   // Flush a deferred submit. When a submit landed during the
   // transport-settling window, `performSubmit`'s blocked-submit branch

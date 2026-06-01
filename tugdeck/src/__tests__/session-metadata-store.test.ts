@@ -478,3 +478,152 @@ describe("SessionMetadataStore wire-key parsing", () => {
     store.dispose();
   });
 });
+
+describe("SessionMetadataStore handshake command catalog (from the drop)", () => {
+  // The turn-free `initialize` handshake (`session_capabilities`) carries the
+  // command catalog as `commands` — available before any turn. Capturing it
+  // is what makes the slash-command filter + unknown-command detection work
+  // on the very first input ([#step-13a]), rather than waiting for a
+  // post-turn `system_metadata`.
+  test("session_capabilities `commands` populates slashCommands from the drop", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      models: [{ value: "default", displayName: "Default" }],
+      commands: [
+        { name: "init" },
+        { name: "compact", description: "compact the context" },
+        { name: "tugplug:commit" },
+      ],
+    });
+
+    const snap = store.getSnapshot();
+    expect(snap.slashCommands.map((c) => c.name)).toEqual([
+      "init",
+      "compact",
+      "tugplug:commit",
+    ]);
+    // models captured in the same frame still land.
+    expect(snap.models).toHaveLength(1);
+
+    store.dispose();
+  });
+
+  test("a later empty system_metadata does NOT wipe the handshake catalog", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    // Handshake lands first (from the drop).
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      models: [],
+      commands: [{ name: "init" }, { name: "loop" }],
+    });
+    expect(store.getSnapshot().slashCommands).toHaveLength(2);
+
+    // An early/sparse system_metadata with no slash_commands must not clobber
+    // the catalog we already have.
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      model: "claude-opus-4-8",
+      slash_commands: [],
+    });
+    expect(store.getSnapshot().slashCommands.map((c) => c.name)).toEqual([
+      "init",
+      "loop",
+    ]);
+    // The richer model field from system_metadata still applies.
+    expect(store.getSnapshot().model).toBe("claude-opus-4-8");
+
+    store.dispose();
+  });
+
+  test("a non-empty system_metadata catalog refreshes the handshake one", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      models: [],
+      commands: [{ name: "init" }],
+    });
+    // Post-turn system_metadata carries the authoritative (richer) list.
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      slash_commands: ["init", "loop", "compact"],
+    });
+    expect(store.getSnapshot().slashCommands.map((c) => c.name)).toEqual([
+      "init",
+      "loop",
+      "compact",
+    ]);
+
+    store.dispose();
+  });
+});
+
+describe("SessionMetadataStore reconciliation (optimistic overrides)", () => {
+  // Optimistic overrides win until the authoritative frame that OWNS the field
+  // lands and drops the override — proving the two sources reconcile through a
+  // single precedence rule rather than racing to patch one snapshot.
+  test("applyModel wins until a system_metadata lands and drops the override", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    store.applyModel("claude-sonnet-4-6");
+    expect(store.getSnapshot().model).toBe("claude-sonnet-4-6");
+
+    // The authoritative system_metadata (here carrying the live model) drops
+    // the optimistic override and the reconciled snapshot reflects the wire.
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      model: "claude-opus-4-8",
+    });
+    expect(store.getSnapshot().model).toBe("claude-opus-4-8");
+
+    store.dispose();
+  });
+
+  test("applyEffort wins until a fresh session_capabilities drops it", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      models: [],
+      effort: "low",
+      commands: [],
+    });
+    expect(store.getSnapshot().effort).toBe("low");
+
+    store.applyEffort("high");
+    expect(store.getSnapshot().effort).toBe("high");
+
+    // A fresh handshake (owns effort) drops the optimistic override.
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      models: [],
+      effort: "medium",
+      commands: [],
+    });
+    expect(store.getSnapshot().effort).toBe("medium");
+
+    store.dispose();
+  });
+
+  test("a model override does not survive a system_metadata that omits model", () => {
+    // Matches the prior wholesale-replace behavior: a system_metadata frame is
+    // authoritative for model, so it drops the optimistic override even when it
+    // carries no model (→ null), rather than letting a stale override linger.
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    store.applyModel("claude-sonnet-4-6");
+    feedStore.emit(FEED_ID, { type: "system_metadata", cwd: "/x" });
+    expect(store.getSnapshot().model).toBeNull();
+
+    store.dispose();
+  });
+});

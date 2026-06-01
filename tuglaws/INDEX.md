@@ -19,6 +19,7 @@
 - [responder-chain.md](responder-chain.md) — The tree of components that own semantic state, and the walk that routes typed actions through them. Read before writing any component that emits or handles an action.
 - [action-naming.md](action-naming.md) — The action vocabulary. Every action has one canonical `kebab-case` name, exported as a `TUG_ACTIONS.*` constant, referenced by constant at every call site.
 - [component-authoring.md](component-authoring.md) — The component author's checklist. How to build a tugways component end-to-end — files, hooks, attributes, tokens, tests.
+- [dev-card-unsupported-slash-commands.md](dev-card-unsupported-slash-commands.md) — Why some of Claude Code's slash commands are hidden from the dev card's `/` popup ([D14]). Mirrors `HIDDEN_SLASH_COMMANDS` in `slash-supported.ts`; the discoverable answer to "why isn't `/vim` here?".
 
 ## Theming, palette, tokens
 

@@ -67,7 +67,7 @@ import { TugBox } from "../tug-box";
 import { TugBadge } from "../tug-badge";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPushButton } from "../tug-push-button";
-import { Maximize2, Minimize2, Trash2 } from "lucide-react";
+import { AlertTriangle, Maximize2, Minimize2, Trash2 } from "lucide-react";
 import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,
@@ -82,6 +82,7 @@ import {
   type TugListViewDelegate,
 } from "../tug-list-view";
 import { useTugSheet } from "../tug-sheet";
+import { presentAlertSheet } from "../tug-alert-sheet";
 import { useCardSettings } from "../use-card-settings";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
@@ -143,9 +144,11 @@ import type { SessionRow } from "@/protocol";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 import {
+  filterCommandProvider,
   localCommandCompletionProvider,
   mergeCommandProviders,
 } from "./completion-providers/local-commands";
+import { isHiddenSlashCommand } from "@/lib/slash-supported";
 import {
   useDevRecentsDataSource,
   useDevSessionsDataSource,
@@ -482,7 +485,14 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
                   name !== "rewind" ||
                   canOfferRewind(services.codeSessionStore.getSnapshot().transcript),
               }),
-              services.sessionMetadataStore.getCommandCompletionProvider(),
+              // Apply the [D14] allowlist over claude's reported commands:
+              // drop the known-unsupported `hidden` tier from the popup
+              // ([#step-13a]). Local commands need no filter — every registry
+              // entry is supported by construction.
+              filterCommandProvider(
+                services.sessionMetadataStore.getCommandCompletionProvider(),
+                (name) => !isHiddenSlashCommand(name),
+              ),
             ),
           )
         : EMPTY_FILE_COMPLETION_PROVIDER,
@@ -2723,6 +2733,21 @@ export function DevCardBody({
         if (payload === undefined) return;
         const open = slashCommandSurfaces[payload.name];
         if (open !== undefined) open(payload.args);
+      },
+      // A typed `/command` claude does not recognize, dispatched by the
+      // prompt entry once it has confirmed (against claude's reported
+      // catalog) that the name is a genuine unknown ([#step-13a]). Present
+      // a pane-modal alert rather than letting the line burn a turn.
+      [TUG_ACTIONS.SHOW_UNKNOWN_SLASH_COMMAND]: (event: ActionEvent) => {
+        const payload = event.value as { name: string } | undefined;
+        if (payload === undefined) return;
+        void presentAlertSheet(cardPickerSheet.showSheet, {
+          title: "Unknown command",
+          // Match the canonical TugAlert icon sizing (the `.tug-alert-icon`
+          // box is 48×48; the default glyph is `size={48}`).
+          icon: <AlertTriangle size={48} aria-hidden="true" />,
+          message: `There is no /${payload.name} command in this project. Type / to see the available commands.`,
+        });
       },
     },
   });

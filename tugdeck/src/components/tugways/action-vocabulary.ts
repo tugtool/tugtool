@@ -232,6 +232,15 @@ export const TUG_ACTIONS = {
   //                 Transport-independent — not gated on send-readiness.
   //                 A host with no handler leaves it unhandled, so the
   //                 prompt entry sends the text to claude instead.
+  // SHOW_UNKNOWN_SLASH_COMMAND: payload — `value: { name, commandLine }`. The
+  //                 prompt entry dispatches it key-card-scoped when a typed
+  //                 `/command` is neither local nor hidden and claude's
+  //                 reported command catalog does not contain it (a genuine
+  //                 unknown / typo). The dev card's card-content responder
+  //                 handles it by presenting an "unknown command" alert
+  //                 instead of sending the line to claude ([#step-13a]). A
+  //                 host with no handler leaves it unhandled, so the prompt
+  //                 entry falls through and sends the text to claude.
   CYCLE_CARD:     "cycle-card",
   PREVIOUS_TAB:   "previous-tab",
   NEXT_TAB:       "next-tab",
@@ -241,6 +250,7 @@ export const TUG_ACTIONS = {
   JUMP_TO_TAB:    "jump-to-tab",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
   RUN_SLASH_COMMAND: "run-slash-command",
+  SHOW_UNKNOWN_SLASH_COMMAND: "show-unknown-slash-command",
 
   // ---- Dialog / popover ----
   //

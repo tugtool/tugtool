@@ -150,3 +150,19 @@ export function matchLocalSlashCommand(text: string): LocalSlashCommandMatch | n
   if (args.length > 0 && spec.takesArgs !== true) return null;
   return { name: name as LocalCommandName, args };
 }
+
+/**
+ * Extract the command name (without the leading slash) from a draft that is
+ * a single `/command` line, ignoring any trailing args; `null` for anything
+ * that isn't a command line. Unlike {@link matchLocalSlashCommand} this does
+ * not consult the registry — it answers "what `/name` did the user type?",
+ * which the [D14] allowlist ([#step-13a]) reads to classify a typed command
+ * that is *not* a local one (a known-unsupported name to swallow, a
+ * pass-through to send to claude).
+ *
+ * Pure: no side effects.
+ */
+export function slashCommandName(text: string): string | null {
+  const m = COMMAND_LINE.exec(text.trim());
+  return m === null ? null : m[1];
+}
