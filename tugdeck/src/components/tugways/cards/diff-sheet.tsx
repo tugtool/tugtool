@@ -115,7 +115,6 @@ export function useDiffSheet({
       void showSheet({
         title: "Diff",
         displayWidth: "xl",
-        resizable: true,
         content: (close) => (
           <DiffSheetBody gitDiffStore={gitDiffStore} onClose={close} />
         ),

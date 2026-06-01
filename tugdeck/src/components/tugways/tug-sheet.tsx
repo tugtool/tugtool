@@ -149,6 +149,21 @@ export type TugSheetPresentation = "top" | "bottom" | "scale-fade";
  */
 export type TugSheetDisplayWidth = "sm" | "md" | "lg" | "xl";
 
+/**
+ * Drag-resize handles for a `resizable` sheet. The sheet is top-anchored and
+ * horizontally centered, so there is no north handle (the top edge is pinned
+ * below the title bar) — east/west grow the centered width, south grows the
+ * height downward, and the two bottom corners combine them.
+ */
+type SheetResizeEdge = "e" | "w" | "s" | "se" | "sw";
+const SHEET_RESIZE_EDGES: SheetResizeEdge[] = ["e", "w", "s", "se", "sw"];
+/** Lower bound for drag-resize: the `sm` reading-cap width. */
+const SHEET_RESIZE_MIN_WIDTH = 460;
+/** Lower bound for drag-resize height. */
+const SHEET_RESIZE_MIN_HEIGHT = 250;
+/** Gap kept between the sheet's bottom and the canvas bottom (px). */
+const SHEET_CANVAS_GAP = 32;
+
 /** Enter/exit keyframe pair for one presentation style. */
 interface SheetPresentationMotion {
   enter: Keyframe[];
@@ -544,6 +559,111 @@ export function TugSheetContent({
   // `mounted` becomes true when open goes true, and false only after the exit animation completes.
   const [mounted, setMounted] = useState(false);
   const sheetContentRef = useRef<HTMLDivElement | null>(null);
+  const clipRef = useRef<HTMLDivElement | null>(null);
+
+  // ---- Clamp the panel to the canvas ([D15]) ----
+  //
+  // Pure CSS can't see where the host pane sits relative to the canvas, so a
+  // tall panel (long /diff) ran off the bottom. Mirror what panes do when
+  // drag-resizing: measure the rectangles and clamp in JS. The canvas is the
+  // pane frame's parent; the panel's top is the (un-transformed) clip top plus
+  // its own top margin. Set `max-height` so the panel bottom lands 16px above
+  // the canvas bottom. Re-measured on canvas/pane resize and window resize.
+  // DOM write only ([L06]); inline `max-height` overrides the CSS fallback.
+  useLayoutEffect(() => {
+    const content = sheetContentRef.current;
+    const clip = clipRef.current;
+    if (content === null || clip === null || paneFrameEl === null) return;
+    const canvas = paneFrameEl.parentElement;
+    if (canvas === null) return;
+    const measure = (): void => {
+      // The visible bottom limit: the canvas rect bottom, but never below the
+      // viewport (the canvas element can be taller than the window).
+      const bottomLimit = Math.min(
+        canvas.getBoundingClientRect().bottom,
+        window.innerHeight,
+      );
+      const clipTop = clip.getBoundingClientRect().top;
+      const marginTop =
+        Number.parseFloat(getComputedStyle(content).marginTop) || 0;
+      const available = bottomLimit - SHEET_CANVAS_GAP - clipTop - marginTop;
+      content.style.maxHeight = `${Math.max(SHEET_RESIZE_MIN_HEIGHT, available)}px`;
+    };
+    measure();
+    // Re-measure once layout settles (the portal + entrance can shift the clip
+    // top a frame after the layout effect).
+    const raf = requestAnimationFrame(measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvas);
+    observer.observe(paneFrameEl);
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [paneFrameEl, mounted]);
+
+  // ---- Drag-resize ([D15] resizable sheets) ----
+  //
+  // Pane-style edge/corner handles. The geometry is written straight to the
+  // content element's inline `width`/`height` ([L06] — no React state); CSS
+  // `max-width`/`max-height` cap the upper bound (so a narrow pane shrinks the
+  // sheet rather than overflowing), and we clamp the lower bound to the `sm`
+  // width / 250px here. The sheet is horizontally centered and top-anchored,
+  // so horizontal edges grow symmetrically (the dragged edge tracks the cursor
+  // via 2×dx) and the south edge grows downward — there is no north handle.
+  const resizeStateRef = useRef<{
+    edge: SheetResizeEdge;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
+
+  const onResizePointerDown = useCallback(
+    (edge: SheetResizeEdge) => (event: React.PointerEvent) => {
+      const el = sheetContentRef.current;
+      if (el === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = el.getBoundingClientRect();
+      resizeStateRef.current = {
+        edge,
+        startX: event.clientX,
+        startY: event.clientY,
+        startW: rect.width,
+        startH: rect.height,
+      };
+      (event.currentTarget as HTMLElement).setPointerCapture(
+        event.nativeEvent.pointerId,
+      );
+    },
+    [],
+  );
+
+  const onResizePointerMove = useCallback((event: React.PointerEvent) => {
+    const state = resizeStateRef.current;
+    const el = sheetContentRef.current;
+    if (state === null || el === null) return;
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    let width = state.startW;
+    let height = state.startH;
+    if (state.edge.includes("e")) width = state.startW + 2 * dx;
+    if (state.edge.includes("w")) width = state.startW - 2 * dx;
+    if (state.edge.includes("s")) height = state.startH + dy;
+    el.style.width = `${Math.max(SHEET_RESIZE_MIN_WIDTH, width)}px`;
+    el.style.height = `${Math.max(SHEET_RESIZE_MIN_HEIGHT, height)}px`;
+  }, []);
+
+  const onResizePointerUp = useCallback((event: React.PointerEvent) => {
+    if (resizeStateRef.current === null) return;
+    resizeStateRef.current = null;
+    (event.currentTarget as HTMLElement).releasePointerCapture?.(
+      event.nativeEvent.pointerId,
+    );
+  }, []);
 
   // ---- Sheet-lifecycle event emission ----
   //
@@ -794,7 +914,7 @@ export function TugSheetContent({
     // a tall panel can paint into the canvas grid without being
     // clipped by the chrome's overflow:hidden.
     <TugSheetStackingContext.Provider value={true}>
-      <div className="tug-sheet-clip">
+      <div className="tug-sheet-clip" ref={clipRef}>
         {/* A sheet is PANE-modal, never app-modal: its modality must not leak
             to other panes ([D15], pane-model). Same-pane modality is enforced
             by `inert` on this pane's `.tug-pane-body` (the card behind is
@@ -843,6 +963,20 @@ export function TugSheetContent({
               {/* Sheet body: arbitrary content */}
               <div className="tug-sheet-body">{children}</div>
             </ResponderScope>
+
+            {/* Drag-resize handles (pane-style edge/corner strips). Absolutely
+                positioned, so they sit outside the flex flow. */}
+            {resizable &&
+              SHEET_RESIZE_EDGES.map((edge) => (
+                <div
+                  key={edge}
+                  className={`tug-sheet-resize tug-sheet-resize-${edge}`}
+                  data-edge={edge}
+                  onPointerDown={onResizePointerDown(edge)}
+                  onPointerMove={onResizePointerMove}
+                  onPointerUp={onResizePointerUp}
+                />
+              ))}
           </div>
         </FocusScopeRadix.FocusScope>
       </div>

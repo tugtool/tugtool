@@ -60,6 +60,10 @@ body {
   top: calc(var(--tug-chrome-height) + 1px);
   left: 0;
   right: 0;
+  /* Tall clip — it must NOT bound the panel (a CSS `100%`/`vh` cap can't see
+     where the pane sits relative to the canvas). The panel's `max-height` is
+     clamped in JS to the measured canvas bottom (see `clampSheetToCanvas` in
+     tug-sheet.tsx) — the same rectangle-math panes use when drag-resizing. */
   height: 100vh;
   z-index: 2;
   overflow: hidden;
@@ -84,8 +88,10 @@ body {
   pointer-events: auto;
   /* Uniform padding like alert: B on all sides */
   padding: var(--tugx-sheet-space-b);
-  /* Constrained to the clip container height */
-  max-height: calc(100% - var(--tugx-sheet-space-a));
+  /* Fallback cap for the standalone (no-pane) case; in a pane the JS clamp
+     overrides this with an inline `max-height` measured against the canvas
+     bottom (32px gap, `SHEET_CANVAS_GAP`), so the footer is always reachable. */
+  max-height: calc(100vh - var(--tug-chrome-height) - 32px);
   overflow-y: auto;
   /* Box model */
   box-sizing: border-box;
@@ -122,17 +128,94 @@ body {
 
 /* ---- Resizable ([data-resizable]) ----
  *
- * Opt-in drag-resize via native CSS `resize` — the browser owns the geometry
- * (no React state, [L06]); the grab affordance is the bottom-right corner.
- * `overflow: auto` is required for `resize` to take effect (the sheet already
- * scrolls on overflow). `min-*` set a usable floor; the chosen
- * `data-display-width` supplies the starting width, which dragging overrides.
- * [L06] */
+ * Opt-in drag-resize via pane-style edge/corner handles (see TugSheetContent;
+ * geometry written to inline width/height, [L06]). The content becomes a flex
+ * column that clips (`overflow: hidden`) so it never scrolls as a whole — the
+ * inner body is the only scroll region, keeping a sticky footer (e.g. Done)
+ * pinned as the sheet shrinks. The chosen `data-display-width` supplies the
+ * starting width; `max-width`/`max-height` (above + the clip) cap the upper
+ * bound; the JS handlers clamp the lower bound. */
 .tug-sheet-content[data-resizable="true"] {
-  resize: both;
-  overflow: auto;
-  min-width: 360px;
-  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The sheet body fills the resizable content and owns the scroll, so the
+   consumer's own footer row stays visible while the body scrolls. */
+.tug-sheet-content[data-resizable="true"] .tug-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Edge / corner drag handles — invisible strips just outside the border with
+   resize cursors (the same affordance as pane handles). No north handle: the
+   sheet is top-anchored below the title bar. */
+.tug-sheet-resize {
+  position: absolute;
+  z-index: 2;
+  user-select: none;
+  touch-action: none;
+}
+.tug-sheet-resize-s {
+  bottom: -4px;
+  left: 12px;
+  right: 12px;
+  height: 10px;
+  cursor: ns-resize;
+}
+.tug-sheet-resize-e {
+  right: -4px;
+  top: 12px;
+  bottom: 12px;
+  width: 10px;
+  cursor: ew-resize;
+}
+.tug-sheet-resize-w {
+  left: -4px;
+  top: 12px;
+  bottom: 12px;
+  width: 10px;
+  cursor: ew-resize;
+}
+.tug-sheet-resize-se {
+  right: -2px;
+  bottom: -2px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+.tug-sheet-resize-sw {
+  left: -2px;
+  bottom: -2px;
+  width: 18px;
+  height: 18px;
+  cursor: nesw-resize;
+}
+
+/* Discoverability: a subtle grip on the SE corner (the native corner nub was
+   invisible). Two diagonal ticks, brightening when the handle is hovered.
+   Decorative only — `pointer-events: none` so the handle keeps the hit area. */
+.tug-sheet-resize-se::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--tug7-element-global-icon-normal-muted-rest) 0 1.5px,
+    transparent 1.5px 4px
+  );
+  -webkit-mask-image: linear-gradient(135deg, transparent 0 35%, #000 35% 100%);
+  mask-image: linear-gradient(135deg, transparent 0 35%, #000 35% 100%);
+  transition: opacity calc(120ms * var(--tug-timing, 1)) ease;
+}
+.tug-sheet-resize-se:hover::after {
+  opacity: 0.75;
 }
 
 /* ---- Presentation resting states ----
