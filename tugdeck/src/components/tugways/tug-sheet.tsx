@@ -448,6 +448,12 @@ export interface TugSheetContentProps {
    * Defaults to `false`. See {@link ShowSheetOptions.resizable}.
    */
   resizable?: boolean;
+  /**
+   * Suppress the title-bar header; the content owns the panel. `title`
+   * still labels the dialog (via `aria-label`). Defaults to `false`.
+   * See {@link ShowSheetOptions.hideHeader}.
+   */
+  hideHeader?: boolean;
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -475,6 +481,7 @@ export function TugSheetContent({
   presentation = "scale-fade",
   displayWidth = "sm",
   resizable = false,
+  hideHeader = false,
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -808,7 +815,8 @@ export function TugSheetContent({
             id={contentId}
             className="tug-sheet-content"
             role="dialog"
-            aria-labelledby={titleId}
+            aria-labelledby={hideHeader ? undefined : titleId}
+            aria-label={hideHeader ? title : undefined}
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
             data-tug-sheet-presentation={presentation}
@@ -818,10 +826,14 @@ export function TugSheetContent({
             onMouseDown={suppressButtonFocusShift}
           >
             <ResponderScope>
-              {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape */}
-              <div className="tug-sheet-header">
-                <h2 id={titleId} className="tug-sheet-title">{title}</h2>
-              </div>
+              {/* Sheet header: title only — no close button, sheets dismiss via Cancel/Escape.
+                  Suppressed when `hideHeader` (e.g. TugAlertSheet owns the panel);
+                  the title still labels the dialog via aria-label above. */}
+              {!hideHeader && (
+                <div className="tug-sheet-header">
+                  <h2 id={titleId} className="tug-sheet-title">{title}</h2>
+                </div>
+              )}
 
               {/* Optional description */}
               {description && (
@@ -924,6 +936,14 @@ export interface ShowSheetOptions {
    * life of the open sheet. Defaults to `false`.
    */
   resizable?: boolean;
+  /**
+   * Suppress the sheet's title-bar header (the `<h2>` + divider). The
+   * content then owns the whole panel — used by `TugAlertSheet`, which
+   * renders its own icon + title layout. `title` is still required and is
+   * wired to the dialog's `aria-label` for accessibility. Defaults to
+   * `false`.
+   */
+  hideHeader?: boolean;
   /**
    * Cascade-target responder id captured at sheet-open time.
    *
@@ -1275,6 +1295,7 @@ export function useTugSheet(): {
           presentation={options.presentation}
           displayWidth={options.displayWidth}
           resizable={options.resizable}
+          hideHeader={options.hideHeader}
         >
           {options.content(close)}
         </TugSheetContent>

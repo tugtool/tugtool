@@ -1866,6 +1866,11 @@ Split into **[#step-10a] sourcing** (tugcast `git_diff_request`/`git_diff_respon
 - [x] **TugSheet width scale → `sm`/`md`/`lg`/`xl`** (mirroring TugPushButton/TugBadge): mapped `standard→sm` (460), `wide→md` (640), `document→lg` (800), added `xl` (950). Migrated all callers; `/diff` uses `xl`.
 - [x] **TugSheet `resizable` prop** (default false) — native CSS `resize: both` drag-resize ([L06], browser-owned geometry, no React state); `/diff` opts in.
 
+**Polish round 3 (2026-05-31) — pane-modal alert:**
+- [x] **New `TugAlertSheet`** (`tug-alert-sheet.tsx`) — a pane-modal alert that composes `TugSheet`'s proven modal substrate (pane-frame portal + pane scrim + `inert`, no global focus trap [D15]) with `TugAlert`'s exact look (the global `.tug-alert-*` layout classes). Avoids retrofitting Radix `AlertDialog`'s document-global focus trap into a pane (the cross-pane leak hazard). `presentAlertSheet(showSheet, opts)` rides any card's `showSheet` host; resolves `true`/`false`.
+- [x] **New `TugSheet hideHeader` prop** — suppresses the title bar so `TugAlertSheet` owns the panel; `title` still labels the dialog via `aria-label`.
+- [x] **`/diff` branches on first response**: a clean tree / non-git dir / error opens a lightweight `TugAlertSheet` ("No uncommitted changes" / "Not a git repository") instead of an empty diff sheet; the full sheet opens only when there are changes. (`at0104` covers the alert path → OK dismiss → then the diff path.)
+
 ---
 
 #### Step 11: `/context` HUD via status-bar arc gauge {#step-11}

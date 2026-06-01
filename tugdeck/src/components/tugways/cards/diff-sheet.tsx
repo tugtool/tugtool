@@ -43,6 +43,7 @@ import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordi
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
+import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import {
   type GitDiffFile,
   type GitDiffStore,
@@ -73,17 +74,56 @@ export function useDiffSheet({
   showSheet,
 }: UseDiffSheetArgs): DiffSheetController {
   const openDiffSheet = useCallback(() => {
-    // Fire the request as the sheet opens so the diff is in flight before the
-    // body mounts; the body reads the result reactively.
     gitDiffStore.requestDiff();
-    void showSheet({
-      title: "Diff",
-      displayWidth: "xl",
-      resizable: true,
-      content: (close) => (
-        <DiffSheetBody gitDiffStore={gitDiffStore} onClose={close} />
-      ),
-    });
+
+    // Branch on the first resolved response: there's no point opening the
+    // (resizable, document-width) diff sheet only to show "nothing here" — a
+    // clean tree, a non-git dir, or an error is better surfaced as a
+    // lightweight pane-modal alert. The full sheet opens only when there are
+    // actual changes to read. (In-sheet Refresh keeps its own inline states.)
+    let unsubscribe: (() => void) | null = null;
+    const decide = (): void => {
+      const snap = gitDiffStore.getSnapshot();
+      if (snap.phase === "loading") return; // still in flight — wait
+      unsubscribe?.();
+      unsubscribe = null;
+
+      if (snap.phase === "error") {
+        void presentAlertSheet(showSheet, {
+          title: "Couldn't load the diff",
+          message: snap.error ?? "Something went wrong fetching the diff.",
+        });
+        return;
+      }
+      const payload = snap.payload;
+      if (payload === null) return; // defensive — ready implies a payload
+      if (payload.no_repo) {
+        void presentAlertSheet(showSheet, {
+          title: "Not a git repository",
+          message:
+            "This project isn't a git repository, so there are no changes to show.",
+        });
+        return;
+      }
+      if (payload.files.length === 0) {
+        void presentAlertSheet(showSheet, {
+          title: "No uncommitted changes",
+          message: "The working tree is clean — nothing to diff against HEAD.",
+        });
+        return;
+      }
+      void showSheet({
+        title: "Diff",
+        displayWidth: "xl",
+        resizable: true,
+        content: (close) => (
+          <DiffSheetBody gitDiffStore={gitDiffStore} onClose={close} />
+        ),
+      });
+    };
+
+    unsubscribe = gitDiffStore.subscribe(decide);
+    decide(); // resolve synchronously if the response is already cached
   }, [gitDiffStore, showSheet]);
 
   return { openDiffSheet };

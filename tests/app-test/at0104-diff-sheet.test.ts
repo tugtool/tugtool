@@ -36,6 +36,14 @@ const DIFF_FILE = `${SHEET} [data-testid="diff-file"]`;
 const DIFF_SUMMARY = `${SHEET} .diff-sheet-summary`;
 const DIFF_HUNK = `${SHEET} [data-slot="diff-hunk"]`;
 const ACCORDION_TRIGGER = `${SHEET} .tug-accordion-trigger`;
+const ALERT_TITLE = `${SHEET} .tug-alert-title`;
+const ALERT_OK = `${SHEET} [data-testid="alert-confirm"]`;
+
+async function runDiff(app: App): Promise<void> {
+  await app.nativeClickAtElement(PROMPT_INPUT);
+  await app.nativeType("/diff");
+  await app.nativeClickAtElement(SUBMIT_BTN);
+}
 
 const MODIFIED_UNIFIED =
   "diff --git a/src/main.rs b/src/main.rs\n" +
@@ -105,7 +113,7 @@ function deckShape() {
 
 describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
   test(
-    "typing /diff opens a per-file accordion that renders the diff",
+    "/diff alerts when there's nothing to show, and opens the accordion for changes",
     async () => {
       const app = await launchTugApp({ testName: "at0104-diff-sheet" });
       try {
@@ -117,31 +125,50 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
         await app.bindDevSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
-        // Type `/diff` and submit → RUN_SLASH_COMMAND opens the sheet.
-        await app.nativeClickAtElement(PROMPT_INPUT);
-        await app.nativeType("/diff");
-        await app.nativeClickAtElement(SUBMIT_BTN);
-
-        // The Diff sheet opens (loading until the response lands).
+        // ── 1. Non-git dir → a pane-modal alert (NOT a diff sheet). ──────────
+        // `/diff` waits for the response, then branches: nothing-to-show is
+        // surfaced as a TugAlertSheet, not an empty diff sheet.
+        await runDiff(app);
+        await app.ingestGitDiff("A", {
+          request_id: "gd-1",
+          workspace_key: "test-workspace-A",
+          base: "HEAD",
+          no_repo: true,
+          file_count: 0,
+          total_added: 0,
+          total_removed: 0,
+          files: [],
+        });
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(SHEET)}) !== null`,
+          `(function(){ var e = document.querySelector(${JSON.stringify(ALERT_TITLE)}); return e !== null && /not a git repository/i.test(e.textContent || ""); })()`,
           { timeoutMs: 6000 },
         );
-        const title = await app.evalJS<string | null>(
-          `(function(){ var e = document.querySelector(${JSON.stringify(SHEET_TITLE)}); return e ? e.textContent : null; })()`,
+        // It's an alert, not the diff sheet — no file list, no title bar.
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(DIFF_FILE)}).length`,
+          ),
+        ).toBe(0);
+        // OK dismisses it.
+        await app.nativeClickAtElement(ALERT_OK);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SHEET)}) === null`,
+          { timeoutMs: 6000 },
         );
-        expect(title).toBe("Diff");
 
-        // Drive the response: two changed files.
+        // ── 2. Real changes → the per-file accordion diff sheet. ─────────────
+        await runDiff(app);
         await app.ingestGitDiff("A", diffPayload());
-
-        // The accordion lists both files …
+        await app.waitForCondition<boolean>(
+          `(function(){ var e = document.querySelector(${JSON.stringify(SHEET_TITLE)}); return e !== null && e.textContent === "Diff"; })()`,
+          { timeoutMs: 6000 },
+        );
         await app.waitForCondition<boolean>(
           `document.querySelectorAll(${JSON.stringify(DIFF_FILE)}).length === 2`,
           { timeoutMs: 6000 },
         );
 
-        // … the header summarizes them …
+        // Header summarizes the change set …
         const summary = await app.evalJS<string | null>(
           `(function(){ var e = document.querySelector(${JSON.stringify(DIFF_SUMMARY)}); return e ? e.textContent : null; })()`,
         );
@@ -153,14 +180,14 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
         );
         expect(firstTriggerText).toContain("src/main.rs");
 
-        // … and nothing is expanded yet (multi-file opens collapsed).
-        const hunksBefore = await app.evalJS<number>(
-          `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length`,
-        );
-        expect(hunksBefore).toBe(0);
+        // … multi-file opens collapsed …
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length`,
+          ),
+        ).toBe(0);
 
-        // Expand All opens every file (controlled accordion) → both files'
-        // hunks render via DiffBlock.
+        // Expand All opens every file (controlled accordion) → hunks render.
         await app.nativeClickAtElement(`${SHEET} [data-testid="diff-expand-all"]`);
         await app.waitForCondition<boolean>(
           `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length >= 2`,
@@ -173,29 +200,6 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
           `document.querySelectorAll(${JSON.stringify(DIFF_HUNK)}).length === 0`,
           { timeoutMs: 6000 },
         );
-
-        // Refresh re-fires the request; a non-git project dir is flagged as
-        // such (not misreported as "no changes"). Covered here rather than in
-        // a second app launch to avoid a redundant cold boot.
-        await app.nativeClickAtElement(`${SHEET} [data-testid="diff-refresh"]`);
-        await app.ingestGitDiff("A", {
-          request_id: "gd-2",
-          workspace_key: "test-workspace-A",
-          base: "HEAD",
-          no_repo: true,
-          file_count: 0,
-          total_added: 0,
-          total_removed: 0,
-          files: [],
-        });
-        await app.waitForCondition<boolean>(
-          `(function(){ var e = document.querySelector(${JSON.stringify(`${SHEET} .diff-sheet-notice`)}); return e !== null && /not a git repository/i.test(e.textContent || ""); })()`,
-          { timeoutMs: 6000 },
-        );
-        const filesAfter = await app.evalJS<number>(
-          `document.querySelectorAll(${JSON.stringify(DIFF_FILE)}).length`,
-        );
-        expect(filesAfter).toBe(0);
       } finally {
         await app.close();
       }
