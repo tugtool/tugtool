@@ -15,9 +15,6 @@ pub mod types;
 /// Plan file parsing
 pub mod parser;
 
-/// Validation logic and rules
-pub mod validator;
-
 /// Timestamp utilities
 pub mod session;
 
@@ -41,10 +38,6 @@ pub use parser::parse_tugplan;
 pub use paths::project_state_dir;
 pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
 pub use types::{ParseDiagnostic, TugPlan};
-pub use validator::{
-    Severity, ValidationConfig, ValidationIssue, ValidationLevel, ValidationResult,
-    validate_tugplan, validate_tugplan_with_config,
-};
 pub use worktree::{find_repo_root, sanitize_branch_name};
 
 #[cfg(test)]

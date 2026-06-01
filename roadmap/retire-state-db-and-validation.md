@@ -402,8 +402,8 @@ the step that orphans it.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | done | `14e67a2f` |
-| #step-2 | Delete `validator.rs` + the `validate` command | pending | — |
+| #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | done | `964bc9a1` |
+| #step-2 | Delete `validator.rs` + the `validate` command | done | — |
 | #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | pending | — |
 | #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | pending | — |
 | #step-5 | Relocate runtime state out of the repo + register Claude reads | pending | — |
@@ -473,16 +473,22 @@ the step that orphans it.
 - Deleted `tugutil-core/src/validator.rs` and `tugutil/src/commands/validate.rs`.
 
 **Tasks:**
-- [ ] Delete `validator.rs`; remove `pub mod validator` + validator re-exports from `lib.rs`.
-- [ ] Delete `commands/validate.rs`; remove `Validate` from `cli.rs`, its `main.rs` dispatch arm,
-      and the `run_validate` export from `commands/mod.rs`.
-- [ ] Prune any validation-only `TugError` variants now orphaned.
+- [x] Delete `validator.rs`; remove `pub mod validator` + validator re-exports from `lib.rs`.
+- [x] Delete `commands/validate.rs`; remove `Validate` from `cli.rs`, its `main.rs` dispatch arm,
+      and the `run_validate` export from `commands/mod.rs`. *(Also decoupled `output.rs` from
+      `ValidationIssue`/`ParseDiagnostic` — removed `JsonDiagnostic`, `ValidateData`,
+      `ValidatedFile`, the `From` impls, and the now-dead `ok_with_issues`.)*
+- [~] Prune validation-only `TugError` variants — **folded into [#step-4]'s error sweep.** They are
+      `pub` variants of a library enum, so they do *not* trip `-D warnings`; one comprehensive purge
+      after parser/types are also gone is cleaner than editing the exhaustive match arms each step.
 
 **Tests:**
-- [ ] Remove validate cases from `tugutil/tests/cli_integration_tests.rs`.
+- [x] Removed validate cases from `tugutil/tests/cli_integration_tests.rs`; deleted the all-fixtures
+      `tugutil-core/tests/integration_tests.rs` (parser+validator).
 
 **Checkpoint:**
-- [ ] `cargo build` + `cargo nextest run -p tugutil -p tugutil-core` clean under `-D warnings`.
+- [x] `cargo build` (whole workspace) + `cargo nextest run -p tugutil -p tugutil-core` clean under
+      `-D warnings` (149 passed).
 
 ---
 

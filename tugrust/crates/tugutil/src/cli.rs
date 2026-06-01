@@ -50,25 +50,6 @@ pub enum Commands {
         check: bool,
     },
 
-    /// Validate plan structure against format conventions
-    ///
-    /// Checks anchors, references, metadata, and step dependencies.
-    #[command(
-        long_about = "Validate plan structure against format conventions.\n\nChecks:\n  - Required metadata fields (Owner, Status, Last updated)\n  - Anchor format and uniqueness\n  - Reference validity ([D01], #step-1, etc.)\n  - Step dependency cycles\n  - Cross-reference consistency"
-    )]
-    Validate {
-        /// Plan file to validate (validates all if not specified)
-        file: Option<String>,
-
-        /// Enable strict validation mode (deprecated: use --level strict)
-        #[arg(long, hide = true)]
-        strict: bool,
-
-        /// Validation level: lenient, normal, or strict
-        #[arg(long, value_name = "LEVEL")]
-        level: Option<String>,
-    },
-
     /// List all plans with summary information
     ///
     /// Shows each plan's name, status, and completion percentage.
