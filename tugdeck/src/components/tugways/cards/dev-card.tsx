@@ -49,6 +49,7 @@ import { useSkillsSheet } from "./skills-sheet";
 import { useAgentsSheet } from "./agents-sheet";
 import { useMemorySheet } from "./memory-sheet";
 import { useHooksSheet } from "./hooks-sheet";
+import { useHelpSheet } from "./help-sheet";
 import { canOfferRewind } from "./rewind-turn-source";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
@@ -2686,6 +2687,16 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/help` tabbed sheet ([#step-13b2]) per [D16], card-scoped per [D15]. A
+  // General tab (Tide + shortcuts + the unsupported-commands doc link) over a
+  // Commands / Custom-commands browse of the session catalog, projected through
+  // the [D14] allowlist so it lists exactly what the slash popup offers.
+  const helpSheet = useHelpSheet({
+    cardId,
+    sessionMetadataStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
   // [D07]). `setEffort` sends `effort_change` (tugcode respawns with
   // `--effort` + `--resume`, [R07]); the effort chip + picker funnel through
@@ -2747,6 +2758,7 @@ export function DevCardBody({
         () => notify?.danger("Copy failed"),
       );
     },
+    help: () => helpSheet.openHelpSheet(),
   };
 
   const {

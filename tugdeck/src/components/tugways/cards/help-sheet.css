@@ -1,0 +1,129 @@
+/* @tug-pairings: none — layout + inherited foreground only (no color-setting
+   rules, so no @tug-renders-on [L16]). The panel surface comes from the
+   composed TugSheet; the tab strip from TugTabBar; rows from TugListRow;
+   buttons from TugPushButton. Composed children keep their own tokens [L20]. */
+
+/* Layout (fixed tab strip → scrolling panel → fixed Done) comes from the
+   composed TugSheetScaffold; the help sheet adds the strip→body gap and its
+   own panel typography below. */
+.help-sheet .tug-sheet-scaffold-header {
+  margin-bottom: 0.75rem;
+}
+
+/* The in-sheet tab set is click-selected; its active state reads from the
+   bar's own active underline. Suppress WebKit's focus ring — the tab bar's
+   `overflow: hidden` crops it to a stray blue sliver at the active tab's edge
+   (same fix as the permissions sheet). Scoped so global tab styling is
+   untouched. */
+.help-sheet-tabs .tug-tab:focus {
+  outline: none;
+}
+
+/* ── General panel ──────────────────────────────────────────────────────── */
+
+.help-sheet-general {
+  display: flex;
+  flex-direction: column;
+  /* Match the Commands-tab rows' size — the General copy was reading a step
+     larger than the rest of the sheet. */
+  font-size: var(--tug-font-size-sm);
+}
+
+.help-sheet-intro {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Quiet uppercase divider above each General-tab section (mirrors the read-only
+   listing sheets' section header). */
+.help-sheet-section-title {
+  padding: 1.5rem 0 0.5rem;
+  font-size: var(--tug-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+/* Shortcuts: a two-column definition-list grid — a fixed key column and a
+   flexible description column. */
+.help-sheet-shortcuts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 1.25rem;
+  row-gap: 0.4rem;
+  align-items: baseline;
+}
+
+.help-sheet-shortcut {
+  display: contents;
+}
+
+.help-sheet-shortcut dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.help-sheet-shortcut dd {
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* The key combo. Use the inherited UI font — NOT the mono font, whose Apple
+   modifier glyphs (⌘ ⇧ ⌃ ⇥) render at inconsistent sizes; the system UI font
+   renders them uniformly. */
+.help-sheet-shortcut kbd {
+  font-family: inherit;
+  font-weight: 600;
+}
+
+/* Footer note linking to the unsupported-commands doc. */
+.help-sheet-doc-note {
+  margin: 1.5rem 0 0;
+  font-size: var(--tug-font-size-sm);
+  opacity: 0.8;
+}
+
+.help-sheet-doc-path {
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.8125rem;
+}
+
+/* ── Commands + Custom-commands panels ──────────────────────────────────── */
+
+/* Session header on the Commands tab: version / model / cwd, stacked and quiet,
+   echoing the terminal's identity block above the command list. */
+.help-sheet-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-bottom: 0.75rem;
+  font-size: var(--tug-font-size-sm);
+  opacity: 0.7;
+}
+
+.help-sheet-meta-version {
+  font-weight: 600;
+  opacity: 1;
+}
+
+.help-sheet-meta-cwd {
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.8125rem;
+}
+
+/* The command list is `height: 100%` by default (it expects a bounded flex
+   parent). The composed TugSheetScaffold body is the single scroll region, so
+   size the inline list to its content and let the body scroll (mirrors the
+   read-only /agents + /skills listing sheets). */
+.tug-list-view.help-sheet-commands {
+  height: auto;
+}
+
+/* Empty state for a section with no commands. */
+.help-sheet-empty {
+  padding: 0.5rem 0;
+  font-size: 0.875rem;
+  opacity: 0.6;
+}

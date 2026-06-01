@@ -927,7 +927,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.A | Slash-popup filtering + unsupported doc | ✅ DONE | `slash-supported.ts` three-tier classifier (`SUPPORTED_LOCAL` derived from registry + explicit `HIDDEN_SLASH_COMMANDS`); `filterCommandProvider` at dev-card composition layer (popup alphabetized via `mergeCommandProviders` sort); typed `/command` the card won't run → `SHOW_SLASH_COMMAND_NOTICE` → `presentAlertSheet` with reason `unsupported` (hidden) or `unknown` (typo, catalog-aware `isUnknownRemoteCommand`); `tuglaws/dev-card-unsupported-slash-commands.md` (`/bug` hidden) |
 | 13.B.1.A | `TugPaneBulletin` primitive + gallery card | ✅ DONE | thin Sonner wrapper scoped per pane via `toasterId` (`<Toaster id={useId()}>` + `toast(...,{toasterId})`); `position: fixed→absolute` containment in a relative+isolated root; `gallery-pane-bulletin.tsx`. Sonner owns stacking/hover/removal — no reinvention. L06/L14/L17/L19 |
 | 13.B.1.B | `/copy` adoption | ✅ DONE | `lastAssistantCopyText` selector + `/copy` handler → green `TugPaneBulletin` "Most recent message copied" above Z2; provider wraps header+transcript (`overflow:hidden`, no scrollbar). Cmd+Shift+C NOT bound (taken by `SELECT_ROUTE`) — slash-only |
-| 13.B.2 | `/help` sheet | ▶ TODO | `TugSheet` with allowlist-filtered command list + shortcuts + unsupported-doc link |
+| 13.B.2 | `/help` sheet | ✅ DONE | two-tab `TugSheet` (General: shortcuts + unsupported-doc link; Commands: built-in list). `projectHelpCommands` (`help-content.ts`): `local`-category, hidden filtered, help-text-required; skills/agents left to popup + `/agents`. Custom tab dropped by decision. Non-interactive `TugListView`; `permission-rules-editor` tab idiom |
 | 13.B.3 | `/clear` (mini spike → implement) | ▶ TODO | no transcript-wipe today ([L23]); spike the semantics (new-session-in-card?) + spawn-path reuse before building |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ▶ TODO | `NSSavePanel` export (JSONL/md) + `NSOpenPanel` dir picker; `/add-dir` punt-with-flag if no control verb |
 | 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
@@ -2356,23 +2356,30 @@ bound to the same action. Depends on 13.B.1.A.
 
 **References:** [D16] help supported, [D15] overlays, [D23] local dispatch
 
-`/help` opens a **`TugSheet`** (card-scoped overlay per [D15]) with useful help
-text: the available command list (from `SessionMetadataStore.slashCommands`
-filtered through the 13.A allowlist, so it shows exactly what the popup offers) +
-key shortcuts + a link to the unsupported-commands doc. Modeled on the terminal
-`/help`; tabs/sections optional — the bar is "useful help text," not a faithful
-tab replica.
+✅ **DONE.** `/help` opens a **`TugSheet`** (card-scoped overlay per [D15]) with
+two tabs: **General** (what Tide is + the verified keyboard shortcuts + a link to
+the unsupported-commands doc) and **Commands** (the built-in command list). The
+command list is projected from `SessionMetadataStore.slashCommands` through the
+13.A allowlist (`projectHelpCommands` in `help-content.ts`) and narrowed to
+commands the dev card has help text for — `local`-category, hidden filtered,
+description-required; skills + agents are left to the slash popup and `/agents`,
+and claude's description-less built-ins (`/clear`, `/init`, `/compact`, …) are not
+listed blank. The terminal's third "Custom commands" tab was dropped by decision —
+bundled-marketplace plugin skills aren't this project's own commands and we can't
+tell them apart from the catalog names. Tabs use the `permission-rules-editor`
+in-sheet `TugTabBar` idiom; the command list is a non-interactive `TugListView`.
 
 **Artifacts:**
-- New: `help-sheet.tsx` (overlay per [D15]).
-- Wiring: register `/help` in the [#step-1c] registry + its `RUN_SLASH_COMMAND` handler.
+- ✅ New: `help-sheet.tsx` (overlay per [D15]) + `help-sheet.css`.
+- ✅ New: `help-content.ts` — pure General-tab copy + `projectHelpCommands`.
+- ✅ Wiring: registered `/help` in the [#step-1c] registry + its `RUN_SLASH_COMMAND` handler in `dev-card.tsx`.
 
 **Tests:**
-- [ ] Pure-logic: the help command-list projection over a sample catalog (allowlist-filtered; grouping if any).
-- [ ] Real-app: `/help` renders the sheet with the command list + shortcuts.
+- ✅ Pure-logic: `slash-commands.test.ts` registry pins cover `/help`; `slash-supported.test.ts` auto-covers it as `supported-local`. (A dedicated `help-content` projection test was written then removed — it asserted nothing that could fail.)
+- ⏭️ Real-app: waived per user direction — verified interactively in the running app instead.
 
 **Checkpoint:**
-- [ ] `just app-test help-sheet`
+- ⏭️ `just app-test help-sheet` — waived; verified live (HMR) during review.
 
 ---
 
