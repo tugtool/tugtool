@@ -925,7 +925,10 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 12.A | `/memory` list → OS editor | ✅ DONE | `memory-sheet.tsx` + `memory-destinations.ts` + `os-open.ts` + host `openPath` handler (NSWorkspace); rebuild host to exercise live |
 | 12.C | `/hooks` read-only accordion | ✅ DONE | `hooks-sheet.tsx` + `hooks-inventory-store.ts` + tugcode `hooks-inventory.ts`; request/response, merges settings.json scopes; rebuild tugcode to exercise live |
 | 13.A | Slash-popup filtering + unsupported doc | ✅ DONE | `slash-supported.ts` three-tier classifier (`SUPPORTED_LOCAL` derived from registry + explicit `HIDDEN_SLASH_COMMANDS`); `filterCommandProvider` at dev-card composition layer (popup alphabetized via `mergeCommandProviders` sort); typed `/command` the card won't run → `SHOW_SLASH_COMMAND_NOTICE` → `presentAlertSheet` with reason `unsupported` (hidden) or `unknown` (typo, catalog-aware `isUnknownRemoteCommand`); `tuglaws/dev-card-unsupported-slash-commands.md` (`/bug` hidden) |
-| 13.B | Pure-client: `/copy` `/help` `/clear` | ▶ TODO | Cmd+Shift+C copy; `help-tabbed-sheet.tsx`; `/clear` = new-session-in-card (confirm semantics, transcript stays per [L23]) |
+| 13.B.1.A | `TugPaneBulletin` primitive + gallery card | ▶ TODO | proper pane-scoped bulletin (stacking, hover-persist, reliable dismiss) — deck TugBulletin is Sonner-global; provider/hook + gallery card |
+| 13.B.1.B | `/copy` adoption | ▶ TODO | copy last assistant text + Cmd+Shift+C → `TugPaneBulletin` "Most recent message copied"; depends on 13.B.1.A |
+| 13.B.2 | `/help` sheet | ▶ TODO | `TugSheet` with allowlist-filtered command list + shortcuts + unsupported-doc link |
+| 13.B.3 | `/clear` (mini spike → implement) | ▶ TODO | no transcript-wipe today ([L23]); spike the semantics (new-session-in-card?) + spawn-path reuse before building |
 | 13.C | Host/IPC bridge: `/export` `/add-dir` | ▶ TODO | `NSSavePanel` export (JSONL/md) + `NSOpenPanel` dir picker; `/add-dir` punt-with-flag if no control verb |
 | 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
 | 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
@@ -2251,26 +2254,144 @@ catalog check (`isUnknownRemoteCommand`) layers on top at the dev card.
 
 ##### Step 13.B: Pure-client commands — `/copy`, `/help`, `/clear` {#step-13b}
 
-**Commit:** `feat(dev-card): /copy, /help, /clear client commands`
-
 **References:** [D16] clear+help supported, [D15] overlays, [D23] local dispatch, [L23] transcript is user-visible state
 
-These three are pure client — no host bridge, no control verb, no IPC.
+These three are pure client — no host bridge, no control verb, no IPC — but each
+carries its own design, so they split into **13.B.1–13.B.3**, one per command,
+each committed separately. Order: 13.B.1 → 13.B.2 → 13.B.3.
 
-- **`/copy`** — copy the last `assistant_text` accumulation to the clipboard; bind **Cmd+Shift+C**.
-- **`/help`** — tabbed sheet (card-scoped overlay per [D15]) per [D16]: categorized command list (from `SessionMetadataStore.slashCommands` filtered through the 13.A allowlist) + curated key-shortcuts + docs-links tabs. Tabs modeled on the terminal `/help`.
-- **`/clear`** — **open question to confirm at implementation:** there is no transcript-wipe affordance today, and [L23] keeps the transcript as user-visible state we never clear (even `dispose()` leaves it). Proposed semantics per [D16]: `/clear` = **spawn a fresh session in this card** (reusing the resume/rebind spawn path), transcript stays. Confirm before building; if a different semantic is wanted, scope the missing piece as a sub-task.
+---
+
+###### Step 13.B.1: `/copy` — copy last message + pane-scoped bulletin {#step-13b1}
+
+`/copy` copies the **last `assistant_text` accumulation** to the clipboard and,
+on success, raises a **pane-scoped bulletin** reading *"Most recent message
+copied"*; Cmd+Shift+C is bound to the same action.
+
+The pane-scoped bulletin is a **new primitive**, not a one-off. `TugBulletin`
+today is **deck-global** — a single Sonner `Toaster` mounted once at root — and
+Sonner does real work we'd otherwise lose: correct **stacking** of overlapping
+bulletins, **persist-on-interaction** (a clicked / hovered bulletin hangs around),
+and **reliable dismissal**. A copy confirmation belongs to the **card** it came
+from, so we need a pane-scoped equivalent that does that work properly. That's
+worth its own primitive + gallery card before any feature adopts it — so 13.B.1
+splits into **13.B.1.A** (the primitive) and **13.B.1.B** (the `/copy` adoption).
+
+---
+
+###### Step 13.B.1.A: `TugPaneBulletin` primitive + gallery card {#step-13b1a}
+
+**Commit:** `feat(tugways): TugPaneBulletin pane-scoped bulletin + gallery card`
+
+**References:** [L06] appearance via CSS/DOM, [L02] external state via useSyncExternalStore, pane-model.md (pane scoping), component-authoring.md, [L19] component authoring, [#feedback] use existing Tug components / gallery-first
+
+A proper pane-scoped bulletin primitive — the per-pane analog of the deck
+`TugBulletin`, owning the behavior Sonner gives the global one:
+- **Pane-scoped:** rendered within a pane/card's frame and addressed per-host, so
+  one card's bulletins never appear over another's. A `TugPaneBulletinProvider`
+  (mounted per pane) + `useTugPaneBulletin()` hook, mirroring the deck bulletin's
+  provider/hook shape but with a per-provider stack.
+- **Stacking:** multiple concurrent bulletins stack with a gap, newest-first; the
+  stack reference is `Object.is`-stable across quiescent reads ([L02]).
+- **Persist-on-interaction:** hovering (and/or clicking) a bulletin pauses its
+  auto-dismiss timer so it "hangs around"; leaving resumes it.
+- **Reliable dismissal:** per-bulletin auto-dismiss after a duration, an explicit
+  dismiss affordance, and timer cleanup on unmount (no setState-after-unmount).
+- **Appearance + animation via CSS only** ([L06]); tone variants
+  (success/caution/danger) matching the deck bulletin's API surface so the two
+  read as siblings.
+
+**Gallery card (required — gallery-first per feedback):** a `TugPaneBulletin`
+gallery card (sibling of the existing deck-bulletin gallery card) that fires
+single / stacked / tone / long-text bulletins so stacking, hover-persist, and
+dismissal are all exercised by hand. Registered in `gallery-registrations.tsx`.
 
 **Artifacts:**
-- New: `help-tabbed-sheet.tsx` (overlay per [D15]).
-- Wiring: register `/copy`, `/help`, `/clear` in the [#step-1c] registry; their `RUN_SLASH_COMMAND` handlers perform the mapped action. `/copy` also binds Cmd+Shift+C.
+- New: `tug-pane-bulletin.tsx` (+ `.css`) — `TugPaneBulletinProvider`, `useTugPaneBulletin()`, the per-pane stack host; a small per-provider store (subscribe/getSnapshot, [L02]) holding the bulletin list with a monotonic id (no `Date.now()` identity).
+- New: `gallery-pane-bulletin.tsx` + registration in `gallery-registrations.tsx`.
 
 **Tests:**
-- [ ] Pure-logic: `/copy` formatter (last-assistant-text selection); `/help` tab/command-list projection over a sample catalog.
-- [ ] Real-app: Cmd+Shift+C copies the last assistant text; `/help` renders with tabs; `/clear` spawns a fresh session (transcript behavior matches the confirmed semantics).
+- [ ] Pure-logic: the bulletin store/reducer — push appends with a fresh id; dismiss removes by id; reference stability across no-op reads; tone carried.
+- [ ] Real-app (gallery): fire several → they stack; hover → auto-dismiss pauses; dismiss affordance removes one; all clear on their own.
 
 **Checkpoint:**
-- [ ] `just app-test help-tabbed-sheet`
+- [ ] `just app-test pane-bulletin` (or exercise live in the gallery card).
+
+---
+
+###### Step 13.B.1.B: `/copy` adoption {#step-13b1b}
+
+**Commit:** `feat(dev-card): /copy copies last message + pane bulletin`
+
+**References:** [D23] local dispatch, [#step-13b1a] TugPaneBulletin, [L07] read live state at event time
+
+`/copy` copies the **last `assistant_text`** to the clipboard and raises a
+`TugPaneBulletin` *"Most recent message copied"* in the dev card; Cmd+Shift+C is
+bound to the same action. Depends on 13.B.1.A.
+
+**Artifacts:**
+- New (pure): a "last assistant text" selector over the transcript (which accumulation `/copy` copies — reuse the same copy text the per-message `BlockCopyButton` produces).
+- Wiring: wrap the dev card's content in a `TugPaneBulletinProvider`; register `/copy` in the [#step-1c] registry + its `RUN_SLASH_COMMAND` handler (copy + raise bulletin); bind **Cmd+Shift+C** to the same action.
+
+**Tests:**
+- [ ] Pure-logic: the last-assistant-text selector (most recent assistant accumulation; empty / no-assistant cases).
+- [ ] Real-app: `/copy` and Cmd+Shift+C both copy the last assistant text and raise the pane bulletin in the right card.
+
+**Checkpoint:**
+- [ ] `just app-test copy-command`
+
+---
+
+###### Step 13.B.2: `/help` — help sheet {#step-13b2}
+
+**Commit:** `feat(dev-card): /help sheet`
+
+**References:** [D16] help supported, [D15] overlays, [D23] local dispatch
+
+`/help` opens a **`TugSheet`** (card-scoped overlay per [D15]) with useful help
+text: the available command list (from `SessionMetadataStore.slashCommands`
+filtered through the 13.A allowlist, so it shows exactly what the popup offers) +
+key shortcuts + a link to the unsupported-commands doc. Modeled on the terminal
+`/help`; tabs/sections optional — the bar is "useful help text," not a faithful
+tab replica.
+
+**Artifacts:**
+- New: `help-sheet.tsx` (overlay per [D15]).
+- Wiring: register `/help` in the [#step-1c] registry + its `RUN_SLASH_COMMAND` handler.
+
+**Tests:**
+- [ ] Pure-logic: the help command-list projection over a sample catalog (allowlist-filtered; grouping if any).
+- [ ] Real-app: `/help` renders the sheet with the command list + shortcuts.
+
+**Checkpoint:**
+- [ ] `just app-test help-sheet`
+
+---
+
+###### Step 13.B.3: `/clear` — mini spike, then implement {#step-13b3}
+
+**Commit:** TBD (set after the spike resolves the approach)
+
+**References:** [D16] clear supported, [L23] transcript is user-visible state, [D23] local dispatch
+
+`/clear` has **no settled implementation** — it needs a **mini spike first**, then
+implementation. The unknowns:
+- There is **no transcript-wipe affordance** today, and [L23] keeps the transcript
+  as user-visible state we never clear (even `dispose()` leaves it). So "clear"
+  is not a primitive we already have.
+- What should `/clear` *mean* here? Candidate: **spawn a fresh session in this
+  card** (reuse the resume/rebind spawn path), transcript stays vs. genuinely
+  wiping the transcript view vs. something else. The terminal `/clear` starts a
+  fresh context; map that intent to the dev card honestly.
+- How does the existing resume/rebind spawn path behave, and what does it cost to
+  reuse for a "new session, same card" action?
+
+**Spike tasks (investigation — produce findings, do not build yet):**
+- [ ] Determine the intended `/clear` semantics for the dev card and confirm with the user.
+- [ ] Survey the resume/rebind spawn path ([#step-8]) and the transcript/[L23] constraints; identify the smallest mechanism that delivers the chosen semantics.
+- [ ] Write the findings + chosen approach inline here (or a short note), then scope the implementation tasks. Implementation lands in a follow-up once the approach is approved.
+
+**Checkpoint:** (defined once the spike picks an approach)
 
 ---
 
