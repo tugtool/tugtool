@@ -57,7 +57,7 @@ describe("encodeCodeInputPayload / decodeCodeInputPayload", () => {
     const msg: InboundMessage = {
       type: "question_answer",
       request_id: "req00000-0000-4000-8000-000000000002",
-      answers: { pick: "a", confidence: 0.9 },
+      answers: { pick: "a", confidence: "high" },
     };
     expect(roundTrip(msg)).toEqual({
       ...msg,

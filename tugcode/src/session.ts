@@ -1,6 +1,6 @@
 // Session lifecycle management via direct claude CLI spawning
 
-import { PermissionManager, type PermissionMode } from "./permissions.ts";
+import { PermissionManager } from "./permissions.ts";
 import { writeLine, writeLineAndExit } from "./ipc.ts";
 import {
   sendControlRequest,
@@ -4584,9 +4584,7 @@ export class SessionManager {
     if (msg.decision === "allow") {
       const response = formatPermissionAllow(
         msg.request_id,
-        // Shared contract types `updatedInput` opaquely (`unknown`,
-        // [#step-13c1]); narrow at this boundary.
-        (msg.updatedInput as Record<string, unknown> | undefined) || originalInput,
+        msg.updatedInput || originalInput,
         msg.updatedPermissions,
       );
       sendControlResponse(stdin, response);
@@ -4656,9 +4654,7 @@ export class SessionManager {
    */
   handlePermissionMode(msg: PermissionModeMessage): void {
     console.log(`Setting permission mode: ${msg.mode}`);
-    // Shared contract types `mode` as a bare `string` ([#step-13c1]); narrow at
-    // this boundary to the PermissionManager's mode union.
-    this.permissionManager.setMode(msg.mode as PermissionMode);
+    this.permissionManager.setMode(msg.mode);
 
     // Also notify the CLI process of the mode change.
     if (this.claudeProcess) {

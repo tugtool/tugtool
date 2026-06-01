@@ -16,6 +16,7 @@
  */
 
 import type { TaggedValue } from "@/lib/tugbank-client";
+import type { PermissionMode } from "@tugproto/inbound";
 
 /**
  * The four modes the `Shift+Tab` cycle steps through, in order. Index `i`
@@ -26,7 +27,7 @@ export const PERMISSION_MODE_CYCLE = [
   "acceptEdits",
   "plan",
   "auto",
-] as const;
+] as const satisfies readonly PermissionMode[];
 
 /** A mode that participates in the `Shift+Tab` cycle. */
 export type CyclePermissionMode = (typeof PERMISSION_MODE_CYCLE)[number];
@@ -43,7 +44,7 @@ export const PERMISSION_MODE_MENU = [
   "plan",
   "auto",
   "bypassPermissions",
-] as const;
+] as const satisfies readonly PermissionMode[];
 
 /**
  * Human-readable labels for the chip's content line. Covers the four cycle
@@ -87,19 +88,37 @@ export function cyclePermissionMode(current: string | null): CyclePermissionMode
   return PERMISSION_MODE_CYCLE[(idx + 1) % PERMISSION_MODE_CYCLE.length];
 }
 
+/** Every mode claude accepts, for validating untrusted (persisted) strings. */
+const ALL_PERMISSION_MODES: ReadonlySet<string> = new Set<PermissionMode>([
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "plan",
+  "auto",
+  "dontAsk",
+  "delegate",
+]);
+
+/** Whether `value` is a permission mode claude accepts. */
+export function isPermissionMode(value: string): value is PermissionMode {
+  return ALL_PERMISSION_MODES.has(value);
+}
+
 /**
- * Parse the per-card persisted mode out of its tugbank tagged value. Returns
- * the stored string when present and string-kinded, else `null`. The value
- * is intentionally NOT narrowed to a known mode — a mode persisted by a
- * future build is still a legible string the chip can show and the cycle can
- * step away from.
+ * Parse the per-card persisted mode out of its tugbank tagged value, narrowed
+ * to a known {@link PermissionMode} (or `null`). The persisted string is
+ * untrusted — a value from a future / corrupt build that isn't a real mode
+ * yields `null` (no restore) rather than being pushed to claude as a bogus
+ * mode. The chip's *display* stays string-tolerant ({@link formatPermissionMode});
+ * only the send path is strict.
  */
 export function parsePersistedPermissionMode(
   entry: TaggedValue | undefined,
-): string | null {
-  return entry?.kind === "string" && typeof entry.value === "string"
-    ? entry.value
-    : null;
+): PermissionMode | null {
+  if (entry?.kind === "string" && typeof entry.value === "string" && isPermissionMode(entry.value)) {
+    return entry.value;
+  }
+  return null;
 }
 
 /** tugbank domain for per-card permission-mode persistence per [D07]. */

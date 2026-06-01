@@ -28,6 +28,7 @@ import {
   type ContentBlock,
   type FeedIdValue,
 } from "@/protocol";
+import type { PermissionMode } from "@tugproto/inbound";
 import type { TugConnection } from "@/connection";
 import type { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import {
@@ -707,7 +708,7 @@ export class CodeSessionStore {
    * keeps `dispatch` private and the caller free of reducer-event
    * vocabulary — same precedent as `interrupt` / `respondQuestion`.
    */
-  setPermissionMode(mode: string): void {
+  setPermissionMode(mode: PermissionMode): void {
     if (this._disposed) return;
     this.dispatch({ type: "set_permission_mode", mode });
   }
@@ -882,7 +883,7 @@ export class CodeSessionStore {
     requestId: string,
     payload: {
       decision: "allow" | "deny";
-      updatedInput?: unknown;
+      updatedInput?: Record<string, unknown>;
       message?: string;
       updatedPermissions?: unknown[];
     },
@@ -905,7 +906,7 @@ export class CodeSessionStore {
    */
   respondQuestion(
     requestId: string,
-    payload: { answers: Record<string, unknown> },
+    payload: { answers: Record<string, string> },
   ): void {
     if (this._disposed) return;
     this.dispatch({

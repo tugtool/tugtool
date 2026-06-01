@@ -69,19 +69,19 @@ export interface ToolApproval {
   type: "tool_approval";
   request_id: string;
   decision: "allow" | "deny";
-  /** On allow: optional override of the tool input. Opaque on the wire. */
-  updatedInput?: unknown;
+  /** On allow: optional override of the tool input. */
+  updatedInput?: Record<string, unknown>;
   /** On deny: a human-readable reason. */
   message?: string;
   /** On allow: the SDK `PermissionUpdate[]` durable-scope suggestion, opaque. */
   updatedPermissions?: unknown[];
 }
 
-/** Answer a pending `AskUserQuestion`. */
+/** Answer a pending `AskUserQuestion`. Values are the selected option labels. */
 export interface QuestionAnswer {
   type: "question_answer";
   request_id: string;
-  answers: Record<string, unknown>;
+  answers: Record<string, string>;
 }
 
 /** Interrupt the in-flight turn. */
@@ -89,10 +89,20 @@ export interface Interrupt {
   type: "interrupt";
 }
 
-/** Set the session permission mode. The receiver narrows the value. */
+/** The session permission modes claude accepts. */
+export type PermissionMode =
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "plan"
+  | "auto"
+  | "dontAsk"
+  | "delegate";
+
+/** Set the session permission mode. */
 export interface PermissionModeMessage {
   type: "permission_mode";
-  mode: string;
+  mode: PermissionMode;
 }
 
 /** Switch the active model. */

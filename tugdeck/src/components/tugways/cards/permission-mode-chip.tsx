@@ -55,8 +55,10 @@ import {
   PERMISSION_MODE_DOMAIN,
   PERMISSION_MODE_MENU,
   formatPermissionMode,
+  isPermissionMode,
   parsePersistedPermissionMode,
 } from "@/lib/permission-mode";
+import type { PermissionMode } from "@tugproto/inbound";
 
 export interface PermissionModeChipProps {
   /** The card whose binding's permission mode the chip persists / restores. */
@@ -154,7 +156,7 @@ export interface UsePermissionSheetArgs {
    * card to `usePermissionMode().setMode`, which sends the `permission_mode`
    * frame, optimistically reflects the mode, and persists it per card.
    */
-  onSelectMode: (mode: string) => void;
+  onSelectMode: (mode: PermissionMode) => void;
   /**
    * The card's shared sheet host (`useTugSheet().showSheet`). Routing every
    * card picker through one host means opening this sheet replaces any other
@@ -250,9 +252,9 @@ const PermissionModeListContext = React.createContext<string | null>(null);
  * `getVersion` is a stable constant.
  */
 class PermissionModeDataSource implements TugListViewDataSource {
-  private readonly modes: readonly string[];
+  private readonly modes: readonly PermissionMode[];
 
-  constructor(modes: readonly string[]) {
+  constructor(modes: readonly PermissionMode[]) {
     this.modes = modes;
   }
 
@@ -268,8 +270,8 @@ class PermissionModeDataSource implements TugListViewDataSource {
     return "mode";
   }
 
-  /** Cell-renderer accessor — the raw mode string at `index`. */
-  modeAt(index: number): string {
+  /** Cell-renderer accessor — the mode at `index`. */
+  modeAt(index: number): PermissionMode {
     return this.modes[index];
   }
 
@@ -321,10 +323,14 @@ const PERMISSION_MODE_CELL_RENDERERS: Record<
 };
 
 interface PermissionModeSheetBodyProps {
-  /** The mode marked as selected when the sheet opened (`null` if unknown). */
+  /**
+   * The live mode marked as selected when the sheet opened (`null` if unknown).
+   * Loose `string` — it seeds from claude's reported mode, which the chip
+   * displays tolerantly; an unknown value just leaves no row pre-selected.
+   */
   currentMode: string | null;
   /** Commit the chosen mode (no-op if unchanged) and dismiss — OK / Enter. */
-  onConfirm: (mode: string | null) => void;
+  onConfirm: (mode: PermissionMode | null) => void;
   /** Dismiss without changing the mode — Cancel / Escape / Cmd-. */
   onCancel: () => void;
 }
@@ -346,8 +352,12 @@ function PermissionModeSheetBody({
   onCancel,
 }: PermissionModeSheetBodyProps): React.ReactElement {
   // In-sheet selection — clicking a row moves the checkmark; nothing commits
-  // until OK (or Enter). Cancel / Escape leave the mode unchanged.
-  const [selected, setSelected] = useState<string | null>(currentMode);
+  // until OK (or Enter). Cancel / Escape leave the mode unchanged. Seed from
+  // the live mode only when it's a real mode (an unknown live value leaves no
+  // pre-selection rather than seeding a non-selectable string).
+  const [selected, setSelected] = useState<PermissionMode | null>(
+    currentMode !== null && isPermissionMode(currentMode) ? currentMode : null,
+  );
   const dataSource = useMemo(
     () => new PermissionModeDataSource(PERMISSION_MODE_MENU),
     [],

@@ -2494,11 +2494,20 @@ groups them.
 >   verbs, sender-permissive payloads), tugcode's the *receive-superset* (16,
 >   incl. `protocol_init`/`request_replay`/`skills`/`hooks`), and `ContentBlock`
 >   was defined in both. Resolved by authoring the **full** contract once in
->   `tugproto` with **sender-permissive types for the 3 fields that diverged**
->   (`mode: string`, `answers: Record<string, unknown>`, `updatedInput: unknown`)
->   and **narrowing at tugcode's handler boundary** — exactly two one-line
->   adjustments (`formatQuestionAnswer` param; a `setMode(... as PermissionMode)`
->   cast + an `updatedInput as …` cast). Neither side's call sites changed.
+>   `tugproto` with the **strict (receiver) types** for the 3 fields that diverged
+>   (`mode: PermissionMode`, `answers: Record<string, string>`,
+>   `updatedInput?: Record<string, unknown>`) and **tightening the tugdeck sender
+>   stack to match** — `events.ts` → `code-session-store` → `use-permission-mode`
+>   → `permission-mode.ts` → `permission-mode-chip`. No boundary casts: the one
+>   untrusted input (the *persisted* mode string) is validated with an
+>   `isPermissionMode` guard at the persistence boundary, and the chip's *display*
+>   of the live mode stays a tolerant `string` (claude may report any mode). The
+>   mode value space (`PermissionMode`) is now authored once in `tugproto` and
+>   sourced by both tugcode's `permissions.ts` and tugdeck's `permission-mode.ts`;
+>   `PERMISSION_MODE_CYCLE`/`_MENU` gained `satisfies readonly PermissionMode[]`
+>   (a typo'd cycle mode is now a compile error). *(First cut used
+>   sender-permissive types + boundary narrowing; tightened to strict end-to-end
+>   on review — it converged cleanly across ~6 files, both suites green.)*
 > - **Per-type guards kept.** A dedicated `types.test.ts` exercises them, and
 >   they're harmless one-liners. The win is `isInboundMessage` **derived from
 >   `INBOUND_VERBS`** (the silent-allowlist footgun is gone) + the registry

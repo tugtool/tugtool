@@ -12,6 +12,7 @@
 
 import type { AtomSegment } from "../tug-atom-img";
 import type { ContentBlock } from "../../protocol";
+import type { PermissionMode } from "@tugproto/inbound";
 import type { ControlRequestForward } from "./types";
 
 /** Internal `send` action injected by `CodeSessionStore.send`. */
@@ -250,7 +251,7 @@ export interface RespondApprovalActionEvent {
   type: "respond_approval";
   request_id: string;
   decision: "allow" | "deny";
-  updatedInput?: unknown;
+  updatedInput?: Record<string, unknown>;
   message?: string;
   // On allow with a chosen scope: the SDK `PermissionUpdate[]` echoed
   // back so the CLI records a durable rule. Opaque at this layer.
@@ -264,7 +265,7 @@ export interface RespondApprovalActionEvent {
 export interface RespondQuestionActionEvent {
   type: "respond_question";
   request_id: string;
-  answers: Record<string, unknown>;
+  answers: Record<string, string>;
 }
 
 /**
@@ -286,7 +287,7 @@ export interface InterruptActionEvent {
  */
 export interface SetPermissionModeActionEvent {
   type: "set_permission_mode";
-  mode: string;
+  mode: PermissionMode;
 }
 
 /**

@@ -32,6 +32,7 @@ import {
   cyclePermissionMode,
   parsePersistedPermissionMode,
 } from "@/lib/permission-mode";
+import type { PermissionMode } from "@tugproto/inbound";
 
 /**
  * Persist a card's permission mode: optimistic local-cache write (so
@@ -70,7 +71,7 @@ export interface UsePermissionModeResult {
   /** Advance the mode one `Shift+Tab` step (default → acceptEdits → plan → auto → …). */
   cycle: () => void;
   /** Set the mode to an explicit value (the behavior-sheet / `/permissions` path). */
-  setMode: (mode: string) => void;
+  setMode: (mode: PermissionMode) => void;
 }
 
 export function usePermissionMode({
@@ -86,7 +87,7 @@ export function usePermissionMode({
     ),
   );
 
-  const persistedMode = useTugbankValue<string | null>(
+  const persistedMode = useTugbankValue<PermissionMode | null>(
     PERMISSION_MODE_DOMAIN,
     cardId,
     parsePersistedPermissionMode,
@@ -102,7 +103,7 @@ export function usePermissionMode({
   // see `applyPermissionMode`), and persist it per card. The single path
   // both `cycle` and the chip's behavior sheet funnel through.
   const setMode = useCallback(
-    (mode: string) => {
+    (mode: PermissionMode) => {
       // A manual change supersedes any not-yet-fired mount restore.
       sentRef.current = true;
       // Optimistic chip update + persist first, so the indicator reflects the

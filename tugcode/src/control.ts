@@ -107,10 +107,7 @@ export function formatPermissionDeny(
 export function formatQuestionAnswer(
   requestId: string,
   originalInput: Record<string, unknown>,
-  // Shared contract types `answers` loosely (`Record<string, unknown>`,
-  // [#step-13c1]); values are spread into `updatedInput` verbatim — no
-  // narrowing needed here.
-  answers: Record<string, unknown>
+  answers: Record<string, string>
 ): Record<string, unknown> {
   // Per §5b: answers are nested under an "answers" key in updatedInput.
   // The key is the question text, the value is the selected option label.
