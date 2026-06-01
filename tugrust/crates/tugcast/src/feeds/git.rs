@@ -303,6 +303,20 @@ pub async fn build_git_diff_snapshot(
     request_id: String,
     workspace_key: &str,
 ) -> GitDiffSnapshot {
+    // Distinguish "not a git repo" from "clean repo" so the client can say so
+    // rather than misreport a clean tree. Cheap, subprocess-free.
+    if !is_within_git_worktree(repo_dir).await {
+        return GitDiffSnapshot {
+            request_id,
+            workspace_key: workspace_key.to_string(),
+            base: GIT_DIFF_BASE.to_string(),
+            no_repo: true,
+            file_count: 0,
+            total_added: 0,
+            total_removed: 0,
+            files: Vec::new(),
+        };
+    }
     let files = match fetch_git_diff(repo_dir).await {
         Some(output) => parse_git_diff(&output),
         None => Vec::new(),
@@ -313,6 +327,7 @@ pub async fn build_git_diff_snapshot(
         request_id,
         workspace_key: workspace_key.to_string(),
         base: GIT_DIFF_BASE.to_string(),
+        no_repo: false,
         file_count: files.len() as u32,
         total_added,
         total_removed,
@@ -1115,9 +1130,21 @@ Binary files a/img.png and b/img.png differ
         let temp = init_diff_fixture_repo().await;
         let snapshot =
             build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws").await;
+        assert!(!snapshot.no_repo, "a real repo is not flagged no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());
         assert_eq!(snapshot.total_added, 0);
         assert_eq!(snapshot.total_removed, 0);
+    }
+
+    #[tokio::test]
+    async fn test_build_git_diff_snapshot_non_repo_flags_no_repo() {
+        // A plain dir (never `git init`ed) is flagged no_repo, not "clean".
+        let temp = TempDir::new().unwrap();
+        let snapshot =
+            build_git_diff_snapshot(temp.path(), "req-norepo".to_string(), "ws").await;
+        assert!(snapshot.no_repo, "a non-git dir must set no_repo");
+        assert_eq!(snapshot.file_count, 0);
+        assert!(snapshot.files.is_empty());
     }
 }

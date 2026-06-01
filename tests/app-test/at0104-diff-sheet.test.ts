@@ -166,21 +166,22 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
           { timeoutMs: 6000 },
         );
 
-        // Refresh re-fires the request; a now-clean tree shows the empty
-        // state (covered here rather than in a second app launch to avoid a
-        // redundant cold boot).
+        // Refresh re-fires the request; a non-git project dir is flagged as
+        // such (not misreported as "no changes"). Covered here rather than in
+        // a second app launch to avoid a redundant cold boot.
         await app.nativeClickAtElement(`${SHEET} [data-testid="diff-refresh"]`);
         await app.ingestGitDiff("A", {
           request_id: "gd-2",
           workspace_key: "test-workspace-A",
           base: "HEAD",
+          no_repo: true,
           file_count: 0,
           total_added: 0,
           total_removed: 0,
           files: [],
         });
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(`${SHEET} .diff-sheet-empty`)}) !== null`,
+          `(function(){ var e = document.querySelector(${JSON.stringify(`${SHEET} .diff-sheet-notice`)}); return e !== null && /not a git repository/i.test(e.textContent || ""); })()`,
           { timeoutMs: 6000 },
         );
         const filesAfter = await app.evalJS<number>(

@@ -1851,6 +1851,14 @@ Split into **[#step-10a] sourcing** (tugcast `git_diff_request`/`git_diff_respon
 **Checkpoint:**
 - [x] `just app-test diff-sheet` — VERDICT: PASS (1/1). Plus tsc clean and 3213 tugdeck unit tests green (slash-command registry expectations updated for `/diff`).
 
+**Polish (2026-05-31, post-review):**
+- [x] **Non-git dir is flagged, not faked.** tugcast `build_git_diff_snapshot` sets `no_repo: true` (via `is_within_git_worktree`) instead of returning a false "clean tree"; wire type + client carry it; the sheet says "Not a git repository." (Rust + TS tests).
+- [x] **Empty / no-repo states show a single centered `proposal` TugLabel** — no more triple "no changes"; the "Uncommitted changes (git diff HEAD)" header context shows only when there are files.
+- [x] **Header `+X −Y` uses the green/red tone colors** (matching the per-file stats).
+- [x] **New `TugSheet` `displayWidth: "document"` (fixed 800px)**; `/diff` uses it for real diff-reading room.
+- [x] **Diff scrolls**: the file list is a bounded scroll region (`.diff-sheet-body`, header + Done pinned); long code lines scroll horizontally within their hunk (sheet-scoped).
+- [x] **DiffBlock hunk header readable**: `@@ … @@` text sized to the diff body and a larger chevron (override the cue's `--tugx-cue-*` slots, [L17]).
+
 ---
 
 #### Step 11: `/context` HUD via status-bar arc gauge {#step-11}

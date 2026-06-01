@@ -104,7 +104,7 @@ describe("parseGitDiffPayload", () => {
     expect(parsed?.files.map((f) => f.path)).toEqual(["a.rs", "b.rs", "c.rs"]);
   });
 
-  test("defaults base/totals when absent, file_count falls back to files.length", () => {
+  test("defaults base/totals/no_repo when absent, file_count falls back to files.length", () => {
     const parsed = parseGitDiffPayload({
       request_id: "gd-3",
       files: [file({}), file({})],
@@ -112,6 +112,18 @@ describe("parseGitDiffPayload", () => {
     expect(parsed?.base).toBe("HEAD");
     expect(parsed?.total_added).toBe(0);
     expect(parsed?.file_count).toBe(2);
+    expect(parsed?.no_repo).toBe(false);
+  });
+
+  test("carries no_repo when the project dir is not a git repo", () => {
+    const parsed = parseGitDiffPayload({
+      request_id: "gd-4",
+      no_repo: true,
+      file_count: 0,
+      files: [],
+    });
+    expect(parsed?.no_repo).toBe(true);
+    expect(parsed?.files).toHaveLength(0);
   });
 
   test("rejects malformed payloads", () => {

@@ -204,6 +204,12 @@ body {
  * sticky pattern. */
 .tugx-diff-hunk-header.tugx-diff-hunk-header {
   position: sticky;
+  /* The hunk header is a `<TugCue>`; its size flows through the cue's own
+   * component-tier slots ([L17]). Match the `@@ … @@` text to the diff body
+   * size and give the chevron a non-stingy size — the cue default
+   * (`2xs` / `icon-xs`) reads too small against the code rows. */
+  --tugx-cue-font-size: var(--tugx-block-code-font-size);
+  --tugx-cue-icon-size: var(--tug-icon-size-sm);
   top: calc(
     var(--tugx-pin-stack-top, 0px)
     + var(--tugx-toolblock-header-height, 0px)

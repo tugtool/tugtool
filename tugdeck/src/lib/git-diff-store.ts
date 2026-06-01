@@ -54,6 +54,8 @@ export interface GitDiffPayload {
   request_id: string;
   workspace_key: string;
   base: string;
+  /** True when the project dir is not inside a git working tree. */
+  no_repo: boolean;
   file_count: number;
   total_added: number;
   total_removed: number;
@@ -148,6 +150,7 @@ export function parseGitDiffPayload(payload: unknown): GitDiffPayload | null {
     request_id: p.request_id,
     workspace_key: typeof p.workspace_key === "string" ? p.workspace_key : "",
     base: typeof p.base === "string" ? p.base : "HEAD",
+    no_repo: p.no_repo === true,
     file_count: typeof p.file_count === "number" ? p.file_count : p.files.length,
     total_added: typeof p.total_added === "number" ? p.total_added : 0,
     total_removed: typeof p.total_removed === "number" ? p.total_removed : 0,

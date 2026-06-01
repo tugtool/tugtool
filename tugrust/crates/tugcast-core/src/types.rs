@@ -137,6 +137,11 @@ pub struct GitDiffSnapshot {
     pub workspace_key: String,
     /// The ref the working tree was diffed against (currently `"HEAD"`).
     pub base: String,
+    /// True when the project dir is **not** inside a git working tree — so the
+    /// client can say "not a git repository" rather than misreport a clean
+    /// tree. `files` is empty in that case.
+    #[serde(default)]
+    pub no_repo: bool,
     /// Number of changed files (`files.len()`).
     pub file_count: u32,
     /// Total added lines across all files.
@@ -298,6 +303,7 @@ mod tests {
             request_id: "req-1".to_string(),
             workspace_key: "/work/repo".to_string(),
             base: "HEAD".to_string(),
+            no_repo: false,
             file_count: 2,
             total_added: 12,
             total_removed: 3,

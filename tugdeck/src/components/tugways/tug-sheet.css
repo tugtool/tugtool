@@ -112,6 +112,16 @@ body {
   max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
 }
 
+/* `document` — a fixed 800px reading column for content that needs real
+ * horizontal room (a diff, a long document). Unlike `wide` (a fraction of
+ * the pane), this is a stable width regardless of pane size; the trailing
+ * `max-width` still guards against a pane narrower than 800px so the sheet
+ * never overflows its host. [L06] */
+.tug-sheet-content[data-display-width="document"] {
+  width: 800px;
+  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+}
+
 /* ---- Presentation resting states ----
  *
  * Each presentation style ([data-tug-sheet-presentation]) declares the

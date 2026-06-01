@@ -71,7 +71,7 @@ export function useDiffSheet({
     gitDiffStore.requestDiff();
     void showSheet({
       title: "Diff",
-      displayWidth: "wide",
+      displayWidth: "document",
       content: (close) => (
         <DiffSheetBody gitDiffStore={gitDiffStore} onClose={close} />
       ),
@@ -162,6 +162,7 @@ function DiffSheetBody({
 
   const payload = snapshot.payload;
   const files = payload?.files ?? [];
+  const hasFiles = files.length > 0;
 
   // A single-file diff opens expanded; multi-file opens as a scannable
   // collapsed list. Uncontrolled — the user toggles from there.
@@ -170,26 +171,87 @@ function DiffSheetBody({
     [files],
   );
 
-  const summary =
-    payload !== null
-      ? diffSummaryLine(
-          payload.file_count,
-          payload.total_added,
-          payload.total_removed,
-        )
-      : null;
+  // Body content by phase. The empty / no-repo states render a *single*
+  // centered proposal label (no repeated "no changes" — the header
+  // context line is shown only when there are files to summarize).
+  let body: React.ReactElement;
+  if (snapshot.phase === "error") {
+    body = (
+      <p className="diff-sheet-notice" role="alert">
+        {snapshot.error ?? "Couldn't load the diff."}
+      </p>
+    );
+  } else if (snapshot.phase === "loading" || payload === null) {
+    body = (
+      <p className="diff-sheet-notice" role="status">
+        Loading changes…
+      </p>
+    );
+  } else if (payload.no_repo) {
+    body = (
+      <div className="diff-sheet-notice" role="status">
+        <TugLabel emphasis="proposal" align="center">
+          Not a git repository.
+        </TugLabel>
+      </div>
+    );
+  } else if (!hasFiles) {
+    body = (
+      <div className="diff-sheet-notice" role="status">
+        <TugLabel emphasis="proposal" align="center">
+          No uncommitted changes.
+        </TugLabel>
+      </div>
+    );
+  } else {
+    body = (
+      <TugAccordion
+        type="multiple"
+        variant="separator"
+        defaultValue={defaultOpen}
+        className="diff-sheet-files"
+      >
+        {files.map((file) => (
+          <TugAccordionItem
+            key={fileKey(file)}
+            value={fileKey(file)}
+            trigger={<FileTrigger file={file} />}
+            data-testid="diff-file"
+          >
+            <FileBody file={file} />
+          </TugAccordionItem>
+        ))}
+      </TugAccordion>
+    );
+  }
 
   return (
     <div className="diff-sheet">
       <div className="diff-sheet-header">
-        <div className="diff-sheet-header-text">
-          <TugLabel emphasis="proposal">
-            Uncommitted changes (git diff HEAD)
-          </TugLabel>
-          {summary !== null ? (
-            <span className="diff-sheet-summary">{summary}</span>
-          ) : null}
-        </div>
+        {hasFiles && payload !== null ? (
+          <div className="diff-sheet-header-text">
+            <TugLabel emphasis="proposal">
+              Uncommitted changes (git diff HEAD)
+            </TugLabel>
+            <span
+              className="diff-sheet-summary"
+              aria-label={diffSummaryLine(
+                payload.file_count,
+                payload.total_added,
+                payload.total_removed,
+              )}
+            >
+              {payload.file_count}{" "}
+              {payload.file_count === 1 ? "file" : "files"} changed{" "}
+              <span className="diff-sheet-stat-add">+{payload.total_added}</span>{" "}
+              <span className="diff-sheet-stat-remove">
+                −{payload.total_removed}
+              </span>
+            </span>
+          </div>
+        ) : (
+          <span className="diff-sheet-header-spacer" />
+        )}
         <TugPushButton
           size="sm"
           onClick={refresh}
@@ -200,39 +262,7 @@ function DiffSheetBody({
         </TugPushButton>
       </div>
 
-      <div className="diff-sheet-body">
-        {snapshot.phase === "error" ? (
-          <p className="diff-sheet-error" role="alert">
-            {snapshot.error ?? "Couldn't load the diff."}
-          </p>
-        ) : snapshot.phase === "loading" ? (
-          <p className="diff-sheet-status" role="status">
-            Loading changes…
-          </p>
-        ) : files.length === 0 ? (
-          <p className="diff-sheet-empty" role="status">
-            No uncommitted changes.
-          </p>
-        ) : (
-          <TugAccordion
-            type="multiple"
-            variant="separator"
-            defaultValue={defaultOpen}
-            className="diff-sheet-files"
-          >
-            {files.map((file) => (
-              <TugAccordionItem
-                key={fileKey(file)}
-                value={fileKey(file)}
-                trigger={<FileTrigger file={file} />}
-                data-testid="diff-file"
-              >
-                <FileBody file={file} />
-              </TugAccordionItem>
-            ))}
-          </TugAccordion>
-        )}
-      </div>
+      <div className="diff-sheet-body">{body}</div>
 
       <div className="tug-sheet-actions">
         <TugPushButton emphasis="filled" onClick={() => onClose()} data-testid="diff-done">

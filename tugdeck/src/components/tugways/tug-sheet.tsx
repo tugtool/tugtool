@@ -139,7 +139,7 @@ export type TugSheetPresentation = "top" | "bottom" | "scale-fade";
  * resting width differs [L06]. Declared in `tug-sheet.css` keyed on
  * `data-display-width`.
  */
-export type TugSheetDisplayWidth = "standard" | "wide";
+export type TugSheetDisplayWidth = "standard" | "wide" | "document";
 
 /** Enter/exit keyframe pair for one presentation style. */
 interface SheetPresentationMotion {

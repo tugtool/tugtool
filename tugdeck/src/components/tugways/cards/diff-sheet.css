@@ -14,6 +14,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  /* Fill the sheet's content area so the file list (not the whole sheet)
+     is what scrolls — header + Done stay pinned. */
+  min-height: 0;
+  max-height: 100%;
 }
 
 /* Header: "Uncommitted changes (git diff HEAD)" + summary on the left, the
@@ -23,6 +27,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  flex: 0 0 auto;
 }
 
 .diff-sheet-header-text {
@@ -32,35 +37,44 @@
   min-width: 0;
 }
 
+/* Pushes Refresh to the right when there is no header text (empty / no-repo
+   / loading), so the control stays in its usual place. */
+.diff-sheet-header-spacer {
+  flex: 1 1 auto;
+}
+
 .diff-sheet-summary {
   font-size: 0.8125rem;
   opacity: 0.7;
 }
 
+/* The scrollable file-list region. Bounded so a long diff scrolls here
+   rather than growing the whole sheet past the pane; header + Done stay put.
+   The `max-height` backstop covers hosts where the flex parent isn't itself
+   height-bounded. */
 .diff-sheet-body {
-  display: flex;
-  flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;
+  max-height: 65vh;
 }
 
-/* Status / empty / error notices. */
-.diff-sheet-status,
-.diff-sheet-empty,
-.diff-sheet-error,
-.diff-sheet-binary-note {
+/* Single centered notice for the loading / empty / no-repo / error states. */
+.diff-sheet-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
   margin: 0;
-  padding: 1rem 0;
   font-size: 0.875rem;
-}
-
-.diff-sheet-status,
-.diff-sheet-empty {
-  opacity: 0.6;
+  opacity: 0.7;
   text-align: center;
 }
 
 .diff-sheet-binary-note {
+  margin: 0;
   padding: 0.5rem 0;
+  font-size: 0.875rem;
   opacity: 0.6;
 }
 
@@ -128,4 +142,11 @@
 .diff-sheet-file-diff.tugx-diff {
   border: 0;
   border-radius: 0;
+}
+
+/* Long code lines scroll horizontally within their hunk rather than being
+   clipped by the 800px document column. Scoped to the sheet so DiffBlock's
+   other hosts (transcript) keep their own overflow behavior. */
+.diff-sheet-file-diff .tugx-diff-hunk-rows {
+  overflow-x: auto;
 }
