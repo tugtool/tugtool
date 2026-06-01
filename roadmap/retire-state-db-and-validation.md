@@ -138,7 +138,7 @@ output break CI, justfile recipes, hooks, or other automation?
 **Why it matters:** A silent external caller would turn a clean removal into a breakage.
 
 **Resolution:** DECIDED — no. Grepped `Justfile`, `.github`, `.claude`, `tugplug`, and the
-Rust tree: `validate` appears only in skill prose (rewritten in [#step-5]); `list` has zero
+Rust tree: `validate` appears only in skill prose (rewritten in [#step-6]); `list` has zero
 callers anywhere; no non-skill caller drives `dash`. Safe to remove.
 
 ---
@@ -176,7 +176,7 @@ the parser/AST, and the `tugutil validate` gate.
 
 **Implications:**
 - `devise` still authors against the skeleton; `implement` still walks it via the ledger.
-- `devise-skeleton.md` loses only its two `tugutil validate` references ([#step-5]).
+- `devise-skeleton.md` loses only its two `tugutil validate` references ([#step-6]).
 - Conformance to the skeleton is upheld by authorship and review, not a CLI gate.
 
 #### [P02] Git is the source of truth for dash lifecycle (DECIDED) {#p02-git-source-of-truth}
@@ -248,8 +248,10 @@ no AST.
 
 **Decision:** After `git worktree add`, `dash create` runs the commands declared in
 `[tugtool.dash].post_create` (from `.tugtool/config.toml`), with the new worktree as cwd —
-e.g. `bun install --cwd tugdeck`. The hook runs **only on actual creation**, not on the
-idempotent resume path, and a non-zero exit **hard-fails** `create` with the command's output.
+e.g. `bun install --cwd tugdeck`. The hook runs **only on actual creation**, not on the idempotent
+resume path. A non-zero exit **rolls back the just-added worktree and branch, then fails** `create`
+with the command's output — otherwise the worktree would survive un-hydrated and the next
+(idempotent) `create` would skip the hook, stranding it.
 
 **Rationale:**
 - A git worktree never inherits gitignored files, so `tugdeck/node_modules` is *always* absent
@@ -265,7 +267,7 @@ idempotent resume path, and a non-zero exit **hard-fails** `create` with the com
 - `config.rs` gains a `[tugtool.dash].post_create: Vec<String>` field; `init`'s `DEFAULT_CONFIG`
   seeds it with `bun install --cwd tugdeck`.
 - The skills no longer install deps or check for `node_modules` — the worktree arrives hydrated
-  ([#step-5] removes that prose).
+  ([#step-6] removes that prose).
 - Hydration is the *tool's* job; establishing a green test **baseline** stays the *skill's* job
   (contextual: which suites, Rust vs JS).
 - **Rejected:** symlinking the base checkout's `node_modules` into the worktree — fragile with
@@ -294,9 +296,11 @@ Post-rewrite command behavior (all shell out to `git`, as the current flow alrea
 #### Worktree hydration (contract) {#worktree-hydration-spec}
 
 `[tugtool.dash].post_create` is an ordered list of shell commands. On a real `create` (a freshly
-added worktree), `dash create` runs each from the worktree root, in order; the first non-zero
-exit aborts `create` and surfaces the failing command's stderr. On the idempotent path (worktree
-already existed) the hook is skipped. Default seeded by `init`:
+added worktree), `dash create` runs each from the worktree root, in order; the first non-zero exit
+**removes the just-added worktree and branch**, then aborts `create` surfacing the failing
+command's stderr — so a retry re-creates and re-hydrates cleanly, and the idempotent skip never
+strands a half-hydrated worktree. On the idempotent path (worktree already existed) the hook is
+skipped. Default seeded by `init`:
 
 ```toml
 [tugtool.dash]
@@ -345,11 +349,13 @@ the step that orphans it.
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `project_state_dir` | fn | `tugutil-core/src/` (new) | `dirs::data_dir()/Tug/projects/<slug>/` ([P08]); per-project runtime-state home |
-| `run_dash_{create,commit,join,release,list,show}` | fn | `tugutil/src/commands/dash.rs` | rewrite on git; drop `StateDb` calls; dash-log → `project_state_dir()` |
+| `project_state_dir` | fn | `tugutil-core/src/` (new) | `dirs::data_dir()/Tug/projects/<slug>/` ([P08]); `$HOME/.local/share` fallback; from the **main** repo root |
+| `state-dir` subcommand | cli | `tugutil` (cli.rs/main.rs/commands) | prints `project_state_dir(find_repo_root())` for the `Justfile` + host ([P08]) |
+| `run_dash_{create,commit,join,release,list,show}` | fn | `tugutil/src/commands/dash.rs` | rewrite on git; drop `StateDb`; dash-log → `project_state_dir()`; drop vestigial `--all`/`--all-rounds` |
+| `DashRoundMeta` | struct | `tugutil-core/src/dash.rs` | trim to `instruction`/`summary` (the log's fields); drop unused `files_*` |
 | `impl crate::state::StateDb` | impl block | `tugutil-core/src/dash.rs` | delete (~335 lines) |
-| Claude-session launch (`additionalDirectories`) | host path | `tugcode`/`tugcast` | ensure `dirs::data_dir()/Tug` is registered so reads under `project_state_dir()` need no prompt ([P10]) |
-| code-sign sentinel path | const/recipe | `Justfile` | move from `.tugtool/` to `project_state_dir()` ([P08]) |
+| Claude-session launch (`additionalDirectories`) | host path | `tugcode`/`tugcast` (site TBD by [#step-5] spike) | register `dirs::data_dir()/Tug` (parent, one entry) as an allowed read root — `--add-dir` or settings ([P10]) |
+| code-sign sentinel path | const/recipe | `Justfile` | resolve via `tugutil state-dir` (not a hardcoded path) ([P08]) |
 | `lib.rs` module decls + re-exports | mod/use | `tugutil-core/src/lib.rs` | drop `parser`/`validator`/`types`/`state` + their exports + smoke tests |
 | `Commands::{Validate,List}` | enum variants | `tugutil/src/cli.rs` | remove |
 | `Commands::{Validate,List}` dispatch | match arms | `tugutil/src/main.rs` | remove |
@@ -364,11 +370,11 @@ the step that orphans it.
 ### Documentation Plan {#documentation-plan}
 
 - [ ] `tuglaws/devise-skeleton.md` — strip the two `tugutil validate` references, bump to `v4`;
-      keep every structural section ([#step-5], [P01]).
+      keep every structural section ([#step-6], [P01]).
 - [ ] `tugplug/CLAUDE.md` + `devise`/`implement`/`dash` SKILL.md — remove the validate gate and
-      round-ledger framing ([#step-5]).
+      round-ledger framing ([#step-6]).
 - [ ] `tuglaws/design-decisions.md` + `roadmap/` sweep — reword stale "validated by" references
-      to "convention"; leave archived plans as history ([#step-5]).
+      to "convention"; leave archived plans as history ([#step-6]).
 
 ---
 
@@ -379,7 +385,7 @@ the step that orphans it.
 | Category | Purpose | When |
 |----------|---------|------|
 | **Integration (CLI)** | Drive `tugutil dash` end-to-end against a temp git repo, asserting git state (branch/worktree/log) | [#step-1] |
-| **Drift / grep gates** | Assert removed symbols have zero live references | [#step-6] |
+| **Drift / grep gates** | Assert removed symbols have zero live references | [#step-7] |
 
 #### What stays out of tests {#test-non-goals}
 
@@ -396,12 +402,13 @@ the step that orphans it.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Dash on git + `project_state_dir()` + hydration + log; delete `state.db`/`StateDb` | pending | — |
+| #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | pending | — |
 | #step-2 | Delete `validator.rs` + the `validate` command | pending | — |
 | #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | pending | — |
-| #step-4 | Evict runtime state from the repo + register reads + cleanup | pending | — |
-| #step-5 | De-ceremony skills + skeleton/docs | pending | — |
-| #step-6 | Integration checkpoint | pending | — |
+| #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | pending | — |
+| #step-5 | Relocate runtime state out of the repo + register Claude reads | pending | — |
+| #step-6 | De-ceremony skills + skeleton/docs | pending | — |
+| #step-7 | Integration checkpoint | pending | — |
 
 #### Step 1: Dash on git + `project_state_dir()` + hydration + log; delete `state.db`/`StateDb` {#step-1}
 
@@ -412,34 +419,43 @@ the step that orphans it.
 (#dash-on-git, #worktree-hydration-spec, #log-format, #runtime-relocation)
 
 **Artifacts:**
-- New `project_state_dir(repo_root)` in `tugutil-core` ([P08]); the dash-log append path points there.
+- New `project_state_dir(repo_root)` in `tugutil-core` ([P08]) + a `tugutil state-dir` subcommand
+  that prints it; the dash-log append path points there.
 - Rewritten `run_dash_*` in `commands/dash.rs`.
 - `[tugtool.dash].post_create` field in `config.rs` + a seeded default in `init`'s `DEFAULT_CONFIG`.
 - Deleted `tugutil-core/src/state.rs` and the `impl StateDb` block in `dash.rs`.
 
 **Tasks:**
-- [ ] Add `project_state_dir(repo_root) -> PathBuf` to `tugutil-core` ([P08]): `dirs::data_dir()/`
-      `Tug/projects/<slug>`, slug = the git-root path flattened `/` → `-` (Claude's scheme).
+- [ ] Add `project_state_dir(repo_root) -> PathBuf` to `tugutil-core` ([P08]): `dirs::data_dir()`
+      (fallback `$HOME/.local/share` if `None`) `/Tug/projects/<slug>`; slug = the **main** repo
+      root path flattened `/` → `-` (`find_repo_root` resolves a worktree's `.git` to the main root).
+- [ ] Add a `tugutil state-dir` subcommand printing `project_state_dir(find_repo_root())`, for the
+      shell/host consumers in [#step-5] ([P08]).
 - [ ] Rewrite `run_dash_create` on `git worktree add` + `git config` ([P03]); drop `StateDb`.
-- [ ] On real creation only, run `[tugtool.dash].post_create` from the worktree root; hard-fail on
-      a non-zero exit ([P07], #worktree-hydration-spec). Add the field to `config.rs` and seed it
-      in `DEFAULT_CONFIG`.
-- [ ] Rewrite `run_dash_commit` to append a log line ([P04]) instead of `record_round`.
+- [ ] On real creation only, run `[tugtool.dash].post_create` from the worktree root; **on a
+      non-zero exit, remove the just-added worktree and branch, then fail** so a retry re-creates
+      clean ([P07], #worktree-hydration-spec). Add the field to `config.rs` and seed `DEFAULT_CONFIG`.
+- [ ] Rewrite `run_dash_commit` to append a log line ([P04]) instead of `record_round`; **trim
+      `DashRoundMeta`** to the fields the log uses (`instruction`, `summary`) — drop the now-unused
+      `files_created`/`files_modified` rather than accept and discard them.
 - [ ] Rewrite `run_dash_join` / `run_dash_release` to read base from git config; drop status flip.
-- [ ] Rewrite `run_dash_list` / `run_dash_show` to read git ([P02]).
+- [ ] Rewrite `run_dash_list` / `run_dash_show` to read git ([P02]); **drop the now-vestigial
+      `list --all` / `show --all-rounds` flags** (no DB graveyard left to show).
 - [ ] Delete `state.rs` + the `impl crate::state::StateDb` block; drop `state` from `lib.rs`;
-      keep `DashStatus`/`DashInfo`/`DashRound` only if a command still needs them as plain structs.
+      keep `DashStatus`/`DashInfo` only if a command still needs them as plain structs.
 - [ ] Prune `TugError::StateDb*` variants; delete the on-disk `.tugtool/state.db*`.
 
 **Tests:**
 - [ ] Update `tugutil-core/tests/integration_tests.rs` dash cases to assert git state + log lines.
-- [ ] Add a case: `create` in a repo whose config declares a `post_create` echo command runs it
-      once on creation and not on idempotent resume.
+- [ ] `post_create` runs once on creation, **not** on idempotent resume; and on a **failing** hook,
+      leaves **no** worktree/branch behind (rollback) so a re-run succeeds.
+- [ ] Explicit `join` (squash-merge to base, base read from git config, worktree+branch removed) and
+      `release` (worktree+branch removed, `released` log line) cases.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugutil -p tugutil-core`
 - [ ] Manual: `create → commit → show → join` on a throwaway dash; confirm the `tugdash(...)`
-      commit on base, the dash-log lines under `project_state_dir()`, and a hydrated
+      commit on base, the dash-log lines under `tugutil state-dir`, and a hydrated
       `tugdeck/node_modules`.
 
 ---
@@ -493,46 +509,75 @@ the step that orphans it.
 
 ---
 
-#### Step 4: Evict runtime state from the repo + register reads + cleanup {#step-4}
+#### Step 4: tugutil cleanup — deps, config fields, `init` fossil, orphans {#step-4}
 
 **Depends on:** #step-1, #step-3
 
-**Commit:** `chore(tug): move runtime state to project_state_dir, register reads, drop dead deps`
+**Commit:** `chore(tugutil): drop dead deps, validation config, init fossil, and orphans`
 
-**References:** [P08] project-state-dir, [P09] config-stays, [P10] additional-directories,
-[P04] flat-log, (#runtime-relocation, #error-model)
+**References:** [P07] worktree-hydration, [P09] config-stays, (#error-model)
 
 **Tasks:**
-- [ ] Relocate the `code-sign-fingerprint` sentinel from `.tugtool/` to `project_state_dir()` and
-      update its `Justfile` references ([P08]).
-- [ ] Register reads ([P10]): in the host's Claude-session launch path (`tugcode`/`tugcast`),
-      ensure `dirs::data_dir()/Tug` is present in `additionalDirectories` (one entry covers all
-      per-project subdirs). Computed at runtime via `dirs` — no committed absolute paths.
-- [ ] `.gitignore` — drop the now-relocated `.tugtool/state.db*` and `.tugtool/code-sign-fingerprint`
-      entries; the dash-log is no longer under `.tugtool/`. Confirm the repo's `.tugtool/` holds only
-      `config.toml` (tracked) ([P09]).
 - [ ] `tugutil-core/Cargo.toml` — drop `rusqlite` + `sha2`; delete the `dependency_smoke_tests`
       module in `lib.rs` (their only users).
 - [ ] `config.rs` + `DEFAULT_CONFIG` — remove the now-dead validation fields (`validation_level`,
       `show_info`, and `naming.name_pattern` if it served only validation — confirm consumers
       first). `[tugtool.dash].post_create` ([P07]) becomes config.toml's primary content.
+- [ ] **Update the committed `.tugtool/config.toml`** itself (not just the template): drop the
+      validation fields, add `[tugtool.dash].post_create`. (serde ignores unknown keys, so stale
+      checkouts still parse — but the repo's own config should be correct.)
 - [ ] `commands/init.rs` — stop creating `tugplan-implementation-log.md`; remove the committed
       fossil file. `init` still creates `.tugtool/` + `config.toml` (needed by `resolve`).
 - [ ] Remove the orphaned, tracked `.tugtool/session-memory.md` (confirm zero references first).
 
 **Tests:**
 - [ ] Update `init` integration cases that asserted the log file is created.
-- [ ] Add a case: `project_state_dir(repo_root)` returns the `dirs::data_dir()/Tug/projects/<slug>`
-      path with the expected flattened slug for a known repo root.
+- [ ] `project_state_dir(repo_root)` returns the expected `…/Tug/projects/<slug>` path (flattened
+      slug) for a known repo root; `tugutil state-dir` prints it.
 
 **Checkpoint:**
 - [ ] `cargo build` + `cargo nextest run` clean under `-D warnings`.
-- [ ] In a Tug-launched session, a `Read` of a file under `project_state_dir()` completes with no
-      permission prompt ([P10]); the repo's `.tugtool/` contains only `config.toml`.
 
 ---
 
-#### Step 5: De-ceremony the skills + skeleton/docs {#step-5}
+#### Step 5: Relocate runtime state out of the repo + register Claude reads {#step-5}
+
+**Depends on:** #step-1, #step-4
+
+**Commit:** `feat(tug): relocate runtime state to project_state_dir, register reads`
+
+**References:** [P08] project-state-dir, [P09] config-stays, [P10] additional-directories,
+(#runtime-relocation, #p10-additional-directories)
+
+**Investigate first (spike):**
+- [ ] Locate **how the host launches Claude Code** and grants directory access: does `tugcode`/
+      `tugcast` spawn `claude` with `--add-dir`, or write `additionalDirectories` into a settings
+      file? Find the launch site and confirm the lever before wiring; record the finding in [P10].
+
+**Tasks:**
+- [ ] Relocate the `code-sign-fingerprint` sentinel from `.tugtool/` to the path printed by
+      `tugutil state-dir`; update the `Justfile` to resolve it via the subcommand — **no hardcoded
+      OS path, no slug re-derived in shell** ([P08]).
+- [ ] Wire the registration per the spike: ensure `dirs::data_dir()/Tug` (the parent — one entry
+      covers every per-project subdir) is added to the Claude session's allowed read roots ([P10]).
+- [ ] `.gitignore` — drop the now-relocated `.tugtool/state.db*` and `.tugtool/code-sign-fingerprint`
+      entries (the dash-log was never under `.tugtool/`). Confirm `.tugtool/` holds only `config.toml`
+      (tracked) ([P09]).
+
+**Tests:**
+- [ ] The `Justfile` code-signing recipe resolves the sentinel via `tugutil state-dir` and
+      round-trips (write → read → clear) at the relocated path.
+
+**Checkpoint:**
+- [ ] `cargo build` + `cargo nextest run` clean under `-D warnings`.
+- [ ] **Verify registration by inspecting the launch artifact** (the `--add-dir` argv or the
+      settings `additionalDirectories` entry), **not** by observing "no prompt" — a permissive
+      session passes that check with no registration at all. Then, in a **default**-permission
+      session, a `Read` under `tugutil state-dir` completes without a prompt ([P10]).
+
+---
+
+#### Step 6: De-ceremony the skills + skeleton/docs {#step-6}
 
 **Depends on:** #step-1, #step-2, #step-3
 
@@ -560,25 +605,25 @@ the step that orphans it.
 
 ---
 
-#### Step 6: Integration checkpoint {#step-6}
+#### Step 7: Integration checkpoint {#step-7}
 
-**Depends on:** #step-1, #step-2, #step-3, #step-4, #step-5
+**Depends on:** #step-1, #step-2, #step-3, #step-4, #step-5, #step-6
 
 **Commit:** `N/A (verification only)`
 
 **References:** (#success-criteria)
 
 **Tasks:**
-- [ ] Verify the four prior code steps work together: a clean dash lifecycle with no `state.db`.
+- [ ] Verify the prior code steps work together: a clean dash lifecycle with no `state.db`.
 
 **Tests:**
 - [ ] `cargo build` + `cargo nextest run` clean under `-D warnings` across the whole workspace.
 
 **Checkpoint:**
 - [ ] `rg 'StateDb|parse_tugplan|validate_tugplan|state\.db'` → zero live hits (archive excepted).
-- [ ] Manual end-to-end `dash` cycle confirms the log (under `project_state_dir()`) + base commit;
-      the repo's `.tugtool/` holds only `config.toml`; a Claude `Read` under `project_state_dir()`
-      does not prompt.
+- [ ] Manual end-to-end `dash` cycle confirms the log (under `tugutil state-dir`) + base commit;
+      the repo's `.tugtool/` holds only `config.toml`; in a default-permission session a Claude
+      `Read` under `tugutil state-dir` does not prompt.
 
 ---
 
@@ -599,8 +644,8 @@ on git + a flat log, and the skills act on skeleton-structured plans directly.
 
 | Checkpoint | Verification |
 |------------|--------------|
-| No live references to removed symbols | `rg` sweep ([#step-6]) |
-| Green workspace | `cargo nextest run` ([#step-6]) |
+| No live references to removed symbols | `rg` sweep ([#step-7]) |
+| Green workspace | `cargo nextest run` ([#step-7]) |
 | Skeleton preserved | diff of `devise-skeleton.md` shows only validation-ref removals |
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -616,7 +661,7 @@ on git + a flat log, and the skills act on skeleton-structured plans directly.
 ### Runtime State Relocation {#runtime-relocation}
 
 > **Required for phase close.** Per-user runtime state leaves the repo. The decisions below are
-> implemented by [#step-1] (`project_state_dir()` + the dash-log) and [#step-4] (the sentinel
+> implemented by [#step-1] (`project_state_dir()` + the dash-log) and [#step-5] (the sentinel
 > relocation, the `additionalDirectories` registration, and confirming `.tugtool/` = config only).
 
 #### Context {#followon-context}
@@ -652,6 +697,12 @@ absolute path (git root) flattened by replacing each `/` with `-`. For this repo
 **Implications:**
 - The function is the single source of the path (the indirection the design calls for); it derives
   the slug from `repo_root`, so it is stable across runs for the same checkout path.
+- `repo_root` is the **main** repo root — `find_repo_root` resolves a worktree's `.git` *file* to
+  it — so every `tugdash/` worktree of a project shares **one** state dir, not one per worktree.
+- `dirs::data_dir()` returns `Option`; if `None` (rare), fall back to `$HOME/.local/share`
+  (mirroring `tugcore::instance_data_dir_for`) so the function always yields a real `PathBuf`.
+- A thin `tugutil state-dir` subcommand prints `project_state_dir(find_repo_root())`, so shell
+  consumers (the `Justfile`) and the host resolve the path without re-deriving the slug.
 - **Rejected:** `~/.claude/projects/<…>` as the *parent* — Claude-locked and a layering inversion
   (a general CLI writing into Claude Code's data dir; breaks when `tugutil` runs outside Claude).
   We borrow Claude's *naming scheme*, not its *directory*.
@@ -686,6 +737,10 @@ reads of relocated state and side-command outputs need no prompt.
 
 **Implications:**
 - Registration is a Tug (host) responsibility, wired once; document it for the side-command feature.
+- The exact lever — `claude --add-dir` at spawn vs. an `additionalDirectories` settings write — is
+  unknown until the [#step-5] spike locates the host's Claude-launch site. **Verify it by inspecting
+  the launch artifact** (the argv or the settings entry), not by observing "no prompt": a permissive
+  session passes that check even with no registration at all.
 
 #### What moves, what stays {#followon-moves}
 
@@ -701,7 +756,7 @@ reads of relocated state and side-command outputs need no prompt.
 - `project_state_dir(repo_root)` + the dash-log writing there → **[#step-1]**.
 - `code-sign-fingerprint` sentinel relocation (+ `Justfile`), the `additionalDirectories`
   registration ([P10]), `.gitignore` cleanup, and confirming `.tugtool/` = `config.toml` only
-  → **[#step-4]**.
+  → **[#step-5]**.
 
 #### Resolved {#followon-open}
 
