@@ -511,8 +511,8 @@ pub fn parse_tugplan(content: &str) -> Result<TugPlan, TugError> {
 
             // Track the Plan Metadata section so metadata-table detection is scoped
             // to it. Any other section heading leaves it.
-            in_plan_metadata_section = header_anchor == Some("plan-metadata")
-                || header_lower.contains("metadata");
+            in_plan_metadata_section =
+                header_anchor == Some("plan-metadata") || header_lower.contains("metadata");
 
             if header_lower.contains("tasks:") || header_lower == "tasks" {
                 current_section = CurrentSection::Tasks;

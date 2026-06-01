@@ -58,10 +58,7 @@ fn make_dirty_repo() -> TempDir {
     temp
 }
 
-fn file_by_path<'a>(
-    resp: &'a serde_json::Value,
-    path: &str,
-) -> &'a serde_json::Value {
+fn file_by_path<'a>(resp: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
     resp["files"]
         .as_array()
         .expect("files array")
@@ -93,7 +90,9 @@ async fn git_diff_query_returns_project_dir_diff() {
     assert_eq!(resp["request_id"], "rt-1");
     assert_eq!(resp["base"], "HEAD");
     assert!(
-        resp["workspace_key"].as_str().is_some_and(|k| !k.is_empty()),
+        resp["workspace_key"]
+            .as_str()
+            .is_some_and(|k| !k.is_empty()),
         "response must carry the resolved workspace_key",
     );
     assert_eq!(

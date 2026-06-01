@@ -222,7 +222,11 @@ async fn capture_all_probes() {
     // fixtures from a subset would corrupt the manifest/schema (missing
     // probes). Print the captured event types per probe and return without
     // touching the committed golden.
-    if std::env::var("TUG_PROBE_FILTER").ok().filter(|s| !s.is_empty()).is_some() {
+    if std::env::var("TUG_PROBE_FILTER")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .is_some()
+    {
         println!("--- TUG_PROBE_FILTER active: inspection only, NOT writing fixtures ---");
         for probe in &captures {
             let types: Vec<&str> = probe
@@ -230,13 +234,19 @@ async fn capture_all_probes() {
                 .iter()
                 .filter_map(|e| e.get("type").and_then(|v| v.as_str()))
                 .collect();
-            println!("  {} [{}]:\n    {}", probe.name, probe.events.len(), types.join(", "));
+            println!(
+                "  {} [{}]:\n    {}",
+                probe.name,
+                probe.events.len(),
+                types.join(", ")
+            );
             // Dump the rewind-relevant payloads so a filtered run confirms
             // semantics (canRewind / newSessionId / fork session id), not just
             // that the event types appeared.
             for e in &probe.events {
                 match e.get("type").and_then(|v| v.as_str()) {
-                    Some("rewind_result") | Some("rewind_preview_result")
+                    Some("rewind_result")
+                    | Some("rewind_preview_result")
                     | Some("session_init") => {
                         println!("      → {e}");
                     }

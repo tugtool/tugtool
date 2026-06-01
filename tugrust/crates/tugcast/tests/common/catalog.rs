@@ -688,9 +688,7 @@ pub async fn execute_probe(
                     .await
                 {
                     Ok(payload) => {
-                        if let Some(uuid) =
-                            payload.get("promptUuid").and_then(|v| v.as_str())
-                        {
+                        if let Some(uuid) = payload.get("promptUuid").and_then(|v| v.as_str()) {
                             captured_prompt_uuid = Some(uuid.to_string());
                         }
                     }
@@ -698,9 +696,7 @@ pub async fn execute_probe(
                         return CapturedProbe {
                             name: probe.name.to_string(),
                             events: Vec::new(),
-                            status: ProbeStatus::Failed(format!(
-                                "capture_anchor failed: {e}"
-                            )),
+                            status: ProbeStatus::Failed(format!("capture_anchor failed: {e}")),
                             runtime_ms: start.elapsed().as_millis(),
                         };
                     }
@@ -724,9 +720,7 @@ pub async fn execute_probe(
                     return CapturedProbe {
                         name: probe.name.to_string(),
                         events: Vec::new(),
-                        status: ProbeStatus::Failed(format!(
-                            "consume {event_type} failed: {e}"
-                        )),
+                        status: ProbeStatus::Failed(format!("consume {event_type} failed: {e}")),
                         runtime_ms: start.elapsed().as_millis(),
                     };
                 }
@@ -1071,15 +1065,23 @@ pub async fn capture_with_stability(
     // full ~5-minute suite. `capture_all_probes` REFUSES to overwrite the
     // committed golden when a filter is active (a partial run would corrupt
     // the manifest/schema) — it captures + prints + returns. Unset → full run.
-    let filter = std::env::var("TUG_PROBE_FILTER").ok().filter(|s| !s.is_empty());
+    let filter = std::env::var("TUG_PROBE_FILTER")
+        .ok()
+        .filter(|s| !s.is_empty());
     let selected: Vec<&ProbeRecord> = match &filter {
-        Some(f) => PROBES.iter().filter(|p| p.name.contains(f.as_str())).collect(),
+        Some(f) => PROBES
+            .iter()
+            .filter(|p| p.name.contains(f.as_str()))
+            .collect(),
         None => PROBES.iter().collect(),
     };
 
     let total_probes = selected.len();
     if let Some(f) = &filter {
-        println!("[capture] TUG_PROBE_FILTER={f} → {total_probes} of {} probes", PROBES.len());
+        println!(
+            "[capture] TUG_PROBE_FILTER={f} → {total_probes} of {} probes",
+            PROBES.len()
+        );
     }
     println!(
         "[capture] starting — {total_probes} probes × {n} stability run(s) = {} total invocations",

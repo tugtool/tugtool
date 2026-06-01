@@ -13,9 +13,7 @@ use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use tugcast_core::types::{
-    FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitStatus,
-};
+use tugcast_core::types::{FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitStatus};
 use tugcast_core::{FeedId, Frame, SnapshotFeed};
 
 use super::code::splice_workspace_key;
@@ -395,7 +393,9 @@ pub fn parse_git_diff(output: &str) -> Vec<GitDiffFile> {
 
 /// Strip git's `a/` or `b/` path prefix (after a `--- `/`+++ ` marker).
 fn strip_ab_prefix(s: &str) -> &str {
-    s.strip_prefix("a/").or_else(|| s.strip_prefix("b/")).unwrap_or(s)
+    s.strip_prefix("a/")
+        .or_else(|| s.strip_prefix("b/"))
+        .unwrap_or(s)
 }
 
 /// Parse the new-side path out of a `diff --git a/<old> b/<new>` header,
@@ -981,7 +981,10 @@ Binary files a/img.png and b/img.png differ
         assert_eq!(f.removed, 1);
         assert!(!f.binary);
         // The unified chunk is preserved verbatim (preamble through hunks).
-        assert!(f.unified.starts_with("diff --git a/src/main.rs b/src/main.rs"));
+        assert!(
+            f.unified
+                .starts_with("diff --git a/src/main.rs b/src/main.rs")
+        );
         assert!(f.unified.contains("@@ -1,3 +1,4 @@"));
     }
 
@@ -1101,8 +1104,7 @@ Binary files a/img.png and b/img.png differ
         fs::write(repo.join("new.txt"), "fresh line\n").unwrap();
         git_in(&repo, &["add", "-A"]).await;
 
-        let snapshot =
-            build_git_diff_snapshot(&repo, "req-42".to_string(), "ws-key").await;
+        let snapshot = build_git_diff_snapshot(&repo, "req-42".to_string(), "ws-key").await;
 
         assert_eq!(snapshot.request_id, "req-42");
         assert_eq!(snapshot.workspace_key, "ws-key");
@@ -1128,8 +1130,7 @@ Binary files a/img.png and b/img.png differ
     #[tokio::test]
     async fn test_build_git_diff_snapshot_clean_tree_is_empty() {
         let temp = init_diff_fixture_repo().await;
-        let snapshot =
-            build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws").await;
+        let snapshot = build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws").await;
         assert!(!snapshot.no_repo, "a real repo is not flagged no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());
@@ -1141,8 +1142,7 @@ Binary files a/img.png and b/img.png differ
     async fn test_build_git_diff_snapshot_non_repo_flags_no_repo() {
         // A plain dir (never `git init`ed) is flagged no_repo, not "clean".
         let temp = TempDir::new().unwrap();
-        let snapshot =
-            build_git_diff_snapshot(temp.path(), "req-norepo".to_string(), "ws").await;
+        let snapshot = build_git_diff_snapshot(temp.path(), "req-norepo".to_string(), "ws").await;
         assert!(snapshot.no_repo, "a non-git dir must set no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());

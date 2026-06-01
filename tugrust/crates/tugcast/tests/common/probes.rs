@@ -1013,7 +1013,10 @@ pub static PROBES: &[ProbeRecord] = &[
                 event_type: "rewind_preview_result",
                 max_secs: 30,
             },
-            ProbeMsg::SessionRewind { scope: "code", fork: None },
+            ProbeMsg::SessionRewind {
+                scope: "code",
+                fork: None,
+            },
             ProbeMsg::WaitForEvent {
                 event_type: "rewind_result",
                 max_secs: 30,

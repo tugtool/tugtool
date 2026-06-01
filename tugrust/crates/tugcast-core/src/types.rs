@@ -292,7 +292,10 @@ mod tests {
             unified: "@@ -1 +1,3 @@\n a\n+b\n+c\n".to_string(),
         };
         let json = serde_json::to_string(&file).unwrap();
-        assert!(!json.contains("old_path"), "absent old_path must be omitted");
+        assert!(
+            !json.contains("old_path"),
+            "absent old_path must be omitted"
+        );
         let decoded: GitDiffFile = serde_json::from_str(&json).unwrap();
         assert_eq!(file, decoded);
     }
