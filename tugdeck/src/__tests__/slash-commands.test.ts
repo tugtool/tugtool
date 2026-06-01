@@ -41,6 +41,8 @@ describe("matchLocalSlashCommand", () => {
       "copy",
       "help",
       "clear",
+      "export",
+      "add-dir",
     ]);
   });
 
@@ -91,6 +93,8 @@ describe("local-command completion + merge", () => {
       "copy",
       "help",
       "clear",
+      "export",
+      "add-dir",
     ]);
     expect(items[0].atom).toEqual({
       kind: "atom",
@@ -117,6 +121,8 @@ describe("local-command completion + merge", () => {
       "copy",
       "help",
       "clear",
+      "export",
+      "add-dir",
     ]);
     // The gate is consulted on substring queries too.
     expect(gated("rew").map((i) => i.label)).toEqual([]);
@@ -138,12 +144,14 @@ describe("local-command completion + merge", () => {
     // `permissions` appears once (local wins the dedup); the popup ORDER is
     // alphabetical regardless of registry / claude-catalog order.
     expect(labels(merged, "")).toEqual([
+      "add-dir",
       "agents",
       "clear",
       "commit",
       "context",
       "copy",
       "diff",
+      "export",
       "help",
       "hooks",
       "memory",

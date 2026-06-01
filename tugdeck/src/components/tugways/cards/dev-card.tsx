@@ -117,6 +117,13 @@ import {
   sendCloseSessionKeepingBinding,
   sendSpawnSession,
 } from "@/lib/session-lifecycle";
+import { exportSession, isExportAvailable } from "@/lib/os-export";
+import {
+  exportBaseName,
+  transcriptToJsonl,
+  transcriptToMarkdown,
+} from "@/lib/transcript-export";
+import { isPathPickerAvailable, pickPath } from "@/lib/native-path-picker";
 import { TugProgressIndicator } from "../tug-progress-indicator";
 import {
   devRestoreRegistry,
@@ -2783,6 +2790,52 @@ export function DevCardBody({
         "new",
       );
       sendCloseSessionKeepingBinding(connection, cardId, binding.tugSessionId);
+    },
+    // Export the committed transcript ([#step-13c]). The content (both
+    // Markdown + JSON Lines renderings) is built client-side from the
+    // transcript we already hold; the host `NSSavePanel` owns format choice +
+    // file write. Read live at click time ([L07]). Outcomes surface in this
+    // card's pane bulletin; a cancel is silent.
+    export: () => {
+      const notify = paneBulletinRef.current;
+      const transcript = codeSessionStore.getSnapshot().transcript;
+      if (transcript.length === 0) {
+        notify?.caution("Nothing to export yet");
+        return;
+      }
+      if (!isExportAvailable()) {
+        notify?.caution("Export needs the Tug app");
+        return;
+      }
+      const sessionId =
+        cardSessionBindingStore.getBinding(cardId)?.tugSessionId ?? null;
+      void exportSession({
+        baseName: exportBaseName(sessionId),
+        markdown: transcriptToMarkdown(transcript),
+        jsonl: transcriptToJsonl(transcript),
+      }).then((result) => {
+        if (result === "saved") notify?.success("Session exported");
+        else if (result === "unavailable") notify?.caution("Export needs the Tug app");
+        // "canceled" → no bulletin.
+      });
+    },
+    // Add a working directory ([#step-13c]). The native directory picker
+    // supplies the path; `addDirectory` sends an `add_directory` CODE_INPUT
+    // frame and tugcode respawns claude with the dir in `--add-dir` (+
+    // `--resume`) — claude has no live add-directory verb over the bridge, so
+    // it applies on respawn like an effort change. No-op on cancel, or when the
+    // picker is unavailable.
+    "add-dir": () => {
+      const notify = paneBulletinRef.current;
+      if (!isPathPickerAvailable()) {
+        notify?.caution("Directory picker needs the Tug app");
+        return;
+      }
+      void pickPath("directory").then((dir) => {
+        if (dir === null) return; // canceled
+        codeSessionStore.addDirectory(dir);
+        notify?.success("Working directory added");
+      });
     },
   };
 

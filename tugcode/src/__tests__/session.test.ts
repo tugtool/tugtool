@@ -181,6 +181,25 @@ describe("buildClaudeArgs", () => {
     expect(args[idx + 1]).toBe("abc");
   });
 
+  test("emits a --add-dir for each additional directory (/add-dir)", () => {
+    const args = buildClaudeArgs({
+      ...defaultConfig,
+      additionalDirectories: ["/Users/me/Desktop/a", "/Users/me/b"],
+    });
+    // The Tug data root --add-dir is always present; the two extra dirs add two
+    // more --add-dir pairs.
+    const addDirCount = args.filter((a) => a === "--add-dir").length;
+    expect(addDirCount).toBe(3);
+    expect(args).toContain("/Users/me/Desktop/a");
+    expect(args).toContain("/Users/me/b");
+  });
+
+  test("omits extra --add-dir when no additional directories", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    // Only the Tug data root.
+    expect(args.filter((a) => a === "--add-dir").length).toBe(1);
+  });
+
   test("with continue: true includes --continue", () => {
     const args = buildClaudeArgs({ ...defaultConfig, continue: true });
     expect(args).toContain("--continue");

@@ -929,7 +929,7 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 13.B.1.B | `/copy` adoption | ✅ DONE | `lastAssistantCopyText` selector + `/copy` handler → green `TugPaneBulletin` "Most recent message copied" above Z2; provider wraps header+transcript (`overflow:hidden`, no scrollbar). Cmd+Shift+C NOT bound (taken by `SELECT_ROUTE`) — slash-only |
 | 13.B.2 | `/help` sheet | ✅ DONE | two-tab `TugSheet` (General: shortcuts + unsupported-doc link; Commands: built-in list). `projectHelpCommands` (`help-content.ts`): `local`-category, hidden filtered, help-text-required; skills/agents left to popup + `/agents`. Custom tab dropped by decision. Non-interactive `TugListView`; `permission-rules-editor` tab idiom |
 | 13.B.3 | `/clear` (mini spike → implement) | ✅ DONE | `/clear` = fresh session in card (reuse spawn path); old subprocess closed, stays resumable. Core fix: `cardServicesStore._reconcile` now rebuilds on `tugSessionId` change (also repairs latent `/resume`-different + resume-"New session" gap). `sendCloseSessionKeepingBinding`; no picker flash |
-| 13.C | Host/IPC bridge: `/export` `/add-dir` | ▶ TODO | `NSSavePanel` export (JSONL/md) + `NSOpenPanel` dir picker; `/add-dir` punt-with-flag if no control verb |
+| 13.C | Host/IPC bridge: `/export` `/add-dir` | ✅ DONE | `/export`: `transcript-export.ts` (md+jsonl) → `os-export.ts` → new `exportSession` `NSSavePanel` host bridge w/ Format popup. `/add-dir`: reuse `choosePath` `NSOpenPanel` → real `add_directory` CODE_INPUT verb (claude rejects `/add-dir` headless) → tugcode respawns w/ `--add-dir`+`--resume` (mirrors effort; no Rust change). Swift `BUILD SUCCEEDED`; tugcode recompiled; needs `just app-debug` to take effect |
 | 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
 | 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
@@ -2440,23 +2440,41 @@ in-sheet `TugTabBar` idiom; the command list is a non-interactive `TugListView`.
 
 **References:** [D23] local dispatch, host `openPath` bridge precedent ([#step-12a])
 
-Both need a **new host/IPC affordance** beyond the client — that's what groups
-them.
+✅ **DONE.** Both need a host/IPC affordance beyond the client — that's what
+groups them.
 
-- **`/export`** — OS save dialog with a format picker (JSONL / markdown). Source data is already in our journal/transcript, so the export *content* is client-side; the **save panel** is a new macOS host bridge, sibling of the `openPath` handler [#step-12a] added (`NSSavePanel`).
-- **`/add-dir`** — directory picker (`NSOpenPanel`, choose-directories) → control message adding the directory to the session. There is no `add_directory` control verb today; **punt-with-flag** if the IPC isn't there yet (build the picker, flag the missing verb as a sub-task) rather than blocking the sub-step.
+- **`/export`** — fully implemented. The export *content* (both Markdown and
+  JSON Lines renderings) is built client-side from the committed transcript
+  (`transcript-export.ts`); the host owns the save panel + file write. The new
+  `exportSession` host bridge (`MainWindow.swift`, sibling of `openPath`) runs an
+  `NSSavePanel` with a **File Format popup** (Markdown / JSON Lines) and writes
+  the selected format's content. `os-export.ts` posts both renderings + a default
+  base name and resolves `saved` / `canceled` / `unavailable`; outcomes surface
+  in the card's pane bulletin.
+- **`/add-dir`** — the native directory picker is reused (`pickPath("directory")`
+  via the existing `choosePath` host bridge); the chosen path is added through a
+  new **`add_directory` CODE_INPUT verb**. (The first cut tried handing the path
+  to claude's own `/add-dir` as a pass-through turn — claude rejects it headless:
+  *"`/add-dir` isn't available in this environment."* So a real verb was built.)
+  Mechanism mirrors `effort_change`: `code-session-store.addDirectory` →
+  CODE_INPUT (tugcast relays it generically by session id — no Rust change) →
+  tugcode `handleAddDirectory` appends the dir to its `additionalDirectories`
+  and respawns claude with the dir in `--add-dir` (+ `--resume`), since claude
+  has no live add-directory control verb. The dir survives resume / fork /
+  continue (re-applied by `buildClaudeArgs` on every spawn).
 
 **Artifacts:**
-- New (host): `NSSavePanel` (export) + `NSOpenPanel` directory (add-dir) cases in `MainWindow.swift`, registered + cleaned up alongside `openPath`.
-- New (tugdeck): an `os-export` / `os-pick-directory` lib (sibling of `os-open.ts`); export formatter (JSONL + markdown) over the transcript/journal.
-- Wiring: register `/export`, `/add-dir` in the registry + `RUN_SLASH_COMMAND` handlers. `/add-dir` → control verb (or flagged stub).
+- ✅ Host: `exportSession` `NSSavePanel` case in `MainWindow.swift` (registered + cleaned up alongside `openPath`); `/add-dir` reuses the existing `choosePath` `NSOpenPanel`.
+- ✅ tugdeck: `os-export.ts` (save-panel bridge) + `transcript-export.ts` (Markdown + JSONL formatter); `/add-dir` reuses `native-path-picker.ts`; `code-session-store.addDirectory` + the `add_directory` `InboundMessage`.
+- ✅ tugcode: `add_directory` type + guard + `isInboundMessage` allowlist (`types.ts`); `main.ts` handler; `session.ts` `handleAddDirectory` + `additionalDirectories` field threaded through `buildClaudeArgs` (re-applied on every spawn). No tugcast/Rust change — CODE_INPUT is relayed generically.
+- ✅ Wiring: registered `/export`, `/add-dir` in the registry + `RUN_SLASH_COMMAND` surfaces in `dev-card.tsx`.
 
 **Tests:**
-- [ ] Pure-logic: export formatter produces well-formed JSONL and markdown for a sample transcript.
-- [ ] Real-app: `/export` opens the save dialog (format picker present); `/add-dir` opens the directory picker (or the flagged-punt is documented if the verb is absent).
+- ✅ Pure-logic: `transcript-export.test.ts` (JSONL one parseable object per Message in order; Markdown prompt+response under headings; empty + filename cases); `session.test.ts` gains `buildClaudeArgs` `--add-dir`-per-directory cases; `slash-commands.test.ts` pins cover `/export` + `/add-dir`.
+- ⏭️ Real-app: native `NSSavePanel` / `NSOpenPanel` are OS-modal windows (not in the WebView DOM), so they can't be driven by an in-DOM app-test. Verify live after a rebuild.
 
 **Checkpoint:**
-- [ ] `just app-test export-add-dir`
+- ✅ tugdeck + tugcode `tsc` clean; tugdeck suite 3275 pass, tugcode suite 549 pass; Swift `BUILD SUCCEEDED`; tugcode binary recompiled. Needs `just app-debug` to take effect live (Swift host bridge + bun-compiled tugcode have no HMR).
 
 ---
 

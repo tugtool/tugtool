@@ -11,6 +11,7 @@ import {
   isPermissionMode,
   isModelChange,
   isEffortChange,
+  isAddDirectory,
   isSessionCommand,
   isStopTask,
   isRequestReplay,
@@ -364,6 +365,20 @@ async function main() {
         writeLine({
           type: "error",
           message: `Effort change failed: ${err}`,
+          recoverable: true,
+          ipc_version: 2,
+        });
+      });
+    } else if (isAddDirectory(msg)) {
+      // Add a working directory ([#step-13c]). Like effort, claude has no live
+      // add-directory control verb over the bridge — respawn-with-resume so the
+      // new `--add-dir` applies. Fire-and-forget for the same reason: awaiting
+      // would block the IPC loop while killAndCleanup drains the old process.
+      sessionManager?.handleAddDirectory(msg.directory).catch((err) => {
+        console.error("Add directory failed:", err);
+        writeLine({
+          type: "error",
+          message: `Add directory failed: ${err}`,
           recoverable: true,
           ipc_version: 2,
         });

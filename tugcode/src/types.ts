@@ -121,6 +121,18 @@ export interface EffortChange {
   effort: string;
 }
 
+/**
+ * Inbound `add_directory` verb ([#step-13c]). Adds a working directory to the
+ * session. Like `effort_change`, claude exposes no live add-directory control
+ * subtype over the stream-json bridge, so tugcode applies it by respawning
+ * claude with the dir appended to `--add-dir` (+ `--resume`), preserving the
+ * transcript via tugcast's resume/replay.
+ */
+export interface AddDirectory {
+  type: "add_directory";
+  directory: string;
+}
+
 export interface StopTask {
   type: "stop_task";
   task_id: string;
@@ -224,6 +236,7 @@ export type InboundMessage =
   | PermissionModeMessage
   | ModelChange
   | EffortChange
+  | AddDirectory
   | SessionCommand
   | StopTask
   | RequestReplay
@@ -1193,6 +1206,7 @@ export function isInboundMessage(msg: unknown): msg is InboundMessage {
     typed.type === "permission_mode" ||
     typed.type === "model_change" ||
     typed.type === "effort_change" ||
+    typed.type === "add_directory" ||
     typed.type === "session_command" ||
     typed.type === "stop_task" ||
     typed.type === "request_replay" ||
@@ -1233,6 +1247,10 @@ export function isModelChange(msg: InboundMessage): msg is ModelChange {
 
 export function isEffortChange(msg: InboundMessage): msg is EffortChange {
   return msg.type === "effort_change";
+}
+
+export function isAddDirectory(msg: InboundMessage): msg is AddDirectory {
+  return msg.type === "add_directory";
 }
 
 export function isSessionCommand(msg: InboundMessage): msg is SessionCommand {

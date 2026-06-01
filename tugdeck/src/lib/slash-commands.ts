@@ -116,6 +116,14 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "clear",
     description: "Start a fresh session in this card (the current one stays resumable)",
   },
+  {
+    name: "export",
+    description: "Export the session transcript to a file (Markdown or JSON Lines)",
+  },
+  {
+    name: "add-dir",
+    description: "Add a working directory to this session",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

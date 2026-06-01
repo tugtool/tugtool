@@ -97,6 +97,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "cardList")
         contentController.add(self, name: "hmrUpdate")
         contentController.add(self, name: "openPath")
+        contentController.add(self, name: "exportSession")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -437,6 +438,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "cardList")
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
         contentController.removeScriptMessageHandler(forName: "openPath")
+        contentController.removeScriptMessageHandler(forName: "exportSession")
         bridgeCleaned = true
     }
 
@@ -449,6 +451,63 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         str.replacingOccurrences(of: "\\", with: "\\\\")
            .replacingOccurrences(of: "'", with: "\\'")
            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    /// Present the `/export` save panel ([#step-13c]) as a sheet on this
+    /// window. The accessory File Format popup selects which content
+    /// (markdown / JSON Lines) is written; the popup index — not the typed
+    /// extension — is authoritative at write time. Calls back
+    /// `onExportDone(id, "saved" | "canceled")`.
+    private func presentExportPanel(requestId: String, baseName: String,
+                                    markdown: String, jsonl: String) {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.title = "Export Session"
+        panel.nameFieldLabel = "Export As:"
+        panel.nameFieldStringValue = "\(baseName).md"
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 200, height: 25))
+        popup.addItems(withTitles: ["Markdown", "JSON Lines"])
+        popup.target = self
+        popup.action = #selector(exportFormatChanged(_:))
+
+        let label = NSTextField(labelWithString: "Format:")
+        let stack = NSStackView(views: [label, popup])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+        panel.accessoryView = stack
+
+        panel.beginSheetModal(for: self) { [weak self] response in
+            guard let self = self else { return }
+            var result = "canceled"
+            if response == .OK, let url = panel.url {
+                let content = popup.indexOfSelectedItem == 0 ? markdown : jsonl
+                do {
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                    result = "saved"
+                } catch {
+                    NSLog("MainWindow: export write failed: %@", error.localizedDescription)
+                }
+            }
+            let idArg = self.escapeForJS(requestId)
+            self.webView.evaluateJavaScript(
+                "window.__tugBridge?.onExportDone?.('\(idArg)', '\(result)')"
+            ) { _, error in
+                if let error = error {
+                    NSLog("MainWindow: evaluateJavaScript failed for exportSession: %@", error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// File Format popup changed — swap the save panel's filename extension to
+    /// match (cosmetic; the popup index drives the written content at OK time).
+    @objc private func exportFormatChanged(_ sender: NSPopUpButton) {
+        guard let panel = sender.window as? NSSavePanel else { return }
+        let ext = sender.indexOfSelectedItem == 0 ? "md" : "jsonl"
+        let base = (panel.nameFieldStringValue as NSString).deletingPathExtension
+        panel.nameFieldStringValue = "\(base).\(ext)"
     }
 
     /// Send dev mode error to frontend
@@ -722,6 +781,21 @@ extension MainWindow: WKScriptMessageHandler {
                 }
                 NSWorkspace.shared.open(url)
             }
+        case "exportSession":
+            // `/export` ([#step-13c]) — save the session transcript to a
+            // user-chosen file. The web layer builds BOTH renderings
+            // (markdown + JSON Lines) and sends them with a default base
+            // name; the host runs an NSSavePanel whose File Format popup
+            // chooses which content is written. Sibling of `openPath` (the
+            // host owns the panel + file write; the content is the web
+            // layer's). Calls back `onExportDone(id, "saved" | "canceled")`.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["id"] as? String else { return }
+            let baseName = (body["baseName"] as? String) ?? "tug-session"
+            let markdown = (body["markdown"] as? String) ?? ""
+            let jsonl = (body["jsonl"] as? String) ?? ""
+            presentExportPanel(requestId: requestId, baseName: baseName,
+                               markdown: markdown, jsonl: jsonl)
         case "frontendReady":
             revealWebView()
             bridgeDelegate?.bridgeFrontendReady()

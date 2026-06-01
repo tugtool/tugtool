@@ -743,6 +743,23 @@ export class CodeSessionStore {
   }
 
   /**
+   * Add a working directory to the session ([#step-13c]). Emits an
+   * `add_directory` CODE_INPUT frame and changes no transcript state — tugcode
+   * applies it by respawning claude with the dir in `--add-dir` + `--resume`
+   * (claude exposes no live add-directory control verb over the bridge), the
+   * same respawn-to-apply shape as {@link setEffort}. Sent directly rather than
+   * through the reducer: there is no transcript/optimistic state to track, so a
+   * reducer event would be ceremony. The `/add-dir` surface is the only caller.
+   */
+  addDirectory(directory: string): void {
+    if (this._disposed) return;
+    this.conn.send(
+      FeedId.CODE_INPUT,
+      encodeCodeInputPayload({ type: "add_directory", directory }, this.tugSessionId),
+    );
+  }
+
+  /**
    * Request the per-turn code diff-stat preview for the `/rewind` sheet
    * ([#step-7-1]/[#step-7-3]). Marks `rewindPreviews[promptUuid]` loading and
    * emits a `rewind_preview` (dry-run) CODE_INPUT frame; the result folds back

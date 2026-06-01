@@ -363,6 +363,11 @@ export type InboundMessage =
   | { type: "permission_mode"; mode: string }
   | { type: "model_change"; model: string }
   | { type: "effort_change"; effort: string }
+  // `/add-dir` ([#step-13c]). Adds a working directory to the live session;
+  // tugcode respawns claude with the dir in `--add-dir` (+ `--resume`), the
+  // same respawn-to-apply shape as `effort_change` — claude exposes no live
+  // add-directory control verb over the bridge.
+  | { type: "add_directory"; directory: string }
   | { type: "session_command"; command: "new" | "continue" | "fork" }
   | { type: "stop_task"; task_id: string }
   // `/rewind` bridge ([#step-7-1]/[#step-7-2]). `promptUuid` is claude's

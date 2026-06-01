@@ -547,6 +547,12 @@ export interface ClaudeSpawnConfig {
    * (claude exposes no current-effort value, so unset is genuinely unset).
    */
   effort?: string | null;
+  /**
+   * Extra working directories granted as claude read roots ([#step-13c]),
+   * each emitted as an additional `--add-dir`. Accumulated by `/add-dir` and
+   * re-applied on every (re)spawn, like {@link effort}.
+   */
+  additionalDirectories?: readonly string[];
   sessionId: string | null;
   continue?: boolean;
   forkSession?: boolean;
@@ -642,6 +648,12 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
     // code-sign sentinel, side-command output) for every session.
     "--add-dir", tugDataRoot(),
   ];
+
+  // Extra working directories from `/add-dir` ([#step-13c]) — one `--add-dir`
+  // each, applied on every (re)spawn so they survive resume / fork / continue.
+  for (const dir of config.additionalDirectories ?? []) {
+    args.push("--add-dir", dir);
+  }
 
   if (config.model) {
     args.push("--model", config.model);
@@ -1976,6 +1988,13 @@ export class SessionManager {
    */
   private currentEffort: string | null = null;
   /**
+   * Working directories added via `/add-dir` ([#step-13c]), in add order. Like
+   * {@link currentEffort}, tugcode owns the `--add-dir` flags and re-applies
+   * these on every (re)spawn (claude has no live add-directory control verb
+   * over the bridge). {@link handleAddDirectory} appends + respawns to apply.
+   */
+  private additionalDirectories: string[] = [];
+  /**
    * Optional `/context`-style breakdown emitter. Injected by main.ts
    * after reading the user's Claude Code settings; null in tests and
    * any caller that doesn't supply one. When present, the dispatcher
@@ -2322,6 +2341,7 @@ export class SessionManager {
       pluginDir: this.getPluginDir(),
       permissionMode: this.permissionManager.getMode(),
       effort: this.currentEffort,
+      additionalDirectories: this.additionalDirectories,
       sessionId: mode === "resume" ? id : null,
       sessionIdOverride: mode === "session-id" && id !== null ? id : undefined,
     });
@@ -5155,6 +5175,28 @@ export class SessionManager {
   }
 
   /**
+   * Add a working directory to the session ([#step-13c]). Records the dir
+   * (deduped) so every (re)spawn grants it via `--add-dir`, then respawns the
+   * live conversation with `--resume` to apply it now — the same shape as
+   * {@link handleEffortChange}, because claude exposes no live add-directory
+   * control verb over the bridge. A blank or already-present dir is a no-op
+   * (no needless respawn). Before the first spawn (no `sessionId` yet) we just
+   * record it; the initial spawn picks it up via `buildClaudeArgs`.
+   */
+  async handleAddDirectory(directory: string): Promise<void> {
+    const dir = directory.trim();
+    if (dir === "" || this.additionalDirectories.includes(dir)) return;
+    console.log(`Adding working directory: ${dir}`);
+    this.additionalDirectories.push(dir);
+
+    if (this.sessionId === null || this.sessionId === "") return;
+
+    await this.killAndCleanup();
+    this.claudeProcess = this.spawnClaude(this.sessionId, "resume");
+    this.startStdoutDrain(this.claudeProcess);
+  }
+
+  /**
    * Fork the current session: kill current process, respawn with --continue --fork-session.
    * Per D10 (#d10-session-forking).
    */
@@ -5168,6 +5210,7 @@ export class SessionManager {
       pluginDir: this.getPluginDir(),
       permissionMode: this.permissionManager.getMode(),
       effort: this.currentEffort,
+      additionalDirectories: this.additionalDirectories,
       sessionId: null,
       continue: true,
       forkSession: true,
@@ -5205,6 +5248,7 @@ export class SessionManager {
       pluginDir: this.getPluginDir(),
       permissionMode: this.permissionManager.getMode(),
       effort: this.currentEffort,
+      additionalDirectories: this.additionalDirectories,
       sessionId: null,
       continue: true,
     });
