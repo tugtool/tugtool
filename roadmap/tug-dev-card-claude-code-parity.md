@@ -597,7 +597,7 @@ The original question about model-scope (card vs session) is consequently moot �
 | `/copy` | Copy last response | 2 | **Inline button + Cmd+Shift+C** | 13 |
 | `/btw` | Out-of-history side question | 2 | **Exclude-from-history flag** per [#d11-btw-exclude-flag] | 13 |
 | `/add-dir` | Add working root | 2 | **Directory picker dialog** | 13 |
-| `/bug` | File a bug report | 2 | **External link** to GitHub issues | 13 |
+| `/bug` | File a bug report | UNSUPPORTED | **Hidden from popup** ([#step-13a]) — files feedback to Anthropic; no meaning over the bridge | 13.A |
 | `/login`, `/logout` | Auth | UNSUPPORTED | **Host-app surface** — hidden from popup | — |
 | `/vim`, `/theme`, `/color` | Terminal-only UI flags | UNSUPPORTED | **Hidden from popup** ([#d14-slash-unsupported-list]) | 13 |
 | `/usage`, `/goal`, `/team-onboarding`, `/usage-credits`, `/extra-usage`, `/heapdump`, `/reload-skills` | Subscription/admin/dev | UNSUPPORTED | **Hidden from popup; case-by-case external link in docs** | — |
@@ -924,7 +924,11 @@ Z4B cluster, left-to-right when all chips are populated. **All chips are display
 | 12.B | `/agents` Running + Library | ✅ DONE | `agents-sheet.tsx` + `agents-list.ts`; Running from transcript (pending Task), Library = built-in roster + plugin/user; sectioned TugListView, no tugcode |
 | 12.A | `/memory` list → OS editor | ✅ DONE | `memory-sheet.tsx` + `memory-destinations.ts` + `os-open.ts` + host `openPath` handler (NSWorkspace); rebuild host to exercise live |
 | 12.C | `/hooks` read-only accordion | ✅ DONE | `hooks-sheet.tsx` + `hooks-inventory-store.ts` + tugcode `hooks-inventory.ts`; request/response, merges settings.json scopes; rebuild tugcode to exercise live |
-| 13 | Slash filtering + mappings (`/clear` `/help` `/export` `/copy` `/btw` `/add-dir` `/rename` `/bug`) | ▶ TODO | |
+| 13.A | Slash-popup filtering + unsupported doc | ▶ TODO | `slash-supported.ts` three-tier classifier + popup filter + submit blocklist + `dev-card-unsupported-slash-commands.md` (`/bug` hidden) |
+| 13.B | Pure-client: `/copy` `/help` `/clear` | ▶ TODO | Cmd+Shift+C copy; `help-tabbed-sheet.tsx`; `/clear` = new-session-in-card (confirm semantics, transcript stays per [L23]) |
+| 13.C | Host/IPC bridge: `/export` `/add-dir` | ▶ TODO | `NSSavePanel` export (JSONL/md) + `NSOpenPanel` dir picker; `/add-dir` punt-with-flag if no control verb |
+| 13.D | `/rename` cross-layer session name | ▶ TODO | tugcast ledger `name TEXT` + `rename_session` verb + Z4B chip + chooser row-title |
+| 13.E | `/btw` exclude-from-history | ▶ TODO | probe → `UserMessage.metadata` → tugbank filter → transcript hide → `/btw <text>` handler |
 | 14 | Phase B integration checkpoint | ▶ TODO | verification only |
 | 15 | `control_request_forward` approval UI | ✅ DONE | `PermissionDialog` (`dev-permission-dialog`) handles tool approval — Q-C |
 | 16 | `api_retry` banner | ▶ TODO | retargeted: card-level `TugPaneBanner` (via `deriveDevCardBannerSpec`), NOT a Z4B chip |
@@ -2170,61 +2174,178 @@ builder, mirroring `skills-inventory.ts`.
 
 ---
 
-#### Step 13: Slash-popup filtering + `/clear`, `/help`, `/export`, `/copy`, `/btw`, `/add-dir`, `/rename`, `/bug` mapping {#step-13}
+#### Step 13: Slash-popup filtering + UI-affordance command mappings {#step-13}
 
 **Depends on:** #step-1c, #step-5, #step-6
 
-**Commit:** `feat(dev-card): slash-popup filtering + map UI-affordance slash commands`
+In stream-json / print mode claude has **no interactive UI**, so none of these
+commands survive as pass-throughs — each is either a Tug-local reimplementation
+or a cross-layer feature. [D14]'s allowlist sorts every command into three
+tiers — (1) **pass-through** (`prompt`/skill commands, sent to claude verbatim);
+(2) **local with a Tug surface** ([D23] registry); (3) **hidden** — and building
+that filter is the spine of this step; everything else registers into it. Split
+into **13.A–13.E**, grouped by where the work lives, mirroring [#step-12].
 
-**References:** [D11] btw exclude flag, [D14] unsupported-list, [D23] local slash-command dispatch, [D16] clear+help supported, [D15] overlays, [#l02-slash-cmd-audit] (`/rename` cheap-win), (#slash-cmd-inventory)
+**`/bug` is hidden (tier 3).** In the terminal it files feedback to Anthropic;
+over the bridge that has no meaning. It joins `/vim`, `/theme`, `/color`,
+`/mcp`, `/quit`, `/login`/`/logout`, `/usage`, … in the unsupported doc — no
+mapping, absent from the popup. The remaining seven map to surfaces.
+
+**Order:** 13.A (filter spine) → 13.B (pure-client) → 13.C (host/IPC bridge) →
+13.D (`/rename`) → 13.E (`/btw`). 13.A is foundational (13.B's `/help` renders
+the allowlist-filtered command list); the rest are independent after it.
+
+**References (whole step):** [D11] btw exclude flag, [D14] unsupported-list,
+[D23] local slash-command dispatch, [D16] clear+help supported, [D15] overlays,
+[#l02-slash-cmd-audit] (`/rename` cheap-win), (#slash-cmd-inventory)
+
+---
+
+##### Step 13.A: Slash-popup filtering + unsupported doc {#step-13a}
+
+**Commit:** `feat(dev-card): slash-popup filtering + unsupported-command doc`
+
+**References:** [D14] unsupported-list, [D23] local dispatch, [#q09-slash-popup-filter], (#slash-cmd-inventory)
+
+This is the spine the other sub-steps plug into. The allowlist is a **three-tier
+classifier**, not a flat list: `supported-local` (a [D23] registry command with a
+Tug surface), `pass-through` (a `prompt`/skill command sent to claude verbatim),
+and `hidden` (the known-unsupported set, swallowed at submit). Unknown `/names`
+default to **send-to-claude**, never swallowed — a new claude command we don't
+know about must still reach it.
 
 **Artifacts:**
-- New: `tugdeck/src/lib/slash-supported.ts` — canonical allowlist constant (co-located with / read by the [#step-1c] `slash-commands.ts` registry)
-- New: `tugdeck/docs/dev-card-unsupported-slash-commands.md` (or under `tuglaws/`) — discoverable list of unsupported commands
-- New: `help-tabbed-sheet.tsx` (overlay per [D15])
-- Modified: `session-metadata-store.ts` `getCommandCompletionProvider` applies the allowlist *filter* over claude's commands (the local-command merge seam landed in [#step-1c])
-- Modified: slash-command popup component to filter; submit-side blocklist swallows known-unsupported commands so they don't reach claude (per [D14])
-- Wiring: register `/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/rename`, `/bug`, `/btw` in the [#step-1c] registry; their `RUN_SLASH_COMMAND` handlers perform the mapped action
-- For `/rename` (cross-layer session name): add a `name TEXT` column to the tugcast `sessions` ledger (`session_ledger.rs`) + a `rename_session` control verb (`CONTROL_ACTION_RENAME_SESSION`, sibling of `trash_session`); the session-list query the chooser reads returns `name`. Modified: `DevSessionIdBadge` reads the name (≤16-char cap, id to tooltip); `dev-picker-cells.tsx` uses the name as the `session-resume` row title when present.
+- New: `tugdeck/src/lib/slash-supported.ts` — `GRAPHICAL_SUPPORTED_COMMANDS` + the tier classifier; co-located with / read by the [#step-1c] `slash-commands.ts` registry.
+- New: `tugdeck/docs/dev-card-unsupported-slash-commands.md` — discoverable list of every hidden command + why.
+- Modified: `session-metadata-store.ts` `getCommandCompletionProvider` applies the allowlist *filter* over claude's reported commands (the local-command merge seam landed in [#step-1c]).
+- Modified: slash-command popup component filters; submit-side blocklist swallows known-unsupported commands so they don't reach claude (per [D14]).
 
 **Tasks:**
-
-*Slash-popup filtering:*
-- [ ] Define `GRAPHICAL_SUPPORTED_COMMANDS` allowlist in `slash-supported.ts`.
-- [ ] Filter popup output — unsupported commands hidden from popup per [D14].
-- [ ] Author `dev-card-unsupported-slash-commands.md` listing every unsupported command + why. Link the doc from the slash popup's "?" help affordance and from `/help`.
-
-*`/clear`, `/help`, `/export`, `/copy`, `/add-dir`, `/bug` mappings:*
-- [ ] Map `/clear` → existing transcript-clear / new-session affordance per [D16]. Verify the affordance exists; if not, scope the missing piece as a sub-task.
-- [ ] Implement `/help` as a tabbed sheet (card-scoped overlay per [D15]) per [D16] with categorized command list, key shortcuts, and links to docs. Tabs modeled on terminal `/help`. Source of command list: `SessionMetadataStore.slashCommands` filtered through the allowlist + a curated docs section.
-- [ ] `/export`: open save dialog with format picker (JSONL / markdown).
-- [ ] `/copy`: copy last assistant_text accumulation; bind Cmd+Shift+C.
-- [ ] `/add-dir`: directory picker → control message (or punt if no IPC support yet — flag).
-- [ ] `/rename` (the [#l02-slash-cmd-audit] win — names the **session**, matching the terminal's `/rename` which renames the conversation shown in `/resume`). `/rename <text>` (arg-bearing per [D23]) sets the name; bare `/rename` opens a one-field dialog seeded with the current name (reuse an existing Tug input dialog; no bespoke sheet). The name is **session-scoped and persisted** so it surfaces in two places:
-  - **Z4B session chip** (`DevSessionIdBadge`): show the name as the chip value, **capped at ~16 chars** (ellipsized), with the full name + raw `tugSessionId` in the tooltip; fall back to the truncated id when no name is set. Optimistic on rename; authoritative from the ledger on bind.
-  - **Session chooser** (`dev-picker-cells.tsx` `session-resume` row): use the name as the row title when present, falling back to today's `last_user_prompt`-derived title.
-  - **Cross-layer scope (grounded):** the tugcast `sessions` ledger table has no name column today — add `name TEXT` (the schema self-healing guard supports it) set by a new `rename_session` control verb (sibling of `trash_session` / `close_session`); the existing session-list query the chooser reads returns it. No IPC to claude (the name is Tug-side conversation metadata, exactly as the terminal's `local`-type `/rename` is local). This is a small cross-layer feature (ledger column + control verb + chip read + chooser read), not a one-file client action — scope accordingly.
-
-*`/btw` exclude-from-history flow (substeps in execution order, per [D11]):*
-- [ ] **13.btw.1 — Probe claude 2.1.154 support for the metadata flag.** Add a real-claude probe that sends `user_message` with `metadata.exclude_from_history: true` and a marker text. After the turn completes, read the session JSONL and assert whether the marker text is present. Document the result in `transport-exploration.md` and decide the implementation path:
-  - **Path A (claude honors the flag)**: the flag alone suffices; no journal-side work.
-  - **Path B (claude does NOT honor)**: tugbank carries the exclusion via journal-side filtering.
-- [ ] **13.btw.2 — Extend `UserMessage` type with optional metadata.** Add `metadata?: { exclude_from_history?: boolean }` to `tugcode/src/types.ts:UserMessage` and the parallel `tugdeck/src/protocol.ts` shape. Pre-Step-5c-style discipline: optional field, additive, type-pin tests in both projects. Tugcast `payload_inspector.rs` ignores unknown `metadata` shapes.
-- [ ] **13.btw.3 — Tugbank journal filtering (Path B fallback or default).** If the probe in 13.btw.1 returned Path A, this substep is a no-op stub for forward-compat. If Path B: tugbank's journal-write skips entries whose user_message carries `metadata.exclude_from_history: true`. Drift-pin the filter behavior in a unit test.
-- [ ] **13.btw.4 — Transcript renderer hides exclude-flagged turns by default.** The dev-card's transcript filters out turns where `metadata.exclude_from_history: true`. Toggle (out of scope here; future addition) would let the user surface them. For this step, they're invisible by default — matching `/btw`'s terminal mental model of "ephemeral, no scrollback trace."
-- [ ] **13.btw.5 — Typed `/btw <text>` handler.** Strips the prefix and sends `user_message` with `metadata.exclude_from_history: true` and the content blocks for `<text>`.
+- [ ] Define `GRAPHICAL_SUPPORTED_COMMANDS` + the three-tier classifier in `slash-supported.ts`.
+- [ ] Filter popup output — `hidden`-tier commands absent from the popup per [D14]; `pass-through` + `supported-local` visible.
+- [ ] Submit-side blocklist swallows the `hidden` set (silent drop, not a no-op message); unknown `/names` still go to claude.
+- [ ] Author `dev-card-unsupported-slash-commands.md` listing every hidden command + why (`/bug`, `/vim`, `/theme`, `/color`, `/mcp`, `/quit`, `/login`, `/logout`, `/usage`, …). Link the doc from the slash popup's "?" affordance and (later) from `/help`.
 
 **Tests:**
-- [ ] Pure-logic: allowlist filter; copy formatter; `/btw` metadata flag serialization.
-- [ ] Pure-logic: tugbank journal-write filter respects `exclude_from_history` (whether or not claude honors it).
-- [ ] Pure-logic: transcript projection skips exclude-flagged turns.
-- [ ] Real-app: each typed shortcut performs the expected UI action; `/help` sheet renders with tabs; `/rename <text>` sets the session name → Z4B session chip shows it (≤16 chars, id in tooltip) and bare `/rename` opens the dialog.
-- [ ] Real-app: a renamed session shows its name as the row title in the session chooser (open the chooser, assert the named row).
-- [ ] Real-claude probe for `/btw` (13.btw.1): assert whether the marker text appears in the session JSONL after a turn with the flag.
+- [ ] Pure-logic: classifier returns the right tier for a sampled catalog (supported-local / pass-through / hidden); unknown `/name` → send-to-claude.
+- [ ] Pure-logic: popup filter hides exactly the `hidden` tier; submit blocklist swallows it.
 
 **Checkpoint:**
-- [ ] `just app-test slash-mappings`
+- [ ] `just app-test slash-filtering` (real-app: `/vim`, `/theme`, `/bug`, … absent from popup; supported + pass-through present).
+
+---
+
+##### Step 13.B: Pure-client commands — `/copy`, `/help`, `/clear` {#step-13b}
+
+**Commit:** `feat(dev-card): /copy, /help, /clear client commands`
+
+**References:** [D16] clear+help supported, [D15] overlays, [D23] local dispatch, [L23] transcript is user-visible state
+
+These three are pure client — no host bridge, no control verb, no IPC.
+
+- **`/copy`** — copy the last `assistant_text` accumulation to the clipboard; bind **Cmd+Shift+C**.
+- **`/help`** — tabbed sheet (card-scoped overlay per [D15]) per [D16]: categorized command list (from `SessionMetadataStore.slashCommands` filtered through the 13.A allowlist) + curated key-shortcuts + docs-links tabs. Tabs modeled on the terminal `/help`.
+- **`/clear`** — **open question to confirm at implementation:** there is no transcript-wipe affordance today, and [L23] keeps the transcript as user-visible state we never clear (even `dispose()` leaves it). Proposed semantics per [D16]: `/clear` = **spawn a fresh session in this card** (reusing the resume/rebind spawn path), transcript stays. Confirm before building; if a different semantic is wanted, scope the missing piece as a sub-task.
+
+**Artifacts:**
+- New: `help-tabbed-sheet.tsx` (overlay per [D15]).
+- Wiring: register `/copy`, `/help`, `/clear` in the [#step-1c] registry; their `RUN_SLASH_COMMAND` handlers perform the mapped action. `/copy` also binds Cmd+Shift+C.
+
+**Tests:**
+- [ ] Pure-logic: `/copy` formatter (last-assistant-text selection); `/help` tab/command-list projection over a sample catalog.
+- [ ] Real-app: Cmd+Shift+C copies the last assistant text; `/help` renders with tabs; `/clear` spawns a fresh session (transcript behavior matches the confirmed semantics).
+
+**Checkpoint:**
 - [ ] `just app-test help-tabbed-sheet`
+
+---
+
+##### Step 13.C: Host/IPC-bridge commands — `/export`, `/add-dir` {#step-13c}
+
+**Commit:** `feat(dev-card): /export save dialog + /add-dir directory picker`
+
+**References:** [D23] local dispatch, host `openPath` bridge precedent ([#step-12a])
+
+Both need a **new host/IPC affordance** beyond the client — that's what groups
+them.
+
+- **`/export`** — OS save dialog with a format picker (JSONL / markdown). Source data is already in our journal/transcript, so the export *content* is client-side; the **save panel** is a new macOS host bridge, sibling of the `openPath` handler [#step-12a] added (`NSSavePanel`).
+- **`/add-dir`** — directory picker (`NSOpenPanel`, choose-directories) → control message adding the directory to the session. There is no `add_directory` control verb today; **punt-with-flag** if the IPC isn't there yet (build the picker, flag the missing verb as a sub-task) rather than blocking the sub-step.
+
+**Artifacts:**
+- New (host): `NSSavePanel` (export) + `NSOpenPanel` directory (add-dir) cases in `MainWindow.swift`, registered + cleaned up alongside `openPath`.
+- New (tugdeck): an `os-export` / `os-pick-directory` lib (sibling of `os-open.ts`); export formatter (JSONL + markdown) over the transcript/journal.
+- Wiring: register `/export`, `/add-dir` in the registry + `RUN_SLASH_COMMAND` handlers. `/add-dir` → control verb (or flagged stub).
+
+**Tests:**
+- [ ] Pure-logic: export formatter produces well-formed JSONL and markdown for a sample transcript.
+- [ ] Real-app: `/export` opens the save dialog (format picker present); `/add-dir` opens the directory picker (or the flagged-punt is documented if the verb is absent).
+
+**Checkpoint:**
+- [ ] `just app-test export-add-dir`
+
+---
+
+##### Step 13.D: `/rename` — cross-layer session name {#step-13d}
+
+**Commit:** `feat: /rename session name (ledger + chip + chooser)`
+
+**References:** [#l02-slash-cmd-audit] (`/rename` cheap-win), [D23] local dispatch (arg-bearing)
+
+`/rename` names the **session**, matching the terminal's `/rename` which renames
+the conversation shown in `/resume`. `/rename <text>` (arg-bearing per [D23]) sets
+the name; bare `/rename` opens a one-field dialog seeded with the current name
+(reuse an existing Tug input dialog; no bespoke sheet). The name is
+**session-scoped and persisted** so it surfaces in two places:
+- **Z4B session chip** (`DevSessionIdBadge`): show the name as the chip value, **capped at ~16 chars** (ellipsized), with the full name + raw `tugSessionId` in the tooltip; fall back to the truncated id when no name is set. Optimistic on rename; authoritative from the ledger on bind.
+- **Session chooser** (`dev-picker-cells.tsx` `session-resume` row): use the name as the row title when present, falling back to today's `last_user_prompt`-derived title.
+
+**Cross-layer scope (grounded):** the tugcast `sessions` ledger table has no name
+column today — add `name TEXT` (`session_ledger.rs`; the schema self-healing guard
+supports it) set by a new `rename_session` control verb
+(`CONTROL_ACTION_RENAME_SESSION`, sibling of `trash_session` / `close_session`);
+the existing session-list query the chooser reads returns it. No IPC to claude
+(the name is Tug-side conversation metadata, exactly as the terminal's
+`local`-type `/rename` is local). A small cross-layer feature (ledger column +
+control verb + chip read + chooser read), not a one-file client action.
+
+**Artifacts:**
+- Modified (tugcast): `session_ledger.rs` `name TEXT` column; `rename_session` control verb; session-list query returns `name`.
+- Modified (tugdeck): registry entry + handler (arg-bearing); reuse an input dialog for the bare form; `DevSessionIdBadge` reads the name; `dev-picker-cells.tsx` uses it as the row title.
+
+**Tests:**
+- [ ] Pure-logic: name truncation/ellipsis (≤16 chars) + tooltip composition; chooser row-title selection (name vs. prompt-derived fallback).
+- [ ] Real-app: `/rename <text>` sets the name → Z4B chip shows it (≤16 chars, id in tooltip); bare `/rename` opens the dialog seeded with the current name.
+- [ ] Real-app: a renamed session shows its name as the row title in the session chooser.
+
+**Checkpoint:**
+- [ ] `just app-test rename-session`
+
+---
+
+##### Step 13.E: `/btw` — exclude-from-history {#step-13e}
+
+**Commit:** `feat(dev-card): /btw exclude-from-history`
+
+**References:** [D11] btw exclude flag, [D23] local dispatch (arg-bearing)
+
+Hybrid: the text *does* go to claude as a turn, but with
+`metadata.exclude_from_history` + transcript-hiding + (maybe) tugbank journal
+filtering. Substeps in execution order per [D11]:
+
+- [ ] **13.E.1 — Probe claude support for the metadata flag.** Add a real-claude probe that sends `user_message` with `metadata.exclude_from_history: true` and a marker text. After the turn completes, read the session JSONL and assert whether the marker text is present. Document the result in `transport-exploration.md` and decide the implementation path:
+  - **Path A (claude honors the flag)**: the flag alone suffices; no journal-side work.
+  - **Path B (claude does NOT honor)**: tugbank carries the exclusion via journal-side filtering.
+- [ ] **13.E.2 — Extend `UserMessage` type with optional metadata.** Add `metadata?: { exclude_from_history?: boolean }` to `tugcode/src/types.ts:UserMessage` and the parallel `tugdeck/src/protocol.ts` shape. Optional field, additive, type-pin tests in both projects. Tugcast `payload_inspector.rs` ignores unknown `metadata` shapes.
+- [ ] **13.E.3 — Tugbank journal filtering (Path B fallback or default).** If 13.E.1 returned Path A, this substep is a no-op stub for forward-compat. If Path B: tugbank's journal-write skips entries whose user_message carries `metadata.exclude_from_history: true`. Drift-pin the filter behavior in a unit test.
+- [ ] **13.E.4 — Transcript renderer hides exclude-flagged turns by default.** The dev-card's transcript filters out turns where `metadata.exclude_from_history: true`. Toggle (out of scope here; future addition) would let the user surface them. For this step, they're invisible by default — matching `/btw`'s terminal mental model of "ephemeral, no scrollback trace."
+- [ ] **13.E.5 — Typed `/btw <text>` handler.** Strips the prefix and sends `user_message` with `metadata.exclude_from_history: true` and the content blocks for `<text>`.
+
+**Tests:**
+- [ ] Pure-logic: `/btw` metadata-flag serialization; tugbank journal-write filter respects `exclude_from_history` (whether or not claude honors it); transcript projection skips exclude-flagged turns.
+- [ ] Real-claude probe (13.E.1): assert whether the marker text appears in the session JSONL after a turn with the flag.
+
+**Checkpoint:**
 - [ ] `just app-test btw-exclude-from-history`
 
 ---
@@ -2404,9 +2525,9 @@ builder, mirroring `skills-inventory.ts`.
 - [ ] Z4B chrome shows all 4 chips as INDICATORS on every dev-card mount, rendered via the two-line `TugBadge` (display-only per [D13]; no click-to-popover on any chip). `Shift+Tab` cycles permission mode; rate-limit chip appears when status ≠ allowed; session-state reflects lifecycle.
 - [ ] Permission mode persists per-card via tugbank per [D07] — relaunching a card restores its prior mode.
 - [ ] Typed `/rewind`, `/resume`, `/permissions`, `/model`, `/diff`, `/context`, `/memory`, `/agents`, `/hooks`, `/help` each produce the documented graphical surface (all overlay sheets per [D15]).
-- [ ] `/vim`, `/theme`, `/color`, `/mcp`, `/login`, `/logout`, `/quit`, `/usage`, `/insights`, `/goal`, `/team-onboarding`, `/usage-credits`, `/extra-usage`, `/heapdump`, `/reload-skills` are absent from the slash popup.
+- [ ] `/vim`, `/theme`, `/color`, `/mcp`, `/login`, `/logout`, `/quit`, `/usage`, `/insights`, `/goal`, `/team-onboarding`, `/usage-credits`, `/extra-usage`, `/heapdump`, `/reload-skills`, `/bug` are absent from the slash popup.
 - [ ] `tugdeck/docs/dev-card-unsupported-slash-commands.md` exists and lists every hidden command.
-- [ ] `/clear`, `/export`, `/copy`, `/btw`, `/add-dir`, `/bug` each map to the documented UI action. `/btw` honors exclude-from-history per [D11].
+- [ ] `/clear`, `/export`, `/copy`, `/btw`, `/add-dir`, `/rename` each map to the documented UI action. `/btw` honors exclude-from-history per [D11].
 - [ ] `/diff` uses a dedicated `git_diff_request` command per [D21], not the GIT feed.
 - [ ] `/context` HUD uses the status-bar arc gauge per [D22].
 - [ ] `/rewind` flow matches the terminal empirically per [D10]; canonical event sequence pinned in the golden catalog from [#step-7a].
