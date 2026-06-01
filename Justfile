@@ -518,8 +518,11 @@ setup-dev-signing:
     scripts/setup-dev-signing.sh
 
 # Clear the per-machine code-sign drift sentinel. Use this if the
-# `.tugtool/code-sign-fingerprint` file ever gets out of sync (e.g.
-# after manually re-issuing the Developer ID cert in Xcode).
+# `code-sign-fingerprint` file ever gets out of sync (e.g. after
+# manually re-issuing the Developer ID cert in Xcode).
+#
+# The sentinel lives in the per-project runtime-state dir (out of the
+# repo), resolved via `tugutil state-dir`.
 #
 # Does NOT touch the Developer ID cert in the login keychain — that's
 # the user's Apple-issued identity, not project-specific.
@@ -529,11 +532,12 @@ setup-dev-signing:
 teardown-dev-signing:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ -f .tugtool/code-sign-fingerprint ]; then
-        rm -f .tugtool/code-sign-fingerprint
-        echo "✓ Sentinel .tugtool/code-sign-fingerprint cleared."
+    SENTINEL_FILE="$(tugutil state-dir 2>/dev/null || tugrust/target/debug/tugutil state-dir)/code-sign-fingerprint"
+    if [ -f "$SENTINEL_FILE" ]; then
+        rm -f "$SENTINEL_FILE"
+        echo "✓ Sentinel $SENTINEL_FILE cleared."
     else
-        echo ".tugtool/code-sign-fingerprint not present; nothing to remove."
+        echo "Sentinel not present ($SENTINEL_FILE); nothing to remove."
     fi
     echo
     echo "Note: the Developer ID Application cert in the login keychain"
@@ -627,7 +631,7 @@ build-app:
     # tolerates both the `# designated => ...` form (ad-hoc) and the
     # `designated => identifier "..." and anchor apple generic ...`
     # form (Developer ID).
-    SENTINEL_DIR=".tugtool"
+    SENTINEL_DIR="$(tugutil state-dir 2>/dev/null || tugrust/target/debug/tugutil state-dir)"
     SENTINEL_FILE="${SENTINEL_DIR}/code-sign-fingerprint"
     CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | sed -nE 's/^#?[[:space:]]*designated[[:space:]]+=>[[:space:]]+(.*)$/\1/p' | head -1)"
     if [ -z "$CURRENT_DR" ]; then

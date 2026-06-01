@@ -165,6 +165,15 @@ describe("buildClaudeArgs", () => {
     expect(args).toContain("--replay-user-messages");
   });
 
+  test("registers the Tug data root as a read dir via --add-dir", () => {
+    const args = buildClaudeArgs(defaultConfig);
+    const idx = args.indexOf("--add-dir");
+    expect(idx).toBeGreaterThan(-1);
+    // The registered path is the Tug app-data root — one entry covering every
+    // per-project runtime-state subdir.
+    expect(args[idx + 1].endsWith("/Tug")).toBe(true);
+  });
+
   test("with sessionId includes --resume", () => {
     const args = buildClaudeArgs({ ...defaultConfig, sessionId: "abc" });
     const idx = args.indexOf("--resume");

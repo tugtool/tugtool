@@ -590,6 +590,26 @@ const DEV_SYSTEM_PROMPT_NUDGE =
   "the next step you're about to take).";
 
 /**
+ * The Tug application-data root (`<data_dir>/Tug`).
+ *
+ * Registered as a claude read root on every spawn (via `--add-dir`) so the
+ * per-project runtime state that now lives outside the repo — the dash-log,
+ * the code-sign sentinel, and future side-command output — is readable without
+ * a permission prompt. One entry covers every `Tug/projects/<slug>/` subdir.
+ *
+ * Honors `TUG_DATA_DIR` as the base override (matching
+ * `tugutil_core::project_state_dir`); otherwise the macOS app-support dir.
+ */
+export function tugDataRoot(): string {
+  const override = process.env.TUG_DATA_DIR;
+  const base =
+    override && override.length > 0
+      ? override
+      : join(homedir(), "Library", "Application Support");
+  return join(base, "Tug");
+}
+
+/**
  * Build the CLI argument array for spawning the claude process.
  * Exported for unit tests.
  */
@@ -618,6 +638,9 @@ export function buildClaudeArgs(config: ClaudeSpawnConfig): string[] {
     "--plugin-dir", config.pluginDir,
     "--permission-mode", config.permissionMode,
     "--append-system-prompt", DEV_SYSTEM_PROMPT_NUDGE,
+    // Grant frictionless reads of out-of-repo Tug runtime state (dash-log,
+    // code-sign sentinel, side-command output) for every session.
+    "--add-dir", tugDataRoot(),
   ];
 
   if (config.model) {

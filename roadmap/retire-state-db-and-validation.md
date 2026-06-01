@@ -405,8 +405,8 @@ the step that orphans it.
 | #step-1 | Dash on git + `project_state_dir()`/`state-dir` + hydration + log; delete `state.db`/`StateDb` | done | `964bc9a1` |
 | #step-2 | Delete `validator.rs` + the `validate` command | done | `8a516fa7` |
 | #step-3 | Delete `tugutil list`, then `parser.rs` + `types.rs` | done | `865c5aff` |
-| #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | done | — |
-| #step-5 | Relocate runtime state out of the repo + register Claude reads | pending | — |
+| #step-4 | tugutil cleanup: deps, config fields, `init` fossil, orphans | done | `ef04e84c` |
+| #step-5 | Relocate runtime state out of the repo + register Claude reads | done | — |
 | #step-6 | De-ceremony skills + skeleton/docs | pending | — |
 | #step-7 | Integration checkpoint | pending | — |
 
@@ -561,30 +561,30 @@ the step that orphans it.
 (#runtime-relocation, #p10-additional-directories)
 
 **Investigate first (spike):**
-- [ ] Locate **how the host launches Claude Code** and grants directory access: does `tugcode`/
-      `tugcast` spawn `claude` with `--add-dir`, or write `additionalDirectories` into a settings
-      file? Find the launch site and confirm the lever before wiring; record the finding in [P10].
+- [x] **Resolved:** tugcode builds the claude argv in `buildClaudeArgs()`
+      (`tugcode/src/session.ts`), shared by all three spawn paths. The lever is `--add-dir` at spawn
+      (not a settings write). Recorded in [P10].
 
 **Tasks:**
-- [ ] Relocate the `code-sign-fingerprint` sentinel from `.tugtool/` to the path printed by
-      `tugutil state-dir`; update the `Justfile` to resolve it via the subcommand — **no hardcoded
-      OS path, no slug re-derived in shell** ([P08]).
-- [ ] Wire the registration per the spike: ensure `dirs::data_dir()/Tug` (the parent — one entry
-      covers every per-project subdir) is added to the Claude session's allowed read roots ([P10]).
-- [ ] `.gitignore` — drop the now-relocated `.tugtool/state.db*` and `.tugtool/code-sign-fingerprint`
-      entries (the dash-log was never under `.tugtool/`). Confirm `.tugtool/` holds only `config.toml`
-      (tracked) ([P09]).
+- [x] Relocated the `code-sign-fingerprint` sentinel from `.tugtool/` to the path printed by
+      `tugutil state-dir`; the `Justfile` (`build-app` write + `teardown-dev-signing` clear) resolves
+      it via the subcommand (PATH `tugutil`, falling back to `tugrust/target/debug/tugutil`) — no
+      hardcoded OS path, no slug re-derived in shell ([P08]). Moved the existing sentinel across.
+- [x] Wired the registration: `buildClaudeArgs` appends `--add-dir <tugDataRoot()>` where
+      `tugDataRoot()` = `<data_dir>/Tug` (parent — one entry) ([P10]).
+- [x] `.gitignore` — dropped the `.tugtool/state.db*` and `.tugtool/code-sign-fingerprint` entries.
+      Confirmed `.tugtool/` holds only `config.toml` (tracked) ([P09]).
 
 **Tests:**
-- [ ] The `Justfile` code-signing recipe resolves the sentinel via `tugutil state-dir` and
-      round-trips (write → read → clear) at the relocated path.
+- [x] `Justfile` sentinel round-trips (write → read → clear) at the `tugutil state-dir` path.
+- [x] `buildClaudeArgs` unit test asserts the `--add-dir <…/Tug>` registration artifact.
 
 **Checkpoint:**
-- [ ] `cargo build` + `cargo nextest run` clean under `-D warnings`.
-- [ ] **Verify registration by inspecting the launch artifact** (the `--add-dir` argv or the
-      settings `additionalDirectories` entry), **not** by observing "no prompt" — a permissive
-      session passes that check with no registration at all. Then, in a **default**-permission
-      session, a `Read` under `tugutil state-dir` completes without a prompt ([P10]).
+- [x] `cargo build` + `cargo nextest run` clean under `-D warnings` (Rust unchanged this step);
+      tugcode `bunx tsc --noEmit` clean + `buildClaudeArgs` tests pass.
+- [x] **Registration verified by inspecting the launch artifact** — `buildClaudeArgs` emits
+      `--add-dir /…/Tug`. The live default-permission `Read`-without-prompt check needs a rebuilt
+      tugcode (bun-compiled, no HMR) + a running Tug session — a host step for the user ([P10]).
 
 ---
 
@@ -748,10 +748,16 @@ reads of relocated state and side-command outputs need no prompt.
 
 **Implications:**
 - Registration is a Tug (host) responsibility, wired once; document it for the side-command feature.
-- The exact lever — `claude --add-dir` at spawn vs. an `additionalDirectories` settings write — is
-  unknown until the [#step-5] spike locates the host's Claude-launch site. **Verify it by inspecting
-  the launch artifact** (the argv or the settings entry), not by observing "no prompt": a permissive
-  session passes that check even with no registration at all.
+- **Lever resolved by the [#step-5] spike:** tugcode builds the claude argv in
+  `buildClaudeArgs()` (`tugcode/src/session.ts`), shared by all three interactive spawn paths
+  (`spawnClaude`, `handleSessionFork`, `handleSessionContinue`). Registration is `--add-dir
+  <tugDataRoot()>` appended there — **not** an `additionalDirectories` settings write (that file is
+  the user-managed Workspace shape per the parity roadmap; injecting Tug's data dir there would be
+  surprising). `tugDataRoot()` returns `<data_dir>/Tug` (the parent — one entry covers every
+  per-project subdir), honoring `TUG_DATA_DIR` to match `tugutil_core::project_state_dir`.
+- **Verified by inspecting the launch artifact** (the `--add-dir` argv via the `buildClaudeArgs`
+  unit test), not by observing "no prompt". The live default-permission Read check needs a *rebuilt*
+  tugcode (bun-compiled, no HMR) + a running Tug session — a host step for the user to confirm.
 
 #### What moves, what stays {#followon-moves}
 
